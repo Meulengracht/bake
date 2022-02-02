@@ -21,8 +21,17 @@
 
 #include <stddef.h>
 
+enum recipe_type {
+    RECIPE_TYPE_LIBRARY,
+    RECIPE_TYPE_APPLICATION
+};
+
 struct recipe {
-    int type;
+    const char* name;
+    const char* description;
+    enum recipe_type type;
+    const char* platform;
+    const char* arch;
 };
 
 /**
