@@ -20,8 +20,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char* g_defaultLibraryRecipe = "";
-static const char* g_defaultApplicationRecipe = "";
+extern const char* g_appYaml;
+extern const char* g_libraryYaml;
 
 static void __print_help(void)
 {
@@ -32,10 +32,37 @@ static void __print_help(void)
     printf("      Possible recipe types are {lib, app}\n");
 }
 
-
 static int __write_recipe(enum recipe_type type)
 {
+    const char* recipe = NULL;
+    FILE*       file;
 
+    switch (type) {
+        case RECIPE_TYPE_LIBRARY:
+            recipe = g_libraryYaml;
+            break;
+        case RECIPE_TYPE_APPLICATION:
+            recipe = g_appYaml;
+            break;
+    }
+
+    file = fopen("recipe.yaml", "r");
+    if (file) {
+        fclose(file);
+        printf("bake: recipe already exists, please remove it first.\n");
+        return -1;
+    }
+
+    file = fopen("recipe.yaml", "w");
+    if (!file) {
+        printf("bake: failed to create recipe.yaml\n");
+        return -1;
+    }
+
+    fwrite(recipe, strlen(recipe), 1, file);
+    fclose(file);
+    printf("recipe.yaml created.\n");
+    return 0;
 }
 
 int init_main(int argc, char** argv, struct recipe* recipe)
@@ -58,14 +85,11 @@ int init_main(int argc, char** argv, struct recipe* recipe)
                     type = RECIPE_TYPE_APPLICATION;
                 }
                 else {
-                    printf("Unknown recipe type: %s\n", argv[3]);
+                    printf("bake: unknown recipe type: %s\n", argv[3]);
                     return -1;
                 }
             }
         }
     }
-
-
-
-    return 0;
+    return __write_recipe(type);
 }

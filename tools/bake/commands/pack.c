@@ -16,7 +16,37 @@
  * 
  */
 
+#include <errno.h>
+#include <liboven.h>
+#include <stdio.h>
+#include <string.h>
+
 int pack_main(int argc, char** argv, struct recipe* recipe)
 {
-    
+    int status;
+
+    status = oven_initialize();
+    if (status != 0) {
+        fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
+        return status;
+    }
+
+    status = oven_configure();
+    if (status != 0) {
+        fprintf(stderr, "bake: failed to configure target: %s\n", strerror(errno));
+        return status;
+    }
+
+    status = oven_build();
+    if (status != 0) {
+        fprintf(stderr, "bake: failed to build target: %s\n", strerror(errno));
+        return status;
+    }
+
+    status = oven_cleanup();
+    if (status != 0) {
+        fprintf(stderr, "bake: failed to cleanup target: %s\n", strerror(errno));
+        return status;
+    }
+    return 0;
 }

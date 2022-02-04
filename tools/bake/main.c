@@ -118,6 +118,7 @@ int main(int argc, char** argv)
         result = recipe_parse(buffer, length, &recipe);
         free(buffer);
         if (result != 0) {
+            fprintf(stderr, "bake: failed to parse recipe\n");
             return result;
         }
     }

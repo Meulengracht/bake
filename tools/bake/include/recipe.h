@@ -26,12 +26,30 @@ enum recipe_type {
     RECIPE_TYPE_APPLICATION
 };
 
-struct recipe {
+struct recipe_step {
     const char* name;
-    const char* description;
-    enum recipe_type type;
-    const char* platform;
-    const char* arch;
+    const char* depends;
+};
+
+struct recipe_step_generate {
+    struct recipe_step base;
+    const char*        system;
+    const char*        arguments;
+};
+
+struct recipe_step_build {
+    struct recipe_step base;
+    const char*        system;
+    const char*        arguments;
+};
+
+struct recipe {
+    const char*         name;
+    const char*         description;
+    enum recipe_type    type;
+    const char*         platform;
+    const char*         arch;
+    struct recipe_step* steps;
 };
 
 /**

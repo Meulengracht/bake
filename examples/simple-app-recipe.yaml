@@ -24,14 +24,17 @@ recipes:
   # from is denoted by ${BAKE_BUILD_DIR}.  Bake expects all artifacts that
   # should be included in the package to be placed in ${BAKE_ARTIFACT_DIR}.
   - type: generate
-    commands:
-      - configure ${BAKE_SOURCE_DIR} --prefix=${BAKE_ARTIFACT_DIR}
+    system: configure
+    arguments: --platform=amd64
+    env:
+      VAR: VALUE
   # The build step is executed from ${BAKE_BUILD_DIR}
   - type: build
     depends: generate
-    commands:
-      - make
-      - make install
+    system: make
+    arguments: mytarget
+    env:
+      VAR: VALUE
 
 # commands are applications or services that should be available
 # to the system once the application is installed. These commands
