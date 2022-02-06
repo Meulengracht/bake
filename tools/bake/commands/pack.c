@@ -18,12 +18,33 @@
 
 #include <errno.h>
 #include <liboven.h>
+#include <recipe.h>
 #include <stdio.h>
 #include <string.h>
 
+static void __initialize_generator_options(struct oven_generate_options* options, struct recipe* recipe)
+{
+    options->system = NULL;
+    options->arguments = NULL;
+}
+
+static void __initialize_build_options(struct oven_build_options* options, struct recipe* recipe)
+{
+    options->system = NULL;
+    options->arguments = NULL;
+}
+
+static void __initialize_pack_options(struct oven_pack_options* options, struct recipe* recipe)
+{
+    options->compression = NULL;
+}
+
 int pack_main(int argc, char** argv, struct recipe* recipe)
 {
-    int status;
+    struct oven_generate_options genOptions;
+    struct oven_build_options    buildOptions;
+    struct oven_pack_options     packOptions;
+    int                          status;
 
     status = oven_initialize();
     if (status != 0) {
@@ -31,15 +52,24 @@ int pack_main(int argc, char** argv, struct recipe* recipe)
         return status;
     }
 
-    status = oven_configure();
+    __initialize_generator_options(&genOptions, recipe);
+    status = oven_configure(&genOptions);
     if (status != 0) {
         fprintf(stderr, "bake: failed to configure target: %s\n", strerror(errno));
         return status;
     }
 
-    status = oven_build();
+    __initialize_build_options(&buildOptions, recipe);
+    status = oven_build(&buildOptions);
     if (status != 0) {
         fprintf(stderr, "bake: failed to build target: %s\n", strerror(errno));
+        return status;
+    }
+
+    __initialize_pack_options(&packOptions, recipe);
+    status = oven_pack(&packOptions);
+    if (status != 0) {
+        fprintf(stderr, "bake: failed to pack target: %s\n", strerror(errno));
         return status;
     }
 

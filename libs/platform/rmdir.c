@@ -22,7 +22,10 @@
 
 #include <dirent.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 int platform_rmdir(const char *path) {
    DIR *d = opendir(path);
@@ -34,36 +37,38 @@ int platform_rmdir(const char *path) {
 
       r = 0;
       while (!r && (p=readdir(d))) {
-          int r2 = -1;
-          char *buf;
-          size_t len;
+         int r2 = -1;
+         char *buf;
+         size_t len;
 
-          /* Skip the names "." and ".." as we don't want to recurse on them. */
-          if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
-             continue;
+         /* Skip the names "." and ".." as we don't want to recurse on them. */
+         if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, "..")) {
+            continue;
+         }
 
-          len = path_len + strlen(p->d_name) + 2; 
-          buf = malloc(len);
+         len = path_len + strlen(p->d_name) + 2; 
+         buf = malloc(len);
 
-          if (buf) {
-             struct stat statbuf;
+         if (buf) {
+            struct stat statbuf;
 
-             snprintf(buf, len, "%s/%s", path, p->d_name);
-             if (!stat(buf, &statbuf)) {
-                if (S_ISDIR(statbuf.st_mode))
-                   r2 = platform_rmdir(buf);
-                else
-                   r2 = unlink(buf);
-             }
-             free(buf);
-          }
-          r = r2;
+            snprintf(buf, len, "%s/%s", path, p->d_name);
+            if (!stat(buf, &statbuf)) {
+               if (S_ISDIR(statbuf.st_mode))
+                  r2 = platform_rmdir(buf);
+               else
+                  r2 = unlink(buf);
+            }
+            free(buf);
+         }
+         r = r2;
       }
       closedir(d);
    }
 
-   if (!r)
-      r = rmdir(path);
+   if (!r) {
+      r = platform_rmdir(path);
+   }
 
    return r;
 }

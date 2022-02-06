@@ -16,17 +16,17 @@
  * 
  */
 
-#ifndef __LIBPLATFORM_H__
-#define __LIBPLATFORM_H__
+#include <libplatform.h>
 
-#include <stddef.h>
+#ifdef __linux__
 
-extern int platform_mkdir(const char* path);
-extern int platform_rmdir(const char* path);
-extern int platform_getenv(const char* name, char* buffer, size_t length);
-extern int platform_setenv(const char* name, const char* value);
-extern int platform_getcwd(char* buffer, size_t length);
-extern int platform_chdir(const char* path);
-extern int platform_spawn(const char* path, const char* arguments, const char** envp);
+#include <spawn.h>
 
-#endif //!__LIBPLATFORM_H__
+int platform_spawn(const char* path, const char* arguments, const char** envp)
+{
+    return posix_spawn(NULL, path, NULL, NULL, NULL, envp);
+}
+
+#else
+#error "spawn: not implemented for this platform"
+#endif

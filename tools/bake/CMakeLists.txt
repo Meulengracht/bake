@@ -10,4 +10,4 @@ add_subdirectory(commands)
 add_subdirectory(parser)
 
 target_include_directories(bake PRIVATE include)
-target_link_libraries(bake bake-commands bake-parser liboven libyaml)
+target_link_libraries(bake bake-commands bake-parser libyaml)

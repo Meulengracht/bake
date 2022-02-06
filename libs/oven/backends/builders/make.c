@@ -16,17 +16,11 @@
  * 
  */
 
-#ifndef __LIBPLATFORM_H__
-#define __LIBPLATFORM_H__
+#include <errno.h>
+#include <liboven.h>
 
-#include <stddef.h>
-
-extern int platform_mkdir(const char* path);
-extern int platform_rmdir(const char* path);
-extern int platform_getenv(const char* name, char* buffer, size_t length);
-extern int platform_setenv(const char* name, const char* value);
-extern int platform_getcwd(char* buffer, size_t length);
-extern int platform_chdir(const char* path);
-extern int platform_spawn(const char* path, const char* arguments, const char** envp);
-
-#endif //!__LIBPLATFORM_H__
+int make_main(struct oven_build_options* options)
+{
+    errno = ENOTSUP;
+    return -1;
+}

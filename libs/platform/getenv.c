@@ -16,17 +16,18 @@
  * 
  */
 
-#ifndef __LIBPLATFORM_H__
-#define __LIBPLATFORM_H__
+#include <errno.h>
+#include <libplatform.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include <stddef.h>
-
-extern int platform_mkdir(const char* path);
-extern int platform_rmdir(const char* path);
-extern int platform_getenv(const char* name, char* buffer, size_t length);
-extern int platform_setenv(const char* name, const char* value);
-extern int platform_getcwd(char* buffer, size_t length);
-extern int platform_chdir(const char* path);
-extern int platform_spawn(const char* path, const char* arguments, const char** envp);
-
-#endif //!__LIBPLATFORM_H__
+int platform_getenv(const char* name, char* buffer, size_t length)
+{   
+    const char* value = getenv(name);
+    if (value == NULL) {
+        errno = ENOENT;
+        return -1;
+    }
+    strncpy(buffer, value, length);
+    return 0;
+}

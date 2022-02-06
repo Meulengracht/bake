@@ -19,6 +19,20 @@
 #ifndef __LIBOVEN_H__
 #define __LIBOVEN_H__
 
+struct oven_generate_options {
+    const char* system;
+    const char* arguments;
+};
+
+struct oven_build_options {
+    const char* system;
+    const char* arguments;
+};
+
+struct oven_pack_options {
+    const char* compression;
+};
+
 /**
  * @brief 
  * 
@@ -26,9 +40,29 @@
  */
 extern int oven_initialize(void);
 
-extern int oven_configure(void);
-extern int oven_build(void);
-extern int oven_pack(void);
+/**
+ * @brief 
+ * 
+ * @param options 
+ * @return int 
+ */
+extern int oven_configure(struct oven_generate_options* options);
+
+/**
+ * @brief 
+ * 
+ * @param options 
+ * @return int 
+ */
+extern int oven_build(struct oven_build_options* options);
+
+/**
+ * @brief 
+ * 
+ * @param options 
+ * @return int 
+ */
+extern int oven_pack(struct oven_pack_options* options);
 
 /**
  * @brief 
