@@ -1,0 +1,3 @@
+[submodule "libs/vafs"]
+	path = libs/vafs
+	url = git@github.com:Meulengracht/vali-rofs.git
