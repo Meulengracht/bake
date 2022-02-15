@@ -24,7 +24,12 @@
 
 int platform_spawn(const char* path, const char* arguments, const char** envp)
 {
-    return posix_spawn(NULL, path, NULL, NULL, NULL, envp);
+    pid_t  pid;
+    char** argv;
+
+    
+
+    return posix_spawn(&pid, path, NULL, NULL, NULL, (char * const* restrict)envp);
 }
 
 #else
