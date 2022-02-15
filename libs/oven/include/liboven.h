@@ -22,11 +22,13 @@
 struct oven_generate_options {
     const char* system;
     const char* arguments;
+    char**      environment;
 };
 
 struct oven_build_options {
     const char* system;
     const char* arguments;
+    char**      environment;
 };
 
 struct oven_pack_options {

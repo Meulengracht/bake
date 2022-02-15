@@ -25,21 +25,23 @@
 
 int cmake_main(struct oven_generate_options* options)
 {
-    char* command;
-    char* cwd;
-    int   written;
-    int   status;
+    char*  argument;
+    char*  cwd;
+    int    written;
+    int    status;
+    size_t argumentLength;
 
-    command = malloc(1024);
-    if (command == NULL) {
+    argumentLength = strlen(options->arguments) + 64;
+    argument = malloc(argumentLength);
+    if (argument == NULL) {
         errno = ENOMEM;
         return -1;
     }
-    memset(command, 0, 1024);
+    memset(argument, 0, argumentLength);
     
     cwd = malloc(1024);
     if (cwd == NULL) {
-        free(command);
+        free(argument);
         errno = ENOMEM;
         return -1;
     }
@@ -55,11 +57,11 @@ int cmake_main(struct oven_generate_options* options)
     }
 
     // build the cmake command, execute from build folder
-    written = snprintf(command, 1023,
+    written = snprintf(argument, argumentLength - 1,
         "%s ../..", 
         options->arguments);
-    command[written] = '\0';
-    status = platform_spawn("cmake", command, NULL);
+    argument[written] = '\0';
+    status = platform_spawn("cmake", argument, options->environment);
     if (status) {
         goto cleanup;
     }
@@ -69,6 +71,6 @@ int cmake_main(struct oven_generate_options* options)
     
 cleanup:
     free(cwd);
-    free(command);
+    free(argument);
     return status;
 }

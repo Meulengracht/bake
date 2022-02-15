@@ -4,8 +4,6 @@ project:
   description: A simple application recipe
   type: application
   version: 0.1
-  platform: linux
-  architecture: amd64
   license: MIT
   homepage:
 

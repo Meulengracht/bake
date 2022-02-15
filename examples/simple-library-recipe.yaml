@@ -4,8 +4,6 @@ project:
   description: A simple library recipe
   type: library
   version: 0.1
-  platform: linux
-  architecture: amd64
   license: MIT
   homepage:
 
