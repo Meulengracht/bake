@@ -43,18 +43,65 @@ struct recipe_step_build {
     const char*        arguments;
 };
 
-struct recipe {
+struct recipe_part {
     const char*         name;
-    enum recipe_type    type;
+    const char*         path;
+    struct recipe_step* steps;
+};
+
+struct recipe_project {
+    const char*         name;
     const char*         description;
     const char*         version;
     const char*         license;
     const char*         author;
     const char*         email;
     const char*         url;
-    const char*         platform;
-    const char*         arch;
-    struct recipe_step* steps;
+};
+
+enum recipe_ingredient_source_type {
+    RECIPE_INGREDIENT_SOURCE_TYPE_REPO,
+    RECIPE_INGREDIENT_SOURCE_TYPE_URL,
+    RECIPE_INGREDIENT_SOURCE_TYPE_FILE,
+};
+
+struct recipe_ingredient_source_url {
+    const char* url;
+};
+
+struct recipe_ingredient_source_file {
+    const char* path;
+};
+
+struct recipe_ingredient {
+    const char* name;
+    const char* version;
+    const char* description;
+    enum recipe_ingredient_source_type type;
+    union {
+        struct recipe_ingredient_source_url  url;
+        struct recipe_ingredient_source_file file;
+    };
+};
+
+enum recipe_command_type {
+    RECIPE_COMMAND_TYPE_EXECUTABLE,
+    RECIPE_COMMAND_TYPE_DAEMON
+};
+
+struct recipe_commands {
+    const char* name;
+    const char* description;
+    enum recipe_command_type type;
+    const char* path;
+    const char* arguments;
+};
+
+struct recipe {
+    struct recipe_project     project;
+    enum recipe_type          type;
+    struct recipe_ingredient* ingredients;
+    struct recipe_part*       parts;
 };
 
 /**

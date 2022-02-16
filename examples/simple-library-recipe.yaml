@@ -18,7 +18,7 @@ ingredients:
 # There are a number of keywords that can be used in the recipe
 # steps during generate, build, install and package.
 recipes:
-  recipe:
+  - recipe:
     - name: my-library
       path: source/
       steps:

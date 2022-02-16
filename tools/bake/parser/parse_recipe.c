@@ -132,6 +132,8 @@ enum state {
     STATE_PROJECT,
     STATE_PROJECT_NAME,
     STATE_PROJECT_DESCRIPTION,
+    STATE_PROJECT_AUTHOR,
+    STATE_PROJECT_EMAIL,
     STATE_PROJECT_TYPE,
     STATE_PROJECT_VERSION,
     STATE_PROJECT_LICENSE,
@@ -158,20 +160,25 @@ enum state {
 
     STATE_RECIPE_STEP,     // MAPPING_START
     STATE_RECIPE_STEP_TYPE,
-    STATE_RECIPE_STEP_DEPENDS,
+    STATE_RECIPE_STEP_DEPEND_LIST,
     STATE_RECIPE_STEP_SYSTEM,
-    STATE_RECIPE_STEP_ARGUMENTS,
-    
+    STATE_RECIPE_STEP_ARGUMENT_LIST,
     STATE_RECIPE_STEP_ENV_LIST,
+
+    STATE_RECIPE_STEP_DEPENDENCY,
+    STATE_RECIPE_STEP_ARGUMENT,
+    STATE_RECIPE_STEP_ENV,
 
     STATE_COMMANDS_LIST,
 
     STATE_COMMAND,         // MAPPING_START
-    STATE_COMMAND_DATA,    // MAPPING_START
-    STATE_COMMAND_DATA_PATH,
-    STATE_COMMAND_DATA_ARGUMENTS,
-    STATE_COMMAND_DATA_TYPE,
-    STATE_COMMAND_DATA_DESCRIPTION,
+    STATE_COMMAND_NAME,
+    STATE_COMMAND_PATH,
+    STATE_COMMAND_ARGUMENT_LIST,
+    STATE_COMMAND_TYPE,
+    STATE_COMMAND_DESCRIPTION,
+
+    STATE_COMMAND_ARGUMENT,
 
     STATE_STOP
 };
@@ -324,13 +331,13 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-#define __consume_scalar_fn(__STATE, __FIELD, __FN) \
+#define __consume_scalar_fn(__INITSTATE, __STATE, __FIELD, __FN) \
         case __STATE: \
             switch (event->type) { \
                 case YAML_SCALAR_EVENT: \
                     value = (char *)event->data.scalar.value; \
                     s->recipe.__FIELD = __FN(value); \
-                    s->state = STATE_PROJECT; \
+                    s->state = __INITSTATE; \
                     break; \
                 default: \
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state); \
@@ -338,30 +345,31 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             } \
             break;
 
-        __consume_scalar_fn(STATE_PROJECT_NAME, name, __parse_project_string)
-        __consume_scalar_fn(STATE_PROJECT_DESCRIPTION, description, __parse_project_string)
-        __consume_scalar_fn(STATE_PROJECT_TYPE, type, __parse_project_type)
-        __consume_scalar_fn(STATE_PROJECT_VERSION, version, __parse_project_string)
-        __consume_scalar_fn(STATE_PROJECT_LICENSE, license, __parse_project_string)
-        __consume_scalar_fn(STATE_PROJECT_HOMEPAGE, url, __parse_project_string)
-
-        case STATE_INGREDIENT_LIST:
-            switch (event->type) {
-                case YAML_SEQUENCE_START_EVENT:
-                    break;
-                case YAML_SEQUENCE_END_EVENT:
-                    s->state = STATE_PROJECT;
-                    break;
-
-                case YAML_MAPPING_START_EVENT:
-                    s->state = STATE_INGREDIENT;
-                    break;
-
-                default:
-                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
-                    return -1;
-            }
+#define __consume_sequence(__INITSTATE, __LISTSTATE, __ITEMSTATE) \
+        case __LISTSTATE: \
+            switch (event->type) { \
+                case YAML_SEQUENCE_START_EVENT: \
+                    break; \
+                case YAML_SEQUENCE_END_EVENT: \
+                    s->state = __INITSTATE; \
+                    break; \
+                case YAML_MAPPING_START_EVENT: \
+                    s->state = __ITEMSTATE; \
+                    break; \
+                default: \
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state); \
+                    return -1; \
+            } \
             break;
+
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_NAME, name, __parse_project_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_DESCRIPTION, description, __parse_project_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_TYPE, type, __parse_project_type)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_VERSION, version, __parse_project_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_LICENSE, license, __parse_project_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_HOMEPAGE, url, __parse_project_string)
+
+        __consume_sequence(STATE_SECTION, STATE_INGREDIENT_LIST, STATE_INGREDIENT)
 
         case STATE_INGREDIENT:
             switch (event->type) {
@@ -386,6 +394,234 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 case YAML_MAPPING_END_EVENT:
                     s->state = STATE_INGREDIENT_LIST;
                     break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_NAME, name, __parse_ingredient_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_DESCRIPTION, description, __parse_ingredient_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_VERSION, version, __parse_ingredient_string)
+
+        case STATE_INGREDIENT_SOURCE:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    s->state = STATE_INGREDIENT;
+                    break;
+                
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "type") == 0) {
+                        s->state = STATE_INGREDIENT_SOURCE_TYPE;
+                    }
+                    else if (strcmp(value, "url") == 0) {
+                        s->state = STATE_INGREDIENT_SOURCE_URL;
+                    }
+                    else {
+                        fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_TYPE, type, __parse_ingredient_source_type)
+        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_URL, url, __parse_ingredient_source_string)
+
+        __consume_sequence(STATE_SECTION, STATE_RECIPE_LIST, STATE_RECIPE)
+
+        case STATE_RECIPE:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    s->state = STATE_RECIPE_LIST;
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "name") == 0) {
+                        s->state = STATE_RECIPE_NAME;
+                    }
+                    else if (strcmp(value, "path") == 0) {
+                        s->state = STATE_RECIPE_PATH;
+                    }
+                    else if (strcmp(value, "steps") == 0) {
+                        s->state = STATE_RECIPE_STEP_LIST;
+                    }
+                    else {
+                        fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_NAME, name, __parse_recipe_string)
+        __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_PATH, path, __parse_recipe_string)
+
+        __consume_sequence(STATE_RECIPE, STATE_RECIPE_STEP_LIST, STATE_RECIPE_STEP)
+
+        case STATE_RECIPE_STEP:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    s->state = STATE_RECIPE_STEP_LIST;
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "type") == 0) {
+                        s->state = STATE_RECIPE_STEP_TYPE;
+                    }
+                    else if (strcmp(value, "depends") == 0) {
+                        s->state = STATE_RECIPE_STEP_DEPEND_LIST;
+                    }
+                    else if (strcmp(value, "system") == 0) {
+                        s->state = STATE_RECIPE_STEP_SYSTEM;
+                    }
+                    else if (strcmp(value, "arguments") == 0) {
+                        s->state = STATE_RECIPE_STEP_ARGUMENT_LIST;
+                    }
+                    else if (strcmp(value, "env") == 0) {
+                        s->state = STATE_RECIPE_STEP_ENV_LIST;
+                    }
+                    else {
+                        fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_TYPE, type, __parse_recipe_step_type)
+        __consume_sequence(STATE_RECIPE_STEP, STATE_RECIPE_STEP_DEPEND_LIST, STATE_RECIPE_STEP_DEPENDENCY)
+        __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_SYSTEM, system, __parse_recipe_step_string)
+        __consume_sequence(STATE_RECIPE_STEP, STATE_RECIPE_STEP_ARGUMENT_LIST, STATE_RECIPE_STEP_ARGUMENT)
+        __consume_sequence(STATE_RECIPE_STEP, STATE_RECIPE_STEP_ENV_LIST, STATE_RECIPE_STEP_ENV)
+
+        case STATE_RECIPE_STEP_DEPENDENCY:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    s->state = STATE_RECIPE_STEP_DEPEND_LIST;
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    // TODO store the dependency name
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+        
+        case STATE_RECIPE_STEP_ARGUMENT:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    s->state = STATE_RECIPE_STEP_ARGUMENT_LIST;
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    // TODO store the argument name
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        case STATE_RECIPE_STEP_ENV:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    s->state = STATE_RECIPE_STEP_ENV_LIST;
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    // TODO store the env name
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_sequence(STATE_SECTION, STATE_COMMANDS_LIST, STATE_COMMAND)
+
+        case STATE_COMMAND:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    s->state = STATE_COMMANDS_LIST;
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "name") == 0) {
+                        s->state = STATE_COMMAND_NAME;
+                    }
+                    else if (strcmp(value, "description") == 0) {
+                        s->state = STATE_COMMAND_DESCRIPTION;
+                    }
+                    else if (strcmp(value, "path") == 0) {
+                        s->state = STATE_COMMAND_PATH;
+                    }
+                    else if (strcmp(value, "arguments") == 0) {
+                        s->state = STATE_COMMAND_ARGUMENT_LIST;
+                    }
+                    else if (strcmp(value, "type") == 0) {
+                        s->state = STATE_COMMAND_TYPE;
+                    }
+                    else {
+                        fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_NAME, name, __parse_command_name)
+        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_DESCRIPTION, description, __parse_command_description)
+        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_PATH, path, __parse_command_path)
+        __consume_sequence(STATE_COMMAND, STATE_COMMAND_ARGUMENT_LIST, STATE_COMMAND_ARGUMENT)
+        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_TYPE, type, __parse_command_type)
+        
+        case STATE_COMMAND_ARGUMENT:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    s->state = STATE_COMMAND_ARGUMENT_LIST;
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    // TODO store the argument name
+
                 default:
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
                     return -1;

@@ -3,6 +3,8 @@ project:
   name: Simple Application Recipe
   description: A simple application recipe
   type: application
+  author: who made it
+  email: contact@me.com
   version: 0.1
   license: MIT
   homepage:
@@ -18,7 +20,7 @@ ingredients:
 # There are a number of keywords that can be used in the recipe
 # steps during generate, build, install and package.
 recipes:
-  recipe:
+  - recipe:
     - name: my-app
       path: source/
       steps:
@@ -27,14 +29,14 @@ recipes:
       # should be included in the package to be placed in ${BAKE_ARTIFACT_DIR}.
       - type: generate
         system: configure
-        arguments: --platform=amd64
+        arguments: [--platform=amd64]
         env:
           VAR: VALUE
       # The build step is executed from ${BAKE_BUILD_DIR}
       - type: build
-        depends: generate
+        depends: [generate]
         system: make
-        arguments: mytarget
+        arguments: [mytarget]
         env:
           VAR: VALUE
 
@@ -42,7 +44,7 @@ recipes:
 # to the system once the application is installed. These commands
 # can be registered to a binary or script inside the app package
 commands:
-  myapp:
+  - name: myapp
     path: /bin/myapp
     arguments: [--arg1, --arg2]
     type: executable
