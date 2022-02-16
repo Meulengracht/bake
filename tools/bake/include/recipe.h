@@ -45,8 +45,13 @@ struct recipe_step_build {
 
 struct recipe {
     const char*         name;
-    const char*         description;
     enum recipe_type    type;
+    const char*         description;
+    const char*         version;
+    const char*         license;
+    const char*         author;
+    const char*         email;
+    const char*         url;
     const char*         platform;
     const char*         arch;
     struct recipe_step* steps;

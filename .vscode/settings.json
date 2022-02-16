@@ -1,6 +1,13 @@
 {
     "files.associations": {
         "spawn.h": "c",
-        "errno.h": "c"
+        "errno.h": "c",
+        "array": "c",
+        "functional": "c",
+        "istream": "c",
+        "ostream": "c",
+        "tuple": "c",
+        "type_traits": "c",
+        "utility": "c"
     }
 }

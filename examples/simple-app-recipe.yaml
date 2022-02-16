@@ -44,6 +44,6 @@ recipes:
 commands:
   myapp:
     path: /bin/myapp
-    arguments: [--arg1 --arg2]
+    arguments: [--arg1, --arg2]
     type: executable
     description: A simple application
