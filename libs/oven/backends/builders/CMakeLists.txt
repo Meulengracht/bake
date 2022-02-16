@@ -4,3 +4,4 @@ add_library(oven-builders STATIC
 )
 
 target_include_directories(oven-builders PRIVATE ../../include)
+target_link_libraries(oven-builders oven-backend)

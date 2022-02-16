@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "spawn.h": "c"
+        "spawn.h": "c",
+        "errno.h": "c"
     }
 }

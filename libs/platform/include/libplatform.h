@@ -27,6 +27,6 @@ extern int platform_getenv(const char* name, char* buffer, size_t length);
 extern int platform_setenv(const char* name, const char* value);
 extern int platform_getcwd(char* buffer, size_t length);
 extern int platform_chdir(const char* path);
-extern int platform_spawn(const char* path, const char* arguments, const char** envp);
+extern int platform_spawn(const char* path, const char* arguments, const char* const* envp);
 
 #endif //!__LIBPLATFORM_H__

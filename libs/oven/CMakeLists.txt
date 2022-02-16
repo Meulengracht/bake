@@ -3,8 +3,15 @@ project (oven C)
 
 add_subdirectory(backends)
 
-add_library(liboven STATIC
+# add platform libraries
+set(ADDITIONAL_LIBS)
+if (UNIX)
+    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} -lpthread)
+endif (UNIX)
+
+add_library(oven STATIC
         oven.c
 )
-target_include_directories(liboven PUBLIC include)
-target_link_libraries(liboven oven-builders oven-generators libplatform)
+target_include_directories(oven PUBLIC include)
+target_link_libraries(oven PRIVATE oven-backend oven-builders oven-generators platform)
+target_link_libraries(oven PUBLIC vafs ${ADDITIONAL_LIBS})

@@ -16,6 +16,7 @@
  * 
  */
 
+#include <backend.h>
 #include <errno.h>
 #include <liboven.h>
 #include <libplatform.h>
@@ -23,38 +24,14 @@
 #include <string.h>
 #include <stdio.h>
 
-int configure_main(struct oven_generate_options* options)
+int configure_main(struct oven_backend_data* data)
 {
-    char* cwd;
-    int   status;
+    int status;
 
-    cwd = malloc(1024);
-    if (cwd == NULL) {
-        free(argument);
-        errno = ENOMEM;
-        return -1;
-    }
-
-    status = platform_getcwd(cwd, 1024);
-    if (status) {
-        goto cleanup;
-    }
-
-    status = platform_chdir(".oven/build");
-    if (status) {
-        goto cleanup;
-    }
-
-    status = platform_spawn("../../configure", options->arguments, options->environment);
-    if (status) {
-        goto cleanup;
-    }
-    
-    // restore working directory
-    status = platform_chdir(cwd);
-    
-cleanup:
-    free(cwd);
-    free(argument);
+    status = platform_spawn(
+        "../../configure",
+        data->arguments,
+        data->environment
+    );
     return status;
 }

@@ -16,10 +16,11 @@
  * 
  */
 
+#include <backend.h>
 #include <errno.h>
 #include <liboven.h>
 
-int make_main(struct oven_build_options* options)
+int make_main(struct oven_backend_data* data)
 {
     errno = ENOTSUP;
     return -1;

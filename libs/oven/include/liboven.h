@@ -19,16 +19,21 @@
 #ifndef __LIBOVEN_H__
 #define __LIBOVEN_H__
 
+struct oven_recipe_options {
+    const char* name;
+    const char* relative_path;
+};
+
 struct oven_generate_options {
-    const char* system;
-    const char* arguments;
-    char**      environment;
+    const char*  system;
+    const char*  arguments;
+    const char** environment;
 };
 
 struct oven_build_options {
-    const char* system;
-    const char* arguments;
-    char**      environment;
+    const char*  system;
+    const char*  arguments;
+    const char** environment;
 };
 
 struct oven_pack_options {
@@ -41,6 +46,20 @@ struct oven_pack_options {
  * @return int 
  */
 extern int oven_initialize(void);
+
+/**
+ * @brief 
+ * 
+ * @param options 
+ * @return int 
+ */
+extern int oven_recipe_start(struct oven_recipe_options* options);
+
+/**
+ * @brief 
+ * 
+ */
+extern void oven_recipe_end(void);
 
 /**
  * @brief 

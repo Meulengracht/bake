@@ -1,7 +1,7 @@
 # Project setup
 project (platform C)
 
-add_library(libplatform STATIC
+add_library(platform STATIC
     chdir.c
     getcwd.c
     getenv.c
@@ -10,4 +10,4 @@ add_library(libplatform STATIC
     setenv.c
     spawn.c
 )
-target_include_directories(libplatform PUBLIC include)
+target_include_directories(platform PUBLIC include)

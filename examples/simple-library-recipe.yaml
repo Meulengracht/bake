@@ -18,16 +18,22 @@ ingredients:
 # There are a number of keywords that can be used in the recipe
 # steps during generate, build, install and package.
 recipes:
-  # The generate step is run first, and the folder generation is run
-  # from is denoted by ${BAKE_BUILD_DIR}.  Bake expects all artifacts that
-  # should be included in the package to be placed in ${BAKE_ARTIFACT_DIR}.
-  - type: generate
-    commands:
-      - configure ${BAKE_SOURCE_DIR} --prefix=${BAKE_ARTIFACT_DIR}
-  # The build step is executed from ${BAKE_BUILD_DIR}
-  - type: build
-    depends: generate
-    commands:
-      - make
-      - make install
-
+  recipe:
+    - name: my-library
+      path: source/
+      steps:
+      # The generate step is run first, and the folder generation is run
+      # from is denoted by ${BAKE_BUILD_DIR}.  Bake expects all artifacts that
+      # should be included in the package to be placed in ${BAKE_ARTIFACT_DIR}.
+      - type: generate
+        system: configure
+        arguments: --platform=amd64
+        env:
+          VAR: VALUE
+      # The build step is executed from ${BAKE_BUILD_DIR}
+      - type: build
+        depends: generate
+        system: make
+        arguments: mytarget
+        env:
+          VAR: VALUE

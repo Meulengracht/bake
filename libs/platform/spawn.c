@@ -73,7 +73,7 @@ static void __split_arguments(const char* arguments, char** argv)
     }
 }
 
-int platform_spawn(const char* path, const char* arguments, const char** envp)
+int platform_spawn(const char* path, const char* arguments, const char* const* envp)
 {
     pid_t  pid;
     char** argv;
