@@ -34,6 +34,10 @@ stream-start-event (1)
         scalar-event (6) = {value="A simple application recipe", length=27}
         scalar-event (6) = {value="type", length=4}
         scalar-event (6) = {value="application", length=11}
+        scalar-event (6) = {value="author", length=6}
+        scalar-event (6) = {value="who made it", length=11}
+        scalar-event (6) = {value="email", length=5}
+        scalar-event (6) = {value="contact@me.com", length=14}
         scalar-event (6) = {value="version", length=7}
         scalar-event (6) = {value="0.1", length=3}
         scalar-event (6) = {value="license", length=7}
@@ -60,64 +64,74 @@ stream-start-event (1)
         mapping-end-event (10)
       sequence-end-event (8)
       scalar-event (6) = {value="recipes", length=7}
-      mapping-start-event (9)
-        scalar-event (6) = {value="recipe", length=6}
-        sequence-start-event (7)
-          mapping-start-event (9)
-            scalar-event (6) = {value="name", length=4}
-            scalar-event (6) = {value="my-app", length=6}
-            scalar-event (6) = {value="path", length=4}
-            scalar-event (6) = {value="source/", length=7}
-            scalar-event (6) = {value="steps", length=5}
-            sequence-start-event (7)
-              mapping-start-event (9)
-                scalar-event (6) = {value="type", length=4}
-                scalar-event (6) = {value="generate", length=8}
-                scalar-event (6) = {value="system", length=6}
-                scalar-event (6) = {value="configure", length=9}
-                scalar-event (6) = {value="arguments", length=9}
-                scalar-event (6) = {value="--platform=amd64", length=16}
-                scalar-event (6) = {value="env", length=3}
-                mapping-start-event (9)
-                  scalar-event (6) = {value="VAR", length=3}
-                  scalar-event (6) = {value="VALUE", length=5}
-                mapping-end-event (10)
-              mapping-end-event (10)
-              mapping-start-event (9)
-                scalar-event (6) = {value="type", length=4}
-                scalar-event (6) = {value="build", length=5}
-                scalar-event (6) = {value="depends", length=7}
-                scalar-event (6) = {value="generate", length=8}
-                scalar-event (6) = {value="system", length=6}
-                scalar-event (6) = {value="make", length=4}
-                scalar-event (6) = {value="arguments", length=9}
-                scalar-event (6) = {value="mytarget", length=8}
-                scalar-event (6) = {value="env", length=3}
-                mapping-start-event (9)
-                  scalar-event (6) = {value="VAR", length=3}
-                  scalar-event (6) = {value="VALUE", length=5}
-                mapping-end-event (10)
-              mapping-end-event (10)
-            sequence-end-event (8)
-          mapping-end-event (10)
-        sequence-end-event (8)
-      mapping-end-event (10)
-      scalar-event (6) = {value="commands", length=8}
-      mapping-start-event (9)
-        scalar-event (6) = {value="myapp", length=5}
+      sequence-start-event (7)
         mapping-start-event (9)
+          scalar-event (6) = {value="recipe", length=6}
+          sequence-start-event (7)
+            mapping-start-event (9)
+              scalar-event (6) = {value="name", length=4}
+              scalar-event (6) = {value="my-app", length=6}
+              scalar-event (6) = {value="path", length=4}
+              scalar-event (6) = {value="source/", length=7}
+              scalar-event (6) = {value="steps", length=5}
+              sequence-start-event (7)
+                mapping-start-event (9)
+                  scalar-event (6) = {value="type", length=4}
+                  scalar-event (6) = {value="generate", length=8}
+                  scalar-event (6) = {value="system", length=6}
+                  scalar-event (6) = {value="configure", length=9}
+                  scalar-event (6) = {value="arguments", length=9}
+                  sequence-start-event (7)
+                    scalar-event (6) = {value="--platform=amd64", length=16}
+                  sequence-end-event (8)
+                  scalar-event (6) = {value="env", length=3}
+                  mapping-start-event (9)
+                    scalar-event (6) = {value="VAR", length=3}
+                    scalar-event (6) = {value="VALUE", length=5}
+                  mapping-end-event (10)
+                mapping-end-event (10)
+                mapping-start-event (9)
+                  scalar-event (6) = {value="type", length=4}
+                  scalar-event (6) = {value="build", length=5}
+                  scalar-event (6) = {value="depends", length=7}
+                  sequence-start-event (7)
+                    scalar-event (6) = {value="generate", length=8}
+                  sequence-end-event (8)
+                  scalar-event (6) = {value="system", length=6}
+                  scalar-event (6) = {value="make", length=4}
+                  scalar-event (6) = {value="arguments", length=9}
+                  sequence-start-event (7)
+                    scalar-event (6) = {value="mytarget", length=8}
+                  sequence-end-event (8)
+                  scalar-event (6) = {value="env", length=3}
+                  mapping-start-event (9)
+                    scalar-event (6) = {value="VAR", length=3}
+                    scalar-event (6) = {value="VALUE", length=5}
+                  mapping-end-event (10)
+                mapping-end-event (10)
+              sequence-end-event (8)
+            mapping-end-event (10)
+          sequence-end-event (8)
+        mapping-end-event (10)
+      sequence-end-event (8)
+      scalar-event (6) = {value="commands", length=8}
+      sequence-start-event (7)
+        mapping-start-event (9)
+          scalar-event (6) = {value="name", length=4}
+          scalar-event (6) = {value="myapp", length=5}
           scalar-event (6) = {value="path", length=4}
           scalar-event (6) = {value="/bin/myapp", length=10}
           scalar-event (6) = {value="arguments", length=9}
           sequence-start-event (7)
-            scalar-event (6) = {value="--arg1 --arg2", length=13}
+            scalar-event (6) = {value="--arg1", length=6}
+            scalar-event (6) = {value="--arg2", length=6}
           sequence-end-event (8)
           scalar-event (6) = {value="type", length=4}
           scalar-event (6) = {value="executable", length=10}
           scalar-event (6) = {value="description", length=11}
           scalar-event (6) = {value="A simple application", length=20}
         mapping-end-event (10)
-      mapping-end-event (10)
+      sequence-end-event (8)
     mapping-end-event (10)
   document-end-event (4)
 stream-end-event (2)
@@ -163,11 +177,9 @@ enum state {
     STATE_RECIPE_STEP_DEPEND_LIST,
     STATE_RECIPE_STEP_SYSTEM,
     STATE_RECIPE_STEP_ARGUMENT_LIST,
-    STATE_RECIPE_STEP_ENV_LIST,
 
-    STATE_RECIPE_STEP_DEPENDENCY,
-    STATE_RECIPE_STEP_ARGUMENT,
-    STATE_RECIPE_STEP_ENV,
+    STATE_RECIPE_STEP_ENV_LIST_KEY,
+    STATE_RECIPE_STEP_ENV_LIST_VALUE,
 
     STATE_COMMANDS_LIST,
 
@@ -178,15 +190,227 @@ enum state {
     STATE_COMMAND_TYPE,
     STATE_COMMAND_DESCRIPTION,
 
-    STATE_COMMAND_ARGUMENT,
-
     STATE_STOP
 };
 
 struct parser_state {
-    enum state    state;
-    struct recipe recipe;
+    enum state                state;
+    struct recipe             recipe;
+    struct recipe_ingredient  ingredient;
+    struct recipe_part        part;
+    struct recipe_step        step;
+    struct recipe_command     command;
+    struct recipe_env_keypair env_keypair;
 };
+
+static const char* __parse_string(const char* value)
+{
+    if (value == NULL || strlen(value) == 0) {
+        return NULL;
+    }
+
+    return strdup(value);
+}
+
+static enum recipe_type __parse_project_type(const char* value)
+{
+    if (strcmp(value, "library") == 0) {
+        return RECIPE_TYPE_LIBRARY;
+    } else if (strcmp(value, "application") == 0) {
+        return RECIPE_TYPE_APPLICATION;
+    } else {
+        return RECIPE_TYPE_UNKNOWN;
+    }
+}
+
+static enum recipe_ingredient_source_type __parse_ingredient_source_type(const char* value)
+{
+    if (value == NULL || strlen(value) == 0) {
+        return RECIPE_INGREDIENT_SOURCE_TYPE_REPO;
+    }
+
+    if (strcmp(value, "repo") == 0) {
+        return RECIPE_INGREDIENT_SOURCE_TYPE_REPO;
+    } else if (strcmp(value, "local") == 0) {
+        return RECIPE_INGREDIENT_SOURCE_TYPE_URL;
+    } else if (strcmp(value, "local") == 0) {
+        return RECIPE_INGREDIENT_SOURCE_TYPE_FILE;
+    } else {
+        return RECIPE_INGREDIENT_SOURCE_TYPE_UNKNOWN;
+    }
+}
+
+static enum recipe_step_type __parse_recipe_step_type(const char* value)
+{
+    if (strcmp(value, "generate") == 0) {
+        return RECIPE_STEP_TYPE_GENERATE;
+    } else if (strcmp(value, "build") == 0) {
+        return RECIPE_STEP_TYPE_BUILD;
+    } else {
+        return RECIPE_STEP_TYPE_UNKNOWN;
+    }
+}
+
+static enum recipe_command_type __parse_command_type(const char* value)
+{
+    if (strcmp(value, "executable") == 0) {
+        return RECIPE_COMMAND_TYPE_EXECUTABLE;
+    } else if (strcmp(value, "daemon") == 0) {
+        return RECIPE_COMMAND_TYPE_DAEMON;
+    } else {
+        return RECIPE_COMMAND_TYPE_UNKNOWN;
+    }
+}
+
+static void __finalize_recipe(struct parser_state* state)
+{
+    // verify required recipe members
+    if (state->recipe.type == RECIPE_TYPE_UNKNOWN) {
+        fprintf(stderr, "error: recipe type is not specified\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void __finalize_project(struct parser_state* state)
+{
+    // verify required project members
+    if (state->recipe.project.name == NULL) {
+        fprintf(stderr, "error: project name is required\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (state->recipe.project.version == NULL) {
+        fprintf(stderr, "error: project version must be specified\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (state->recipe.project.license == NULL) {
+        fprintf(stderr, "error: project license is required\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void __finalize_ingredient(struct parser_state* state)
+{
+    struct recipe_ingredient* ingredient;
+
+    // we should verify required members of the ingredient before creating a copy
+    
+    // now we copy and reset
+    ingredient = malloc(sizeof(struct recipe_ingredient));
+    if (ingredient == NULL) {
+        return;
+    }
+
+    memcpy(ingredient, &state->ingredient, sizeof(struct recipe_ingredient));
+    list_add(&state->recipe.ingredients, &ingredient->list_header);
+
+    // reset the structure in state
+    memset(&state->ingredient, 0, sizeof(struct recipe_ingredient));
+}
+
+static void __finalize_part(struct parser_state* state)
+{
+    struct recipe_part* part;
+
+    // we should verify required members of the part before creating a copy
+    
+    // now we copy and reset
+    part = malloc(sizeof(struct recipe_part));
+    if (part == NULL) {
+        return;
+    }
+
+    memcpy(part, &state->part, sizeof(struct recipe_part));
+    list_add(&state->recipe.parts, &part->list_header);
+
+    // reset the structure in state
+    memset(&state->part, 0, sizeof(struct recipe_part));
+}
+
+static void __finalize_step(struct parser_state* state)
+{
+    struct recipe_step* step;
+
+    // we should verify required members of the step before creating a copy
+    
+    // now we copy and reset
+    step = malloc(sizeof(struct recipe_step));
+    if (step == NULL) {
+        return;
+    }
+
+    memcpy(step, &state->step, sizeof(struct recipe_step));
+    list_add(&state->part.steps, &step->list_header);
+
+    // reset the structure in state
+    memset(&state->step, 0, sizeof(struct recipe_step));
+}
+
+static void __finalize_step_env(struct parser_state* state)
+{
+    struct recipe_env_keypair* keypair;
+
+    // key value must be provided
+    if (state->env_keypair.key == NULL || strlen(state->env_keypair.key) == 0) {
+        return;
+    }
+
+    keypair = malloc(sizeof(struct recipe_env_keypair));
+    if (keypair == NULL) {
+        return;
+    }
+
+    keypair->key   = state->env_keypair.key;
+    keypair->value = state->env_keypair.value;
+    list_add(&state->step.env_keypairs, &keypair->list_header);
+
+    // reset the keypair
+    state->env_keypair.key   = NULL;
+    state->env_keypair.value = NULL;
+}
+
+static void __finalize_command(struct parser_state* state)
+{
+    struct recipe_command* command;
+
+    // we should verify required members of the command before creating a copy
+    
+    // now we copy and reset
+    command = malloc(sizeof(struct recipe_command));
+    if (command == NULL) {
+        return;
+    }
+
+    memcpy(command, &state->command, sizeof(struct recipe_command));
+    list_add(&state->recipe.commands, &command->list_header);
+
+    // reset the structure in state
+    memset(&state->command, 0, sizeof(struct recipe_command));
+}
+
+// TODO error handling
+#define DEFINE_LIST_STRING_ADD(structure, field) \
+    static void __add_## structure ##_## field ##(struct parser_state* state, const char* value) \
+    { \
+        struct recipe_string_value* argument; \
+        if (value == NULL || strlen(value) == 0) { \
+            return; \
+        } \
+        \
+        argument = malloc(sizeof(struct recipe_string_value)); \
+        if (!argument) { \
+            return; \
+        } \
+        \
+        argument->value = strdup(value); \
+        \
+        list_add(&state->structure.field, &argument->list_header); \
+    }
+
+DEFINE_LIST_STRING_ADD(step, depends)
+DEFINE_LIST_STRING_ADD(step, arguments)
+DEFINE_LIST_STRING_ADD(command, arguments)
 
 static int __parse_boolean(const char* string, int* value)
 {
@@ -207,16 +431,6 @@ static int __parse_boolean(const char* string, int* value)
         }
     }
     return EINVAL;
-}
-
-static const char* __parse_project_string(const char* value)
-{
-
-}
-
-static enum recipe_type __parse_project_type(const char* value)
-{
-
 }
 
 static int __consume_event(struct parser_state* s, yaml_event_t* event)
@@ -285,6 +499,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         return -1;
                     } break;
                 case YAML_DOCUMENT_END_EVENT:
+                    __finalize_recipe(s);
                     s->state = STATE_STREAM;
                     break;
                 default:
@@ -298,6 +513,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 case YAML_MAPPING_START_EVENT:
                     break;
                 case YAML_MAPPING_END_EVENT:
+                    __finalize_project(s);
                     s->state = STATE_SECTION;
                     break;
                 
@@ -336,7 +552,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             switch (event->type) { \
                 case YAML_SCALAR_EVENT: \
                     value = (char *)event->data.scalar.value; \
-                    s->recipe.__FIELD = __FN(value); \
+                    s->__FIELD = __FN(value); \
                     s->state = __INITSTATE; \
                     break; \
                 default: \
@@ -345,7 +561,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             } \
             break;
 
-#define __consume_sequence(__INITSTATE, __LISTSTATE, __ITEMSTATE) \
+#define __consume_sequence_mapped(__INITSTATE, __LISTSTATE, __ITEMSTATE) \
         case __LISTSTATE: \
             switch (event->type) { \
                 case YAML_SEQUENCE_START_EVENT: \
@@ -362,14 +578,31 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             } \
             break;
 
-        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_NAME, name, __parse_project_string)
-        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_DESCRIPTION, description, __parse_project_string)
-        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_TYPE, type, __parse_project_type)
-        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_VERSION, version, __parse_project_string)
-        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_LICENSE, license, __parse_project_string)
-        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_HOMEPAGE, url, __parse_project_string)
+#define __consume_sequence_unmapped(__INITSTATE, __STATE, __FN) \
+        case __STATE: \
+            switch (event->type) { \
+                case YAML_SEQUENCE_START_EVENT: \
+                    break; \
+                case YAML_SEQUENCE_END_EVENT: \
+                    s->state = __INITSTATE; \
+                    break; \
+                case YAML_SCALAR_EVENT: \
+                    __FN(s, (char *)event->data.scalar.value); \
+                default: \
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state); \
+                    return -1; \
+            } \
+            break;
 
-        __consume_sequence(STATE_SECTION, STATE_INGREDIENT_LIST, STATE_INGREDIENT)
+
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_NAME, recipe.project.name, __parse_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_DESCRIPTION, recipe.project.description, __parse_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_TYPE, recipe.type, __parse_project_type)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_VERSION, recipe.project.version, __parse_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_LICENSE, recipe.project.license, __parse_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_HOMEPAGE, recipe.project.url, __parse_string)
+
+        __consume_sequence_mapped(STATE_SECTION, STATE_INGREDIENT_LIST, STATE_INGREDIENT)
 
         case STATE_INGREDIENT:
             switch (event->type) {
@@ -392,6 +625,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         return -1;
                     } break;
                 case YAML_MAPPING_END_EVENT:
+                    __finalize_ingredient(s);
                     s->state = STATE_INGREDIENT_LIST;
                     break;
                 default:
@@ -400,9 +634,9 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_NAME, name, __parse_ingredient_string)
-        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_DESCRIPTION, description, __parse_ingredient_string)
-        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_VERSION, version, __parse_ingredient_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_NAME, ingredient.name, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_DESCRIPTION, ingredient.description, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_VERSION, ingredient.version, __parse_string)
 
         case STATE_INGREDIENT_SOURCE:
             switch (event->type) {
@@ -430,16 +664,17 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_TYPE, type, __parse_ingredient_source_type)
-        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_URL, url, __parse_ingredient_source_string)
+        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_TYPE, ingredient.type, __parse_ingredient_source_type)
+        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_URL, ingredient.url.url, __parse_string)
 
-        __consume_sequence(STATE_SECTION, STATE_RECIPE_LIST, STATE_RECIPE)
+        __consume_sequence_mapped(STATE_SECTION, STATE_RECIPE_LIST, STATE_RECIPE)
 
         case STATE_RECIPE:
             switch (event->type) {
                 case YAML_MAPPING_START_EVENT:
                     break;
                 case YAML_MAPPING_END_EVENT:
+                    __finalize_part(s);
                     s->state = STATE_RECIPE_LIST;
                     break;
 
@@ -465,16 +700,17 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_NAME, name, __parse_recipe_string)
-        __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_PATH, path, __parse_recipe_string)
+        __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_NAME, part.name, __parse_string)
+        __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_PATH, part.path, __parse_string)
 
-        __consume_sequence(STATE_RECIPE, STATE_RECIPE_STEP_LIST, STATE_RECIPE_STEP)
+        __consume_sequence_mapped(STATE_RECIPE, STATE_RECIPE_STEP_LIST, STATE_RECIPE_STEP)
 
         case STATE_RECIPE_STEP:
             switch (event->type) {
                 case YAML_MAPPING_START_EVENT:
                     break;
                 case YAML_MAPPING_END_EVENT:
+                    __finalize_step(s);
                     s->state = STATE_RECIPE_STEP_LIST;
                     break;
 
@@ -493,7 +729,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         s->state = STATE_RECIPE_STEP_ARGUMENT_LIST;
                     }
                     else if (strcmp(value, "env") == 0) {
-                        s->state = STATE_RECIPE_STEP_ENV_LIST;
+                        s->state = STATE_RECIPE_STEP_ENV_LIST_KEY;
                     }
                     else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
@@ -506,23 +742,24 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_TYPE, type, __parse_recipe_step_type)
-        __consume_sequence(STATE_RECIPE_STEP, STATE_RECIPE_STEP_DEPEND_LIST, STATE_RECIPE_STEP_DEPENDENCY)
-        __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_SYSTEM, system, __parse_recipe_step_string)
-        __consume_sequence(STATE_RECIPE_STEP, STATE_RECIPE_STEP_ARGUMENT_LIST, STATE_RECIPE_STEP_ARGUMENT)
-        __consume_sequence(STATE_RECIPE_STEP, STATE_RECIPE_STEP_ENV_LIST, STATE_RECIPE_STEP_ENV)
+        __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_TYPE, step.type, __parse_recipe_step_type)
+        __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_SYSTEM, step.system, __parse_string)
 
-        case STATE_RECIPE_STEP_DEPENDENCY:
+        __consume_sequence_unmapped(STATE_RECIPE_STEP, STATE_RECIPE_STEP_ARGUMENT_LIST, __add_step_arguments)
+        __consume_sequence_unmapped(STATE_RECIPE_STEP, STATE_RECIPE_STEP_DEPEND_LIST, __add_step_depends)
+
+        case STATE_RECIPE_STEP_ENV_LIST_KEY:
             switch (event->type) {
                 case YAML_MAPPING_START_EVENT:
                     break;
                 case YAML_MAPPING_END_EVENT:
-                    s->state = STATE_RECIPE_STEP_DEPEND_LIST;
+                    s->state = STATE_RECIPE_STEP;
                     break;
 
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
-                    // TODO store the dependency name
+                    s->env_keypair.key = __parse_string(value);
+                    s->state = STATE_RECIPE_STEP_ENV_LIST_VALUE;
 
                 default:
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
@@ -530,17 +767,14 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
         
-        case STATE_RECIPE_STEP_ARGUMENT:
+        case STATE_RECIPE_STEP_ENV_LIST_VALUE:
             switch (event->type) {
-                case YAML_MAPPING_START_EVENT:
-                    break;
-                case YAML_MAPPING_END_EVENT:
-                    s->state = STATE_RECIPE_STEP_ARGUMENT_LIST;
-                    break;
-
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
-                    // TODO store the argument name
+                    s->env_keypair.value = __parse_string(value);
+
+                    __finalize_step_env(s);
+                    s->state = STATE_RECIPE_STEP_ENV_LIST_KEY;
 
                 default:
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
@@ -548,31 +782,14 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        case STATE_RECIPE_STEP_ENV:
-            switch (event->type) {
-                case YAML_MAPPING_START_EVENT:
-                    break;
-                case YAML_MAPPING_END_EVENT:
-                    s->state = STATE_RECIPE_STEP_ENV_LIST;
-                    break;
-
-                case YAML_SCALAR_EVENT:
-                    value = (char *)event->data.scalar.value;
-                    // TODO store the env name
-
-                default:
-                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
-                    return -1;
-            }
-            break;
-
-        __consume_sequence(STATE_SECTION, STATE_COMMANDS_LIST, STATE_COMMAND)
+        __consume_sequence_mapped(STATE_SECTION, STATE_COMMANDS_LIST, STATE_COMMAND)
 
         case STATE_COMMAND:
             switch (event->type) {
                 case YAML_MAPPING_START_EVENT:
                     break;
                 case YAML_MAPPING_END_EVENT:
+                    __finalize_command(s);
                     s->state = STATE_COMMANDS_LIST;
                     break;
 
@@ -604,30 +821,12 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_NAME, name, __parse_command_name)
-        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_DESCRIPTION, description, __parse_command_description)
-        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_PATH, path, __parse_command_path)
-        __consume_sequence(STATE_COMMAND, STATE_COMMAND_ARGUMENT_LIST, STATE_COMMAND_ARGUMENT)
-        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_TYPE, type, __parse_command_type)
+        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_NAME, command.name, __parse_string)
+        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_DESCRIPTION, command.description, __parse_string)
+        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_PATH, command.path, __parse_string)
+        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_TYPE, command.type, __parse_command_type)
+        __consume_sequence_unmapped(STATE_COMMAND, STATE_COMMAND_ARGUMENT_LIST, __add_command_arguments)
         
-        case STATE_COMMAND_ARGUMENT:
-            switch (event->type) {
-                case YAML_MAPPING_START_EVENT:
-                    break;
-                case YAML_MAPPING_END_EVENT:
-                    s->state = STATE_COMMAND_ARGUMENT_LIST;
-                    break;
-
-                case YAML_SCALAR_EVENT:
-                    value = (char *)event->data.scalar.value;
-                    // TODO store the argument name
-
-                default:
-                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
-                    return -1;
-            }
-            break;
-
         case STATE_STOP:
             break;
     }
@@ -661,4 +860,9 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
         yaml_event_delete(&event);
     } while (state.state != STATE_STOP);
     return 0;
+}
+
+void recipe_destroy(struct recipe* recipe)
+{
+
 }

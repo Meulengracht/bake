@@ -20,46 +20,59 @@
 #define __BAKE_RECIPE_H__
 
 #include <stddef.h>
+#include <list.h>
+
+struct recipe_string_value {
+    struct list_item list_header;
+    const char*      value;
+};
+
+struct recipe_env_keypair {
+    struct list_item list_header;
+    const char*      key;
+    const char*      value;
+};
 
 enum recipe_type {
+    RECIPE_TYPE_UNKNOWN,
     RECIPE_TYPE_LIBRARY,
     RECIPE_TYPE_APPLICATION
 };
 
+enum recipe_step_type {
+    RECIPE_STEP_TYPE_UNKNOWN,
+    RECIPE_STEP_TYPE_GENERATE,
+    RECIPE_STEP_TYPE_BUILD,
+};
+
 struct recipe_step {
-    const char* name;
-    const char* depends;
-};
-
-struct recipe_step_generate {
-    struct recipe_step base;
-    const char*        system;
-    const char*        arguments;
-};
-
-struct recipe_step_build {
-    struct recipe_step base;
-    const char*        system;
-    const char*        arguments;
+    struct list_item      list_header;
+    enum recipe_step_type type;
+    const char*           system;
+    struct list           depends;
+    struct list           arguments;
+    struct list           env_keypairs;
 };
 
 struct recipe_part {
-    const char*         name;
-    const char*         path;
-    struct recipe_step* steps;
+    struct list_item list_header;
+    const char*      name;
+    const char*      path;
+    struct list      steps;
 };
 
 struct recipe_project {
-    const char*         name;
-    const char*         description;
-    const char*         version;
-    const char*         license;
-    const char*         author;
-    const char*         email;
-    const char*         url;
+    const char* name;
+    const char* description;
+    const char* version;
+    const char* license;
+    const char* author;
+    const char* email;
+    const char* url;
 };
 
 enum recipe_ingredient_source_type {
+    RECIPE_INGREDIENT_SOURCE_TYPE_UNKNOWN,
     RECIPE_INGREDIENT_SOURCE_TYPE_REPO,
     RECIPE_INGREDIENT_SOURCE_TYPE_URL,
     RECIPE_INGREDIENT_SOURCE_TYPE_FILE,
@@ -74,9 +87,10 @@ struct recipe_ingredient_source_file {
 };
 
 struct recipe_ingredient {
-    const char* name;
-    const char* version;
-    const char* description;
+    struct list_item list_header;
+    const char*      name;
+    const char*      version;
+    const char*      description;
     enum recipe_ingredient_source_type type;
     union {
         struct recipe_ingredient_source_url  url;
@@ -85,23 +99,26 @@ struct recipe_ingredient {
 };
 
 enum recipe_command_type {
+    RECIPE_COMMAND_TYPE_UNKNOWN,
     RECIPE_COMMAND_TYPE_EXECUTABLE,
     RECIPE_COMMAND_TYPE_DAEMON
 };
 
-struct recipe_commands {
-    const char* name;
-    const char* description;
+struct recipe_command {
+    struct list_item         list_header;
+    const char*              name;
+    const char*              description;
     enum recipe_command_type type;
-    const char* path;
-    const char* arguments;
+    const char*              path;
+    struct list              arguments;
 };
 
 struct recipe {
-    struct recipe_project     project;
-    enum recipe_type          type;
-    struct recipe_ingredient* ingredients;
-    struct recipe_part*       parts;
+    struct recipe_project project;
+    enum recipe_type      type;
+    struct list           ingredients;
+    struct list           parts;
+    struct list           commands;
 };
 
 /**
@@ -114,5 +131,11 @@ struct recipe {
  */
 extern int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut);
 
+/**
+ * @brief Cleans up any resources allocated during recipe_parse, and frees the recipe.
+ * 
+ * @param[In] recipe 
+ */
+extern void recipe_destroy(struct recipe* recipe);
 
 #endif //!__BAKE_RECIPE_H__
