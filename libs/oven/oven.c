@@ -204,8 +204,8 @@ int oven_recipe_start(struct oven_recipe_options* options)
         return -1;
     }
 
-    g_ovenContext.recipe.name          = options->name;
-    g_ovenContext.recipe.relative_path = options->relative_path;
+    g_ovenContext.recipe.name          = strdup(options->name);
+    g_ovenContext.recipe.relative_path = strdup(options->relative_path);
     
     // generate build and install directories
     buildRoot = malloc(sizeof(char) * (strlen(g_ovenContext.build_root) + strlen(g_ovenContext.recipe.relative_path) + 2));

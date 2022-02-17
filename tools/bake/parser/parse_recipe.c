@@ -231,7 +231,7 @@ static enum recipe_ingredient_source_type __parse_ingredient_source_type(const c
 
     if (strcmp(value, "repo") == 0) {
         return RECIPE_INGREDIENT_SOURCE_TYPE_REPO;
-    } else if (strcmp(value, "local") == 0) {
+    } else if (strcmp(value, "url") == 0) {
         return RECIPE_INGREDIENT_SOURCE_TYPE_URL;
     } else if (strcmp(value, "local") == 0) {
         return RECIPE_INGREDIENT_SOURCE_TYPE_FILE;
@@ -266,7 +266,7 @@ static void __finalize_recipe(struct parser_state* state)
 {
     // verify required recipe members
     if (state->recipe.type == RECIPE_TYPE_UNKNOWN) {
-        fprintf(stderr, "error: recipe type is not specified\n");
+        fprintf(stderr, "bake: parse error: project type is not specified\n");
         exit(EXIT_FAILURE);
     }
 }
@@ -275,17 +275,17 @@ static void __finalize_project(struct parser_state* state)
 {
     // verify required project members
     if (state->recipe.project.name == NULL) {
-        fprintf(stderr, "error: project name is required\n");
+        fprintf(stderr, "bake: parse error: project name is required\n");
         exit(EXIT_FAILURE);
     }
 
     if (state->recipe.project.version == NULL) {
-        fprintf(stderr, "error: project version must be specified\n");
+        fprintf(stderr, "bake: parse error: project version must be specified\n");
         exit(EXIT_FAILURE);
     }
 
-    if (state->recipe.project.license == NULL) {
-        fprintf(stderr, "error: project license is required\n");
+    if (state->recipe.project.author == NULL) {
+        fprintf(stderr, "bake: parse error: project author is required\n");
         exit(EXIT_FAILURE);
     }
 }
@@ -295,11 +295,43 @@ static void __finalize_ingredient(struct parser_state* state)
     struct recipe_ingredient* ingredient;
 
     // we should verify required members of the ingredient before creating a copy
-    
+    if (state->ingredient.name == NULL) {
+        fprintf(stderr, "bake: parse error: ingredient name is required\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (state->ingredient.version == NULL) {
+        fprintf(stderr, "bake: parse error: ingredient %s: version is required\n", state->ingredient.name);
+        exit(EXIT_FAILURE);
+    }
+
+    switch (state->ingredient.type) {
+        case RECIPE_INGREDIENT_SOURCE_TYPE_URL:
+            if (state->ingredient.url.url == NULL) {
+                fprintf(stderr, "bake: parse error: ingredient %s: url is required\n", state->ingredient.name);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        case RECIPE_INGREDIENT_SOURCE_TYPE_FILE:
+            if (state->ingredient.file.path == NULL) {
+                fprintf(stderr, "bake: parse error: ingredient %s: file path is required\n", state->ingredient.name);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        case RECIPE_INGREDIENT_SOURCE_TYPE_UNKNOWN:
+            fprintf(stderr, "bake: parse error: ingredient %s: type is not supported\n", state->ingredient.name);
+            exit(EXIT_FAILURE);
+            break;
+            
+        default:
+            break;
+    }
+
     // now we copy and reset
     ingredient = malloc(sizeof(struct recipe_ingredient));
     if (ingredient == NULL) {
-        return;
+        fprintf(stderr, "bake: error: out of memory\n");
+        exit(EXIT_FAILURE);
     }
 
     memcpy(ingredient, &state->ingredient, sizeof(struct recipe_ingredient));
@@ -314,11 +346,16 @@ static void __finalize_part(struct parser_state* state)
     struct recipe_part* part;
 
     // we should verify required members of the part before creating a copy
+    if (state->part.name == NULL) {
+        fprintf(stderr, "bake: parse error: part name is required\n");
+        exit(EXIT_FAILURE);
+    }
     
     // now we copy and reset
     part = malloc(sizeof(struct recipe_part));
     if (part == NULL) {
-        return;
+        fprintf(stderr, "bake: error: out of memory\n");
+        exit(EXIT_FAILURE);
     }
 
     memcpy(part, &state->part, sizeof(struct recipe_part));
@@ -333,11 +370,21 @@ static void __finalize_step(struct parser_state* state)
     struct recipe_step* step;
 
     // we should verify required members of the step before creating a copy
+    if (state->step.type == RECIPE_STEP_TYPE_UNKNOWN) {
+        fprintf(stderr, "bake: parse error: part %s: valid step types are {generate, build}\n", state->part.name);
+        exit(EXIT_FAILURE);
+    }
+
+    if (state->step.system == NULL) {
+        fprintf(stderr, "bake: parse error: part %s: system is required\n", state->part.name);
+        exit(EXIT_FAILURE);
+    }
     
     // now we copy and reset
     step = malloc(sizeof(struct recipe_step));
     if (step == NULL) {
-        return;
+        fprintf(stderr, "bake: error: out of memory\n");
+        exit(EXIT_FAILURE);
     }
 
     memcpy(step, &state->step, sizeof(struct recipe_step));
@@ -358,7 +405,8 @@ static void __finalize_step_env(struct parser_state* state)
 
     keypair = malloc(sizeof(struct recipe_env_keypair));
     if (keypair == NULL) {
-        return;
+        fprintf(stderr, "bake: error: out of memory\n");
+        exit(EXIT_FAILURE);
     }
 
     keypair->key   = state->env_keypair.key;
@@ -375,11 +423,26 @@ static void __finalize_command(struct parser_state* state)
     struct recipe_command* command;
 
     // we should verify required members of the command before creating a copy
+    if (state->command.name == NULL) {
+        fprintf(stderr, "bake: parse error: command name is required\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (state->command.type == RECIPE_COMMAND_TYPE_UNKNOWN) {
+        fprintf(stderr, "bake: parse error: command %s: valid command types are {executable, daemon}\n", state->command.name);
+        exit(EXIT_FAILURE);
+    }
+
+    if (state->command.path == NULL) {
+        fprintf(stderr, "bake: parse error: command %s: path is required\n", state->command.name);
+        exit(EXIT_FAILURE);
+    }
     
     // now we copy and reset
     command = malloc(sizeof(struct recipe_command));
     if (command == NULL) {
-        return;
+        fprintf(stderr, "bake: error: out of memory\n");
+        exit(EXIT_FAILURE);
     }
 
     memcpy(command, &state->command, sizeof(struct recipe_command));
@@ -391,7 +454,7 @@ static void __finalize_command(struct parser_state* state)
 
 // TODO error handling
 #define DEFINE_LIST_STRING_ADD(structure, field) \
-    static void __add_## structure ##_## field ##(struct parser_state* state, const char* value) \
+    static void __add_##structure ##_##field(struct parser_state* state, const char* value) \
     { \
         struct recipe_string_value* argument; \
         if (value == NULL || strlen(value) == 0) { \
@@ -400,7 +463,8 @@ static void __finalize_command(struct parser_state* state)
         \
         argument = malloc(sizeof(struct recipe_string_value)); \
         if (!argument) { \
-            return; \
+            fprintf(stderr, "bake: error: out of memory\n"); \
+            exit(EXIT_FAILURE); \
         } \
         \
         argument->value = strdup(value); \
@@ -859,10 +923,100 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
         }
         yaml_event_delete(&event);
     } while (state.state != STATE_STOP);
+
+    yaml_parser_delete(&parser);
+
+    // create the recipe and copy all data
+    *recipeOut = malloc(sizeof(struct recipe));
+    if (!*recipeOut) {
+        fprintf(stderr, "bake: error: out of memory\n");
+        return -1;
+    }
+
+    memcpy(*recipeOut, &state.recipe, sizeof(struct recipe));
     return 0;
+}
+
+#define __destroy_list(fn, list, type) \
+    do { \
+        struct list_item* item; \
+        while ((item = list)) { \
+            list = item->next; \
+            __destroy_##fn((type*)item); \
+        } \
+    } while (0)
+
+static void __destroy_string(struct recipe_string_value* value)
+{
+    free((void*)value->value);
+    free(value);
+}
+
+static void __destroy_keypair(struct recipe_env_keypair* keypair)
+{
+    free((void*)keypair->key);
+    free((void*)keypair->value);
+    free(keypair);
+}
+
+static void __destroy_project(struct recipe_project* project)
+{
+    free((void*)project->name);
+    free((void*)project->description);
+    free((void*)project->version);
+    free((void*)project->url);
+    free((void*)project->license);
+    free((void*)project->author);
+    free((void*)project->email);
+    // do not free project itself, part of recipe
+}
+
+static void __destroy_ingredient(struct recipe_ingredient* ingredient)
+{
+    free((void*)ingredient->name);
+    free((void*)ingredient->version);
+    free((void*)ingredient->description);
+
+    if (ingredient->type == RECIPE_INGREDIENT_SOURCE_TYPE_URL) {
+        free((void*)ingredient->url.url);
+    }
+    else if (ingredient->type == RECIPE_INGREDIENT_SOURCE_TYPE_FILE) {
+        free((void*)ingredient->file.path);
+    }
+    free(ingredient);
+}
+
+static void __destroy_step(struct recipe_step* step)
+{
+    __destroy_list(string, step->depends.head, struct recipe_string_value);
+    __destroy_list(string, step->arguments.head, struct recipe_string_value);
+    __destroy_list(keypair, step->env_keypairs.head, struct recipe_env_keypair);
+    free((void*)step->system);
+    free(step);
+}
+
+static void __destroy_part(struct recipe_part* part)
+{
+    __destroy_list(step, part->steps.head, struct recipe_step);
+    free((void*)part->name);
+    free((void*)part->path);
+    free(part);
+}
+
+static void __destroy_command(struct recipe_command* command)
+{
+    __destroy_list(string, command->arguments.head, struct recipe_string_value);
+    free((void*)command->name);
+    free((void*)command->description);
+    free((void*)command->path);
+    free(command);
 }
 
 void recipe_destroy(struct recipe* recipe)
 {
-
+    __destroy_project(&recipe->project);
+    __destroy_list(ingredient, recipe->ingredients.head, struct recipe_ingredient);
+    __destroy_list(part, recipe->parts.head, struct recipe_part);
+    __destroy_list(command, recipe->commands.head, struct recipe_command);
+    free(recipe);
 }
