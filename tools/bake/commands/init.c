@@ -65,7 +65,7 @@ static int __write_recipe(enum recipe_type type)
     return 0;
 }
 
-int init_main(int argc, char** argv, struct recipe* recipe)
+int init_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     enum recipe_type type = RECIPE_TYPE_LIBRARY;
 

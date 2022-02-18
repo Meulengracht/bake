@@ -19,6 +19,19 @@
 #ifndef __LIBOVEN_H__
 #define __LIBOVEN_H__
 
+#include <list.h>
+
+struct oven_keypair_item {
+    struct list_item list_header;
+    const char*      key;
+    const char*      value;
+};
+
+struct oven_value_item {
+    struct list_item list_header;
+    const char*      value;
+};
+
 struct oven_recipe_options {
     const char* name;
     const char* relative_path;
@@ -26,14 +39,14 @@ struct oven_recipe_options {
 
 struct oven_generate_options {
     const char*  system;
-    const char*  arguments;
-    const char** environment;
+    struct list* arguments;
+    struct list* environment;
 };
 
 struct oven_build_options {
     const char*  system;
-    const char*  arguments;
-    const char** environment;
+    struct list* arguments;
+    struct list* environment;
 };
 
 struct oven_pack_options {
@@ -46,7 +59,7 @@ struct oven_pack_options {
  * 
  * @return int 
  */
-extern int oven_initialize(void);
+extern int oven_initialize(char** envp);
 
 /**
  * @brief 

@@ -10,5 +10,6 @@ add_library(platform STATIC
     rmdir.c
     setenv.c
     spawn.c
+    unsetenv.c
 )
 target_include_directories(platform PUBLIC include)

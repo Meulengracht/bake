@@ -32,98 +32,18 @@ static void __print_help(void)
     printf("      The name for the produced container image (default: recipe-name)\n");
 }
 
-static const char* __build_argument_string(struct list* argumentList)
-{
-    size_t            argumentLength = 0;
-    char*             argumentString;
-    char*             argumentItr;
-    struct list_item* item;
-
-    // build argument length first
-    list_foreach(argumentList, item) {
-        struct recipe_string_value* value = (struct recipe_string_value*)item;
-
-        // add one for the space
-        argumentLength += strlen(value->value) + 1;
-    }
-
-    // allocate memory for the string
-    argumentString = (char*)malloc(argumentLength + 1);
-    if (argumentString == NULL) {
-        return NULL;
-    }
-    memset(argumentString, 0, argumentLength + 1);
-
-    // copy arguments into buffer
-    argumentItr = argumentString;
-    list_foreach(argumentList, item) {
-        struct recipe_string_value* value = (struct recipe_string_value*)item;
-
-        // copy argument
-        strcpy(argumentItr, value->value);
-        argumentItr += strlen(value->value);
-
-        // add space
-        *argumentItr = ' ';
-        argumentItr++;
-    }
-    return argumentString;
-}
-
-static const char** __build_environment(struct list* keypairs)
-{
-    struct list_item* item;
-    char**            environment;
-    int               i;
-
-    // allocate memory for the environment array
-    environment = (char**)malloc(sizeof(char*) * keypairs->count + 1);
-    if (environment == NULL) {
-        return NULL;
-    }
-    memset(environment, 0, sizeof(char*) * keypairs->count + 1);
-
-    // copy keypairs into environment
-    list_foreach(keypairs, item) {
-        struct recipe_env_keypair* keypair = (struct recipe_env_keypair*)item;
-
-        // allocate memory for the environment variable
-        // + 1 for the '=' and + 1 for the '\0'
-        environment[i] = (char*)malloc(strlen(keypair->key) + strlen(keypair->value) + 2);
-        if (environment[i] == NULL) {
-            return NULL;
-        }
-
-        sprintf(environment[i], "%s=%s", keypair->key, keypair->value);
-        i++;
-    }
-    return (const char**)environment;
-}
-
 static void __initialize_generator_options(struct oven_generate_options* options, struct recipe_step* step)
 {
-    options->system = step->system;
-    options->arguments = __build_argument_string(&step->arguments);
-    options->environment = __build_environment(&step->env_keypairs);
-}
-
-static void __destroy_generator_options(struct oven_generate_options* options)
-{
-    free((void*)options->arguments);
-    free((void*)options->environment);
+    options->system      = step->system;
+    options->arguments   = &step->arguments;
+    options->environment = &step->env_keypairs;
 }
 
 static void __initialize_build_options(struct oven_build_options* options, struct recipe_step* step)
 {
-    options->system = step->system;
-    options->arguments = __build_argument_string(&step->arguments);
-    options->environment = __build_environment(&step->env_keypairs);
-}
-
-static void __destroy_build_options(struct oven_build_options* options)
-{
-    free((void*)options->arguments);
-    free((void*)options->environment);
+    options->system      = step->system;
+    options->arguments   = &step->arguments;
+    options->environment = &step->env_keypairs;
 }
 
 static void __initialize_pack_options(struct oven_pack_options* options, char* name, struct recipe* recipe)
@@ -155,7 +75,6 @@ static int __make_recipe_steps(struct list* steps)
                 fprintf(stderr, "bake: failed to configure target: %s\n", strerror(errno));
                 return status;
             }
-            __destroy_generator_options(&genOptions);
         }
         else if (step->type == RECIPE_STEP_TYPE_BUILD) {
             struct oven_build_options buildOptions;
@@ -165,7 +84,6 @@ static int __make_recipe_steps(struct list* steps)
                 fprintf(stderr, "bake: failed to build target: %s\n", strerror(errno));
                 return status;
             }
-            __destroy_build_options(&buildOptions);
         }
     }
     
@@ -204,7 +122,7 @@ static int __make_recipes(struct recipe* recipe)
     return 0;
 }
 
-int pack_main(int argc, char** argv, struct recipe* recipe)
+int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     struct oven_pack_options packOptions;
     int                      status;
@@ -257,7 +175,7 @@ int pack_main(int argc, char** argv, struct recipe* recipe)
         return status;
     }
 
-    status = oven_initialize();
+    status = oven_initialize(envp);
     if (status) {
         fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
         return status;

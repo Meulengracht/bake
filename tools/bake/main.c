@@ -21,13 +21,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern int init_main(int argc, char** argv, struct recipe* recipe);
-extern int fetch_main(int argc, char** argv, struct recipe* recipe);
-extern int pack_main(int argc, char** argv, struct recipe* recipe);
+extern int init_main(int argc, char** argv, char** envp, struct recipe* recipe);
+extern int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe);
+extern int pack_main(int argc, char** argv, char** envp, struct recipe* recipe);
 
 struct command_handler {
     char* name;
-    int (*handler)(int argc, char** argv, struct recipe* recipe);
+    int (*handler)(int argc, char** argv, char** envp, struct recipe* recipe);
 };
 
 static struct command_handler g_commands[] = {
@@ -93,7 +93,7 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
     return 0;
 }
 
-int main(int argc, char** argv)
+int main(int argc, char** argv, char** envp)
 {
     struct command_handler* command    = &g_commands[2];
     struct recipe*          recipe     = NULL;
@@ -110,7 +110,7 @@ int main(int argc, char** argv)
         }
 
         if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
-            printf("bake version 0.1\n");
+            printf("bake: version 0.1\n");
             return 0;
         }
 
@@ -145,7 +145,7 @@ int main(int argc, char** argv)
         }
     }
 
-    result = command->handler(argc, argv, recipe);
+    result = command->handler(argc, argv, envp, recipe);
     recipe_destroy(recipe);
     if (result != 0) {
         return result;

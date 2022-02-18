@@ -25,6 +25,11 @@ struct oven_build_options;
 
 struct oven_backend_data {
     /**
+     * @brief The environmental values that the current process has
+     */
+    const char** process_environment;
+
+    /**
      * @brief The working directory from which the backend is executed
      * This is not the current active directory. The current working directory
      * will be BAKE_BUILD_DIR.
@@ -56,11 +61,9 @@ struct oven_backend_data {
     const char* arguments;
 
     /**
-     * @brief combined environment that includes the environment variables
-     * set from the subsystem and also those given from oven configuration.
-     * This option superseeds whatever is in the options
+     * @brief list of key-value pairs for the current recipe step.
      */
-    const char* const* environment;
+    struct list* environment;
 };
 
 //****************************************************************************//

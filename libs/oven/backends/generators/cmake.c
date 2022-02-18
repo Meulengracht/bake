@@ -23,34 +23,48 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <utils.h>
 
 int cmake_main(struct oven_backend_data* data)
 {
     char*  argument;
     char*  cwd;
+    char** environment;
     int    written;
     int    status;
     size_t argumentLength;
+    printf("oven-cmake: executing 'cmake %s' in dir %s\n",
+        data->arguments, data->install_directory);
 
-    argumentLength = strlen(data->arguments) + 64;
-    argument = malloc(argumentLength);
+    argumentLength = strlen(data->arguments) + strlen(data->install_directory) + 64;
+    argument       = malloc(argumentLength);
     if (argument == NULL) {
         errno = ENOMEM;
         return -1;
     }
-    memset(argument, 0, argumentLength);
-    
-    // build the cmake command, execute from build folder
-    written = snprintf(argument, argumentLength - 1,
-        "%s ../..", 
-        data->arguments);
-    argument[written] = '\0';
-    status = platform_spawn("cmake", argument, data->environment);
-    if (status) {
-        goto cleanup;
+
+    environment = oven_environment_create(data->process_environment, data->environment);
+    if (environment == NULL) {
+        free(argument);
+        errno = ENOMEM;
+        return -1;
     }
+
+    // build the cmake command, execute from build folder
+    written = snprintf(
+        argument, 
+        argumentLength - 1,
+        "%s -DCMAKE_INSTALL_PREFIX=%s ../..", 
+        data->arguments,
+        data->install_directory
+    );
+    argument[written] = '\0';
+
+    // perform the spawn operation
+    printf("oven-cmake: executing 'cmake %s'\n", argument);
+    status = platform_spawn("cmake", argument, (const char* const*)environment);
     
-cleanup:
+    oven_environment_destroy(environment);
     free(argument);
     return status;
 }

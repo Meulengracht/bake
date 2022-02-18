@@ -41,7 +41,7 @@ struct oven_recipe_context {
 };
 
 struct oven_context {
-    const char*                environment;
+    const char**               process_environment;
     const char*                build_root;
     const char*                install_root;
     struct oven_recipe_context recipe;
@@ -122,7 +122,7 @@ static int __oven_setup_environment(void)
 // oven is the work-area for the build and pack
 // .oven/build
 // .oven/install
-int oven_initialize(void)
+int oven_initialize(char** envp)
 {
     int   status;
     char* cwd;
@@ -160,8 +160,9 @@ int oven_initialize(void)
     free(cwd);
 
     // update oven context
-    g_ovenContext.build_root = buildRoot;
-    g_ovenContext.install_root = installRoot;
+    g_ovenContext.process_environment = (const char**)envp;
+    g_ovenContext.build_root          = buildRoot;
+    g_ovenContext.install_root        = installRoot;
 
     // no active recipe
     g_ovenContext.recipe.name          = NULL;
@@ -258,51 +259,42 @@ void oven_recipe_end(void)
     }
 }
 
-static char** combine_environments(const char** lh, const char** rh)
+static const char* __build_argument_string(struct list* argumentList)
 {
-    int    numEnvironments = 0;
-    int    i               = 0;
-    char** environment;
-    
-    while (lh && lh[i++]) {
-        numEnvironments++;
+    size_t            argumentLength = 0;
+    char*             argumentString;
+    char*             argumentItr;
+    struct list_item* item;
+
+    // build argument length first
+    list_foreach(argumentList, item) {
+        struct oven_value_item* value = (struct oven_value_item*)item;
+
+        // add one for the space
+        argumentLength += strlen(value->value) + 1;
     }
 
-    i = 0;
-    while (rh && rh[i++]) {
-        numEnvironments++;
-    }
-
-    environment = (char**)malloc(sizeof(char*) * (numEnvironments + 1));
-    if (!environment) {
+    // allocate memory for the string
+    argumentString = (char*)malloc(argumentLength + 1);
+    if (argumentString == NULL) {
         return NULL;
     }
+    memset(argumentString, 0, argumentLength + 1);
 
-    // last entry should always be null
-    environment[numEnvironments] = NULL;
+    // copy arguments into buffer
+    argumentItr = argumentString;
+    list_foreach(argumentList, item) {
+        struct oven_value_item* value = (struct oven_value_item*)item;
 
-    // now we copy the environments from both sides
-    numEnvironments = 0;
-    i               = 0;
-    while (lh && lh[i]) {
-        environment[numEnvironments++] = strdup(lh[i++]);
+        // copy argument
+        strcpy(argumentItr, value->value);
+        argumentItr += strlen(value->value);
+
+        // add space
+        *argumentItr = ' ';
+        argumentItr++;
     }
-
-    i = 0;
-    while (rh && rh[i]) {
-        environment[numEnvironments++] = strdup(rh[i++]);
-    }
-    return environment;
-}
-
-static void __cleanup_environment(char** environment)
-{
-    int i = 0;
-    while (environment[i]) {
-        free(environment[i]);
-        i++;
-    }
-    free(environment);
+    return argumentString;
 }
 
 static int __get_project_directory(const char* cwd, const char* projectPath, char** bufferOut)
@@ -370,9 +362,12 @@ int oven_configure(struct oven_generate_options* options)
     }
     data.project_directory = path;
 
-    data.arguments   = options->arguments;
-    data.environment = (const char* const*)combine_environments(options->environment, NULL);
-    if (!data.environment) {
+    data.install_directory   = g_ovenContext.recipe.install_root;
+    data.build_directory     = g_ovenContext.recipe.build_root;
+    data.process_environment = g_ovenContext.process_environment;
+    data.environment = options->environment;
+    data.arguments   = __build_argument_string(options->arguments);
+    if (!data.arguments) {
         free((void*)data.root_directory);
         free((void*)data.project_directory);
         return -1;
@@ -390,7 +385,6 @@ int oven_configure(struct oven_generate_options* options)
     
     // cleanup
 cleanup:
-    __cleanup_environment((void*)data.environment);
     free((void*)data.project_directory);
     free((void*)data.root_directory);
     return status;
@@ -438,9 +432,12 @@ int oven_build(struct oven_build_options* options)
     }
     data.project_directory = path;
 
-    data.arguments   = options->arguments;
-    data.environment = (const char* const*)combine_environments(options->environment, NULL);
-    if (!data.environment) {
+    data.install_directory   = g_ovenContext.recipe.install_root;
+    data.build_directory     = g_ovenContext.recipe.build_root;
+    data.process_environment = g_ovenContext.process_environment;
+    data.environment = options->environment;
+    data.arguments   = __build_argument_string(options->arguments);
+    if (!data.arguments) {
         free((void*)data.root_directory);
         free((void*)data.project_directory);
         return -1;
@@ -458,7 +455,6 @@ int oven_build(struct oven_build_options* options)
     
     // cleanup
 cleanup:
-    __cleanup_environment((void*)data.environment);
     free((void*)data.project_directory);
     free((void*)data.root_directory);
     return status;

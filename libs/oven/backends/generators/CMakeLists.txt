@@ -5,4 +5,4 @@ add_library(oven-generators STATIC
 )
 
 target_include_directories(oven-generators PRIVATE ../../include)
-target_link_libraries(oven-generators oven-backend platform)
+target_link_libraries(oven-generators PUBLIC oven-backend oven-utils platform)

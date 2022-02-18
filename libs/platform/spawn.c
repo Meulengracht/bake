@@ -94,7 +94,7 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
 
     // split the arguments into the argv array
     __split_arguments(arguments, argv);
-    status = posix_spawn(&pid, path, NULL, NULL, argv, (char * const* restrict)envp);
+    status = posix_spawnp(&pid, path, NULL, NULL, argv, (char* const*)envp);
     free(argv);
     if (status) {
         fprintf(stderr, "platform_spawn: failed to spawn process: %s\n", strerror(errno));

@@ -16,14 +16,10 @@
  * 
  */
 
-#include <errno.h>
 #include <libplatform.h>
 #include <stdlib.h>
 
 int platform_setenv(const char* name, const char* value)
 {
-    if (setenv(name, value, 1) != 0) {
-        return errno;
-    }
-    return 0;
+    return setenv(name, value, 1);
 }

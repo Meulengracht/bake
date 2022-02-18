@@ -16,31 +16,23 @@
  * 
  */
 
-#include <backend.h>
-#include <errno.h>
-#include <liboven.h>
-#include <libplatform.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
+#ifndef __LIBOVEN_UTILS_H__
+#define __LIBOVEN_UTILS_H__
 
-int configure_main(struct oven_backend_data* data)
-{
-    char** environment;
-    int    status;
+/**
+ * @brief 
+ * 
+ * @param parent 
+ * @param additonal 
+ * @return char** 
+ */
+extern char** oven_environment_create(const char** parent, struct list* additonal);
 
-    environment = oven_environment_create(data->process_environment, data->environment);
-    if (environment == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
+/**
+ * @brief 
+ * 
+ * @param environment 
+ */
+extern void oven_environment_destroy(char** environment);
 
-    status = platform_spawn(
-        "../../configure",
-        data->arguments,
-        environment
-    );
-
-    oven_environment_destroy(environment);
-    return status;
-}
+#endif //!__LIBOVEN_UTILS_H__

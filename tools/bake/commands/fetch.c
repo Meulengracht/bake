@@ -18,7 +18,7 @@
 
 #include <recipe.h>
 
-int fetch_main(int argc, char** argv, struct recipe* recipe)
+int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     return -1;
 }

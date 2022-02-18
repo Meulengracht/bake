@@ -194,13 +194,13 @@ enum state {
 };
 
 struct parser_state {
-    enum state                state;
-    struct recipe             recipe;
-    struct recipe_ingredient  ingredient;
-    struct recipe_part        part;
-    struct recipe_step        step;
-    struct recipe_command     command;
-    struct recipe_env_keypair env_keypair;
+    enum state               state;
+    struct recipe            recipe;
+    struct recipe_ingredient ingredient;
+    struct recipe_part       part;
+    struct recipe_step       step;
+    struct recipe_command    command;
+    struct oven_keypair_item env_keypair;
 };
 
 static const char* __parse_string(const char* value)
@@ -396,14 +396,14 @@ static void __finalize_step(struct parser_state* state)
 
 static void __finalize_step_env(struct parser_state* state)
 {
-    struct recipe_env_keypair* keypair;
+    struct oven_keypair_item* keypair;
 
     // key value must be provided
     if (state->env_keypair.key == NULL || strlen(state->env_keypair.key) == 0) {
         return;
     }
 
-    keypair = malloc(sizeof(struct recipe_env_keypair));
+    keypair = malloc(sizeof(struct oven_keypair_item));
     if (keypair == NULL) {
         fprintf(stderr, "bake: error: out of memory\n");
         exit(EXIT_FAILURE);
@@ -456,12 +456,12 @@ static void __finalize_command(struct parser_state* state)
 #define DEFINE_LIST_STRING_ADD(structure, field) \
     static void __add_##structure ##_##field(struct parser_state* state, const char* value) \
     { \
-        struct recipe_string_value* argument; \
+        struct oven_value_item* argument; \
         if (value == NULL || strlen(value) == 0) { \
             return; \
         } \
         \
-        argument = malloc(sizeof(struct recipe_string_value)); \
+        argument = malloc(sizeof(struct oven_value_item)); \
         if (!argument) { \
             fprintf(stderr, "bake: error: out of memory\n"); \
             exit(EXIT_FAILURE); \
@@ -561,10 +561,12 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
-                    } break;
-                case YAML_DOCUMENT_END_EVENT:
+                    }
+                    break;
+                
+                case YAML_MAPPING_END_EVENT:
                     __finalize_recipe(s);
-                    s->state = STATE_STREAM;
+                    s->state = STATE_DOCUMENT;
                     break;
                 default:
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
@@ -589,6 +591,12 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else if (strcmp(value, "description") == 0) {
                         s->state = STATE_PROJECT_DESCRIPTION;
                     }
+                    else if (strcmp(value, "author") == 0) {
+                        s->state = STATE_PROJECT_AUTHOR;
+                    }
+                    else if (strcmp(value, "email") == 0) {
+                        s->state = STATE_PROJECT_EMAIL;
+                    }
                     else if (strcmp(value, "type") == 0) {
                         s->state = STATE_PROJECT_TYPE;
                     }
@@ -604,7 +612,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
-                    } break;
+                    }
+                    break;
                 default:
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
                     return -1;
@@ -652,6 +661,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     break; \
                 case YAML_SCALAR_EVENT: \
                     __FN(s, (char *)event->data.scalar.value); \
+                    break; \
                 default: \
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state); \
                     return -1; \
@@ -661,6 +671,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_NAME, recipe.project.name, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_DESCRIPTION, recipe.project.description, __parse_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_AUTHOR, recipe.project.author, __parse_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_EMAIL, recipe.project.email, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_TYPE, recipe.type, __parse_project_type)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_VERSION, recipe.project.version, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_LICENSE, recipe.project.license, __parse_string)
@@ -912,13 +924,15 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
     do {
         status = yaml_parser_parse(&parser, &event);
         if (status == 0) {
-            fprintf(stderr, "recipe_parse: failed to parse driver configuration\n");
+            fprintf(stderr, "bake: error: malformed recipe at line %u: %s: %s (code: %i)\n",
+                (unsigned int)parser.context_mark.line, parser.context, parser.problem, parser.error);
             return -1;
         }
 
-        status = __consume_event(&state, &event);
+        status = __consume_event(&state, &event );
         if (status) {
-            fprintf(stderr, "recipe_parse: failed to parse driver configuration\n");
+            fprintf(stderr, "bake: error: failed to parse recipe at line %u\n",
+                (unsigned int)event.start_mark.line);
             return -1;
         }
         yaml_event_delete(&event);
@@ -946,13 +960,13 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
         } \
     } while (0)
 
-static void __destroy_string(struct recipe_string_value* value)
+static void __destroy_string(struct oven_value_item* value)
 {
     free((void*)value->value);
     free(value);
 }
 
-static void __destroy_keypair(struct recipe_env_keypair* keypair)
+static void __destroy_keypair(struct oven_keypair_item* keypair)
 {
     free((void*)keypair->key);
     free((void*)keypair->value);
@@ -988,9 +1002,9 @@ static void __destroy_ingredient(struct recipe_ingredient* ingredient)
 
 static void __destroy_step(struct recipe_step* step)
 {
-    __destroy_list(string, step->depends.head, struct recipe_string_value);
-    __destroy_list(string, step->arguments.head, struct recipe_string_value);
-    __destroy_list(keypair, step->env_keypairs.head, struct recipe_env_keypair);
+    __destroy_list(string, step->depends.head, struct oven_value_item);
+    __destroy_list(string, step->arguments.head, struct oven_value_item);
+    __destroy_list(keypair, step->env_keypairs.head, struct oven_keypair_item);
     free((void*)step->system);
     free(step);
 }
@@ -1005,7 +1019,7 @@ static void __destroy_part(struct recipe_part* part)
 
 static void __destroy_command(struct recipe_command* command)
 {
-    __destroy_list(string, command->arguments.head, struct recipe_string_value);
+    __destroy_list(string, command->arguments.head, struct oven_value_item);
     free((void*)command->name);
     free((void*)command->description);
     free((void*)command->path);

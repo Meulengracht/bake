@@ -19,9 +19,34 @@
 #include <backend.h>
 #include <errno.h>
 #include <liboven.h>
+#include <libplatform.h>
+#include <stdio.h>
+#include <utils.h>
 
 int make_main(struct oven_backend_data* data)
 {
-    errno = ENOTSUP;
-    return -1;
+    int    status;
+    char** environment;
+
+    environment = oven_environment_create(data->process_environment, data->environment);
+    if (environment == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    // perform the build operation, supply unmodified args
+    printf("oven-make: executing 'make %s'\n", data->arguments);
+    status = platform_spawn("make", data->arguments, (const char* const*)environment);
+    if (status != 0) {
+        printf("oven-make: failed to execute 'make %s'\n", data->arguments);
+        goto cleanup;
+    }
+
+    // perform the installation operation, supply unmodified args
+    printf("oven-make: executing 'make install'\n");
+    status = platform_spawn("make", "install", (const char* const*)environment);
+
+cleanup:
+    oven_environment_destroy(environment);
+    return status;
 }

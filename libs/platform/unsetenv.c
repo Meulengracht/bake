@@ -16,31 +16,10 @@
  * 
  */
 
-#include <backend.h>
-#include <errno.h>
-#include <liboven.h>
 #include <libplatform.h>
 #include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
 
-int configure_main(struct oven_backend_data* data)
+int platform_unsetenv(const char* name)
 {
-    char** environment;
-    int    status;
-
-    environment = oven_environment_create(data->process_environment, data->environment);
-    if (environment == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    status = platform_spawn(
-        "../../configure",
-        data->arguments,
-        environment
-    );
-
-    oven_environment_destroy(environment);
-    return status;
+    return unsetenv(name);
 }

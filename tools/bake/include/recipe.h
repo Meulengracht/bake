@@ -20,18 +20,8 @@
 #define __BAKE_RECIPE_H__
 
 #include <stddef.h>
+#include <liboven.h>
 #include <list.h>
-
-struct recipe_string_value {
-    struct list_item list_header;
-    const char*      value;
-};
-
-struct recipe_env_keypair {
-    struct list_item list_header;
-    const char*      key;
-    const char*      value;
-};
 
 enum recipe_type {
     RECIPE_TYPE_UNKNOWN,
