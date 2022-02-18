@@ -46,6 +46,8 @@ static void __print_help(void)
     printf("  pack        builds the project\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -r, --recipe\n");
+    printf("      A path to recipe file that should be used (default: recipe.yaml)\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
     printf("  -v, --version\n");
@@ -62,13 +64,13 @@ static struct command_handler* __get_command(const char* command)
     return NULL;
 }
 
-static int __read_recipe(void** bufferOut, size_t* lengthOut)
+static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
 {
     FILE*  file;
     void*  buffer;
     size_t size;
 
-    file = fopen("recipe.yaml", "r");
+    file = fopen(path, "r");
     if (!file) {
         return -1;
     }
@@ -93,15 +95,22 @@ static int __read_recipe(void** bufferOut, size_t* lengthOut)
 
 int main(int argc, char** argv)
 {
-    struct command_handler* command = &g_commands[2];
-    struct recipe*          recipe  = NULL;
+    struct command_handler* command    = &g_commands[2];
+    struct recipe*          recipe     = NULL;
+    char*                   recipePath = "recipe.yaml";
     void*                   buffer;
     size_t                  length;
     int                     result;
 
+    // first argument must be the command if not --help or --version
     if (argc > 1) {
         if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
             __print_help();
+            return 0;
+        }
+
+        if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
+            printf("bake version 0.1\n");
             return 0;
         }
 
@@ -110,19 +119,34 @@ int main(int argc, char** argv)
             fprintf(stderr, "bake: invalid command %s\n", argv[1]);
             return -1;
         }
+
+        if (argc > 2) {
+            for (int i = 2; i < argc; i++) {
+                if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--recipe")) {
+                    if (i + 1 < argc) {
+                        recipePath = argv[i + 1];
+                    }
+                    else {
+                        fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
+                        return 1;
+                    }
+                }
+            }
+        }
     }
 
-    result = __read_recipe(&buffer, &length);
+    result = __read_recipe(recipePath, &buffer, &length);
     if (!result) {
         result = recipe_parse(buffer, length, &recipe);
         free(buffer);
-        if (result != 0) {
+        if (result) {
             fprintf(stderr, "bake: failed to parse recipe\n");
             return result;
         }
     }
 
     result = command->handler(argc, argv, recipe);
+    recipe_destroy(recipe);
     if (result != 0) {
         return result;
     }

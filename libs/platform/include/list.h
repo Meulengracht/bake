@@ -32,6 +32,9 @@ struct list {
     int count;
 };
 
+#define list_foreach(list, item) \
+    for (item = (list)->head; item != NULL; item = item->next)
+
 static inline void list_init(struct list* list)
 {
     list->head = NULL;

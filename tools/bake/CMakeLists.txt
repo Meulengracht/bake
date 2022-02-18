@@ -4,7 +4,6 @@ set (BAKE_SRCS
 
 add_executable(bake ${BAKE_SRCS})
 
-
 # add sub projects
 add_subdirectory(commands)
 add_subdirectory(parser)

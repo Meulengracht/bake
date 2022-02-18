@@ -21,8 +21,24 @@
 
 #include <stddef.h>
 
+/**
+ * @brief Creates the provided directory path, if the directory already exists
+ * nothing happens.
+ * 
+ * @param[In] path The path to create 
+ * @return int 0 on success, -1 on error
+ */
 extern int platform_mkdir(const char* path);
+
 extern int platform_rmdir(const char* path);
+
+/**
+ * @brief Check whether the path exists and is a directory
+ * 
+ * @param[In] path The path to check
+ * @return int 0 if the path exists and is a directory, -1 otherwise
+ */
+extern int platform_isdir(const char* path);
 extern int platform_getenv(const char* name, char* buffer, size_t length);
 extern int platform_setenv(const char* name, const char* value);
 extern int platform_getcwd(char* buffer, size_t length);

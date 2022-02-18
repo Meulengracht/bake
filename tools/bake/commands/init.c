@@ -73,19 +73,25 @@ int init_main(int argc, char** argv, struct recipe* recipe)
 
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[2], "-h") || !strcmp(argv[2], "--help")) {
+            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
             }
-            else if (!strcmp(argv[2], "-t") || !strcmp(argv[2], "--type")) {
-                if (!strcmp(argv[3], "lib")) {
-                    type = RECIPE_TYPE_LIBRARY;
-                }
-                else if (!strcmp(argv[3], "app")) {
-                    type = RECIPE_TYPE_APPLICATION;
+            else if (!strcmp(argv[i], "-t") || !strcmp(argv[i], "--type")) {
+                if (i + 1 < argc) {
+                    if (!strcmp(argv[i + 1], "lib")) {
+                        type = RECIPE_TYPE_LIBRARY;
+                    }
+                    else if (!strcmp(argv[i + 1], "app")) {
+                        type = RECIPE_TYPE_APPLICATION;
+                    }
+                    else {
+                        printf("bake: invalid recipe type %s\n", argv[i + 1]);
+                        return -1;
+                    }
                 }
                 else {
-                    printf("bake: unknown recipe type: %s\n", argv[3]);
+                    printf("bake: missing recipe type\n");
                     return -1;
                 }
             }

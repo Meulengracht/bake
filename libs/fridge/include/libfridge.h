@@ -16,9 +16,21 @@
  * 
  */
 
-#include <recipe.h>
+#ifndef __LIBFRIDGE_H__
+#define __LIBFRIDGE_H__
 
-int fetch_main(int argc, char** argv, struct recipe* recipe)
-{
-    return -1;
-}
+/**
+ * @brief 
+ * 
+ * @return int 
+ */
+extern int fridge_initialize(void);
+
+/**
+ * @brief 
+ * 
+ * @return int 
+ */
+extern int fridge_cleanup(void);
+
+#endif //!__LIBFRIDGE_H__

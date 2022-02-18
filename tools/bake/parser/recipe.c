@@ -1014,6 +1014,10 @@ static void __destroy_command(struct recipe_command* command)
 
 void recipe_destroy(struct recipe* recipe)
 {
+    if (!recipe) {
+        return;
+    }
+
     __destroy_project(&recipe->project);
     __destroy_list(ingredient, recipe->ingredients.head, struct recipe_ingredient);
     __destroy_list(part, recipe->parts.head, struct recipe_part);

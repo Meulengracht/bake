@@ -10,7 +10,7 @@ if (UNIX)
 endif (UNIX)
 
 add_library(oven STATIC
-        oven.c
+    oven.c
 )
 target_include_directories(oven PUBLIC include)
 target_link_libraries(oven PRIVATE oven-backend oven-builders oven-generators platform)
