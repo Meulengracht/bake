@@ -204,8 +204,9 @@ int oven_initialize(char** envp)
 
 int oven_recipe_start(struct oven_recipe_options* options)
 {
-    char* buildRoot;
-    char* installRoot;
+    char*  buildRoot;
+    char*  installRoot;
+    size_t relativePathLength;
 
     if (g_ovenContext.recipe.name) {
         fprintf(stderr, "oven: recipe already started\n");
@@ -227,12 +228,23 @@ int oven_recipe_start(struct oven_recipe_options* options)
         return -1;
     }
 
-    sprintf(buildRoot, "%s/%s", g_ovenContext.build_root, g_ovenContext.recipe.relative_path);
-    sprintf(installRoot, "%s/%s", g_ovenContext.install_root, g_ovenContext.recipe.relative_path);
+    relativePathLength = strlen(g_ovenContext.recipe.relative_path);
+    if (relativePathLength > 0) {
+        if (g_ovenContext.recipe.relative_path[0] != '/') {
+            sprintf(buildRoot, "%s/%s", g_ovenContext.build_root, g_ovenContext.recipe.relative_path);
+            sprintf(installRoot, "%s/%s", g_ovenContext.install_root, g_ovenContext.recipe.relative_path);
+        } else {
+            sprintf(buildRoot, "%s%s", g_ovenContext.build_root, g_ovenContext.recipe.relative_path);
+            sprintf(installRoot, "%s%s", g_ovenContext.install_root, g_ovenContext.recipe.relative_path);
+        }
+    } else {
+        sprintf(buildRoot, "%s", g_ovenContext.build_root);
+        sprintf(installRoot, "%s", g_ovenContext.install_root);
+    }
 
     // store members as const
-    g_ovenContext.recipe.build_root    = buildRoot;
-    g_ovenContext.recipe.install_root  = installRoot;
+    g_ovenContext.recipe.build_root   = buildRoot;
+    g_ovenContext.recipe.install_root = installRoot;
     return 0;
 }
 

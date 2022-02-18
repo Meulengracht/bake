@@ -20,6 +20,7 @@
 
 #ifdef __linux__
 
+#define __USE_GNU
 #include <errno.h>
 #include <spawn.h>
 #include <stdio.h>
@@ -75,6 +76,7 @@ static void __split_arguments(const char* arguments, char** argv)
 
 int platform_spawn(const char* path, const char* arguments, const char* const* envp)
 {
+    posix_spawn_file_actions_t actions;
     pid_t  pid;
     char** argv;
     int    argc;
@@ -94,7 +96,13 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
 
     // split the arguments into the argv array
     __split_arguments(arguments, argv);
-    status = posix_spawnp(&pid, path, NULL, NULL, argv, (char* const*)envp);
+
+    // initialize the file actions
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addchdir_np(&actions, "/");
+
+    status = posix_spawnp(&pid, path, &actions, NULL, argv, (char* const*)envp);
+    posix_spawn_file_actions_destroy(&actions);
     free(argv);
     if (status) {
         fprintf(stderr, "platform_spawn: failed to spawn process: %s\n", strerror(errno));

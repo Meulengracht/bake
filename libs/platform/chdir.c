@@ -20,9 +20,11 @@
 
 #ifdef __linux__
 #include <unistd.h>
+#include <stdio.h>
 
 int platform_chdir(const char* path)
 {
+    printf("bake: chdir %s\n", path);
     return chdir(path);
 }
 

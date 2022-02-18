@@ -33,8 +33,6 @@ int cmake_main(struct oven_backend_data* data)
     int    written;
     int    status;
     size_t argumentLength;
-    printf("oven-cmake: executing 'cmake %s' in dir %s\n",
-        data->arguments, data->install_directory);
 
     argumentLength = strlen(data->arguments) + strlen(data->install_directory) + 64;
     argument       = malloc(argumentLength);
