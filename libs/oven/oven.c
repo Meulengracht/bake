@@ -532,7 +532,7 @@ static int __write_directory(
 {
     struct dirent* dp;
 	DIR*           dfd;
-	int            status;
+	int            status = 0;
 	char*          filepathBuffer;
 	printf("oven: writing directory '%s'\n", path);
 
