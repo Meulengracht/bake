@@ -303,8 +303,10 @@ static const char* __build_argument_string(struct list* argumentList)
         argumentItr += strlen(value->value);
 
         // add space
-        *argumentItr = ' ';
-        argumentItr++;
+        if (item->next) {
+            *argumentItr = ' ';
+            argumentItr++;
+        }
     }
     return argumentString;
 }
