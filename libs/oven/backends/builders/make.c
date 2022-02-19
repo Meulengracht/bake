@@ -36,7 +36,7 @@ int make_main(struct oven_backend_data* data)
 
     // perform the build operation, supply unmodified args
     printf("oven-make: executing 'make %s'\n", data->arguments);
-    status = platform_spawn("make", data->arguments, (const char* const*)environment);
+    status = platform_spawn("make", data->arguments, (const char* const*)environment, data->build_directory);
     if (status != 0) {
         printf("oven-make: failed to execute 'make %s'\n", data->arguments);
         goto cleanup;
@@ -44,7 +44,7 @@ int make_main(struct oven_backend_data* data)
 
     // perform the installation operation, supply unmodified args
     printf("oven-make: executing 'make install'\n");
-    status = platform_spawn("make", "install", (const char* const*)environment);
+    status = platform_spawn("make", "install", (const char* const*)environment, data->build_directory);
 
 cleanup:
     oven_environment_destroy(environment);

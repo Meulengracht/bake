@@ -44,6 +44,16 @@ extern int platform_setenv(const char* name, const char* value);
 extern int platform_unsetenv(const char* name);
 extern int platform_getcwd(char* buffer, size_t length);
 extern int platform_chdir(const char* path);
-extern int platform_spawn(const char* path, const char* arguments, const char* const* envp);
+
+/**
+ * @brief Spawns a new process, and waits for the process to complete. 
+ * 
+ * @param[In] path      The path to the executable 
+ * @param[In] arguments The arguments to pass to the executable
+ * @param[In] envp      The environment variables to pass to the executable
+ * @param[In] cwd       The working directory to pass to the executable
+ * @return int 0 on success, -1 on error
+ */
+extern int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd);
 
 #endif //!__LIBPLATFORM_H__

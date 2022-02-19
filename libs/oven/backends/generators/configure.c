@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <utils.h>
 
 int configure_main(struct oven_backend_data* data)
 {
@@ -38,7 +39,8 @@ int configure_main(struct oven_backend_data* data)
     status = platform_spawn(
         "../../configure",
         data->arguments,
-        environment
+        (const char* const*)environment,
+        data->build_directory
     );
 
     oven_environment_destroy(environment);

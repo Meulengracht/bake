@@ -60,7 +60,7 @@ int cmake_main(struct oven_backend_data* data)
 
     // perform the spawn operation
     printf("oven-cmake: executing 'cmake %s'\n", argument);
-    status = platform_spawn("cmake", argument, (const char* const*)environment);
+    status = platform_spawn("cmake", argument, (const char* const*)environment, data->build_directory);
     
     oven_environment_destroy(environment);
     free(argument);
