@@ -387,16 +387,8 @@ int oven_configure(struct oven_generate_options* options)
         return -1;
     }
 
-    status = platform_chdir(g_ovenContext.recipe.build_root);
-    if (status) {
-        goto cleanup;
-    }
-
     status = backend->generate(&data);
 
-    // restore working directory
-    (void)platform_chdir(data.root_directory);
-    
     // cleanup
 cleanup:
     free((void*)data.project_directory);
@@ -457,16 +449,8 @@ int oven_build(struct oven_build_options* options)
         return -1;
     }
 
-    status = platform_chdir(g_ovenContext.recipe.build_root);
-    if (status) {
-        goto cleanup;
-    }
-
     status = backend->build(&data);
 
-    // restore working directory
-    (void)platform_chdir(data.root_directory);
-    
     // cleanup
 cleanup:
     free((void*)data.project_directory);
