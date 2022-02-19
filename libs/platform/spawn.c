@@ -16,26 +16,31 @@
  * 
  */
 
-#include <libplatform.h>
-
 #ifdef __linux__
-
+// enable _GNU_SOURCE for chdir on spawn
 #define _GNU_SOURCE
-#include <errno.h>
-#include <spawn.h>
-#include <stdio.h>
-#include <stdlib.h>
+#endif
+
+#include <libplatform.h>
 #include <string.h>
-#include <sys/wait.h>
 
 static int __get_arg_count(const char* arguments)
 {
     const char* arg   = arguments;
     int         count = 0;
+
+    if (arg == NULL) {
+        return 0;
+    }
     
     // trim start of arguments
     while (*arg && *arg == ' ') {
         arg++;
+    }
+
+    // catch empty strings after trimming
+    if (strlen(arg) == 0) {
+        return 0;
     }
 
     // count the initial argument
@@ -71,13 +76,24 @@ static void __split_arguments(char* arguments, char** argv)
     char* arg = arguments;
     int   i   = 1;
 
+    if (arguments == NULL) {
+        return;
+    }
+
     // set the initial argument, skip whitespaces
     while (*arg && *arg == ' ') {
         arg++;
     }
+
+    // catch empty strings after trimming
+    if (strlen(arg) == 0) {
+        return;
+    }
+
+    // set the initial argument
     argv[i++] = (char*)arg;
 
-    // set the rest of the arguments
+    // parse the rest of the arguments
     while (*arg) {
         // Whitespace denote the end of an argument
         if (*arg == ' ') {
@@ -99,22 +115,42 @@ static void __split_arguments(char* arguments, char** argv)
         // in quoted paramters don't mean the end of an argument
         if (*arg == '"') {
             arg++;
+
+            // because of how spawn works, we need to strip the quotes
+            // from the argument
+            argv[i - 1] = (char*)arg; // skip the first quote
+
+            // now skip through the argument
             while (*arg && *arg != '"') {
                 arg++;
             }
+
+            // at this point, we need to end the argument, so we replace
+            // the closing quote with a null terminator
+            if (!(*arg)) {
+                break;
+            }
+            *arg = '\0';
         }
         arg++;
     }
 }
 
+#ifdef __linux__
+#include <errno.h>
+#include <spawn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+
 int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd)
 {
     posix_spawn_file_actions_t actions;
-    pid_t  pid;
-    char** argv;
-    int    argc;
-    int    status;
-    char*  argumentCopy;
+    pid_t                      pid;
+    char**                     argv;
+    int                        argc;
+    int                        status;
+    char*                      argumentCopy = NULL;
 
     // initialize the argv array
     argc = __get_arg_count(arguments);
@@ -129,15 +165,17 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
     argv[argc + 1] = NULL;
 
     // create a copy of the arguments to work on
-    argumentCopy = strdup(arguments);
-    if (!argumentCopy) {
-        free(argv);
-        return -1;
+    if (arguments) {
+        argumentCopy = strdup(arguments);
+        if (!argumentCopy) {
+            free(argv);
+            return -1;
+        }
     }
 
     // split the arguments into the argv array
     __split_arguments(argumentCopy, argv);
-
+    
     // initialize the file actions
     posix_spawn_file_actions_init(&actions);
     if (cwd) {

@@ -281,9 +281,12 @@ static const char* __build_argument_string(struct list* argumentList)
     // build argument length first
     list_foreach(argumentList, item) {
         struct oven_value_item* value = (struct oven_value_item*)item;
+        size_t                  valueLength = strlen(value->value);
 
         // add one for the space
-        argumentLength += strlen(value->value) + 1;
+        if (valueLength > 0) {
+            argumentLength += valueLength + 1;
+        }
     }
 
     // allocate memory for the string
@@ -297,15 +300,15 @@ static const char* __build_argument_string(struct list* argumentList)
     argumentItr = argumentString;
     list_foreach(argumentList, item) {
         struct oven_value_item* value = (struct oven_value_item*)item;
+        size_t                  valueLength = strlen(value->value);
 
-        // copy argument
-        strcpy(argumentItr, value->value);
-        argumentItr += strlen(value->value);
-
-        // add space
-        if (item->next) {
-            *argumentItr = ' ';
-            argumentItr++;
+        if (valueLength > 0) {
+            strcpy(argumentItr, value->value);
+            argumentItr += strlen(value->value);
+            if (item->next) {
+                *argumentItr = ' ';
+                argumentItr++;
+            }
         }
     }
     return argumentString;
@@ -551,7 +554,7 @@ static int __write_directory(
 			sprintf(filepathBuffer, "%s%s", path, dp->d_name);
 		printf("oven: found '%s'\n", filepathBuffer);
 
-		if (platform_isdir(filepathBuffer)) {
+		if (!platform_isdir(filepathBuffer)) {
 			struct VaFsDirectoryHandle* subdirectoryHandle;
 			status = vafs_directory_open_directory(directoryHandle, dp->d_name, &subdirectoryHandle);
 			if (status) {

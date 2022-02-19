@@ -500,7 +500,7 @@ static int __parse_boolean(const char* string, int* value)
 static int __consume_event(struct parser_state* s, yaml_event_t* event)
 {
     char *value;
-    printf("__consume_event(state=%d event=%d)\n", s->state, event->type);
+    //printf("__consume_event(state=%d event=%d)\n", s->state, event->type);
 
     switch (s->state) {
         case STATE_START:
