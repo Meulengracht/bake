@@ -23,14 +23,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vafs/vafs.h>
-
-// include dirent.h for directory operations
-#if defined(_WIN32) || defined(_WIN64)
-#include <dirent_win32.h>
-#else
-#include <dirent.h>
-#endif
 
 struct oven_recipe_context {
     const char* name;
@@ -87,38 +79,6 @@ static int __get_root_directory(char** bufferOut)
     return 0;
 }
 
-// expose the following variables to the build process
-// BAKE_BUILD_DIR
-// BAKE_ARTIFACT_DIR
-static int __oven_setup_environment(void)
-{
-    char** environment;
-    int    status;
-
-    environment = (char**)malloc(sizeof(char*) * 3);
-    if (!environment) {
-        return -1;
-    }
-
-    environment[0] = (char*)malloc(sizeof(char) * (strlen("BAKE_BUILD_DIR=") + strlen(g_ovenContext.build_root) + 1));
-    if (!environment[0]) {
-        free(environment);
-        return -1;
-    }
-
-    environment[1] = (char*)malloc(sizeof(char) * (strlen("BAKE_ARTIFACT_DIR=") + strlen(g_ovenContext.install_root) + 1));
-    if (!environment[1]) {
-        free(environment[0]);
-        free(environment);
-        return -1;
-    }
-
-    sprintf(environment[0], "BAKE_BUILD_DIR=%s", g_ovenContext.build_root);
-    sprintf(environment[1], "BAKE_ARTIFACT_DIR=%s", g_ovenContext.install_root);
-    environment[2] = NULL;
-    return 0;
-}
-
 // oven is the work-area for the build and pack
 // .oven/build
 // .oven/install
@@ -170,12 +130,6 @@ int oven_initialize(char** envp)
     g_ovenContext.recipe.build_root    = NULL;
     g_ovenContext.recipe.install_root  = NULL;
 
-    status = __oven_setup_environment();
-    if (status) {
-        fprintf(stderr, "oven: failed to initialize: %s\n", strerror(errno));
-        return status;
-    }
-    
     status = platform_mkdir(".oven");
     if (status) {
         if (errno != EEXIST) {
@@ -458,187 +412,6 @@ int oven_build(struct oven_build_options* options)
 cleanup:
     free((void*)data.project_directory);
     free((void*)data.root_directory);
-    return status;
-}
-
-static const char* __get_relative_path(
-	const char* root,
-	const char* path)
-{
-	const char* relative = path;
-	if (strncmp(path, root, strlen(root)) == 0)
-		relative = path + strlen(root);
-	return relative;
-}
-
-static const char* __get_filename(
-	const char* path)
-{
-	const char* filename = (const char*)strrchr(path, '/');
-	if (filename == NULL)
-		filename = path;
-	else
-		filename++;
-	return filename;
-}
-
-static int __write_file(
-	struct VaFsDirectoryHandle* directoryHandle,
-	const char*                 path,
-	const char*                 filename)
-{
-	struct VaFsFileHandle* fileHandle;
-	FILE*                  file;
-	long                   fileSize;
-	void*                  fileBuffer;
-	int                    status;
-
-	// create the VaFS file
-	status = vafs_directory_open_file(directoryHandle, filename, &fileHandle);
-	if (status) {
-		fprintf(stderr, "oven: failed to create file '%s'\n", filename);
-		return -1;
-	}
-
-	if ((file = fopen(path, "rb")) == NULL) {
-		fprintf(stderr, "oven: unable to open file %s\n", path);
-		return -1;
-	}
-
-	fseek(file, 0, SEEK_END);
-	fileSize = ftell(file);
-	fileBuffer = malloc(fileSize);
-	rewind(file);
-	fread(fileBuffer, 1, fileSize, file);
-	fclose(file);
-
-	// write the file to the VaFS file
-	status = vafs_file_write(fileHandle, fileBuffer, fileSize);
-	if (status) {
-		fprintf(stderr, "oven: failed to write file '%s'\n", filename);
-		return -1;
-	}
-
-	status = vafs_file_close(fileHandle);
-	if (status) {
-		fprintf(stderr, "oven: failed to close file '%s'\n", filename);
-		return -1;
-	}
-	return 0;
-}
-
-static int __write_directory(
-	struct VaFsDirectoryHandle* directoryHandle,
-	const char*                 path)
-{
-    struct dirent* dp;
-	DIR*           dfd;
-	int            status = 0;
-	char*          filepathBuffer;
-	printf("oven: writing directory '%s'\n", path);
-
-	if ((dfd = opendir(path)) == NULL) {
-		fprintf(stderr, "oven: can't open initrd folder\n");
-		return -1;
-	}
-
-    filepathBuffer = malloc(512);
-	while ((dp = readdir(dfd)) != NULL) {
-		if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
-			continue;
-
-		// only append a '/' if not provided
-		if (path[strlen(path) - 1] != '/')
-			sprintf(filepathBuffer, "%s/%s", path, dp->d_name);
-		else
-			sprintf(filepathBuffer, "%s%s", path, dp->d_name);
-		printf("oven: found '%s'\n", filepathBuffer);
-
-		if (!platform_isdir(filepathBuffer)) {
-			struct VaFsDirectoryHandle* subdirectoryHandle;
-			status = vafs_directory_open_directory(directoryHandle, dp->d_name, &subdirectoryHandle);
-			if (status) {
-				fprintf(stderr, "oven: failed to create directory '%s'\n", dp->d_name);
-				continue;
-			}
-
-			status = __write_directory(subdirectoryHandle, filepathBuffer);
-			if (status != 0) {
-				fprintf(stderr, "oven: unable to write directory %s\n", filepathBuffer);
-				break;
-			}
-
-			status = vafs_directory_close(subdirectoryHandle);
-			if (status) {
-				fprintf(stderr, "oven: failed to close directory '%s'\n", filepathBuffer);
-				break;
-			}
-		}
-		else {
-			status = __write_file(directoryHandle, filepathBuffer, dp->d_name);
-			if (status != 0) {
-				fprintf(stderr, "oven: unable to write file %s\n", dp->d_name);
-				break;
-			}
-		}
-	}
-
-	free(filepathBuffer);
-	closedir(dfd);
-	return status;
-}
-
-static int __install_filter(struct VaFs* vafs)
-{
-    
-}
-
-int oven_pack(struct oven_pack_options* options)
-{
-    struct VaFsDirectoryHandle* directoryHandle;
-    struct VaFs*                vafs;
-    int                         status;
-    char                        tmp[128];
-    int                         i;
-
-    if (!options) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    memset(&tmp[0], 0, sizeof(tmp));
-    for (i = 0; options->name[i] && options->name[i] != '.'; i++) {
-        tmp[i] = options->name[i];
-    }
-    strcat(tmp, ".container");
-
-    // TODO arch
-    status = vafs_create(&tmp[0], VaFsArchitecture_X64, &vafs);
-    if (status) {
-        return status;
-    }
-    
-	// Was a compression requested?
-	if (options->compression != NULL) {
-		//status = __install_filter(vafs, options->compression);
-		//if (status) {
-		//	fprintf(stderr, "oven: cannot set compression: %s\n", options->compression);
-		//	return -1;
-		//}
-	}
-
-	status = vafs_directory_open(vafs, "/", &directoryHandle);
-	if (status) {
-		fprintf(stderr, "oven: cannot open root directory\n");
-		return -1;
-	}
-
-    status = __write_directory(directoryHandle, ".oven/install");
-    if (status != 0) {
-        fprintf(stderr, "oven: unable to write directory\n");
-    }
-
-    status = vafs_close(vafs);
     return status;
 }
 

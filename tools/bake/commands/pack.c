@@ -48,8 +48,7 @@ static void __initialize_build_options(struct oven_build_options* options, struc
 
 static void __initialize_pack_options(struct oven_pack_options* options, char* name, struct recipe* recipe)
 {
-    options->name        = name;
-    options->compression = NULL;
+    options->name = name;
 }
 
 static int __fetch_ingredients(struct recipe* recipe)

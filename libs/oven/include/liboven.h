@@ -51,7 +51,6 @@ struct oven_build_options {
 
 struct oven_pack_options {
     const char* name;
-    const char* compression;
 };
 
 /**
