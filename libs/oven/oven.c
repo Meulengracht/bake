@@ -588,6 +588,11 @@ static int __write_directory(
 	return status;
 }
 
+static int __install_filter(struct VaFs* vafs)
+{
+    
+}
+
 int oven_pack(struct oven_pack_options* options)
 {
     struct VaFsDirectoryHandle* directoryHandle;

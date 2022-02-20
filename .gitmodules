@@ -1,3 +1,6 @@
 [submodule "libs/vafs"]
 	path = libs/vafs
-	url = git@github.com:Meulengracht/vali-rofs.git
+	url = ../vali-rofs.git
+[submodule "libs/zstd"]
+	path = libs/zstd
+	url = ../../umbrella-c/zstd.git
