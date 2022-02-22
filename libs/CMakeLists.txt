@@ -13,19 +13,26 @@ set(ZSTD_BUILD_CONTRIB  OFF CACHE BOOL "Do not build zstd contrib")
 set(ZSTD_BUILD_TESTS    OFF CACHE BOOL "Do not build zstd tests")
 add_subdirectory(zstd/build/cmake)
 
-# build wolfssl
-set(WOLFSSL_EXAMPLES OFF CACHE BOOL "Do not build wolfssl examples")
-set(WOLFSSL_CRYPT_TESTS OFF CACHE BOOL "Do not build wolfssl crypt tests")
-add_subdirectory(wolfssl)
-
-# build curl
-set(BUILD_CURL_EXE OFF CACHE BOOL "Do not build curl executable")
-set(CURL_USE_WOLFSSL ON CACHE BOOL "Use wolfSSL")
-add_subdirectory(curl)
-
 # create an interface library for zstd
 add_library(zstd-api INTERFACE)
 target_include_directories(zstd-api INTERFACE zstd/lib)
+
+# The following libraries and dependencies are only needed by libchefclient
+# which is used by order/serve. 
+if (CHEF_BUILD_ORDER OR CHEF_BUILD_SERVE)
+    # build wolfssl
+    set(WOLFSSL_EXAMPLES OFF CACHE BOOL "Do not build wolfssl examples")
+    set(WOLFSSL_CRYPT_TESTS OFF CACHE BOOL "Do not build wolfssl crypt tests")
+    add_subdirectory(wolfssl)
+
+    # build curl
+    set(BUILD_CURL_EXE OFF CACHE BOOL "Do not build curl executable")
+    set(CURL_USE_WOLFSSL ON CACHE BOOL "Use wolfSSL")
+    add_subdirectory(curl)
+
+    # build libchefclient
+    add_subdirectory(chefclient)
+endif()
 
 # build support libraries for tools
 add_subdirectory(oven)
