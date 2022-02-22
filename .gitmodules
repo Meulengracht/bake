@@ -4,3 +4,9 @@
 [submodule "libs/zstd"]
 	path = libs/zstd
 	url = ../../umbrella-c/zstd.git
+[submodule "libs/curl"]
+	path = libs/curl
+	url = ../../umbrella-c/curl.git
+[submodule "libs/wolfssl"]
+	path = libs/wolfssl
+	url = git@github.com:umbrella-c/wolfssl.git
