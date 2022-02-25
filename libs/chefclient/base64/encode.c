@@ -40,8 +40,8 @@ unsigned char* base64_encode(const unsigned char* data, size_t len, size_t* lenO
 	if (out == NULL)
 		return NULL;
 
-	end = src + len;
-	in = src;
+	end = data + len;
+	in = data;
 	pos = out;
 	line_len = 0;
 	while (end - in >= 3) {

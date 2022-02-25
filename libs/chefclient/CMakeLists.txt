@@ -5,6 +5,7 @@ add_library(chef-client STATIC
     base64/decode.c
     base64/encode.c
 
+    client.c
     download.c
     info.c
     publish.c

@@ -10,6 +10,7 @@
 
 #include <base64.h>
 #include <stdlib.h>
+#include <string.h>
 
 static const int g_b64Table[256] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,

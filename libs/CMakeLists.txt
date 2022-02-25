@@ -21,6 +21,7 @@ target_include_directories(zstd-api INTERFACE zstd/lib)
 # which is used by order/serve. 
 if (CHEF_BUILD_ORDER OR CHEF_BUILD_SERVE)
     # build wolfssl
+    set(WOLFSSL_OPENSSLEXTRA ON CACHE BOOL "Enable OpenSSL compatibility")
     set(WOLFSSL_EXAMPLES OFF CACHE BOOL "Do not build wolfssl examples")
     set(WOLFSSL_CRYPT_TESTS OFF CACHE BOOL "Do not build wolfssl crypt tests")
     add_subdirectory(wolfssl)
