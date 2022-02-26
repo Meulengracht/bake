@@ -46,6 +46,14 @@ extern int platform_getcwd(char* buffer, size_t length);
 extern int platform_chdir(const char* path);
 
 /**
+ * @brief 
+ * 
+ * @param milliseconds 
+ * @return int 
+ */
+extern int platform_sleep(unsigned int milliseconds);
+
+/**
  * @brief Spawns a new process, and waits for the process to complete. 
  * 
  * @param[In] path      The path to the executable 

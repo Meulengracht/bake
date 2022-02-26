@@ -9,6 +9,7 @@ add_library(platform STATIC
     mkdir.c
     rmdir.c
     setenv.c
+    sleep.c
     spawn.c
     unsetenv.c
 )

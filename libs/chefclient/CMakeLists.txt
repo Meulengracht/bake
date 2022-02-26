@@ -16,4 +16,4 @@ add_library(chef-client STATIC
     trace.c
 )
 target_include_directories(chef-client PUBLIC include)
-target_link_libraries(chef-client PUBLIC libcurl regex)
+target_link_libraries(chef-client PUBLIC libcurl regex platform)
