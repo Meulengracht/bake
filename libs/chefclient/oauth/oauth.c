@@ -18,16 +18,27 @@
 
 #include <errno.h>
 #include "oauth.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <stddef.h>
 
-extern int oauth_deviceflow_start(char* accessToken, size_t accessTokenLength, char* refreshToken, size_t refreshTokenLength);
+extern int oauth_deviceflow_start(struct token_context* tokenContexth);
 
 int oauth_login(enum oauth_flow_type flowType)
 {
+    struct token_context* tokenContext;
+    int                   status = -1;
+
+    tokenContext = calloc(1, sizeof(struct token_context));
+    if (!tokenContext) {
+        fprintf(stderr, "oauth_login: failed to allocate token context\n");
+        return -1;
+    }
+
     if (flowType == OAUTH_FLOW_DEVICECODE) {
-        return oauth_deviceflow_start(NULL, 0, NULL, 0);
+        status = oauth_deviceflow_start(tokenContext);
     }
     
-    errno = ENOTSUP;
-    return -1;
+    free(tokenContext);
+    return status;
 }

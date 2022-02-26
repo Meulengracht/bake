@@ -23,6 +23,12 @@ enum oauth_flow_type {
     OAUTH_FLOW_DEVICECODE
 };
 
+struct token_context {
+    const char* access_token;
+    const char* refresh_token;
+    int         expires_in;
+};
+
 /**
  * @brief 
  * 

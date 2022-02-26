@@ -19,6 +19,7 @@
 #include <curl/curl.h>
 #include <errno.h>
 #include "../private.h"
+#include "oauth.h"
 #include <libplatform.h>
 #include <regex/regex.h>
 #include <stdlib.h>
@@ -30,12 +31,6 @@ struct devicecode_context {
     const char* verification_uri;
     int         expires_in;
     int         interval;
-};
-
-struct token_context {
-    const char* access_token;
-    const char* refresh_token;
-    int         expires_in;
 };
 
 static int __response_writer(char *data, size_t size, size_t nmemb, size_t* dataIndex)
@@ -571,10 +566,9 @@ static int __deviceflow_poll(struct devicecode_context* deviceContext, struct to
     return -1;
 }
 
-int oauth_deviceflow_start(char* accessToken, size_t accessTokenLength, char* refreshToken, size_t refreshTokenLength)
+int oauth_deviceflow_start(struct token_context* tokenContext)
 {
     struct devicecode_context* deviceContext;
-    struct token_context*      tokenContext;
     int                        status;
 
     deviceContext = calloc(1, sizeof(struct devicecode_context));
@@ -585,6 +579,7 @@ int oauth_deviceflow_start(char* accessToken, size_t accessTokenLength, char* re
 
     status = __deviceflow_challenge(deviceContext);
     if (status != 0) {
+        free(deviceContext);
         fprintf(stderr, "oauth_deviceflow_start: failed to get device code\n");
         return status;
     }
@@ -595,8 +590,8 @@ int oauth_deviceflow_start(char* accessToken, size_t accessTokenLength, char* re
     status = __deviceflow_poll(deviceContext, tokenContext);
     if (status != 0) {
         fprintf(stderr, "oauth_deviceflow_start: failed to retrieve access token\n");
-        return status;
     }
 
+    free(deviceContext);
     return 0;
 }
