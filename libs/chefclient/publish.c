@@ -17,7 +17,7 @@
  */
 
 #include <errno.h>
-#include <libchefclient.h>
+#include <chef/client.h>
 
 int chefclient_pack_publish(struct chef_publish_params* params, const char* path)
 {

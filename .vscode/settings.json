@@ -55,6 +55,7 @@
         "new": "c",
         "stdexcept": "c",
         "streambuf": "c",
-        "thread": "c"
+        "thread": "c",
+        "client.h": "c"
     }
 }

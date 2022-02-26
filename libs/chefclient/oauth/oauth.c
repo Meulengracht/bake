@@ -17,10 +17,17 @@
  */
 
 #include <errno.h>
-#include <chef/client.h>
+#include "oauth.h"
+#include <stddef.h>
 
-int chefclient_pack_download(struct chef_download_params* params, const char* path)
+extern int oauth_deviceflow_start(char* accessToken, size_t accessTokenLength, char* refreshToken, size_t refreshTokenLength);
+
+int oauth_login(enum oauth_flow_type flowType)
 {
+    if (flowType == OAUTH_FLOW_DEVICECODE) {
+        return oauth_deviceflow_start(NULL, 0, NULL, 0);
+    }
+    
     errno = ENOTSUP;
     return -1;
 }

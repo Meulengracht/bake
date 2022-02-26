@@ -16,7 +16,7 @@
  * 
  */
 
-#include <libchefclient.h>
+#include <chef/client.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -40,6 +40,7 @@ int info_main(int argc, char** argv)
     chefclient_initialize();
 
     // retrieve information about the pack
+    chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
 
     // cleanup chefclient
     chefclient_cleanup();

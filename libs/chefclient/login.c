@@ -16,11 +16,17 @@
  * 
  */
 
-#include <errno.h>
 #include <chef/client.h>
+#include <errno.h>
+#include "private.h"
+#include "oauth/oauth.h"
 
-int chefclient_pack_download(struct chef_download_params* params, const char* path)
+int chefclient_login(enum chef_login_flow_type flowType)
 {
+    if (flowType == CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE) {
+        return oauth_login(OAUTH_FLOW_DEVICECODE);
+    }
+    
     errno = ENOTSUP;
     return -1;
 }

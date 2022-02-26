@@ -37,6 +37,10 @@ struct chef_download_params {
     const char* version;
 };
 
+enum chef_login_flow_type {
+    CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE
+};
+
 /**
  * @brief Initializes the chef client library and enables communication with the chef api
  * 
@@ -56,7 +60,7 @@ extern void chefclient_cleanup(void);
  * 
  * @return int 
  */
-extern int chefclient_login(void);
+extern int chefclient_login(enum chef_login_flow_type flowType);
 
 /**
  * @brief Terminates the current authentication session with the chef api.

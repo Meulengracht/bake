@@ -16,11 +16,19 @@
  * 
  */
 
-#include <errno.h>
-#include <chef/client.h>
+#ifndef __LIBCHEF_OAUTH_H__
+#define __LIBCHEF_OAUTH_H__
 
-int chefclient_pack_download(struct chef_download_params* params, const char* path)
-{
-    errno = ENOTSUP;
-    return -1;
-}
+enum oauth_flow_type {
+    OAUTH_FLOW_DEVICECODE
+};
+
+/**
+ * @brief 
+ * 
+ * @param flowType 
+ * @return int 
+ */
+extern int oauth_login(enum oauth_flow_type flowType);
+
+#endif //!__LIBCHEF_OAUTH_H__

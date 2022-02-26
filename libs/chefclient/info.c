@@ -17,7 +17,7 @@
  */
 
 #include <errno.h>
-#include <libchefclient.h>
+#include <chef/client.h>
 
 int chefclient_pack_info(struct chef_info_params* params)
 {

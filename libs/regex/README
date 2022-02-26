@@ -1,0 +1,70 @@
+This is a modified version of Henry Spencer's "BSD" regular expression
+library. The original library can be found at
+https://github.com/garyhouston/regex.  A description of Spencer's
+various libraries can be found at https://garyhouston.github.io/regex/
+
+The changes in this version are:
+
+* The library name has been changed to rxspencer, the header installs
+  into a directory rxspencer, and the man pages named accordingly, to
+  allow easy installation as a system library on Linux without
+  conflicting with other regex libraries.
+* A CMake build system, which can build either static or shared
+  libraries, maybe even on non-Unix systems.
+* A few code modernizations and changes to improve portabilty, avoid
+  compiler warnings, and improve robustness.
+
+I (Gary Houston) originally made this version with a build system
+based on GNU Automake and Libtool, to allow building a shared library
+for a project where the library needed to be dynamically loaded. The
+CMake scripts were contributed by Stephen Just, modified from LuaDist
+versions.
+
+Spencer's original license can be found in the COPYRIGHT file. The CMake
+scripts are licensed under the MIT license. I release all of my own
+changes to the public domain under the Creative Commons Zero license.
+
+Installation
+============
+
+CMake needs to be installed. To build from a Linux command line, or
+something compatible, within the source directory:
+
+to configure for a static library:
+cmake .
+or
+cmake -Drxshared=0 .
+
+to configure for a shared library:
+cmake -Drxshared=1 .
+
+to build:
+make
+make install
+
+also required on Linux, after installing the shared library:
+ldconfig
+
+to run the tests:
+make test
+
+to run the tests, with output displayed:
+ctest -V
+
+Usage
+=====
+
+Include the following header in a C program:
+
+#include <rxspencer/regex.h>
+
+Link with the library using the -lrxspencer flag, as in:
+gcc test.c -o test -lrxspencer
+
+The library is further described in the supplied man pages: rxspencer.3
+and rxspencer.7, which are formatted at
+https://garyhouston.github.io/regex/regex3.html and
+https://garyhouston.github.io/regex/regex7.html.
+
+--
+Gary Houston,  ghouston@arglist.com
