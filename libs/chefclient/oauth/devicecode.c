@@ -92,13 +92,15 @@ static int __get_usercode(const char* response, struct devicecode_context* conte
     int        status;
     int        codeLength;
 
-    status = regcomp(&regex, "\"user_code\":\"(.*?)\"", REG_EXTENDED);
+    status = regcomp(&regex, "\"user_code\":\"([a-zA-Z0-9]+)\"", REG_EXTENDED);
     if (status != 0) {
+        fprintf(stderr, "__get_usercode: failed to compile regex: %i\n", status);
         return status;
     }
 
     status = regexec(&regex, response, 2, matches, 0);
     if (status != 0) {
+        fprintf(stderr, "__get_usercode: failed to match regex: %i\n", status);
         goto cleanup;
     }
 
@@ -119,13 +121,15 @@ static int __get_devicecode(const char* response, struct devicecode_context* con
     int        status;
     int        codeLength;
 
-    status = regcomp(&regex, "\"device_code\":\"(.*?)\"", REG_EXTENDED);
+    status = regcomp(&regex, "\"device_code\":\"([a-zA-Z0-9_\\-]+)\"", REG_EXTENDED);
     if (status != 0) {
+        fprintf(stderr, "__get_devicecode: failed to compile regex: %i\n", status);
         return status;
     }
 
     status = regexec(&regex, response, 2, matches, 0);
     if (status != 0) {
+        fprintf(stderr, "__get_devicecode: failed to match regex: %i\n", status);
         goto cleanup;
     }
 
@@ -146,7 +150,7 @@ static int __get_verification_url(const char* response, struct devicecode_contex
     int        status;
     int        urlLength;
 
-    status = regcomp(&regex, "\"verification_uri\":\"(.*?)\"", REG_EXTENDED);
+    status = regcomp(&regex, "\"verification_uri\":\"([a-zA-Z0-9\\-_:\\/\\.]+)\"", REG_EXTENDED);
     if (status != 0) {
         return status;
     }
@@ -173,7 +177,7 @@ static int __get_expires_in(const char* response, struct devicecode_context* con
     int        status;
     int        valueLength;
 
-    status = regcomp(&regex, "\"expires_in\":\"(.*?)\"", REG_EXTENDED);
+    status = regcomp(&regex, "\"expires_in\":([0-9]+)", REG_EXTENDED);
     if (status != 0) {
         return status;
     }
@@ -200,7 +204,7 @@ static int __get_interval(const char* response, struct devicecode_context* conte
     int        status;
     int        valueLength;
 
-    status = regcomp(&regex, "\"interval\":\"(.*?)\"", REG_EXTENDED);
+    status = regcomp(&regex, "\"interval\":([0-9]+)", REG_EXTENDED);
     if (status != 0) {
         return status;
     }
@@ -437,13 +441,13 @@ int oauth_deviceflow_start(char* accessToken, size_t accessTokenLength, char* re
     }
 
     printf("To sign in, use a web browser to open the page %s and enter the code %s to authenticate.\n", 
-        deviceContext->verification_uri, deviceContext->device_code);
+        deviceContext->verification_uri, deviceContext->user_code);
 
-    status = __deviceflow_poll(deviceContext, tokenContext);
-    if (status != 0) {
-        fprintf(stderr, "oauth_deviceflow_start: failed to retrieve access token\n");
-        return status;
-    }
+    //status = __deviceflow_poll(deviceContext, tokenContext);
+    //if (status != 0) {
+    //    fprintf(stderr, "oauth_deviceflow_start: failed to retrieve access token\n");
+    //    return status;
+    //}
 
     return 0;
 }
