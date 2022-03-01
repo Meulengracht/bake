@@ -37,4 +37,11 @@ struct token_context {
  */
 extern int oauth_login(enum oauth_flow_type flowType);
 
+/**
+ * @brief 
+ * 
+ * @param curl 
+ */
+extern void oauth_set_authentication(void** headerlist);
+
 #endif //!__LIBCHEF_OAUTH_H__

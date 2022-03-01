@@ -10,3 +10,6 @@
 [submodule "libs/wolfssl"]
 	path = libs/wolfssl
 	url = git@github.com:umbrella-c/wolfssl.git
+[submodule "libs/jansson"]
+	path = libs/jansson
+	url = git@github.com:umbrella-c/jansson.git

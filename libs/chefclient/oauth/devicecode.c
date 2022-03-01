@@ -33,16 +33,6 @@ struct devicecode_context {
     int         interval;
 };
 
-static int __response_writer(char *data, size_t size, size_t nmemb, size_t* dataIndex)
-{
-    if (dataIndex == NULL) {
-        return 0;
-    }
-
-    memcpy(chef_response_buffer() + *dataIndex, data, size * nmemb);
-    return size * nmemb;
-}
-
 static int __get_devicecode_auth_link(char* buffer, size_t maxLength)
 {
     int written = snprintf(buffer, maxLength,
@@ -271,22 +261,8 @@ static int __deviceflow_challenge(struct devicecode_context* context)
         fprintf(stderr, "__oauth2_device_flow_start: curl_easy_init() failed\n");
         return -1;
     }
+    chef_set_curl_common(curl, NULL, 1, 1, 0);
 
-    code = curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, chef_error_buffer());
-    if (code != CURLE_OK) {
-        fprintf(stderr, "__oauth2_device_flow_start: failed to set error buffer [%d]\n", code);
-        goto cleanup;
-    }
-
-    if (chef_curl_trace_enabled()) {
-        curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, chef_curl_trace);
-        curl_easy_setopt(curl, CURLOPT_DEBUGDATA, NULL);
-        curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-    }
- 
-    // To get around CA cert issues......
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
- 
     // set the url
     if (__get_devicecode_auth_link(buffer, sizeof(buffer)) != 0) {
         fprintf(stderr, "__oauth2_device_flow_start: buffer too small for device code auth link\n");
@@ -299,13 +275,6 @@ static int __deviceflow_challenge(struct devicecode_context* context)
         goto cleanup;
     }
 
-    // set the writer function to get the response
-    code = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, __response_writer);
-    if (code != CURLE_OK) {
-        fprintf(stderr, "__oauth2_device_flow_start: failed to set writer [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-    
     code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
     if(code != CURLE_OK) {
         fprintf(stderr, "__oauth2_device_flow_start: failed to set write data [%s]\n", chef_error_buffer());
@@ -469,22 +438,8 @@ static int __deviceflow_get_token(struct devicecode_context* deviceContext, stru
         fprintf(stderr, "__deviceflow_get_token: curl_easy_init() failed\n");
         return -1;
     }
+    chef_set_curl_common(curl, NULL, 1, 1, 0);
 
-    code = curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, chef_error_buffer());
-    if (code != CURLE_OK) {
-        fprintf(stderr, "__deviceflow_get_token: failed to set error buffer [%d]\n", code);
-        goto cleanup;
-    }
-
-    if (chef_curl_trace_enabled()) {
-        curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, chef_curl_trace);
-        curl_easy_setopt(curl, CURLOPT_DEBUGDATA, NULL);
-        curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-    }
- 
-    // To get around CA cert issues......
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
- 
     // set the url
     if (__get_token_auth_link(buffer, sizeof(buffer)) != 0) {
         fprintf(stderr, "__deviceflow_get_token: buffer too small for token auth link\n");
@@ -497,13 +452,6 @@ static int __deviceflow_get_token(struct devicecode_context* deviceContext, stru
         goto cleanup;
     }
 
-    // set the writer function to get the response
-    code = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, __response_writer);
-    if (code != CURLE_OK) {
-        fprintf(stderr, "__deviceflow_get_token: failed to set writer [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-    
     code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
     if(code != CURLE_OK) {
         fprintf(stderr, "__deviceflow_get_token: failed to set write data [%s]\n", chef_error_buffer());

@@ -16,29 +16,42 @@
  * 
  */
 
+#include <curl/curl.h>
 #include <errno.h>
 #include "oauth.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <string.h>
 
 extern int oauth_deviceflow_start(struct token_context* tokenContexth);
 
+static struct token_context g_tokenContext = { 0 };
+static char                 g_token[1024]  = { 0 };
+
 int oauth_login(enum oauth_flow_type flowType)
 {
-    struct token_context* tokenContext;
-    int                   status = -1;
-
-    tokenContext = calloc(1, sizeof(struct token_context));
-    if (!tokenContext) {
-        fprintf(stderr, "oauth_login: failed to allocate token context\n");
-        return -1;
-    }
+    int status = -1;
 
     if (flowType == OAUTH_FLOW_DEVICECODE) {
-        status = oauth_deviceflow_start(tokenContext);
+        status = oauth_deviceflow_start(&g_tokenContext);
     }
-    
-    free(tokenContext);
+
+    if (!status) {
+        sprintf(&g_token[0], "access_token: %s", g_tokenContext.access_token);
+    }
+
     return status;
+}
+
+int oauth_logout(void)
+{
+    memset(&g_tokenContext, 0, sizeof(struct token_context));
+    return 0;
+}
+
+void oauth_set_authentication(void** headerlist)
+{
+    struct curl_slist* headers = curl_slist_append(*headerlist, &g_token[0]);
+    *headerlist = headers;
 }

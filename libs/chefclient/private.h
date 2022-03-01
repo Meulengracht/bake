@@ -55,9 +55,12 @@ extern char* chef_error_buffer(void);
 /**
  * @brief 
  * 
- * @return int 
+ * @param curl 
+ * @param response
+ * @param secure
+ * @param authorization
  */
-extern int chef_curl_trace_enabled(void);
+extern void chef_set_curl_common(void* curl, void** headerlist, int response, int secure, int authorization);
 
 /**
  * @brief 

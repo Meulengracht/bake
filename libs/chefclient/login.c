@@ -30,3 +30,8 @@ int chefclient_login(enum chef_login_flow_type flowType)
     errno = ENOTSUP;
     return -1;
 }
+
+void chefclient_logout(void)
+{
+
+}

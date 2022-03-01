@@ -19,6 +19,7 @@
 #include <curl/curl.h>
 #include <chef/client.h>
 #include <errno.h>
+#include "oauth/oauth.h"
 #include "private.h"
 #include <stdlib.h>
 #include <string.h>
@@ -86,12 +87,57 @@ char* chef_error_buffer(void)
     return g_curlErrorBuffer;
 }
 
-int chef_curl_trace_enabled(void)
+static int __response_writer(char *data, size_t size, size_t nmemb, size_t* dataIndex)
 {
-    return g_curlTrace;
+    if (dataIndex == NULL) {
+        return 0;
+    }
+
+    memcpy(chef_response_buffer() + *dataIndex, data, size * nmemb);
+    *dataIndex += size * nmemb;
+    return size * nmemb;
 }
 
-void chefclient_logout(void)
+void chef_set_curl_common(void* curl, void** headerlist, int response, int secure, int authorization)
 {
+    CURLcode code;
+    
+    code = curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, g_curlErrorBuffer);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "chef_set_curl_common: failed to set error buffer [%d]\n", code);
+    }
 
+    if (g_curlTrace) {
+        curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, chef_curl_trace);
+        curl_easy_setopt(curl, CURLOPT_DEBUGDATA, NULL);
+        curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    }
+
+    // To get around CA cert issues......
+    if (secure) {
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    }
+ 
+    // set the writer function to get the response
+    if (response) {
+        code = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, __response_writer);
+        if (code != CURLE_OK) {
+            fprintf(stderr, "chef_set_curl_common: failed to set writer [%s]\n", g_curlErrorBuffer);
+        }
+    }
+
+    if (authorization) {
+        if (headerlist == NULL) {
+            fprintf(stderr, "chef_set_curl_common: auth requested but headerlist is NULL\n");
+            return;
+        }
+        oauth_set_authentication(headerlist);
+    }
+
+    if (headerlist && *headerlist) {
+        code = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, (struct curl_slist*)(*headerlist));
+        if (code != CURLE_OK) {
+            fprintf(stderr, "chef_set_curl_common: failed to set http headers [%s]\n", g_curlErrorBuffer);
+        }
+    }
 }
