@@ -16,33 +16,127 @@
  * 
  */
 
+#include <errno.h>
 #include <chef/client.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 static void __print_help(void)
 {
-    printf("Usage: bake info <pack-name>\n");
+    printf("Usage: order info <publisher/pack> [options]\n");
+    printf("Options:\n");
+    printf("  -h, --help\n");
+    printf("      Print this help message\n");
+}
+
+static int __parse_packname(char* pack, struct chef_info_params* params)
+{
+    // pack names are in the form of publisher/name, we need to seperate those
+    char* slash = strchr(pack, '/');
+    if (!slash) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    *slash = '\0';
+
+    params->publisher = pack;
+    params->package   = slash + 1;
+    return 0;
+}
+
+static void __print_channel(struct chef_channel* channel)
+{
+    size_t tagSize = strlen(channel->current_version.tag);
+    printf(((tagSize == 0) ? "    %s   %i.%i.%i\n" : "    %s   %i.%i.%i+%s\n"),
+        channel->name, 
+        channel->current_version.major,
+        channel->current_version.minor,
+        channel->current_version.revision,
+        channel->current_version.tag
+    );
+}
+
+static void __print_package(struct chef_package* package)
+{
+    printf("Name: %s\n", package->package);
+    printf("Publisher: %s\n", package->publisher);
+    printf("Description: %s\n", package->description);
+    printf("Homepage: %s\n", package->homepage);
+    printf("License: %s\n", package->license);
+    printf("Maintainer: %s\n", package->maintainer);
+    printf("Maintainer Email: %s\n", package->maintainer_email);
+    
+    printf("Channels available:\n\n");
+    for (int i = 0; i < package->channels_count; i++) {
+        __print_channel(&package->channels[i]);
+    }
+
+    printf("\n");
 }
 
 int info_main(int argc, char** argv)
 {
+    struct chef_info_params params   = { 0 };
+    struct chef_package*    package;
+    char*                   packCopy = NULL;
+    int                     status;
+
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
             }
+            else {
+                // do this only once
+                if (params.publisher == NULL) {
+                // assume this is the pack name
+                    packCopy = strdup(argv[i]);
+                    status   = __parse_packname(packCopy, &params);
+                    if (status != 0) {
+                        free(packCopy);
+                        fprintf(stderr, "order: failed to parse pack name: %s\n", strerror(errno));
+                        return status;
+                    }
+                }
+                else {
+                    free(packCopy);
+                    fprintf(stderr, "order: too many arguments\n");
+                    __print_help();
+                    return -1;
+                }
+            }
         }
     }
 
+    if (params.publisher == NULL) {
+        fprintf(stderr, "order: missing pack name\n");
+        __print_help();
+        return -1;
+    }
+
     // initialize chefclient
-    chefclient_initialize();
+    status = chefclient_initialize();
+    if (status != 0) {
+        free(packCopy);
+        fprintf(stderr, "order: failed to initialize chefclient: %s\n", strerror(errno));
+        return -1;
+    }
 
     // retrieve information about the pack
-    chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
+    status = chefclient_pack_info(&params, &package);
+    if (status != 0) {
+        printf("order: failed to retrieve information: %s\n", strerror(errno));
+        goto cleanup;
+    }
 
-    // cleanup chefclient
+    __print_package(package);
+    chef_package_free(package);
+
+cleanup:
     chefclient_cleanup();
-    return -1;
+    free(packCopy);
+    return status;
 }

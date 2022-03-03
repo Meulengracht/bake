@@ -20,33 +20,29 @@ add_subdirectory(zstd/build/cmake)
 add_library(zstd-api INTERFACE)
 target_include_directories(zstd-api INTERFACE zstd/lib)
 
-# The following libraries and dependencies are only needed by libchefclient
-# which is used by order/serve. 
-if (CHEF_BUILD_ORDER OR CHEF_BUILD_SERVE)
-    # build jansson
-    set(JANSSON_BUILD_DOCS OFF CACHE BOOL "Do not build jansson documentation")
-    set(JANSSON_EXAMPLES OFF CACHE BOOL "Do not build jansson examples")
-    set(JANSSON_WITHOUT_TESTS ON CACHE BOOL "Do not build jansson tests")
-    add_subdirectory(jansson)
+# build jansson for json requests and responses
+set(JANSSON_BUILD_DOCS OFF CACHE BOOL "Do not build jansson documentation")
+set(JANSSON_EXAMPLES OFF CACHE BOOL "Do not build jansson examples")
+set(JANSSON_WITHOUT_TESTS ON CACHE BOOL "Do not build jansson tests")
+add_subdirectory(jansson)
 
-    # create an interface library for jansson
-    add_library(jansson-api INTERFACE)
-    target_include_directories(jansson-api INTERFACE ${CMAKE_BINARY_DIR}/libs/jansson/include)
+# create an interface library for jansson
+add_library(jansson-api INTERFACE)
+target_include_directories(jansson-api INTERFACE ${CMAKE_BINARY_DIR}/libs/jansson/include)
 
-    # build wolfssl
-    set(WOLFSSL_OPENSSLEXTRA ON CACHE BOOL "Enable OpenSSL compatibility")
-    set(WOLFSSL_EXAMPLES OFF CACHE BOOL "Do not build wolfssl examples")
-    set(WOLFSSL_CRYPT_TESTS OFF CACHE BOOL "Do not build wolfssl crypt tests")
-    add_subdirectory(wolfssl)
+# build wolfssl
+set(WOLFSSL_OPENSSLEXTRA ON CACHE BOOL "Enable OpenSSL compatibility")
+set(WOLFSSL_EXAMPLES OFF CACHE BOOL "Do not build wolfssl examples")
+set(WOLFSSL_CRYPT_TESTS OFF CACHE BOOL "Do not build wolfssl crypt tests")
+add_subdirectory(wolfssl)
 
-    # build curl
-    set(BUILD_CURL_EXE OFF CACHE BOOL "Do not build curl executable")
-    set(CURL_USE_WOLFSSL ON CACHE BOOL "Use wolfSSL")
-    add_subdirectory(curl)
+# build curl
+set(BUILD_CURL_EXE OFF CACHE BOOL "Do not build curl executable")
+set(CURL_USE_WOLFSSL ON CACHE BOOL "Use wolfSSL")
+add_subdirectory(curl)
 
-    # build libchefclient
-    add_subdirectory(chefclient)
-endif()
+# build libchefclient
+add_subdirectory(chefclient)
 
 # build support libraries for tools
 add_subdirectory(oven)

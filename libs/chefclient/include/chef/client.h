@@ -19,15 +19,17 @@
 #ifndef __LIBCHEF_CLIENT_H__
 #define __LIBCHEF_CLIENT_H__
 
+#include <chef/package.h>
+
 struct chef_info_params {
     const char* publisher;
     const char* package;
 };
 
 struct chef_publish_params {
-    const char* publisher;
-    const char* package;
-    const char* channel;
+    struct chef_package* package;
+    struct chef_version* version;
+    const char*          channel;
 };
 
 struct chef_download_params {
@@ -83,7 +85,7 @@ extern int chefclient_pack_download(struct chef_download_params* params, const c
  * @param params 
  * @return int 
  */
-extern int chefclient_pack_info(struct chef_info_params* params);
+extern int chefclient_pack_info(struct chef_info_params* params, struct chef_package** packageOut);
 
 /**
  * @brief 

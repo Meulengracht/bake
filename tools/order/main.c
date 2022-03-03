@@ -21,6 +21,7 @@
 #include <string.h>
 
 extern int info_main(int argc, char** argv);
+extern int publish_main(int argc, char** argv);
 
 struct command_handler {
     char* name;
@@ -28,7 +29,8 @@ struct command_handler {
 };
 
 static struct command_handler g_commands[] = {
-    { "info",  info_main }
+    { "info",     info_main },
+    { "publish",  publish_main }
 };
 
 static void __print_help(void)
@@ -37,12 +39,13 @@ static void __print_help(void)
     printf("\n");
     printf("Commands:\n");
     printf("  info        retrieves information about a specific pack\n");
+    printf("  publish     publish a new pack to chef\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
     printf("  -v, --version\n");
-    printf("      Print the version of bake\n");
+    printf("      Print the version of order\n");
 }
 
 static struct command_handler* __get_command(const char* command)
@@ -57,7 +60,7 @@ static struct command_handler* __get_command(const char* command)
 
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler* command = &g_commands[0];
+    struct command_handler* command = NULL;
     int                     result;
 
     // first argument must be the command if not --help or --version
@@ -77,6 +80,11 @@ int main(int argc, char** argv, char** envp)
             fprintf(stderr, "order: invalid command %s\n", argv[1]);
             return -1;
         }
+    }
+
+    if (!command) {
+        __print_help();
+        return 0;
     }
 
     result = command->handler(argc, argv);

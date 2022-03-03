@@ -35,55 +35,60 @@ struct file_upload_context {
     size_t bytes_read;
 };
 
-static json_t* __create_pack_info(void)
+static json_t* __create_pack_info(struct chef_publish_params* params)
 {
     json_t* packInfo = json_object();
     if (!packInfo) {
         return NULL;
     }
 
-    json_object_set_new(packInfo, "publisher", json_string("test"));
-    json_object_set_new(packInfo, "name", json_string("mypack"));
+    json_object_set_new(packInfo, "publisher", json_string(params->package->publisher));
+    json_object_set_new(packInfo, "name", json_string(params->package->package));
     return packInfo;
 }
 
-static json_t* __create_pack_version(void)
+static json_t* __create_pack_version(struct chef_publish_params* params)
 {
     json_t* packVersion = json_object();
     if (!packVersion) {
         return NULL;
     }
 
-    json_object_set_new(packVersion, "major", json_integer(1));
-    json_object_set_new(packVersion, "minor", json_integer(0));
+    json_object_set_new(packVersion, "major", json_integer(params->version->major));
+    json_object_set_new(packVersion, "minor", json_integer(params->version->minor));
+
+    // revision is only set by server, and ignored by us
     json_object_set_new(packVersion, "revision", json_integer(0));
-    json_object_set_new(packVersion, "additional", json_string(""));
+    
+    if (params->version->tag) {
+        json_object_set_new(packVersion, "additional", json_string(params->version->tag));
+    }
     return packVersion;
 }
 
-static json_t* __create_publish_request(void)
+static json_t* __create_publish_request(struct chef_publish_params* params)
 {
     json_t* request = json_object();
     if (!request) {
         return NULL;
     }
 
-    json_object_set_new(request, "info", __create_pack_info());
-    json_object_set_new(request, "channel", json_string("stable"));
-    json_object_set_new(request, "version", __create_pack_version());
+    json_object_set_new(request, "info", __create_pack_info(params));
+    json_object_set_new(request, "channel", json_string(params->channel));
+    json_object_set_new(request, "version", __create_pack_version(params));
     return request;
 }
 
-static json_t* __create_commit_request(void)
+static json_t* __create_commit_request(struct chef_publish_params* params)
 {
     json_t* request = json_object();
     if (!request) {
         return NULL;
     }
 
-    json_object_set_new(request, "info", __create_pack_info());
-    json_object_set_new(request, "channel", json_string("stable"));
-    json_object_set_new(request, "version", __create_pack_version());
+    json_object_set_new(request, "info", __create_pack_info(params));
+    json_object_set_new(request, "channel", json_string(params->channel));
+    json_object_set_new(request, "version", __create_pack_version(params));
     return request;
 }
 
@@ -229,6 +234,7 @@ static size_t __read_file(char *ptr, size_t size, size_t nmemb, void *userp)
 static int __upload_file(const char* filePath, struct pack_response* context)
 {
     struct file_upload_context fileContext = { 0 };
+    struct curl_slist*         headers     = NULL;
     int                        status      = -1;
     CURL*                      curl;
     CURLcode                   code;
@@ -247,10 +253,39 @@ static int __upload_file(const char* filePath, struct pack_response* context)
         goto cleanup;
     }
 
-    curl_easy_setopt(curl, CURLOPT_READFUNCTION, __read_file);
-    curl_easy_setopt(curl, CURLOPT_READDATA, &fileContext);
-    curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, fileContext.length);
-    curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+    // set required ms headers
+    headers = curl_slist_append(headers, "x-ms-blob-type:BlockBlob");
+    headers = curl_slist_append(headers, "x-ms-blob-content-type:application/octet-stream");
+
+    code = curl_easy_setopt(curl, CURLOPT_READFUNCTION, __read_file);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__upload_file: failed to set upload data reader [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(curl, CURLOPT_READDATA, &fileContext);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__upload_file: failed to set upload data [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, fileContext.length);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__upload_file: failed to set upload size [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__upload_file: failed to set request to upload [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__upload_file: failed to set http headers [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
 
     code = curl_easy_setopt(curl, CURLOPT_URL, context->url);
     if (code != CURLE_OK) {
@@ -260,11 +295,12 @@ static int __upload_file(const char* filePath, struct pack_response* context)
 
     code = curl_easy_perform(curl);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        fprintf(stderr, "__upload_file: curl_easy_perform() failed: %s\n", chef_error_buffer());
     }
 
 cleanup:
     __cleanup_file_context(&fileContext);
+    curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     return status;
 }
@@ -333,7 +369,11 @@ int chefclient_pack_publish(struct chef_publish_params* params, const char* path
     int                  status;
 
     // create the publish request
-    request = __create_publish_request();
+    request = __create_publish_request(params);
+    if (!request) {
+        fprintf(stderr, "chefclient_pack_publish: failed to create publish request\n");
+        return -1;
+    }
 
     // build and execute the curl request
     status = __publish_request(request, &context);
@@ -341,11 +381,19 @@ int chefclient_pack_publish(struct chef_publish_params* params, const char* path
         fprintf(stderr, "chefclient_pack_publish: failed to publish pack\n");
         return -1;
     }
+    json_decref(request);
 
     // now upload the pack
     status = __upload_file(path, &context);
     if (status != 0) {
         fprintf(stderr, "chefclient_pack_publish: failed to upload pack\n");
+        return -1;
+    }
+
+    // create the commit request
+    request = __create_commit_request(params);
+    if (!request) {
+        fprintf(stderr, "chefclient_pack_publish: failed to create commit request\n");
         return -1;
     }
 
@@ -355,8 +403,6 @@ int chefclient_pack_publish(struct chef_publish_params* params, const char* path
         fprintf(stderr, "chefclient_pack_publish: failed to commit pack\n");
         return -1;
     }
-
-    // cleanup the request
     json_decref(request);
     return 0;
 }

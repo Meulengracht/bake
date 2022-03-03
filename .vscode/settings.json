@@ -57,6 +57,7 @@
         "streambuf": "c",
         "thread": "c",
         "client.h": "c",
-        "jansson.h": "c"
+        "jansson.h": "c",
+        "vafs.h": "c"
     }
 }

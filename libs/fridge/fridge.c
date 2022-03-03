@@ -16,6 +16,7 @@
  * 
  */
 
+#include <errno.h>
 #include <libfridge.h>
 
 
@@ -144,4 +145,10 @@ int fridge_initialize(void)
 int fridge_cleanup(void)
 {
     return 0;
+}
+
+int fridge_use_ingredient(struct fridge_ingredient *ingredient)
+{
+    errno = ENOTSUP;
+    return -1;
 }

@@ -19,6 +19,13 @@
 #ifndef __LIBFRIDGE_H__
 #define __LIBFRIDGE_H__
 
+struct fridge_ingredient {
+    const char* publisher;
+    const char* name;
+    const char* description;
+    const char* version;
+};
+
 /**
  * @brief 
  * 
@@ -32,5 +39,14 @@ extern int fridge_initialize(void);
  * @return int 
  */
 extern int fridge_cleanup(void);
+
+/**
+ * @brief Tells the fridge that we want to use a specific ingredient for our recipe. If
+ * the ingredient doesn't exist, it will be fetched from chef.
+ * 
+ * @param[In] ingredient 
+ * @return int  
+ */
+extern int fridge_use_ingredient(struct fridge_ingredient *ingredient);
 
 #endif //!__LIBFRIDGE_H__

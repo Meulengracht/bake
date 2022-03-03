@@ -25,7 +25,7 @@
 
 enum recipe_type {
     RECIPE_TYPE_UNKNOWN,
-    RECIPE_TYPE_LIBRARY,
+    RECIPE_TYPE_INGREDIENT,
     RECIPE_TYPE_APPLICATION
 };
 
@@ -68,6 +68,10 @@ enum recipe_ingredient_source_type {
     RECIPE_INGREDIENT_SOURCE_TYPE_FILE,
 };
 
+struct recipe_ingredient_source_repo {
+    const char* channel;
+};
+
 struct recipe_ingredient_source_url {
     const char* url;
 };
@@ -83,6 +87,7 @@ struct recipe_ingredient {
     const char*      description;
     enum recipe_ingredient_source_type type;
     union {
+        struct recipe_ingredient_source_repo repo;
         struct recipe_ingredient_source_url  url;
         struct recipe_ingredient_source_file file;
     };

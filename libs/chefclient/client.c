@@ -29,7 +29,7 @@ static const char* g_mollenosTenantId   = "d8acf75d-9820-4522-a25b-ad672acc5fdd"
 static const char* g_chefClientId       = "17985824-571b-4bdf-b291-c25b2ff14837";
 static char*       g_curlresponseBuffer = NULL;
 static char*       g_curlErrorBuffer    = NULL; // CURL_ERROR_SIZE
-static int         g_curlTrace          = 0;
+static int         g_curlTrace          = 1;
 
 int chefclient_initialize(void)
 {

@@ -44,10 +44,9 @@ int oauth_login(enum oauth_flow_type flowType)
     return status;
 }
 
-int oauth_logout(void)
+void oauth_logout(void)
 {
     memset(&g_tokenContext, 0, sizeof(struct token_context));
-    return 0;
 }
 
 void oauth_set_authentication(void** headerlist)

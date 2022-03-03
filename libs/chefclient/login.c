@@ -33,5 +33,5 @@ int chefclient_login(enum chef_login_flow_type flowType)
 
 void chefclient_logout(void)
 {
-
+    oauth_logout();
 }

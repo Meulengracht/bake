@@ -163,6 +163,7 @@ enum state {
 
     STATE_INGREDIENT_SOURCE_TYPE,
     STATE_INGREDIENT_SOURCE_URL,
+    STATE_INGREDIENT_SOURCE_CHANNEL,
 
     STATE_RECIPE_LIST,
 
@@ -214,8 +215,8 @@ static const char* __parse_string(const char* value)
 
 static enum recipe_type __parse_project_type(const char* value)
 {
-    if (strcmp(value, "library") == 0) {
-        return RECIPE_TYPE_LIBRARY;
+    if (strcmp(value, "ingredient") == 0) {
+        return RECIPE_TYPE_INGREDIENT;
     } else if (strcmp(value, "application") == 0) {
         return RECIPE_TYPE_APPLICATION;
     } else {
@@ -730,6 +731,9 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else if (strcmp(value, "url") == 0) {
                         s->state = STATE_INGREDIENT_SOURCE_URL;
                     }
+                    else if (strcmp(value, "channel") == 0) {
+                        s->state = STATE_INGREDIENT_SOURCE_CHANNEL;
+                    }
                     else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
@@ -741,6 +745,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             break;
 
         __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_TYPE, ingredient.type, __parse_ingredient_source_type)
+        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_CHANNEL, ingredient.repo.channel, __parse_string)
         __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_URL, ingredient.url.url, __parse_string)
 
         __consume_sequence_mapped(STATE_SECTION, STATE_RECIPE_LIST, STATE_RECIPE)

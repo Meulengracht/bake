@@ -1,8 +1,8 @@
 # project information, packaging data
 project: 
-  name: Simple Library Recipe
-  description: A simple library recipe
-  type: library
+  name: Simple Ingredient Recipe
+  description: A simple ingredient recipe
+  type: ingredient
   version: 0.1
   license: MIT
   homepage:

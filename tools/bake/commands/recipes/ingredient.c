@@ -16,7 +16,7 @@
  * 
  */
 
-const char* g_libraryYaml = 
+const char* g_ingredientYaml = 
     "# project information, packaging data\n"
     "project:\n"
     "  name: Simple Library Recipe\n"

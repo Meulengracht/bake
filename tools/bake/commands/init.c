@@ -21,7 +21,7 @@
 #include <string.h>
 
 extern const char* g_appYaml;
-extern const char* g_libraryYaml;
+extern const char* g_ingredientYaml;
 
 static void __print_help(void)
 {
@@ -29,7 +29,7 @@ static void __print_help(void)
     printf("\n");
     printf("Options:\n");
     printf("  -t, --type\n");
-    printf("      Possible recipe types are {lib, app}\n");
+    printf("      Possible recipe types are {ingredient, app}\n");
 }
 
 static int __write_recipe(enum recipe_type type)
@@ -38,8 +38,8 @@ static int __write_recipe(enum recipe_type type)
     FILE*       file;
 
     switch (type) {
-        case RECIPE_TYPE_LIBRARY:
-            recipe = g_libraryYaml;
+        case RECIPE_TYPE_INGREDIENT:
+            recipe = g_ingredientYaml;
             break;
         case RECIPE_TYPE_APPLICATION:
             recipe = g_appYaml;
@@ -67,7 +67,7 @@ static int __write_recipe(enum recipe_type type)
 
 int init_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    enum recipe_type type = RECIPE_TYPE_LIBRARY;
+    enum recipe_type type = RECIPE_TYPE_INGREDIENT;
 
     (void)recipe;
 
@@ -79,8 +79,8 @@ int init_main(int argc, char** argv, char** envp, struct recipe* recipe)
             }
             else if (!strcmp(argv[i], "-t") || !strcmp(argv[i], "--type")) {
                 if (i + 1 < argc) {
-                    if (!strcmp(argv[i + 1], "lib")) {
-                        type = RECIPE_TYPE_LIBRARY;
+                    if (!strcmp(argv[i + 1], "ingredient")) {
+                        type = RECIPE_TYPE_INGREDIENT;
                     }
                     else if (!strcmp(argv[i + 1], "app")) {
                         type = RECIPE_TYPE_APPLICATION;
