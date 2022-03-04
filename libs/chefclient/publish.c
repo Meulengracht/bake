@@ -44,6 +44,11 @@ static json_t* __create_pack_info(struct chef_publish_params* params)
 
     json_object_set_new(packInfo, "publisher", json_string(params->package->publisher));
     json_object_set_new(packInfo, "name", json_string(params->package->package));
+    json_object_set_new(packInfo, "description", json_string(params->package->description));
+    json_object_set_new(packInfo, "homepage", json_string(params->package->homepage));
+    json_object_set_new(packInfo, "license", json_string(params->package->license));
+    json_object_set_new(packInfo, "maintainer", json_string(params->package->maintainer));
+    json_object_set_new(packInfo, "maintainer_email", json_string(params->package->maintainer_email));
     return packInfo;
 }
 
@@ -92,40 +97,23 @@ static json_t* __create_commit_request(struct chef_publish_params* params)
     return request;
 }
 
-static int __parse_pack_response(const char* response, struct pack_response* context)
+static int __parse_pack_response(const char* response, struct pack_response* packResponse)
 {
     json_error_t error;
-    json_t*      result;
     json_t*      root;
-    int          status = -1;
 
-    printf("__parse_pack_response: loading %s\n", response);
-    root = json_loads(response, 0, &error); 
+    printf("__parse_pack_response: %s\n", response);
+
+    root = json_loads(response, 0, &error);
     if (!root) {
         return -1;
     }
 
-    result = json_object_get(root, "result");
-    if (!result) {
-        goto cleanup;
-    }
-
-    if (!json_is_string(result)) {
-        goto cleanup;
-    }
-
-    const char* resultString = json_string_value(result);
-    if (!resultString) {
-        goto cleanup;
-    }
-
-    if (!strcmp(resultString, "success")) {
-        return 0;
-    }
-
-cleanup:
+    packResponse->token = strdup(json_string_value(json_object_get(root, "sas-token")));
+    packResponse->url = strdup(json_string_value(json_object_get(root, "blob-url")));
     json_decref(root);
-    return -1;
+
+    return 0;
 }
 
 static int __get_publish_url(char* urlBuffer, size_t bufferSize)

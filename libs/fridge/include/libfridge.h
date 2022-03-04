@@ -47,6 +47,6 @@ extern int fridge_cleanup(void);
  * @param[In] ingredient 
  * @return int  
  */
-extern int fridge_use_ingredient(struct fridge_ingredient *ingredient);
+extern int fridge_use_ingredient(struct fridge_ingredient* ingredient);
 
 #endif //!__LIBFRIDGE_H__

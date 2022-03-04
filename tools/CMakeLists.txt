@@ -7,6 +7,6 @@ add_subdirectory(bake)
 add_subdirectory(order)
 
 install(
-    TARGETS bake
+    TARGETS bake order
     RUNTIME DESTINATION bin
 )

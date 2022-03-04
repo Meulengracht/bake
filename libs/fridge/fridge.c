@@ -18,7 +18,8 @@
 
 #include <errno.h>
 #include <libfridge.h>
-
+#include <stdio.h>
+#include <vafs/vafs.h>
 
 static const char* __get_relative_path(
     const char* root,
@@ -139,16 +140,25 @@ static int __extract_directory(
 
 int fridge_initialize(void)
 {
+    // initialize the prep area
     return 0;
 }
 
 int fridge_cleanup(void)
 {
+    // cleanup prep area
     return 0;
 }
 
-int fridge_use_ingredient(struct fridge_ingredient *ingredient)
+int fridge_use_ingredient(struct fridge_ingredient* ingredient)
 {
+    // check if we have the requested ingredient in store already
+
+    // otherwise we use chef to download it
+
+
+    // unpack it into preparation area
+
     errno = ENOTSUP;
     return -1;
 }

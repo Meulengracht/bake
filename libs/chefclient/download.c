@@ -20,6 +20,7 @@
 #include <chef/client.h>
 #include <curl/curl.h>
 #include <jansson.h>
+#include "private.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,8 +53,8 @@ static int __parse_pack_response(const char* response, struct pack_response* pac
         return -1;
     }
 
-    packResponse->token = strdup(json_string_value(json_object_get(root, "token")));
-    packResponse->url = strdup(json_string_value(json_object_get(root, "url")));
+    packResponse->token = strdup(json_string_value(json_object_get(root, "sas-token")));
+    packResponse->url = strdup(json_string_value(json_object_get(root, "blob-url")));
     json_decref(root);
 
     return 0;
@@ -114,7 +115,7 @@ int __download_request(struct chef_download_params* params, struct pack_response
         goto cleanup;
     }
 
-    status = __parse_package_info_response(chef_response_buffer(), packResponse);
+    status = __parse_pack_response(chef_response_buffer(), packResponse);
 
 cleanup:
     curl_easy_cleanup(curl);

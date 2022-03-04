@@ -55,13 +55,13 @@ static int __parse_package_info_response(const char* response, struct chef_packa
     memset(package, 0, sizeof(struct chef_package));
 
     // parse the package
-    package->publisher = json_string_value(json_object_get(root, "publisher"));
-    package->package = json_string_value(json_object_get(root, "name"));
-    package->description = json_string_value(json_object_get(root, "description"));
-    package->homepage = json_string_value(json_object_get(root, "homepage"));
-    package->license = json_string_value(json_object_get(root, "license"));
-    package->maintainer = json_string_value(json_object_get(root, "maintainer"));
-    package->maintainer_email = json_string_value(json_object_get(root, "maintainer_email"));
+    package->publisher = strdup(json_string_value(json_object_get(root, "publisher")));
+    package->package = strdup(json_string_value(json_object_get(root, "name")));
+    package->description = strdup(json_string_value(json_object_get(root, "description")));
+    package->homepage = strdup(json_string_value(json_object_get(root, "homepage")));
+    package->license = strdup(json_string_value(json_object_get(root, "license")));
+    package->maintainer = strdup(json_string_value(json_object_get(root, "maintainer")));
+    package->maintainer_email = strdup(json_string_value(json_object_get(root, "maintainer_email")));
 
     // parse the channels
     channels = json_object_get(root, "channels");
@@ -83,13 +83,14 @@ static int __parse_package_info_response(const char* response, struct chef_packa
             json_t* version_revision = json_object_get(version, "revision");
             json_t* version_tag = json_object_get(version, "tag");
 
-            package->channels[i].name = json_string_value(json_object_get(channel, "name"));
+            package->channels[i].name = strdup(json_string_value(json_object_get(channel, "name")));
             package->channels[i].current_version.major = json_integer_value(version_major);
             package->channels[i].current_version.minor = json_integer_value(version_minor);
             package->channels[i].current_version.revision = json_integer_value(version_revision);
             package->channels[i].current_version.tag = json_string_value(version_tag);
         }
     }
+    json_decref(root);
     return 0;
 }
 
