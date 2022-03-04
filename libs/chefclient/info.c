@@ -135,7 +135,16 @@ int chefclient_pack_info(struct chef_info_params* params, struct chef_package** 
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
-        fprintf(stderr, "chefclient_pack_info: curl_easy_perform() failed: %ld\n", httpCode);
+        status = -1;
+        
+        if (httpCode == 404) {
+            fprintf(stderr, "chefclient_pack_info: package not found\n");
+            errno = ENOENT;
+        }
+        else {
+            fprintf(stderr, "chefclient_pack_info: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            errno = EIO;
+        }
         goto cleanup;
     }
 

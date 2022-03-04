@@ -131,7 +131,7 @@ cleanup:
 static int __get_publish_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/PackPublishPrepare?code=DRUMm1zqmmdSEnTxWrWpbTFsh/n31doTmGljVx6MbdZWyEXB2XuzJg=="
+        "https://chef-api.azurewebsites.net/api/PackPublishPrepare"
     );
     urlBuffer[written] = '\0';
     return written == bufferSize - 1 ? -1 : 0;
@@ -140,7 +140,7 @@ static int __get_publish_url(char* urlBuffer, size_t bufferSize)
 static int __get_commit_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1,
-    "https://chef-api.azurewebsites.net/api/PackPublishCommit?code=0rzW29gyJo4zMtU2cjS5Ykrq3df64r9eNn9WMQv9Gsl5LuKSLCWH2Q=="
+    "https://chef-api.azurewebsites.net/api/PackPublishCommit"
     );
     urlBuffer[written] = '\0';
     return written == bufferSize - 1 ? -1 : 0;
