@@ -249,7 +249,7 @@ static int __install_filter(struct VaFs* vafs)
 
 static int __parse_version_string(const char* string, struct chef_vafs_feature_package_version* version)
 {
-    // parse a version string of format "1.2.3(+tag)"
+    // parse a version string of format "1.2(+tag)"
     // where tag is optional
     char* pointer    = (char*)string;
 	char* pointerEnd = strchr(pointer, '.');
@@ -261,24 +261,11 @@ static int __parse_version_string(const char* string, struct chef_vafs_feature_p
     version->major = (int)strtol(pointer, &pointerEnd, 10);
     
     pointer    = pointerEnd + 1;
-	pointerEnd = strchr(pointer, '.');
-	if (pointerEnd == NULL) {
-	    return -1;
-	}
+	pointerEnd = NULL; // consume rest
 	
 	// extract second part
-    version->minor = strtol(pointer, &pointerEnd, 10);
-    
-    pointer    = pointerEnd + 1;
-	pointerEnd = strchr(pointer, '+');
-    
-	// extract the 3rd part, revision
-	// at this point, if pointerEnd is not NULL, then it contains tag
-	if (pointerEnd != NULL) {
-		// pointerEnd is tag
-	}
-
-	version->revision = strtol(pointer, &pointerEnd, 10);
+    version->minor    = strtol(pointer, &pointerEnd, 10);
+    version->revision = 0;
     return 0;
 }
 
