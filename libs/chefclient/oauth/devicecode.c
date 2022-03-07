@@ -21,6 +21,7 @@
 #include "../private.h"
 #include "oauth.h"
 #include <libplatform.h>
+#include <jansson.h>
 #include <regex/regex.h>
 #include <stdlib.h>
 #include <string.h>
@@ -304,88 +305,25 @@ cleanup:
     return status;
 }
 
-static int __get_access_token(const char* response, struct token_context* context)
-{
-    regex_t    regex;
-    regmatch_t matches[2];
-    int        status;
-    int        codeLength;
-
-    status = regcomp(&regex, "\"access_token\":\"([a-zA-Z0-9_\\-]+)\"", REG_EXTENDED);
-    if (status != 0) {
-        fprintf(stderr, "__get_access_token: failed to compile regex: %i\n", status);
-        return status;
-    }
-
-    status = regexec(&regex, response, 2, matches, 0);
-    if (status != 0) {
-        fprintf(stderr, "__get_access_token: failed to match regex: %i\n", status);
-        goto cleanup;
-    }
-
-    codeLength = matches[1].rm_eo - matches[1].rm_so;
-    if (codeLength > 0) {
-        context->access_token = strndup(response + matches[1].rm_so, codeLength);
-    }
-
-cleanup:
-    regfree(&regex);
-    return status;
-}
-
-static int __get_refresh_token(const char* response, struct token_context* context)
-{
-    regex_t    regex;
-    regmatch_t matches[2];
-    int        status;
-    int        codeLength;
-
-    status = regcomp(&regex, "\"refresh_token\":\"([a-zA-Z0-9_\\-]+)\"", REG_EXTENDED);
-    if (status != 0) {
-        fprintf(stderr, "__get_refresh_token: failed to compile regex: %i\n", status);
-        return status;
-    }
-
-    status = regexec(&regex, response, 2, matches, 0);
-    if (status != 0) {
-        fprintf(stderr, "__get_refresh_token: failed to match regex: %i\n", status);
-        goto cleanup;
-    }
-
-    codeLength = matches[1].rm_eo - matches[1].rm_so;
-    if (codeLength > 0) {
-        context->refresh_token = strndup(response + matches[1].rm_so, codeLength);
-    }
-
-cleanup:
-    regfree(&regex);
-    return status;
-}
-
 static int __parse_token_response(const char* responseBuffer, struct token_context* context)
 {
-    int status;
+    json_error_t error;
+    json_t*      root;
+    int          status;
 
     printf("__parse_token_response: %s\n", responseBuffer);
 
-    status = __get_access_token(responseBuffer, context);
-    if (status != 0) {
-        fprintf(stderr, "__parse_token_response: failed to parse access token: %s\n", responseBuffer);
-        return -1;
-    }
-    
-    status = __get_refresh_token(responseBuffer, context);
-    if (status != 0) {
-        fprintf(stderr, "__parse_token_response: failed to parse refresh token: %s\n", responseBuffer);
-        return -1;
-    }
- 
-    status = __get_expires_in(responseBuffer, &context->expires_in);
-    if (status != 0) {
-        fprintf(stderr, "__parse_token_response: failed to parse expiration value: %s\n", responseBuffer);
+    root = json_loads(responseBuffer, 0, &error);
+    if (!root) {
+        fprintf(stderr, "__parse_token_response: failed to parse json: %s\n", error.text);
         return -1;
     }
 
+    context->access_token = strdup(json_string_value(json_object_get(root, "access_token")));
+    context->refresh_token = strdup(json_string_value(json_object_get(root, "refresh_token")));
+    context->expires_in = json_integer_value(json_object_get(root, "expires_in"));
+
+    json_decref(root);
     return 0;
 }
 

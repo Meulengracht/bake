@@ -21,7 +21,7 @@
 
 #include <curl/curl.h>
 
-#define MAX_RESPONSE_SIZE 4096
+#define MAX_RESPONSE_SIZE (4096 * 8)
 
 /**
  * @brief 

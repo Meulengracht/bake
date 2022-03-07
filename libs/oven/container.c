@@ -396,7 +396,7 @@ int oven_pack(struct oven_pack_options* options)
     for (i = 0; options->name[i] && options->name[i] != '.'; i++) {
         tmp[i] = options->name[i];
     }
-    strcat(tmp, ".container");
+    strcat(tmp, ".pack");
 
     // TODO arch
     status = vafs_create(&tmp[0], VaFsArchitecture_X64, &vafs);
@@ -404,7 +404,7 @@ int oven_pack(struct oven_pack_options* options)
         return status;
     }
     
-    // install the compression for the container
+    // install the compression for the pack
     status = __install_filter(vafs);
     if (status) {
         fprintf(stderr, "oven: cannot initialize compression\n");
