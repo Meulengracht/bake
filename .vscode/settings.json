@@ -59,5 +59,6 @@
         "client.h": "c",
         "jansson.h": "c",
         "vafs.h": "c"
-    }
+    },
+    "cmake.installPrefix": "/usr/local/chef"
 }

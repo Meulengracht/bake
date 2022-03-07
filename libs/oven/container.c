@@ -251,23 +251,34 @@ static int __parse_version_string(const char* string, struct chef_vafs_feature_p
 {
     // parse a version string of format "1.2.3(+tag)"
     // where tag is optional
-    const char* pointer = string;
+    char* pointer    = (char*)string;
+	char* pointerEnd = strchr(pointer, '.');
+	if (pointerEnd == NULL) {
+	    return -1;
+	}
+	
+	// extract first part
+    version->major = (int)strtol(pointer, &pointerEnd, 10);
+    
+    pointer    = pointerEnd + 1;
+	pointerEnd = strchr(pointer, '.');
+	if (pointerEnd == NULL) {
+	    return -1;
+	}
+	
+	// extract second part
+    version->minor = strtol(pointer, &pointerEnd, 10);
+    
+    pointer    = pointerEnd + 1;
+	pointerEnd = strchr(pointer, '+');
+    
+	// extract the 3rd part, revision
+	// at this point, if pointerEnd is not NULL, then it contains tag
+	if (pointerEnd != NULL) {
+		// pointerEnd is tag
+	}
 
-    version->major = atoi(pointer);
-    pointer = strchr(pointer, '.');
-    if (pointer == NULL) {
-        fprintf(stderr, "__parse_version_string: invalid version string\n");
-        return -1;
-    }
-
-    version->minor = atoi(pointer + 1);
-    pointer = strchr(pointer + 1, '.');
-    if (pointer == NULL) {
-        fprintf(stderr, "__parse_version_string: invalid version string\n");
-        return -1;
-    }
-
-    version->revision = atoi(pointer + 1);
+	version->revision = strtol(pointer, &pointerEnd, 10);
     return 0;
 }
 
@@ -282,12 +293,12 @@ static int __write_package_metadata(struct VaFs* vafs, struct oven_pack_options*
 
 	// count up the data requirements for the package header
 	featureSize = sizeof(struct chef_vafs_feature_package_header);
-	featureSize += strlen(options->name);
-	featureSize += strlen(options->description);
-	featureSize += strlen(options->license);
-	featureSize += strlen(options->author);
-	featureSize += strlen(options->email);
-	featureSize += strlen(options->url);
+	featureSize += options->name == NULL ? 0 : strlen(options->name);
+	featureSize += options->description == NULL ? 0 : strlen(options->description);
+	featureSize += options->license == NULL ? 0 : strlen(options->license);
+	featureSize += options->author == NULL ? 0 : strlen(options->author);
+	featureSize += options->email == NULL ? 0 : strlen(options->email);
+	featureSize += options->url == NULL ? 0 : strlen(options->url);
 	
 	packageHeader = malloc(featureSize);
 	if (!packageHeader) {
@@ -299,12 +310,12 @@ static int __write_package_metadata(struct VaFs* vafs, struct oven_pack_options*
 	packageHeader->header.Length = featureSize;
 
 	// fill in lengths
-	packageHeader->package_length = strlen(options->name);
-	packageHeader->description_length = strlen(options->description);
-	packageHeader->license_length = strlen(options->license);
-	packageHeader->homepage_length = strlen(options->url);
-	packageHeader->maintainer_length = strlen(options->author);
-	packageHeader->maintainer_email_length = strlen(options->email);
+	packageHeader->package_length          = options->name == NULL ? 0 : strlen(options->name);
+	packageHeader->description_length      = options->description == NULL ? 0 : strlen(options->description);
+	packageHeader->license_length          = options->license == NULL ? 0 : strlen(options->license);
+	packageHeader->homepage_length         = options->url == NULL ? 0 : strlen(options->url);
+	packageHeader->maintainer_length       = options->author == NULL ? 0 : strlen(options->author);
+	packageHeader->maintainer_email_length = options->email == NULL ? 0 : strlen(options->email);
 
 	// fill in data ptrs
 	dataPointer = (char*)packageHeader + sizeof(struct chef_vafs_feature_package_header);
@@ -360,8 +371,13 @@ static int __write_package_metadata(struct VaFs* vafs, struct oven_pack_options*
 	memcpy(&packageVersion->header.Guid, &g_versionGuid, sizeof(struct VaFsGuid));
 	packageVersion->header.Length = featureSize;
 
-	__parse_version_string(options->version, packageVersion);
-	packageVersion->tag_length = tagPointer ? strlen(tagPointer) : 0;
+	status = __parse_version_string(options->version, packageVersion);
+	if (status) {
+		fprintf(stderr, "oven: failed to parse version string %s\n", options->version);
+		return -1;
+	}
+
+	packageVersion->tag_length = tagPointer != NULL ? strlen(tagPointer) : 0;
 
 	// fill in data ptrs
 	if (tagPointer != NULL) {

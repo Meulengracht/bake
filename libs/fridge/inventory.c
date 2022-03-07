@@ -48,6 +48,7 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
     json_t*                  root;
     json_t*                  last_check;
     json_t*                  packs;
+    int                      status;
 
     // instantiate a new inventory
     inventory = __inventory_new();
@@ -60,8 +61,8 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
 
     root = json_loads(json, 0, &error);
     if (!root) {
-        free(inventory);
-        return -1;
+        status = 0;
+        goto exit;
     }
 
     // parse the root members
@@ -75,7 +76,9 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
         size_t pack_count = json_array_size(packs);
         inventory->packs = (struct fridge_inventory_pack*)malloc(sizeof(struct fridge_inventory_pack) * pack_count);
         if (inventory->packs == NULL) {
-            return -1;
+            errno = ENOMEM;
+            status = -1;
+            goto exit;
         }
 
         memset(inventory->packs, 0, sizeof(struct fridge_inventory_pack) * pack_count);
@@ -105,8 +108,9 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
         }
     }
 
+exit:
     *inventoryOut = inventory;
-    return 0;    
+    return 0;
 }
 
 static int __inventory_load_file(const char* path, char** jsonOut)
@@ -117,7 +121,10 @@ static int __inventory_load_file(const char* path, char** jsonOut)
 
     file = fopen(path, "r+");
     if (file == NULL) {
-        return -1;
+        file = fopen(path, "w+");
+        if (file == NULL) {
+            return -1;
+        }
     }
 
     fseek(file, SEEK_END, 0);
@@ -315,7 +322,7 @@ int inventory_save(struct fridge_inventory* inventory, const char* path)
         return -1;
     }
 
-    status = json_dump_file(root, path, JSON_INDENT(4));
+    status = json_dump_file(root, path, JSON_INDENT(2));
     json_decref(root);
     return status;
 }

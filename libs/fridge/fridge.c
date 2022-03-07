@@ -224,31 +224,34 @@ static int __parse_version_string(const char* string, struct chef_version* versi
 {
     // parse a version string of format "1.2.3(+tag)"
     // where tag is optional
-    const char* pointer = string;
-    char* tag;
-
-    version->major = atoi(pointer);
-    pointer = strchr(pointer, '.');
-    if (pointer == NULL) {
-        fprintf(stderr, "__parse_version_string: invalid version string\n");
-        return -1;
-    }
-
-    version->minor = atoi(pointer + 1);
-    pointer = strchr(pointer + 1, '.');
-    if (pointer == NULL) {
-        fprintf(stderr, "__parse_version_string: invalid version string\n");
-        return -1;
-    }
-
-    version->revision = atoi(pointer + 1);
-    pointer = strchr(pointer + 1, '+');
-    if (pointer == NULL) {
-        version->tag = NULL;
-        return 0;
-    }
+    char* pointer    = (char*)string;
+	char* pointerEnd = strchr(pointer, '.');
+	if (pointerEnd == NULL) {
+	    return -1;
+	}
+	
+	// extract first part
+    version->major = (int)strtol(pointer, &pointerEnd, 10);
     
-    version->tag = pointer + 1;
+    pointer    = pointerEnd + 1;
+	pointerEnd = strchr(pointer, '.');
+	if (pointerEnd == NULL) {
+	    return -1;
+	}
+	
+	// extract second part
+    version->minor = strtol(pointer, &pointerEnd, 10);
+    
+    pointer    = pointerEnd + 1;
+	pointerEnd = strchr(pointer, '+');
+    
+	// extract the 3rd part, revision
+	// at this point, if pointerEnd is not NULL, then it contains tag
+	if (pointerEnd != NULL) {
+        version->tag = pointerEnd;
+	}
+
+	version->revision = strtol(pointer, &pointerEnd, 10);
     return 0;
 }
 
