@@ -415,7 +415,7 @@ cleanup:
     return status;
 }
 
-int oven_cleanup(void)
+void oven_cleanup(void)
 {
     if (g_ovenContext.build_root) {
         free((void*)g_ovenContext.build_root);
@@ -426,5 +426,4 @@ int oven_cleanup(void)
         free((void*)g_ovenContext.install_root);
         g_ovenContext.install_root = NULL;
     }
-    return 0;
 }

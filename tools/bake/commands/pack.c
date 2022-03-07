@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/client.h>
 #include <errno.h>
 #include <liboven.h>
 #include <recipe.h>
@@ -30,6 +31,8 @@ static void __print_help(void)
     printf("Options:\n");
     printf("  -n, --name\n");
     printf("      The name for the produced container image (default: recipe-name)\n");
+    printf("  -h, --help\n");
+    printf("      Shows this help message\n");
 }
 
 static void __initialize_generator_options(struct oven_generate_options* options, struct recipe_step* step)
@@ -48,12 +51,36 @@ static void __initialize_build_options(struct oven_build_options* options, struc
 
 static void __initialize_pack_options(struct oven_pack_options* options, char* name, struct recipe* recipe)
 {
-    options->name = name;
+    options->name        = name;
+    options->description = recipe->project.description;
+    options->version     = recipe->project.version;
+    options->license     = recipe->project.license;
+    options->author      = recipe->project.author;
+    options->email       = recipe->project.email;
+    options->url         = recipe->project.url;
 }
 
 static int __fetch_ingredients(struct recipe* recipe)
 {
-    printf("bake: fetch ingredients is not implemented\n");
+    struct list_item* item;
+    int               status;
+
+    if (recipe->ingredients.count == 0) {
+        return 0;
+    }
+
+    // iterate through all ingredients
+    printf("bake: preparing %i ingredients\n", recipe->ingredients.count);
+    for (item = recipe->ingredients.head; item != NULL; item = item->next) {
+        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
+        
+        // fetch the ingredient
+        status = fridge_use_ingredient(&ingredient->ingredient);
+        if (status != 0) {
+            fprintf(stderr, "bake: failed to fetch ingredient %s\n", ingredient->ingredient.name);
+            return -1;
+        }
+    }
     return 0;
 }
 
@@ -167,6 +194,18 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return 1;
     }
 
+    status = fridge_initialize();
+    if (status != 0) {
+        fprintf(stderr, "bake: failed to initialize fridge\n");
+        return -1;
+    }
+
+    status = chefclient_initialize();
+    if (status != 0) {
+        fprintf(stderr, "bake: failed to initialize chef client\n");
+        return -1;
+    }
+
     // fetch ingredients
     status = __fetch_ingredients(recipe);
     if (status) {
@@ -195,10 +234,8 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return status;
     }
 
-    status = oven_cleanup();
-    if (status) {
-        fprintf(stderr, "bake: failed to cleanup target: %s\n", strerror(errno));
-        return status;
-    }
+    oven_cleanup();
+    chefclient_cleanup();
+    fridge_cleanup();
     return 0;
 }

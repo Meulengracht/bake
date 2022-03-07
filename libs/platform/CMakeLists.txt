@@ -11,6 +11,7 @@ add_library(platform STATIC
     setenv.c
     sleep.c
     spawn.c
+    strsplit.c
     unsetenv.c
 )
 target_include_directories(platform PUBLIC include)

@@ -19,11 +19,37 @@
 #ifndef __LIBFRIDGE_H__
 #define __LIBFRIDGE_H__
 
+enum ingredient_source {
+    INGREDIENT_SOURCE_UNKNOWN,
+    INGREDIENT_SOURCE_REPO,
+    INGREDIENT_SOURCE_URL,
+    INGREDIENT_SOURCE_FILE,
+};
+
+struct ingredient_source_repo {
+    const char* channel;
+};
+
+struct ingredient_source_url {
+    const char* url;
+};
+
+struct ingredient_source_file {
+    const char* path;
+};
+
 struct fridge_ingredient {
-    const char* publisher;
     const char* name;
     const char* description;
+    const char* channel;
     const char* version;
+
+    enum ingredient_source source;
+    union {
+        struct ingredient_source_repo repo;
+        struct ingredient_source_url  url;
+        struct ingredient_source_file file;
+    };
 };
 
 /**
@@ -35,10 +61,17 @@ extern int fridge_initialize(void);
 
 /**
  * @brief 
- * 
- * @return int 
  */
-extern int fridge_cleanup(void);
+extern void fridge_cleanup(void);
+
+/**
+ * @brief Stores the given ingredient, making sure we have a local copy of it in
+ * our fridge storage.
+ * 
+ * @param[In] ingredient 
+ * @return int  
+ */
+extern int fridge_store_ingredient(struct fridge_ingredient* ingredient);
 
 /**
  * @brief Tells the fridge that we want to use a specific ingredient for our recipe. If

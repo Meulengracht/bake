@@ -46,3 +46,4 @@ add_subdirectory(chefclient)
 
 # build support libraries for tools
 add_subdirectory(oven)
+add_subdirectory(fridge)

@@ -21,6 +21,9 @@
 
 #include <stddef.h>
 
+extern char** strsplit(const char* text, char sep);
+extern void   strsplit_free(char** strings);
+
 /**
  * @brief Creates the provided directory path, if the directory already exists
  * nothing happens.

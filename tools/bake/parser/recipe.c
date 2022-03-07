@@ -159,6 +159,7 @@ enum state {
     STATE_INGREDIENT_NAME,
     STATE_INGREDIENT_VERSION,
     STATE_INGREDIENT_DESCRIPTION,
+    STATE_INGREDIENT_CHANNEL,
     STATE_INGREDIENT_SOURCE,
 
     STATE_INGREDIENT_SOURCE_TYPE,
@@ -224,20 +225,20 @@ static enum recipe_type __parse_project_type(const char* value)
     }
 }
 
-static enum recipe_ingredient_source_type __parse_ingredient_source_type(const char* value)
+static enum ingredient_source __parse_ingredient_source_type(const char* value)
 {
     if (value == NULL || strlen(value) == 0) {
-        return RECIPE_INGREDIENT_SOURCE_TYPE_REPO;
+        return INGREDIENT_SOURCE_REPO;
     }
 
     if (strcmp(value, "repo") == 0) {
-        return RECIPE_INGREDIENT_SOURCE_TYPE_REPO;
+        return INGREDIENT_SOURCE_REPO;
     } else if (strcmp(value, "url") == 0) {
-        return RECIPE_INGREDIENT_SOURCE_TYPE_URL;
+        return INGREDIENT_SOURCE_URL;
     } else if (strcmp(value, "local") == 0) {
-        return RECIPE_INGREDIENT_SOURCE_TYPE_FILE;
+        return INGREDIENT_SOURCE_FILE;
     } else {
-        return RECIPE_INGREDIENT_SOURCE_TYPE_UNKNOWN;
+        return INGREDIENT_SOURCE_UNKNOWN;
     }
 }
 
@@ -296,31 +297,31 @@ static void __finalize_ingredient(struct parser_state* state)
     struct recipe_ingredient* ingredient;
 
     // we should verify required members of the ingredient before creating a copy
-    if (state->ingredient.name == NULL) {
+    if (state->ingredient.ingredient.name == NULL) {
         fprintf(stderr, "bake: parse error: ingredient name is required\n");
         exit(EXIT_FAILURE);
     }
 
-    if (state->ingredient.version == NULL) {
-        fprintf(stderr, "bake: parse error: ingredient %s: version is required\n", state->ingredient.name);
+    if (state->ingredient.ingredient.channel == NULL) {
+        fprintf(stderr, "bake: parse error: ingredient %s: channel is required\n", state->ingredient.ingredient.name);
         exit(EXIT_FAILURE);
     }
 
-    switch (state->ingredient.type) {
-        case RECIPE_INGREDIENT_SOURCE_TYPE_URL:
-            if (state->ingredient.url.url == NULL) {
-                fprintf(stderr, "bake: parse error: ingredient %s: url is required\n", state->ingredient.name);
+    switch (state->ingredient.ingredient.source) {
+        case INGREDIENT_SOURCE_URL:
+            if (state->ingredient.ingredient.url.url == NULL) {
+                fprintf(stderr, "bake: parse error: ingredient %s: url is required\n", state->ingredient.ingredient.name);
                 exit(EXIT_FAILURE);
             }
             break;
-        case RECIPE_INGREDIENT_SOURCE_TYPE_FILE:
-            if (state->ingredient.file.path == NULL) {
-                fprintf(stderr, "bake: parse error: ingredient %s: file path is required\n", state->ingredient.name);
+        case INGREDIENT_SOURCE_FILE:
+            if (state->ingredient.ingredient.file.path == NULL) {
+                fprintf(stderr, "bake: parse error: ingredient %s: file path is required\n", state->ingredient.ingredient.name);
                 exit(EXIT_FAILURE);
             }
             break;
-        case RECIPE_INGREDIENT_SOURCE_TYPE_UNKNOWN:
-            fprintf(stderr, "bake: parse error: ingredient %s: type is not supported\n", state->ingredient.name);
+        case INGREDIENT_SOURCE_UNKNOWN:
+            fprintf(stderr, "bake: parse error: ingredient %s: type is not supported\n", state->ingredient.ingredient.name);
             exit(EXIT_FAILURE);
             break;
             
@@ -691,6 +692,9 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else if (strcmp(value, "description") == 0) {
                         s->state = STATE_INGREDIENT_DESCRIPTION;
                     }
+                    else if (strcmp(value, "channel") == 0) {
+                        s->state = STATE_INGREDIENT_CHANNEL;
+                    }
                     else if (strcmp(value, "version") == 0) {
                         s->state = STATE_INGREDIENT_VERSION;
                     }
@@ -711,9 +715,10 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_NAME, ingredient.name, __parse_string)
-        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_DESCRIPTION, ingredient.description, __parse_string)
-        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_VERSION, ingredient.version, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_NAME, ingredient.ingredient.name, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_DESCRIPTION, ingredient.ingredient.description, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_CHANNEL, ingredient.ingredient.channel, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_VERSION, ingredient.ingredient.version, __parse_string)
 
         case STATE_INGREDIENT_SOURCE:
             switch (event->type) {
@@ -744,9 +749,9 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_TYPE, ingredient.type, __parse_ingredient_source_type)
-        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_CHANNEL, ingredient.repo.channel, __parse_string)
-        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_URL, ingredient.url.url, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_TYPE, ingredient.ingredient.source, __parse_ingredient_source_type)
+        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_CHANNEL, ingredient.ingredient.repo.channel, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT_SOURCE, STATE_INGREDIENT_SOURCE_URL, ingredient.ingredient.url.url, __parse_string)
 
         __consume_sequence_mapped(STATE_SECTION, STATE_RECIPE_LIST, STATE_RECIPE)
 
@@ -992,15 +997,16 @@ static void __destroy_project(struct recipe_project* project)
 
 static void __destroy_ingredient(struct recipe_ingredient* ingredient)
 {
-    free((void*)ingredient->name);
-    free((void*)ingredient->version);
-    free((void*)ingredient->description);
+    free((void*)ingredient->ingredient.name);
+    free((void*)ingredient->ingredient.version);
+    free((void*)ingredient->ingredient.channel);
+    free((void*)ingredient->ingredient.description);
 
-    if (ingredient->type == RECIPE_INGREDIENT_SOURCE_TYPE_URL) {
-        free((void*)ingredient->url.url);
+    if (ingredient->ingredient.source == INGREDIENT_SOURCE_URL) {
+        free((void*)ingredient->ingredient.url.url);
     }
-    else if (ingredient->type == RECIPE_INGREDIENT_SOURCE_TYPE_FILE) {
-        free((void*)ingredient->file.path);
+    else if (ingredient->ingredient.source == INGREDIENT_SOURCE_FILE) {
+        free((void*)ingredient->ingredient.file.path);
     }
     free(ingredient);
 }

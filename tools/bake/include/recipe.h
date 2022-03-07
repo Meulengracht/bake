@@ -20,6 +20,7 @@
 #define __BAKE_RECIPE_H__
 
 #include <stddef.h>
+#include <libfridge.h>
 #include <liboven.h>
 #include <list.h>
 
@@ -61,36 +62,9 @@ struct recipe_project {
     const char* url;
 };
 
-enum recipe_ingredient_source_type {
-    RECIPE_INGREDIENT_SOURCE_TYPE_UNKNOWN,
-    RECIPE_INGREDIENT_SOURCE_TYPE_REPO,
-    RECIPE_INGREDIENT_SOURCE_TYPE_URL,
-    RECIPE_INGREDIENT_SOURCE_TYPE_FILE,
-};
-
-struct recipe_ingredient_source_repo {
-    const char* channel;
-};
-
-struct recipe_ingredient_source_url {
-    const char* url;
-};
-
-struct recipe_ingredient_source_file {
-    const char* path;
-};
-
 struct recipe_ingredient {
-    struct list_item list_header;
-    const char*      name;
-    const char*      version;
-    const char*      description;
-    enum recipe_ingredient_source_type type;
-    union {
-        struct recipe_ingredient_source_repo repo;
-        struct recipe_ingredient_source_url  url;
-        struct recipe_ingredient_source_file file;
-    };
+    struct list_item         list_header;
+    struct fridge_ingredient ingredient;
 };
 
 enum recipe_command_type {

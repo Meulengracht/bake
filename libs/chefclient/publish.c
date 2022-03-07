@@ -42,7 +42,6 @@ static json_t* __create_pack_info(struct chef_publish_params* params)
         return NULL;
     }
 
-    json_object_set_new(packInfo, "publisher", json_string(params->package->publisher));
     json_object_set_new(packInfo, "name", json_string(params->package->package));
     json_object_set_new(packInfo, "description", json_string(params->package->description));
     json_object_set_new(packInfo, "homepage", json_string(params->package->homepage));

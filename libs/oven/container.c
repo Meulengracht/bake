@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <chef/utils_vafs.h>
 #include <liboven.h>
 #include <libplatform.h>
 #include <stdio.h>
@@ -38,6 +39,8 @@ struct VaFsFeatureFilter {
 
 static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
 static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
+static struct VaFsGuid g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
+static struct VaFsGuid g_versionGuid   = CHEF_PACKAGE_VERSION_GUID;
 
 
 static const char* __get_relative_path(
@@ -244,6 +247,135 @@ static int __install_filter(struct VaFs* vafs)
     return __set_filter_ops(vafs, &filter);
 }
 
+static int __parse_version_string(const char* string, struct chef_vafs_feature_package_version* version)
+{
+    // parse a version string of format "1.2.3(+tag)"
+    // where tag is optional
+    const char* pointer = string;
+
+    version->major = atoi(pointer);
+    pointer = strchr(pointer, '.');
+    if (pointer == NULL) {
+        fprintf(stderr, "__parse_version_string: invalid version string\n");
+        return -1;
+    }
+
+    version->minor = atoi(pointer + 1);
+    pointer = strchr(pointer + 1, '.');
+    if (pointer == NULL) {
+        fprintf(stderr, "__parse_version_string: invalid version string\n");
+        return -1;
+    }
+
+    version->revision = atoi(pointer + 1);
+    return 0;
+}
+
+static int __write_package_metadata(struct VaFs* vafs, struct oven_pack_options* options)
+{
+	struct chef_vafs_feature_package_header*  packageHeader;
+	struct chef_vafs_feature_package_version* packageVersion;
+	size_t                                    featureSize;
+	char*                                     dataPointer;
+	char*                                     tagPointer;
+	int                                       status;
+
+	// count up the data requirements for the package header
+	featureSize = sizeof(struct chef_vafs_feature_package_header);
+	featureSize += strlen(options->name);
+	featureSize += strlen(options->description);
+	featureSize += strlen(options->license);
+	featureSize += strlen(options->author);
+	featureSize += strlen(options->email);
+	featureSize += strlen(options->url);
+	
+	packageHeader = malloc(featureSize);
+	if (!packageHeader) {
+		fprintf(stderr, "oven: failed to allocate package header\n");
+		return -1;
+	}
+
+	memcpy(&packageHeader->header.Guid, &g_headerGuid, sizeof(struct VaFsGuid));
+	packageHeader->header.Length = featureSize;
+
+	// fill in lengths
+	packageHeader->package_length = strlen(options->name);
+	packageHeader->description_length = strlen(options->description);
+	packageHeader->license_length = strlen(options->license);
+	packageHeader->homepage_length = strlen(options->url);
+	packageHeader->maintainer_length = strlen(options->author);
+	packageHeader->maintainer_email_length = strlen(options->email);
+
+	// fill in data ptrs
+	dataPointer = (char*)packageHeader + sizeof(struct chef_vafs_feature_package_header);
+
+	// required
+	memcpy(dataPointer, options->name, packageHeader->package_length);
+	dataPointer += packageHeader->package_length;
+
+	if (options->description) {
+		memcpy(dataPointer, options->description, packageHeader->description_length);
+		dataPointer += packageHeader->description_length;
+	}
+
+	if (options->license) {
+		memcpy(dataPointer, options->license, packageHeader->license_length);
+		dataPointer += packageHeader->license_length;
+	}
+
+	if (options->url) {
+		memcpy(dataPointer, options->url, packageHeader->homepage_length);
+		dataPointer += packageHeader->homepage_length;
+	}
+	
+	// required
+	memcpy(dataPointer, options->author, packageHeader->maintainer_length);
+	dataPointer += packageHeader->maintainer_length;
+
+	// required
+	memcpy(dataPointer, options->email, packageHeader->maintainer_email_length);
+	dataPointer += packageHeader->maintainer_email_length;
+
+	// write the package header
+	status = vafs_feature_add(vafs, &packageHeader->header);
+	free(packageHeader);
+	if (status) {
+		fprintf(stderr, "oven: failed to write package header\n");
+		return -1;
+	}
+
+	// create the package version
+	featureSize = sizeof(struct chef_vafs_feature_package_version);
+	tagPointer = strchr(options->version, '+');
+	if (tagPointer != NULL) {
+		featureSize += strlen(tagPointer);
+	}
+
+	packageVersion = malloc(featureSize);
+	if (!packageVersion) {
+		fprintf(stderr, "oven: failed to allocate package version\n");
+		return -1;
+	}
+
+	memcpy(&packageVersion->header.Guid, &g_versionGuid, sizeof(struct VaFsGuid));
+	packageVersion->header.Length = featureSize;
+
+	__parse_version_string(options->version, packageVersion);
+	packageVersion->tag_length = tagPointer ? strlen(tagPointer) : 0;
+
+	// fill in data ptrs
+	if (tagPointer != NULL) {
+		dataPointer = (char*)packageVersion + sizeof(struct chef_vafs_feature_package_version);
+		memcpy(dataPointer, tagPointer, packageVersion->tag_length);
+		dataPointer += packageVersion->tag_length;
+	}
+
+	// write the package header
+	status = vafs_feature_add(vafs, &packageVersion->header);
+	free(packageVersion);
+	return status;
+}
+
 int oven_pack(struct oven_pack_options* options)
 {
     struct VaFsDirectoryHandle* directoryHandle;
@@ -286,6 +418,11 @@ int oven_pack(struct oven_pack_options* options)
     if (status != 0) {
         fprintf(stderr, "oven: unable to write directory\n");
     }
+
+	status = __write_package_metadata(vafs, options);
+	if (status != 0) {
+		fprintf(stderr, "oven: unable to write package metadata\n");
+	}
 
     status = vafs_close(vafs);
     return status;

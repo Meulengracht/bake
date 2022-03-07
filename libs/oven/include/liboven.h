@@ -51,6 +51,12 @@ struct oven_build_options {
 
 struct oven_pack_options {
     const char* name;
+    const char* description;
+    const char* version;
+    const char* license;
+    const char* author;
+    const char* email;
+    const char* url;
 };
 
 /**
@@ -100,9 +106,7 @@ extern int oven_pack(struct oven_pack_options* options);
 
 /**
  * @brief 
- * 
- * @return int 
  */
-extern int oven_cleanup(void);
+extern void oven_cleanup(void);
 
 #endif //!__LIBOVEN_H__

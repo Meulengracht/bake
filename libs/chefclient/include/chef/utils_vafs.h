@@ -30,7 +30,6 @@ struct chef_vafs_feature_package_header {
 
     // lengths of the data for each string, none of the strings
     // are zero terminated, which must be added at load
-    size_t                   publisher_length;
     size_t                   package_length;
     size_t                   description_length;
     size_t                   homepage_length;

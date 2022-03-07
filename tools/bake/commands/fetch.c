@@ -16,9 +16,66 @@
  * 
  */
 
+#include <chef/client.h>
+#include <libfridge.h>
 #include <recipe.h>
+#include <stdio.h>
+#include <string.h>
+
+static void __print_help(void)
+{
+    printf("Usage: bake fetch [options]\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -h, --help\n");
+    printf("      Shows this help message\n");
+}
 
 int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    return -1;
+    struct list_item* item;
+    int               status;
+
+    // handle individual help command
+    if (argc > 2) {
+        for (int i = 2; i < argc; i++) {
+            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+                __print_help();
+                return 0;
+            }
+        }
+    }
+
+    if (recipe == NULL) {
+        fprintf(stderr, "bake: no recipe specified\n");
+        return -1;
+    }
+    
+    status = fridge_initialize();
+    if (status != 0) {
+        fprintf(stderr, "bake: failed to initialize fridge\n");
+        return -1;
+    }
+
+    status = chefclient_initialize();
+    if (status != 0) {
+        fprintf(stderr, "bake: failed to initialize chef client\n");
+        return -1;
+    }
+
+    // iterate through all ingredients
+    printf("bake: fetching %i ingredients\n", recipe->ingredients.count);
+    for (item = recipe->ingredients.head; item != NULL; item = item->next) {
+        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
+        
+        // fetch the ingredient
+        status = fridge_store_ingredient(&ingredient->ingredient);
+        if (status != 0) {
+            fprintf(stderr, "bake: failed to fetch ingredient %s\n", ingredient->ingredient.name);
+        }
+    }
+
+    chefclient_cleanup();
+    fridge_cleanup();
+    return 0;
 }
