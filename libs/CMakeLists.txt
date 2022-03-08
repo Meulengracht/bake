@@ -6,9 +6,6 @@ add_subdirectory(platform)
 add_subdirectory(vafs)
 add_subdirectory(yaml)
 
-# build regex library
-add_subdirectory(regex)
-
 # build zstd
 set(ZSTD_LEGACY_SUPPORT OFF CACHE BOOL "Disable legacy support for zstd")
 set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "Do not build zstd programs")

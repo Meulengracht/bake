@@ -22,7 +22,6 @@
 #include "oauth.h"
 #include <libplatform.h>
 #include <jansson.h>
-#include <regex/regex.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -72,179 +71,27 @@ static int __get_token_auth_body(const char* deviceCode, char* buffer, size_t ma
     return written < maxLength ? 0 : -1;
 }
 
-static int __get_usercode(const char* response, struct devicecode_context* context)
-{
-    regex_t    regex;
-    regmatch_t matches[2];
-    int        status;
-    int        codeLength;
-
-    status = regcomp(&regex, "\"user_code\":\"([a-zA-Z0-9]+)\"", REG_EXTENDED);
-    if (status != 0) {
-        fprintf(stderr, "__get_usercode: failed to compile regex: %i\n", status);
-        return status;
-    }
-
-    status = regexec(&regex, response, 2, matches, 0);
-    if (status != 0) {
-        fprintf(stderr, "__get_usercode: failed to match regex: %i\n", status);
-        goto cleanup;
-    }
-
-    codeLength = matches[1].rm_eo - matches[1].rm_so;
-    if (codeLength > 0) {
-        context->user_code = strndup(response + matches[1].rm_so, codeLength);
-    }
-
-cleanup:
-    regfree(&regex);
-    return status;
-}
-
-static int __get_devicecode(const char* response, struct devicecode_context* context)
-{
-    regex_t    regex;
-    regmatch_t matches[2];
-    int        status;
-    int        codeLength;
-
-    status = regcomp(&regex, "\"device_code\":\"([a-zA-Z0-9_\\-]+)\"", REG_EXTENDED);
-    if (status != 0) {
-        fprintf(stderr, "__get_devicecode: failed to compile regex: %i\n", status);
-        return status;
-    }
-
-    status = regexec(&regex, response, 2, matches, 0);
-    if (status != 0) {
-        fprintf(stderr, "__get_devicecode: failed to match regex: %i\n", status);
-        goto cleanup;
-    }
-
-    codeLength = matches[1].rm_eo - matches[1].rm_so;
-    if (codeLength > 0) {
-        context->device_code = strndup(response + matches[1].rm_so, codeLength);
-    }
-
-cleanup:
-    regfree(&regex);
-    return status;
-}
-
-static int __get_verification_url(const char* response, struct devicecode_context* context)
-{
-    regex_t    regex;
-    regmatch_t matches[2];
-    int        status;
-    int        urlLength;
-
-    status = regcomp(&regex, "\"verification_uri\":\"([a-zA-Z0-9\\-_:\\/\\.]+)\"", REG_EXTENDED);
-    if (status != 0) {
-        return status;
-    }
-
-    status = regexec(&regex, response, 2, matches, 0);
-    if (status != 0) {
-        goto cleanup;
-    }
-
-    urlLength = matches[1].rm_eo - matches[1].rm_so;
-    if (urlLength > 0) {
-        context->verification_uri = strndup(response + matches[1].rm_so, urlLength);
-    }
-
-cleanup:
-    regfree(&regex);
-    return status;
-}
-
-static int __get_expires_in(const char* response, int* expiresValue)
-{
-    regex_t    regex;
-    regmatch_t matches[2];
-    int        status;
-    int        valueLength;
-
-    status = regcomp(&regex, "\"expires_in\":([0-9]+)", REG_EXTENDED);
-    if (status != 0) {
-        return status;
-    }
-
-    status = regexec(&regex, response, 2, matches, 0);
-    if (status != 0) {
-        goto cleanup;
-    }
-
-    valueLength = matches[1].rm_eo - matches[1].rm_so;
-    if (valueLength > 0) {
-        *expiresValue = atoi(response + matches[1].rm_so);
-    }
-
-cleanup:
-    regfree(&regex);
-    return status;
-}
-
-static int __get_interval(const char* response, struct devicecode_context* context)
-{
-    regex_t    regex;
-    regmatch_t matches[2];
-    int        status;
-    int        valueLength;
-
-    status = regcomp(&regex, "\"interval\":([0-9]+)", REG_EXTENDED);
-    if (status != 0) {
-        return status;
-    }
-
-    status = regexec(&regex, response, 2, matches, 0);
-    if (status != 0) {
-        goto cleanup;
-    }
-
-    valueLength = matches[1].rm_eo - matches[1].rm_so;
-    if (valueLength > 0) {
-        context->interval = atoi(response + matches[1].rm_so);
-    }
-
-cleanup:
-    regfree(&regex);
-    return status;
-}
-
 static int __parse_challenge_response(const char* responseBuffer, struct devicecode_context* context)
 {
-    int status;
+    json_error_t error;
+    json_t*      root;
+    int          status;
 
-    status = __get_usercode(responseBuffer, context);
-    if (status != 0) {
-        fprintf(stderr, "__parse_challenge_response: failed to parse usercode: %s\n", responseBuffer);
-        return -1;
-    }
-    
-    status = __get_devicecode(responseBuffer, context);
-    if (status != 0) {
-        fprintf(stderr, "__parse_challenge_response: failed to parse devicecode: %s\n", responseBuffer);
-        return -1;
-    }
-    
-    status = __get_verification_url(responseBuffer, context);
-    if (status != 0) {
-        fprintf(stderr, "__parse_challenge_response: failed to parse verification url: %s\n", responseBuffer);
+    printf("__parse_challenge_response: %s\n", responseBuffer);
+
+    root = json_loads(responseBuffer, 0, &error);
+    if (!root) {
+        fprintf(stderr, "__parse_challenge_response: failed to parse json: %s\n", error.text);
         return -1;
     }
 
-    status = __get_expires_in(responseBuffer, &context->expires_in);
-    if (status != 0) {
-        fprintf(stderr, "__parse_challenge_response: failed to parse expiration value: %s\n", responseBuffer);
-        return -1;
-    }
-    
-    status = __get_interval(responseBuffer, context);
-    if (status != 0) {
-        fprintf(stderr, "__parse_challenge_response: failed to parse interval: %s\n", responseBuffer);
-        return -1;
-    }
-    
+    context->user_code = strdup(json_string_value(json_object_get(root, "user_code")));
+    context->device_code = strdup(json_string_value(json_object_get(root, "device_code")));
+    context->verification_uri = strdup(json_string_value(json_object_get(root, "verification_uri")));
+    context->expires_in = json_integer_value(json_object_get(root, "expires_in"));
+    context->interval = json_integer_value(json_object_get(root, "interval"));
+
+    json_decref(root);
     return 0;
 }
 
@@ -329,36 +176,30 @@ static int __parse_token_response(const char* responseBuffer, struct token_conte
 
 static void __parse_token_error_response(const char* responseBuffer)
 {
-    regex_t    regex;
-    regmatch_t matches[2];
-    int        status;
-    int        errorLength;
+    json_error_t error;
+    json_t*      root;
+    int          status;
+    const char*  statusText;
 
-    status = regcomp(&regex, "\"error\":\"([a-zA-Z_]+)\"", REG_EXTENDED);
-    if (status != 0) {
+    printf("__parse_token_error_response: %s\n", responseBuffer);
+
+    root = json_loads(responseBuffer, 0, &error);
+    if (!root) {
+        fprintf(stderr, "__parse_token_error_response: failed to parse json: %s\n", error.text);
         return;
     }
 
-    status = regexec(&regex, responseBuffer, 2, matches, 0);
-    if (status != 0) {
-        goto cleanup;
+    statusText = json_string_value(json_object_get(root, "access_token"));
+    if (strncmp(statusText, "authorization_pending", 21) == 0) {
+        errno = EAGAIN;
     }
-
-    errorLength = matches[1].rm_eo - matches[1].rm_so;
-    if (errorLength > 0) {
-        if (strncmp(responseBuffer + matches[1].rm_so, "authorization_pending", errorLength) == 0) {
-            errno = EAGAIN;
-        }
-        else if (strncmp(responseBuffer + matches[1].rm_so, "slow_down", errorLength) == 0) {
-            errno = EBUSY;
-        }
-        else {
-            errno = EPIPE;
-        }
+    else if (strncmp(statusText, "slow_down", 9) == 0) {
+        errno = EBUSY;
     }
-
-cleanup:
-    regfree(&regex);
+    else {
+        errno = EPIPE;
+    }
+    json_decref(root);
 }
 
 static int __deviceflow_get_token(struct devicecode_context* deviceContext, struct token_context* tokenContext)
