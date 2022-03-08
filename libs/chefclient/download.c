@@ -34,7 +34,7 @@ static int __get_download_url(struct chef_download_params* params, char* urlBuff
 {
     // todo specific version support
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/PackDownload?publisher=%s&name=%s&channel=%s",
+        "https://chef-api.azurewebsites.net/api/pack/download?publisher=%s&name=%s&channel=%s",
         params->publisher, params->package, params->channel
     );
     urlBuffer[written] = '\0';

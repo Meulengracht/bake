@@ -23,11 +23,10 @@
 #include "private.h"
 #include <string.h>
 
-static int __get_info_url(struct chef_info_params* params, char* urlBuffer, size_t bufferSize)
+static int __get_info_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/info?publisher=%s&name=%s",
-        params->publisher, params->package
+        "https://chef-api.azurewebsites.net/api/account"
     );
     urlBuffer[written] = '\0';
     return written == bufferSize - 1 ? -1 : 0;
@@ -154,4 +153,19 @@ int chefclient_pack_info(struct chef_info_params* params, struct chef_package** 
 cleanup:
     curl_easy_cleanup(curl);
     return status;
+}
+
+int chef_account_get(struct chef_account** accountOut)
+{
+
+}
+
+int chef_account_update(struct chef_account* account)
+{
+
+}
+
+void chef_account_free(struct chef_account* account)
+{
+
 }

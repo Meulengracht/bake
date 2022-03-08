@@ -118,7 +118,7 @@ static int __parse_pack_response(const char* response, struct pack_response* pac
 static int __get_publish_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/PackPublishPrepare"
+        "https://chef-api.azurewebsites.net/api/pack/publish"
     );
     urlBuffer[written] = '\0';
     return written == bufferSize - 1 ? -1 : 0;
@@ -127,7 +127,7 @@ static int __get_publish_url(char* urlBuffer, size_t bufferSize)
 static int __get_commit_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1,
-    "https://chef-api.azurewebsites.net/api/PackPublishCommit"
+        "https://chef-api.azurewebsites.net/api/pack/commit"
     );
     urlBuffer[written] = '\0';
     return written == bufferSize - 1 ? -1 : 0;

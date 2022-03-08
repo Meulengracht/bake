@@ -27,7 +27,7 @@
 extern int oauth_deviceflow_start(struct token_context* tokenContexth);
 
 static struct token_context g_tokenContext = { 0 };
-static char                 g_token[1024]  = { 0 };
+static char                 g_token[4096]  = { 0 };
 
 int oauth_login(enum oauth_flow_type flowType)
 {
@@ -38,7 +38,8 @@ int oauth_login(enum oauth_flow_type flowType)
     }
 
     if (!status) {
-        sprintf(&g_token[0], "access_token: %s", g_tokenContext.access_token);
+        // build the auth bearer token for http header
+        snprintf(g_token, sizeof(g_token), "Bearer %s", g_tokenContext.access_token);
     }
 
     return status;
