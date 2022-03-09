@@ -16,38 +16,27 @@
  * 
  */
 
-#ifndef __LIBCHEF_OAUTH_H__
-#define __LIBCHEF_OAUTH_H__
+#include <libplatform.h>
 
-enum oauth_flow_type {
-    OAUTH_FLOW_DEVICECODE
-};
+#ifdef __linux__
 
-struct token_context {
-    const char* access_token;
-    const char* id_token;
-    int         expires_in;
-};
+#include <pwd.h>
+#include <string.h>
+#include <unistd.h>
 
-/**
- * @brief 
- * 
- * @param flowType 
- * @return int 
- */
-extern int oauth_login(enum oauth_flow_type flowType);
+int platform_getuserdir(char* buffer, size_t length)
+{
+    struct passwd* pw;
+    
+    pw = getpwuid(getuid());
+    if (pw == NULL) {
+        return -1;
+    }
 
-/**
- * @brief 
- * 
- */
-extern void oauth_logout(void);
+    strncpy(buffer, pw->pw_dir, length);
+    return 0;
+}
 
-/**
- * @brief 
- * 
- * @param curl 
- */
-extern void oauth_set_authentication(void** headerlist);
-
-#endif //!__LIBCHEF_OAUTH_H__
+#else
+#error "platform_getuserdir: not implemented for this platform"
+#endif

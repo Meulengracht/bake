@@ -152,13 +152,13 @@ int account_main(int argc, char** argv)
                 return 0;
             }
             else {
-                if (command != NULL) {
+                if (command == NULL) {
                     command = argv[i];
                 }
-                else if (parameter != NULL) {
+                else if (parameter == NULL) {
                     parameter = argv[i];
                 }
-                else if (value != NULL) {
+                else if (value == NULL) {
                     value = argv[i];
                 }
             }

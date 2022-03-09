@@ -57,9 +57,7 @@ static int __parse_account(const char* response, struct chef_account** accountOu
     struct chef_account* account;
     json_error_t         error;
     json_t*              root;
-    json_t*              channels;
-
-    printf("__parse_account: %s\n", response);
+    json_t*              publisherName;
 
     root = json_loads(response, 0, &error);
     if (!root) {
@@ -73,7 +71,12 @@ static int __parse_account(const char* response, struct chef_account** accountOu
     }
 
     // parse the account
-    account->publisher_name = strdup(json_string_value(json_object_get(root, "publisher-name")));
+    publisherName = json_object_get(root, "publisher-name");
+    if (publisherName) {
+        account->publisher_name = strdup(json_string_value(publisherName));
+    }
+
+    *accountOut = account;
 
     json_decref(root);
     return 0;
@@ -129,7 +132,7 @@ int __get_account(struct chef_account** accountOut)
             errno = ENOENT;
         }
         else {
-            fprintf(stderr, "__get_account: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            fprintf(stderr, "__get_account: http error %ld\n", httpCode);
             errno = EIO;
         }
         goto cleanup;

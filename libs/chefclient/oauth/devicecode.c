@@ -47,7 +47,7 @@ static int __get_device_auth_body(char* buffer, size_t maxLength)
     int written = snprintf(buffer, maxLength,
         "client_id=%s&scope=%s",
         chef_client_id(),
-        "user.read%20openid%20profile"
+        "email%20profile%20User.Read%20openid"
     );
     return written < maxLength ? 0 : -1;
 }
@@ -76,8 +76,6 @@ static int __parse_challenge_response(const char* responseBuffer, struct devicec
     json_error_t error;
     json_t*      root;
     int          status;
-
-    printf("__parse_challenge_response: %s\n", responseBuffer);
 
     root = json_loads(responseBuffer, 0, &error);
     if (!root) {
@@ -167,17 +165,15 @@ static int __parse_token_response(const char* responseBuffer, struct token_conte
     json_t*      root;
     int          status;
 
-    printf("__parse_token_response: %s\n", responseBuffer);
-
     root = json_loads(responseBuffer, 0, &error);
     if (!root) {
         fprintf(stderr, "__parse_token_response: failed to parse json: %s\n", error.text);
         return -1;
     }
 
-    context->access_token = strdup(json_string_value(json_object_get(root, "access_token")));
-    context->refresh_token = strdup(json_string_value(json_object_get(root, "refresh_token")));
     context->expires_in = json_integer_value(json_object_get(root, "expires_in"));
+    context->access_token = strdup(json_string_value(json_object_get(root, "access_token")));
+    context->id_token = strdup(json_string_value(json_object_get(root, "id_token")));
 
     json_decref(root);
     return 0;
@@ -190,15 +186,13 @@ static void __parse_token_error_response(const char* responseBuffer)
     int          status;
     const char*  statusText;
 
-    printf("__parse_token_error_response: %s\n", responseBuffer);
-
     root = json_loads(responseBuffer, 0, &error);
     if (!root) {
         fprintf(stderr, "__parse_token_error_response: failed to parse json: %s\n", error.text);
         return;
     }
 
-    statusText = json_string_value(json_object_get(root, "access_token"));
+    statusText = json_string_value(json_object_get(root, "error"));
     if (strncmp(statusText, "authorization_pending", 21) == 0) {
         errno = EAGAIN;
     }

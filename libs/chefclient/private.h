@@ -30,7 +30,6 @@
  */
 extern const char* chef_tenant_id(void);
 
-
 /**
  * @brief 
  * 

@@ -21,6 +21,8 @@
 #include <errno.h>
 #include "oauth/oauth.h"
 #include "private.h"
+#include <libplatform.h>
+#include <jansson.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wolfssl/ssl.h>
@@ -31,8 +33,101 @@ static char*       g_curlresponseBuffer = NULL;
 static char*       g_curlErrorBuffer    = NULL; // CURL_ERROR_SIZE
 static int         g_curlTrace          = 0;
 
+// settings object
+json_t* g_chefSettings = NULL;
+
+static void __initialize_settings(void)
+{
+    g_chefSettings = json_object();
+}
+
+static int __load_settings(void)
+{
+    json_error_t error;
+    char*        path;
+    int          status;
+
+    if (g_chefSettings != NULL) {
+        return 0;
+    }
+
+    path = malloc(PATH_MAX);
+    if (path == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    status = platform_getuserdir(path, PATH_MAX);
+    if (status != 0) {
+        free(path);
+        return -1;
+    }
+
+    // append filename
+    strcat(path, "/.chef/settings.json");
+
+    g_chefSettings = json_load_file(path, 0, &error);
+    if (g_chefSettings == NULL) {
+        // handle if file not found
+        if (json_error_code(&error) == json_error_cannot_open_file) {
+            __initialize_settings();
+        }
+        else {
+            free(path);
+            return -1;
+        }
+    }
+    free(path);
+    return 0;
+}
+
+static int __save_settings(void)
+{
+    char* path;
+    int   status;
+
+    if (g_chefSettings == NULL) {
+        return 0;
+    }
+
+    path = malloc(PATH_MAX);
+    if (path == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    status = platform_getuserdir(path, PATH_MAX);
+    if (status != 0) {
+        fprintf(stderr, "__save_settings: failed to get user directory: %s\n", strerror(errno));
+        free(path);
+        return -1;
+    }
+
+    // append directory, and make sure directory exists
+    strcat(path, "/.chef");
+    status = platform_mkdir(path);
+    if (status != 0) {
+        fprintf(stderr, "__save_settings: failed to create directory: %s\n", strerror(errno));
+        free(path);
+        return -1;
+    }
+
+    // append filename
+    strcat(path, "/settings.json");
+
+    status = json_dump_file(g_chefSettings, path, JSON_INDENT(2));
+    if (status != 0) {
+        free(path);
+        return -1;
+    }
+    free(path);
+    return 0;
+}
+
 int chefclient_initialize(void)
 {
+    int status;
+
     g_curlresponseBuffer = (char*)malloc(MAX_RESPONSE_SIZE);
     if (g_curlresponseBuffer == NULL) {
         fprintf(stderr, "chefclient_initialize: failed to allocate response buffer\n");
@@ -48,11 +143,22 @@ int chefclient_initialize(void)
     // required on windows
     curl_global_init(CURL_GLOBAL_ALL);
 
+    // load settings
+    status = __load_settings();
+    if (status != 0) {
+        fprintf(stderr, "chefclient_initialize: failed to load settings\n");
+        return -1;
+    }
     return 0;
 }
 
 void chefclient_cleanup(void)
 {
+    // save settings
+    if (__save_settings() != 0) {
+        fprintf(stderr, "chefclient_cleanup: failed to save settings\n");
+    }
+
     // required on windows
     curl_global_cleanup();
 
