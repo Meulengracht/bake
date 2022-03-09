@@ -30,9 +30,11 @@ static void __print_help(void)
     printf("Options:\n");
     printf("  -t, --type\n");
     printf("      Possible recipe types are {ingredient, app}\n");
+    printf("  -n, --name\n");
+    printf("      Name of the recipe\n");
 }
 
-static int __write_recipe(enum recipe_type type)
+static int __write_recipe(enum recipe_type type, char* output)
 {
     const char* recipe = NULL;
     FILE*       file;
@@ -46,28 +48,29 @@ static int __write_recipe(enum recipe_type type)
             break;
     }
 
-    file = fopen("recipe.yaml", "r");
+    file = fopen(output, "r");
     if (file) {
         fclose(file);
         printf("bake: recipe already exists, please remove it first.\n");
         return -1;
     }
 
-    file = fopen("recipe.yaml", "w");
+    file = fopen(output, "w");
     if (!file) {
-        printf("bake: failed to create recipe.yaml\n");
+        printf("bake: failed to create %s\n", output);
         return -1;
     }
 
     fwrite(recipe, strlen(recipe), 1, file);
     fclose(file);
-    printf("recipe.yaml created.\n");
+    printf("%s created.\n", output);
     return 0;
 }
 
 int init_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    enum recipe_type type = RECIPE_TYPE_INGREDIENT;
+    enum recipe_type type   = RECIPE_TYPE_INGREDIENT;
+    char*            output = "recipe.yaml";
 
     (void)recipe;
 
@@ -95,7 +98,16 @@ int init_main(int argc, char** argv, char** envp, struct recipe* recipe)
                     return -1;
                 }
             }
+            else if (!strcmp(argv[i], "-n") || !strcmp(argv[i], "--name")) {
+                if (i + 1 < argc) {
+                    output = argv[i + 1];
+                }
+                else {
+                    printf("bake: missing recipe name for --name\n");
+                    return -1;
+                }
+            }
         }
     }
-    return __write_recipe(type);
+    return __write_recipe(type, output);
 }

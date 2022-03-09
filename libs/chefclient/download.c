@@ -136,7 +136,7 @@ static int __download_file(const char* filePath, struct pack_response* context)
         fprintf(stderr, "__download_file: curl_easy_init() failed\n");
         return -1;
     }
-    chef_set_curl_common(curl, NULL, 0, 1, 1);
+    chef_set_curl_common(curl, NULL, 0, 1, 0);
 
     // initialize the output file
     file = fopen(filePath, "wb");
@@ -171,7 +171,7 @@ static int __download_file(const char* filePath, struct pack_response* context)
     if (code != CURLE_OK) {
         fprintf(stderr, "__download_file: curl_easy_perform() failed: %s\n", chef_error_buffer());
     }
-
+    
 cleanup:
     if (file) {
         fclose(file);

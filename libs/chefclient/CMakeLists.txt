@@ -5,6 +5,7 @@ add_library(chef-client STATIC
     oauth/devicecode.c
     oauth/oauth.c
 
+    account.c
     client.c
     download.c
     info.c

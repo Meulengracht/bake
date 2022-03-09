@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern int account_main(int argc, char** argv);
 extern int info_main(int argc, char** argv);
 extern int publish_main(int argc, char** argv);
 
@@ -29,6 +30,7 @@ struct command_handler {
 };
 
 static struct command_handler g_commands[] = {
+    { "account",  account_main },
     { "info",     info_main },
     { "publish",  publish_main }
 };
@@ -38,6 +40,7 @@ static void __print_help(void)
     printf("Usage: order <command> [options]\n");
     printf("\n");
     printf("Commands:\n");
+    printf("  account     view account information or setup your account\n");
     printf("  info        retrieves information about a specific pack\n");
     printf("  publish     publish a new pack to chef\n");
     printf("\n");

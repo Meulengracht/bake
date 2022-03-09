@@ -21,9 +21,7 @@
 
 #include <stddef.h>
 
-struct chef_account {
-    const char* publisher_name;
-};
+struct chef_account;
 
 /**
  * @brief Retrieves the account information of the current user. This requires
@@ -43,10 +41,19 @@ extern int chef_account_get(struct chef_account** accountOut);
 extern int chef_account_update(struct chef_account* account);
 
 /**
- * @brief Cleans up any resources allocated by get account.
+ * @brief Creates a new account instance. This is neccessary if no account exists yet.
+ * However the account is not saved to the server until chef_account_update is called.
+ */
+extern struct chef_account* chef_account_new(void);
+
+/**
+ * @brief Cleans up any resources allocated by either @chef_account_get or @chef_account_new.
  * 
  * @param[In] version A pointer to the account that will be freed. 
  */
 extern void chef_account_free(struct chef_account* account);
+
+extern const char* chef_account_get_publisher_name(struct chef_account* account);
+extern void        chef_account_set_publisher_name(struct chef_account* account, const char* publisherName);
 
 #endif //!__LIBCHEF_ACCOUNT_H__

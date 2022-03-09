@@ -102,6 +102,7 @@ static int __deviceflow_challenge(struct devicecode_context* context)
     size_t   dataIndex = 0;
     char     buffer[256];
     int      status = -1;
+    long     httpCode;
 
     // initialize a curl session
     curl = curl_easy_init();
@@ -143,6 +144,14 @@ static int __deviceflow_challenge(struct devicecode_context* context)
     code = curl_easy_perform(curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__oauth2_device_flow_start: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+    }
+
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode != 200) {
+        fprintf(stderr, "__oauth2_device_flow_start: http error %ld [%s]\n", httpCode, chef_response_buffer());
+        status = -1;
+        errno = EIO;
+        goto cleanup;
     }
 
     status = __parse_challenge_response(chef_response_buffer(), context);

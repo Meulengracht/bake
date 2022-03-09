@@ -17,9 +17,12 @@
  */
 
 #include <errno.h>
+#include <chef/account.h>
 #include <chef/client.h>
 #include <stdio.h>
 #include <string.h>
+
+extern void account_setup(void);
 
 static void __print_help(void)
 {
@@ -29,6 +32,25 @@ static void __print_help(void)
     printf("      The channel that should be published to, default is devel\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
+}
+
+static int __ensure_account_setup(void)
+{
+    struct chef_account* account;
+    int                  status;
+
+    status = chef_account_get(&account);
+    if (status != 0) {
+        if (errno == ENOENT) {
+            printf("order: no account information available yet\n");
+            account_setup();
+            return 0;
+        }
+        return -1;
+    }
+
+    chef_account_free(account);
+    return 0;
 }
 
 int publish_main(int argc, char** argv)
@@ -85,6 +107,13 @@ int publish_main(int argc, char** argv)
     status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
     if (status != 0) {
         printf("order: failed to login to chef server: %s\n", strerror(errno));
+        goto cleanup;
+    }
+
+    // ensure account is setup
+    status = __ensure_account_setup();
+    if (status != 0) {
+        printf("order: failed to setup neccessary account information: %s\n", strerror(errno));
         goto cleanup;
     }
 

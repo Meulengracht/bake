@@ -142,6 +142,7 @@ static int __publish_request(json_t* json, struct pack_response* context)
     char*              body      = NULL;
     int                status    = -1;
     char               buffer[256];
+    long               httpCode;
 
     // initialize a curl session
     curl = curl_easy_init();
@@ -179,6 +180,14 @@ static int __publish_request(json_t* json, struct pack_response* context)
     code = curl_easy_perform(curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__publish_request: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+    }
+
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode != 200) {
+        fprintf(stderr, "__publish_request: http error %ld [%s]\n", httpCode, chef_response_buffer());
+        status = -1;
+        errno = EIO;
+        goto cleanup;
     }
 
     status = __parse_pack_response(chef_response_buffer(), context);
@@ -232,7 +241,7 @@ static int __upload_file(const char* filePath, struct pack_response* context)
         fprintf(stderr, "__upload_file: curl_easy_init() failed\n");
         return -1;
     }
-    chef_set_curl_common(curl, NULL, 0, 1, 1);
+    chef_set_curl_common(curl, NULL, 0, 1, 0);
 
     status = __init_file_context(&fileContext, filePath);
     if (status != 0) {
@@ -301,6 +310,7 @@ static int __commit_request(json_t* json)
     char*              body      = NULL;
     int                status    = -1;
     char               buffer[256];
+    long               httpCode;
 
     // initialize a curl session
     curl = curl_easy_init();
@@ -338,6 +348,14 @@ static int __commit_request(json_t* json)
     code = curl_easy_perform(curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__commit_request: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+    }
+
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode != 200) {
+        fprintf(stderr, "__commit_request: http error %ld [%s]\n", httpCode, chef_response_buffer());
+        status = -1;
+        errno = EIO;
+        goto cleanup;
     }
 
     status = 0;
