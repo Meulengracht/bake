@@ -154,7 +154,7 @@ static int __publish_request(json_t* json, struct pack_response* context)
 
     // set the url
     if (__get_publish_url(buffer, sizeof(buffer)) != 0) {
-        fprintf(stderr, "__publish_request: buffer too small for device code auth link\n");
+        fprintf(stderr, "__publish_request: buffer too small for publish link\n");
         goto cleanup;
     }
 

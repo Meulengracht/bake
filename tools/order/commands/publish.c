@@ -96,6 +96,10 @@ int publish_main(int argc, char** argv)
         return -1;
     }
 
+    // set the parameter values
+    params.package = package;
+    params.version = version;
+
     // initialize chefclient
     status = chefclient_initialize();
     if (status != 0) {
