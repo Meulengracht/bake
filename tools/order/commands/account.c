@@ -33,6 +33,7 @@ static void __print_help(void)
     printf("  whoami              shows information about the currently logged in user\n");
     printf("  set <param> <value> sets a specific account parameter\n");
     printf("  get <param>         retrieves the value of a specific account paramater\n");
+    printf("  logout              logout of the current account\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
@@ -194,13 +195,15 @@ int account_main(int argc, char** argv)
     else if (!strcmp(command, "get")) {
         status = __handle_get(parameter);
     }
+    else if (!strcmp(command, "logout")) {
+        chefclient_logout();
+    }
     else {
         printf("order: unknown command '%s'\n", command);
         status = -1;
     }
 
 cleanup:
-    chefclient_logout();
     chefclient_cleanup();
     return status;
 }

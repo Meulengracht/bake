@@ -52,8 +52,9 @@ static int __load_oauth_settings(void)
 static void __save_oauth_settings(void)
 {
     if (g_chefSettings != NULL) {
-        json_t* oauth;
-        json_t* accessToken;
+        const char* empty = "";
+        json_t*     oauth;
+        json_t*     accessToken;
 
         oauth = json_object();
         if (oauth == NULL) {
@@ -61,6 +62,9 @@ static void __save_oauth_settings(void)
         }
 
         accessToken = json_string(g_tokenContext.access_token);
+        if (accessToken == NULL) {
+            accessToken = json_string(empty);
+        }
 
         // build oauth object
         json_object_set_new(oauth, "access-token", accessToken);
@@ -92,6 +96,7 @@ int oauth_login(enum oauth_flow_type flowType)
 void oauth_logout(void)
 {
     memset(&g_tokenContext, 0, sizeof(struct token_context));
+    __save_oauth_settings();
 }
 
 void oauth_set_authentication(void** headerlist)

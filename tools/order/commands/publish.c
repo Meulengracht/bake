@@ -129,7 +129,6 @@ int publish_main(int argc, char** argv)
 cleanup:
     chef_version_free(version);
     chef_package_free(package);
-    chefclient_logout();
     chefclient_cleanup();
     return status;
 }
