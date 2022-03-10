@@ -35,22 +35,6 @@ struct file_upload_context {
     size_t bytes_read;
 };
 
-static json_t* __create_pack_info(struct chef_publish_params* params)
-{
-    json_t* packInfo = json_object();
-    if (!packInfo) {
-        return NULL;
-    }
-
-    json_object_set_new(packInfo, "name", json_string(params->package->package));
-    json_object_set_new(packInfo, "description", json_string(params->package->description));
-    json_object_set_new(packInfo, "homepage", json_string(params->package->homepage));
-    json_object_set_new(packInfo, "license", json_string(params->package->license));
-    json_object_set_new(packInfo, "maintainer", json_string(params->package->maintainer));
-    json_object_set_new(packInfo, "maintainer_email", json_string(params->package->maintainer_email));
-    return packInfo;
-}
-
 static json_t* __create_pack_version(struct chef_publish_params* params)
 {
     json_t* packVersion = json_object();
@@ -77,9 +61,10 @@ static json_t* __create_publish_request(struct chef_publish_params* params)
         return NULL;
     }
 
-    json_object_set_new(request, "info", __create_pack_info(params));
+    json_object_set_new(request, "name", json_string(params->package->package));
+    json_object_set_new(request, "platform", json_string(params->platform));
+    json_object_set_new(request, "architecture", json_string(params->arch));
     json_object_set_new(request, "channel", json_string(params->channel));
-    json_object_set_new(request, "version", __create_pack_version(params));
     return request;
 }
 
@@ -90,7 +75,14 @@ static json_t* __create_commit_request(struct chef_publish_params* params)
         return NULL;
     }
 
-    json_object_set_new(request, "info", __create_pack_info(params));
+    json_object_set_new(request, "name", json_string(params->package->package));
+    json_object_set_new(request, "description", json_string(params->package->description));
+    json_object_set_new(request, "homepage", json_string(params->package->homepage));
+    json_object_set_new(request, "license", json_string(params->package->license));
+    json_object_set_new(request, "maintainer", json_string(params->package->maintainer));
+    json_object_set_new(request, "maintainer_email", json_string(params->package->maintainer_email));
+    json_object_set_new(request, "platform", json_string(params->platform));
+    json_object_set_new(request, "architecture", json_string(params->arch));
     json_object_set_new(request, "channel", json_string(params->channel));
     json_object_set_new(request, "version", __create_pack_version(params));
     return request;

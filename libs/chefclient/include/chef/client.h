@@ -29,12 +29,16 @@ struct chef_info_params {
 struct chef_publish_params {
     struct chef_package* package;
     struct chef_version* version;
+    const char*          platform;
+    const char*          arch;
     const char*          channel;
 };
 
 struct chef_download_params {
     const char* publisher;
     const char* package;
+    const char* platform;
+    const char* arch;
     const char* channel;
     const char* version;
 };

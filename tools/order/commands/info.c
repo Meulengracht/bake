@@ -49,13 +49,31 @@ static int __parse_packname(char* pack, struct chef_info_params* params)
 static void __print_channel(struct chef_channel* channel)
 {
     size_t tagSize = strlen(channel->current_version.tag);
-    printf(((tagSize == 0) ? "    %s   %i.%i.%i\n" : "    %s   %i.%i.%i+%s\n"),
+    printf(((tagSize == 0) ? "      %s   %i.%i.%i\n" : "      %s   %i.%i.%i+%s\n"),
         channel->name, 
         channel->current_version.major,
         channel->current_version.minor,
         channel->current_version.revision,
         channel->current_version.tag
     );
+}
+
+static void __print_architecture(struct chef_architecture* architecture)
+{
+    printf("    %s\n", architecture->name);
+    printf("    Channels:\n\n");
+    for (int i = 0; i < architecture->channels_count; i++) {
+        __print_channel(&architecture->channels[i]);
+    }
+}
+
+static void __print_platform(struct chef_platform* platform)
+{
+    printf("  %s\n", platform->name);
+    printf("  Architectures:\n");
+    for (int i = 0; i < platform->architectures_count; i++) {
+        __print_architecture(&platform->architectures[i]);
+    }
 }
 
 static void __print_package(struct chef_package* package)
@@ -68,9 +86,9 @@ static void __print_package(struct chef_package* package)
     printf("Maintainer: %s\n", package->maintainer);
     printf("Maintainer Email: %s\n", package->maintainer_email);
     
-    printf("Channels available:\n\n");
-    for (int i = 0; i < package->channels_count; i++) {
-        __print_channel(&package->channels[i]);
+    printf("Platforms:\n");
+    for (int i = 0; i < package->platforms_count; i++) {
+        __print_platform(&package->platforms[i]);
     }
 
     printf("\n");

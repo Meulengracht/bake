@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <chef/account.h>
 #include <chef/client.h>
+#include <libplatform.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -28,6 +29,10 @@ static void __print_help(void)
 {
     printf("Usage: order publish <pack-path> [options]\n");
     printf("Options:\n");
+    printf("  -p, --platform\n");
+    printf("      The platform that should be published to, default is current platform\n");
+    printf("  -a, --arch\n");
+    printf("      The architecture that should be published for, default is current architecture\n");
     printf("  -c, --channel\n");
     printf("      The channel that should be published to, default is devel\n");
     printf("  -h, --help\n");
@@ -62,13 +67,21 @@ int publish_main(int argc, char** argv)
     int                        status;
 
     // set default channel
-    params.channel = "devel";
+    params.platform = CHEF_PLATFORM_STR;
+    params.arch     = CHEF_ARCHITECTURE_STR;
+    params.channel  = "devel";
 
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
+            }
+            else if (!strcmp(argv[i], "-p") || !strcmp(argv[i], "--platform")) {
+                params.platform = argv[++i];
+            }
+            else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--arch")) {
+                params.arch = argv[++i];
             }
             else if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "--channel")) {
                 params.channel = argv[++i];

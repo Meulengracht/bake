@@ -33,12 +33,105 @@ static int __get_info_url(struct chef_info_params* params, char* urlBuffer, size
     return written == bufferSize - 1 ? -1 : 0;
 }
 
+static int __parse_channels(json_t* channels, struct chef_architecture* architecture)
+{
+    size_t i;
+    size_t channelsCount = json_array_size(channels);
+    
+    architecture->channels_count = channelsCount;
+    architecture->channels = (struct chef_channel*)malloc(sizeof(struct chef_channel) * channelsCount);
+    if (architecture->channels == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    for (i = 0; i < channelsCount; i++)
+    {
+        json_t* channel = json_array_get(channels, i);
+        json_t* version = json_object_get(channel, "version");
+        json_t* version_major = json_object_get(version, "major");
+        json_t* version_minor = json_object_get(version, "minor");
+        json_t* version_revision = json_object_get(version, "revision");
+        json_t* version_tag = json_object_get(version, "tag");
+
+        // transfer members of architecture
+        architecture->channels[i].name = strdup(json_string_value(json_object_get(channel, "name")));
+        architecture->channels[i].current_version.major = json_integer_value(version_major);
+        architecture->channels[i].current_version.minor = json_integer_value(version_minor);
+        architecture->channels[i].current_version.revision = json_integer_value(version_revision);
+        architecture->channels[i].current_version.tag = json_string_value(version_tag);
+    }
+    return 0;
+}
+
+static int __parse_architectures(json_t* architectures, struct chef_platform* platform)
+{
+    size_t i;
+    size_t architecturesCount = json_array_size(architectures);
+    
+    platform->architectures_count = architecturesCount;
+    platform->architectures = (struct chef_architecture*)malloc(sizeof(struct chef_architecture) * architecturesCount);
+    if (platform->architectures == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    for (i = 0; i < architecturesCount; i++)
+    {
+        json_t* architecture = json_array_get(architectures, i);
+        json_t* channels;
+
+        // transfer members of architecture
+        platform->architectures[i].name = strdup(json_string_value(json_object_get(architecture, "name")));
+
+        // parse channels
+        channels = json_object_get(architecture, "channels");
+        if (channels != NULL) {
+            if (__parse_channels(channels, &platform->architectures[i]) != 0) {
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int __parse_platforms(json_t* platforms, struct chef_package* package)
+{
+    size_t i;
+    size_t platformsCount = json_array_size(platforms);
+    
+    package->platforms_count = platformsCount;
+    package->platforms = (struct chef_platform*)malloc(sizeof(struct chef_platform) * platformsCount);
+    if (package->platforms == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    for (i = 0; i < platformsCount; i++)
+    {
+        json_t* platform = json_array_get(platforms, i);
+        json_t* architectures;
+
+        // transfer members of platform
+        package->platforms[i].name = strdup(json_string_value(json_object_get(platform, "name")));
+
+        // parse architecures
+        architectures = json_object_get(platform, "architectures");
+        if (architectures != NULL) {
+            if (__parse_architectures(architectures, package) != 0) {
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
 static int __parse_package_info_response(const char* response, struct chef_package** packageOut)
 {
     struct chef_package* package;
     json_error_t         error;
     json_t*              root;
-    json_t*              channels;
+    json_t*              platforms;
 
     printf("__parse_package_info_response: %s\n", response);
 
@@ -63,33 +156,15 @@ static int __parse_package_info_response(const char* response, struct chef_packa
     package->maintainer = strdup(json_string_value(json_object_get(root, "maintainer")));
     package->maintainer_email = strdup(json_string_value(json_object_get(root, "maintainer_email")));
 
-    // parse the channels
-    channels = json_object_get(root, "channels");
-    if (channels) {
-        size_t i;
-        size_t channels_count = json_array_size(channels);
-        package->channels = (struct chef_channel*)malloc(sizeof(struct chef_channel) * channels_count);
-        if (!package->channels) {
+    // parse the platforms
+    platforms = json_object_get(root, "platforms");
+    if (platforms != NULL) {
+        if (__parse_platforms(platforms, package) != 0) {
+            chef_package_free(package);
             return -1;
         }
-        memset(package->channels, 0, sizeof(struct chef_channel) * channels_count);
-        package->channels_count = channels_count;
-
-        for (i = 0; i < channels_count; i++) {
-            json_t* channel = json_array_get(channels, i);
-            json_t* version = json_object_get(channel, "version");
-            json_t* version_major = json_object_get(version, "major");
-            json_t* version_minor = json_object_get(version, "minor");
-            json_t* version_revision = json_object_get(version, "revision");
-            json_t* version_tag = json_object_get(version, "tag");
-
-            package->channels[i].name = strdup(json_string_value(json_object_get(channel, "name")));
-            package->channels[i].current_version.major = json_integer_value(version_major);
-            package->channels[i].current_version.minor = json_integer_value(version_minor);
-            package->channels[i].current_version.revision = json_integer_value(version_revision);
-            package->channels[i].current_version.tag = json_string_value(version_tag);
-        }
     }
+
     json_decref(root);
     return 0;
 }

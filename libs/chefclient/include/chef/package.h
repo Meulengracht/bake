@@ -33,6 +33,18 @@ struct chef_channel {
     struct chef_version current_version;
 };
 
+struct chef_architecture {
+    const char*          name;
+    struct chef_channel* channels;
+    size_t               channels_count;
+};
+
+struct chef_platform {
+    const char*               name;
+    struct chef_architecture* architectures;
+    size_t                    architectures_count;
+};
+
 struct chef_package {
     const char* publisher;
     const char* package;
@@ -42,8 +54,8 @@ struct chef_package {
     const char* maintainer;
     const char* maintainer_email;
 
-    struct chef_channel* channels;
-    size_t               channels_count;
+    struct chef_platform* platforms;
+    size_t                platforms_count;
 };
 
 /**

@@ -34,8 +34,8 @@ static int __get_download_url(struct chef_download_params* params, char* urlBuff
 {
     // todo specific version support
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/download?publisher=%s&name=%s&channel=%s",
-        params->publisher, params->package, params->channel
+        "https://chef-api.azurewebsites.net/api/pack/download?publisher=%s&name=%s&platform=%s&arch=%s&channel=%s",
+        params->publisher, params->package, params->platform, params->arch, params->channel
     );
     urlBuffer[written] = '\0';
     return written == bufferSize - 1 ? -1 : 0;
@@ -65,7 +65,7 @@ int __download_request(struct chef_download_params* params, struct pack_response
     CURL*    curl;
     CURLcode code;
     size_t   dataIndex = 0;
-    char     buffer[256];
+    char     buffer[512];
     int      status = -1;
     long     httpCode;
 

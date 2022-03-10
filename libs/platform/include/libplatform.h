@@ -21,6 +21,93 @@
 
 #include <stddef.h>
 
+// detect platform
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+   //define something for Windows (32-bit and 64-bit, this part is common)
+   #define CHEF_PLATFORM_STR "windows"
+   #ifdef _WIN64
+      //define something for Windows (64-bit only)
+   #else
+      //define something for Windows (32-bit only)
+   #endif
+#elif __MOLLENOS__
+    #define CHEF_PLATFORM_STR "vali"
+#elif __APPLE__
+    #include <TargetConditionals.h>
+    #if TARGET_IPHONE_SIMULATOR
+         // iOS, tvOS, or watchOS Simulator
+         #define CHEF_PLATFORM_STR "ios-simulator"
+    #elif TARGET_OS_MACCATALYST
+         // Mac's Catalyst (ports iOS API into Mac, like UIKit).
+         #define CHEF_PLATFORM_STR "ios-catalyst"
+    #elif TARGET_OS_IPHONE
+        // iOS, tvOS, or watchOS device
+         #define CHEF_PLATFORM_STR "ios"
+    #elif TARGET_OS_MAC
+        // Other kinds of Apple platforms
+         #define CHEF_PLATFORM_STR "mac"
+    #else
+    #   error "Unknown Apple platform"
+    #endif
+#elif __linux__
+    #define CHEF_PLATFORM_STR "linux"
+#elif __unix__ // all unices not caught above
+    #define CHEF_PLATFORM_STR "unix"
+#elif defined(_POSIX_VERSION)
+    #define CHEF_PLATFORM_STR "posix"
+#else
+#   error "Unknown compiler"
+#endif
+
+// detect architecture
+#if defined(__x86_64__) || defined(_M_X64)
+#define CHEF_ARCHITECTURE_STR "x64"
+#elif defined(i386) || defined(__i386__) || defined(__i386) || defined(_M_IX86)
+#define CHEF_ARCHITECTURE_STR "x32"
+#elif defined(__ARM_ARCH_2__)
+#define CHEF_ARCHITECTURE_STR "arm2"
+#elif defined(__ARM_ARCH_3__) || defined(__ARM_ARCH_3M__)
+#define CHEF_ARCHITECTURE_STR "arm3"
+#elif defined(__ARM_ARCH_4T__) || defined(__TARGET_ARM_4T)
+#define CHEF_ARCHITECTURE_STR "arm4t"
+#elif defined(__ARM_ARCH_5_) || defined(__ARM_ARCH_5E_)
+#define CHEF_ARCHITECTURE_STR "arm5"
+#elif defined(__ARM_ARCH_6T2_) || defined(__ARM_ARCH_6T2_)
+#define CHEF_ARCHITECTURE_STR "arm6t2"
+#elif defined(__ARM_ARCH_6__) || defined(__ARM_ARCH_6J__) || defined(__ARM_ARCH_6K__) || defined(__ARM_ARCH_6Z__) || defined(__ARM_ARCH_6ZK__)
+#define CHEF_ARCHITECTURE_STR "arm6"
+#elif defined(__ARM_ARCH_7__) || defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
+#define CHEF_ARCHITECTURE_STR "arm7"
+#elif defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
+#define CHEF_ARCHITECTURE_STR "arm7a"
+#elif defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
+#define CHEF_ARCHITECTURE_STR "arm7r"
+#elif defined(__ARM_ARCH_7M__)
+#define CHEF_ARCHITECTURE_STR "arm7m"
+#elif defined(__ARM_ARCH_7S__)
+#define CHEF_ARCHITECTURE_STR "arm7s"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#define CHEF_ARCHITECTURE_STR "arm64"
+#elif defined(mips) || defined(__mips__) || defined(__mips)
+#define CHEF_ARCHITECTURE_STR "mips"
+#elif defined(__sh__)
+#define CHEF_ARCHITECTURE_STR "superh"
+#elif defined(__powerpc) || defined(__powerpc__) || defined(__powerpc64__) || defined(__POWERPC__) || defined(__ppc__) || defined(__PPC__) || defined(_ARCH_PPC)
+#define CHEF_ARCHITECTURE_STR "powerpc"
+#elif defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)
+#define CHEF_ARCHITECTURE_STR "powerpc64"
+#elif defined(__sparc__) || defined(__sparc)
+#define CHEF_ARCHITECTURE_STR "sparc"
+#elif defined(__m68k__)
+#define CHEF_ARCHITECTURE_STR "m68k"
+#elif defined(__riscv32)
+#define CHEF_ARCHITECTURE_STR "riscv32"
+#elif defined(__riscv64)
+#define CHEF_ARCHITECTURE_STR "riscv64"
+#else
+#define CHEF_ARCHITECTURE_STR "unknown"
+#endif
+
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
 
@@ -29,7 +116,7 @@ extern void   strsplit_free(char** strings);
  * nothing happens.
  * 
  * @param[In] path The path to create 
- * @return int 0 on success, -1 on error
+ * @#define CHEF_ARCHITECTURE_STR int 0 on success, -1 on error
  */
 extern int platform_mkdir(const char* path);
 
@@ -39,7 +126,7 @@ extern int platform_rmdir(const char* path);
  * @brief Check whether the path exists and is a directory
  * 
  * @param[In] path The path to check
- * @return int 0 if the path exists and is a directory, -1 otherwise
+ * @#define CHEF_ARCHITECTURE_STR int 0 if the path exists and is a directory, -1 otherwise
  */
 extern int platform_isdir(const char* path);
 extern int platform_getenv(const char* name, char* buffer, size_t length);
@@ -53,7 +140,7 @@ extern int platform_chdir(const char* path);
  * @brief 
  * 
  * @param milliseconds 
- * @return int 
+ * @#define CHEF_ARCHITECTURE_STR int 
  */
 extern int platform_sleep(unsigned int milliseconds);
 
@@ -64,7 +151,7 @@ extern int platform_sleep(unsigned int milliseconds);
  * @param[In] arguments The arguments to pass to the executable
  * @param[In] envp      The environment variables to pass to the executable
  * @param[In] cwd       The working directory to pass to the executable
- * @return int 0 on success, -1 on error
+ * @#define CHEF_ARCHITECTURE_STR int 0 on success, -1 on error
  */
 extern int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd);
 
