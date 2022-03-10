@@ -159,6 +159,8 @@ enum state {
     STATE_INGREDIENT_NAME,
     STATE_INGREDIENT_VERSION,
     STATE_INGREDIENT_DESCRIPTION,
+    STATE_INGREDIENT_PLATFORM,
+    STATE_INGREDIENT_ARCH,
     STATE_INGREDIENT_CHANNEL,
     STATE_INGREDIENT_SOURCE,
 
@@ -692,6 +694,12 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else if (strcmp(value, "description") == 0) {
                         s->state = STATE_INGREDIENT_DESCRIPTION;
                     }
+                    else if (strcmp(value, "platform") == 0) {
+                        s->state = STATE_INGREDIENT_PLATFORM;
+                    }
+                    else if (strcmp(value, "arch") == 0) {
+                        s->state = STATE_INGREDIENT_ARCH;
+                    }
                     else if (strcmp(value, "channel") == 0) {
                         s->state = STATE_INGREDIENT_CHANNEL;
                     }
@@ -717,6 +725,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_NAME, ingredient.ingredient.name, __parse_string)
         __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_DESCRIPTION, ingredient.ingredient.description, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_PLATFORM, ingredient.ingredient.platform, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_ARCH, ingredient.ingredient.arch, __parse_string)
         __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_CHANNEL, ingredient.ingredient.channel, __parse_string)
         __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_VERSION, ingredient.ingredient.version, __parse_string)
 
@@ -999,6 +1009,8 @@ static void __destroy_ingredient(struct recipe_ingredient* ingredient)
 {
     free((void*)ingredient->ingredient.name);
     free((void*)ingredient->ingredient.version);
+    free((void*)ingredient->ingredient.platform);
+    free((void*)ingredient->ingredient.arch);
     free((void*)ingredient->ingredient.channel);
     free((void*)ingredient->ingredient.description);
 

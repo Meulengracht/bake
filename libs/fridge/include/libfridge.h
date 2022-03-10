@@ -41,6 +41,8 @@ struct ingredient_source_file {
 struct fridge_ingredient {
     const char* name;
     const char* description;
+    const char* platform;
+    const char* arch;
     const char* channel;
     const char* version;
 

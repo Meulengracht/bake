@@ -88,6 +88,8 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
             json_t* pack = json_array_get(packs, i);
             json_t* publisher = json_object_get(pack, "publisher");
             json_t* name = json_object_get(pack, "package");
+            json_t* platform = json_object_get(pack, "platform");
+            json_t* architecture = json_object_get(pack, "architecture");
             json_t* channel = json_object_get(pack, "channel");
 
             json_t* version = json_object_get(pack, "version");
@@ -99,6 +101,8 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
 
             inventory->packs[i].publisher = strdup(json_string_value(publisher));
             inventory->packs[i].package = strdup(json_string_value(name));
+            inventory->packs[i].platform = strdup(json_string_value(platform));
+            inventory->packs[i].arch = strdup(json_string_value(architecture));
             inventory->packs[i].channel = strdup(json_string_value(channel));
             inventory->packs[i].version.major = json_integer_value(version_major);
             inventory->packs[i].version.minor = json_integer_value(version_minor);
@@ -186,7 +190,8 @@ int __compare_version(struct chef_version* version1, struct chef_version* versio
 }
 
 int inventory_contains(struct fridge_inventory* inventory, const char* publisher, 
-    const char* package, const char* channel, struct chef_version* version, int latest)
+    const char* package, const char* platform, const char* arch, const char* channel,
+    struct chef_version* version, int latest)
 {
     if (inventory == NULL || publisher == NULL || package == NULL || channel == NULL) {
         errno = EINVAL;
@@ -196,6 +201,8 @@ int inventory_contains(struct fridge_inventory* inventory, const char* publisher
     for (int i = 0; i < inventory->packs_count; i++) {
         if (strcmp(inventory->packs[i].publisher, publisher) == 0 &&
             strcmp(inventory->packs[i].package, package) == 0 &&
+            strcmp(inventory->packs[i].platform, platform) == 0 &&
+            strcmp(inventory->packs[i].arch, arch) == 0 &&
             strcmp(inventory->packs[i].channel, channel) == 0) {
             // ok same package, check version against latest
             if (inventory->packs[i].latest == latest && latest == 1) {
@@ -213,7 +220,8 @@ int inventory_contains(struct fridge_inventory* inventory, const char* publisher
 }
 
 int inventory_add(struct fridge_inventory* inventory, const char* publisher,
-    const char* package, const char* channel, struct chef_version* version, int latest)
+    const char* package, const char* platform, const char* arch, const char* channel,
+    struct chef_version* version, int latest)
 {
     struct fridge_inventory_pack* packEntry;
     void*                         newArray;
@@ -241,6 +249,8 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
 
     packEntry->publisher = strdup(publisher);
     packEntry->package   = strdup(package);
+    packEntry->platform  = strdup(platform);
+    packEntry->arch      = strdup(arch);
     packEntry->channel   = strdup(channel);
     if (latest == 1 || version == NULL) {
         packEntry->latest = 1;
@@ -284,6 +294,8 @@ static int __serialize_inventory(struct fridge_inventory* inventory, json_t** js
 
         json_object_set_new(pack, "publisher", json_string(inventory->packs[i].publisher));
         json_object_set_new(pack, "package", json_string(inventory->packs[i].package));
+        json_object_set_new(pack, "platform", json_string(inventory->packs[i].platform));
+        json_object_set_new(pack, "architecture", json_string(inventory->packs[i].arch));
         json_object_set_new(pack, "channel", json_string(inventory->packs[i].channel));
         json_object_set_new(pack, "latest", json_integer(inventory->packs[i].latest));
 

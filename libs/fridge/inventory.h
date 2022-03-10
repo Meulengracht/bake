@@ -25,6 +25,8 @@
 struct fridge_inventory_pack {
     const char*         publisher;
     const char*         package;
+    const char*         platform;
+    const char*         arch;
     const char*         channel;
     struct chef_version version;
     int                 latest;
@@ -54,13 +56,16 @@ extern int inventory_load(const char* path, struct fridge_inventory** inventoryO
  * @param[In] inventory The inventory instance to check.
  * @param[In] publisher The publisher of the package.
  * @param[In] package   The package from the publisher that we are adding.
+ * @param[In] platform  The platform target of the package.
+ * @param[In] arch      The platform architecture of the package.
  * @param[In] channel   The channel of the package.
  * @param[In] version   The current version of the package.
  * @param[In] latest    Whether or not we want to have the latest version.
  * @return int 0 if the package is found, otherwise -1 and errno will be set to ENOENT
  */
 extern int inventory_contains(struct fridge_inventory* inventory, const char* publisher, 
-    const char* package, const char* channel, struct chef_version* version, int latest);
+    const char* package, const char* platform, const char* arch, const char* channel,
+    struct chef_version* version, int latest);
 
 /**
  * @brief Adds a new package to inventory
@@ -68,13 +73,16 @@ extern int inventory_contains(struct fridge_inventory* inventory, const char* pu
  * @param[In] inventory The inventory instance the pack should be added to.
  * @param[In] publisher The publisher of the package
  * @param[In] package   The package from the publisher that we are adding.
+ * @param[In] platform  The platform target of the package.
+ * @param[In] arch      The platform architecture of the package.
  * @param[In] channel   The channel of the package.
  * @param[In] version   The current version of the package.
  * @param[In] latest    Whether or not we want to have the latest version
  * @return int 0 on success, otherwise -1 and errno will be set
  */
 extern int inventory_add(struct fridge_inventory* inventory, const char* publisher,
-    const char* package, const char* channel, struct chef_version* version, int latest);
+    const char* package, const char* platform, const char* arch, const char* channel,
+    struct chef_version* version, int latest);
 
 /**
  * @brief Saves the inventory to the given file path. The file created is json.
