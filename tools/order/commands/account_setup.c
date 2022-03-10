@@ -85,9 +85,17 @@ void account_setup(void)
     
     // ask for the publisher name
     printf("We need to know the name under which your packages will be published. (i.e my-org)\n");
-    printf("Please only include the name, characters allowed: [a-zA-Z0-9_-]\n");
+    printf("Please only include the name, characters allowed: [a-zA-Z0-9_-], length must be between 3-63 characters\n");
     publisherName = __ask_input_question("Your publisher name: ");
     if (publisherName == NULL) {
+        return;
+    }
+
+    // check if the publisher name is valid
+    if (strlen(publisherName) < 3 || strlen(publisherName) > 63) {
+        fprintf(stderr, "order: publisher name must be between 3-63 characters\n");
+        free(publisherName);
+        chef_account_free(account);
         return;
     }
 

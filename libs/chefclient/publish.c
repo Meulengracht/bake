@@ -92,9 +92,7 @@ static int __parse_pack_response(const char* response, struct pack_response* pac
 {
     json_error_t error;
     json_t*      root;
-
-    printf("__parse_pack_response: %s\n", response);
-
+    
     root = json_loads(response, 0, &error);
     if (!root) {
         return -1;
@@ -176,9 +174,15 @@ static int __publish_request(json_t* json, struct pack_response* context)
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
-        fprintf(stderr, "__publish_request: http error %ld [%s]\n", httpCode, chef_response_buffer());
         status = -1;
-        errno = EIO;
+        
+        if (httpCode == 302) {
+            status = -EACCES;
+        }
+        else {
+            fprintf(stderr, "__publish_request: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            status = -EIO;
+        }
         goto cleanup;
     }
 
@@ -226,6 +230,7 @@ static int __upload_file(const char* filePath, struct pack_response* context)
     int                        status      = -1;
     CURL*                      curl;
     CURLcode                   code;
+    long                       httpCode;
 
     // initialize a curl session
     curl = curl_easy_init();
@@ -233,7 +238,7 @@ static int __upload_file(const char* filePath, struct pack_response* context)
         fprintf(stderr, "__upload_file: curl_easy_init() failed\n");
         return -1;
     }
-    chef_set_curl_common(curl, NULL, 0, 1, 0);
+    chef_set_curl_common(curl, (void**)&headers, 0, 1, 0);
 
     status = __init_file_context(&fileContext, filePath);
     if (status != 0) {
@@ -242,8 +247,8 @@ static int __upload_file(const char* filePath, struct pack_response* context)
     }
 
     // set required ms headers
-    headers = curl_slist_append(headers, "x-ms-blob-type:BlockBlob");
-    headers = curl_slist_append(headers, "x-ms-blob-content-type:application/octet-stream");
+    headers = curl_slist_append(headers, "x-ms-blob-type: BlockBlob");
+    headers = curl_slist_append(headers, "x-ms-blob-content-type: application/octet-stream");
 
     code = curl_easy_setopt(curl, CURLOPT_READFUNCTION, __read_file);
     if (code != CURLE_OK) {
@@ -285,6 +290,15 @@ static int __upload_file(const char* filePath, struct pack_response* context)
     if (code != CURLE_OK) {
         fprintf(stderr, "__upload_file: curl_easy_perform() failed: %s\n", chef_error_buffer());
     }
+
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode < 200 || httpCode >= 300) {
+        fprintf(stderr, "__upload_file: http error %ld\n", httpCode);
+        status = -1;
+        goto cleanup;
+    }
+
+    status = 0;
 
 cleanup:
     __cleanup_file_context(&fileContext);
@@ -344,9 +358,15 @@ static int __commit_request(json_t* json)
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
-        fprintf(stderr, "__commit_request: http error %ld [%s]\n", httpCode, chef_response_buffer());
         status = -1;
-        errno = EIO;
+        
+        if (httpCode == 302) {
+            status = -EACCES;
+        }
+        else {
+            fprintf(stderr, "__commit_request: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            status = -EIO;
+        }
         goto cleanup;
     }
 

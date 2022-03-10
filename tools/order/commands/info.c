@@ -48,20 +48,23 @@ static int __parse_packname(char* pack, struct chef_info_params* params)
 
 static void __print_channel(struct chef_channel* channel)
 {
-    size_t tagSize = strlen(channel->current_version.tag);
-    printf(((tagSize == 0) ? "      %s   %i.%i.%i\n" : "      %s   %i.%i.%i+%s\n"),
+    printf("      * %s   %i.%i.%i",
         channel->name, 
         channel->current_version.major,
         channel->current_version.minor,
-        channel->current_version.revision,
-        channel->current_version.tag
+        channel->current_version.revision
     );
+
+    if (channel->current_version.tag != NULL) {
+        printf("%s", channel->current_version.tag);
+    }
+    printf("\n");
 }
 
 static void __print_architecture(struct chef_architecture* architecture)
 {
-    printf("    %s\n", architecture->name);
-    printf("    Channels:\n\n");
+    printf("    * %s\n", architecture->name);
+    printf("      Channels:\n");
     for (int i = 0; i < architecture->channels_count; i++) {
         __print_channel(&architecture->channels[i]);
     }
@@ -69,8 +72,8 @@ static void __print_architecture(struct chef_architecture* architecture)
 
 static void __print_platform(struct chef_platform* platform)
 {
-    printf("  %s\n", platform->name);
-    printf("  Architectures:\n");
+    printf("  * %s\n", platform->name);
+    printf("    Architectures:\n");
     for (int i = 0; i < platform->architectures_count; i++) {
         __print_architecture(&platform->architectures[i]);
     }
@@ -78,12 +81,12 @@ static void __print_platform(struct chef_platform* platform)
 
 static void __print_package(struct chef_package* package)
 {
-    printf("Name: %s\n", package->package);
-    printf("Publisher: %s\n", package->publisher);
-    printf("Description: %s\n", package->description);
-    printf("Homepage: %s\n", package->homepage);
-    printf("License: %s\n", package->license);
-    printf("Maintainer: %s\n", package->maintainer);
+    printf("Name:             %s\n", package->package);
+    printf("Publisher:        %s\n", package->publisher);
+    printf("Description:      %s\n", package->description);
+    printf("Homepage:         %s\n", package->homepage);
+    printf("License:          %s\n", package->license);
+    printf("Maintainer:       %s\n", package->maintainer);
     printf("Maintainer Email: %s\n", package->maintainer_email);
     
     printf("Platforms:\n");

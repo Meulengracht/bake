@@ -47,12 +47,12 @@ static int __handle_whoami(void)
 
     status = chef_account_get(&account);
     if (status != 0) {
-        if (errno == ENOENT) {
+        if (status == -ENOENT) {
             printf("order: no account information available yet\n");
             account_setup();
             return 0;
         }
-        return -1;
+        return status;
     }
 
     printf("order: account information\n");
@@ -75,12 +75,12 @@ static int __handle_get(char* parameter)
 
     status = chef_account_get(&account);
     if (status != 0) {
-        if (errno == ENOENT) {
+        if (status == -ENOENT) {
             printf("order: no account information available yet\n");
             account_setup();
             return 0;
         }
-        return -1;
+        return status;
     }
 
     if (strcmp(parameter, "publisher-name") == 0) {
@@ -113,12 +113,12 @@ static int __handle_set(char* parameter, char* value)
 
     status = chef_account_get(&account);
     if (status != 0) {
-        if (errno == ENOENT) {
+        if (status == -ENOENT) {
             printf("order: no account information available yet\n");
             account_setup();
             return 0;
         }
-        return -1;
+        return status;
     }
 
     if (strcmp(parameter, "publisher-name") == 0) {
@@ -178,32 +178,45 @@ int account_main(int argc, char** argv)
         return -1;
     }
 
-    // login before continuing
-    status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
-    if (status != 0) {
-        printf("order: failed to login to chef server: %s\n", strerror(errno));
-        goto cleanup;
+    // do this in a loop, to catch cases where our login token has
+    // expired
+    while (1) {
+        // login before continuing
+        status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
+        if (status != 0) {
+            printf("order: failed to login to chef server: %s\n", strerror(errno));
+            break;
+        }
+
+        // now handle the command that was passed
+        if (!strcmp(command, "whoami")) {
+            status = __handle_whoami();
+        }
+        else if (!strcmp(command, "set")) {
+            status = __handle_set(parameter, value);
+        }
+        else if (!strcmp(command, "get")) {
+            status = __handle_get(parameter);
+        }
+        else if (!strcmp(command, "logout")) {
+            status = 0;
+            chefclient_logout();
+        }
+        else {
+            printf("order: unknown command '%s'\n", command);
+            status = -1;
+            break;
+        }
+
+        if (status != 0) {
+            if (status == -EACCES) {
+                chefclient_logout();
+                continue;
+            }
+        }
+        break;
     }
 
-    // now handle the command that was passed
-    if (!strcmp(command, "whoami")) {
-        status = __handle_whoami();
-    }
-    else if (!strcmp(command, "set")) {
-        status = __handle_set(parameter, value);
-    }
-    else if (!strcmp(command, "get")) {
-        status = __handle_get(parameter);
-    }
-    else if (!strcmp(command, "logout")) {
-        chefclient_logout();
-    }
-    else {
-        printf("order: unknown command '%s'\n", command);
-        status = -1;
-    }
-
-cleanup:
     chefclient_cleanup();
     return status;
 }

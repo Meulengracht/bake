@@ -158,6 +158,28 @@ static void __free_channel(struct chef_channel* channel)
     __free_version(&channel->current_version);
 }
 
+static void __free_architecture(struct chef_architecture* architecture)
+{
+    free((void*)architecture->name);
+    if (architecture->channels != NULL) {
+        for (size_t i = 0; i < architecture->channels_count; i++) {
+            __free_channel(&architecture->channels[i]);
+        }
+        free(architecture->channels);
+    }
+}
+
+static void __free_platform(struct chef_platform* platform)
+{
+    free((void*)platform->name);
+    if (platform->architectures != NULL) {
+        for (size_t i = 0; i < platform->architectures_count; i++) {
+            __free_architecture(&platform->architectures[i]);
+        }
+        free(platform->architectures);
+    }
+}
+
 void chef_package_free(struct chef_package* package)
 {
     if (package == NULL) {
@@ -172,11 +194,11 @@ void chef_package_free(struct chef_package* package)
     free((void*)package->maintainer);
     free((void*)package->maintainer_email);
 
-    if (package->channels != NULL) {
-        for (size_t i = 0; i < package->channels_count; i++) {
-            __free_channel(&package->channels[i]);
+    if (package->platforms != NULL) {
+        for (size_t i = 0; i < package->platforms_count; i++) {
+            __free_platform(&package->platforms[i]);
         }
-        free(package->channels);
+        free(package->platforms);
     }
     free(package);
 }

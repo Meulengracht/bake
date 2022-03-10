@@ -41,9 +41,8 @@ static int __load_oauth_settings(void)
             
             if (json_string_value(token) != NULL && strlen(json_string_value(token)) > 0) {
                 g_tokenContext.access_token = strdup(json_string_value(token));
+                return 0;
             }
-
-            return 0;
         }
     }
     return -1;

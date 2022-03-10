@@ -46,12 +46,12 @@ static int __ensure_account_setup(void)
 
     status = chef_account_get(&account);
     if (status != 0) {
-        if (errno == ENOENT) {
+        if (status == -ENOENT) {
             printf("order: no account information available yet\n");
             account_setup();
             return 0;
         }
-        return -1;
+        return status;
     }
 
     chef_account_free(account);
@@ -109,6 +109,10 @@ int publish_main(int argc, char** argv)
         return -1;
     }
 
+    // dump information
+    printf("publishing package %s\n", package->package);
+    printf("channel %s\n", params.channel);
+
     // set the parameter values
     params.package = package;
     params.version = version;
@@ -120,30 +124,38 @@ int publish_main(int argc, char** argv)
         return -1;
     }
 
-    // login before continuing
-    status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
-    if (status != 0) {
-        printf("order: failed to login to chef server: %s\n", strerror(errno));
-        goto cleanup;
+    // do this in a loop, to catch cases where our login token has
+    // expired
+    while (1) {
+        // login before continuing
+        status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
+        if (status != 0) {
+            printf("order: failed to login to chef server: %s\n", strerror(errno));
+            break;
+        }
+
+        // ensure account is setup
+        status = __ensure_account_setup();
+        if (status != 0) {
+            if (status == -EACCES) {
+                chefclient_logout();
+                continue;
+            }
+            printf("order: failed to setup neccessary account information: %s\n", strerror(-status));
+            break;
+        }
+
+        // publish the package
+        status = chefclient_pack_publish(&params, packPath);
+        if (status != 0) {
+            printf("order: failed to publish package: %s\n", strerror(errno));
+            break;
+        }
+
+        printf("order: package published successfully\n");
+        break;
     }
-
-    // ensure account is setup
-    status = __ensure_account_setup();
-    if (status != 0) {
-        printf("order: failed to setup neccessary account information: %s\n", strerror(errno));
-        goto cleanup;
-    }
-
-    // publish the package
-    status = chefclient_pack_publish(&params, packPath);
-    if (status != 0) {
-        printf("order: failed to publish package: %s\n", strerror(errno));
-        goto cleanup;
-    }
-
-    printf("order: package published successfully\n");
-
-cleanup:
+    
     chef_version_free(version);
     chef_package_free(package);
     chefclient_cleanup();

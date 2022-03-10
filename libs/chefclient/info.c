@@ -23,6 +23,15 @@
 #include "private.h"
 #include <string.h>
 
+static const char* __get_json_string_safe(json_t* object, const char* key)
+{
+    json_t* value = json_object_get(object, key);
+    if (value != NULL && json_string_value(value) != NULL) {
+        return strdup(json_string_value(value));
+    }
+    return strdup("<not set>");
+}
+
 static int __get_info_url(struct chef_info_params* params, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
@@ -48,14 +57,14 @@ static int __parse_channels(json_t* channels, struct chef_architecture* architec
     for (i = 0; i < channelsCount; i++)
     {
         json_t* channel = json_array_get(channels, i);
-        json_t* version = json_object_get(channel, "version");
+        json_t* version = json_object_get(channel, "current-version");
         json_t* version_major = json_object_get(version, "major");
         json_t* version_minor = json_object_get(version, "minor");
         json_t* version_revision = json_object_get(version, "revision");
         json_t* version_tag = json_object_get(version, "tag");
 
         // transfer members of architecture
-        architecture->channels[i].name = strdup(json_string_value(json_object_get(channel, "name")));
+        architecture->channels[i].name = __get_json_string_safe(channel, "name");
         architecture->channels[i].current_version.major = json_integer_value(version_major);
         architecture->channels[i].current_version.minor = json_integer_value(version_minor);
         architecture->channels[i].current_version.revision = json_integer_value(version_revision);
@@ -82,7 +91,7 @@ static int __parse_architectures(json_t* architectures, struct chef_platform* pl
         json_t* channels;
 
         // transfer members of architecture
-        platform->architectures[i].name = strdup(json_string_value(json_object_get(architecture, "name")));
+        platform->architectures[i].name = __get_json_string_safe(architecture, "name");
 
         // parse channels
         channels = json_object_get(architecture, "channels");
@@ -113,12 +122,12 @@ static int __parse_platforms(json_t* platforms, struct chef_package* package)
         json_t* architectures;
 
         // transfer members of platform
-        package->platforms[i].name = strdup(json_string_value(json_object_get(platform, "name")));
+        package->platforms[i].name = __get_json_string_safe(platform, "name");
 
         // parse architecures
         architectures = json_object_get(platform, "architectures");
         if (architectures != NULL) {
-            if (__parse_architectures(architectures, package) != 0) {
+            if (__parse_architectures(architectures, &package->platforms[i]) != 0) {
                 return -1;
             }
         }
@@ -133,8 +142,6 @@ static int __parse_package_info_response(const char* response, struct chef_packa
     json_t*              root;
     json_t*              platforms;
 
-    printf("__parse_package_info_response: %s\n", response);
-
     root = json_loads(response, 0, &error);
     if (!root) {
         return -1;
@@ -147,14 +154,14 @@ static int __parse_package_info_response(const char* response, struct chef_packa
     }
     memset(package, 0, sizeof(struct chef_package));
 
-    // parse the package
-    package->publisher = strdup(json_string_value(json_object_get(root, "publisher")));
-    package->package = strdup(json_string_value(json_object_get(root, "name")));
-    package->description = strdup(json_string_value(json_object_get(root, "description")));
-    package->homepage = strdup(json_string_value(json_object_get(root, "homepage")));
-    package->license = strdup(json_string_value(json_object_get(root, "license")));
-    package->maintainer = strdup(json_string_value(json_object_get(root, "maintainer")));
-    package->maintainer_email = strdup(json_string_value(json_object_get(root, "maintainer_email")));
+    // parse the required members
+    package->publisher = __get_json_string_safe(root, "publisher");
+    package->package = __get_json_string_safe(root, "name");
+    package->description = __get_json_string_safe(root, "description");
+    package->homepage = __get_json_string_safe(root, "homepage");
+    package->license = __get_json_string_safe(root, "license");
+    package->maintainer = __get_json_string_safe(root, "maintainer");
+    package->maintainer_email = __get_json_string_safe(root, "maintainer_email");
 
     // parse the platforms
     platforms = json_object_get(root, "platforms");
@@ -164,6 +171,8 @@ static int __parse_package_info_response(const char* response, struct chef_packa
             return -1;
         }
     }
+
+    *packageOut = package;
 
     json_decref(root);
     return 0;

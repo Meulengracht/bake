@@ -269,7 +269,7 @@ static int __parse_version_string(const char* string, struct chef_vafs_feature_p
     return 0;
 }
 
-static int __write_package_metadata(struct VaFs* vafs, struct oven_pack_options* options)
+static int __write_package_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
 {
 	struct chef_vafs_feature_package_header*  packageHeader;
 	struct chef_vafs_feature_package_version* packageVersion;
@@ -280,7 +280,7 @@ static int __write_package_metadata(struct VaFs* vafs, struct oven_pack_options*
 
 	// count up the data requirements for the package header
 	featureSize = sizeof(struct chef_vafs_feature_package_header);
-	featureSize += options->name == NULL ? 0 : strlen(options->name);
+	featureSize += strlen(name);
 	featureSize += options->description == NULL ? 0 : strlen(options->description);
 	featureSize += options->license == NULL ? 0 : strlen(options->license);
 	featureSize += options->author == NULL ? 0 : strlen(options->author);
@@ -297,7 +297,7 @@ static int __write_package_metadata(struct VaFs* vafs, struct oven_pack_options*
 	packageHeader->header.Length = featureSize;
 
 	// fill in lengths
-	packageHeader->package_length          = options->name == NULL ? 0 : strlen(options->name);
+	packageHeader->package_length          = strlen(name);
 	packageHeader->description_length      = options->description == NULL ? 0 : strlen(options->description);
 	packageHeader->license_length          = options->license == NULL ? 0 : strlen(options->license);
 	packageHeader->homepage_length         = options->url == NULL ? 0 : strlen(options->url);
@@ -308,7 +308,7 @@ static int __write_package_metadata(struct VaFs* vafs, struct oven_pack_options*
 	dataPointer = (char*)packageHeader + sizeof(struct chef_vafs_feature_package_header);
 
 	// required
-	memcpy(dataPointer, options->name, packageHeader->package_length);
+	memcpy(dataPointer, name, packageHeader->package_length);
 	dataPointer += packageHeader->package_length;
 
 	if (options->description) {
@@ -385,6 +385,7 @@ int oven_pack(struct oven_pack_options* options)
     struct VaFs*                vafs;
     int                         status;
     char                        tmp[128];
+	char*                       name;
     int                         i;
 
     if (!options) {
@@ -396,11 +397,13 @@ int oven_pack(struct oven_pack_options* options)
     for (i = 0; options->name[i] && options->name[i] != '.'; i++) {
         tmp[i] = options->name[i];
     }
+	name = strdup(tmp);
     strcat(tmp, ".pack");
 
     // TODO arch
     status = vafs_create(&tmp[0], VaFsArchitecture_X64, &vafs);
     if (status) {
+		free(name);
         return status;
     }
     
@@ -408,25 +411,28 @@ int oven_pack(struct oven_pack_options* options)
     status = __install_filter(vafs);
     if (status) {
         fprintf(stderr, "oven: cannot initialize compression\n");
-        return -1;
+		goto cleanup;
     }
 
 	status = vafs_directory_open(vafs, "/", &directoryHandle);
 	if (status) {
 		fprintf(stderr, "oven: cannot open root directory\n");
-		return -1;
+		goto cleanup;
 	}
 
     status = __write_directory(directoryHandle, ".oven/install");
     if (status != 0) {
         fprintf(stderr, "oven: unable to write directory\n");
+		goto cleanup;
     }
 
-	status = __write_package_metadata(vafs, options);
+	status = __write_package_metadata(vafs, name, options);
 	if (status != 0) {
 		fprintf(stderr, "oven: unable to write package metadata\n");
 	}
 
+cleanup:
     status = vafs_close(vafs);
+	free(name);
     return status;
 }

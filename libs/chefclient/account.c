@@ -125,15 +125,15 @@ int __get_account(struct chef_account** accountOut)
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
-        status = -1;
-        
         if (httpCode == 404) {
-            fprintf(stderr, "__get_account: account not setup\n");
-            errno = ENOENT;
+            status = -ENOENT;
+        }
+        else if (httpCode == 302) {
+            status = -EACCES;
         }
         else {
             fprintf(stderr, "__get_account: http error %ld\n", httpCode);
-            errno = EIO;
+            status = -EIO;
         }
         goto cleanup;
     }
@@ -197,9 +197,14 @@ static int __update_account(json_t* json, struct chef_account** accountOut)
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
-        fprintf(stderr, "__update_account: http error %ld [%s]\n", httpCode, chef_response_buffer());
         status = -1;
-        errno = EIO;
+        if (httpCode == 302) {
+            status = -EACCES;
+        }
+        else {
+            fprintf(stderr, "__update_account: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            status = -EIO;
+        }
         goto cleanup;
     }
 
