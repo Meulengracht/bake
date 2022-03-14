@@ -38,12 +38,14 @@ struct oven_recipe_options {
 };
 
 struct oven_generate_options {
+    const char*  profile;
     const char*  system;
     struct list* arguments;
     struct list* environment;
 };
 
 struct oven_build_options {
+    const char*  profile;
     const char*  system;
     struct list* arguments;
     struct list* environment;
@@ -62,9 +64,11 @@ struct oven_pack_options {
 /**
  * @brief 
  * 
+ * @param  envp
+ * @param  fridgePrepDirectory
  * @return int 
  */
-extern int oven_initialize(char** envp);
+extern int oven_initialize(char** envp, const char* fridgePrepDirectory);
 
 /**
  * @brief 

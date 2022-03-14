@@ -25,6 +25,16 @@ struct oven_build_options;
 
 struct oven_backend_data {
     /**
+     * @brief The name of the current project. Will usually be the file-name without .yaml
+     */
+    const char* project_name;
+
+    /**
+     * @brief The current compilation/build profile. Usually 'Release'
+     */
+    const char* profile_name;
+
+    /**
      * @brief The environmental values that the current process has
      */
     const char** process_environment;
@@ -39,12 +49,13 @@ struct oven_backend_data {
     /**
      * @brief The is the path to the project source directory, this is the path
      * where the backend is supposed to load/execute files from.
+     * <root_directory>/<source_offset>
      */
     const char* project_directory;
 
     /**
      * @brief The path to the project build directory, this is the path where
-     * the backend is supposed to store the generated files.
+     * the oven backend is supposed to store the generated files.
      */
     const char* build_directory;
 
@@ -53,6 +64,13 @@ struct oven_backend_data {
      * the backend is supposed to store the files that should be installed.
      */
     const char* install_directory;
+
+    /**
+     * @brief The path where the fridge keeps it's ingredients. This is the prep area
+     * path and not the storage path. The prep area will usually contain bin/, lib/ and
+     * include/
+     */
+    const char* fridge_directory;
 
     /**
      * @brief Argument string for the current recipe step. The string is a

@@ -214,6 +214,7 @@ static int __zstd_decode(void* Input, uint32_t InputLength, void* Output, uint32
     if (ZSTD_isError(decompressedSize)) {
         return -1;
     }
+    *OutputLength = (uint32_t)decompressedSize;
     return 0;
 }
 

@@ -37,6 +37,7 @@ static void __print_help(void)
 
 static void __initialize_generator_options(struct oven_generate_options* options, struct recipe_step* step)
 {
+    options->profile     = NULL;
     options->system      = step->system;
     options->arguments   = &step->arguments;
     options->environment = &step->env_keypairs;
@@ -44,6 +45,7 @@ static void __initialize_generator_options(struct oven_generate_options* options
 
 static void __initialize_build_options(struct oven_build_options* options, struct recipe_step* step)
 {
+    options->profile     = NULL;
     options->system      = step->system;
     options->arguments   = &step->arguments;
     options->environment = &step->env_keypairs;
@@ -213,7 +215,7 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return status;
     }
 
-    status = oven_initialize(envp);
+    status = oven_initialize(envp, fridge_get_prep_directory());
     if (status) {
         fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
         return status;

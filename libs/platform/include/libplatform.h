@@ -110,6 +110,7 @@
 
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
+extern char*  strreplace(char* text, const char* find, const char* replaceWith);
 
 /**
  * @brief Creates the provided directory path, if the directory already exists

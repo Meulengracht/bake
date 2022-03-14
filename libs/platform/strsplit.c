@@ -27,12 +27,16 @@ char** strsplit(const char* text, char sep)
 	int    count = 1; // add zero terminator
 	int    index = 0;
 
-	for (const char* p = text; *p != '\0'; p++) {
-		if (*p == sep) {
+	for (const char* p = text;; p++) {
+		if (*p == '\0' || *p == sep) {
 			count++;
+			
+			if (*p == '\0') {
+			    break;
+			}
 		}
 	}
-
+	
 	results = (char**)malloc(sizeof(char*) * count);
 	if (results == NULL) {
 		errno = ENOMEM;
@@ -40,11 +44,11 @@ char** strsplit(const char* text, char sep)
 	}
 	memset(results, 0, sizeof(char*) * count);
 
-	index = 0;
-	for (const char* p = text; *p != '\0'; p++) {
-		if (*p == sep) {
+	for (const char* p = text;; p++) {
+		if (*p == '\0' || *p == sep) {
 			results[index] = (char*)malloc(p - text + 1);
 			if (results[index] == NULL) {
+			    // cleanup
 				for (int i = 0; i < index; i++) {
 					free(results[i]);
 				}
@@ -56,6 +60,10 @@ char** strsplit(const char* text, char sep)
 			results[index][p - text] = '\0';
 			text = p + 1;
 			index++;
+			
+			if (*p == '\0') {
+			    break;
+			}
 		}
 	}
 	return results;

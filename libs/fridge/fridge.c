@@ -27,6 +27,13 @@
 #include <vafs/vafs.h>
 #include <zstd.h>
 
+#define FRIDGE_ROOT_PATH ".fridge"
+
+#define FRIDGE_STORAGE_PATH           FRIDGE_ROOT_PATH "/storage"
+#define FRIDGE_STORAGE_INVENTORY_PATH FRIDGE_STORAGE_PATH "/inventory.json"
+
+#define FRIDGE_PREP_PATH    FRIDGE_ROOT_PATH "/prep"
+
 struct VaFsFeatureFilter {
     struct VaFsFeatureHeader Header;
 };
@@ -157,18 +164,18 @@ static int __extract_directory(
 // .fridge/prep/
 static int __make_folders(void)
 {
-    if (platform_mkdir(".fridge")) {
-        fprintf(stderr, "unmkvafs: failed to create .fridge folder\n");
+    if (platform_mkdir(FRIDGE_ROOT_PATH)) {
+        fprintf(stderr, "unmkvafs: failed to create " FRIDGE_ROOT_PATH " folder\n");
         return -1;
     }
 
-    if (platform_mkdir(".fridge/storage")) {
-        fprintf(stderr, "unmkvafs: failed to create .fridge/storage folder\n");
+    if (platform_mkdir(FRIDGE_STORAGE_PATH)) {
+        fprintf(stderr, "unmkvafs: failed to create " FRIDGE_STORAGE_PATH " folder\n");
         return -1;
     }
 
-    if (platform_mkdir(".fridge/prep")) {
-        fprintf(stderr, "unmkvafs: failed to create .fridge/prep folder\n");
+    if (platform_mkdir(FRIDGE_PREP_PATH)) {
+        fprintf(stderr, "unmkvafs: failed to create " FRIDGE_PREP_PATH " folder\n");
         return -1;
     }
     return 0;
@@ -193,7 +200,7 @@ int fridge_initialize(void)
         return -1;
     }
 
-    status = inventory_load(".fridge/storage/inventory.json", &g_inventory);
+    status = inventory_load(FRIDGE_STORAGE_INVENTORY_PATH, &g_inventory);
     if (status) {
         fprintf(stderr, "fridge_initialize: failed to load inventory\n");
         return -1;
@@ -207,17 +214,22 @@ void fridge_cleanup(void)
 
     // save inventory if loaded
     if (g_inventory != NULL) {
-        status = inventory_save(g_inventory, ".fridge/storage/inventory.json");
+        status = inventory_save(g_inventory, FRIDGE_STORAGE_INVENTORY_PATH);
         if (status) {
             fprintf(stderr, "fridge_cleanup: failed to save inventory: %i\n", status);
         }
     }
 
     // remove the prep area
-    status = platform_rmdir(".fridge/prep");
+    status = platform_rmdir(FRIDGE_PREP_PATH);
     if (status) {
-        fprintf(stderr, "fridge_cleanup: failed to remove prep area\n");
+        fprintf(stderr, "fridge_cleanup: failed to remove " FRIDGE_PREP_PATH "\n");
     }
+}
+
+char* fridge_get_prep_directory(void)
+{
+    return FRIDGE_PREP_PATH;
 }
 
 static int __parse_version_string(const char* string, struct chef_version* version)
@@ -266,9 +278,10 @@ static int __zstd_decode(void* Input, uint32_t InputLength, void* Output, uint32
     size_t             decompressedSize;
     unsigned long long contentSize = ZSTD_getFrameContentSize(Input, InputLength);
     if (contentSize == ZSTD_CONTENTSIZE_ERROR || contentSize == ZSTD_CONTENTSIZE_UNKNOWN) {
+        fprintf(stderr, "__zstd_decode: failed to get frame content size\n");
         return -1;
     }
-
+    
     /* Decompress.
      * If you are doing many decompressions, you may want to reuse the context
      * and use ZSTD_decompressDCtx(). If you want to set advanced parameters,
@@ -278,12 +291,12 @@ static int __zstd_decode(void* Input, uint32_t InputLength, void* Output, uint32
     if (ZSTD_isError(decompressedSize)) {
         return -1;
     }
+    *OutputLength = (uint32_t)decompressedSize;
     return 0;
 }
 
 static int __set_filter_ops(
-    struct VaFs*              vafs,
-    struct VaFsFeatureFilter* filter)
+    struct VaFs* vafs)
 {
     struct VaFsFeatureFilterOps filterOps;
 
@@ -306,7 +319,7 @@ static int __handle_filter(struct VaFs* vafs)
         // no filter present
         return 0;
     }
-    return __set_filter_ops(vafs, filter);
+    return __set_filter_ops(vafs);
 }
 
 static int __fridge_unpack(const char* packPath)
@@ -335,7 +348,7 @@ static int __fridge_unpack(const char* packPath)
         return -1;
     }
 
-    status = __extract_directory(directoryHandle, ".fridge/prep", ".fridge/prep");
+    status = __extract_directory(directoryHandle, FRIDGE_PREP_PATH, FRIDGE_PREP_PATH);
     if (status != 0) {
         vafs_close(vafsHandle);
         fprintf(stderr, "__fridge_unpack: unable to extract pack\n");
@@ -420,7 +433,7 @@ int fridge_store_ingredient(struct fridge_ingredient* ingredient)
     // generate the file name
     snprintf(
         nameBuffer, sizeof(nameBuffer) - 1, 
-        ".fridge/storage/%s-%s-%s-%s-%s-%s.pack", 
+        FRIDGE_STORAGE_PATH "/%s-%s-%s-%s-%s-%s.pack", 
         names[0], names[1],
         ingredient->platform,
         ingredient->arch,
@@ -520,7 +533,7 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
     // generate the file name
     snprintf(
         nameBuffer, sizeof(nameBuffer) - 1, 
-        ".fridge/storage/%s-%s-%s-%s-%s-%s.pack", 
+        FRIDGE_STORAGE_PATH "/%s-%s-%s-%s-%s-%s.pack", 
         names[0], names[1],
         ingredient->platform,
         ingredient->arch,
@@ -537,7 +550,7 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
     downloadParams.version   = ingredient->version;
     status = chefclient_pack_download(&downloadParams, &nameBuffer[0]);
     if (status) {
-        fprintf(stderr, "fridge_use_ingredient: failed to download ingredient %s\n", ingredient->name);
+        fprintf(stderr, "fridge_use_ingredient: failed to download ingredient %s [%i]\n", ingredient->name, status);
         goto cleanup;
     }
 

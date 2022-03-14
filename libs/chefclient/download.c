@@ -46,10 +46,9 @@ static int __parse_pack_response(const char* response, struct pack_response* pac
     json_error_t error;
     json_t*      root;
 
-    printf("__parse_pack_response: %s\n", response);
-
     root = json_loads(response, 0, &error);
     if (!root) {
+        fprintf(stderr, "__parse_pack_response: failed to parse json: %s\n", error.text);
         return -1;
     }
 
@@ -129,6 +128,7 @@ static int __download_file(const char* filePath, struct pack_response* context)
     int                status  = -1;
     CURL*              curl;
     CURLcode           code;
+    long               httpCode;
 
     // initialize a curl session
     curl = curl_easy_init();
@@ -136,7 +136,7 @@ static int __download_file(const char* filePath, struct pack_response* context)
         fprintf(stderr, "__download_file: curl_easy_init() failed\n");
         return -1;
     }
-    chef_set_curl_common(curl, NULL, 0, 1, 0);
+    chef_set_curl_common(curl, (void**)&headers, 0, 1, 0);
 
     // initialize the output file
     file = fopen(filePath, "wb");
@@ -146,8 +146,8 @@ static int __download_file(const char* filePath, struct pack_response* context)
     }
 
     // set required ms headers
-    headers = curl_slist_append(headers, "x-ms-blob-type:BlockBlob");
-    headers = curl_slist_append(headers, "x-ms-blob-content-type:application/octet-stream");
+    headers = curl_slist_append(headers, "x-ms-blob-type: BlockBlob");
+    headers = curl_slist_append(headers, "x-ms-blob-content-type: application/octet-stream");
 
     code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
     if (code != CURLE_OK) {
@@ -170,8 +170,17 @@ static int __download_file(const char* filePath, struct pack_response* context)
     code = curl_easy_perform(curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__download_file: curl_easy_perform() failed: %s\n", chef_error_buffer());
+        goto cleanup;
     }
     
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode < 200 || httpCode >= 300) {
+        fprintf(stderr, "__download_file: http error %ld\n", httpCode);
+        status = -1;
+    }
+
+    status = 0;
+
 cleanup:
     if (file) {
         fclose(file);
@@ -188,12 +197,14 @@ int chefclient_pack_download(struct chef_download_params* params, const char* pa
 
     status = __download_request(params, &packResponse);
     if (status != 0) {
+        fprintf(stderr, "chefclient_pack_download: failed to create download request [%s]\n", strerror(errno));
         return status;
     }
 
     status = __download_file(path, &packResponse);
     if (status != 0) {
+        fprintf(stderr, "chefclient_pack_download: failed to download package [%s]\n", strerror(errno));
         return status;
     }
-    return 0;
+    return status;
 }

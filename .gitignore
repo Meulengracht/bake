@@ -33,3 +33,5 @@
 
 # Projects
 build/
+.fridge
+.oven

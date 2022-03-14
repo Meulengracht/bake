@@ -206,17 +206,17 @@ int inventory_contains(struct fridge_inventory* inventory, const char* publisher
             strcmp(inventory->packs[i].channel, channel) == 0) {
             // ok same package, check version against latest
             if (inventory->packs[i].latest == latest && latest == 1) {
-                return 1;
+                return 0;
             } else if (inventory->packs[i].latest == latest && latest == 0) {
                 if (__compare_version(&inventory->packs[i].version, version) == 0) {
-                    return 1;
+                    return 0;
                 }
             }
-            return 1;
         }
     }
 
-    return 0;
+    errno = ENOENT;
+    return -1;
 }
 
 int inventory_add(struct fridge_inventory* inventory, const char* publisher,
@@ -234,7 +234,7 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
 
     // extend the pack array by one
     oldArray = inventory->packs;
-    newArray = malloc(inventory->packs_count + 1);
+    newArray = malloc(sizeof(struct fridge_inventory_pack) * (inventory->packs_count + 1));
     if (!newArray) {
         return -1;
     }
@@ -249,8 +249,8 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
 
     packEntry->publisher = strdup(publisher);
     packEntry->package   = strdup(package);
-    packEntry->platform  = strdup(platform);
-    packEntry->arch      = strdup(arch);
+    packEntry->platform  = platform != NULL ? strdup(platform) : NULL;
+    packEntry->arch      = platform != NULL ? strdup(arch) : NULL;
     packEntry->channel   = strdup(channel);
     if (latest == 1 || version == NULL) {
         packEntry->latest = 1;

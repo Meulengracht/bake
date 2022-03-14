@@ -12,6 +12,7 @@ add_library(platform STATIC
     setenv.c
     sleep.c
     spawn.c
+    strreplace.c
     strsplit.c
     unsetenv.c
 )

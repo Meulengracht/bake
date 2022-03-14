@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <libplatform.h>
 #include <recipe.h>
 #include <yaml/yaml.h>
 #include <stdio.h>
@@ -338,11 +339,23 @@ static void __finalize_ingredient(struct parser_state* state)
         exit(EXIT_FAILURE);
     }
 
+    // copy the set values
     memcpy(ingredient, &state->ingredient, sizeof(struct recipe_ingredient));
+
+    // now we do some value defaulting
+    if (ingredient->ingredient.arch == NULL) {
+        ingredient->ingredient.arch = strdup(CHEF_ARCHITECTURE_STR);
+    }
+
+    if (ingredient->ingredient.platform == NULL) {
+        ingredient->ingredient.platform = strdup(CHEF_PLATFORM_STR);
+    }
+
     list_add(&state->recipe.ingredients, &ingredient->list_header);
 
     // reset the structure in state
     memset(&state->ingredient, 0, sizeof(struct recipe_ingredient));
+    state->ingredient.ingredient.source = INGREDIENT_SOURCE_REPO;
 }
 
 static void __finalize_part(struct parser_state* state)
@@ -938,6 +951,9 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
     
     memset(&state, 0, sizeof(state));
     state.state = STATE_START;
+
+    // initialize some default options
+    state.ingredient.ingredient.source = INGREDIENT_SOURCE_REPO;
 
     yaml_parser_initialize(&parser);
     yaml_parser_set_input_string(&parser, buffer, length);

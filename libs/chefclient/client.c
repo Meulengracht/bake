@@ -226,6 +226,7 @@ void chef_set_curl_common(void* curl, void** headerlist, int response, int secur
  
     // set the writer function to get the response
     if (response) {
+        memset(g_curlresponseBuffer, 0, MAX_RESPONSE_SIZE);
         code = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, __response_writer);
         if (code != CURLE_OK) {
             fprintf(stderr, "chef_set_curl_common: failed to set writer [%s]\n", g_curlErrorBuffer);

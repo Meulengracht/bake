@@ -36,6 +36,7 @@ struct oven_context {
     const char**               process_environment;
     const char*                build_root;
     const char*                install_root;
+    const char*                fridge_prep_directory;
     struct oven_recipe_context recipe;
 };
 
@@ -82,7 +83,7 @@ static int __get_root_directory(char** bufferOut)
 // oven is the work-area for the build and pack
 // .oven/build
 // .oven/install
-int oven_initialize(char** envp)
+int oven_initialize(char** envp, const char* fridgePrepDirectory)
 {
     int   status;
     char* cwd;
@@ -120,9 +121,10 @@ int oven_initialize(char** envp)
     free(cwd);
 
     // update oven context
-    g_ovenContext.process_environment = (const char**)envp;
-    g_ovenContext.build_root          = buildRoot;
-    g_ovenContext.install_root        = installRoot;
+    g_ovenContext.process_environment   = (const char**)envp;
+    g_ovenContext.build_root            = buildRoot;
+    g_ovenContext.install_root          = installRoot;
+    g_ovenContext.fridge_prep_directory = fridgePrepDirectory;
 
     // no active recipe
     g_ovenContext.recipe.name          = NULL;
@@ -301,6 +303,40 @@ static struct generate_backend* __get_generate_backend(const char* name)
     return NULL;
 }
 
+static int __initialize_backend_data(struct oven_backend_data* data, const char* profile, struct list* arguments, struct list* environment)
+{
+    int                      status;
+    char*                    path;
+
+    status = __get_root_directory(&path);
+    if (status) {
+        return status;
+    }
+    data->root_directory = path;
+    
+    status = __get_project_directory(data->root_directory, g_ovenContext.recipe.relative_path, &path);
+    if (status) {
+        free((void*)data->root_directory);
+        return status;
+    }
+    data->project_directory = path;
+
+    data->project_name        = g_ovenContext.recipe.name;
+    data->profile_name        = profile != NULL ? profile : "release";
+    data->install_directory   = g_ovenContext.recipe.install_root;
+    data->build_directory     = g_ovenContext.recipe.build_root;
+    data->process_environment = g_ovenContext.process_environment;
+    data->fridge_directory    = g_ovenContext.fridge_prep_directory;
+    data->environment         = environment;
+    data->arguments           = __build_argument_string(arguments);
+    if (!data->arguments) {
+        free((void*)data->root_directory);
+        free((void*)data->project_directory);
+        return -1;
+    }
+    return 0;
+}
+
 int oven_configure(struct oven_generate_options* options)
 {
     struct generate_backend* backend;
@@ -320,28 +356,9 @@ int oven_configure(struct oven_generate_options* options)
     }
 
     // build the backend data
-    status = __get_root_directory(&path);
+    status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
-        return status;
-    }
-    data.root_directory = path;
-    
-    status = __get_project_directory(data.root_directory, g_ovenContext.recipe.relative_path, &path);
-    if (status) {
-        free((void*)data.root_directory);
-        return status;
-    }
-    data.project_directory = path;
-
-    data.install_directory   = g_ovenContext.recipe.install_root;
-    data.build_directory     = g_ovenContext.recipe.build_root;
-    data.process_environment = g_ovenContext.process_environment;
-    data.environment = options->environment;
-    data.arguments   = __build_argument_string(options->arguments);
-    if (!data.arguments) {
-        free((void*)data.root_directory);
-        free((void*)data.project_directory);
-        return -1;
+        goto cleanup;
     }
 
     status = backend->generate(&data);
@@ -382,28 +399,9 @@ int oven_build(struct oven_build_options* options)
     }
 
     // build the backend data
-    status = __get_root_directory(&path);
+    status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
-        return status;
-    }
-    data.root_directory = path;
-    
-    status = __get_project_directory(data.root_directory, g_ovenContext.recipe.relative_path, &path);
-    if (status) {
-        free((void*)data.root_directory);
-        return status;
-    }
-    data.project_directory = path;
-
-    data.install_directory   = g_ovenContext.recipe.install_root;
-    data.build_directory     = g_ovenContext.recipe.build_root;
-    data.process_environment = g_ovenContext.process_environment;
-    data.environment = options->environment;
-    data.arguments   = __build_argument_string(options->arguments);
-    if (!data.arguments) {
-        free((void*)data.root_directory);
-        free((void*)data.project_directory);
-        return -1;
+        goto cleanup;
     }
 
     status = backend->build(&data);
