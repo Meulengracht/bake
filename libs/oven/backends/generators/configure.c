@@ -25,6 +25,15 @@
 #include <stdio.h>
 #include <utils.h>
 
+/*
+$ mkdir -p ~/local/share
+$ cat << EOF > ~/local/share/config.site
+CPPFLAGS=-I$HOME/local/include
+LDFLAGS=-L$HOME/local/lib
+...
+EOF
+*/
+
 int configure_main(struct oven_backend_data* data)
 {
     char** environment;

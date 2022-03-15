@@ -30,6 +30,8 @@ static int __load_package_header(struct chef_vafs_feature_package_header* header
 {
     char* data = (char*)header + sizeof(struct chef_vafs_feature_package_header);
 
+    package->type = header->type;
+
     if (header->package_length) {
         package->package = strndup(data, header->package_length);
         data += header->package_length;

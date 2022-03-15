@@ -85,12 +85,12 @@ static int __write_include(FILE* file, const char* includePath)
     return 0;
 }
 
-static int __generate_cmake_file(struct oven_backend_data* data)
+static int __generate_cmake_file(const char* path, struct oven_backend_data* data)
 {
     FILE* file;
     int   status;
 
-    file = fopen("workspace.cmake", "w");
+    file = fopen(path, "w");
     if(!file) {
         fprintf(stderr, "Failed to open workspace.cmake for writing: %s\n", strerror(errno));
         return -1;
@@ -120,28 +120,38 @@ cleanup:
 
 int cmake_main(struct oven_backend_data* data)
 {
-    char*  argument;
+    char*  workspacePath;
+    char*  argument = NULL;
     char*  cwd;
-    char** environment;
+    char** environment = NULL;
     int    written;
-    int    status;
+    int    status = -1;
     size_t argumentLength;
 
-    argumentLength = strlen(data->arguments) + strlen(data->install_directory) + 64;
+    workspacePath = malloc(strlen(data->build_directory) + strlen("/workspace.cmake") + 1);
+    if (workspacePath == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    strcpy(workspacePath, data->build_directory);
+    strcat(workspacePath, "/workspace.cmake");
+
+    argumentLength = strlen(data->arguments) + 1024;
     argument       = malloc(argumentLength);
     if (argument == NULL) {
         errno = ENOMEM;
-        return -1;
+        goto cleanup;
     }
 
     environment = oven_environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
         free(argument);
         errno = ENOMEM;
-        return -1;
+        goto cleanup;
     }
 
-    status = __generate_cmake_file(data);
+    status = __generate_cmake_file(workspacePath, data);
     if (status != 0) {
         goto cleanup;
     }
@@ -150,9 +160,11 @@ int cmake_main(struct oven_backend_data* data)
     written = snprintf(
         argument,
         argumentLength - 1,
-        "%s -DCMAKE_PROJECT_INCLUDE=./workspace.cmake -DCMAKE_INSTALL_PREFIX=%s ../..",
+        "%s -DCMAKE_PROJECT_INCLUDE=%s -DCMAKE_INSTALL_PREFIX=%s %s",
         data->arguments,
-        data->install_directory
+        workspacePath,
+        data->install_directory,
+        data->project_directory
     );
     argument[written] = '\0';
 
@@ -163,5 +175,6 @@ int cmake_main(struct oven_backend_data* data)
 cleanup:
     oven_environment_destroy(environment);
     free(argument);
+    free(workspacePath);
     return status;
 }

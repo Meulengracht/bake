@@ -42,25 +42,15 @@ static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
 static struct VaFsGuid g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
 static struct VaFsGuid g_versionGuid   = CHEF_PACKAGE_VERSION_GUID;
 
-
-static const char* __get_relative_path(
-	const char* root,
-	const char* path)
-{
-	const char* relative = path;
-	if (strncmp(path, root, strlen(root)) == 0)
-		relative = path + strlen(root);
-	return relative;
-}
-
 static const char* __get_filename(
 	const char* path)
 {
 	const char* filename = (const char*)strrchr(path, '/');
-	if (filename == NULL)
+	if (filename == NULL) {
 		filename = path;
-	else
+	} else {
 		filename++;
+	}
 	return filename;
 }
 
@@ -155,8 +145,7 @@ static int __write_directory(
 				fprintf(stderr, "oven: failed to close directory '%s'\n", filepathBuffer);
 				break;
 			}
-		}
-		else {
+		} else {
 			status = __write_file(directoryHandle, filepathBuffer, dp->d_name);
 			if (status != 0) {
 				fprintf(stderr, "oven: unable to write file %s\n", dp->d_name);
@@ -297,6 +286,9 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 	memcpy(&packageHeader->header.Guid, &g_headerGuid, sizeof(struct VaFsGuid));
 	packageHeader->header.Length = featureSize;
 
+	// fill in info
+	packageHeader->type  = options->type;
+
 	// fill in lengths
 	packageHeader->package_length          = strlen(name);
 	packageHeader->description_length      = options->description == NULL ? 0 : strlen(options->description);
@@ -386,6 +378,7 @@ int oven_pack(struct oven_pack_options* options)
     struct VaFs*                vafs;
     int                         status;
     char                        tmp[128];
+	char*                       start;
 	char*                       name;
     int                         i;
 
@@ -395,8 +388,15 @@ int oven_pack(struct oven_pack_options* options)
     }
 
     memset(&tmp[0], 0, sizeof(tmp));
-    for (i = 0; options->name[i] && options->name[i] != '.'; i++) {
-        tmp[i] = options->name[i];
+	start = strrchr(options->name, '/');
+	if (start == NULL) {
+		start = options->name;
+	} else {
+		start++;
+	}
+
+    for (i = 0; start[i] && start[i] != '.'; i++) {
+        tmp[i] = start[i];
     }
 	name = strdup(tmp);
     strcat(tmp, ".pack");

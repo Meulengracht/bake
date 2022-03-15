@@ -174,6 +174,7 @@ enum state {
     STATE_RECIPE,          // MAPPING_START
     STATE_RECIPE_NAME,
     STATE_RECIPE_PATH,
+    STATE_RECIPE_TOOLCHAIN,
 
     STATE_RECIPE_STEP_LIST,
 
@@ -217,14 +218,16 @@ static const char* __parse_string(const char* value)
     return strdup(value);
 }
 
-static enum recipe_type __parse_project_type(const char* value)
+static enum chef_package_type __parse_project_type(const char* value)
 {
     if (strcmp(value, "ingredient") == 0) {
-        return RECIPE_TYPE_INGREDIENT;
+        return CHEF_PACKAGE_TYPE_INGREDIENT;
     } else if (strcmp(value, "application") == 0) {
-        return RECIPE_TYPE_APPLICATION;
+        return CHEF_PACKAGE_TYPE_APPLICATION;
+    } else if (strcmp(value, "toolchain") == 0) {
+        return CHEF_PACKAGE_TYPE_TOOLCHAIN;
     } else {
-        return RECIPE_TYPE_UNKNOWN;
+        return CHEF_PACKAGE_TYPE_UNKNOWN;
     }
 }
 
@@ -270,7 +273,7 @@ static enum recipe_command_type __parse_command_type(const char* value)
 static void __finalize_recipe(struct parser_state* state)
 {
     // verify required recipe members
-    if (state->recipe.type == RECIPE_TYPE_UNKNOWN) {
+    if (state->recipe.type == CHEF_PACKAGE_TYPE_UNKNOWN) {
         fprintf(stderr, "bake: parse error: project type is not specified\n");
         exit(EXIT_FAILURE);
     }
@@ -795,6 +798,9 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else if (strcmp(value, "path") == 0) {
                         s->state = STATE_RECIPE_PATH;
                     }
+                    else if (strcmp(value, "toolchain") == 0) {
+                        s->state = STATE_RECIPE_TOOLCHAIN;
+                    }
                     else if (strcmp(value, "steps") == 0) {
                         s->state = STATE_RECIPE_STEP_LIST;
                     }
@@ -811,6 +817,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_NAME, part.name, __parse_string)
         __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_PATH, part.path, __parse_string)
+        __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_TOOLCHAIN, part.toolchain, __parse_string)
 
         __consume_sequence_mapped(STATE_RECIPE, STATE_RECIPE_STEP_LIST, STATE_RECIPE_STEP)
 

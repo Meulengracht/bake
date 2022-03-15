@@ -54,6 +54,7 @@ static void __initialize_build_options(struct oven_build_options* options, struc
 static void __initialize_pack_options(struct oven_pack_options* options, char* name, struct recipe* recipe)
 {
     options->name        = name;
+    options->type        = recipe->type;
     options->description = recipe->project.description;
     options->version     = recipe->project.version;
     options->license     = recipe->project.license;
@@ -103,8 +104,7 @@ static int __make_recipe_steps(struct list* steps)
                 fprintf(stderr, "bake: failed to configure target: %s\n", strerror(errno));
                 return status;
             }
-        }
-        else if (step->type == RECIPE_STEP_TYPE_BUILD) {
+        } else if (step->type == RECIPE_STEP_TYPE_BUILD) {
             struct oven_build_options buildOptions;
             __initialize_build_options(&buildOptions, step);
             status = oven_build(&buildOptions);
@@ -122,6 +122,7 @@ static void __initialize_recipe_options(struct oven_recipe_options* options, str
 {
     options->name          = part->name;
     options->relative_path = part->path;
+    options->toolchain     = part->toolchain;
 }
 
 static int __make_recipes(struct recipe* recipe)
@@ -162,24 +163,20 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
-            }
-            else if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--recipe")) {
+            } else if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--recipe")) {
                 if (i + 1 < argc) {
                     if (name == NULL) {
                         // only set name if --name was not provided
                         name = argv[i + 1];
                     }
-                }
-                else {
+                } else {
                     fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
                     return 1;
                 }
-            }
-            else if (!strcmp(argv[i], "-n") || !strcmp(argv[i], "--name")) {
+            } else if (!strcmp(argv[i], "-n") || !strcmp(argv[i], "--name")) {
                 if (i + 1 < argc) {
                     name = argv[i + 1];
-                }
-                else {
+                } else {
                     fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
                     return 1;
                 }

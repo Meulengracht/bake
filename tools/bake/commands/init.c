@@ -29,35 +29,43 @@ static void __print_help(void)
     printf("\n");
     printf("Options:\n");
     printf("  -t, --type\n");
-    printf("      Possible recipe types are {ingredient, app}\n");
+    printf("      Possible recipe types are {ingredient, app, toolchain}\n");
     printf("  -n, --name\n");
     printf("      Name of the recipe\n");
 }
 
-static int __write_recipe(enum recipe_type type, char* output)
+static int __write_recipe(enum chef_package_type type, char* output)
 {
     const char* recipe = NULL;
     FILE*       file;
 
     switch (type) {
-        case RECIPE_TYPE_INGREDIENT:
+        case CHEF_PACKAGE_TYPE_INGREDIENT:
             recipe = g_ingredientYaml;
             break;
-        case RECIPE_TYPE_APPLICATION:
+        case CHEF_PACKAGE_TYPE_APPLICATION:
             recipe = g_appYaml;
             break;
+        case CHEF_PACKAGE_TYPE_TOOLCHAIN:
+            recipe = g_appYaml;
+            break;
+    }
+
+    if (recipe == NULL) {
+        fprintf(stderr, "bake: unknown recipe type\n");
+        return -1;
     }
 
     file = fopen(output, "r");
     if (file) {
         fclose(file);
-        printf("bake: recipe already exists, please remove it first.\n");
+        fprintf(stderr, "bake: recipe already exists, please remove it first.\n");
         return -1;
     }
 
     file = fopen(output, "w");
     if (!file) {
-        printf("bake: failed to create %s\n", output);
+        fprintf(stderr, "bake: failed to create %s\n", output);
         return -1;
     }
 
@@ -69,8 +77,8 @@ static int __write_recipe(enum recipe_type type, char* output)
 
 int init_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    enum recipe_type type   = RECIPE_TYPE_INGREDIENT;
-    char*            output = "recipe.yaml";
+    enum chef_package_type type   = CHEF_PACKAGE_TYPE_INGREDIENT;
+    char*                  output = "recipe.yaml";
 
     (void)recipe;
 
@@ -83,10 +91,13 @@ int init_main(int argc, char** argv, char** envp, struct recipe* recipe)
             else if (!strcmp(argv[i], "-t") || !strcmp(argv[i], "--type")) {
                 if (i + 1 < argc) {
                     if (!strcmp(argv[i + 1], "ingredient")) {
-                        type = RECIPE_TYPE_INGREDIENT;
+                        type = CHEF_PACKAGE_TYPE_INGREDIENT;
+                    }
+                    else if (!strcmp(argv[i + 1], "toolchain")) {
+                        type = CHEF_PACKAGE_TYPE_TOOLCHAIN;
                     }
                     else if (!strcmp(argv[i + 1], "app")) {
-                        type = RECIPE_TYPE_APPLICATION;
+                        type = CHEF_PACKAGE_TYPE_APPLICATION;
                     }
                     else {
                         printf("bake: invalid recipe type %s\n", argv[i + 1]);

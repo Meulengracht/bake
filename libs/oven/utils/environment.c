@@ -61,6 +61,11 @@ char** oven_environment_create(const char** parent, struct list* additonal)
 void oven_environment_destroy(char** environment)
 {
     int i = 0;
+    
+    if (!environment) {
+        return;
+    }
+
     while (environment[i]) {
         free(environment[i]);
         i++;

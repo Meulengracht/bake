@@ -20,15 +20,10 @@
 #define __BAKE_RECIPE_H__
 
 #include <stddef.h>
+#include <chef/package.h>
 #include <libfridge.h>
 #include <liboven.h>
 #include <list.h>
-
-enum recipe_type {
-    RECIPE_TYPE_UNKNOWN,
-    RECIPE_TYPE_INGREDIENT,
-    RECIPE_TYPE_APPLICATION
-};
 
 enum recipe_step_type {
     RECIPE_STEP_TYPE_UNKNOWN,
@@ -49,6 +44,7 @@ struct recipe_part {
     struct list_item list_header;
     const char*      name;
     const char*      path;
+    const char*      toolchain;
     struct list      steps;
 };
 
@@ -83,11 +79,11 @@ struct recipe_command {
 };
 
 struct recipe {
-    struct recipe_project project;
-    enum recipe_type      type;
-    struct list           ingredients;
-    struct list           parts;
-    struct list           commands;
+    struct recipe_project  project;
+    enum chef_package_type type;
+    struct list            ingredients;
+    struct list            parts;
+    struct list            commands;
 };
 
 /**

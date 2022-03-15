@@ -19,6 +19,7 @@
 #ifndef __LIBOVEN_H__
 #define __LIBOVEN_H__
 
+#include <chef/package.h>
 #include <list.h>
 
 struct oven_keypair_item {
@@ -35,6 +36,7 @@ struct oven_value_item {
 struct oven_recipe_options {
     const char* name;
     const char* relative_path;
+    const char* toolchain;
 };
 
 struct oven_generate_options {
@@ -52,13 +54,14 @@ struct oven_build_options {
 };
 
 struct oven_pack_options {
-    const char* name;
-    const char* description;
-    const char* version;
-    const char* license;
-    const char* author;
-    const char* email;
-    const char* url;
+    const char*            name;
+    const char*            description;
+    const char*            version;
+    const char*            license;
+    const char*            author;
+    const char*            email;
+    const char*            url;
+    enum chef_package_type type;
 };
 
 /**

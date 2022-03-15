@@ -21,6 +21,13 @@
 
 #include <stddef.h>
 
+enum chef_package_type {
+    CHEF_PACKAGE_TYPE_UNKNOWN,
+    CHEF_PACKAGE_TYPE_TOOLCHAIN,
+    CHEF_PACKAGE_TYPE_INGREDIENT,
+    CHEF_PACKAGE_TYPE_APPLICATION
+};
+
 struct chef_version {
     int         major;
     int         minor;
@@ -53,9 +60,11 @@ struct chef_package {
     const char* license;
     const char* maintainer;
     const char* maintainer_email;
+    
+    enum chef_package_type type;
 
-    struct chef_platform* platforms;
-    size_t                platforms_count;
+    struct chef_platform*  platforms;
+    size_t                 platforms_count;
 };
 
 /**

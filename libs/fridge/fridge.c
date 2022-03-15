@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <chef/client.h>
+#include <chef/utils_vafs.h>
 #include "inventory.h"
 #include <libfridge.h>
 #include <libplatform.h>
@@ -29,18 +30,32 @@
 
 #define FRIDGE_ROOT_PATH ".fridge"
 
+// In the storage area we store the raw unpacked ingredients. We only unpack
+// ingredients when we need them into the prep area
 #define FRIDGE_STORAGE_PATH           FRIDGE_ROOT_PATH "/storage"
 #define FRIDGE_STORAGE_INVENTORY_PATH FRIDGE_STORAGE_PATH "/inventory.json"
 
+// The prep area contains ingredients needed for the recipe.
 #define FRIDGE_PREP_PATH    FRIDGE_ROOT_PATH "/prep"
+
+// The utensils area contains the directory for tools. Each tool will have their
+// own subdirectory in the utensils area. A tool can for instance be a toolchain
+#define FRIDGE_UTENSILS_PATH    FRIDGE_ROOT_PATH "/utensils"
 
 struct VaFsFeatureFilter {
     struct VaFsFeatureHeader Header;
 };
 
 static struct fridge_inventory* g_inventory     = NULL;
+static struct VaFsGuid          g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
 static struct VaFsGuid          g_filterGuid    = VA_FS_FEATURE_FILTER;
 static struct VaFsGuid          g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
+
+static const char* g_rootPath      = NULL;
+static const char* g_storagePath   = NULL;
+static const char* g_inventoryPath = NULL;
+static const char* g_prepPath      = NULL;
+static const char* g_utensilsPath  = NULL;
 
 static const char* __get_relative_path(
     const char* root,
@@ -50,6 +65,35 @@ static const char* __get_relative_path(
     if (strncmp(path, root, strlen(root)) == 0)
         relative = path + strlen(root);
     return relative;
+}
+
+static int __get_cwd(char** bufferOut)
+{
+    char*  cwd;
+    size_t cwdLength;
+    int    status;
+
+    cwd = malloc(PATH_MAX);
+    if (cwd == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    status = platform_getcwd(cwd, PATH_MAX);
+    if (status) {
+        free(cwd);
+        return -1;
+    }
+
+    // make sure it ends on a path seperator
+    cwdLength = strlen(cwd);
+    if (cwd[cwdLength - 1] != '/') {
+        cwd[cwdLength] = '/';
+        cwd[cwdLength + 1] = '\0';
+    }
+
+    *bufferOut = cwd;
+    return 0;
 }
 
 static int __extract_file(
@@ -164,31 +208,104 @@ static int __extract_directory(
 // .fridge/prep/
 static int __make_folders(void)
 {
-    if (platform_mkdir(FRIDGE_ROOT_PATH)) {
-        fprintf(stderr, "unmkvafs: failed to create " FRIDGE_ROOT_PATH " folder\n");
+    char* cwd;
+    char* rootPath;
+    char* storagePath;
+    char* inventoryPath;
+    char* prepPath;
+    char* utensilsPath;
+    int   status;
+
+    status = __get_cwd(&cwd);
+    if (status) {
+        fprintf(stderr, "__make_folders: failed to get root directory\n");
         return -1;
     }
 
-    if (platform_mkdir(FRIDGE_STORAGE_PATH)) {
-        fprintf(stderr, "unmkvafs: failed to create " FRIDGE_STORAGE_PATH " folder\n");
+    rootPath = malloc(strlen(cwd) + strlen(FRIDGE_ROOT_PATH) + 1);
+    if (rootPath == NULL) {
+        free(cwd);
+        fprintf(stderr, "__make_folders: failed to allocate memory for root path\n");
         return -1;
     }
 
-    if (platform_mkdir(FRIDGE_PREP_PATH)) {
-        fprintf(stderr, "unmkvafs: failed to create " FRIDGE_PREP_PATH " folder\n");
+    storagePath = malloc(strlen(cwd) + strlen(FRIDGE_STORAGE_PATH) + 1);
+    if (storagePath == NULL) {
+        free(cwd);
+        free(rootPath);
+        fprintf(stderr, "__make_folders: failed to allocate memory for storage path\n");
+        return -1;
+    }
+
+    inventoryPath = malloc(strlen(cwd) + strlen(FRIDGE_STORAGE_INVENTORY_PATH) + 1);
+    if (inventoryPath == NULL) {
+        free(cwd);
+        free(rootPath);
+        free(storagePath);
+        fprintf(stderr, "__make_folders: failed to allocate memory for storage path\n");
+        return -1;
+    }
+
+    prepPath = malloc(strlen(cwd) + strlen(FRIDGE_PREP_PATH) + 1);
+    if (prepPath == NULL) {
+        free(cwd);
+        free(rootPath);
+        free(storagePath);
+        free(inventoryPath);
+        fprintf(stderr, "__make_folders: failed to allocate memory for prep path\n");
+        return -1;
+    }
+
+    utensilsPath = malloc(strlen(cwd) + strlen(FRIDGE_UTENSILS_PATH) + 1);
+    if (utensilsPath == NULL) {
+        free(cwd);
+        free(rootPath);
+        free(storagePath);
+        free(inventoryPath);
+        free(prepPath);
+        fprintf(stderr, "__make_folders: failed to allocate memory for utensils path\n");
+        return -1;
+    }
+
+    sprintf(rootPath, "%s%s", cwd, FRIDGE_ROOT_PATH);
+    sprintf(storagePath, "%s%s", cwd, FRIDGE_STORAGE_PATH);
+    sprintf(inventoryPath, "%s%s", cwd, FRIDGE_STORAGE_INVENTORY_PATH);
+    sprintf(prepPath, "%s%s", cwd, FRIDGE_PREP_PATH);
+    sprintf(utensilsPath, "%s%s", cwd, FRIDGE_UTENSILS_PATH);
+    free(cwd);
+
+    // update global paths
+    g_rootPath = rootPath;
+    g_storagePath = storagePath;
+    g_inventoryPath = inventoryPath;
+    g_prepPath = prepPath;
+    g_utensilsPath = utensilsPath;
+
+    status = platform_mkdir(rootPath);
+    if (status) {
+        fprintf(stderr, "__make_folders: failed to create root directory\n");
+        return -1;
+    }
+
+    status = platform_mkdir(storagePath);
+    if (status) {
+        fprintf(stderr, "__make_folders: failed to create storage directory\n");
+        return -1;
+    }
+
+    status = platform_mkdir(prepPath);
+    if (status) {
+        fprintf(stderr, "__make_folders: failed to create prep directory\n");
+        return -1;
+    }
+
+    status = platform_mkdir(utensilsPath);
+    if (status) {
+        fprintf(stderr, "__make_folders: failed to create utensils directory\n");
         return -1;
     }
     return 0;
 }
-
-/*
-$ mkdir -p ~/local/share
-$ cat << EOF > ~/local/share/config.site
-CPPFLAGS=-I$HOME/local/include
-LDFLAGS=-L$HOME/local/lib
-...
-EOF
-*/
 
 int fridge_initialize(void)
 {
@@ -200,7 +317,7 @@ int fridge_initialize(void)
         return -1;
     }
 
-    status = inventory_load(FRIDGE_STORAGE_INVENTORY_PATH, &g_inventory);
+    status = inventory_load(g_inventoryPath, &g_inventory);
     if (status) {
         fprintf(stderr, "fridge_initialize: failed to load inventory\n");
         return -1;
@@ -214,22 +331,48 @@ void fridge_cleanup(void)
 
     // save inventory if loaded
     if (g_inventory != NULL) {
-        status = inventory_save(g_inventory, FRIDGE_STORAGE_INVENTORY_PATH);
+        status = inventory_save(g_inventory, g_inventoryPath);
         if (status) {
             fprintf(stderr, "fridge_cleanup: failed to save inventory: %i\n", status);
         }
     }
 
     // remove the prep area
-    status = platform_rmdir(FRIDGE_PREP_PATH);
+    status = platform_rmdir(g_prepPath);
     if (status) {
-        fprintf(stderr, "fridge_cleanup: failed to remove " FRIDGE_PREP_PATH "\n");
+        fprintf(stderr, "fridge_cleanup: failed to remove %s\n", g_prepPath);
+    }
+
+    // free resources
+    if (g_rootPath != NULL) {
+        free((void*)g_rootPath);
+        g_rootPath = NULL;
+    }
+
+    if (g_storagePath != NULL) {
+        free((void*)g_storagePath);
+        g_storagePath = NULL;
+    }
+
+    if (g_inventoryPath != NULL) {
+        free((void*)g_inventoryPath);
+        g_inventoryPath = NULL;
+    }
+
+    if (g_prepPath != NULL) {
+        free((void*)g_prepPath);
+        g_prepPath = NULL;
+    }
+
+    if (g_utensilsPath != NULL) {
+        free((void*)g_utensilsPath);
+        g_utensilsPath = NULL;
     }
 }
 
-char* fridge_get_prep_directory(void)
+const char* fridge_get_prep_directory(void)
 {
-    return FRIDGE_PREP_PATH;
+    return g_prepPath;
 }
 
 static int __parse_version_string(const char* string, struct chef_version* version)
@@ -322,11 +465,39 @@ static int __handle_filter(struct VaFs* vafs)
     return __set_filter_ops(vafs);
 }
 
-static int __fridge_unpack(const char* packPath)
+static const char* __get_unpack_path(struct VaFs* vafsHandle, const char* packageName)
 {
-    struct VaFsDirectoryHandle* directoryHandle;
+    struct chef_vafs_feature_package_header* packageHeader;
+    int                                      status;
+
+    status = vafs_feature_query(vafsHandle, &g_headerGuid, (struct VaFsFeatureHeader**)&packageHeader);
+    if (status) {
+        fprintf(stderr, "__get_unpack_path: failed to query package header\n");
+        return NULL;
+    }
+    
+    switch (packageHeader->type) {
+        case CHEF_PACKAGE_TYPE_TOOLCHAIN: {
+            char* toolchainPath = (char*)malloc(strlen(g_utensilsPath) + strlen(packageName) + 2);
+            sprintf(toolchainPath, "%s/%s", g_utensilsPath, packageName);
+            if (platform_mkdir(toolchainPath)) {
+                fprintf(stderr, "__get_unpack_path: failed to create toolchain directory\n");
+                free(toolchainPath);
+                return NULL;
+            }
+            return toolchainPath;
+        }
+        default:
+            return strdup(g_prepPath);
+    }
+}
+
+static int __fridge_unpack(const char* packPath, const char* packageName)
+{
     struct VaFs*                vafsHandle;
+    struct VaFsDirectoryHandle* directoryHandle;
     int                         status;
+    const char*                 unpackPath;
 
     status = vafs_open_file(packPath, &vafsHandle);
     if (status) {
@@ -348,13 +519,26 @@ static int __fridge_unpack(const char* packPath)
         return -1;
     }
 
-    status = __extract_directory(directoryHandle, FRIDGE_PREP_PATH, FRIDGE_PREP_PATH);
+    // detect the type of ingredient we are unpacking.
+    unpackPath = __get_unpack_path(vafsHandle, packageName);
+    if (unpackPath == NULL) {
+        vafs_directory_close(directoryHandle);
+        vafs_close(vafsHandle);
+        fprintf(stderr, "__fridge_unpack: failed to create unpack path\n");
+        return -1;
+    }
+
+    status = __extract_directory(directoryHandle, unpackPath, unpackPath);
     if (status != 0) {
+        free((void*)unpackPath);
+        vafs_directory_close(directoryHandle);
         vafs_close(vafsHandle);
         fprintf(stderr, "__fridge_unpack: unable to extract pack\n");
         return -1;
     }
 
+    free((void*)unpackPath);
+    vafs_directory_close(directoryHandle);
     return vafs_close(vafsHandle);
 }
 
@@ -433,7 +617,8 @@ int fridge_store_ingredient(struct fridge_ingredient* ingredient)
     // generate the file name
     snprintf(
         nameBuffer, sizeof(nameBuffer) - 1, 
-        FRIDGE_STORAGE_PATH "/%s-%s-%s-%s-%s-%s.pack", 
+        "%s/%s-%s-%s-%s-%s-%s.pack",
+        g_storagePath,
         names[0], names[1],
         ingredient->platform,
         ingredient->arch,
@@ -533,7 +718,8 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
     // generate the file name
     snprintf(
         nameBuffer, sizeof(nameBuffer) - 1, 
-        FRIDGE_STORAGE_PATH "/%s-%s-%s-%s-%s-%s.pack", 
+        "%s/%s-%s-%s-%s-%s-%s.pack", 
+        g_storagePath,
         names[0], names[1],
         ingredient->platform,
         ingredient->arch,
@@ -555,7 +741,7 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
     }
 
     // unpack it into preparation area
-    status = __fridge_unpack(nameBuffer);
+    status = __fridge_unpack(nameBuffer, names[1]);
     if (status) {
         fprintf(stderr, "fridge_use_ingredient: failed to unpack ingredient %s\n", ingredient->name);
     }

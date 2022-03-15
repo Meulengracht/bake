@@ -27,6 +27,7 @@
 struct oven_recipe_context {
     const char* name;
     const char* relative_path;
+    const char* toolchain;
 
     const char* build_root;
     const char* install_root;
@@ -61,7 +62,7 @@ static struct build_backend g_buildbackends[] = {
 
 static struct oven_context g_ovenContext = { 0 };
 
-static int __get_root_directory(char** bufferOut)
+static int __get_cwd(char** bufferOut)
 {
     char*  cwd;
     int    status;
@@ -91,7 +92,7 @@ int oven_initialize(char** envp, const char* fridgePrepDirectory)
     char* installRoot;
 
     // get the current working directory
-    status = __get_root_directory(&cwd);
+    status = __get_cwd(&cwd);
     if (status) {
         return -1;
     }
@@ -171,6 +172,7 @@ int oven_recipe_start(struct oven_recipe_options* options)
 
     g_ovenContext.recipe.name          = strdup(options->name);
     g_ovenContext.recipe.relative_path = strdup(options->relative_path);
+    g_ovenContext.recipe.toolchain     = options->toolchain != NULL ? strdup(options->toolchain) : NULL;
     
     // generate build and install directories
     buildRoot = malloc(sizeof(char) * (strlen(g_ovenContext.build_root) + strlen(g_ovenContext.recipe.relative_path) + 2));
@@ -214,6 +216,11 @@ void oven_recipe_end(void)
     if (g_ovenContext.recipe.relative_path) {
         free((void*)g_ovenContext.recipe.relative_path);
         g_ovenContext.recipe.relative_path = NULL;
+    }
+
+    if (g_ovenContext.recipe.toolchain) {
+        free((void*)g_ovenContext.recipe.toolchain);
+        g_ovenContext.recipe.toolchain = NULL;
     }
 
     if (g_ovenContext.recipe.build_root) {
@@ -275,14 +282,21 @@ static int __get_project_directory(const char* cwd, const char* projectPath, cha
     char* result;
 
     if (projectPath) {
+        size_t cwdLength = strlen(cwd);
+
         // append the relative path to the root directory
-        result = malloc(strlen(cwd) + strlen(projectPath) + 2);
+        result = malloc(cwdLength + strlen(projectPath) + 2);
         if (!result) {
             return -1;
         }
-        sprintf(result, "%s/%s", cwd, projectPath);        
-    }
-    else {
+
+        // take into account the trailing slash
+        if (cwd[cwdLength] == '/' || projectPath[0] == '/') {
+            sprintf(result, "%s%s", cwd, projectPath);
+        } else {
+            sprintf(result, "%s/%s", cwd, projectPath);
+        }
+    } else {
         result = strdup(cwd);
         if (!result) {
             return -1;
@@ -308,7 +322,7 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     int                      status;
     char*                    path;
 
-    status = __get_root_directory(&path);
+    status = __get_cwd(&path);
     if (status) {
         return status;
     }
