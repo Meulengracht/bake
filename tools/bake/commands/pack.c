@@ -31,6 +31,8 @@ static void __print_help(void)
     printf("Options:\n");
     printf("  -n, --name\n");
     printf("      The name for the produced container image (default: recipe-name)\n");
+    printf("  -g, --regenerate\n");
+    printf("      Cleans and reconfigures before building\n");
     printf("  -h, --help\n");
     printf("      Shows this help message\n");
 }
@@ -104,6 +106,7 @@ static int __make_recipe_steps(struct list* steps)
                 fprintf(stderr, "bake: failed to configure target: %s\n", strerror(errno));
                 return status;
             }
+            
         } else if (step->type == RECIPE_STEP_TYPE_BUILD) {
             struct oven_build_options buildOptions;
             __initialize_build_options(&buildOptions, step);
@@ -156,6 +159,7 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
     struct oven_pack_options packOptions;
     int                      status;
     char*                    name = NULL;
+    int                      regenerate = 0;
 
     // handle individual help command
     if (argc > 2) {
@@ -180,6 +184,8 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
                     fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
                     return 1;
                 }
+            } else if (!strcmp(argv[i], "-g") || !strcmp(argv[i], "--regenerate")) {
+                regenerate = 1;
             }
         }
     }
@@ -209,20 +215,28 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
     status = __fetch_ingredients(recipe);
     if (status) {
         fprintf(stderr, "bake: failed to fetch ingredients: %s\n", strerror(errno));
-        return status;
+        goto cleanup;
     }
 
     status = oven_initialize(envp, fridge_get_prep_directory());
     if (status) {
         fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
-        return status;
+        goto cleanup;
+    }
+
+    if (regenerate) {
+        status = oven_reset();
+        if (status) {
+            fprintf(stderr, "bake: failed to reset oven: %s\n", strerror(errno));
+           goto cleanup;
+        }
     }
 
     // build parts
     status = __make_recipes(recipe);
     if (status) {
         fprintf(stderr, "bake: failed to build parts: %s\n", strerror(errno));
-        return status;
+        goto cleanup;
     }
 
     // pack it all together
@@ -230,11 +244,11 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
     status = oven_pack(&packOptions);
     if (status) {
         fprintf(stderr, "bake: failed to pack target: %s\n", strerror(errno));
-        return status;
     }
 
+cleanup:
     oven_cleanup();
     chefclient_cleanup();
     fridge_cleanup();
-    return 0;
+    return status;
 }

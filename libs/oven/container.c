@@ -63,6 +63,7 @@ static int __write_file(
 	FILE*                  file;
 	long                   fileSize;
 	void*                  fileBuffer;
+	size_t                 bytesRead;
 	int                    status;
 
 	// create the VaFS file
@@ -81,7 +82,10 @@ static int __write_file(
 	fileSize = ftell(file);
 	fileBuffer = malloc(fileSize);
 	rewind(file);
-	fread(fileBuffer, 1, fileSize, file);
+	bytesRead = fread(fileBuffer, 1, fileSize, file);
+	if (bytesRead != fileSize) {
+		fprintf(stderr, "oven: only partial read %s\n", path);
+	}
 	fclose(file);
 
 	// write the file to the VaFS file
@@ -390,7 +394,7 @@ int oven_pack(struct oven_pack_options* options)
     memset(&tmp[0], 0, sizeof(tmp));
 	start = strrchr(options->name, '/');
 	if (start == NULL) {
-		start = options->name;
+		start = (char*)options->name;
 	} else {
 		start++;
 	}

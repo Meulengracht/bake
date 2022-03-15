@@ -136,13 +136,15 @@ static int __inventory_load_file(const char* path, char** jsonOut)
     fseek(file, SEEK_SET, 0);
 
     if (size) {
+        size_t bytesRead;
+
         json = (char*)malloc(size + 1); // sz?!
         if (!json) {
             fclose(file);
             return -1;
         }
         memset(json, 0, size + 1);
-        fread(json, 1, size, file);
+        bytesRead = fread(json, 1, size, file);
     }
 
     fclose(file);

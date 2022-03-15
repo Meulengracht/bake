@@ -31,6 +31,7 @@ struct oven_recipe_context {
 
     const char* build_root;
     const char* install_root;
+    const char* checkpoint_path;
 };
 
 struct oven_context {
@@ -67,12 +68,12 @@ static int __get_cwd(char** bufferOut)
     char*  cwd;
     int    status;
 
-    cwd = malloc(1024);
+    cwd = malloc(4096);
     if (cwd == NULL) {
         return -1;
     }
 
-    status = platform_getcwd(cwd, 1024);
+    status = platform_getcwd(cwd, 4096);
     if (status) {
         free(cwd);
         return -1;
@@ -81,13 +82,11 @@ static int __get_cwd(char** bufferOut)
     return 0;
 }
 
-// oven is the work-area for the build and pack
-// .oven/build
-// .oven/install
 int oven_initialize(char** envp, const char* fridgePrepDirectory)
 {
     int   status;
     char* cwd;
+    char* root;
     char* buildRoot;
     char* installRoot;
 
@@ -104,19 +103,28 @@ int oven_initialize(char** envp, const char* fridgePrepDirectory)
     }
 
     // initialize oven paths
+    root = malloc(sizeof(char) * (strlen(cwd) + strlen(".oven") + 1));
+    if (!root) {
+        free(cwd);
+        return -1;
+    }
+
     buildRoot = malloc(sizeof(char) * (strlen(cwd) + strlen(".oven/build") + 1));
     if (!buildRoot) {
+        free(root);
         free(cwd);
         return -1;
     }
 
     installRoot = malloc(sizeof(char) * (strlen(cwd) + strlen(".oven/install") + 1));
     if (!installRoot) {
+        free(root);
         free(buildRoot);
         free(cwd);
         return -1;
     }
     
+    sprintf(root, "%s%s", cwd, ".oven");
     sprintf(buildRoot, "%s%s", cwd, ".oven/build");
     sprintf(installRoot, "%s%s", cwd, ".oven/install");
     free(cwd);
@@ -133,7 +141,8 @@ int oven_initialize(char** envp, const char* fridgePrepDirectory)
     g_ovenContext.recipe.build_root    = NULL;
     g_ovenContext.recipe.install_root  = NULL;
 
-    status = platform_mkdir(".oven");
+    status = platform_mkdir(root);
+    free(root);
     if (status) {
         if (errno != EEXIST) {
             fprintf(stderr, "oven: failed to create work space: %s\n", strerror(errno));
@@ -141,7 +150,7 @@ int oven_initialize(char** envp, const char* fridgePrepDirectory)
         }
     }
     
-    status = platform_mkdir(".oven/build");
+    status = platform_mkdir(g_ovenContext.build_root);
     if (status) {
         if (errno != EEXIST) {
             fprintf(stderr, "oven: failed to create build space: %s\n", strerror(errno));
@@ -149,7 +158,7 @@ int oven_initialize(char** envp, const char* fridgePrepDirectory)
         }
     }
     
-    status = platform_mkdir(".oven/install");
+    status = platform_mkdir(g_ovenContext.install_root);
     if (status) {
         if (errno != EEXIST) {
             fprintf(stderr, "oven: failed to create artifact space: %s\n", strerror(errno));
@@ -159,14 +168,52 @@ int oven_initialize(char** envp, const char* fridgePrepDirectory)
     return 0;
 }
 
+static int __recreate_dir(const char* path)
+{
+    int status;
+
+    status = platform_rmdir(path);
+    if (status) {
+        if (errno != ENOENT) {
+            fprintf(stderr, "oven: failed to remove directory: %s\n", strerror(errno));
+            return -1;
+        }
+    }
+
+    status = platform_mkdir(path);
+    if (status) {
+        fprintf(stderr, "oven: failed to create directory: %s\n", strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+int oven_reset(void)
+{
+    int status;
+
+    status = __recreate_dir(g_ovenContext.build_root);
+    if (status) {
+        return status;
+    }
+    
+    status = __recreate_dir(g_ovenContext.install_root);
+    if (status) {
+        return status;
+    }
+    return 0;
+}
+
 int oven_recipe_start(struct oven_recipe_options* options)
 {
     char*  buildRoot;
+    char*  checkpointPath;
     size_t relativePathLength;
     int    status;
 
     if (g_ovenContext.recipe.name) {
         fprintf(stderr, "oven: recipe already started\n");
+        errno = ENOSYS;
         return -1;
     }
 
@@ -177,6 +224,7 @@ int oven_recipe_start(struct oven_recipe_options* options)
     // generate build and install directories
     buildRoot = malloc(sizeof(char) * (strlen(g_ovenContext.build_root) + strlen(g_ovenContext.recipe.relative_path) + 2));
     if (!buildRoot) {
+        errno = ENOMEM;
         return -1;
     }
 
@@ -192,16 +240,25 @@ int oven_recipe_start(struct oven_recipe_options* options)
         if (status) {
             fprintf(stderr, "oven: failed to create build directory: %s\n", strerror(errno));
             free(buildRoot);
-            return -1;
+            return status;
         }
 
     } else {
         strcpy(buildRoot, g_ovenContext.build_root);
     }
 
+    checkpointPath = malloc(strlen(buildRoot) + strlen("/.checkpoints") + 1);
+    if (!checkpointPath) {
+        errno = ENOMEM;
+        free(buildRoot);
+        return -1;
+    }
+    sprintf(checkpointPath, "%s/.checkpoints", buildRoot);
+
     // store members as const
-    g_ovenContext.recipe.build_root   = buildRoot;
-    g_ovenContext.recipe.install_root = strdup(g_ovenContext.install_root);
+    g_ovenContext.recipe.build_root      = buildRoot;
+    g_ovenContext.recipe.install_root    = strdup(g_ovenContext.install_root);
+    g_ovenContext.recipe.checkpoint_path = checkpointPath;
     return 0;
 }
 
@@ -231,47 +288,136 @@ void oven_recipe_end(void)
         free((void*)g_ovenContext.recipe.install_root);
         g_ovenContext.recipe.install_root = NULL;
     }
+
+    if (g_ovenContext.recipe.checkpoint_path) {
+        free((void*)g_ovenContext.recipe.checkpoint_path);
+        g_ovenContext.recipe.checkpoint_path = NULL;
+    }
+}
+
+static int __create_checkpoint(const char* path, const char* checkpoint)
+{
+    // write checkpoint to file
+    FILE* file = fopen(path, "a");
+    if (!file) {
+        fprintf(stderr, "oven: failed to create checkpoint file: %s\n", strerror(errno));
+        return -1;
+    }
+
+    fprintf(file, "%s", checkpoint);
+    fclose(file);
+    return 0;
+}
+
+static int __has_checkpoint(const char* path, const char* checkpoint)
+{
+    FILE*   file;
+    char*   line = NULL;
+    size_t  lineLength = 0;
+    ssize_t read;
+
+    // read checkpoint from file
+    file = fopen(path, "r");
+    if (!file) {
+        return 0;
+    }
+
+    while ((read = getline(&line, &lineLength, file)) != -1) {
+        if (strcmp(line, checkpoint) == 0) {
+            fclose(file);
+            return 1;
+        }
+    }
+
+    fclose(file);
+    return 0;
+}
+
+static const char* __get_variable(const char* name)
+{
+    if (strcmp(name, "TOOLCHAIN_PREFIX") == 0) {
+        return g_ovenContext.recipe.toolchain;
+    }
+    return NULL;
+}
+
+static const char* __preprocess_value(const char* original)
+{
+    const char* itr = original;
+
+    if (original == NULL) {
+        return NULL;
+    }
+
+    // trim spaces
+    while (*itr == ' ') {
+        itr++;
+    }
+
+    // expand variables
+    if (strncmp(itr, "${{", 3) == 0) {
+        char* end = strchr(itr, '}');
+        if (end && end[1] == '}') {
+            char* variable = strndup(itr + 3, end - itr - 3);
+            if (variable) {
+                const char* value = __get_variable(variable);
+                free(variable);
+                if (value) {
+                    return strdup(value);
+                }
+            }
+        }
+    }
+
+    // expand environment variables
+    if (strncmp(itr, "${", 2) == 0) {
+        char* end = strchr(itr, '}');
+        if (end) {
+            char* variable = strndup(itr + 2, end - itr - 2);
+            if (variable != NULL) {
+                char* env = getenv(variable);
+                free(variable);
+                if (env) {
+                    return strdup(env);
+                }
+            }
+        }
+    }
+    return strdup(original);
 }
 
 static const char* __build_argument_string(struct list* argumentList)
 {
-    size_t            argumentLength = 0;
+    struct list_item* item;
     char*             argumentString;
     char*             argumentItr;
-    struct list_item* item;
-
-    // build argument length first
-    list_foreach(argumentList, item) {
-        struct oven_value_item* value = (struct oven_value_item*)item;
-        size_t                  valueLength = strlen(value->value);
-
-        // add one for the space
-        if (valueLength > 0) {
-            argumentLength += valueLength + 1;
-        }
-    }
+    size_t            totalLength = 0;
 
     // allocate memory for the string
-    argumentString = (char*)malloc(argumentLength + 1);
+    argumentString = (char*)malloc(4096);
     if (argumentString == NULL) {
         return NULL;
     }
-    memset(argumentString, 0, argumentLength + 1);
+    memset(argumentString, 0, 4096);
 
     // copy arguments into buffer
     argumentItr = argumentString;
     list_foreach(argumentList, item) {
         struct oven_value_item* value = (struct oven_value_item*)item;
-        size_t                  valueLength = strlen(value->value);
+        const char*             valueString = __preprocess_value(value->value);
+        size_t                  valueLength = strlen(valueString);
 
-        if (valueLength > 0) {
-            strcpy(argumentItr, value->value);
-            argumentItr += strlen(value->value);
+        if (valueLength > 0 && (totalLength + valueLength + 2) < 4096) {
+            strcpy(argumentItr, valueString);
+            
+            totalLength += valueLength;
+            argumentItr += valueLength;
             if (item->next) {
                 *argumentItr = ' ';
                 argumentItr++;
             }
         }
+        free((void*)valueString);
     }
     return argumentString;
 }
@@ -316,10 +462,80 @@ static struct generate_backend* __get_generate_backend(const char* name)
     return NULL;
 }
 
+static struct oven_keypair_item* __preprocess_keypair(struct oven_keypair_item* original)
+{
+    struct oven_keypair_item* keypair;
+
+    keypair = (struct oven_keypair_item*)malloc(sizeof(struct oven_keypair_item));
+    if (!keypair) {
+        return NULL;
+    }
+
+    keypair->key   = strdup(original->key);
+    keypair->value = __preprocess_value(original->value);
+    return keypair;
+}
+
+static struct list* __preprocess_keypair_list(struct list* original)
+{
+    struct list*      processed = malloc(sizeof(struct list));
+    struct list_item* item;
+
+    if (!processed) {
+        fprintf(stderr, "oven: failed to allocate memory environment preprocessor\n");
+        return original;
+    }
+
+    list_init(processed);
+    list_foreach(original, item) {
+        struct oven_keypair_item* keypair          = (struct oven_keypair_item*)item;
+        struct oven_keypair_item* processedKeypair = __preprocess_keypair(keypair);
+        if (!processedKeypair) {
+            fprintf(stderr, "oven: failed to allocate memory environment preprocessor\n");
+            break;
+        }
+
+        list_add(processed, &processedKeypair->list_header);
+    }
+    return processed;
+}
+
+static void __cleanup_environment(struct list* keypairs)
+{
+    struct list_item* item;
+
+    if (keypairs == NULL) {
+        return;
+    }
+
+    for (item = keypairs->head; item != NULL;) {
+        struct list_item*         next    = item->next;
+        struct oven_keypair_item* keypair = (struct oven_keypair_item*)item;
+
+        free((void*)keypair->key);
+        free((void*)keypair->value);
+        free(keypair);
+
+        item = next;
+    }
+    free(keypairs);
+}
+
+static void __cleanup_backend_data(struct oven_backend_data* data)
+{
+    __cleanup_environment(data->environment);
+    free((void*)data->arguments);
+    free((void*)data->project_directory);
+    free((void*)data->root_directory);
+}
+
 static int __initialize_backend_data(struct oven_backend_data* data, const char* profile, struct list* arguments, struct list* environment)
 {
     int                      status;
     char*                    path;
+
+    // reset the datastructure
+    memset(data, 0, sizeof(struct oven_backend_data));
 
     status = __get_cwd(&path);
     if (status) {
@@ -335,16 +551,21 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     data->project_directory = path;
 
     data->project_name        = g_ovenContext.recipe.name;
-    data->profile_name        = profile != NULL ? profile : "release";
+    data->profile_name        = profile != NULL ? profile : "Release";
     data->install_directory   = g_ovenContext.recipe.install_root;
     data->build_directory     = g_ovenContext.recipe.build_root;
     data->process_environment = g_ovenContext.process_environment;
     data->fridge_directory    = g_ovenContext.fridge_prep_directory;
-    data->environment         = environment;
-    data->arguments           = __build_argument_string(arguments);
+    
+    data->environment = __preprocess_keypair_list(environment);
+    if (!data->environment) {
+        __cleanup_backend_data(data);
+        return -1;
+    }
+
+    data->arguments = __build_argument_string(arguments);
     if (!data->arguments) {
-        free((void*)data->root_directory);
-        free((void*)data->project_directory);
+        __cleanup_backend_data(data);
         return -1;
     }
     return 0;
@@ -368,18 +589,24 @@ int oven_configure(struct oven_generate_options* options)
         return -1;
     }
 
+    // check if we already have done this step
+    if (__has_checkpoint(g_ovenContext.recipe.checkpoint_path, options->system)) {
+        return 0;
+    }
+    
     // build the backend data
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
-        goto cleanup;
+        return status;
     }
 
     status = backend->generate(&data);
+    if (status == 0) {
+        status = __create_checkpoint(g_ovenContext.recipe.checkpoint_path, options->system);
+    }
 
-    // cleanup
 cleanup:
-    free((void*)data.project_directory);
-    free((void*)data.root_directory);
+    __cleanup_backend_data(&data);
     return status;
 }
 
@@ -414,15 +641,13 @@ int oven_build(struct oven_build_options* options)
     // build the backend data
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
-        goto cleanup;
+        return status;
     }
 
     status = backend->build(&data);
 
-    // cleanup
 cleanup:
-    free((void*)data.project_directory);
-    free((void*)data.root_directory);
+    __cleanup_backend_data(&data);
     return status;
 }
 

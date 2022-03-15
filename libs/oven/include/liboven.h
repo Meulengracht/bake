@@ -90,6 +90,13 @@ extern void oven_recipe_end(void);
 /**
  * @brief 
  * 
+ * @return int 
+ */
+extern int oven_reset(void);
+
+/**
+ * @brief 
+ * 
  * @param options 
  * @return int 
  */

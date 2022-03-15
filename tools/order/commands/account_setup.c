@@ -27,7 +27,7 @@ static int __ask_yes_no_question(const char* question)
 {
     char answer[3];
     printf("%s [y/n] ", question);
-    fgets(answer, sizeof(answer), stdin);
+    (void)fgets(answer, sizeof(answer), stdin);
     return answer[0] == 'y' || answer[0] == 'Y';
 }
 

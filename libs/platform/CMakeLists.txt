@@ -2,6 +2,7 @@
 project (platform C)
 
 add_library(platform STATIC
+    cpucount.c
     chdir.c
     getcwd.c
     getenv.c

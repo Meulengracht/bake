@@ -136,6 +136,7 @@ extern int platform_unsetenv(const char* name);
 extern int platform_getcwd(char* buffer, size_t length);
 extern int platform_getuserdir(char* buffer, size_t length);
 extern int platform_chdir(const char* path);
+extern int platform_cpucount(void);
 
 /**
  * @brief 

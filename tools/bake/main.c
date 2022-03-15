@@ -85,7 +85,7 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
         return -1;
     }
 
-    fread(buffer, size, 1, file);
+    (void)fread(buffer, size, 1, file);
     fclose(file);
 
     *bufferOut = buffer;
