@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 static void __print_help(void)
 {
@@ -154,12 +155,24 @@ static int __make_recipes(struct recipe* recipe)
     return 0;
 }
 
+void __cleanup_systems(int sig)
+{
+    (void)sig;
+    printf("bake: termination requested, cleaning up\n");
+    oven_cleanup();
+    chefclient_cleanup();
+    fridge_cleanup();
+}
+
 int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     struct oven_pack_options packOptions;
     int                      status;
     char*                    name = NULL;
     int                      regenerate = 0;
+
+    // catch CTRL-C
+    signal(SIGINT, __cleanup_systems);
 
     // handle individual help command
     if (argc > 2) {
@@ -204,31 +217,34 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
         fprintf(stderr, "bake: failed to initialize fridge\n");
         return -1;
     }
+    atexit(fridge_cleanup);
 
     status = chefclient_initialize();
     if (status != 0) {
         fprintf(stderr, "bake: failed to initialize chef client\n");
         return -1;
     }
+    atexit(chefclient_cleanup);
 
     // fetch ingredients
     status = __fetch_ingredients(recipe);
     if (status) {
         fprintf(stderr, "bake: failed to fetch ingredients: %s\n", strerror(errno));
-        goto cleanup;
+        return -1;
     }
 
     status = oven_initialize(envp, fridge_get_prep_directory());
     if (status) {
         fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
-        goto cleanup;
+        return -1;
     }
+    atexit(oven_cleanup);
 
     if (regenerate) {
         status = oven_reset();
         if (status) {
             fprintf(stderr, "bake: failed to reset oven: %s\n", strerror(errno));
-           goto cleanup;
+            return -1;
         }
     }
 
@@ -236,7 +252,7 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
     status = __make_recipes(recipe);
     if (status) {
         fprintf(stderr, "bake: failed to build parts: %s\n", strerror(errno));
-        goto cleanup;
+        return -1;
     }
 
     // pack it all together
@@ -245,10 +261,5 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
     if (status) {
         fprintf(stderr, "bake: failed to pack target: %s\n", strerror(errno));
     }
-
-cleanup:
-    oven_cleanup();
-    chefclient_cleanup();
-    fridge_cleanup();
     return status;
 }

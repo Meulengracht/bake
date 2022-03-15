@@ -304,7 +304,7 @@ static int __create_checkpoint(const char* path, const char* checkpoint)
         return -1;
     }
 
-    fprintf(file, "%s", checkpoint);
+    fprintf(file, "%s\n", checkpoint);
     fclose(file);
     return 0;
 }
