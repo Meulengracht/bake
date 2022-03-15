@@ -162,8 +162,8 @@ int oven_initialize(char** envp, const char* fridgePrepDirectory)
 int oven_recipe_start(struct oven_recipe_options* options)
 {
     char*  buildRoot;
-    char*  installRoot;
     size_t relativePathLength;
+    int    status;
 
     if (g_ovenContext.recipe.name) {
         fprintf(stderr, "oven: recipe already started\n");
@@ -180,29 +180,28 @@ int oven_recipe_start(struct oven_recipe_options* options)
         return -1;
     }
 
-    installRoot = malloc(sizeof(char) * (strlen(g_ovenContext.install_root) + strlen(g_ovenContext.recipe.relative_path) + 2));
-    if (!installRoot) {
-        free(buildRoot);
-        return -1;
-    }
-
     relativePathLength = strlen(g_ovenContext.recipe.relative_path);
     if (relativePathLength > 0) {
         if (g_ovenContext.recipe.relative_path[0] != '/') {
             sprintf(buildRoot, "%s/%s", g_ovenContext.build_root, g_ovenContext.recipe.relative_path);
-            sprintf(installRoot, "%s/%s", g_ovenContext.install_root, g_ovenContext.recipe.relative_path);
         } else {
             sprintf(buildRoot, "%s%s", g_ovenContext.build_root, g_ovenContext.recipe.relative_path);
-            sprintf(installRoot, "%s%s", g_ovenContext.install_root, g_ovenContext.recipe.relative_path);
         }
+
+        status = platform_mkdir(buildRoot);
+        if (status) {
+            fprintf(stderr, "oven: failed to create build directory: %s\n", strerror(errno));
+            free(buildRoot);
+            return -1;
+        }
+
     } else {
-        sprintf(buildRoot, "%s", g_ovenContext.build_root);
-        sprintf(installRoot, "%s", g_ovenContext.install_root);
+        strcpy(buildRoot, g_ovenContext.build_root);
     }
 
     // store members as const
     g_ovenContext.recipe.build_root   = buildRoot;
-    g_ovenContext.recipe.install_root = installRoot;
+    g_ovenContext.recipe.install_root = strdup(g_ovenContext.install_root);
     return 0;
 }
 
