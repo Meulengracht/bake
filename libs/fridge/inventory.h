@@ -93,4 +93,11 @@ extern int inventory_add(struct fridge_inventory* inventory, const char* publish
  */
 extern int inventory_save(struct fridge_inventory* inventory, const char* path);
 
+/**
+ * @brief Cleans up any resources allocated by the inventory_* functions.
+ * 
+ * @param[In] inventory The inventory to clean up. 
+ */
+extern void inventory_free(struct fridge_inventory* inventory);
+
 #endif //!__LIBFRIDGE_INVENTORY_H__

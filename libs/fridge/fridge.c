@@ -335,12 +335,16 @@ void fridge_cleanup(void)
         if (status) {
             fprintf(stderr, "fridge_cleanup: failed to save inventory: %i\n", status);
         }
+        inventory_free(g_inventory);
+        g_inventory = NULL;
     }
 
     // remove the prep area
-    status = platform_rmdir(g_prepPath);
-    if (status) {
-        fprintf(stderr, "fridge_cleanup: failed to remove %s\n", g_prepPath);
+    if (g_prepPath != NULL) {
+        status = platform_rmdir(g_prepPath);
+        if (status) {
+            fprintf(stderr, "fridge_cleanup: failed to remove %s\n", g_prepPath);
+        }
     }
 
     // free resources

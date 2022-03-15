@@ -55,12 +55,17 @@ int make_main(struct oven_backend_data* data)
     // perform the build operation
     status = platform_spawn("make", argument, (const char* const*)environment, data->build_directory);
     if (status != 0) {
+        errno = status;
         fprintf(stderr, "oven-make: failed to execute 'make %s'\n", argument);
         goto cleanup;
     }
 
     // perform the installation operation, ignore any other parameters
     status = platform_spawn("make", "install", (const char* const*)environment, data->build_directory);
+    if (status != 0) {
+        errno = status;
+        fprintf(stderr, "oven-make: failed to execute 'make install'\n");
+    }
 
 cleanup:
     free(argument);

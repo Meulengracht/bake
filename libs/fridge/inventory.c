@@ -340,3 +340,22 @@ int inventory_save(struct fridge_inventory* inventory, const char* path)
     json_decref(root);
     return status;
 }
+
+void inventory_free(struct fridge_inventory* inventory)
+{
+    if (inventory == NULL) {
+        return;
+    }
+
+    for (int i = 0; i < inventory->packs_count; i++) {
+        free((void*)inventory->packs[i].publisher);
+        free((void*)inventory->packs[i].package);
+        free((void*)inventory->packs[i].platform);
+        free((void*)inventory->packs[i].arch);
+        free((void*)inventory->packs[i].channel);
+        free((void*)inventory->packs[i].version.tag);
+    }
+
+    free(inventory->packs);
+    free(inventory);
+}

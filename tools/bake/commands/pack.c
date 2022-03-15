@@ -104,7 +104,7 @@ static int __make_recipe_steps(struct list* steps)
             __initialize_generator_options(&genOptions, step);
             status = oven_configure(&genOptions);
             if (status) {
-                fprintf(stderr, "bake: failed to configure target: %s\n", strerror(errno));
+                fprintf(stderr, "bake: failed to configure target: %s\n", step->system);
                 return status;
             }
             
@@ -113,7 +113,7 @@ static int __make_recipe_steps(struct list* steps)
             __initialize_build_options(&buildOptions, step);
             status = oven_build(&buildOptions);
             if (status) {
-                fprintf(stderr, "bake: failed to build target: %s\n", strerror(errno));
+                fprintf(stderr, "bake: failed to build target: %s\n", step->system);
                 return status;
             }
         }
@@ -146,6 +146,7 @@ static int __make_recipes(struct recipe* recipe)
 
         status = __make_recipe_steps(&part->steps);
         if (status) {
+            fprintf(stderr, "bake: failed to make recipe %s\n", part->name);
             return status;
         }
 
@@ -251,7 +252,7 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
     // build parts
     status = __make_recipes(recipe);
     if (status) {
-        fprintf(stderr, "bake: failed to build parts: %s\n", strerror(errno));
+        fprintf(stderr, "bake: failed to build recipe\n");
         return -1;
     }
 
