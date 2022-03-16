@@ -3,6 +3,7 @@
 add_subdirectory(platform)
 
 # Build utility libraries before the system libraries
+set(VAFS_BUILD_TOOLS OFF CACHE BOOL "Do not build vafs utilities")
 add_subdirectory(vafs)
 add_subdirectory(yaml)
 
