@@ -20,6 +20,6 @@ parts:
   chef-src:
     plugin: cmake
     source: .
-    configflags:
+    cmake-parameters:
       - -DCMAKE_INSTALL_PREFIX=/usr
   

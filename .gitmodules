@@ -9,7 +9,7 @@
 	url = ../../umbrella-c/curl.git
 [submodule "libs/wolfssl"]
 	path = libs/wolfssl
-	url = git@github.com:umbrella-c/wolfssl.git
+	url = ../../umbrella-c/wolfssl.git
 [submodule "libs/jansson"]
 	path = libs/jansson
-	url = git@github.com:umbrella-c/jansson.git
+	url = ../../umbrella-c/jansson.git
