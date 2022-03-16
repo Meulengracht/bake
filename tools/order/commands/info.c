@@ -145,6 +145,7 @@ int info_main(int argc, char** argv)
         fprintf(stderr, "order: failed to initialize chefclient: %s\n", strerror(errno));
         return -1;
     }
+    atexit(chefclient_cleanup);
 
     // retrieve information about the pack
     status = chefclient_pack_info(&params, &package);
@@ -157,7 +158,6 @@ int info_main(int argc, char** argv)
     chef_package_free(package);
 
 cleanup:
-    chefclient_cleanup();
     free(packCopy);
     return status;
 }

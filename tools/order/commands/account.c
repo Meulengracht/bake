@@ -177,6 +177,7 @@ int account_main(int argc, char** argv)
         fprintf(stderr, "order: failed to initialize chefclient: %s\n", strerror(errno));
         return -1;
     }
+    atexit(chefclient_cleanup);
 
     // do this in a loop, to catch cases where our login token has
     // expired
@@ -216,7 +217,6 @@ int account_main(int argc, char** argv)
         }
         break;
     }
-
-    chefclient_cleanup();
+    
     return status;
 }

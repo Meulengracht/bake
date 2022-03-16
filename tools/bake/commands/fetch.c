@@ -56,12 +56,14 @@ int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe)
         fprintf(stderr, "bake: failed to initialize fridge\n");
         return -1;
     }
+    atexit(fridge_cleanup);
 
     status = chefclient_initialize();
     if (status != 0) {
         fprintf(stderr, "bake: failed to initialize chef client\n");
         return -1;
     }
+    atexit(chefclient_cleanup);
 
     // iterate through all ingredients
     printf("bake: fetching %i ingredients\n", recipe->ingredients.count);
@@ -74,8 +76,5 @@ int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe)
             fprintf(stderr, "bake: failed to fetch ingredient %s\n", ingredient->ingredient.name);
         }
     }
-
-    chefclient_cleanup();
-    fridge_cleanup();
     return 0;
 }

@@ -146,7 +146,7 @@ static int __make_recipes(struct recipe* recipe)
 
         status = __make_recipe_steps(&part->steps);
         if (status) {
-            fprintf(stderr, "bake: failed to make recipe %s\n", part->name);
+            fprintf(stderr, "bake: failed to build recipe %s\n", part->name);
             return status;
         }
 
@@ -252,7 +252,7 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
     // build parts
     status = __make_recipes(recipe);
     if (status) {
-        fprintf(stderr, "bake: failed to build recipe\n");
+        fprintf(stderr, "bake: failed to make recipe\n");
         return -1;
     }
 

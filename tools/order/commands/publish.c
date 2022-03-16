@@ -123,6 +123,7 @@ int publish_main(int argc, char** argv)
         fprintf(stderr, "order: failed to initialize chefclient: %s\n", strerror(errno));
         return -1;
     }
+    atexit(chefclient_cleanup);
 
     // do this in a loop, to catch cases where our login token has
     // expired
@@ -158,6 +159,5 @@ int publish_main(int argc, char** argv)
     
     chef_version_free(version);
     chef_package_free(package);
-    chefclient_cleanup();
     return status;
 }
