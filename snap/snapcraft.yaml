@@ -1,0 +1,24 @@
+name: vchef
+version: '1.0'
+summary: The Vali Chef Package Mangement System
+description: |
+  Originally developed for the Vali/MollenOS operating system, this is a generic package management system that is 
+  built as a lightweight alternative to current package managers. Its not only for package management, 
+  but also as an application format. 
+
+grade: stable
+confinement: strict
+
+apps:
+  bake:
+    command: usr/bin/bake
+  order:
+    command: usr/bin/order
+
+parts:
+  chef-src:
+    plugin: cmake
+    source: .
+    configflags:
+      - -DCMAKE_INSTALL_PREFIX=/usr
+  
