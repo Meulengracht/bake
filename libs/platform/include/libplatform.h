@@ -108,6 +108,13 @@
 #define CHEF_ARCHITECTURE_STR "unknown"
 #endif
 
+enum platform_filetype {
+    PLATFORM_FILETYPE_DIRECTORY,
+    PLATFORM_FILETYPE_FILE,
+    PLATFORM_FILETYPE_SYMLINK,
+    PLATFORM_FILETYPE_UNKNOWN
+};
+
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
 extern char*  strreplace(char* text, const char* find, const char* replaceWith);
@@ -130,6 +137,9 @@ extern int platform_rmdir(const char* path);
  * @#define CHEF_ARCHITECTURE_STR int 0 if the path exists and is a directory, -1 otherwise
  */
 extern int platform_isdir(const char* path);
+extern int platform_filetype(const char* path, enum platform_filetype* typeOut);
+extern int platform_readlink(const char* path, char** bufferOut);
+extern int platform_symlink(const char* path, const char* target);
 extern int platform_getenv(const char* name, char* buffer, size_t length);
 extern int platform_setenv(const char* name, const char* value);
 extern int platform_unsetenv(const char* name);

@@ -106,14 +106,14 @@ static int __extract_file(
     int   status;
 
     if ((file = fopen(path, "wb+")) == NULL) {
-        fprintf(stderr, "unmkvafs: unable to open file %s\n", path);
+        fprintf(stderr, "__extract_file: unable to open file %s\n", path);
         return -1;
     }
 
     fileSize = vafs_file_length(fileHandle);
     fileBuffer = malloc(fileSize);
     if (fileBuffer == NULL) {
-        fprintf(stderr, "unmkvafs: unable to allocate memory for file %s\n", path);
+        fprintf(stderr, "__extract_file: unable to allocate memory for file %s\n", path);
         return -1;
     }
 
@@ -137,7 +137,7 @@ static int __extract_directory(
     // ensure the directory exists
     if (strlen(path)) {
         if (platform_mkdir(path)) {
-            fprintf(stderr, "unmkvafs: unable to create directory %s\n", path);
+            fprintf(stderr, "__extract_directory: unable to create directory %s\n", path);
             return -1;
         }
     }
@@ -146,7 +146,7 @@ static int __extract_directory(
         status = vafs_directory_read(directoryHandle, &dp);
         if (status) {
             if (errno != ENOENT) {
-                fprintf(stderr, "unmkvafs: failed to read directory '%s' - %i\n",
+                fprintf(stderr, "__extract_directory: failed to read directory '%s' - %i\n",
                     __get_relative_path(root, path), status);
                 return -1;
             }
@@ -160,42 +160,60 @@ static int __extract_directory(
             struct VaFsDirectoryHandle* subdirectoryHandle;
             status = vafs_directory_open_directory(directoryHandle, dp.Name, &subdirectoryHandle);
             if (status) {
-                fprintf(stderr, "unmkvafs: failed to open directory '%s'\n", __get_relative_path(root, filepathBuffer));
+                fprintf(stderr, "__extract_directory: failed to open directory '%s'\n", __get_relative_path(root, filepathBuffer));
                 return -1;
             }
 
             status = __extract_directory(subdirectoryHandle, root, filepathBuffer);
             if (status) {
-                fprintf(stderr, "unmkvafs: unable to extract directory '%s'\n", __get_relative_path(root, path));
+                fprintf(stderr, "__extract_directory: unable to extract directory '%s'\n", __get_relative_path(root, path));
                 return -1;
             }
 
             status = vafs_directory_close(subdirectoryHandle);
             if (status) {
-                fprintf(stderr, "unmkvafs: failed to close directory '%s'\n", __get_relative_path(root, filepathBuffer));
+                fprintf(stderr, "__extract_directory: failed to close directory '%s'\n", __get_relative_path(root, filepathBuffer));
                 return -1;
             }
-        }
-        else {
+        } else if (dp.Type == VaFsEntryType_File) {
             struct VaFsFileHandle* fileHandle;
             status = vafs_directory_open_file(directoryHandle, dp.Name, &fileHandle);
             if (status) {
-                fprintf(stderr, "unmkvafs: failed to open file '%s' - %i\n",
+                fprintf(stderr, "__extract_directory: failed to open file '%s' - %i\n",
                     __get_relative_path(root, filepathBuffer), status);
                 return -1;
             }
 
             status = __extract_file(fileHandle, filepathBuffer);
             if (status) {
-                fprintf(stderr, "unmkvafs: unable to extract file '%s'\n", __get_relative_path(root, path));
+                fprintf(stderr, "__extract_directory: unable to extract file '%s'\n", __get_relative_path(root, path));
                 return -1;
             }
 
             status = vafs_file_close(fileHandle);
             if (status) {
-                fprintf(stderr, "unmkvafs: failed to close file '%s'\n", __get_relative_path(root, filepathBuffer));
+                fprintf(stderr, "__extract_directory: failed to close file '%s'\n", __get_relative_path(root, filepathBuffer));
                 return -1;
             }
+        } else if (dp.Type == VaFsEntryType_Symlink) {
+            const char* symlinkTarget;
+            
+            status = vafs_directory_read_symlink(directoryHandle, dp.Name, &symlinkTarget);
+            if (status) {
+                fprintf(stderr, "__extract_directory: failed to read symlink '%s' - %i\n",
+                    __get_relative_path(root, filepathBuffer), status);
+                return -1;
+            }
+
+            status = platform_symlink(symlinkTarget, filepathBuffer);
+            if (status) {
+                fprintf(stderr, "__extract_directory: failed to create symlink '%s' - %i\n",
+                    __get_relative_path(root, filepathBuffer), status);
+                return -1;
+            }
+        } else {
+            fprintf(stderr, "__extract_directory: unable to extract unknown type '%s'\n", __get_relative_path(root, filepathBuffer));
+            return -1;
         }
         free(filepathBuffer);
     } while(1);
@@ -203,9 +221,6 @@ static int __extract_directory(
     return 0;
 }
 
-// we want to create the following folders
-// .fridge/storage/packs
-// .fridge/prep/
 static int __make_folders(void)
 {
     char* cwd;

@@ -90,6 +90,8 @@ static int __write_file(
 
 	// write the file to the VaFS file
 	status = vafs_file_write(fileHandle, fileBuffer, fileSize);
+	free(fileBuffer);
+	
 	if (status) {
 		fprintf(stderr, "oven: failed to write file '%s'\n", filename);
 		return -1;
@@ -120,17 +122,26 @@ static int __write_directory(
 
     filepathBuffer = malloc(512);
 	while ((dp = readdir(dfd)) != NULL) {
-		if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
+		enum platform_filetype fileType;
+
+		if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0) {
 			continue;
+		}
 
 		// only append a '/' if not provided
 		if (path[strlen(path) - 1] != '/')
 			sprintf(filepathBuffer, "%s/%s", path, dp->d_name);
 		else
 			sprintf(filepathBuffer, "%s%s", path, dp->d_name);
-		printf("oven: found '%s'\n", filepathBuffer);
 
-		if (!platform_isdir(filepathBuffer)) {
+		status = platform_filetype(filepathBuffer, &fileType);
+		if (status != 0) {
+			fprintf(stderr, "oven: failed to get filetype for '%s'\n", filepathBuffer);
+			continue;
+		}
+
+		printf("oven: found '%s' [%i]\n", filepathBuffer, fileType);
+		if (fileType == PLATFORM_FILETYPE_DIRECTORY) {
 			struct VaFsDirectoryHandle* subdirectoryHandle;
 			status = vafs_directory_open_directory(directoryHandle, dp->d_name, &subdirectoryHandle);
 			if (status) {
@@ -149,12 +160,29 @@ static int __write_directory(
 				fprintf(stderr, "oven: failed to close directory '%s'\n", filepathBuffer);
 				break;
 			}
-		} else {
+		} else if (fileType == PLATFORM_FILETYPE_FILE) {
 			status = __write_file(directoryHandle, filepathBuffer, dp->d_name);
 			if (status != 0) {
 				fprintf(stderr, "oven: unable to write file %s\n", dp->d_name);
 				break;
 			}
+		} else if (fileType == PLATFORM_FILETYPE_SYMLINK) {
+			char* linkpath;
+			status = platform_readlink(filepathBuffer, &linkpath);
+			if (status != 0) {
+				fprintf(stderr, "oven: failed to read link %s\n", filepathBuffer);
+				break;
+			}
+
+			status = vafs_directory_create_symlink(directoryHandle, dp->d_name, linkpath);
+			free(linkpath);
+
+			if (status != 0) {
+				fprintf(stderr, "oven: failed to create symlink %s\n", filepathBuffer);
+				break;
+			}
+		} else {
+			fprintf(stderr, "oven: unknown filetype for '%s'\n", filepathBuffer);
 		}
 	}
 

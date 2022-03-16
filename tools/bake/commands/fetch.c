@@ -20,6 +20,7 @@
 #include <libfridge.h>
 #include <recipe.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void __print_help(void)

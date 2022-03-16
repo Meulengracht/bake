@@ -4,6 +4,7 @@ Originally developed for the Vali/MollenOS operating system, this is a generic p
 Chef consists of 3 parts, bake, order and serve.
 
 [![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-black.svg)](https://snapcraft.io/vchef)
+[![vchef](https://snapcraft.io/vchef/badge.svg)](https://snapcraft.io/vchef)
 
 ## Bake
 The bake utility serves as the builder, and orchestrates everything related to generation of bake packages. Bake packages serve both as packages and application images that can be executed by serve.

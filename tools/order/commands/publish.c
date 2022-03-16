@@ -21,6 +21,7 @@
 #include <chef/client.h>
 #include <libplatform.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 extern void account_setup(void);
