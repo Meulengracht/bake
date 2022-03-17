@@ -124,10 +124,17 @@ extern char*  strreplace(char* text, const char* find, const char* replaceWith);
  * nothing happens.
  * 
  * @param[In] path The path to create 
- * @#define CHEF_ARCHITECTURE_STR int 0 on success, -1 on error
+ * @return int 0 on success, -1 on error
  */
 extern int platform_mkdir(const char* path);
 
+/**
+ * @brief Recursively deletes the provided directory path, if the directory
+ * does not exist nothing happens, but it returns with -1.
+ * 
+ * @param[In] path The path to delete
+ * @return int 0 on success, -1 on error
+ */
 extern int platform_rmdir(const char* path);
 
 /**

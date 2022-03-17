@@ -161,6 +161,12 @@ static int __download_file(const char* filePath, struct pack_response* context)
         goto cleanup;
     }
 
+    code = curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__download_file: failed to enable download progress [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
+
     code = curl_easy_setopt(curl, CURLOPT_URL, context->url);
     if (code != CURLE_OK) {
         fprintf(stderr, "__download_file: failed to set url [%s]\n", chef_error_buffer());

@@ -24,16 +24,64 @@
 #include <stdio.h>
 #include <string.h>
 
+// Max supported by REST api on azure is 100mb
+#define CHEF_UPLOAD_MAX_SIZE (100 * 1024 * 1024)
+
 struct pack_response {
     const char* token;
     const char* url;
 };
 
 struct file_upload_context {
+    CURL*  handle;
     FILE*  file;
     size_t length;
     size_t bytes_read;
 };
+
+static int __create_file_contexts(const char* path, struct file_upload_context** contextsOut, int* contextCountOut)
+{
+    // Allow each segment to be uploaded in parallel, max size of 100mb
+    int                         contextCount = 0;
+    struct file_upload_context* contexts = NULL;
+    FILE*                       file = fopen(path, "rb");
+    size_t                      fileSize;
+
+    if (!file) {
+        return -1;
+    }
+
+    fseek(file, 0, SEEK_END);
+    fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    fclose(file);
+
+    // Calculate the number of segments
+    contextCount = (int)((fileSize + (CHEF_UPLOAD_MAX_SIZE - 1)) / CHEF_UPLOAD_MAX_SIZE);
+
+    // Allocate contexts
+    contexts = (struct file_upload_context*)malloc(sizeof(struct file_upload_context) * contextCount);
+    if (!contexts) {
+        return -1;
+    }
+
+    // Initialize contexts
+    for (long i = 0; i < (long)contextCount; i++) {
+        contexts[i].file = fopen(path, "rb");
+        if (!contexts[i].file) {
+            return -1;
+        }
+        fseek(contexts[i].file, i * CHEF_UPLOAD_MAX_SIZE, SEEK_SET);
+
+        contexts[i].length = (i == (contextCount - 1)) ? (fileSize - (i * CHEF_UPLOAD_MAX_SIZE)) : CHEF_UPLOAD_MAX_SIZE;
+        contexts[i].bytes_read = 0;
+        contexts[i].handle = NULL;
+    }
+
+    *contextsOut = contexts;
+    *contextCountOut = contextCount;
+    return 0;
+}
 
 static json_t* __create_pack_version(struct chef_publish_params* params)
 {
@@ -195,17 +243,76 @@ cleanup:
     return status;
 }
 
-static int __init_file_context(struct file_upload_context* context, const char* filename)
+static int __write_blocklist(json_t* json, struct pack_response* context)
 {
-    context->file = fopen(filename, "rb");
-    if (!context->file) {
+    CURL*              curl;
+    CURLcode           code;
+    struct curl_slist* headers   = NULL;
+    size_t             dataIndex = 0;
+    char*              body      = NULL;
+    int                status    = -1;
+    char               buffer[256];
+    long               httpCode;
+
+    // initialize a curl session
+    curl = curl_easy_init();
+    if (!curl) {
+        fprintf(stderr, "__publish_request: curl_easy_init() failed\n");
         return -1;
     }
+    chef_set_curl_common(curl, (void**)&headers, 1, 1, 1);
 
-    fseek(context->file, 0, SEEK_END);
-    context->length = ftell(context->file);
-    fseek(context->file, 0, SEEK_SET);
-    return 0;
+    // set the url
+    if (__get_publish_url(buffer, sizeof(buffer)) != 0) {
+        fprintf(stderr, "__publish_request: buffer too small for publish link\n");
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(curl, CURLOPT_URL, &buffer[0]);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__publish_request: failed to set url [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
+    if(code != CURLE_OK) {
+        fprintf(stderr, "__publish_request: failed to set write data [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
+
+    body = json_dumps(json, 0);
+    code = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__publish_request: failed to set body [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
+
+    code = curl_easy_perform(curl);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__publish_request: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+    }
+
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode != 200) {
+        status = -1;
+        
+        if (httpCode == 302) {
+            status = -EACCES;
+        }
+        else {
+            fprintf(stderr, "__publish_request: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            status = -EIO;
+        }
+        goto cleanup;
+    }
+
+    status = __parse_pack_response(chef_response_buffer(), context);
+
+cleanup:
+    free(body);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    return status;
 }
 
 static void __cleanup_file_context(struct file_upload_context* context)
@@ -223,87 +330,115 @@ static size_t __read_file(char *ptr, size_t size, size_t nmemb, void *userp)
     return retcode;
 }
 
-static int __upload_file(const char* filePath, struct pack_response* context)
+static int __generate_bad_but_valid_guid(void)
 {
-    struct file_upload_context fileContext = { 0 };
-    struct curl_slist*         headers     = NULL;
-    int                        status      = -1;
-    CURL*                      curl;
-    CURLcode                   code;
-    long                       httpCode;
+    srand (clock());
+    char GUID[40];
+    int t = 0;
+    char *szTemp = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
+    char *szHex = "0123456789ABCDEF-";
+    int nLen = strlen (szTemp);
+
+    for (t=0; t<nLen+1; t++)
+    {
+        int r = rand () % 16;
+        char c = ' ';   
+
+        switch (szTemp[t])
+        {
+            case 'x' : { c = szHex [r]; } break;
+            case 'y' : { c = szHex [r & 0x03 | 0x08]; } break;
+            case '-' : { c = '-'; } break;
+            case '4' : { c = '4'; } break;
+        }
+
+        GUID[t] = ( t < nLen ) ? c : 0x00;
+    }
+
+    printf ("%s\r\n", GUID);
+}
+
+// https://inside.covve.com/uploading-block-blobs-larger-than-256-mb-in-azure/
+// Split file into blocks of 100mb
+// Generate a GUID for each block
+// Convert to base64
+
+// Upload each block to {sas-url}&comp=block&blockid={base64BlockId}
+// Upload block list to {sasUri}&comp=blocklist
+
+// Delete blocks
+
+static int __upload_block(struct curl_slist* headers, struct file_upload_context* uploadContext, struct pack_response* context)
+{
+    int                status      = -1;
+    CURLcode           code;
+    long               httpCode;
 
     // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "__upload_file: curl_easy_init() failed\n");
+    uploadContext->handle = curl_easy_init();
+    if (!uploadContext->handle) {
+        fprintf(stderr, "__upload_block: curl_easy_init() failed\n");
         return -1;
     }
-    chef_set_curl_common(curl, (void**)&headers, 0, 1, 0);
+    chef_set_curl_common(uploadContext->handle, NULL, 0, 1, 0);
 
-    status = __init_file_context(&fileContext, filePath);
-    if (status != 0) {
-        fprintf(stderr, "__upload_file: failed to initialize file context\n");
+    code = curl_easy_setopt(uploadContext->handle, CURLOPT_READFUNCTION, __read_file);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__upload_block: failed to set upload data reader [%s]\n", chef_error_buffer());
         goto cleanup;
     }
 
-    // set required ms headers
-    headers = curl_slist_append(headers, "x-ms-blob-type: BlockBlob");
-    headers = curl_slist_append(headers, "x-ms-blob-content-type: application/octet-stream");
-
-    code = curl_easy_setopt(curl, CURLOPT_READFUNCTION, __read_file);
+    code = curl_easy_setopt(uploadContext->handle, CURLOPT_READDATA, uploadContext);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set upload data reader [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__upload_block: failed to set upload data [%s]\n", chef_error_buffer());
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_READDATA, &fileContext);
+    code = curl_easy_setopt(uploadContext->handle, CURLOPT_INFILESIZE_LARGE, uploadContext->length);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set upload data [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__upload_block: failed to set upload size [%s]\n", chef_error_buffer());
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, fileContext.length);
+    code = curl_easy_setopt(uploadContext->handle, CURLOPT_UPLOAD, 1L);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set upload size [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__upload_block: failed to set request to upload [%s]\n", chef_error_buffer());
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+    code = curl_easy_setopt(uploadContext->handle, CURLOPT_NOPROGRESS, 0);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set request to upload [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__upload_block: failed to enable upload progress [%s]\n", chef_error_buffer());
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    code = curl_easy_setopt(uploadContext->handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set http headers [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__upload_block: failed to http version 2 [%s]\n", chef_error_buffer());
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, context->url);
+    code = curl_easy_setopt(uploadContext->handle, CURLOPT_HTTPHEADER, headers);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set url [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__upload_block: failed to set http headers [%s]\n", chef_error_buffer());
         goto cleanup;
     }
 
-    code = curl_easy_perform(curl);
+    code = curl_easy_setopt(uploadContext->handle, CURLOPT_PIPEWAIT, 1L);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: curl_easy_perform() failed: %s\n", chef_error_buffer());
+        fprintf(stderr, "__upload_block: failed to set pipe wait [%s]\n", chef_error_buffer());
+        goto cleanup;
     }
 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    if (httpCode < 200 || httpCode >= 300) {
-        fprintf(stderr, "__upload_file: http error %ld\n", httpCode);
-        status = -1;
+    code = curl_easy_setopt(uploadContext->handle, CURLOPT_URL, context->url);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__upload_block: failed to set url [%s]\n", chef_error_buffer());
         goto cleanup;
     }
 
     status = 0;
 
 cleanup:
-    __cleanup_file_context(&fileContext);
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
     return status;
 }
 
@@ -379,11 +514,63 @@ cleanup:
     return status;
 }
 
+static int __upload_blocks(struct pack_response* response, struct file_upload_context* uploadContexts, int uploadCount)
+{
+    struct curl_slist* headers = NULL;
+    CURLM*    transfersHandle;
+    CURLMcode code;
+    int       stillRunning;
+
+    // set required ms headers
+    headers = curl_slist_append(headers, "x-ms-blob-type: BlockBlob");
+    headers = curl_slist_append(headers, "x-ms-blob-content-type: application/octet-stream");
+
+    transfersHandle = curl_multi_init();
+    for(int i = 0; i < uploadCount; i++) {
+        __upload_block(headers, &uploadContexts[i], i);
+        curl_multi_add_handle(transfersHandle, uploadContexts[i].handle);
+    }
+
+    curl_multi_setopt(transfersHandle, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
+
+    // We do HTTP/2 so let's stick to one connection per host
+    curl_multi_setopt(transfersHandle, CURLMOPT_MAX_HOST_CONNECTIONS, 1L);
+
+    do {
+        code = curl_multi_perform(transfersHandle, &stillRunning);
+        if (stillRunning) {
+            code = curl_multi_poll(transfersHandle, NULL, 0, 1000, NULL);
+        }
+
+        if (code) {
+            break;
+        }
+    } while(stillRunning);
+
+    curl_multi_cleanup(transfersHandle);
+
+    for (int i = 0; i < uploadCount; i++) {
+        curl_multi_remove_handle(transfersHandle, uploadContexts[i].handle);
+        curl_easy_cleanup(uploadContexts[i].handle);
+    }
+
+    curl_slist_free_all(headers);
+}
+
 int chefclient_pack_publish(struct chef_publish_params* params, const char* path)
 {
-    struct pack_response context;
-    json_t*              request;
-    int                  status;
+    struct file_upload_context* uploadContexts;
+    struct pack_response        context;
+    json_t*                     request;
+    int                         uploadCount;
+    int                         status;
+
+    // create all the neccessary contexts
+    status = __create_file_contexts(path, &uploadContexts, &uploadCount);
+    if (status != 0) {
+        fprintf(stderr, "chefclient_pack_publish: failed to create file contexts\n");
+        return status;
+    }
 
     // create the publish request
     request = __create_publish_request(params);
@@ -400,10 +587,10 @@ int chefclient_pack_publish(struct chef_publish_params* params, const char* path
     }
     json_decref(request);
 
-    // now upload the pack
-    status = __upload_file(path, &context);
+    // now upload the blocks
+    status = __upload_blocks(&context, uploadContexts, uploadCount);
     if (status != 0) {
-        fprintf(stderr, "chefclient_pack_publish: failed to upload pack\n");
+        fprintf(stderr, "chefclient_pack_publish: failed to upload file\n");
         return -1;
     }
 

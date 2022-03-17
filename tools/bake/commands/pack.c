@@ -14,6 +14,16 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
+ * Package System TODOs:
+ * - toolchain support (in progress)
+ * - serve protocol
+ * - autotools backend
+ * - upload progress
+ * - download progress
+ * - nicer feedback
+ * Application System TODOs:
+ * - app commands
+ * - icon support
  */
 
 #include <chef/client.h>
@@ -145,12 +155,12 @@ static int __make_recipes(struct recipe* recipe)
         }
 
         status = __make_recipe_steps(&part->steps);
+        oven_recipe_end();
+
         if (status) {
             fprintf(stderr, "bake: failed to build recipe %s\n", part->name);
             return status;
         }
-
-        oven_recipe_end();
     }
 
     return 0;
