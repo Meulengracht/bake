@@ -14,6 +14,9 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
+ * VaFS TODOs:
+ * - Block caching system (unpack speeds of very large images are insanely slow)
+ * - FS statistics (file count, total uncompressed size of files) to support unpack progress
  * Package System TODOs:
  * - toolchain support (in progress)
  * - serve protocol

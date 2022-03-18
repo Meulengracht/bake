@@ -511,7 +511,7 @@ static const char* __get_unpack_path(struct VaFs* vafsHandle, const char* packag
     }
 }
 
-static int __fridge_unpack(const char* packPath, const char* packageName)
+static int __fridge_unpack(const char* packPath, const char* packageName, struct fridge_inventory_pack* pack)
 {
     struct VaFs*                vafsHandle;
     struct VaFsDirectoryHandle* directoryHandle;
@@ -519,7 +519,9 @@ static int __fridge_unpack(const char* packPath, const char* packageName)
     const char*                 unpackPath;
 
     // check our inventory status if we should unpack it again
-    
+    if (inventory_pack_is_unpacked(pack) == 1) {
+        return 0;
+    }
 
     status = vafs_open_file(packPath, &vafsHandle);
     if (status) {
@@ -550,9 +552,6 @@ static int __fridge_unpack(const char* packPath, const char* packageName)
         return -1;
     }
 
-    // clean the directory first just to make sure
-    platform_rmdir(unpackPath);
-
     status = __extract_directory(directoryHandle, unpackPath, unpackPath);
     if (status != 0) {
         free((void*)unpackPath);
@@ -562,6 +561,9 @@ static int __fridge_unpack(const char* packPath, const char* packageName)
         return -1;
     }
 
+    // awesome, lets mark it unpacked
+    inventory_pack_set_unpacked(pack);
+
     free((void*)unpackPath);
     vafs_directory_close(directoryHandle);
     return vafs_close(vafsHandle);
@@ -569,14 +571,14 @@ static int __fridge_unpack(const char* packPath, const char* packageName)
 
 int fridge_store_ingredient(struct fridge_ingredient* ingredient)
 {
-    struct chef_download_params downloadParams;
-    struct chef_version         version;
-    struct chef_version*        versionPtr = NULL;
-    int                         latest = 0;
-    char**                      names;
-    int                         namesCount;
-    int                         status;
-    char                        nameBuffer[256];
+    struct chef_download_params   downloadParams;
+    struct chef_version           version;
+    struct chef_version*          versionPtr = NULL;
+    struct fridge_inventory_pack* pack;
+    char**                        names;
+    int                           namesCount;
+    int                           status;
+    char                          nameBuffer[256];
 
     if (g_inventory == NULL) {
         errno = ENOSYS;
@@ -598,10 +600,6 @@ int fridge_store_ingredient(struct fridge_ingredient* ingredient)
         }
         versionPtr = &version;
     }
-    else {
-        // if no version provided, we want the latest
-        latest = 1;
-    }
 
     // split the publisher/package
     names = strsplit(ingredient->name, '/');
@@ -621,23 +619,14 @@ int fridge_store_ingredient(struct fridge_ingredient* ingredient)
         goto cleanup;
     }
 
-    // check if we have the requested ingredient in store already
-    status = inventory_contains(g_inventory, names[0], names[1],
+    // check if we have the requested ingredient in store already, otherwise
+    // download the ingredient
+    status = inventory_get_pack(g_inventory, names[0], names[1],
         ingredient->platform, ingredient->arch, ingredient->channel,
-        versionPtr, latest
+        versionPtr, &pack
     );
     if (status == 0) {
         printf("already cached %s\n", ingredient->name);
-        goto cleanup;
-    }
-
-    // otherwise we add the ingredient and download it
-    status = inventory_add(g_inventory, names[0], names[1],
-        ingredient->platform, ingredient->arch, ingredient->channel,
-        versionPtr, latest
-    );
-    if (status) {
-        fprintf(stderr, "fridge_store_ingredient: failed to add ingredient\n");
         goto cleanup;
     }
 
@@ -665,6 +654,16 @@ int fridge_store_ingredient(struct fridge_ingredient* ingredient)
         fprintf(stderr, "fridge_use_ingredient: failed to download ingredient %s\n", ingredient->name);
     }
 
+    // it's downloaded, lets add it
+    status = inventory_add(g_inventory, names[0], names[1],
+        ingredient->platform, ingredient->arch, ingredient->channel,
+        versionPtr, &pack
+    );
+    if (status) {
+        fprintf(stderr, "fridge_store_ingredient: failed to add ingredient\n");
+        goto cleanup;
+    }
+
 cleanup:
     strsplit_free(names);
     return status;
@@ -672,14 +671,14 @@ cleanup:
 
 int fridge_use_ingredient(struct fridge_ingredient* ingredient)
 {
-    struct chef_download_params downloadParams;
-    struct chef_version         version;
-    struct chef_version*        versionPtr = NULL;
-    int                         latest = 0;
-    int                         status;
-    char**                      names;
-    int                         namesCount;
-    char                        nameBuffer[256];
+    struct chef_download_params   downloadParams;
+    struct chef_version           version;
+    struct chef_version*          versionPtr = NULL;
+    struct fridge_inventory_pack* pack;
+    int                           status;
+    char**                        names;
+    int                           namesCount;
+    char                          nameBuffer[256];
 
     if (g_inventory == NULL) {
         errno = ENOSYS;
@@ -700,10 +699,6 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
             return -1;
         }
         versionPtr = &version;
-    }
-    else {
-        // if no version provided, we want the latest
-        latest = 1;
     }
 
     // split the publisher/package
@@ -737,23 +732,14 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
         (ingredient->version == NULL ? "latest" : ingredient->version)
     );
 
-    // check if we have the requested ingredient in store already
-    status = inventory_contains(g_inventory, names[0], names[1],
+    // check if we have the requested ingredient in store already, otherwise
+    // download the ingredient
+    status = inventory_get_pack(g_inventory, names[0], names[1],
         ingredient->platform, ingredient->arch, ingredient->channel,
-        versionPtr, latest
+        versionPtr, &pack
     );
     if (status == 0) {
         goto unpack;
-    }
-
-    // otherwise we add the ingredient and download it
-    status = inventory_add(g_inventory, names[0], names[1],
-        ingredient->platform, ingredient->arch, ingredient->channel,
-        versionPtr, latest
-    );
-    if (status) {
-        fprintf(stderr, "fridge_use_ingredient: failed to add ingredient\n");
-        goto cleanup;
     }
 
     // initialize download params
@@ -765,13 +751,23 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
     downloadParams.version   = ingredient->version;
     status = chefclient_pack_download(&downloadParams, &nameBuffer[0]);
     if (status) {
-        fprintf(stderr, "fridge_use_ingredient: failed to download ingredient %s [%i]\n", ingredient->name, status);
+        fprintf(stderr, "fridge_use_ingredient: failed to download ingredient %s\n", ingredient->name);
+        goto cleanup;
+    }
+
+    // it's downloaded, lets add it
+    status = inventory_add(g_inventory, names[0], names[1],
+        ingredient->platform, ingredient->arch, ingredient->channel,
+        versionPtr, &pack
+    );
+    if (status) {
+        fprintf(stderr, "fridge_use_ingredient: failed to add ingredient\n");
         goto cleanup;
     }
 
     // unpack it into preparation area
 unpack:
-    status = __fridge_unpack(nameBuffer, names[1]);
+    status = __fridge_unpack(nameBuffer, names[1], pack);
     if (status) {
         fprintf(stderr, "fridge_use_ingredient: failed to unpack ingredient %s\n", ingredient->name);
     }

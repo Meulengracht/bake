@@ -22,22 +22,8 @@
 #include <chef/package.h>
 #include <time.h>
 
-struct fridge_inventory_pack {
-    const char*         publisher;
-    const char*         package;
-    const char*         platform;
-    const char*         arch;
-    const char*         channel;
-    struct chef_version version;
-    int                 latest;
-    int                 installed;
-};
-
-struct fridge_inventory {
-    struct timespec               last_check;
-    struct fridge_inventory_pack* packs;
-    int                           packs_count;
-};
+struct fridge_inventory_pack;
+struct fridge_inventory;
 
 
 /**
@@ -52,38 +38,38 @@ struct fridge_inventory {
 extern int inventory_load(const char* path, struct fridge_inventory** inventoryOut);
 
 /**
- * @brief Checks the inventory for a given package.
+ * @brief Retrieves a given package matching the provided criteria from the inventory.
  * 
- * @param[In] inventory The inventory instance to check.
- * @param[In] publisher The publisher of the package.
- * @param[In] package   The package from the publisher that we are adding.
- * @param[In] platform  The platform target of the package.
- * @param[In] arch      The platform architecture of the package.
- * @param[In] channel   The channel of the package.
- * @param[In] version   The current version of the package.
- * @param[In] latest    Whether or not we want to have the latest version.
- * @return int 0 if the package is found, otherwise -1 and errno will be set to ENOENT
+ * @param[In]  inventory The inventory instance to check.
+ * @param[In]  publisher The publisher of the package.
+ * @param[In]  package   The package from the publisher that we are adding.
+ * @param[In]  platform  The platform target of the package.
+ * @param[In]  arch      The platform architecture of the package.
+ * @param[In]  channel   The channel of the package.
+ * @param[In]  version   The current version of the package.
+ * @param[Out] packOut  A pointer to a pack pointer where the handle of the pack will be stored.
+ * @return int 0 if the package is found, otherwise -1 and errno will be set accordingly.
  */
-extern int inventory_contains(struct fridge_inventory* inventory, const char* publisher, 
+extern int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher, 
     const char* package, const char* platform, const char* arch, const char* channel,
-    struct chef_version* version, int latest);
+    struct chef_version* version, struct fridge_inventory_pack** packOut);
 
 /**
  * @brief Adds a new package to inventory
  * 
- * @param[In] inventory The inventory instance the pack should be added to.
- * @param[In] publisher The publisher of the package
- * @param[In] package   The package from the publisher that we are adding.
- * @param[In] platform  The platform target of the package.
- * @param[In] arch      The platform architecture of the package.
- * @param[In] channel   The channel of the package.
- * @param[In] version   The current version of the package.
- * @param[In] latest    Whether or not we want to have the latest version
+ * @param[In]  inventory The inventory instance the pack should be added to.
+ * @param[In]  publisher The publisher of the package
+ * @param[In]  package   The package from the publisher that we are adding.
+ * @param[In]  platform  The platform target of the package.
+ * @param[In]  arch      The platform architecture of the package.
+ * @param[In]  channel   The channel of the package.
+ * @param[In]  version   The current version of the package.
+ * @param[Out] packOut   A pointer to a pack pointer where the handle of the pack will be stored.
  * @return int 0 on success, otherwise -1 and errno will be set
  */
 extern int inventory_add(struct fridge_inventory* inventory, const char* publisher,
     const char* package, const char* platform, const char* arch, const char* channel,
-    struct chef_version* version, int latest);
+    struct chef_version* version, struct fridge_inventory_pack** packOut);
 
 /**
  * @brief Saves the inventory to the given file path. The file created is json.
@@ -100,5 +86,22 @@ extern int inventory_save(struct fridge_inventory* inventory, const char* path);
  * @param[In] inventory The inventory to clean up. 
  */
 extern void inventory_free(struct fridge_inventory* inventory);
+
+/**
+ * @brief Marks a pack for being currently unpacked. This can be used to indicate whether
+ * or not a pack has been prepared for usage. It will be automatically cleared when the pack
+ * is updated.
+ * 
+ * @param[In] pack The pack to mark as unpacked. 
+ */
+extern void inventory_pack_set_unpacked(struct fridge_inventory_pack* pack);
+
+/**
+ * @brief Queries the current unpack status for the pack
+ * 
+ * @param[In] pack The pack to query.
+ * @return int 1 if the pack is unpacked, otherwise 0.
+ */
+extern int inventory_pack_is_unpacked(struct fridge_inventory_pack* pack);
 
 #endif //!__LIBFRIDGE_INVENTORY_H__

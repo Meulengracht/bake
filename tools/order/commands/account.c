@@ -168,6 +168,7 @@ int account_main(int argc, char** argv)
 
     if (command == NULL) {
         printf("order: no command was specified for 'account'\n");
+        __print_help();
         return -1;
     }
 

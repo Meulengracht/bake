@@ -23,6 +23,23 @@
 #include <string.h>
 #include <stdlib.h>
 
+struct fridge_inventory_pack {
+    const char*         publisher;
+    const char*         package;
+    const char*         platform;
+    const char*         arch;
+    const char*         channel;
+    struct chef_version version;
+    int                 latest;
+    int                 unpacked;
+};
+
+struct fridge_inventory {
+    struct timespec               last_check;
+    struct fridge_inventory_pack* packs;
+    int                           packs_count;
+};
+
 static struct fridge_inventory* __inventory_new(void)
 {
     struct fridge_inventory* inventory;
@@ -194,9 +211,9 @@ int __compare_version(struct chef_version* version1, struct chef_version* versio
     return 0;
 }
 
-int inventory_contains(struct fridge_inventory* inventory, const char* publisher, 
+int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher, 
     const char* package, const char* platform, const char* arch, const char* channel,
-    struct chef_version* version, int latest)
+    struct chef_version* version, struct fridge_inventory_pack** packOut)
 {
     if (inventory == NULL || publisher == NULL || package == NULL || channel == NULL) {
         errno = EINVAL;
@@ -210,10 +227,12 @@ int inventory_contains(struct fridge_inventory* inventory, const char* publisher
             strcmp(inventory->packs[i].arch, arch) == 0 &&
             strcmp(inventory->packs[i].channel, channel) == 0) {
             // ok same package, check version against latest
-            if (inventory->packs[i].latest == latest && latest == 1) {
+            if (inventory->packs[i].latest == 1 && version == NULL) {
+                *packOut = &inventory->packs[i];
                 return 0;
-            } else if (inventory->packs[i].latest == latest && latest == 0) {
+            } else if (inventory->packs[i].latest == 0 && version != NULL) {
                 if (__compare_version(&inventory->packs[i].version, version) == 0) {
+                    *packOut = &inventory->packs[i];
                     return 0;
                 }
             }
@@ -226,7 +245,7 @@ int inventory_contains(struct fridge_inventory* inventory, const char* publisher
 
 int inventory_add(struct fridge_inventory* inventory, const char* publisher,
     const char* package, const char* platform, const char* arch, const char* channel,
-    struct chef_version* version, int latest)
+    struct chef_version* version, struct fridge_inventory_pack** packOut)
 {
     struct fridge_inventory_pack* packEntry;
     void*                         newArray;
@@ -257,7 +276,7 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
     packEntry->platform  = platform != NULL ? strdup(platform) : NULL;
     packEntry->arch      = platform != NULL ? strdup(arch) : NULL;
     packEntry->channel   = strdup(channel);
-    if (latest == 1 || version == NULL) {
+    if (version == NULL) {
         packEntry->latest = 1;
     } else {
         packEntry->version.major = version->major;
@@ -267,6 +286,8 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
             packEntry->version.tag = strdup(version->tag);
         }
     }
+
+    *packOut = packEntry;
 
     inventory->packs = newArray;
     inventory->packs_count += 1;
@@ -361,4 +382,22 @@ void inventory_free(struct fridge_inventory* inventory)
 
     free(inventory->packs);
     free(inventory);
+}
+
+void inventory_pack_set_unpacked(struct fridge_inventory_pack* pack)
+{
+    if (pack == NULL) {
+        return;
+    }
+
+    pack->unpacked = 1;
+}
+
+int inventory_pack_is_unpacked(struct fridge_inventory_pack* pack)
+{
+    if (pack == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    return pack->unpacked;
 }
