@@ -18,7 +18,6 @@
  * - Block caching system (unpack speeds of very large images are insanely slow)
  * - FS statistics (file count, total uncompressed size of files) to support unpack progress
  * Package System TODOs:
- * - toolchain support (in progress)
  * - serve protocol
  * - autotools backend
  * Application System TODOs:
