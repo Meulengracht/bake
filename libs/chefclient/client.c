@@ -204,6 +204,18 @@ static int __response_writer(char *data, size_t size, size_t nmemb, size_t* data
     return size * nmemb;
 }
 
+
+void chef_set_curl_common_headers(void** headerlist, int authorization)
+{
+    if (authorization) {
+        if (headerlist == NULL) {
+            fprintf(stderr, "chef_set_curl_common: auth requested but headerlist is NULL\n");
+            return;
+        }
+        oauth_set_authentication(headerlist);
+    }
+}
+
 void chef_set_curl_common(void* curl, void** headerlist, int response, int secure, int authorization)
 {
     CURLcode code;
@@ -233,18 +245,12 @@ void chef_set_curl_common(void* curl, void** headerlist, int response, int secur
         }
     }
 
-    if (authorization) {
-        if (headerlist == NULL) {
-            fprintf(stderr, "chef_set_curl_common: auth requested but headerlist is NULL\n");
-            return;
-        }
-        oauth_set_authentication(headerlist);
-    }
-
+    chef_set_curl_common_headers(headerlist, authorization);
     if (headerlist && *headerlist) {
         code = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, (struct curl_slist*)(*headerlist));
         if (code != CURLE_OK) {
             fprintf(stderr, "chef_set_curl_common: failed to set http headers [%s]\n", g_curlErrorBuffer);
         }
     }
+
 }

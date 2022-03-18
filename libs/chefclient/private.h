@@ -62,6 +62,14 @@ extern char* chef_error_buffer(void);
 extern void chef_set_curl_common(void* curl, void** headerlist, int response, int secure, int authorization);
 
 /**
+ * @brief This sets only the common headers for a curl request
+ * 
+ * @param headerlist 
+ * @param authorization
+ */
+extern void chef_set_curl_common_headers(void** headerlist, int authorization);
+
+/**
  * @brief 
  * 
  * @param handle 

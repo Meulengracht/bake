@@ -2,6 +2,8 @@
 project (chef-client C)
 
 add_library(chef-client STATIC
+    base64/encode.c
+
     oauth/devicecode.c
     oauth/oauth.c
 
