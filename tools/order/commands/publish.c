@@ -111,8 +111,9 @@ int publish_main(int argc, char** argv)
     }
 
     // dump information
-    printf("publishing package %s\n", package->package);
-    printf("channel %s\n", params.channel);
+    printf("publishing package: %s\n", package->package);
+    printf("channel:            %s\n", params.channel);
+    printf("version:            %d.%d\n", version->major, version->minor);
 
     // set the parameter values
     params.package = package;
@@ -154,7 +155,7 @@ int publish_main(int argc, char** argv)
             break;
         }
 
-        printf("order: package published successfully\n");
+        printf("package published successfully\n");
         break;
     }
     

@@ -619,7 +619,7 @@ static int __update_progress(struct file_upload_context* uploadContexts, int upl
             printf(" ");
         }
     }
-    printf("| %3d%%] %6zu / %6zu", percent, complete, total);
+    printf("| %3d%%] %6zu / %6zu bytes", percent, complete, total);
     fflush(stdout);
     return status;
 }
