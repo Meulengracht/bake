@@ -136,10 +136,12 @@ int oven_initialize(char** envp, const char* fridgePrepDirectory)
     g_ovenContext.fridge_prep_directory = fridgePrepDirectory;
 
     // no active recipe
-    g_ovenContext.recipe.name          = NULL;
-    g_ovenContext.recipe.relative_path = NULL;
-    g_ovenContext.recipe.build_root    = NULL;
-    g_ovenContext.recipe.install_root  = NULL;
+    g_ovenContext.recipe.name            = NULL;
+    g_ovenContext.recipe.relative_path   = NULL;
+    g_ovenContext.recipe.build_root      = NULL;
+    g_ovenContext.recipe.install_root    = NULL;
+    g_ovenContext.recipe.toolchain       = NULL;
+    g_ovenContext.recipe.checkpoint_path = NULL;
 
     status = platform_mkdir(root);
     free(root);
@@ -336,6 +338,7 @@ static int __has_checkpoint(const char* path, const char* checkpoint)
 static const char* __get_variable(const char* name)
 {
     if (strcmp(name, "TOOLCHAIN_PREFIX") == 0) {
+        printf("TOOLCHAIN_PREFIX: %s\n", g_ovenContext.recipe.toolchain);
         return g_ovenContext.recipe.toolchain;
     }
     return NULL;
@@ -358,7 +361,23 @@ static const char* __preprocess_value(const char* original)
     if (strncmp(itr, "${{", 3) == 0) {
         char* end = strchr(itr, '}');
         if (end && end[1] == '}') {
-            char* variable = strndup(itr + 3, end - itr - 3);
+            char* variable;
+
+            itr += 3; // skip ${{
+
+            // trim leading spaces
+            while (*itr == ' ') {
+                itr++;
+            }
+
+            // trim trailing spaces
+            end--;
+            while (*end == ' ') {
+                end--;
+            }
+            end++;
+
+            variable = strndup(itr, end - itr);
             if (variable) {
                 const char* value = __get_variable(variable);
                 free(variable);
@@ -373,7 +392,23 @@ static const char* __preprocess_value(const char* original)
     if (strncmp(itr, "${", 2) == 0) {
         char* end = strchr(itr, '}');
         if (end) {
-            char* variable = strndup(itr + 2, end - itr - 2);
+            char* variable;
+
+            itr += 2; // skip ${
+
+            // trim leading spaces
+            while (*itr == ' ') {
+                itr++;
+            }
+
+            // trim trailing spaces
+            end--;
+            while (*end == ' ') {
+                end--;
+            }
+            end++;
+
+            variable = strndup(itr, end - itr);
             if (variable != NULL) {
                 char* env = getenv(variable);
                 free(variable);

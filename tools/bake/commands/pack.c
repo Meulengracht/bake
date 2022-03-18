@@ -18,10 +18,10 @@
  * - toolchain support (in progress)
  * - serve protocol
  * - autotools backend
- * - nicer feedback
  * Application System TODOs:
  * - app commands
  * - icon support
+ * - served system
  */
 
 #include <chef/client.h>
@@ -134,7 +134,12 @@ static void __initialize_recipe_options(struct oven_recipe_options* options, str
 {
     options->name          = part->name;
     options->relative_path = part->path;
-    options->toolchain     = part->toolchain;
+    options->toolchain     = fridge_get_utensil_location(part->toolchain);
+}
+
+static void __destroy_recipe_options(struct oven_recipe_options* options)
+{
+    free((void*)options->toolchain);
 }
 
 static int __make_recipes(struct recipe* recipe)
@@ -148,6 +153,8 @@ static int __make_recipes(struct recipe* recipe)
 
         __initialize_recipe_options(&options, part);
         status = oven_recipe_start(&options);
+        __destroy_recipe_options(&options);
+
         if (status) {
             return status;
         }

@@ -876,6 +876,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     s->env_keypair.key = __parse_string(value);
                     s->state = STATE_RECIPE_STEP_ENV_LIST_VALUE;
+                    break;
 
                 default:
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
@@ -891,6 +892,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
                     __finalize_step_env(s);
                     s->state = STATE_RECIPE_STEP_ENV_LIST_KEY;
+                    break;
 
                 default:
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);

@@ -518,6 +518,9 @@ static int __fridge_unpack(const char* packPath, const char* packageName)
     int                         status;
     const char*                 unpackPath;
 
+    // check our inventory status if we should unpack it again
+    
+
     status = vafs_open_file(packPath, &vafsHandle);
     if (status) {
         fprintf(stderr, "__fridge_unpack: cannot open vafs image: %s\n", packPath);
@@ -546,6 +549,9 @@ static int __fridge_unpack(const char* packPath, const char* packageName)
         fprintf(stderr, "__fridge_unpack: failed to create unpack path\n");
         return -1;
     }
+
+    // clean the directory first just to make sure
+    platform_rmdir(unpackPath);
 
     status = __extract_directory(directoryHandle, unpackPath, unpackPath);
     if (status != 0) {
@@ -611,7 +617,8 @@ int fridge_store_ingredient(struct fridge_ingredient* ingredient)
 
     if (namesCount != 2) {
         fprintf(stderr, "fridge_store_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
-        return -1;
+        status = -1;
+        goto cleanup;
     }
 
     // check if we have the requested ingredient in store already
@@ -713,8 +720,22 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
 
     if (namesCount != 2) {
         fprintf(stderr, "fridge_store_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
-        return -1;
+        status = -1;
+        goto cleanup;
     }
+
+    // generate the file name before checking that we already have this filename as 
+    // we need it to unpack
+    snprintf(
+        nameBuffer, sizeof(nameBuffer) - 1, 
+        "%s/%s-%s-%s-%s-%s-%s.pack", 
+        g_storagePath,
+        names[0], names[1],
+        ingredient->platform,
+        ingredient->arch,
+        ingredient->channel,
+        (ingredient->version == NULL ? "latest" : ingredient->version)
+    );
 
     // check if we have the requested ingredient in store already
     status = inventory_contains(g_inventory, names[0], names[1],
@@ -722,7 +743,7 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
         versionPtr, latest
     );
     if (status == 0) {
-        goto cleanup;
+        goto unpack;
     }
 
     // otherwise we add the ingredient and download it
@@ -734,18 +755,6 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
         fprintf(stderr, "fridge_use_ingredient: failed to add ingredient\n");
         goto cleanup;
     }
-
-    // generate the file name
-    snprintf(
-        nameBuffer, sizeof(nameBuffer) - 1, 
-        "%s/%s-%s-%s-%s-%s-%s.pack", 
-        g_storagePath,
-        names[0], names[1],
-        ingredient->platform,
-        ingredient->arch,
-        ingredient->channel,
-        (ingredient->version == NULL ? "latest" : ingredient->version)
-    );
 
     // initialize download params
     downloadParams.publisher = names[0];
@@ -761,6 +770,7 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
     }
 
     // unpack it into preparation area
+unpack:
     status = __fridge_unpack(nameBuffer, names[1]);
     if (status) {
         fprintf(stderr, "fridge_use_ingredient: failed to unpack ingredient %s\n", ingredient->name);
@@ -769,4 +779,45 @@ int fridge_use_ingredient(struct fridge_ingredient* ingredient)
 cleanup:
     strsplit_free(names);
     return status;
+}
+
+char* fridge_get_utensil_location(const char* ingredient)
+{
+    char** names;
+    int    namesCount;
+    char*  path = NULL;
+
+    if (ingredient == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    // split the publisher/package
+    names = strsplit(ingredient, '/');
+    if (names == NULL) {
+        fprintf(stderr, "fridge_get_utensil_location: invalid package naming '%s' (must be publisher/package)\n", ingredient);
+        return NULL;
+    }
+    
+    namesCount = 0;
+    while (names[namesCount] != NULL) {
+        namesCount++;
+    }
+
+    if (namesCount != 2) {
+        fprintf(stderr, "fridge_get_utensil_location: invalid package naming '%s' (must be publisher/package)\n", ingredient);
+        goto cleanup;
+    }
+
+    path = (char*)malloc(strlen(g_utensilsPath) + strlen(names[1]) + 2);
+    if (path == NULL) {
+        errno = ENOMEM;
+        goto cleanup;
+    }
+
+    sprintf(path, "%s/%s", g_utensilsPath, names[1]);
+
+cleanup:
+    strsplit_free(names);
+    return path;
 }

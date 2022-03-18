@@ -91,4 +91,13 @@ extern int fridge_store_ingredient(struct fridge_ingredient* ingredient);
  */
 extern int fridge_use_ingredient(struct fridge_ingredient* ingredient);
 
+/**
+ * @brief Resolves the path of a utensils package. This will return the prefix path
+ * that can be exposed to the building of the package.
+ * 
+ * @param[In] ingredient The name of the ingredient to resolve in the format of publisher/name
+ * @return char* A malloc'd copy of the path prefix to the unpacked utensils package.
+ */
+extern char* fridge_get_utensil_location(const char* ingredient);
+
 #endif //!__LIBFRIDGE_H__

@@ -30,6 +30,7 @@ struct fridge_inventory_pack {
     const char*         channel;
     struct chef_version version;
     int                 latest;
+    int                 installed;
 };
 
 struct fridge_inventory {
