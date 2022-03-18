@@ -57,8 +57,6 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
         return 0;
     }
 
-    printf("__parse_inventory: %s\n", json);
-
     root = json_loads(json, 0, &error);
     if (!root) {
         status = 0;
@@ -91,9 +89,9 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
             json_t* platform = json_object_get(pack, "platform");
             json_t* architecture = json_object_get(pack, "architecture");
             json_t* channel = json_object_get(pack, "channel");
+            json_t* latest = json_object_get(pack, "latest");
 
             json_t* version = json_object_get(pack, "version");
-            json_t* latest = json_object_get(version, "latest");
             json_t* version_major = json_object_get(version, "major");
             json_t* version_minor = json_object_get(version, "minor");
             json_t* version_revision = json_object_get(version, "revision");
@@ -119,9 +117,9 @@ exit:
 
 static int __inventory_load_file(const char* path, char** jsonOut)
 {
-    FILE*  file;
-    size_t size;
-    char*  json;
+    FILE* file;
+    long  size;
+    char* json = NULL;
 
     file = fopen(path, "r+");
     if (file == NULL) {
@@ -131,9 +129,9 @@ static int __inventory_load_file(const char* path, char** jsonOut)
         }
     }
 
-    fseek(file, SEEK_END, 0);
+    fseek(file, 0, SEEK_END);
     size = ftell(file);
-    fseek(file, SEEK_SET, 0);
+    fseek(file, 0, SEEK_SET);
 
     if (size) {
         size_t bytesRead;
@@ -145,6 +143,11 @@ static int __inventory_load_file(const char* path, char** jsonOut)
         }
         memset(json, 0, size + 1);
         bytesRead = fread(json, 1, size, file);
+        if (bytesRead != size) {
+            fprintf(stderr, "__inventory_load_file: failed to read file: %s\n", strerror(errno));
+            fclose(file);
+            return -1;
+        }
     }
 
     fclose(file);

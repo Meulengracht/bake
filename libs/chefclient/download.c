@@ -30,6 +30,50 @@ struct pack_response {
     const char* url;
 };
 
+struct download_context {
+    const char* publisher;
+    const char* package;
+    size_t      bytes_downloaded;
+    size_t      bytes_total;
+};
+
+static void __update_progress(struct download_context* downloadContext)
+{
+    int percent;
+
+    percent = (downloadContext->bytes_downloaded * 100) / downloadContext->bytes_total;
+    
+    // print a fancy progress bar with percentage, upload progress and a moving
+    // bar being filled
+    printf("\r%s/%s [", downloadContext->publisher, downloadContext->package);
+    for (int i = 0; i < 20; i++) {
+        if (i < percent / 5) {
+            printf("#");
+        }
+        else {
+            printf(" ");
+        }
+    }
+    printf("| %3d%%] %6zu / %6zu bytes", percent, 
+        downloadContext->bytes_downloaded, 
+        downloadContext->bytes_total
+    );
+    fflush(stdout);
+}
+
+static int __download_progress_callback(void *clientp,
+    double dltotal, double dlnow,
+    double ultotal, double ulnow)
+{
+    struct download_context* context = (struct download_context*)clientp;
+    context->bytes_downloaded = (size_t)dlnow;
+    context->bytes_total = (size_t)dltotal;
+    if (context->bytes_total > 0) {
+        __update_progress(context);
+    }
+    return 0;
+}
+
 static int __get_download_url(struct chef_download_params* params, char* urlBuffer, size_t bufferSize)
 {
     // todo specific version support
@@ -121,7 +165,7 @@ cleanup:
     return status;
 }
 
-static int __download_file(const char* filePath, struct pack_response* context)
+static int __download_file(const char* filePath, struct pack_response* context, struct download_context* downloadContext)
 {
     FILE*              file;
     struct curl_slist* headers = NULL;
@@ -167,6 +211,18 @@ static int __download_file(const char* filePath, struct pack_response* context)
         goto cleanup;
     }
 
+    code = curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, __download_progress_callback);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__download_file: failed to set download progress callback [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, downloadContext);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__download_file: failed to set download progress callback data [%s]\n", chef_error_buffer());
+        goto cleanup;
+    }
+
     code = curl_easy_setopt(curl, CURLOPT_URL, context->url);
     if (code != CURLE_OK) {
         fprintf(stderr, "__download_file: failed to set url [%s]\n", chef_error_buffer());
@@ -198,8 +254,9 @@ cleanup:
 
 int chefclient_pack_download(struct chef_download_params* params, const char* path)
 {
-    struct pack_response packResponse = { 0 };
-    int                  status;
+    struct pack_response    packResponse = { 0 };
+    struct download_context downloadContext = { 0 };
+    int                     status;
 
     status = __download_request(params, &packResponse);
     if (status != 0) {
@@ -207,10 +264,22 @@ int chefclient_pack_download(struct chef_download_params* params, const char* pa
         return status;
     }
 
-    status = __download_file(path, &packResponse);
+    // prepare download context
+    downloadContext.publisher = params->publisher;
+    downloadContext.package   = params->package;
+
+    // print initial banner
+    printf("initiating download of %s/%s", params->publisher, params->package);
+    fflush(stdout);
+
+    // start download
+    status = __download_file(path, &packResponse, &downloadContext);
     if (status != 0) {
         fprintf(stderr, "chefclient_pack_download: failed to download package [%s]\n", strerror(errno));
         return status;
     }
+
+    // print newline
+    printf("\n");
     return status;
 }

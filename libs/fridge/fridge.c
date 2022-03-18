@@ -620,6 +620,7 @@ int fridge_store_ingredient(struct fridge_ingredient* ingredient)
         versionPtr, latest
     );
     if (status == 0) {
+        printf("already cached %s\n", ingredient->name);
         goto cleanup;
     }
 

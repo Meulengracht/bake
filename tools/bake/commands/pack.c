@@ -18,8 +18,6 @@
  * - toolchain support (in progress)
  * - serve protocol
  * - autotools backend
- * - upload progress
- * - download progress
  * - nicer feedback
  * Application System TODOs:
  * - app commands
