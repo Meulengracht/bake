@@ -178,9 +178,7 @@ void __cleanup_systems(int sig)
 {
     (void)sig;
     printf("bake: termination requested, cleaning up\n");
-    oven_cleanup();
-    chefclient_cleanup();
-    fridge_cleanup();
+    exit(0);
 }
 
 int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)

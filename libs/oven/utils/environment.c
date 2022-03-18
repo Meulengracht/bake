@@ -22,14 +22,14 @@
 #include <string.h>
 #include <utils.h>
 
-char** oven_environment_create(const char** parent, struct list* additonal)
+char** oven_environment_create(const char** parent, struct list* additional)
 {
     struct list_item* item;
     char**            environment;
-    int               entryCount = additonal->count;
+    int               entryCount = additional->count;
     int               i = 0;
 
-    while (parent[entryCount]) {
+    while (parent[entryCount - additional->count]) {
         entryCount++;
     }
 
@@ -43,10 +43,10 @@ char** oven_environment_create(const char** parent, struct list* additonal)
         i++;
     }
 
-    list_foreach(additonal, item) {
-        struct oven_keypair_item* keypair = (struct oven_keypair_item*)item;
+    list_foreach(additional, item) {
+        struct oven_keypair_item* keypair    = (struct oven_keypair_item*)item;
         size_t                    lineLength = strlen(keypair->key) + strlen(keypair->value) + 2;
-        char*                     line = (char*)calloc(lineLength, sizeof(char));
+        char*                     line       = (char*)calloc(lineLength, sizeof(char));
         if (!line) {
             return NULL;
         }
