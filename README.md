@@ -13,4 +13,6 @@ The bake utility serves as the builder, and orchestrates everything related to g
 Order handles the orchestration of the online segment. Order controls your account setup, downloading of packages, package query and is the gateway to serve
 
 ## Serve
-Serve is the application backend. This needs to be implemented on an OS basis. This means if you seek to support chef applications, you need to implement serve for your OS.
+Serve consts of a frontend and a backend. The frontend is a CLI utility that allows you to interact with the backend. The backend is the application backend. This needs to be implemented on an OS basis. View the README located under daemons/served for more information.
+
+Serve and Served communicate using the serve protocol, the serve protocol is implemented using the Gracht library.
