@@ -610,7 +610,7 @@ static int __update_progress(struct file_upload_context* uploadContexts, int upl
     
     // print a fancy progress bar with percentage, upload progress and a moving
     // bar being filled
-    printf("\r[");
+    printf("\33[2K\r[");
     for (int i = 0; i < 20; i++) {
         if (i < percent / 5) {
             printf("#");

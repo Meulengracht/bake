@@ -45,7 +45,7 @@ static void __update_progress(struct download_context* downloadContext)
     
     // print a fancy progress bar with percentage, upload progress and a moving
     // bar being filled
-    printf("\r%s/%s [", downloadContext->publisher, downloadContext->package);
+    printf("\33[2K\r%s/%s [", downloadContext->publisher, downloadContext->package);
     for (int i = 0; i < 20; i++) {
         if (i < percent / 5) {
             printf("#");

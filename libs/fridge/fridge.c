@@ -42,12 +42,25 @@
 // own subdirectory in the utensils area. A tool can for instance be a toolchain
 #define FRIDGE_UTENSILS_PATH    FRIDGE_ROOT_PATH "/utensils"
 
+struct progress_context {
+    int disabled;
+
+    int files;
+    int directories;
+    int symlinks;
+
+    int files_total;
+    int directories_total;
+    int symlinks_total;
+};
+
 struct VaFsFeatureFilter {
     struct VaFsFeatureHeader Header;
 };
 
 static struct fridge_inventory* g_inventory     = NULL;
 static struct VaFsGuid          g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
+static struct VaFsGuid          g_overviewGuid  = VA_FS_FEATURE_OVERVIEW;
 static struct VaFsGuid          g_filterGuid    = VA_FS_FEATURE_FILTER;
 static struct VaFsGuid          g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
 
@@ -96,6 +109,43 @@ static int __get_cwd(char** bufferOut)
     return 0;
 }
 
+static void __write_progress(const char* prefix, struct progress_context* context)
+{
+    static int last = 0;
+    int        current;
+    int        total;
+    int        percent;
+
+    if (context->disabled) {
+        return;
+    }
+
+    total   = context->files_total + context->directories_total + context->symlinks_total;
+    current = context->files + context->directories + context->symlinks;
+    percent = (current * 100) / total;
+
+    printf("\33[2K\r%-10.10s [", prefix);
+    for (int i = 0; i < 20; i++) {
+        if (i < percent / 5) {
+            printf("#");
+        }
+        else {
+            printf(" ");
+        }
+    }
+    printf("| %3d%%]", percent);
+	if (context->files_total) {
+		printf(" %i/%i files", context->files, context->files_total);
+	}
+	if (context->directories_total) {
+		printf(" %i/%i directories", context->directories, context->directories_total);
+	}
+	if (context->symlinks_total) {
+		printf(" %i/%i symlinks", context->symlinks, context->symlinks_total);
+	}
+    fflush(stdout);
+}
+
 static int __extract_file(
     struct VaFsFileHandle* fileHandle,
     const char*            path)
@@ -126,6 +176,7 @@ static int __extract_file(
 }
 
 static int __extract_directory(
+    struct progress_context*    progress,
     struct VaFsDirectoryHandle* directoryHandle,
     const char*                 root,
     const char*                 path)
@@ -156,6 +207,7 @@ static int __extract_directory(
         filepathBuffer = malloc(strlen(path) + strlen(dp.Name) + 2);
         sprintf(filepathBuffer, "%s/%s", path, dp.Name);
 
+        __write_progress(dp.Name, progress);
         if (dp.Type == VaFsEntryType_Directory) {
             struct VaFsDirectoryHandle* subdirectoryHandle;
             status = vafs_directory_open_directory(directoryHandle, dp.Name, &subdirectoryHandle);
@@ -164,7 +216,7 @@ static int __extract_directory(
                 return -1;
             }
 
-            status = __extract_directory(subdirectoryHandle, root, filepathBuffer);
+            status = __extract_directory(progress, subdirectoryHandle, root, filepathBuffer);
             if (status) {
                 fprintf(stderr, "__extract_directory: unable to extract directory '%s'\n", __get_relative_path(root, path));
                 return -1;
@@ -175,6 +227,7 @@ static int __extract_directory(
                 fprintf(stderr, "__extract_directory: failed to close directory '%s'\n", __get_relative_path(root, filepathBuffer));
                 return -1;
             }
+            progress->directories++;
         } else if (dp.Type == VaFsEntryType_File) {
             struct VaFsFileHandle* fileHandle;
             status = vafs_directory_open_file(directoryHandle, dp.Name, &fileHandle);
@@ -195,6 +248,7 @@ static int __extract_directory(
                 fprintf(stderr, "__extract_directory: failed to close file '%s'\n", __get_relative_path(root, filepathBuffer));
                 return -1;
             }
+            progress->files++;
         } else if (dp.Type == VaFsEntryType_Symlink) {
             const char* symlinkTarget;
             
@@ -211,10 +265,12 @@ static int __extract_directory(
                     __get_relative_path(root, filepathBuffer), status);
                 return -1;
             }
+            progress->symlinks++;
         } else {
             fprintf(stderr, "__extract_directory: unable to extract unknown type '%s'\n", __get_relative_path(root, filepathBuffer));
             return -1;
         }
+        __write_progress(dp.Name, progress);
         free(filepathBuffer);
     } while(1);
 
@@ -511,10 +567,28 @@ static const char* __get_unpack_path(struct VaFs* vafsHandle, const char* packag
     }
 }
 
+static int __handle_overview(struct VaFs* vafsHandle, struct progress_context* progress)
+{
+    struct VaFsFeatureOverview* overview;
+    int                         status;
+
+    status = vafs_feature_query(vafsHandle, &g_overviewGuid, (struct VaFsFeatureHeader**)&overview);
+    if (status) {
+        fprintf(stderr, "unmkvafs: failed to query feature overview - %i\n", errno);
+        return -1;
+    }
+
+    progress->files_total       = overview->Counts.Files;
+    progress->directories_total = overview->Counts.Directories;
+    progress->symlinks_total    = overview->Counts.Symlinks;
+    return 0;
+}
+
 static int __fridge_unpack(const char* packPath, const char* packageName, struct fridge_inventory_pack* pack)
 {
     struct VaFs*                vafsHandle;
     struct VaFsDirectoryHandle* directoryHandle;
+    struct progress_context     progressContext = { 0 };
     int                         status;
     const char*                 unpackPath;
 
@@ -526,6 +600,13 @@ static int __fridge_unpack(const char* packPath, const char* packageName, struct
     status = vafs_open_file(packPath, &vafsHandle);
     if (status) {
         fprintf(stderr, "__fridge_unpack: cannot open vafs image: %s\n", packPath);
+        return -1;
+    }
+
+    status = __handle_overview(vafsHandle, &progressContext);
+    if (status) {
+        vafs_close(vafsHandle);
+        fprintf(stderr, "__fridge_unpack: failed to handle image overview\n");
         return -1;
     }
 
@@ -552,7 +633,7 @@ static int __fridge_unpack(const char* packPath, const char* packageName, struct
         return -1;
     }
 
-    status = __extract_directory(directoryHandle, unpackPath, unpackPath);
+    status = __extract_directory(&progressContext, directoryHandle, unpackPath, unpackPath);
     if (status != 0) {
         free((void*)unpackPath);
         vafs_directory_close(directoryHandle);
@@ -560,6 +641,7 @@ static int __fridge_unpack(const char* packPath, const char* packageName, struct
         fprintf(stderr, "__fridge_unpack: unable to extract pack\n");
         return -1;
     }
+    printf("\n");
 
     // awesome, lets mark it unpacked
     inventory_pack_set_unpacked(pack);

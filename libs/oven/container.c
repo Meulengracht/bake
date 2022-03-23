@@ -33,9 +33,23 @@
 #include <dirent.h>
 #endif
 
+struct progress_context {
+    int disabled;
+
+    int files;
+    int directories;
+    int symlinks;
+
+    int files_total;
+    int directories_total;
+    int symlinks_total;
+};
+
 struct VaFsFeatureFilter {
     struct VaFsFeatureHeader Header;
 };
+
+extern const char* __get_install_path(void);
 
 static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
 static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
@@ -52,6 +66,97 @@ static const char* __get_filename(
 		filename++;
 	}
 	return filename;
+}
+
+int __get_count_recursive(const char *path, int* fileCountOut, int* SymlinkCountOut, int* dirCountOut)
+{
+    struct dirent* direntp;
+    DIR*           dir_ptr = NULL;
+
+    if (!path) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if ((dir_ptr = opendir(path)) == NULL) {
+        return -1;
+    }
+
+    while ((direntp = readdir(dir_ptr))) {
+        if (strcmp(direntp->d_name,".") == 0 || strcmp(direntp->d_name,"..") == 0) {
+             continue;
+        }
+
+        switch (direntp->d_type) {
+            case DT_REG:
+                (*fileCountOut)++;
+                break;
+            case DT_DIR: {
+                char* npath;
+
+                (*dirCountOut)++;
+                
+                npath = malloc(strlen(path)+strlen(direntp->d_name)+2);
+                if (npath == NULL) {
+                    errno = ENOMEM;
+                    return -1;
+                }
+                
+                sprintf(npath, "%s/%s", path, direntp->d_name);
+                
+                if (__get_count_recursive(npath, fileCountOut, SymlinkCountOut, dirCountOut) == -1) {
+                    free(npath);
+                    return -1;
+                }
+
+                free(npath);
+            } break;
+            case DT_LNK:
+                (*SymlinkCountOut)++;
+                break;
+            default:
+                break;
+        }
+    }
+    closedir(dir_ptr);
+    return 0;
+}
+
+static void __write_progress(const char* prefix, struct progress_context* context)
+{
+    static int last = 0;
+    int        current;
+    int        total;
+    int        percent;
+
+    if (context->disabled) {
+        return;
+    }
+
+    total   = context->files_total + context->directories_total + context->symlinks_total;
+    current = context->files + context->directories + context->symlinks;
+    percent = (current * 100) / total;
+
+    printf("\33[2K\r%-10.10s [", prefix);
+    for (int i = 0; i < 20; i++) {
+        if (i < percent / 5) {
+            printf("#");
+        }
+        else {
+            printf(" ");
+        }
+    }
+    printf("| %3d%%]", percent);
+	if (context->files_total) {
+		printf(" %i/%i files", context->files, context->files_total);
+	}
+	if (context->directories_total) {
+		printf(" %i/%i directories", context->directories, context->directories_total);
+	}
+	if (context->symlinks_total) {
+		printf(" %i/%i symlinks", context->symlinks, context->symlinks_total);
+	}
+    fflush(stdout);
 }
 
 static int __write_file(
@@ -106,6 +211,7 @@ static int __write_file(
 }
 
 static int __write_directory(
+    struct progress_context*    progress,
 	struct VaFsDirectoryHandle* directoryHandle,
 	const char*                 path)
 {
@@ -140,7 +246,8 @@ static int __write_directory(
 			continue;
 		}
 
-		printf("oven: found '%s' [%i]\n", filepathBuffer, fileType);
+		// write progress before to update the file/folder in progress
+        __write_progress(filepathBuffer, progress);
 		if (fileType == PLATFORM_FILETYPE_DIRECTORY) {
 			struct VaFsDirectoryHandle* subdirectoryHandle;
 			status = vafs_directory_open_directory(directoryHandle, dp->d_name, &subdirectoryHandle);
@@ -149,7 +256,7 @@ static int __write_directory(
 				continue;
 			}
 
-			status = __write_directory(subdirectoryHandle, filepathBuffer);
+			status = __write_directory(progress, subdirectoryHandle, filepathBuffer);
 			if (status != 0) {
 				fprintf(stderr, "oven: unable to write directory %s\n", filepathBuffer);
 				break;
@@ -160,12 +267,14 @@ static int __write_directory(
 				fprintf(stderr, "oven: failed to close directory '%s'\n", filepathBuffer);
 				break;
 			}
+			progress->directories++;
 		} else if (fileType == PLATFORM_FILETYPE_FILE) {
 			status = __write_file(directoryHandle, filepathBuffer, dp->d_name);
 			if (status != 0) {
 				fprintf(stderr, "oven: unable to write file %s\n", dp->d_name);
 				break;
 			}
+			progress->files++;
 		} else if (fileType == PLATFORM_FILETYPE_SYMLINK) {
 			char* linkpath;
 			status = platform_readlink(filepathBuffer, &linkpath);
@@ -181,9 +290,13 @@ static int __write_directory(
 				fprintf(stderr, "oven: failed to create symlink %s\n", filepathBuffer);
 				break;
 			}
+			progress->symlinks++;
 		} else {
 			fprintf(stderr, "oven: unknown filetype for '%s'\n", filepathBuffer);
 		}
+
+		// write progress after to update the file/folder in progress
+        __write_progress(filepathBuffer, progress);
 	}
 
 	free(filepathBuffer);
@@ -407,7 +520,9 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 int oven_pack(struct oven_pack_options* options)
 {
     struct VaFsDirectoryHandle* directoryHandle;
+	struct VaFsConfiguration    configuration;
     struct VaFs*                vafs;
+    struct progress_context     progressContext = { 0 };
     int                         status;
     char                        tmp[128];
 	char*                       start;
@@ -433,8 +548,20 @@ int oven_pack(struct oven_pack_options* options)
 	name = strdup(tmp);
     strcat(tmp, ".pack");
 
-    // TODO arch
-    status = vafs_create(&tmp[0], VaFsArchitecture_X64, &vafs);
+	// get a file count
+	__get_count_recursive(__get_install_path(),
+		&progressContext.files_total,
+		&progressContext.symlinks_total, 
+		&progressContext.directories_total
+	);
+
+	// initialize settings
+	vafs_config_initialize(&configuration);
+    
+	// TODO arch
+	vafs_config_set_architecture(&configuration, VaFsArchitecture_X64);
+
+    status = vafs_create(&tmp[0], &configuration, &vafs);
     if (status) {
 		free(name);
         return status;
@@ -453,11 +580,12 @@ int oven_pack(struct oven_pack_options* options)
 		goto cleanup;
 	}
 
-    status = __write_directory(directoryHandle, ".oven/install");
+    status = __write_directory(&progressContext, directoryHandle, __get_install_path());
     if (status != 0) {
         fprintf(stderr, "oven: unable to write directory\n");
 		goto cleanup;
     }
+	printf("\n");
 
 	status = __write_package_metadata(vafs, name, options);
 	if (status != 0) {

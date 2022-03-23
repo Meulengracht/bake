@@ -63,6 +63,11 @@ static struct build_backend g_buildbackends[] = {
 
 static struct oven_context g_ovenContext = { 0 };
 
+const char* __get_install_path(void)
+{
+    return g_ovenContext.install_root;
+}
+
 static int __get_cwd(char** bufferOut)
 {
     char*  cwd;
