@@ -264,7 +264,7 @@ static int __write_directory(
 			status = vafs_directory_close(subdirectoryHandle);
 			if (status) {
 				fprintf(stderr, "oven: failed to close directory '%s'\n", filepathBuffer);
-				break;filepathBuffer
+				break;
 			}
 			progress->directories++;
 		} else if (fileType == PLATFORM_FILETYPE_FILE) {
