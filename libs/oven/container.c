@@ -246,7 +246,7 @@ static int __write_directory(
 		}
 
 		// write progress before to update the file/folder in progress
-        __write_progress(filepathBuffer, progress);
+        __write_progress(dp->d_name, progress);
 		if (fileType == PLATFORM_FILETYPE_DIRECTORY) {
 			struct VaFsDirectoryHandle* subdirectoryHandle;
 			status = vafs_directory_open_directory(directoryHandle, dp->d_name, &subdirectoryHandle);
@@ -264,7 +264,7 @@ static int __write_directory(
 			status = vafs_directory_close(subdirectoryHandle);
 			if (status) {
 				fprintf(stderr, "oven: failed to close directory '%s'\n", filepathBuffer);
-				break;
+				break;filepathBuffer
 			}
 			progress->directories++;
 		} else if (fileType == PLATFORM_FILETYPE_FILE) {
@@ -295,7 +295,7 @@ static int __write_directory(
 		}
 
 		// write progress after to update the file/folder in progress
-        __write_progress(filepathBuffer, progress);
+        __write_progress(dp->d_name, progress);
 	}
 
 	free(filepathBuffer);
