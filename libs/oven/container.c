@@ -219,7 +219,6 @@ static int __write_directory(
 	DIR*           dfd;
 	int            status = 0;
 	char*          filepathBuffer;
-	printf("oven: writing directory '%s'\n", path);
 
 	if ((dfd = opendir(path)) == NULL) {
 		fprintf(stderr, "oven: can't open initrd folder\n");
