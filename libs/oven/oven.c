@@ -342,6 +342,10 @@ static int __has_checkpoint(const char* path, const char* checkpoint)
 
 static const char* __get_variable(const char* name)
 {
+    if (strcmp(name, "INGREDIENTS_PREFIX") == 0) {
+        printf("INGREDIENTS_PREFIX: %s\n", g_ovenContext.fridge_prep_directory);
+        return g_ovenContext.fridge_prep_directory;
+    }
     if (strcmp(name, "TOOLCHAIN_PREFIX") == 0) {
         printf("TOOLCHAIN_PREFIX: %s\n", g_ovenContext.recipe.toolchain);
         return g_ovenContext.recipe.toolchain;
