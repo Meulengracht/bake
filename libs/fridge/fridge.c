@@ -161,16 +161,17 @@ static int __extract_file(
     }
 
     fileSize = vafs_file_length(fileHandle);
-    fileBuffer = malloc(fileSize);
-    if (fileBuffer == NULL) {
-        fprintf(stderr, "__extract_file: unable to allocate memory for file %s\n", path);
-        return -1;
-    }
+    if (fileSize) {
+        fileBuffer = malloc(fileSize);
+        if (fileBuffer == NULL) {
+            fprintf(stderr, "__extract_file: unable to allocate memory for file %s\n", path);
+            return -1;
+        }
 
-    vafs_file_read(fileHandle, fileBuffer, fileSize);
-    fwrite(fileBuffer, 1, fileSize, file);
-    
-    free(fileBuffer);
+        vafs_file_read(fileHandle, fileBuffer, fileSize);
+        fwrite(fileBuffer, 1, fileSize, file);
+        free(fileBuffer);
+    }
     fclose(file);
     return 0;
 }

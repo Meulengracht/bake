@@ -185,18 +185,20 @@ static int __write_file(
 
 	fseek(file, 0, SEEK_END);
 	fileSize = ftell(file);
-	fileBuffer = malloc(fileSize);
-	rewind(file);
-	bytesRead = fread(fileBuffer, 1, fileSize, file);
-	if (bytesRead != fileSize) {
-		fprintf(stderr, "oven: only partial read %s\n", path);
+	if (fileSize) {
+		fileBuffer = malloc(fileSize);
+		rewind(file);
+		bytesRead = fread(fileBuffer, 1, fileSize, file);
+		if (bytesRead != fileSize) {
+			fprintf(stderr, "oven: only partial read %s\n", path);
+		}
+		
+		// write the file to the VaFS file
+		status = vafs_file_write(fileHandle, fileBuffer, fileSize);
+		free(fileBuffer);
 	}
 	fclose(file);
 
-	// write the file to the VaFS file
-	status = vafs_file_write(fileHandle, fileBuffer, fileSize);
-	free(fileBuffer);
-	
 	if (status) {
 		fprintf(stderr, "oven: failed to write file '%s'\n", filename);
 		return -1;

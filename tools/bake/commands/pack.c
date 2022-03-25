@@ -15,9 +15,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
  * Package System TODOs:
- * - handle overwriting of symlinks
  * - don't unpack utensils if already unpacked
- * - don't fail on empty files
  * - serve protocol
  * - autotools backend
  * - reuse zstd context for improved performance
