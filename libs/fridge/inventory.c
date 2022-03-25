@@ -107,6 +107,7 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
             json_t* architecture = json_object_get(pack, "architecture");
             json_t* channel = json_object_get(pack, "channel");
             json_t* latest = json_object_get(pack, "latest");
+            json_t* unpacked = json_object_get(pack, "unpacked");
 
             json_t* version = json_object_get(pack, "version");
             json_t* version_major = json_object_get(version, "major");
@@ -124,6 +125,7 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
             inventory->packs[i].version.revision = json_integer_value(version_revision);
             inventory->packs[i].version.tag = json_string_value(version_tag);
             inventory->packs[i].latest = json_integer_value(latest);
+            inventory->packs[i].unpacked = json_integer_value(unpacked);
         }
     }
 
@@ -324,6 +326,7 @@ static int __serialize_inventory(struct fridge_inventory* inventory, json_t** js
         json_object_set_new(pack, "architecture", json_string(inventory->packs[i].arch));
         json_object_set_new(pack, "channel", json_string(inventory->packs[i].channel));
         json_object_set_new(pack, "latest", json_integer(inventory->packs[i].latest));
+        json_object_set_new(pack, "unpacked", json_integer(inventory->packs[i].unpacked));
 
         json_t* version = json_object();
         if (!version) {
