@@ -22,11 +22,13 @@
 #include <string.h>
 #include <errno.h>
 
+// client protocol
+#include "chef_served_service_client.h"
+
 #if defined(__linux__)
 #include <sys/un.h>
 
-//static const char* dgramPath = "/tmp/g_dgram";
-static const char* clientsPath = "/tmp/g_clients";
+static const char* clientsPath = "/tmp/served";
 
 static void init_socket_config(struct gracht_link_socket* link)
 {
@@ -55,14 +57,14 @@ static void init_socket_config(struct gracht_link_socket* link)
     // AF_INET is the Internet address family.
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    addr.sin_port = htons(55555);
+    addr.sin_port = htons(4335);
 
     gracht_link_socket_set_type(link, gracht_link_stream_based);
     gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr, sizeof(struct sockaddr_in));
 }
 #endif
 
-int init_client_with_socket_link(gracht_client_t** clientOut)
+int __chef_client_initialize(gracht_client_t** clientOut)
 {
     struct gracht_link_socket*         link;
     struct gracht_client_configuration clientConfiguration;
@@ -78,15 +80,36 @@ int init_client_with_socket_link(gracht_client_t** clientOut)
 
     code = gracht_client_create(&clientConfiguration, &client);
     if (code) {
-        printf("init_client_with_socket_link: error initializing client library %i, %i\n", errno, code);
+        printf("__chef_client_initialize: error initializing client library %i, %i\n", errno, code);
+        return code;
+    }
+
+    code = gracht_client_register_protocol(client, &chef_served_client_protocol);
+    if (code) {
+        printf("__chef_client_initialize: error registering protocol %i, %i\n", errno, code);
         return code;
     }
 
     code = gracht_client_connect(client);
     if (code) {
-        printf("init_client_with_socket_link: failed to connect client %i, %i\n", errno, code);
+        printf("__chef_client_initialize: failed to connect client %i, %i\n", errno, code);
     }
 
     *clientOut = client;
     return code;
+}
+
+void chef_served_event_package_installed_invocation(gracht_client_t* client, const struct chef_package* info)
+{
+
+}
+
+void chef_served_event_package_removed_invocation(gracht_client_t* client, const struct chef_package* info)
+{
+
+}
+
+void chef_served_event_package_updated_invocation(gracht_client_t* client, const struct chef_package* info)
+{
+
 }

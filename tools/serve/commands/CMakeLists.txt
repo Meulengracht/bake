@@ -1,5 +1,7 @@
 
 add_library(serve-commands STATIC
+    ${CMAKE_BINARY_DIR}/protocols/chef_served_service_client.c
+    client.c
     install.c
     list.c
     remove.c

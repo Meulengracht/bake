@@ -17,9 +17,12 @@
  */
 
 #include <errno.h>
+#include <gracht/client.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
+extern int __chef_client_initialize(gracht_client_t** clientOut);
 
 static void __print_help(void)
 {
@@ -31,7 +34,8 @@ static void __print_help(void)
 
 int list_main(int argc, char** argv)
 {
-    int status = 0;
+    gracht_client_t* client;
+    int              status;
 
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {
@@ -42,5 +46,12 @@ int list_main(int argc, char** argv)
         }
     }
 
+    status = __chef_client_initialize(&client);
+    if (status != 0) {
+        printf("serve: failed to initialize client: %s\n", strerror(status));
+        return status;
+    }
+
+    gracht_client_shutdown(client);
     return status;
 }
