@@ -1,0 +1,25 @@
+/**
+ * Serve Daemon Protocol
+ * The protocol specifies which commands are available from served. Served is the
+ * application server for chef, and the CLI utility 'serve' implements this protocol
+ */
+
+namespace chef
+
+struct package {
+    string name;
+    string version;
+}
+
+service served (42) {
+    func install(string packageName) : (int result) = 1;
+    func remove(string packageName) : (int result) = 2;
+    func info(string packageName) : (package info) = 3;
+    func list() : (package[] packages) = 4;
+    func update(string packageName) : () = 5;
+    func update_all() : () = 6;
+    
+    event package_installed : (package info) = 7;
+    event package_removed : (package info) = 8;
+    event package_updated : (package info) = 9;
+}

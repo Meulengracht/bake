@@ -5,4 +5,6 @@ add_library(serve-commands STATIC
     remove.c
     update.c
 )
-target_link_libraries(serve-commands PUBLIC chef-client)
+add_dependencies(serve-commands service_client)
+target_include_directories(serve-commands PUBLIC ${CMAKE_BINARY_DIR}/protocols)
+target_link_libraries(serve-commands PUBLIC chef-client gracht_static)

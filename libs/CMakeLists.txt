@@ -6,6 +6,7 @@ add_subdirectory(platform)
 set(VAFS_BUILD_TOOLS OFF CACHE BOOL "Do not build vafs utilities")
 add_subdirectory(vafs)
 add_subdirectory(yaml)
+add_subdirectory(gracht)
 
 # build zstd
 set(ZSTD_LEGACY_SUPPORT OFF CACHE BOOL "Disable legacy support for zstd")
