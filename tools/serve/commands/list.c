@@ -22,6 +22,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "chef_served_service_client.h"
+
 extern int __chef_client_initialize(gracht_client_t** clientOut);
 
 static void __print_help(void)
@@ -34,8 +36,11 @@ static void __print_help(void)
 
 int list_main(int argc, char** argv)
 {
-    gracht_client_t* client;
-    int              status;
+    gracht_client_t*              client;
+    struct gracht_message_context context;
+    int                           status;
+    uint32_t                      packageCount;
+    struct chef_package*          packages;
 
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {
@@ -50,6 +55,38 @@ int list_main(int argc, char** argv)
     if (status != 0) {
         printf("serve: failed to initialize client: %s\n", strerror(status));
         return status;
+    }
+
+    status = chef_served_listcount(client, &context);
+    if (status != 0) {
+        printf("serve: failed to get installed packages: %s\n", strerror(status));
+        return status;
+    }
+    gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    chef_served_listcount_result(client, &context, &packageCount);
+    
+    if (packageCount == 0) {
+        printf("serve: no packages installed\n");
+        return 0;
+    }
+
+    // allocate memory for the package array
+    packages = malloc(sizeof(struct chef_package) * packageCount);
+    if (packages == NULL) {
+        printf("serve: failed to allocate memory for package array: %s\n", strerror(errno));
+        return -1;
+    }
+
+    status = chef_served_list(client, &context);
+    if (status != 0) {
+        printf("serve: failed to list installed packs: %s\n", strerror(status));
+        return status;
+    }
+    gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    chef_served_list_result(client, &context, packages, packageCount);
+
+    for (uint32_t i = 0; i < packageCount; i++) {
+        printf("%30.30s %s\n", packages[i].name, packages[i].version);
     }
 
     gracht_client_shutdown(client);
