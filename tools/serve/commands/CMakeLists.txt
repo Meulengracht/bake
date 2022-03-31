@@ -1,6 +1,10 @@
+set (GENERATED_SRCS
+    ${CMAKE_BINARY_DIR}/protocols/chef_served_service_client.c
+)
+set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 
 add_library(serve-commands STATIC
-    ${CMAKE_BINARY_DIR}/protocols/chef_served_service_client.c
+    ${GENERATED_SRCS}
     client.c
     install.c
     list.c
