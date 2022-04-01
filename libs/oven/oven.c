@@ -38,11 +38,16 @@ struct oven_recipe_context {
     const char* checkpoint_path;
 };
 
+struct oven_variables {
+    const char* cwd;
+    const char* fridge_prep_directory;
+};
+
 struct oven_context {
     const char**               process_environment;
     const char*                build_root;
     const char*                install_root;
-    const char*                fridge_prep_directory;
+    struct oven_variables      variables;
     struct oven_recipe_context recipe;
 };
 
@@ -149,7 +154,6 @@ int oven_initialize(char** envp, const char* recipeScope, const char* fridgePrep
     root        = __combine(cwd, OVEN_ROOT);
     buildRoot   = __combine(cwd, OVEN_BUILD_ROOT);
     installRoot = __combine(cwd, OVEN_INSTALL_ROOT);
-    free(cwd);
 
     if (root == NULL || buildRoot == NULL || installRoot == NULL) {
         free((void*)root);
@@ -158,9 +162,12 @@ int oven_initialize(char** envp, const char* recipeScope, const char* fridgePrep
         return -1;
     }
 
+    // update oven variables
+    g_ovenContext.variables.cwd                   = cwd;
+    g_ovenContext.variables.fridge_prep_directory = fridgePrepDirectory;
+
     // update oven context
     g_ovenContext.process_environment   = (const char**)envp;
-    g_ovenContext.fridge_prep_directory = fridgePrepDirectory;
     g_ovenContext.build_root            = __combine(buildRoot, &tmp[0]);
     g_ovenContext.install_root          = __combine(installRoot, &tmp[0]);;
     if (g_ovenContext.build_root == NULL || g_ovenContext.install_root == NULL) {
@@ -363,9 +370,13 @@ static int __has_checkpoint(const char* path, const char* checkpoint)
 
 static const char* __get_variable(const char* name)
 {
+    if (strcmp(name, "PROJECT_PATH") == 0) {
+        printf("PROJECT_PATH: %s\n", g_ovenContext.variables.cwd);
+        return g_ovenContext.variables.cwd;
+    }
     if (strcmp(name, "INGREDIENTS_PREFIX") == 0) {
-        printf("INGREDIENTS_PREFIX: %s\n", g_ovenContext.fridge_prep_directory);
-        return g_ovenContext.fridge_prep_directory;
+        printf("INGREDIENTS_PREFIX: %s\n", g_ovenContext.variables.fridge_prep_directory);
+        return g_ovenContext.variables.fridge_prep_directory;
     }
     if (strcmp(name, "TOOLCHAIN_PREFIX") == 0) {
         printf("TOOLCHAIN_PREFIX: %s\n", g_ovenContext.recipe.toolchain);
@@ -374,11 +385,136 @@ static const char* __get_variable(const char* name)
     return NULL;
 }
 
+static int __expand_variable(char** at, char** buffer, int* index, size_t* maxLength)
+{
+    const char* start = *at;
+    char*       end   = strchr(start, '}');
+    if (end && end[1] == '}') {
+        char* variable;
+
+        // fixup at
+        *at = (end + 2);
+
+        start += 3; // skip ${{
+
+        // trim leading spaces
+        while (*start == ' ') {
+            start++;
+        }
+
+        // trim trailing spaces
+        end--;
+        while (*end == ' ') {
+            end--;
+        }
+        end++;
+        
+        variable = strndup(start, end - start);
+        if (variable != NULL) {
+            const char* value = __get_variable(variable);
+            free(variable);
+            if (value != NULL) {
+                size_t valueLength = strlen(value);
+                if (valueLength > *maxLength) {
+                    *maxLength = valueLength;
+                    errno = ENOSPC;
+                    return -1;
+                }
+                
+                memcpy(&(*buffer)[*index], value, valueLength);
+                *index += valueLength;
+                return 0;
+            } else {
+                errno = ENOENT;
+                return -1;
+            }
+        } else {
+            errno = ENOMEM;
+            return -1;
+        }
+    }
+    errno = EINVAL;
+    return -1;
+}
+
+static int __expand_environment_variable(char** at, char** buffer, int* index, size_t* maxLength)
+{
+    const char* start = *at;
+    char*       end   = strchr(start, '}');
+    if (end) {
+        char* variable;
+        
+        // fixup at
+        *at = end + 1;
+
+        start += 2; // skip ${
+
+        // trim leading spaces
+        while (*start == ' ') {
+            start++;
+        }
+
+        // trim trailing spaces
+        end--;
+        while (*end == ' ') {
+            end--;
+        }
+        end++;
+
+        variable = strndup(start, end - start);
+        if (variable != NULL) {
+            char* value = getenv(variable);
+            free(variable);
+            if (value != NULL) {
+                size_t valueLength = strlen(value);
+                if (valueLength > *maxLength) {
+                    *maxLength = valueLength;
+                    errno = ENOSPC;
+                    return -1;
+                }
+                
+                memcpy(&(*buffer)[*index], value, valueLength);
+                *index += valueLength;
+                return 0;
+            }
+        } else {
+            errno = ENOENT;
+            return -1;
+        }
+    } else {
+        errno = ENOMEM;
+        return -1;
+    }
+    errno = EINVAL;
+    return -1;
+}
+
+static void* __resize_buffer(void* buffer, size_t length)
+{
+    void* biggerBuffer = calloc(1, length);
+    if (!biggerBuffer) {
+        return NULL;
+    }
+    strcat(biggerBuffer, buffer);
+    free(buffer);
+    return biggerBuffer;
+}
+
 static const char* __preprocess_value(const char* original)
 {
     const char* itr = original;
+    const char* result;
+    char*       buffer;
+    size_t      bufferSize = 4096;
+    int         index;
 
     if (original == NULL) {
+        return NULL;
+    }
+    
+    buffer = calloc(1, bufferSize);
+    if (buffer == NULL) {
+        errno = ENOMEM;
         return NULL;
     }
 
@@ -386,69 +522,55 @@ static const char* __preprocess_value(const char* original)
     while (*itr == ' ') {
         itr++;
     }
-
-    // expand variables
-    if (strncmp(itr, "${{", 3) == 0) {
-        char* end = strchr(itr, '}');
-        if (end && end[1] == '}') {
-            char* variable;
-
-            itr += 3; // skip ${{
-
-            // trim leading spaces
-            while (*itr == ' ') {
-                itr++;
-            }
-
-            // trim trailing spaces
-            end--;
-            while (*end == ' ') {
-                end--;
-            }
-            end++;
-
-            variable = strndup(itr, end - itr);
-            if (variable) {
-                const char* value = __get_variable(variable);
-                free(variable);
-                if (value) {
-                    return strdup(value);
+    
+    index = 0;
+    while (*itr) {
+        if (strncmp(itr, "${{", 3) == 0) {
+            // handle variables
+            size_t spaceLeft = bufferSize - index;
+            int    status;
+            do {
+                status = __expand_variable((char**)&itr, &buffer, &index, &spaceLeft);
+                if (status) {
+                    if (errno == ENOSPC) {
+                        buffer = __resize_buffer(buffer, bufferSize + spaceLeft + 1024);
+                        if (!buffer) {
+                            free(buffer);
+                            return NULL;
+                        }
+                    } else {
+                        break;
+                    }
                 }
-            }
+            } while (status != 0);
+        } else if (strncmp(itr, "${", 2) == 0) {
+            // handle environment variables
+            size_t spaceLeft = bufferSize - index;
+            int    status;
+            do {
+                status = __expand_environment_variable((char**)&itr, &buffer, &index, &spaceLeft);
+                if (status) {
+                    if (errno == ENOSPC) {
+                        buffer = __resize_buffer(buffer, bufferSize + spaceLeft + 1024);
+                        if (!buffer) {
+                            free(buffer);
+                            return NULL;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                
+            } while (status != 0);
+        } else {
+            buffer[index++] = *itr;
+            itr++;
         }
     }
-
-    // expand environment variables
-    if (strncmp(itr, "${", 2) == 0) {
-        char* end = strchr(itr, '}');
-        if (end) {
-            char* variable;
-
-            itr += 2; // skip ${
-
-            // trim leading spaces
-            while (*itr == ' ') {
-                itr++;
-            }
-
-            // trim trailing spaces
-            end--;
-            while (*end == ' ') {
-                end--;
-            }
-            end++;
-
-            variable = strndup(itr, end - itr);
-            if (variable != NULL) {
-                char* env = getenv(variable);
-                free(variable);
-                if (env) {
-                    return strdup(env);
-                }
-            }
-        }
-    }
-    return strdup(original);
+    
+    result = strdup(buffer);
+    free(buffer);
+    return result;
 }
 
 static const char* __build_argument_string(struct list* argumentList)
@@ -620,7 +742,7 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     data->install_directory   = g_ovenContext.recipe.install_root;
     data->build_directory     = g_ovenContext.recipe.build_root;
     data->process_environment = g_ovenContext.process_environment;
-    data->fridge_directory    = g_ovenContext.fridge_prep_directory;
+    data->fridge_directory    = g_ovenContext.variables.fridge_prep_directory;
     
     data->environment = __preprocess_keypair_list(environment);
     if (!data->environment) {
@@ -726,5 +848,10 @@ void oven_cleanup(void)
     if (g_ovenContext.install_root) {
         free((void*)g_ovenContext.install_root);
         g_ovenContext.install_root = NULL;
+    }
+
+    if (g_ovenContext.variables.cwd) {
+        free((void*)g_ovenContext.variables.cwd);
+        g_ovenContext.variables.cwd = NULL;
     }
 }

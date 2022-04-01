@@ -109,7 +109,7 @@ static int __get_cwd(char** bufferOut)
     return 0;
 }
 
-static void __write_progress(const char* prefix, struct progress_context* context)
+static void __write_progress(const char* prefix, struct progress_context* context, int verbose)
 {
     static int last = 0;
     int        current;
@@ -134,15 +134,17 @@ static void __write_progress(const char* prefix, struct progress_context* contex
         }
     }
     printf("| %3d%%]", percent);
-	if (context->files_total) {
-		printf(" %i/%i files", context->files, context->files_total);
-	}
-	if (context->directories_total) {
-		printf(" %i/%i directories", context->directories, context->directories_total);
-	}
-	if (context->symlinks_total) {
-		printf(" %i/%i symlinks", context->symlinks, context->symlinks_total);
-	}
+    if (verbose) {
+        if (context->files_total) {
+            printf(" %i/%i files", context->files, context->files_total);
+        }
+        if (context->directories_total) {
+            printf(" %i/%i directories", context->directories, context->directories_total);
+        }
+        if (context->symlinks_total) {
+            printf(" %i/%i symlinks", context->symlinks, context->symlinks_total);
+        }
+    }
     fflush(stdout);
 }
 
@@ -208,7 +210,7 @@ static int __extract_directory(
         filepathBuffer = malloc(strlen(path) + strlen(dp.Name) + 2);
         sprintf(filepathBuffer, "%s/%s", path, dp.Name);
 
-        __write_progress(dp.Name, progress);
+        __write_progress(dp.Name, progress, 0);
         if (dp.Type == VaFsEntryType_Directory) {
             struct VaFsDirectoryHandle* subdirectoryHandle;
             status = vafs_directory_open_directory(directoryHandle, dp.Name, &subdirectoryHandle);
@@ -271,7 +273,7 @@ static int __extract_directory(
             fprintf(stderr, "__extract_directory: unable to extract unknown type '%s'\n", __get_relative_path(root, filepathBuffer));
             return -1;
         }
-        __write_progress(dp.Name, progress);
+        __write_progress(dp.Name, progress, 0);
         free(filepathBuffer);
     } while(1);
 
@@ -456,33 +458,33 @@ static int __parse_version_string(const char* string, struct chef_version* versi
     // parse a version string of format "1.2.3(+tag)"
     // where tag is optional
     char* pointer    = (char*)string;
-	char* pointerEnd = strchr(pointer, '.');
-	if (pointerEnd == NULL) {
-	    return -1;
-	}
-	
-	// extract first part
+    char* pointerEnd = strchr(pointer, '.');
+    if (pointerEnd == NULL) {
+        return -1;
+    }
+    
+    // extract first part
     version->major = (int)strtol(pointer, &pointerEnd, 10);
     
     pointer    = pointerEnd + 1;
-	pointerEnd = strchr(pointer, '.');
-	if (pointerEnd == NULL) {
-	    return -1;
-	}
-	
-	// extract second part
+    pointerEnd = strchr(pointer, '.');
+    if (pointerEnd == NULL) {
+        return -1;
+    }
+    
+    // extract second part
     version->minor = strtol(pointer, &pointerEnd, 10);
     
     pointer    = pointerEnd + 1;
-	pointerEnd = strchr(pointer, '+');
+    pointerEnd = strchr(pointer, '+');
     
-	// extract the 3rd part, revision
-	// at this point, if pointerEnd is not NULL, then it contains tag
-	if (pointerEnd != NULL) {
+    // extract the 3rd part, revision
+    // at this point, if pointerEnd is not NULL, then it contains tag
+    if (pointerEnd != NULL) {
         version->tag = pointerEnd;
-	}
+    }
 
-	version->revision = strtol(pointer, &pointerEnd, 10);
+    version->revision = strtol(pointer, &pointerEnd, 10);
     return 0;
 }
 

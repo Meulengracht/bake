@@ -34,19 +34,19 @@
 #endif
 
 struct progress_context {
-    int disabled;
+	int disabled;
 
-    int files;
-    int directories;
-    int symlinks;
+	int files;
+	int directories;
+	int symlinks;
 
-    int files_total;
-    int directories_total;
-    int symlinks_total;
+	int files_total;
+	int directories_total;
+	int symlinks_total;
 };
 
 struct VaFsFeatureFilter {
-    struct VaFsFeatureHeader Header;
+	struct VaFsFeatureHeader Header;
 };
 
 extern const char* __get_install_path(void);
@@ -70,93 +70,95 @@ static const char* __get_filename(
 
 int __get_count_recursive(const char *path, int* fileCountOut, int* SymlinkCountOut, int* dirCountOut)
 {
-    struct dirent* direntp;
-    DIR*           dir_ptr = NULL;
+	struct dirent* direntp;
+	DIR*           dir_ptr = NULL;
 
-    if (!path) {
-        errno = EINVAL;
-        return -1;
-    }
+	if (!path) {
+		errno = EINVAL;
+		return -1;
+	}
 
-    if ((dir_ptr = opendir(path)) == NULL) {
-        return -1;
-    }
+	if ((dir_ptr = opendir(path)) == NULL) {
+		return -1;
+	}
 
-    while ((direntp = readdir(dir_ptr))) {
-        if (strcmp(direntp->d_name,".") == 0 || strcmp(direntp->d_name,"..") == 0) {
-             continue;
-        }
+	while ((direntp = readdir(dir_ptr))) {
+		if (strcmp(direntp->d_name,".") == 0 || strcmp(direntp->d_name,"..") == 0) {
+			 continue;
+		}
 
-        switch (direntp->d_type) {
-            case DT_REG:
-                (*fileCountOut)++;
-                break;
-            case DT_DIR: {
-                char* npath;
+		switch (direntp->d_type) {
+			case DT_REG:
+				(*fileCountOut)++;
+				break;
+			case DT_DIR: {
+				char* npath;
 
-                (*dirCountOut)++;
-                
-                npath = malloc(strlen(path)+strlen(direntp->d_name)+2);
-                if (npath == NULL) {
-                    errno = ENOMEM;
-                    return -1;
-                }
-                
-                sprintf(npath, "%s/%s", path, direntp->d_name);
-                
-                if (__get_count_recursive(npath, fileCountOut, SymlinkCountOut, dirCountOut) == -1) {
-                    free(npath);
-                    return -1;
-                }
+				(*dirCountOut)++;
+				
+				npath = malloc(strlen(path)+strlen(direntp->d_name)+2);
+				if (npath == NULL) {
+					errno = ENOMEM;
+					return -1;
+				}
+				
+				sprintf(npath, "%s/%s", path, direntp->d_name);
+				
+				if (__get_count_recursive(npath, fileCountOut, SymlinkCountOut, dirCountOut) == -1) {
+					free(npath);
+					return -1;
+				}
 
-                free(npath);
-            } break;
-            case DT_LNK:
-                (*SymlinkCountOut)++;
-                break;
-            default:
-                break;
-        }
-    }
-    closedir(dir_ptr);
-    return 0;
+				free(npath);
+			} break;
+			case DT_LNK:
+				(*SymlinkCountOut)++;
+				break;
+			default:
+				break;
+		}
+	}
+	closedir(dir_ptr);
+	return 0;
 }
 
-static void __write_progress(const char* prefix, struct progress_context* context)
+static void __write_progress(const char* prefix, struct progress_context* context, int verbose)
 {
-    static int last = 0;
-    int        current;
-    int        total;
-    int        percent;
+	static int last = 0;
+	int        current;
+	int        total;
+	int        percent;
 
-    if (context->disabled) {
-        return;
-    }
+	if (context->disabled) {
+		return;
+	}
 
-    total   = context->files_total + context->directories_total + context->symlinks_total;
-    current = context->files + context->directories + context->symlinks;
-    percent = (current * 100) / total;
+	total   = context->files_total + context->directories_total + context->symlinks_total;
+	current = context->files + context->directories + context->symlinks;
+	percent = (current * 100) / total;
 
-    printf("\33[2K\r%-10.10s [", prefix);
-    for (int i = 0; i < 20; i++) {
-        if (i < percent / 5) {
-            printf("#");
-        }
-        else {
-            printf(" ");
-        }
-    }
-    printf("| %3d%%]", percent);
-	if (context->files_total) {
-		printf(" %i/%i files", context->files, context->files_total);
+	printf("\33[2K\r%-10.10s [", prefix);
+	for (int i = 0; i < 20; i++) {
+		if (i < percent / 5) {
+			printf("#");
+		}
+		else {
+			printf(" ");
+		}
 	}
-	if (context->directories_total) {
-		printf(" %i/%i directories", context->directories, context->directories_total);
+	printf("| %3d%%]", percent);
+	if (verbose) {
+		if (context->files_total) {
+			printf(" %i/%i files", context->files, context->files_total);
+		}
+		if (context->directories_total) {
+			printf(" %i/%i directories", context->directories, context->directories_total);
+		}
+		if (context->symlinks_total) {
+			printf(" %i/%i symlinks", context->symlinks, context->symlinks_total);
+		}
 	}
-	if (context->symlinks_total) {
-		printf(" %i/%i symlinks", context->symlinks, context->symlinks_total);
-	}
-    fflush(stdout);
+	fflush(stdout);
 }
 
 static int __write_file(
@@ -213,11 +215,11 @@ static int __write_file(
 }
 
 static int __write_directory(
-    struct progress_context*    progress,
+	struct progress_context*    progress,
 	struct VaFsDirectoryHandle* directoryHandle,
 	const char*                 path)
 {
-    struct dirent* dp;
+	struct dirent* dp;
 	DIR*           dfd;
 	int            status = 0;
 	char*          filepathBuffer;
@@ -227,7 +229,7 @@ static int __write_directory(
 		return -1;
 	}
 
-    filepathBuffer = malloc(512);
+	filepathBuffer = malloc(512);
 	while ((dp = readdir(dfd)) != NULL) {
 		enum platform_filetype fileType;
 
@@ -248,7 +250,7 @@ static int __write_directory(
 		}
 
 		// write progress before to update the file/folder in progress
-        __write_progress(dp->d_name, progress);
+		__write_progress(dp->d_name, progress, 0);
 		if (fileType == PLATFORM_FILETYPE_DIRECTORY) {
 			struct VaFsDirectoryHandle* subdirectoryHandle;
 			status = vafs_directory_open_directory(directoryHandle, dp->d_name, &subdirectoryHandle);
@@ -297,7 +299,7 @@ static int __write_directory(
 		}
 
 		// write progress after to update the file/folder in progress
-        __write_progress(dp->d_name, progress);
+		__write_progress(dp->d_name, progress, 0);
 	}
 
 	free(filepathBuffer);
@@ -307,102 +309,102 @@ static int __write_directory(
 
 static int __zstd_encode(void* Input, uint32_t InputLength, void** Output, uint32_t* OutputLength)
 {
-    size_t compressedSize = ZSTD_compressBound(InputLength);
-    void*  compressedData;
-    size_t checkSize;
+	size_t compressedSize = ZSTD_compressBound(InputLength);
+	void*  compressedData;
+	size_t checkSize;
 
-    compressedData = malloc(compressedSize);
-    if (!compressedData) {
-        return -1;
-    }
+	compressedData = malloc(compressedSize);
+	if (!compressedData) {
+		return -1;
+	}
 
-    checkSize = ZSTD_compress(compressedData, compressedSize, Input, InputLength, ZSTD_defaultCLevel());
-    if (ZSTD_isError(checkSize)) {
-        return -1;
-    }
+	checkSize = ZSTD_compress(compressedData, compressedSize, Input, InputLength, ZSTD_defaultCLevel());
+	if (ZSTD_isError(checkSize)) {
+		return -1;
+	}
 
-    *Output       = compressedData;
-    *OutputLength = checkSize;
-    return 0;
+	*Output       = compressedData;
+	*OutputLength = checkSize;
+	return 0;
 }
 
 static int __zstd_decode(void* Input, uint32_t InputLength, void* Output, uint32_t* OutputLength)
 {
-    /* Read the content size from the frame header. For simplicity we require
-     * that it is always present. By default, zstd will write the content size
-     * in the header when it is known. If you can't guarantee that the frame
-     * content size is always written into the header, either use streaming
-     * decompression, or ZSTD_decompressBound().
-     */
-    size_t             decompressedSize;
-    unsigned long long contentSize = ZSTD_getFrameContentSize(Input, InputLength);
-    if (contentSize == ZSTD_CONTENTSIZE_ERROR || contentSize == ZSTD_CONTENTSIZE_UNKNOWN) {
-        return -1;
-    }
+	/* Read the content size from the frame header. For simplicity we require
+	 * that it is always present. By default, zstd will write the content size
+	 * in the header when it is known. If you can't guarantee that the frame
+	 * content size is always written into the header, either use streaming
+	 * decompression, or ZSTD_decompressBound().
+	 */
+	size_t             decompressedSize;
+	unsigned long long contentSize = ZSTD_getFrameContentSize(Input, InputLength);
+	if (contentSize == ZSTD_CONTENTSIZE_ERROR || contentSize == ZSTD_CONTENTSIZE_UNKNOWN) {
+		return -1;
+	}
 
-    /* Decompress.
-     * If you are doing many decompressions, you may want to reuse the context
-     * and use ZSTD_decompressDCtx(). If you want to set advanced parameters,
-     * use ZSTD_DCtx_setParameter().
-     */
-    decompressedSize = ZSTD_decompress(Output, *OutputLength, Input, InputLength);
-    if (ZSTD_isError(decompressedSize)) {
-        return -1;
-    }
-    *OutputLength = (uint32_t)decompressedSize;
-    return 0;
+	/* Decompress.
+	 * If you are doing many decompressions, you may want to reuse the context
+	 * and use ZSTD_decompressDCtx(). If you want to set advanced parameters,
+	 * use ZSTD_DCtx_setParameter().
+	 */
+	decompressedSize = ZSTD_decompress(Output, *OutputLength, Input, InputLength);
+	if (ZSTD_isError(decompressedSize)) {
+		return -1;
+	}
+	*OutputLength = (uint32_t)decompressedSize;
+	return 0;
 }
 
 static int __set_filter_ops(
-    struct VaFs*              vafs,
-    struct VaFsFeatureFilter* filter)
+	struct VaFs*              vafs,
+	struct VaFsFeatureFilter* filter)
 {
-    struct VaFsFeatureFilterOps filterOps;
+	struct VaFsFeatureFilterOps filterOps;
 
-    memcpy(&filterOps.Header.Guid, &g_filterOpsGuid, sizeof(struct VaFsGuid));
+	memcpy(&filterOps.Header.Guid, &g_filterOpsGuid, sizeof(struct VaFsGuid));
 
-    filterOps.Header.Length = sizeof(struct VaFsFeatureFilterOps);
-    filterOps.Encode = __zstd_encode;
-    filterOps.Decode = __zstd_decode;
+	filterOps.Header.Length = sizeof(struct VaFsFeatureFilterOps);
+	filterOps.Encode = __zstd_encode;
+	filterOps.Decode = __zstd_decode;
 
-    return vafs_feature_add(vafs, &filterOps.Header);
+	return vafs_feature_add(vafs, &filterOps.Header);
 }
 
 static int __install_filter(struct VaFs* vafs)
 {
-    struct VaFsFeatureFilter filter;
-    int                      status;
+	struct VaFsFeatureFilter filter;
+	int                      status;
 
-    memcpy(&filter.Header.Guid, &g_filterGuid, sizeof(struct VaFsGuid));
-    filter.Header.Length = sizeof(struct VaFsFeatureFilter);
-    
-    status = vafs_feature_add(vafs, &filter.Header);
-    if (status) {
-        return status;
-    }
-    return __set_filter_ops(vafs, &filter);
+	memcpy(&filter.Header.Guid, &g_filterGuid, sizeof(struct VaFsGuid));
+	filter.Header.Length = sizeof(struct VaFsFeatureFilter);
+	
+	status = vafs_feature_add(vafs, &filter.Header);
+	if (status) {
+		return status;
+	}
+	return __set_filter_ops(vafs, &filter);
 }
 
 static int __parse_version_string(const char* string, struct chef_vafs_feature_package_version* version)
 {
-    // parse a version string of format "1.2(+tag)"
-    // where tag is optional
-    char* pointer    = (char*)string;
+	// parse a version string of format "1.2(+tag)"
+	// where tag is optional
+	char* pointer    = (char*)string;
 	char* pointerEnd = strchr(pointer, '.');
 	if (pointerEnd == NULL) {
-	    return -1;
+		return -1;
 	}
 	
 	// extract first part
-    version->major = (int)strtol(pointer, &pointerEnd, 10);
-    
-    pointer    = pointerEnd + 1;
+	version->major = (int)strtol(pointer, &pointerEnd, 10);
+	
+	pointer    = pointerEnd + 1;
 	pointerEnd = NULL; // consume rest
 	
 	// extract second part
-    version->minor    = strtol(pointer, &pointerEnd, 10);
-    version->revision = 0;
-    return 0;
+	version->minor    = strtol(pointer, &pointerEnd, 10);
+	version->revision = 0;
+	return 0;
 }
 
 static int __write_package_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
@@ -520,24 +522,24 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 
 int oven_pack(struct oven_pack_options* options)
 {
-    struct VaFsDirectoryHandle* directoryHandle;
+	struct VaFsDirectoryHandle* directoryHandle;
 	struct VaFsConfiguration    configuration;
-    struct VaFs*                vafs;
-    struct progress_context     progressContext = { 0 };
-    int                         status;
-    char                        tmp[128];
+	struct VaFs*                vafs;
+	struct progress_context     progressContext = { 0 };
+	int                         status;
+	char                        tmp[128];
 	char*                       start;
 	char*                       name;
-    int                         i;
+	int                         i;
 
-    if (!options) {
-        errno = EINVAL;
-        return -1;
-    }
+	if (!options) {
+		errno = EINVAL;
+		return -1;
+	}
 
 	strbasename(options->name, tmp, sizeof(tmp));
 	name = strdup(tmp);
-    strcat(tmp, ".pack");
+	strcat(tmp, ".pack");
 
 	// get a file count
 	__get_count_recursive(__get_install_path(),
@@ -548,22 +550,22 @@ int oven_pack(struct oven_pack_options* options)
 
 	// initialize settings
 	vafs_config_initialize(&configuration);
-    
+	
 	// TODO arch
 	vafs_config_set_architecture(&configuration, VaFsArchitecture_X64);
 
-    status = vafs_create(&tmp[0], &configuration, &vafs);
-    if (status) {
+	status = vafs_create(&tmp[0], &configuration, &vafs);
+	if (status) {
 		free(name);
-        return status;
-    }
-    
-    // install the compression for the pack
-    status = __install_filter(vafs);
-    if (status) {
-        fprintf(stderr, "oven: cannot initialize compression\n");
+		return status;
+	}
+	
+	// install the compression for the pack
+	status = __install_filter(vafs);
+	if (status) {
+		fprintf(stderr, "oven: cannot initialize compression\n");
 		goto cleanup;
-    }
+	}
 
 	status = vafs_directory_open(vafs, "/", &directoryHandle);
 	if (status) {
@@ -571,11 +573,11 @@ int oven_pack(struct oven_pack_options* options)
 		goto cleanup;
 	}
 
-    status = __write_directory(&progressContext, directoryHandle, __get_install_path());
-    if (status != 0) {
-        fprintf(stderr, "oven: unable to write directory\n");
+	status = __write_directory(&progressContext, directoryHandle, __get_install_path());
+	if (status != 0) {
+		fprintf(stderr, "oven: unable to write directory\n");
 		goto cleanup;
-    }
+	}
 	printf("\n");
 
 	status = __write_package_metadata(vafs, name, options);
@@ -584,7 +586,7 @@ int oven_pack(struct oven_pack_options* options)
 	}
 
 cleanup:
-    status = vafs_close(vafs);
+	status = vafs_close(vafs);
 	free(name);
-    return status;
+	return status;
 }
