@@ -24,6 +24,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define OVEN_ROOT ".oven"
+#define OVEN_BUILD_ROOT OVEN_ROOT "/build"
+#define OVEN_INSTALL_ROOT OVEN_ROOT "/install"
+
 struct oven_recipe_context {
     const char* name;
     const char* relative_path;
@@ -87,13 +91,44 @@ static int __get_cwd(char** bufferOut)
     return 0;
 }
 
-int oven_initialize(char** envp, const char* fridgePrepDirectory)
+static const char* __combine(const char* a, const char* b)
 {
+    char* combined;
     int   status;
-    char* cwd;
-    char* root;
-    char* buildRoot;
-    char* installRoot;
+
+    combined = malloc(strlen(a) + strlen(b) + 2);
+    if (combined == NULL) {
+        return NULL;
+    }
+
+    status = sprintf(combined, "%s/%s", a, b);
+    if (status < 0) {
+        free(combined);
+        return NULL;
+    }
+
+    return combined;
+}
+
+static int __create_path(const char* path)
+{
+    if (platform_mkdir(path)) {
+        if (errno != EEXIST) {
+            fprintf(stderr, "oven: failed to create %s: %s\n", path, strerror(errno));
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int oven_initialize(char** envp, const char* recipeScope, const char* fridgePrepDirectory)
+{
+    int         status;
+    char*       cwd;
+    const char* root;
+    const char* buildRoot;
+    const char* installRoot;
+    char        tmp[128];
 
     // get the current working directory
     status = __get_cwd(&cwd);
@@ -107,38 +142,33 @@ int oven_initialize(char** envp, const char* fridgePrepDirectory)
         strcat(cwd, "/");
     }
 
+    // get basename of recipe
+    strbasename(recipeScope, tmp, sizeof(tmp));
+
     // initialize oven paths
-    root = malloc(sizeof(char) * (strlen(cwd) + strlen(".oven") + 1));
-    if (!root) {
-        free(cwd);
-        return -1;
-    }
-
-    buildRoot = malloc(sizeof(char) * (strlen(cwd) + strlen(".oven/build") + 1));
-    if (!buildRoot) {
-        free(root);
-        free(cwd);
-        return -1;
-    }
-
-    installRoot = malloc(sizeof(char) * (strlen(cwd) + strlen(".oven/install") + 1));
-    if (!installRoot) {
-        free(root);
-        free(buildRoot);
-        free(cwd);
-        return -1;
-    }
-    
-    sprintf(root, "%s%s", cwd, ".oven");
-    sprintf(buildRoot, "%s%s", cwd, ".oven/build");
-    sprintf(installRoot, "%s%s", cwd, ".oven/install");
+    root        = __combine(cwd, OVEN_ROOT);
+    buildRoot   = __combine(cwd, OVEN_BUILD_ROOT);
+    installRoot = __combine(cwd, OVEN_INSTALL_ROOT);
     free(cwd);
+
+    if (root == NULL || buildRoot == NULL || installRoot == NULL) {
+        free((void*)root);
+        free((void*)buildRoot);
+        free((void*)installRoot);
+        return -1;
+    }
 
     // update oven context
     g_ovenContext.process_environment   = (const char**)envp;
-    g_ovenContext.build_root            = buildRoot;
-    g_ovenContext.install_root          = installRoot;
     g_ovenContext.fridge_prep_directory = fridgePrepDirectory;
+    g_ovenContext.build_root            = __combine(buildRoot, &tmp[0]);
+    g_ovenContext.install_root          = __combine(installRoot, &tmp[0]);;
+    if (g_ovenContext.build_root == NULL || g_ovenContext.install_root == NULL) {
+        free((void*)root);
+        free((void*)buildRoot);
+        free((void*)installRoot);
+        return -1;
+    }
 
     // no active recipe
     g_ovenContext.recipe.name            = NULL;
@@ -148,30 +178,21 @@ int oven_initialize(char** envp, const char* fridgePrepDirectory)
     g_ovenContext.recipe.toolchain       = NULL;
     g_ovenContext.recipe.checkpoint_path = NULL;
 
-    status = platform_mkdir(root);
-    free(root);
-    if (status) {
-        if (errno != EEXIST) {
-            fprintf(stderr, "oven: failed to create work space: %s\n", strerror(errno));
-            return -1;
-        }
+    // create all paths
+    if (__create_path(root) || __create_path(buildRoot) || __create_path(installRoot) ||
+        __create_path(g_ovenContext.build_root) || __create_path(g_ovenContext.install_root)) {
+        free((void*)root);
+        free((void*)buildRoot);
+        free((void*)installRoot);
+        free((void*)g_ovenContext.build_root);
+        free((void*)g_ovenContext.install_root);
+        return -1;
     }
-    
-    status = platform_mkdir(g_ovenContext.build_root);
-    if (status) {
-        if (errno != EEXIST) {
-            fprintf(stderr, "oven: failed to create build space: %s\n", strerror(errno));
-            return -1;
-        }
-    }
-    
-    status = platform_mkdir(g_ovenContext.install_root);
-    if (status) {
-        if (errno != EEXIST) {
-            fprintf(stderr, "oven: failed to create artifact space: %s\n", strerror(errno));
-            return -1;
-        }
-    }
+
+    // free the intermediate paths
+    free((void*)root);
+    free((void*)buildRoot);
+    free((void*)installRoot);
     return 0;
 }
 

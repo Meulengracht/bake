@@ -2,6 +2,7 @@
 project (platform C)
 
 add_library(platform STATIC
+    basename.c
     chdir.c
     cpucount.c
     filetype.c

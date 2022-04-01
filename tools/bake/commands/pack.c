@@ -256,7 +256,7 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = oven_initialize(envp, fridge_get_prep_directory());
+    status = oven_initialize(envp, name, fridge_get_prep_directory());
     if (status) {
         fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
         return -1;

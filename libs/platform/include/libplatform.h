@@ -115,6 +115,7 @@ enum platform_filetype {
     PLATFORM_FILETYPE_UNKNOWN
 };
 
+extern void   strbasename(const char* path, char* buffer, size_t bufferSize);
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
 extern char*  strreplace(char* text, const char* find, const char* replaceWith);

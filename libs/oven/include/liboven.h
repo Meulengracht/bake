@@ -71,7 +71,7 @@ struct oven_pack_options {
  * @param  fridgePrepDirectory
  * @return int 
  */
-extern int oven_initialize(char** envp, const char* fridgePrepDirectory);
+extern int oven_initialize(char** envp, const char* recipeScope, const char* fridgePrepDirectory);
 
 /**
  * @brief 

@@ -535,17 +535,7 @@ int oven_pack(struct oven_pack_options* options)
         return -1;
     }
 
-    memset(&tmp[0], 0, sizeof(tmp));
-	start = strrchr(options->name, '/');
-	if (start == NULL) {
-		start = (char*)options->name;
-	} else {
-		start++;
-	}
-
-    for (i = 0; start[i] && start[i] != '.'; i++) {
-        tmp[i] = start[i];
-    }
+	strbasename(options->name, tmp, sizeof(tmp));
 	name = strdup(tmp);
     strcat(tmp, ".pack");
 
