@@ -22,6 +22,23 @@
 #include <string.h>
 #include <utils.h>
 
+static int __contains_envkey(struct list* list, const char* key)
+{
+    struct list_item* item;
+
+    list_foreach(list, item) {
+        struct oven_keypair_item* keypair = (struct oven_keypair_item*)item;
+        char*                     end     = strchr(key, '=');
+
+        // when doing the string comparison, include the '=' so we ensure that the
+        // key is not just a prefix of another key
+        if (end != NULL && strncmp(keypair->key, key, (end - key) + 1) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 char** oven_environment_create(const char** parent, struct list* additional)
 {
     struct list_item* item;
@@ -38,8 +55,12 @@ char** oven_environment_create(const char** parent, struct list* additional)
         return NULL;
     }
 
+    // copy all variables over, but we skip those that are provided in additional
+    // list, as we want to use that one instead
     while (parent[i]) {
-        environment[i] = strdup(parent[i]);
+        if (!__contains_envkey(additional, parent[i])) {
+            environment[i] = strdup(parent[i]);
+        }
         i++;
     }
 
