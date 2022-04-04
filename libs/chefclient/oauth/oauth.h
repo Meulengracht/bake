@@ -25,6 +25,7 @@ enum oauth_flow_type {
 
 struct token_context {
     const char* access_token;
+    const char* refresh_token;
     const char* id_token;
     int         expires_in;
 };

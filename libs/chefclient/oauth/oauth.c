@@ -37,12 +37,16 @@ static int __load_oauth_settings(void)
     if (g_chefSettings != NULL) {
         json_t* oauth = json_object_get(g_chefSettings, "oauth");
         if (oauth != NULL) {
-            json_t* token = json_object_get(oauth, "access-token");
-            
-            if (json_string_value(token) != NULL && strlen(json_string_value(token)) > 0) {
-                g_tokenContext.access_token = strdup(json_string_value(token));
-                return 0;
+            json_t* accessToken  = json_object_get(oauth, "access-token");
+            json_t* refreshToken = json_object_get(oauth, "refresh-token");
+
+            if (json_string_value(refreshToken) != NULL && strlen(json_string_value(refreshToken)) > 0) {
+                g_tokenContext.refresh_token = strdup(json_string_value(refreshToken));
             }
+            if (json_string_value(accessToken) != NULL && strlen(json_string_value(accessToken)) > 0) {
+                g_tokenContext.access_token = strdup(json_string_value(accessToken));
+            }
+            return 0;
         }
     }
     return -1;
@@ -54,6 +58,7 @@ static void __save_oauth_settings(void)
         const char* empty = "";
         json_t*     oauth;
         json_t*     accessToken;
+        json_t*     refreshToken;
 
         oauth = json_object();
         if (oauth == NULL) {
@@ -65,8 +70,14 @@ static void __save_oauth_settings(void)
             accessToken = json_string(empty);
         }
 
+        refreshToken = json_string(g_tokenContext.refresh_token);
+        if (refreshToken == NULL) {
+            refreshToken = json_string(empty);
+        }
+
         // build oauth object
         json_object_set_new(oauth, "access-token", accessToken);
+        json_object_set_new(oauth, "refresh-token", refreshToken);
 
         // store the oauth object
         json_object_set_new(g_chefSettings, "oauth", oauth);

@@ -25,9 +25,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+// offline_access is required for refresh_token
+#define OAUTH_SCOPE "email%20profile%20User.Read%20openid"
+
 struct devicecode_context {
     const char* device_code;
     const char* user_code;
+    const char* refresh_token;
     const char* verification_uri;
     int         expires_in;
     int         interval;
@@ -46,8 +50,7 @@ static int __get_device_auth_body(char* buffer, size_t maxLength)
 {
     int written = snprintf(buffer, maxLength,
         "client_id=%s&scope=%s",
-        chef_client_id(),
-        "email%20profile%20User.Read%20openid"
+        chef_client_id(), OAUTH_SCOPE
     );
     return written < maxLength ? 0 : -1;
 }
@@ -61,13 +64,22 @@ static int __get_token_auth_link(char* buffer, size_t maxLength)
     return written < maxLength ? 0 : -1;
 }
 
-static int __get_token_auth_body(const char* deviceCode, char* buffer, size_t maxLength)
+static int __get_token_auth_body(struct devicecode_context* context, char* buffer, size_t maxLength)
 {
-    int written = snprintf(buffer, maxLength,
-        "client_id=%s&device_code=%s&grant_type=%s",
-        chef_client_id(), deviceCode,
-        "urn:ietf:params:oauth:grant-type:device_code"
-    );
+    int written = 0;
+    
+    if (context->refresh_token != NULL) {
+        written = snprintf(buffer, maxLength,
+            "client_id=%s&scope=%s&refresh_token=%s&grant_type=refresh_token",
+            chef_client_id(), OAUTH_SCOPE, context->refresh_token
+        );
+    } else {
+        written = snprintf(buffer, maxLength,
+            "client_id=%s&device_code=%s&grant_type=%s",
+            chef_client_id(), context->device_code,
+            "urn:ietf:params:oauth:grant-type:device_code"
+        );
+    }
     return written < maxLength ? 0 : -1;
 }
 
@@ -83,6 +95,7 @@ static int __parse_challenge_response(const char* responseBuffer, struct devicec
         return -1;
     }
 
+    // get rest of values that should be there
     context->user_code = strdup(json_string_value(json_object_get(root, "user_code")));
     context->device_code = strdup(json_string_value(json_object_get(root, "device_code")));
     context->verification_uri = strdup(json_string_value(json_object_get(root, "verification_uri")));
@@ -163,6 +176,7 @@ static int __parse_token_response(const char* responseBuffer, struct token_conte
 {
     json_error_t error;
     json_t*      root;
+    json_t*      refreshToken;
     int          status;
 
     root = json_loads(responseBuffer, 0, &error);
@@ -174,6 +188,12 @@ static int __parse_token_response(const char* responseBuffer, struct token_conte
     context->expires_in = json_integer_value(json_object_get(root, "expires_in"));
     context->access_token = strdup(json_string_value(json_object_get(root, "access_token")));
     context->id_token = strdup(json_string_value(json_object_get(root, "id_token")));
+    
+    // refresh token is optional, and we only get it for offline_access
+    refreshToken = json_object_get(root, "refresh_token");
+    if (refreshToken != NULL) {
+        context->refresh_token = strdup(json_string_value(refreshToken));
+    }
 
     json_decref(root);
     return 0;
@@ -240,7 +260,7 @@ static int __deviceflow_get_token(struct devicecode_context* deviceContext, stru
         goto cleanup;
     }
 
-    if (__get_token_auth_body(deviceContext->device_code, buffer, sizeof(buffer)) != 0) {
+    if (__get_token_auth_body(deviceContext, buffer, sizeof(buffer)) != 0) {
         fprintf(stderr, "__deviceflow_get_token: buffer too small for token auth body\n");
         goto cleanup;
     }
@@ -296,6 +316,12 @@ static int __deviceflow_poll(struct devicecode_context* deviceContext, struct to
     return -1;
 }
 
+static int __try_refresh_token(struct devicecode_context* deviceContext, struct token_context* tokenContext)
+{
+    deviceContext->refresh_token = tokenContext->refresh_token;
+    return __deviceflow_get_token(deviceContext, tokenContext);
+}
+
 int oauth_deviceflow_start(struct token_context* tokenContext)
 {
     struct devicecode_context* deviceContext;
@@ -305,6 +331,13 @@ int oauth_deviceflow_start(struct token_context* tokenContext)
     if (!deviceContext) {
         fprintf(stderr, "oauth_deviceflow_start: failed to allocate device context\n");
         return -1;
+    }
+
+    if (tokenContext->refresh_token != NULL) {
+        status = __try_refresh_token(deviceContext, tokenContext);
+        if (status == 0) {
+            return 0;
+        }
     }
 
     status = __deviceflow_challenge(deviceContext);
