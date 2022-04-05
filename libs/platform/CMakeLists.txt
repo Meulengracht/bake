@@ -4,6 +4,7 @@ project (platform C)
 add_library(platform STATIC
     basename.c
     chdir.c
+    chmod.c
     cpucount.c
     filetype.c
     getcwd.c

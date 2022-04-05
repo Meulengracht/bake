@@ -175,7 +175,7 @@ static int __extract_file(
         free(fileBuffer);
     }
     fclose(file);
-    return 0;
+    return platform_chmod(path, vafs_file_permissions(fileHandle));
 }
 
 static int __extract_directory(

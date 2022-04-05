@@ -164,7 +164,8 @@ static void __write_progress(const char* prefix, struct progress_context* contex
 static int __write_file(
 	struct VaFsDirectoryHandle* directoryHandle,
 	const char*                 path,
-	const char*                 filename)
+	const char*                 filename,
+	uint32_t                    permissions)
 {
 	struct VaFsFileHandle* fileHandle;
 	FILE*                  file;
@@ -174,7 +175,7 @@ static int __write_file(
 	int                    status;
 
 	// create the VaFS file
-	status = vafs_directory_open_file(directoryHandle, filename, &fileHandle);
+	status = vafs_directory_create_file(directoryHandle, filename, permissions, &fileHandle);
 	if (status) {
 		fprintf(stderr, "oven: failed to create file '%s'\n", filename);
 		return -1;
@@ -232,6 +233,7 @@ static int __write_directory(
 	filepathBuffer = malloc(512);
 	while ((dp = readdir(dfd)) != NULL) {
 		enum platform_filetype fileType;
+		uint32_t               filePermissions;
 
 		if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0) {
 			continue;
@@ -243,7 +245,7 @@ static int __write_directory(
 		else
 			sprintf(filepathBuffer, "%s%s", path, dp->d_name);
 
-		status = platform_filetype(filepathBuffer, &fileType);
+		status = platform_stat(filepathBuffer, &fileType, &filePermissions);
 		if (status != 0) {
 			fprintf(stderr, "oven: failed to get filetype for '%s'\n", filepathBuffer);
 			continue;
@@ -253,7 +255,7 @@ static int __write_directory(
 		__write_progress(dp->d_name, progress, 0);
 		if (fileType == PLATFORM_FILETYPE_DIRECTORY) {
 			struct VaFsDirectoryHandle* subdirectoryHandle;
-			status = vafs_directory_open_directory(directoryHandle, dp->d_name, &subdirectoryHandle);
+			status = vafs_directory_create_directory(directoryHandle, dp->d_name, filePermissions, &subdirectoryHandle);
 			if (status) {
 				fprintf(stderr, "oven: failed to create directory '%s'\n", dp->d_name);
 				continue;
@@ -272,7 +274,7 @@ static int __write_directory(
 			}
 			progress->directories++;
 		} else if (fileType == PLATFORM_FILETYPE_FILE) {
-			status = __write_file(directoryHandle, filepathBuffer, dp->d_name);
+			status = __write_file(directoryHandle, filepathBuffer, dp->d_name, filePermissions);
 			if (status != 0) {
 				fprintf(stderr, "oven: unable to write file %s\n", dp->d_name);
 				break;

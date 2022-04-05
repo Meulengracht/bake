@@ -23,31 +23,11 @@
 #include <errno.h>
 #include <sys/stat.h>
 
-int platform_stat(const char* path, enum platform_filetype* typeOut, uint32_t* permissionsOut)
+int platform_chmod(const char* path, uint32_t permissions)
 {
-	struct stat st;
-	if (lstat(path, &st) != 0) {
-		return -1;
-	}
-
-	*permissionsOut = st.st_mode & 0777;
-	switch (st.st_mode & S_IFMT) {
-		case S_IFREG:
-			*typeOut = PLATFORM_FILETYPE_FILE;
-			break;
-		case S_IFDIR:
-			*typeOut = PLATFORM_FILETYPE_DIRECTORY;
-			break;
-		case S_IFLNK:
-			*typeOut = PLATFORM_FILETYPE_SYMLINK;
-			break;
-		default:
-			*typeOut = PLATFORM_FILETYPE_UNKNOWN;
-			break;
-	}
-	return 0;
+	return chmod(path, permissions);
 }
 
 #else
-#error "stat: not implemented for this platform"
+#error "chmod: not implemented for this platform"
 #endif
