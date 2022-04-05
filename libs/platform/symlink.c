@@ -53,11 +53,41 @@ char* __prefix_path(const char* base, const char* path)
 #include <sys/stat.h>
 #include <unistd.h>
 
-int platform_symlink(const char* path, const char* target)
+static int __create_dummy_dir_if_not_exists(const char* path)
+{
+	struct stat st;
+	int         result;
+
+	result = stat(path, &st);
+	if (result) {
+		result = mkdir(path, 0777);
+	}
+	return result;
+}
+
+static int __create_dummy_file_if_not_exists(const char* path)
+{
+	struct stat st;
+	int         result;
+
+	result = stat(path, &st);
+	if (result) {
+		FILE* file = fopen(path, "w");
+		if (file == NULL) {
+			return -1;
+		}
+		fclose(file);
+		result = 0;
+	}
+	return result;
+}
+
+int platform_symlink(const char* path, const char* target, int directory)
 {
 	char* targetFullPath;
 	int   status;
 
+	printf("Creating symlink: %s -> %s\n", path, target);
 	if (path == NULL || target == NULL) {
 		errno = EINVAL;
 		return -1;
@@ -68,17 +98,36 @@ int platform_symlink(const char* path, const char* target)
 		return -1;
 	}
 
-	status = symlink(path, targetFullPath);
-	free(targetFullPath);
+	// it's actually a bit confusing, but path is actually the name of the
+	// symlink, and target is the target of the symlink.
+	if (directory) {
+		status = __create_dummy_dir_if_not_exists(targetFullPath);
+	} else {
+		status = __create_dummy_file_if_not_exists(targetFullPath);
+	}
+	
+	if (status) {
+		free(targetFullPath);
+		return status;
+	}
+
+	status = symlink(targetFullPath, path);
 	if (status) {
         // ignore it if it exists, in theory we would like to 'update it' if 
         // exists, but for now just ignore
         if (errno == EEXIST) {
-            return 0;
+			// update it to be the correct symlink
+			status = unlink(path);
+			if (status != 0) {
+				free(targetFullPath);
+				return status;
+			}
+
+            status = symlink(targetFullPath, path);
         }
-		return -1;
 	}
-	return 0;
+	free(targetFullPath);
+	return status;
 }
 
 #else

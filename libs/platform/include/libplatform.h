@@ -148,7 +148,7 @@ extern int platform_rmdir(const char* path);
 extern int platform_isdir(const char* path);
 extern int platform_stat(const char* path, enum platform_filetype* typeOut, uint32_t* permissionsOut);
 extern int platform_readlink(const char* path, char** bufferOut);
-extern int platform_symlink(const char* path, const char* target);
+extern int platform_symlink(const char* path, const char* target, int directory);
 extern int platform_getenv(const char* name, char* buffer, size_t length);
 extern int platform_setenv(const char* name, const char* value);
 extern int platform_unsetenv(const char* name);

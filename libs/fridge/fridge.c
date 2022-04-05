@@ -262,7 +262,7 @@ static int __extract_directory(
                 return -1;
             }
 
-            status = platform_symlink(filepathBuffer, symlinkTarget);
+            status = platform_symlink(filepathBuffer, symlinkTarget, 0 /* TODO */);
             if (status) {
                 fprintf(stderr, "__extract_directory: failed to create symlink '%s' - %i\n",
                     __get_relative_path(root, filepathBuffer), status);
