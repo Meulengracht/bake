@@ -79,33 +79,145 @@ static void __print_platform(struct chef_platform* platform)
     }
 }
 
-// this function modifies the description string, but we 'own' the copy
-// anyway so we dont care
-static void __print_description(const char* padding, char* description)
+static char* __strip_newlines(const char* text)
 {
-    // split every 50 characters and ignore any preexisting newlines
-    size_t length = strlen(description);
-    size_t i      = 0;
-    while (i < length) {
-        size_t j = i;
-        while (j < length && j - i < 50) {
-            if (description[j] == '\n') {
-                description[j] = ' ';
+    char* result = strdup(text);
+    char* ptr    = result;
+    while (*ptr != '\0') {
+        if (*ptr == '\n') {
+            *ptr = ' ';
+        }
+        ptr++;
+    }
+    return result;
+}
+
+// Given a text, split the text into lines of max length <lineWidth>
+// but do not breakup words.
+static char** __word_wrap(const char* text, const char* prefix, const char* padding, int lineWidth)
+{
+    char** result        = NULL;
+    int    i             = 0;
+    int    lineCount     = 0;
+    size_t prefixLength  = 0;
+    size_t paddingLength = 0;
+    
+    if (text == NULL || lineWidth <= 0) {
+        errno = EINVAL;
+        return NULL;
+    }
+    
+    if (prefixLength >= lineWidth || paddingLength >= lineWidth) {
+        errno = EINVAL;
+        return NULL;
+    }
+    
+    if (prefix != NULL) {
+        prefixLength = strlen(prefix);
+    }
+    if (padding != NULL) {
+        paddingLength = strlen(padding);
+    }
+
+    while (text[i]) {
+        int j;
+        int lastSpace;
+        int lineLength = lineWidth;
+        
+        // skip leading spaces
+        while (text[i] == ' ') {
+            i++;
+        }
+        
+        j = i;
+        lastSpace = i;
+
+        // correct lineLength, for the first line we use prefix and for the
+        // remaining lines we use padding
+        if (i == 0) {
+            lineLength -= prefixLength;
+        } else {
+            lineLength -= paddingLength;
+        }
+        
+        // keep skipping words while we are under limit
+        while ((j - i) < lineLength) {
+            if (text[j] == '\0') {
+                lastSpace = j;
                 break;
+            }
+            if (text[j] == ' ') {
+                lastSpace = j;
             }
             j++;
         }
-        printf("%s%.*s\n", padding, (int)(j - i), &description[i]);
+        
+        // correct j by going back to last space
+        j = lastSpace;
+        
+        // did we not find a space in time?
+        if (lastSpace == i) {
+            // accept line is going to be long
+            j = i;
+            while (text[j] && text[j] != ' ') {
+                j++;
+            }
+        }
+        
+        // i is now start, j is end and points to space
+        lineCount++;
+        result = (char**)realloc(result, (lineCount + 1) * sizeof(char*));
+        if (!result) {
+            errno = ENOMEM;
+            return NULL;
+        }
+        
+        // now we create the line
+        result[lineCount - 1] = malloc(lineWidth - lineLength + (j - i) + 1);
+        result[lineCount]     = NULL;
+        
+        // build line
+        if (prefix != NULL && i == 0) {
+            strcpy(result[lineCount - 1], prefix);
+            strncat(result[lineCount - 1], &text[i], j - i);
+        } else if (padding != NULL) {
+            strcpy(result[lineCount - 1], padding);
+            strncat(result[lineCount - 1], &text[i], j - i);
+        } else {
+            strncpy(result[lineCount - 1], &text[i], j - i);
+            result[lineCount - 1][j - i] = 0;
+        }
+        
         i = j;
     }
+    return result;
+}
+
+static int __print_description(const char* prefix, const char* padding, const char* description)
+{
+    char*  stripped = __strip_newlines(description);
+    char** lines    = __word_wrap(stripped, prefix, padding, 65);
+    int    i        = 0;
+
+    free(stripped);
+    if (!lines) {
+        return -1;
+    }
+
+    while (lines[i]) {
+        printf("%s\n", lines[i]);
+        free(lines[i]);
+        i++;
+    }
+    free(lines);
+    return 0;
 }
 
 static void __print_package(struct chef_package* package)
 {
     printf("Name:             %s\n", package->package);
     printf("Publisher:        %s\n", package->publisher);
-    printf("Description:\n");
-    __print_description("    ", (char*)package->description);
+    __print_description("Description:      ", "    ", package->description);
     printf("Homepage:         %s\n", package->homepage);
     printf("License:          %s\n", package->license);
     printf("Maintainer:       %s\n", package->maintainer);
