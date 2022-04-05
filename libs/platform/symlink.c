@@ -87,7 +87,6 @@ int platform_symlink(const char* path, const char* target, int directory)
 	char* targetFullPath;
 	int   status;
 
-	printf("Creating symlink: %s -> %s\n", path, target);
 	if (path == NULL || target == NULL) {
 		errno = EINVAL;
 		return -1;
