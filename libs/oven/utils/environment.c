@@ -30,9 +30,8 @@ static int __contains_envkey(struct list* list, const char* key)
         struct oven_keypair_item* keypair = (struct oven_keypair_item*)item;
         char*                     end     = strchr(key, '=');
 
-        // when doing the string comparison, include the '=' so we ensure that the
-        // key is not just a prefix of another key
-        if (end != NULL && strncmp(keypair->key, key, (end - key) + 1) == 0) {
+        // we need to make sure lengths are equal as well to avoid false positives
+        if (end != NULL && strncmp(keypair->key, key, end - key) == 0 && strlen(keypair->key) == (end - key)) {
             return 1;
         }
     }
@@ -45,6 +44,7 @@ char** oven_environment_create(const char** parent, struct list* additional)
     char**            environment;
     int               entryCount = additional->count;
     int               i = 0;
+    int               j = 0; // keeps track of index into environment
 
     while (parent[entryCount - additional->count]) {
         entryCount++;
@@ -59,7 +59,7 @@ char** oven_environment_create(const char** parent, struct list* additional)
     // list, as we want to use that one instead
     while (parent[i]) {
         if (!__contains_envkey(additional, parent[i])) {
-            environment[i] = strdup(parent[i]);
+            environment[j++] = strdup(parent[i]);
         }
         i++;
     }
@@ -73,7 +73,7 @@ char** oven_environment_create(const char** parent, struct list* additional)
         }
 
         sprintf(line, "%s=%s", keypair->key, keypair->value);
-        environment[i++] = line;
+        environment[j++] = line;
     }
     
     return environment;
