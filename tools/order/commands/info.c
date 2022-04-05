@@ -79,11 +79,31 @@ static void __print_platform(struct chef_platform* platform)
     }
 }
 
+static void __print_description(const char* padding, const char* description)
+{
+    // split every 80 characters and ignore any preexisting newlines
+    size_t length = strlen(description);
+    size_t i      = 0;
+    while (i < length) {
+        size_t j = i;
+        while (j < length && j - i < 80) {
+            j++;
+        }
+        if (i != 0) {
+            printf("%s%.*s\n", padding, (int)(j - i), &description[i]);
+        } else {
+            printf("%.*s\n", (int)(j - i), &description[i]);
+        }
+        i = j;
+    }
+}
+
 static void __print_package(struct chef_package* package)
 {
     printf("Name:             %s\n", package->package);
     printf("Publisher:        %s\n", package->publisher);
-    printf("Description:      %s\n", package->description);
+    printf("Description:      ");
+    __print_description("    ", package->description);
     printf("Homepage:         %s\n", package->homepage);
     printf("License:          %s\n", package->license);
     printf("Maintainer:       %s\n", package->maintainer);

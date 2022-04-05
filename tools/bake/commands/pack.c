@@ -15,7 +15,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
  * Package System TODOs:
- * - strip descriptions from newlines
  * - homepage/license read wrong ?
  * - autotools backend
  * - reuse zstd context for improved performance
