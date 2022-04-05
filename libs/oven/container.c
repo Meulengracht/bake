@@ -457,16 +457,16 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 		dataPointer += packageHeader->description_length;
 	}
 
-	if (options->license) {
-		memcpy(dataPointer, options->license, packageHeader->license_length);
-		dataPointer += packageHeader->license_length;
-	}
-
 	if (options->url) {
 		memcpy(dataPointer, options->url, packageHeader->homepage_length);
 		dataPointer += packageHeader->homepage_length;
 	}
 	
+	if (options->license) {
+		memcpy(dataPointer, options->license, packageHeader->license_length);
+		dataPointer += packageHeader->license_length;
+	}
+
 	// required
 	memcpy(dataPointer, options->author, packageHeader->maintainer_length);
 	dataPointer += packageHeader->maintainer_length;
