@@ -157,6 +157,7 @@ int cmake_main(struct oven_backend_data* data)
     }
 
     // build the cmake command, execute from build folder
+    // if cross compiling set -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF
     written = snprintf(
         argument,
         argumentLength - 1,

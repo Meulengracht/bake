@@ -543,7 +543,7 @@ static int __handle_filter(struct VaFs* vafs)
     return __set_filter_ops(vafs);
 }
 
-static const char* __get_unpack_path(struct VaFs* vafsHandle, const char* packageName)
+static enum chef_package_type __get_pack_type(struct VaFs* vafsHandle)
 {
     struct chef_vafs_feature_package_header* packageHeader;
     int                                      status;
@@ -551,10 +551,14 @@ static const char* __get_unpack_path(struct VaFs* vafsHandle, const char* packag
     status = vafs_feature_query(vafsHandle, &g_headerGuid, (struct VaFsFeatureHeader**)&packageHeader);
     if (status) {
         fprintf(stderr, "__get_unpack_path: failed to query package header\n");
-        return NULL;
+        return CHEF_PACKAGE_TYPE_UNKNOWN;
     }
-    
-    switch (packageHeader->type) {
+    return packageHeader->type;
+}
+
+static const char* __get_unpack_path(enum chef_package_type type, const char* packageName)
+{
+    switch (type) {
         case CHEF_PACKAGE_TYPE_TOOLCHAIN: {
             char* toolchainPath = (char*)malloc(strlen(g_utensilsPath) + strlen(packageName) + 2);
             sprintf(toolchainPath, "%s/%s", g_utensilsPath, packageName);
@@ -592,6 +596,7 @@ static int __fridge_unpack(const char* packPath, const char* packageName, struct
     struct VaFs*                vafsHandle;
     struct VaFsDirectoryHandle* directoryHandle;
     struct progress_context     progressContext = { 0 };
+    enum chef_package_type      packType;
     int                         status;
     const char*                 unpackPath;
 
@@ -628,7 +633,8 @@ static int __fridge_unpack(const char* packPath, const char* packageName, struct
     }
 
     // detect the type of ingredient we are unpacking.
-    unpackPath = __get_unpack_path(vafsHandle, packageName);
+    packType   = __get_pack_type(vafsHandle);
+    unpackPath = __get_unpack_path(packType, packageName);
     if (unpackPath == NULL) {
         vafs_directory_close(directoryHandle);
         vafs_close(vafsHandle);
@@ -647,7 +653,9 @@ static int __fridge_unpack(const char* packPath, const char* packageName, struct
     printf("\n");
 
     // awesome, lets mark it unpacked
-    inventory_pack_set_unpacked(pack);
+    if (packType == CHEF_PACKAGE_TYPE_TOOLCHAIN) {
+        inventory_pack_set_unpacked(pack);
+    }
 
     free((void*)unpackPath);
     vafs_directory_close(directoryHandle);
