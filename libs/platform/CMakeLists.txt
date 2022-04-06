@@ -6,7 +6,7 @@ add_library(platform STATIC
     chdir.c
     chmod.c
     cpucount.c
-    filetype.c
+    fnmatch.c
     getcwd.c
     getenv.c
     getuserdir.c
@@ -17,6 +17,7 @@ add_library(platform STATIC
     setenv.c
     sleep.c
     spawn.c
+    stat.c
     strreplace.c
     strsplit.c
     symlink.c

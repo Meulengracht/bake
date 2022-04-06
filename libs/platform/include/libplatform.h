@@ -109,6 +109,10 @@
 #define CHEF_ARCHITECTURE_STR "unknown"
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum platform_filetype {
     PLATFORM_FILETYPE_DIRECTORY,
     PLATFORM_FILETYPE_FILE,
@@ -176,5 +180,26 @@ extern int platform_sleep(unsigned int milliseconds);
  * @#define CHEF_ARCHITECTURE_STR int 0 on success, -1 on error
  */
 extern int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd);
+
+/**
+ * @brief fnmatch functionality from musl-libc.org
+ * The reason we have imported this is for cross-platform functionality.
+ */
+
+#define	FNM_PATHNAME    0x1
+#define	FNM_NOESCAPE    0x2
+#define	FNM_PERIOD      0x4
+#define	FNM_LEADING_DIR	0x8           
+#define	FNM_CASEFOLD	0x10
+#define	FNM_FILE_NAME	FNM_PATHNAME
+
+#define	FNM_NOMATCH 1
+#define FNM_NOSYS   (-1)
+
+int platform_fnmatch(const char *pattern, const char *string, int flags);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //!__LIBPLATFORM_H__

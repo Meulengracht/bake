@@ -1,8 +1,8 @@
 # project information, packaging data
 project: 
-  name: Simple Ingredient Recipe
-  description: A simple ingredient recipe
-  type: ingredient
+  name: Simple Toolchain Recipe
+  description: A simple toolchain recipe
+  type: toolchain
   version: 0.1
   author: me
   email: me@me.com
@@ -10,17 +10,13 @@ project:
   homepage:
 
 ingredients:
-  - name: libc
+  - name: vali/libc
     version: 0.2
-    description: A library
-    source:
-      type: archive
-      url:
 
 # There are a number of keywords that can be used in the recipe
 # steps during generate, build, install and package.
 recipes:
-  - name: my-library
+  - name: my-toolchain
     path: source/
     steps:
     # The generate step is run first, and the folder generation is run

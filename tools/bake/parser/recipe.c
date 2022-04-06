@@ -296,6 +296,11 @@ static void __finalize_project(struct parser_state* state)
         fprintf(stderr, "bake: parse error: project author is required\n");
         exit(EXIT_FAILURE);
     }
+
+    if (state->recipe.project.email == NULL) {
+        fprintf(stderr, "bake: parse error: project author email is required\n");
+        exit(EXIT_FAILURE);
+    }
 }
 
 static void __finalize_ingredient(struct parser_state* state)
