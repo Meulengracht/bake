@@ -112,6 +112,7 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
             json_t* version = json_object_get(pack, "version");
             json_t* version_major = json_object_get(version, "major");
             json_t* version_minor = json_object_get(version, "minor");
+            json_t* version_patch = json_object_get(version, "patch");
             json_t* version_revision = json_object_get(version, "revision");
             json_t* version_tag = json_object_get(version, "tag");
 
@@ -122,6 +123,7 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
             inventory->packs[i].channel = strdup(json_string_value(channel));
             inventory->packs[i].version.major = json_integer_value(version_major);
             inventory->packs[i].version.minor = json_integer_value(version_minor);
+            inventory->packs[i].version.patch = json_integer_value(version_patch);
             inventory->packs[i].version.revision = json_integer_value(version_revision);
             inventory->packs[i].version.tag = json_string_value(version_tag);
             inventory->packs[i].latest = json_integer_value(latest);
@@ -205,12 +207,21 @@ int inventory_load(const char* path, struct fridge_inventory** inventoryOut)
 
 int __compare_version(struct chef_version* version1, struct chef_version* version2)
 {
-    if (version1->revision > version2->revision) {
-        return 1;
-    } else if (version1->revision < version2->revision) {
-        return -1;
+    if (version1->revision != 0 && version2->revision != 0) {
+        if (version1->revision > version2->revision) {
+            return 1;
+        } else if (version1->revision < version2->revision) {
+            return -1;
+        }
+        return 0;
     }
-    return 0;
+
+    if (version1->major == version2->major && 
+        version1->minor == version2->minor &&
+        version1->patch == version2->patch) {
+        return 0;
+    }
+    return -1;
 }
 
 int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher, 
@@ -336,6 +347,7 @@ static int __serialize_inventory(struct fridge_inventory* inventory, json_t** js
 
         json_object_set_new(version, "major", json_integer(inventory->packs[i].version.major));
         json_object_set_new(version, "minor", json_integer(inventory->packs[i].version.minor));
+        json_object_set_new(version, "patch", json_integer(inventory->packs[i].version.patch));
         json_object_set_new(version, "revision", json_integer(inventory->packs[i].version.revision));
         json_object_set_new(version, "tag", json_string(inventory->packs[i].version.tag));
 

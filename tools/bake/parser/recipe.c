@@ -147,6 +147,7 @@ enum state {
     STATE_PROJECT,
     STATE_PROJECT_SUMMARY,
     STATE_PROJECT_DESCRIPTION,
+    STATE_PROJECT_ICON,
     STATE_PROJECT_AUTHOR,
     STATE_PROJECT_EMAIL,
     STATE_PROJECT_VERSION,
@@ -650,6 +651,9 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else if (strcmp(value, "description") == 0) {
                         s->state = STATE_PROJECT_DESCRIPTION;
                     }
+                    else if (strcmp(value, "icon") == 0) {
+                        s->state = STATE_PROJECT_ICON;
+                    }
                     else if (strcmp(value, "author") == 0) {
                         s->state = STATE_PROJECT_AUTHOR;
                     }
@@ -730,10 +734,12 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_SUMMARY, recipe.project.summary, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_DESCRIPTION, recipe.project.description, __parse_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_ICON, recipe.project.icon, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_AUTHOR, recipe.project.author, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_EMAIL, recipe.project.email, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_VERSION, recipe.project.version, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_LICENSE, recipe.project.license, __parse_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_EULA, recipe.project.eula, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_HOMEPAGE, recipe.project.url, __parse_string)
 
         __consume_sequence_mapped(STATE_SECTION, STATE_INGREDIENT_LIST, STATE_INGREDIENT)

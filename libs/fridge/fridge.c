@@ -459,32 +459,40 @@ static int __parse_version_string(const char* string, struct chef_version* versi
     // where tag is optional
     char* pointer    = (char*)string;
     char* pointerEnd = strchr(pointer, '.');
+
+    // if '.' was not found, then the revision is provided, so we use that
     if (pointerEnd == NULL) {
-        return -1;
+        version->major    = 0;
+        version->minor    = 0;
+        version->patch    = 0;
+        version->revision = (int)strtol(pointer, &pointerEnd, 10);
+        if (version->revision == 0) {
+            errno = EINVAL;
+            return -1;
+        }
+
+        version->tag = NULL;
+        return 0;
     }
     
     // extract first part
     version->major = (int)strtol(pointer, &pointerEnd, 10);
     
+    // extract second part
     pointer    = pointerEnd + 1;
     pointerEnd = strchr(pointer, '.');
     if (pointerEnd == NULL) {
+        errno = EINVAL;
         return -1;
     }
-    
-    // extract second part
     version->minor = strtol(pointer, &pointerEnd, 10);
     
     pointer    = pointerEnd + 1;
-    pointerEnd = strchr(pointer, '+');
+    pointerEnd = NULL;
     
-    // extract the 3rd part, revision
-    // at this point, if pointerEnd is not NULL, then it contains tag
-    if (pointerEnd != NULL) {
-        version->tag = pointerEnd;
-    }
-
-    version->revision = strtol(pointer, &pointerEnd, 10);
+    // extract the 3rd part, patch
+    version->patch = strtol(pointer, &pointerEnd, 10);
+    version->tag   = NULL;
     return 0;
 }
 

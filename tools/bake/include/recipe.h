@@ -51,8 +51,10 @@ struct recipe_part {
 struct recipe_project {
     const char* summary;
     const char* description;
+    const char* icon;
     const char* version;
     const char* license;
+    const char* eula;
     const char* author;
     const char* email;
     const char* url;

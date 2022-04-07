@@ -61,7 +61,14 @@ project:
   # for every publish done the revision increments, no matter if the 
   # version number stays the same. 
   version: 0.1.0
-
+  
+  #########################
+  # icon - Optional
+  #
+  # The project icon file. This is either a png, bmp or jpg file that will be
+  # shown in the project info page, or in the application launcher.
+  icon: /path/to/icon.png
+  
   #########################
   # license - Optional
   #
@@ -106,6 +113,9 @@ ingredients:
     # A specific version can be given, this will attempt to resolve the package
     # with the wanted version, if no version is provided, then the latest will be
     # fetched.
+    # Supported version formats:
+    #  - <major>.<minor>.<patch>
+    #  - <revision>
     version: 1.0.1
 
     ###########################

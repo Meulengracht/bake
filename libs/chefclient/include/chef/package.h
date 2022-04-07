@@ -31,6 +31,7 @@ enum chef_package_type {
 struct chef_version {
     int         major;
     int         minor;
+    int         patch;
     int         revision;
     const char* tag;
 };

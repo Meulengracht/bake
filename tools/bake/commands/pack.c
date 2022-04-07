@@ -15,17 +15,8 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
  * Package System TODOs:
- * - homepage/license read wrong ?
  * - autotools backend
  * - reuse zstd context for improved performance
- * - support 'pack' steps to specify files we want to include and exclude
- *   - type: pack
- *     depends: [generate, build]
- *     include:
- *      - include/lib
- *      - lib/
- *     exclude:
- *      - share/lib
  * Application System TODOs:
  * - app commands
  * - icon support
@@ -79,8 +70,10 @@ static void __initialize_pack_options(
     options->type        = pack->type;
     options->summary     = recipe->project.summary;
     options->description = recipe->project.description;
+    options->icon        = recipe->project.icon;
     options->version     = recipe->project.version;
     options->license     = recipe->project.license;
+    options->eula        = recipe->project.eula;
     options->author      = recipe->project.author;
     options->email       = recipe->project.email;
     options->url         = recipe->project.url;

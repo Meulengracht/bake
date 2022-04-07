@@ -156,6 +156,7 @@ static json_t* __create_pack_version(struct chef_publish_params* params)
 
     json_object_set_new(packVersion, "major", json_integer(params->version->major));
     json_object_set_new(packVersion, "minor", json_integer(params->version->minor));
+    json_object_set_new(packVersion, "patch", json_integer(params->version->patch));
 
     // revision is only set by server, and ignored by us
     json_object_set_new(packVersion, "revision", json_integer(0));

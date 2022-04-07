@@ -53,7 +53,7 @@ struct chef_vafs_feature_package_version {
     int                      revision;
 
     // the data is not zero terminated.
-    size_t                   tag_length;
+    uint32_t                 tag_length;
 };
 
 struct chef_vafs_feature_package_icon {

@@ -67,6 +67,7 @@ struct oven_pack_options {
     enum chef_package_type type;
     const char*            summary;
     const char*            description;
+    const char*            icon;
     const char*            version;
     const char*            license;
     const char*            eula;
