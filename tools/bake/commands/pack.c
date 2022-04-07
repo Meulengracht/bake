@@ -70,16 +70,22 @@ static void __initialize_build_options(struct oven_build_options* options, struc
     options->environment = &step->env_keypairs;
 }
 
-static void __initialize_pack_options(struct oven_pack_options* options, char* name, struct recipe* recipe)
+static void __initialize_pack_options(
+    struct oven_pack_options* options, 
+    struct recipe*            recipe,
+    struct recipe_pack*       pack)
 {
-    options->name        = name;
-    options->type        = recipe->type;
+    options->name        = pack->name;
+    options->type        = pack->type;
+    options->summary     = recipe->project.summary;
     options->description = recipe->project.description;
     options->version     = recipe->project.version;
     options->license     = recipe->project.license;
     options->author      = recipe->project.author;
     options->email       = recipe->project.email;
     options->url         = recipe->project.url;
+    options->filters     = &pack->filters;
+    options->commands    = &pack->commands;
 }
 
 static int __fetch_ingredients(struct recipe* recipe)
@@ -179,6 +185,37 @@ static int __make_recipes(struct recipe* recipe)
     return 0;
 }
 
+static int __make_packs(struct recipe* recipe)
+{
+    struct oven_pack_options packOptions;
+    struct list_item*        item;
+    int                      status;
+
+    // include ingredients marked for packing
+    list_foreach(&recipe->ingredients, item) {
+        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
+        if (ingredient->include) {
+            status = oven_include_filters(&ingredient->filters);
+            if (status) {
+                fprintf(stderr, "bake: failed to include ingredient %s\n", ingredient->ingredient.name);
+                return status;
+            }
+        }
+    }
+
+    list_foreach(&recipe->packs, item) {
+        struct recipe_pack* pack = (struct recipe_pack*)item;
+
+        __initialize_pack_options(&packOptions, recipe, pack);
+        status = oven_pack(&packOptions);
+        if (status) {
+            fprintf(stderr, "bake: failed to construct pack %s\n", pack->name);
+            return status;
+        }
+    }
+    return 0;
+}
+
 void __cleanup_systems(int sig)
 {
     (void)sig;
@@ -188,10 +225,9 @@ void __cleanup_systems(int sig)
 
 int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    struct oven_pack_options packOptions;
-    int                      status;
-    char*                    name = NULL;
-    int                      regenerate = 0;
+    int   status;
+    char* name = NULL;
+    int   regenerate = 0;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -270,18 +306,17 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
         }
     }
 
-    // build parts
     status = __make_recipes(recipe);
     if (status) {
-        fprintf(stderr, "bake: failed to make recipe\n");
+        fprintf(stderr, "bake: failed to make recipes\n");
         return -1;
     }
 
-    // pack it all together
-    __initialize_pack_options(&packOptions, name, recipe);
-    status = oven_pack(&packOptions);
+    status = __make_packs(recipe);
     if (status) {
-        fprintf(stderr, "bake: failed to pack target: %s\n", strerror(errno));
+        fprintf(stderr, "bake: failed to construct packs\n");
+        return -1;
     }
+
     return status;
 }

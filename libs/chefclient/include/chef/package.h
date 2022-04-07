@@ -52,12 +52,19 @@ struct chef_platform {
     size_t                    architectures_count;
 };
 
+enum chef_command_type {
+    CHEF_COMMAND_TYPE_UNKNOWN,
+    CHEF_COMMAND_TYPE_EXECUTABLE,
+    CHEF_COMMAND_TYPE_DAEMON
+};
+
 struct chef_package {
     const char* publisher;
     const char* package;
     const char* description;
     const char* homepage;
     const char* license;
+    const char* eula;
     const char* maintainer;
     const char* maintainer_email;
     

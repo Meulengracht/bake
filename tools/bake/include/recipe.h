@@ -49,7 +49,7 @@ struct recipe_part {
 };
 
 struct recipe_project {
-    const char* name;
+    const char* summary;
     const char* description;
     const char* version;
     const char* license;
@@ -61,29 +61,23 @@ struct recipe_project {
 struct recipe_ingredient {
     struct list_item         list_header;
     struct fridge_ingredient ingredient;
+    int                      include;
+    struct list              filters;  // list<oven_value_item>
 };
 
-enum recipe_command_type {
-    RECIPE_COMMAND_TYPE_UNKNOWN,
-    RECIPE_COMMAND_TYPE_EXECUTABLE,
-    RECIPE_COMMAND_TYPE_DAEMON
-};
-
-struct recipe_command {
-    struct list_item         list_header;
-    const char*              name;
-    const char*              description;
-    enum recipe_command_type type;
-    const char*              path;
-    struct list              arguments;
+struct recipe_pack {
+    struct list_item       list_header;
+    const char*            name;
+    enum chef_package_type type;
+    struct list            filters;  // list<oven_value_item>
+    struct list            commands; // list<oven_pack_command>
 };
 
 struct recipe {
     struct recipe_project  project;
-    enum chef_package_type type;
-    struct list            ingredients;
-    struct list            parts;
-    struct list            commands;
+    struct list            ingredients; // list<recipe_ingredient>
+    struct list            parts;       // list<recipe_part>
+    struct list            packs;       // list<recipe_pack>
 };
 
 /**

@@ -52,6 +52,11 @@ static int __load_package_header(struct chef_vafs_feature_package_header* header
         data += header->license_length;
     }
 
+    if (header->eula_length) {
+        package->eula = strndup(data, header->eula_length);
+        data += header->eula_length;
+    }
+
     if (header->maintainer_length) {
         package->maintainer = strndup(data, header->maintainer_length);
         data += header->maintainer_length;

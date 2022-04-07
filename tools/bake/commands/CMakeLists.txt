@@ -1,11 +1,9 @@
 
 add_library(bake-commands STATIC
-    recipes/app.c
-    recipes/ingredient.c
-
     fetch.c
     init.c
     pack.c
+    recipe_specification.c
 )
 
 target_include_directories(bake-commands PRIVATE ../include)

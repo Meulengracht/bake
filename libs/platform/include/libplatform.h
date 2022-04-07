@@ -62,9 +62,9 @@
 
 // detect architecture
 #if defined(__x86_64__) || defined(_M_X64)
-#define CHEF_ARCHITECTURE_STR "x64"
+#define CHEF_ARCHITECTURE_STR "amd64"
 #elif defined(i386) || defined(__i386__) || defined(__i386) || defined(_M_IX86)
-#define CHEF_ARCHITECTURE_STR "x32"
+#define CHEF_ARCHITECTURE_STR "i386"
 #elif defined(__ARM_ARCH_2__)
 #define CHEF_ARCHITECTURE_STR "arm2"
 #elif defined(__ARM_ARCH_3__) || defined(__ARM_ARCH_3M__)
@@ -180,23 +180,6 @@ extern int platform_sleep(unsigned int milliseconds);
  * @#define CHEF_ARCHITECTURE_STR int 0 on success, -1 on error
  */
 extern int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd);
-
-/**
- * @brief fnmatch functionality from musl-libc.org
- * The reason we have imported this is for cross-platform functionality.
- */
-
-#define	FNM_PATHNAME    0x1
-#define	FNM_NOESCAPE    0x2
-#define	FNM_PERIOD      0x4
-#define	FNM_LEADING_DIR	0x8           
-#define	FNM_CASEFOLD	0x10
-#define	FNM_FILE_NAME	FNM_PATHNAME
-
-#define	FNM_NOMATCH 1
-#define FNM_NOSYS   (-1)
-
-int platform_fnmatch(const char *pattern, const char *string, int flags);
 
 #ifdef __cplusplus
 }

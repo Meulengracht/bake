@@ -16,7 +16,7 @@
  * 
  */
 
-const char* g_appYaml = 
+const char* g_baseYaml = 
     "# project information, packaging data\n"
     "project:\n"
     "  name: Simple Application Recipe\n"

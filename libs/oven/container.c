@@ -400,11 +400,21 @@ static int __parse_version_string(const char* string, struct chef_vafs_feature_p
 	// extract first part
 	version->major = (int)strtol(pointer, &pointerEnd, 10);
 	
-	pointer    = pointerEnd + 1;
-	pointerEnd = NULL; // consume rest
-	
 	// extract second part
-	version->minor    = strtol(pointer, &pointerEnd, 10);
+	pointer    = pointerEnd + 1;
+	pointerEnd = strchr(pointer, '.');
+	version->minor = strtol(pointer, &pointerEnd, 10);
+
+	// extract third part if available
+	if (pointerEnd != NULL) {
+		pointer        = pointerEnd + 1;
+		pointerEnd     = NULL;
+		version->patch = strtol(pointer, &pointerEnd, 10);
+	} else {
+		version->patch = 0;
+	}
+
+	// default to zero
 	version->revision = 0;
 	return 0;
 }
@@ -443,6 +453,7 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 	packageHeader->package_length          = strlen(name);
 	packageHeader->description_length      = options->description == NULL ? 0 : strlen(options->description);
 	packageHeader->license_length          = options->license == NULL ? 0 : strlen(options->license);
+	packageHeader->eula_length             = options->eula == NULL ? 0 : strlen(options->eula);
 	packageHeader->homepage_length         = options->url == NULL ? 0 : strlen(options->url);
 	packageHeader->maintainer_length       = options->author == NULL ? 0 : strlen(options->author);
 	packageHeader->maintainer_email_length = options->email == NULL ? 0 : strlen(options->email);
@@ -467,6 +478,11 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 	if (options->license) {
 		memcpy(dataPointer, options->license, packageHeader->license_length);
 		dataPointer += packageHeader->license_length;
+	}
+
+	if (options->eula) {
+		memcpy(dataPointer, options->eula, packageHeader->eula_length);
+		dataPointer += packageHeader->eula_length;
 	}
 
 	// required

@@ -145,13 +145,13 @@ enum state {
     STATE_SECTION,  /* top level */
 
     STATE_PROJECT,
-    STATE_PROJECT_NAME,
+    STATE_PROJECT_SUMMARY,
     STATE_PROJECT_DESCRIPTION,
     STATE_PROJECT_AUTHOR,
     STATE_PROJECT_EMAIL,
-    STATE_PROJECT_TYPE,
     STATE_PROJECT_VERSION,
     STATE_PROJECT_LICENSE,
+    STATE_PROJECT_EULA,
     STATE_PROJECT_HOMEPAGE,
 
     STATE_INGREDIENT_LIST,
@@ -159,6 +159,8 @@ enum state {
     STATE_INGREDIENT,       // MAPPING_START
     STATE_INGREDIENT_NAME,
     STATE_INGREDIENT_VERSION,
+    STATE_INGREDIENT_INCLUDE,
+    STATE_INGREDIENT_INCLUDE_FILTERS_LIST,
     STATE_INGREDIENT_DESCRIPTION,
     STATE_INGREDIENT_PLATFORM,
     STATE_INGREDIENT_ARCH,
@@ -170,14 +172,12 @@ enum state {
     STATE_INGREDIENT_SOURCE_CHANNEL,
 
     STATE_RECIPE_LIST,
-
     STATE_RECIPE,          // MAPPING_START
     STATE_RECIPE_NAME,
     STATE_RECIPE_PATH,
     STATE_RECIPE_TOOLCHAIN,
 
     STATE_RECIPE_STEP_LIST,
-
     STATE_RECIPE_STEP,     // MAPPING_START
     STATE_RECIPE_STEP_TYPE,
     STATE_RECIPE_STEP_DEPEND_LIST,
@@ -187,7 +187,12 @@ enum state {
     STATE_RECIPE_STEP_ENV_LIST_KEY,
     STATE_RECIPE_STEP_ENV_LIST_VALUE,
 
-    STATE_COMMANDS_LIST,
+    STATE_PACKS_LIST,
+    STATE_PACK,            // MAPPING_START
+    STATE_PACK_NAME,
+    STATE_PACK_TYPE,
+    STATE_PACK_FILTER_LIST,
+    STATE_PACK_COMMANDS_LIST,
 
     STATE_COMMAND,         // MAPPING_START
     STATE_COMMAND_NAME,
@@ -205,7 +210,8 @@ struct parser_state {
     struct recipe_ingredient ingredient;
     struct recipe_part       part;
     struct recipe_step       step;
-    struct recipe_command    command;
+    struct recipe_pack       pack;
+    struct oven_pack_command command;
     struct oven_keypair_item env_keypair;
 };
 
@@ -218,7 +224,7 @@ static const char* __parse_string(const char* value)
     return strdup(value);
 }
 
-static enum chef_package_type __parse_project_type(const char* value)
+static enum chef_package_type __parse_pack_type(const char* value)
 {
     if (strcmp(value, "ingredient") == 0) {
         return CHEF_PACKAGE_TYPE_INGREDIENT;
@@ -259,31 +265,27 @@ static enum recipe_step_type __parse_recipe_step_type(const char* value)
     }
 }
 
-static enum recipe_command_type __parse_command_type(const char* value)
+static enum chef_command_type __parse_command_type(const char* value)
 {
     if (strcmp(value, "executable") == 0) {
-        return RECIPE_COMMAND_TYPE_EXECUTABLE;
+        return CHEF_COMMAND_TYPE_EXECUTABLE;
     } else if (strcmp(value, "daemon") == 0) {
-        return RECIPE_COMMAND_TYPE_DAEMON;
+        return CHEF_COMMAND_TYPE_DAEMON;
     } else {
-        return RECIPE_COMMAND_TYPE_UNKNOWN;
+        return CHEF_COMMAND_TYPE_UNKNOWN;
     }
 }
 
 static void __finalize_recipe(struct parser_state* state)
 {
-    // verify required recipe members
-    if (state->recipe.type == CHEF_PACKAGE_TYPE_UNKNOWN) {
-        fprintf(stderr, "bake: parse error: project type is not specified\n");
-        exit(EXIT_FAILURE);
-    }
+    // todo
 }
 
 static void __finalize_project(struct parser_state* state)
 {
     // verify required project members
-    if (state->recipe.project.name == NULL) {
-        fprintf(stderr, "bake: parse error: project name is required\n");
+    if (state->recipe.project.summary == NULL) {
+        fprintf(stderr, "bake: parse error: project summary is required\n");
         exit(EXIT_FAILURE);
     }
 
@@ -445,7 +447,7 @@ static void __finalize_step_env(struct parser_state* state)
 
 static void __finalize_command(struct parser_state* state)
 {
-    struct recipe_command* command;
+    struct oven_pack_command* command;
 
     // we should verify required members of the command before creating a copy
     if (state->command.name == NULL) {
@@ -453,7 +455,7 @@ static void __finalize_command(struct parser_state* state)
         exit(EXIT_FAILURE);
     }
 
-    if (state->command.type == RECIPE_COMMAND_TYPE_UNKNOWN) {
+    if (state->command.type == CHEF_COMMAND_TYPE_UNKNOWN) {
         fprintf(stderr, "bake: parse error: command %s: valid command types are {executable, daemon}\n", state->command.name);
         exit(EXIT_FAILURE);
     }
@@ -464,17 +466,46 @@ static void __finalize_command(struct parser_state* state)
     }
     
     // now we copy and reset
-    command = malloc(sizeof(struct recipe_command));
+    command = malloc(sizeof(struct oven_pack_command));
     if (command == NULL) {
         fprintf(stderr, "bake: error: out of memory\n");
         exit(EXIT_FAILURE);
     }
 
-    memcpy(command, &state->command, sizeof(struct recipe_command));
-    list_add(&state->recipe.commands, &command->list_header);
+    memcpy(command, &state->command, sizeof(struct oven_pack_command));
+    list_add(&state->pack.commands, &command->list_header);
 
     // reset the structure in state
-    memset(&state->command, 0, sizeof(struct recipe_command));
+    memset(&state->command, 0, sizeof(struct oven_pack_command));
+}
+
+static void __finalize_pack(struct parser_state* state)
+{
+    struct recipe_pack* pack;
+
+    // we should verify required members of the command before creating a copy
+    if (state->pack.name == NULL) {
+        fprintf(stderr, "bake: parse error: pack name is required\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (state->pack.type == CHEF_PACKAGE_TYPE_UNKNOWN) {
+        fprintf(stderr, "bake: parse error: pack type is not specified\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // now we copy and reset
+    pack = malloc(sizeof(struct recipe_pack));
+    if (pack == NULL) {
+        fprintf(stderr, "bake: error: out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+
+    memcpy(pack, &state->pack, sizeof(struct recipe_pack));
+    list_add(&state->recipe.packs, &pack->list_header);
+
+    // reset the structure in state
+    memset(&state->pack, 0, sizeof(struct recipe_pack));
 }
 
 // TODO error handling
@@ -497,11 +528,13 @@ static void __finalize_command(struct parser_state* state)
         list_add(&state->structure.field, &argument->list_header); \
     }
 
+DEFINE_LIST_STRING_ADD(ingredient, filters)
 DEFINE_LIST_STRING_ADD(step, depends)
 DEFINE_LIST_STRING_ADD(step, arguments)
+DEFINE_LIST_STRING_ADD(pack, filters)
 DEFINE_LIST_STRING_ADD(command, arguments)
 
-static int __parse_boolean(const char* string, int* value)
+static int __parse_boolean(const char* string)
 {
     char*  t[] = {"y", "Y", "yes", "Yes", "YES", "true", "True", "TRUE", "on", "On", "ON", NULL};
     char*  f[] = {"n", "N", "no", "No", "NO", "false", "False", "FALSE", "off", "Off", "OFF", NULL};
@@ -509,17 +542,18 @@ static int __parse_boolean(const char* string, int* value)
 
     for (p = t; *p; p++) {
         if (strcmp(string, *p) == 0) {
-            *value = 1;
-            return 0;
+            return 1;
         }
     }
     for (p = f; *p; p++) {
         if (strcmp(string, *p) == 0) {
-            *value = 0;
             return 0;
         }
     }
-    return EINVAL;
+
+    // default to false
+    fprintf(stderr, "bake: parse error: unrecognized boolean value: %s\n", string);
+    return 0;
 }
 
 static int __consume_event(struct parser_state* s, yaml_event_t* event)
@@ -580,8 +614,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else if (strcmp(value, "recipes") == 0) {
                         s->state = STATE_RECIPE_LIST;
                     }
-                    else if (strcmp(value, "commands") == 0) {
-                        s->state = STATE_COMMANDS_LIST;
+                    else if (strcmp(value, "packs") == 0) {
+                        s->state = STATE_PACKS_LIST;
                     }
                     else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
@@ -610,8 +644,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
-                    if (strcmp(value, "name") == 0) {
-                        s->state = STATE_PROJECT_NAME;
+                    if (strcmp(value, "summary") == 0) {
+                        s->state = STATE_PROJECT_SUMMARY;
                     }
                     else if (strcmp(value, "description") == 0) {
                         s->state = STATE_PROJECT_DESCRIPTION;
@@ -622,14 +656,14 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else if (strcmp(value, "email") == 0) {
                         s->state = STATE_PROJECT_EMAIL;
                     }
-                    else if (strcmp(value, "type") == 0) {
-                        s->state = STATE_PROJECT_TYPE;
-                    }
                     else if (strcmp(value, "version") == 0) {
                         s->state = STATE_PROJECT_VERSION;
                     }
                     else if (strcmp(value, "license") == 0) {
                         s->state = STATE_PROJECT_LICENSE;
+                    }
+                    else if (strcmp(value, "eula") == 0) {
+                        s->state = STATE_PROJECT_EULA;
                     }
                     else if (strcmp(value, "homepage") == 0) {
                         s->state = STATE_PROJECT_HOMEPAGE;
@@ -694,11 +728,10 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             break;
 
 
-        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_NAME, recipe.project.name, __parse_string)
+        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_SUMMARY, recipe.project.summary, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_DESCRIPTION, recipe.project.description, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_AUTHOR, recipe.project.author, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_EMAIL, recipe.project.email, __parse_string)
-        __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_TYPE, recipe.type, __parse_project_type)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_VERSION, recipe.project.version, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_LICENSE, recipe.project.license, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_HOMEPAGE, recipe.project.url, __parse_string)
@@ -727,6 +760,12 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     else if (strcmp(value, "version") == 0) {
                         s->state = STATE_INGREDIENT_VERSION;
                     }
+                    else if (strcmp(value, "include-filters") == 0) {
+                        s->state = STATE_INGREDIENT_INCLUDE_FILTERS_LIST;
+                    }
+                    else if (strcmp(value, "include") == 0) {
+                        s->state = STATE_INGREDIENT_INCLUDE;
+                    }
                     else if (strcmp(value, "source") == 0) {
                         s->state = STATE_INGREDIENT_SOURCE;
                     }
@@ -750,6 +789,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_ARCH, ingredient.ingredient.arch, __parse_string)
         __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_CHANNEL, ingredient.ingredient.channel, __parse_string)
         __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_VERSION, ingredient.ingredient.version, __parse_string)
+        __consume_scalar_fn(STATE_INGREDIENT, STATE_INGREDIENT_INCLUDE, ingredient.include, __parse_boolean)
+        __consume_sequence_unmapped(STATE_INGREDIENT, STATE_INGREDIENT_INCLUDE_FILTERS_LIST, __add_ingredient_filters)
 
         case STATE_INGREDIENT_SOURCE:
             switch (event->type) {
@@ -905,7 +946,45 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_sequence_mapped(STATE_SECTION, STATE_COMMANDS_LIST, STATE_COMMAND)
+        __consume_sequence_mapped(STATE_SECTION, STATE_PACKS_LIST, STATE_PACK)
+        case STATE_PACK:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __finalize_pack(s);
+                    s->state = STATE_PACKS_LIST;
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "name") == 0) {
+                        s->state = STATE_PACK_NAME;
+                    }
+                    else if (strcmp(value, "type") == 0) {
+                        s->state = STATE_PACK_TYPE;
+                    }
+                    else if (strcmp(value, "filters") == 0) {
+                        s->state = STATE_PACK_FILTER_LIST;
+                    }
+                    else if (strcmp(value, "commands") == 0) {
+                        s->state = STATE_PACK_COMMANDS_LIST;
+                    }
+                    else {
+                        fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_PACK, STATE_PACK_NAME, pack.name, __parse_string)
+        __consume_scalar_fn(STATE_PACK, STATE_PACK_TYPE, pack.type, __parse_pack_type)
+        __consume_sequence_unmapped(STATE_PACK, STATE_PACK_FILTER_LIST, __add_pack_filters)
+        __consume_sequence_mapped(STATE_PACK, STATE_PACK_COMMANDS_LIST, STATE_COMMAND)
 
         case STATE_COMMAND:
             switch (event->type) {
@@ -913,7 +992,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     break;
                 case YAML_MAPPING_END_EVENT:
                     __finalize_command(s);
-                    s->state = STATE_COMMANDS_LIST;
+                    s->state = STATE_PACK_COMMANDS_LIST;
                     break;
 
                 case YAML_SCALAR_EVENT:
@@ -1025,7 +1104,7 @@ static void __destroy_keypair(struct oven_keypair_item* keypair)
 
 static void __destroy_project(struct recipe_project* project)
 {
-    free((void*)project->name);
+    free((void*)project->summary);
     free((void*)project->description);
     free((void*)project->version);
     free((void*)project->url);
@@ -1070,13 +1149,21 @@ static void __destroy_part(struct recipe_part* part)
     free(part);
 }
 
-static void __destroy_command(struct recipe_command* command)
+static void __destroy_command(struct oven_pack_command* command)
 {
     __destroy_list(string, command->arguments.head, struct oven_value_item);
     free((void*)command->name);
     free((void*)command->description);
     free((void*)command->path);
     free(command);
+}
+
+static void __destroy_pack(struct recipe_pack* pack)
+{
+    __destroy_list(command, pack->commands.head, struct oven_pack_command);
+    __destroy_list(string, pack->filters.head, struct oven_value_item);
+    free((void*)pack->name);
+    free(pack);
 }
 
 void recipe_destroy(struct recipe* recipe)
@@ -1088,6 +1175,6 @@ void recipe_destroy(struct recipe* recipe)
     __destroy_project(&recipe->project);
     __destroy_list(ingredient, recipe->ingredients.head, struct recipe_ingredient);
     __destroy_list(part, recipe->parts.head, struct recipe_part);
-    __destroy_list(command, recipe->commands.head, struct recipe_command);
+    __destroy_list(pack, recipe->packs.head, struct recipe_pack);
     free(recipe);
 }

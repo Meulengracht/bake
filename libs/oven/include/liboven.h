@@ -33,6 +33,15 @@ struct oven_value_item {
     const char*      value;
 };
 
+struct oven_pack_command {
+    struct list_item       list_header;
+    const char*            name;
+    const char*            description;
+    enum chef_command_type type;
+    const char*            path;
+    struct list            arguments; // list<oven_value_item>
+};
+
 struct oven_recipe_options {
     const char* name;
     const char* relative_path;
@@ -55,21 +64,28 @@ struct oven_build_options {
 
 struct oven_pack_options {
     const char*            name;
+    enum chef_package_type type;
+    const char*            summary;
     const char*            description;
     const char*            version;
     const char*            license;
+    const char*            eula;
     const char*            author;
     const char*            email;
     const char*            url;
-    enum chef_package_type type;
+
+    struct list*           filters;  // list<oven_value_item>
+    struct list*           commands; // list<oven_pack_command>
 };
 
 /**
- * @brief 
+ * @brief Initializes the oven system, creates all neccessary folders. All oven_*
+ *       functions will fail if this function is not called first.
  * 
- * @param  envp
- * @param  fridgePrepDirectory
- * @return int 
+ * @param[In] envp
+ * @param[In] recipeScope
+ * @param[In] fridgePrepDirectory
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
 extern int oven_initialize(char** envp, const char* recipeScope, const char* fridgePrepDirectory);
 
@@ -77,7 +93,7 @@ extern int oven_initialize(char** envp, const char* recipeScope, const char* fri
  * @brief 
  * 
  * @param options 
- * @return int 
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
 extern int oven_recipe_start(struct oven_recipe_options* options);
 
@@ -90,7 +106,7 @@ extern void oven_recipe_end(void);
 /**
  * @brief 
  * 
- * @return int 
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
 extern int oven_reset(void);
 
@@ -98,7 +114,7 @@ extern int oven_reset(void);
  * @brief 
  * 
  * @param options 
- * @return int 
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
 extern int oven_configure(struct oven_generate_options* options);
 
@@ -106,15 +122,25 @@ extern int oven_configure(struct oven_generate_options* options);
  * @brief 
  * 
  * @param options 
- * @return int 
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
 extern int oven_build(struct oven_build_options* options);
+
+/**
+ * @brief List of filepath patterns that should be included in the install directory.
+ * This will be applied to the fridge prep area directory where ingredients are stored used
+ * for building. This is to support runtime dependencies for packs.
+ * 
+ * @param[In] filters List of struct oven_value_item containg filepath patterns.
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
+ */
+extern int oven_include_filters(struct list* filters);
 
 /**
  * @brief 
  * 
  * @param options 
- * @return int 
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
 extern int oven_pack(struct oven_pack_options* options);
 

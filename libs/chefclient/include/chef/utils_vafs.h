@@ -21,6 +21,7 @@
 
 #include <stddef.h>
 #include <chef/package.h>
+#include <stdint.h>
 #include <vafs/vafs.h>
 
 #define CHEF_PACKAGE_HEADER_GUID  { 0x91C48A1D, 0xC445, 0x4607, { 0x95, 0x98, 0xFE, 0x73, 0x49, 0x1F, 0xD3, 0x7E } }
@@ -35,18 +36,20 @@ struct chef_vafs_feature_package_header {
 
     // lengths of the data for each string, none of the strings
     // are zero terminated, which must be added at load
-    size_t                   package_length;
-    size_t                   description_length;
-    size_t                   homepage_length;
-    size_t                   license_length;
-    size_t                   maintainer_length;
-    size_t                   maintainer_email_length;
+    uint32_t                 package_length;
+    uint32_t                 description_length;
+    uint32_t                 homepage_length;
+    uint32_t                 license_length;
+    uint32_t                 eula_length;
+    uint32_t                 maintainer_length;
+    uint32_t                 maintainer_email_length;
 };
 
 struct chef_vafs_feature_package_version {
     struct VaFsFeatureHeader header;
     int                      major;
     int                      minor;
+    int                      patch;
     int                      revision;
 
     // the data is not zero terminated.

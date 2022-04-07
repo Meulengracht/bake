@@ -838,6 +838,22 @@ cleanup:
     return status;
 }
 
+int oven_include_filters(struct list* filters)
+{
+    struct list_item* item;
+
+    if (!filters) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    list_foreach(filters, item) {
+        struct oven_filter_item* filter = (struct oven_filter_item*)item;
+        // TODO support filters
+    }
+    return 0;
+}
+
 void oven_cleanup(void)
 {
     if (g_ovenContext.build_root) {
