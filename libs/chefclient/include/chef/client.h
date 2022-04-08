@@ -35,12 +35,16 @@ struct chef_publish_params {
 };
 
 struct chef_download_params {
-    const char* publisher;
-    const char* package;
-    const char* platform;
-    const char* arch;
-    const char* channel;
-    const char* version;
+    const char*          publisher;
+    const char*          package;
+    const char*          platform;
+    const char*          arch;
+    const char*          channel;
+    struct chef_version* version;
+
+    // this will be updated to the revision downloaded,
+    // which means from a callers perspective this is read-only
+    int                  revision;
 };
 
 enum chef_login_flow_type {
@@ -77,8 +81,8 @@ extern void chefclient_logout(void);
 /**
  * @brief 
  * 
- * @param params 
- * @param path 
+ * @param[In]  params 
+ * @param[In]  path 
  * @return int 
  */
 extern int chefclient_pack_download(struct chef_download_params* params, const char* path);

@@ -19,7 +19,6 @@
  * - reuse zstd context for improved performance
  * Application System TODOs:
  * - app commands
- * - icon support
  * - served system
  */
 

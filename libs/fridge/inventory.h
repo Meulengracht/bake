@@ -72,13 +72,12 @@ extern int inventory_add(struct fridge_inventory* inventory, const char* publish
     struct chef_version* version, struct fridge_inventory_pack** packOut);
 
 /**
- * @brief Saves the inventory to the given file path. The file created is json.
+ * @brief Saves the current inventory state.
  * 
  * @param[In] inventory The inventory to serialize.
- * @param[In] path      The path of the file the inventory should be stored to.
  * @return int 0 on success, otherwise -1 and errno will be set
  */
-extern int inventory_save(struct fridge_inventory* inventory, const char* path);
+extern int inventory_save(struct fridge_inventory* inventory);
 
 /**
  * @brief Cleans up any resources allocated by the inventory_* functions.
@@ -86,6 +85,25 @@ extern int inventory_save(struct fridge_inventory* inventory, const char* path);
  * @param[In] inventory The inventory to clean up. 
  */
 extern void inventory_free(struct fridge_inventory* inventory);
+
+/**
+ * @brief Retrieves the package name of the given pack.
+ * 
+ * @param[In] pack A pointer to the pack.
+ * @return const char* A pointer to a zero terminated string containing the package name.
+ */
+extern const char* inventory_pack_name(struct fridge_inventory_pack* pack);
+
+/**
+ * @brief Constructs the filename of the package, this can be used to load or save the package
+ * to a canonical name build from the package's configuration.
+ * 
+ * @param[In] pack A pointer to the pack.
+ * @param[In] buffer A buffer to store the constructed filename in. 
+ * @param[In] size The size of the buffer, if the buffer is not large enough, the function will return -1 and errno will be set to ERANGE.
+ * @return int 0 on success, otherwise -1 and errno will be set
+ */
+extern int inventory_pack_filename(struct fridge_inventory_pack* pack, char* buffer, size_t size);
 
 /**
  * @brief Marks a pack for being currently unpacked. This can be used to indicate whether

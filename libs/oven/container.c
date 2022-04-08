@@ -55,6 +55,8 @@ static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
 static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
 static struct VaFsGuid g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
 static struct VaFsGuid g_versionGuid   = CHEF_PACKAGE_VERSION_GUID;
+static struct VaFsGuid g_iconGuid      = CHEF_PACKAGE_ICON_GUID;
+static struct VaFsGuid g_commandsGuid  = CHEF_PACKAGE_APPS_GUID;
 
 static const char* __get_filename(
 	const char* path)
@@ -419,13 +421,11 @@ static int __parse_version_string(const char* string, struct chef_vafs_feature_p
 	return 0;
 }
 
-static int __write_package_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
+static int __write_header_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
 {
 	struct chef_vafs_feature_package_header*  packageHeader;
-	struct chef_vafs_feature_package_version* packageVersion;
 	size_t                                    featureSize;
 	char*                                     dataPointer;
-	char*                                     tagPointer;
 	int                                       status;
 
 	// count up the data requirements for the package header
@@ -447,7 +447,7 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 	packageHeader->header.Length = featureSize;
 
 	// fill in info
-	packageHeader->type  = options->type;
+	packageHeader->type = options->type;
 
 	// fill in lengths
 	packageHeader->package_length          = strlen(name);
@@ -502,8 +502,19 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 	}
 
 	// create the package version
+	return status;
+}
+
+static int __write_version_metadata(struct VaFs* vafs, const char* version)
+{
+	struct chef_vafs_feature_package_version* packageVersion;
+	size_t                                    featureSize;
+	char*                                     tagPointer;
+	char*                                     dataPointer;
+	int                                       status;
+
 	featureSize = sizeof(struct chef_vafs_feature_package_version);
-	tagPointer = strchr(options->version, '+');
+	tagPointer = strchr(version, '+');
 	if (tagPointer != NULL) {
 		featureSize += strlen(tagPointer);
 	}
@@ -517,9 +528,9 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 	memcpy(&packageVersion->header.Guid, &g_versionGuid, sizeof(struct VaFsGuid));
 	packageVersion->header.Length = featureSize;
 
-	status = __parse_version_string(options->version, packageVersion);
+	status = __parse_version_string(version, packageVersion);
 	if (status) {
-		fprintf(stderr, "oven: failed to parse version string %s\n", options->version);
+		fprintf(stderr, "oven: failed to parse version string %s\n", version);
 		return -1;
 	}
 
@@ -535,7 +546,89 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 	// write the package header
 	status = vafs_feature_add(vafs, &packageVersion->header);
 	free(packageVersion);
-	return status;
+	return 0;
+}
+
+static int __write_icon_metadata(struct VaFs* vafs, const char* path)
+{
+	struct chef_vafs_feature_package_icon* packageIcon;
+	long                                   iconSize;
+	char*                                  iconBuffer;
+	char*                                  dataPointer;
+	int                                    status;
+	FILE* 								   file;
+
+	file = fopen(path, "rb");
+	if (!file) {
+		fprintf(stderr, "oven: failed to open icon file %s\n", path);
+		return -1;
+	}
+
+	fseek(file, 0, SEEK_END);
+	iconSize = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	iconBuffer = malloc(iconSize);
+	if (!iconBuffer) {
+		fprintf(stderr, "oven: failed to allocate icon buffer\n");
+		fclose(file);
+		return -1;
+	}
+
+	if (fread(iconBuffer, 1, iconSize, file) != iconSize) {
+		fprintf(stderr, "oven: failed to read icon file %s\n", path);
+		fclose(file);
+		free(iconBuffer);
+		return -1;
+	}
+	fclose(file);
+
+	packageIcon = malloc(sizeof(struct chef_vafs_feature_package_icon) + iconSize);
+	if (!packageIcon) {
+		fprintf(stderr, "oven: failed to allocate package version\n");
+		return -1;
+	}
+
+	memcpy(&packageIcon->header.Guid, &g_iconGuid, sizeof(struct VaFsGuid));
+	packageIcon->header.Length = sizeof(struct chef_vafs_feature_package_icon) + iconSize;
+
+	dataPointer = (char*)packageIcon + sizeof(struct chef_vafs_feature_package_icon);
+	memcpy(dataPointer, iconBuffer, iconSize);
+	free(iconBuffer);
+
+	// write the package header
+	status = vafs_feature_add(vafs, &packageIcon->header);
+	free(packageIcon);
+	return 0;
+}
+
+static int __write_commands_metadata(struct VaFs* vafs, struct list* commands)
+{
+	return 0;
+}
+
+static int __write_package_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
+{
+	int status;
+
+	status = __write_header_metadata(vafs, name, options);
+	if (status) {
+		fprintf(stderr, "oven: failed to write package header\n");
+		return -1;
+	}
+
+	status = __write_version_metadata(vafs, options->version);
+	if (status) {
+		fprintf(stderr, "oven: failed to write package version\n");
+		return -1;
+	}
+
+	status = __write_icon_metadata(vafs, options->icon);
+	if (status) {
+		fprintf(stderr, "oven: failed to write package icon\n");
+		return -1;
+	}
+
+	return __write_commands_metadata(vafs, options->commands);
 }
 
 int oven_pack(struct oven_pack_options* options)

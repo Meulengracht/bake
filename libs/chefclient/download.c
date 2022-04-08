@@ -26,6 +26,7 @@
 #include <string.h>
 
 struct pack_response {
+    int         revision;
     const char* token;
     const char* url;
 };
@@ -96,6 +97,7 @@ static int __parse_pack_response(const char* response, struct pack_response* pac
         return -1;
     }
 
+    packResponse->revision = json_integer_value(json_object_get(root, "pack-revision"));
     packResponse->token = strdup(json_string_value(json_object_get(root, "sas-token")));
     packResponse->url = strdup(json_string_value(json_object_get(root, "blob-url")));
     json_decref(root);
@@ -263,6 +265,9 @@ int chefclient_pack_download(struct chef_download_params* params, const char* pa
         fprintf(stderr, "chefclient_pack_download: failed to create download request [%s]\n", strerror(errno));
         return status;
     }
+
+    // update the revision
+    params->revision = packResponse.revision;
 
     // prepare download context
     downloadContext.publisher = params->publisher;
