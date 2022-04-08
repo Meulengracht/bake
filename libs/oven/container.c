@@ -217,39 +217,68 @@ static int __write_file(
 	return 0;
 }
 
+static int __matches_filters(const char* path, struct list* filters)
+{
+    struct list_item* item;
+
+    if (filters->count == 0) {
+        return 0; // YES! no filters means everything matches
+    }
+
+    list_foreach(filters, item) {
+        struct oven_value_item* filter = (struct oven_value_item*)item;
+        if (strfilter(filter->value, path, 0) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int __write_directory(
 	struct progress_context*    progress,
+	struct list*                filters,
 	struct VaFsDirectoryHandle* directoryHandle,
-	const char*                 path)
+	const char*                 path,
+	const char*                 subPath)
 {
 	struct dirent* dp;
 	DIR*           dfd;
 	int            status = 0;
-	char*          filepathBuffer;
 
 	if ((dfd = opendir(path)) == NULL) {
 		fprintf(stderr, "oven: can't open initrd folder\n");
 		return -1;
 	}
 
-	filepathBuffer = malloc(512);
 	while ((dp = readdir(dfd)) != NULL) {
 		enum platform_filetype fileType;
 		uint32_t               filePermissions;
+		const char*            combinedPath;
+        const char*            combinedSubPath;
 
 		if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0) {
 			continue;
 		}
 
-		// only append a '/' if not provided
-		if (path[strlen(path) - 1] != '/')
-			sprintf(filepathBuffer, "%s/%s", path, dp->d_name);
-		else
-			sprintf(filepathBuffer, "%s%s", path, dp->d_name);
+		combinedPath    = strpathcombine(path, dp->d_name);
+        combinedSubPath = strpathcombine(subPath, dp->d_name);
+        if (!combinedPath || !combinedSubPath) {
+			free((void*)combinedPath);
+            break;
+        }
 
-		status = platform_stat(filepathBuffer, &fileType, &filePermissions);
+        // does this match filters?
+        if (__matches_filters(combinedSubPath, filters)) {
+			free((void*)combinedPath);
+			free((void*)combinedSubPath);
+            continue;
+        }
+
+		status = platform_stat(combinedPath, &fileType, &filePermissions);
 		if (status != 0) {
-			fprintf(stderr, "oven: failed to get filetype for '%s'\n", filepathBuffer);
+			fprintf(stderr, "oven: failed to get filetype for '%s'\n", combinedPath);
+			free((void*)combinedPath);
+			free((void*)combinedSubPath);
 			continue;
 		}
 
@@ -263,20 +292,20 @@ static int __write_directory(
 				continue;
 			}
 
-			status = __write_directory(progress, subdirectoryHandle, filepathBuffer);
+			status = __write_directory(progress, filters, subdirectoryHandle, combinedPath, combinedSubPath);
 			if (status != 0) {
-				fprintf(stderr, "oven: unable to write directory %s\n", filepathBuffer);
+				fprintf(stderr, "oven: unable to write directory %s\n", combinedPath);
 				break;
 			}
 
 			status = vafs_directory_close(subdirectoryHandle);
 			if (status) {
-				fprintf(stderr, "oven: failed to close directory '%s'\n", filepathBuffer);
+				fprintf(stderr, "oven: failed to close directory '%s'\n", combinedPath);
 				break;
 			}
 			progress->directories++;
 		} else if (fileType == PLATFORM_FILETYPE_FILE) {
-			status = __write_file(directoryHandle, filepathBuffer, dp->d_name, filePermissions);
+			status = __write_file(directoryHandle, combinedPath, dp->d_name, filePermissions);
 			if (status != 0) {
 				fprintf(stderr, "oven: unable to write file %s\n", dp->d_name);
 				break;
@@ -284,9 +313,9 @@ static int __write_directory(
 			progress->files++;
 		} else if (fileType == PLATFORM_FILETYPE_SYMLINK) {
 			char* linkpath;
-			status = platform_readlink(filepathBuffer, &linkpath);
+			status = platform_readlink(combinedPath, &linkpath);
 			if (status != 0) {
-				fprintf(stderr, "oven: failed to read link %s\n", filepathBuffer);
+				fprintf(stderr, "oven: failed to read link %s\n", combinedPath);
 				break;
 			}
 
@@ -294,19 +323,18 @@ static int __write_directory(
 			free(linkpath);
 
 			if (status != 0) {
-				fprintf(stderr, "oven: failed to create symlink %s\n", filepathBuffer);
+				fprintf(stderr, "oven: failed to create symlink %s\n", combinedPath);
 				break;
 			}
 			progress->symlinks++;
 		} else {
-			fprintf(stderr, "oven: unknown filetype for '%s'\n", filepathBuffer);
+			fprintf(stderr, "oven: unknown filetype for '%s'\n", combinedPath);
 		}
 
 		// write progress after to update the file/folder in progress
 		__write_progress(dp->d_name, progress, 0);
 	}
 
-	free(filepathBuffer);
 	closedir(dfd);
 	return status;
 }
@@ -684,7 +712,7 @@ int oven_pack(struct oven_pack_options* options)
 		goto cleanup;
 	}
 
-	status = __write_directory(&progressContext, directoryHandle, __get_install_path());
+	status = __write_directory(&progressContext, options->filters, directoryHandle, __get_install_path(), NULL);
 	if (status != 0) {
 		fprintf(stderr, "oven: unable to write directory\n");
 		goto cleanup;

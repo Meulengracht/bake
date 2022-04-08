@@ -17,6 +17,8 @@ add_library(platform STATIC
     sleep.c
     spawn.c
     stat.c
+    strfilter.c
+    strpathcombine.c
     strreplace.c
     strsplit.c
     symlink.c

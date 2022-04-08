@@ -19,6 +19,7 @@
 #include <chef/client.h>
 #include <errno.h>
 #include "inventory.h"
+#include <libplatform.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <string.h>
@@ -45,25 +46,6 @@ struct fridge_inventory {
 };
 
 #define PACKAGE_TEMP_PATH "pack.inprogress"
-
-static char* __combine(const char* a, const char* b)
-{
-    char* combined;
-    int   status;
-
-    combined = malloc(strlen(a) + strlen(b) + 2);
-    if (combined == NULL) {
-        return NULL;
-    }
-
-    status = sprintf(combined, "%s/%s", a, b);
-    if (status < 0) {
-        free(combined);
-        return NULL;
-    }
-
-    return combined;
-}
 
 static struct fridge_inventory* __inventory_new(void)
 {
@@ -213,7 +195,7 @@ int inventory_load(const char* path, struct fridge_inventory** inventoryOut)
         return -1;
     }
 
-    filePath = __combine(path, "inventory.json");
+    filePath = strpathcombine(path, "inventory.json");
     if (filePath == NULL) {
         return -1;
     }
@@ -478,7 +460,7 @@ int inventory_save(struct fridge_inventory* inventory)
         return -1;
     }
 
-    filePath = __combine(inventory->path, "inventory.json");
+    filePath = strpathcombine(inventory->path, "inventory.json");
     if (filePath == NULL) {
         return -1;
     }

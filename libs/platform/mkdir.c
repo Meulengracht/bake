@@ -33,7 +33,7 @@ static int __directory_exists(
         }
         return -1;
     }
-    return S_ISDIR(st.st_mode) > 0 ? 1 : -1;
+    return S_ISDIR(st.st_mode) ? 1 : -1;
 }
 
 int platform_mkdir(const char* path)

@@ -24,6 +24,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+// include dirent.h for directory operations
+#if defined(_WIN32) || defined(_WIN64)
+#include <dirent_win32.h>
+#else
+#include <dirent.h>
+#endif
+
 #define OVEN_ROOT ".oven"
 #define OVEN_BUILD_ROOT OVEN_ROOT "/build"
 #define OVEN_INSTALL_ROOT OVEN_ROOT "/install"
@@ -96,25 +103,6 @@ static int __get_cwd(char** bufferOut)
     return 0;
 }
 
-static const char* __combine(const char* a, const char* b)
-{
-    char* combined;
-    int   status;
-
-    combined = malloc(strlen(a) + strlen(b) + 2);
-    if (combined == NULL) {
-        return NULL;
-    }
-
-    status = sprintf(combined, "%s/%s", a, b);
-    if (status < 0) {
-        free(combined);
-        return NULL;
-    }
-
-    return combined;
-}
-
 static int __create_path(const char* path)
 {
     if (platform_mkdir(path)) {
@@ -151,9 +139,9 @@ int oven_initialize(char** envp, const char* recipeScope, const char* fridgePrep
     strbasename(recipeScope, tmp, sizeof(tmp));
 
     // initialize oven paths
-    root        = __combine(cwd, OVEN_ROOT);
-    buildRoot   = __combine(cwd, OVEN_BUILD_ROOT);
-    installRoot = __combine(cwd, OVEN_INSTALL_ROOT);
+    root        = strpathcombine(cwd, OVEN_ROOT);
+    buildRoot   = strpathcombine(cwd, OVEN_BUILD_ROOT);
+    installRoot = strpathcombine(cwd, OVEN_INSTALL_ROOT);
 
     if (root == NULL || buildRoot == NULL || installRoot == NULL) {
         free((void*)root);
@@ -168,8 +156,8 @@ int oven_initialize(char** envp, const char* recipeScope, const char* fridgePrep
 
     // update oven context
     g_ovenContext.process_environment   = (const char**)envp;
-    g_ovenContext.build_root            = __combine(buildRoot, &tmp[0]);
-    g_ovenContext.install_root          = __combine(installRoot, &tmp[0]);;
+    g_ovenContext.build_root            = strpathcombine(buildRoot, &tmp[0]);
+    g_ovenContext.install_root          = strpathcombine(installRoot, &tmp[0]);;
     if (g_ovenContext.build_root == NULL || g_ovenContext.install_root == NULL) {
         free((void*)root);
         free((void*)buildRoot);
@@ -838,20 +826,165 @@ cleanup:
     return status;
 }
 
-int oven_include_filters(struct list* filters)
+static int __copy_file(const char* source, const char* destination)
+{
+    int    status;
+    FILE*  sourceFile;
+    FILE*  destinationFile;
+    char*  buffer;
+    size_t fileSize;
+
+    sourceFile = fopen(source, "rb");
+    if (!sourceFile) {
+        return -1;
+    }
+
+    fseek(sourceFile, 0, SEEK_END);
+    fileSize = ftell(sourceFile);
+    fseek(sourceFile, 0, SEEK_SET);
+
+    buffer = (char*)malloc(fileSize);
+    if (!buffer) {
+        fclose(sourceFile);
+        return -1;
+    }
+
+    if (fread(buffer, 1, fileSize, sourceFile) != fileSize) {
+        free(buffer);
+        fclose(sourceFile);
+        return -1;
+    }
+    fclose(sourceFile);
+
+    destinationFile = fopen(destination, "wb");
+    if (!destinationFile) {
+        fclose(sourceFile);
+        return -1;
+    }
+
+    if (fwrite(buffer, 1, fileSize, destinationFile) != fileSize) {
+        free(buffer);
+        fclose(destinationFile);
+        return -1;
+    }
+
+    fclose(destinationFile);
+    return status;
+}
+
+static int __matches_filters(const char* path, struct list* filters)
 {
     struct list_item* item;
 
+    if (filters->count == 0) {
+        return 0; // YES! no filters means everything matches
+    }
+
+    list_foreach(filters, item) {
+        struct oven_value_item* filter = (struct oven_value_item*)item;
+        if (strfilter(filter->value, path, 0) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int __copy_files_with_filters(const char* sourceRoot, const char* path, struct list* filters, const char* destinationRoot)
+{
+    // recursively iterate through the directory and copy all files
+    // as long as they match the list of filters
+    int            status = -1;
+    struct dirent* entry;
+    DIR*           dir;
+    const char*    finalSource;
+    const char*    finalDestination = NULL;
+    
+    finalSource = strpathcombine(sourceRoot, path);
+    if (!finalSource) {
+        goto cleanup;
+    }
+
+    finalDestination = strpathcombine(destinationRoot, path);
+    if (!finalDestination) {
+        goto cleanup;
+    }
+
+    dir = opendir(finalSource);
+    if (!dir) {
+        goto cleanup;
+    }
+
+    // make sure target is created
+    if (platform_mkdir(finalDestination)) {
+        goto cleanup;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        const char* combinedSubPath;
+
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        combinedSubPath = strpathcombine(path, entry->d_name);
+        if (!combinedSubPath) {
+            goto cleanup;
+        }
+
+        // does this match filters?
+        if (__matches_filters(combinedSubPath, filters)) {
+            free((void*)combinedSubPath);
+            continue;
+        }
+
+        // oh ok, is it a directory?
+        if (entry->d_type == DT_DIR) {
+            status = __copy_files_with_filters(sourceRoot, combinedSubPath, filters, destinationRoot);
+            free((void*)combinedSubPath);
+            if (status) {
+                goto cleanup;
+            }
+        } else {
+            // ok, it's a file, copy it
+            char* sourceFile      = strpathcombine(finalSource, entry->d_name);
+            char* destinationFile = strpathcombine(finalDestination, entry->d_name);
+            free((void*)combinedSubPath);
+            if (!sourceFile || !destinationFile) {
+                free((void*)sourceFile);
+                goto cleanup;
+            }
+
+            status = __copy_file(sourceFile, destinationFile);
+            free((void*)sourceFile);
+            free((void*)destinationFile);
+            if (status) {
+                goto cleanup;
+            }
+        }
+    }
+
+    closedir(dir);
+    status = 0;
+
+cleanup:
+    free((void*)finalSource);
+    free((void*)finalDestination);
+    return status;
+}
+
+int oven_include_filters(struct list* filters)
+{
     if (!filters) {
         errno = EINVAL;
         return -1;
     }
 
-    list_foreach(filters, item) {
-        struct oven_filter_item* filter = (struct oven_filter_item*)item;
-        // TODO support filters
-    }
-    return 0;
+    return __copy_files_with_filters(
+        g_ovenContext.variables.fridge_prep_directory,
+        NULL,
+        filters,
+        g_ovenContext.recipe.install_root
+    );
 }
 
 void oven_cleanup(void)

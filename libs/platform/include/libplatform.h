@@ -121,9 +121,23 @@ enum platform_filetype {
 };
 
 extern void   strbasename(const char* path, char* buffer, size_t bufferSize);
+extern char*  strpathcombine(const char* path1, const char* path2);
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
 extern char*  strreplace(char* text, const char* find, const char* replaceWith);
+
+#define FILTER_FOLDCASE 0x1
+
+/**
+ * @brief Supports most of the glob patterns from the POSIX standard. The
+ * following wildcards are supported: ?, *,  \\, !
+ * 
+ * @param filter 
+ * @param text 
+ * @param flags 
+ * @return int returns 0 if filter was a match, -1 if not
+ */
+extern int strfilter(const char* filter, const char* text, int flags);
 
 /**
  * @brief Creates the provided directory path, if the directory already exists
