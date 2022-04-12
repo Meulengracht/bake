@@ -112,8 +112,10 @@ int publish_main(int argc, char** argv)
 
     // dump information
     printf("publishing package: %s\n", package->package);
+    printf("platform:           %s\n", params.platform);
+    printf("architecture:       %s\n", params.arch);
     printf("channel:            %s\n", params.channel);
-    printf("version:            %d.%d\n", version->major, version->minor);
+    printf("version:            %d.%d.%d\n", version->major, version->minor, version->patch);
 
     // set the parameter values
     params.package = package;

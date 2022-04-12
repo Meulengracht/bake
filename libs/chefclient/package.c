@@ -75,6 +75,7 @@ static int __load_package_version(struct chef_vafs_feature_package_version* head
 
     version->major = header->major;
     version->minor = header->minor;
+    version->patch = header->patch;
     version->revision = header->revision;
 
     if (header->tag_length) {
