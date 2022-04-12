@@ -70,48 +70,74 @@ static const char* __get_filename(
     return filename;
 }
 
-int __get_count_recursive(const char *path, int* fileCountOut, int* SymlinkCountOut, int* dirCountOut)
+static int __matches_filters(const char* path, struct list* filters)
 {
-    struct dirent* direntp;
-    DIR*           dir_ptr = NULL;
+    struct list_item* item;
+
+    if (filters->count == 0) {
+        return 0; // YES! no filters means everything matches
+    }
+
+    list_foreach(filters, item) {
+        struct oven_value_item* filter = (struct oven_value_item*)item;
+        if (strfilter(filter->value, path, 0) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int __get_count_recursive(
+    const char*  path,
+    const char*  subPath,
+    struct list* filters,
+    int*         fileCountOut,
+    int*         SymlinkCountOut,
+    int*         dirCountOut)
+{
+    struct dirent* dp;
+    DIR*           d;
+    int            status = 0;
 
     if (!path) {
         errno = EINVAL;
         return -1;
     }
 
-    if ((dir_ptr = opendir(path)) == NULL) {
+    if ((d = opendir(path)) == NULL) {
         return -1;
     }
 
-    while ((direntp = readdir(dir_ptr))) {
-        if (strcmp(direntp->d_name,".") == 0 || strcmp(direntp->d_name,"..") == 0) {
+    while ((dp = readdir(d))) {
+        char* combinedPath;
+        char* combinedSubPath;
+
+        if (strcmp(dp->d_name,".") == 0 || strcmp(dp->d_name,"..") == 0) {
              continue;
         }
 
-        switch (direntp->d_type) {
+        combinedPath    = strpathcombine(path, dp->d_name);
+        combinedSubPath = strpathcombine(subPath, dp->d_name);
+        if (!combinedPath || !combinedSubPath) {
+            free((void*)combinedPath);
+            break;
+        }
+
+        // does this match filters?
+        status = __matches_filters(combinedSubPath, filters);
+        if (status) {
+            free((void*)combinedPath);
+            free((void*)combinedSubPath);
+            continue;
+        }
+
+        switch (dp->d_type) {
             case DT_REG:
                 (*fileCountOut)++;
                 break;
             case DT_DIR: {
-                char* npath;
-
                 (*dirCountOut)++;
-                
-                npath = malloc(strlen(path)+strlen(direntp->d_name)+2);
-                if (npath == NULL) {
-                    errno = ENOMEM;
-                    return -1;
-                }
-                
-                sprintf(npath, "%s/%s", path, direntp->d_name);
-                
-                if (__get_count_recursive(npath, fileCountOut, SymlinkCountOut, dirCountOut) == -1) {
-                    free(npath);
-                    return -1;
-                }
-
-                free(npath);
+                status = __get_count_recursive(combinedPath, combinedSubPath, filters, fileCountOut, SymlinkCountOut, dirCountOut);
             } break;
             case DT_LNK:
                 (*SymlinkCountOut)++;
@@ -119,9 +145,15 @@ int __get_count_recursive(const char *path, int* fileCountOut, int* SymlinkCount
             default:
                 break;
         }
+
+        free((void*)combinedPath);
+        free((void*)combinedSubPath);
+        if (status) {
+            break;
+        }
     }
-    closedir(dir_ptr);
-    return 0;
+    closedir(d);
+    return status;
 }
 
 static void __write_progress(const char* prefix, struct progress_context* context, int verbose)
@@ -213,23 +245,6 @@ static int __write_file(
     if (status) {
         fprintf(stderr, "oven: failed to close file '%s'\n", filename);
         return -1;
-    }
-    return 0;
-}
-
-static int __matches_filters(const char* path, struct list* filters)
-{
-    struct list_item* item;
-
-    if (filters->count == 0) {
-        return 0; // YES! no filters means everything matches
-    }
-
-    list_foreach(filters, item) {
-        struct oven_value_item* filter = (struct oven_value_item*)item;
-        if (strfilter(filter->value, path, 0) != 0) {
-            return -1;
-        }
     }
     return 0;
 }
@@ -591,6 +606,11 @@ static int __write_icon_metadata(struct VaFs* vafs, const char* path)
     int                                    status;
     FILE* 								   file;
 
+    // icon is optional, so just return
+    if (path == NULL) {
+        return 0;
+    }
+
     file = fopen(path, "rb");
     if (!file) {
         fprintf(stderr, "oven: failed to open icon file %s\n", path);
@@ -704,11 +724,20 @@ int oven_pack(struct oven_pack_options* options)
     strcat(tmp, ".pack");
 
     // get a file count
-    __get_count_recursive(__get_install_path(),
+    __get_count_recursive(
+        __get_install_path(),
+        NULL,
+        options->filters,
         &progressContext.files_total,
         &progressContext.symlinks_total, 
         &progressContext.directories_total
     );
+
+    // we do not want any empty packs
+    if (progressContext.files_total == 0) {
+        printf("oven: skipping pack %s, no files to pack\n", options->name);
+        return 0;
+    }
 
     // initialize settings
     vafs_config_initialize(&configuration);

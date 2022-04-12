@@ -283,7 +283,7 @@ packs:
     # to the system once the application is installed. These commands
     # can be registered to a binary or script inside the app package
     commands:
-    - name: myapp
+      - name: myapp
         path: /bin/myapp
         arguments: [--arg1, --arg2]
         type: executable
