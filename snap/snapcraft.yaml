@@ -15,8 +15,6 @@ apps:
     command: usr/bin/bake
   order:
     command: usr/bin/order
-  serve:
-    command: usr/bin/serve
 
 parts:
   chef-src:
