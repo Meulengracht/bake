@@ -48,10 +48,11 @@ static int __parse_packname(char* pack, struct chef_info_params* params)
 
 static void __print_channel(struct chef_channel* channel)
 {
-    printf("      * %s   %i.%i.%i",
+    printf("      * %s   %i.%i.%i (%i)",
         channel->name, 
         channel->current_version.major,
         channel->current_version.minor,
+        channel->current_version.patch,
         channel->current_version.revision
     );
 
