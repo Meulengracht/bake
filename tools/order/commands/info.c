@@ -217,11 +217,13 @@ static void __print_package(struct chef_package* package)
 {
     printf("Name:             %s\n", package->package);
     printf("Publisher:        %s\n", package->publisher);
+    printf("Summary:          %s\n", package->summary);
     __print_description("Description:      ", "    ", package->description);
     printf("Homepage:         %s\n", package->homepage);
     printf("License:          %s\n", package->license);
     printf("Maintainer:       %s\n", package->maintainer);
     printf("Maintainer Email: %s\n", package->maintainer_email);
+    printf("EULA:             %s\n", (package->eula != NULL ? "yes" : "no"));
     
     printf("Platforms:\n");
     for (int i = 0; i < package->platforms_count; i++) {

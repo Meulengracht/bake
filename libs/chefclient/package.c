@@ -37,6 +37,11 @@ static int __load_package_header(struct chef_vafs_feature_package_header* header
         data += header->package_length;
     }
 
+    if (header->summary_length) {
+        package->summary = strndup(data, header->summary_length);
+        data += header->summary_length;
+    }
+
     if (header->description_length) {
         package->description = strndup(data, header->description_length);
         data += header->description_length;

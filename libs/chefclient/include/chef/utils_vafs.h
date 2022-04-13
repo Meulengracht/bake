@@ -24,6 +24,8 @@
 #include <stdint.h>
 #include <vafs/vafs.h>
 
+#define CHEF_PACKAGE_VERSION 0x00010000
+
 #define CHEF_PACKAGE_HEADER_GUID  { 0x91C48A1D, 0xC445, 0x4607, { 0x95, 0x98, 0xFE, 0x73, 0x49, 0x1F, 0xD3, 0x7E } }
 #define CHEF_PACKAGE_VERSION_GUID { 0x478ED773, 0xAA23, 0x45DA, { 0x89, 0x23, 0x9F, 0xCE, 0x5F, 0x2E, 0xCB, 0xED } }
 #define CHEF_PACKAGE_ICON_GUID    { 0xDB6981BF, 0xC344, 0x47F5, { 0xB6, 0xE1, 0x5C, 0x3C, 0x76, 0xF5, 0x6F, 0xFF } }
@@ -32,11 +34,13 @@
 struct chef_vafs_feature_package_header {
     struct VaFsFeatureHeader header;
 
+    uint32_t                 version;
     enum chef_package_type   type;
 
     // lengths of the data for each string, none of the strings
     // are zero terminated, which must be added at load
     uint32_t                 package_length;
+    uint32_t                 summary_length;
     uint32_t                 description_length;
     uint32_t                 homepage_length;
     uint32_t                 license_length;

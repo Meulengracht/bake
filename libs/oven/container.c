@@ -479,11 +479,13 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
     // count up the data requirements for the package header
     featureSize = sizeof(struct chef_vafs_feature_package_header);
     featureSize += strlen(name);
+    featureSize += strlen(options->summary);
     featureSize += options->description == NULL ? 0 : strlen(options->description);
     featureSize += options->license == NULL ? 0 : strlen(options->license);
-    featureSize += options->author == NULL ? 0 : strlen(options->author);
-    featureSize += options->email == NULL ? 0 : strlen(options->email);
+    featureSize += options->eula == NULL ? 0 : strlen(options->eula);
     featureSize += options->url == NULL ? 0 : strlen(options->url);
+    featureSize += strlen(options->author);
+    featureSize += strlen(options->email);
     
     packageHeader = malloc(featureSize);
     if (!packageHeader) {
@@ -495,16 +497,18 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
     packageHeader->header.Length = featureSize;
 
     // fill in info
-    packageHeader->type = options->type;
+    packageHeader->version = CHEF_PACKAGE_VERSION;
+    packageHeader->type    = options->type;
 
     // fill in lengths
     packageHeader->package_length          = strlen(name);
+    packageHeader->summary_length          = strlen(options->summary);
     packageHeader->description_length      = options->description == NULL ? 0 : strlen(options->description);
     packageHeader->license_length          = options->license == NULL ? 0 : strlen(options->license);
     packageHeader->eula_length             = options->eula == NULL ? 0 : strlen(options->eula);
     packageHeader->homepage_length         = options->url == NULL ? 0 : strlen(options->url);
-    packageHeader->maintainer_length       = options->author == NULL ? 0 : strlen(options->author);
-    packageHeader->maintainer_email_length = options->email == NULL ? 0 : strlen(options->email);
+    packageHeader->maintainer_length       = strlen(options->author);
+    packageHeader->maintainer_email_length = strlen(options->email);
 
     // fill in data ptrs
     dataPointer = (char*)packageHeader + sizeof(struct chef_vafs_feature_package_header);
@@ -512,6 +516,10 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
     // required
     memcpy(dataPointer, name, packageHeader->package_length);
     dataPointer += packageHeader->package_length;
+
+    // required
+    memcpy(dataPointer, options->summary, packageHeader->summary_length);
+    dataPointer += packageHeader->summary_length;
 
     if (options->description) {
         memcpy(dataPointer, options->description, packageHeader->description_length);
@@ -548,8 +556,6 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
         fprintf(stderr, "oven: failed to write package header\n");
         return -1;
     }
-
-    // create the package version
     return status;
 }
 
