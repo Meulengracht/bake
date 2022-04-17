@@ -34,6 +34,8 @@ struct chef_version {
     int         patch;
     int         revision;
     const char* tag;
+    long long   size;
+    const char* created;
 };
 
 struct chef_channel {

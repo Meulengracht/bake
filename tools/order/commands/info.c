@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <chef/client.h>
+#include <libplatform.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -46,17 +47,53 @@ static int __parse_packname(char* pack, struct chef_info_params* params)
     return 0;
 }
 
-static void __print_channel(struct chef_channel* channel)
+static void __format_quantity(long long size, char* buffer, size_t bufferSize)
 {
-    printf("      * %s   %i.%i.%i (%i)",
+	char*  suffix[]       = { "B", "KB", "MB", "GB", "TB" };
+    int    i              = 0;
+	double remainingBytes = (double)size;
+
+	if (size >= 1024) {
+        long long count = size;
+		for (; (count / 1024) > 0 && i < 4 /* len(suffix)-1 */; i++, count /= 1024) {
+			remainingBytes = count / 1024.0;
+        }
+	}
+	snprintf(&buffer[0], bufferSize, "%.02lf%s", remainingBytes, suffix[i]);
+}
+
+static void __format_date(const char* dateTime, char* buffer, size_t bufferSize)
+{
+    // find the 'T' and strip it
+    char* t = strchr(dateTime, 'T');
+
+    memset(buffer, 0, bufferSize);
+    if (t == NULL) {
+        return;
+    }
+    strncpy(buffer, dateTime, t - dateTime);
+}
+
+static void __print_channel(struct chef_channel* channel, const char* padding)
+{
+    char quantityBuffer[32];
+    char dateBuffer[32];
+
+    __format_quantity(channel->current_version.size, quantityBuffer, sizeof(quantityBuffer));
+    __format_date(channel->current_version.created, dateBuffer, sizeof(dateBuffer));
+    printf("%s%.25s   %i.%i.%i (%i) %s %s",
+        padding,
         channel->name, 
         channel->current_version.major,
         channel->current_version.minor,
         channel->current_version.patch,
-        channel->current_version.revision
+        channel->current_version.revision,
+        &quantityBuffer[0],
+        &dateBuffer[0]
     );
 
-    if (channel->current_version.tag != NULL) {
+    // if it is set, show it
+    if (strcmp(channel->current_version.tag, "<not set>")) {
         printf("%s", channel->current_version.tag);
     }
     printf("\n");
@@ -67,7 +104,7 @@ static void __print_architecture(struct chef_architecture* architecture)
     printf("    * %s\n", architecture->name);
     printf("      Channels:\n");
     for (int i = 0; i < architecture->channels_count; i++) {
-        __print_channel(&architecture->channels[i]);
+        __print_channel(&architecture->channels[i], "      * ");
     }
 }
 
@@ -214,7 +251,33 @@ static int __print_description(const char* prefix, const char* padding, const ch
     return 0;
 }
 
-static void __print_package(struct chef_package* package)
+static void __print_verbose(struct chef_package* package)
+{
+    printf("Platforms:\n");
+    for (int i = 0; i < package->platforms_count; i++) {
+        __print_platform(&package->platforms[i]);
+    }
+}
+
+static void __print_normal(struct chef_package* package)
+{
+    printf("Channels:\n");
+    for (int i = 0; i < package->platforms_count; i++) {
+        if (strcmp(package->platforms[i].name, CHEF_PLATFORM_STR) == 0) {
+            for (int j = 0; j < package->platforms[i].architectures_count; j++) {
+                if (strcmp(package->platforms[i].architectures[j].name, CHEF_ARCHITECTURE_STR) == 0) {
+                    for (int k = 0; k < package->platforms[i].architectures[j].channels_count; k++) {
+                        __print_channel(&package->platforms[i].architectures[j].channels[k], "  ");
+                    }
+                    break;
+                }
+            }
+            break;
+        }
+    }
+}
+
+static void __print_package(struct chef_package* package, int verbose)
 {
     printf("Name:             %s\n", package->package);
     printf("Publisher:        %s\n", package->publisher);
@@ -225,12 +288,11 @@ static void __print_package(struct chef_package* package)
     printf("Maintainer:       %s\n", package->maintainer);
     printf("Maintainer Email: %s\n", package->maintainer_email);
     printf("EULA:             %s\n", (package->eula != NULL ? "yes" : "no"));
-    
-    printf("Platforms:\n");
-    for (int i = 0; i < package->platforms_count; i++) {
-        __print_platform(&package->platforms[i]);
+    if (verbose) {
+        __print_verbose(package);
+    } else {
+        __print_normal(package);
     }
-
     printf("\n");
 }
 
@@ -239,6 +301,7 @@ int info_main(int argc, char** argv)
     struct chef_info_params params   = { 0 };
     struct chef_package*    package;
     char*                   packCopy = NULL;
+    int                     printAll = 0;
     int                     status;
 
     if (argc > 2) {
@@ -246,8 +309,9 @@ int info_main(int argc, char** argv)
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
-            }
-            else {
+            } else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--all")) {
+                printAll = 1;
+            } else {
                 // do this only once
                 if (params.publisher == NULL) {
                 // assume this is the pack name
@@ -291,7 +355,7 @@ int info_main(int argc, char** argv)
         goto cleanup;
     }
 
-    __print_package(package);
+    __print_package(package, printAll);
     chef_package_free(package);
 
 cleanup:

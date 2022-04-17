@@ -60,8 +60,14 @@ struct chef_vafs_feature_package_version {
     uint32_t                 tag_length;
 };
 
+#define CHEF_PACKAGE_ICON_TYPE_PNG  0x01
+#define CHEF_PACKAGE_ICON_TYPE_JPEG 0x02
+#define CHEF_PACKAGE_ICON_TYPE_GIF  0x03
+#define CHEF_PACKAGE_ICON_TYPE_BMP  0x04
+
 struct chef_vafs_feature_package_icon {
     struct VaFsFeatureHeader header;
+    int                      icon_type;
 };
 
 struct chef_vafs_feature_package_apps {

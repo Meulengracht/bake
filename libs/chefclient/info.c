@@ -54,15 +54,14 @@ static int __parse_channels(json_t* channels, struct chef_architecture* architec
         return -1;
     }
 
-    for (i = 0; i < channelsCount; i++)
-    {
+    for (i = 0; i < channelsCount; i++) {
         json_t* channel = json_array_get(channels, i);
         json_t* version = json_object_get(channel, "current-version");
         json_t* version_major = json_object_get(version, "major");
         json_t* version_minor = json_object_get(version, "minor");
         json_t* version_patch = json_object_get(version, "patch");
         json_t* version_revision = json_object_get(version, "revision");
-        json_t* version_tag = json_object_get(version, "tag");
+        json_t* size_revision = json_object_get(version, "size");
 
         // transfer members of architecture
         architecture->channels[i].name = __get_json_string_safe(channel, "name");
@@ -70,7 +69,9 @@ static int __parse_channels(json_t* channels, struct chef_architecture* architec
         architecture->channels[i].current_version.minor = json_integer_value(version_minor);
         architecture->channels[i].current_version.patch = json_integer_value(version_patch);
         architecture->channels[i].current_version.revision = json_integer_value(version_revision);
-        architecture->channels[i].current_version.tag = json_string_value(version_tag);
+        architecture->channels[i].current_version.tag = __get_json_string_safe(version, "additional");
+        architecture->channels[i].current_version.size = json_integer_value(size_revision);
+        architecture->channels[i].current_version.created = __get_json_string_safe(version, "created");
     }
     return 0;
 }
