@@ -22,6 +22,24 @@
 #include <chef/package.h>
 #include <list.h>
 
+
+//****************************************************************************//
+// Oven backend options                                                       //
+//****************************************************************************//
+struct oven_backend_make_options {
+    int in_tree;
+    int parallel;
+};
+
+struct oven_backend_meson_options {
+    const char* cross_file;
+};
+
+union oven_backend_options {
+    struct oven_backend_make_options  make;
+    struct oven_backend_meson_options meson;
+};
+
 struct oven_keypair_item {
     struct list_item list_header;
     const char*      key;
@@ -49,17 +67,19 @@ struct oven_recipe_options {
 };
 
 struct oven_generate_options {
-    const char*  profile;
-    const char*  system;
-    struct list* arguments;
-    struct list* environment;
+    const char*                 profile;
+    const char*                 system;
+    union oven_backend_options* system_options;
+    struct list*                arguments;
+    struct list*                environment;
 };
 
 struct oven_build_options {
-    const char*  profile;
-    const char*  system;
-    struct list* arguments;
-    struct list* environment;
+    const char*                 profile;
+    const char*                 system;
+    union oven_backend_options* system_options;
+    struct list*                arguments;
+    struct list*                environment;
 };
 
 struct oven_pack_options {
@@ -84,11 +104,12 @@ struct oven_pack_options {
  *       functions will fail if this function is not called first.
  * 
  * @param[In] envp
+ * @param[In] architecture
  * @param[In] recipeScope
  * @param[In] fridgePrepDirectory
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int oven_initialize(char** envp, const char* recipeScope, const char* fridgePrepDirectory);
+extern int oven_initialize(char** envp, char* architecture, const char* recipeScope, const char* fridgePrepDirectory);
 
 /**
  * @brief 

@@ -1,7 +1,8 @@
 
 add_library(oven-generators STATIC
+    autotools.c
     cmake.c
-    configure.c
+    meson.c
 )
 
 target_include_directories(oven-generators PRIVATE ../../include)

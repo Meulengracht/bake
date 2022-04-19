@@ -32,12 +32,13 @@ enum recipe_step_type {
 };
 
 struct recipe_step {
-    struct list_item      list_header;
-    enum recipe_step_type type;
-    const char*           system;
-    struct list           depends;
-    struct list           arguments;
-    struct list           env_keypairs;
+    struct list_item           list_header;
+    enum recipe_step_type      type;
+    const char*                system;
+    struct list                depends;
+    struct list                arguments;
+    struct list                env_keypairs;
+    union oven_backend_options options;
 };
 
 struct recipe_part {

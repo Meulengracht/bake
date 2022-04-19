@@ -25,6 +25,7 @@
 #include <chef/client.h>
 #include <errno.h>
 #include <liboven.h>
+#include <libplatform.h>
 #include <recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +37,8 @@ static void __print_help(void)
     printf("Usage: bake pack [options]\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -a, --arch\n");
+    printf("      The target architecture to build for (default: host-arch)\n");
     printf("  -n, --name\n");
     printf("      The name for the produced container image (default: recipe-name)\n");
     printf("  -g, --regenerate\n");
@@ -46,18 +49,20 @@ static void __print_help(void)
 
 static void __initialize_generator_options(struct oven_generate_options* options, struct recipe_step* step)
 {
-    options->profile     = NULL;
-    options->system      = step->system;
-    options->arguments   = &step->arguments;
-    options->environment = &step->env_keypairs;
+    options->profile        = NULL;
+    options->system         = step->system;
+    options->system_options = &step->options;
+    options->arguments      = &step->arguments;
+    options->environment    = &step->env_keypairs;
 }
 
 static void __initialize_build_options(struct oven_build_options* options, struct recipe_step* step)
 {
-    options->profile     = NULL;
-    options->system      = step->system;
-    options->arguments   = &step->arguments;
-    options->environment = &step->env_keypairs;
+    options->profile        = NULL;
+    options->system         = step->system;
+    options->system_options = &step->options;
+    options->arguments      = &step->arguments;
+    options->environment    = &step->env_keypairs;
 }
 
 static void __initialize_pack_options(
@@ -219,6 +224,7 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     int   status;
     char* name = NULL;
+    char* arch = CHEF_ARCHITECTURE_STR;
     int   regenerate = 0;
 
     // catch CTRL-C
@@ -249,6 +255,13 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
                 }
             } else if (!strcmp(argv[i], "-g") || !strcmp(argv[i], "--regenerate")) {
                 regenerate = 1;
+            } else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--arch")) {
+                if (i + 1 < argc) {
+                    arch = argv[i + 1];
+                } else {
+                    fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
+                    return 1;
+                }
             }
         }
     }
@@ -283,7 +296,7 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = oven_initialize(envp, name, fridge_get_prep_directory());
+    status = oven_initialize(envp, arch, name, fridge_get_prep_directory());
     if (status) {
         fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
         return -1;

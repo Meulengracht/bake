@@ -185,6 +185,11 @@ enum state {
     STATE_RECIPE_STEP_SYSTEM,
     STATE_RECIPE_STEP_ARGUMENT_LIST,
 
+    STATE_RECIPE_STEP_MESON_CROSS_FILE,
+
+    STATE_RECIPE_STEP_MAKE_INTREE,
+    STATE_RECIPE_STEP_MAKE_PARALLEL,
+
     STATE_RECIPE_STEP_ENV_LIST_KEY,
     STATE_RECIPE_STEP_ENV_LIST_VALUE,
 
@@ -697,6 +702,25 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             } \
             break;
 
+#define __consume_system_option_scalar_fn(__INITSTATE, __STATE, __SYSTEM, __FIELD, __FN) \
+        case __STATE: \
+            switch (event->type) { \
+                case YAML_SCALAR_EVENT: \
+                    if (s->step.system == NULL || strcmp(s->step.system, __SYSTEM)) {\
+                        fprintf(stderr, "unexpected option: " #__STATE ".\n"); \
+                        fprintf(stderr, "system options must appear after 'system' keyword\n"); \
+                        return -1; \
+                    } \
+                    value = (char *)event->data.scalar.value; \
+                    s->step.options.__FIELD = __FN(value); \
+                    s->state = __INITSTATE; \
+                    break; \
+                default: \
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state); \
+                    return -1; \
+            } \
+            break;
+
 #define __consume_sequence_mapped(__INITSTATE, __LISTSTATE, __ITEMSTATE) \
         case __LISTSTATE: \
             switch (event->type) { \
@@ -886,20 +910,21 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "type") == 0) {
                         s->state = STATE_RECIPE_STEP_TYPE;
-                    }
-                    else if (strcmp(value, "depends") == 0) {
+                    } else if (strcmp(value, "depends") == 0) {
                         s->state = STATE_RECIPE_STEP_DEPEND_LIST;
-                    }
-                    else if (strcmp(value, "system") == 0) {
+                    } else if (strcmp(value, "system") == 0) {
                         s->state = STATE_RECIPE_STEP_SYSTEM;
-                    }
-                    else if (strcmp(value, "arguments") == 0) {
+                    } else if (strcmp(value, "meson-cross-file") == 0) {
+                        s->state = STATE_RECIPE_STEP_MESON_CROSS_FILE;
+                    } else if (strcmp(value, "make-in-tree") == 0) {
+                        s->state = STATE_RECIPE_STEP_MAKE_INTREE;
+                    } else if (strcmp(value, "make-parallel") == 0) {
+                        s->state = STATE_RECIPE_STEP_MAKE_PARALLEL;
+                    } else if (strcmp(value, "arguments") == 0) {
                         s->state = STATE_RECIPE_STEP_ARGUMENT_LIST;
-                    }
-                    else if (strcmp(value, "env") == 0) {
+                    } else if (strcmp(value, "env") == 0) {
                         s->state = STATE_RECIPE_STEP_ENV_LIST_KEY;
-                    }
-                    else {
+                    } else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
                     } break;
@@ -912,6 +937,10 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_TYPE, step.type, __parse_recipe_step_type)
         __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_SYSTEM, step.system, __parse_string)
+
+        __consume_system_option_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_MESON_CROSS_FILE, "meson", meson.cross_file, __parse_string)
+        __consume_system_option_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_MAKE_INTREE, "make", make.in_tree, __parse_boolean)
+        __consume_system_option_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_MAKE_PARALLEL, "make", make.parallel, atoi)
 
         __consume_sequence_unmapped(STATE_RECIPE_STEP, STATE_RECIPE_STEP_ARGUMENT_LIST, __add_step_arguments)
         __consume_sequence_unmapped(STATE_RECIPE_STEP, STATE_RECIPE_STEP_DEPEND_LIST, __add_step_depends)

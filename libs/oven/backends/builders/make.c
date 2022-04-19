@@ -25,12 +25,13 @@
 #include <string.h>
 #include <utils.h>
 
-int make_main(struct oven_backend_data* data)
+int make_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
-    int    status = -1;
-    char** environment;
-    char*  argument = NULL;
-    size_t argumentLength;
+    int         status = -1;
+    char**      environment;
+    char*       argument = NULL;
+    size_t      argumentLength;
+    const char* cwd = data->build_directory;
 
     argumentLength = strlen(data->arguments) + 32;
     argument       = calloc(argumentLength, 1);
@@ -46,14 +47,19 @@ int make_main(struct oven_backend_data* data)
     }
 
     // build the make parameters, execute from build folder
-    sprintf(argument, "-j%i", platform_cpucount());
+    sprintf(argument, "-j%i", options->make.parallel <= 0 ? platform_cpucount() : options->make.parallel);
     if (strlen(data->arguments) > 0) {
         strcat(argument, " ");
         strcat(argument, data->arguments);
     }
 
+    // handle in-tree builds
+    if (options->make.in_tree) {
+        cwd = NULL;
+    }
+
     // perform the build operation
-    status = platform_spawn("make", argument, (const char* const*)environment, data->build_directory);
+    status = platform_spawn("make", argument, (const char* const*)environment, cwd);
     if (status != 0) {
         errno = status;
         fprintf(stderr, "oven-make: failed to execute 'make %s'\n", argument);
@@ -61,7 +67,7 @@ int make_main(struct oven_backend_data* data)
     }
 
     // perform the installation operation, ignore any other parameters
-    status = platform_spawn("make", "install", (const char* const*)environment, data->build_directory);
+    status = platform_spawn("make", "install", (const char* const*)environment, cwd);
     if (status != 0) {
         errno = status;
         fprintf(stderr, "oven-make: failed to execute 'make install'\n");

@@ -46,6 +46,7 @@ struct oven_recipe_context {
 };
 
 struct oven_variables {
+    const char* architecture;
     const char* cwd;
     const char* fridge_prep_directory;
 };
@@ -60,17 +61,18 @@ struct oven_context {
 
 struct generate_backend {
     const char* name;
-    int       (*generate)(struct oven_backend_data* data);
+    int       (*generate)(struct oven_backend_data* data, union oven_backend_options* options);
 };
 
 struct build_backend {
     const char* name;
-    int       (*build)(struct oven_backend_data* data);
+    int       (*build)(struct oven_backend_data* data, union oven_backend_options* options);
 };
 
 static struct generate_backend g_genbackends[] = {
     { "configure", configure_main },
-    { "cmake",     cmake_main     }
+    { "cmake",     cmake_main     },
+    { "meson",     meson_main     }
 };
 
 static struct build_backend g_buildbackends[] = {
@@ -114,7 +116,7 @@ static int __create_path(const char* path)
     return 0;
 }
 
-int oven_initialize(char** envp, const char* recipeScope, const char* fridgePrepDirectory)
+int oven_initialize(char** envp, char* architecture, const char* recipeScope, const char* fridgePrepDirectory)
 {
     int         status;
     char*       cwd;
@@ -151,6 +153,7 @@ int oven_initialize(char** envp, const char* recipeScope, const char* fridgePrep
     }
 
     // update oven variables
+    g_ovenContext.variables.architecture          = architecture;
     g_ovenContext.variables.cwd                   = cwd;
     g_ovenContext.variables.fridge_prep_directory = fridgePrepDirectory;
 
@@ -358,6 +361,10 @@ static int __has_checkpoint(const char* path, const char* checkpoint)
 
 static const char* __get_variable(const char* name)
 {
+    if (strcmp(name, "CHEF_ARCHITECTURE") == 0) {
+        printf("CHEF_ARCHITECTURE: %s\n", g_ovenContext.variables.architecture);
+        return g_ovenContext.variables.architecture;
+    }
     if (strcmp(name, "PROJECT_PATH") == 0) {
         printf("PROJECT_PATH: %s\n", g_ovenContext.variables.cwd);
         return g_ovenContext.variables.cwd;
@@ -369,6 +376,10 @@ static const char* __get_variable(const char* name)
     if (strcmp(name, "TOOLCHAIN_PREFIX") == 0) {
         printf("TOOLCHAIN_PREFIX: %s\n", g_ovenContext.recipe.toolchain);
         return g_ovenContext.recipe.toolchain;
+    }
+    if (strcmp(name, "INSTALL_PREFIX") == 0) {
+        printf("INSTALL_PREFIX: %s\n", g_ovenContext.recipe.install_root);
+        return g_ovenContext.recipe.install_root;
     }
     return NULL;
 }
@@ -775,7 +786,7 @@ int oven_configure(struct oven_generate_options* options)
         return status;
     }
 
-    status = backend->generate(&data);
+    status = backend->generate(&data, options->system_options);
     if (status == 0) {
         status = __create_checkpoint(g_ovenContext.recipe.checkpoint_path, options->system);
     }
@@ -819,7 +830,7 @@ int oven_build(struct oven_build_options* options)
         return status;
     }
 
-    status = backend->build(&data);
+    status = backend->build(&data, options->system_options);
 
 cleanup:
     __cleanup_backend_data(&data);

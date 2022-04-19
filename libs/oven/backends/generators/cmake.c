@@ -118,7 +118,7 @@ cleanup:
     return status;
 }
 
-int cmake_main(struct oven_backend_data* data)
+int cmake_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
     char*  workspacePath;
     char*  argument = NULL;

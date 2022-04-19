@@ -22,6 +22,7 @@
 // prototype some types from liboven.h
 struct oven_generate_options;
 struct oven_build_options;
+union oven_backend_options;
 
 struct oven_backend_data {
     /**
@@ -87,12 +88,13 @@ struct oven_backend_data {
 //****************************************************************************//
 // Configure backend entries                                                  //
 //****************************************************************************//
-extern int configure_main(struct oven_backend_data* data);
-extern int cmake_main(struct oven_backend_data* data);
+extern int configure_main(struct oven_backend_data* data, union oven_backend_options* options);
+extern int cmake_main(struct oven_backend_data* data, union oven_backend_options* options);
+extern int meson_main(struct oven_backend_data* data, union oven_backend_options* options);
 
 //****************************************************************************//
 // Build backend entries                                                      //
 //****************************************************************************//
-extern int make_main(struct oven_backend_data* data);
+extern int make_main(struct oven_backend_data* data, union oven_backend_options* options);
 
 #endif //!__LIBOVEN_BACKEND_H__
