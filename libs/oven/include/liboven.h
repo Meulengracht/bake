@@ -37,6 +37,7 @@ struct oven_pack_command {
     struct list_item       list_header;
     const char*            name;
     const char*            description;
+    const char*            icon;
     enum chef_command_type type;
     const char*            path;
     struct list            arguments; // list<oven_value_item>

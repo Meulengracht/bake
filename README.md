@@ -66,7 +66,7 @@ project:
   # icon - Optional
   #
   # The project icon file. This is either a png, bmp or jpg file that will be
-  # shown in the project info page, or in the application launcher.
+  # shown in the project info page.
   icon: /path/to/icon.png
   
   #########################
@@ -288,4 +288,5 @@ packs:
         arguments: [--arg1, --arg2]
         type: executable
         description: A simple application
+        icon: /my/app/icon
 ```

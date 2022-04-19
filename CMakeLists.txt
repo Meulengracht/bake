@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 3.14.3)
-project(chef C)
+project(chef VERSION "1.0.0")
 
 option(CHEF_BUILD_BAKE "Build the bake executable" ON)
 option(CHEF_BUILD_ORDER "Build the order executable" ON)
 option(CHEF_BUILD_SERVE "Build the serve executable" ON)
+
+include_directories(${CMAKE_BINARY_DIR})
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/chef-config.h.in"
+               "${CMAKE_BINARY_DIR}/chef-config.h"
+               @ONLY
+)
 
 add_subdirectory(protocols)
 add_subdirectory(libs)
