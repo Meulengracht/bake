@@ -73,6 +73,7 @@ static const char* __get_filename(
 static int __matches_filters(const char* path, struct list* filters)
 {
     struct list_item* item;
+    int               status = -1;
 
     if (filters->count == 0) {
         return 0; // YES! no filters means everything matches
@@ -80,11 +81,12 @@ static int __matches_filters(const char* path, struct list* filters)
 
     list_foreach(filters, item) {
         struct oven_value_item* filter = (struct oven_value_item*)item;
-        if (strfilter(filter->value, path, 0) != 0) {
-            return -1;
+        if (strfilter(filter->value, path, 0) == 0) {
+            status = 0;
+            break;
         }
     }
-    return 0;
+    return status;
 }
 
 int __get_count_recursive(
