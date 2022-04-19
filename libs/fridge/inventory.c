@@ -123,6 +123,7 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
             json_t* version_revision = json_object_get(version, "revision");
             json_t* version_tag = json_object_get(version, "tag");
 
+            inventory->packs[i].inventory = inventory;
             inventory->packs[i].publisher = strdup(json_string_value(publisher));
             inventory->packs[i].package = strdup(json_string_value(name));
             inventory->packs[i].platform = strdup(json_string_value(platform));
@@ -305,7 +306,7 @@ static int __package_path(struct fridge_inventory* inventory, const char* publis
 
 static int __inventory_download(struct fridge_inventory* inventory, const char* publisher,
     const char* package, const char* platform, const char* arch, const char* channel,
-    struct chef_version* version)
+    struct chef_version* version, int* revisionDownloaded)
 {
     struct chef_download_params downloadParams;
     int                         status;
@@ -331,7 +332,10 @@ static int __inventory_download(struct fridge_inventory* inventory, const char* 
         fprintf(stderr, "__inventory_download: package path too long!\n");
         return -1;
     }
+    
     status = rename(PACKAGE_TEMP_PATH, &pathBuffer[0]);
+    
+    *revisionDownloaded = downloadParams.revision;
 
     return status;
 }
@@ -344,6 +348,7 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
     void*                         newArray;
     void*                         oldArray;
     int                           status;
+    int                           revisionDownloaded;
 
     if (inventory == NULL || publisher == NULL || 
         package == NULL   || channel == NULL) {
@@ -351,7 +356,7 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
         return -1;
     }
 
-    status = __inventory_download(inventory, publisher, package, platform, arch, channel, version);
+    status = __inventory_download(inventory, publisher, package, platform, arch, channel, version, &revisionDownloaded);
     if (status) {
         return -1;
     }
@@ -379,6 +384,7 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
     packEntry->channel   = strdup(channel);
     if (version == NULL) {
         packEntry->latest = 1;
+        packEntry->version.revision = revisionDownloaded;
     } else {
         packEntry->version.major = version->major;
         packEntry->version.minor = version->minor;
