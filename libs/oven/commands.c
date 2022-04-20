@@ -23,6 +23,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+// resolvers
+extern int elf_resolve_dependencies(const char* path, struct list* dependencies);
+
 extern const char* __get_install_path(void);
 
 static int __verify_commands(struct list* commands)

@@ -1,6 +1,7 @@
 # Project setup
 project (oven C)
 
+add_subdirectory(resolvers)
 add_subdirectory(utils)
 add_subdirectory(backends)
 
