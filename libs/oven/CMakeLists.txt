@@ -11,6 +11,7 @@ if (UNIX)
 endif (UNIX)
 
 add_library(oven STATIC
+    commands.c
     container.c
     oven.c
 )

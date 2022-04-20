@@ -25,6 +25,7 @@
 #include <string.h>
 #include <vafs/vafs.h>
 #include <zstd.h>
+#include "private.h"
 
 // include dirent.h for directory operations
 #if defined(_WIN32) || defined(_WIN64)
@@ -836,46 +837,12 @@ static enum VaFsArchitecture __parse_arch(const char* arch)
     return VaFsArchitecture_UNKNOWN;
 }
 
-static int __verify_commands(struct list* commands)
-{
-    struct list_item* item;
-    struct platform_stat stats;
-
-    if (commands->count == 0) {
-        return 0;
-    }
-
-    list_foreach(commands, item) {
-        struct oven_pack_command* command = (struct oven_pack_command*)item;
-        char*                     path;
-        
-        if (command->path == NULL || strlen(command->path) == 0) {
-            fprintf(stderr, "oven: command %s has no path\n", command->name);
-            return -1;
-        }
-
-        // verify the command points to something correct
-        path = strpathcombine(__get_install_path(), command->path);
-        if (path == NULL) {
-            fprintf(stderr, "oven: failed to combine command path\n");
-            return -1;
-        }
-
-        if (platform_stat(path, &stats)) {
-            fprintf(stderr, "oven: could not find command path %s\n", path);
-            free(path);
-            return -1;
-        }
-        free(path);
-    }
-    return 0;
-}
-
 int oven_pack(struct oven_pack_options* options)
 {
     struct VaFsDirectoryHandle* directoryHandle;
     struct VaFsConfiguration    configuration;
     struct VaFs*                vafs;
+    struct list                 resolves = { 0 };
     struct progress_context     progressContext = { 0 };
     int                         status;
     char                        tmp[128];
@@ -908,7 +875,7 @@ int oven_pack(struct oven_pack_options* options)
         return 0;
     }
 
-    status = __verify_commands(options->commands);
+    status = oven_resolve_commands(options->commands, &resolves);
     if (status) {
         fprintf(stderr, "oven: failed to verify commands\n");
         return -1;
