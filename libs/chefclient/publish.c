@@ -189,9 +189,11 @@ static json_t* __create_commit_request(struct chef_publish_params* params)
     }
 
     json_object_set_new(request, "name", json_string(params->package->package));
+    json_object_set_new(request, "summary", json_string(params->package->summary));
     json_object_set_new(request, "description", json_string(params->package->description));
     json_object_set_new(request, "homepage", json_string(params->package->homepage));
     json_object_set_new(request, "license", json_string(params->package->license));
+    json_object_set_new(request, "eula", json_string(params->package->eula));
     json_object_set_new(request, "maintainer", json_string(params->package->maintainer));
     json_object_set_new(request, "maintainer_email", json_string(params->package->maintainer_email));
     json_object_set_new(request, "platform", json_string(params->platform));

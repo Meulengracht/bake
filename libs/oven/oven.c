@@ -572,7 +572,7 @@ static const char* __preprocess_value(const char* original)
     return result;
 }
 
-static const char* __build_argument_string(struct list* argumentList)
+const char* __build_argument_string(struct list* argumentList)
 {
     struct list_item* item;
     char*             argumentString;
@@ -582,6 +582,7 @@ static const char* __build_argument_string(struct list* argumentList)
     // allocate memory for the string
     argumentString = (char*)malloc(4096);
     if (argumentString == NULL) {
+        errno = ENOMEM;
         return NULL;
     }
     memset(argumentString, 0, 4096);

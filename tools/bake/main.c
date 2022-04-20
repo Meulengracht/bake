@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "chef-config.h"
 
 extern int init_main(int argc, char** argv, char** envp, struct recipe* recipe);
 extern int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe);
@@ -110,7 +111,7 @@ int main(int argc, char** argv, char** envp)
         }
 
         if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
-            printf("bake: version 0.1\n");
+            printf("bake: version " PROJECT_VER "\n");
             return 0;
         }
 

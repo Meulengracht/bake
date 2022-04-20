@@ -50,6 +50,7 @@ struct VaFsFeatureFilter {
 };
 
 extern const char* __get_install_path(void);
+extern const char* __build_argument_string(struct list* argumentList);
 
 static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
 static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
@@ -268,10 +269,9 @@ static int __write_directory(
     }
 
     while ((dp = readdir(dfd)) != NULL) {
-        enum platform_filetype fileType;
-        uint32_t               filePermissions;
-        const char*            combinedPath;
-        const char*            combinedSubPath;
+        struct platform_stat stats;
+        const char*          combinedPath;
+        const char*          combinedSubPath;
 
         if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0) {
             continue;
@@ -291,7 +291,7 @@ static int __write_directory(
             continue;
         }
 
-        status = platform_stat(combinedPath, &fileType, &filePermissions);
+        status = platform_stat(combinedPath, &stats);
         if (status) {
             fprintf(stderr, "oven: failed to get filetype for '%s'\n", combinedPath);
             free((void*)combinedPath);
@@ -305,9 +305,9 @@ static int __write_directory(
         // I under normal circumstances do absolutely revolt this type of christmas
         // tree style code, however to avoid 7000 breaks and remembering to cleanup
         // resources, we do it like this. It's not pretty, but it works.
-        if (fileType == PLATFORM_FILETYPE_DIRECTORY) {
+        if (stats.type == PLATFORM_FILETYPE_DIRECTORY) {
             struct VaFsDirectoryHandle* subdirectoryHandle;
-            status = vafs_directory_create_directory(directoryHandle, dp->d_name, filePermissions, &subdirectoryHandle);
+            status = vafs_directory_create_directory(directoryHandle, dp->d_name, stats.permissions, &subdirectoryHandle);
             if (status) {
                 fprintf(stderr, "oven: failed to create directory '%s'\n", dp->d_name);
             } else {
@@ -322,13 +322,13 @@ static int __write_directory(
                 }
             }
             progress->directories++;
-        } else if (fileType == PLATFORM_FILETYPE_FILE) {
-            status = __write_file(directoryHandle, combinedPath, dp->d_name, filePermissions);
+        } else if (stats.type == PLATFORM_FILETYPE_FILE) {
+            status = __write_file(directoryHandle, combinedPath, dp->d_name, stats.permissions);
             if (status) {
                 fprintf(stderr, "oven: unable to write file %s\n", dp->d_name);
             }
             progress->files++;
-        } else if (fileType == PLATFORM_FILETYPE_SYMLINK) {
+        } else if (stats.type == PLATFORM_FILETYPE_SYMLINK) {
             char* linkpath;
             status = platform_readlink(combinedPath, &linkpath);
             if (status) {
@@ -471,6 +471,14 @@ static int __parse_version_string(const char* string, struct chef_vafs_feature_p
     return 0;
 }
 
+static int __safe_strlen(const char* string)
+{
+    if (string == NULL) {
+        return 0;
+    }
+    return strlen(string);
+}
+
 static int __write_header_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
 {
     struct chef_vafs_feature_package_header*  packageHeader;
@@ -482,10 +490,10 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
     featureSize = sizeof(struct chef_vafs_feature_package_header);
     featureSize += strlen(name);
     featureSize += strlen(options->summary);
-    featureSize += options->description == NULL ? 0 : strlen(options->description);
-    featureSize += options->license == NULL ? 0 : strlen(options->license);
-    featureSize += options->eula == NULL ? 0 : strlen(options->eula);
-    featureSize += options->url == NULL ? 0 : strlen(options->url);
+    featureSize += __safe_strlen(options->description);
+    featureSize += __safe_strlen(options->license);
+    featureSize += __safe_strlen(options->eula);
+    featureSize += __safe_strlen(options->url);
     featureSize += strlen(options->author);
     featureSize += strlen(options->email);
     
@@ -662,9 +670,123 @@ static int __write_icon_metadata(struct VaFs* vafs, const char* path)
     return 0;
 }
 
+static size_t __file_size(const char* path)
+{
+    struct platform_stat fileStat;
+
+    if (path == NULL) {
+        return 0;
+    }
+
+    if (platform_stat(path, &fileStat) != 0) {
+        fprintf(stderr, "oven: failed to stat file %s\n", path);
+        return 0;
+    }
+    return fileStat.size;
+}
+
+static size_t __command_size(struct oven_pack_command* command)
+{
+    size_t      size = sizeof(struct chef_vafs_package_app);
+    const char* args = __build_argument_string(&command->arguments);
+    
+    size += strlen(command->name);
+    size += __safe_strlen(command->description);
+    size += __safe_strlen(args);
+    size += strlen(command->path);
+    size += __file_size(command->icon);
+    free((void*)args);
+    return size;
+}
+
+static size_t __serialize_command(struct oven_pack_command* command, char* buffer)
+{
+    struct chef_vafs_package_app* app = (struct chef_vafs_package_app*)buffer;
+    const char*                   args = __build_argument_string(&command->arguments);
+
+    app->name_length        = strlen(command->name);
+    app->description_length = __safe_strlen(command->description);
+    app->arguments_length   = __safe_strlen(args);
+    app->type               = (int)command->type;
+    app->path_length        = strlen(command->path);
+    app->icon_length        = __file_size(command->icon);
+
+    // move the buffer pointer and write in the data
+    buffer += sizeof(struct chef_vafs_package_app);
+    
+    memcpy(buffer, command->name, app->name_length);
+    buffer += app->name_length;
+
+    if (command->description) {
+        memcpy(buffer, command->description, app->description_length);
+        buffer += app->description_length;
+    }
+
+    if (command->arguments.count > 0) {
+        memcpy(buffer, args, app->arguments_length);
+        buffer += app->arguments_length;
+    }
+
+    memcpy(buffer, command->path, app->path_length);
+    buffer += app->path_length;
+
+    if (app->icon_length > 0) {
+        FILE* file = fopen(command->icon, "rb");
+        if (file) {
+            fread(buffer, 1, app->icon_length, file);
+            fclose(file);
+        } else {
+            app->icon_length = 0;
+        }
+    }
+    free((void*)args);
+    return sizeof(struct chef_vafs_package_app) 
+        + app->name_length
+        + app->description_length
+        + app->arguments_length
+        + app->path_length
+        + app->icon_length;
+}
+
 static int __write_commands_metadata(struct VaFs* vafs, struct list* commands)
 {
-    return 0;
+    struct chef_vafs_feature_package_apps* packageApps;
+    struct list_item* item;
+    size_t            totalSize = sizeof(struct chef_vafs_feature_package_apps);
+    char*             buffer;
+    int               status;
+
+    if (commands->count == 0) {
+        return 0;
+    }
+
+    // start out by counting up the total size the commands will take up when
+    // serialized, so we can preallocate the memory
+    list_foreach(commands, item) {
+        struct oven_pack_command* command = (struct oven_pack_command*)item;
+        totalSize += __command_size(command);
+    }
+
+    buffer = malloc(totalSize);
+    if (!buffer) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    packageApps = (struct chef_vafs_feature_package_apps*)buffer;
+    memcpy(&packageApps->header.Guid, &g_commandsGuid, sizeof(struct VaFsGuid));
+    packageApps->header.Length = totalSize;
+    packageApps->apps_count = commands->count;
+
+    buffer += sizeof(struct chef_vafs_feature_package_apps);
+    list_foreach(commands, item) {
+        struct oven_pack_command* command = (struct oven_pack_command*)item;
+        buffer += __serialize_command(command, buffer);
+    }
+
+    status = vafs_feature_add(vafs, &packageApps->header);
+    free(packageApps);
+    return status;
 }
 
 static int __write_package_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)

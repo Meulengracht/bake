@@ -60,19 +60,22 @@ struct chef_vafs_feature_package_version {
     uint32_t                 tag_length;
 };
 
-#define CHEF_PACKAGE_ICON_TYPE_PNG  0x01
-#define CHEF_PACKAGE_ICON_TYPE_JPEG 0x02
-#define CHEF_PACKAGE_ICON_TYPE_GIF  0x03
-#define CHEF_PACKAGE_ICON_TYPE_BMP  0x04
-
 struct chef_vafs_feature_package_icon {
     struct VaFsFeatureHeader header;
-    int                      icon_type;
 };
 
 struct chef_vafs_feature_package_apps {
     struct VaFsFeatureHeader header;
     int                      apps_count;
+};
+
+struct chef_vafs_package_app {
+    uint32_t name_length;
+    uint32_t description_length;
+    uint32_t arguments_length;
+    int      type;
+    uint32_t path_length;
+    uint32_t icon_length;
 };
 
 #endif //!__LIBCHEF_UTILS_VAFS_H__

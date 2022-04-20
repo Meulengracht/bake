@@ -59,7 +59,8 @@
         "client.h": "c",
         "jansson.h": "c",
         "vafs.h": "c",
-        "libplatform.h": "c"
+        "libplatform.h": "c",
+        "chef_served_service_client.h": "c"
     },
     "cmake.installPrefix": "/usr/local/chef"
 }
