@@ -222,7 +222,7 @@ recipes:
       
       ###########################
       # type - Required
-      #    values: {generate, build}
+      #    values: {generate, build, script}
       #
       # The step type, which must be specified. This determines which
       # kinds of 'system' is available for this step.
@@ -232,11 +232,33 @@ recipes:
       # system - Required
       #    generate-values: {autotools, cmake}
       #    build-values:    {make}
+      #    script-values:   <none>
       #
       # This determines which backend will be used for this step. Configure steps
       # will only be invoked when they change (todo!), but build/install steps are always
       # executed.
       system: autotools
+
+      ###########################
+      # script - Required for script
+      # 
+      # Shell script that should be executed. The working directory of the script
+      # will be the build directory for this recipe. The project directory and install
+      # directories can be refered to through ${{ PROJECT_PATH }} and ${{ INSTALL_PREFIX }}.
+      # On linux, this will be run as a shell script, while on windows it will run as a 
+      # powershell script
+      script: |
+        valid=true
+        count=1
+        while [ $valid ]
+        do
+          echo $count
+          if [ $count -eq 5 ];
+          then
+            break
+          fi
+          ((count++))
+        done
 
       ###########################
       # arguments - Optional

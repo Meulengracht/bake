@@ -716,8 +716,6 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
         if (packOut) {
             *packOut = pack;
         }
-
-        printf("already cached %s\n", ingredient->name);
         goto cleanup;
     }
     

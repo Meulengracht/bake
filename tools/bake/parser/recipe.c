@@ -23,121 +23,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/*
-stream-start-event (1)
-  document-start-event (3)
-    mapping-start-event (9)
-      scalar-event (6) = {value="project", length=7}
-      mapping-start-event (9)
-        scalar-event (6) = {value="name", length=4}
-        scalar-event (6) = {value="Simple Application Recipe", length=25}
-        scalar-event (6) = {value="description", length=11}
-        scalar-event (6) = {value="A simple application recipe", length=27}
-        scalar-event (6) = {value="type", length=4}
-        scalar-event (6) = {value="application", length=11}
-        scalar-event (6) = {value="author", length=6}
-        scalar-event (6) = {value="who made it", length=11}
-        scalar-event (6) = {value="email", length=5}
-        scalar-event (6) = {value="contact@me.com", length=14}
-        scalar-event (6) = {value="version", length=7}
-        scalar-event (6) = {value="0.1", length=3}
-        scalar-event (6) = {value="license", length=7}
-        scalar-event (6) = {value="MIT", length=3}
-        scalar-event (6) = {value="homepage", length=8}
-        scalar-event (6) = {value="", length=0}
-      mapping-end-event (10)
-      scalar-event (6) = {value="ingredients", length=11}
-      sequence-start-event (7)
-        mapping-start-event (9)
-          scalar-event (6) = {value="name", length=4}
-          scalar-event (6) = {value="libc", length=4}
-          scalar-event (6) = {value="version", length=7}
-          scalar-event (6) = {value="0.2", length=3}
-          scalar-event (6) = {value="description", length=11}
-          scalar-event (6) = {value="A library", length=9}
-          scalar-event (6) = {value="source", length=6}
-          mapping-start-event (9)
-            scalar-event (6) = {value="type", length=4}
-            scalar-event (6) = {value="archive", length=7}
-            scalar-event (6) = {value="url", length=3}
-            scalar-event (6) = {value="", length=0}
-          mapping-end-event (10)
-        mapping-end-event (10)
-      sequence-end-event (8)
-      scalar-event (6) = {value="recipes", length=7}
-      sequence-start-event (7)
-        mapping-start-event (9)
-          scalar-event (6) = {value="recipe", length=6}
-          sequence-start-event (7)
-            mapping-start-event (9)
-              scalar-event (6) = {value="name", length=4}
-              scalar-event (6) = {value="my-app", length=6}
-              scalar-event (6) = {value="path", length=4}
-              scalar-event (6) = {value="source/", length=7}
-              scalar-event (6) = {value="steps", length=5}
-              sequence-start-event (7)
-                mapping-start-event (9)
-                  scalar-event (6) = {value="type", length=4}
-                  scalar-event (6) = {value="generate", length=8}
-                  scalar-event (6) = {value="system", length=6}
-                  scalar-event (6) = {value="configure", length=9}
-                  scalar-event (6) = {value="arguments", length=9}
-                  sequence-start-event (7)
-                    scalar-event (6) = {value="--platform=amd64", length=16}
-                  sequence-end-event (8)
-                  scalar-event (6) = {value="env", length=3}
-                  mapping-start-event (9)
-                    scalar-event (6) = {value="VAR", length=3}
-                    scalar-event (6) = {value="VALUE", length=5}
-                  mapping-end-event (10)
-                mapping-end-event (10)
-                mapping-start-event (9)
-                  scalar-event (6) = {value="type", length=4}
-                  scalar-event (6) = {value="build", length=5}
-                  scalar-event (6) = {value="depends", length=7}
-                  sequence-start-event (7)
-                    scalar-event (6) = {value="generate", length=8}
-                  sequence-end-event (8)
-                  scalar-event (6) = {value="system", length=6}
-                  scalar-event (6) = {value="make", length=4}
-                  scalar-event (6) = {value="arguments", length=9}
-                  sequence-start-event (7)
-                    scalar-event (6) = {value="mytarget", length=8}
-                  sequence-end-event (8)
-                  scalar-event (6) = {value="env", length=3}
-                  mapping-start-event (9)
-                    scalar-event (6) = {value="VAR", length=3}
-                    scalar-event (6) = {value="VALUE", length=5}
-                  mapping-end-event (10)
-                mapping-end-event (10)
-              sequence-end-event (8)
-            mapping-end-event (10)
-          sequence-end-event (8)
-        mapping-end-event (10)
-      sequence-end-event (8)
-      scalar-event (6) = {value="commands", length=8}
-      sequence-start-event (7)
-        mapping-start-event (9)
-          scalar-event (6) = {value="name", length=4}
-          scalar-event (6) = {value="myapp", length=5}
-          scalar-event (6) = {value="path", length=4}
-          scalar-event (6) = {value="/bin/myapp", length=10}
-          scalar-event (6) = {value="arguments", length=9}
-          sequence-start-event (7)
-            scalar-event (6) = {value="--arg1", length=6}
-            scalar-event (6) = {value="--arg2", length=6}
-          sequence-end-event (8)
-          scalar-event (6) = {value="type", length=4}
-          scalar-event (6) = {value="executable", length=10}
-          scalar-event (6) = {value="description", length=11}
-          scalar-event (6) = {value="A simple application", length=20}
-        mapping-end-event (10)
-      sequence-end-event (8)
-    mapping-end-event (10)
-  document-end-event (4)
-stream-end-event (2)
-*/
-
 enum state {
     STATE_START,    /* start state */
     STATE_STREAM,   /* start/end stream */
@@ -183,6 +68,7 @@ enum state {
     STATE_RECIPE_STEP_TYPE,
     STATE_RECIPE_STEP_DEPEND_LIST,
     STATE_RECIPE_STEP_SYSTEM,
+    STATE_RECIPE_STEP_SCRIPT,
     STATE_RECIPE_STEP_ARGUMENT_LIST,
 
     STATE_RECIPE_STEP_MESON_CROSS_FILE,
@@ -266,6 +152,8 @@ static enum recipe_step_type __parse_recipe_step_type(const char* value)
         return RECIPE_STEP_TYPE_GENERATE;
     } else if (strcmp(value, "build") == 0) {
         return RECIPE_STEP_TYPE_BUILD;
+    } else if (strcmp(value, "script") == 0) {
+        return RECIPE_STEP_TYPE_SCRIPT;
     } else {
         return RECIPE_STEP_TYPE_UNKNOWN;
     }
@@ -408,7 +296,7 @@ static void __finalize_step(struct parser_state* state)
         exit(EXIT_FAILURE);
     }
 
-    if (state->step.system == NULL) {
+    if (state->step.type != RECIPE_STEP_TYPE_SCRIPT && state->step.system == NULL) {
         fprintf(stderr, "bake: parse error: part %s: system is required\n", state->part.name);
         exit(EXIT_FAILURE);
     }
@@ -914,6 +802,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         s->state = STATE_RECIPE_STEP_DEPEND_LIST;
                     } else if (strcmp(value, "system") == 0) {
                         s->state = STATE_RECIPE_STEP_SYSTEM;
+                    } else if (strcmp(value, "script") == 0) {
+                        s->state = STATE_RECIPE_STEP_SCRIPT;
                     } else if (strcmp(value, "meson-cross-file") == 0) {
                         s->state = STATE_RECIPE_STEP_MESON_CROSS_FILE;
                     } else if (strcmp(value, "make-in-tree") == 0) {
@@ -937,6 +827,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_TYPE, step.type, __parse_recipe_step_type)
         __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_SYSTEM, step.system, __parse_string)
+        __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_SCRIPT, step.script, __parse_string)
 
         __consume_system_option_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_MESON_CROSS_FILE, "meson", meson.cross_file, __parse_string)
         __consume_system_option_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_MAKE_INTREE, "make", make.in_tree, __parse_boolean)

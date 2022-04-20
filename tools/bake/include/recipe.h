@@ -29,12 +29,14 @@ enum recipe_step_type {
     RECIPE_STEP_TYPE_UNKNOWN,
     RECIPE_STEP_TYPE_GENERATE,
     RECIPE_STEP_TYPE_BUILD,
+    RECIPE_STEP_TYPE_SCRIPT,
 };
 
 struct recipe_step {
     struct list_item           list_header;
     enum recipe_step_type      type;
     const char*                system;
+    const char*                script;
     struct list                depends;
     struct list                arguments;
     struct list                env_keypairs;

@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "chef-config.h"
 
 extern int account_main(int argc, char** argv);
 extern int info_main(int argc, char** argv);
@@ -74,7 +75,7 @@ int main(int argc, char** argv, char** envp)
         }
 
         if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
-            printf("order: version 0.1\n");
+            printf("order: version " PROJECT_VER "\n");
             return 0;
         }
 

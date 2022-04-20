@@ -173,9 +173,6 @@ extern int platform_isdir(const char* path);
 extern int platform_stat(const char* path, struct platform_stat* stats);
 extern int platform_readlink(const char* path, char** bufferOut);
 extern int platform_symlink(const char* path, const char* target, int directory);
-extern int platform_getenv(const char* name, char* buffer, size_t length);
-extern int platform_setenv(const char* name, const char* value);
-extern int platform_unsetenv(const char* name);
 extern int platform_getcwd(char* buffer, size_t length);
 extern int platform_getuserdir(char* buffer, size_t length);
 extern int platform_chdir(const char* path);
@@ -200,6 +197,14 @@ extern int platform_sleep(unsigned int milliseconds);
  * @#define CHEF_ARCHITECTURE_STR int 0 on success, -1 on error
  */
 extern int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd);
+
+/**
+ * @brief Execute the provided shell script.
+ * 
+ * @param[In] script The shell script to execute 
+ * @return int 
+ */
+extern int platform_script(const char* script);
 
 #ifdef __cplusplus
 }

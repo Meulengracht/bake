@@ -838,6 +838,28 @@ cleanup:
     return status;
 }
 
+int oven_script(struct oven_script_options* options)
+{
+    const char* preprocessedScript;
+    int         status;
+
+    // handle script substitution first, then we pass it on
+    // to the platform handler
+    if (options == NULL || options->script == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    preprocessedScript = __preprocess_value(options->script);
+    if (preprocessedScript == NULL) {
+        return -1;
+    }
+
+    status = platform_script(preprocessedScript);
+    free((void*)preprocessedScript);
+    return status;
+}
+
 static int __copy_file(const char* source, const char* destination)
 {
     int    status;

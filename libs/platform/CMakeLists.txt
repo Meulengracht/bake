@@ -1,27 +1,23 @@
 # Project setup
 project (platform C)
 
+add_subdirectory(strutils)
+
 add_library(platform STATIC
-    basename.c
     chdir.c
     chmod.c
     cpucount.c
     getcwd.c
-    getenv.c
     getuserdir.c
     isdir.c
     mkdir.c
     readlink.c
     rmdir.c
-    setenv.c
+    script.c
     sleep.c
     spawn.c
     stat.c
-    strfilter.c
-    strpathcombine.c
-    strreplace.c
-    strsplit.c
     symlink.c
-    unsetenv.c
 )
 target_include_directories(platform PUBLIC include)
+target_link_libraries(platform PUBLIC platform-utils)

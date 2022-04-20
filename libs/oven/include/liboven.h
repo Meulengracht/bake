@@ -83,6 +83,11 @@ struct oven_build_options {
     struct list*                environment;
 };
 
+struct oven_script_options {
+    const char* script;
+};
+
+
 struct oven_pack_options {
     const char*            name;
     enum chef_package_type type;
@@ -148,6 +153,14 @@ extern int oven_configure(struct oven_generate_options* options);
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
 extern int oven_build(struct oven_build_options* options);
+
+/**
+ * @brief Runs a custom recipe script with default
+ * 
+ * @param options 
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
+ */
+extern int oven_script(struct oven_script_options* options);
 
 /**
  * @brief List of filepath patterns that should be included in the install directory.

@@ -160,9 +160,11 @@ static int __parse_package_info_response(const char* response, struct chef_packa
     // parse the required members
     package->publisher = __get_json_string_safe(root, "publisher");
     package->package = __get_json_string_safe(root, "name");
+    package->summary = __get_json_string_safe(root, "summary");
     package->description = __get_json_string_safe(root, "description");
     package->homepage = __get_json_string_safe(root, "homepage");
     package->license = __get_json_string_safe(root, "license");
+    package->eula = __get_json_string_safe(root, "eula");
     package->maintainer = __get_json_string_safe(root, "maintainer");
     package->maintainer_email = __get_json_string_safe(root, "maintainer_email");
 
