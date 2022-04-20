@@ -1,0 +1,35 @@
+project: 
+  summary: Chef Package Management System
+  description: |
+    Originally developed for the Vali/MollenOS operating system, this is a generic package 
+    management system that is built as a lightweight alternative to current package managers. 
+    Its not only for package management, but also as an application format. 
+  author: Philip Meulengracht
+  email: the_meulengracht@hotmail.com
+  version: 1.0.0
+  license: MIT
+  homepage: https://github.com/Meulengracht/bake
+
+recipes:
+  - name: chef
+    path: /
+    steps:
+    - type: generate
+      system: cmake
+      arguments: [-G, '"Unix Makefiles"']
+    - type: build
+      depends: [generate]
+      system: make
+
+packs:
+- name: chef
+  type: application
+  commands:
+  - name: bake
+    path: bin/bake
+    type: executable
+    description: Utility to create chef recipes
+  - name: order
+    path: bin/order
+    type: executable
+    description: Utility to publish, inspect and manage account services

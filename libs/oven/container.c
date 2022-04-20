@@ -50,6 +50,7 @@ struct VaFsFeatureFilter {
 };
 
 extern const char* __get_install_path(void);
+extern const char* __get_architecture(void);
 extern const char* __build_argument_string(struct list* argumentList);
 
 static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
@@ -173,6 +174,9 @@ static void __write_progress(const char* prefix, struct progress_context* contex
     total   = context->files_total + context->directories_total + context->symlinks_total;
     current = context->files + context->directories + context->symlinks;
     percent = (current * 100) / total;
+    if (percent > 100) {
+        percent = 100;
+    }
 
     printf("\33[2K\r%-10.10s [", prefix);
     for (int i = 0; i < 20; i++) {
@@ -832,6 +836,41 @@ static enum VaFsArchitecture __parse_arch(const char* arch)
     return VaFsArchitecture_UNKNOWN;
 }
 
+static int __verify_commands(struct list* commands)
+{
+    struct list_item* item;
+    struct platform_stat stats;
+
+    if (commands->count == 0) {
+        return 0;
+    }
+
+    list_foreach(commands, item) {
+        struct oven_pack_command* command = (struct oven_pack_command*)item;
+        char*                     path;
+        
+        if (command->path == NULL || strlen(command->path) == 0) {
+            fprintf(stderr, "oven: command %s has no path\n", command->name);
+            return -1;
+        }
+
+        // verify the command points to something correct
+        path = strpathcombine(__get_install_path(), command->path);
+        if (path == NULL) {
+            fprintf(stderr, "oven: failed to combine command path\n");
+            return -1;
+        }
+
+        if (platform_stat(path, &stats)) {
+            fprintf(stderr, "oven: could not find command path %s\n", path);
+            free(path);
+            return -1;
+        }
+        free(path);
+    }
+    return 0;
+}
+
 int oven_pack(struct oven_pack_options* options)
 {
     struct VaFsDirectoryHandle* directoryHandle;
@@ -869,11 +908,15 @@ int oven_pack(struct oven_pack_options* options)
         return 0;
     }
 
+    status = __verify_commands(options->commands);
+    if (status) {
+        fprintf(stderr, "oven: failed to verify commands\n");
+        return -1;
+    }
+
     // initialize settings
     vafs_config_initialize(&configuration);
-
-    // TODO we somehow need to get the arch for the target, do we even care?
-    vafs_config_set_architecture(&configuration, __parse_arch(CHEF_ARCHITECTURE_STR));
+    vafs_config_set_architecture(&configuration, __parse_arch(__get_architecture()));
 
     status = vafs_create(&tmp[0], &configuration, &vafs);
     if (status) {

@@ -8,6 +8,6 @@ add_subdirectory(order)
 add_subdirectory(serve)
 
 install(
-    TARGETS bake order
+    TARGETS bake order serve
     RUNTIME DESTINATION bin
 )

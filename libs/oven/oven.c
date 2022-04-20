@@ -86,6 +86,11 @@ const char* __get_install_path(void)
     return g_ovenContext.install_root;
 }
 
+const char* __get_architecture(void)
+{
+    return g_ovenContext.variables.architecture;
+}
+
 static int __get_cwd(char** bufferOut)
 {
     char*  cwd;
