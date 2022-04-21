@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct address_mapping {
+struct __elf_address_mapping {
     const char* data;
     size_t      voffset;
     size_t      size;
@@ -100,7 +100,7 @@ static const char* __get_string_from_strtab32(const char* strTable, Elf32_Xword 
     return strTable + index;
 }
 
-static int __parse_dynamic_section32(struct address_mapping* mappings, const char* dynamicTable, size_t dynamicTableSize, struct list* dependencies)
+static int __parse_dynamic_section32(struct __elf_address_mapping* mappings, const char* dynamicTable, size_t dynamicTableSize, struct list* dependencies)
 {
     Elf32_Dyn*  di;
     size_t      i;
@@ -152,7 +152,7 @@ static int __parse_dependencies_32(const char* buffer, size_t bufferSize, struct
 {
     Elf32_Ehdr*             header = (Elf32_Ehdr*)buffer;
     Elf32_Phdr*             pi, *dynamic = NULL;
-    struct address_mapping* mappings;
+    struct __elf_address_mapping* mappings;
     int                     mi = 0;
     int                     status = 0;
 
@@ -169,7 +169,7 @@ static int __parse_dependencies_32(const char* buffer, size_t bufferSize, struct
     }
 
     // allocate space to keep mappings
-    mappings = calloc(sizeof(struct address_mapping), header->e_phnum + 1);
+    mappings = calloc(sizeof(struct __elf_address_mapping), header->e_phnum + 1);
     if (mappings == NULL) {
         errno = ENOMEM;
         return -1;
@@ -205,7 +205,7 @@ static const char* __get_string_from_strtab64(const char* strTable, Elf64_Xword 
     return strTable + index;
 }
 
-static int __parse_dynamic_section64(struct address_mapping* mappings, const char* dynamicTable, size_t dynamicTableSize, struct list* dependencies)
+static int __parse_dynamic_section64(struct __elf_address_mapping* mappings, const char* dynamicTable, size_t dynamicTableSize, struct list* dependencies)
 {
     Elf64_Dyn*  di;
     size_t      i;
@@ -257,7 +257,7 @@ static int __parse_dependencies_64(const char* buffer, size_t bufferSize, struct
 {
     Elf64_Ehdr*             header = (Elf64_Ehdr*)buffer;
     Elf64_Phdr*             pi, *dynamic = NULL;
-    struct address_mapping* mappings;
+    struct __elf_address_mapping* mappings;
     int                     mi = 0;
     int                     status = 0;
 
@@ -274,7 +274,7 @@ static int __parse_dependencies_64(const char* buffer, size_t bufferSize, struct
     }
 
     // allocate space to keep mappings
-    mappings = calloc(sizeof(struct address_mapping), header->e_phnum + 1);
+    mappings = calloc(sizeof(struct __elf_address_mapping), header->e_phnum + 1);
     if (mappings == NULL) {
         errno = ENOMEM;
         return -1;

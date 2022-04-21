@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/libs/curl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/libs/gracht" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/libs/jansson" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/libs/vafs" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/libs/wolfssl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/libs/zstd" vcs="Git" />
+  </component>
+</project>
