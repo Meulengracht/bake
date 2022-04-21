@@ -21,6 +21,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <list.h>
 
 // detect platform
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
@@ -126,11 +127,20 @@ struct platform_stat {
     uint32_t               permissions;
 };
 
+struct platform_file_entry {
+    struct list_item       list_header;
+    char*                  name;
+    enum platform_filetype type;
+    char*                  path;
+    char*                  sub_path;
+};
+
 extern void   strbasename(const char* path, char* buffer, size_t bufferSize);
 extern char*  strpathcombine(const char* path1, const char* path2);
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
 extern char*  strreplace(char* text, const char* find, const char* replaceWith);
+extern int    strendswith(const char* text, const char* suffix);
 
 #define FILTER_FOLDCASE 0x1
 
@@ -177,6 +187,8 @@ extern int platform_getcwd(char* buffer, size_t length);
 extern int platform_getuserdir(char* buffer, size_t length);
 extern int platform_chdir(const char* path);
 extern int platform_chmod(const char* path, uint32_t permissions);
+extern int platform_getfiles(const char* path, struct list* files);
+extern int platform_getfiles_destroy(struct list* files);
 extern int platform_cpucount(void);
 
 /**

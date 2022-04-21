@@ -388,6 +388,12 @@ static void __finalize_pack(struct parser_state* state)
         exit(EXIT_FAILURE);
     }
 
+    // commands are only allowed in application mode
+    if (state->pack.type != CHEF_PACKAGE_TYPE_APPLICATION && state->pack.commands.count != 0) {
+        fprintf(stderr, "bake: parse error: pack %s: commands are only allowed in application packs\n", state->pack.name);
+        exit(EXIT_FAILURE);
+    }
+
     // now we copy and reset
     pack = malloc(sizeof(struct recipe_pack));
     if (pack == NULL) {

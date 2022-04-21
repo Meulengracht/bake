@@ -15,3 +15,20 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
  */
+
+#include <errno.h>
+#include <libplatform.h>
+#include <stdlib.h>
+#include <string.h>
+
+int strendswith(const char* text, const char* suffix)
+{
+	size_t textLength   = strlen(text);
+	size_t suffixLength = strlen(suffix);
+	
+	if (textLength < suffixLength) {
+		return 0;
+	}
+	
+	return strcmp(text + textLength - suffixLength, suffix);
+}

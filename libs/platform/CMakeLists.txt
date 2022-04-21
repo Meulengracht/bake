@@ -8,6 +8,7 @@ add_library(platform STATIC
     chmod.c
     cpucount.c
     getcwd.c
+    getfiles.c
     getuserdir.c
     isdir.c
     mkdir.c

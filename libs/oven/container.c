@@ -26,6 +26,7 @@
 #include <vafs/vafs.h>
 #include <zstd.h>
 #include "private.h"
+#include "resolvers/resolvers.h"
 
 // include dirent.h for directory operations
 #if defined(_WIN32) || defined(_WIN64)
@@ -38,11 +39,9 @@ struct progress_context {
     int disabled;
 
     int files;
-    int directories;
     int symlinks;
 
     int files_total;
-    int directories_total;
     int symlinks_total;
 };
 
@@ -92,73 +91,37 @@ static int __matches_filters(const char* path, struct list* filters)
     return status;
 }
 
-int __get_count_recursive(
-    const char*  path,
-    const char*  subPath,
+int __get_install_stats(
+    struct list* files,
     struct list* filters,
     int*         fileCountOut,
-    int*         SymlinkCountOut,
-    int*         dirCountOut)
+    int*         SymlinkCountOut)
 {
-    struct dirent* dp;
-    DIR*           d;
-    int            status = 0;
+    struct list_item* item;
 
-    if (!path) {
+    if (files == NULL || fileCountOut == NULL || SymlinkCountOut == NULL) {
         errno = EINVAL;
         return -1;
     }
 
-    if ((d = opendir(path)) == NULL) {
-        return -1;
-    }
-
-    while ((dp = readdir(d))) {
-        char* combinedPath;
-        char* combinedSubPath;
-
-        if (strcmp(dp->d_name,".") == 0 || strcmp(dp->d_name,"..") == 0) {
-             continue;
-        }
-
-        combinedPath    = strpathcombine(path, dp->d_name);
-        combinedSubPath = strpathcombine(subPath, dp->d_name);
-        if (!combinedPath || !combinedSubPath) {
-            free((void*)combinedPath);
-            break;
-        }
-
-        // does this match filters?
-        status = __matches_filters(combinedSubPath, filters);
-        if (status) {
-            free((void*)combinedPath);
-            free((void*)combinedSubPath);
+    list_foreach(files, item) {
+        struct platform_file_entry* entry = (struct platform_file_entry*)item;
+        if (__matches_filters(entry->sub_path, filters)) {
             continue;
         }
 
-        switch (dp->d_type) {
-            case DT_REG:
+        switch (entry->type) {
+            case PLATFORM_FILETYPE_FILE:
                 (*fileCountOut)++;
                 break;
-            case DT_DIR: {
-                (*dirCountOut)++;
-                status = __get_count_recursive(combinedPath, combinedSubPath, filters, fileCountOut, SymlinkCountOut, dirCountOut);
-            } break;
-            case DT_LNK:
+            case PLATFORM_FILETYPE_SYMLINK:
                 (*SymlinkCountOut)++;
                 break;
             default:
                 break;
         }
-
-        free((void*)combinedPath);
-        free((void*)combinedSubPath);
-        if (status) {
-            break;
-        }
     }
-    closedir(d);
-    return status;
+    return 0;
 }
 
 static void __write_progress(const char* prefix, struct progress_context* context, int verbose)
@@ -172,8 +135,8 @@ static void __write_progress(const char* prefix, struct progress_context* contex
         return;
     }
 
-    total   = context->files_total + context->directories_total + context->symlinks_total;
-    current = context->files + context->directories + context->symlinks;
+    total   = context->files_total + context->symlinks_total;
+    current = context->files + context->symlinks;
     percent = (current * 100) / total;
     if (percent > 100) {
         percent = 100;
@@ -192,9 +155,6 @@ static void __write_progress(const char* prefix, struct progress_context* contex
     if (verbose) {
         if (context->files_total) {
             printf(" %i/%i files", context->files, context->files_total);
-        }
-        if (context->directories_total) {
-            printf(" %i/%i directories", context->directories, context->directories_total);
         }
         if (context->symlinks_total) {
             printf(" %i/%i symlinks", context->symlinks, context->symlinks_total);
@@ -219,7 +179,6 @@ static int __write_file(
     // create the VaFS file
     status = vafs_directory_create_file(directoryHandle, filename, permissions, &fileHandle);
     if (status) {
-        fprintf(stderr, "oven: failed to create file '%s'\n", filename);
         return -1;
     }
 
@@ -326,7 +285,6 @@ static int __write_directory(
                     }
                 }
             }
-            progress->directories++;
         } else if (stats.type == PLATFORM_FILETYPE_FILE) {
             status = __write_file(directoryHandle, combinedPath, dp->d_name, stats.permissions);
             if (status) {
@@ -364,6 +322,37 @@ static int __write_directory(
 
     closedir(dfd);
     return status;
+}
+
+
+static int __write_dependencies(
+    struct progress_context*    progress,
+    struct list*                files,
+    struct VaFsDirectoryHandle* directoryHandle)
+{
+    struct VaFsDirectoryHandle* subdirectoryHandle;
+    struct list_item*           item;
+    int                         status;
+
+    status = vafs_directory_create_directory(directoryHandle, "lib", 0666, &subdirectoryHandle);
+    if (status) {
+        fprintf(stderr, "oven: failed to create directory lib\n");
+        return status;
+    }
+
+    list_foreach(files, item) {
+        struct oven_resolve_dependency* dependency = (struct oven_resolve_dependency*)item;
+        
+        __write_progress(dependency->name, progress, 0);
+        status = __write_file(subdirectoryHandle, dependency->path, dependency->name, 0777);
+        if (status && errno != EEXIST) {
+            fprintf(stderr, "oven: failed to write dependency %s\n", dependency->path);
+            return -1;
+        }
+        progress->files++;
+        __write_progress(dependency->name, progress, 0);
+    }
+    return 0;
 }
 
 static int __zstd_encode(void* Input, uint32_t InputLength, void** Output, uint32_t* OutputLength)
@@ -843,6 +832,8 @@ int oven_pack(struct oven_pack_options* options)
     struct VaFsConfiguration    configuration;
     struct VaFs*                vafs;
     struct list                 resolves = { 0 };
+    struct list                 files = { 0 };
+    struct list_item*           item;
     struct progress_context     progressContext = { 0 };
     int                         status;
     char                        tmp[128];
@@ -859,14 +850,17 @@ int oven_pack(struct oven_pack_options* options)
     name = strdup(tmp);
     strcat(tmp, ".pack");
 
-    // get a file count
-    __get_count_recursive(
-        __get_install_path(),
-        NULL,
+    status = platform_getfiles(__get_install_path(), &files);
+    if (status) {
+        fprintf(stderr, "oven: failed to get files marked for install\n");
+        return -1;
+    }
+
+    __get_install_stats(
+        &files,
         options->filters,
         &progressContext.files_total,
-        &progressContext.symlinks_total, 
-        &progressContext.directories_total
+        &progressContext.symlinks_total
     );
 
     // we do not want any empty packs
@@ -875,10 +869,17 @@ int oven_pack(struct oven_pack_options* options)
         return 0;
     }
 
+    // TODO cleanup resolves
     status = oven_resolve_commands(options->commands, &resolves);
     if (status) {
         fprintf(stderr, "oven: failed to verify commands\n");
         return -1;
+    }
+
+    // include all the resolves in the total files count
+    list_foreach(&resolves, item) {
+        struct oven_resolve* resolve = (struct oven_resolve*)item;
+        progressContext.files_total += resolve->dependencies.count;
     }
 
     // initialize settings
@@ -909,6 +910,15 @@ int oven_pack(struct oven_pack_options* options)
         fprintf(stderr, "oven: unable to write directory\n");
         goto cleanup;
     }
+
+    list_foreach(&resolves, item) {
+        struct oven_resolve* resolve = (struct oven_resolve*)item;
+        status = __write_dependencies(&progressContext, &resolve->dependencies, directoryHandle);
+        if (status != 0) {
+            fprintf(stderr, "oven: unable to write libraries\n");
+            goto cleanup;
+        }
+    }
     printf("\n");
 
     status = __write_package_metadata(vafs, name, options);
@@ -918,6 +928,7 @@ int oven_pack(struct oven_pack_options* options)
 
 cleanup:
     status = vafs_close(vafs);
+    platform_getfiles_destroy(&files);
     free(name);
     return status;
 }

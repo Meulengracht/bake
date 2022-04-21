@@ -16,6 +16,7 @@
  * 
  */
 
+#include <libplatform.h>
 #include <recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +36,9 @@ static struct command_handler g_commands[] = {
     { "init",  init_main },
     { "fetch", fetch_main },
     { "pack",  pack_main }
+    // config
+    // build
+    // pack
 };
 
 static void __print_help(void)
@@ -99,10 +103,11 @@ int main(int argc, char** argv, char** envp)
     struct command_handler* command    = &g_commands[2];
     struct recipe*          recipe     = NULL;
     char*                   recipePath = "recipe.yaml";
+    char*                   arch       = CHEF_ARCHITECTURE_STR;
     void*                   buffer;
     size_t                  length;
     int                     result;
-
+    
     // first argument must be the command if not --help or --version
     if (argc > 1) {
         if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
@@ -128,6 +133,13 @@ int main(int argc, char** argv, char** envp)
                         recipePath = argv[i + 1];
                     }
                     else {
+                        fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
+                        return 1;
+                    }
+                } else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--arch")) {
+                    if (i + 1 < argc) {
+                        arch = argv[i + 1];
+                    } else {
                         fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
                         return 1;
                     }
