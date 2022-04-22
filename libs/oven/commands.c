@@ -201,7 +201,7 @@ static int __resolve_command(struct oven_pack_command* command, struct list* res
         if (!status) {
             status = __resolve_elf_dependencies(resolve, command->allow_system_libraries);
         }
-    } else if (pe_is_valid(path, &resolve->arch)) {
+    } else if (pe_is_valid(path, &resolve->arch) == 0) {
         status = pe_resolve_dependencies(path, &resolve->dependencies);
         if (!status) {
             status = __resolve_pe_dependencies(resolve, command->allow_system_libraries);
