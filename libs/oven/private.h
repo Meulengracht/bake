@@ -30,4 +30,11 @@ struct list;
  */
 extern int oven_resolve_commands(struct list* commands, struct list* resolves);
 
+/**
+ * @brief 
+ * 
+ * @param resolves 
+ */
+extern void oven_resolve_destroy(struct list* resolves);
+
 #endif //!__OVEN_PRIVATE_H__

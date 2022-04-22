@@ -892,9 +892,9 @@ int oven_pack(struct oven_pack_options* options)
 {
     struct VaFsDirectoryHandle* directoryHandle;
     struct VaFsConfiguration    configuration;
-    struct VaFs*                vafs;
+    struct VaFs*                vafs     = NULL;
     struct list                 resolves = { 0 };
-    struct list                 files = { 0 };
+    struct list                 files    = { 0 };
     struct list_item*           item;
     struct progress_context     progressContext = { 0 };
     int                         status;
@@ -908,15 +908,15 @@ int oven_pack(struct oven_pack_options* options)
         return -1;
     }
 
-    strbasename(options->name, tmp, sizeof(tmp));
-    name = strdup(tmp);
-    strcat(tmp, ".pack");
-
     status = platform_getfiles(__get_install_path(), &files);
     if (status) {
         fprintf(stderr, "oven: failed to get files marked for install\n");
         return -1;
     }
+
+    strbasename(options->name, tmp, sizeof(tmp));
+    name = strdup(tmp);
+    strcat(tmp, ".pack");
 
     __get_install_stats(
         &files,
@@ -928,14 +928,14 @@ int oven_pack(struct oven_pack_options* options)
     // we do not want any empty packs
     if (progressContext.files_total == 0) {
         printf("oven: skipping pack %s, no files to pack\n", options->name);
-        return 0;
+        status = 0;
+        goto cleanup;
     }
 
-    // TODO cleanup resolves
     status = oven_resolve_commands(options->commands, &resolves);
     if (status) {
         fprintf(stderr, "oven: failed to verify commands\n");
-        return -1;
+        goto cleanup;
     }
 
     // include all the resolves in the total files count
@@ -951,7 +951,7 @@ int oven_pack(struct oven_pack_options* options)
     status = vafs_create(&tmp[0], &configuration, &vafs);
     if (status) {
         free(name);
-        return status;
+        goto cleanup;
     }
     
     // install the compression for the pack
@@ -989,8 +989,9 @@ int oven_pack(struct oven_pack_options* options)
     }
 
 cleanup:
-    status = vafs_close(vafs);
+    vafs_close(vafs);
     platform_getfiles_destroy(&files);
+    oven_resolve_destroy(&resolves);
     free(name);
     return status;
 }

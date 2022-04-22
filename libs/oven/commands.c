@@ -251,3 +251,37 @@ int oven_resolve_commands(struct list* commands, struct list* resolves)
     }
     return __resolve_commands(commands, resolves);
 }
+
+static void __cleanup_dependencies(struct list* dependencies)
+{
+    struct list_item* item;
+
+    for (item = dependencies->head; item != NULL;) {
+        struct oven_resolve_dependency* dependency = (struct oven_resolve_dependency*)item;
+        item = item->next;
+
+        free((void*)dependency->name);
+        free((void*)dependency->path);
+        free((void*)dependency->sub_path);
+        free(dependency);
+    }
+    list_init(dependencies);
+}
+
+void oven_resolve_destroy(struct list* resolves)
+{
+    struct list_item* item;
+
+    if (resolves == NULL) {
+        return;
+    }
+
+    for (item = resolves->head; item != NULL;) {
+        struct oven_resolve* resolve = (struct oven_resolve*)item;
+        item = item->next;
+
+        free((void*)resolve->path);
+        free(resolve);
+    }
+    list_init(resolves);
+}
