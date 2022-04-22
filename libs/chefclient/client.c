@@ -64,7 +64,7 @@ static int __load_settings(void)
     }
 
     // append filename
-    strcat(path, "/.chef/settings.json");
+    strcat(path, CHEF_PATH_SEPARATOR_S ".chef/settings.json");
 
     g_chefSettings = json_load_file(path, 0, &error);
     if (g_chefSettings == NULL) {
@@ -104,7 +104,7 @@ static int __save_settings(void)
     }
 
     // append directory, and make sure directory exists
-    strcat(path, "/.chef");
+    strcat(path, CHEF_PATH_SEPARATOR_S ".chef");
     status = platform_mkdir(path);
     if (status != 0) {
         fprintf(stderr, "__save_settings: failed to create directory: %s\n", strerror(errno));
@@ -113,7 +113,7 @@ static int __save_settings(void)
     }
 
     // append filename
-    strcat(path, "/settings.json");
+    strcat(path, CHEF_PATH_SEPARATOR_S "settings.json");
 
     status = json_dump_file(g_chefSettings, path, JSON_INDENT(2));
     if (status != 0) {

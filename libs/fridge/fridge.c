@@ -32,14 +32,14 @@
 
 // In the storage area we store the raw unpacked ingredients. We only unpack
 // ingredients when we need them into the prep area
-#define FRIDGE_STORAGE_PATH FRIDGE_ROOT_PATH "/storage"
+#define FRIDGE_STORAGE_PATH FRIDGE_ROOT_PATH CHEF_PATH_SEPARATOR_S "storage"
 
 // The prep area contains ingredients needed for the recipe.
-#define FRIDGE_PREP_PATH    FRIDGE_ROOT_PATH "/prep"
+#define FRIDGE_PREP_PATH FRIDGE_ROOT_PATH CHEF_PATH_SEPARATOR_S "prep"
 
 // The utensils area contains the directory for tools. Each tool will have their
 // own subdirectory in the utensils area. A tool can for instance be a toolchain
-#define FRIDGE_UTENSILS_PATH    FRIDGE_ROOT_PATH "/utensils"
+#define FRIDGE_UTENSILS_PATH FRIDGE_ROOT_PATH CHEF_PATH_SEPARATOR_S "utensils"
 
 struct progress_context {
     int disabled;

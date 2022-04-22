@@ -128,14 +128,14 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
     int    status = -1;
     size_t argumentLength;
 
-    workspacePath = malloc(strlen(data->build_directory) + strlen("/workspace.cmake") + 1);
+    workspacePath = malloc(strlen(data->build_directory) + strlen(CHEF_PATH_SEPARATOR_S "workspace.cmake") + 1);
     if (workspacePath == NULL) {
         errno = ENOMEM;
         return -1;
     }
 
     strcpy(workspacePath, data->build_directory);
-    strcat(workspacePath, "/workspace.cmake");
+    strcat(workspacePath, CHEF_PATH_SEPARATOR_S "workspace.cmake");
 
     argumentLength = strlen(data->arguments) + 1024;
     argument       = malloc(argumentLength);

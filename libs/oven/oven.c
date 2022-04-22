@@ -31,9 +31,9 @@
 #include <dirent.h>
 #endif
 
-#define OVEN_ROOT ".oven"
-#define OVEN_BUILD_ROOT OVEN_ROOT "/build"
-#define OVEN_INSTALL_ROOT OVEN_ROOT "/install"
+#define OVEN_ROOT         ".oven"
+#define OVEN_BUILD_ROOT   OVEN_ROOT CHEF_PATH_SEPARATOR_S "build"
+#define OVEN_INSTALL_ROOT OVEN_ROOT CHEF_PATH_SEPARATOR_S "install"
 
 struct oven_recipe_context {
     const char* name;
@@ -624,36 +624,6 @@ const char* __build_argument_string(struct list* argumentList)
     return argumentString;
 }
 
-static int __get_project_directory(const char* cwd, const char* projectPath, char** bufferOut)
-{
-    char* result;
-
-    if (projectPath) {
-        size_t cwdLength = strlen(cwd);
-
-        // append the relative path to the root directory
-        result = malloc(cwdLength + strlen(projectPath) + 2);
-        if (!result) {
-            return -1;
-        }
-
-        // take into account the trailing slash
-        if (cwd[cwdLength] == CHEF_PATH_SEPARATOR || projectPath[0] == CHEF_PATH_SEPARATOR) {
-            sprintf(result, "%s%s", cwd, projectPath);
-        } else {
-            sprintf(result, "%s" CHEF_PATH_SEPARATOR_S "%s", cwd, projectPath);
-        }
-    } else {
-        result = strdup(cwd);
-        if (!result) {
-            return -1;
-        }
-    }
-    
-    *bufferOut = result;
-    return 0;
-}
-
 static struct generate_backend* __get_generate_backend(const char* name)
 {
     for (int i = 0; i < sizeof(g_genbackends) / sizeof(struct generate_backend); i++) {
@@ -745,8 +715,8 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     }
     data->root_directory = path;
     
-    status = __get_project_directory(data->root_directory, g_ovenContext.recipe.relative_path, &path);
-    if (status) {
+    path = strpathcombine(data->root_directory, g_ovenContext.recipe.relative_path);
+    if (path == NULL) {
         free((void*)data->root_directory);
         return status;
     }
