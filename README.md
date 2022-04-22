@@ -10,7 +10,7 @@ Chef consists of 3 parts, bake, order and serve.
 The bake utility serves as the builder, and orchestrates everything related to generation of bake packages. Bake packages serve both as packages and application images that can be executed by serve.
 
 ## Order
-Order handles the orchestration of the online segment. Order controls your account setup, downloading of packages, package query and is the gateway to serve
+Order handles the orchestration of the online segment. Order controls your account setup, downloading of packages and package query
 
 ## Serve
 Serve consts of a frontend and a backend. The frontend is a CLI utility that allows you to interact with the backend. The backend is the application backend. This needs to be implemented on an OS basis. View the README located under daemons/served for more information.
@@ -276,7 +276,14 @@ recipes:
         VAR: VALUE
 
 packs:
+    ###########################
+    # name - Required
+    # 
+    # Name of the pack. This will be used for the filename and also the
+    # name that will be used for publishing. The published name will be
+    # publisher/name of this pack.
   - name: mypack
+
     ###########################
     # type - Required
     #    values: {ingredient, application, toolchain}
@@ -305,11 +312,57 @@ packs:
     # to the system once the application is installed. These commands
     # can be registered to a binary or script inside the app package
     commands:
+        ###########################
+        # name - Required
+        # 
+        # Name of the command. This is the command that will be exposed
+        # to the system. The name should be unique, and should not contain
+        # spaces.
       - name: myapp
+        
+        ###########################
+        # name - Required
+        # 
+        # Path to the command. This is the relative path from the root
+        # of the pack. So if the application is installed at bin/app then
+        # thats the path that should be used.
         path: /bin/myapp
+
+        ###########################
+        # arguments - Optional
+        #
+        # Arguments that should be passed to the command when run.
         arguments: [--arg1, --arg2]
+
+        ###########################
+        # type - Required
+        #    values: {executable, daemon}
+        #
+        # The type of command, this determines how the command is run.
         type: executable
+
+        ###########################
+        # description - Optional
+        #
+        # Description of the command, will be shown to user if the user decides
+        # to expect the command.
         description: A simple application
+
+        ###########################
+        # icon - Optional
+        #
+        # Icon that should be shown for this command. This is only used in 
+        # combination with the window manager. Every command registered can
+        # also register a seperate icon.
         icon: /my/app/icon
+
+        ###########################
+        # system-libs - Optional
+        #    default: false
+        #
+        # Informs the library resolver that it can also resolve libraries
+        # the command is linked against from system paths. This means that
+        # libraries not found in ingredients will be resolved in system
+        # library paths. Use with caution.
         system-libs: true
 ```
