@@ -62,7 +62,7 @@ static int __verify_commands(struct list* commands)
     return 0;
 }
 
-static const char* __resolve_dependency_path(struct oven_resolve* resolve, const char* dependency)
+static int __resolve_dependency_path(struct oven_resolve* resolve, struct oven_resolve_dependency* dependency, int allowSystemLibraries)
 {
     struct list       files = { 0 };
     struct list_item* item;
@@ -72,7 +72,7 @@ static const char* __resolve_dependency_path(struct oven_resolve* resolve, const
     status = platform_getfiles(__get_install_path(), &files);
     if (status) {
         fprintf(stderr, "oven: failed to get install file list\n");
-        return NULL;
+        return -1;
     }
 
     // priority 2 - check in ingredient path
@@ -80,24 +80,33 @@ static const char* __resolve_dependency_path(struct oven_resolve* resolve, const
     if (status) {
         fprintf(stderr, "oven: failed to get ingredient file list\n");
         platform_getfiles_destroy(&files);
-        return NULL;
+        return -1;
     }
 
     list_foreach(&files, item) {
         struct platform_file_entry* file = (struct platform_file_entry*)item;
-        if (!strcmp(file->name, dependency)) {
-            char* pathCopy = strdup(file->path);
+        if (!strcmp(file->name, dependency->name)) {
+            dependency->path = strdup(file->path);
+            dependency->sub_path = strdup(file->sub_path);
             platform_getfiles_destroy(&files);
-            return pathCopy;
+            return 0;
         }
     }
     platform_getfiles_destroy(&files);
 
-    // priority 3 - invoke platform resolver
-    return resolve_platform_dependency(resolve, dependency);
+    // priority 3 - invoke platform resolver (if allowed)
+    if (allowSystemLibraries) {
+        const char* path = resolve_platform_dependency(resolve, dependency->name);
+        if (path) {
+            dependency->path = path;
+            dependency->system_library = 1;
+            return 0;
+        }
+    }
+    return -1;
 }
 
-static int __resolve_elf_dependencies(struct oven_resolve* resolve)
+static int __resolve_elf_dependencies(struct oven_resolve* resolve, int allowSystemLibraries)
 {
     while (1) {
         struct list_item* item;
@@ -109,14 +118,51 @@ static int __resolve_elf_dependencies(struct oven_resolve* resolve)
                 int status;
                 
                 // try to resolve the location of the dependency
-                dependency->path = __resolve_dependency_path(resolve, dependency->name);
-                if (dependency->path == NULL) {
+                status = __resolve_dependency_path(resolve, dependency, allowSystemLibraries);
+                if (status) {
                     fprintf(stderr, "oven: failed to locate %s\n", dependency->name);
                     return -1;
                 }
 
                 // now we resolve the dependencies of this binary
                 status = elf_resolve_dependencies(dependency->path, &resolve->dependencies);
+                if (status != 0) {
+                    fprintf(stderr, "oven: failed to resolve dependencies for %s\n", dependency->name);
+                    return -1;
+                }
+
+                dependency->resolved = 1;
+                resolved = 1;
+            }
+        }
+
+        if (!resolved) {
+            break;
+        }
+    }
+    return 0;
+}
+
+static int __resolve_pe_dependencies(struct oven_resolve* resolve, int allowSystemLibraries)
+{
+    while (1) {
+        struct list_item* item;
+        int               resolved = 0;
+
+        list_foreach(&resolve->dependencies, item) {
+            struct oven_resolve_dependency* dependency = (struct oven_resolve_dependency*)item;
+            if (!dependency->resolved) {
+                int status;
+                
+                // try to resolve the location of the dependency
+                status = __resolve_dependency_path(resolve, dependency, allowSystemLibraries);
+                if (status) {
+                    fprintf(stderr, "oven: failed to locate %s\n", dependency->name);
+                    return -1;
+                }
+
+                // now we resolve the dependencies of this binary
+                status = pe_resolve_dependencies(dependency->path, &resolve->dependencies);
                 if (status != 0) {
                     fprintf(stderr, "oven: failed to resolve dependencies for %s\n", dependency->name);
                     return -1;
@@ -153,7 +199,12 @@ static int __resolve_command(struct oven_pack_command* command, struct list* res
     if (elf_is_valid(path, &resolve->arch) == 0) {
         status = elf_resolve_dependencies(path, &resolve->dependencies);
         if (!status) {
-            status = __resolve_elf_dependencies(resolve);
+            status = __resolve_elf_dependencies(resolve, command->allow_system_libraries);
+        }
+    } else if (pe_is_valid(path, &resolve->arch)) {
+        status = pe_resolve_dependencies(path, &resolve->dependencies);
+        if (!status) {
+            status = __resolve_pe_dependencies(resolve, command->allow_system_libraries);
         }
     } else {
         status = -1;

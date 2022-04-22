@@ -110,6 +110,16 @@
 #define CHEF_ARCHITECTURE_STR "unknown"
 #endif
 
+#if defined(__linux__) || defined(__APPLE__) || \
+    defined(__MOLLENOS__) || defined(__unix__) || \
+    defined(__posix__)
+#define CHEF_PATH_SEPARATOR   '/'
+#define CHEF_PATH_SEPARATOR_S "/"
+#else
+#define CHEF_PATH_SEPARATOR   '\\'
+#define CHEF_PATH_SEPARATOR_S "\\"
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

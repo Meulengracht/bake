@@ -63,7 +63,7 @@ static struct VaFsGuid g_commandsGuid  = CHEF_PACKAGE_APPS_GUID;
 static const char* __get_filename(
     const char* path)
 {
-    const char* filename = (const char*)strrchr(path, '/');
+    const char* filename = (const char*)strrchr(path, CHEF_PATH_SEPARATOR);
     if (filename == NULL) {
         filename = path;
     } else {
@@ -324,32 +324,94 @@ static int __write_directory(
     return status;
 }
 
+static int __write_syslib(
+    struct progress_context*        progress,
+    struct VaFsDirectoryHandle*     directoryHandle,
+    struct oven_resolve_dependency* dependency)
+{
+    struct VaFsDirectoryHandle* subdirectoryHandle;
+    struct list_item*           item;
+    int                         status;
+
+    status = vafs_directory_create_directory(directoryHandle, "syslib", 0666, &subdirectoryHandle);
+    if (status) {
+        fprintf(stderr, "oven: failed to create directory 'syslib'\n");
+        return status;
+    }
+
+    status = __write_file(subdirectoryHandle, dependency->path, dependency->name, 0777);
+    if (status && errno != EEXIST) {
+        fprintf(stderr, "oven: failed to write dependency %s\n", dependency->path);
+        return -1;
+    }
+    progress->files++;
+
+    return vafs_directory_close(subdirectoryHandle);
+}
+
+static int __write_filepath(
+    struct progress_context*        progress,
+    struct VaFsDirectoryHandle*     directoryHandle,
+    struct oven_resolve_dependency* dependency,
+    const char*                     remainingPath)
+{
+    struct VaFsDirectoryHandle* subdirectoryHandle;
+    int                         status;
+    char*                       token;
+    char*                       remaining;
+
+    // extract next token from the remaining path
+    remaining = strchr(remainingPath, CHEF_PATH_SEPARATOR);
+    if (!remaining) {
+        return __write_file(directoryHandle, dependency->path, dependency->name, 0777);
+    }
+
+    token = strndup(remainingPath, remaining - remainingPath);
+    if (!token) {
+        return -1;
+    }
+
+    // create directory if it doesn't exist
+    status = vafs_directory_create_directory(directoryHandle, token, 0666, &subdirectoryHandle);
+    free(token);
+
+    if (status) {
+        fprintf(stderr, "oven: failed to create directory '%s'\n", token);
+        return -1;
+    }
+
+    // recurse into the next directory
+    status = __write_filepath(progress, subdirectoryHandle, dependency, remaining);
+    if (status) {
+        fprintf(stderr, "oven: failed to write file %s\n", dependency->path);
+        return -1;
+    }
+
+    return vafs_directory_close(subdirectoryHandle);
+}
 
 static int __write_dependencies(
     struct progress_context*    progress,
     struct list*                files,
     struct VaFsDirectoryHandle* directoryHandle)
 {
-    struct VaFsDirectoryHandle* subdirectoryHandle;
-    struct list_item*           item;
-    int                         status;
-
-    status = vafs_directory_create_directory(directoryHandle, "lib", 0666, &subdirectoryHandle);
-    if (status) {
-        fprintf(stderr, "oven: failed to create directory lib\n");
-        return status;
-    }
+    struct list_item* item;
+    int               status;
 
     list_foreach(files, item) {
         struct oven_resolve_dependency* dependency = (struct oven_resolve_dependency*)item;
         
         __write_progress(dependency->name, progress, 0);
-        status = __write_file(subdirectoryHandle, dependency->path, dependency->name, 0777);
-        if (status && errno != EEXIST) {
+        if (dependency->system_library) {
+            status = __write_syslib(progress, directoryHandle, dependency);
+        } else {
+            status = __write_filepath(progress, directoryHandle, dependency, dependency->sub_path);
+        }
+
+        if (status) {
             fprintf(stderr, "oven: failed to write dependency %s\n", dependency->path);
             return -1;
         }
-        progress->files++;
         __write_progress(dependency->name, progress, 0);
     }
     return 0;

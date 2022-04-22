@@ -34,6 +34,9 @@ enum oven_resolve_arch {
     OVEN_RESOLVE_ARCH_SPARC,
     OVEN_RESOLVE_ARCH_SPARV9,
     OVEN_RESOLVE_ARCH_S390,
+    OVEN_RESOLVE_ARCH_RISCV32,
+    OVEN_RESOLVE_ARCH_RISCV64,
+    OVEN_RESOLVE_ARCH_RISCV128,
 
     OVEN_RESOLVE_ARCH_MAX
 };
@@ -42,7 +45,9 @@ struct oven_resolve_dependency {
     struct list_item list_header;
     const char*      name;
     const char*      path;
+    const char*      sub_path; // only set if system_library == 0
     int              resolved;
+    int              system_library;
 };
 
 struct oven_resolve {
@@ -59,6 +64,7 @@ struct oven_resolve {
  * @return int 
  */
 extern int elf_is_valid(const char* path, enum oven_resolve_arch* arch);
+extern int pe_is_valid(const char* path, enum oven_resolve_arch* arch);
 
 /**
  * @brief Resolves all dependencies for the given binary. The binary must be an
@@ -70,6 +76,7 @@ extern int elf_is_valid(const char* path, enum oven_resolve_arch* arch);
  * @return int             0 on success, -1 on error
  */
 extern int elf_resolve_dependencies(const char* path, struct list* dependencies);
+extern int pe_resolve_dependencies(const char* path, struct list* dependencies);
 
 /**
  * @brief Tries to resolve where the dependency is located on the system.

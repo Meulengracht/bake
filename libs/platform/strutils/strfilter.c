@@ -43,14 +43,14 @@ int strfilter(const char* filter, const char* text, int flags)
             case '*':
                 // wildcard match (string)
                 // * does not match '/'
-                while (*i != '/' && FOLD(*i) != FOLD(*(fi + 1))) {
+                while (*i != CHEF_PATH_SEPARATOR && FOLD(*i) != FOLD(*(fi + 1))) {
                     i++;
                 }
                 break;
             case '?':
                 // wildcard match (one character)
                 // ? does not match '/'
-                if (*i != '/') {
+                if (*i != CHEF_PATH_SEPARATOR) {
                     i++;
                 }
                 break;

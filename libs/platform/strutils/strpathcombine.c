@@ -53,8 +53,8 @@ char* strpathcombine(const char* path1, const char* path2)
         return NULL;
     }
 
-    if (path1[path1Length - 1] != '/') {
-        status = sprintf(combined, "%s/%s", path1, path2);
+    if (path1[path1Length - 1] != CHEF_PATH_SEPARATOR) {
+        status = sprintf(combined, "%s" CHEF_PATH_SEPARATOR_S "%s", path1, path2);
     } else {
         status = sprintf(combined, "%s%s", path1, path2);
     }

@@ -57,6 +57,7 @@ struct oven_pack_command {
     const char*            description;
     const char*            icon;
     enum chef_command_type type;
+    int                    allow_system_libraries;
     const char*            path;
     struct list            arguments; // list<oven_value_item>
 };

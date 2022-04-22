@@ -108,6 +108,8 @@ static int __get_cwd(char** bufferOut)
 
     status = platform_getcwd(cwd, 4096);
     if (status) {
+        // buffer was too small
+        fprintf(stderr, "could not get current working directory, buffer too small?\n");
         free(cwd);
         return -1;
     }
@@ -134,6 +136,7 @@ int oven_initialize(char** envp, char* architecture, const char* recipeScope, co
     const char* buildRoot;
     const char* installRoot;
     char        tmp[128];
+    size_t      length;
 
     // get the current working directory
     status = __get_cwd(&cwd);
@@ -142,9 +145,12 @@ int oven_initialize(char** envp, char* architecture, const char* recipeScope, co
     }
 
     // make sure to add the last path seperator if not already
-    // present in cwd
-    if (cwd[strlen(cwd) - 1] != '/') {
-        strcat(cwd, "/");
+    // present in cwd, we assume space for this due to relatively
+    // large buffer of 4096 (this is dangerous assumption!)
+    length = strlen(cwd);
+    if (cwd[length - 1] != CHEF_PATH_SEPARATOR) {
+        cwd[length] = CHEF_PATH_SEPARATOR;
+        cwd[length + 1] = '\0';
     }
 
     // get basename of recipe
@@ -266,8 +272,8 @@ int oven_recipe_start(struct oven_recipe_options* options)
 
     relativePathLength = strlen(g_ovenContext.recipe.relative_path);
     if (relativePathLength > 0) {
-        if (g_ovenContext.recipe.relative_path[0] != '/') {
-            sprintf(buildRoot, "%s/%s", g_ovenContext.build_root, g_ovenContext.recipe.relative_path);
+        if (g_ovenContext.recipe.relative_path[0] != CHEF_PATH_SEPARATOR) {
+            sprintf(buildRoot, "%s" CHEF_PATH_SEPARATOR_S "%s", g_ovenContext.build_root, g_ovenContext.recipe.relative_path);
         } else {
             sprintf(buildRoot, "%s%s", g_ovenContext.build_root, g_ovenContext.recipe.relative_path);
         }
@@ -283,13 +289,12 @@ int oven_recipe_start(struct oven_recipe_options* options)
         strcpy(buildRoot, g_ovenContext.build_root);
     }
 
-    checkpointPath = malloc(strlen(buildRoot) + strlen("/.checkpoints") + 1);
+    checkpointPath = strpathcombine(buildRoot, ".checkpoints");
     if (!checkpointPath) {
         errno = ENOMEM;
         free(buildRoot);
         return -1;
     }
-    sprintf(checkpointPath, "%s/.checkpoints", buildRoot);
 
     // store members as const
     g_ovenContext.recipe.build_root      = buildRoot;
@@ -633,10 +638,10 @@ static int __get_project_directory(const char* cwd, const char* projectPath, cha
         }
 
         // take into account the trailing slash
-        if (cwd[cwdLength] == '/' || projectPath[0] == '/') {
+        if (cwd[cwdLength] == CHEF_PATH_SEPARATOR || projectPath[0] == CHEF_PATH_SEPARATOR) {
             sprintf(result, "%s%s", cwd, projectPath);
         } else {
-            sprintf(result, "%s/%s", cwd, projectPath);
+            sprintf(result, "%s" CHEF_PATH_SEPARATOR_S "%s", cwd, projectPath);
         }
     } else {
         result = strdup(cwd);

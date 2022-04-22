@@ -311,4 +311,5 @@ packs:
         type: executable
         description: A simple application
         icon: /my/app/icon
+        system-libs: true
 ```

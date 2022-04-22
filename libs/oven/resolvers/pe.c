@@ -20,6 +20,10 @@
 #include "resolvers.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+extern int __resolve_load_file(const char* path, void** bufferOut, size_t* sizeOut);
+extern int __resolve_add_dependency(struct list* dependencies, const char* library);
 
 struct __pe_address_mapping {
     const char* data;
@@ -45,7 +49,19 @@ static inline PeOptionalHeader* __get_optionalheader(const char* buffer)
     return (PeOptionalHeader*)((char*)pe + sizeof(PeHeader));
 }
 
-static void __read_sections(const char* buffer, struct __pe_address_mapping** mappingsOut)
+static char* __rva_to_file_offset(struct __pe_address_mapping* mappings, uintptr_t rva)
+{
+    int i = 0;
+    while (mappings[i].valid) {
+        if (rva >= mappings[i].voffset && rva < mappings[i].voffset + mappings[i].size) {
+            return (char*)mappings[i].data + (rva - mappings[i].voffset);
+        }
+        i++;
+    }
+    return NULL;
+}
+
+static int __read_sections(const char* buffer, struct __pe_address_mapping** mappingsOut)
 {
     struct __pe_address_mapping* mappings;
     PeHeader*         pe       = __get_peheader(buffer);
@@ -55,34 +71,82 @@ static void __read_sections(const char* buffer, struct __pe_address_mapping** ma
     mappings = (struct __pe_address_mapping*)calloc(sizeof(struct __pe_address_mapping), pe->NumSections + 1);
     if (!mappings) {
         fprintf(stderr, "Failed to allocate memory for section mappings\n");
-        return;
+        return -1;
     }
 
-    for (uint16_t i = 0; i < pe->NumSections; i++) {
-        sections[i].name = section->Name;
-        sections[i].virtual_address = section->VirtualAddress;
-        sections[i].virtual_size = section->VirtualSize;
-        sections[i].raw_address = section->PointerToRawData;
-        sections[i].raw_size = section->SizeOfRawData;
-        sections[i].characteristics = section->Characteristics;
-        section++;
+    for (uint16_t i = 0; i < pe->NumSections; i++, section++) {
+        mappings[i].data = buffer + section->RawAddress;
+        mappings[i].voffset = section->VirtualAddress;
+        mappings[i].size = section->RawSize;
+        mappings[i].valid = 1;
     }
 
     *mappingsOut = mappings;
+    return 0;
+}
+
+static int __parse_imports(struct __pe_address_mapping* mappings, const char* contents, struct list* dependencies)
+{
+    PeImportDescriptor* descriptor = (PeImportDescriptor*)contents;
+    while (descriptor->ImportAddressTable != 0) {
+        const char* library = __rva_to_file_offset(mappings, descriptor->ModuleName);
+        if (library) {
+            if (__resolve_add_dependency(dependencies, library) != 0) {
+                fprintf(stderr, "Failed to add dependency %s\n", library);
+                return -1;
+            }
+        }
+        descriptor++;
+    }
+    return 0;
 }
 
 static int __parse_dependencies_64(const char* buffer, size_t bufferSize, struct list* dependencies)
 {
     PeHeader*                    pe     = __get_peheader(buffer);
     PeOptionalHeader64*          header = (PeOptionalHeader64*)__get_optionalheader(buffer);
+    PeDataDirectory*             directory;
     struct __pe_address_mapping* mappings;
+    int                          status;
 
+    status = __read_sections(buffer, &mappings);
+    if (status != 0) {
+        return status;
+    }
 
+    directory = &header->Directories[PE_SECTION_IMPORT];
+    if (directory->Size == 0) {
+        free(mappings);
+        return 0;
+    }
+
+    status = __parse_imports(mappings, __rva_to_file_offset(mappings, directory->AddressRVA), dependencies);
+    free(mappings);
+    return status;
 }
 
 static int __parse_dependencies_32(const char* buffer, size_t bufferSize, struct list* dependencies)
 {
-    PeOptionalHeader32* header = (PeOptionalHeader32*)__get_optionalheader(buffer);
+    PeHeader*                    pe     = __get_peheader(buffer);
+    PeOptionalHeader32*          header = (PeOptionalHeader32*)__get_optionalheader(buffer);
+    PeDataDirectory*             directory;
+    struct __pe_address_mapping* mappings;
+    int                          status;
+
+    status = __read_sections(buffer, &mappings);
+    if (status != 0) {
+        return status;
+    }
+
+    directory = &header->Directories[PE_SECTION_IMPORT];
+    if (directory->Size == 0) {
+        free(mappings);
+        return 0;
+    }
+
+    status = __parse_imports(mappings, __rva_to_file_offset(mappings, directory->AddressRVA), dependencies);
+    free(mappings);
+    return status;
 }
 
 static int __parse_dependencies(const char* buffer, size_t bufferSize, struct list* dependencies)
@@ -97,28 +161,23 @@ static int __parse_dependencies(const char* buffer, size_t bufferSize, struct li
 static enum oven_resolve_arch __pe_machine_to_arch(uint16_t pe_arch)
 {
     switch (pe_arch) {
-        case EM_386:
-            return OVEN_RESOLVE_ARCH_X86;
-        case EM_X86_64:
+        case IMAGE_FILE_MACHINE_AMD64:
             return OVEN_RESOLVE_ARCH_X86_64;
-        case EM_ARM:
+        case IMAGE_FILE_MACHINE_ARMNT:
+        case IMAGE_FILE_MACHINE_ARM:
             return OVEN_RESOLVE_ARCH_ARM;
-        case EM_AARCH64:
+        case IMAGE_FILE_MACHINE_ARM64:
             return OVEN_RESOLVE_ARCH_ARM64;
-        case EM_MIPS:
-            return OVEN_RESOLVE_ARCH_MIPS;
-        case EM_MIPS_X:
-            return OVEN_RESOLVE_ARCH_MIPS64;
-        case EM_PPC:
-            return OVEN_RESOLVE_ARCH_PPC;
-        case EM_PPC64:
-            return OVEN_RESOLVE_ARCH_PPC64;
-        case EM_SPARC:
-            return OVEN_RESOLVE_ARCH_SPARC;
-        case EM_SPARCV9:
-            return OVEN_RESOLVE_ARCH_SPARV9;
-        case EM_S390:
-            return OVEN_RESOLVE_ARCH_S390;
+        case IMAGE_FILE_MACHINE_I386:
+            return OVEN_RESOLVE_ARCH_X86;
+        case IMAGE_FILE_MACHINE_POWERPC:
+            return OVEN_RESOLVE_ARCH_PPC;            
+        case IMAGE_FILE_MACHINE_RISCV32:
+            return OVEN_RESOLVE_ARCH_RISCV32;
+        case IMAGE_FILE_MACHINE_RISCV64:
+            return OVEN_RESOLVE_ARCH_RISCV64;
+        case IMAGE_FILE_MACHINE_RISCV128:
+            return OVEN_RESOLVE_ARCH_RISCV128;
         default:
             return OVEN_RESOLVE_ARCH_UNKNOWN;
     }
@@ -153,7 +212,7 @@ int pe_is_valid(const char* path, enum oven_resolve_arch* arch)
 
     // verify the validity of the pe header
     pe = __get_peheader(buffer);
-    if (pe->Signature != PE_MAGIC) {
+    if (pe->Magic != PE_MAGIC) {
         return -1;
     }
 
@@ -167,7 +226,7 @@ int pe_resolve_dependencies(const char* path, struct list* dependencies)
     size_t bufferSize;
     int    status;
 
-    status = __load_file(path, (void**)&buffer, &bufferSize);
+    status = __resolve_load_file(path, (void**)&buffer, &bufferSize);
     if (status) {
         fprintf(stderr, "oven: failed to load file: %s\n", path);
         return status;
@@ -179,7 +238,7 @@ int pe_resolve_dependencies(const char* path, struct list* dependencies)
 }
 
 #ifdef TEST
-
+// gcc -I../../platform/include -DTEST ./pe.c
 int main(int argc, char** argv)
 {
     struct list dependencies;

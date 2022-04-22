@@ -24,15 +24,27 @@
 #define MZ_MAGIC 0x5A4D
 #define PE_MAGIC 0x00004550
 
-#define PE_MACHINE_UNKNOWN 0x0
-#define PE_MACHINE_AM33    0x1D3
-#define PE_MACHINE_X64     0x8664
-#define PE_MACHINE_ARM     0x1C0
-#define PE_MACHINE_ARMNT   0x1C4
-#define PE_MACHINE_ARM64   0xAA64
-#define PE_MACHINE_EFI     0xEBC
-#define PE_MACHINE_X32     0x14C
-#define PE_MACHINE_IA64    0x200
+#define IMAGE_FILE_MACHINE_UNKNOWN      0x0
+#define IMAGE_FILE_MACHINE_AM33         0x1D3
+#define IMAGE_FILE_MACHINE_AMD64        0x8664
+#define IMAGE_FILE_MACHINE_ARM          0x1c0
+#define IMAGE_FILE_MACHINE_ARM64        0xaa64
+#define IMAGE_FILE_MACHINE_ARMNT        0x1c4
+#define IMAGE_FILE_MACHINE_EBC          0xEBC
+#define IMAGE_FILE_MACHINE_I386         0x14C
+#define IMAGE_FILE_MACHINE_IA64         0x200
+#define IMAGE_FILE_MACHINE_LOONGARCH32  0x6232
+#define IMAGE_FILE_MACHINE_LOONGARCH64  0x6264
+#define IMAGE_FILE_MACHINE_M32R         0x9041
+#define IMAGE_FILE_MACHINE_MIPS16       0x266
+#define IMAGE_FILE_MACHINE_MIPSFPU      0x366
+#define IMAGE_FILE_MACHINE_MIPSFPU16    0x466
+#define IMAGE_FILE_MACHINE_POWERPC      0x1f0
+#define IMAGE_FILE_MACHINE_POWERPCFP    0x1f1
+#define IMAGE_FILE_MACHINE_R4000        0x166
+#define IMAGE_FILE_MACHINE_RISCV32      0x5032
+#define IMAGE_FILE_MACHINE_RISCV64      0x5064
+#define IMAGE_FILE_MACHINE_RISCV128     0x5128
 
 #define PE_ARCHITECTURE_32 0x10B
 #define PE_ARCHITECTURE_64 0x20B
@@ -153,5 +165,15 @@ uint16_t            NumLineNumbers;
 uint32_t            Flags;
 } PeSectionHeader;
 
+typedef struct {
+    union {
+        uint32_t Attributes;
+        uint32_t ImportLookupTable; // RVA Value
+    } Variable;
+    uint32_t TimeStamp; // Set to 0 if image is not bound
+    uint32_t ForwarderChainId;
+    uint32_t ModuleName; // RVA
+    uint32_t ImportAddressTable; // RVA
+} PeImportDescriptor;
 
 #endif //!__RESOLVERS_PE_H__

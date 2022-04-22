@@ -301,6 +301,7 @@ int pack_main(int argc, char** argv, char** envp, struct recipe* recipe)
 
     if (recipe == NULL) {
         fprintf(stderr, "bake: no recipe provided\n");
+        __print_help();
         return 1;
     }
 

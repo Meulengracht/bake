@@ -24,76 +24,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern int __resolve_load_file(const char* path, void** bufferOut, size_t* sizeOut);
+extern int __resolve_add_dependency(struct list* dependencies, const char* library);
+
 struct __elf_address_mapping {
     const char* data;
     size_t      voffset;
     size_t      size;
     int         valid;
 };
-
-static int __add_dependency(struct list* dependencies, const char* library)
-{
-    struct oven_resolve_dependency* dependency;
-    struct list_item*               item;
-
-    // make sure dependency is not already added
-    list_foreach(dependencies, item) {
-        dependency = (struct oven_resolve_dependency*)item;
-        if (strcmp(dependency->name, library) == 0) {
-            return 0;
-        }
-    }
-
-    // add dependency
-    dependency = calloc(1, sizeof(struct oven_resolve_dependency));
-    if (dependency == NULL) {
-        return -1;
-    }
-
-    dependency->name = strdup(library);
-    if (dependency->name == NULL) {
-        free(dependency);
-        return -1;
-    }
-
-    list_add(dependencies, &dependency->list_header);
-    return 0;
-}
-
-static int __load_file(const char* path, void** bufferOut, size_t* sizeOut)
-{
-    FILE*  file;
-    void*  buffer;
-    size_t size;
-    size_t read;
-    
-    file = fopen(path, "rb");
-    if (file == NULL) {
-        return -1;
-    }
-    
-    fseek(file, 0, SEEK_END);
-    size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    buffer = malloc(size);
-    if (buffer == NULL) {
-        fclose(file);
-        return -1;
-    }
-    
-    read = fread(buffer, 1, size, file);
-    if (read != size) {
-        fclose(file);
-        free(buffer);
-        return -1;
-    }
-    fclose(file);
-    
-    *bufferOut = buffer;
-    *sizeOut = size;
-    return 0;
-}
 
 static const char* __get_string_from_strtab32(const char* strTable, Elf32_Xword index)
 {
@@ -137,7 +76,7 @@ static int __parse_dynamic_section32(struct __elf_address_mapping* mappings, con
     for (i = 0, di = (Elf32_Dyn*)dynamicTable;
          i < dynamicTableSize; i += sizeof(Elf32_Dyn), di++) {
         if (di->d_tag == DT_NEEDED) {
-            if (__add_dependency(dependencies, __get_string_from_strtab32(strTable, di->d_un.d_val))) {
+            if (__resolve_add_dependency(dependencies, __get_string_from_strtab32(strTable, di->d_un.d_val))) {
                 return -1;
             }
         } else if (di->d_tag == DT_NULL) {
@@ -242,7 +181,7 @@ static int __parse_dynamic_section64(struct __elf_address_mapping* mappings, con
     for (i = 0, di = (Elf64_Dyn*)dynamicTable;
          i < dynamicTableSize; i += sizeof(Elf64_Dyn), di++) {
         if (di->d_tag == DT_NEEDED) {
-            if (__add_dependency(dependencies, __get_string_from_strtab64(strTable, di->d_un.d_val))) {
+            if (__resolve_add_dependency(dependencies, __get_string_from_strtab64(strTable, di->d_un.d_val))) {
                 return -1;
             }
         } else if (di->d_tag == DT_NULL) {
@@ -392,7 +331,7 @@ int elf_resolve_dependencies(const char* path, struct list* dependencies)
     size_t bufferSize;
     int    status;
 
-    status = __load_file(path, (void**)&buffer, &bufferSize);
+    status = __resolve_load_file(path, (void**)&buffer, &bufferSize);
     if (status) {
         fprintf(stderr, "oven: failed to load file: %s\n", path);
         return status;
@@ -404,7 +343,7 @@ int elf_resolve_dependencies(const char* path, struct list* dependencies)
 }
 
 #ifdef TEST
-
+// gcc -I../../platform/include -DTEST ./elf.c
 int main(int argc, char** argv)
 {
     struct list dependencies;

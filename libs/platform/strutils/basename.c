@@ -31,7 +31,7 @@ void strbasename(const char* path, char* buffer, size_t bufferSize)
         return;
     }
 	
-	start = strrchr(path, '/');
+	start = strrchr(path, CHEF_PATH_SEPARATOR);
 	if (start == NULL) {
 		start = (char*)path;
 	} else {

@@ -98,8 +98,8 @@ static int __get_cwd(char** bufferOut)
 
     // make sure it ends on a path seperator
     cwdLength = strlen(cwd);
-    if (cwd[cwdLength - 1] != '/') {
-        cwd[cwdLength] = '/';
+    if (cwd[cwdLength - 1] != CHEF_PATH_SEPARATOR) {
+        cwd[cwdLength] = CHEF_PATH_SEPARATOR;
         cwd[cwdLength + 1] = '\0';
     }
 
@@ -205,8 +205,11 @@ static int __extract_directory(
             break;
         }
 
-        filepathBuffer = malloc(strlen(path) + strlen(dp.Name) + 2);
-        sprintf(filepathBuffer, "%s/%s", path, dp.Name);
+        filepathBuffer = strpathcombine(path, dp.Name);
+        if (filepathBuffer == NULL) {
+            fprintf(stderr, "__extract_directory: unable to allocate memory for filepath\n");
+            return -1;
+        }
 
         __write_progress(dp.Name, progress, 0);
         if (dp.Type == VaFsEntryType_Directory) {
@@ -547,9 +550,8 @@ static const char* __get_unpack_path(enum chef_package_type type, const char* pa
 {
     switch (type) {
         case CHEF_PACKAGE_TYPE_TOOLCHAIN: {
-            char* toolchainPath = (char*)malloc(strlen(g_utensilsPath) + strlen(packageName) + 2);
-            sprintf(toolchainPath, "%s/%s", g_utensilsPath, packageName);
-            if (platform_mkdir(toolchainPath)) {
+            char* toolchainPath = strpathcombine(g_utensilsPath, packageName);
+            if (toolchainPath && platform_mkdir(toolchainPath)) {
                 fprintf(stderr, "__get_unpack_path: failed to create toolchain directory\n");
                 free(toolchainPath);
                 return NULL;
@@ -689,7 +691,7 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     }
 
     // split the publisher/package
-    names = strsplit(ingredient->name, '/');
+    names = strsplit(ingredient->name, CHEF_PATH_SEPARATOR);
     if (names == NULL) {
         fprintf(stderr, "__cache_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
         return -1;
@@ -767,7 +769,7 @@ char* fridge_get_utensil_location(const char* ingredient)
     }
 
     // split the publisher/package
-    names = strsplit(ingredient, '/');
+    names = strsplit(ingredient, CHEF_PATH_SEPARATOR);
     if (names == NULL) {
         fprintf(stderr, "fridge_get_utensil_location: invalid package naming '%s' (must be publisher/package)\n", ingredient);
         return NULL;
@@ -789,7 +791,7 @@ char* fridge_get_utensil_location(const char* ingredient)
         goto cleanup;
     }
 
-    sprintf(path, "%s/%s", g_utensilsPath, names[1]);
+    sprintf(path, "%s" CHEF_PATH_SEPARATOR_S "%s", g_utensilsPath, names[1]);
 
 cleanup:
     strsplit_free(names);

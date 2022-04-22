@@ -91,6 +91,8 @@ enum state {
     STATE_COMMAND_PATH,
     STATE_COMMAND_ARGUMENT_LIST,
     STATE_COMMAND_TYPE,
+    STATE_COMMAND_ICON,
+    STATE_COMMAND_SYSTEMLIBS,
     STATE_COMMAND_DESCRIPTION,
 
     STATE_STOP
@@ -931,20 +933,19 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "name") == 0) {
                         s->state = STATE_COMMAND_NAME;
-                    }
-                    else if (strcmp(value, "description") == 0) {
+                    } else if (strcmp(value, "description") == 0) {
                         s->state = STATE_COMMAND_DESCRIPTION;
-                    }
-                    else if (strcmp(value, "path") == 0) {
+                    } else if (strcmp(value, "path") == 0) {
                         s->state = STATE_COMMAND_PATH;
-                    }
-                    else if (strcmp(value, "arguments") == 0) {
+                    } else if (strcmp(value, "icon") == 0) {
+                        s->state = STATE_COMMAND_ICON;
+                    } else if (strcmp(value, "system-libs") == 0) {
+                        s->state = STATE_COMMAND_SYSTEMLIBS;
+                    } else if (strcmp(value, "arguments") == 0) {
                         s->state = STATE_COMMAND_ARGUMENT_LIST;
-                    }
-                    else if (strcmp(value, "type") == 0) {
+                    } else if (strcmp(value, "type") == 0) {
                         s->state = STATE_COMMAND_TYPE;
-                    }
-                    else {
+                    } else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
                     } break;
@@ -959,6 +960,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_DESCRIPTION, command.description, __parse_string)
         __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_PATH, command.path, __parse_string)
         __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_TYPE, command.type, __parse_command_type)
+        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_ICON, command.icon, __parse_string)
+        __consume_scalar_fn(STATE_COMMAND, STATE_COMMAND_SYSTEMLIBS, command.allow_system_libraries, __parse_boolean)
         __consume_sequence_unmapped(STATE_COMMAND, STATE_COMMAND_ARGUMENT_LIST, __add_command_arguments)
         
         case STATE_STOP:

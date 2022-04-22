@@ -35,9 +35,11 @@ char* __prefix_path(const char* base, const char* path)
 			return NULL;
 		}
 
-		last = strrchr(base, '/');
+		last = strrchr(base, CHEF_PATH_SEPARATOR);
 		if (last == NULL) {
-			strcpy(result, "/");
+			size_t length = strlen(result);
+			result[length] = CHEF_PATH_SEPARATOR;
+			result[length + 1] = '\0';
 		} else {
 			strncpy(result, base, (last - base) + 1);
 			result[(last - base) + 1] = '\0';

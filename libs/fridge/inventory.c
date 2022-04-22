@@ -288,7 +288,7 @@ static int __package_path(struct fridge_inventory* inventory, const char* publis
 
     written = snprintf(
         pathBuffer, bufferSize - 1,
-        "%s/%s-%s-%s-%s-%s-%i.pack",
+        "%s" CHEF_PATH_SEPARATOR_S "%s-%s-%s-%s-%s-%i.pack",
         inventory->path,
         publisher, package,
         platform, arch,

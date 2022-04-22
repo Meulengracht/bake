@@ -1,4 +1,5 @@
 set(SRCS
+    common.c
     elf.c
     pe.c
 )

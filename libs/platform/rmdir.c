@@ -51,7 +51,7 @@ int platform_rmdir(const char *path) {
          if (buf) {
             struct stat statbuf;
 
-            snprintf(buf, len, "%s/%s", path, p->d_name);
+            snprintf(buf, len, "%s" CHEF_PATH_SEPARATOR_S "%s", path, p->d_name);
             if (!stat(buf, &statbuf)) {
                if (S_ISDIR(statbuf.st_mode))
                   r2 = platform_rmdir(buf);
