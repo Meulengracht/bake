@@ -691,7 +691,7 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     }
 
     // split the publisher/package
-    names = strsplit(ingredient->name, CHEF_PATH_SEPARATOR);
+    names = strsplit(ingredient->name, '/');
     if (names == NULL) {
         fprintf(stderr, "__cache_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
         return -1;
@@ -769,7 +769,7 @@ char* fridge_get_utensil_location(const char* ingredient)
     }
 
     // split the publisher/package
-    names = strsplit(ingredient, CHEF_PATH_SEPARATOR);
+    names = strsplit(ingredient, '/');
     if (names == NULL) {
         fprintf(stderr, "fridge_get_utensil_location: invalid package naming '%s' (must be publisher/package)\n", ingredient);
         return NULL;

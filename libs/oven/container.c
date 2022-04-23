@@ -381,7 +381,7 @@ static int __write_filepath(
     }
 
     // recurse into the next directory
-    status = __write_filepath(progress, subdirectoryHandle, dependency, remaining);
+    status = __write_filepath(progress, subdirectoryHandle, dependency, remaining + 1);
     if (status) {
         fprintf(stderr, "oven: failed to write file %s\n", dependency->path);
         return -1;
