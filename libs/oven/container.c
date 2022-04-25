@@ -49,6 +49,7 @@ struct VaFsFeatureFilter {
     struct VaFsFeatureHeader Header;
 };
 
+extern const char* __get_build_root(void);
 extern const char* __get_install_path(void);
 extern const char* __get_architecture(void);
 extern const char* __build_argument_string(struct list* argumentList);
@@ -179,7 +180,7 @@ static int __write_file(
     // create the VaFS file
     status = vafs_directory_create_file(directoryHandle, filename, permissions, &fileHandle);
     if (status) {
-        return -1;
+        return status;
     }
 
     if ((file = fopen(path, "rb")) == NULL) {
@@ -204,7 +205,7 @@ static int __write_file(
     fclose(file);
 
     if (status) {
-        fprintf(stderr, "oven: failed to write file '%s'\n", filename);
+        fprintf(stderr, "oven: failed to write file '%s': %s\n", filename, strerror(errno));
         return -1;
     }
 
@@ -363,7 +364,11 @@ static int __write_filepath(
     // extract next token from the remaining path
     remaining = strchr(remainingPath, CHEF_PATH_SEPARATOR);
     if (!remaining) {
-        return __write_file(directoryHandle, dependency->path, dependency->name, 0777);
+        status = __write_file(directoryHandle, dependency->path, dependency->name, 0777);
+        if (status && errno != EEXIST) {
+            return -1;
+        }
+        return 0;
     }
 
     token = strndup(remainingPath, remaining - remainingPath);
@@ -383,7 +388,7 @@ static int __write_filepath(
     // recurse into the next directory
     status = __write_filepath(progress, subdirectoryHandle, dependency, remaining + 1);
     if (status) {
-        fprintf(stderr, "oven: failed to write file %s\n", dependency->path);
+        fprintf(stderr, "oven: failed to write filepath %s\n", dependency->path);
         return -1;
     }
 
@@ -888,6 +893,15 @@ static enum VaFsArchitecture __parse_arch(const char* arch)
     return VaFsArchitecture_UNKNOWN;
 }
 
+static void __finalize_progress(struct progress_context* progress, const char* packName)
+{
+    progress->files = progress->files_total;
+    progress->symlinks = progress->symlinks_total;
+
+    __write_progress(packName, progress, 0);
+    printf("\n");
+}
+
 int oven_pack(struct oven_pack_options* options)
 {
     struct VaFsDirectoryHandle* directoryHandle;
@@ -981,7 +995,7 @@ int oven_pack(struct oven_pack_options* options)
             goto cleanup;
         }
     }
-    printf("\n");
+    __finalize_progress(&progressContext, &tmp[0]);
 
     status = __write_package_metadata(vafs, name, options);
     if (status != 0) {

@@ -14,11 +14,13 @@ recipes:
   - name: chef
     path: /
     steps:
-    - type: generate
+    - name: config
+      type: generate
       system: cmake
       arguments: [-G, '"Unix Makefiles"']
-    - type: build
-      depends: [generate]
+    - name: build
+      type: build
+      depends: [config]
       system: make
 
 packs:
@@ -29,7 +31,9 @@ packs:
     path: bin/bake
     type: executable
     description: Utility to create chef recipes
+    system-libs: true
   - name: order
     path: bin/order
     type: executable
     description: Utility to publish, inspect and manage account services
+    system-libs: true

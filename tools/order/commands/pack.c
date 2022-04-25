@@ -27,13 +27,13 @@ extern void account_setup(void);
 
 static void __print_help(void)
 {
-    printf("Usage: order account <command> [options]\n");
+    printf("Usage: order pack <command> [options]\n");
     printf("\n");
     printf("Commands:\n");
-    printf("  whoami              shows information about the currently logged in user\n");
-    printf("  set <param> <value> sets a specific account parameter\n");
-    printf("  get <param>         retrieves the value of a specific account paramater\n");
-    printf("  logout              logout of the current account\n");
+    printf("  list                 list all packs registered the current account\n");
+    printf("  set <param> <value>  sets a specific pack parameter\n");
+    printf("  get <param>          retrieves the value of a specific pack paramater\n");
+    printf("  delete <pack-format> deletes either a specific pack, channel, platform, architecture or version\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
@@ -139,34 +139,6 @@ static int __handle_set(char* parameter, char* value)
     return 0;
 }
 
-static int __handle_api_key(const char* option, const char* value)
-{
-    struct chef_account* account;
-    int                  status;
-
-    if (option == NULL) {
-        printf("order: no option specified for 'account api-key'\n");
-        return -1;
-    }
-
-    if (value == NULL) {
-        printf("order: no value specified for 'account api-key'\n");
-        return -1;
-    }
-    
-    if (strcmp(option, "create") == 0) {
-
-    } else if (strcmp(option, "delete") == 0) {
-
-    } else if (strcmp(option, "list") == 0) {
-
-    } else {
-        printf("order: unknown option '%s' for 'account api-key'\n", option);
-        return -1;
-    }
-    return 0;
-}
-
 int account_main(int argc, char** argv)
 {
     char* command   = NULL;
@@ -221,16 +193,18 @@ int account_main(int argc, char** argv)
         // now handle the command that was passed
         if (!strcmp(command, "whoami")) {
             status = __handle_whoami();
-        } else if (!strcmp(command, "api-key")) {
-            status = __handle_api_key(parameter, value);
-        } else if (!strcmp(command, "set")) {
+        }
+        else if (!strcmp(command, "set")) {
             status = __handle_set(parameter, value);
-        } else if (!strcmp(command, "get")) {
+        }
+        else if (!strcmp(command, "get")) {
             status = __handle_get(parameter);
-        } else if (!strcmp(command, "logout")) {
+        }
+        else if (!strcmp(command, "logout")) {
             status = 0;
             chefclient_logout();
-        } else {
+        }
+        else {
             printf("order: unknown command '%s'\n", command);
             status = -1;
             break;

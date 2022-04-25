@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <utils.h>
 
 // include dirent.h for directory operations
 #if defined(_WIN32) || defined(_WIN64)
@@ -80,6 +81,11 @@ static struct build_backend g_buildbackends[] = {
 };
 
 static struct oven_context g_ovenContext = { 0 };
+
+const char* __get_build_root(void)
+{
+    return g_ovenContext.build_root;
+}
 
 const char* __get_install_path(void)
 {
@@ -230,7 +236,7 @@ static int __recreate_dir(const char* path)
     return 0;
 }
 
-int oven_reset(void)
+int oven_clean(void)
 {
     int status;
 
@@ -264,29 +270,17 @@ int oven_recipe_start(struct oven_recipe_options* options)
     g_ovenContext.recipe.toolchain     = options->toolchain != NULL ? strdup(options->toolchain) : NULL;
     
     // generate build and install directories
-    buildRoot = malloc(sizeof(char) * (strlen(g_ovenContext.build_root) + strlen(g_ovenContext.recipe.relative_path) + 2));
+    buildRoot = strpathcombine(g_ovenContext.build_root, options->relative_path);
     if (!buildRoot) {
         errno = ENOMEM;
         return -1;
     }
 
-    relativePathLength = strlen(g_ovenContext.recipe.relative_path);
-    if (relativePathLength > 0) {
-        if (g_ovenContext.recipe.relative_path[0] != CHEF_PATH_SEPARATOR) {
-            sprintf(buildRoot, "%s" CHEF_PATH_SEPARATOR_S "%s", g_ovenContext.build_root, g_ovenContext.recipe.relative_path);
-        } else {
-            sprintf(buildRoot, "%s%s", g_ovenContext.build_root, g_ovenContext.recipe.relative_path);
-        }
-
-        status = platform_mkdir(buildRoot);
-        if (status) {
-            fprintf(stderr, "oven: failed to create build directory: %s\n", strerror(errno));
-            free(buildRoot);
-            return status;
-        }
-
-    } else {
-        strcpy(buildRoot, g_ovenContext.build_root);
+    status = platform_mkdir(buildRoot);
+    if (status) {
+        fprintf(stderr, "oven: failed to create build directory: %s\n", strerror(errno));
+        free(buildRoot);
+        return status;
     }
 
     checkpointPath = strpathcombine(buildRoot, ".checkpoints");
@@ -336,42 +330,18 @@ void oven_recipe_end(void)
     }
 }
 
-static int __create_checkpoint(const char* path, const char* checkpoint)
+int oven_clear_recipe_checkpoint(const char* name)
 {
-    // write checkpoint to file
-    FILE* file = fopen(path, "a");
-    if (!file) {
-        fprintf(stderr, "oven: failed to create checkpoint file: %s\n", strerror(errno));
+    if (name == NULL) {
+        errno = EINVAL;
         return -1;
     }
 
-    fprintf(file, "%s\n", checkpoint);
-    fclose(file);
-    return 0;
-}
-
-static int __has_checkpoint(const char* path, const char* checkpoint)
-{
-    FILE*   file;
-    char*   line = NULL;
-    size_t  lineLength = 0;
-    ssize_t read;
-
-    // read checkpoint from file
-    file = fopen(path, "r");
-    if (!file) {
-        return 0;
+    if (g_ovenContext.recipe.checkpoint_path == NULL) {
+        errno = ENOSYS;
+        return -1;
     }
-
-    while ((read = getline(&line, &lineLength, file)) != -1) {
-        if (strcmp(line, checkpoint) == 0) {
-            fclose(file);
-            return 1;
-        }
-    }
-
-    fclose(file);
-    return 0;
+    return oven_checkpoint_remove(g_ovenContext.recipe.checkpoint_path, name);
 }
 
 static const char* __get_variable(const char* name)
@@ -762,11 +732,12 @@ int oven_configure(struct oven_generate_options* options)
     }
 
     // check if we already have done this step
-    if (__has_checkpoint(g_ovenContext.recipe.checkpoint_path, options->system)) {
+    if (oven_checkpoint_contains(g_ovenContext.recipe.checkpoint_path, options->name)) {
+        printf("nothing to be done for %s\n", options->name);
         return 0;
     }
     
-    // build the backend data
+    printf("running step %s\n", options->name);
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
@@ -774,7 +745,7 @@ int oven_configure(struct oven_generate_options* options)
 
     status = backend->generate(&data, options->system_options);
     if (status == 0) {
-        status = __create_checkpoint(g_ovenContext.recipe.checkpoint_path, options->system);
+        status = oven_checkpoint_create(g_ovenContext.recipe.checkpoint_path, options->name);
     }
 
 cleanup:
@@ -810,13 +781,22 @@ int oven_build(struct oven_build_options* options)
         return -1;
     }
 
-    // build the backend data
+    // check if we already have done this step
+    if (oven_checkpoint_contains(g_ovenContext.recipe.checkpoint_path, options->name)) {
+        printf("nothing to be done for %s\n", options->name);
+        return 0;
+    }
+
+    printf("running step %s\n", options->name);
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
     }
 
     status = backend->build(&data, options->system_options);
+    if (status == 0) {
+        status = oven_checkpoint_create(g_ovenContext.recipe.checkpoint_path, options->name);
+    }
 
 cleanup:
     __cleanup_backend_data(&data);
@@ -835,6 +815,13 @@ int oven_script(struct oven_script_options* options)
         return -1;
     }
 
+    // check if we already have done this step
+    if (oven_checkpoint_contains(g_ovenContext.recipe.checkpoint_path, options->name)) {
+        printf("nothing to be done for %s\n", options->name);
+        return 0;
+    }
+
+    printf("running step %s\n", options->name);
     preprocessedScript = __preprocess_value(options->script);
     if (preprocessedScript == NULL) {
         return -1;
@@ -842,6 +829,10 @@ int oven_script(struct oven_script_options* options)
 
     status = platform_script(preprocessedScript);
     free((void*)preprocessedScript);
+
+    if (status == 0) {
+        status = oven_checkpoint_create(g_ovenContext.recipe.checkpoint_path, options->name);
+    }
     return status;
 }
 

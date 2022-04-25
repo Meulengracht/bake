@@ -69,6 +69,7 @@ struct oven_recipe_options {
 };
 
 struct oven_generate_options {
+    const char*                 name;
     const char*                 profile;
     const char*                 system;
     union oven_backend_options* system_options;
@@ -77,6 +78,7 @@ struct oven_generate_options {
 };
 
 struct oven_build_options {
+    const char*                 name;
     const char*                 profile;
     const char*                 system;
     union oven_backend_options* system_options;
@@ -85,9 +87,9 @@ struct oven_build_options {
 };
 
 struct oven_script_options {
+    const char* name;
     const char* script;
 };
-
 
 struct oven_pack_options {
     const char*            name;
@@ -137,7 +139,15 @@ extern void oven_recipe_end(void);
  * 
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int oven_reset(void);
+extern int oven_clear_recipe_checkpoint(const char* name);
+
+/**
+ * @brief Cleans up the build and install areas, resetting the entire state
+ * of the current project context.
+ * 
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
+ */
+extern int oven_clean(void);
 
 /**
  * @brief 

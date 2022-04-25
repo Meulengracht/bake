@@ -1,4 +1,4 @@
-# About
+# Chef Package Management System
 Originally developed for the Vali/MollenOS operating system, this is a generic package management system that is built as a lightweight alternative to current package managers. Its not only for package management, but also as an application format. 
 
 Chef consists of 3 parts, bake, order and serve.
@@ -219,7 +219,21 @@ recipes:
     # will automatically set the correct installation prefix when invoking the
     # generator.
     steps:
-      
+      ###########################
+      # name - Required
+      #
+      # Name of the step, this can also be used to refer to this step when
+      # setting up step dependencies.
+    - name: config
+
+      ###########################
+      # depends - Optional
+      # 
+      # List of steps that this step depends on. Steps are executed in sequential order
+      # of how they are defined in the YAML file. But when requesting specific steps to run
+      # then chef needs to know which steps will be invalidated once that step has rerun.
+      depends: [config]
+
       ###########################
       # type - Required
       #    values: {generate, build, script}

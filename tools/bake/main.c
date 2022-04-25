@@ -16,6 +16,7 @@
  * 
  */
 
+#include <errno.h>
 #include <libplatform.h>
 #include <recipe.h>
 #include <stdio.h>
@@ -25,7 +26,8 @@
 
 extern int init_main(int argc, char** argv, char** envp, struct recipe* recipe);
 extern int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe);
-extern int pack_main(int argc, char** argv, char** envp, struct recipe* recipe);
+extern int run_main(int argc, char** argv, char** envp, struct recipe* recipe);
+extern int clean_main(int argc, char** argv, char** envp, struct recipe* recipe);
 
 struct command_handler {
     char* name;
@@ -33,26 +35,31 @@ struct command_handler {
 };
 
 static struct command_handler g_commands[] = {
-    { "init",  init_main },
-    { "fetch", fetch_main },
-    { "pack",  pack_main }
-    // config
-    // build
-    // pack
+    { "init",     init_main },
+    { "fetch",    fetch_main },
+    { "run",      run_main },
+    { "generate", run_main },
+    { "build",    run_main },
+    { "script",   run_main },
+    { "pack",     run_main },
+    { "clean",    clean_main }
 };
 
 static void __print_help(void)
 {
-    printf("Usage: bake <command> [options]\n");
+    printf("Usage: bake <command> <recipe> [options]\n");
     printf("\n");
     printf("Commands:\n");
     printf("  init        initializes a new recipe in the current directory\n");
     printf("  fetch       refreshes/fetches all ingredients\n");
-    printf("  pack        builds the project\n");
+    printf("  run         runs all recipe steps that have not already been completed\n");
+    printf("  generate    run configure step and its dependencies\n");
+    printf("  build       run the build step and its dependencies\n");
+    printf("  script      run the script step and its dependencies\n");
+    printf("  pack        run the pack step\n");
+    printf("  clean       cleanup all build and intermediate directories\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -r, --recipe\n");
-    printf("      A path to recipe file that should be used (default: recipe.yaml)\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
     printf("  -v, --version\n");
@@ -74,6 +81,11 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
     FILE*  file;
     void*  buffer;
     size_t size;
+
+    if (path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
 
     file = fopen(path, "r");
     if (!file) {
@@ -100,9 +112,9 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
 
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler* command    = &g_commands[2];
+    struct command_handler* command    = &g_commands[2]; // run step is default
     struct recipe*          recipe     = NULL;
-    char*                   recipePath = "recipe.yaml";
+    char*                   recipePath = NULL;
     char*                   arch       = CHEF_ARCHITECTURE_STR;
     void*                   buffer;
     size_t                  length;
@@ -122,27 +134,29 @@ int main(int argc, char** argv, char** envp)
 
         command = __get_command(argv[1]);
         if (!command) {
-            fprintf(stderr, "bake: invalid command %s\n", argv[1]);
-            return -1;
+            struct platform_stat stats;
+            // was a file passed? Then it was the recipe and we assume
+            // that the run command should be run.
+            if (platform_stat(argv[1], &stats) == 0) {
+                command = &g_commands[2];
+                recipePath = argv[1];
+            } else {
+                fprintf(stderr, "bake: invalid command %s\n", argv[1]);
+                return -1;
+            }
         }
 
         if (argc > 2) {
             for (int i = 2; i < argc; i++) {
-                if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--recipe")) {
-                    if (i + 1 < argc) {
-                        recipePath = argv[i + 1];
-                    }
-                    else {
-                        fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
-                        return 1;
-                    }
-                } else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--arch")) {
+                if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--arch")) {
                     if (i + 1 < argc) {
                         arch = argv[i + 1];
                     } else {
                         fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
                         return 1;
                     }
+                } else if (argv[i][0] != '-') {
+                    recipePath = argv[i];
                 }
             }
         }

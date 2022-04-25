@@ -16,6 +16,7 @@
  * 
  */
 
+#include <ctype.h>
 #include <errno.h>
 #include <libplatform.h>
 #include <recipe.h>
@@ -65,6 +66,7 @@ enum state {
 
     STATE_RECIPE_STEP_LIST,
     STATE_RECIPE_STEP,     // MAPPING_START
+    STATE_RECIPE_STEP_NAME,
     STATE_RECIPE_STEP_TYPE,
     STATE_RECIPE_STEP_DEPEND_LIST,
     STATE_RECIPE_STEP_SYSTEM,
@@ -181,22 +183,22 @@ static void __finalize_project(struct parser_state* state)
 {
     // verify required project members
     if (state->recipe.project.summary == NULL) {
-        fprintf(stderr, "bake: parse error: project summary is required\n");
+        fprintf(stderr, "parse error: project summary is required\n");
         exit(EXIT_FAILURE);
     }
 
     if (state->recipe.project.version == NULL) {
-        fprintf(stderr, "bake: parse error: project version must be specified\n");
+        fprintf(stderr, "parse error: project version must be specified\n");
         exit(EXIT_FAILURE);
     }
 
     if (state->recipe.project.author == NULL) {
-        fprintf(stderr, "bake: parse error: project author is required\n");
+        fprintf(stderr, "parse error: project author is required\n");
         exit(EXIT_FAILURE);
     }
 
     if (state->recipe.project.email == NULL) {
-        fprintf(stderr, "bake: parse error: project author email is required\n");
+        fprintf(stderr, "parse error: project author email is required\n");
         exit(EXIT_FAILURE);
     }
 }
@@ -207,30 +209,30 @@ static void __finalize_ingredient(struct parser_state* state)
 
     // we should verify required members of the ingredient before creating a copy
     if (state->ingredient.ingredient.name == NULL) {
-        fprintf(stderr, "bake: parse error: ingredient name is required\n");
+        fprintf(stderr, "parse error: ingredient name is required\n");
         exit(EXIT_FAILURE);
     }
 
     if (state->ingredient.ingredient.channel == NULL) {
-        fprintf(stderr, "bake: parse error: ingredient %s: channel is required\n", state->ingredient.ingredient.name);
+        fprintf(stderr, "parse error: ingredient %s: channel is required\n", state->ingredient.ingredient.name);
         exit(EXIT_FAILURE);
     }
 
     switch (state->ingredient.ingredient.source) {
         case INGREDIENT_SOURCE_URL:
             if (state->ingredient.ingredient.url.url == NULL) {
-                fprintf(stderr, "bake: parse error: ingredient %s: url is required\n", state->ingredient.ingredient.name);
+                fprintf(stderr, "parse error: ingredient %s: url is required\n", state->ingredient.ingredient.name);
                 exit(EXIT_FAILURE);
             }
             break;
         case INGREDIENT_SOURCE_FILE:
             if (state->ingredient.ingredient.file.path == NULL) {
-                fprintf(stderr, "bake: parse error: ingredient %s: file path is required\n", state->ingredient.ingredient.name);
+                fprintf(stderr, "parse error: ingredient %s: file path is required\n", state->ingredient.ingredient.name);
                 exit(EXIT_FAILURE);
             }
             break;
         case INGREDIENT_SOURCE_UNKNOWN:
-            fprintf(stderr, "bake: parse error: ingredient %s: type is not supported\n", state->ingredient.ingredient.name);
+            fprintf(stderr, "parse error: ingredient %s: type is not supported\n", state->ingredient.ingredient.name);
             exit(EXIT_FAILURE);
             break;
             
@@ -241,7 +243,7 @@ static void __finalize_ingredient(struct parser_state* state)
     // now we copy and reset
     ingredient = malloc(sizeof(struct recipe_ingredient));
     if (ingredient == NULL) {
-        fprintf(stderr, "bake: error: out of memory\n");
+        fprintf(stderr, "error: out of memory\n");
         exit(EXIT_FAILURE);
     }
 
@@ -264,20 +266,36 @@ static void __finalize_ingredient(struct parser_state* state)
     state->ingredient.ingredient.source = INGREDIENT_SOURCE_REPO;
 }
 
+static int __is_valid_name(const char* name)
+{
+    if (name == NULL || strlen(name) == 0) {
+        return -1;
+    }
+
+    // step names must only contain a-z and '-_'
+    while (*name != '\0') {
+        if (!(isascii(*name) || (*name == '_') || (*name == '-'))) {
+            return -1;
+        }
+        name++;
+    }
+    return 0;
+}
+
 static void __finalize_part(struct parser_state* state)
 {
     struct recipe_part* part;
 
     // we should verify required members of the part before creating a copy
-    if (state->part.name == NULL) {
-        fprintf(stderr, "bake: parse error: part name is required\n");
+    if (__is_valid_name(state->part.name)) {
+        fprintf(stderr, "parse error: part name must be provided and only contain [a-zA-Z_-]\n");
         exit(EXIT_FAILURE);
     }
     
     // now we copy and reset
     part = malloc(sizeof(struct recipe_part));
     if (part == NULL) {
-        fprintf(stderr, "bake: error: out of memory\n");
+        fprintf(stderr, "error: out of memory\n");
         exit(EXIT_FAILURE);
     }
 
@@ -288,25 +306,70 @@ static void __finalize_part(struct parser_state* state)
     memset(&state->part, 0, sizeof(struct recipe_part));
 }
 
+static int __find_step(struct parser_state* state, const char* name)
+{
+    struct list_item* item;
+
+    // go through dependency list and make sure we can find the step
+    list_foreach(&state->part.steps, item) {
+        struct recipe_step* step = (struct recipe_step*)item;
+        if (strcmp(step->name, name) == 0) {
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int __resolve_step_dependencies(struct parser_state* state, struct list* dependencies)
+{
+    struct list_item* item;
+
+    // go through dependency list and make sure we can find the step
+    list_foreach(dependencies, item) {
+        struct oven_value_item* value = (struct oven_value_item*)item;
+        if (__find_step(state, value->value)) {
+            fprintf(stderr, "parse error: step %s which does not exist\n", value->value);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static void __finalize_step(struct parser_state* state)
 {
     struct recipe_step* step;
+    int                 status;
 
     // we should verify required members of the step before creating a copy
+    if (__is_valid_name(state->step.name)) {
+        fprintf(stderr, "parse error: part %s: step name must be provided and only contain [a-zA-Z_-]\n", state->part.name);
+        exit(EXIT_FAILURE);
+    }
+
     if (state->step.type == RECIPE_STEP_TYPE_UNKNOWN) {
-        fprintf(stderr, "bake: parse error: part %s: valid step types are {generate, build}\n", state->part.name);
+        fprintf(stderr, "parse error: part %s: step %s: valid step types are {generate, build, script}\n",
+            state->part.name, state->step.name);
         exit(EXIT_FAILURE);
     }
 
     if (state->step.type != RECIPE_STEP_TYPE_SCRIPT && state->step.system == NULL) {
-        fprintf(stderr, "bake: parse error: part %s: system is required\n", state->part.name);
+        fprintf(stderr, "parse error: part %s: step %s: system is required\n",
+            state->part.name, state->step.name);
+        exit(EXIT_FAILURE);
+    }
+
+    // verify dependencies are defined
+    status = __resolve_step_dependencies(state, &state->step.depends);
+    if (status != 0) {
+        fprintf(stderr, "parse error: part %s: step %s: dependencies could not be resolved\n",
+            state->part.name, state->step.name);
         exit(EXIT_FAILURE);
     }
     
     // now we copy and reset
     step = malloc(sizeof(struct recipe_step));
     if (step == NULL) {
-        fprintf(stderr, "bake: error: out of memory\n");
+        fprintf(stderr, "parse error: out of memory\n");
         exit(EXIT_FAILURE);
     }
 
@@ -328,7 +391,7 @@ static void __finalize_step_env(struct parser_state* state)
 
     keypair = malloc(sizeof(struct oven_keypair_item));
     if (keypair == NULL) {
-        fprintf(stderr, "bake: error: out of memory\n");
+        fprintf(stderr, "error: out of memory\n");
         exit(EXIT_FAILURE);
     }
 
@@ -346,25 +409,25 @@ static void __finalize_command(struct parser_state* state)
     struct oven_pack_command* command;
 
     // we should verify required members of the command before creating a copy
-    if (state->command.name == NULL) {
-        fprintf(stderr, "bake: parse error: command name is required\n");
+    if (__is_valid_name(state->command.name)) {
+        fprintf(stderr, "parse error: command name must be provided and only contain [a-zA-Z_-]\n");
         exit(EXIT_FAILURE);
     }
 
     if (state->command.type == CHEF_COMMAND_TYPE_UNKNOWN) {
-        fprintf(stderr, "bake: parse error: command %s: valid command types are {executable, daemon}\n", state->command.name);
+        fprintf(stderr, "parse error: command %s: valid command types are {executable, daemon}\n", state->command.name);
         exit(EXIT_FAILURE);
     }
 
     if (state->command.path == NULL) {
-        fprintf(stderr, "bake: parse error: command %s: path is required\n", state->command.name);
+        fprintf(stderr, "parse error: command %s: path is required\n", state->command.name);
         exit(EXIT_FAILURE);
     }
     
     // now we copy and reset
     command = malloc(sizeof(struct oven_pack_command));
     if (command == NULL) {
-        fprintf(stderr, "bake: error: out of memory\n");
+        fprintf(stderr, "error: out of memory\n");
         exit(EXIT_FAILURE);
     }
 
@@ -381,25 +444,25 @@ static void __finalize_pack(struct parser_state* state)
 
     // we should verify required members of the command before creating a copy
     if (state->pack.name == NULL) {
-        fprintf(stderr, "bake: parse error: pack name is required\n");
+        fprintf(stderr, "parse error: pack name is required\n");
         exit(EXIT_FAILURE);
     }
 
     if (state->pack.type == CHEF_PACKAGE_TYPE_UNKNOWN) {
-        fprintf(stderr, "bake: parse error: pack type is not specified\n");
+        fprintf(stderr, "parse error: pack type is not specified\n");
         exit(EXIT_FAILURE);
     }
 
     // commands are only allowed in application mode
     if (state->pack.type != CHEF_PACKAGE_TYPE_APPLICATION && state->pack.commands.count != 0) {
-        fprintf(stderr, "bake: parse error: pack %s: commands are only allowed in application packs\n", state->pack.name);
+        fprintf(stderr, "parse error: pack %s: commands are only allowed in application packs\n", state->pack.name);
         exit(EXIT_FAILURE);
     }
 
     // now we copy and reset
     pack = malloc(sizeof(struct recipe_pack));
     if (pack == NULL) {
-        fprintf(stderr, "bake: error: out of memory\n");
+        fprintf(stderr, "error: out of memory\n");
         exit(EXIT_FAILURE);
     }
 
@@ -421,7 +484,7 @@ static void __finalize_pack(struct parser_state* state)
         \
         argument = malloc(sizeof(struct oven_value_item)); \
         if (!argument) { \
-            fprintf(stderr, "bake: error: out of memory\n"); \
+            fprintf(stderr, "error: out of memory\n"); \
             exit(EXIT_FAILURE); \
         } \
         \
@@ -454,7 +517,7 @@ static int __parse_boolean(const char* string)
     }
 
     // default to false
-    fprintf(stderr, "bake: parse error: unrecognized boolean value: %s\n", string);
+    fprintf(stderr, "parse error: unrecognized boolean value: %s\n", string);
     return 0;
 }
 
@@ -806,6 +869,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "type") == 0) {
                         s->state = STATE_RECIPE_STEP_TYPE;
+                    } else if (strcmp(value, "name") == 0) {
+                        s->state = STATE_RECIPE_STEP_NAME;
                     } else if (strcmp(value, "depends") == 0) {
                         s->state = STATE_RECIPE_STEP_DEPEND_LIST;
                     } else if (strcmp(value, "system") == 0) {
@@ -833,6 +898,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
+        __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_NAME, step.name, __parse_string)
         __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_TYPE, step.type, __parse_recipe_step_type)
         __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_SYSTEM, step.system, __parse_string)
         __consume_scalar_fn(STATE_RECIPE_STEP, STATE_RECIPE_STEP_SCRIPT, step.script, __parse_string)
@@ -988,14 +1054,14 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
     do {
         status = yaml_parser_parse(&parser, &event);
         if (status == 0) {
-            fprintf(stderr, "bake: error: malformed recipe at line %u: %s: %s (code: %i)\n",
+            fprintf(stderr, "error: malformed recipe at line %u: %s: %s (code: %i)\n",
                 (unsigned int)parser.context_mark.line, parser.context, parser.problem, parser.error);
             return -1;
         }
 
         status = __consume_event(&state, &event );
         if (status) {
-            fprintf(stderr, "bake: error: failed to parse recipe at line %u\n",
+            fprintf(stderr, "error: failed to parse recipe at line %u\n",
                 (unsigned int)event.start_mark.line);
             return -1;
         }
@@ -1007,7 +1073,7 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
     // create the recipe and copy all data
     *recipeOut = malloc(sizeof(struct recipe));
     if (!*recipeOut) {
-        fprintf(stderr, "bake: error: out of memory\n");
+        fprintf(stderr, "error: out of memory\n");
         return -1;
     }
 

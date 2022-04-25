@@ -34,6 +34,7 @@ enum recipe_step_type {
 
 struct recipe_step {
     struct list_item           list_header;
+    const char*                name;
     enum recipe_step_type      type;
     const char*                system;
     const char*                script;

@@ -35,4 +35,31 @@ extern char** oven_environment_create(const char** parent, struct list* additona
  */
 extern void oven_environment_destroy(char** environment);
 
+/**
+ * @brief 
+ * 
+ * @param path 
+ * @param checkpoint 
+ * @return int 
+ */
+extern int oven_checkpoint_create(const char* path, const char* checkpoint);
+
+/**
+ * @brief 
+ * 
+ * @param path 
+ * @param checkpoint 
+ * @return int 
+ */
+extern int oven_checkpoint_remove(const char* path, const char* checkpoint);
+
+/**
+ * @brief 
+ * 
+ * @param path 
+ * @param checkpoint 
+ * @return int 
+ */
+extern int oven_checkpoint_contains(const char* path, const char* checkpoint);
+
 #endif //!__LIBOVEN_UTILS_H__

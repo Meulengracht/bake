@@ -1,5 +1,6 @@
 
 add_library(oven-utils STATIC
+    checkpoints.c
     environment.c
 )
 

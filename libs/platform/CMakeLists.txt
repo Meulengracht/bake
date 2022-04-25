@@ -6,6 +6,7 @@ add_subdirectory(strutils)
 add_library(platform STATIC
     chdir.c
     chmod.c
+    chsize.c
     cpucount.c
     getcwd.c
     getfiles.c
