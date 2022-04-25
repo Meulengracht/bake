@@ -17,9 +17,9 @@
  * Package System TODOs:
  * - autotools backend
  * - reuse zstd context for improved performance
- * Application System TODOs:
- * - app commands
- * - served system
+ * - api-keys
+ * - find command
+ * - pack management
  */
 
 #include <chef/client.h>
