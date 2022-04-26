@@ -1,5 +1,6 @@
 add_library(platform-utils STATIC
     basename.c
+    strbool.c
     strendswith.c
     strfilter.c
     strpathcombine.c

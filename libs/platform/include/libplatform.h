@@ -151,6 +151,7 @@ extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
 extern char*  strreplace(char* text, const char* find, const char* replaceWith);
 extern int    strendswith(const char* text, const char* suffix);
+extern int    strbool(const char* string);
 
 #define FILTER_FOLDCASE 0x1
 

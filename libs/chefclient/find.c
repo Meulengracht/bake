@@ -36,7 +36,7 @@ static const char* __get_json_string_safe(json_t* object, const char* key)
 static int __get_find_url(struct chef_find_params* params, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/find?name=%s",
+        "https://chef-api.azurewebsites.net/api/pack/find?search=%s",
         params->query
     );
     urlBuffer[written] = '\0';
@@ -225,7 +225,7 @@ int chefclient_pack_find(struct chef_find_params* params, struct chef_package***
     int                  status = -1;
     long                 httpCode;
 
-    request = chef_request_new(1, 0);
+    request = chef_request_new(1, params->privileged);
     if (!request) {
         fprintf(stderr, "chefclient_pack_find: failed to create request\n");
         return -1;

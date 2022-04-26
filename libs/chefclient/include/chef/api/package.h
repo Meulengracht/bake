@@ -29,6 +29,7 @@ struct chef_info_params {
 
 struct chef_find_params {
     const char* query;
+    int         privileged;
 };
 
 struct chef_publish_params {

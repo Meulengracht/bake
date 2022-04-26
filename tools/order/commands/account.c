@@ -32,7 +32,7 @@ static void __print_help(void)
     printf("Commands:\n");
     printf("  whoami              shows information about the currently logged in user\n");
     printf("  set <param> <value> sets a specific account parameter\n");
-    printf("  get <param>         retrieves the value of a specific account paramater\n");
+    printf("  get <param>         retrieves the value of a specific account parameter\n");
     printf("  logout              logout of the current account\n");
     printf("\n");
     printf("Options:\n");

@@ -271,6 +271,16 @@ void chef_package_settings_delete(struct chef_package_settings* settings)
     free(settings);
 }
 
+const char* chef_package_settings_get_package(struct chef_package_settings* settings)
+{
+    if (settings == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    return settings->package;
+}
+
 int chef_package_settings_get_discoverable(struct chef_package_settings* settings)
 {
     if (settings == NULL) {

@@ -18,9 +18,7 @@
  * - autotools backend
  * - reuse zstd context for improved performance
  * - api-keys
- * - find command
- * - pack management
- * - better request system in chefclient
+ * - pack deletion
  */
 
 #include <chef/client.h>
