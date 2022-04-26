@@ -118,7 +118,7 @@ struct oven_pack_options {
  * @param[In] fridgePrepDirectory
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int oven_initialize(char** envp, char* architecture, const char* recipeScope, const char* fridgePrepDirectory);
+extern int oven_initialize(char** envp, const char* architecture, const char* recipeScope, const char* fridgePrepDirectory);
 
 /**
  * @brief 

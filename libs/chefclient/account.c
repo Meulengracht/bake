@@ -175,16 +175,17 @@ static int __update_account(json_t* json, struct chef_account** accountOut)
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    if (httpCode != 200) {
+    if (httpCode < 200 || httpCode >= 300) {
         status = -1;
         if (httpCode == 302) {
             status = -EACCES;
-        }
-        else {
+        } else {
             fprintf(stderr, "__update_account: http error %ld [%s]\n", httpCode, request->response);
             status = -EIO;
         }
         goto cleanup;
+    } else {
+        status = 0;
     }
 
     if (accountOut != NULL) {

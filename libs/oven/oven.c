@@ -134,7 +134,7 @@ static int __create_path(const char* path)
     return 0;
 }
 
-int oven_initialize(char** envp, char* architecture, const char* recipeScope, const char* fridgePrepDirectory)
+int oven_initialize(char** envp, const char* architecture, const char* recipeScope, const char* fridgePrepDirectory)
 {
     int         status;
     char*       cwd;
@@ -838,7 +838,6 @@ int oven_script(struct oven_script_options* options)
 
 static int __copy_file(const char* source, const char* destination)
 {
-    int    status;
     FILE*  sourceFile;
     FILE*  destinationFile;
     char*  buffer;
@@ -879,7 +878,7 @@ static int __copy_file(const char* source, const char* destination)
     }
 
     fclose(destinationFile);
-    return status;
+    return 0;
 }
 
 static int __matches_filters(const char* path, struct list* filters)

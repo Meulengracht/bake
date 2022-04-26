@@ -33,10 +33,9 @@ static int __ask_yes_no_question(const char* question)
 
 static char* __ask_input_question(const char* question)
 {
-    char*  buffer = NULL;
+    char*  buffer     = NULL;
     size_t bufferSize = 0;
-    int    read;
-    int    written;
+    int    read       = 0;
     int    ch;
     
     // ask the question
@@ -50,15 +49,14 @@ static char* __ask_input_question(const char* question)
             if (buffer == NULL) {
                 return NULL;
             }
-        }
-        else if (bufferSize == bufferSize - 1) {
+        } else if (read == bufferSize - 1) {
             bufferSize *= 2;
             buffer = realloc(buffer, bufferSize);
             if (buffer == NULL) {
                 return NULL;
             }
         }
-        buffer[read++] = ch;
+        buffer[read++] = (char)ch;
     }
     buffer[read] = '\0';
     return buffer;
@@ -81,6 +79,7 @@ static int __verify_publisher_name(const char* name)
             fprintf(stderr, "order: publisher name must only contain characters [a-zA-Z0-9-]\n");
             return -1;
         }
+        i++;
     }
     return 0;
 }

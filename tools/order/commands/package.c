@@ -108,7 +108,7 @@ static int __handle_list_packages(void)
     return 0;
 }
 
-static int __print_settings(struct chef_package_settings* settings)
+static void __print_settings(struct chef_package_settings* settings)
 {
     printf("settings for %s\n", chef_package_settings_get_package(settings));
     printf("  discoverable: %s\n", chef_package_settings_get_discoverable(settings) ? "true" : "false");

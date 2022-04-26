@@ -61,7 +61,7 @@ static int __parse_dynamic_section32(struct __elf_address_mapping* mappings, con
     }
 
     // find the correct file offset
-    for (int i = 0; mappings[i].valid; i++) {
+    for (i = 0; mappings[i].valid; i++) {
         if (strTableOffset >= mappings[i].voffset && strTableOffset < (mappings[i].voffset + mappings[i].size)) {
             strTable = mappings[i].data + (strTableOffset - mappings[i].voffset);
             break;
@@ -166,7 +166,7 @@ static int __parse_dynamic_section64(struct __elf_address_mapping* mappings, con
     }
 
     // find the correct file offset
-    for (int i = 0; mappings[i].valid; i++) {
+    for (i = 0; mappings[i].valid; i++) {
         if (strTableOffset >= mappings[i].voffset && strTableOffset < (mappings[i].voffset + mappings[i].size)) {
             strTable = mappings[i].data + (strTableOffset - mappings[i].voffset);
             break;

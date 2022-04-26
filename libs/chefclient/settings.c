@@ -195,7 +195,7 @@ static int __update_settings(json_t* json, struct chef_package_settings** settin
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    if (httpCode != 200) {
+    if (httpCode < 200 || httpCode >= 300) {
         status = -1;
         if (httpCode == 302) {
             status = -EACCES;
@@ -205,6 +205,8 @@ static int __update_settings(json_t* json, struct chef_package_settings** settin
             status = -EIO;
         }
         goto cleanup;
+    } else {
+        status = 0;
     }
 
     if (settingsOut != NULL) {

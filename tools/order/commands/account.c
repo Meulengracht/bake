@@ -200,7 +200,6 @@ int account_main(int argc, char** argv)
         return -1;
     }
 
-    // initialize chefclient
     status = chefclient_initialize();
     if (status != 0) {
         fprintf(stderr, "order: failed to initialize chefclient: %s\n", strerror(errno));

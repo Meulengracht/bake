@@ -27,9 +27,9 @@
 
 int make_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
-    int         status = -1;
-    char**      environment;
-    char*       argument = NULL;
+    int         status      = -1;
+    char**      environment = NULL;
+    char*       argument    = NULL;
     size_t      argumentLength;
     const char* cwd = data->build_directory;
 

@@ -76,7 +76,7 @@ static char* __generate_blockid(void)
     __generate_bad_but_valid_guid(guidBuffer);
     
     // encode it in base64
-    return (char*)base64_encode(guidBuffer, strlen(guidBuffer), NULL);
+    return (char*)base64_encode((const unsigned char*)&guidBuffer[0], strlen(guidBuffer), NULL);
 }
 
 static int __create_file_contexts(const char* path, struct file_upload_context** contextsOut, int* contextCountOut)

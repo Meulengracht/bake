@@ -259,12 +259,11 @@ static int __reset_steps(struct list* steps, const char* step, const char* name)
 static int __step_depends_on(struct list* dependencies, const char* step)
 {
     struct list_item* item;
-    int               status;
 
     list_foreach(dependencies, item) {
         struct oven_value_item* value = (struct oven_value_item*)item;
         if (strcmp(value->value, step) == 0) {
-            // OK this step depends on the step we are reseting
+            // OK this step depends on the step we are resetting
             // so reset this step too
             return 1;
         }

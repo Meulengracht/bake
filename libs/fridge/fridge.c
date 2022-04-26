@@ -548,19 +548,16 @@ static enum chef_package_type __get_pack_type(struct VaFs* vafsHandle)
 
 static const char* __get_unpack_path(enum chef_package_type type, const char* packageName)
 {
-    switch (type) {
-        case CHEF_PACKAGE_TYPE_TOOLCHAIN: {
-            char* toolchainPath = strpathcombine(g_utensilsPath, packageName);
-            if (toolchainPath && platform_mkdir(toolchainPath)) {
-                fprintf(stderr, "__get_unpack_path: failed to create toolchain directory\n");
-                free(toolchainPath);
-                return NULL;
-            }
-            return toolchainPath;
+    if (type == CHEF_PACKAGE_TYPE_TOOLCHAIN) {
+        char* toolchainPath = strpathcombine(g_utensilsPath, packageName);
+        if (toolchainPath && platform_mkdir(toolchainPath)) {
+            fprintf(stderr, "__get_unpack_path: failed to create toolchain directory\n");
+            free(toolchainPath);
+            return NULL;
         }
-        default:
-            return strdup(g_prepPath);
+        return toolchainPath;
     }
+    return strdup(g_prepPath);
 }
 
 static int __handle_overview(struct VaFs* vafsHandle, struct progress_context* progress)

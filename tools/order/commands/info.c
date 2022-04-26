@@ -94,7 +94,7 @@ static void __print_channel(struct chef_channel* channel, const char* padding)
     );
 
     // if it is set, show it
-    if (strcmp(channel->current_version.tag, "<not set>")) {
+    if (strcmp(channel->current_version.tag, "<not set>") != 0) {
         printf("%s", channel->current_version.tag);
     }
     printf("\n");

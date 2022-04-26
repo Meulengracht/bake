@@ -20,7 +20,7 @@
 #include <errno.h>
 #include <libplatform.h>
 
-#define FOLD(c) ((flags & FILTER_FOLDCASE) != 0 ? tolower(c) : c)
+#define FOLD(c) ((flags & FILTER_FOLDCASE) != 0 ? tolower((c)) : (c))
 
 int strfilter(const char* filter, const char* text, int flags)
 {

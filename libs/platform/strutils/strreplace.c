@@ -23,13 +23,13 @@
 
 char* strreplace(char* text, const char* find, const char* replaceWith)
 {
-    char* result;            // the return string
-    char* ins;               // the next insert point
-    char* tmp;               // varies
-    int   lengthFind;        // length of find (the string to remove)
-    int   lengthReplaceWith; // length of replaceWith (the string to replace find with)
-    int   lengthFront;       // distance between find and end of last find
-    int   count;             // number of replacements
+    char*  result;            // the return string
+    char*  ins;               // the next insert point
+    char*  tmp;               // varies
+    size_t lengthFind;        // length of find (the string to remove)
+    size_t lengthReplaceWith; // length of replaceWith (the string to replace find with)
+    size_t lengthFront;       // distance between find and end of last find
+    int    count;             // number of replacements
 
     // sanity checks and initialization
     if (!text || !find) {
@@ -51,7 +51,7 @@ char* strreplace(char* text, const char* find, const char* replaceWith)
 
     // count the number of replacements needed
     ins = text;
-    for (count = 0; tmp = strstr(ins, find); ++count) {
+    for (count = 0; (tmp = strstr(ins, find)); ++count) {
         ins = tmp + lengthFind;
     }
 
@@ -65,7 +65,7 @@ char* strreplace(char* text, const char* find, const char* replaceWith)
     // from here on,
     //    tmp points to the end of the result string
     //    ins points to the next occurrence of find in text
-    //    text points to the remainder of text after "end of find"
+    //    points to the remainder of text after "end of find"
     while (count--) {
         ins = strstr(text, find);
         lengthFront = ins - text;

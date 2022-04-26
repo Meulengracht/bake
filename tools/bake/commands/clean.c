@@ -22,7 +22,6 @@
  * - served system
  */
 
-#include <chef/client.h>
 #include <errno.h>
 #include <liboven.h>
 #include <libplatform.h>
@@ -52,7 +51,6 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     int   status;
     char* name = NULL;
-    int   debug = 0;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);

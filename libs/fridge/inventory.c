@@ -63,7 +63,8 @@ static struct fridge_inventory* __inventory_new(void)
 
 static struct timespec __parse_timespec(const char* timestamp)
 {
-
+    struct timespec ts;
+    return ts;
 }
 
 static int __parse_inventory(const char* json, struct fridge_inventory** inventoryOut)

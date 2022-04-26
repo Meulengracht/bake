@@ -135,7 +135,7 @@ int main(int argc, char** argv, char** envp)
         command = __get_command(argv[1]);
         if (!command) {
             struct platform_stat stats;
-            // was a file passed? Then it was the recipe and we assume
+            // was a file passed? Then it was the recipe, and we assume
             // that the run command should be run.
             if (platform_stat(argv[1], &stats) == 0) {
                 command = &g_commands[2];

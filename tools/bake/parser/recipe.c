@@ -17,7 +17,6 @@
  */
 
 #include <ctype.h>
-#include <errno.h>
 #include <libplatform.h>
 #include <recipe.h>
 #include <yaml/yaml.h>
@@ -665,7 +664,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         case __STATE: \
             switch (event->type) { \
                 case YAML_SCALAR_EVENT: \
-                    if (s->step.system == NULL || strcmp(s->step.system, __SYSTEM)) {\
+                    if (s->step.system == NULL || strcmp(s->step.system, __SYSTEM) != 0) {\
                         fprintf(stderr, "unexpected option: " #__STATE ".\n"); \
                         fprintf(stderr, "system options must appear after 'system' keyword\n"); \
                         return -1; \
@@ -1084,8 +1083,8 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
 #define __destroy_list(fn, list, type) \
     do { \
         struct list_item* item; \
-        while ((item = list)) { \
-            list = item->next; \
+        while ((item = (list))) { \
+            (list) = item->next; \
             __destroy_##fn((type*)item); \
         } \
     } while (0)
