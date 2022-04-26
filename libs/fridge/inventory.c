@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/api/package.h>
 #include <chef/client.h>
 #include <errno.h>
 #include "inventory.h"

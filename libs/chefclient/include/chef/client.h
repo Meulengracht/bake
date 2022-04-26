@@ -19,34 +19,6 @@
 #ifndef __LIBCHEF_CLIENT_H__
 #define __LIBCHEF_CLIENT_H__
 
-#include <chef/package.h>
-
-struct chef_info_params {
-    const char* publisher;
-    const char* package;
-};
-
-struct chef_publish_params {
-    struct chef_package* package;
-    struct chef_version* version;
-    const char*          platform;
-    const char*          arch;
-    const char*          channel;
-};
-
-struct chef_download_params {
-    const char*          publisher;
-    const char*          package;
-    const char*          platform;
-    const char*          arch;
-    const char*          channel;
-    struct chef_version* version;
-
-    // this will be updated to the revision downloaded,
-    // which means from a callers perspective this is read-only
-    int                  revision;
-};
-
 enum chef_login_flow_type {
     CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE
 };
@@ -77,31 +49,5 @@ extern int chefclient_login(enum chef_login_flow_type flowType);
  * 
  */
 extern void chefclient_logout(void);
-
-/**
- * @brief 
- * 
- * @param[In]  params 
- * @param[In]  path 
- * @return int 
- */
-extern int chefclient_pack_download(struct chef_download_params* params, const char* path);
-
-/**
- * @brief 
- * 
- * @param params 
- * @return int 
- */
-extern int chefclient_pack_info(struct chef_info_params* params, struct chef_package** packageOut);
-
-/**
- * @brief 
- * 
- * @param params 
- * @param path 
- * @return int 
- */
-extern int chefclient_pack_publish(struct chef_publish_params* params, const char* path);
 
 #endif //!__LIBCHEF_CLIENT_H__

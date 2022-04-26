@@ -16,8 +16,8 @@
  * 
  */
 
-#ifndef __LIBCHEF_ACCOUNT_H__
-#define __LIBCHEF_ACCOUNT_H__
+#ifndef __LIBCHEF_API_ACCOUNT_H__
+#define __LIBCHEF_API_ACCOUNT_H__
 
 #include <stddef.h>
 
@@ -49,11 +49,11 @@ extern struct chef_account* chef_account_new(void);
 /**
  * @brief Cleans up any resources allocated by either @chef_account_get or @chef_account_new.
  * 
- * @param[In] version A pointer to the account that will be freed. 
+ * @param[In] account A pointer to the account that will be freed. 
  */
 extern void chef_account_free(struct chef_account* account);
 
 extern const char* chef_account_get_publisher_name(struct chef_account* account);
 extern void        chef_account_set_publisher_name(struct chef_account* account, const char* publisherName);
 
-#endif //!__LIBCHEF_ACCOUNT_H__
+#endif //!__LIBCHEF_API_ACCOUNT_H__

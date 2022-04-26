@@ -21,45 +21,36 @@
 
 #include <curl/curl.h>
 
-#define MAX_RESPONSE_SIZE (4096 * 8)
+struct chef_request {
+    CURL*              curl;
+    char*              response;
+    size_t             response_index;
+    size_t             response_length;
+    char*              error;
+    size_t             error_length;
+    struct curl_slist* headers;
+};
 
-/**
- * @brief 
- * 
- * @return const char* 
- */
+// Helpers to retrieve the Tenant ID and Client ID for Chef
 extern const char* chef_tenant_id(void);
-
-/**
- * @brief 
- * 
- * @return const char* 
- */
 extern const char* chef_client_id(void);
+extern int         chef_trace_requests(void);
 
 /**
- * @brief 
+ * @brief Allocates and initializes a new instance of the request structure
  * 
- * @return char* 
+ * @param[In] https Whether the request should be made over HTTPS
+ * @param[In] authorization Whether the request should use an authorization header
+ * @return struct chef_request* A malloc'd instance of chef_request
  */
-extern char* chef_response_buffer(void);
+extern struct chef_request* chef_request_new(int https, int authorization);
 
 /**
- * @brief 
+ * @brief Cleans up any resources allocated by the chef request
  * 
- * @return char* 
+ * @param[In] request The request to clean up
  */
-extern char* chef_error_buffer(void);
-
-/**
- * @brief 
- * 
- * @param curl 
- * @param response
- * @param secure
- * @param authorization
- */
-extern void chef_set_curl_common(void* curl, void** headerlist, int response, int secure, int authorization);
+extern void chef_request_delete(struct chef_request* request);
 
 /**
  * @brief This sets only the common headers for a curl request

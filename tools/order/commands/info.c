@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <chef/api/package.h>
 #include <chef/client.h>
 #include <libplatform.h>
 #include <stdio.h>

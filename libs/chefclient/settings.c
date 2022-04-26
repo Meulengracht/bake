@@ -16,29 +16,39 @@
  * 
  */
 
-#include <chef/account.h>
 #include <chef/client.h>
+#include <chef/api/package_settings.h>
 #include <curl/curl.h>
 #include <errno.h>
 #include <jansson.h>
 #include "private.h"
 #include <string.h>
 
-struct chef_account {
-    const char* publisher_name;
-    int         publisher_name_changed;
+struct chef_package_settings {
+    const char* package;
+    int discoverable;
 };
 
-static int __get_account_url(char* urlBuffer, size_t bufferSize)
+static int __get_settings_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/account"
+        "https://chef-api.azurewebsites.net/api/pack/settings"
     );
     urlBuffer[written] = '\0';
     return written == bufferSize - 1 ? -1 : 0;
 }
 
-static json_t* __serialize_account(struct chef_account* account)
+static int __get_settings_query_url(struct chef_settings_params* params, char* urlBuffer, size_t bufferSize)
+{
+    int written = snprintf(urlBuffer, bufferSize - 1, 
+        "https://chef-api.azurewebsites.net/api/pack/settings?name=%s",
+        params->package
+    );
+    urlBuffer[written] = '\0';
+    return written == bufferSize - 1 ? -1 : 0;
+}
+
+static json_t* __serialize_pack_settings(struct chef_package_settings* settings)
 {
     json_t* json = json_object();
     if (json == NULL) {
@@ -46,84 +56,84 @@ static json_t* __serialize_account(struct chef_account* account)
         return NULL;
     }
 
-    if (account->publisher_name_changed) {
-        json_object_set_new(json, "publisher-name", json_string(account->publisher_name));
-    }
+    // never need to serialize publisher
+    
+    // serialize package name
+    json_object_set_new(json, "name", json_string(settings->package));
+
+    // serialize settings
+    json_object_set_new(json, "discoverable", json_boolean(settings->discoverable));
+
     return json;
 }
 
-static int __parse_account(const char* response, struct chef_account** accountOut)
+static int __parse_pack_settings(const char* response, struct chef_package_settings** settingsOut)
 {
-    struct chef_account* account;
-    json_error_t         error;
-    json_t*              root;
-    json_t*              publisherName;
+    struct chef_package_settings* settings;
+    json_error_t                  error;
+    json_t*                       root;
+    json_t*                       name;
+    json_t*                       discoverable;
 
     root = json_loads(response, 0, &error);
     if (!root) {
         return -1;
     }
 
-    // allocate memory for the account
-    account = chef_account_new();
-    if (account == NULL) {
+    settings = chef_package_settings_new();
+    if (settings == NULL) {
         return -1;
     }
 
-    // parse the account
-    publisherName = json_object_get(root, "publisher-name");
-    if (publisherName) {
-        account->publisher_name = strdup(json_string_value(publisherName));
+    // read name
+    name = json_object_get(root, "name");
+    if (name) {
+        settings->package = strdup(json_string_value(name));
     }
 
-    *accountOut = account;
+    discoverable = json_object_get(root, "discoverable");
+    if (discoverable) {
+        settings->discoverable = json_boolean_value(discoverable);
+    }
+
+    *settingsOut = settings;
 
     json_decref(root);
     return 0;
 }
 
-int __get_account(struct chef_account** accountOut)
+int __get_settings(struct chef_settings_params* params, struct chef_package_settings** settingsOut)
 {
-    CURL*              curl;
-    CURLcode           code;
-    struct curl_slist* headers   = NULL;
-    size_t             dataIndex = 0;
-    char               buffer[256];
-    int                status = -1;
-    long               httpCode;
+    struct chef_request* request;
+    CURLcode             code;
+    char                 buffer[256];
+    int                  status = -1;
+    long                 httpCode;
 
-    // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "__get_account: curl_easy_init() failed\n");
+    request = chef_request_new(1, 1);
+    if (!request) {
+        fprintf(stderr, "__get_settings: failed to create request\n");
         return -1;
     }
-    chef_set_curl_common(curl, (void**)&headers, 1, 1, 1);
 
     // set the url
-    if (__get_account_url(buffer, sizeof(buffer)) != 0) {
+    if (__get_settings_query_url(params, buffer, sizeof(buffer)) != 0) {
         fprintf(stderr, "__get_account: buffer too small for account link\n");
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__get_account: failed to set url [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__get_account: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
-    if(code != CURLE_OK) {
-        fprintf(stderr, "__get_account: failed to set write data [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-
-    code = curl_easy_perform(curl);
+    code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__get_account: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
         if (httpCode == 404) {
             status = -ENOENT;
@@ -138,157 +148,145 @@ int __get_account(struct chef_account** accountOut)
         goto cleanup;
     }
 
-    status = __parse_account(chef_response_buffer(), accountOut);
+    status = __parse_pack_settings(request->response, settingsOut);
 
 cleanup:
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    chef_request_delete(request);
     return status;
 }
 
-static int __update_account(json_t* json, struct chef_account** accountOut)
+static int __update_settings(json_t* json, struct chef_package_settings** settingsOut)
 {
-    CURL*              curl;
-    CURLcode           code;
-    struct curl_slist* headers   = NULL;
-    size_t             dataIndex = 0;
-    char*              body      = NULL;
-    int                status    = -1;
-    char               buffer[256];
-    long               httpCode;
+    struct chef_request* request;
+    CURLcode             code;
+    char*                body   = NULL;
+    int                  status = -1;
+    char                 buffer[256];
+    long                 httpCode;
 
-    // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "__update_account: curl_easy_init() failed\n");
+    request = chef_request_new(1, 1);
+    if (!request) {
+        fprintf(stderr, "__update_settings: failed to create request\n");
         return -1;
     }
-    chef_set_curl_common(curl, (void**)&headers, 1, 1, 1);
 
     // set the url
-    if (__get_account_url(buffer, sizeof(buffer)) != 0) {
+    if (__get_settings_url(buffer, sizeof(buffer)) != 0) {
         fprintf(stderr, "__update_account: buffer too small for account link\n");
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__update_account: failed to set url [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
-    if(code != CURLE_OK) {
-        fprintf(stderr, "__update_account: failed to set write data [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__update_account: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
     body = json_dumps(json, 0);
-    code = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, body);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__update_account: failed to set body [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__update_account: failed to set body [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_perform(curl);
+    code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__update_account: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
         status = -1;
         if (httpCode == 302) {
             status = -EACCES;
         }
         else {
-            fprintf(stderr, "__update_account: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            fprintf(stderr, "__update_account: http error %ld [%s]\n", httpCode, request->response);
             status = -EIO;
         }
         goto cleanup;
     }
 
-    if (accountOut != NULL) {
-        status = __parse_account(chef_response_buffer(), accountOut);
+    if (settingsOut != NULL) {
+        status = __parse_pack_settings(request->response, settingsOut);
     }
 
 cleanup:
     free(body);
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    chef_request_delete(request);
     return status;
 }
 
-int chef_account_get(struct chef_account** accountOut)
+int chefclient_pack_settings_get(struct chef_settings_params* params, struct chef_package_settings** settingsOut)
 {
-    return __get_account(accountOut);
-}
-
-int chef_account_update(struct chef_account* account)
-{
-    json_t* json;
-    int     status;
-
-    if (account == NULL) {
+    if (params == NULL || settingsOut == NULL) {
         errno = EINVAL;
         return -1;
     }
 
-    json = __serialize_account(account);
+    return __get_settings(params, settingsOut);
+}
+
+int chefclient_pack_settings_update(struct chef_package_settings* settings)
+{
+    json_t* json;
+    int     status;
+
+    if (settings == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    json = __serialize_pack_settings(settings);
     if (json == NULL) {
         return -1;
     }
 
-    status = __update_account(json, NULL);
+    status = __update_settings(json, NULL);
 
     json_decref(json);
     return status;
 }
 
-struct chef_account* chef_account_new(void)
+struct chef_package_settings* chef_package_settings_new(void)
 {
-    struct chef_account* account = (struct chef_account*)malloc(sizeof(struct chef_account));
-    if (account == NULL) {
+    struct chef_package_settings* settings = (struct chef_package_settings*)malloc(sizeof(struct chef_package_settings));
+    if (settings == NULL) {
         errno = ENOMEM;
         return NULL;
     }
 
-    memset(account, 0, sizeof(struct chef_account));
-    return account;
+    memset(settings, 0, sizeof(struct chef_package_settings));
+    return settings;
 }
 
-void chef_account_free(struct chef_account* account)
+void chef_package_settings_delete(struct chef_package_settings* settings)
 {
-    if (account == NULL) {
+    if (settings == NULL) {
         errno = EINVAL;
         return;
     }
 
-    free((void*)account->publisher_name);
-    free(account);
+    free((void*)settings->package);
+    free(settings);
 }
 
-const char* chef_account_get_publisher_name(struct chef_account* account)
+int chef_package_settings_get_discoverable(struct chef_package_settings* settings)
 {
-    if (account == NULL) {
+    if (settings == NULL) {
         errno = EINVAL;
-        return NULL;
+        return -1;
     }
 
-    return account->publisher_name;
+    return settings->discoverable;
 }
 
-void chef_account_set_publisher_name(struct chef_account* account, const char* publisherName)
+void chef_package_settings_set_discoverable(struct chef_package_settings* settings, int discoverable)
 {
-    if (account == NULL) {
+    if (settings == NULL) {
         errno = EINVAL;
         return;
     }
 
-    if (account->publisher_name != NULL) {
-        free((void*)account->publisher_name);
-    }
-
-    account->publisher_name = strdup(publisherName);
-    account->publisher_name_changed = 1;
+    settings->discoverable = discoverable;
 }

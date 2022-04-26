@@ -20,6 +20,7 @@
  * - api-keys
  * - find command
  * - pack management
+ * - better request system in chefclient
  */
 
 #include <chef/client.h>

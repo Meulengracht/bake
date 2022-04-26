@@ -108,20 +108,17 @@ static int __parse_challenge_response(const char* responseBuffer, struct devicec
 
 static int __deviceflow_challenge(struct devicecode_context* context)
 {
-    CURL*    curl;
-    CURLcode code;
-    size_t   dataIndex = 0;
-    char     buffer[256];
-    int      status = -1;
-    long     httpCode;
+    struct chef_request* request;
+    CURLcode             code;
+    char                 buffer[256];
+    int                  status = -1;
+    long                 httpCode;
 
-    // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "__oauth2_device_flow_start: curl_easy_init() failed\n");
+    request = chef_request_new(1, 0);
+    if (!request) {
+        fprintf(stderr, "__deviceflow_challenge: failed to create request\n");
         return -1;
     }
-    chef_set_curl_common(curl, NULL, 1, 1, 0);
 
     // set the url
     if (__get_devicecode_auth_link(buffer, sizeof(buffer)) != 0) {
@@ -129,15 +126,9 @@ static int __deviceflow_challenge(struct devicecode_context* context)
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__oauth2_device_flow_start: failed to set url [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
-    if(code != CURLE_OK) {
-        fprintf(stderr, "__oauth2_device_flow_start: failed to set write data [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__oauth2_device_flow_start: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
@@ -146,29 +137,29 @@ static int __deviceflow_challenge(struct devicecode_context* context)
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__oauth2_device_flow_start: failed to set body [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__oauth2_device_flow_start: failed to set body [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_perform(curl);
+    code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__oauth2_device_flow_start: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
-        fprintf(stderr, "__oauth2_device_flow_start: http error %ld [%s]\n", httpCode, chef_response_buffer());
+        fprintf(stderr, "__oauth2_device_flow_start: http error %ld [%s]\n", httpCode, request->response);
         status = -1;
         errno = EIO;
         goto cleanup;
     }
 
-    status = __parse_challenge_response(chef_response_buffer(), context);
+    status = __parse_challenge_response(request->response, context);
 
 cleanup:
-    curl_easy_cleanup(curl);
+    chef_request_delete(request);
     return status;
 }
 
@@ -227,20 +218,17 @@ static void __parse_token_error_response(const char* responseBuffer)
 
 static int __deviceflow_get_token(struct devicecode_context* deviceContext, struct token_context* tokenContext)
 {
-    CURL*    curl;
-    CURLcode code;
-    size_t   dataIndex = 0;
-    char     buffer[512];
-    int      status = -1;
-    long     httpCode;
+    struct chef_request* request;
+    CURLcode             code;
+    char                 buffer[512];
+    int                  status = -1;
+    long                 httpCode;
 
-    // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "__deviceflow_get_token: curl_easy_init() failed\n");
+    request = chef_request_new(1, 0);
+    if (!request) {
+        fprintf(stderr, "__deviceflow_get_token: failed to create request\n");
         return -1;
     }
-    chef_set_curl_common(curl, NULL, 1, 1, 0);
 
     // set the url
     if (__get_token_auth_link(buffer, sizeof(buffer)) != 0) {
@@ -248,15 +236,9 @@ static int __deviceflow_get_token(struct devicecode_context* deviceContext, stru
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__deviceflow_get_token: failed to set url [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
-    if(code != CURLE_OK) {
-        fprintf(stderr, "__deviceflow_get_token: failed to set write data [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__deviceflow_get_token: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
@@ -265,29 +247,29 @@ static int __deviceflow_get_token(struct devicecode_context* deviceContext, stru
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__deviceflow_get_token: failed to set body [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__deviceflow_get_token: failed to set body [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_perform(curl);
+    code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__deviceflow_get_token: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode == 200 && code != CURLE_ABORTED_BY_CALLBACK) {
-        status = __parse_token_response(chef_response_buffer(), tokenContext);
+        status = __parse_token_response(request->response, tokenContext);
     }
     else {
         // this will set errno appropriately
-        __parse_token_error_response(chef_response_buffer());
+        __parse_token_error_response(request->response);
         status = -1;
     }
 
 cleanup:
-    curl_easy_cleanup(curl);
+    chef_request_delete(request);
     return status;
 }
 

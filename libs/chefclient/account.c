@@ -16,8 +16,8 @@
  * 
  */
 
-#include <chef/account.h>
 #include <chef/client.h>
+#include <chef/api/account.h>
 #include <curl/curl.h>
 #include <errno.h>
 #include <jansson.h>
@@ -84,21 +84,17 @@ static int __parse_account(const char* response, struct chef_account** accountOu
 
 int __get_account(struct chef_account** accountOut)
 {
-    CURL*              curl;
-    CURLcode           code;
-    struct curl_slist* headers   = NULL;
-    size_t             dataIndex = 0;
-    char               buffer[256];
-    int                status = -1;
-    long               httpCode;
+    struct chef_request* request;
+    CURLcode             code;
+    char                 buffer[256];
+    int                  status = -1;
+    long                 httpCode;
 
-    // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "__get_account: curl_easy_init() failed\n");
+    request = chef_request_new(1, 1);
+    if (!request) {
+        fprintf(stderr, "__get_account: failed to create request\n");
         return -1;
     }
-    chef_set_curl_common(curl, (void**)&headers, 1, 1, 1);
 
     // set the url
     if (__get_account_url(buffer, sizeof(buffer)) != 0) {
@@ -106,24 +102,18 @@ int __get_account(struct chef_account** accountOut)
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__get_account: failed to set url [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__get_account: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
-    if(code != CURLE_OK) {
-        fprintf(stderr, "__get_account: failed to set write data [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-
-    code = curl_easy_perform(curl);
+    code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__get_account: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
         if (httpCode == 404) {
             status = -ENOENT;
@@ -138,32 +128,27 @@ int __get_account(struct chef_account** accountOut)
         goto cleanup;
     }
 
-    status = __parse_account(chef_response_buffer(), accountOut);
+    status = __parse_account(request->response, accountOut);
 
 cleanup:
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    chef_request_delete(request);
     return status;
 }
 
 static int __update_account(json_t* json, struct chef_account** accountOut)
 {
-    CURL*              curl;
-    CURLcode           code;
-    struct curl_slist* headers   = NULL;
-    size_t             dataIndex = 0;
-    char*              body      = NULL;
-    int                status    = -1;
-    char               buffer[256];
-    long               httpCode;
+    struct chef_request* request;
+    CURLcode             code;
+    char*                body      = NULL;
+    int                  status    = -1;
+    char                 buffer[256];
+    long                 httpCode;
 
-    // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "__update_account: curl_easy_init() failed\n");
+    request = chef_request_new(1, 1);
+    if (!request) {
+        fprintf(stderr, "__update_account: failed to create request\n");
         return -1;
     }
-    chef_set_curl_common(curl, (void**)&headers, 1, 1, 1);
 
     // set the url
     if (__get_account_url(buffer, sizeof(buffer)) != 0) {
@@ -171,51 +156,44 @@ static int __update_account(json_t* json, struct chef_account** accountOut)
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__update_account: failed to set url [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
-    if(code != CURLE_OK) {
-        fprintf(stderr, "__update_account: failed to set write data [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__update_account: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
     body = json_dumps(json, 0);
-    code = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, body);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__update_account: failed to set body [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__update_account: failed to set body [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_perform(curl);
+    code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__update_account: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
         status = -1;
         if (httpCode == 302) {
             status = -EACCES;
         }
         else {
-            fprintf(stderr, "__update_account: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            fprintf(stderr, "__update_account: http error %ld [%s]\n", httpCode, request->response);
             status = -EIO;
         }
         goto cleanup;
     }
 
     if (accountOut != NULL) {
-        status = __parse_account(chef_response_buffer(), accountOut);
+        status = __parse_account(request->response, accountOut);
     }
 
 cleanup:
     free(body);
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    chef_request_delete(request);
     return status;
 }
 

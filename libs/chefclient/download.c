@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <chef/client.h>
+#include <chef/api/package.h>
 #include <curl/curl.h>
 #include <jansson.h>
 #include "private.h"
@@ -107,20 +108,18 @@ static int __parse_pack_response(const char* response, struct pack_response* pac
 
 int __download_request(struct chef_download_params* params, struct pack_response* packResponse)
 {
-    CURL*    curl;
-    CURLcode code;
-    size_t   dataIndex = 0;
-    char     buffer[512];
-    int      status = -1;
-    long     httpCode;
+    struct chef_request* request;
+    CURLcode             code;
+    char                 buffer[512];
+    int                  status = -1;
+    long                 httpCode;
 
     // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "__download_request: curl_easy_init() failed\n");
+    request = chef_request_new(1, 0);
+    if (!request) {
+        fprintf(stderr, "__download_request: failed to create request\n");
         return -1;
     }
-    chef_set_curl_common(curl, NULL, 1, 1, 0);
 
     // set the url
     if (__get_download_url(params, buffer, sizeof(buffer)) != 0) {
@@ -128,24 +127,18 @@ int __download_request(struct chef_download_params* params, struct pack_response
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__download_request: failed to set url [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__download_request: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
-    if(code != CURLE_OK) {
-        fprintf(stderr, "__download_request: failed to set write data [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-
-    code = curl_easy_perform(curl);
+    code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "__download_request: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
         status = -1;
         
@@ -154,35 +147,33 @@ int __download_request(struct chef_download_params* params, struct pack_response
             errno = ENOENT;
         }
         else {
-            fprintf(stderr, "__download_request: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            fprintf(stderr, "__download_request: http error %ld [%s]\n", httpCode, request->response);
             errno = EIO;
         }
         goto cleanup;
     }
 
-    status = __parse_pack_response(chef_response_buffer(), packResponse);
+    status = __parse_pack_response(request->response, packResponse);
 
 cleanup:
-    curl_easy_cleanup(curl);
+    chef_request_delete(request);
     return status;
 }
 
 static int __download_file(const char* filePath, struct pack_response* context, struct download_context* downloadContext)
 {
-    FILE*              file;
-    struct curl_slist* headers = NULL;
-    int                status  = -1;
-    CURL*              curl;
-    CURLcode           code;
-    long               httpCode;
+    struct chef_request* request;
+    FILE*                file;
+    int                  status  = -1;
+    CURLcode             code;
+    long                 httpCode;
 
     // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "__download_file: curl_easy_init() failed\n");
+    request = chef_request_new(1, 0);
+    if (!request) {
+        fprintf(stderr, "__download_file: failed to create request\n");
         return -1;
     }
-    chef_set_curl_common(curl, (void**)&headers, 0, 1, 0);
 
     // initialize the output file
     file = fopen(filePath, "wb");
@@ -192,52 +183,52 @@ static int __download_file(const char* filePath, struct pack_response* context, 
     }
 
     // set required ms headers
-    headers = curl_slist_append(headers, "x-ms-blob-type: BlockBlob");
-    headers = curl_slist_append(headers, "x-ms-blob-content-type: application/octet-stream");
+    request->headers = curl_slist_append(request->headers, "x-ms-blob-type: BlockBlob");
+    request->headers = curl_slist_append(request->headers, "x-ms-blob-content-type: application/octet-stream");
 
-    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
+    code = curl_easy_setopt(request->curl, CURLOPT_WRITEDATA, file);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__download_file: failed to set upload data [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__download_file: failed to set upload data [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    code = curl_easy_setopt(request->curl, CURLOPT_HTTPHEADER, request->headers);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__download_file: failed to set http headers [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__download_file: failed to set http headers [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
+    code = curl_easy_setopt(request->curl, CURLOPT_NOPROGRESS, 0);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__download_file: failed to enable download progress [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__download_file: failed to enable download progress [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, __download_progress_callback);
+    code = curl_easy_setopt(request->curl, CURLOPT_PROGRESSFUNCTION, __download_progress_callback);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__download_file: failed to set download progress callback [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__download_file: failed to set download progress callback [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, downloadContext);
+    code = curl_easy_setopt(request->curl, CURLOPT_PROGRESSDATA, downloadContext);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__download_file: failed to set download progress callback data [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__download_file: failed to set download progress callback data [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, context->url);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, context->url);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__download_file: failed to set url [%s]\n", chef_error_buffer());
+        fprintf(stderr, "__download_file: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_perform(curl);
+    code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__download_file: curl_easy_perform() failed: %s\n", chef_error_buffer());
+        fprintf(stderr, "__download_file: curl_easy_perform() failed: %s\n", request->error);
         goto cleanup;
     }
     
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode < 200 || httpCode >= 300) {
         fprintf(stderr, "__download_file: http error %ld\n", httpCode);
         status = -1;
@@ -249,8 +240,7 @@ cleanup:
     if (file) {
         fclose(file);
     }
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    chef_request_delete(request);
     return status;
 }
 

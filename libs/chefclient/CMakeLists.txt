@@ -10,10 +10,13 @@ add_library(chef-client STATIC
     account.c
     client.c
     download.c
+    find.c
     info.c
     login.c
     package.c
     publish.c
+    request.c
+    settings.c
     trace.c
 )
 target_include_directories(chef-client PUBLIC include)

@@ -17,6 +17,7 @@
  */
 
 #include <chef/client.h>
+#include <chef/api/package.h>
 #include <curl/curl.h>
 #include <errno.h>
 #include <jansson.h>
@@ -185,20 +186,17 @@ static int __parse_package_info_response(const char* response, struct chef_packa
 
 int chefclient_pack_info(struct chef_info_params* params, struct chef_package** packageOut)
 {
-    CURL*    curl;
-    CURLcode code;
-    size_t   dataIndex = 0;
-    char     buffer[256];
-    int      status = -1;
-    long     httpCode;
+    struct chef_request* request;
+    CURLcode             code;
+    char                 buffer[256];
+    int                  status = -1;
+    long                 httpCode;
 
-    // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "chefclient_pack_info: curl_easy_init() failed\n");
+    request = chef_request_new(1, 0);
+    if (!request) {
+        fprintf(stderr, "chefclient_pack_info: failed to create request\n");
         return -1;
     }
-    chef_set_curl_common(curl, NULL, 1, 1, 0);
 
     // set the url
     if (__get_info_url(params, buffer, sizeof(buffer)) != 0) {
@@ -206,24 +204,18 @@ int chefclient_pack_info(struct chef_info_params* params, struct chef_package** 
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "chefclient_pack_info: failed to set url [%s]\n", chef_error_buffer());
+        fprintf(stderr, "chefclient_pack_info: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
-
-    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
-    if(code != CURLE_OK) {
-        fprintf(stderr, "chefclient_pack_info: failed to set write data [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-
-    code = curl_easy_perform(curl);
+    
+    code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
         fprintf(stderr, "chefclient_pack_info: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
         status = -1;
         
@@ -232,15 +224,15 @@ int chefclient_pack_info(struct chef_info_params* params, struct chef_package** 
             errno = ENOENT;
         }
         else {
-            fprintf(stderr, "chefclient_pack_info: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            fprintf(stderr, "chefclient_pack_info: http error %ld [%s]\n", httpCode, request->response);
             errno = EIO;
         }
         goto cleanup;
     }
 
-    status = __parse_package_info_response(chef_response_buffer(), packageOut);
+    status = __parse_package_info_response(request->response, packageOut);
 
 cleanup:
-    curl_easy_cleanup(curl);
+    chef_request_delete(request);
     return status;
 }

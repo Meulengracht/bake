@@ -17,6 +17,7 @@
  */
 
 #include <chef/client.h>
+#include <chef/api/package.h>
 #include <curl/curl.h>
 #include <errno.h>
 #include <jansson.h>
@@ -32,11 +33,11 @@ static const char* __get_json_string_safe(json_t* object, const char* key)
     return strdup("<not set>");
 }
 
-static int __get_info_url(struct chef_info_params* params, char* urlBuffer, size_t bufferSize)
+static int __get_find_url(struct chef_find_params* params, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/info?publisher=%s&name=%s",
-        params->publisher, params->package
+        "https://chef-api.azurewebsites.net/api/pack/find?name=%s",
+        params->query
     );
     urlBuffer[written] = '\0';
     return written == bufferSize - 1 ? -1 : 0;
@@ -138,17 +139,10 @@ static int __parse_platforms(json_t* platforms, struct chef_package* package)
     return 0;
 }
 
-static int __parse_package_info_response(const char* response, struct chef_package** packageOut)
+static int __parse_package(json_t* root, struct chef_package** packageOut)
 {
     struct chef_package* package;
-    json_error_t         error;
-    json_t*              root;
     json_t*              platforms;
-
-    root = json_loads(response, 0, &error);
-    if (!root) {
-        return -1;
-    }
 
     // allocate memory for the package
     package = (struct chef_package*)malloc(sizeof(struct chef_package));
@@ -183,64 +177,95 @@ static int __parse_package_info_response(const char* response, struct chef_packa
     return 0;
 }
 
-int chefclient_pack_info(struct chef_info_params* params, struct chef_package** packageOut)
+static int __parse_package_find_response(const char* response, struct chef_package*** packagesOut, int* countOut)
 {
-    CURL*    curl;
-    CURLcode code;
-    size_t   dataIndex = 0;
-    char     buffer[256];
-    int      status = -1;
-    long     httpCode;
+    json_error_t          error;
+    json_t*               root;
+    size_t                i;
+    struct chef_package** packages;
+    size_t                packageCount;
 
-    // initialize a curl session
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "chefclient_pack_info: curl_easy_init() failed\n");
+    root = json_loads(response, 0, &error);
+    if (!root) {
         return -1;
     }
-    chef_set_curl_common(curl, NULL, 1, 1, 0);
+
+    // root is a list of packages
+    packageCount = json_array_size(root);
+    if (!packageCount) {
+        json_decref(root);
+        *packagesOut = NULL;
+        *countOut = 0;
+        return 0;
+    }
+
+    packages = (struct chef_package**)calloc(packageCount, sizeof(struct chef_package*));
+    if (packages == NULL) {
+        return -1;
+    }
+
+    for (i = 0; i < packageCount; i++) {
+        json_t* package = json_array_get(root, i);
+        if (__parse_package(package, &packages[i]) != 0) {
+            return -1;
+        }
+    }
+
+    json_decref(root);
+    *packagesOut = packages;
+    *countOut = (int)packageCount;
+    return 0;
+}
+
+int chefclient_pack_find(struct chef_find_params* params, struct chef_package*** packagesOut, int* countOut)
+{
+    struct chef_request* request;
+    CURLcode             code;
+    char                 buffer[256];
+    int                  status = -1;
+    long                 httpCode;
+
+    request = chef_request_new(1, 0);
+    if (!request) {
+        fprintf(stderr, "chefclient_pack_find: failed to create request\n");
+        return -1;
+    }
 
     // set the url
-    if (__get_info_url(params, buffer, sizeof(buffer)) != 0) {
-        fprintf(stderr, "chefclient_pack_info: buffer too small for package info link\n");
+    if (__get_find_url(params, buffer, sizeof(buffer)) != 0) {
+        fprintf(stderr, "chefclient_pack_find: buffer too small for package info link\n");
         goto cleanup;
     }
 
-    code = curl_easy_setopt(curl, CURLOPT_URL, &buffer[0]);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "chefclient_pack_info: failed to set url [%s]\n", chef_error_buffer());
+        fprintf(stderr, "chefclient_pack_find: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
-
-    code = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dataIndex);
-    if(code != CURLE_OK) {
-        fprintf(stderr, "chefclient_pack_info: failed to set write data [%s]\n", chef_error_buffer());
-        goto cleanup;
-    }
-
-    code = curl_easy_perform(curl);
+    
+    code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
-        fprintf(stderr, "chefclient_pack_info: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        fprintf(stderr, "chefclient_pack_find: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
         status = -1;
         
         if (httpCode == 404) {
-            fprintf(stderr, "chefclient_pack_info: package not found\n");
+            fprintf(stderr, "chefclient_pack_find: package not found\n");
             errno = ENOENT;
         }
         else {
-            fprintf(stderr, "chefclient_pack_info: http error %ld [%s]\n", httpCode, chef_response_buffer());
+            fprintf(stderr, "chefclient_pack_find: http error %ld [%s]\n", httpCode, request->response);
             errno = EIO;
         }
         goto cleanup;
     }
 
-    status = __parse_package_info_response(chef_response_buffer(), packageOut);
+    status = __parse_package_find_response(request->response, packagesOut, countOut);
 
 cleanup:
-    curl_easy_cleanup(curl);
+    chef_request_delete(request);
     return status;
 }
