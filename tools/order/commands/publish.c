@@ -52,9 +52,17 @@ static int __ensure_account_setup(void)
         return status;
     }
 
+    // verify account status is active
+    if (chef_account_get_status(account) != CHEF_ACCOUNT_STATUS_ACTIVE) {
+        printf("account has been suspended, you are not allowed to publish new packages\n");
+        errno = EACCES;
+        return -1;
+    }
+
     // verify publisher-name has been confirmed
     if (chef_account_get_verified_status(account) != CHEF_ACCOUNT_VERIFIED_STATUS_VERIFIED) {
         printf("publisher name has not been verified yet, please wait for verification status to be approved\n");
+        errno = EACCES;
         return -1;
     }
 
