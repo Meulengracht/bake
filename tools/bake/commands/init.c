@@ -66,12 +66,13 @@ int init_main(int argc, char** argv, char** envp, struct recipe* recipe)
                 __print_help();
                 return 0;
             }
-            else if (!strcmp(argv[i], "-n") || !strcmp(argv[i], "--name")) {
-                if (i + 1 < argc) {
-                    output = argv[i + 1];
-                }
-                else {
-                    printf("bake: missing recipe name for --name\n");
+            else if (!strncmp(argv[i], "-n", 2) || !strncmp(argv[i], "--name", 6)) {
+                char* name = strchr(argv[i], '=');
+                if (name) {
+                    name++;
+                    output = name;
+                } else {
+                    printf("bake: missing recipe name for --name=...\n");
                     return -1;
                 }
             }

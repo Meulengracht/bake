@@ -39,9 +39,7 @@ static void __print_help(void)
     printf("  -cc, --cross-compile\n");
     printf("      Cross-compile for another platform or/and architecture. This switch\n");
     printf("      can be used with two different formats, either just like\n");
-    printf("      --cross-compile <arch> or --cross-compile platform/arch\n");
-    printf("  -n,  --name\n");
-    printf("      The name for the produced container image (default: recipe-name)\n");
+    printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
 }
@@ -371,19 +369,30 @@ static int __parse_cc_switch(const char* value, char** platformOut, char** archO
     // platform/arch
     // arch
     char* separator;
+    char* equal;
 
     if (value == NULL) {
         errno = EINVAL;
         return -1;
     }
 
-    separator = strchr(value, '/');
+    equal = strchr(value, '=');
+    if (equal == NULL) {
+        fprintf(stderr, "invalid format of %s (must be -cc=... or --cross-compile=...)\n", value);
+        errno = EINVAL;
+        return -1;
+    }
+
+    // skip the '='
+    equal++;
+
+    separator = strchr(equal, '/');
     if (separator) {
-        *platformOut = strndup(value, separator - value);
+        *platformOut = strndup(equal, separator - equal);
         *archOut     = strdup(separator + 1);
     } else {
         *platformOut = strdup(CHEF_PLATFORM_STR);
-        *archOut     = strdup(value);
+        *archOut     = strdup(equal);
     }
     return 0;
 }
@@ -406,25 +415,13 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
-            } else if (!strcmp(argv[i], "-n") || !strcmp(argv[i], "--name")) {
-                if (i + 1 < argc) {
-                    name = argv[i + 1];
-                } else {
-                    fprintf(stderr, "missing argument for option: %s\n", argv[i]);
-                    return 1;
-                }
             } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--debug")) {
                 debug = 1;
-            } else if (!strcmp(argv[i], "-cc") || !strcmp(argv[i], "--cross-compile")) {
-                if (i + 1 < argc) {
-                    status = __parse_cc_switch(argv[i + 1], &platform, &arch);
-                    if (status) {
-                        fprintf(stderr, "failed to parse cross-compile switch\n");
-                        return status;
-                    }
-                } else {
-                    fprintf(stderr, "missing argument for option: %s\n", argv[i]);
-                    return 1;
+            } else if (!strncmp(argv[i], "-cc", 3) || !strncmp(argv[i], "--cross-compile", 15)) {
+                status = __parse_cc_switch(argv[i], &platform, &arch);
+                if (status) {
+                    fprintf(stderr, "failed to parse cross-compile switch\n");
+                    return status;
                 }
             } else if (argv[i][0] != '-') {
                 if (__is_step_name(argv[i])) {

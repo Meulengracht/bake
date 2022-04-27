@@ -86,8 +86,15 @@ int publish_main(int argc, char** argv)
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
-            } else if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "--channel")) {
-                params.channel = argv[++i];
+            } else if (!strncmp(argv[i], "-c", 2) || !strncmp(argv[i], "--channel", 9)) {
+                char* channel = strchr(argv[i], '=');
+                if (channel) {
+                    channel++;
+                    params.channel = channel;
+                } else {
+                    printf("bake: missing value for --channel=...\n");
+                    return -1;
+                }
             } else {
                 if (packPath != NULL) {
                     printf("only one pack path can be specified\n");
