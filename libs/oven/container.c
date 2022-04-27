@@ -595,12 +595,12 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
     dataPointer = (char*)packageHeader + sizeof(struct chef_vafs_feature_package_header);
 
     // required
-    memcpy(dataPointer, __get_platform(), packageHeader->package_length);
-    dataPointer += packageHeader->package_length;
+    memcpy(dataPointer, __get_platform(), packageHeader->platform_length);
+    dataPointer += packageHeader->platform_length;
 
     // required
-    memcpy(dataPointer, __get_architecture(), packageHeader->package_length);
-    dataPointer += packageHeader->package_length;
+    memcpy(dataPointer, __get_architecture(), packageHeader->arch_length);
+    dataPointer += packageHeader->arch_length;
 
     // required
     memcpy(dataPointer, name, packageHeader->package_length);
