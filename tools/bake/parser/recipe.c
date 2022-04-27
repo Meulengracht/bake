@@ -239,6 +239,19 @@ static void __finalize_ingredient(struct parser_state* state)
             break;
     }
 
+    // handle "host" values in arch and platform
+    if (state->ingredient.ingredient.arch != NULL &&
+        strcmp(state->ingredient.ingredient.arch, "host") == 0) {
+        free(state->ingredient.ingredient.arch);
+        state->ingredient.ingredient.arch = strdup(CHEF_ARCHITECTURE_STR);
+    }
+
+    if (state->ingredient.ingredient.platform != NULL &&
+        strcmp(state->ingredient.ingredient.platform, "host") == 0) {
+        free(state->ingredient.ingredient.platform);
+        state->ingredient.ingredient.platform = strdup(CHEF_PLATFORM_STR);
+    }
+
     // now we copy and reset
     ingredient = malloc(sizeof(struct recipe_ingredient));
     if (ingredient == NULL) {
