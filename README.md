@@ -1,23 +1,97 @@
-# Chef Package Management System
-Originally developed for the Vali/MollenOS operating system, this is a generic package management system that is built as a lightweight alternative to current package managers. Its not only for package management, but also as an application format. 
+<div style="text-align: center;">
 
-Chef consists of 3 parts, bake, order and serve.
+# Chef Package Management System
 
 [![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-black.svg)](https://snapcraft.io/vchef)
-[![vchef](https://snapcraft.io/vchef/badge.svg)](https://snapcraft.io/vchef)
 
-## Bake
-The bake utility serves as the builder, and orchestrates everything related to generation of bake packages. Bake packages serve both as packages and application images that can be executed by serve.
+</div>
 
-## Order
-Order handles the orchestration of the online segment. Order controls your account setup, downloading of packages and package query
+Chef is a cross-platform package management system, specifically built to support all kinds of platforms. It's built with cross-compilation in mind and is also built to work as an application format. It's written in C to make it as portable as possible. It is relatively lightweight alternative to other package management systems, and provides an online repository for all your packages as well.
 
-## Serve
-Serve consts of a frontend and a backend. The frontend is a CLI utility that allows you to interact with the backend. The backend is the application backend. This needs to be implemented on an OS basis. View the README located under daemons/served for more information.
+<div style="text-align: center;">
 
-Serve and Served communicate using the serve protocol, the serve protocol is implemented using the Gracht library.
+# Getting Started
 
-## Recipe Specification
+</div>
+
+The best way to get started is to install the latest version of Chef using the [snap store](https://snapcraft.io/vchef). However not everyone likes or uses snaps, and in this case it's recommended to build chef from source, as chef is not distributed as a debian package yet!
+
+## Account Setup
+
+To get started with your account setup, you will need to activate one of the privileged commands provided by 'order'
+
+```
+$ order account whoami
+```
+
+This will initialize the account setup by asking you to login/register an account using OAUTH2 authentation methods. It will provide you with a link and a code you need to paste in to the browser.
+
+Once authentitacted, you will be prompted to provide your publisher name (the name from which your packages will be published under), and an email used to notify you once your publisher name is approved (or rejected, in which case you may choose another).
+
+Publishing names will be reviewed quickly (usually within 24 hours), and then you will be able to publish packages to the official Chef repository. While waiting for
+the approval, you can also see the current account status using
+
+```
+$ order account whoami
+```
+
+## Your first recipe
+
+The easiest way to get started is to use the init helper provided by the command 'bake'. This will create a new .yaml recipe in the current directory, where you can
+customize the recipe to your liking.
+
+```
+$ bake init
+```
+
+For examples on recipes, please see the examples/ directory, the chef.yaml, or refer
+to the Recipe Specification in the bottom of this page.
+
+Once the recipe is created, you can start baking!
+
+## Building
+
+```
+$ bake my-recipe.yaml
+```
+
+This should create a new (or multiple based on your recipe) *.pack file in the current directory, which are now ready for publishing! During execution of steps,
+chef will expose the following variables to help control the build process:
+
+  * `PROJECT_PATH`: path to the root of the project (where bake was invoked)
+  * `INGREDIENTS_PREFIX`: path to where ingredients are unpacked
+  * `INSTALL_PREFIX`: path to where the steps will install files to be packed
+  * `CHEF_PLATFORM`: the platform for which the package is being built
+  * `CHEF_ARCHITECTURE`: the architecture for which the package is being built
+
+## Cross-compiling
+
+Chef is specifically built to work easily with cross-compilation scenarios. This allows users to build packages for other platforms or architecture and publish them as well.
+
+```
+$ bake my-recipe.yaml --cross-compiling=linux/i386
+```
+
+The above will trigger chef to download ingredients for the linux/i386 platform, and then build the package for that platform. During execution of the different steps, chef will expose the following additional environment variables:
+
+  * `TOOLCHAIN_PREFIX`: path to where the toolchain ingredient is unpacked
+  * `CHEF_PLATFORM`: the platform which was provided on the commandline
+  * `CHEF_ARCHITECTURE`: the architecture which was provided on the commandline
+
+## Publishing your first package
+
+Once the packages are built, they are in essence ready for publishing. To publish them, you can use the publish command:
+
+```
+$ order publish my-something.pack
+```
+
+<div style="text-align: center;">
+
+# Recipe Specification
+
+</div>
+
 
 ```
 #########################
@@ -144,7 +218,8 @@ ingredients:
     #
     # The platform configuration of the package to retrieve. This is usefull
     # if cross-compiling for another platform. The default value for this is
-    # the host platform.
+    # the host platform. The value 'host' is also supported, which can be usefull
+    # for toolchains
     platform: linux
 
     ###########################
@@ -156,7 +231,7 @@ ingredients:
 
     ###########################
     # arch - Optional
-    #    values: {i386, amd64, arm, arm64, rv32, rv64}
+    #    values: {host, i386, amd64, arm, arm64, rv32, rv64}
     #
     # The architecture configuration of the package to retrieve. This is also usefull
     # for cross-compiling for other architectures. This value defaults to host architecture.
@@ -225,7 +300,7 @@ recipes:
       #
       # The step type, which must be specified. This determines which
       # kinds of 'system' is available for this step.
-    - type: generate
+      type: generate
       
       ###########################
       # system - Required

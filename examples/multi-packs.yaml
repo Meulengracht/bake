@@ -1,0 +1,44 @@
+project: 
+  summary: Simple Application Recipe
+  description: A simple application recipe
+  author: who made it
+  email: contact@me.com
+  version: 0.1.0
+  license: MIT
+
+# There are a number of keywords that can be used in the recipe
+# steps during generate, build, install and package.
+recipes:
+  - name: vafs
+    path: /
+    steps:
+    - name: config
+      type: generate
+      system: cmake
+      arguments: [-G, '"Unix Makefiles"']
+    - name: build
+      type: build
+      depends: [config]
+      system: make
+
+packs:
+- name: libvafs
+  type: ingredient
+  filters:
+    - lib
+    - include
+- name: vafs
+  type: application
+  filters:
+    - bin
+  commands:
+    - name: mkvafs
+      path: bin/mkvafs
+      type: executable
+      description: Utility for building vafs images
+      system-libs: true
+    - name: unmkvafs
+      path: bin/unmkvafs
+      type: executable
+      description: Utility for extracting vafs images
+      system-libs: true
