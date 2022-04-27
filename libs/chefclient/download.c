@@ -186,9 +186,16 @@ static int __download_file(const char* filePath, struct pack_response* context, 
     request->headers = curl_slist_append(request->headers, "x-ms-blob-type: BlockBlob");
     request->headers = curl_slist_append(request->headers, "x-ms-blob-content-type: application/octet-stream");
 
+    // reset the writer function/data
+    code = curl_easy_setopt(request->curl, CURLOPT_WRITEFUNCTION, fwrite);
+    if (code != CURLE_OK) {
+        fprintf(stderr, "__download_file: failed to set write function [%s]\n", request->error);
+        return -1;
+    }
+
     code = curl_easy_setopt(request->curl, CURLOPT_WRITEDATA, file);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__download_file: failed to set upload data [%s]\n", request->error);
+        fprintf(stderr, "__download_file: failed to set write data [%s]\n", request->error);
         goto cleanup;
     }
 
