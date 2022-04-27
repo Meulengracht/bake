@@ -31,10 +31,6 @@ static void __print_help(void)
 {
     printf("Usage: order publish <pack-path> [options]\n");
     printf("Options:\n");
-    printf("  -p, --platform\n");
-    printf("      The platform that should be published to, default is current platform\n");
-    printf("  -a, --arch\n");
-    printf("      The architecture that should be published for, default is current architecture\n");
     printf("  -c, --channel\n");
     printf("      The channel that should be published to, default is devel\n");
     printf("  -h, --help\n");
@@ -49,11 +45,17 @@ static int __ensure_account_setup(void)
     status = chef_account_get(&account);
     if (status != 0) {
         if (status == -ENOENT) {
-            printf("order: no account information available yet\n");
+            printf("no account information available yet\n");
             account_setup();
             return 0;
         }
         return status;
+    }
+
+    // verify publisher-name has been confirmed
+    if (chef_account_get_verified_status(account) != CHEF_ACCOUNT_VERIFIED_STATUS_VERIFIED) {
+        printf("publisher name has not been verified yet, please wait for verification status to be approved\n");
+        return -1;
     }
 
     chef_account_free(account);
@@ -69,28 +71,18 @@ int publish_main(int argc, char** argv)
     int                        status;
 
     // set default channel
-    params.platform = CHEF_PLATFORM_STR;
-    params.arch     = CHEF_ARCHITECTURE_STR;
-    params.channel  = "devel";
+    params.channel = "devel";
 
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
-            }
-            else if (!strcmp(argv[i], "-p") || !strcmp(argv[i], "--platform")) {
-                params.platform = argv[++i];
-            }
-            else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--arch")) {
-                params.arch = argv[++i];
-            }
-            else if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "--channel")) {
+            } else if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "--channel")) {
                 params.channel = argv[++i];
-            }
-            else {
+            } else {
                 if (packPath != NULL) {
-                    printf("order: only one pack path can be specified\n");
+                    printf("only one pack path can be specified\n");
                     return -1;
                 }
 
@@ -101,20 +93,20 @@ int publish_main(int argc, char** argv)
 
     // parse the pack for all the information we need
     if (packPath == NULL) {
-        printf("order: no pack path specified\n");
+        printf("no pack path specified\n");
         return -1;
     }
 
     status = chef_package_load(packPath, &package, &version);
     if (status != 0) {
-        printf("order: failed to load package: %s\n", strerror(errno));
+        printf("failed to load package: %s\n", strerror(errno));
         return -1;
     }
 
     // dump information
     printf("publishing package: %s\n", package->package);
-    printf("platform:           %s\n", params.platform);
-    printf("architecture:       %s\n", params.arch);
+    printf("platform:           %s\n", package->platform);
+    printf("architecture:       %s\n", package->arch);
     printf("channel:            %s\n", params.channel);
     printf("version:            %d.%d.%d\n", version->major, version->minor, version->patch);
 
@@ -125,7 +117,7 @@ int publish_main(int argc, char** argv)
     // initialize chefclient
     status = chefclient_initialize();
     if (status != 0) {
-        fprintf(stderr, "order: failed to initialize chefclient: %s\n", strerror(errno));
+        fprintf(stderr, "failed to initialize chefclient: %s\n", strerror(errno));
         return -1;
     }
     atexit(chefclient_cleanup);
@@ -136,7 +128,7 @@ int publish_main(int argc, char** argv)
         // login before continuing
         status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
         if (status != 0) {
-            printf("order: failed to login to chef server: %s\n", strerror(errno));
+            printf("failed to login to chef server: %s\n", strerror(errno));
             break;
         }
 
@@ -147,14 +139,14 @@ int publish_main(int argc, char** argv)
                 chefclient_logout();
                 continue;
             }
-            printf("order: failed to setup neccessary account information: %s\n", strerror(-status));
+            printf("failed to setup neccessary account information: %s\n", strerror(-status));
             break;
         }
 
         // publish the package
         status = chefclient_pack_publish(&params, packPath);
         if (status != 0) {
-            printf("order: failed to publish package: %s\n", strerror(errno));
+            printf("failed to publish package: %s\n", strerror(errno));
             break;
         }
 

@@ -26,7 +26,10 @@
 
 struct chef_account {
     const char* publisher_name;
-    int         publisher_name_changed;
+    const char* publisher_email;
+
+    enum chef_account_status          status;
+    enum chef_account_verified_status verified_status;
 };
 
 static int __get_account_url(char* urlBuffer, size_t bufferSize)
@@ -46,9 +49,8 @@ static json_t* __serialize_account(struct chef_account* account)
         return NULL;
     }
 
-    if (account->publisher_name_changed) {
-        json_object_set_new(json, "publisher-name", json_string(account->publisher_name));
-    }
+    json_object_set_new(json, "publisher-name", json_string(account->publisher_name));
+    json_object_set_new(json, "publisher-email", json_string(account->publisher_email));
     return json;
 }
 
@@ -57,7 +59,7 @@ static int __parse_account(const char* response, struct chef_account** accountOu
     struct chef_account* account;
     json_error_t         error;
     json_t*              root;
-    json_t*              publisherName;
+    json_t*              member;
 
     root = json_loads(response, 0, &error);
     if (!root) {
@@ -71,9 +73,24 @@ static int __parse_account(const char* response, struct chef_account** accountOu
     }
 
     // parse the account
-    publisherName = json_object_get(root, "publisher-name");
-    if (publisherName) {
-        account->publisher_name = strdup(json_string_value(publisherName));
+    member = json_object_get(root, "publisher-name");
+    if (member) {
+        account->publisher_name = strdup(json_string_value(member));
+    }
+
+    member = json_object_get(root, "publisher-email");
+    if (member) {
+        account->publisher_email = strdup(json_string_value(member));
+    }
+
+    member = json_object_get(root, "status");
+    if (member) {
+        account->status = (enum chef_account_status)json_integer_value(member);
+    }
+
+    member = json_object_get(root, "verification-status");
+    if (member) {
+        account->verified_status = (enum chef_account_verified_status)json_integer_value(member);
     }
 
     *accountOut = account;
@@ -269,5 +286,48 @@ void chef_account_set_publisher_name(struct chef_account* account, const char* p
     }
 
     account->publisher_name = strdup(publisherName);
-    account->publisher_name_changed = 1;
+}
+
+void chef_account_set_publisher_email(struct chef_account* account, const char* publisherEmail)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return;
+    }
+
+    if (account->publisher_email != NULL) {
+        free((void*)account->publisher_email);
+    }
+
+    account->publisher_email = strdup(publisherEmail);
+}
+
+const char* chef_account_get_publisher_email(struct chef_account* account)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    return account->publisher_email;
+}
+
+enum chef_account_status chef_account_get_status(struct chef_account* account)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return CHEF_ACCOUNT_STATUS_UNKNOWN;
+    }
+
+    return account->status;
+}
+
+enum chef_account_verified_status chef_account_get_verified_status(struct chef_account* account)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return CHEF_ACCOUNT_VERIFIED_STATUS_UNKNOWN;
+    }
+
+    return account->verified_status;
 }

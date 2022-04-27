@@ -35,8 +35,6 @@ struct chef_find_params {
 struct chef_publish_params {
     struct chef_package* package;
     struct chef_version* version;
-    const char*          platform;
-    const char*          arch;
     const char*          channel;
 };
 

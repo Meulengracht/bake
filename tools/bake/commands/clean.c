@@ -79,14 +79,14 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = fridge_initialize();
+    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR);
     if (status != 0) {
         fprintf(stderr, "bake: failed to initialize fridge\n");
         return -1;
     }
     atexit(fridge_cleanup);
 
-    status = oven_initialize(envp, CHEF_ARCHITECTURE_STR, name, fridge_get_prep_directory());
+    status = oven_initialize(envp, CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR, name, fridge_get_prep_directory());
     if (status) {
         fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
         return -1;

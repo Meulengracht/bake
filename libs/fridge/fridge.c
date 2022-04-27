@@ -57,16 +57,21 @@ struct VaFsFeatureFilter {
     struct VaFsFeatureHeader Header;
 };
 
-static struct fridge_inventory* g_inventory     = NULL;
-static struct VaFsGuid          g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
-static struct VaFsGuid          g_overviewGuid  = VA_FS_FEATURE_OVERVIEW;
-static struct VaFsGuid          g_filterGuid    = VA_FS_FEATURE_FILTER;
-static struct VaFsGuid          g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
+struct fridge_context {
+    struct fridge_inventory* inventory;
+    const char*              root_path;
+    const char*              storage_path;
+    const char*              prep_path;
+    const char*              utensils_path;
+    const char*              target_platform;
+    const char*              target_arch;
+};
 
-static const char* g_rootPath      = NULL;
-static const char* g_storagePath   = NULL;
-static const char* g_prepPath      = NULL;
-static const char* g_utensilsPath  = NULL;
+static struct fridge_context g_fridge        = { 0 };
+static struct VaFsGuid       g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
+static struct VaFsGuid       g_overviewGuid  = VA_FS_FEATURE_OVERVIEW;
+static struct VaFsGuid       g_filterGuid    = VA_FS_FEATURE_FILTER;
+static struct VaFsGuid       g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
 
 static const char* __get_relative_path(
     const char* root,
@@ -284,10 +289,6 @@ static int __extract_directory(
 static int __make_folders(void)
 {
     char* cwd;
-    char* rootPath;
-    char* storagePath;
-    char* prepPath;
-    char* utensilsPath;
     int   status;
 
     status = __get_cwd(&cwd);
@@ -296,71 +297,36 @@ static int __make_folders(void)
         return -1;
     }
 
-    rootPath = malloc(strlen(cwd) + strlen(FRIDGE_ROOT_PATH) + 1);
-    if (rootPath == NULL) {
-        free(cwd);
-        fprintf(stderr, "__make_folders: failed to allocate memory for root path\n");
-        return -1;
-    }
-
-    storagePath = malloc(strlen(cwd) + strlen(FRIDGE_STORAGE_PATH) + 1);
-    if (storagePath == NULL) {
-        free(cwd);
-        free(rootPath);
-        fprintf(stderr, "__make_folders: failed to allocate memory for storage path\n");
-        return -1;
-    }
-
-    prepPath = malloc(strlen(cwd) + strlen(FRIDGE_PREP_PATH) + 1);
-    if (prepPath == NULL) {
-        free(cwd);
-        free(rootPath);
-        free(storagePath);
-        fprintf(stderr, "__make_folders: failed to allocate memory for prep path\n");
-        return -1;
-    }
-
-    utensilsPath = malloc(strlen(cwd) + strlen(FRIDGE_UTENSILS_PATH) + 1);
-    if (utensilsPath == NULL) {
-        free(cwd);
-        free(rootPath);
-        free(storagePath);
-        free(prepPath);
-        fprintf(stderr, "__make_folders: failed to allocate memory for utensils path\n");
-        return -1;
-    }
-
-    sprintf(rootPath, "%s%s", cwd, FRIDGE_ROOT_PATH);
-    sprintf(storagePath, "%s%s", cwd, FRIDGE_STORAGE_PATH);
-    sprintf(prepPath, "%s%s", cwd, FRIDGE_PREP_PATH);
-    sprintf(utensilsPath, "%s%s", cwd, FRIDGE_UTENSILS_PATH);
-    free(cwd);
-
     // update global paths
-    g_rootPath = rootPath;
-    g_storagePath = storagePath;
-    g_prepPath = prepPath;
-    g_utensilsPath = utensilsPath;
+    g_fridge.root_path     = strpathcombine(cwd, FRIDGE_ROOT_PATH);
+    g_fridge.storage_path  = strpathcombine(cwd, FRIDGE_STORAGE_PATH);
+    g_fridge.prep_path     = strpathcombine(cwd, FRIDGE_PREP_PATH);
+    g_fridge.utensils_path = strpathcombine(cwd, FRIDGE_UTENSILS_PATH);
+    free(cwd);
+    if (g_fridge.root_path == NULL || g_fridge.storage_path == NULL || g_fridge.prep_path == NULL || g_fridge.utensils_path == NULL) {
+        fprintf(stderr, "__make_folders: unable to allocate memory for paths\n");
+        return -1;
+    }
 
-    status = platform_mkdir(rootPath);
+    status = platform_mkdir(g_fridge.root_path);
     if (status) {
         fprintf(stderr, "__make_folders: failed to create root directory\n");
         return -1;
     }
 
-    status = platform_mkdir(storagePath);
+    status = platform_mkdir(g_fridge.storage_path);
     if (status) {
         fprintf(stderr, "__make_folders: failed to create storage directory\n");
         return -1;
     }
 
-    status = platform_mkdir(prepPath);
+    status = platform_mkdir(g_fridge.prep_path);
     if (status) {
         fprintf(stderr, "__make_folders: failed to create prep directory\n");
         return -1;
     }
 
-    status = platform_mkdir(utensilsPath);
+    status = platform_mkdir(g_fridge.utensils_path);
     if (status) {
         fprintf(stderr, "__make_folders: failed to create utensils directory\n");
         return -1;
@@ -368,19 +334,31 @@ static int __make_folders(void)
     return 0;
 }
 
-int fridge_initialize(void)
+int fridge_initialize(const char* platform, const char* architecture)
 {
     int status;
+
+    if (platform == NULL || architecture == NULL) {
+        fprintf(stderr, "fridge_initialize: platform and architecture must be specified\n");
+        return -1;
+    }
 
     status = __make_folders();
     if (status) {
         fprintf(stderr, "fridge_initialize: failed to create folders\n");
+        fridge_cleanup();
         return -1;
     }
 
-    status = inventory_load(g_storagePath, &g_inventory);
+    // store platform and architecture, this will be used as fall-back
+    // values if platform or arch is not specified for ingredients
+    g_fridge.target_platform = strdup(platform);
+    g_fridge.target_arch = strdup(architecture);
+
+    status = inventory_load(g_fridge.storage_path, &g_fridge.inventory);
     if (status) {
         fprintf(stderr, "fridge_initialize: failed to load inventory\n");
+        fridge_cleanup();
         return -1;
     }
     return 0;
@@ -391,48 +369,37 @@ void fridge_cleanup(void)
     int status;
 
     // save inventory if loaded
-    if (g_inventory != NULL) {
-        status = inventory_save(g_inventory);
+    if (g_fridge.inventory != NULL) {
+        status = inventory_save(g_fridge.inventory);
         if (status) {
             fprintf(stderr, "fridge_cleanup: failed to save inventory: %i\n", status);
         }
-        inventory_free(g_inventory);
-        g_inventory = NULL;
+        inventory_free(g_fridge.inventory);
     }
 
     // remove the prep area
-    if (g_prepPath != NULL) {
-        status = platform_rmdir(g_prepPath);
+    if (g_fridge.prep_path != NULL) {
+        status = platform_rmdir(g_fridge.prep_path);
         if (status) {
-            fprintf(stderr, "fridge_cleanup: failed to remove %s\n", g_prepPath);
+            fprintf(stderr, "fridge_cleanup: failed to remove %s\n", g_fridge.prep_path);
         }
     }
 
     // free resources
-    if (g_rootPath != NULL) {
-        free((void*)g_rootPath);
-        g_rootPath = NULL;
-    }
+    free((void*)g_fridge.root_path);
+    free((void*)g_fridge.storage_path);
+    free((void*)g_fridge.prep_path);
+    free((void*)g_fridge.utensils_path);
+    free((void*)g_fridge.target_platform);
+    free((void*)g_fridge.target_arch);
 
-    if (g_storagePath != NULL) {
-        free((void*)g_storagePath);
-        g_storagePath = NULL;
-    }
-
-    if (g_prepPath != NULL) {
-        free((void*)g_prepPath);
-        g_prepPath = NULL;
-    }
-
-    if (g_utensilsPath != NULL) {
-        free((void*)g_utensilsPath);
-        g_utensilsPath = NULL;
-    }
+    // reset context
+    memset(&g_fridge, 0, sizeof(struct fridge_context));
 }
 
 const char* fridge_get_prep_directory(void)
 {
-    return g_prepPath;
+    return g_fridge.prep_path;
 }
 
 static int __parse_version_string(const char* string, struct chef_version* version)
@@ -549,7 +516,7 @@ static enum chef_package_type __get_pack_type(struct VaFs* vafsHandle)
 static const char* __get_unpack_path(enum chef_package_type type, const char* packageName)
 {
     if (type == CHEF_PACKAGE_TYPE_TOOLCHAIN) {
-        char* toolchainPath = strpathcombine(g_utensilsPath, packageName);
+        char* toolchainPath = strpathcombine(g_fridge.utensils_path, packageName);
         if (toolchainPath && platform_mkdir(toolchainPath)) {
             fprintf(stderr, "__get_unpack_path: failed to create toolchain directory\n");
             free(toolchainPath);
@@ -557,7 +524,7 @@ static const char* __get_unpack_path(enum chef_package_type type, const char* pa
         }
         return toolchainPath;
     }
-    return strdup(g_prepPath);
+    return strdup(g_fridge.prep_path);
 }
 
 static int __handle_overview(struct VaFs* vafsHandle, struct progress_context* progress)
@@ -656,6 +623,22 @@ static int __fridge_unpack(struct fridge_inventory_pack* pack)
     return vafs_close(vafsHandle);
 }
 
+static const char* __get_ingredient_platform(struct fridge_ingredient* ingredient)
+{
+    if (ingredient->platform == NULL) {
+        return g_fridge.target_platform;
+    }
+    return ingredient->platform;
+}
+
+static const char* __get_ingredient_arch(struct fridge_ingredient* ingredient)
+{
+    if (ingredient->arch == NULL) {
+        return g_fridge.target_arch;
+    }
+    return ingredient->arch;
+}
+
 static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut)
 {
     struct chef_version           version;
@@ -666,7 +649,7 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     int                           status;
     char                          nameBuffer[256];
 
-    if (g_inventory == NULL) {
+    if (g_fridge.inventory == NULL) {
         errno = ENOSYS;
         fprintf(stderr, "__cache_ingredient: inventory not loaded\n");
         return -1;
@@ -707,9 +690,9 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
 
     // check if we have the requested ingredient in store already, otherwise
     // download the ingredient
-    status = inventory_get_pack(g_inventory, names[0], names[1],
-        ingredient->platform, ingredient->arch, ingredient->channel,
-        versionPtr, &pack
+    status = inventory_get_pack(g_fridge.inventory, names[0], names[1],
+        __get_ingredient_platform(ingredient), __get_ingredient_arch(ingredient),
+        ingredient->channel, versionPtr, &pack
     );
     if (status == 0) {
         if (packOut) {
@@ -719,9 +702,9 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     }
     
     // it's downloaded, lets add it
-    status = inventory_add(g_inventory, names[0], names[1],
-        ingredient->platform, ingredient->arch, ingredient->channel,
-        versionPtr, &pack
+    status = inventory_add(g_fridge.inventory, names[0], names[1],
+        __get_ingredient_platform(ingredient), __get_ingredient_arch(ingredient),
+        ingredient->channel, versionPtr, &pack
     );
     if (status) {
         fprintf(stderr, "__cache_ingredient: failed to add ingredient\n");
@@ -782,13 +765,13 @@ char* fridge_get_utensil_location(const char* ingredient)
         goto cleanup;
     }
 
-    path = (char*)malloc(strlen(g_utensilsPath) + strlen(names[1]) + 2);
+    path = (char*)malloc(strlen(g_fridge.utensils_path) + strlen(names[1]) + 2);
     if (path == NULL) {
         errno = ENOMEM;
         goto cleanup;
     }
 
-    sprintf(path, "%s" CHEF_PATH_SEPARATOR_S "%s", g_utensilsPath, names[1]);
+    sprintf(path, "%s" CHEF_PATH_SEPARATOR_S "%s", g_fridge.utensils_path, names[1]);
 
 cleanup:
     strsplit_free(names);

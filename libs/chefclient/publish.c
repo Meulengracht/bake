@@ -176,8 +176,8 @@ static json_t* __create_publish_request(struct chef_publish_params* params)
     }
 
     json_object_set_new(request, "name", json_string(params->package->package));
-    json_object_set_new(request, "platform", json_string(params->platform));
-    json_object_set_new(request, "architecture", json_string(params->arch));
+    json_object_set_new(request, "platform", json_string(params->package->platform));
+    json_object_set_new(request, "architecture", json_string(params->package->arch));
     json_object_set_new(request, "channel", json_string(params->channel));
     return request;
 }
@@ -197,8 +197,8 @@ static json_t* __create_commit_request(struct chef_publish_params* params)
     json_object_set_new(request, "eula", json_string(params->package->eula));
     json_object_set_new(request, "maintainer", json_string(params->package->maintainer));
     json_object_set_new(request, "maintainer_email", json_string(params->package->maintainer_email));
-    json_object_set_new(request, "platform", json_string(params->platform));
-    json_object_set_new(request, "architecture", json_string(params->arch));
+    json_object_set_new(request, "platform", json_string(params->package->platform));
+    json_object_set_new(request, "architecture", json_string(params->package->arch));
     json_object_set_new(request, "channel", json_string(params->channel));
     json_object_set_new(request, "version", __create_pack_version(params));
     return request;

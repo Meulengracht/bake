@@ -248,16 +248,6 @@ static void __finalize_ingredient(struct parser_state* state)
 
     // copy the set values
     memcpy(ingredient, &state->ingredient, sizeof(struct recipe_ingredient));
-
-    // now we do some value defaulting
-    if (ingredient->ingredient.arch == NULL) {
-        ingredient->ingredient.arch = strdup(CHEF_ARCHITECTURE_STR);
-    }
-
-    if (ingredient->ingredient.platform == NULL) {
-        ingredient->ingredient.platform = strdup(CHEF_PLATFORM_STR);
-    }
-
     list_add(&state->recipe.ingredients, &ingredient->list_header);
 
     // reset the structure in state

@@ -47,7 +47,8 @@ struct oven_recipe_context {
 };
 
 struct oven_variables {
-    const char* architecture;
+    const char* target_platform;
+    const char* target_arch;
     const char* cwd;
     const char* fridge_prep_directory;
 };
@@ -80,26 +81,31 @@ static struct build_backend g_buildbackends[] = {
     { "make", make_main }
 };
 
-static struct oven_context g_ovenContext = { 0 };
+static struct oven_context g_oven = { 0 };
 
 const char* __get_build_root(void)
 {
-    return g_ovenContext.build_root;
+    return g_oven.build_root;
 }
 
 const char* __get_install_path(void)
 {
-    return g_ovenContext.install_root;
+    return g_oven.install_root;
 }
 
 const char* __get_ingredients_path(void)
 {
-    return g_ovenContext.variables.fridge_prep_directory;
+    return g_oven.variables.fridge_prep_directory;
+}
+
+const char* __get_platform(void)
+{
+    return g_oven.variables.target_platform;
 }
 
 const char* __get_architecture(void)
 {
-    return g_ovenContext.variables.architecture;
+    return g_oven.variables.target_arch;
 }
 
 static int __get_cwd(char** bufferOut)
@@ -134,7 +140,7 @@ static int __create_path(const char* path)
     return 0;
 }
 
-int oven_initialize(char** envp, const char* architecture, const char* recipeScope, const char* fridgePrepDirectory)
+int oven_initialize(char** envp, const char* platform, const char* architecture, const char* recipeScope, const char* fridgePrepDirectory)
 {
     int         status;
     char*       cwd;
@@ -175,15 +181,16 @@ int oven_initialize(char** envp, const char* architecture, const char* recipeSco
     }
 
     // update oven variables
-    g_ovenContext.variables.architecture          = architecture;
-    g_ovenContext.variables.cwd                   = cwd;
-    g_ovenContext.variables.fridge_prep_directory = fridgePrepDirectory;
+    g_oven.variables.target_platform       = strdup(platform);
+    g_oven.variables.target_arch           = strdup(architecture);
+    g_oven.variables.cwd                   = cwd;
+    g_oven.variables.fridge_prep_directory = strdup(fridgePrepDirectory);
 
     // update oven context
-    g_ovenContext.process_environment   = (const char**)envp;
-    g_ovenContext.build_root            = strpathcombine(buildRoot, &tmp[0]);
-    g_ovenContext.install_root          = strpathcombine(installRoot, &tmp[0]);;
-    if (g_ovenContext.build_root == NULL || g_ovenContext.install_root == NULL) {
+    g_oven.process_environment   = (const char**)envp;
+    g_oven.build_root            = strpathcombine(buildRoot, &tmp[0]);
+    g_oven.install_root          = strpathcombine(installRoot, &tmp[0]);;
+    if (g_oven.build_root == NULL || g_oven.install_root == NULL) {
         free((void*)root);
         free((void*)buildRoot);
         free((void*)installRoot);
@@ -191,21 +198,21 @@ int oven_initialize(char** envp, const char* architecture, const char* recipeSco
     }
 
     // no active recipe
-    g_ovenContext.recipe.name            = NULL;
-    g_ovenContext.recipe.relative_path   = NULL;
-    g_ovenContext.recipe.build_root      = NULL;
-    g_ovenContext.recipe.install_root    = NULL;
-    g_ovenContext.recipe.toolchain       = NULL;
-    g_ovenContext.recipe.checkpoint_path = NULL;
+    g_oven.recipe.name            = NULL;
+    g_oven.recipe.relative_path   = NULL;
+    g_oven.recipe.build_root      = NULL;
+    g_oven.recipe.install_root    = NULL;
+    g_oven.recipe.toolchain       = NULL;
+    g_oven.recipe.checkpoint_path = NULL;
 
     // create all paths
     if (__create_path(root) || __create_path(buildRoot) || __create_path(installRoot) ||
-        __create_path(g_ovenContext.build_root) || __create_path(g_ovenContext.install_root)) {
+        __create_path(g_oven.build_root) || __create_path(g_oven.install_root)) {
         free((void*)root);
         free((void*)buildRoot);
         free((void*)installRoot);
-        free((void*)g_ovenContext.build_root);
-        free((void*)g_ovenContext.install_root);
+        free((void*)g_oven.build_root);
+        free((void*)g_oven.install_root);
         return -1;
     }
 
@@ -214,6 +221,22 @@ int oven_initialize(char** envp, const char* architecture, const char* recipeSco
     free((void*)buildRoot);
     free((void*)installRoot);
     return 0;
+}
+
+
+void oven_cleanup(void)
+{
+    // cleanup resources by recipe context
+    oven_recipe_end();
+
+    free((void*)g_oven.build_root);
+    free((void*)g_oven.install_root);
+    free((void*)g_oven.variables.target_platform);
+    free((void*)g_oven.variables.target_arch);
+    free((void*)g_oven.variables.cwd);
+    free((void*)g_oven.variables.fridge_prep_directory);
+
+    memset(&g_oven, 0, sizeof(struct oven_context));
 }
 
 static int __recreate_dir(const char* path)
@@ -240,12 +263,12 @@ int oven_clean(void)
 {
     int status;
 
-    status = __recreate_dir(g_ovenContext.build_root);
+    status = __recreate_dir(g_oven.build_root);
     if (status) {
         return status;
     }
     
-    status = __recreate_dir(g_ovenContext.install_root);
+    status = __recreate_dir(g_oven.install_root);
     if (status) {
         return status;
     }
@@ -259,18 +282,18 @@ int oven_recipe_start(struct oven_recipe_options* options)
     size_t relativePathLength;
     int    status;
 
-    if (g_ovenContext.recipe.name) {
+    if (g_oven.recipe.name) {
         fprintf(stderr, "oven: recipe already started\n");
         errno = ENOSYS;
         return -1;
     }
 
-    g_ovenContext.recipe.name          = strdup(options->name);
-    g_ovenContext.recipe.relative_path = strdup(options->relative_path);
-    g_ovenContext.recipe.toolchain     = options->toolchain != NULL ? strdup(options->toolchain) : NULL;
+    g_oven.recipe.name          = strdup(options->name);
+    g_oven.recipe.relative_path = strdup(options->relative_path);
+    g_oven.recipe.toolchain     = options->toolchain != NULL ? strdup(options->toolchain) : NULL;
     
     // generate build and install directories
-    buildRoot = strpathcombine(g_ovenContext.build_root, options->relative_path);
+    buildRoot = strpathcombine(g_oven.build_root, options->relative_path);
     if (!buildRoot) {
         errno = ENOMEM;
         return -1;
@@ -291,43 +314,21 @@ int oven_recipe_start(struct oven_recipe_options* options)
     }
 
     // store members as const
-    g_ovenContext.recipe.build_root      = buildRoot;
-    g_ovenContext.recipe.install_root    = strdup(g_ovenContext.install_root);
-    g_ovenContext.recipe.checkpoint_path = checkpointPath;
+    g_oven.recipe.build_root      = buildRoot;
+    g_oven.recipe.install_root    = strdup(g_oven.install_root);
+    g_oven.recipe.checkpoint_path = checkpointPath;
     return 0;
 }
 
 void oven_recipe_end(void)
 {
-    if (g_ovenContext.recipe.name) {
-        free((void*)g_ovenContext.recipe.name);
-        g_ovenContext.recipe.name = NULL;
-    }
-
-    if (g_ovenContext.recipe.relative_path) {
-        free((void*)g_ovenContext.recipe.relative_path);
-        g_ovenContext.recipe.relative_path = NULL;
-    }
-
-    if (g_ovenContext.recipe.toolchain) {
-        free((void*)g_ovenContext.recipe.toolchain);
-        g_ovenContext.recipe.toolchain = NULL;
-    }
-
-    if (g_ovenContext.recipe.build_root) {
-        free((void*)g_ovenContext.recipe.build_root);
-        g_ovenContext.recipe.build_root = NULL;
-    }
-
-    if (g_ovenContext.recipe.install_root) {
-        free((void*)g_ovenContext.recipe.install_root);
-        g_ovenContext.recipe.install_root = NULL;
-    }
-
-    if (g_ovenContext.recipe.checkpoint_path) {
-        free((void*)g_ovenContext.recipe.checkpoint_path);
-        g_ovenContext.recipe.checkpoint_path = NULL;
-    }
+    free((void*)g_oven.recipe.name);
+    free((void*)g_oven.recipe.relative_path);
+    free((void*)g_oven.recipe.toolchain);
+    free((void*)g_oven.recipe.build_root);
+    free((void*)g_oven.recipe.install_root);
+    free((void*)g_oven.recipe.checkpoint_path);
+    memset(&g_oven.recipe, 0, sizeof(struct oven_recipe_context));
 }
 
 int oven_clear_recipe_checkpoint(const char* name)
@@ -337,34 +338,38 @@ int oven_clear_recipe_checkpoint(const char* name)
         return -1;
     }
 
-    if (g_ovenContext.recipe.checkpoint_path == NULL) {
+    if (g_oven.recipe.checkpoint_path == NULL) {
         errno = ENOSYS;
         return -1;
     }
-    return oven_checkpoint_remove(g_ovenContext.recipe.checkpoint_path, name);
+    return oven_checkpoint_remove(g_oven.recipe.checkpoint_path, name);
 }
 
 static const char* __get_variable(const char* name)
 {
+    if (strcmp(name, "CHEF_PLATFORM") == 0) {
+        printf("CHEF_PLATFORM: %s\n", g_oven.variables.target_platform);
+        return g_oven.variables.target_platform;
+    }
     if (strcmp(name, "CHEF_ARCHITECTURE") == 0) {
-        printf("CHEF_ARCHITECTURE: %s\n", g_ovenContext.variables.architecture);
-        return g_ovenContext.variables.architecture;
+        printf("CHEF_ARCHITECTURE: %s\n", g_oven.variables.target_arch);
+        return g_oven.variables.target_arch;
     }
     if (strcmp(name, "PROJECT_PATH") == 0) {
-        printf("PROJECT_PATH: %s\n", g_ovenContext.variables.cwd);
-        return g_ovenContext.variables.cwd;
+        printf("PROJECT_PATH: %s\n", g_oven.variables.cwd);
+        return g_oven.variables.cwd;
     }
     if (strcmp(name, "INGREDIENTS_PREFIX") == 0) {
-        printf("INGREDIENTS_PREFIX: %s\n", g_ovenContext.variables.fridge_prep_directory);
-        return g_ovenContext.variables.fridge_prep_directory;
+        printf("INGREDIENTS_PREFIX: %s\n", g_oven.variables.fridge_prep_directory);
+        return g_oven.variables.fridge_prep_directory;
     }
     if (strcmp(name, "TOOLCHAIN_PREFIX") == 0) {
-        printf("TOOLCHAIN_PREFIX: %s\n", g_ovenContext.recipe.toolchain);
-        return g_ovenContext.recipe.toolchain;
+        printf("TOOLCHAIN_PREFIX: %s\n", g_oven.recipe.toolchain);
+        return g_oven.recipe.toolchain;
     }
     if (strcmp(name, "INSTALL_PREFIX") == 0) {
-        printf("INSTALL_PREFIX: %s\n", g_ovenContext.recipe.install_root);
-        return g_ovenContext.recipe.install_root;
+        printf("INSTALL_PREFIX: %s\n", g_oven.recipe.install_root);
+        return g_oven.recipe.install_root;
     }
     return NULL;
 }
@@ -685,19 +690,19 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     }
     data->root_directory = path;
     
-    path = strpathcombine(data->root_directory, g_ovenContext.recipe.relative_path);
+    path = strpathcombine(data->root_directory, g_oven.recipe.relative_path);
     if (path == NULL) {
         free((void*)data->root_directory);
         return status;
     }
     data->project_directory = path;
 
-    data->project_name        = g_ovenContext.recipe.name;
+    data->project_name        = g_oven.recipe.name;
     data->profile_name        = profile != NULL ? profile : "Release";
-    data->install_directory   = g_ovenContext.recipe.install_root;
-    data->build_directory     = g_ovenContext.recipe.build_root;
-    data->process_environment = g_ovenContext.process_environment;
-    data->fridge_directory    = g_ovenContext.variables.fridge_prep_directory;
+    data->install_directory   = g_oven.recipe.install_root;
+    data->build_directory     = g_oven.recipe.build_root;
+    data->process_environment = g_oven.process_environment;
+    data->fridge_directory    = g_oven.variables.fridge_prep_directory;
     
     data->environment = __preprocess_keypair_list(environment);
     if (!data->environment) {
@@ -732,7 +737,7 @@ int oven_configure(struct oven_generate_options* options)
     }
 
     // check if we already have done this step
-    if (oven_checkpoint_contains(g_ovenContext.recipe.checkpoint_path, options->name)) {
+    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_path, options->name)) {
         printf("nothing to be done for %s\n", options->name);
         return 0;
     }
@@ -745,7 +750,7 @@ int oven_configure(struct oven_generate_options* options)
 
     status = backend->generate(&data, options->system_options);
     if (status == 0) {
-        status = oven_checkpoint_create(g_ovenContext.recipe.checkpoint_path, options->name);
+        status = oven_checkpoint_create(g_oven.recipe.checkpoint_path, options->name);
     }
 
 cleanup:
@@ -782,7 +787,7 @@ int oven_build(struct oven_build_options* options)
     }
 
     // check if we already have done this step
-    if (oven_checkpoint_contains(g_ovenContext.recipe.checkpoint_path, options->name)) {
+    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_path, options->name)) {
         printf("nothing to be done for %s\n", options->name);
         return 0;
     }
@@ -795,7 +800,7 @@ int oven_build(struct oven_build_options* options)
 
     status = backend->build(&data, options->system_options);
     if (status == 0) {
-        status = oven_checkpoint_create(g_ovenContext.recipe.checkpoint_path, options->name);
+        status = oven_checkpoint_create(g_oven.recipe.checkpoint_path, options->name);
     }
 
 cleanup:
@@ -816,7 +821,7 @@ int oven_script(struct oven_script_options* options)
     }
 
     // check if we already have done this step
-    if (oven_checkpoint_contains(g_ovenContext.recipe.checkpoint_path, options->name)) {
+    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_path, options->name)) {
         printf("nothing to be done for %s\n", options->name);
         return 0;
     }
@@ -831,7 +836,7 @@ int oven_script(struct oven_script_options* options)
     free((void*)preprocessedScript);
 
     if (status == 0) {
-        status = oven_checkpoint_create(g_ovenContext.recipe.checkpoint_path, options->name);
+        status = oven_checkpoint_create(g_oven.recipe.checkpoint_path, options->name);
     }
     return status;
 }
@@ -989,27 +994,9 @@ int oven_include_filters(struct list* filters)
     }
 
     return __copy_files_with_filters(
-        g_ovenContext.variables.fridge_prep_directory,
+        g_oven.variables.fridge_prep_directory,
         NULL,
         filters,
-        g_ovenContext.recipe.install_root
+        g_oven.recipe.install_root
     );
-}
-
-void oven_cleanup(void)
-{
-    if (g_ovenContext.build_root) {
-        free((void*)g_ovenContext.build_root);
-        g_ovenContext.build_root = NULL;
-    }
-    
-    if (g_ovenContext.install_root) {
-        free((void*)g_ovenContext.install_root);
-        g_ovenContext.install_root = NULL;
-    }
-
-    if (g_ovenContext.variables.cwd) {
-        free((void*)g_ovenContext.variables.cwd);
-        g_ovenContext.variables.cwd = NULL;
-    }
 }

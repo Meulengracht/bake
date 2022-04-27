@@ -40,6 +40,36 @@ static void __print_help(void)
     printf("      Print this help message\n");
 }
 
+static const char* __get_verified_status(struct chef_account* account)
+{
+    enum chef_account_verified_status status = chef_account_get_verified_status(account);
+    switch (status) {
+        case CHEF_ACCOUNT_VERIFIED_STATUS_PENDING:
+            return "name change pending";
+        case CHEF_ACCOUNT_VERIFIED_STATUS_VERIFIED:
+            return "verified";
+        case CHEF_ACCOUNT_VERIFIED_STATUS_REJECTED:
+            return "rejected";
+        default:
+            return "unknown";
+    }
+}
+
+static const char* __get_status(struct chef_account* account)
+{
+    enum chef_account_status status = chef_account_get_status(account);
+    switch (status) {
+        case CHEF_ACCOUNT_STATUS_ACTIVE:
+            return "active";
+        case CHEF_ACCOUNT_STATUS_LOCKED:
+            return "locked";
+        case CHEF_ACCOUNT_STATUS_DELETED:
+            return "deleted";
+        default:
+            return "unknown";
+    }
+}
+
 static int __handle_whoami(void)
 {
     struct chef_account* account;
@@ -48,15 +78,17 @@ static int __handle_whoami(void)
     status = chef_account_get(&account);
     if (status != 0) {
         if (status == -ENOENT) {
-            printf("order: no account information available yet\n");
+            printf("no account information available yet\n");
             account_setup();
             return 0;
         }
         return status;
     }
 
-    printf("order: account information\n");
-    printf("  publisher name: %s\n", chef_account_get_publisher_name(account));
+    printf("account information\n");
+    printf("  publisher-name:  %s (%s)\n", chef_account_get_publisher_name(account), __get_verified_status(account));
+    printf("  publisher-email: %s\n", chef_account_get_publisher_email(account));
+    printf("  status:          %s\n", __get_status(account));
 
     chef_account_free(account);
     return 0;
@@ -69,14 +101,14 @@ static int __handle_get(char* parameter)
     const char*          value;
 
     if (parameter == NULL) {
-        printf("order: no parameter specified for 'account get'\n");
+        printf("no parameter specified for 'account get'\n");
         return -1;
     }
 
     status = chef_account_get(&account);
     if (status != 0) {
         if (status == -ENOENT) {
-            printf("order: no account information available yet\n");
+            printf("no account information available yet\n");
             account_setup();
             return 0;
         }
@@ -85,13 +117,14 @@ static int __handle_get(char* parameter)
 
     if (strcmp(parameter, "publisher-name") == 0) {
         value = chef_account_get_publisher_name(account);
-    }
-    else {
-        printf("order: unknown parameter '%s' for 'account get'\n", parameter);
+    } else if (strcmp(parameter, "publisher-email") == 0) {
+        value = chef_account_get_publisher_email(account);
+    } else {
+        printf("unknown parameter '%s' for 'account get'\n", parameter);
         return -1;
     }
 
-    printf("order: %s: %s\n", parameter, value);
+    printf("%s: %s\n", parameter, value);
     chef_account_free(account);
     return 0;
 }
@@ -102,19 +135,19 @@ static int __handle_set(char* parameter, char* value)
     int                  status;
 
     if (parameter == NULL) {
-        printf("order: no parameter specified for 'account set'\n");
+        printf("no parameter specified for 'account set'\n");
         return -1;
     }
 
     if (value == NULL) {
-        printf("order: no value specified for 'account set'\n");
+        printf("no value specified for 'account set'\n");
         return -1;
     }
 
     status = chef_account_get(&account);
     if (status != 0) {
         if (status == -ENOENT) {
-            printf("order: no account information available yet\n");
+            printf("no account information available yet\n");
             account_setup();
             return 0;
         }
@@ -123,16 +156,23 @@ static int __handle_set(char* parameter, char* value)
 
     if (strcmp(parameter, "publisher-name") == 0) {
         chef_account_set_publisher_name(account, value);
-    }
-    else {
-        printf("order: unknown parameter '%s'\n", parameter);
+    } else if (strcmp(parameter, "publisher-email") == 0) {
+        chef_account_set_publisher_email(account, value);
+    } else {
+        printf("unknown parameter '%s'\n", parameter);
         return -1;
     }
 
     status = chef_account_update(account);
     if (status != 0) {
-        fprintf(stderr, "order: failed to update account information: %s\n", strerror(errno));
+        fprintf(stderr, "failed to update account information: %s\n", strerror(errno));
         return -1;
+    }
+
+    printf("Account information updated\n");
+    if (strcmp(parameter, "publisher-name") == 0) {
+        printf("An email will be sent once your publisher name has been verified.\n");
+        printf("We usually review your account within 24 hours, and remember to check your spam filter.\n");
     }
     
     chef_account_free(account);
@@ -145,12 +185,12 @@ static int __handle_api_key(const char* option, const char* value)
     int                  status;
 
     if (option == NULL) {
-        printf("order: no option specified for 'account api-key'\n");
+        printf("no option specified for 'account api-key'\n");
         return -1;
     }
 
     if (value == NULL) {
-        printf("order: no value specified for 'account api-key'\n");
+        printf("no value specified for 'account api-key'\n");
         return -1;
     }
     
@@ -161,7 +201,7 @@ static int __handle_api_key(const char* option, const char* value)
     } else if (strcmp(option, "list") == 0) {
 
     } else {
-        printf("order: unknown option '%s' for 'account api-key'\n", option);
+        printf("unknown option '%s' for 'account api-key'\n", option);
         return -1;
     }
     return 0;
@@ -195,14 +235,14 @@ int account_main(int argc, char** argv)
     }
 
     if (command == NULL) {
-        printf("order: no command was specified for 'account'\n");
+        printf("no command was specified for 'account'\n");
         __print_help();
         return -1;
     }
 
     status = chefclient_initialize();
     if (status != 0) {
-        fprintf(stderr, "order: failed to initialize chefclient: %s\n", strerror(errno));
+        fprintf(stderr, "failed to initialize chefclient: %s\n", strerror(errno));
         return -1;
     }
     atexit(chefclient_cleanup);
@@ -213,7 +253,7 @@ int account_main(int argc, char** argv)
         // login before continuing
         status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
         if (status != 0) {
-            printf("order: failed to login to chef server: %s\n", strerror(errno));
+            printf("failed to login to chef server: %s\n", strerror(errno));
             break;
         }
 
@@ -230,7 +270,7 @@ int account_main(int argc, char** argv)
             status = 0;
             chefclient_logout();
         } else {
-            printf("order: unknown command '%s'\n", command);
+            printf("unknown command '%s'\n", command);
             status = -1;
             break;
         }

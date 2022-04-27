@@ -25,6 +25,10 @@
 static struct VaFsGuid g_headerGuid  = CHEF_PACKAGE_HEADER_GUID;
 static struct VaFsGuid g_versionGuid = CHEF_PACKAGE_VERSION_GUID;
 
+#define READ_IF_PRESENT(__MEM) if (header->__MEM ## _length > 0) { \
+        package->__MEM = strndup(data, header->__MEM ## _length); \
+        data += header->__MEM ## _length; \
+    }
 
 static int __load_package_header(struct chef_vafs_feature_package_header* header, struct chef_package* package)
 {
@@ -32,45 +36,17 @@ static int __load_package_header(struct chef_vafs_feature_package_header* header
 
     package->type = header->type;
 
-    if (header->package_length) {
-        package->package = strndup(data, header->package_length);
-        data += header->package_length;
-    }
+    READ_IF_PRESENT(platform)
+    READ_IF_PRESENT(arch)
+    READ_IF_PRESENT(package)
+    READ_IF_PRESENT(summary)
+    READ_IF_PRESENT(description)
+    READ_IF_PRESENT(homepage)
+    READ_IF_PRESENT(license)
+    READ_IF_PRESENT(eula)
+    READ_IF_PRESENT(maintainer)
+    READ_IF_PRESENT(maintainer_email)
 
-    if (header->summary_length) {
-        package->summary = strndup(data, header->summary_length);
-        data += header->summary_length;
-    }
-
-    if (header->description_length) {
-        package->description = strndup(data, header->description_length);
-        data += header->description_length;
-    }
-
-    if (header->homepage_length) {
-        package->homepage = strndup(data, header->homepage_length);
-        data += header->homepage_length;
-    }
-
-    if (header->license_length) {
-        package->license = strndup(data, header->license_length);
-        data += header->license_length;
-    }
-
-    if (header->eula_length) {
-        package->eula = strndup(data, header->eula_length);
-        data += header->eula_length;
-    }
-
-    if (header->maintainer_length) {
-        package->maintainer = strndup(data, header->maintainer_length);
-        data += header->maintainer_length;
-    }
-
-    if (header->maintainer_email_length) {
-        package->maintainer_email = strndup(data, header->maintainer_email_length);
-        data += header->maintainer_email_length;
-    }
     return 0;
 }
 

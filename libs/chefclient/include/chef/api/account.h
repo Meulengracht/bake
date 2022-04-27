@@ -23,6 +23,20 @@
 
 struct chef_account;
 
+enum chef_account_status {
+    CHEF_ACCOUNT_STATUS_UNKNOWN,
+    CHEF_ACCOUNT_STATUS_ACTIVE,
+    CHEF_ACCOUNT_STATUS_LOCKED,
+    CHEF_ACCOUNT_STATUS_DELETED
+};
+
+enum chef_account_verified_status {
+    CHEF_ACCOUNT_VERIFIED_STATUS_UNKNOWN,
+    CHEF_ACCOUNT_VERIFIED_STATUS_PENDING,
+    CHEF_ACCOUNT_VERIFIED_STATUS_VERIFIED,
+    CHEF_ACCOUNT_VERIFIED_STATUS_REJECTED
+};
+
 /**
  * @brief Retrieves the account information of the current user. This requires
  * that @chefclient_login has been called.
@@ -55,5 +69,11 @@ extern void chef_account_free(struct chef_account* account);
 
 extern const char* chef_account_get_publisher_name(struct chef_account* account);
 extern void        chef_account_set_publisher_name(struct chef_account* account, const char* publisherName);
+
+extern void        chef_account_set_publisher_email(struct chef_account* account, const char* publisherEmail);
+extern const char* chef_account_get_publisher_email(struct chef_account* account);
+
+extern enum chef_account_status          chef_account_get_status(struct chef_account* account);
+extern enum chef_account_verified_status chef_account_get_verified_status(struct chef_account* account);
 
 #endif //!__LIBCHEF_API_ACCOUNT_H__

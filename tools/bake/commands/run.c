@@ -36,11 +36,13 @@ static void __print_help(void)
     printf("Usage: bake pack [options]\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -a, --arch\n");
-    printf("      The target architecture to build for (default: host-arch)\n");
-    printf("  -n, --name\n");
+    printf("  -cc, --cross-compile\n");
+    printf("      Cross-compile for another platform or/and architecture. This switch\n");
+    printf("      can be used with two different formats, either just like\n");
+    printf("      --cross-compile <arch> or --cross-compile platform/arch\n");
+    printf("  -n,  --name\n");
     printf("      The name for the produced container image (default: recipe-name)\n");
-    printf("  -h, --help\n");
+    printf("  -h,  --help\n");
     printf("      Shows this help message\n");
 }
 
@@ -75,19 +77,19 @@ static void __initialize_pack_options(
     struct recipe*            recipe,
     struct recipe_pack*       pack)
 {
-    options->name        = pack->name;
-    options->type        = pack->type;
-    options->summary     = recipe->project.summary;
-    options->description = recipe->project.description;
-    options->icon        = recipe->project.icon;
-    options->version     = recipe->project.version;
-    options->license     = recipe->project.license;
-    options->eula        = recipe->project.eula;
-    options->author      = recipe->project.author;
-    options->email       = recipe->project.email;
-    options->url         = recipe->project.url;
-    options->filters     = &pack->filters;
-    options->commands    = &pack->commands;
+    options->name             = pack->name;
+    options->type             = pack->type;
+    options->summary          = recipe->project.summary;
+    options->description      = recipe->project.description;
+    options->icon             = recipe->project.icon;
+    options->version          = recipe->project.version;
+    options->license          = recipe->project.license;
+    options->eula             = recipe->project.eula;
+    options->maintainer       = recipe->project.author;
+    options->maintainer_email = recipe->project.email;
+    options->homepage         = recipe->project.url;
+    options->filters          = &pack->filters;
+    options->commands         = &pack->commands;
 }
 
 static int __prep_ingredients(struct recipe* recipe)
@@ -99,12 +101,12 @@ static int __prep_ingredients(struct recipe* recipe)
         return 0;
     }
 
-    printf("bake: preparing %i ingredients\n", recipe->ingredients.count);
+    printf("preparing %i ingredients\n", recipe->ingredients.count);
     list_foreach(&recipe->ingredients, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         status = fridge_store_ingredient(&ingredient->ingredient);
         if (status != 0) {
-            fprintf(stderr, "bake: failed to fetch ingredient %s\n", ingredient->ingredient.name);
+            fprintf(stderr, "failed to fetch ingredient %s\n", ingredient->ingredient.name);
             return status;
         }
     }
@@ -113,7 +115,7 @@ static int __prep_ingredients(struct recipe* recipe)
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         status = fridge_use_ingredient(&ingredient->ingredient);
         if (status != 0) {
-            fprintf(stderr, "bake: failed to fetch ingredient %s\n", ingredient->ingredient.name);
+            fprintf(stderr, "failed to fetch ingredient %s\n", ingredient->ingredient.name);
             return status;
         }
     }
@@ -127,14 +129,14 @@ static int __make_recipe_steps(struct list* steps)
     
     list_foreach(steps, item) {
         struct recipe_step* step = (struct recipe_step*)item;
-        printf("bake: executing step '%s'\n", step->system);
+        printf("executing step '%s'\n", step->system);
 
         if (step->type == RECIPE_STEP_TYPE_GENERATE) {
             struct oven_generate_options genOptions;
             __initialize_generator_options(&genOptions, step);
             status = oven_configure(&genOptions);
             if (status) {
-                fprintf(stderr, "bake: failed to configure target: %s\n", step->system);
+                fprintf(stderr, "failed to configure target: %s\n", step->system);
                 return status;
             }
         } else if (step->type == RECIPE_STEP_TYPE_BUILD) {
@@ -142,7 +144,7 @@ static int __make_recipe_steps(struct list* steps)
             __initialize_build_options(&buildOptions, step);
             status = oven_build(&buildOptions);
             if (status) {
-                fprintf(stderr, "bake: failed to build target: %s\n", step->system);
+                fprintf(stderr, "failed to build target: %s\n", step->system);
                 return status;
             }
         } else if (step->type == RECIPE_STEP_TYPE_SCRIPT) {
@@ -150,7 +152,7 @@ static int __make_recipe_steps(struct list* steps)
             __initialize_script_options(&scriptOptions, step);
             status = oven_script(&scriptOptions);
             if (status) {
-                fprintf(stderr, "bake: failed to execute script\n");
+                fprintf(stderr, "failed to execute script\n");
                 return status;
             }
         }
@@ -192,7 +194,7 @@ static int __make_recipes(struct recipe* recipe)
         oven_recipe_end();
 
         if (status) {
-            fprintf(stderr, "bake: failed to build recipe %s\n", part->name);
+            fprintf(stderr, "failed to build recipe %s\n", part->name);
             return status;
         }
     }
@@ -212,7 +214,7 @@ static int __make_packs(struct recipe* recipe)
         if (ingredient->include) {
             status = oven_include_filters(&ingredient->filters);
             if (status) {
-                fprintf(stderr, "bake: failed to include ingredient %s\n", ingredient->ingredient.name);
+                fprintf(stderr, "failed to include ingredient %s\n", ingredient->ingredient.name);
                 return status;
             }
         }
@@ -224,7 +226,7 @@ static int __make_packs(struct recipe* recipe)
         __initialize_pack_options(&packOptions, recipe, pack);
         status = oven_pack(&packOptions);
         if (status) {
-            fprintf(stderr, "bake: failed to construct pack %s\n", pack->name);
+            fprintf(stderr, "failed to construct pack %s\n", pack->name);
             return status;
         }
     }
@@ -234,14 +236,14 @@ static int __make_packs(struct recipe* recipe)
 static void __cleanup_systems(int sig)
 {
     (void)sig;
-    printf("bake: termination requested, cleaning up\n");
+    printf("termination requested, cleaning up\n");
     exit(0);
 }
 
 static void __debug(void)
 {
     // wait for any key and then return
-    printf("bake: press any key to continue\n");
+    printf("press any key to continue\n");
     getchar();
 }
 
@@ -284,7 +286,7 @@ static int __reset_depending_steps(struct list* steps, const char* name)
             if (__step_depends_on(&recipeStep->depends, name)) {
                 status = __reset_steps(steps, NULL, recipeStep->name);
                 if (status) {
-                    fprintf(stderr, "bake: failed to reset step %s\n", recipeStep->name);
+                    fprintf(stderr, "failed to reset step %s\n", recipeStep->name);
                     return status;
                 }
             }
@@ -318,7 +320,7 @@ static int __reset_steps(struct list* steps, const char* step, const char* name)
             // this should be deleted
             status = oven_clear_recipe_checkpoint(recipeStep->name);
             if (status) {
-                fprintf(stderr, "bake: failed to clear checkpoint %s\n", recipeStep->name);
+                fprintf(stderr, "failed to clear checkpoint %s\n", recipeStep->name);
                 return status;
             }
 
@@ -355,7 +357,7 @@ static int __reset_recipe_steps(struct recipe* recipe, const char* step)
         oven_recipe_end();
 
         if (status) {
-            fprintf(stderr, "bake: failed to build recipe %s\n", part->name);
+            fprintf(stderr, "failed to build recipe %s\n", part->name);
             return status;
         }
     }
@@ -363,13 +365,37 @@ static int __reset_recipe_steps(struct recipe* recipe, const char* step)
     return 0;
 }
 
+static int __parse_cc_switch(const char* value, char** platformOut, char** archOut)
+{
+    // value is either of two forms
+    // platform/arch
+    // arch
+    char* separator;
+
+    if (value == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    separator = strchr(value, '/');
+    if (separator) {
+        *platformOut = strndup(value, separator - value);
+        *archOut     = strdup(separator + 1);
+    } else {
+        *platformOut = strdup(CHEF_PLATFORM_STR);
+        *archOut     = strdup(value);
+    }
+    return 0;
+}
+
 int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
+    char* name     = NULL;
+    char* platform = CHEF_PLATFORM_STR;
+    char* arch     = CHEF_ARCHITECTURE_STR;
+    char* step     = "run";
+    int   debug    = 0;
     int   status;
-    char* name = NULL;
-    char* arch = CHEF_ARCHITECTURE_STR;
-    char* step = "run";
-    int   debug = 0;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -384,16 +410,20 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
                 if (i + 1 < argc) {
                     name = argv[i + 1];
                 } else {
-                    fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
+                    fprintf(stderr, "missing argument for option: %s\n", argv[i]);
                     return 1;
                 }
             } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--debug")) {
                 debug = 1;
-            } else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--arch")) {
+            } else if (!strcmp(argv[i], "-cc") || !strcmp(argv[i], "--cross-compile")) {
                 if (i + 1 < argc) {
-                    arch = argv[i + 1];
+                    status = __parse_cc_switch(argv[i + 1], &platform, &arch);
+                    if (status) {
+                        fprintf(stderr, "failed to parse cross-compile switch\n");
+                        return status;
+                    }
                 } else {
-                    fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
+                    fprintf(stderr, "missing argument for option: %s\n", argv[i]);
                     return 1;
                 }
             } else if (argv[i][0] != '-') {
@@ -408,52 +438,52 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
 
     if (name == NULL) {
         // should not happen
-        fprintf(stderr, "bake: missing recipe name\n");
+        fprintf(stderr, "missing recipe name\n");
         return -1;
     }
 
     if (recipe == NULL) {
-        fprintf(stderr, "bake: no recipe provided\n");
+        fprintf(stderr, "no recipe provided\n");
         __print_help();
         return -1;
     }
 
-    status = fridge_initialize();
+    status = fridge_initialize(platform, arch);
     if (status != 0) {
-        fprintf(stderr, "bake: failed to initialize fridge\n");
+        fprintf(stderr, "failed to initialize fridge\n");
         return -1;
     }
     atexit(fridge_cleanup);
 
     status = chefclient_initialize();
     if (status != 0) {
-        fprintf(stderr, "bake: failed to initialize chef client\n");
+        fprintf(stderr, "failed to initialize chef client\n");
         return -1;
     }
     atexit(chefclient_cleanup);
 
     status = __prep_ingredients(recipe);
     if (status) {
-        fprintf(stderr, "bake: failed to fetch ingredients: %s\n", strerror(errno));
+        fprintf(stderr, "failed to fetch ingredients: %s\n", strerror(errno));
         return -1;
     }
 
-    status = oven_initialize(envp, arch, name, fridge_get_prep_directory());
+    status = oven_initialize(envp, platform, arch, name, fridge_get_prep_directory());
     if (status) {
-        fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
+        fprintf(stderr, "failed to initialize oven: %s\n", strerror(errno));
         return -1;
     }
     atexit(oven_cleanup);
     
     status = __reset_recipe_steps(recipe, step);
     if (status) {
-        fprintf(stderr, "bake: failed to reset steps: %s\n", strerror(errno));
+        fprintf(stderr, "failed to reset steps: %s\n", strerror(errno));
         return -1;
     }
 
     status = __make_recipes(recipe);
     if (status) {
-        fprintf(stderr, "bake: failed to make recipes\n");
+        fprintf(stderr, "failed to make recipes\n");
         if (debug) {
             __debug();
         }
@@ -463,7 +493,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     if (strcmp(step, "run") == 0 || strcmp(step, "pack") == 0) {
         status = __make_packs(recipe);
         if (status) {
-            fprintf(stderr, "bake: failed to construct packs\n");
+            fprintf(stderr, "failed to construct packs\n");
             if (debug) {
                 __debug();
             }

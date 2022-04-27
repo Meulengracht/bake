@@ -100,9 +100,9 @@ struct oven_pack_options {
     const char*            version;
     const char*            license;
     const char*            eula;
-    const char*            author;
-    const char*            email;
-    const char*            url;
+    const char*            maintainer;
+    const char*            maintainer_email;
+    const char*            homepage;
 
     struct list*           filters;  // list<oven_value_item>
     struct list*           commands; // list<oven_pack_command>
@@ -113,12 +113,13 @@ struct oven_pack_options {
  *       functions will fail if this function is not called first.
  * 
  * @param[In] envp
+ * @param[In] platform
  * @param[In] architecture
  * @param[In] recipeScope
  * @param[In] fridgePrepDirectory
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int oven_initialize(char** envp, const char* architecture, const char* recipeScope, const char* fridgePrepDirectory);
+extern int oven_initialize(char** envp, const char* platform, const char* architecture, const char* recipeScope, const char* fridgePrepDirectory);
 
 /**
  * @brief 

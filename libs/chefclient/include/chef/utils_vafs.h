@@ -39,6 +39,8 @@ struct chef_vafs_feature_package_header {
 
     // lengths of the data for each string, none of the strings
     // are zero terminated, which must be added at load
+    uint32_t                 platform_length;
+    uint32_t                 arch_length;
     uint32_t                 package_length;
     uint32_t                 summary_length;
     uint32_t                 description_length;

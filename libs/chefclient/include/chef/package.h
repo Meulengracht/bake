@@ -62,6 +62,8 @@ enum chef_command_type {
 };
 
 struct chef_package {
+    const char* platform;
+    const char* arch;
     const char* publisher;
     const char* package;
     const char* summary;

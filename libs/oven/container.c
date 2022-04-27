@@ -51,6 +51,7 @@ struct VaFsFeatureFilter {
 
 extern const char* __get_build_root(void);
 extern const char* __get_install_path(void);
+extern const char* __get_platform(void);
 extern const char* __get_architecture(void);
 extern const char* __build_argument_string(struct list* argumentList);
 
@@ -540,6 +541,11 @@ static int __safe_strlen(const char* string)
     return strlen(string);
 }
 
+#define WRITE_IF_PRESENT(__MEM) if (options->__MEM != NULL) { \
+        memcpy(dataPointer, options->__MEM, packageHeader->__MEM ## _length); \
+        dataPointer += packageHeader->__MEM ## _length; \
+    }
+
 static int __write_header_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
 {
     struct chef_vafs_feature_package_header*  packageHeader;
@@ -549,14 +555,16 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
 
     // count up the data requirements for the package header
     featureSize = sizeof(struct chef_vafs_feature_package_header);
+    featureSize += strlen(__get_platform());
+    featureSize += strlen(__get_architecture());
     featureSize += strlen(name);
     featureSize += strlen(options->summary);
     featureSize += __safe_strlen(options->description);
     featureSize += __safe_strlen(options->license);
     featureSize += __safe_strlen(options->eula);
-    featureSize += __safe_strlen(options->url);
-    featureSize += strlen(options->author);
-    featureSize += strlen(options->email);
+    featureSize += __safe_strlen(options->homepage);
+    featureSize += strlen(options->maintainer);
+    featureSize += strlen(options->maintainer_email);
     
     packageHeader = malloc(featureSize);
     if (!packageHeader) {
@@ -572,54 +580,40 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
     packageHeader->type    = options->type;
 
     // fill in lengths
+    packageHeader->platform_length         = strlen(__get_platform());
+    packageHeader->arch_length             = strlen(__get_architecture());
     packageHeader->package_length          = strlen(name);
     packageHeader->summary_length          = strlen(options->summary);
     packageHeader->description_length      = options->description == NULL ? 0 : strlen(options->description);
     packageHeader->license_length          = options->license == NULL ? 0 : strlen(options->license);
     packageHeader->eula_length             = options->eula == NULL ? 0 : strlen(options->eula);
-    packageHeader->homepage_length         = options->url == NULL ? 0 : strlen(options->url);
-    packageHeader->maintainer_length       = strlen(options->author);
-    packageHeader->maintainer_email_length = strlen(options->email);
+    packageHeader->homepage_length         = options->homepage == NULL ? 0 : strlen(options->homepage);
+    packageHeader->maintainer_length       = strlen(options->maintainer);
+    packageHeader->maintainer_email_length = strlen(options->maintainer_email);
 
     // fill in data ptrs
     dataPointer = (char*)packageHeader + sizeof(struct chef_vafs_feature_package_header);
 
     // required
-    memcpy(dataPointer, name, packageHeader->package_length);
+    memcpy(dataPointer, __get_platform(), packageHeader->package_length);
     dataPointer += packageHeader->package_length;
 
     // required
-    memcpy(dataPointer, options->summary, packageHeader->summary_length);
-    dataPointer += packageHeader->summary_length;
+    memcpy(dataPointer, __get_architecture(), packageHeader->package_length);
+    dataPointer += packageHeader->package_length;
 
-    if (options->description) {
-        memcpy(dataPointer, options->description, packageHeader->description_length);
-        dataPointer += packageHeader->description_length;
-    }
+    // required
+    memcpy(dataPointer, name, packageHeader->package_length);
+    dataPointer += packageHeader->package_length;
 
-    if (options->url) {
-        memcpy(dataPointer, options->url, packageHeader->homepage_length);
-        dataPointer += packageHeader->homepage_length;
-    }
+    WRITE_IF_PRESENT(summary)
+    WRITE_IF_PRESENT(description)
+    WRITE_IF_PRESENT(homepage)
+    WRITE_IF_PRESENT(license)
+    WRITE_IF_PRESENT(eula)
+    WRITE_IF_PRESENT(maintainer)
+    WRITE_IF_PRESENT(maintainer_email)
     
-    if (options->license) {
-        memcpy(dataPointer, options->license, packageHeader->license_length);
-        dataPointer += packageHeader->license_length;
-    }
-
-    if (options->eula) {
-        memcpy(dataPointer, options->eula, packageHeader->eula_length);
-        dataPointer += packageHeader->eula_length;
-    }
-
-    // required
-    memcpy(dataPointer, options->author, packageHeader->maintainer_length);
-    dataPointer += packageHeader->maintainer_length;
-
-    // required
-    memcpy(dataPointer, options->email, packageHeader->maintainer_email_length);
-    dataPointer += packageHeader->maintainer_email_length;
-
     // write the package header
     status = vafs_feature_add(vafs, &packageHeader->header);
     free(packageHeader);

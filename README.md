@@ -168,21 +168,6 @@ ingredients:
     # Provides a description for why this ingredient is included in the project.
     description: A library
 
-    ###########################
-    # source - Optional
-    #
-    # Specifies where the package should be retrieved from. If no source is provided
-    # the ingredient will be fetched from the chef package repository.
-    source:
-      ###########################
-      # type - Required
-      #    values: {local, url, repo}
-      #
-      # 'repo' is the default value, and has no extra parameters in this.
-      # 'local' can be specified for a local file, and has 'path' extra parameter
-      # 'url' can be specified for downloading a file, and has 'url' extra parameter.
-      type: repo
-
 ###########################
 # recipes - Required
 #
