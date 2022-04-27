@@ -1,18 +1,14 @@
-<p align="center">
+<h1 align="center" style="margin-top: 0px;">Chef Package Management System</h1>
 
-# Chef Package Management System
+<div align="center" >
 
 [![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-black.svg)](https://snapcraft.io/vchef)
 
-</p>
+</div>
 
 Chef is a cross-platform package management system, specifically built to support all kinds of platforms. It's built with cross-compilation in mind and is also built to work as an application format. It's written in C to make it as portable as possible. It is relatively lightweight alternative to other package management systems, and provides an online repository for all your packages as well.
 
-<p align="center">
-
-# Getting Started
-
-</p>
+<h1 align="center" style="margin-top: 0px;">Getting Started</h1>
 
 The best way to get started is to install the latest version of Chef using the [snap store](https://snapcraft.io/vchef). However not everyone likes or uses snaps, and in this case it's recommended to build chef from source, as chef is not distributed as a debian package yet!
 
@@ -86,11 +82,7 @@ Once the packages are built, they are in essence ready for publishing. To publis
 $ order publish my-something.pack
 ```
 
-<p align="center">
-
-# Recipe Specification
-
-</p>
+<h1 align="center" style="margin-top: 0px;">Recipe Specification</h1>
 
 
 ```
