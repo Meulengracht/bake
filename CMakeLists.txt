@@ -15,6 +15,7 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/chef-config.h.in"
 add_subdirectory(protocols)
 add_subdirectory(libs)
 add_subdirectory(tools)
+add_subdirectory(daemons)
 
 configure_file(
     "${CMAKE_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
