@@ -29,11 +29,13 @@ char* strpathcombine(const char* path1, const char* path2)
     size_t path1Length;
     size_t path2Length;
 
-    if (path1 == NULL) {
-        return strdup(path2);
+    if (path1 == NULL && path2 == NULL) {
+        return NULL;
     }
 
-    if (path2 == NULL) {
+    if (path1 == NULL) {
+        return strdup(path2);
+    } else if (path2 == NULL) {
         return strdup(path1);
     }
 
@@ -42,11 +44,14 @@ char* strpathcombine(const char* path1, const char* path2)
 
     if (path1Length == 0) {
         return strdup(path2);
-    }
-
-    if (path2Length == 0) {
+    } else if (path2Length == 0) {
         return strdup(path1);
     }
+
+    if (path2[0] == CHEF_PATH_SEPARATOR) {
+        path2++;
+        path2Length--;
+    };
 
     combined = malloc(path1Length + path2Length + 2);
     if (combined == NULL) {

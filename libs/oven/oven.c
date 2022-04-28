@@ -148,21 +148,11 @@ int oven_initialize(char** envp, const char* platform, const char* architecture,
     const char* buildRoot;
     const char* installRoot;
     char        tmp[128];
-    size_t      length;
 
     // get the current working directory
     status = __get_cwd(&cwd);
     if (status) {
         return -1;
-    }
-
-    // make sure to add the last path seperator if not already
-    // present in cwd, we assume space for this due to relatively
-    // large buffer of 4096 (this is dangerous assumption!)
-    length = strlen(cwd);
-    if (cwd[length - 1] != CHEF_PATH_SEPARATOR) {
-        cwd[length] = CHEF_PATH_SEPARATOR;
-        cwd[length + 1] = '\0';
     }
 
     // get basename of recipe
