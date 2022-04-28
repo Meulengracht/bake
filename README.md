@@ -65,7 +65,7 @@ chef will expose the following variables to help control the build process:
 Chef is specifically built to work easily with cross-compilation scenarios. This allows users to build packages for other platforms or architecture and publish them as well.
 
 ```
-$ bake my-recipe.yaml --cross-compiling=linux/i386
+$ bake my-recipe.yaml --cross-compile=linux/i386
 ```
 
 The above will trigger chef to download ingredients for the linux/i386 platform, and then build the package for that platform. During execution of the different steps, chef will expose the following additional environment variables:
@@ -81,6 +81,21 @@ Once the packages are built, they are in essence ready for publishing. To publis
 ```
 $ order publish my-something.pack
 ```
+
+## Installing packages
+
+Chef packages are designed to be installable, not just used for building. To support this the 'serve' utility
+is provided, and you will also need a 'served' daemon for your platform. 
+
+Currently no platforms have a served daemon implemented, however this is currently planned for linux and vali.
+
+```
+$ serve install publisher/package
+```
+
+The 'serve' utility communicates with the 'served' daemon through a network protocol, to support network control
+of a computer. The serve protocol provides the ability to install, update and remove packages from the system. For
+more information about the 'served' daemon, see the README in directory daemons/served.
 
 <h1 align="center" style="margin-top: 0px;">Recipe Specification</h1>
 

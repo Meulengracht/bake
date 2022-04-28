@@ -1,0 +1,34 @@
+# project information, packaging data
+project: 
+  summary: Clang/llvm crosscompiler for Vali/MollenOS
+  description: |
+    The toolchain to use when cross compiling for vali/mollenos. It includes support
+    for VPE binary formats, and neccessary changes required.
+  author: Philip Meulengracht
+  email: the_meulengracht@hotmail.com
+  version: 1.0.0
+  license: MIT
+
+recipes:
+  - name: llvm-projects
+    path: llvm
+    steps:
+    - name: config
+      type: generate
+      system: cmake
+      arguments:
+        - -G
+        - '"Unix Makefiles"'
+        - -DLLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN=True
+        - -DLLVM_ENABLE_PROJECTS='clang;clang-tools-extra;libcxx;libcxxabi;libunwind;lldb;compiler-rt;lld'
+        - -DCMAKE_BUILD_TYPE=Release
+        - -DLLVM_INCLUDE_TESTS=Off
+        - -DLLVM_DEFAULT_TARGET_TRIPLE=amd64-uml-vali
+    - name: build
+      type: build
+      depends: [config]
+      system: make
+
+packs:
+  - name: clang-cc
+    type: toolchain
