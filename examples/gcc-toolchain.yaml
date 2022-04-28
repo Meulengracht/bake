@@ -1,0 +1,33 @@
+project: 
+  summary: The GNU Compiler Collection
+  description: |
+    The GNU Compiler Collection is free software.  See the files whose
+    names start with COPYING for copying permission.  The manuals, and
+    some of the runtime libraries, are under different terms; see the
+    individual source files for details.
+  author: Free Software Foundation
+  email: gcc-help@gcc.gnu.org
+  version: 11.3.0
+  license: MIT
+
+recipes:
+  - name: gcc
+    path: /
+    steps:
+    - name: config
+      type: generate
+      system: configure
+      arguments:
+        - --enable-shared
+        - --enable-threads=posix
+        - --enable-__cxa_atexit
+        - --enable-clocale=gnu
+        - --enable-languages=all
+    - name: build
+      type: build
+      depends: [config]
+      system: make
+
+packs:
+  - name: gcc
+    type: toolchain
