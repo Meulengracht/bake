@@ -80,19 +80,33 @@ static int __handle_list_packages(void)
 {
     struct chef_package**   packages;
     int                     packageCount;
-    struct chef_find_params params = { 0 };
+    struct chef_find_params params        = { 0 };
+    const char*             publisherName = NULL;
+    char*                   query;
     int                     status;
 
-    params.query = __get_publisher_name();
-    if (params.query == NULL) {
+    publisherName = __get_publisher_name();
+    if (publisherName == NULL) {
         return -1;
     }
 
+    // allocate memory for the query, which we will write like this
+    // publisher/
+    query = malloc(strlen(publisherName) + 2);
+    if (query == NULL) {
+        free((void*)publisherName);
+        return -1;
+    }
+
+    sprintf(query, "%s/", publisherName);
+    free((void*)publisherName);
+
     // we want all undiscoverable as well
+    params.query      = query;
     params.privileged = 1;
 
     status = chefclient_pack_find(&params, &packages, &packageCount);
-    free((void*)params.query);
+    free(query);
     if (status != 0) {
         printf("order: failed to retrieve packages: %s\n", strerror(status));
         return -1;

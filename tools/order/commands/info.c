@@ -262,6 +262,8 @@ static void __print_verbose(struct chef_package* package)
 
 static void __print_normal(struct chef_package* package)
 {
+    int channelsFound = 0;
+    
     printf("Channels:\n");
     for (int i = 0; i < package->platforms_count; i++) {
         if (strcmp(package->platforms[i].name, CHEF_PLATFORM_STR) == 0) {
@@ -269,12 +271,17 @@ static void __print_normal(struct chef_package* package)
                 if (strcmp(package->platforms[i].architectures[j].name, CHEF_ARCHITECTURE_STR) == 0) {
                     for (int k = 0; k < package->platforms[i].architectures[j].channels_count; k++) {
                         __print_channel(&package->platforms[i].architectures[j].channels[k], "  ");
+                        channelsFound++;
                     }
                     break;
                 }
             }
             break;
         }
+    }
+
+    if (!channelsFound) {
+        printf("  no channels available for current platform/arch, try again with --all\n");
     }
 }
 
