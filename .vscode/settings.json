@@ -60,7 +60,10 @@
         "jansson.h": "c",
         "vafs.h": "c",
         "libplatform.h": "c",
-        "chef_served_service_client.h": "c"
+        "chef_served_service_client.h": "c",
+        "fuse.h": "c",
+        "fuse_common.h": "c",
+        "fuse_opt.h": "c"
     },
     "cmake.installPrefix": "/usr/local/chef"
 }

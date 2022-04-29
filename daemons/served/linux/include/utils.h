@@ -16,21 +16,26 @@
  *
  */
 
-#ifndef __SERVED_STARTUP_H__
-#define __SERVED_STARTUP_H__
+#ifndef __SERVED_UTILS_H__
+#define __SERVED_UTILS_H__
 
-/**
- * @brief
- *
- * @return
- */
-extern int served_startup(void);
+struct served_mount;
 
 /**
  * @brief 
  * 
+ * @param path 
+ * @param mountPoint
+ * @param mountOut 
  * @return int 
  */
-extern int served_shutdown(void);
+extern int served_mount(const char* path, const char* mountPoint, struct served_mount** mountOut);
 
-#endif //!__SERVED_STARTUP_H__
+/**
+ * @brief 
+ * 
+ * @param mount 
+ */
+extern void served_unmount(struct served_mount* mount);
+
+#endif //!__SERVED_UTILS_H__

@@ -4,7 +4,7 @@ The serve daemon is the application backend. This needs to be implemented on an 
 
 ## Linux Features
 
-Still needs to be implemented
+Implementation is in progress, and requires libfuse3 to work as we provide our own FS implementation layer over VaFS.
 
 ## Windows Features
 

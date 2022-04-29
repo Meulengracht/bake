@@ -27,7 +27,7 @@ struct package {
 }
 
 service served (42) {
-    func install(string packageName) : () = 1;
+    func install(string path) : () = 1;
     func remove(string packageName) : (int result) = 2;
     func info(string packageName) : (package info) = 3;
     func listcount() : (uint count) = 4;

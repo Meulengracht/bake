@@ -46,9 +46,94 @@ static struct __state* __state_new(void)
     return state;
 }
 
+static void __state_destroy(struct __state* state)
+{
+    if (state == NULL) {
+        return;
+    }
+
+    for (int i = 0; i < state->application_count; i++) {
+        struct served_application* application = &state->applications[i];
+        for (int j = 0; j < application->commands_count; j++) {
+            struct served_command* command = &application->commands[j];
+            free((void*)command->name);
+            free((void*)command->path);
+            free((void*)command->arguments);
+        }
+        free((void*)application->commands);
+        free((void*)application->name);
+    }
+    free((void*)state->applications);
+    free((void*)state);
+}
+
+static int __parse_command(json_t* cmd, struct served_command* command)
+{
+    json_t* name;
+    json_t* path;
+    json_t* args;
+    json_t* type;
+
+    name = json_object_get(cmd, "name");
+    if (name) {
+        command->name = strdup(json_string_value(name));
+    }
+    
+    path = json_object_get(cmd, "path");
+    if (path) {
+        command->path = strdup(json_string_value(path));
+    }
+
+    args = json_object_get(cmd, "args");
+    if (args) {
+        command->arguments = strdup(json_string_value(args));
+    }
+
+    type = json_object_get(cmd, "type");
+    if (type) {
+        command->type = json_integer_value(type);
+    }
+    return 0;
+}
+
+static int __parse_commands(json_t* commands, struct served_application* application)
+{
+    size_t cmdsCount = json_array_size(commands);
+    if (cmdsCount == 0) {
+        return 0;
+    }
+
+    application->commands = calloc(cmdsCount, sizeof(struct served_command));
+    if (application->commands == NULL) {
+        return -1;
+    }
+
+    application->commands_count = (int)json_array_size(commands);
+    for (int i = 0; i < application->commands_count; i++) {
+        json_t* command = json_array_get(commands, i);
+        int     status  = __parse_command(command, &application->commands[i]);
+        if (status != 0) {
+            return status;
+        }
+    }
+    return 0;
+}
+
 static int __parse_app(json_t* app, struct served_application* application)
 {
+    json_t* name;
+    json_t* commands;
 
+    name = json_object_get(app, "name");
+    if (name) {
+        application->name = strdup(json_string_value(name));
+    }
+
+    commands = json_object_get(app, "commands");
+    if (commands) {
+        return __parse_commands(commands, application);
+    }
+    return 0;
 }
 
 static int __parse_apps(json_t* apps, struct __state* state)
@@ -68,6 +153,9 @@ static int __parse_apps(json_t* apps, struct __state* state)
     for (size_t i = 0; i < appsCount; i++) {
         json_t* app    = json_array_get(apps, i);
         int     status = __parse_app(app, &state->applications[i]);
+        if (status != 0) {
+            return status;
+        }
     }
 
     return 0;
@@ -93,7 +181,7 @@ static int __parse_state(const char* content, struct __state** stateOut)
         goto exit;
     }
 
-    apps = json_object_get(root, "apps");
+    apps = json_object_get(root, "applications");
     if (apps) {
         status = __parse_apps(apps, state);
     }
@@ -159,7 +247,7 @@ static const char* __get_state_path(void)
         return NULL;
     }
 
-    strcat(path, CHEF_PATH_SEPARATOR_S ".chef/state.json");
+    strcat(path, CHEF_PATH_SEPARATOR_S ".chef" CHEF_PATH_SEPARATOR_S "state.json");
     return path;
 }
 
@@ -189,9 +277,124 @@ int served_state_load(void)
     return status;
 }
 
+static int __serialize_command(struct served_command* command, json_t** jsonOut)
+{
+    json_t* json = json_object();
+    if (json == NULL) {
+        return -1;
+    }
+
+    json_object_set_new(json, "name", json_string(command->name));
+    json_object_set_new(json, "path", json_string(command->path));
+    json_object_set_new(json, "args", json_string(command->arguments));
+    json_object_set_new(json, "type", json_integer(command->type));
+
+    *jsonOut = json;
+    return 0;
+}
+
+static int __serialize_application(struct served_application* application, json_t** jsonOut)
+{
+    json_t* json = json_object();
+    if (!json) {
+        return -1;
+    }
+
+    json_object_set_new(json, "name", json_string(application->name));
+    json_object_set_new(json, "revision", json_integer(application->revision));
+
+    json_t* commands = json_array();
+    if (!commands) {
+        json_decref(json);
+        return -1;
+    }
+
+    for (int i = 0; i < application->commands_count; i++) {
+        json_t* cmd;
+        int     status;
+
+        status = __serialize_command(&application->commands[i], &cmd);
+        if (status != 0) {
+            json_decref(json);
+            json_decref(commands);
+            return status;
+        }
+        json_array_append_new(commands, cmd);
+    }
+
+    json_object_set_new(json, "commands", commands);
+    *jsonOut = json;
+    return 0;
+}
+
+static int __serialize_state(struct __state* state, json_t** jsonOut)
+{
+    json_t* root;
+    json_t* apps;
+    
+    root = json_object();
+    if (!root) {
+        return -1;
+    }
+
+    apps = json_array();
+    if (!apps) {
+        json_decref(root);
+        return -1;
+    }
+
+    for (int i = 0; i < state->application_count; i++) {
+        json_t* app;
+        int     status;
+
+        status = __serialize_application(&state->applications[i], &app);
+        if (status != 0) {
+            json_decref(root);
+            return status;
+        }
+        json_array_append_new(apps, app);
+    }
+
+    json_object_set_new(root, "applications", apps);
+    *jsonOut = root;
+    return 0;
+}
+
 int served_state_save(void)
 {
+    json_t*     root;
+    int         status;
+    const char* filePath;
 
+    filePath = __get_state_path();
+    if (filePath == NULL) {
+        return -1;
+    }
 
+    status = __serialize_state(g_state, &root);
+    if (status) {
+        free((void*)filePath);
+        return -1;
+    }
+
+    status = json_dump_file(root, filePath, JSON_INDENT(2));
+    free((void*)filePath);
+    json_decref(root);
+    
+    __state_destroy(g_state);
+    g_state = NULL;
+
+    return status;
+}
+
+int served_state_get_applications(struct served_application** applicationsOut, int* applicationsCount)
+{
+    if (g_state == NULL) {
+        errno = ENOSYS;
+        return -1;
+    }
+
+    *applicationsOut   = g_state->applications;
+    *applicationsCount = g_state->application_count;
     return 0;
 }

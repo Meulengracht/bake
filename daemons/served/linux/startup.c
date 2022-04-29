@@ -17,8 +17,81 @@
  */
 
 #include <application.h>
+#include <errno.h>
+#include <libplatform.h>
 #include <startup.h>
 #include <state.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+
+static const char* g_profileScriptPath = "/etc/profile.d/chef.sh";
+static const char* g_profileScript = 
+"#!/bin/sh\n"
+"export CHEF_HOME=/chef\n"
+"export PATH=$PATH:$CHEF_HOME/bin\n";
+
+static int __write_profile_d_script(void)
+{
+    int status;
+    FILE* file;
+
+    // if file exists, then we do not touch it
+    file = fopen(g_profileScriptPath, "r");
+    if (file != NULL) {
+        fclose(file);
+        return 0;
+    }
+    
+    file = fopen(g_profileScriptPath, "w");
+    if (file == NULL) {
+        if (errno == EEXIST) {
+            return 0;
+        }
+        return -1;
+    }
+    
+    status = fwrite(g_profileScript, strlen(g_profileScript), 1, file);
+    if (status != 1) {
+        fclose(file);
+        return -1;
+    }
+
+    // change permissions to executable
+    status = chmod(g_profileScriptPath, 0755);
+    fclose(file);
+    return status;
+}
+
+static int __ensure_chef_paths(void)
+{
+    // ensure following paths are created
+    // /chef
+    // /chef/bin
+    // /run/chef
+    // /usr/share/chef
+
+    if (platform_mkdir("/chef") != 0) {
+        // log
+        return -1;
+    }
+
+    if (platform_mkdir("/chef/bin") != 0) {
+        // log
+        return -1;
+    }
+
+    if (platform_mkdir("/run/chef") != 0) {
+        // log
+        return -1;
+    }
+
+    if (platform_mkdir("/usr/share/chef") != 0) {
+        // log
+        return -1;
+    }
+    return 0;
+}
 
 int served_startup(void)
 {
@@ -26,9 +99,21 @@ int served_startup(void)
     int                        applicationCount;
     int                        status;
 
-    // Load registry of installed applications
+    status = __write_profile_d_script();
+    if (status != 0) {
+        // log
+        return status;
+    }
+
+    status = __ensure_chef_paths();
+    if (status != 0) {
+        // log
+        return status;
+    }
+
     status = served_state_load();
     if (status != 0) {
+        // log
         return status;
     }
 
@@ -39,6 +124,12 @@ int served_startup(void)
     }
 
     for (int i = 0; i < applicationCount; i++) {
+        status = served_application_ensure_paths(&applications[i]);
+        if (status != 0) {
+            // log
+            continue;
+        }
+
         status = served_application_mount(&applications[i]);
         if (status != 0) {
             // log

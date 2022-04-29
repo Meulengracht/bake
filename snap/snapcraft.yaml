@@ -17,6 +17,10 @@ apps:
     command: usr/bin/order
   serve:
     command: usr/bin/serve
+  served:
+    command: usr/bin/served
+    daemon: simple
+    install-mode: disable
 
 parts:
   chef-src:
@@ -24,4 +28,7 @@ parts:
     source: .
     cmake-parameters:
       - -DCMAKE_INSTALL_PREFIX=/usr
-  
+    build-packages:
+      - libfuse3-dev
+    stage-packages:
+      - libfuse3-3

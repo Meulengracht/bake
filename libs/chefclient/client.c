@@ -62,7 +62,7 @@ static int __load_settings(void)
     }
 
     // append filename
-    strcat(path, CHEF_PATH_SEPARATOR_S ".chef/settings.json");
+    strcat(path, CHEF_PATH_SEPARATOR_S ".chef" CHEF_PATH_SEPARATOR_S "settings.json");
 
     g_chefSettings = json_load_file(path, 0, &error);
     if (g_chefSettings == NULL) {

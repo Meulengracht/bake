@@ -1,7 +1,9 @@
 # Linux reference implementation of the served daemon
+find_package(FUSE REQUIRED)
 
 # add sub-targets
 add_subdirectory(application)
+add_subdirectory(utils)
 
 set (GENERATED_SRCS
     ${CMAKE_BINARY_DIR}/protocols/chef_served_service_server.c
@@ -12,6 +14,7 @@ set(SRCS
     ${GENERATED_SRCS}
     api.c
     main.c
+    shutdown.c
     startup.c
     state.c
 )
@@ -19,4 +22,4 @@ set(SRCS
 add_executable(served ${SRCS})
 add_dependencies(serve-commands service_server)
 target_include_directories(served PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
-target_link_libraries(served served-application gracht_static jansson-api jansson platform -lpthread)
+target_link_libraries(served served-application served-utils gracht jansson-api jansson platform -lpthread ${FUSE_LIBRARIES})

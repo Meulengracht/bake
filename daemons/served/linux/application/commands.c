@@ -16,21 +16,33 @@
  *
  */
 
-#ifndef __SERVED_STARTUP_H__
-#define __SERVED_STARTUP_H__
+#include <errno.h>
+#include <application.h>
+#include <libplatform.h>
+#include <utils.h>
 
-/**
- * @brief
- *
- * @return
- */
-extern int served_startup(void);
+int served_application_start_daemons(struct served_application* application)
+{
+    if (application == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
 
-/**
- * @brief 
- * 
- * @return int 
- */
-extern int served_shutdown(void);
+    for (int i = 0; i < application->commands_count; i++) {
 
-#endif //!__SERVED_STARTUP_H__
+    }
+    return 0;
+}
+
+int served_application_stop_daemons(struct served_application* application)
+{
+    if (application == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    for (int i = 0; i < application->commands_count; i++) {
+
+    }
+    return 0;
+}

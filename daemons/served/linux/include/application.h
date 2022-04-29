@@ -19,13 +19,32 @@
 #ifndef __SERVED_APPLICATION_H__
 #define __SERVED_APPLICATION_H__
 
+struct served_mount;
+
 struct served_command {
     const char* name;
+    const char* path;
+    const char* arguments;
+    int         type;
 };
 
 struct served_application {
     const char* name;
+    int         revision;
+
+    struct served_command* commands;
+    int                    commands_count;
+
+    struct served_mount* mount;
 };
+
+/**
+ * @brief 
+ * 
+ * @param application 
+ * @return int 
+ */
+extern int served_application_ensure_paths(struct served_application* application);
 
 /**
  *
@@ -39,6 +58,26 @@ extern int served_application_mount(struct served_application* application);
  * @param application
  * @return
  */
+extern int served_application_unmount(struct served_application* application);
+
+/**
+ *
+ * @param application
+ * @return
+ */
 extern int served_application_start_daemons(struct served_application* application);
+
+/**
+ *
+ * @param application
+ * @return
+ */
+extern int served_application_stop_daemons(struct served_application* application);
+
+
+// application paths
+extern const char* served_application_get_pack_path(struct served_application* application);
+extern const char* served_application_get_mount_path(struct served_application* application);
+extern const char* served_application_get_data_path(struct served_application* application);
 
 #endif //!__SERVED_APPLICATION_H__
