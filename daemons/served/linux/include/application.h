@@ -39,6 +39,20 @@ struct served_application {
 };
 
 /**
+ * @brief
+ *
+ * @return
+ */
+extern struct served_application* served_application_new(void);
+
+/**
+ * @brief
+ *
+ * @param application
+ */
+extern void served_application_delete(struct served_application* application);
+
+/**
  * @brief 
  * 
  * @param application 

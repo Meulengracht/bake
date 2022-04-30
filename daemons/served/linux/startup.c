@@ -95,9 +95,9 @@ static int __ensure_chef_paths(void)
 
 int served_startup(void)
 {
-    struct served_application* applications;
-    int                        applicationCount;
-    int                        status;
+    struct served_application** applications;
+    int                         applicationCount;
+    int                         status;
 
     status = __write_profile_d_script();
     if (status != 0) {
@@ -124,19 +124,19 @@ int served_startup(void)
     }
 
     for (int i = 0; i < applicationCount; i++) {
-        status = served_application_ensure_paths(&applications[i]);
+        status = served_application_ensure_paths(applications[i]);
         if (status != 0) {
             // log
             continue;
         }
 
-        status = served_application_mount(&applications[i]);
+        status = served_application_mount(applications[i]);
         if (status != 0) {
             // log
             continue;
         }
 
-        status = served_application_start_daemons(&applications[i]);
+        status = served_application_start_daemons(applications[i]);
         if (status != 0) {
             // log
         }

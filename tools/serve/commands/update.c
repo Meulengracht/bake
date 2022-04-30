@@ -69,7 +69,7 @@ int update_main(int argc, char** argv)
     if (package != NULL) {
         printf("serve: updating package: %s\n", package);
         g_updateCount = 1;
-        status        = chef_served_update(client, NULL, package);
+        // TODO
     } else {
         // get the number of packages available
         status = chef_served_listcount(client, &context);
@@ -81,7 +81,7 @@ int update_main(int argc, char** argv)
         chef_served_listcount_result(client, &context, &g_updateCount);
 
         printf("serve: updating %i packages\n", g_updateCount);
-        status = chef_served_update_all(client, NULL);
+        // TODO
     }
 
     // handle messages untill all requested updates are done
@@ -93,7 +93,7 @@ int update_main(int argc, char** argv)
     return status;
 }
 
-void chef_served_event_package_updated_invocation(gracht_client_t* client, const enum chef_update_status status, const struct chef_package* info)
+void chef_served_event_package_updated_invocation(gracht_client_t* client, const enum chef_update_status status, const struct chef_package_info* info)
 {
     if (status == CHEF_UPDATE_STATUS_NOT_AVAILABLE) {
         printf("serve: package %s is up to date\n", info->name);
