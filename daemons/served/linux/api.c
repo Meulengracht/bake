@@ -16,22 +16,30 @@
  *
  */
 
+#include <application.h>
 #include <gracht/server.h>
+#include <installer.h>
 #include <state.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 // server protocol
 #include "chef_served_service_server.h"
 
+static void __convert_app_to_protocol(struct served_application* application, struct chef_package_info* info)
+{
+    // TODO
+    info->name = (char*)application->name;
+    info->version = application->revision;
+}
+
 void chef_served_install_invocation(struct gracht_message* message, const char* path)
 {
-
+    served_installer_install(path);
 }
 
 void chef_served_remove_invocation(struct gracht_message* message, const char* packageName)
 {
-
+    served_installer_uninstall(packageName);
 }
 
 void chef_served_info_invocation(struct gracht_message* message, const char* packageName)
@@ -39,26 +47,31 @@ void chef_served_info_invocation(struct gracht_message* message, const char* pac
     struct served_application** applications;
     int                         count;
     struct chef_package_info*   info;
+    struct chef_package_info    zero = { 0 };
     int                         status;
 
     status = served_state_get_applications(&applications, &count);
     if (status != 0 || count == 0) {
-        struct chef_package_info zero = { 0 };
         chef_served_info_response(message, &zero);
         return;
     }
 
     info = (struct chef_package_info*)malloc(sizeof(struct chef_package_info));
     if (info == NULL) {
-        struct chef_package_info zero = { 0 };
         chef_served_info_response(message, &zero);
         return;
     }
 
     for (int i = 0; i < count; i++) {
-        // create info object from application
+        if (strcmp(applications[i]->name, packageName) == 0) {
+            __convert_app_to_protocol(applications[i], info);
+            chef_served_info_response(message, info);
+            free(info);
+            return;
+        }
     }
 
+    chef_served_info_response(message, &zero);
     free(info);
 }
 
@@ -96,13 +109,9 @@ void chef_served_list_invocation(struct gracht_message* message)
     }
 
     for (int i = 0; i < count; i++) {
-        // create info object from application
+        __convert_app_to_protocol(applications[i], &infos[i]);
     }
 
     chef_served_list_response(message, infos, count);
-
-    for (int i = 0; i < count; i++) {
-        // cleanup
-    }
     free(infos);
 }

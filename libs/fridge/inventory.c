@@ -20,7 +20,7 @@
 #include <chef/client.h>
 #include <errno.h>
 #include "inventory.h"
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <string.h>

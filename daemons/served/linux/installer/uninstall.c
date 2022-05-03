@@ -13,20 +13,20 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 
-#include <chef/platform.h>
+#include <installer.h>
 
-#ifdef __linux__
-
-#include <unistd.h>
-
-int platform_cpucount(void)
+void served_installer_uninstall(const char* package)
 {
-	return (int)sysconf(_SC_NPROCESSORS_ONLN);
-}
+    // lookup app in state
 
-#else
-#error "cpucount: not implemented for this platform"
-#endif
+    // TODO run uninstall hook
+
+    // Run the same shutdown sequence as in shutdown.c
+
+    // Remove application from state
+
+    // Remove package from storage
+}

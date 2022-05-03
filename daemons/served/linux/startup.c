@@ -18,7 +18,7 @@
 
 #include <application.h>
 #include <errno.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <startup.h>
 #include <state.h>
 #include <stdio.h>

@@ -28,59 +28,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <vafs/vafs.h>
+#include <vafs/file.h>
+#include <vafs/directory.h>
+#include <vafs/stat.h>
 
 struct served_mount {
     struct VaFs* vafs;
     struct fuse* fuse;
     const char*  mount_point;
 };
-
-static int __find_file_recursive(
-    struct VaFsDirectoryHandle* directory,
-    const char*                 path,
-    struct VaFsFileHandle**     handleOut)
-{
-    struct VaFsDirectoryHandle* subdirectoryHandle;
-    int                         status;
-    char*                       token;
-    char*                       remainingPath;
-
-    // extract next token from the remaining path
-    remainingPath = strchr(path, '/');
-    if (!remainingPath) {
-        return vafs_directory_open_file(directory, path, handleOut);
-    }
-
-    token = strndup(path, remainingPath - path);
-    if (!token) {
-        return -1;
-    }
-
-    status = vafs_directory_open_directory(directory, token, &subdirectoryHandle);
-    free(token);
-    if (status != 0) {
-        return status;
-    }
-
-    status = __find_file_recursive(subdirectoryHandle, remainingPath, handleOut);
-    vafs_directory_close(subdirectoryHandle);
-    return 0;
-}
-
-static int __find_file(struct VaFs* vafs, const char* path, struct VaFsFileHandle** handleOut)
-{
-    struct VaFsDirectoryHandle* root;
-    int                         status;
-
-    status = vafs_directory_open(vafs, "/", &root);
-    if (status != 0) {
-        return -1;
-    }
-
-    status = __find_file_recursive(root, path, handleOut);
-    vafs_directory_close(root);
-    return 0;
-}
 
 /** Open a file
  *
@@ -134,9 +90,11 @@ int __vafs_open(const char* path, struct fuse_file_info* fi)
     struct fuse_context*   context = fuse_get_context();
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle;
+    int                    status;
 
-    if (__find_file(mount->vafs, path, &handle) != 0) {
-        return -1;
+    status = vafs_file_open(mount->vafs, path, &handle);
+    if (status) {
+        return status;
     }
 
     fi->fh = (uint64_t)handle;
@@ -156,27 +114,18 @@ int __vafs_access(const char* path, int permissions)
 {
     struct fuse_context* context = fuse_get_context();
     struct served_mount* mount   = (struct served_mount*)context->private_data;
-    struct VaFsFileHandle*      filehandle;
-    struct VaFsDirectoryHandle* dirhandle;
-    int                         status;
+    struct vafs_stat     stat;
+    int                  status;
 
-    status = __find_file(mount->vafs, path, &filehandle);
-    if (status != 0 && errno != ENFILE) {
+    status = vafs_path_stat(mount->vafs, path, &stat);
+    if (status) {
+        return status;
+    }
+
+    if ((stat.mode & (uint32_t)permissions) != (uint32_t)permissions) {
+        errno = EACCES;
         return -1;
     }
-
-    if (status == 0) {
-        unsigned int perms = vafs_file_permissions(filehandle);
-        unsigned int req   = permissions;
-        if ((req & perms) != req) {
-            errno = EACCES;
-            return -1;
-        }
-        return 0;
-    }
-
-
-
     return 0;
 }
 
@@ -194,14 +143,23 @@ int __vafs_read(const char* path, char* buffer, size_t count, off_t offset, stru
     struct fuse_context*   context = fuse_get_context();
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle  = (struct VaFsFileHandle*)fi->fh;
+    int                    status;
 
     if (handle == NULL) {
         errno = EINVAL;
         return -1;
     }
-    
-    if (vafs_file_read(handle, buffer, count)) {
-        return -1;
+
+    if (offset != 0) {
+        status = vafs_file_seek(handle, offset, SEEK_SET);
+        if (status) {
+            return status;
+        }
+    }
+
+    status = (int)vafs_file_read(handle, buffer, count);
+    if (status) {
+        return status;
     }
     return (int)count;
 }
@@ -221,17 +179,27 @@ int __vafs_getattr(const char* path, struct stat* stat, struct fuse_file_info *f
 {
     struct fuse_context* context  = fuse_get_context();
     struct served_mount* mount    = (struct served_mount*)context->private_data;
-    struct VaFsFileHandle* handle = (struct VaFsFileHandle*)fi->fh;
+    struct vafs_stat     vstat;
+    int                  status;
 
-    if (handle == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    
     memset(stat, 0, sizeof(struct stat));
+    if (fi != NULL && fi->fh != 0) {
+        struct VaFsFileHandle* handle = (struct VaFsFileHandle*)fi->fh;
+
+        stat->st_blksize = 512;
+        stat->st_mode = vafs_file_permissions(handle);
+        stat->st_size = (off_t)vafs_file_length(handle);
+        return 0;
+    }
+
+    status = vafs_path_stat(mount->vafs, path, &vstat);
+    if (status) {
+        return status;
+    }
+
     stat->st_blksize = 512;
-    stat->st_mode = vafs_file_permissions(handle);
-    stat->st_size = (off_t)vafs_file_length(handle);
+    stat->st_mode = vstat.mode;
+    stat->st_size = (off_t)vstat.size;
     return 0;
 }
 
@@ -270,12 +238,16 @@ int __vafs_release(const char* path, struct fuse_file_info* fi)
     struct fuse_context*   context = fuse_get_context();
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle  = (struct VaFsFileHandle*)fi->fh;
+    int                    status;
 
     if (handle == NULL) {
         errno = EINVAL;
         return -1;
-    }    
-    return vafs_file_close(handle);
+    }
+
+    status = vafs_file_close(handle);
+    fi->fh = 0;
+    return status;
 }
 
 /** Open directory
@@ -288,9 +260,18 @@ int __vafs_release(const char* path, struct fuse_file_info* fi)
  */
 int __vafs_opendir(const char* path, struct fuse_file_info* fi)
 {
-    struct fuse_context* context = fuse_get_context();
-    struct served_mount* mount   = (struct served_mount*)context->private_data;
+    struct fuse_context*        context = fuse_get_context();
+    struct served_mount*        mount   = (struct served_mount*)context->private_data;
+    struct VaFsDirectoryHandle* handle;
+    int                         status;
 
+    status = vafs_directory_open(mount->vafs, path, &handle);
+    if (status) {
+        return status;
+    }
+
+    fi->fh = (uint64_t)handle;
+    return 0;
 }
 
 /** Read directory
@@ -319,13 +300,39 @@ int __vafs_readdir(
     struct fuse_context*        context = fuse_get_context();
     struct served_mount*        mount   = (struct served_mount*)context->private_data;
     struct VaFsDirectoryHandle* handle  = (struct VaFsDirectoryHandle*)fi->fh;
+    int                         status;
 
     if (handle == NULL) {
         errno = EINVAL;
         return -1;
     }
-    
 
+    while (1) {
+        struct VaFsEntry entry;
+        //struct stat      stat;
+        status = vafs_directory_read(handle, &entry);
+        if (status) {
+            if (errno != ENOENT) {
+                return status;
+            }
+            break;
+        }
+
+        // TODO support retrieving file attributes from a directory entry
+        /*if (flags & FUSE_READDIR_PLUS) {
+            status = fill(buffer, entry.Name, &stat, 0, FUSE_FILL_DIR_PLUS);
+            if (status) {
+                return status;
+            }
+        } else { */
+            status = fill(buffer, entry.Name, NULL, 0, 0);
+            if (status) {
+                return status;
+            }
+        //}
+    }
+
+    return 0;
 }
 
 /** Release directory
@@ -335,13 +342,16 @@ int __vafs_releasedir(const char* path, struct fuse_file_info* fi)
     struct fuse_context*        context = fuse_get_context();
     struct served_mount*        mount   = (struct served_mount*)context->private_data;
     struct VaFsDirectoryHandle* handle  = (struct VaFsDirectoryHandle*)fi->fh;
+    int                         status;
 
     if (handle == NULL) {
         errno = EINVAL;
         return -1;
     }
-    
 
+    status = vafs_directory_close(handle);
+    fi->fh = 0;
+    return status;
 }
 
 /** Get file system statistics

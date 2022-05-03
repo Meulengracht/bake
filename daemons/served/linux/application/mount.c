@@ -18,7 +18,7 @@
 
 #include <errno.h>
 #include <application.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <linux/limits.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -95,7 +95,7 @@ static void __remove_application_symlinks(struct served_application* application
     
     for (int i = 0; i < application->commands_count; i++) {
         const char* symlinkPath = __get_command_symlink_path(&application->commands[i]);
-        int         status      = unlink(symlinkPath);
+        int         status      = platform_unlink(symlinkPath);
         free((void*)symlinkPath);
         if (status != 0) {
             // log and continue

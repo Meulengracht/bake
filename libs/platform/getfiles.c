@@ -17,7 +17,7 @@
  */
 
 #include <errno.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <stdlib.h>
 #include <string.h>
 

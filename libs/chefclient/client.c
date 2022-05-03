@@ -21,7 +21,7 @@
 #include <errno.h>
 #include "oauth/oauth.h"
 #include "private.h"
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <jansson.h>
 #include <stdlib.h>
 #include <string.h>

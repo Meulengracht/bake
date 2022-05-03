@@ -17,7 +17,7 @@
  */
 
 #include <errno.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <liboven.h>
 #include "resolvers/resolvers.h"
 #include <stdio.h>

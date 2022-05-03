@@ -20,7 +20,7 @@
 #include <chef/client.h>
 #include <errno.h>
 #include <gracht/client.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -69,7 +69,7 @@ static int __parse_package_identifier(const char* id, const char** publisherOut,
 static void __cleanup(void)
 {
     // delete .inprogress
-    unlink(".inprogress");
+    platform_unlink(".inprogress");
 }
 
 int install_main(int argc, char** argv)

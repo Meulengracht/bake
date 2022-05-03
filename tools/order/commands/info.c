@@ -19,7 +19,7 @@
 #include <errno.h>
 #include <chef/api/package.h>
 #include <chef/client.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

@@ -21,7 +21,7 @@
 #define _GNU_SOURCE
 #endif
 
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <string.h>
 
 static int __get_arg_count(const char* arguments)

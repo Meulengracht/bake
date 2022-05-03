@@ -13,20 +13,24 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 
-#include <chef/platform.h>
+#ifndef __SERVED_INSTALLER_H__
+#define __SERVED_INSTALLER_H__
 
-#ifdef __linux__
+/**
+ *
+ * @param path
+ * @return
+ */
+extern void served_installer_install(const char* path);
 
-#include <unistd.h>
+/**
+ *
+ * @param package
+ * @return
+ */
+extern void served_installer_uninstall(const char* package);
 
-int platform_cpucount(void)
-{
-	return (int)sysconf(_SC_NPROCESSORS_ONLN);
-}
-
-#else
-#error "cpucount: not implemented for this platform"
-#endif
+#endif //!__SERVED_INSTALLER_H__

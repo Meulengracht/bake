@@ -13,7 +13,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 
 #include <chef/platform.h>
@@ -22,11 +22,11 @@
 
 #include <unistd.h>
 
-int platform_cpucount(void)
+int platform_unlink(const char* path)
 {
-	return (int)sysconf(_SC_NPROCESSORS_ONLN);
+    return unlink(path);
 }
 
 #else
-#error "cpucount: not implemented for this platform"
+#error "unlink: not implemented for this platform"
 #endif

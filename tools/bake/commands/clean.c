@@ -24,7 +24,7 @@
 
 #include <errno.h>
 #include <liboven.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <recipe.h>
 #include <stdio.h>
 #include <stdlib.h>

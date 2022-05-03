@@ -19,7 +19,7 @@
 #include <errno.h>
 #include <application.h>
 #include <linux/limits.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <state.h>
 #include <stddef.h>
 #include <stdlib.h>

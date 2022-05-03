@@ -19,7 +19,7 @@
 #ifndef __RESOLVERS_H__
 #define __RESOLVERS_H__
 
-#include <list.h>
+#include <chef/list.h>
 
 enum oven_resolve_arch {
     OVEN_RESOLVE_ARCH_UNKNOWN,
