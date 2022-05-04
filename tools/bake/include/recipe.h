@@ -21,9 +21,9 @@
 
 #include <stddef.h>
 #include <chef/package.h>
+#include <chef/list.h>
 #include <libfridge.h>
 #include <liboven.h>
-#include <list.h>
 
 enum recipe_step_type {
     RECIPE_STEP_TYPE_UNKNOWN,

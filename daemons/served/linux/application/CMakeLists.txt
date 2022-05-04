@@ -1,4 +1,5 @@
 add_library(served-application STATIC
+    application.c
     commands.c
     mount.c
     paths.c

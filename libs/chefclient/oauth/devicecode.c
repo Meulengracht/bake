@@ -20,7 +20,7 @@
 #include <errno.h>
 #include "../private.h"
 #include "oauth.h"
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <jansson.h>
 #include <stdlib.h>
 #include <string.h>

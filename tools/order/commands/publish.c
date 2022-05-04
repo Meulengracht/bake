@@ -20,7 +20,7 @@
 #include <chef/api/account.h>
 #include <chef/api/package.h>
 #include <chef/client.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

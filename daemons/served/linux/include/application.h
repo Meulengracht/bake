@@ -26,10 +26,17 @@ struct served_command {
     const char* path;
     const char* arguments;
     int         type;
+
+    // these are runtime state variables
+    // and are not stored anywhere.
+    const char* mount;
 };
 
 struct served_application {
     const char* name;
+    int         major;
+    int         minor;
+    int         patch;
     int         revision;
 
     struct served_command* commands;
@@ -37,6 +44,34 @@ struct served_application {
 
     struct served_mount* mount;
 };
+
+/**
+ * @brief
+ *
+ * @return
+ */
+extern struct served_application* served_application_new(void);
+
+/**
+ * @brief
+ *
+ * @param application
+ */
+extern void served_application_delete(struct served_application* application);
+
+/**
+ *
+ * @param application
+ * @return
+ */
+extern int served_application_load(struct served_application* application);
+
+/**
+ * 
+ * @param application
+ * @return
+ */
+extern int served_application_unload(struct served_application* application);
 
 /**
  * @brief 

@@ -19,8 +19,8 @@
 #include <errno.h>
 #include "elf.h"
 #include "resolvers.h"
-#include <libplatform.h>
-#include <list.h>
+#include <chef/platform.h>
+#include <chef/list.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -176,6 +176,13 @@ static json_t* __create_publish_request(struct chef_publish_params* params)
     }
 
     json_object_set_new(request, "name", json_string(params->package->package));
+    json_object_set_new(request, "summary", json_string(params->package->summary));
+    json_object_set_new(request, "description", json_string(params->package->description));
+    json_object_set_new(request, "homepage", json_string(params->package->homepage));
+    json_object_set_new(request, "license", json_string(params->package->license));
+    json_object_set_new(request, "eula", json_string(params->package->eula));
+    json_object_set_new(request, "maintainer", json_string(params->package->maintainer));
+    json_object_set_new(request, "maintainer_email", json_string(params->package->maintainer_email));
     json_object_set_new(request, "platform", json_string(params->package->platform));
     json_object_set_new(request, "architecture", json_string(params->package->arch));
     json_object_set_new(request, "channel", json_string(params->channel));
@@ -456,7 +463,7 @@ static int __prepare_block_request(
         goto cleanup;
     }
 
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_INFILESIZE_LARGE, fileContext->length);
+    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t)fileContext->length);
     if (code != CURLE_OK) {
         fprintf(stderr, "__prepare_block_request: failed to set upload size [%s]\n", fileContext->request->error);
         goto cleanup;

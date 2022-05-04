@@ -17,7 +17,7 @@
  */
 
 #include <errno.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,7 +102,7 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
         return -1;
     }
 
-    (void)fread(buffer, size, 1, file);
+    fread(buffer, size, 1, file);
     fclose(file);
 
     *bufferOut = buffer;

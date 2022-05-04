@@ -18,7 +18,7 @@
 
 #include <errno.h>
 #include <application.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <utils.h>
 
 int served_application_start_daemons(struct served_application* application)

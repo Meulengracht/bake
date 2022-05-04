@@ -36,12 +36,40 @@ extern int served_state_load(void);
 extern int served_state_save(void);
 
 /**
+ *
+ * @return
+ */
+extern int served_state_lock(void);
+
+/**
+ *
+ * @return
+ */
+extern int served_state_unlock(void);
+
+/**
  * @brief
  *
  * @param applicationsOut
  * @param applicationsCount
  * @return
  */
-extern int served_state_get_applications(struct served_application** applicationsOut, int* applicationsCount);
+extern int served_state_get_applications(struct served_application*** applicationsOut, int* applicationsCount);
+
+/**
+ * @brief 
+ * 
+ * @param application 
+ * @return int 
+ */
+extern int served_state_add_application(struct served_application* application);
+
+/**
+ * @brief 
+ * 
+ * @param application 
+ * @return int 
+ */
+extern int served_state_remove_application(struct served_application* application);
 
 #endif //!__SERVED_STATE_H__

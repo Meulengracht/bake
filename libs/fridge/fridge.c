@@ -21,11 +21,13 @@
 #include <chef/utils_vafs.h>
 #include "inventory.h"
 #include <libfridge.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vafs/vafs.h>
+#include <vafs/file.h>
+#include <vafs/directory.h>
 #include <zstd.h>
 
 #define FRIDGE_ROOT_PATH ".fridge"

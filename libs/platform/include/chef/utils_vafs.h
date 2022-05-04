@@ -16,8 +16,8 @@
  * 
  */
 
-#ifndef __LIBCHEF_UTILS_VAFS_H__
-#define __LIBCHEF_UTILS_VAFS_H__
+#ifndef __PLATFORM_UTILS_VAFS_H__
+#define __PLATFORM_UTILS_VAFS_H__
 
 #include <stddef.h>
 #include <chef/package.h>
@@ -80,4 +80,4 @@ struct chef_vafs_package_app {
     uint32_t icon_length;
 };
 
-#endif //!__LIBCHEF_UTILS_VAFS_H__
+#endif //!__PLATFORM_UTILS_VAFS_H__

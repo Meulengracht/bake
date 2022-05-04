@@ -99,7 +99,7 @@ int __chef_client_initialize(gracht_client_t** clientOut)
     return code;
 }
 
-void chef_served_event_package_removed_invocation(gracht_client_t* client, const struct chef_package* info)
+void chef_served_event_package_removed_invocation(gracht_client_t* client, const struct chef_served_package* info)
 {
 
 }

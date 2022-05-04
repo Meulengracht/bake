@@ -3,6 +3,7 @@ find_package(FUSE REQUIRED)
 
 # add sub-targets
 add_subdirectory(application)
+add_subdirectory(installer)
 add_subdirectory(utils)
 
 set (GENERATED_SRCS
@@ -22,4 +23,13 @@ set(SRCS
 add_executable(served ${SRCS})
 add_dependencies(serve-commands service_server)
 target_include_directories(served PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
-target_link_libraries(served served-application served-utils gracht jansson-api jansson platform -lpthread ${FUSE_LIBRARIES})
+target_link_libraries(served
+        served-application served-installer served-utils
+        gracht jansson-api jansson platform
+        -lpthread ${FUSE_LIBRARIES}
+)
+
+install(
+        TARGETS served
+        RUNTIME DESTINATION bin
+)

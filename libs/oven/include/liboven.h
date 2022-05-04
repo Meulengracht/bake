@@ -20,7 +20,7 @@
 #define __LIBOVEN_H__
 
 #include <chef/package.h>
-#include <list.h>
+#include <chef/list.h>
 
 
 //****************************************************************************//

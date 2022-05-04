@@ -17,7 +17,7 @@
  */
 
 #include <errno.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 #include <string.h>
 
 int strbool(const char* string)

@@ -22,9 +22,9 @@
 
 int served_shutdown(void)
 {
-    struct served_application* applications;
-    int                        applicationCount;
-    int                        status;
+    struct served_application** applications;
+    int                         applicationCount;
+    int                         status;
 
     status = served_state_get_applications(&applications, &applicationCount);
     if (status != 0) {
@@ -33,12 +33,12 @@ int served_shutdown(void)
     }
 
     for (int i = 0; i < applicationCount; i++) {
-        status = served_application_stop_daemons(&applications[i]);
+        status = served_application_stop_daemons(applications[i]);
         if (status != 0) {
             // log
         }
 
-        status = served_application_unmount(&applications[i]);
+        status = served_application_unmount(applications[i]);
         if (status != 0) {
             // log
             continue;

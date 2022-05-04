@@ -18,7 +18,7 @@
 
 #include <ctype.h>
 #include <errno.h>
-#include <libplatform.h>
+#include <chef/platform.h>
 
 #define FOLD(c) ((flags & FILTER_FOLDCASE) != 0 ? tolower((c)) : (c))
 

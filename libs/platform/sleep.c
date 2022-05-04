@@ -16,7 +16,7 @@
  * 
  */
 
-#include <libplatform.h>
+#include <chef/platform.h>
 
 #ifdef __linux__
 

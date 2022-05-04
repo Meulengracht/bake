@@ -16,8 +16,8 @@
  * 
  */
 
-#ifndef __LIBCHEF_PACKAGE_H__
-#define __LIBCHEF_PACKAGE_H__
+#ifndef __PLATFORM_PACKAGE_H__
+#define __PLATFORM_PACKAGE_H__
 
 #include <stddef.h>
 
@@ -105,4 +105,4 @@ extern void chef_package_free(struct chef_package* package);
  */
 extern void chef_version_free(struct chef_version* version);
 
-#endif //!__LIBCHEF_PACKAGE_H__
+#endif //!__PLATFORM_PACKAGE_H__

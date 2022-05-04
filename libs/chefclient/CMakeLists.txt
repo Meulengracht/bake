@@ -13,7 +13,6 @@ add_library(chef-client STATIC
     find.c
     info.c
     login.c
-    package.c
     publish.c
     request.c
     settings.c

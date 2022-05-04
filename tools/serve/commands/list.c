@@ -40,7 +40,7 @@ int list_main(int argc, char** argv)
     struct gracht_message_context context;
     int                           status;
     uint32_t                      packageCount;
-    struct chef_package*          packages;
+    struct chef_served_package*     packages;
 
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {
@@ -71,7 +71,7 @@ int list_main(int argc, char** argv)
     }
 
     // allocate memory for the package array
-    packages = malloc(sizeof(struct chef_package) * packageCount);
+    packages = malloc(sizeof(struct chef_served_package) * packageCount);
     if (packages == NULL) {
         printf("serve: failed to allocate memory for package array: %s\n", strerror(errno));
         return -1;
