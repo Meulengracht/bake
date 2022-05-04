@@ -7,6 +7,7 @@ add_library(platform STATIC
     chdir.c
     chmod.c
     chsize.c
+    copyfile.c
     cpucount.c
     getcwd.c
     getfiles.c
@@ -24,4 +25,4 @@ add_library(platform STATIC
     unlink.c
 )
 target_include_directories(platform PUBLIC include)
-target_link_libraries(platform PUBLIC platform-utils)
+target_link_libraries(platform PUBLIC platform-utils vafs)

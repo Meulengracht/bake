@@ -36,6 +36,18 @@ extern int served_state_load(void);
 extern int served_state_save(void);
 
 /**
+ *
+ * @return
+ */
+extern int served_state_lock(void);
+
+/**
+ *
+ * @return
+ */
+extern int served_state_unlock(void);
+
+/**
  * @brief
  *
  * @param applicationsOut

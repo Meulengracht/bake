@@ -203,6 +203,7 @@ extern int platform_chmod(const char* path, uint32_t permissions);
 extern int platform_getfiles(const char* path, struct list* files);
 extern int platform_getfiles_destroy(struct list* files);
 extern int platform_cpucount(void);
+extern int platform_copyfile(const char* source, const char* destination);
 
 /**
  * @brief 

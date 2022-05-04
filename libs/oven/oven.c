@@ -831,51 +831,6 @@ int oven_script(struct oven_script_options* options)
     return status;
 }
 
-static int __copy_file(const char* source, const char* destination)
-{
-    FILE*  sourceFile;
-    FILE*  destinationFile;
-    char*  buffer;
-    size_t fileSize;
-
-    sourceFile = fopen(source, "rb");
-    if (!sourceFile) {
-        return -1;
-    }
-
-    fseek(sourceFile, 0, SEEK_END);
-    fileSize = ftell(sourceFile);
-    fseek(sourceFile, 0, SEEK_SET);
-
-    buffer = (char*)malloc(fileSize);
-    if (!buffer) {
-        fclose(sourceFile);
-        return -1;
-    }
-
-    if (fread(buffer, 1, fileSize, sourceFile) != fileSize) {
-        free(buffer);
-        fclose(sourceFile);
-        return -1;
-    }
-    fclose(sourceFile);
-
-    destinationFile = fopen(destination, "wb");
-    if (!destinationFile) {
-        fclose(sourceFile);
-        return -1;
-    }
-
-    if (fwrite(buffer, 1, fileSize, destinationFile) != fileSize) {
-        free(buffer);
-        fclose(destinationFile);
-        return -1;
-    }
-
-    fclose(destinationFile);
-    return 0;
-}
-
 static int __matches_filters(const char* path, struct list* filters)
 {
     struct list_item* item;
@@ -958,7 +913,7 @@ int __copy_files_with_filters(const char* sourceRoot, const char* path, struct l
                 goto cleanup;
             }
 
-            status = __copy_file(sourceFile, destinationFile);
+            status = platform_copyfile(sourceFile, destinationFile);
             free((void*)sourceFile);
             free((void*)destinationFile);
             if (status) {

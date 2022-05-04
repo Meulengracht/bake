@@ -18,13 +18,33 @@
 
 #include <application.h>
 #include <chef/package.h>
+#include <chef/platform.h>
 #include <errno.h>
 #include <installer.h>
-#include <gracht/server.h>
 #include <state.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <utils.h>
 
 // server protocol
 #include "chef_served_service_server.h"
+
+static const char* __build_application_name(const char* publisher, const char* package)
+{
+    char* buffer;
+
+    if (publisher == NULL || package == NULL) {
+        return NULL;
+    }
+
+    buffer = malloc(strlen(publisher) + strlen(package) + 2);
+    if (buffer == NULL) {
+        return NULL;
+    }
+
+    sprintf(&buffer[0], "%s/%s", publisher, package);
+    return buffer;
+}
 
 static int __parse_package(const char* path, struct served_application** applicationOut)
 {
@@ -46,6 +66,11 @@ static int __parse_package(const char* path, struct served_application** applica
         return -1;
     }
 
+    application->name     = __build_application_name(package->publisher, package->package);
+    application->major    = version->major;
+    application->minor    = version->minor;
+    application->patch    = version->patch;
+    application->revision = version->revision;
 
     *applicationOut = application;
     chef_package_free(package);
@@ -53,10 +78,18 @@ static int __parse_package(const char* path, struct served_application** applica
     return 0;
 }
 
-static int __install(const char* path)
+static int __install(const char* path, struct served_application* application)
 {
+    const char* storagePath = served_application_get_pack_path(application);
+    int         status;
 
-    return -1;
+    if (storagePath == NULL) {
+        return -1;
+    }
+
+    status = platform_copyfile(path, storagePath);
+    free((void*)storagePath);
+    return status;
 }
 
 static int __is_in_state(struct served_application* application)
@@ -80,33 +113,80 @@ static int __is_in_state(struct served_application* application)
     return -1;
 }
 
-static int __load_application(struct served_application* application)
+static void __convert_app_to_info(struct served_application* application, struct chef_package_info* info)
 {
-    int status;
+    char versionBuffer[32];
 
-    status = served_application_ensure_paths(application);
-    if (status != 0) {
-        // log
-        return status;
-    }
+    sprintf(&versionBuffer[0], "%i.%i.%i.%i",
+            application->major, application->minor,
+            application->patch, application->revision
+    );
 
-    status = served_application_mount(application);
-    if (status != 0) {
-        // log
-        return status;
-    }
-
-    status = served_application_start_daemons(application);
-    if (status != 0) {
-        // log
-        return status;
-    }
-    return 0;
+    info->name = (char*)application->name;
+    info->version = strdup(&versionBuffer[0]);
 }
 
-static void __update(void)
+static void __cleanup_info(struct chef_package_info* info)
 {
+    free(info->version);
+}
 
+static void __update(const char* path, const char* name)
+{
+    struct served_application*  application = NULL;
+    struct served_application** applications;
+    struct chef_package_info    result = { 0 };
+    int                         count;
+    int                         status;
+
+    status = served_state_get_applications(&applications, &count);
+    if (status) {
+        chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_FAILED_INSTALL, &result);
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        if (strcmp(applications[i]->name, name) == 0) {
+            application = applications[i];
+            break;
+        }
+    }
+
+    if (application == NULL) {
+        // THIS SHOULD NEVER HAPPEN!!
+        chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_FAILED_INSTALL, &result);
+        return;
+    }
+
+    // check if it is running, then we need to turn it off and mark it as updating
+    // so we don't start it again
+
+    // TODO run the pre-update hook
+
+    status = served_application_unload(application);
+    if (status != 0) {
+        chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_FAILED_INSTALL, &result);
+        return;
+    }
+
+    status = __install(path, application);
+    if (status) {
+        chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_FAILED_INSTALL, &result);
+        return;
+    }
+
+    status = served_application_load(application);
+    if (status) {
+        chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_FAILED_INSTALL, &result);
+        return;
+    }
+
+    // TODO run the post-update hook
+
+
+    __convert_app_to_info(application, &result);
+    chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_SUCCESS, &result);
+    __cleanup_info(&result);
 }
 
 void served_installer_install(const char* path)
@@ -115,41 +195,50 @@ void served_installer_install(const char* path)
     struct chef_package_info   result = { 0 };
     int                        status;
 
-    // Parse and validate the pack provided
     status = __parse_package(path, &application);
     if (status) {
-        chef_served_event_package_installed_all(NULL, CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
+        chef_served_event_package_installed_all(served_gracht_server(), CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
         return;
     }
 
-    // Copy the pack into the storage
-    status = __install(path);
+    status = served_state_lock();
     if (status) {
-        chef_served_event_package_installed_all(NULL, CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
         return;
     }
 
-    // Is this package already installed in a different version?
+    // If the application is already installed, then we perform an update sequence instead of
+    // an installation sequence.
     if (__is_in_state(application)) {
-        // OK lets update instead
-        __update();
+        __update(path, application->name);
+        served_state_unlock();
         return;
     }
 
-    // Add it to state
+    status = __install(path, application);
+    if (status) {
+        chef_served_event_package_installed_all(served_gracht_server(), CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
+        return;
+    }
+
     status = served_state_add_application(application);
     if (status) {
-        chef_served_event_package_installed_all(NULL, CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
+        served_state_unlock();
+        chef_served_event_package_installed_all(served_gracht_server(), CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
         return;
     }
 
-    // Perform initialization sequence as in startup.c
-    status = __load_application(application);
+    status = served_application_load(application);
     if (status) {
-        chef_served_event_package_installed_all(NULL, CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
+        served_state_unlock();
+        chef_served_event_package_installed_all(served_gracht_server(), CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
         return;
     }
+
+    served_state_unlock();
 
     // TODO: run install hook
-    chef_served_event_package_installed_all(NULL, CHEF_INSTALL_STATUS_SUCCESS, &result);
+
+    __convert_app_to_info(application, &result);
+    chef_served_event_package_installed_all(served_gracht_server(), CHEF_INSTALL_STATUS_SUCCESS, &result);
+    __cleanup_info(&result);
 }

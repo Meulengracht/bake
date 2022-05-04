@@ -20,11 +20,11 @@
 #include <application.h>
 #include <linux/limits.h>
 #include <chef/platform.h>
+#include <jansson.h>
 #include <state.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include <jansson.h>
 
 struct __state {
     struct served_application** applications;
@@ -59,32 +59,23 @@ static void __state_destroy(struct __state* state)
     free((void*)state);
 }
 
+static const char* __get_string_safe(json_t* json, const char* key)
+{
+    json_t* member;
+
+    member = json_object_get(json, key);
+    if (member) {
+        return strdup(json_string_value(member));
+    }
+    return NULL;
+}
+
 static int __parse_command(json_t* cmd, struct served_command* command)
 {
-    json_t* name;
-    json_t* path;
-    json_t* args;
-    json_t* type;
-
-    name = json_object_get(cmd, "name");
-    if (name) {
-        command->name = strdup(json_string_value(name));
-    }
-    
-    path = json_object_get(cmd, "path");
-    if (path) {
-        command->path = strdup(json_string_value(path));
-    }
-
-    args = json_object_get(cmd, "args");
-    if (args) {
-        command->arguments = strdup(json_string_value(args));
-    }
-
-    type = json_object_get(cmd, "type");
-    if (type) {
-        command->type = json_integer_value(type);
-    }
+    command->name      = __get_string_safe(cmd, "name");
+    command->path      = __get_string_safe(cmd, "path");
+    command->arguments = __get_string_safe(cmd, "args");
+    command->type      = (int)json_integer_value(json_object_get(cmd, "type"));
     return 0;
 }
 
@@ -113,13 +104,14 @@ static int __parse_commands(json_t* commands, struct served_application* applica
 
 static int __parse_app(json_t* app, struct served_application* application)
 {
-    json_t* name;
+    json_t* member;
     json_t* commands;
 
-    name = json_object_get(app, "name");
-    if (name) {
-        application->name = strdup(json_string_value(name));
-    }
+    application->name     = __get_string_safe(app, "name");
+    application->major    = (int)json_integer_value(json_object_get(app, "major"));
+    application->minor    = (int)json_integer_value(json_object_get(app, "minor"));
+    application->patch    = (int)json_integer_value(json_object_get(app, "patch"));
+    application->revision = (int)json_integer_value(json_object_get(app, "revision"));
 
     commands = json_object_get(app, "commands");
     if (commands) {
@@ -300,6 +292,9 @@ static int __serialize_application(struct served_application* application, json_
     }
 
     json_object_set_new(json, "name", json_string(application->name));
+    json_object_set_new(json, "major", json_integer(application->major));
+    json_object_set_new(json, "minor", json_integer(application->minor));
+    json_object_set_new(json, "patch", json_integer(application->patch));
     json_object_set_new(json, "revision", json_integer(application->revision));
 
     json_t* commands = json_array();
@@ -386,6 +381,18 @@ int served_state_save(void)
     g_state = NULL;
 
     return status;
+}
+
+int served_state_lock(void)
+{
+    // TODO
+    return 0;
+}
+
+int served_state_unlock(void)
+{
+    // TODO
+    return 0;
 }
 
 int served_state_get_applications(struct served_application*** applicationsOut, int* applicationsCount)

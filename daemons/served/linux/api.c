@@ -20,16 +20,28 @@
 #include <gracht/server.h>
 #include <installer.h>
 #include <state.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 // server protocol
 #include "chef_served_service_server.h"
 
-static void __convert_app_to_protocol(struct served_application* application, struct chef_package_info* info)
+static void __convert_app_to_info(struct served_application* application, struct chef_package_info* info)
 {
-    // TODO
+    char versionBuffer[32];
+
+    sprintf(&versionBuffer[0], "%i.%i.%i.%i",
+            application->major, application->minor,
+            application->patch, application->revision
+    );
+
     info->name = (char*)application->name;
-    info->version = application->revision;
+    info->version = strdup(&versionBuffer[0]);
+}
+
+static void __cleanup_info(struct chef_package_info* info)
+{
+    free(info->version);
 }
 
 void chef_served_install_invocation(struct gracht_message* message, const char* path)
@@ -64,8 +76,9 @@ void chef_served_info_invocation(struct gracht_message* message, const char* pac
 
     for (int i = 0; i < count; i++) {
         if (strcmp(applications[i]->name, packageName) == 0) {
-            __convert_app_to_protocol(applications[i], info);
+            __convert_app_to_info(applications[i], info);
             chef_served_info_response(message, info);
+            __cleanup_info(info);
             free(info);
             return;
         }
@@ -109,9 +122,13 @@ void chef_served_list_invocation(struct gracht_message* message)
     }
 
     for (int i = 0; i < count; i++) {
-        __convert_app_to_protocol(applications[i], &infos[i]);
+        __convert_app_to_info(applications[i], &infos[i]);
     }
 
     chef_served_list_response(message, infos, count);
+
+    for (int i = 0; i < count; i++) {
+        __cleanup_info(&infos[i]);
+    }
     free(infos);
 }

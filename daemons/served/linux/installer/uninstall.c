@@ -16,17 +16,82 @@
  *
  */
 
+#include <application.h>
+#include <chef/platform.h>
 #include <installer.h>
+#include <state.h>
+#include <string.h>
+#include <utils.h>
+
+// server protocol
+#include "chef_served_service_server.h"
+
+static struct served_application* __get_application(const char* name)
+{
+    struct served_application** applications;
+    int                         count;
+    int                         status;
+
+    status = served_state_get_applications(&applications, &count);
+    if (status) {
+        return NULL;
+    }
+
+    for (int i = 0; i < count; i++) {
+        if (strcmp(applications[i]->name, name) == 0) {
+            return applications[i];
+        }
+    }
+    return NULL;
+}
+
+static int __remove_package(struct served_application* application)
+{
+    const char* storagePath = served_application_get_pack_path(application);
+    int         status;
+
+    if (storagePath == NULL) {
+        return -1;
+    }
+
+    status = platform_unlink(storagePath);
+    free((void*)storagePath);
+    return status;
+}
 
 void served_installer_uninstall(const char* package)
 {
-    // lookup app in state
+    struct served_application* application;
+    int                        status;
+
+    status = served_state_lock();
+    if (status) {
+        return;
+    }
+
+    application = __get_application(package);
+    if (application == NULL) {
+        served_state_unlock();
+        return;
+    }
 
     // TODO run uninstall hook
 
-    // Run the same shutdown sequence as in shutdown.c
+    status = served_application_unload(application);
+    if (status) {
+        served_state_unlock();
+        return;
+    }
 
-    // Remove application from state
+    status = served_state_remove_application(application);
+    if (status) {
+        served_state_unlock();
+        return;
+    }
+    served_state_unlock();
 
-    // Remove package from storage
+    status = __remove_package(application);
+    if (status) {
+        return;
+    }
 }

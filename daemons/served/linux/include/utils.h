@@ -19,6 +19,7 @@
 #ifndef __SERVED_UTILS_H__
 #define __SERVED_UTILS_H__
 
+typedef struct gracht_server gracht_server_t;
 struct served_mount;
 
 /**
@@ -37,5 +38,11 @@ extern int served_mount(const char* path, const char* mountPoint, struct served_
  * @param mount 
  */
 extern void served_unmount(struct served_mount* mount);
+
+/**
+ * 
+ * @return
+ */
+extern gracht_server_t* served_gracht_server(void);
 
 #endif //!__SERVED_UTILS_H__

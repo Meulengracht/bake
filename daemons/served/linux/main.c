@@ -92,3 +92,8 @@ int main(int argc, char** argv)
     gracht_server_register_protocol(server, &chef_served_server_protocol);
     return gracht_server_main_loop(server);
 }
+
+gracht_server_t* served_gracht_server(void)
+{
+    return NULL;
+}
