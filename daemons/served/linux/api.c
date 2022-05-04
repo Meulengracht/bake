@@ -26,7 +26,7 @@
 // server protocol
 #include "chef_served_service_server.h"
 
-static void __convert_app_to_info(struct served_application* application, struct chef_package_info* info)
+static void __convert_app_to_info(struct served_application* application, struct chef_served_package* info)
 {
     char versionBuffer[32];
 
@@ -39,7 +39,7 @@ static void __convert_app_to_info(struct served_application* application, struct
     info->version = strdup(&versionBuffer[0]);
 }
 
-static void __cleanup_info(struct chef_package_info* info)
+static void __cleanup_info(struct chef_served_package* info)
 {
     free(info->version);
 }
@@ -58,8 +58,8 @@ void chef_served_info_invocation(struct gracht_message* message, const char* pac
 {
     struct served_application** applications;
     int                         count;
-    struct chef_package_info*   info;
-    struct chef_package_info    zero = { 0 };
+    struct chef_served_package*   info;
+    struct chef_served_package    zero = { 0 };
     int                         status;
 
     status = served_state_get_applications(&applications, &count);
@@ -68,7 +68,7 @@ void chef_served_info_invocation(struct gracht_message* message, const char* pac
         return;
     }
 
-    info = (struct chef_package_info*)malloc(sizeof(struct chef_package_info));
+    info = (struct chef_served_package*)malloc(sizeof(struct chef_served_package));
     if (info == NULL) {
         chef_served_info_response(message, &zero);
         return;
@@ -105,7 +105,7 @@ void chef_served_listcount_invocation(struct gracht_message* message)
 void chef_served_list_invocation(struct gracht_message* message)
 {
     struct served_application** applications;
-    struct chef_package_info*   infos;
+    struct chef_served_package* infos;
     int                         count;
     int                         status;
 
@@ -115,7 +115,7 @@ void chef_served_list_invocation(struct gracht_message* message)
         return;
     }
 
-    infos = (struct chef_package_info*)malloc(sizeof(struct chef_package_info) * count);
+    infos = (struct chef_served_package*)malloc(sizeof(struct chef_served_package) * count);
     if (infos == NULL) {
         chef_served_list_response(message, NULL, 0);
         return;
@@ -131,4 +131,34 @@ void chef_served_list_invocation(struct gracht_message* message)
         __cleanup_info(&infos[i]);
     }
     free(infos);
+}
+
+void chef_served_get_command_invocation(struct gracht_message* message, const char* mountPath)
+{
+    struct served_application** applications;
+    int                         count;
+    int                         status;
+
+    status = served_state_lock();
+    if (status) {
+
+    }
+
+    status = served_state_get_applications(&applications, &count);
+    if (status) {
+        served_state_unlock();
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        for (int j = 0; j < applications[i]->commands_count; j++) {
+            if (strcmp(applications[i]->commands[j].mount, mountPath) == 0) {
+                chef_served_get_command_response(message, NULL);
+                served_state_unlock();
+                return;
+            }
+        }
+    }
+    served_state_unlock();
+    chef_served_get_command_response(message, NULL);
 }

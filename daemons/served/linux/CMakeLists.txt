@@ -28,3 +28,8 @@ target_link_libraries(served
         gracht jansson-api jansson platform
         -lpthread ${FUSE_LIBRARIES}
 )
+
+install(
+        TARGETS served
+        RUNTIME DESTINATION bin
+)

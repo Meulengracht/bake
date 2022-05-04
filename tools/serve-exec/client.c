@@ -103,3 +103,13 @@ void chef_served_event_package_removed_invocation(gracht_client_t* client, const
 {
 
 }
+
+void chef_served_event_package_installed_invocation(gracht_client_t* client, const enum chef_install_status status, const struct chef_served_package* info)
+{
+
+}
+
+void chef_served_event_package_updated_invocation(gracht_client_t* client, const enum chef_update_status status, const struct chef_served_package* info)
+{
+
+}

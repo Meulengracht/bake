@@ -68,7 +68,7 @@ int __init_curl(struct chef_request* request, int https, int authorization)
     }
  
     // set the writer function to get the response
-    code = curl_easy_setopt(request->curl, CURLOPT_WRITEFUNCTION, __response_writer);
+    code = curl_easy_setopt(request->curl, CURLOPT_WRITEFUNCTION, (curl_write_callback)__response_writer);
     if (code != CURLE_OK) {
         fprintf(stderr, "__init_curl: failed to set response function [%s]\n", request->error);
         return -1;

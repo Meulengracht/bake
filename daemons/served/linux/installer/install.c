@@ -113,7 +113,7 @@ static int __is_in_state(struct served_application* application)
     return -1;
 }
 
-static void __convert_app_to_info(struct served_application* application, struct chef_package_info* info)
+static void __convert_app_to_info(struct served_application* application, struct chef_served_package* info)
 {
     char versionBuffer[32];
 
@@ -126,7 +126,7 @@ static void __convert_app_to_info(struct served_application* application, struct
     info->version = strdup(&versionBuffer[0]);
 }
 
-static void __cleanup_info(struct chef_package_info* info)
+static void __cleanup_info(struct chef_served_package* info)
 {
     free(info->version);
 }
@@ -135,7 +135,7 @@ static void __update(const char* path, const char* name)
 {
     struct served_application*  application = NULL;
     struct served_application** applications;
-    struct chef_package_info    result = { 0 };
+    struct chef_served_package    result = { 0 };
     int                         count;
     int                         status;
 
@@ -192,7 +192,7 @@ static void __update(const char* path, const char* name)
 void served_installer_install(const char* path)
 {
     struct served_application* application;
-    struct chef_package_info   result = { 0 };
+    struct chef_served_package   result = { 0 };
     int                        status;
 
     status = __parse_package(path, &application);

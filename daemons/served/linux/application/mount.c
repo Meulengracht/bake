@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <application.h>
 #include <chef/platform.h>
+#include <chef/package.h>
 #include <linux/limits.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -61,10 +62,12 @@ static int __create_application_symlinks(struct served_application* application)
     }
 
     for (int i = 0; i < application->commands_count; i++) {
-        const char* symlinkPath = __get_command_symlink_path(&application->commands[i]);
-        const char* cmdPath = __get_command_path(application, &application->commands[i]);
+        const char* symlinkPath;
+        const char* cmdPath;
         int         status;
 
+        symlinkPath = __get_command_symlink_path(&application->commands[i]);
+        cmdPath = __get_command_path(application, &application->commands[i]);
         if (symlinkPath == NULL || cmdPath == NULL) {
             free((void*)symlinkPath);
             free((void*)cmdPath);

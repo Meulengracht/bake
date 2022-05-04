@@ -26,6 +26,10 @@ struct served_command {
     const char* path;
     const char* arguments;
     int         type;
+
+    // these are runtime state variables
+    // and are not stored anywhere.
+    const char* mount;
 };
 
 struct served_application {

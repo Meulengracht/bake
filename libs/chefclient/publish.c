@@ -463,7 +463,7 @@ static int __prepare_block_request(
         goto cleanup;
     }
 
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_INFILESIZE_LARGE, fileContext->length);
+    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t)fileContext->length);
     if (code != CURLE_OK) {
         fprintf(stderr, "__prepare_block_request: failed to set upload size [%s]\n", fileContext->request->error);
         goto cleanup;

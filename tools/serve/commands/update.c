@@ -93,11 +93,9 @@ int update_main(int argc, char** argv)
     return status;
 }
 
-void chef_served_event_package_updated_invocation(gracht_client_t* client, const enum chef_update_status status, const struct chef_package_info* info)
+void chef_served_event_package_updated_invocation(gracht_client_t* client, const enum chef_update_status status, const struct chef_served_package* info)
 {
-    if (status == CHEF_UPDATE_STATUS_NOT_AVAILABLE) {
-        printf("serve: package %s is up to date\n", info->name);
-    } else if (status == CHEF_UPDATE_STATUS_SUCCESS) {
+    if (status == CHEF_UPDATE_STATUS_SUCCESS) {
         printf("serve: package %s updated to version %s\n", info->name, info->version);
     } else {
         printf("serve: failed to update package %s\n", info->name);
