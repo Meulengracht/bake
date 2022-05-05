@@ -19,31 +19,36 @@
 #include <application.h>
 #include <startup.h>
 #include <state.h>
+#include <vlog.h>
 
-int served_shutdown(void)
+void served_shutdown(void)
 {
     struct served_application** applications;
     int                         applicationCount;
     int                         status;
+    VLOG_TRACE("shutdown", "served_shutdown()\n");
 
     status = served_state_get_applications(&applications, &applicationCount);
     if (status != 0) {
-        // log
-        return status;
+        VLOG_ERROR("shutdown", "failed to load applications from state, this could be serious\n");
+        goto save_state;
     }
 
     for (int i = 0; i < applicationCount; i++) {
         status = served_application_stop_daemons(applications[i]);
         if (status != 0) {
-            // log
+            VLOG_WARNING("shutdown", "failed to stop daemons for application %s\n", applications[i]->name);
         }
 
         status = served_application_unmount(applications[i]);
         if (status != 0) {
-            // log
-            continue;
+            VLOG_WARNING("shutdown", "failed to unmount application %s\n", applications[i]->name);
         }
     }
-    
-    return served_state_save();
+
+save_state:
+    status = served_state_save();
+    if (status) {
+        VLOG_ERROR("shutdown", "failed to save state!!!\n");
+    }
 }

@@ -53,7 +53,7 @@ static int __parse_package(const char* path, struct served_application** applica
     struct chef_version*       version;
     int                        status;
 
-    status = chef_package_load(path, &package, &version);
+    status = chef_package_load(path, &package, &version, NULL, NULL);
     if (status) {
         return status;
     }
@@ -71,6 +71,8 @@ static int __parse_package(const char* path, struct served_application** applica
     application->minor    = version->minor;
     application->patch    = version->patch;
     application->revision = version->revision;
+
+    // TODO load commands
 
     *applicationOut = application;
     chef_package_free(package);

@@ -28,8 +28,9 @@ struct served_command {
     int         type;
 
     // these are runtime state variables
-    // and are not stored anywhere.
+    // and are not serialized to disk.
     const char* mount;
+    const char* data;
 };
 
 struct served_application {
@@ -42,6 +43,8 @@ struct served_application {
     struct served_command* commands;
     int                    commands_count;
 
+    // these are runtime state variables
+    // and are not serialized to disk.
     struct served_mount* mount;
 };
 

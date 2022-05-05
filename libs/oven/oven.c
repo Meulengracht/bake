@@ -337,14 +337,26 @@ int oven_clear_recipe_checkpoint(const char* name)
 
 static const char* __get_variable(const char* name)
 {
-    if (strcmp(name, "CHEF_PLATFORM") == 0) {
-        printf("CHEF_PLATFORM: %s\n", g_oven.variables.target_platform);
+    // Cross-compilation target variables.
+    if (strcmp(name, "CHEF_TARGET_PLATFORM") == 0) {
+        printf("CHEF_TARGET_PLATFORM: %s\n", g_oven.variables.target_platform);
         return g_oven.variables.target_platform;
     }
-    if (strcmp(name, "CHEF_ARCHITECTURE") == 0) {
-        printf("CHEF_ARCHITECTURE: %s\n", g_oven.variables.target_arch);
+    if (strcmp(name, "CHEF_TARGET_ARCHITECTURE") == 0) {
+        printf("CHEF_TARGET_ARCHITECTURE: %s\n", g_oven.variables.target_arch);
         return g_oven.variables.target_arch;
     }
+
+    // Cross-compilation host variables.
+    if (strcmp(name, "CHEF_HOST_PLATFORM") == 0) {
+        printf("CHEF_HOST_PLATFORM: " CHEF_PLATFORM_STR "\n");
+        return CHEF_PLATFORM_STR;
+    }
+    if (strcmp(name, "CHEF_HOST_ARCHITECTURE") == 0) {
+        printf("CHEF_HOST_ARCHITECTURE: " CHEF_ARCHITECTURE_STR "\n");
+        return CHEF_ARCHITECTURE_STR;
+    }
+
     if (strcmp(name, "PROJECT_PATH") == 0) {
         printf("PROJECT_PATH: %s\n", g_oven.variables.cwd);
         return g_oven.variables.cwd;

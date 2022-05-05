@@ -112,7 +112,7 @@ int publish_main(int argc, char** argv)
         return -1;
     }
 
-    status = chef_package_load(packPath, &package, &version);
+    status = chef_package_load(packPath, &package, &version, NULL, NULL);
     if (status != 0) {
         printf("failed to load package: %s\n", strerror(errno));
         return -1;

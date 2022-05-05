@@ -22,6 +22,7 @@
 #include <state.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <vlog.h>
 
 // server protocol
 #include "chef_served_service_server.h"
@@ -44,6 +45,14 @@ static void __cleanup_info(struct chef_served_package* info)
     free(info->version);
 }
 
+static void __convert_cmd_to_protocol(struct served_command* command, struct chef_served_command* proto)
+{
+    proto->type      = command->type;
+    proto->path      = (char*)command->mount;
+    proto->arguments = (char*)command->arguments;
+    proto->data_path = (char*)command->data;
+}
+
 void chef_served_install_invocation(struct gracht_message* message, const char* path)
 {
     served_installer_install(path);
@@ -58,18 +67,30 @@ void chef_served_info_invocation(struct gracht_message* message, const char* pac
 {
     struct served_application** applications;
     int                         count;
-    struct chef_served_package*   info;
-    struct chef_served_package    zero = { 0 };
+    struct chef_served_package* info;
+    struct chef_served_package  zero = { 0 };
     int                         status;
+    VLOG_DEBUG("api", "chef_served_info_invocation(package=%s)\n", packageName);
+
+    status = served_state_lock();
+    if (status) {
+        VLOG_WARNING("api", "failed to acquire state lock\n");
+        chef_served_info_response(message, &zero);
+        return;
+    }
 
     status = served_state_get_applications(&applications, &count);
     if (status != 0 || count == 0) {
+        served_state_unlock();
+        VLOG_WARNING("api", "failed to retrieve applications from state\n");
         chef_served_info_response(message, &zero);
         return;
     }
 
     info = (struct chef_served_package*)malloc(sizeof(struct chef_served_package));
     if (info == NULL) {
+        served_state_unlock();
+        VLOG_WARNING("api", "failed to allocate memory!\n");
         chef_served_info_response(message, &zero);
         return;
     }
@@ -77,6 +98,9 @@ void chef_served_info_invocation(struct gracht_message* message, const char* pac
     for (int i = 0; i < count; i++) {
         if (strcmp(applications[i]->name, packageName) == 0) {
             __convert_app_to_info(applications[i], info);
+            served_state_unlock();
+
+            // this can be done without the lock
             chef_served_info_response(message, info);
             __cleanup_info(info);
             free(info);
@@ -84,6 +108,7 @@ void chef_served_info_invocation(struct gracht_message* message, const char* pac
         }
     }
 
+    served_state_unlock();
     chef_served_info_response(message, &zero);
     free(info);
 }
@@ -91,14 +116,19 @@ void chef_served_info_invocation(struct gracht_message* message, const char* pac
 void chef_served_listcount_invocation(struct gracht_message* message)
 {
     struct served_application** applications;
-    int                         count;
+    int                         count = 0;
     int                         status;
+    VLOG_DEBUG("api", "chef_served_listcount_invocation()\n");
 
-    status = served_state_get_applications(&applications, &count);
-    if (status != 0) {
+    status = served_state_lock();
+    if (status) {
+        VLOG_WARNING("api", "failed to acquire state lock\n");
         chef_served_listcount_response(message, 0);
         return;
     }
+
+    served_state_get_applications(&applications, &count);
+    served_state_unlock();
     chef_served_listcount_response(message, (unsigned int)count);
 }
 
@@ -108,15 +138,27 @@ void chef_served_list_invocation(struct gracht_message* message)
     struct chef_served_package* infos;
     int                         count;
     int                         status;
+    VLOG_DEBUG("api", "chef_served_list_invocation()\n");
+
+    status = served_state_lock();
+    if (status) {
+        VLOG_WARNING("api", "failed to acquire state lock\n");
+        chef_served_list_response(message, NULL, 0);
+        return;
+    }
 
     status = served_state_get_applications(&applications, &count);
     if (status != 0 || count == 0) {
+        served_state_unlock();
+        VLOG_WARNING("api", "failed to retrieve applications from state\n");
         chef_served_list_response(message, NULL, 0);
         return;
     }
 
     infos = (struct chef_served_package*)malloc(sizeof(struct chef_served_package) * count);
     if (infos == NULL) {
+        served_state_unlock();
+        VLOG_WARNING("api", "failed to allocate memory!\n");
         chef_served_list_response(message, NULL, 0);
         return;
     }
@@ -125,8 +167,10 @@ void chef_served_list_invocation(struct gracht_message* message)
         __convert_app_to_info(applications[i], &infos[i]);
     }
 
-    chef_served_list_response(message, infos, count);
+    // we can unlock from here as we do not need to access the state anymore
+    served_state_unlock();
 
+    chef_served_list_response(message, infos, count);
     for (int i = 0; i < count; i++) {
         __cleanup_info(&infos[i]);
     }
@@ -136,30 +180,36 @@ void chef_served_list_invocation(struct gracht_message* message)
 void chef_served_get_command_invocation(struct gracht_message* message, const char* mountPath)
 {
     struct served_application** applications;
+    struct chef_served_command  result = { 0 };
     int                         count;
     int                         status;
+    VLOG_DEBUG("api", "chef_served_get_command_invocation(mountPath=%s)\n", mountPath);
 
     status = served_state_lock();
     if (status) {
-
+        VLOG_WARNING("api", "failed to acquire state lock\n");
+        chef_served_get_command_response(message, &result);
+        return;
     }
 
     status = served_state_get_applications(&applications, &count);
     if (status) {
         served_state_unlock();
+        VLOG_WARNING("api", "failed to retrieve applications from state\n");
+        chef_served_get_command_response(message, &result);
         return;
     }
 
     for (int i = 0; i < count; i++) {
         for (int j = 0; j < applications[i]->commands_count; j++) {
             if (strcmp(applications[i]->commands[j].mount, mountPath) == 0) {
-                // TODO
-                chef_served_get_command_response(message, NULL);
+                __convert_cmd_to_protocol(&applications[i]->commands[j], &result);
                 served_state_unlock();
+                chef_served_get_command_response(message, &result);
                 return;
             }
         }
     }
     served_state_unlock();
-    chef_served_get_command_response(message, NULL);
+    chef_served_get_command_response(message, &result);
 }
