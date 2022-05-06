@@ -166,6 +166,7 @@ static int __parse_state(const char* content, struct __state** stateOut)
     json_t*         root;
     json_t*         apps;
     int             status = -1;
+    VLOG_DEBUG("state", "__parse_state()\n");
 
     state = __state_new();
     if (state == NULL) {

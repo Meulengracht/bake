@@ -75,6 +75,7 @@ static int __ensure_chef_paths(void)
     // /run/chef
     // /usr/share/chef
     // /var/chef
+    // /var/chef/packs
 
     if (platform_mkdir("/chef") != 0) {
         VLOG_ERROR("startup", "failed to create path /chef\n");
@@ -134,6 +135,7 @@ int served_startup(void)
         return status;
     }
 
+    VLOG_DEBUG("startup", "initializing %i applications\n", applicationCount);
     for (int i = 0; i < applicationCount; i++) {
         status = served_application_ensure_paths(applications[i]);
         if (status != 0) {
@@ -153,5 +155,6 @@ int served_startup(void)
         }
     }
 
+    VLOG_TRACE("startup", "complete\n");
     return 0;
 }

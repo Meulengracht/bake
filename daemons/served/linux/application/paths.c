@@ -16,14 +16,13 @@
  *
  */
 
-#include <errno.h>
 #include <application.h>
 #include <chef/platform.h>
 #include <linux/limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <utils.h>
+#include <vlog.h>
 
 int served_application_ensure_paths(struct served_application* application)
 {
@@ -36,12 +35,14 @@ int served_application_ensure_paths(struct served_application* application)
 
     sprintf(path, "/usr/share/chef/%s", application->name);
     if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("paths", "failed to create path %s\n", path);
         free(path);
         return -1;
     }
 
     sprintf(path, "/usr/share/chef/%s/%i", application->name, application->revision);
     if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("paths", "failed to create path %s\n", path);
         free(path);
         return -1;
     }
@@ -52,21 +53,13 @@ int served_application_ensure_paths(struct served_application* application)
 const char* served_application_get_pack_path(struct served_application* application)
 {
     char* path;
-    int   status;
 
     path = malloc(PATH_MAX);
     if (path == NULL) {
         return NULL;
     }
 
-    status = platform_getuserdir(path, PATH_MAX);
-    if (status != 0) {
-        free(path);
-        return NULL;
-    }
-
-    strcat(path, CHEF_PATH_SEPARATOR_S ".chef" CHEF_PATH_SEPARATOR_S "packs" CHEF_PATH_SEPARATOR_S);
-    strcat(path, application->name);
+    sprintf(&path[0], "/var/chef/packs/%s.pack", application->name);
     return path;
 }
 
