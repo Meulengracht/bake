@@ -238,18 +238,12 @@ static const char* __get_state_path(void)
     char* path;
     int   status;
 
-    path = malloc(PATH_MAX);
+    path = malloc(128);
     if (path == NULL) {
         return NULL;
     }
 
-    status = platform_getuserdir(path, PATH_MAX);
-    if (status != 0) {
-        free(path);
-        return NULL;
-    }
-
-    strcat(path, CHEF_PATH_SEPARATOR_S ".chef" CHEF_PATH_SEPARATOR_S "state.json");
+    sprintf(&path[0], "/var/chef/state.json");
     return path;
 }
 
