@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <gracht/link/socket.h>
 #include <gracht/server.h>
+#include <signal.h>
 #include <stdio.h>
 #include <sys/un.h>
 #include <vlog.h>
@@ -76,14 +77,24 @@ int __init_server(gracht_server_t** serverOut)
     return __register_server_links(*serverOut);
 }
 
+static void __cleanup_systems(int sig)
+{
+    (void)sig;
+    VLOG_TRACE("main", "termination requested, cleaning up\n");
+    exit(0);
+}
+
 int main(int argc, char** argv)
 {
-    int              code;
+    int code;
 
     // initialize logging as the first thing, we need output!
     vlog_initialize();
     vlog_set_level(VLOG_LEVEL_DEBUG); // debug for now, change this to trace later
     vlog_add_output(stdout, 0);
+
+    // catch CTRL-C
+    signal(SIGINT, __cleanup_systems);
 
     // must register this first as we want it called last!
     atexit(vlog_cleanup);
