@@ -76,11 +76,17 @@ static int __spawn_command(struct chef_served_command* command, int argc, char**
     char* arguments;
     int   status;
 
+    if (command->path == NULL || strlen(command->path) == 0) {
+        fprintf(stderr, "serve-exec: cannot be invoked directly\n");
+        return -1;
+    }
+
     arguments = __build_args(argc, argv, command->arguments);
     if (arguments == NULL) {
         return -1;
     }
 
+    // TODO proxy argv[0]
     status = platform_spawn(command->path, arguments, (const char* const*)envp, command->data_path);
     free(arguments);
     return status;
@@ -95,9 +101,10 @@ static void __cleanup_command(struct chef_served_command* command)
 
 int main(int argc, char** argv, char** envp)
 {
-    struct chef_served_command command;
-    gracht_client_t*           client;
-    int                        status;
+    struct gracht_message_context context;
+    struct chef_served_command    command;
+    gracht_client_t*              client;
+    int                           status;
 
     status = chefclient_initialize();
     if (status != 0) {
@@ -118,9 +125,9 @@ int main(int argc, char** argv, char** envp)
         return status;
     }
 
-    chef_served_get_command(client, NULL, argv[0]);
-    gracht_client_wait_message(client, NULL, GRACHT_MESSAGE_BLOCK);
-    chef_served_get_command_result(client, NULL, &command);
+    chef_served_get_command(client, &context, argv[0]);
+    gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    chef_served_get_command_result(client, &context, &command);
 
     status = __spawn_command(&command, argc, argv, envp);
     __cleanup_command(&command);

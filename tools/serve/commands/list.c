@@ -40,7 +40,7 @@ int list_main(int argc, char** argv)
     struct gracht_message_context context;
     int                           status;
     uint32_t                      packageCount;
-    struct chef_served_package*     packages;
+    struct chef_served_package*   packages;
 
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {
@@ -67,20 +67,21 @@ int list_main(int argc, char** argv)
     
     if (packageCount == 0) {
         printf("serve: no packages installed\n");
-        return 0;
+        goto cleanup;
     }
 
     // allocate memory for the package array
     packages = malloc(sizeof(struct chef_served_package) * packageCount);
     if (packages == NULL) {
         printf("serve: failed to allocate memory for package array: %s\n", strerror(errno));
-        return -1;
+        status = -1;
+        goto cleanup;
     }
 
     status = chef_served_list(client, &context);
     if (status != 0) {
         printf("serve: failed to list installed packs: %s\n", strerror(status));
-        return status;
+        goto cleanup;
     }
     gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
     chef_served_list_result(client, &context, packages, packageCount);
@@ -89,6 +90,7 @@ int list_main(int argc, char** argv)
         printf("%30.30s %s\n", packages[i].name, packages[i].version);
     }
 
+cleanup:
     gracht_client_shutdown(client);
     return status;
 }
