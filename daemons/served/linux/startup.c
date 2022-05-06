@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <vlog.h>
 
 static const char* g_profileScriptPath = "/etc/profile.d/chef.sh";
 static const char* g_profileScript = 
@@ -33,8 +34,10 @@ static const char* g_profileScript =
 
 static int __write_profile_d_script(void)
 {
-    int status;
-    FILE* file;
+    int    status;
+    FILE*  file;
+    size_t written;
+    VLOG_TRACE("startup", "__write_profile_d_script()\n");
 
     // if file exists, then we do not touch it
     file = fopen(g_profileScriptPath, "r");
@@ -51,8 +54,8 @@ static int __write_profile_d_script(void)
         return -1;
     }
     
-    status = fwrite(g_profileScript, strlen(g_profileScript), 1, file);
-    if (status != 1) {
+    written = fwrite(g_profileScript, strlen(g_profileScript), 1, file);
+    if (written != 1) {
         fclose(file);
         return -1;
     }
@@ -65,6 +68,7 @@ static int __write_profile_d_script(void)
 
 static int __ensure_chef_paths(void)
 {
+    VLOG_TRACE("startup", "__ensure_chef_paths()\n");
     // ensure following paths are created
     // /chef
     // /chef/bin
@@ -72,22 +76,22 @@ static int __ensure_chef_paths(void)
     // /usr/share/chef
 
     if (platform_mkdir("/chef") != 0) {
-        // log
+        VLOG_ERROR("startup", "failed to create path /chef\n");
         return -1;
     }
 
     if (platform_mkdir("/chef/bin") != 0) {
-        // log
+        VLOG_ERROR("startup", "failed to create path /chef/bin\n");
         return -1;
     }
 
     if (platform_mkdir("/run/chef") != 0) {
-        // log
+        VLOG_ERROR("startup", "failed to create path /run/chef\n");
         return -1;
     }
 
     if (platform_mkdir("/usr/share/chef") != 0) {
-        // log
+        VLOG_ERROR("startup", "failed to create path /usr/share/chef\n");
         return -1;
     }
     return 0;
@@ -98,47 +102,48 @@ int served_startup(void)
     struct served_application** applications;
     int                         applicationCount;
     int                         status;
+    VLOG_TRACE("startup", "served_startup()\n");
 
     status = __write_profile_d_script();
     if (status != 0) {
-        // log
+        VLOG_ERROR("startup", "failed to write profile script to path %s\n", g_profileScriptPath);
         return status;
     }
 
     status = __ensure_chef_paths();
     if (status != 0) {
-        // log
+        VLOG_ERROR("startup", "failed to write necessary chef paths\n");
         return status;
     }
 
     status = served_state_load();
     if (status != 0) {
-        // log
+        VLOG_ERROR("startup", "failed to load/initialize state\n");
         return status;
     }
 
     status = served_state_get_applications(&applications, &applicationCount);
     if (status != 0) {
-        // log
+        VLOG_ERROR("startup", "failed to load applications from state\n");
         return status;
     }
 
     for (int i = 0; i < applicationCount; i++) {
         status = served_application_ensure_paths(applications[i]);
         if (status != 0) {
-            // log
+            VLOG_WARNING("startup", "failed to create application paths for %s\n", applications[i]->name);
             continue;
         }
 
         status = served_application_mount(applications[i]);
         if (status != 0) {
-            // log
+            VLOG_WARNING("startup", "failed to mount application %s\n", applications[i]->name);
             continue;
         }
 
         status = served_application_start_daemons(applications[i]);
         if (status != 0) {
-            // log
+            VLOG_WARNING("startup", "failed to start daemons for application %s\n", applications[i]->name);
         }
     }
 

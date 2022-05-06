@@ -51,9 +51,16 @@ static int __parse_package(const char* path, struct served_application** applica
     struct served_application* application;
     struct chef_package*       package;
     struct chef_version*       version;
+    struct chef_command*       commands;
+    int                        count;
     int                        status;
 
-    status = chef_package_load(path, &package, &version);
+    status = chef_package_load(path,
+                               &package,
+                               &version,
+                               &commands,
+                               &count
+    );
     if (status) {
         return status;
     }
@@ -61,9 +68,8 @@ static int __parse_package(const char* path, struct served_application** applica
     // In theory this should also verify the signed signature...
     application = served_application_new();
     if (application == NULL) {
-        chef_package_free(package);
-        chef_version_free(version);
-        return -1;
+        status = -1;
+        goto cleanup;
     }
 
     application->name     = __build_application_name(package->publisher, package->package);
@@ -72,10 +78,30 @@ static int __parse_package(const char* path, struct served_application** applica
     application->patch    = version->patch;
     application->revision = version->revision;
 
+    application->commands_count = count;
+    if (count) {
+        application->commands = calloc(count, sizeof(struct served_command));
+        if (application->commands == NULL) {
+            status = -1;
+            goto cleanup;
+        }
+
+        for (int i = 0; i < count; i++) {
+            application->commands[i].type      = (int)commands[i].type;
+            application->commands[i].name      = strdup(commands[i].name);
+            application->commands[i].path      = strdup(commands[i].path);
+            application->commands[i].arguments = strdup(commands[i].arguments);
+        }
+    }
+
     *applicationOut = application;
+
+cleanup:
+    served_application_delete(application);
     chef_package_free(package);
     chef_version_free(version);
-    return 0;
+    chef_commands_free(commands, count);
+    return status;
 }
 
 static int __install(const char* path, struct served_application* application)
@@ -158,7 +184,7 @@ static void __update(const char* path, const char* name)
         return;
     }
 
-    // check if it is running, then we need to turn it off and mark it as updating
+    // TODO check if it is running, then we need to turn it off and mark it as updating
     // so we don't start it again
 
     // TODO run the pre-update hook

@@ -22,19 +22,36 @@
 #include <stdlib.h>
 #include <string.h>
 
-static struct VaFsGuid g_headerGuid  = CHEF_PACKAGE_HEADER_GUID;
-static struct VaFsGuid g_versionGuid = CHEF_PACKAGE_VERSION_GUID;
+static struct VaFsGuid g_headerGuid   = CHEF_PACKAGE_HEADER_GUID;
+static struct VaFsGuid g_versionGuid  = CHEF_PACKAGE_VERSION_GUID;
+static struct VaFsGuid g_commandsGuid = CHEF_PACKAGE_APPS_GUID;
+
+static int __load_package_header(struct VaFs* vafs, struct chef_package** packageOut)
+{
+    struct chef_vafs_feature_package_header* header;
+    struct chef_package*                     package;
+    char*                                    data;
+    int                                      status;
+
+    status = vafs_feature_query(vafs, &g_headerGuid, (struct VaFsFeatureHeader**)&header);
+    if (status != 0) {
+        return status;
+    }
+
+    package = (struct chef_package*)malloc(sizeof(struct chef_package));
+    if (package == NULL) {
+        return -1;
+    }
+    memset(package, 0, sizeof(struct chef_package));
+
+    data = (char*)header + sizeof(struct chef_vafs_feature_package_header);
+
+    package->type = header->type;
 
 #define READ_IF_PRESENT(__MEM) if (header->__MEM ## _length > 0) { \
         package->__MEM = strndup(data, header->__MEM ## _length); \
         data += header->__MEM ## _length; \
     }
-
-static int __load_package_header(struct chef_vafs_feature_package_header* header, struct chef_package* package)
-{
-    char* data = (char*)header + sizeof(struct chef_vafs_feature_package_header);
-
-    package->type = header->type;
 
     READ_IF_PRESENT(platform)
     READ_IF_PRESENT(arch)
@@ -47,12 +64,31 @@ static int __load_package_header(struct chef_vafs_feature_package_header* header
     READ_IF_PRESENT(maintainer)
     READ_IF_PRESENT(maintainer_email)
 
+#undef READ_IF_PRESENT
+
+    *packageOut = package;
     return 0;
 }
 
-static int __load_package_version(struct chef_vafs_feature_package_version* header, struct chef_version* version)
+static int __load_package_version(struct VaFs* vafs, struct chef_version** versionOut)
 {
-    char* data = (char*)header + sizeof(struct chef_vafs_feature_package_version);
+    struct chef_vafs_feature_package_version* header;
+    struct chef_version*                      version;
+    char*                                     data;
+    int                                       status;
+
+    status = vafs_feature_query(vafs, &g_versionGuid, (struct VaFsFeatureHeader**)&header);
+    if (status != 0) {
+        return status;
+    }
+
+    version = (struct chef_version*)malloc(sizeof(struct chef_version));
+    if (version == NULL) {
+        return -1;
+    }
+    memset(version, 0, sizeof(struct chef_version));
+
+    data = (char*)header + sizeof(struct chef_vafs_feature_package_version);
 
     version->major = header->major;
     version->minor = header->minor;
@@ -61,18 +97,79 @@ static int __load_package_version(struct chef_vafs_feature_package_version* head
 
     if (header->tag_length) {
         version->tag = strndup(data, header->tag_length);
-        data += header->tag_length;
     }
+
+    *versionOut = version;
     return 0;
 }
 
-int chef_package_load(const char* path, struct chef_package** packageOut, struct chef_version** versionOut)
+static void __fill_command(char** dataPointer, struct chef_command* command)
 {
-    struct VaFsFeatureHeader* chefHeader;
-    struct VaFs*              vafs;
-    int                       status;
+    struct chef_vafs_package_app* entry = (struct chef_vafs_package_app*)*dataPointer;
 
-    if (path == NULL || packageOut == NULL) {
+    command->type = (enum chef_command_type)entry->type;
+
+    // move datapointer up to the rest of the data
+    *dataPointer += sizeof(struct chef_vafs_package_app);
+
+#define READ_IF_PRESENT(__MEM) if (entry->__MEM ## _length > 0) { \
+        command->__MEM = strndup(*dataPointer, entry->__MEM ## _length); \
+        *dataPointer += entry->__MEM ## _length; \
+    }
+
+    READ_IF_PRESENT(name)
+    READ_IF_PRESENT(description)
+    READ_IF_PRESENT(arguments)
+    READ_IF_PRESENT(path)
+
+    // TOOD skip icon for now, we haven't completed support for this
+    // on linux yet
+    *dataPointer += entry->icon_length;
+#undef READ_IF_PRESENT
+}
+
+static int __load_package_commands(struct VaFs* vafs, struct chef_command** commandsOut, int* commandCountOut)
+{
+    struct chef_vafs_feature_package_apps* header;
+    struct chef_command*                   commands;
+    char*                                  data;
+    int                                    status;
+
+    status = vafs_feature_query(vafs, &g_commandsGuid, (struct VaFsFeatureHeader**)&header);
+    if (status != 0) {
+        return status;
+    }
+
+    if (header->apps_count == 0) {
+        return -1;
+    }
+
+    commands = (struct chef_command*)calloc(header->apps_count, sizeof(struct chef_command));
+    if (commands == NULL) {
+        return -1;
+    }
+
+    data = (char*)header + sizeof(struct chef_vafs_feature_package_apps);
+    for (int i = 0; i < header->apps_count; i++) {
+        __fill_command(&data, &commands[i]);
+    }
+
+    *commandsOut     = commands;
+    *commandCountOut = header->apps_count;
+    return 0;
+}
+
+int chef_package_load(
+        const char*           path,
+        struct chef_package** packageOut,
+        struct chef_version** versionOut,
+        struct chef_command** commandsOut,
+        int*                  commandCountOut)
+{
+    struct VaFs* vafs;
+    int          status;
+
+    if (path == NULL) {
         errno = EINVAL;
         return -1;
     }
@@ -82,56 +179,37 @@ int chef_package_load(const char* path, struct chef_package** packageOut, struct
         return status;
     }
 
-    // locate the chef package header
-    status = vafs_feature_query(vafs, &g_headerGuid, &chefHeader);
-    if (status != 0) {
-        vafs_close(vafs);
-        return status;
+    if (packageOut) {
+        status = __load_package_header(vafs, packageOut);
+        if (status != 0) {
+            vafs_close(vafs);
+            return status;
+        }
     }
 
-    // allocate the package structure
-    *packageOut = (struct chef_package*)malloc(sizeof(struct chef_package));
-    if (*packageOut == NULL) {
-        vafs_close(vafs);
-        return -1;
-    }
-    memset(*packageOut, 0, sizeof(struct chef_package));
-
-    // load the package header
-    status = __load_package_header((struct chef_vafs_feature_package_header*)chefHeader, *packageOut);
-    if (status != 0) {
-        free(*packageOut);
-        vafs_close(vafs);
-        return status;
+    if (versionOut) {
+        status = __load_package_version(vafs, versionOut);
+        if (status != 0) {
+            // This is a required header, so something is definitely off
+            // lets cleanup
+            if (packageOut) {
+                chef_package_free(*packageOut);
+            }
+            vafs_close(vafs);
+            return status;
+        }
     }
 
-    // locate the package version header
-    status = vafs_feature_query(vafs, &g_versionGuid, &chefHeader);
-    if (status != 0) {
-        free(*packageOut);
-        vafs_close(vafs);
-        return status;
+    if (commandsOut && commandCountOut) {
+        // This header is optional, which means we won't ever fail on it. If
+        // the loader/locate returns error, we zero the out values
+        status = __load_package_commands(vafs, commandsOut, commandCountOut);
+        if (status != 0) {
+            *commandsOut     = NULL;
+            *commandCountOut = 0;
+        }
     }
 
-    // allocate the version structure
-    *versionOut = (struct chef_version*)malloc(sizeof(struct chef_version));
-    if (*versionOut == NULL) {
-        free(*packageOut);
-        vafs_close(vafs);
-        return -1;
-    }
-    memset(*versionOut, 0, sizeof(struct chef_version));
-
-    // load the package version header
-    status = __load_package_version((struct chef_vafs_feature_package_version*)chefHeader, *versionOut);
-    if (status != 0) {
-        free(*packageOut);
-        free(*versionOut);
-        vafs_close(vafs);
-        return status;
-    }
-
-    // close the vafs handle
     vafs_close(vafs);
     return 0;
 }
@@ -200,4 +278,20 @@ void chef_version_free(struct chef_version* version)
 
     __free_version(version);
     free(version);
+}
+
+void chef_commands_free(struct chef_command* commands, int count)
+{
+    if (commands == NULL || count == 0) {
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        free((void*)commands[i].name);
+        free((void*)commands[i].path);
+        free((void*)commands[i].arguments);
+        free((void*)commands[i].description);
+        free((void*)commands[i].icon_buffer);
+    }
+    free(commands);
 }

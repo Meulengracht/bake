@@ -31,6 +31,6 @@ extern int served_startup(void);
  * 
  * @return int 
  */
-extern int served_shutdown(void);
+extern void served_shutdown(void);
 
 #endif //!__SERVED_STARTUP_H__

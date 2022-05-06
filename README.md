@@ -57,8 +57,8 @@ chef will expose the following variables to help control the build process:
   * `PROJECT_PATH`: path to the root of the project (where bake was invoked)
   * `INGREDIENTS_PREFIX`: path to where ingredients are unpacked
   * `INSTALL_PREFIX`: path to where the steps will install files to be packed
-  * `CHEF_PLATFORM`: the platform for which the package is being built
-  * `CHEF_ARCHITECTURE`: the architecture for which the package is being built
+  * `CHEF_HOST_PLATFORM`: the platform for which the package is being built
+  * `CHEF_HOST_ARCHITECTURE`: the architecture for which the package is being built
 
 ## Cross-compiling
 
@@ -71,8 +71,8 @@ $ bake my-recipe.yaml --cross-compile=linux/i386
 The above will trigger chef to download ingredients for the linux/i386 platform, and then build the package for that platform. During execution of the different steps, chef will expose the following additional environment variables:
 
   * `TOOLCHAIN_PREFIX`: path to where the toolchain ingredient is unpacked
-  * `CHEF_PLATFORM`: the platform which was provided on the commandline
-  * `CHEF_ARCHITECTURE`: the architecture which was provided on the commandline
+  * `CHEF_TARGET_PLATFORM`: the platform which was provided on the commandline
+  * `CHEF_TARGET_ARCHITECTURE`: the architecture which was provided on the commandline
 
 ## Publishing your first package
 

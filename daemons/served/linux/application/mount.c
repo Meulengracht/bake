@@ -62,27 +62,35 @@ static int __create_application_symlinks(struct served_application* application)
     }
 
     for (int i = 0; i < application->commands_count; i++) {
-        const char* symlinkPath;
-        const char* cmdPath;
-        int         status;
+        struct served_command* command = &application->commands[i];
+        const char*            symlinkPath;
+        const char*            cmdPath;
+        const char*            dataPath;
+        int                    status;
 
-        symlinkPath = __get_command_symlink_path(&application->commands[i]);
-        cmdPath = __get_command_path(application, &application->commands[i]);
-        if (symlinkPath == NULL || cmdPath == NULL) {
+        symlinkPath = __get_command_symlink_path(command);
+        cmdPath     = __get_command_path(application, command);
+        dataPath    = served_application_get_data_path(application);
+        if (symlinkPath == NULL || cmdPath == NULL || dataPath == NULL) {
             free((void*)symlinkPath);
             free((void*)cmdPath);
+            free((void*)dataPath);
             // log and continue
             continue;
         }
 
-        // create a link from /chef/bin/<command> => /run/chef/<application>/<cmd-path>
-        status = platform_symlink(cmdPath, symlinkPath, 0);
+        // create a link from /chef/bin/<command> => /usr/bin/serve-exec
+        status = platform_symlink("/usr/bin/serve-exec", symlinkPath, 0);
         free((void*)symlinkPath);
-        free((void*)cmdPath);
-
         if (status != 0) {
+            free((void*)cmdPath);
+            free((void*)dataPath);
             // log and continue
         }
+
+        // store the command mount path which is read by serve-exec
+        command->mount = cmdPath;
+        command->data  = dataPath;
     }
     free((void*)mountRoot);
     return 0;
@@ -99,9 +107,20 @@ static void __remove_application_symlinks(struct served_application* application
     for (int i = 0; i < application->commands_count; i++) {
         const char* symlinkPath = __get_command_symlink_path(&application->commands[i]);
         int         status      = platform_unlink(symlinkPath);
+
+        // free the symlink path immediately, we dont need it anymore
         free((void*)symlinkPath);
+
+        // then we free resources and NULL them so we are ready to remount
+        free((char*)application->commands[i].mount);
+        free((char*)application->commands[i].data);
+        application->commands[i].mount = NULL;
+        application->commands[i].data  = NULL;
+
+        // and then we handle the error code, and by handling we mean just
+        // log it, because we will ignore any issues encountered in this loop
         if (status != 0) {
-            // log and continue
+            // LOG
         }
     }
     free((void*)mountRoot);

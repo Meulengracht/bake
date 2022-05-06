@@ -61,6 +61,15 @@ enum chef_command_type {
     CHEF_COMMAND_TYPE_DAEMON
 };
 
+struct chef_command {
+    enum chef_command_type type;
+    const char*            name;
+    const char*            description;
+    const char*            arguments;
+    const char*            path;
+    const void*            icon_buffer;
+};
+
 struct chef_package {
     const char* platform;
     const char* arch;
@@ -83,12 +92,20 @@ struct chef_package {
 /**
  * @brief 
  * 
- * @param path 
- * @param packageOut 
- * @param versionOut 
+ * @param[In]       path
+ * @param[Out, Opt] packageOut
+ * @param[Out, Opt] versionOut
+ * @param[Out, Opt] commandsOut     A pointer to a chef_command*, it will be set to an array of commands.
+ * @param[Out, Opt] commandCountOut Will be set to the size of commandsOut.
  * @return int 
  */
-extern int chef_package_load(const char* path, struct chef_package** packageOut, struct chef_version** versionOut);
+extern int chef_package_load(
+        const char* path,
+        struct chef_package** packageOut,
+        struct chef_version** versionOut,
+        struct chef_command** commandsOut,
+        int*                  commandCountOut
+);
 
 /**
  * @brief Cleans up any resources allocated by the package.
@@ -104,5 +121,15 @@ extern void chef_package_free(struct chef_package* package);
  * @param[In] version A pointer to the version that will be freed. 
  */
 extern void chef_version_free(struct chef_version* version);
+
+/**
+ * @brief Cleans up any resources allocated by chef_package_load. The commands pointer will pont
+ * to an array of struct chef_command, and the caller must save the count as well to pass to this
+ * function.
+ *
+ * @param[In] commands A pointer to an array of commands.
+ * @param[In] count    The size of the array passed.
+ */
+extern void chef_commands_free(struct chef_command* commands, int count);
 
 #endif //!__PLATFORM_PACKAGE_H__

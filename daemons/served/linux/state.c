@@ -25,6 +25,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vlog.h>
 
 struct __state {
     struct served_application** applications;
@@ -76,6 +77,10 @@ static int __parse_command(json_t* cmd, struct served_command* command)
     command->path      = __get_string_safe(cmd, "path");
     command->arguments = __get_string_safe(cmd, "args");
     command->type      = (int)json_integer_value(json_object_get(cmd, "type"));
+    if (command->name == NULL || command->path == NULL) {
+        VLOG_ERROR("state", "command name/path is missing\n");
+        return -1;
+    }
     return 0;
 }
 
@@ -96,6 +101,7 @@ static int __parse_commands(json_t* commands, struct served_application* applica
         json_t* command = json_array_get(commands, i);
         int     status  = __parse_command(command, &application->commands[i]);
         if (status != 0) {
+            VLOG_ERROR("state", "failed to parse command index %i in application %s\n", i, application->name);
             return status;
         }
     }
@@ -145,6 +151,7 @@ static int __parse_apps(json_t* apps, struct __state* state)
 
         status = __parse_app(app, state->applications[i]);
         if (status != 0) {
+            VLOG_ERROR("state", "failed to parse application index %i from state.json\n", i);
             return status;
         }
     }
@@ -158,9 +165,13 @@ static int __parse_state(const char* content, struct __state** stateOut)
     json_error_t    error;
     json_t*         root;
     json_t*         apps;
-    int             status;
+    int             status = -1;
 
     state = __state_new();
+    if (state == NULL) {
+        return -1;
+    }
+
     if (content == NULL) {
         *stateOut = state;
         return 0;
@@ -179,7 +190,7 @@ static int __parse_state(const char* content, struct __state** stateOut)
 
 exit:
     *stateOut = state;
-    return 0;
+    return status;
 }
 
 static int __ensure_file(const char* path, char** jsonOut)
@@ -211,7 +222,7 @@ static int __ensure_file(const char* path, char** jsonOut)
         memset(json, 0, size + 1);
         bytesRead = fread(json, 1, size, file);
         if (bytesRead != size) {
-            fprintf(stderr, "__load_file: failed to read file: %s\n", strerror(errno));
+            VLOG_ERROR("state", "could only read %zu out of %zu bytes from state file\n", bytesRead, size);
             fclose(file);
             return -1;
         }
@@ -247,23 +258,25 @@ int served_state_load(void)
     int         status;
     char*       json;
     const char* filePath;
+    VLOG_DEBUG("state", "served_state_load()\n");
 
     filePath = __get_state_path();
     if (filePath == NULL) {
+        VLOG_ERROR("state", "failed to retrieve the path where the state is stored\n");
         return -1;
     }
 
     status = __ensure_file(filePath, &json);
     free((void*)filePath);
     if (status) {
-        fprintf(stderr, "served_state_load: failed to load %s\n", filePath);
+        VLOG_ERROR("state", "failed to load state from %s\n", filePath);
         return -1;
     }
 
     status = __parse_state(json, &g_state);
     free(json);
     if (status) {
-        fprintf(stderr, "served_state_load: failed to parse the state, file corrupt??\n");
+        VLOG_ERROR("state", "failed to parse the state, file corrupt??\n");
     }
     return status;
 }
@@ -309,6 +322,7 @@ static int __serialize_application(struct served_application* application, json_
 
         status = __serialize_command(&application->commands[i], &cmd);
         if (status != 0) {
+            VLOG_ERROR("state", "failed to serialize command %s\n", application->commands[i].name);
             json_decref(json);
             json_decref(commands);
             return status;
@@ -344,6 +358,7 @@ static int __serialize_state(struct __state* state, json_t** jsonOut)
         if (state->applications[i] != NULL) {
             status = __serialize_application(state->applications[i], &app);
             if (status != 0) {
+                VLOG_ERROR("state", "failed to serialize application %s\n", state->applications[i]->name);
                 json_decref(root);
                 return status;
             }
@@ -361,19 +376,25 @@ int served_state_save(void)
     json_t*     root;
     int         status;
     const char* filePath;
+    VLOG_DEBUG("state", "served_state_save()\n");
 
     filePath = __get_state_path();
     if (filePath == NULL) {
+        VLOG_ERROR("state", "failed to retrieve the path where the state is stored\n");
         return -1;
     }
 
     status = __serialize_state(g_state, &root);
     if (status) {
+        VLOG_ERROR("state", "failed to serialize state to json\n");
         free((void*)filePath);
         return -1;
     }
 
     status = json_dump_file(root, filePath, JSON_INDENT(2));
+    if (status) {
+        VLOG_ERROR("state", "failed to write state to disk\n");
+    }
     free((void*)filePath);
     json_decref(root);
     

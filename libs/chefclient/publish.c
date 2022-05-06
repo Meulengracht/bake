@@ -176,6 +176,7 @@ static json_t* __create_publish_request(struct chef_publish_params* params)
     }
 
     json_object_set_new(request, "name", json_string(params->package->package));
+    json_object_set_new(request, "type", json_integer((long long int)params->package->type));
     json_object_set_new(request, "summary", json_string(params->package->summary));
     json_object_set_new(request, "description", json_string(params->package->description));
     json_object_set_new(request, "homepage", json_string(params->package->homepage));

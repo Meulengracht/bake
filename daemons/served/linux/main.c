@@ -21,12 +21,14 @@
 #include <gracht/server.h>
 #include <stdio.h>
 #include <sys/un.h>
+#include <vlog.h>
 
 // server protocol
 #include "chef_served_service_server.h"
 #include "startup.h"
 
-static const char* g_servedUnPath = "/tmp/served";
+static const char*      g_servedUnPath = "/tmp/served";
+static gracht_server_t* g_server       = NULL;
 
 static void init_link_config(struct gracht_link_socket* link)
 {
@@ -76,24 +78,32 @@ int __init_server(gracht_server_t** serverOut)
 
 int main(int argc, char** argv)
 {
-    gracht_server_t* server;
     int              code;
+
+    // initialize logging as the first thing, we need output!
+    vlog_initialize();
+    vlog_set_level(VLOG_LEVEL_DEBUG); // debug for now, change this to trace later
+    vlog_add_output(stdout, 0);
+
+    // must register this first as we want it called last!
+    atexit(vlog_cleanup);
 
     code = served_startup();
     if (code) {
         return code;
     }
+    atexit(served_shutdown);
 
-    code = __init_server(&server);
+    code = __init_server(&g_server);
     if (code) {
         return code;
     }
 
-    gracht_server_register_protocol(server, &chef_served_server_protocol);
-    return gracht_server_main_loop(server);
+    gracht_server_register_protocol(g_server, &chef_served_server_protocol);
+    return gracht_server_main_loop(g_server);
 }
 
 gracht_server_t* served_gracht_server(void)
 {
-    return NULL;
+    return g_server;
 }
