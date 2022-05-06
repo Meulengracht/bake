@@ -74,6 +74,7 @@ static int __ensure_chef_paths(void)
     // /chef/bin
     // /run/chef
     // /usr/share/chef
+    // /var/chef
 
     if (platform_mkdir("/chef") != 0) {
         VLOG_ERROR("startup", "failed to create path /chef\n");
@@ -92,6 +93,11 @@ static int __ensure_chef_paths(void)
 
     if (platform_mkdir("/usr/share/chef") != 0) {
         VLOG_ERROR("startup", "failed to create path /usr/share/chef\n");
+        return -1;
+    }
+
+    if (platform_mkdir("/var/chef") != 0) {
+        VLOG_ERROR("startup", "failed to create path /var/chef\n");
         return -1;
     }
     return 0;
