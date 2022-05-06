@@ -161,6 +161,7 @@ static int __parse_package_info_response(const char* response, struct chef_packa
     // parse the required members
     package->publisher = __get_json_string_safe(root, "publisher");
     package->package = __get_json_string_safe(root, "name");
+    package->type = (enum chef_package_type)json_integer_value(json_object_get(root, "type"));
     package->summary = __get_json_string_safe(root, "summary");
     package->description = __get_json_string_safe(root, "description");
     package->homepage = __get_json_string_safe(root, "homepage");
