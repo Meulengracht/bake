@@ -77,8 +77,8 @@ int install_main(int argc, char** argv)
     gracht_client_t*            client;
     int                         status;
     struct platform_stat        stats;
-    struct chef_download_params params    = { 0 };
-    const char*                 package   = NULL;
+    struct chef_download_params params  = { 0 };
+    const char*                 package = NULL;
 
     // set default channel
     params.channel = "stable";

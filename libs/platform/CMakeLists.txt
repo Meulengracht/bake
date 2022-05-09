@@ -4,6 +4,7 @@ project (platform C)
 add_subdirectory(strutils)
 
 add_library(platform STATIC
+    abspath.c
     chdir.c
     chmod.c
     chsize.c

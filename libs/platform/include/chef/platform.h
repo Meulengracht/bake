@@ -196,6 +196,7 @@ extern int platform_chsize(int fd, long size);
 extern int platform_readlink(const char* path, char** bufferOut);
 extern int platform_symlink(const char* path, const char* target, int directory);
 extern int platform_unlink(const char* path);
+extern const char* platform_abspath(const char* path);
 extern int platform_getcwd(char* buffer, size_t length);
 extern int platform_getuserdir(char* buffer, size_t length);
 extern int platform_chdir(const char* path);
