@@ -17,17 +17,9 @@
  */
 
 #include <chef/platform.h>
+#include <unistd.h>
 
-#ifdef __linux__
-
-#include <errno.h>
-#include <sys/stat.h>
-
-int platform_chmod(const char* path, uint32_t permissions)
+int platform_sleep(unsigned int milliseconds)
 {
-	return chmod(path, permissions);
+	return usleep(milliseconds * 1000);
 }
-
-#else
-#error "chmod: not implemented for this platform"
-#endif

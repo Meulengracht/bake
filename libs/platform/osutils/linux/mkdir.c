@@ -17,39 +17,29 @@
  */
 
 #include <chef/platform.h>
-#include <stdlib.h>
-
-#ifdef __linux__
-
 #include <errno.h>
-#include <linux/limits.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
-int platform_readlink(const char* path, char** bufferOut)
+static int __directory_exists(
+    const char* path)
 {
-	char* buffer;
-
-	if (path == NULL || bufferOut == NULL) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	buffer = calloc(1, PATH_MAX);
-	if (buffer == NULL) {
-		errno = ENOMEM;
-		return -1;
-	}
-
-	if (readlink(path, buffer, PATH_MAX - 1) == -1) {
-		free(buffer);
-		return -1;
-	}
-
-	*bufferOut = buffer;
-	return 0;
+    struct stat st;
+    if (stat(path, &st)) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+        return -1;
+    }
+    return S_ISDIR(st.st_mode) ? 1 : -1;
 }
 
-#else
-#error "readlink: not implemented for this platform"
-#endif
+int platform_mkdir(const char* path)
+{
+    int status;
+
+    status = __directory_exists(path);
+    if (!status) {
+        return mkdir(path, 0755);
+    }
+    return status == 1 ? 0 : -1;
+}

@@ -17,36 +17,10 @@
  */
 
 #include <chef/platform.h>
-
-#ifdef __linux__
-
 #include <errno.h>
 #include <sys/stat.h>
 
-static int __directory_exists(
-    const char* path)
+int platform_chmod(const char* path, uint32_t permissions)
 {
-    struct stat st;
-    if (stat(path, &st)) {
-        if (errno == ENOENT) {
-            return 0;
-        }
-        return -1;
-    }
-    return S_ISDIR(st.st_mode) ? 1 : -1;
+	return chmod(path, permissions);
 }
-
-int platform_mkdir(const char* path)
-{
-    int status;
-
-    status = __directory_exists(path);
-    if (!status) {
-        return mkdir(path, 0755);
-    }
-    return status == 1 ? 0 : -1;
-}
-
-#else
-#error "mkdir: not implemented for this platform"
-#endif

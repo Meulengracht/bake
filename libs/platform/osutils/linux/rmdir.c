@@ -17,9 +17,6 @@
  */
 
 #include <chef/platform.h>
-
-#ifdef __linux__
-
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -71,7 +68,3 @@ int platform_rmdir(const char *path) {
 
    return r;
 }
-
-#else
-#error "rmdir: not implemented for this platform"
-#endif

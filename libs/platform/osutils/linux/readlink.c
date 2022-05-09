@@ -16,39 +16,33 @@
  * 
  */
 
-#include <chef/platform.h>
-
-#ifdef __linux__
-
 #include <errno.h>
+#include <chef/platform.h>
+#include <linux/limits.h>
+#include <stdlib.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
-int platform_stat(const char* path, struct platform_stat* stats)
+int platform_readlink(const char* path, char** bufferOut)
 {
-	struct stat st;
-	if (lstat(path, &st) != 0) {
+	char* buffer;
+
+	if (path == NULL || bufferOut == NULL) {
+		errno = EINVAL;
 		return -1;
 	}
 
-	stats->permissions = st.st_mode & 0777;
-	stats->size        = st.st_size;
-	switch (st.st_mode & S_IFMT) {
-		case S_IFREG:
-			stats->type = PLATFORM_FILETYPE_FILE;
-			break;
-		case S_IFDIR:
-			stats->type = PLATFORM_FILETYPE_DIRECTORY;
-			break;
-		case S_IFLNK:
-			stats->type = PLATFORM_FILETYPE_SYMLINK;
-			break;
-		default:
-			stats->type = PLATFORM_FILETYPE_UNKNOWN;
-			break;
+	buffer = calloc(1, PATH_MAX);
+	if (buffer == NULL) {
+		errno = ENOMEM;
+		return -1;
 	}
+
+	if (readlink(path, buffer, PATH_MAX - 1) == -1) {
+		free(buffer);
+		return -1;
+	}
+
+	*bufferOut = buffer;
 	return 0;
 }
-
-#else
-#error "stat: not implemented for this platform"
-#endif

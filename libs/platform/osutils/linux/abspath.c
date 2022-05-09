@@ -17,26 +17,9 @@
  */
 
 #include <chef/platform.h>
+#include <stdlib.h>
 
-#ifdef __linux__
-
-#include <pwd.h>
-#include <string.h>
-#include <unistd.h>
-
-int platform_getuserdir(char* buffer, size_t length)
+char* platform_abspath(const char* path)
 {
-    struct passwd* pw;
-    
-    pw = getpwuid(getuid());
-    if (pw == NULL) {
-        return -1;
-    }
-
-    strncpy(buffer, pw->pw_dir, length);
-    return 0;
+    return realpath(path, NULL);
 }
-
-#else
-#error "platform_getuserdir: not implemented for this platform"
-#endif

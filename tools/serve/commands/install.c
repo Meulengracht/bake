@@ -27,7 +27,17 @@
 
 #include "chef_served_service_client.h"
 
+#define __TEMPORARY_FILENAME ".cheftmpdl"
+
 extern int __chef_client_initialize(gracht_client_t** clientOut);
+
+static const char* g_installMsgs[] = {
+    "success",
+    "verification failed, invalid or corrupt package",
+    "package installation failed due to technical problems", // lol lets improve this some day, but view chef logs for details
+    "package was installed but failed to load applications",
+    "package was installed but failed to execute hooks, package is in undefined state"
+};
 
 static void __print_help(void)
 {
@@ -68,8 +78,7 @@ static int __parse_package_identifier(const char* id, const char** publisherOut,
 
 static void __cleanup(void)
 {
-    // delete .inprogress
-    platform_unlink(".inprogress");
+    platform_unlink(__TEMPORARY_FILENAME);
 }
 
 int install_main(int argc, char** argv)
@@ -79,6 +88,7 @@ int install_main(int argc, char** argv)
     struct platform_stat        stats;
     struct chef_download_params params  = { 0 };
     const char*                 package = NULL;
+    char*                       fullpath;
 
     // set default channel
     params.channel = "stable";
@@ -130,22 +140,27 @@ int install_main(int argc, char** argv)
             return status;
         }
 
+        // we only allow installs from native packages
         params.platform = CHEF_PLATFORM_STR;
         params.arch     = CHEF_ARCHITECTURE_STR;
 
         printf("downloading package %s...\n", package);
-        status = chefclient_pack_download(&params, ".inprogress");
+        status = chefclient_pack_download(&params, __TEMPORARY_FILENAME);
         if (status != 0) {
             printf("failed to download package: %s\n", strerror(status));
             return status;
         }
 
-        package = ".inprogress";
+        package = __TEMPORARY_FILENAME;
     }
 
     // at this point package points to a file in our PATH
     // but we need the absolute path
-    char* abspath = realpath(package, NULL);
+    fullpath = platform_abspath(package);
+    if (fullpath == NULL) {
+        printf("failed to get resolve package path: %s\n", package);
+        return -1;
+    }
 
     status = __chef_client_initialize(&client);
     if (status != 0) {
@@ -154,22 +169,24 @@ int install_main(int argc, char** argv)
     }
 
     printf("installing package: %s... ", package);
-    status = chef_served_install(client, NULL, package);
+    status = chef_served_install(client, NULL, fullpath);
     if (status != 0) {
         printf("communication error: %i\n", status);
-        return status;
+        goto cleanup;
     }
 
     gracht_client_wait_message(client, NULL, GRACHT_MESSAGE_BLOCK);
+
+cleanup:
     gracht_client_shutdown(client);
+    free(fullpath);
     return status;
 }
 
 void chef_served_event_package_installed_invocation(gracht_client_t* client, const enum chef_install_status status, const struct chef_served_package* info)
 {
-    if (status != CHEF_INSTALL_STATUS_SUCCESS) {
-        printf("failed: %s\n", strerror(status));
-    } else {
-        printf("done\n");
+    printf("installation status: %s\n", g_installMsgs[status]);
+    if (status == CHEF_INSTALL_STATUS_SUCCESS) {
+        // print package info
     }
 }

@@ -16,11 +16,8 @@
  * 
  */
 
-#include <chef/platform.h>
-
-#ifdef __linux__
-
 #include <errno.h>
+#include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <spawn.h>
@@ -60,7 +57,3 @@ int platform_script(const char* script)
     }
     return status;
 }
-
-#else
-#error "script: not implemented for this platform"
-#endif

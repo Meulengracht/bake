@@ -171,8 +171,8 @@ int publish_main(int argc, char** argv)
 
         printf("package has been added to the publish queue, it can take up to 10 minuttes "
                "before the package has been published, it depends on the server load and size "
-               " of the package. You can check when the package version has changed by running the "
-               "command: 'order info %s/%s'\n", publisher, package->package);
+               "of the package. You can check when the package version has changed by running\n"
+               "'order info %s/%s'\n", publisher, package->package);
         free(publisher);
         break;
     }

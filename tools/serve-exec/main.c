@@ -104,7 +104,7 @@ int main(int argc, char** argv, char** envp)
     struct gracht_message_context context;
     struct chef_served_command    command;
     gracht_client_t*              client;
-    const char*                   fullpath;
+    char*                         fullpath;
     int                           status;
 
     status = chefclient_initialize();
@@ -127,7 +127,7 @@ int main(int argc, char** argv, char** envp)
     // and then setup the environment for the command, and pass argv[1+] to it
     status = __chef_client_initialize(&client);
     if (status != 0) {
-        free((void*)fullpath);
+        free(fullpath);
         printf("failed to initialize client: %s\n", strerror(status));
         return status;
     }
@@ -139,6 +139,6 @@ int main(int argc, char** argv, char** envp)
     status = __spawn_command(&command, argc, argv, envp);
     __cleanup_command(&command);
     gracht_client_shutdown(client);
-    free((void*)fullpath);
+    free(fullpath);
     return status;
 }

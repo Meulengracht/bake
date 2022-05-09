@@ -17,17 +17,13 @@
  */
 
 #include <chef/platform.h>
-
-#ifdef __linux__
 #include <unistd.h>
-#include <stdio.h>
 
-int platform_chdir(const char* path)
+int platform_getcwd(char* buffer, size_t length)
 {
-    printf("bake: chdir %s\n", path);
-    return chdir(path);
+    char* result = getcwd(buffer, length);
+    if (result == NULL) {
+        return -1;
+    }
+    return 0;
 }
-
-#else
-#error "chdir: not implemented for this platform"
-#endif

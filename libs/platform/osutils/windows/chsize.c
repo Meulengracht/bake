@@ -17,17 +17,9 @@
  */
 
 #include <chef/platform.h>
+#include <io.h>
 
-#ifdef __linux__
-
-#include <errno.h>
-#include <unistd.h>
-
-int platform_sleep(unsigned int milliseconds)
+int platform_chsize(int fd, long size)
 {
-	return usleep(milliseconds * 1000);
+	return _chsize(fd, size);
 }
-
-#else
-#error "sleep: not implemented for this platform"
-#endif
