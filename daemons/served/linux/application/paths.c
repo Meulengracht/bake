@@ -48,6 +48,15 @@ int served_application_ensure_paths(struct served_application* application)
         free(path);
         return -1;
     }
+
+    // always make sure mount-point is created
+    sprintf(path, "/run/chef/%s-%s", application->publisher,
+        application->package);
+    if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("paths", "failed to create path %s\n", path);
+        free(path);
+        return -1;
+    }
     free(path);
     return 0;
 }
