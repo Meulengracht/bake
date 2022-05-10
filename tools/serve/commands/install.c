@@ -89,6 +89,7 @@ int install_main(int argc, char** argv)
     struct chef_download_params params  = { 0 };
     const char*                 package = NULL;
     char*                       fullpath;
+    const char*                 infoName = NULL;
 
     // set default channel
     params.channel = "stable";
@@ -132,6 +133,9 @@ int install_main(int argc, char** argv)
     }
     atexit(chefclient_cleanup);
 
+    // store package in infoName
+    infoName = package;
+
     // is the package a path? otherwise try to download from
     // official repo
     if (platform_stat(package, &stats)) {
@@ -168,7 +172,7 @@ int install_main(int argc, char** argv)
         return status;
     }
 
-    printf("installing package: %s...\n", package);
+    printf("installing %s...\n", infoName);
     status = chef_served_install(client, NULL, params.publisher, fullpath);
     if (status != 0) {
         printf("communication error: %i\n", status);
