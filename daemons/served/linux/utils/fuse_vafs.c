@@ -31,6 +31,7 @@
 #include <vafs/file.h>
 #include <vafs/directory.h>
 #include <vafs/stat.h>
+#include <vlog.h>
 
 struct served_mount {
     struct VaFs* vafs;
@@ -91,6 +92,11 @@ int __vafs_open(const char* path, struct fuse_file_info* fi)
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle;
     int                    status;
+    VLOG_DEBUG("fuse", "open(path=%s)\n", path);
+
+	if ((fi->flags & O_ACCMODE) != O_RDONLY) {
+		return -EACCES;
+    }
 
     status = vafs_file_open(mount->vafs, path, &handle);
     if (status) {
@@ -116,6 +122,7 @@ int __vafs_access(const char* path, int permissions)
     struct served_mount* mount   = (struct served_mount*)context->private_data;
     struct vafs_stat     stat;
     int                  status;
+    VLOG_DEBUG("fuse", "access(path=%s, perms=%i)\n", path, permissions);
 
     status = vafs_path_stat(mount->vafs, path, &stat);
     if (status) {
@@ -144,6 +151,7 @@ int __vafs_read(const char* path, char* buffer, size_t count, off_t offset, stru
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle  = (struct VaFsFileHandle*)fi->fh;
     int                    status;
+    VLOG_DEBUG("fuse", "read(path=%s, count=%zu, offset=%li)\n", path, count, offset);
 
     if (handle == NULL) {
         errno = EINVAL;
@@ -181,14 +189,17 @@ int __vafs_getattr(const char* path, struct stat* stat, struct fuse_file_info *f
     struct served_mount* mount    = (struct served_mount*)context->private_data;
     struct vafs_stat     vstat;
     int                  status;
+    int                  isRoot;
+    VLOG_DEBUG("fuse", "getattr(path=%s)\n", path);
 
     memset(stat, 0, sizeof(struct stat));
     if (fi != NULL && fi->fh != 0) {
         struct VaFsFileHandle* handle = (struct VaFsFileHandle*)fi->fh;
 
         stat->st_blksize = 512;
-        stat->st_mode = vafs_file_permissions(handle);
-        stat->st_size = (off_t)vafs_file_length(handle);
+        stat->st_mode    = vafs_file_permissions(handle);
+        stat->st_size    = (off_t)vafs_file_length(handle);
+        stat->st_nlink   = 1;
         return 0;
     }
 
@@ -197,9 +208,13 @@ int __vafs_getattr(const char* path, struct stat* stat, struct fuse_file_info *f
         return status;
     }
 
+    // root has 2 links
+    isRoot = (strcmp(path, "/") == 0);
+
     stat->st_blksize = 512;
-    stat->st_mode = vstat.mode;
-    stat->st_size = (off_t)vstat.size;
+    stat->st_mode    = vstat.mode;
+    stat->st_size    = (off_t)vstat.size;
+    stat->st_nlink   = isRoot + 1;
     return 0;
 }
 
@@ -211,6 +226,7 @@ off_t __vafs_lseek(const char* path, off_t off, int whence, struct fuse_file_inf
     struct fuse_context*   context = fuse_get_context();
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle  = (struct VaFsFileHandle*)fi->fh;
+    VLOG_DEBUG("fuse", "lseek(path=%s)\n", path);
 
     if (handle == NULL) {
         errno = EINVAL;
@@ -239,6 +255,7 @@ int __vafs_release(const char* path, struct fuse_file_info* fi)
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle  = (struct VaFsFileHandle*)fi->fh;
     int                    status;
+    VLOG_DEBUG("fuse", "release(path=%s)\n", path);
 
     if (handle == NULL) {
         errno = EINVAL;
@@ -264,6 +281,7 @@ int __vafs_opendir(const char* path, struct fuse_file_info* fi)
     struct served_mount*        mount   = (struct served_mount*)context->private_data;
     struct VaFsDirectoryHandle* handle;
     int                         status;
+    VLOG_DEBUG("fuse", "opendir(path=%s)\n", path);
 
     status = vafs_directory_open(mount->vafs, path, &handle);
     if (status) {
@@ -301,11 +319,16 @@ int __vafs_readdir(
     struct served_mount*        mount   = (struct served_mount*)context->private_data;
     struct VaFsDirectoryHandle* handle  = (struct VaFsDirectoryHandle*)fi->fh;
     int                         status;
+    VLOG_DEBUG("fuse", "readdir(path=%s)\n", path);
 
     if (handle == NULL) {
         errno = EINVAL;
         return -1;
     }
+
+    // add ./.. 
+	fill(buffer, ".", NULL, 0, 0);
+	fill(buffer, "..", NULL, 0, 0);
 
     while (1) {
         struct VaFsEntry entry;
@@ -343,9 +366,14 @@ int __vafs_releasedir(const char* path, struct fuse_file_info* fi)
     struct served_mount*        mount   = (struct served_mount*)context->private_data;
     struct VaFsDirectoryHandle* handle  = (struct VaFsDirectoryHandle*)fi->fh;
     int                         status;
+    VLOG_DEBUG("fuse", "releasedir(path=%s)\n", path);
 
     if (handle == NULL) {
         errno = EINVAL;
+
+	if ((fi->flags & O_ACCMODE) != O_RDONLY)
+		return -EACCES;
+
         return -1;
     }
 
@@ -380,6 +408,12 @@ int __vafs_statfs(const char* path, struct statvfs* stat)
     return 0;
 }
 
+static void* __vafs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
+{
+	cfg->kernel_cache = 1;
+	return NULL;
+}
+
 /**
  * All methods are optional, but some are essential for a useful
  * filesystem (e.g. getattr).  Open, flush, release, fsync, opendir,
@@ -388,6 +422,7 @@ int __vafs_statfs(const char* path, struct statvfs* stat)
  * filesystem can still be implemented.
  */
 static struct fuse_operations g_vafsOperations = {
+    .init       = __vafs_init,
     .open       = __vafs_open,
     .access     = __vafs_access,
     .read       = __vafs_read,
