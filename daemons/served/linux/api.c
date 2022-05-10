@@ -204,6 +204,7 @@ void chef_served_get_command_invocation(struct gracht_message* message, const ch
 
     for (int i = 0; i < count; i++) {
         for (int j = 0; j < applications[i]->commands_count; j++) {
+            VLOG_DEBUG("api", "checking command %s\n", applications[i]->commands[j].path);
             if (strcmp(applications[i]->commands[j].mount, mountPath) == 0) {
                 __convert_cmd_to_protocol(&applications[i]->commands[j], &result);
                 served_state_unlock();
