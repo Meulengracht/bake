@@ -34,7 +34,9 @@ struct served_command {
 };
 
 struct served_application {
-    const char* name;
+    const char* name; // publisher/package
+    const char* publisher;
+    const char* package;
     int         major;
     int         minor;
     int         patch;

@@ -44,6 +44,8 @@ void served_application_delete(struct served_application* application)
         free((void*)command->arguments);
     }
     free((void*)application->commands);
+    free((void*)application->package);
+    free((void*)application->publisher);
     free((void*)application->name);
     free(application);
 }

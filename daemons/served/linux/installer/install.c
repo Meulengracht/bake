@@ -79,6 +79,13 @@ static int __parse_package(const char* publisher, const char* path, struct serve
         goto cleanup;
     }
 
+    application->publisher = strdup(publisher);
+    application->package   = strdup(package->package);
+    if (application->publisher == NULL || application->package == NULL) {
+        status = -1;
+        goto cleanup;
+    }
+
     application->major    = version->major;
     application->minor    = version->minor;
     application->patch    = version->patch;

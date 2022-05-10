@@ -33,14 +33,16 @@ int served_application_ensure_paths(struct served_application* application)
         return -1;
     }
 
-    sprintf(path, "/usr/share/chef/%s", application->name);
+    sprintf(path, "/usr/share/chef/%s-%s",
+        application->publisher, application->package);
     if (platform_mkdir(path) != 0) {
         VLOG_ERROR("paths", "failed to create path %s\n", path);
         free(path);
         return -1;
     }
 
-    sprintf(path, "/usr/share/chef/%s/%i", application->name, application->revision);
+    sprintf(path, "/usr/share/chef/%s-%s/%i", application->publisher,
+        application->package, application->revision);
     if (platform_mkdir(path) != 0) {
         VLOG_ERROR("paths", "failed to create path %s\n", path);
         free(path);
@@ -59,7 +61,7 @@ const char* served_application_get_pack_path(struct served_application* applicat
         return NULL;
     }
 
-    sprintf(&path[0], "/var/chef/packs/%s.pack", application->name);
+    sprintf(&path[0], "/var/chef/packs/%s-%s.pack", application->publisher, application->package);
     return path;
 }
 
@@ -72,7 +74,7 @@ const char* served_application_get_mount_path(struct served_application* applica
         return NULL;
     }
 
-    sprintf(path, "/run/chef/%s", application->name);
+    sprintf(path, "/run/chef/%s-%s", application->publisher, application->package);
     return path;
 }
 
@@ -85,6 +87,7 @@ const char* served_application_get_data_path(struct served_application* applicat
         return NULL;
     }
 
-    sprintf(path, "/usr/share/chef/%s/%i", application->name, application->revision);
+    sprintf(path, "/usr/share/chef/%s-%s/%i", application->publisher,
+        application->package, application->revision);
     return path;
 }
