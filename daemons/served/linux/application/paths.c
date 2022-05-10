@@ -21,7 +21,7 @@
 #include <errno.h>
 #include <linux/limits.h>
 #include <stdio.h>
-#include <stdlib.h>!= 
+#include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
@@ -56,7 +56,7 @@ int served_application_ensure_paths(struct served_application* application)
     if (platform_mkdir(path) != 0) {
         // so we might recieve errno 107 here, which means 'Transport endpoint is not connected'
         // but we can safely ignore this error
-        if (errno != ENOTCONN) {
+        if (errno != -ENOTCONN) {
             VLOG_ERROR("paths", "failed to create path %s\n", path);
             free(path);
             return -1;
