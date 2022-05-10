@@ -411,12 +411,6 @@ int __vafs_statfs(const char* path, struct statvfs* stat)
     return 0;
 }
 
-static void* __vafs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
-{
-	cfg->kernel_cache = 1;
-	return NULL;
-}
-
 /**
  * All methods are optional, but some are essential for a useful
  * filesystem (e.g. getattr).  Open, flush, release, fsync, opendir,
@@ -425,7 +419,6 @@ static void* __vafs_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
  * filesystem can still be implemented.
  */
 static struct fuse_operations g_vafsOperations = {
-    .init       = __vafs_init,
     .open       = __vafs_open,
     .access     = __vafs_access,
     .read       = __vafs_read,
