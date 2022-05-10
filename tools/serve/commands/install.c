@@ -144,7 +144,7 @@ int install_main(int argc, char** argv)
         params.platform = CHEF_PLATFORM_STR;
         params.arch     = CHEF_ARCHITECTURE_STR;
 
-        printf("downloading package %s...\n", package);
+        printf("downloading package %s from channel %s\n", package, params.channel);
         status = chefclient_pack_download(&params, __TEMPORARY_FILENAME);
         if (status != 0) {
             printf("failed to download package: %s\n", strerror(status));
