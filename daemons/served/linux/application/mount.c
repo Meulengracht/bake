@@ -83,7 +83,7 @@ static int __create_application_symlinks(struct served_application* application)
         }
 
         // create a link from /chef/bin/<command> => ${CHEF_INSTALL_DIR}/bin/serve-exec
-        status = platform_symlink(CHEF_INSTALL_DIR "/bin/serve-exec", symlinkPath, 0);
+        status = platform_symlink(symlinkPath, CHEF_INSTALL_DIR "/bin/serve-exec", 0);
         free((void*)symlinkPath);
         if (status != 0) {
             free((void*)cmdPath);
