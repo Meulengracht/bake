@@ -23,6 +23,7 @@
 
 #include <errno.h>
 #include <fuse3/fuse.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
@@ -31,12 +32,14 @@
 #include <vafs/file.h>
 #include <vafs/directory.h>
 #include <vafs/stat.h>
+#include <utils.h>
 #include <vlog.h>
 
 struct served_mount {
     struct VaFs* vafs;
     struct fuse* fuse;
     const char*  mount_point;
+    pthread_t    worker;
 };
 
 /** Open a file
@@ -445,6 +448,7 @@ static struct served_mount* served_mount_new(const char* mountPoint)
     mount->mount_point = mountPoint != NULL ? strdup(mountPoint) : NULL;
     mount->fuse        = NULL;
     mount->vafs        = NULL;
+    mount->worker      = 0;
 
     return mount;
 }
@@ -485,11 +489,28 @@ static int __prepare_fuse_args(struct fuse_args* args)
     return 0;
 }
 
+static int __reset_mountpoint(struct served_mount* mount)
+{
+    char* command;
+    int   status;
+
+    command = (char*)malloc(strlen(mount->mount_point) + 64);
+    if (command == NULL) {
+        return -1;
+    }
+
+    sprintf(&command[0], "umount -l %s", mount->mount_point);
+    status = system(&command[0]);
+    free(command);
+    return 0;
+}
+
 int served_mount(const char* path, const char* mountPoint, struct served_mount** mountOut)
 {
     struct fuse_args     args;
     struct served_mount* mount;
     int                  status;
+    VLOG_DEBUG("fuse", "served_mount(path=%s, mountPoint=%s)\n", path, mountPoint);
 
     if (path == NULL || mountPoint == NULL || mountOut == NULL) {
         errno = EINVAL;
@@ -498,30 +519,57 @@ int served_mount(const char* path, const char* mountPoint, struct served_mount**
 
     mount = served_mount_new(mountPoint);
     if (mount == NULL) {
+        VLOG_ERROR("fuse", "failed to create mount data\n");
         return -1;
     }
 
     status = vafs_open_file(path, &mount->vafs);
     if (status != 0) {
+        VLOG_ERROR("fuse", "failed to open vafs image\n");
         served_mount_delete(mount);
         return -1;
     }
 
     status = __prepare_fuse_args(&args);
     if (status != 0) {
+        VLOG_ERROR("fuse", "failed to prepare fuse\n");
         served_mount_delete(mount);
         return -1;
     }
 
     mount->fuse = fuse_new(&args, &g_vafsOperations, sizeof(g_vafsOperations), mount);
     if (mount->fuse == NULL) {
+        VLOG_ERROR("fuse", "failed to create a new fuse instance\n");
         served_mount_delete(mount);
         return -1;
     }
     
     status = fuse_mount(mount->fuse, mount->mount_point);
     if (status != 0) {
-        served_mount_delete(mount);
+        // so we might receive ENOTCONN here, which means 'Transport endpoint is not connected'
+        // which means that the mount was left mounted due to a bad shutdown, lets unmount it first
+        //system("umount -l mount->mount_point")
+        if (errno = ENOTCONN) {
+            VLOG_DEBUG("fuse", "fuse_mount returned ENOTCONN, trying to unmount first\n");
+            status = __reset_mountpoint(mount);
+            if (status == 0) {
+                VLOG_DEBUG("fuse", "successfully unmounted, now retrying mount\n");
+                // now try again, the unmount should have worked
+                status = fuse_mount(mount->fuse, mount->mount_point);
+            }
+        }
+        
+        if (status) {
+            VLOG_ERROR("fuse", "failed to mount fuse at %s\n", mount->mount_point);
+            served_mount_delete(mount);
+            return -1;
+        }
+    }
+
+    status = pthread_create(&mount->worker, NULL,
+        (void *(*)(void *))fuse_loop, (void*)mount->fuse);
+    if (status != 0) {
+        served_unmount(mount);
         return -1;
     }
 
@@ -533,6 +581,15 @@ void served_unmount(struct served_mount* mount)
 {
     if (mount == NULL) {
         return;
+    }
+
+    // kill the worker thread
+    if (mount->worker != 0) {
+        VLOG_DEBUG("fuse", "killing fuse worker thread\n");
+        pthread_cancel(mount->worker);
+        pthread_join(mount->worker, NULL);
+        mount->worker = 0;
+        VLOG_DEBUG("fuse", "fuse worker thread killed\n");
     }
 
     fuse_unmount(mount->fuse);
