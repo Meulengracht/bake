@@ -205,7 +205,7 @@ void chef_served_get_command_invocation(struct gracht_message* message, const ch
 
     for (int i = 0; i < count; i++) {
         for (int j = 0; j < applications[i]->commands_count; j++) {
-            if (strendswith(applications[i]->commands[j].mount, mountPath) == 0) {
+            if (strendswith(applications[i]->commands[j].symlink, mountPath) == 0) {
                 __convert_cmd_to_protocol(&applications[i]->commands[j], &result);
                 served_state_unlock();
                 chef_served_get_command_response(message, &result);

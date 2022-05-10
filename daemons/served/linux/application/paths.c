@@ -66,7 +66,7 @@ int served_application_ensure_paths(struct served_application* application)
     return 0;
 }
 
-const char* served_application_get_pack_path(struct served_application* application)
+char* served_application_get_pack_path(struct served_application* application)
 {
     char* path;
 
@@ -79,7 +79,7 @@ const char* served_application_get_pack_path(struct served_application* applicat
     return path;
 }
 
-const char* served_application_get_mount_path(struct served_application* application)
+char* served_application_get_mount_path(struct served_application* application)
 {
     char* path;
 
@@ -92,7 +92,7 @@ const char* served_application_get_mount_path(struct served_application* applica
     return path;
 }
 
-const char* served_application_get_data_path(struct served_application* application)
+char* served_application_get_data_path(struct served_application* application)
 {
     char* path;
 
@@ -103,5 +103,19 @@ const char* served_application_get_data_path(struct served_application* applicat
 
     sprintf(path, "/usr/share/chef/%s-%s/%i", application->publisher,
         application->package, application->revision);
+    return path;
+}
+
+char* served_application_get_command_symlink_path(struct served_application* application, struct served_command* command)
+{
+    char* path;
+    int   status;
+
+    path = malloc(PATH_MAX);
+    if (path == NULL) {
+        return NULL;
+    }
+    
+    sprintf(path, "/chef/bin/%s", command->name);
     return path;
 }
