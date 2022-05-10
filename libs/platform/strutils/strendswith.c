@@ -27,8 +27,8 @@ int strendswith(const char* text, const char* suffix)
 	size_t suffixLength = strlen(suffix);
 	
 	if (textLength < suffixLength) {
-		return 0;
+		return -1;
 	}
 	
-	return strcmp(text + textLength - suffixLength, suffix);
+	return strcmp(text + (textLength - suffixLength), suffix);
 }
