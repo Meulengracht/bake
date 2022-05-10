@@ -101,6 +101,11 @@ static int __ensure_chef_paths(void)
         VLOG_ERROR("startup", "failed to create path /var/chef\n");
         return -1;
     }
+
+    if (platform_mkdir("/var/chef/packs") != 0) {
+        VLOG_ERROR("startup", "failed to create path /var/chef/packs\n");
+        return -1;
+    }
     return 0;
 }
 
