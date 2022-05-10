@@ -53,13 +53,15 @@ static void __convert_cmd_to_protocol(struct served_command* command, struct che
     proto->data_path = (char*)command->data;
 }
 
-void chef_served_install_invocation(struct gracht_message* message, const char* path)
+void chef_served_install_invocation(struct gracht_message* message, const char* publisher, const char* path)
 {
-    served_installer_install(path);
+    VLOG_DEBUG("api", "chef_served_install_invocation(publisher=%s, path=%s)\n", publisher, path);
+    served_installer_install(publisher, path);
 }
 
 void chef_served_remove_invocation(struct gracht_message* message, const char* packageName)
 {
+    VLOG_DEBUG("api", "chef_served_remove_invocation(package=%s)\n", packageName);
     served_installer_uninstall(packageName);
 }
 

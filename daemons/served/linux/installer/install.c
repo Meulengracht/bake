@@ -47,7 +47,7 @@ static const char* __build_application_name(const char* publisher, const char* p
     return buffer;
 }
 
-static int __parse_package(const char* path, struct served_application** applicationOut)
+static int __parse_package(const char* publisher, const char* path, struct served_application** applicationOut)
 {
     struct served_application* application;
     struct chef_package*       package;
@@ -73,7 +73,7 @@ static int __parse_package(const char* path, struct served_application** applica
         goto cleanup;
     }
 
-    application->name = __build_application_name(package->publisher, package->package);
+    application->name = __build_application_name(publisher, package->package);
     if (application->name == NULL) {
         status = -1;
         goto cleanup;
@@ -227,14 +227,14 @@ static void __update(const char* path, const char* name)
     __cleanup_info(&result);
 }
 
-void served_installer_install(const char* path)
+void served_installer_install(const char* publisher, const char* path)
 {
     struct served_application* application;
     struct chef_served_package result = { 0 };
     int                        status;
-    VLOG_TRACE("install", "served_installer_install(path=%s)\n", path);
+    VLOG_TRACE("install", "served_installer_install(publisher=%s, path=%s)\n", publisher, path);
 
-    status = __parse_package(path, &application);
+    status = __parse_package(publisher, path, &application);
     if (status) {
         VLOG_ERROR("install", "failed to parse %s\n", path);
         chef_served_event_package_installed_all(served_gracht_server(), CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);

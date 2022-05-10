@@ -24,7 +24,7 @@
  * @param path
  * @return
  */
-extern void served_installer_install(const char* path);
+extern void served_installer_install(const char* publisher, const char* path);
 
 /**
  *
