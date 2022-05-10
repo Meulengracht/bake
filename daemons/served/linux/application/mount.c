@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <utils.h>
 #include <unistd.h>
+#include <vlog.h>
 
 static const char* __get_command_symlink_path(struct served_command* command)
 {
@@ -50,7 +51,8 @@ static const char* __get_command_path(struct served_application* application, st
         return NULL;
     }
     
-    sprintf(path, "/run/chef/%s/%s", application->name, command->path);
+    sprintf(path, "/run/chef/%s-%s/%s", application->publisher,
+        application->package, command->path);
     return path;
 }
 
@@ -75,17 +77,19 @@ static int __create_application_symlinks(struct served_application* application)
             free((void*)symlinkPath);
             free((void*)cmdPath);
             free((void*)dataPath);
-            // log and continue
+            VLOG_WARNING("mount", "failed to allocate paths for command %s in app %s",
+                command->name, application->name);
             continue;
         }
 
-        // create a link from /chef/bin/<command> => /usr/bin/serve-exec
-        status = platform_symlink("/usr/bin/serve-exec", symlinkPath, 0);
+        // create a link from /chef/bin/<command> => ${CHEF_INSTALL_DIR}/bin/serve-exec
+        status = platform_symlink(CHEF_INSTALL_DIR "/bin/serve-exec", symlinkPath, 0);
         free((void*)symlinkPath);
         if (status != 0) {
             free((void*)cmdPath);
             free((void*)dataPath);
-            // log and continue
+            VLOG_WARNING("mount", "failed to create symlink for command %s in app %s",
+                command->name, application->name);
         }
 
         // store the command mount path which is read by serve-exec
@@ -120,7 +124,8 @@ static void __remove_application_symlinks(struct served_application* application
         // and then we handle the error code, and by handling we mean just
         // log it, because we will ignore any issues encountered in this loop
         if (status != 0) {
-            // LOG
+            VLOG_WARNING("mount", "failed to remove symlink for command %s in app %s",
+                application->commands[i].name, application->name);
         }
     }
     free((void*)mountRoot);

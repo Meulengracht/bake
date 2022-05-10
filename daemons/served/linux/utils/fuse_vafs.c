@@ -99,7 +99,8 @@ int __vafs_open(const char* path, struct fuse_file_info* fi)
     VLOG_DEBUG("fuse", "open(path=%s)\n", path);
 
 	if ((fi->flags & O_ACCMODE) != O_RDONLY) {
-		return -EACCES;
+        errno = EACCES;
+		return -1;
     }
 
     status = vafs_file_open(mount->vafs, path, &handle);
