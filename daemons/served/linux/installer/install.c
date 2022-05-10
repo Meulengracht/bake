@@ -73,7 +73,12 @@ static int __parse_package(const char* path, struct served_application** applica
         goto cleanup;
     }
 
-    application->name     = __build_application_name(package->publisher, package->package);
+    application->name = __build_application_name(package->publisher, package->package);
+    if (application->name == NULL) {
+        status = -1;
+        goto cleanup;
+    }
+
     application->major    = version->major;
     application->minor    = version->minor;
     application->patch    = version->patch;
@@ -244,7 +249,7 @@ void served_installer_install(const char* path)
 
     // If the application is already installed, then we perform an update sequence instead of
     // an installation sequence.
-    if (__is_in_state(application)) {
+    if (__is_in_state(application) == 0) {
         VLOG_TRACE("install", "%s was already installed, switching to update mode\n", application->name);
         __update(path, application->name);
         served_state_unlock();
