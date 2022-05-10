@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <utils.h>
+#include <vlog.h>
 
 // server protocol
 #include "chef_served_service_server.h"
@@ -161,12 +162,14 @@ static void __update(const char* path, const char* name)
 {
     struct served_application*  application = NULL;
     struct served_application** applications;
-    struct chef_served_package    result = { 0 };
+    struct chef_served_package  result = { 0 };
     int                         count;
     int                         status;
+    VLOG_TRACE("update", "__update(path=%s, name=%s)\n", path, name);
 
     status = served_state_get_applications(&applications, &count);
     if (status) {
+        VLOG_ERROR("update", "Failed to get applications from state\n");
         chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_FAILED_INSTALL, &result);
         return;
     }
@@ -180,6 +183,7 @@ static void __update(const char* path, const char* name)
 
     if (application == NULL) {
         // THIS SHOULD NEVER HAPPEN!!
+        VLOG_ERROR("update", "Failed to find application %s in state\n", name);
         chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_FAILED_INSTALL, &result);
         return;
     }
@@ -191,18 +195,21 @@ static void __update(const char* path, const char* name)
 
     status = served_application_unload(application);
     if (status != 0) {
+        VLOG_ERROR("update", "Failed to unload application %s\n", name);
         chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_FAILED_INSTALL, &result);
         return;
     }
 
     status = __install(path, application);
     if (status) {
+        VLOG_ERROR("update", "Failed to update application %s\n", name);
         chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_FAILED_INSTALL, &result);
         return;
     }
 
     status = served_application_load(application);
     if (status) {
+        VLOG_ERROR("update", "Failed to load application %s\n", name);
         chef_served_event_package_updated_all(served_gracht_server(), CHEF_UPDATE_STATUS_FAILED_INSTALL, &result);
         return;
     }
@@ -218,23 +225,27 @@ static void __update(const char* path, const char* name)
 void served_installer_install(const char* path)
 {
     struct served_application* application;
-    struct chef_served_package   result = { 0 };
+    struct chef_served_package result = { 0 };
     int                        status;
+    VLOG_TRACE("install", "served_installer_install(path=%s)\n", path);
 
     status = __parse_package(path, &application);
     if (status) {
+        VLOG_ERROR("install", "failed to parse %s\n", path);
         chef_served_event_package_installed_all(served_gracht_server(), CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
         return;
     }
 
     status = served_state_lock();
     if (status) {
+        VLOG_ERROR("install", "failed to lock state\n");
         return;
     }
 
     // If the application is already installed, then we perform an update sequence instead of
     // an installation sequence.
     if (__is_in_state(application)) {
+        VLOG_TRACE("install", "%s was already installed, switching to update mode\n", application->name);
         __update(path, application->name);
         served_state_unlock();
         return;
@@ -242,6 +253,8 @@ void served_installer_install(const char* path)
 
     status = __install(path, application);
     if (status) {
+        served_state_unlock();
+        VLOG_ERROR("install", "installation failed\n");
         chef_served_event_package_installed_all(served_gracht_server(), CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
         return;
     }
@@ -249,6 +262,7 @@ void served_installer_install(const char* path)
     status = served_state_add_application(application);
     if (status) {
         served_state_unlock();
+        VLOG_ERROR("install", "failed to add application to state\n");
         chef_served_event_package_installed_all(served_gracht_server(), CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
         return;
     }
@@ -256,6 +270,7 @@ void served_installer_install(const char* path)
     status = served_application_load(application);
     if (status) {
         served_state_unlock();
+        VLOG_ERROR("install", "failed to load application\n");
         chef_served_event_package_installed_all(served_gracht_server(), CHEF_INSTALL_STATUS_FAILED_INSTALL, &result);
         return;
     }
