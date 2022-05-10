@@ -104,7 +104,6 @@ int main(int argc, char** argv, char** envp)
     struct gracht_message_context context;
     struct chef_served_command    command;
     gracht_client_t*              client;
-    char*                         fullpath;
     int                           status;
 
     status = chefclient_initialize();
@@ -117,28 +116,21 @@ int main(int argc, char** argv, char** envp)
     // what we essentially do is redirect everything based on the application
     // path passed in argv[0]. This will tell us exactly which application is currently
     // executing.
-    fullpath = platform_abspath(argv[0]);
-    if (fullpath == NULL) {
-        fprintf(stderr, "cannot find command %s\n", argv[0]);
-        return -1;
-    }
 
     // So we use argv[0] to retrieve command information, together with application information
     // and then setup the environment for the command, and pass argv[1+] to it
     status = __chef_client_initialize(&client);
     if (status != 0) {
-        free(fullpath);
         printf("failed to initialize client: %s\n", strerror(status));
         return status;
     }
 
-    chef_served_get_command(client, &context, fullpath);
+    chef_served_get_command(client, &context, argv[0]);
     gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
     chef_served_get_command_result(client, &context, &command);
 
     status = __spawn_command(&command, argc, argv, envp);
     __cleanup_command(&command);
     gracht_client_shutdown(client);
-    free(fullpath);
     return status;
 }
