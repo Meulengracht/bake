@@ -34,6 +34,7 @@
 #include <vafs/stat.h>
 #include <utils.h>
 #include <vlog.h>
+#include <zstd.h>
 
 struct served_mount {
     struct VaFs* vafs;
@@ -411,6 +412,64 @@ int __vafs_statfs(const char* path, struct statvfs* stat)
     return 0;
 }
 
+static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
+static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
+
+static int __zstd_decode(void* Input, uint32_t InputLength, void* Output, uint32_t* OutputLength)
+{
+    /* Read the content size from the frame header. For simplicity we require
+     * that it is always present. By default, zstd will write the content size
+     * in the header when it is known. If you can't guarantee that the frame
+     * content size is always written into the header, either use streaming
+     * decompression, or ZSTD_decompressBound().
+     */
+    size_t             decompressedSize;
+    unsigned long long contentSize = ZSTD_getFrameContentSize(Input, InputLength);
+    if (contentSize == ZSTD_CONTENTSIZE_ERROR || contentSize == ZSTD_CONTENTSIZE_UNKNOWN) {
+        fprintf(stderr, "__zstd_decode: failed to get frame content size\n");
+        return -1;
+    }
+    
+    /* Decompress.
+     * If you are doing many decompressions, you may want to reuse the context
+     * and use ZSTD_decompressDCtx(). If you want to set advanced parameters,
+     * use ZSTD_DCtx_setParameter().
+     */
+    decompressedSize = ZSTD_decompress(Output, *OutputLength, Input, InputLength);
+    if (ZSTD_isError(decompressedSize)) {
+        return -1;
+    }
+    *OutputLength = (uint32_t)decompressedSize;
+    return 0;
+}
+
+static int __set_filter_ops(
+    struct VaFs* vafs)
+{
+    struct VaFsFeatureFilterOps filterOps;
+
+    memcpy(&filterOps.Header.Guid, &g_filterOpsGuid, sizeof(struct VaFsGuid));
+
+    filterOps.Header.Length = sizeof(struct VaFsFeatureFilterOps);
+    filterOps.Encode = NULL;
+    filterOps.Decode = __zstd_decode;
+
+    return vafs_feature_add(vafs, &filterOps.Header);
+}
+
+static int __handle_filter(struct VaFs* vafs)
+{
+    struct VaFsFeatureFilter* filter;
+    int                       status;
+
+    status = vafs_feature_query(vafs, &g_filterGuid, (struct VaFsFeatureHeader**)&filter);
+    if (status) {
+        // no filter present
+        return 0;
+    }
+    return __set_filter_ops(vafs);
+}
+
 /**
  * All methods are optional, but some are essential for a useful
  * filesystem (e.g. getattr).  Open, flush, release, fsync, opendir,
@@ -519,6 +578,13 @@ int served_mount(const char* path, const char* mountPoint, struct served_mount**
     status = vafs_open_file(path, &mount->vafs);
     if (status != 0) {
         VLOG_ERROR("fuse", "failed to open vafs image\n");
+        served_mount_delete(mount);
+        return -1;
+    }
+
+    status = __handle_filter(mount->vafs);
+    if (status) {
+        VLOG_ERROR("fuse", "failed to set decode filter for vafs image\n");
         served_mount_delete(mount);
         return -1;
     }
