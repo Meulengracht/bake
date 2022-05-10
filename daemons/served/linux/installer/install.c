@@ -90,7 +90,7 @@ static int __parse_package(const char* path, struct served_application** applica
             application->commands[i].type      = (int)commands[i].type;
             application->commands[i].name      = strdup(commands[i].name);
             application->commands[i].path      = strdup(commands[i].path);
-            application->commands[i].arguments = strdup(commands[i].arguments);
+            application->commands[i].arguments = commands[i].arguments ? strdup(commands[i].arguments) : NULL;
         }
     }
 

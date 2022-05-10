@@ -168,7 +168,7 @@ int install_main(int argc, char** argv)
         return status;
     }
 
-    printf("installing package: %s... ", package);
+    printf("installing package: %s...\n", package);
     status = chef_served_install(client, NULL, fullpath);
     if (status != 0) {
         printf("communication error: %i\n", status);
