@@ -110,10 +110,12 @@ static int __parse_package(const char* publisher, const char* path, struct serve
     *applicationOut = application;
 
 cleanup:
-    served_application_delete(application);
     chef_package_free(package);
     chef_version_free(version);
     chef_commands_free(commands, count);
+    if (status) {
+        served_application_delete(application);
+    }
     return status;
 }
 
