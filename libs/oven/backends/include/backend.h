@@ -36,6 +36,11 @@ struct oven_backend_data {
     const char* profile_name;
 
     /**
+     * @brief The target platform.
+     */
+    const char* platform;
+
+    /**
      * @brief The environmental values that the current process has
      */
     const char** process_environment;

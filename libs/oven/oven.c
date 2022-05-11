@@ -701,6 +701,7 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
 
     data->project_name        = g_oven.recipe.name;
     data->profile_name        = profile != NULL ? profile : "Release";
+    data->platform            = g_oven.variables.target_platform;
     data->install_directory   = g_oven.recipe.install_root;
     data->build_directory     = g_oven.recipe.build_root;
     data->process_environment = g_oven.process_environment;
