@@ -433,13 +433,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         }
     }
 
-    if (name == NULL) {
-        // should not happen
-        fprintf(stderr, "missing recipe name\n");
-        return -1;
-    }
-
-    if (recipe == NULL) {
+    if (name == NULL || recipe == NULL) {
         fprintf(stderr, "no recipe provided\n");
         __print_help();
         return -1;

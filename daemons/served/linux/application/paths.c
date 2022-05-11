@@ -16,14 +16,14 @@
  *
  */
 
-#include <errno.h>
 #include <application.h>
 #include <chef/platform.h>
+#include <errno.h>
 #include <linux/limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <utils.h>
+#include <vlog.h>
 
 int served_application_ensure_paths(struct served_application* application)
 {
@@ -34,22 +34,71 @@ int served_application_ensure_paths(struct served_application* application)
         return -1;
     }
 
-    sprintf(path, "/usr/share/chef/%s", application->name);
+    sprintf(path, "/usr/share/chef/%s-%s/%i", application->publisher,
+        application->package, application->revision);
     if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("paths", "failed to create path %s\n", path);
         free(path);
         return -1;
     }
 
-    sprintf(path, "/usr/share/chef/%s/%i", application->name, application->revision);
+    // always make sure mount-point is created
+    sprintf(path, "/run/chef/%s-%s", application->publisher,
+        application->package);
     if (platform_mkdir(path) != 0) {
-        free(path);
-        return -1;
+        // so we might receive ENOTCONN here, which means 'Transport endpoint is not connected'
+        // but we can safely ignore this error
+        if (errno != ENOTCONN) {
+            VLOG_ERROR("paths", "failed to create mount path %s\n", path);
+            free(path);
+            return -1;
+        }
     }
     free(path);
     return 0;
 }
 
-const char* served_application_get_pack_path(struct served_application* application)
+char* served_application_get_pack_path(struct served_application* application)
+{
+    char* path;
+
+    path = malloc(PATH_MAX);
+    if (path == NULL) {
+        return NULL;
+    }
+
+    sprintf(&path[0], "/var/chef/packs/%s-%s.pack", application->publisher, application->package);
+    return path;
+}
+
+char* served_application_get_mount_path(struct served_application* application)
+{
+    char* path;
+
+    path = malloc(PATH_MAX);
+    if (path == NULL) {
+        return NULL;
+    }
+
+    sprintf(path, "/run/chef/%s-%s", application->publisher, application->package);
+    return path;
+}
+
+char* served_application_get_data_path(struct served_application* application)
+{
+    char* path;
+
+    path = malloc(PATH_MAX);
+    if (path == NULL) {
+        return NULL;
+    }
+
+    sprintf(path, "/usr/share/chef/%s-%s/%i", application->publisher,
+        application->package, application->revision);
+    return path;
+}
+
+char* served_application_get_command_symlink_path(struct served_application* application, struct served_command* command)
 {
     char* path;
     int   status;
@@ -58,40 +107,7 @@ const char* served_application_get_pack_path(struct served_application* applicat
     if (path == NULL) {
         return NULL;
     }
-
-    status = platform_getuserdir(path, PATH_MAX);
-    if (status != 0) {
-        free(path);
-        return NULL;
-    }
-
-    strcat(path, CHEF_PATH_SEPARATOR_S ".chef" CHEF_PATH_SEPARATOR_S "packs" CHEF_PATH_SEPARATOR_S);
-    strcat(path, application->name);
-    return path;
-}
-
-const char* served_application_get_mount_path(struct served_application* application)
-{
-    char* path;
-
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        return NULL;
-    }
-
-    sprintf(path, "/run/chef/%s", application->name);
-    return path;
-}
-
-const char* served_application_get_data_path(struct served_application* application)
-{
-    char* path;
-
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        return NULL;
-    }
-
-    sprintf(path, "/usr/share/chef/%s/%i", application->name, application->revision);
+    
+    sprintf(path, "/chef/bin/%s", command->name);
     return path;
 }

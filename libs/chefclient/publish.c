@@ -148,26 +148,6 @@ static int __upload_progress_callback(void *clientp,
     return 0;
 }
 
-static json_t* __create_pack_version(struct chef_publish_params* params)
-{
-    json_t* packVersion = json_object();
-    if (!packVersion) {
-        return NULL;
-    }
-
-    json_object_set_new(packVersion, "major", json_integer(params->version->major));
-    json_object_set_new(packVersion, "minor", json_integer(params->version->minor));
-    json_object_set_new(packVersion, "patch", json_integer(params->version->patch));
-
-    // revision is only set by server, and ignored by us
-    json_object_set_new(packVersion, "revision", json_integer(0));
-    
-    if (params->version->tag) {
-        json_object_set_new(packVersion, "additional", json_string(params->version->tag));
-    }
-    return packVersion;
-}
-
 static json_t* __create_publish_request(struct chef_publish_params* params)
 {
     json_t* request = json_object();
@@ -187,28 +167,6 @@ static json_t* __create_publish_request(struct chef_publish_params* params)
     json_object_set_new(request, "platform", json_string(params->package->platform));
     json_object_set_new(request, "architecture", json_string(params->package->arch));
     json_object_set_new(request, "channel", json_string(params->channel));
-    return request;
-}
-
-static json_t* __create_commit_request(struct chef_publish_params* params)
-{
-    json_t* request = json_object();
-    if (!request) {
-        return NULL;
-    }
-
-    json_object_set_new(request, "name", json_string(params->package->package));
-    json_object_set_new(request, "summary", json_string(params->package->summary));
-    json_object_set_new(request, "description", json_string(params->package->description));
-    json_object_set_new(request, "homepage", json_string(params->package->homepage));
-    json_object_set_new(request, "license", json_string(params->package->license));
-    json_object_set_new(request, "eula", json_string(params->package->eula));
-    json_object_set_new(request, "maintainer", json_string(params->package->maintainer));
-    json_object_set_new(request, "maintainer_email", json_string(params->package->maintainer_email));
-    json_object_set_new(request, "platform", json_string(params->package->platform));
-    json_object_set_new(request, "architecture", json_string(params->package->arch));
-    json_object_set_new(request, "channel", json_string(params->channel));
-    json_object_set_new(request, "version", __create_pack_version(params));
     return request;
 }
 
@@ -254,8 +212,7 @@ static int __get_publish_url(char* urlBuffer, size_t bufferSize)
     int written = snprintf(urlBuffer, bufferSize - 1, 
         "https://chef-api.azurewebsites.net/api/pack/publish"
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static int __get_block_url(char* urlBuffer, size_t bufferSize, const char* urlBase, const char* blockId)
@@ -265,8 +222,7 @@ static int __get_block_url(char* urlBuffer, size_t bufferSize, const char* urlBa
         urlBase,
         blockId
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static int __get_blocklist_url(char* urlBuffer, size_t bufferSize, const char* urlBase)
@@ -275,17 +231,7 @@ static int __get_blocklist_url(char* urlBuffer, size_t bufferSize, const char* u
         "%s&comp=blocklist",
         urlBase
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
-}
-
-static int __get_commit_url(char* urlBuffer, size_t bufferSize)
-{
-    int written = snprintf(urlBuffer, bufferSize - 1,
-        "https://chef-api.azurewebsites.net/api/pack/commit"
-    );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static int __publish_request(json_t* json, struct pack_response* context)
@@ -517,67 +463,6 @@ cleanup:
     return status;
 }
 
-static int __commit_request(json_t* json)
-{
-    struct chef_request* request;
-    CURLcode             code;
-    char*                body   = NULL;
-    int                  status = -1;
-    char                 buffer[256];
-    long                 httpCode;
-
-    request = chef_request_new(1, 1);
-    if (!request) {
-        fprintf(stderr, "__commit_request: failed to create request\n");
-        return -1;
-    }
-
-    // set the url
-    if (__get_commit_url(buffer, sizeof(buffer)) != 0) {
-        fprintf(stderr, "__commit_request: buffer too small for device code auth link\n");
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
-    if (code != CURLE_OK) {
-        fprintf(stderr, "__commit_request: failed to set url [%s]\n", request->error);
-        goto cleanup;
-    }
-
-    body = json_dumps(json, 0);
-    code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, body);
-    if (code != CURLE_OK) {
-        fprintf(stderr, "__commit_request: failed to set body [%s]\n", request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_perform(request->curl);
-    if (code != CURLE_OK) {
-        fprintf(stderr, "__commit_request: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
-    }
-
-    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    if (httpCode != 200) {
-        status = -1;
-        
-        if (httpCode == 302) {
-            status = -EACCES;
-        }
-        else {
-            fprintf(stderr, "__commit_request: http error %ld [%s]\n", httpCode, request->response);
-            status = -EIO;
-        }
-        goto cleanup;
-    }
-
-    status = 0;
-
-cleanup:
-    free(body);
-    chef_request_delete(request);
-    return status;
-}
-
 static int __update_progress(struct file_upload_context* uploadContexts, int uploadCount)
 {
     int    status = 0;
@@ -712,20 +597,5 @@ int chefclient_pack_publish(struct chef_publish_params* params, const char* path
         fprintf(stderr, "chefclient_pack_publish: failed to upload file\n");
         return -1;
     }
-
-    // create the commit request
-    request = __create_commit_request(params);
-    if (!request) {
-        fprintf(stderr, "chefclient_pack_publish: failed to create commit request\n");
-        return -1;
-    }
-
-    // and finally commit the new pack version
-    status = __commit_request(request);
-    if (status != 0) {
-        fprintf(stderr, "chefclient_pack_publish: failed to commit pack\n");
-        return -1;
-    }
-    json_decref(request);
     return 0;
 }

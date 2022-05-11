@@ -19,6 +19,7 @@
 #include <application.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vlog.h>
 
 struct served_application* served_application_new(void)
 {
@@ -44,6 +45,8 @@ void served_application_delete(struct served_application* application)
         free((void*)command->arguments);
     }
     free((void*)application->commands);
+    free((void*)application->package);
+    free((void*)application->publisher);
     free((void*)application->name);
     free(application);
 }
@@ -51,22 +54,23 @@ void served_application_delete(struct served_application* application)
 int served_application_load(struct served_application* application)
 {
     int status;
+    VLOG_DEBUG("app", "served_application_load(name=%s)\n", application->name);
 
     status = served_application_ensure_paths(application);
     if (status != 0) {
-        // log
+        VLOG_ERROR("app", "failed to create application paths\n");
         return status;
     }
 
     status = served_application_mount(application);
     if (status != 0) {
-        // log
+        VLOG_ERROR("app", "failed to mount application\n");
         return status;
     }
 
     status = served_application_start_daemons(application);
     if (status != 0) {
-        // log
+        VLOG_ERROR("app", "failed to start application daemons\n");
         return status;
     }
     return 0;
@@ -75,16 +79,17 @@ int served_application_load(struct served_application* application)
 int served_application_unload(struct served_application* application)
 {
     int status;
+    VLOG_DEBUG("app", "served_application_unload(name=%s)\n", application->name);
 
     status = served_application_stop_daemons(application);
     if (status != 0) {
-        // log
+        VLOG_ERROR("app", "failed to stop application daemons\n");
         return status;
     }
 
     status = served_application_unmount(application);
     if (status != 0) {
-        // log
+        VLOG_ERROR("app", "failed to unmount application\n");
         return status;
     }
     return 0;

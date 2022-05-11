@@ -17,17 +17,9 @@
  */
 
 #include <chef/platform.h>
-
-#ifdef __linux__
 #include <unistd.h>
-#include <stdio.h>
 
-int platform_chdir(const char* path)
+int platform_sleep(unsigned int milliseconds)
 {
-    printf("bake: chdir %s\n", path);
-    return chdir(path);
+	return usleep(milliseconds * 1000);
 }
-
-#else
-#error "chdir: not implemented for this platform"
-#endif

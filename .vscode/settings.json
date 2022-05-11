@@ -63,7 +63,13 @@
         "chef_served_service_client.h": "c",
         "fuse.h": "c",
         "fuse_common.h": "c",
-        "fuse_opt.h": "c"
+        "fuse_opt.h": "c",
+        "stdio.h": "c",
+        "platform.h": "c",
+        "stat.h": "c",
+        "sha512.h": "c",
+        "types.h": "c",
+        "signature.h": "c"
     },
     "cmake.installPrefix": "/usr/local/chef"
 }

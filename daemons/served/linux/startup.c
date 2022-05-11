@@ -75,11 +75,7 @@ static int __ensure_chef_paths(void)
     // /run/chef
     // /usr/share/chef
     // /var/chef
-
-    if (platform_mkdir("/chef") != 0) {
-        VLOG_ERROR("startup", "failed to create path /chef\n");
-        return -1;
-    }
+    // /var/chef/packs
 
     if (platform_mkdir("/chef/bin") != 0) {
         VLOG_ERROR("startup", "failed to create path /chef/bin\n");
@@ -96,8 +92,8 @@ static int __ensure_chef_paths(void)
         return -1;
     }
 
-    if (platform_mkdir("/var/chef") != 0) {
-        VLOG_ERROR("startup", "failed to create path /var/chef\n");
+    if (platform_mkdir("/var/chef/packs") != 0) {
+        VLOG_ERROR("startup", "failed to create path /var/chef/packs\n");
         return -1;
     }
     return 0;
@@ -134,6 +130,7 @@ int served_startup(void)
         return status;
     }
 
+    VLOG_DEBUG("startup", "initializing %i applications\n", applicationCount);
     for (int i = 0; i < applicationCount; i++) {
         status = served_application_ensure_paths(applications[i]);
         if (status != 0) {
@@ -153,5 +150,6 @@ int served_startup(void)
         }
     }
 
+    VLOG_TRACE("startup", "complete\n");
     return 0;
 }

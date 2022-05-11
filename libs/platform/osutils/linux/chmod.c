@@ -16,19 +16,11 @@
  * 
  */
 
-#include <errno.h>
 #include <chef/platform.h>
-#include <stdlib.h>
-#include <string.h>
+#include <errno.h>
+#include <sys/stat.h>
 
-int strendswith(const char* text, const char* suffix)
+int platform_chmod(const char* path, uint32_t permissions)
 {
-	size_t textLength   = strlen(text);
-	size_t suffixLength = strlen(suffix);
-	
-	if (textLength < suffixLength) {
-		return -1;
-	}
-	
-	return strcmp(text + (textLength - suffixLength), suffix);
+	return chmod(path, permissions);
 }

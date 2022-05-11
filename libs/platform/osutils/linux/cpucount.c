@@ -17,21 +17,9 @@
  */
 
 #include <chef/platform.h>
+#include <unistd.h>
 
-#ifdef __linux__
-
-#include <errno.h>
-#include <sys/stat.h>
-
-int platform_isdir(const char* path)
+int platform_cpucount(void)
 {
-	struct stat st;
-	if (stat(path, &st) != 0) {
-		return -1;
-	}
-	return S_ISDIR(st.st_mode) != 1;
+	return (int)sysconf(_SC_NPROCESSORS_ONLN);
 }
-
-#else
-#error "isdir: not implemented for this platform"
-#endif

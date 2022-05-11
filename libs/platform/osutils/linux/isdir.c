@@ -17,17 +17,14 @@
  */
 
 #include <chef/platform.h>
-
-#ifdef __linux__
-
 #include <errno.h>
 #include <sys/stat.h>
 
-int platform_chmod(const char* path, uint32_t permissions)
+int platform_isdir(const char* path)
 {
-	return chmod(path, permissions);
+	struct stat st;
+	if (stat(path, &st) != 0) {
+		return -1;
+	}
+	return S_ISDIR(st.st_mode) != 1;
 }
-
-#else
-#error "chmod: not implemented for this platform"
-#endif

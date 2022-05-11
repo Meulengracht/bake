@@ -34,8 +34,7 @@ static int __get_settings_url(char* urlBuffer, size_t bufferSize)
     int written = snprintf(urlBuffer, bufferSize - 1, 
         "https://chef-api.azurewebsites.net/api/pack/settings"
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static int __get_settings_query_url(struct chef_settings_params* params, char* urlBuffer, size_t bufferSize)
@@ -44,8 +43,7 @@ static int __get_settings_query_url(struct chef_settings_params* params, char* u
         "https://chef-api.azurewebsites.net/api/pack/settings?name=%s",
         params->package
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static json_t* __serialize_pack_settings(struct chef_package_settings* settings)

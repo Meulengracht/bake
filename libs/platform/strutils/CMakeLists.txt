@@ -1,4 +1,4 @@
-add_library(platform-utils STATIC
+add_library(platform-strutils STATIC
     basename.c
     strbool.c
     strendswith.c
@@ -7,4 +7,4 @@ add_library(platform-utils STATIC
     strreplace.c
     strsplit.c
 )
-target_include_directories(platform-utils PRIVATE ../include)
+target_include_directories(platform-strutils PRIVATE ../include)

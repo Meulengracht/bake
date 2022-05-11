@@ -26,6 +26,7 @@ target_include_directories(served PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
 target_link_libraries(served
         served-application served-installer served-utils
         gracht jansson-api jansson platform vlog
+        zstd-api libzstd_static
         -lpthread ${FUSE_LIBRARIES}
 )
 

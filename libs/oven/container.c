@@ -328,6 +328,7 @@ static int __write_directory(
     return status;
 }
 
+// TODO on windows this should just put them into same folder as executable
 static int __write_syslib(
     struct progress_context*        progress,
     struct VaFsDirectoryHandle*     directoryHandle,
@@ -337,9 +338,9 @@ static int __write_syslib(
     struct list_item*           item;
     int                         status;
 
-    status = vafs_directory_create_directory(directoryHandle, "syslib", 0666, &subdirectoryHandle);
+    status = vafs_directory_create_directory(directoryHandle, "lib", 0666, &subdirectoryHandle);
     if (status) {
-        fprintf(stderr, "oven: failed to create directory 'syslib'\n");
+        fprintf(stderr, "oven: failed to create directory 'lib'\n");
         return status;
     }
 

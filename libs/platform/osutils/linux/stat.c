@@ -16,21 +16,32 @@
  * 
  */
 
+#include <errno.h>
 #include <chef/platform.h>
+#include <sys/stat.h>
 
-#ifdef __linux__
-
-#include <unistd.h>
-
-int platform_getcwd(char* buffer, size_t length)
+int platform_stat(const char* path, struct platform_stat* stats)
 {
-    char* result = getcwd(buffer, length);
-    if (result == NULL) {
-        return -1;
-    }
-    return 0;
-}
+	struct stat st;
+	if (lstat(path, &st) != 0) {
+		return -1;
+	}
 
-#else
-#error "getcwd: not implemented for this platform"
-#endif
+	stats->permissions = st.st_mode & 0777;
+	stats->size        = st.st_size;
+	switch (st.st_mode & S_IFMT) {
+		case S_IFREG:
+			stats->type = PLATFORM_FILETYPE_FILE;
+			break;
+		case S_IFDIR:
+			stats->type = PLATFORM_FILETYPE_DIRECTORY;
+			break;
+		case S_IFLNK:
+			stats->type = PLATFORM_FILETYPE_SYMLINK;
+			break;
+		default:
+			stats->type = PLATFORM_FILETYPE_UNKNOWN;
+			break;
+	}
+	return 0;
+}

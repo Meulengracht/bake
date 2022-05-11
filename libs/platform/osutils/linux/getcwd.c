@@ -17,39 +17,13 @@
  */
 
 #include <chef/platform.h>
-#include <stdlib.h>
-
-#ifdef __linux__
-
-#include <errno.h>
-#include <linux/limits.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
-int platform_readlink(const char* path, char** bufferOut)
+int platform_getcwd(char* buffer, size_t length)
 {
-	char* buffer;
-
-	if (path == NULL || bufferOut == NULL) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	buffer = calloc(1, PATH_MAX);
-	if (buffer == NULL) {
-		errno = ENOMEM;
-		return -1;
-	}
-
-	if (readlink(path, buffer, PATH_MAX - 1) == -1) {
-		free(buffer);
-		return -1;
-	}
-
-	*bufferOut = buffer;
-	return 0;
+    char* result = getcwd(buffer, length);
+    if (result == NULL) {
+        return -1;
+    }
+    return 0;
 }
-
-#else
-#error "readlink: not implemented for this platform"
-#endif

@@ -13,20 +13,23 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- *
+ * 
  */
 
 #include <chef/platform.h>
-
-#ifdef __linux__
-
+#include <pwd.h>
+#include <string.h>
 #include <unistd.h>
 
-int platform_unlink(const char* path)
+int platform_getuserdir(char* buffer, size_t length)
 {
-    return unlink(path);
-}
+    struct passwd* pw;
+    
+    pw = getpwuid(getuid());
+    if (pw == NULL) {
+        return -1;
+    }
 
-#else
-#error "unlink: not implemented for this platform"
-#endif
+    strncpy(buffer, pw->pw_dir, length);
+    return 0;
+}

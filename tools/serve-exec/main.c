@@ -76,28 +76,28 @@ static int __spawn_command(struct chef_served_command* command, int argc, char**
     char* arguments;
     int   status;
 
+    if (command->path == NULL || strlen(command->path) == 0) {
+        fprintf(stderr, "serve-exec: cannot be invoked directly\n");
+        return -1;
+    }
+
     arguments = __build_args(argc, argv, command->arguments);
     if (arguments == NULL) {
         return -1;
     }
 
+    // TODO proxy argv[0]
     status = platform_spawn(command->path, arguments, (const char* const*)envp, command->data_path);
     free(arguments);
     return status;
 }
 
-static void __cleanup_command(struct chef_served_command* command)
-{
-    free((void*)command->path);
-    free((void*)command->arguments);
-    free((void*)command->data_path);
-}
-
 int main(int argc, char** argv, char** envp)
 {
-    struct chef_served_command command;
-    gracht_client_t*           client;
-    int                        status;
+    struct gracht_message_context context;
+    struct chef_served_command    command;
+    gracht_client_t*              client;
+    int                           status;
 
     status = chefclient_initialize();
     if (status != 0) {
@@ -109,6 +109,7 @@ int main(int argc, char** argv, char** envp)
     // what we essentially do is redirect everything based on the application
     // path passed in argv[0]. This will tell us exactly which application is currently
     // executing.
+    chef_served_command_init(&command);
 
     // So we use argv[0] to retrieve command information, together with application information
     // and then setup the environment for the command, and pass argv[1+] to it
@@ -118,12 +119,12 @@ int main(int argc, char** argv, char** envp)
         return status;
     }
 
-    chef_served_get_command(client, NULL, argv[0]);
-    gracht_client_wait_message(client, NULL, GRACHT_MESSAGE_BLOCK);
-    chef_served_get_command_result(client, NULL, &command);
+    chef_served_get_command(client, &context, argv[0]);
+    gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    chef_served_get_command_result(client, &context, &command);
 
     status = __spawn_command(&command, argc, argv, envp);
-    __cleanup_command(&command);
+    chef_served_command_destroy(&command);
     gracht_client_shutdown(client);
     return status;
 }

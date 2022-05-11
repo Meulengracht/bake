@@ -37,8 +37,7 @@ static int __get_account_url(char* urlBuffer, size_t bufferSize)
     int written = snprintf(urlBuffer, bufferSize - 1, 
         "https://chef-api.azurewebsites.net/api/account"
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static json_t* __serialize_account(struct chef_account* account)

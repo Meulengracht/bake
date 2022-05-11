@@ -23,6 +23,7 @@
 
 #include <errno.h>
 #include <fuse3/fuse.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
@@ -31,11 +32,15 @@
 #include <vafs/file.h>
 #include <vafs/directory.h>
 #include <vafs/stat.h>
+#include <utils.h>
+#include <vlog.h>
+#include <zstd.h>
 
 struct served_mount {
     struct VaFs* vafs;
     struct fuse* fuse;
     const char*  mount_point;
+    pthread_t    worker;
 };
 
 /** Open a file
@@ -91,6 +96,12 @@ int __vafs_open(const char* path, struct fuse_file_info* fi)
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle;
     int                    status;
+    VLOG_DEBUG("fuse", "open(path=%s)\n", path);
+
+	if ((fi->flags & O_ACCMODE) != O_RDONLY) {
+        errno = EACCES;
+		return -1;
+    }
 
     status = vafs_file_open(mount->vafs, path, &handle);
     if (status) {
@@ -116,6 +127,7 @@ int __vafs_access(const char* path, int permissions)
     struct served_mount* mount   = (struct served_mount*)context->private_data;
     struct vafs_stat     stat;
     int                  status;
+    VLOG_DEBUG("fuse", "access(path=%s, perms=%i)\n", path, permissions);
 
     status = vafs_path_stat(mount->vafs, path, &stat);
     if (status) {
@@ -144,6 +156,7 @@ int __vafs_read(const char* path, char* buffer, size_t count, off_t offset, stru
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle  = (struct VaFsFileHandle*)fi->fh;
     int                    status;
+    VLOG_DEBUG("fuse", "read(path=%s, count=%zu, offset=%li)\n", path, count, offset);
 
     if (handle == NULL) {
         errno = EINVAL;
@@ -181,14 +194,17 @@ int __vafs_getattr(const char* path, struct stat* stat, struct fuse_file_info *f
     struct served_mount* mount    = (struct served_mount*)context->private_data;
     struct vafs_stat     vstat;
     int                  status;
+    int                  isRoot;
+    VLOG_DEBUG("fuse", "getattr(path=%s)\n", path);
 
     memset(stat, 0, sizeof(struct stat));
     if (fi != NULL && fi->fh != 0) {
         struct VaFsFileHandle* handle = (struct VaFsFileHandle*)fi->fh;
 
         stat->st_blksize = 512;
-        stat->st_mode = vafs_file_permissions(handle);
-        stat->st_size = (off_t)vafs_file_length(handle);
+        stat->st_mode    = vafs_file_permissions(handle);
+        stat->st_size    = (off_t)vafs_file_length(handle);
+        stat->st_nlink   = 1;
         return 0;
     }
 
@@ -197,9 +213,13 @@ int __vafs_getattr(const char* path, struct stat* stat, struct fuse_file_info *f
         return status;
     }
 
+    // root has 2 links
+    isRoot = (strcmp(path, "/") == 0);
+
     stat->st_blksize = 512;
-    stat->st_mode = vstat.mode;
-    stat->st_size = (off_t)vstat.size;
+    stat->st_mode    = vstat.mode;
+    stat->st_size    = (off_t)vstat.size;
+    stat->st_nlink   = isRoot + 1;
     return 0;
 }
 
@@ -211,6 +231,7 @@ off_t __vafs_lseek(const char* path, off_t off, int whence, struct fuse_file_inf
     struct fuse_context*   context = fuse_get_context();
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle  = (struct VaFsFileHandle*)fi->fh;
+    VLOG_DEBUG("fuse", "lseek(path=%s)\n", path);
 
     if (handle == NULL) {
         errno = EINVAL;
@@ -239,6 +260,7 @@ int __vafs_release(const char* path, struct fuse_file_info* fi)
     struct served_mount*   mount   = (struct served_mount*)context->private_data;
     struct VaFsFileHandle* handle  = (struct VaFsFileHandle*)fi->fh;
     int                    status;
+    VLOG_DEBUG("fuse", "release(path=%s)\n", path);
 
     if (handle == NULL) {
         errno = EINVAL;
@@ -264,6 +286,7 @@ int __vafs_opendir(const char* path, struct fuse_file_info* fi)
     struct served_mount*        mount   = (struct served_mount*)context->private_data;
     struct VaFsDirectoryHandle* handle;
     int                         status;
+    VLOG_DEBUG("fuse", "opendir(path=%s)\n", path);
 
     status = vafs_directory_open(mount->vafs, path, &handle);
     if (status) {
@@ -301,11 +324,16 @@ int __vafs_readdir(
     struct served_mount*        mount   = (struct served_mount*)context->private_data;
     struct VaFsDirectoryHandle* handle  = (struct VaFsDirectoryHandle*)fi->fh;
     int                         status;
+    VLOG_DEBUG("fuse", "readdir(path=%s)\n", path);
 
     if (handle == NULL) {
         errno = EINVAL;
         return -1;
     }
+
+    // add ./.. 
+	fill(buffer, ".", NULL, 0, 0);
+	fill(buffer, "..", NULL, 0, 0);
 
     while (1) {
         struct VaFsEntry entry;
@@ -343,9 +371,14 @@ int __vafs_releasedir(const char* path, struct fuse_file_info* fi)
     struct served_mount*        mount   = (struct served_mount*)context->private_data;
     struct VaFsDirectoryHandle* handle  = (struct VaFsDirectoryHandle*)fi->fh;
     int                         status;
+    VLOG_DEBUG("fuse", "releasedir(path=%s)\n", path);
 
     if (handle == NULL) {
         errno = EINVAL;
+
+	if ((fi->flags & O_ACCMODE) != O_RDONLY)
+		return -EACCES;
+
         return -1;
     }
 
@@ -380,6 +413,64 @@ int __vafs_statfs(const char* path, struct statvfs* stat)
     return 0;
 }
 
+static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
+static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
+
+static int __zstd_decode(void* Input, uint32_t InputLength, void* Output, uint32_t* OutputLength)
+{
+    /* Read the content size from the frame header. For simplicity we require
+     * that it is always present. By default, zstd will write the content size
+     * in the header when it is known. If you can't guarantee that the frame
+     * content size is always written into the header, either use streaming
+     * decompression, or ZSTD_decompressBound().
+     */
+    size_t             decompressedSize;
+    unsigned long long contentSize = ZSTD_getFrameContentSize(Input, InputLength);
+    if (contentSize == ZSTD_CONTENTSIZE_ERROR || contentSize == ZSTD_CONTENTSIZE_UNKNOWN) {
+        fprintf(stderr, "__zstd_decode: failed to get frame content size\n");
+        return -1;
+    }
+    
+    /* Decompress.
+     * If you are doing many decompressions, you may want to reuse the context
+     * and use ZSTD_decompressDCtx(). If you want to set advanced parameters,
+     * use ZSTD_DCtx_setParameter().
+     */
+    decompressedSize = ZSTD_decompress(Output, *OutputLength, Input, InputLength);
+    if (ZSTD_isError(decompressedSize)) {
+        return -1;
+    }
+    *OutputLength = (uint32_t)decompressedSize;
+    return 0;
+}
+
+static int __set_filter_ops(
+    struct VaFs* vafs)
+{
+    struct VaFsFeatureFilterOps filterOps;
+
+    memcpy(&filterOps.Header.Guid, &g_filterOpsGuid, sizeof(struct VaFsGuid));
+
+    filterOps.Header.Length = sizeof(struct VaFsFeatureFilterOps);
+    filterOps.Encode = NULL;
+    filterOps.Decode = __zstd_decode;
+
+    return vafs_feature_add(vafs, &filterOps.Header);
+}
+
+static int __handle_filter(struct VaFs* vafs)
+{
+    struct VaFsFeatureFilter* filter;
+    int                       status;
+
+    status = vafs_feature_query(vafs, &g_filterGuid, (struct VaFsFeatureHeader**)&filter);
+    if (status) {
+        // no filter present
+        return 0;
+    }
+    return __set_filter_ops(vafs);
+}
+
 /**
  * All methods are optional, but some are essential for a useful
  * filesystem (e.g. getattr).  Open, flush, release, fsync, opendir,
@@ -410,6 +501,7 @@ static struct served_mount* served_mount_new(const char* mountPoint)
     mount->mount_point = mountPoint != NULL ? strdup(mountPoint) : NULL;
     mount->fuse        = NULL;
     mount->vafs        = NULL;
+    mount->worker      = 0;
 
     return mount;
 }
@@ -450,11 +542,28 @@ static int __prepare_fuse_args(struct fuse_args* args)
     return 0;
 }
 
+static int __reset_mountpoint(struct served_mount* mount)
+{
+    char* command;
+    int   status;
+
+    command = (char*)malloc(strlen(mount->mount_point) + 64);
+    if (command == NULL) {
+        return -1;
+    }
+
+    sprintf(&command[0], "umount -l %s", mount->mount_point);
+    status = system(&command[0]);
+    free(command);
+    return 0;
+}
+
 int served_mount(const char* path, const char* mountPoint, struct served_mount** mountOut)
 {
     struct fuse_args     args;
     struct served_mount* mount;
     int                  status;
+    VLOG_DEBUG("fuse", "served_mount(path=%s, mountPoint=%s)\n", path, mountPoint);
 
     if (path == NULL || mountPoint == NULL || mountOut == NULL) {
         errno = EINVAL;
@@ -463,30 +572,64 @@ int served_mount(const char* path, const char* mountPoint, struct served_mount**
 
     mount = served_mount_new(mountPoint);
     if (mount == NULL) {
+        VLOG_ERROR("fuse", "failed to create mount data\n");
         return -1;
     }
 
     status = vafs_open_file(path, &mount->vafs);
     if (status != 0) {
+        VLOG_ERROR("fuse", "failed to open vafs image\n");
+        served_mount_delete(mount);
+        return -1;
+    }
+
+    status = __handle_filter(mount->vafs);
+    if (status) {
+        VLOG_ERROR("fuse", "failed to set decode filter for vafs image\n");
         served_mount_delete(mount);
         return -1;
     }
 
     status = __prepare_fuse_args(&args);
     if (status != 0) {
+        VLOG_ERROR("fuse", "failed to prepare fuse\n");
         served_mount_delete(mount);
         return -1;
     }
 
     mount->fuse = fuse_new(&args, &g_vafsOperations, sizeof(g_vafsOperations), mount);
     if (mount->fuse == NULL) {
+        VLOG_ERROR("fuse", "failed to create a new fuse instance\n");
         served_mount_delete(mount);
         return -1;
     }
     
     status = fuse_mount(mount->fuse, mount->mount_point);
     if (status != 0) {
-        served_mount_delete(mount);
+        // so we might receive ENOTCONN here, which means 'Transport endpoint is not connected'
+        // which means that the mount was left mounted due to a bad shutdown, lets unmount it first
+        //system("umount -l mount->mount_point")
+        if (errno = ENOTCONN) {
+            VLOG_DEBUG("fuse", "fuse_mount returned ENOTCONN, trying to unmount first\n");
+            status = __reset_mountpoint(mount);
+            if (status == 0) {
+                VLOG_DEBUG("fuse", "successfully unmounted, now retrying mount\n");
+                // now try again, the unmount should have worked
+                status = fuse_mount(mount->fuse, mount->mount_point);
+            }
+        }
+        
+        if (status) {
+            VLOG_ERROR("fuse", "failed to mount fuse at %s\n", mount->mount_point);
+            served_mount_delete(mount);
+            return -1;
+        }
+    }
+
+    status = pthread_create(&mount->worker, NULL,
+        (void *(*)(void *))fuse_loop, (void*)mount->fuse);
+    if (status != 0) {
+        served_unmount(mount);
         return -1;
     }
 
@@ -498,6 +641,15 @@ void served_unmount(struct served_mount* mount)
 {
     if (mount == NULL) {
         return;
+    }
+
+    // kill the worker thread
+    if (mount->worker != 0) {
+        VLOG_DEBUG("fuse", "killing fuse worker thread\n");
+        pthread_cancel(mount->worker);
+        pthread_join(mount->worker, NULL);
+        mount->worker = 0;
+        VLOG_DEBUG("fuse", "fuse worker thread killed\n");
     }
 
     fuse_unmount(mount->fuse);

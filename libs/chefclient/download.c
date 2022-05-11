@@ -83,8 +83,7 @@ static int __get_download_url(struct chef_download_params* params, char* urlBuff
         "https://chef-api.azurewebsites.net/api/pack/download?publisher=%s&name=%s&platform=%s&arch=%s&channel=%s",
         params->publisher, params->package, params->platform, params->arch, params->channel
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static int __parse_pack_response(const char* response, struct pack_response* packResponse)

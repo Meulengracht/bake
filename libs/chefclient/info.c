@@ -39,8 +39,7 @@ static int __get_info_url(struct chef_info_params* params, char* urlBuffer, size
         "https://chef-api.azurewebsites.net/api/pack/info?publisher=%s&name=%s",
         params->publisher, params->package
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static int __parse_channels(json_t* channels, struct chef_architecture* architecture)

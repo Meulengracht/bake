@@ -21,6 +21,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 char* __prefix_path(const char* base, const char* path)
 {
@@ -49,11 +51,6 @@ char* __prefix_path(const char* base, const char* path)
 	}
 	return strdup(path);
 }
-
-#ifdef __linux__
-
-#include <sys/stat.h>
-#include <unistd.h>
 
 static int __create_dummy_dir_if_not_exists(const char* path)
 {
@@ -130,7 +127,3 @@ int platform_symlink(const char* path, const char* target, int directory)
 	free(targetFullPath);
 	return status;
 }
-
-#else
-#error "symlink: not implemented for this platform"
-#endif

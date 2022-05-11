@@ -30,11 +30,14 @@ struct served_command {
     // these are runtime state variables
     // and are not serialized to disk.
     const char* mount;
+    const char* symlink;
     const char* data;
 };
 
 struct served_application {
-    const char* name;
+    const char* name; // publisher/package
+    const char* publisher;
+    const char* package;
     int         major;
     int         minor;
     int         patch;
@@ -114,8 +117,9 @@ extern int served_application_stop_daemons(struct served_application* applicatio
 
 
 // application paths
-extern const char* served_application_get_pack_path(struct served_application* application);
-extern const char* served_application_get_mount_path(struct served_application* application);
-extern const char* served_application_get_data_path(struct served_application* application);
+extern char* served_application_get_pack_path(struct served_application* application);
+extern char* served_application_get_mount_path(struct served_application* application);
+extern char* served_application_get_data_path(struct served_application* application);
+extern char* served_application_get_command_symlink_path(struct served_application* application, struct served_command* command);
 
 #endif //!__SERVED_APPLICATION_H__

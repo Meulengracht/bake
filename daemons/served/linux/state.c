@@ -113,11 +113,13 @@ static int __parse_app(json_t* app, struct served_application* application)
     json_t* member;
     json_t* commands;
 
-    application->name     = __get_string_safe(app, "name");
-    application->major    = (int)json_integer_value(json_object_get(app, "major"));
-    application->minor    = (int)json_integer_value(json_object_get(app, "minor"));
-    application->patch    = (int)json_integer_value(json_object_get(app, "patch"));
-    application->revision = (int)json_integer_value(json_object_get(app, "revision"));
+    application->name      = __get_string_safe(app, "name");
+    application->publisher = __get_string_safe(app, "publisher");
+    application->package   = __get_string_safe(app, "package");
+    application->major     = (int)json_integer_value(json_object_get(app, "major"));
+    application->minor     = (int)json_integer_value(json_object_get(app, "minor"));
+    application->patch     = (int)json_integer_value(json_object_get(app, "patch"));
+    application->revision  = (int)json_integer_value(json_object_get(app, "revision"));
 
     commands = json_object_get(app, "commands");
     if (commands) {
@@ -166,6 +168,7 @@ static int __parse_state(const char* content, struct __state** stateOut)
     json_t*         root;
     json_t*         apps;
     int             status = -1;
+    VLOG_DEBUG("state", "__parse_state()\n");
 
     state = __state_new();
     if (state == NULL) {
@@ -299,6 +302,8 @@ static int __serialize_application(struct served_application* application, json_
     }
 
     json_object_set_new(json, "name", json_string(application->name));
+    json_object_set_new(json, "publisher", json_string(application->publisher));
+    json_object_set_new(json, "package", json_string(application->package));
     json_object_set_new(json, "major", json_integer(application->major));
     json_object_set_new(json, "minor", json_integer(application->minor));
     json_object_set_new(json, "patch", json_integer(application->patch));

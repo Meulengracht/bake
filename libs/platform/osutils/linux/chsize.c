@@ -17,16 +17,10 @@
  */
 
 #include <chef/platform.h>
-
-#ifdef __linux__
-
 #include <unistd.h>
+#include <sys/types.h>
 
-int platform_cpucount(void)
+int platform_chsize(int fd, long size)
 {
-	return (int)sysconf(_SC_NPROCESSORS_ONLN);
+	return ftruncate(fd, (off_t)size);
 }
-
-#else
-#error "cpucount: not implemented for this platform"
-#endif

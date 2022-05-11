@@ -13,29 +13,13 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 
 #include <chef/platform.h>
-
-#ifdef __linux__
-
 #include <unistd.h>
-#include <sys/types.h>
 
-int platform_chsize(int fd, long size)
+int platform_unlink(const char* path)
 {
-	return ftruncate(fd, (off_t)size);
+    return unlink(path);
 }
-
-#elif defined(_WIN32)
-
-#include <io.h>
-
-int platform_chsize(int fd, long size)
-{
-	return _chsize(fd, size);
-}
-
-#error "chsize: not implemented for this platform"
-#endif

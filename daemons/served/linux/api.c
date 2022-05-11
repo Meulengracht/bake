@@ -17,6 +17,7 @@
  */
 
 #include <application.h>
+#include <chef/platform.h>
 #include <gracht/server.h>
 #include <installer.h>
 #include <state.h>
@@ -53,13 +54,15 @@ static void __convert_cmd_to_protocol(struct served_command* command, struct che
     proto->data_path = (char*)command->data;
 }
 
-void chef_served_install_invocation(struct gracht_message* message, const char* path)
+void chef_served_install_invocation(struct gracht_message* message, const char* publisher, const char* path)
 {
-    served_installer_install(path);
+    VLOG_DEBUG("api", "chef_served_install_invocation(publisher=%s, path=%s)\n", publisher, path);
+    served_installer_install(publisher, path);
 }
 
 void chef_served_remove_invocation(struct gracht_message* message, const char* packageName)
 {
+    VLOG_DEBUG("api", "chef_served_remove_invocation(package=%s)\n", packageName);
     served_installer_uninstall(packageName);
 }
 
@@ -180,10 +183,12 @@ void chef_served_list_invocation(struct gracht_message* message)
 void chef_served_get_command_invocation(struct gracht_message* message, const char* mountPath)
 {
     struct served_application** applications;
-    struct chef_served_command  result = { 0 };
+    struct chef_served_command  result;
     int                         count;
     int                         status;
+    
     VLOG_DEBUG("api", "chef_served_get_command_invocation(mountPath=%s)\n", mountPath);
+    chef_served_command_init(&result);
 
     status = served_state_lock();
     if (status) {
@@ -202,7 +207,7 @@ void chef_served_get_command_invocation(struct gracht_message* message, const ch
 
     for (int i = 0; i < count; i++) {
         for (int j = 0; j < applications[i]->commands_count; j++) {
-            if (strcmp(applications[i]->commands[j].mount, mountPath) == 0) {
+            if (strendswith(applications[i]->commands[j].symlink, mountPath) == 0) {
                 __convert_cmd_to_protocol(&applications[i]->commands[j], &result);
                 served_state_unlock();
                 chef_served_get_command_response(message, &result);

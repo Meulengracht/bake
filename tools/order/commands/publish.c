@@ -37,7 +37,7 @@ static void __print_help(void)
     printf("      Print this help message\n");
 }
 
-static int __ensure_account_setup(void)
+static int __ensure_account_setup(char** publisherOut)
 {
     struct chef_account* account;
     int                  status;
@@ -66,6 +66,8 @@ static int __ensure_account_setup(void)
         return -1;
     }
 
+    *publisherOut = strdup(chef_account_get_publisher_name(account));
+
     chef_account_free(account);
     return 0;
 }
@@ -77,6 +79,7 @@ int publish_main(int argc, char** argv)
     struct chef_version*       version  = NULL;
     char*                      packPath = NULL;
     int                        status;
+    char*                      publisher;
 
     // set default channel
     params.channel = "devel";
@@ -148,7 +151,7 @@ int publish_main(int argc, char** argv)
         }
 
         // ensure account is setup
-        status = __ensure_account_setup();
+        status = __ensure_account_setup(&publisher);
         if (status != 0) {
             if (status == -EACCES) {
                 chefclient_logout();
@@ -161,11 +164,16 @@ int publish_main(int argc, char** argv)
         // publish the package
         status = chefclient_pack_publish(&params, packPath);
         if (status != 0) {
+            free(publisher);
             printf("failed to publish package: %s\n", strerror(errno));
             break;
         }
 
-        printf("package published successfully\n");
+        printf("package has been added to the publish queue, it can take up to 10 minuttes "
+               "before the package has been published, it depends on the server load and size "
+               "of the package. You can check when the package version has changed by running\n"
+               "'order info %s/%s'\n", publisher, package->package);
+        free(publisher);
         break;
     }
     

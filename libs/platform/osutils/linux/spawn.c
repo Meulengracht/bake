@@ -21,7 +21,12 @@
 #define _GNU_SOURCE
 #endif
 
+#include <errno.h>
 #include <chef/platform.h>
+#include <spawn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/wait.h>
 #include <string.h>
 
 static int __get_arg_count(const char* arguments)
@@ -136,13 +141,6 @@ static void __split_arguments(char* arguments, char** argv)
     }
 }
 
-#ifdef __linux__
-#include <errno.h>
-#include <spawn.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/wait.h>
-
 int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd)
 {
     posix_spawn_file_actions_t actions;
@@ -198,7 +196,3 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
     }
     return status;
 }
-
-#else
-#error "spawn: not implemented for this platform"
-#endif
