@@ -28,12 +28,12 @@ packs:
   type: application
   commands:
   - name: bake
-    path: bin/bake
+    path: /usr/local/bin/bake
     type: executable
     description: Utility to create chef recipes
     system-libs: true
   - name: order
-    path: bin/order
+    path: /usr/local/bin/order
     type: executable
     description: Utility to publish, inspect and manage account services
     system-libs: true
