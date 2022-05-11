@@ -183,10 +183,12 @@ void chef_served_list_invocation(struct gracht_message* message)
 void chef_served_get_command_invocation(struct gracht_message* message, const char* mountPath)
 {
     struct served_application** applications;
-    struct chef_served_command  result = { 0 };
+    struct chef_served_command  result;
     int                         count;
     int                         status;
+    
     VLOG_DEBUG("api", "chef_served_get_command_invocation(mountPath=%s)\n", mountPath);
+    chef_served_command_init(&result);
 
     status = served_state_lock();
     if (status) {
