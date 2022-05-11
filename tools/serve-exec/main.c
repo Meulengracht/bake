@@ -92,13 +92,6 @@ static int __spawn_command(struct chef_served_command* command, int argc, char**
     return status;
 }
 
-static void __cleanup_command(struct chef_served_command* command)
-{
-    free((void*)command->path);
-    free((void*)command->arguments);
-    free((void*)command->data_path);
-}
-
 int main(int argc, char** argv, char** envp)
 {
     struct gracht_message_context context;
@@ -116,6 +109,7 @@ int main(int argc, char** argv, char** envp)
     // what we essentially do is redirect everything based on the application
     // path passed in argv[0]. This will tell us exactly which application is currently
     // executing.
+    chef_served_command_init(&command);
 
     // So we use argv[0] to retrieve command information, together with application information
     // and then setup the environment for the command, and pass argv[1+] to it
@@ -130,7 +124,7 @@ int main(int argc, char** argv, char** envp)
     chef_served_get_command_result(client, &context, &command);
 
     status = __spawn_command(&command, argc, argv, envp);
-    __cleanup_command(&command);
+    chef_served_command_destroy(&command);
     gracht_client_shutdown(client);
     return status;
 }
