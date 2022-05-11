@@ -34,14 +34,6 @@ int served_application_ensure_paths(struct served_application* application)
         return -1;
     }
 
-    sprintf(path, "/usr/share/chef/%s-%s",
-        application->publisher, application->package);
-    if (platform_mkdir(path) != 0) {
-        VLOG_ERROR("paths", "failed to create path %s\n", path);
-        free(path);
-        return -1;
-    }
-
     sprintf(path, "/usr/share/chef/%s-%s/%i", application->publisher,
         application->package, application->revision);
     if (platform_mkdir(path) != 0) {

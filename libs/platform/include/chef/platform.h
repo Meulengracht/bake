@@ -167,8 +167,8 @@ extern int    strbool(const char* string);
 extern int strfilter(const char* filter, const char* text, int flags);
 
 /**
- * @brief Creates the provided directory path, if the directory already exists
- * nothing happens.
+ * @brief Recursively creates the provided directory path, if
+ * the directory already exists nothing happens.
  * 
  * @param[In] path The path to create 
  * @return int 0 on success, -1 on error

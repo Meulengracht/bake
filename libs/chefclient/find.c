@@ -39,8 +39,7 @@ static int __get_find_url(struct chef_find_params* params, char* urlBuffer, size
         "https://chef-api.azurewebsites.net/api/pack/find?search=%s",
         params->query
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static int __parse_channels(json_t* channels, struct chef_architecture* architecture)

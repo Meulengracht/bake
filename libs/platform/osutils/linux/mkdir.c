@@ -18,6 +18,8 @@
 
 #include <chef/platform.h>
 #include <errno.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 
 static int __directory_exists(
@@ -33,13 +35,45 @@ static int __directory_exists(
     return S_ISDIR(st.st_mode) ? 1 : -1;
 }
 
-int platform_mkdir(const char* path)
+static int __mkdir(const char* path, int perms)
 {
-    int status;
-
-    status = __directory_exists(path);
+    int status = __directory_exists(path);
     if (!status) {
-        return mkdir(path, 0755);
+        return mkdir(path, perms);
     }
     return status == 1 ? 0 : -1;
+}
+
+// original http://stackoverflow.com/a/2336245/119527
+int platform_mkdir(const char* path)
+{
+    char   ccpath[512];
+    char*  p = NULL;
+    size_t length;
+    int    status;
+
+    status = snprintf(ccpath, sizeof(ccpath), "%s", path);
+    if (status >= sizeof(ccpath)) {
+        errno = ENAMETOOLONG;
+        return -1; 
+    }
+
+    length = strlen(ccpath);
+    if (ccpath[length - 1] == '/') {
+        ccpath[length - 1] = 0;
+    }
+
+    for (p = ccpath + 1; *p; p++) {
+        if (*p == '/') {
+            *p = 0;
+            
+            status = __mkdir(ccpath, S_IRWXU);
+            if (status) {
+                return status;
+            }
+
+            *p = '/';
+        }
+    }
+    return __mkdir(ccpath, S_IRWXU);
 }

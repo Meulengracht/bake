@@ -212,8 +212,7 @@ static int __get_publish_url(char* urlBuffer, size_t bufferSize)
     int written = snprintf(urlBuffer, bufferSize - 1, 
         "https://chef-api.azurewebsites.net/api/pack/publish"
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static int __get_block_url(char* urlBuffer, size_t bufferSize, const char* urlBase, const char* blockId)
@@ -223,8 +222,7 @@ static int __get_block_url(char* urlBuffer, size_t bufferSize, const char* urlBa
         urlBase,
         blockId
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static int __get_blocklist_url(char* urlBuffer, size_t bufferSize, const char* urlBase)
@@ -233,8 +231,7 @@ static int __get_blocklist_url(char* urlBuffer, size_t bufferSize, const char* u
         "%s&comp=blocklist",
         urlBase
     );
-    urlBuffer[written] = '\0';
-    return written == bufferSize - 1 ? -1 : 0;
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
 static int __publish_request(json_t* json, struct pack_response* context)
