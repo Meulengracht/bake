@@ -54,7 +54,7 @@ struct oven_variables {
 };
 
 struct oven_context {
-    const char**               process_environment;
+    const char* const*         process_environment;
     const char*                build_root;
     const char*                install_root;
     struct oven_variables      variables;
@@ -140,7 +140,7 @@ static int __create_path(const char* path)
     return 0;
 }
 
-int oven_initialize(char** envp, const char* platform, const char* architecture, const char* recipeScope, const char* fridgePrepDirectory)
+int oven_initialize(struct oven_parameters* parameters)
 {
     int         status;
     char*       cwd;
@@ -149,6 +149,11 @@ int oven_initialize(char** envp, const char* platform, const char* architecture,
     const char* installRoot;
     char        tmp[128];
 
+    if (parameters == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
     // get the current working directory
     status = __get_cwd(&cwd);
     if (status) {
@@ -156,7 +161,7 @@ int oven_initialize(char** envp, const char* platform, const char* architecture,
     }
 
     // get basename of recipe
-    strbasename(recipeScope, tmp, sizeof(tmp));
+    strbasename(parameters->recipe_name, tmp, sizeof(tmp));
 
     // initialize oven paths
     root        = strpathcombine(cwd, OVEN_ROOT);
@@ -171,13 +176,13 @@ int oven_initialize(char** envp, const char* platform, const char* architecture,
     }
 
     // update oven variables
-    g_oven.variables.target_platform       = strdup(platform);
-    g_oven.variables.target_arch           = strdup(architecture);
+    g_oven.variables.target_platform       = strdup(parameters->target_platform);
+    g_oven.variables.target_arch           = strdup(parameters->target_architecture);
     g_oven.variables.cwd                   = cwd;
-    g_oven.variables.fridge_prep_directory = strdup(fridgePrepDirectory);
+    g_oven.variables.fridge_prep_directory = strdup(parameters->ingredients_prefix);
 
     // update oven context
-    g_oven.process_environment   = (const char**)envp;
+    g_oven.process_environment   = parameters->envp;
     g_oven.build_root            = strpathcombine(buildRoot, &tmp[0]);
     g_oven.install_root          = strpathcombine(installRoot, &tmp[0]);;
     if (g_oven.build_root == NULL || g_oven.install_root == NULL) {
@@ -674,8 +679,9 @@ static void __cleanup_backend_data(struct oven_backend_data* data)
 {
     __cleanup_environment(data->environment);
     free((void*)data->arguments);
-    free((void*)data->project_directory);
-    free((void*)data->root_directory);
+
+    free((void*)data->paths.root);
+    free((void*)data->paths.project);
 }
 
 static int __initialize_backend_data(struct oven_backend_data* data, const char* profile, struct list* arguments, struct list* environment)
@@ -690,22 +696,27 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     if (status) {
         return status;
     }
-    data->root_directory = path;
+    data->paths.root = path;
     
-    path = strpathcombine(data->root_directory, g_oven.recipe.relative_path);
+    path = strpathcombine(data->paths.root, g_oven.recipe.relative_path);
     if (path == NULL) {
-        free((void*)data->root_directory);
+        free((void*)data->paths.root);
         return status;
     }
-    data->project_directory = path;
+    data->paths.project = path;
 
     data->project_name        = g_oven.recipe.name;
     data->profile_name        = profile != NULL ? profile : "Release";
-    data->platform            = g_oven.variables.target_platform;
-    data->install_directory   = g_oven.recipe.install_root;
-    data->build_directory     = g_oven.recipe.build_root;
     data->process_environment = g_oven.process_environment;
-    data->fridge_directory    = g_oven.variables.fridge_prep_directory;
+
+    data->platform.host_platform = CHEF_PLATFORM_STR;
+    data->platform.host_architecture = CHEF_ARCHITECTURE_STR;
+    data->platform.target_platform = g_oven.variables.target_platform;
+    data->platform.target_architecture = g_oven.variables.target_arch;
+    
+    data->paths.install       = g_oven.recipe.install_root;
+    data->paths.build         = g_oven.recipe.build_root;
+    data->paths.ingredients   = g_oven.variables.fridge_prep_directory;
     
     data->environment = __preprocess_keypair_list(environment);
     if (!data->environment) {

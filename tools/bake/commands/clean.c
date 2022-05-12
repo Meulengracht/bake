@@ -49,8 +49,9 @@ static void __cleanup_systems(int sig)
 
 int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    int   status;
-    char* name = NULL;
+    struct oven_parameters ovenParams;
+    int                    status;
+    char*                  name = NULL;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -86,7 +87,13 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
     }
     atexit(fridge_cleanup);
 
-    status = oven_initialize(envp, CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR, name, fridge_get_prep_directory());
+    ovenParams.envp = (const char* const*)envp;
+    ovenParams.target_platform = CHEF_PLATFORM_STR;
+    ovenParams.target_architecture = CHEF_ARCHITECTURE_STR;
+    ovenParams.recipe_name = name;
+    ovenParams.ingredients_prefix = fridge_get_prep_directory();
+
+    status = oven_initialize(&ovenParams);
     if (status) {
         fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
         return -1;

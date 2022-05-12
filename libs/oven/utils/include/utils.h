@@ -26,7 +26,7 @@
  * @param additonal 
  * @return char** 
  */
-extern char** oven_environment_create(const char** parent, struct list* additonal);
+extern char** oven_environment_create(const char* const* parent, struct list* additonal);
 
 /**
  * @brief 

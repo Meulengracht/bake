@@ -399,12 +399,13 @@ static int __parse_cc_switch(const char* value, char** platformOut, char** archO
 
 int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    char* name     = NULL;
-    char* platform = CHEF_PLATFORM_STR;
-    char* arch     = CHEF_ARCHITECTURE_STR;
-    char* step     = "run";
-    int   debug    = 0;
-    int   status;
+    struct oven_parameters ovenParams;
+    char*                  name     = NULL;
+    char*                  platform = CHEF_PLATFORM_STR;
+    char*                  arch     = CHEF_ARCHITECTURE_STR;
+    char*                  step     = "run";
+    int                    debug    = 0;
+    int                    status;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -459,7 +460,13 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = oven_initialize(envp, platform, arch, name, fridge_get_prep_directory());
+    ovenParams.envp = (const char* const*)envp;
+    ovenParams.target_platform = platform;
+    ovenParams.target_architecture = arch;
+    ovenParams.recipe_name = name;
+    ovenParams.ingredients_prefix = fridge_get_prep_directory();
+
+    status = oven_initialize(&ovenParams);
     if (status) {
         fprintf(stderr, "failed to initialize oven: %s\n", strerror(errno));
         return -1;

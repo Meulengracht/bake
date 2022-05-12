@@ -31,7 +31,7 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
     char**      environment = NULL;
     char*       argument    = NULL;
     size_t      argumentLength;
-    const char* cwd = data->build_directory;
+    const char* cwd = data->paths.build;
 
     argumentLength = strlen(data->arguments) + 32;
     argument       = calloc(argumentLength, 1);

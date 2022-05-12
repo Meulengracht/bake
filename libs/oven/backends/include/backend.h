@@ -24,6 +24,48 @@ struct oven_generate_options;
 struct oven_build_options;
 union oven_backend_options;
 
+struct oven_backend_data_paths {
+    /**
+     * @brief The working directory from which the backend is executed
+     * This is not the current active directory. The current working directory
+     * will be BAKE_BUILD_DIR.
+     */
+    const char* root;
+
+    /**
+     * @brief The is the path to the project source directory, this is the path
+     * where the backend is supposed to load/execute files from.
+     * <root_directory>/<source_offset>
+     */
+    const char* project;
+
+    /**
+     * @brief The path to the project build directory, this is the path where
+     * the oven backend is supposed to store the generated files.
+     */
+    const char* build;
+
+    /**
+     * @brief The path to the project output directory, this is the path where
+     * the backend is supposed to store the files that should be installed.
+     */
+    const char* install;
+
+    /**
+     * @brief The path where the fridge keeps it's ingredients. This is the prep area
+     * path and not the storage path. The prep area will usually contain bin/, lib/ and
+     * include/
+     */
+    const char* ingredients;
+};
+
+struct oven_backend_data_platform {
+    const char* host_platform;
+    const char* host_architecture;
+    const char* target_platform;
+    const char* target_architecture;
+};
+
 struct oven_backend_data {
     /**
      * @brief The name of the current project. Will usually be the file-name without .yaml
@@ -36,47 +78,9 @@ struct oven_backend_data {
     const char* profile_name;
 
     /**
-     * @brief The target platform.
-     */
-    const char* platform;
-
-    /**
      * @brief The environmental values that the current process has
      */
-    const char** process_environment;
-
-    /**
-     * @brief The working directory from which the backend is executed
-     * This is not the current active directory. The current working directory
-     * will be BAKE_BUILD_DIR.
-     */
-    const char* root_directory;
-
-    /**
-     * @brief The is the path to the project source directory, this is the path
-     * where the backend is supposed to load/execute files from.
-     * <root_directory>/<source_offset>
-     */
-    const char* project_directory;
-
-    /**
-     * @brief The path to the project build directory, this is the path where
-     * the oven backend is supposed to store the generated files.
-     */
-    const char* build_directory;
-
-    /**
-     * @brief The path to the project output directory, this is the path where
-     * the backend is supposed to store the files that should be installed.
-     */
-    const char* install_directory;
-
-    /**
-     * @brief The path where the fridge keeps it's ingredients. This is the prep area
-     * path and not the storage path. The prep area will usually contain bin/, lib/ and
-     * include/
-     */
-    const char* fridge_directory;
+    const char* const* process_environment;
 
     /**
      * @brief Argument string for the current recipe step. The string is a
@@ -88,6 +92,16 @@ struct oven_backend_data {
      * @brief list of key-value pairs for the current recipe step.
      */
     struct list* environment;
+
+    /**
+     * @brief The platform information.
+     */
+    struct oven_backend_data_platform platform;
+
+    /**
+     * @brief The paths relevant to the project.
+     */
+    struct oven_backend_data_paths paths;
 };
 
 //****************************************************************************//

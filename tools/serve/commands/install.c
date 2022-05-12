@@ -37,7 +37,16 @@
 
 extern int __chef_client_initialize(gracht_client_t** clientOut);
 
-static const char* g_publicKey = "";
+static const char* g_publicKey = 
+"-----BEGIN PUBLIC KEY-----"
+"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuWpXSNzQqpfd7ZYHRWSh"
+"j5Dfs49jaaUQkAzh+fH8ka5OEUA4yojauq7qX3lFWtmMnua/9XhY1x5xAC/zxDtb"
+"gif09/FbN4rvSlZ0MIq4aC2bvECVCy/S3BtWZk5QHPsRExbMX16vJ8Cmhby6JV8X"
+"0eCdk4nMGyDIktg697GqkpLeL4QeHNliPWLRuxNwHyguLUW3ch83gEQzdClrGSNj"
+"aJiTx05QhUUscaIJGJH/LH2MuGaMwGyDzl0wLO1BhlTRzsPd6lxmQb3c9s92YPjS"
+"sbYBfDFSBK2k3ACfD2+8bGZlu2NMobV4iGYlO26N2qypXZdV6/RLyxw2+aEx+IEY"
+"pQIDAQAB"
+"-----END PUBLIC KEY-----";
 
 static const char* g_installMsgs[] = {
     "success",

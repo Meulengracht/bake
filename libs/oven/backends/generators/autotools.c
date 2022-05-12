@@ -136,9 +136,12 @@ static int __generate_site_file(const char* path, struct oven_backend_data* data
     }
 
     fwrite(g_siteTemplate, strlen(g_siteTemplate), 1, file);
-    fprintf(file, "CFLAGS=-I%s/include\n", data->fridge_directory);
-    fprintf(file, "CPPFLAGS=-I%s/include\n", data->fridge_directory);
-    fprintf(file, "LDFLAGS=-L%s/lib\n", data->fridge_directory);
+    fprintf(file, "CFLAGS=-I%s/include -I%s/usr/include -I%s/usr/local/include\n",
+        data->paths.ingredients, data->paths.ingredients, data->paths.ingredients);
+    fprintf(file, "CPPFLAGS=-I%s/include -I%s/usr/include -I%s/usr/local/include\n",
+        data->paths.ingredients, data->paths.ingredients, data->paths.ingredients);
+    fprintf(file, "LDFLAGS=-L%s/lib -L%s/usr/lib -L%s/usr/local/lib\n",
+        data->paths.ingredients, data->paths.ingredients, data->paths.ingredients);
     fclose(file);
     return 0;
 }
@@ -154,14 +157,19 @@ int configure_main(struct oven_backend_data* data, union oven_backend_options* o
     int    status = -1;
     int    written;
 
-    arguments = __replace_or_add_prefix(data->platform, data->arguments, data->install_directory, &installPath);
+    arguments = __replace_or_add_prefix(
+        data->platform.target_platform,
+        data->arguments,
+        data->paths.install,
+        &installPath
+    );
     if (arguments == NULL) {
         return -1;
     }
 
     sharePath      = strpathcombine(installPath, "share");
     configSitePath = strpathcombine(sharePath, "config.site");
-    configurePath  = strpathcombine(data->project_directory, "configure");
+    configurePath  = strpathcombine(data->paths.project, "configure");
     if (sharePath == NULL || configSitePath == NULL || configurePath == NULL) {
         free(arguments);
         free(sharePath);
@@ -188,7 +196,12 @@ int configure_main(struct oven_backend_data* data, union oven_backend_options* o
 
     // perform the spawn operation
     printf("oven-configure: executing '%s %s'\n", configurePath, arguments);
-    status = platform_spawn(configurePath, arguments, (const char* const*)environment, data->build_directory);
+    status = platform_spawn(
+        configurePath,
+        arguments,
+        (const char* const*)environment,
+        data->paths.build
+    );
     
 cleanup:
     oven_environment_destroy(environment);

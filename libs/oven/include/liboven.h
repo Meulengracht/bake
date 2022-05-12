@@ -108,18 +108,22 @@ struct oven_pack_options {
     struct list*           commands; // list<oven_pack_command>
 };
 
+struct oven_parameters {
+    const char* const* envp;
+    const char*        recipe_name;
+    const char*        target_platform;
+    const char*        target_architecture;
+    const char*        ingredients_prefix;
+};
+
 /**
  * @brief Initializes the oven system, creates all neccessary folders. All oven_*
  *       functions will fail if this function is not called first.
  * 
- * @param[In] envp
- * @param[In] platform
- * @param[In] architecture
- * @param[In] recipeScope
- * @param[In] fridgePrepDirectory
+ * @param[In] parameters
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int oven_initialize(char** envp, const char* platform, const char* architecture, const char* recipeScope, const char* fridgePrepDirectory);
+extern int oven_initialize(struct oven_parameters* parameters);
 
 /**
  * @brief 

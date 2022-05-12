@@ -67,18 +67,45 @@ static int __write_header(FILE* file, const char* projectName, const char* profi
     return 0;
 }
 
-static int __write_prefix(FILE* file, const char* prefixPath)
+static void __write_linux_prefix(FILE* file, const char* prefixPath)
 {
-    fprintf(file, "\n# setup the prefix path\n");
+    fprintf(file, "\n# setup the linux environment paths\n");
     fprintf(file, "list(APPEND CMAKE_PREFIX_PATH \"%s\")\n", prefixPath);
-    return 0;
+    fprintf(file, "list(APPEND CMAKE_PREFIX_PATH \"%s/usr\")\n", prefixPath);
+    fprintf(file, "list(APPEND CMAKE_PREFIX_PATH \"%s/usr/local\")\n", prefixPath);
 }
 
-static int __write_include(FILE* file, const char* includePath)
+static void __write_linux_include(FILE* file, const char* includePath)
+{
+    fprintf(file, "\n# setup additional include paths for linux code environment\n");
+    fprintf(file, "include_directories(\"%s/include\")\n", includePath);
+    fprintf(file, "include_directories(\"%s/usr/include\")\n", includePath);
+    fprintf(file, "include_directories(\"%s/usr/local/include\")\n", includePath);
+}
+
+static void __write_windows_prefix(FILE* file, const char* prefixPath)
+{
+    fprintf(file, "\n# setup the windows environment paths\n");
+    fprintf(file, "list(APPEND CMAKE_PREFIX_PATH \"%s\")\n", prefixPath);
+    fprintf(file, "list(APPEND CMAKE_PREFIX_PATH \"%s/Program Files\")\n", prefixPath);
+}
+
+static void __write_windows_include(FILE* file, const char* includePath)
+{
+    fprintf(file, "\n# setup additional include paths for windows code environment\n");
+    fprintf(file, "include_directories(\"%s/Program Files/include\")\n", includePath);
+}
+
+static void __write_default_prefix(FILE* file, const char* prefixPath)
+{
+    fprintf(file, "\n# setup the default environment path\n");
+    fprintf(file, "list(APPEND CMAKE_PREFIX_PATH \"%s\")\n", prefixPath);
+}
+
+static void __write_default_include(FILE* file, const char* includePath)
 {
     fprintf(file, "\n# setup additional include paths for code\n");
     fprintf(file, "include_directories(\"%s/include\")\n", includePath);
-    return 0;
 }
 
 static int __generate_cmake_file(const char* path, struct oven_backend_data* data)
@@ -97,15 +124,16 @@ static int __generate_cmake_file(const char* path, struct oven_backend_data* dat
         goto cleanup;
     }
 
-    if (data->fridge_directory) {
-        status = __write_prefix(file, data->fridge_directory);
-        if (status != 0) {
-            goto cleanup;
-        }
-        
-        status = __write_include(file, data->fridge_directory);
-        if (status != 0) {
-            goto cleanup;
+    if (data->paths.ingredients) {
+        if (strcmp(data->platform.target_platform, "linux") == 0) {
+            __write_linux_prefix(file, data->paths.ingredients);
+            __write_linux_include(file, data->paths.ingredients);
+        } else if (strcmp(data->platform.target_platform, "windows") == 0) {
+            __write_windows_prefix(file, data->paths.ingredients);
+            __write_windows_include(file, data->paths.ingredients);
+        } else {
+            __write_default_prefix(file, data->paths.ingredients);
+            __write_default_include(file, data->paths.ingredients);
         }
     }
 
@@ -203,8 +231,12 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
     int    status = -1;
     size_t argumentLength;
 
-    workspacePath = strpathcombine(data->build_directory, "workspace.cmake");
-    newArguments  = __replace_or_add_cmake_prefix(data->platform, data->arguments, data->install_directory);
+    workspacePath = strpathcombine(data->paths.build, "workspace.cmake");
+    newArguments  = __replace_or_add_cmake_prefix(
+        data->platform.target_platform,
+        data->arguments,
+        data->paths.install
+    );
     if (workspacePath == NULL || newArguments == NULL) {
         free(workspacePath);
         free(newArguments);
@@ -236,13 +268,18 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
         "%s -DCMAKE_PROJECT_INCLUDE=%s %s",
         newArguments,
         workspacePath,
-        data->project_directory
+        data->paths.project
     );
     argument[written] = '\0';
 
     // perform the spawn operation
     printf("oven-cmake: executing 'cmake %s'\n", argument);
-    status = platform_spawn("cmake", argument, (const char* const*)environment, data->build_directory);
+    status = platform_spawn(
+        "cmake",
+        argument,
+        (const char* const*)environment,
+        data->paths.build
+    );
     
 cleanup:
     oven_environment_destroy(environment);
