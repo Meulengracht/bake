@@ -338,13 +338,17 @@ static int __write_syslib(
     struct list_item*           item;
     int                         status;
 
-    status = vafs_directory_create_directory(directoryHandle, "lib", 0666, &subdirectoryHandle);
+    // write library directories as rwxr-xr-x
+    // TODO other platforms
+    status = vafs_directory_create_directory(directoryHandle, "lib", 0755, &subdirectoryHandle);
     if (status) {
         fprintf(stderr, "oven: failed to create directory 'lib'\n");
         return status;
     }
 
-    status = __write_file(subdirectoryHandle, dependency->path, dependency->name, 0777);
+    // write libraries as -rw-r--r--
+    // TODO other platforms
+    status = __write_file(subdirectoryHandle, dependency->path, dependency->name, 0644);
     if (status && errno != EEXIST) {
         fprintf(stderr, "oven: failed to write dependency %s\n", dependency->path);
         return -1;
@@ -368,7 +372,9 @@ static int __write_filepath(
     // extract next token from the remaining path
     remaining = strchr(remainingPath, CHEF_PATH_SEPARATOR);
     if (!remaining) {
-        status = __write_file(directoryHandle, dependency->path, dependency->name, 0777);
+        // write dependencies (libraries) as -rw-r--r--
+        // TODO other platforms
+        status = __write_file(directoryHandle, dependency->path, dependency->name, 0644);
         if (status && errno != EEXIST) {
             return -1;
         }
@@ -381,7 +387,9 @@ static int __write_filepath(
     }
 
     // create directory if it doesn't exist
-    status = vafs_directory_create_directory(directoryHandle, token, 0666, &subdirectoryHandle);
+    // write library directories as rwxr-xr-x
+    // TODO other platforms
+    status = vafs_directory_create_directory(directoryHandle, token, 0755, &subdirectoryHandle);
     free(token);
 
     if (status) {

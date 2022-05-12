@@ -59,7 +59,8 @@ static int __create_dummy_dir_if_not_exists(const char* path)
 
 	result = stat(path, &st);
 	if (result) {
-		result = mkdir(path, 0777);
+		// rwxrwxr-x
+		result = mkdir(path, 0775);
 	}
 	return result;
 }
