@@ -37,12 +37,12 @@ int meson_main(struct oven_backend_data* data, union oven_backend_options* optio
         return -1;
     }
 
-    mesonCommand = malloc(strlen("meson") + strlen(data->build_directory) + 16);
+    mesonCommand = malloc(strlen("meson") + strlen(data->paths.build) + 16);
     if (mesonCommand == NULL) {
         errno = ENOMEM;
         goto cleanup;
     }
-    sprintf(mesonCommand, "meson %s", data->build_directory);
+    sprintf(mesonCommand, "meson %s", data->paths.build);
 
     // use the project directory (cwd) as the current build directory
     status = platform_spawn(

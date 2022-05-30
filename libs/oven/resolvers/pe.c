@@ -238,6 +238,7 @@ int pe_resolve_dependencies(const char* path, struct list* dependencies)
 }
 
 #ifdef TEST
+#include "common.c"
 // gcc -I../../platform/include -DTEST ./pe.c
 int main(int argc, char** argv)
 {

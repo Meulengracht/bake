@@ -38,7 +38,7 @@ static int __contains_envkey(struct list* list, const char* key)
     return 0;
 }
 
-char** oven_environment_create(const char** parent, struct list* additional)
+char** oven_environment_create(const char* const* parent, struct list* additional)
 {
     struct list_item* item;
     char**            environment;

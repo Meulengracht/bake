@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <vafs/vafs.h>
 #include <vafs/file.h>
+#include <vafs/symlink.h>
 #include <vafs/directory.h>
 #include <vafs/stat.h>
 #include <utils.h>
@@ -129,7 +130,7 @@ int __vafs_access(const char* path, int permissions)
     int                  status;
     VLOG_DEBUG("fuse", "access(path=%s, perms=%i)\n", path, permissions);
 
-    status = vafs_path_stat(mount->vafs, path, &stat);
+    status = vafs_path_stat(mount->vafs, path, 1, &stat);
     if (status) {
         return status;
     }
@@ -208,7 +209,7 @@ int __vafs_getattr(const char* path, struct stat* stat, struct fuse_file_info *f
         return 0;
     }
 
-    status = vafs_path_stat(mount->vafs, path, &vstat);
+    status = vafs_path_stat(mount->vafs, path, 0, &vstat);
     if (status) {
         return status;
     }
@@ -221,6 +222,32 @@ int __vafs_getattr(const char* path, struct stat* stat, struct fuse_file_info *f
     stat->st_size    = (off_t)vstat.size;
     stat->st_nlink   = isRoot + 1;
     return 0;
+}
+
+/** Read the target of a symbolic link
+ *
+ * The buffer should be filled with a null terminated string.  The
+ * buffer size argument includes the space for the terminating
+ * null character.	If the linkname is too long to fit in the
+ * buffer, it should be truncated.	The return value should be 0
+ * for success.
+ */
+int __vafs_readlink(const char* path, char* linkBuffer, size_t bufferSize)
+{
+    struct fuse_context*      context  = fuse_get_context();
+    struct served_mount*      mount    = (struct served_mount*)context->private_data;
+    struct VaFsSymlinkHandle* handle;
+    int                       status;
+    VLOG_DEBUG("fuse", "readlink(path=%s)\n", path);
+
+    status = vafs_symlink_open(mount->vafs, path, &handle);
+    if (status) {
+        return status;
+    }
+
+    status = vafs_symlink_target(handle, linkBuffer, bufferSize);
+    vafs_symlink_close(handle);
+    return status;
 }
 
 /**
@@ -484,6 +511,7 @@ static struct fuse_operations g_vafsOperations = {
     .read       = __vafs_read,
     .lseek      = __vafs_lseek,
     .getattr    = __vafs_getattr,
+    .readlink   = __vafs_readlink,
     .release    = __vafs_release,
     .opendir    = __vafs_opendir,
     .readdir    = __vafs_readdir,
