@@ -16,14 +16,36 @@
  *
  */
 
-#ifndef __CONTAINER_H__
-#define __CONTAINER_H__
+#ifndef __UTILS_H__
+#define __UTILS_H__
 
-#include <sys/types.h>
+#include <errno.h>
 
-struct containerv_container {
-    pid_t pid;
-    int   event_fd;
-};
+#define __INTSAFE_CALL(__expr) \
+({                                            \
+    int __status;                             \
+    do {                                      \
+        __status = (int)(__expr);             \
+    } while (__status < 0 && errno == EINTR); \
+    __status;                                 \
+})
 
-#endif //!__CONTAINER_H__
+static inline int __close_safe(int *fd)
+{
+    int status = 0;
+    if (*fd >= 0) {
+        status = __INTSAFE_CALL(close(*fd));
+        if (status == 0) {
+            *fd = -1;
+        }
+    }
+    return status;
+}
+
+/**
+ *
+ * @return
+ */
+extern int utils_detach_process(void);
+
+#endif //!__UTILS_H__

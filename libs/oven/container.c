@@ -327,7 +327,7 @@ static int __write_directory(
     closedir(dfd);
     return status;
 }
-#include <sys/stat.h>
+
 // TODO on windows this should just put them into same folder as executable
 static int __write_syslib(
     struct progress_context*        progress,

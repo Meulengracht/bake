@@ -43,7 +43,7 @@ int served_application_ensure_paths(struct served_application* application)
     }
 
     // always make sure mount-point is created
-    sprintf(path, "/run/chef/%s-%s", application->publisher,
+    sprintf(path, "/var/chef/mnt/%s-%s", application->publisher,
         application->package);
     if (platform_mkdir(path) != 0) {
         // so we might receive ENOTCONN here, which means 'Transport endpoint is not connected'
@@ -80,7 +80,7 @@ char* served_application_get_mount_path(struct served_application* application)
         return NULL;
     }
 
-    sprintf(path, "/run/chef/%s-%s", application->publisher, application->package);
+    sprintf(path, "/var/chef/mnt/%s-%s", application->publisher, application->package);
     return path;
 }
 

@@ -19,12 +19,34 @@
 #include <errno.h>
 #include <application.h>
 #include <chef/platform.h>
-#include <utils.h>
+#include <chef/containerv.h>
+#include <stdlib.h>
+
+static struct containerv_container* __create_container(struct served_application* application)
+{
+    struct containerv_container* container;
+    int                          status;
+    char*                        rootFs;
+
+    rootFs = served_application_get_mount_path(application);
+    status = containerv_create(rootFs, "mountfs", 0,
+                               NULL, 0, &container);
+    free(rootFs);
+    if (status) {
+        return NULL;
+    }
+    return container;
+}
 
 int served_application_start_daemons(struct served_application* application)
 {
     if (application == NULL) {
         errno = EINVAL;
+        return -1;
+    }
+
+    application->container = __create_container(application);
+    if (application->container == NULL) {
         return -1;
     }
 

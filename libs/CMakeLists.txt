@@ -2,6 +2,7 @@
 # can link against it. The platform library must be independant
 add_subdirectory(platform)
 add_subdirectory(vlog)
+add_subdirectory(containerv)
 
 # Build utility libraries before the system libraries
 set(VAFS_BUILD_TOOLS OFF CACHE BOOL "Do not build vafs utilities")
