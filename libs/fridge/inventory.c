@@ -399,10 +399,15 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
 
     *packOut = packEntry;
 
+    // Update the new array stored before we serialize the inventory to disk.
     inventory->packs = newArray;
     inventory->packs_count += 1;
     free(oldArray);
-    return 0;
+
+    // Once the pack is downloaded and added, lets checkpoint this so we
+    // don't need to redownload, in case anything goes wrong. Be respectful
+    // to people's bandwidth :-)
+    return inventory_save(inventory);
 }
 
 static int __serialize_inventory(struct fridge_inventory* inventory, json_t** jsonOut)

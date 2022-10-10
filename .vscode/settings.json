@@ -71,5 +71,8 @@
         "types.h": "c",
         "signature.h": "c"
     },
-    "cmake.installPrefix": "/usr/local/chef"
+    "cmake.installPrefix": "/usr/local/chef",
+    "cmake.configureArgs": [
+        "-DCMAKE_BUILD_TYPE=Debug"
+    ]
 }
