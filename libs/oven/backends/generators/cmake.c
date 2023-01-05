@@ -105,7 +105,8 @@ static void __write_default_prefix(FILE* file, const char* prefixPath)
 static void __write_default_include(FILE* file, const char* includePath)
 {
     fprintf(file, "\n# setup additional include paths for code\n");
-    fprintf(file, "include_directories(\"%s/include\")\n", includePath);
+    fprintf(file, "string(APPEND CMAKE_C_STANDARD_INCLUDE_DIRECTORIES \"%s/include\")\n", includePath);
+    fprintf(file, "string(APPEND CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES \"%s/include\")\n", includePath);
 }
 
 static int __generate_cmake_file(const char* path, struct oven_backend_data* data)
