@@ -654,6 +654,89 @@ static struct list* __preprocess_keypair_list(struct list* original)
     return processed;
 }
 
+static const char* __append_ingredients_system_path(const char* original)
+{
+    // '-isystem-after ' (15)
+    // '/include' (8)
+    // space between (1)
+    // zero terminator (1)
+    size_t length = strlen(original) + strlen(g_oven.variables.fridge_prep_directory) + 26;
+    char*  buffer = calloc(length, 1);
+    if (buffer == NULL) {
+        return NULL;    
+    }
+    
+    snprintf(buffer, length - 1, "%s -isystem-after %s/include", original, g_oven.variables.fridge_prep_directory);
+    return buffer;
+}
+
+static struct oven_keypair_item* __build_ingredients_system_path_keypair(const char* key)
+{
+    // '-isystem-after ' (15)
+    // '/include' (8)
+    // zero terminator (1)
+    size_t length = strlen(g_oven.variables.fridge_prep_directory) + 25;
+    char*  buffer = calloc(length, 1);
+    struct oven_keypair_item* item = calloc(sizeof(struct oven_keypair_item), 1);
+    if (buffer == NULL || item == NULL) {
+        free(buffer);
+        return NULL;
+    }
+    item->key = strdup(key);
+    if (item->key == NULL) {
+        free(buffer);
+        free(item);
+    }
+
+    snprintf(buffer, length - 1, "-isystem-after %s/include", g_oven.variables.fridge_prep_directory);
+    item->value = buffer;
+    return item;
+}
+
+static int __append_or_update_environ_flags(struct list* environment)
+{
+    // Look and update/add the following language flags to account for
+    // ingredient include paths
+    struct list_item* item;
+    struct {
+        const char* ident;
+        int         fixed;
+    } idents[] = {
+        { "CFLAGS", 0 },
+        { "CXXFLAGS", 0 },
+        { NULL, 0 }
+    };
+
+    // Update any environmental variable already provided by recipe
+    list_foreach(environment, item) {
+        struct oven_keypair_item* keypair = (struct oven_keypair_item*)item;
+        for (int i = 0; idents[i].ident != NULL; i++) {
+            if (!strcmp(keypair->key, idents[i].ident)) {
+                const char* tmp = keypair->value;
+                keypair->value = __append_ingredients_system_path(tmp);
+                if (keypair->value == NULL) {
+                    keypair->value = tmp;
+                    return -1;
+                }
+                free((void*)tmp);
+                idents[i].fixed = 1;
+            }
+        }
+    }
+
+    // Add any that was not provided
+    for (int i = 0; idents[i].ident != NULL; i++) {
+        if (!idents[i].fixed) {
+            item = (struct list_item*)__build_ingredients_system_path_keypair(idents[i].ident);
+            if (item == NULL) {
+                return -1;
+            }
+            list_add(environment, item);
+        }
+    }
+    return 0;
+}
+
 static void __cleanup_environment(struct list* keypairs)
 {
     struct list_item* item;
@@ -720,6 +803,11 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     
     data->environment = __preprocess_keypair_list(environment);
     if (!data->environment) {
+        __cleanup_backend_data(data);
+        return -1;
+    }
+
+    if (__append_or_update_environ_flags(data->environment)) {
         __cleanup_backend_data(data);
         return -1;
     }

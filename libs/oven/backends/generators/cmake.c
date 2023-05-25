@@ -105,8 +105,14 @@ static void __write_default_prefix(FILE* file, const char* prefixPath)
 static void __write_default_include(FILE* file, const char* includePath)
 {
     fprintf(file, "\n# setup additional include paths for code\n");
-    fprintf(file, "set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES \"%s/include\")\n", includePath);
-    fprintf(file, "set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES \"%s/include\")\n", includePath);
+
+    // Issue: these do not work, they need to appear after project()
+    //fprintf(file, "list(APPEND CMAKE_INCLUDE_PATH \"%s/include\")\n", includePath);
+    //fprintf(file, "include_directories(AFTER SYSTEM \"%s/include\")\n", includePath);
+
+    // Issue: this adds -system includes which can break system libraries includes.
+    //fprintf(file, "set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES \"%s/include\")\n", includePath);
+    //fprintf(file, "set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES \"%s/include\")\n", includePath);
 }
 
 static int __generate_cmake_file(const char* path, struct oven_backend_data* data)
