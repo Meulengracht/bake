@@ -2,7 +2,7 @@
 	path = libs/vafs
 	url = ../vali-rofs.git
 [submodule "libs/zstd"]
-	path = libs/zstd
+	path = libs/compression/zstd
 	url = ../../umbrella-c/zstd.git
 [submodule "libs/curl"]
 	path = libs/curl
