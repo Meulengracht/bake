@@ -16,3 +16,6 @@
 [submodule "libs/gracht"]
 	path = libs/gracht
 	url = ../libgracht.git
+[submodule "libs/compression/zip"]
+	path = libs/compression/zip
+	url = git@github.com:umbrella-c/zip.git
