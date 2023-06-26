@@ -204,6 +204,8 @@ extern int platform_getfiles(const char* path, struct list* files);
 extern int platform_getfiles_destroy(struct list* files);
 extern int platform_cpucount(void);
 extern int platform_copyfile(const char* source, const char* destination);
+extern int platform_lockfile(int fd);
+extern int platform_unlockfile(int fd);
 
 /**
  * @brief 

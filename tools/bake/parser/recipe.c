@@ -73,6 +73,11 @@ enum state {
     STATE_RECIPE_STEP_ARGUMENT_LIST,
 
     STATE_RECIPE_STEP_MESON_CROSS_FILE,
+    STATE_RECIPE_STEP_MESON_WRAPS_LIST,
+
+    STATE_MESON_WRAP,
+    STATE_MESON_WRAP_NAME,
+    STATE_MESON_WRAP_INGREDIENT,
 
     STATE_RECIPE_STEP_MAKE_INTREE,
     STATE_RECIPE_STEP_MAKE_PARALLEL,
@@ -108,6 +113,7 @@ struct parser_state {
     struct recipe_pack       pack;
     struct oven_pack_command command;
     struct oven_keypair_item env_keypair;
+    struct meson_wrap_item   meson_wrap_item;
 };
 
 static const char* __parse_string(const char* value)
@@ -473,6 +479,53 @@ static void __finalize_pack(struct parser_state* state)
 
     // reset the structure in state
     memset(&state->pack, 0, sizeof(struct recipe_pack));
+}
+
+static int __resolve_ingredient(struct parser_state* state, const char* name)
+{
+    struct list_item* i;
+
+    list_foreach(&state->recipe.ingredients, i) {
+        struct recipe_ingredient* ing = (struct recipe_ingredient*)i;
+        if (strcmp(ing->ingredient.name, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void __finalize_meson_wrap_item(struct parser_state* state)
+{
+    struct meson_wrap_item* wrapItem;
+
+    if (state->meson_wrap_item.name == NULL) {
+        fprintf(stderr, "parse error: meson wrap name is required\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (state->meson_wrap_item.ingredient == NULL) {
+        fprintf(stderr, "parse error: meson wrap ingredient is required\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // verify that we can resolve the ingredient being mentioned
+    if (!__resolve_ingredient(state, state->meson_wrap_item.ingredient)) {
+        fprintf(stderr, "parse error: ingredient %s specified by meson wrap is not defined\n", state->meson_wrap_item.ingredient);
+        exit(EXIT_FAILURE);
+    }
+    
+    // now we copy and reset
+    wrapItem = malloc(sizeof(struct meson_wrap_item));
+    if (wrapItem == NULL) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+
+    memcpy(wrapItem, &state->meson_wrap_item, sizeof(struct meson_wrap_item));
+    list_add(&state->step.options.meson.wraps, &wrapItem->list_header);
+
+    // reset the structure in state
+    memset(&state->meson_wrap_item, 0, sizeof(struct meson_wrap_item));
 }
 
 // TODO error handling
@@ -881,6 +934,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         s->state = STATE_RECIPE_STEP_SCRIPT;
                     } else if (strcmp(value, "meson-cross-file") == 0) {
                         s->state = STATE_RECIPE_STEP_MESON_CROSS_FILE;
+                    } else if (strcmp(value, "meson-wraps") == 0) {
+                        s->state = STATE_RECIPE_STEP_MESON_WRAPS_LIST;
                     } else if (strcmp(value, "make-in-tree") == 0) {
                         s->state = STATE_RECIPE_STEP_MAKE_INTREE;
                     } else if (strcmp(value, "make-parallel") == 0) {
@@ -947,6 +1002,35 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     return -1;
             }
             break;
+
+        __consume_sequence_mapped(STATE_RECIPE_STEP, STATE_RECIPE_STEP_MESON_WRAPS_LIST, STATE_MESON_WRAP)
+        case STATE_MESON_WRAP:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __finalize_meson_wrap_item(s);
+                    s->state = STATE_RECIPE_STEP_MESON_WRAPS_LIST;
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "name") == 0) {
+                        s->state = STATE_MESON_WRAP_NAME;
+                    } else if (strcmp(value, "ingredient") == 0) {
+                        s->state = STATE_MESON_WRAP_INGREDIENT;
+                    } else {
+                        fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+        __consume_scalar_fn(STATE_MESON_WRAP, STATE_MESON_WRAP_NAME, meson_wrap_item.name, __parse_string)
+        __consume_scalar_fn(STATE_MESON_WRAP, STATE_MESON_WRAP_INGREDIENT, meson_wrap_item.ingredient, __parse_string)
 
         __consume_sequence_mapped(STATE_SECTION, STATE_PACKS_LIST, STATE_PACK)
         case STATE_PACK:

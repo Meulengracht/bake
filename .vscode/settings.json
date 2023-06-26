@@ -69,7 +69,10 @@
         "stat.h": "c",
         "sha512.h": "c",
         "types.h": "c",
-        "signature.h": "c"
+        "signature.h": "c",
+        "backend.h": "c",
+        "*.inc": "c",
+        "zip.h": "c"
     },
     "cmake.installPrefix": "/usr/local/chef",
     "cmake.configureArgs": [

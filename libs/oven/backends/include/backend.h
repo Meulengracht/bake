@@ -102,6 +102,12 @@ struct oven_backend_data {
      * @brief The paths relevant to the project.
      */
     struct oven_backend_data_paths paths;
+
+    /**
+     * @brief The list of ingredients associated with the current project.
+     * The list contains entries of <struct oven_ingredient>.
+     */
+    struct list* ingredients;
 };
 
 //****************************************************************************//
@@ -109,11 +115,12 @@ struct oven_backend_data {
 //****************************************************************************//
 extern int configure_main(struct oven_backend_data* data, union oven_backend_options* options);
 extern int cmake_main(struct oven_backend_data* data, union oven_backend_options* options);
-extern int meson_main(struct oven_backend_data* data, union oven_backend_options* options);
+extern int meson_config_main(struct oven_backend_data* data, union oven_backend_options* options);
 
 //****************************************************************************//
 // Build backend entries                                                      //
 //****************************************************************************//
 extern int make_main(struct oven_backend_data* data, union oven_backend_options* options);
+extern int meson_build_main(struct oven_backend_data* data, union oven_backend_options* options);
 
 #endif //!__LIBOVEN_BACKEND_H__

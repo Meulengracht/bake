@@ -31,8 +31,15 @@ struct oven_backend_make_options {
     int parallel;
 };
 
+struct meson_wrap_item {
+    struct list_item list_header;
+    const char*      name;
+    const char*      ingredient;
+};
+
 struct oven_backend_meson_options {
     const char* cross_file;
+    struct list wraps; // list<meson_wrap_item>
 };
 
 union oven_backend_options {
@@ -62,10 +69,21 @@ struct oven_pack_command {
     struct list            arguments; // list<oven_value_item>
 };
 
+struct oven_ingredient {
+    struct list_item     list_header;
+    const char*          file_path;
+    const char*          name;
+    struct chef_version* version;
+};
+
 struct oven_recipe_options {
     const char* name;
     const char* relative_path;
     const char* toolchain;
+    // ingredients is the list of ingredients used by the current recipe. This
+    // can be useful for backends to have access to in case they need to probe
+    // the ingredients.
+    struct list* ingredients; // list<oven_ingredient>
 };
 
 struct oven_generate_options {
@@ -113,7 +131,10 @@ struct oven_parameters {
     const char*        recipe_name;
     const char*        target_platform;
     const char*        target_architecture;
-    const char*        ingredients_prefix;
+    // ingredients_prefix is the path where ingredients are unpacked when
+    // they have been prepared. This path is nice for the configure/build
+    // system to know when setting up include paths.
+    const char* ingredients_prefix;
 };
 
 /**

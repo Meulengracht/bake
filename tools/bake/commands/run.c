@@ -159,11 +159,12 @@ static int __make_recipe_steps(struct list* steps)
     return 0;
 }
 
-static void __initialize_recipe_options(struct oven_recipe_options* options, struct recipe_part* part)
+static void __initialize_recipe_options(struct oven_recipe_options* options, struct recipe_part* part, struct list* ingredients)
 {
     options->name          = part->name;
     options->relative_path = part->path;
     options->toolchain     = fridge_get_utensil_location(part->toolchain);
+    options->ingredients   = ingredients;
 }
 
 static void __destroy_recipe_options(struct oven_recipe_options* options)
@@ -171,16 +172,19 @@ static void __destroy_recipe_options(struct oven_recipe_options* options)
     free((void*)options->toolchain);
 }
 
-static int __make_recipes(struct recipe* recipe)
+static int __make_recipe(struct recipe* recipe)
 {
     struct oven_recipe_options options;
     struct list_item*          item;
     int                        status;
+    struct list                ingredients;
+
+    // prepare the list of ingredients for the recipe parts
 
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
 
-        __initialize_recipe_options(&options, part);
+        __initialize_recipe_options(&options, part, &ingredients);
         status = oven_recipe_start(&options);
         __destroy_recipe_options(&options);
 
@@ -479,7 +483,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = __make_recipes(recipe);
+    status = __make_recipe(recipe);
     if (status) {
         fprintf(stderr, "failed to make recipes\n");
         if (debug) {

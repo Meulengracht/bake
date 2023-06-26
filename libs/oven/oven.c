@@ -37,13 +37,13 @@
 #define OVEN_INSTALL_ROOT OVEN_ROOT CHEF_PATH_SEPARATOR_S "install"
 
 struct oven_recipe_context {
-    const char* name;
-    const char* relative_path;
-    const char* toolchain;
-
-    const char* build_root;
-    const char* install_root;
-    const char* checkpoint_path;
+    const char*  name;
+    const char*  relative_path;
+    const char*  toolchain;
+    const char*  build_root;
+    const char*  install_root;
+    const char*  checkpoint_path;
+    struct list* ingredients;
 };
 
 struct oven_variables {
@@ -72,13 +72,14 @@ struct build_backend {
 };
 
 static struct generate_backend g_genbackends[] = {
-    { "configure", configure_main },
-    { "cmake",     cmake_main     },
-    { "meson",     meson_main     }
+    { "configure", configure_main    },
+    { "cmake",     cmake_main        },
+    { "meson",     meson_config_main }
 };
 
 static struct build_backend g_buildbackends[] = {
-    { "make", make_main }
+    { "make",  make_main },
+    { "meson", meson_build_main }
 };
 
 static struct oven_context g_oven = { 0 };
@@ -286,6 +287,7 @@ int oven_recipe_start(struct oven_recipe_options* options)
     g_oven.recipe.name          = strdup(options->name);
     g_oven.recipe.relative_path = strdup(options->relative_path);
     g_oven.recipe.toolchain     = options->toolchain != NULL ? strdup(options->toolchain) : NULL;
+    g_oven.recipe.ingredients   = options->ingredients;
     
     // generate build and install directories
     buildRoot = strpathcombine(g_oven.build_root, options->relative_path);
@@ -496,7 +498,7 @@ static void* __resize_buffer(void* buffer, size_t length)
     return biggerBuffer;
 }
 
-static const char* __preprocess_value(const char* original)
+const char* oven_preprocess_text(const char* original)
 {
     const char* itr = original;
     const char* result;
@@ -588,7 +590,7 @@ const char* __build_argument_string(struct list* argumentList)
     argumentItr = argumentString;
     list_foreach(argumentList, item) {
         struct oven_value_item* value = (struct oven_value_item*)item;
-        const char*             valueString = __preprocess_value(value->value);
+        const char*             valueString = oven_preprocess_text(value->value);
         size_t                  valueLength = strlen(valueString);
 
         if (valueLength > 0 && (totalLength + valueLength + 2) < 4096) {
@@ -626,7 +628,7 @@ static struct oven_keypair_item* __preprocess_keypair(struct oven_keypair_item* 
     }
 
     keypair->key   = strdup(original->key);
-    keypair->value = __preprocess_value(original->value);
+    keypair->value = oven_preprocess_text(original->value);
     return keypair;
 }
 
@@ -791,6 +793,7 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     data->project_name        = g_oven.recipe.name;
     data->profile_name        = profile != NULL ? profile : "Release";
     data->process_environment = g_oven.process_environment;
+    data->ingredients         = g_oven.recipe.ingredients;
 
     data->platform.host_platform = CHEF_PLATFORM_STR;
     data->platform.host_architecture = CHEF_ARCHITECTURE_STR;
@@ -929,7 +932,7 @@ int oven_script(struct oven_script_options* options)
     }
 
     printf("running step %s\n", options->name);
-    preprocessedScript = __preprocess_value(options->script);
+    preprocessedScript = oven_preprocess_text(options->script);
     if (preprocessedScript == NULL) {
         return -1;
     }

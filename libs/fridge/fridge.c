@@ -18,9 +18,10 @@
 
 #include <errno.h>
 #include <chef/client.h>
-#include <chef/utils_vafs.h>
 #include "inventory.h"
+#include <libingredient.h>
 #include <libfridge.h>
+#include <limits.h>
 #include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,7 +29,6 @@
 #include <vafs/vafs.h>
 #include <vafs/file.h>
 #include <vafs/directory.h>
-#include <zstd.h>
 
 #define FRIDGE_ROOT_PATH ".fridge"
 
@@ -44,23 +44,17 @@
 #define FRIDGE_UTENSILS_PATH FRIDGE_ROOT_PATH CHEF_PATH_SEPARATOR_S "utensils"
 
 struct progress_context {
-    int disabled;
+    struct ingredient* ingredient;
+    int                disabled;
 
     int files;
     int directories;
     int symlinks;
-
-    int files_total;
-    int directories_total;
-    int symlinks_total;
-};
-
-struct VaFsFeatureFilter {
-    struct VaFsFeatureHeader Header;
 };
 
 struct fridge_context {
     struct fridge_inventory* inventory;
+    const char*              store_path;
     const char*              root_path;
     const char*              storage_path;
     const char*              prep_path;
@@ -69,11 +63,7 @@ struct fridge_context {
     const char*              target_arch;
 };
 
-static struct fridge_context g_fridge        = { 0 };
-static struct VaFsGuid       g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
-static struct VaFsGuid       g_overviewGuid  = VA_FS_FEATURE_OVERVIEW;
-static struct VaFsGuid       g_filterGuid    = VA_FS_FEATURE_FILTER;
-static struct VaFsGuid       g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
+static struct fridge_context g_fridge = { 0 };
 
 static const char* __get_relative_path(
     const char* root,
@@ -125,11 +115,11 @@ static void __write_progress(const char* prefix, struct progress_context* contex
         return;
     }
 
-    total   = context->files_total + context->directories_total + context->symlinks_total;
+    total   = context->ingredient->file_count + context->ingredient->directory_count + context->ingredient->symlink_count;
     current = context->files + context->directories + context->symlinks;
     percent = (current * 100) / total;
 
-    printf("\33[2K\r%-15.15s [", prefix);
+    printf("\33[2K\rextracting [");
     for (int i = 0; i < 20; i++) {
         if (i < percent / 5) {
             printf("#");
@@ -138,22 +128,22 @@ static void __write_progress(const char* prefix, struct progress_context* contex
             printf(" ");
         }
     }
-    printf("| %3d%%]", percent);
+    printf("| %3d%%] %-15.15s", percent, prefix);
     if (verbose) {
-        if (context->files_total) {
-            printf(" %i/%i files", context->files, context->files_total);
+        if (context->ingredient->file_count) {
+            printf(" %i/%i files", context->files, context->ingredient->file_count);
         }
-        if (context->directories_total) {
-            printf(" %i/%i directories", context->directories, context->directories_total);
+        if (context->ingredient->directory_count) {
+            printf(" %i/%i directories", context->directories, context->ingredient->directory_count);
         }
-        if (context->symlinks_total) {
-            printf(" %i/%i symlinks", context->symlinks, context->symlinks_total);
+        if (context->ingredient->symlink_count) {
+            printf(" %i/%i symlinks", context->symlinks, context->ingredient->symlink_count);
         }
     }
     fflush(stdout);
 }
 
-static int __extract_file(
+static int __zip_file(
     struct VaFsFileHandle* fileHandle,
     const char*            path)
 {
@@ -248,7 +238,7 @@ static int __extract_directory(
                 return -1;
             }
 
-            status = __extract_file(fileHandle, filepathBuffer);
+            status = __zip_file(fileHandle, filepathBuffer);
             if (status) {
                 fprintf(stderr, "__extract_directory: unable to extract file '%s'\n", __get_relative_path(root, path));
                 return -1;
@@ -288,18 +278,48 @@ static int __extract_directory(
     return 0;
 }
 
+static int __get_store_path(char** pathOut)
+{
+    char* path;
+    int   status;
+
+    path = malloc(PATH_MAX);
+    if (path == NULL) {
+        return -1;
+    }
+
+    status = platform_getuserdir(path, PATH_MAX);
+    if (status != 0) {
+        free(path);
+        return -1;
+    }
+
+    strcat(path, CHEF_PATH_SEPARATOR_S ".chef" CHEF_PATH_SEPARATOR_S "store");
+    *pathOut = path;
+    return 0;
+}
+
 static int __make_folders(void)
 {
     char* cwd;
+    char* storePath;
     int   status;
 
     status = __get_cwd(&cwd);
     if (status) {
         fprintf(stderr, "__make_folders: failed to get root directory\n");
-        return -1;
+        return status;
+    }
+
+    status = __get_store_path(&storePath);
+    if (status) {
+        fprintf(stderr, "__make_folders: failed to get global store directory\n");
+        free(cwd);
+        return status;
     }
 
     // update global paths
+    g_fridge.store_path    = storePath;
     g_fridge.root_path     = strpathcombine(cwd, FRIDGE_ROOT_PATH);
     g_fridge.storage_path  = strpathcombine(cwd, FRIDGE_STORAGE_PATH);
     g_fridge.prep_path     = strpathcombine(cwd, FRIDGE_PREP_PATH);
@@ -307,6 +327,12 @@ static int __make_folders(void)
     free(cwd);
     if (g_fridge.root_path == NULL || g_fridge.storage_path == NULL || g_fridge.prep_path == NULL || g_fridge.utensils_path == NULL) {
         fprintf(stderr, "__make_folders: unable to allocate memory for paths\n");
+        return -1;
+    }
+
+    status = platform_mkdir(g_fridge.store_path);
+    if (status) {
+        fprintf(stderr, "__make_folders: failed to create global store directory\n");
         return -1;
     }
 
@@ -447,74 +473,6 @@ static int __parse_version_string(const char* string, struct chef_version* versi
     return 0;
 }
 
-static int __zstd_decode(void* Input, uint32_t InputLength, void* Output, uint32_t* OutputLength)
-{
-    /* Read the content size from the frame header. For simplicity we require
-     * that it is always present. By default, zstd will write the content size
-     * in the header when it is known. If you can't guarantee that the frame
-     * content size is always written into the header, either use streaming
-     * decompression, or ZSTD_decompressBound().
-     */
-    size_t             decompressedSize;
-    unsigned long long contentSize = ZSTD_getFrameContentSize(Input, InputLength);
-    if (contentSize == ZSTD_CONTENTSIZE_ERROR || contentSize == ZSTD_CONTENTSIZE_UNKNOWN) {
-        fprintf(stderr, "__zstd_decode: failed to get frame content size\n");
-        return -1;
-    }
-    
-    /* Decompress.
-     * If you are doing many decompressions, you may want to reuse the context
-     * and use ZSTD_decompressDCtx(). If you want to set advanced parameters,
-     * use ZSTD_DCtx_setParameter().
-     */
-    decompressedSize = ZSTD_decompress(Output, *OutputLength, Input, InputLength);
-    if (ZSTD_isError(decompressedSize)) {
-        return -1;
-    }
-    *OutputLength = (uint32_t)decompressedSize;
-    return 0;
-}
-
-static int __set_filter_ops(
-    struct VaFs* vafs)
-{
-    struct VaFsFeatureFilterOps filterOps;
-
-    memcpy(&filterOps.Header.Guid, &g_filterOpsGuid, sizeof(struct VaFsGuid));
-
-    filterOps.Header.Length = sizeof(struct VaFsFeatureFilterOps);
-    filterOps.Encode = NULL;
-    filterOps.Decode = __zstd_decode;
-
-    return vafs_feature_add(vafs, &filterOps.Header);
-}
-
-static int __handle_filter(struct VaFs* vafs)
-{
-    struct VaFsFeatureFilter* filter;
-    int                       status;
-
-    status = vafs_feature_query(vafs, &g_filterGuid, (struct VaFsFeatureHeader**)&filter);
-    if (status) {
-        // no filter present
-        return 0;
-    }
-    return __set_filter_ops(vafs);
-}
-
-static enum chef_package_type __get_pack_type(struct VaFs* vafsHandle)
-{
-    struct chef_vafs_feature_package_header* packageHeader;
-    int                                      status;
-
-    status = vafs_feature_query(vafsHandle, &g_headerGuid, (struct VaFsFeatureHeader**)&packageHeader);
-    if (status) {
-        fprintf(stderr, "__get_unpack_path: failed to query package header\n");
-        return CHEF_PACKAGE_TYPE_UNKNOWN;
-    }
-    return packageHeader->type;
-}
-
 static const char* __get_unpack_path(enum chef_package_type type, const char* packageName)
 {
     if (type == CHEF_PACKAGE_TYPE_TOOLCHAIN) {
@@ -529,32 +487,13 @@ static const char* __get_unpack_path(enum chef_package_type type, const char* pa
     return strdup(g_fridge.prep_path);
 }
 
-static int __handle_overview(struct VaFs* vafsHandle, struct progress_context* progress)
-{
-    struct VaFsFeatureOverview* overview;
-    int                         status;
-
-    status = vafs_feature_query(vafsHandle, &g_overviewGuid, (struct VaFsFeatureHeader**)&overview);
-    if (status) {
-        fprintf(stderr, "unmkvafs: failed to query feature overview - %i\n", errno);
-        return -1;
-    }
-
-    progress->files_total       = overview->Counts.Files;
-    progress->directories_total = overview->Counts.Directories;
-    progress->symlinks_total    = overview->Counts.Symlinks;
-    return 0;
-}
-
 static int __fridge_unpack(struct fridge_inventory_pack* pack)
 {
-    struct VaFs*                vafsHandle;
-    struct VaFsDirectoryHandle* directoryHandle;
-    struct progress_context     progressContext = { 0 };
-    enum chef_package_type      packType;
-    int                         status;
-    const char*                 unpackPath;
-    char                        nameBuffer[512];
+    struct ingredient*      ingredient;
+    struct progress_context progressContext = { 0 };
+    int                     status;
+    const char*             unpackPath;
+    char                    nameBuffer[512];
 
     // check our inventory status if we should unpack it again
     if (inventory_pack_is_unpacked(pack) == 1) {
@@ -568,61 +507,39 @@ static int __fridge_unpack(struct fridge_inventory_pack* pack)
         return -1;
     }
 
-    status = vafs_open_file(&nameBuffer[0], &vafsHandle);
+    status = ingredient_open(&nameBuffer[0], &ingredient);
     if (status) {
-        fprintf(stderr, "__fridge_unpack: cannot open vafs image: %s\n", &nameBuffer[0]);
+        fprintf(stderr, "__fridge_unpack: cannot open ingredient: %s\n", &nameBuffer[0]);
         return -1;
     }
 
-    status = __handle_overview(vafsHandle, &progressContext);
-    if (status) {
-        vafs_close(vafsHandle);
-        fprintf(stderr, "__fridge_unpack: failed to handle image overview\n");
-        return -1;
-    }
-
-    status = __handle_filter(vafsHandle);
-    if (status) {
-        vafs_close(vafsHandle);
-        fprintf(stderr, "__fridge_unpack: failed to handle image filter\n");
-        return -1;
-    }
-
-    status = vafs_directory_open(vafsHandle, "/", &directoryHandle);
-    if (status) {
-        vafs_close(vafsHandle);
-        fprintf(stderr, "__fridge_unpack: cannot open root directory: /\n");
-        return -1;
-    }
-
-    // detect the type of ingredient we are unpacking.
-    packType   = __get_pack_type(vafsHandle);
-    unpackPath = __get_unpack_path(packType, inventory_pack_name(pack));
+    unpackPath = __get_unpack_path(ingredient->type, inventory_pack_name(pack));
     if (unpackPath == NULL) {
-        vafs_directory_close(directoryHandle);
-        vafs_close(vafsHandle);
+        ingredient_close(ingredient);
         fprintf(stderr, "__fridge_unpack: failed to create unpack path\n");
         return -1;
     }
 
-    status = __extract_directory(&progressContext, directoryHandle, unpackPath, unpackPath);
+    // store the ingredient used for progress calculation
+    progressContext.ingredient = ingredient;
+
+    status = __extract_directory(&progressContext, ingredient->root_handle, unpackPath, unpackPath);
     if (status != 0) {
         free((void*)unpackPath);
-        vafs_directory_close(directoryHandle);
-        vafs_close(vafsHandle);
+        ingredient_close(ingredient);
         fprintf(stderr, "__fridge_unpack: unable to extract pack\n");
         return -1;
     }
     printf("\n");
 
     // awesome, lets mark it unpacked
-    if (packType == CHEF_PACKAGE_TYPE_TOOLCHAIN) {
+    if (ingredient->type == CHEF_PACKAGE_TYPE_TOOLCHAIN) {
         inventory_pack_set_unpacked(pack);
     }
 
+    ingredient_close(ingredient);
     free((void*)unpackPath);
-    vafs_directory_close(directoryHandle);
-    return vafs_close(vafsHandle);
+    return 0;
 }
 
 static const char* __get_ingredient_platform(struct fridge_ingredient* ingredient)
@@ -650,11 +567,14 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     int                           namesCount;
     int                           status;
     char                          nameBuffer[256];
+    struct fridge_inventory*      inventory;
 
-    if (g_fridge.inventory == NULL) {
-        errno = ENOSYS;
-        fprintf(stderr, "__cache_ingredient: inventory not loaded\n");
-        return -1;
+    // When caching we read/populate the shared store, we only open it exactly when
+    // we need it to avoid locking it too much.
+    status = inventory_load(g_fridge.store_path, &inventory);
+    if (status) {
+        fprintf(stderr, "__cache_ingredient: global store inventory failed to loaded\n");
+        return status;
     }
 
     if (ingredient == NULL) {
@@ -692,7 +612,7 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
 
     // check if we have the requested ingredient in store already, otherwise
     // download the ingredient
-    status = inventory_get_pack(g_fridge.inventory, names[0], names[1],
+    status = inventory_get_pack(inventory, names[0], names[1],
         __get_ingredient_platform(ingredient), __get_ingredient_arch(ingredient),
         ingredient->channel, versionPtr, &pack
     );
@@ -704,7 +624,7 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     }
     
     // it's downloaded, lets add it
-    status = inventory_add(g_fridge.inventory, names[0], names[1],
+    status = inventory_add(inventory, names[0], names[1],
         __get_ingredient_platform(ingredient), __get_ingredient_arch(ingredient),
         ingredient->channel, versionPtr, &pack
     );
@@ -718,6 +638,7 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     }
 
 cleanup:
+    inventory_save(inventory);
     strsplit_free(names);
     return status;
 }
