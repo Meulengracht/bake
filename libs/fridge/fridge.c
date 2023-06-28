@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "store.h"
 #include <vafs/vafs.h>
 #include <vafs/file.h>
 #include <vafs/directory.h>
@@ -54,13 +55,11 @@ struct progress_context {
 
 struct fridge_context {
     struct fridge_inventory* inventory;
-    const char*              store_path;
+    struct fridge_store*     store;
     const char*              root_path;
     const char*              storage_path;
     const char*              prep_path;
     const char*              utensils_path;
-    const char*              target_platform;
-    const char*              target_arch;
 };
 
 static struct fridge_context g_fridge = { 0 };
@@ -278,27 +277,6 @@ static int __extract_directory(
     return 0;
 }
 
-static int __get_store_path(char** pathOut)
-{
-    char* path;
-    int   status;
-
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        return -1;
-    }
-
-    status = platform_getuserdir(path, PATH_MAX);
-    if (status != 0) {
-        free(path);
-        return -1;
-    }
-
-    strcat(path, CHEF_PATH_SEPARATOR_S ".chef" CHEF_PATH_SEPARATOR_S "store");
-    *pathOut = path;
-    return 0;
-}
-
 static int __make_folders(void)
 {
     char* cwd;
@@ -319,7 +297,6 @@ static int __make_folders(void)
     }
 
     // update global paths
-    g_fridge.store_path    = storePath;
     g_fridge.root_path     = strpathcombine(cwd, FRIDGE_ROOT_PATH);
     g_fridge.storage_path  = strpathcombine(cwd, FRIDGE_STORAGE_PATH);
     g_fridge.prep_path     = strpathcombine(cwd, FRIDGE_PREP_PATH);
@@ -327,12 +304,6 @@ static int __make_folders(void)
     free(cwd);
     if (g_fridge.root_path == NULL || g_fridge.storage_path == NULL || g_fridge.prep_path == NULL || g_fridge.utensils_path == NULL) {
         fprintf(stderr, "__make_folders: unable to allocate memory for paths\n");
-        return -1;
-    }
-
-    status = platform_mkdir(g_fridge.store_path);
-    if (status) {
-        fprintf(stderr, "__make_folders: failed to create global store directory\n");
         return -1;
     }
 
@@ -378,10 +349,13 @@ int fridge_initialize(const char* platform, const char* architecture)
         return -1;
     }
 
-    // store platform and architecture, this will be used as fall-back
-    // values if platform or arch is not specified for ingredients
-    g_fridge.target_platform = strdup(platform);
-    g_fridge.target_arch = strdup(architecture);
+    // initialize the store inventory
+    status = fridge_store_load(platform, architecture, &g_fridge.store);
+    if (status) {
+        fprintf(stderr, "fridge_initialize: failed to load store inventory\n");
+        fridge_cleanup();
+        return -1;
+    }
 
     status = inventory_load(g_fridge.storage_path, &g_fridge.inventory);
     if (status) {
@@ -418,8 +392,6 @@ void fridge_cleanup(void)
     free((void*)g_fridge.storage_path);
     free((void*)g_fridge.prep_path);
     free((void*)g_fridge.utensils_path);
-    free((void*)g_fridge.target_platform);
-    free((void*)g_fridge.target_arch);
 
     // reset context
     memset(&g_fridge, 0, sizeof(struct fridge_context));
@@ -493,7 +465,7 @@ static int __fridge_unpack(struct fridge_inventory_pack* pack)
     struct progress_context progressContext = { 0 };
     int                     status;
     const char*             unpackPath;
-    char                    nameBuffer[512];
+    const char*             packPath;
 
     // check our inventory status if we should unpack it again
     if (inventory_pack_is_unpacked(pack) == 1) {
@@ -501,15 +473,10 @@ static int __fridge_unpack(struct fridge_inventory_pack* pack)
     }
 
     // get the filename of the package
-    status = inventory_pack_filename(pack, &nameBuffer[0], sizeof(nameBuffer));
+    packPath = inventory_pack_filename(pack);
+    status   = ingredient_open(packPath, &ingredient);
     if (status) {
-        fprintf(stderr, "__fridge_unpack: package path too long!\n");
-        return -1;
-    }
-
-    status = ingredient_open(&nameBuffer[0], &ingredient);
-    if (status) {
-        fprintf(stderr, "__fridge_unpack: cannot open ingredient: %s\n", &nameBuffer[0]);
+        fprintf(stderr, "__fridge_unpack: cannot open ingredient: %s\n", packPath);
         return -1;
     }
 
@@ -542,40 +509,33 @@ static int __fridge_unpack(struct fridge_inventory_pack* pack)
     return 0;
 }
 
-static const char* __get_ingredient_platform(struct fridge_ingredient* ingredient)
+int fridge_store_ingredient(struct fridge_ingredient* ingredient)
 {
-    if (ingredient->platform == NULL) {
-        return g_fridge.target_platform;
+    int status;
+
+    status = fridge_store_open(g_fridge.store);
+    if (status) {
+        return status;
     }
-    return ingredient->platform;
+
+    status = fridge_store_ensure_ingredient(g_fridge.store, ingredient, NULL);
+    if (status) {
+        (void)fridge_store_close(g_fridge.store);
+        return status;
+    }
+    return fridge_store_close(g_fridge.store);
 }
 
-static const char* __get_ingredient_arch(struct fridge_ingredient* ingredient)
+static int __ensure_ingredient(struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut)
 {
-    if (ingredient->arch == NULL) {
-        return g_fridge.target_arch;
-    }
-    return ingredient->arch;
-}
-
-static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut)
-{
-    struct chef_version           version;
+    struct chef_version           version = { 0 };
     struct chef_version*          versionPtr = NULL;
     struct fridge_inventory_pack* pack;
     char**                        names;
     int                           namesCount;
     int                           status;
-    char                          nameBuffer[256];
+    int                           revision;
     struct fridge_inventory*      inventory;
-
-    // When caching we read/populate the shared store, we only open it exactly when
-    // we need it to avoid locking it too much.
-    status = inventory_load(g_fridge.store_path, &inventory);
-    if (status) {
-        fprintf(stderr, "__cache_ingredient: global store inventory failed to loaded\n");
-        return status;
-    }
 
     if (ingredient == NULL) {
         errno = EINVAL;
@@ -586,7 +546,7 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     if (ingredient->version != NULL) {
         status = __parse_version_string(ingredient->version, &version);
         if (status) {
-            fprintf(stderr, "__cache_ingredient: failed to parse version '%s'\n", ingredient->version);
+            fprintf(stderr, "__ensure_ingredient: failed to parse version '%s'\n", ingredient->version);
             return -1;
         }
         versionPtr = &version;
@@ -595,7 +555,7 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     // split the publisher/package
     names = strsplit(ingredient->name, '/');
     if (names == NULL) {
-        fprintf(stderr, "__cache_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        fprintf(stderr, "__ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
         return -1;
     }
     
@@ -605,16 +565,21 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     }
 
     if (namesCount != 2) {
-        fprintf(stderr, "__cache_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        fprintf(stderr, "__ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
         status = -1;
         goto cleanup;
     }
 
     // check if we have the requested ingredient in store already, otherwise
     // download the ingredient
-    status = inventory_get_pack(inventory, names[0], names[1],
-        __get_ingredient_platform(ingredient), __get_ingredient_arch(ingredient),
-        ingredient->channel, versionPtr, &pack
+    status = inventory_get_pack(
+        inventory,
+        names[0], names[1],
+        __get_ingredient_platform(store, ingredient),
+        __get_ingredient_arch(store, ingredient),
+        ingredient->channel,
+        versionPtr,
+        &pack
     );
     if (status == 0) {
         if (packOut) {
@@ -623,13 +588,25 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
         goto cleanup;
     }
     
-    // it's downloaded, lets add it
-    status = inventory_add(inventory, names[0], names[1],
-        __get_ingredient_platform(ingredient), __get_ingredient_arch(ingredient),
-        ingredient->channel, versionPtr, &pack
+    // When adding to inventory the version must not be null,
+    // but it does only need to have revision set
+    if (versionPtr == NULL) {
+        version.revision = revision;
+        versionPtr = &version;
+    }
+
+    status = inventory_add(
+        inventory,
+        PACKAGE_TEMP_PATH,
+        names[0], names[1],
+        __get_ingredient_platform(store, ingredient),
+        __get_ingredient_arch(store, ingredient),
+        ingredient->channel,
+        versionPtr,
+        &pack
     );
     if (status) {
-        fprintf(stderr, "__cache_ingredient: failed to add ingredient\n");
+        fprintf(stderr, "fridge_store_ensure_ingredient: failed to add ingredient\n");
         goto cleanup;
     }
 
@@ -638,25 +615,33 @@ static int __cache_ingredient(struct fridge_ingredient* ingredient, struct fridg
     }
 
 cleanup:
-    inventory_save(inventory);
     strsplit_free(names);
     return status;
 }
 
-int fridge_store_ingredient(struct fridge_ingredient* ingredient)
-{
-    return __cache_ingredient(ingredient, NULL);
-}
 
 int fridge_use_ingredient(struct fridge_ingredient* ingredient)
 {
     struct fridge_inventory_pack* pack;
     int                           status;
+    char                          packPath[512];
 
-    status = __cache_ingredient(ingredient, &pack);
+    status = fridge_store_open(g_fridge.store);
     if (status) {
         return status;
     }
+
+    status = fridge_store_ensure_ingredient(g_fridge.store, ingredient, &pack);
+    if (status) {
+        (void)fridge_store_close(g_fridge.store);
+        return status;
+    }
+
+    status = inventory_pack_filename()
+
+    return fridge_store_close(g_fridge.store);
+
+
     return __fridge_unpack(pack);
 }
 

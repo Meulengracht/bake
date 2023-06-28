@@ -16,8 +16,6 @@
  * 
  */
 
-#include <chef/api/package.h>
-#include <chef/client.h>
 #include <errno.h>
 #include "inventory.h"
 #include <chef/platform.h>
@@ -29,13 +27,13 @@
 struct fridge_inventory_pack {
     // yay, parent pointers!
     void*               inventory;
+    const char*         path;
     const char*         publisher;
     const char*         package;
     const char*         platform;
     const char*         arch;
     const char*         channel;
     struct chef_version version;
-    int                 latest;
     int                 unpacked;
 };
 
@@ -45,8 +43,6 @@ struct fridge_inventory {
     struct fridge_inventory_pack* packs;
     int                           packs_count;
 };
-
-#define PACKAGE_TEMP_PATH "pack.inprogress"
 
 static struct fridge_inventory* __inventory_new(void)
 {
@@ -110,6 +106,7 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
         
         for (size_t i = 0; i < pack_count; i++) {
             json_t* pack = json_array_get(packs, i);
+            json_t* path = json_object_get(pack, "path");
             json_t* publisher = json_object_get(pack, "publisher");
             json_t* name = json_object_get(pack, "package");
             json_t* platform = json_object_get(pack, "platform");
@@ -126,6 +123,7 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
             json_t* version_tag = json_object_get(version, "tag");
 
             inventory->packs[i].inventory = inventory;
+            inventory->packs[i].path = strdup(json_string_value(path));
             inventory->packs[i].publisher = strdup(json_string_value(publisher));
             inventory->packs[i].package = strdup(json_string_value(name));
             inventory->packs[i].platform = strdup(json_string_value(platform));
@@ -136,7 +134,6 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
             inventory->packs[i].version.patch = json_integer_value(version_patch);
             inventory->packs[i].version.revision = json_integer_value(version_revision);
             inventory->packs[i].version.tag = json_string_value(version_tag);
-            inventory->packs[i].latest = json_integer_value(latest);
             inventory->packs[i].unpacked = json_integer_value(unpacked);
         }
     }
@@ -248,6 +245,8 @@ int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher
     const char* package, const char* platform, const char* arch, const char* channel,
     struct chef_version* version, struct fridge_inventory_pack** packOut)
 {
+    struct fridge_inventory_pack* result = NULL;
+
     if (inventory == NULL || publisher == NULL || package == NULL || channel == NULL) {
         errno = EINVAL;
         return -1;
@@ -259,11 +258,15 @@ int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher
             strcmp(inventory->packs[i].platform, platform) == 0 &&
             strcmp(inventory->packs[i].arch, arch) == 0 &&
             strcmp(inventory->packs[i].channel, channel) == 0) {
-            // ok same package, check version against latest
-            if (inventory->packs[i].latest == 1 && version == NULL) {
-                *packOut = &inventory->packs[i];
-                return 0;
-            } else if (inventory->packs[i].latest == 0 && version != NULL) {
+            if (version == NULL) {
+                if (result) {
+                    if (version->revision > result->version.revision) {
+                        result = &inventory->packs[i];
+                    }
+                } else {
+                    result = &inventory->packs[i];
+                }
+            } else {
                 if (__compare_version(&inventory->packs[i].version, version) == 0) {
                     *packOut = &inventory->packs[i];
                     return 0;
@@ -272,77 +275,16 @@ int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher
         }
     }
 
+    if (result) {
+        *packOut = result;
+        return 0;
+    }
+
     errno = ENOENT;
     return -1;
 }
 
-static int __package_path(struct fridge_inventory* inventory, const char* publisher,
-    const char* package, const char* platform, const char* arch, const char* channel,
-    int revision, char* pathBuffer, size_t bufferSize)
-{
-    int written;
-
-    if (revision == 0) {
-        fprintf(stderr, "__package_path: revision is not provided, but is required.\n");
-        errno = EINVAL;
-        return -1;
-    }
-
-    written = snprintf(
-        pathBuffer, bufferSize - 1,
-        "%s" CHEF_PATH_SEPARATOR_S "%s-%s-%s-%s-%s-%i.pack",
-        inventory->path,
-        publisher, package,
-        platform, arch,
-        channel, revision
-    );
-    if (written == bufferSize - 1) {
-        errno = ERANGE;
-        return -1;
-    }
-    if (written < 0) {
-        return -1;
-    }
-    return 0;
-}
-
-static int __inventory_download(struct fridge_inventory* inventory, const char* publisher,
-    const char* package, const char* platform, const char* arch, const char* channel,
-    struct chef_version* version, int* revisionDownloaded)
-{
-    struct chef_download_params downloadParams;
-    int                         status;
-    char                        pathBuffer[512];
-
-    // initialize download params
-    downloadParams.publisher = publisher;
-    downloadParams.package   = package;
-    downloadParams.platform  = platform;
-    downloadParams.arch      = arch;
-    downloadParams.channel   = channel;
-    downloadParams.version   = version;
-
-    status = chefclient_pack_download(&downloadParams, PACKAGE_TEMP_PATH);
-    if (status) {
-        fprintf(stderr, "__inventory_download: failed to download %s/%s\n", publisher, package);
-        return -1;
-    }
-
-    // move the package into the right place
-    status = __package_path(inventory, publisher, package, platform, arch, channel, downloadParams.revision, &pathBuffer[0], sizeof(pathBuffer));
-    if (status) {
-        fprintf(stderr, "__inventory_download: package path too long!\n");
-        return -1;
-    }
-    
-    status = rename(PACKAGE_TEMP_PATH, &pathBuffer[0]);
-    
-    *revisionDownloaded = downloadParams.revision;
-
-    return status;
-}
-
-int inventory_add(struct fridge_inventory* inventory, const char* publisher,
+int inventory_add(struct fridge_inventory* inventory, const char* packPath, const char* publisher,
     const char* package, const char* platform, const char* arch, const char* channel,
     struct chef_version* version, struct fridge_inventory_pack** packOut)
 {
@@ -350,16 +292,10 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
     void*                         newArray;
     void*                         oldArray;
     int                           status;
-    int                           revisionDownloaded;
 
     if (inventory == NULL || publisher == NULL || 
         package == NULL   || channel == NULL) {
         errno = EINVAL;
-        return -1;
-    }
-
-    status = __inventory_download(inventory, publisher, package, platform, arch, channel, version, &revisionDownloaded);
-    if (status) {
         return -1;
     }
 
@@ -379,22 +315,19 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
     memset(packEntry, 0, sizeof(struct fridge_inventory_pack));
 
     packEntry->inventory = inventory;
+    packEntry->path      = strdup(packPath);
     packEntry->publisher = strdup(publisher);
     packEntry->package   = strdup(package);
     packEntry->platform  = platform != NULL ? strdup(platform) : NULL;
     packEntry->arch      = platform != NULL ? strdup(arch) : NULL;
     packEntry->channel   = strdup(channel);
-    if (version == NULL) {
-        packEntry->latest = 1;
-        packEntry->version.revision = revisionDownloaded;
-    } else {
-        packEntry->version.major = version->major;
-        packEntry->version.minor = version->minor;
-        packEntry->version.patch = version->patch;
-        packEntry->version.revision = version->revision;
-        if (version->tag) {
-            packEntry->version.tag = strdup(version->tag);
-        }
+
+    packEntry->version.major = version->major;
+    packEntry->version.minor = version->minor;
+    packEntry->version.patch = version->patch;
+    packEntry->version.revision = version->revision;
+    if (version->tag) {
+        packEntry->version.tag = strdup(version->tag);
     }
 
     *packOut = packEntry;
@@ -403,11 +336,7 @@ int inventory_add(struct fridge_inventory* inventory, const char* publisher,
     inventory->packs = newArray;
     inventory->packs_count += 1;
     free(oldArray);
-
-    // Once the pack is downloaded and added, lets checkpoint this so we
-    // don't need to redownload, in case anything goes wrong. Be respectful
-    // to people's bandwidth :-)
-    return inventory_save(inventory);
+    return 0;
 }
 
 static int __serialize_inventory(struct fridge_inventory* inventory, json_t** jsonOut)
@@ -433,12 +362,12 @@ static int __serialize_inventory(struct fridge_inventory* inventory, json_t** js
             return -1;
         }
 
+        json_object_set_new(pack, "path", json_string(inventory->packs[i].path));
         json_object_set_new(pack, "publisher", json_string(inventory->packs[i].publisher));
         json_object_set_new(pack, "package", json_string(inventory->packs[i].package));
         json_object_set_new(pack, "platform", json_string(inventory->packs[i].platform));
         json_object_set_new(pack, "architecture", json_string(inventory->packs[i].arch));
         json_object_set_new(pack, "channel", json_string(inventory->packs[i].channel));
-        json_object_set_new(pack, "latest", json_integer(inventory->packs[i].latest));
         json_object_set_new(pack, "unpacked", json_integer(inventory->packs[i].unpacked));
 
         json_t* version = json_object();
@@ -515,30 +444,15 @@ const char* inventory_pack_name(struct fridge_inventory_pack* pack)
     if (pack == NULL) {
         return NULL;
     }
-
     return pack->package;
 }
 
-int inventory_pack_filename(struct fridge_inventory_pack* pack, char* buffer, size_t size)
+const char* inventory_pack_filename(struct fridge_inventory_pack* pack)
 {
-    int written;
-
-    if (pack == NULL || buffer == NULL) {
-        errno = EINVAL;
-        return -1;
+    if (pack == NULL) {
+        return NULL;
     }
-
-    return __package_path(
-        pack->inventory,
-        pack->publisher,
-        pack->package,
-        pack->platform,
-        pack->arch,
-        pack->channel,
-        pack->version.revision,
-        buffer,
-        size
-    );
+    return pack->path;
 }
 
 void inventory_pack_set_unpacked(struct fridge_inventory_pack* pack)
@@ -546,7 +460,6 @@ void inventory_pack_set_unpacked(struct fridge_inventory_pack* pack)
     if (pack == NULL) {
         return;
     }
-
     pack->unpacked = 1;
 }
 
