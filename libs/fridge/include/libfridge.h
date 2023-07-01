@@ -64,6 +64,11 @@ extern int fridge_initialize(const char* platform, const char* architecture);
 /**
  * @brief 
  */
+extern void fridge_purge(void);
+
+/**
+ * @brief 
+ */
 extern void fridge_cleanup(void);
 
 /**

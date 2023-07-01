@@ -87,6 +87,13 @@ extern int inventory_save(struct fridge_inventory* inventory);
 extern void inventory_free(struct fridge_inventory* inventory);
 
 /**
+ * @brief Clears all items in the inventory.
+ * 
+ * @param[In] inventory The inventory to clear. 
+ */
+extern void inventory_clear(struct fridge_inventory* inventory);
+
+/**
  * @brief Retrieves the package name of the given pack.
  * 
  * @param[In] pack A pointer to the pack.
@@ -100,7 +107,23 @@ extern const char* inventory_pack_name(struct fridge_inventory_pack* pack);
  * @param[In] pack A pointer to the pack.
  * @return const char* A pointer to a zero terminated string containing the package path.
  */
-extern const char* inventory_pack_filename(struct fridge_inventory_pack* pack);
+extern const char* inventory_pack_path(struct fridge_inventory_pack* pack);
+
+/**
+ * @brief Retrieves the package platform of the given pack.
+ * 
+ * @param[In] pack A pointer to the pack.
+ * @return const char* A pointer to a zero terminated string containing the package platform.
+ */
+extern const char* inventory_pack_platform(struct fridge_inventory_pack* pack);
+
+/**
+ * @brief Retrieves the package architecture of the given pack.
+ * 
+ * @param[In] pack A pointer to the pack.
+ * @return const char* A pointer to a zero terminated string containing the package architecture.
+ */
+extern const char* inventory_pack_arch(struct fridge_inventory_pack* pack);
 
 /**
  * @brief Marks a pack for being currently unpacked. This can be used to indicate whether

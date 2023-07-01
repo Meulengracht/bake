@@ -1,5 +1,5 @@
 /**
- * Copyright 2023, Philip Meulengracht
+ * Copyright 2022, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,27 +16,26 @@
  * 
  */
 
-#ifndef __LIBINGREDIENT_H__
-#define __LIBINGREDIENT_H__
+#ifndef __FRIDGE_PACKAGING_H__
+#define __FRIDGE_PACKAGING_H__
 
 #include <chef/package.h>
 
-// prototypes imported from vafs;
-struct VaFs;
-struct VaFsDirectoryHandle;
-
-struct ingredient {
-    struct VaFs*                vafs;
-    struct VaFsDirectoryHandle* root_handle;
-    struct chef_package*        package;
-    struct chef_version*        version;
-    int                         file_count;
-    int                         directory_count;
-    int                         symlink_count;
+struct packaging_params {
+    const char* prep_path;
 };
 
-extern int ingredient_open(const char* path, struct ingredient** ingredientOut);
+struct package_desc {
+    const char*          path;
+    const char*          publisher;
+    const char*          package;
+    struct chef_version* version;
+};
 
-extern void ingredient_close(struct ingredient* ingredient);
+extern int packaging_load(struct packaging_params* params);
 
-#endif //!__LIBINGREDIENT_H__
+extern int packaging_clear(void);
+
+extern int packaging_make_available(struct package_desc*);
+
+#endif //!__FRIDGE_PACKAGING_H__

@@ -106,19 +106,6 @@ static int __handle_overview(struct VaFs* vafsHandle, struct ingredient* ingredi
     return 0;
 }
 
-static enum chef_package_type __get_pack_type(struct VaFs* vafsHandle)
-{
-    struct chef_vafs_feature_package_header* packageHeader;
-    int                                      status;
-
-    status = vafs_feature_query(vafsHandle, &g_headerGuid, (struct VaFsFeatureHeader**)&packageHeader);
-    if (status) {
-        fprintf(stderr, "__get_unpack_path: failed to query package header\n");
-        return CHEF_PACKAGE_TYPE_UNKNOWN;
-    }
-    return packageHeader->type;
-}
-
 static struct ingredient* __ingredient_new(void)
 {
     struct ingredient* ingredient;
@@ -136,6 +123,8 @@ static void __ingredient_delete(struct ingredient* ingredient)
         return;
     }
 
+    chef_package_free(ingredient->package);
+    chef_version_free(ingredient->version);
     vafs_directory_close(ingredient->root_handle);
     vafs_close(ingredient->vafs);
     free(ingredient);
@@ -158,33 +147,37 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
     if (status) {
         fprintf(stderr, "ingredient_open: cannot open vafs image: %s\n", path);
         free(ingredient);
-        return -1;
+        return status;
+    }
+
+    status = chef_package_load_vafs(vafsHandle, &ingredient->package, &ingredient->version, NULL, NULL);
+    if (status) {
+        fprintf(stderr, "ingredient_open: cannot open vafs image: %s\n", path);
+        free(ingredient);
+        return status;
     }
 
     status = __handle_overview(vafsHandle, ingredient);
     if (status) {
         fprintf(stderr, "ingredient_open: failed to handle image overview\n");
         __ingredient_delete(ingredient);
-        return -1;
+        return status;
     }
 
     status = __handle_filter(vafsHandle);
     if (status) {
         fprintf(stderr, "ingredient_open: failed to handle image filter\n");
         __ingredient_delete(ingredient);
-        return -1;
+        return status;
     }
 
     status = vafs_directory_open(vafsHandle, "/", &directoryHandle);
     if (status) {
         fprintf(stderr, "ingredient_open: cannot open root directory: /\n");
         __ingredient_delete(ingredient);
-        return -1;
+        return status;
     }
 
-    // detect the type of ingredient we are unpacking.
-    ingredient->type = __get_pack_type(vafsHandle);
-    
     *ingredientOut = ingredient;
     return 0;
 }

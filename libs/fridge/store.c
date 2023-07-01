@@ -127,6 +127,7 @@ int fridge_store_close(struct fridge_store* store)
     }
 
     status = inventory_save(store->inventory);
+    inventory_free(store->inventory);
     store->inventory = NULL;
     return status;
 }

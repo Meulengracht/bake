@@ -419,13 +419,10 @@ int inventory_save(struct fridge_inventory* inventory)
     return status;
 }
 
-void inventory_free(struct fridge_inventory* inventory)
+void inventory_clear(struct fridge_inventory* inventory)
 {
-    if (inventory == NULL) {
-        return;
-    }
-
     for (int i = 0; i < inventory->packs_count; i++) {
+        free((void*)inventory->packs[i].path);
         free((void*)inventory->packs[i].publisher);
         free((void*)inventory->packs[i].package);
         free((void*)inventory->packs[i].platform);
@@ -433,8 +430,18 @@ void inventory_free(struct fridge_inventory* inventory)
         free((void*)inventory->packs[i].channel);
         free((void*)inventory->packs[i].version.tag);
     }
-
     free(inventory->packs);
+
+    inventory->packs_count = 0;
+    inventory->packs = NULL;
+}
+
+void inventory_free(struct fridge_inventory* inventory)
+{
+    if (inventory == NULL) {
+        return;
+    }
+    inventory_clear(inventory);
     free((void*)inventory->path);
     free(inventory);
 }
@@ -447,12 +454,28 @@ const char* inventory_pack_name(struct fridge_inventory_pack* pack)
     return pack->package;
 }
 
-const char* inventory_pack_filename(struct fridge_inventory_pack* pack)
+const char* inventory_pack_path(struct fridge_inventory_pack* pack)
 {
     if (pack == NULL) {
         return NULL;
     }
     return pack->path;
+}
+
+const char* inventory_pack_platform(struct fridge_inventory_pack* pack)
+{
+    if (pack == NULL) {
+        return NULL;
+    }
+    return pack->platform;
+}
+
+const char* inventory_pack_arch(struct fridge_inventory_pack* pack)
+{
+    if (pack == NULL) {
+        return NULL;
+    }
+    return pack->arch;
 }
 
 void inventory_pack_set_unpacked(struct fridge_inventory_pack* pack)

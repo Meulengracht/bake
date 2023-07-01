@@ -72,10 +72,12 @@
         "signature.h": "c",
         "backend.h": "c",
         "*.inc": "c",
-        "zip.h": "c"
+        "zip.h": "c",
+        "limits.h": "c"
     },
     "cmake.installPrefix": "/usr/local/chef",
     "cmake.configureArgs": [
         "-DCMAKE_BUILD_TYPE=Debug"
-    ]
+    ],
+    "cmake.configureOnOpen": false
 }

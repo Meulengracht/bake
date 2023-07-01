@@ -16,27 +16,20 @@
  * 
  */
 
-#ifndef __LIBINGREDIENT_H__
-#define __LIBINGREDIENT_H__
+#include "../packaging.h"
 
-#include <chef/package.h>
 
-// prototypes imported from vafs;
-struct VaFs;
-struct VaFsDirectoryHandle;
+int packaging_load(struct packaging_params* params)
+{
 
-struct ingredient {
-    struct VaFs*                vafs;
-    struct VaFsDirectoryHandle* root_handle;
-    struct chef_package*        package;
-    struct chef_version*        version;
-    int                         file_count;
-    int                         directory_count;
-    int                         symlink_count;
-};
+}
 
-extern int ingredient_open(const char* path, struct ingredient** ingredientOut);
+int packaging_clear(void)
+{
 
-extern void ingredient_close(struct ingredient* ingredient);
+}
 
-#endif //!__LIBINGREDIENT_H__
+int packaging_make_available(struct package_desc* package)
+{
+
+}

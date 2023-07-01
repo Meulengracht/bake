@@ -159,25 +159,14 @@ static int __load_package_commands(struct VaFs* vafs, struct chef_command** comm
     return 0;
 }
 
-int chef_package_load(
-        const char*           path,
-        struct chef_package** packageOut,
-        struct chef_version** versionOut,
-        struct chef_command** commandsOut,
-        int*                  commandCountOut)
+int chef_package_load_vafs(
+    struct VaFs*          vafs,
+    struct chef_package** packageOut,
+    struct chef_version** versionOut,
+    struct chef_command** commandsOut,
+    int*                  commandCountOut)
 {
-    struct VaFs* vafs;
-    int          status;
-
-    if (path == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    status = vafs_open_file(path, &vafs);
-    if (status != 0) {
-        return status;
-    }
+    int status = 0;
 
     if (packageOut) {
         status = __load_package_header(vafs, packageOut);
@@ -209,9 +198,38 @@ int chef_package_load(
             *commandCountOut = 0;
         }
     }
+    return status;
+}
 
+int chef_package_load(
+        const char*           path,
+        struct chef_package** packageOut,
+        struct chef_version** versionOut,
+        struct chef_command** commandsOut,
+        int*                  commandCountOut)
+{
+    struct VaFs* vafs;
+    int          status;
+
+    if (path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    status = vafs_open_file(path, &vafs);
+    if (status != 0) {
+        return status;
+    }
+
+    status = chef_package_load_vafs(
+        vafs,
+        packageOut,
+        versionOut,
+        commandsOut,
+        commandCountOut
+    );
     vafs_close(vafs);
-    return 0;
+    return status;
 }
 
 static void __free_version(struct chef_version* version)

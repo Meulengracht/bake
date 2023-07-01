@@ -21,6 +21,9 @@
 
 #include <stddef.h>
 
+// prototypes imported from vafs;
+struct VaFs;
+
 enum chef_package_type {
     CHEF_PACKAGE_TYPE_UNKNOWN,
     CHEF_PACKAGE_TYPE_TOOLCHAIN,
@@ -100,12 +103,28 @@ struct chef_package {
  * @return int 
  */
 extern int chef_package_load(
-        const char* path,
-        struct chef_package** packageOut,
-        struct chef_version** versionOut,
-        struct chef_command** commandsOut,
-        int*                  commandCountOut
-);
+    const char* path,
+    struct chef_package** packageOut,
+    struct chef_version** versionOut,
+    struct chef_command** commandsOut,
+    int*                  commandCountOut);
+
+/**
+ * @brief 
+ * 
+ * @param[In]       path
+ * @param[Out, Opt] packageOut
+ * @param[Out, Opt] versionOut
+ * @param[Out, Opt] commandsOut     A pointer to a chef_command*, it will be set to an array of commands.
+ * @param[Out, Opt] commandCountOut Will be set to the size of commandsOut.
+ * @return int 
+ */
+extern int chef_package_load_vafs(
+    struct VaFs*          vafs,
+    struct chef_package** packageOut,
+    struct chef_version** versionOut,
+    struct chef_command** commandsOut,
+    int*                  commandCountOut);
 
 /**
  * @brief Cleans up any resources allocated by the package.
