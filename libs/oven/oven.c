@@ -618,11 +618,11 @@ static struct generate_backend* __get_generate_backend(const char* name)
     return NULL;
 }
 
-static struct oven_keypair_item* __preprocess_keypair(struct oven_keypair_item* original)
+static struct chef_keypair_item* __preprocess_keypair(struct chef_keypair_item* original)
 {
-    struct oven_keypair_item* keypair;
+    struct chef_keypair_item* keypair;
 
-    keypair = (struct oven_keypair_item*)malloc(sizeof(struct oven_keypair_item));
+    keypair = (struct chef_keypair_item*)malloc(sizeof(struct chef_keypair_item));
     if (!keypair) {
         return NULL;
     }
@@ -644,8 +644,8 @@ static struct list* __preprocess_keypair_list(struct list* original)
 
     list_init(processed);
     list_foreach(original, item) {
-        struct oven_keypair_item* keypair          = (struct oven_keypair_item*)item;
-        struct oven_keypair_item* processedKeypair = __preprocess_keypair(keypair);
+        struct chef_keypair_item* keypair          = (struct chef_keypair_item*)item;
+        struct chef_keypair_item* processedKeypair = __preprocess_keypair(keypair);
         if (!processedKeypair) {
             fprintf(stderr, "oven: failed to allocate memory environment preprocessor\n");
             break;
@@ -672,14 +672,14 @@ static const char* __append_ingredients_system_path(const char* original)
     return buffer;
 }
 
-static struct oven_keypair_item* __build_ingredients_system_path_keypair(const char* key)
+static struct chef_keypair_item* __build_ingredients_system_path_keypair(const char* key)
 {
     // '-isystem-after ' (15)
     // '/include' (8)
     // zero terminator (1)
     size_t length = strlen(g_oven.variables.fridge_prep_directory) + 25;
     char*  buffer = calloc(length, 1);
-    struct oven_keypair_item* item = calloc(sizeof(struct oven_keypair_item), 1);
+    struct chef_keypair_item* item = calloc(sizeof(struct chef_keypair_item), 1);
     if (buffer == NULL || item == NULL) {
         free(buffer);
         return NULL;
@@ -711,7 +711,7 @@ static int __append_or_update_environ_flags(struct list* environment)
 
     // Update any environmental variable already provided by recipe
     list_foreach(environment, item) {
-        struct oven_keypair_item* keypair = (struct oven_keypair_item*)item;
+        struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
         for (int i = 0; idents[i].ident != NULL; i++) {
             if (!strcmp(keypair->key, idents[i].ident)) {
                 const char* tmp = keypair->value;
@@ -749,7 +749,7 @@ static void __cleanup_environment(struct list* keypairs)
 
     for (item = keypairs->head; item != NULL;) {
         struct list_item*         next    = item->next;
-        struct oven_keypair_item* keypair = (struct oven_keypair_item*)item;
+        struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
 
         free((void*)keypair->key);
         free((void*)keypair->value);

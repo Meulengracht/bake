@@ -40,6 +40,8 @@ enum state {
     STATE_PROJECT_EULA,
     STATE_PROJECT_HOMEPAGE,
 
+    STATE_PACKAGE_LIST,
+
     STATE_INGREDIENT_LIST,
 
     STATE_INGREDIENT,       // MAPPING_START
@@ -112,7 +114,7 @@ struct parser_state {
     struct recipe_step       step;
     struct recipe_pack       pack;
     struct oven_pack_command command;
-    struct oven_keypair_item env_keypair;
+    struct chef_keypair_item env_keypair;
     struct meson_wrap_item   meson_wrap_item;
 };
 
@@ -127,7 +129,9 @@ static const char* __parse_string(const char* value)
 
 static enum chef_package_type __parse_pack_type(const char* value)
 {
-    if (strcmp(value, "ingredient") == 0) {
+    if (strcmp(value, "bootloader") == 0) {
+        return CHEF_PACKAGE_TYPE_BOOTLOADER;
+    } else if (strcmp(value, "ingredient") == 0) {
         return CHEF_PACKAGE_TYPE_INGREDIENT;
     } else if (strcmp(value, "application") == 0) {
         return CHEF_PACKAGE_TYPE_APPLICATION;
@@ -390,14 +394,14 @@ static void __finalize_step(struct parser_state* state)
 
 static void __finalize_step_env(struct parser_state* state)
 {
-    struct oven_keypair_item* keypair;
+    struct chef_keypair_item* keypair;
 
     // key value must be provided
     if (state->env_keypair.key == NULL || strlen(state->env_keypair.key) == 0) {
         return;
     }
 
-    keypair = malloc(sizeof(struct oven_keypair_item));
+    keypair = malloc(sizeof(struct chef_keypair_item));
     if (keypair == NULL) {
         fprintf(stderr, "error: out of memory\n");
         exit(EXIT_FAILURE);
@@ -548,6 +552,7 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
         list_add(&state->structure.field, &argument->list_header); \
     }
 
+DEFINE_LIST_STRING_ADD(recipe, packages)
 DEFINE_LIST_STRING_ADD(ingredient, filters)
 DEFINE_LIST_STRING_ADD(step, depends)
 DEFINE_LIST_STRING_ADD(step, arguments)
@@ -627,17 +632,15 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "project") == 0) {
                         s->state = STATE_PROJECT;
-                    }
-                    else if (strcmp(value, "ingredients") == 0) {
+                    } else if (strcmp(value, "packages") == 0) {
+                        s->state = STATE_PACKAGE_LIST;
+                    } else if (strcmp(value, "ingredients") == 0) {
                         s->state = STATE_INGREDIENT_LIST;
-                    }
-                    else if (strcmp(value, "recipes") == 0) {
+                    } else if (strcmp(value, "recipes") == 0) {
                         s->state = STATE_RECIPE_LIST;
-                    }
-                    else if (strcmp(value, "packs") == 0) {
+                    } else if (strcmp(value, "packs") == 0) {
                         s->state = STATE_PACKS_LIST;
-                    }
-                    else {
+                    } else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
                     }
@@ -780,6 +783,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_EULA, recipe.project.eula, __parse_string)
         __consume_scalar_fn(STATE_PROJECT, STATE_PROJECT_HOMEPAGE, recipe.project.url, __parse_string)
 
+        __consume_sequence_unmapped(STATE_SECTION, STATE_PACKAGE_LIST, __add_recipe_packages)
+
         __consume_sequence_mapped(STATE_SECTION, STATE_INGREDIENT_LIST, STATE_INGREDIENT)
 
         case STATE_INGREDIENT:
@@ -884,17 +889,13 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "name") == 0) {
                         s->state = STATE_RECIPE_NAME;
-                    }
-                    else if (strcmp(value, "path") == 0) {
+                    } else if (strcmp(value, "path") == 0) {
                         s->state = STATE_RECIPE_PATH;
-                    }
-                    else if (strcmp(value, "toolchain") == 0) {
+                    } else if (strcmp(value, "toolchain") == 0) {
                         s->state = STATE_RECIPE_TOOLCHAIN;
-                    }
-                    else if (strcmp(value, "steps") == 0) {
+                    } else if (strcmp(value, "steps") == 0) {
                         s->state = STATE_RECIPE_STEP_LIST;
-                    }
-                    else {
+                    } else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
                     } break;
@@ -1182,7 +1183,7 @@ static void __destroy_string(struct oven_value_item* value)
     free(value);
 }
 
-static void __destroy_keypair(struct oven_keypair_item* keypair)
+static void __destroy_keypair(struct chef_keypair_item* keypair)
 {
     free((void*)keypair->key);
     free((void*)keypair->value);
@@ -1223,7 +1224,7 @@ static void __destroy_step(struct recipe_step* step)
 {
     __destroy_list(string, step->depends.head, struct oven_value_item);
     __destroy_list(string, step->arguments.head, struct oven_value_item);
-    __destroy_list(keypair, step->env_keypairs.head, struct oven_keypair_item);
+    __destroy_list(keypair, step->env_keypairs.head, struct chef_keypair_item);
     free((void*)step->system);
     free(step);
 }
@@ -1261,6 +1262,7 @@ void recipe_destroy(struct recipe* recipe)
 
     __destroy_project(&recipe->project);
     __destroy_list(ingredient, recipe->ingredients.head, struct recipe_ingredient);
+    __destroy_list(string, recipe->packages.head, struct oven_value_item);
     __destroy_list(part, recipe->parts.head, struct recipe_part);
     __destroy_list(pack, recipe->packs.head, struct recipe_pack);
     free(recipe);

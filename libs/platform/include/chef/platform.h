@@ -124,6 +124,12 @@
 extern "C" {
 #endif
 
+struct chef_keypair_item {
+    struct list_item list_header;
+    const char*      key;
+    const char*      value;
+};
+
 enum platform_filetype {
     PLATFORM_FILETYPE_DIRECTORY,
     PLATFORM_FILETYPE_FILE,
@@ -225,6 +231,11 @@ extern int platform_sleep(unsigned int milliseconds);
  * @#define CHEF_ARCHITECTURE_STR int 0 on success, -1 on error
  */
 extern int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd);
+
+/**
+ * @brief Spawns a child process and returns the stdout as a string.
+ */
+extern const char* platform_exec(const char* cmd);
 
 /**
  * @brief Execute the provided shell script.

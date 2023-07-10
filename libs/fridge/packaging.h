@@ -20,9 +20,17 @@
 #define __FRIDGE_PACKAGING_H__
 
 #include <chef/package.h>
+#include <chef/list.h>
+
+struct packaging_import {
+    struct list_item list_header;
+    const char*      name;
+};
 
 struct packaging_params {
-    const char* prep_path;
+    const char*  prep_path;
+    struct list* environment;
+    struct list* imports; // list<packaging_import>
 };
 
 struct package_desc {
@@ -34,8 +42,8 @@ struct package_desc {
 
 extern int packaging_load(struct packaging_params* params);
 
-extern int packaging_clear(void);
+extern int packaging_clear(const char* prep_path);
 
-extern int packaging_make_available(struct package_desc*);
+extern int packaging_make_available(const char* prep_path, struct package_desc*);
 
 #endif //!__FRIDGE_PACKAGING_H__

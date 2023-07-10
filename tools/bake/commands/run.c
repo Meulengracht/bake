@@ -238,8 +238,8 @@ static int __make_packs(struct recipe* recipe)
 static void __cleanup_systems(int sig)
 {
     (void)sig;
-    printf("termination requested, cleaning up\n");
-    exit(0);
+    printf("termination requested, cleaning up\n"); // not safe
+    exit(0); // not safe, manually clean up systems and call _Exit()
 }
 
 static void __debug(void)
@@ -444,7 +444,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = fridge_initialize(platform, arch);
+    status = fridge_initialize(platform, arch, &recipe->packages);
     if (status != 0) {
         fprintf(stderr, "failed to initialize fridge\n");
         return -1;

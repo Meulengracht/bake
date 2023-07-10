@@ -59,7 +59,7 @@ struct fridge_ingredient {
  * 
  * @return int 
  */
-extern int fridge_initialize(const char* platform, const char* architecture);
+extern int fridge_initialize(const char* platform, const char* architecture, struct list* packages);
 
 /**
  * @brief 

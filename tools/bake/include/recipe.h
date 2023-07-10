@@ -82,6 +82,7 @@ struct recipe_pack {
 struct recipe {
     struct recipe_project  project;
     struct list            ingredients; // list<recipe_ingredient>
+    struct list            packages;    // list<packages>
     struct list            parts;       // list<recipe_part>
     struct list            packs;       // list<recipe_pack>
 };

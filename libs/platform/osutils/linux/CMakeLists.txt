@@ -3,6 +3,7 @@ add_library(platform-osutils STATIC
     chmod.c
     chsize.c
     cpucount.c
+    exec.c
     getcwd.c
     getuserdir.c
     isdir.c

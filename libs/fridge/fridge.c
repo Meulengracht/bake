@@ -61,6 +61,7 @@ struct fridge_context {
     const char*              storage_path;
     const char*              prep_path;
     const char*              utensils_path;
+    struct list              environment;
 };
 
 static struct fridge_context g_fridge = { 0 };
@@ -334,7 +335,7 @@ static int __make_folders(void)
     return 0;
 }
 
-int fridge_initialize(const char* platform, const char* architecture)
+int fridge_initialize(const char* platform, const char* architecture, struct list* packages)
 {
     int status;
 
@@ -342,6 +343,9 @@ int fridge_initialize(const char* platform, const char* architecture)
         fprintf(stderr, "fridge_initialize: platform and architecture must be specified\n");
         return -1;
     }
+
+    // initialize members
+    list_init(&g_fridge.environment);
 
     status = __make_folders();
     if (status) {
@@ -365,7 +369,11 @@ int fridge_initialize(const char* platform, const char* architecture)
         return -1;
     }
 
-    status = packaging_load();
+    status = packaging_load(&(struct packaging_params) {
+        .prep_path   = g_fridge.prep_path,
+        .environment = &g_fridge.environment,
+        .imports = packages
+    });
     if (status) {
         fprintf(stderr, "fridge_initialize: failed to load packaging subsystem\n");
         fridge_cleanup();
@@ -377,7 +385,7 @@ int fridge_initialize(const char* platform, const char* architecture)
 void fridge_purge(void)
 {
     // make all packages unavailable
-    int status = packaging_clear();
+    int status = packaging_clear(g_fridge.prep_path);
     if (status) {
         fprintf(stderr, "fridge_purge: failed to clear packaging store\n");
     }
@@ -529,7 +537,7 @@ static int __fridge_unpack(struct fridge_inventory_pack* pack)
     inventory_pack_set_unpacked(pack);
 
     // make it available for the packaging detction
-    status = packaging_make_available(&(struct package_desc) {
+    status = packaging_make_available(g_fridge.prep_path, &(struct package_desc) {
         .path = unpackPath,
         .publisher = ingredient->package->publisher,
         .package = ingredient->package->package,

@@ -47,12 +47,6 @@ union oven_backend_options {
     struct oven_backend_meson_options meson;
 };
 
-struct oven_keypair_item {
-    struct list_item list_header;
-    const char*      key;
-    const char*      value;
-};
-
 struct oven_value_item {
     struct list_item list_header;
     const char*      value;
