@@ -131,6 +131,8 @@ static enum chef_package_type __parse_pack_type(const char* value)
 {
     if (strcmp(value, "bootloader") == 0) {
         return CHEF_PACKAGE_TYPE_BOOTLOADER;
+    } else if (strcmp(value, "os") == 0) {
+        return CHEF_PACKAGE_TYPE_OSBASE;
     } else if (strcmp(value, "ingredient") == 0) {
         return CHEF_PACKAGE_TYPE_INGREDIENT;
     } else if (strcmp(value, "application") == 0) {

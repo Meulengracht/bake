@@ -1,6 +1,7 @@
 
 add_library(oven-builders STATIC
     make.c
+    meson.c
 )
 
 target_include_directories(oven-builders PRIVATE ../../include)

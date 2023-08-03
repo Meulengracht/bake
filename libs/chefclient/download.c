@@ -269,9 +269,9 @@ cleanup:
     return status;
 }
 
-static void __format_version(const char* buffer, struct chef_version* version)
+static void __format_version(char* buffer, struct chef_version* version)
 {
-    sprintf(buffer, "%i.%i.%i", version->major, version->minor, version->patch);
+    sprintf(&buffer[0], "%i.%i.%i", version->major, version->minor, version->patch);
 }
 
 int chefclient_pack_download(struct chef_download_params* params, const char* path)

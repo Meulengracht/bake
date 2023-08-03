@@ -262,21 +262,31 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
         goto cleanup;
     }
 
-    status = __generate_cmake_file(workspacePath, data);
-    if (status != 0) {
-        goto cleanup;
-    }
+    if (options == NULL) {
+        status = __generate_cmake_file(workspacePath, data);
+        if (status != 0) {
+            goto cleanup;
+        }
 
-    // build the cmake command, execute from build folder
-    // if cross compiling set -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF
-    written = snprintf(
-        argument,
-        argumentLength - 1,
-        "%s -DCMAKE_PROJECT_INCLUDE=%s %s",
-        newArguments,
-        workspacePath,
-        data->paths.project
-    );
+        // build the cmake command, execute from build folder
+        // if cross compiling set -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF
+        written = snprintf(
+            argument,
+            argumentLength - 1,
+            "%s -DCMAKE_PROJECT_INCLUDE=%s %s",
+            newArguments,
+            workspacePath,
+            data->paths.project
+        );
+    } else {
+        written = snprintf(
+            argument,
+            argumentLength - 1,
+            "%s %s",
+            newArguments,
+            data->paths.project
+        );
+    }
     argument[written] = '\0';
 
     // perform the spawn operation

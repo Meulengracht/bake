@@ -35,8 +35,27 @@ struct ingredient {
     int                         symlink_count;
 };
 
+#define INGREDIENT_PROGRESS_START     0
+#define INGREDIENT_PROGRESS_FILE      1
+#define INGREDIENT_PROGRESS_DIRECTORY 2
+#define INGREDIENT_PROGRESS_SYMLINK   3
+typedef void(*ingredient_progress_cb)(const char* name, int type, void* context);
+
+/**
+ * @brief Opens up an ingredient for reading. Returns a handle that can be used for
+ * manually doing operations or be used for further operations.
+ */
 extern int ingredient_open(const char* path, struct ingredient** ingredientOut);
 
+/**
+ * @brief Closes a previously opened ingredient handle
+ */
 extern void ingredient_close(struct ingredient* ingredient);
+
+/**
+ * @brief Helper to extract an ingredient to a specific path. Optionally a progress callback
+ * can be provided.
+ */
+extern int ingredient_unpack(struct ingredient* ingredient, const char* path, ingredient_progress_cb progressCB, void* context);
 
 #endif //!__LIBINGREDIENT_H__

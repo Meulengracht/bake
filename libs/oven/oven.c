@@ -18,6 +18,7 @@
 
 #include <backend.h>
 #include <errno.h>
+#include <libingredient.h>
 #include <liboven.h>
 #include <chef/platform.h>
 #include <stdio.h>
@@ -267,6 +268,85 @@ int oven_clean(void)
     status = __recreate_dir(g_oven.install_root);
     if (status) {
         return status;
+    }
+    return 0;
+}
+
+// .oven/<package>/bin
+// .oven/<package>/lib
+// .oven/<package>/share
+// .oven/<package>/usr/...
+// .oven/<package>/chef/build
+// .oven/<package>/chef/install
+// .oven/<package>/chef/project/...
+static int __setup_ingredients(const char* root, struct list* ingredients)
+{
+    struct list_item* i;
+    int               status;
+
+    list_foreach(ingredients, i) {
+        struct oven_ingredient* ovenIngredient = (struct oven_ingredient*)i;
+        struct ingredient*      ingredient;
+
+        status = ingredient_open(ovenIngredient->file_path, &ingredient);
+        if (status) {
+            fprintf("__setup_ingredients: failed to open %s", ovenIngredient->name);
+            return -1;
+        }
+
+        status = ingredient_unpack(ingredient, ovenIngredient->file_path, NULL, NULL);
+        ingredient_close(ingredient);
+        if (status) {
+            fprintf("__setup_ingredients: failed to setup %s", ovenIngredient->name);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int __setup_scratch(struct oven_recipe_options* options)
+{
+    struct platform_stat stats;
+    const char*          scratchPad[512];
+    char*                buildRoot;
+    char*                installRoot;
+    char*                projectRoot;
+    char*                checkpointPath;
+
+    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/build", options->name);
+    if (platform_mkdir(&scratchPad[0])) {
+        fprintf("__setup_scratch: failed to create %s", &scratchPad[0]);
+        return -1;
+    }
+    buildRoot = strdup(&scratchPad[0]);
+
+    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/install", options->name);
+    if (platform_mkdir(&scratchPad[0])) {
+        fprintf("__setup_scratch: failed to create %s", &scratchPad[0]);
+        return -1;
+    }
+    installRoot = strdup(&scratchPad[0]);
+
+    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/project", options->name);
+    if (platform_mkdir(&scratchPad[0])) {
+        fprintf("__setup_scratch: failed to create %s", &scratchPad[0]);
+        return -1;
+    }
+    projectRoot = strdup(&scratchPad[0]);
+
+    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/.checkpoint", options->name);
+
+    g_oven.recipe.build_root      = buildRoot;
+    g_oven.recipe.install_root    = installRoot;
+    g_oven.recipe.checkpoint_path = strdup(&scratchPad[0]);
+    if (g_oven.recipe.build_root == NULL || g_oven.recipe.install_root == NULL || g_oven.recipe.checkpoint_path == NULL) {
+        return -1;
+    }
+
+    // extract os/ingredients/toolchain
+    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s", options->name);
+    if (__setup_ingredients(&scratchPad[0], options->ingredients)) {
+        return -1;
     }
     return 0;
 }
@@ -810,10 +890,10 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
         return -1;
     }
 
-    if (__append_or_update_environ_flags(data->environment)) {
-        __cleanup_backend_data(data);
-        return -1;
-    }
+    //if (__append_or_update_environ_flags(data->environment)) {
+    //    __cleanup_backend_data(data);
+    //    return -1;
+    //}
 
     data->arguments = __build_argument_string(arguments);
     if (!data->arguments) {

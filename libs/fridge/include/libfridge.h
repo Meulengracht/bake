@@ -19,6 +19,8 @@
 #ifndef __LIBFRIDGE_H__
 #define __LIBFRIDGE_H__
 
+#include <chef/list.h>
+
 enum ingredient_source {
     INGREDIENT_SOURCE_UNKNOWN,
     INGREDIENT_SOURCE_REPO,

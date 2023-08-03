@@ -23,6 +23,8 @@
 #include "inventory.h"
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "store.h"
 
 #define PACKAGE_TEMP_PATH "pack.inprogress"
@@ -262,7 +264,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
 
     // parse the version provided if any
     if (ingredient->version != NULL) {
-        status = __parse_version_string(ingredient->version, &version);
+        status = chef_version_from_string(ingredient->version, &version);
         if (status) {
             fprintf(stderr, "fridge_store_ensure_ingredient: failed to parse version '%s'\n", ingredient->version);
             return -1;

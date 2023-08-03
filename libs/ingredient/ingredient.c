@@ -23,6 +23,7 @@
 #include <vafs/directory.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <zstd.h>
 
 struct VaFsFeatureFilter {
@@ -185,4 +186,157 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
 void ingredient_close(struct ingredient* ingredient)
 {
     __ingredient_delete(ingredient);
+}
+
+
+static int __extract_file(
+    struct VaFsFileHandle* fileHandle,
+    const char*            path)
+{
+    FILE* file;
+    long  fileSize;
+    void* fileBuffer;
+    int   status;
+
+    if ((file = fopen(path, "wb+")) == NULL) {
+        fprintf(stderr, "__extract_file: unable to open file %s\n", path);
+        return -1;
+    }
+
+    fileSize = vafs_file_length(fileHandle);
+    if (fileSize) {
+        fileBuffer = malloc(fileSize);
+        if (fileBuffer == NULL) {
+            fprintf(stderr, "__extract_file: unable to allocate memory for file %s\n", path);
+            return -1;
+        }
+
+        vafs_file_read(fileHandle, fileBuffer, fileSize);
+        fwrite(fileBuffer, 1, fileSize, file);
+        free(fileBuffer);
+    }
+    fclose(file);
+    return platform_chmod(path, vafs_file_permissions(fileHandle));
+}
+
+static int __extract_directory(
+    struct VaFsDirectoryHandle* directoryHandle,
+    const char*                 root,
+    const char*                 path,
+    ingredient_progress_cb      progressCB,
+    void*                       context)
+{
+    struct VaFsEntry dp;
+    int              status;
+    char*            filepathBuffer;
+
+    // ensure the directory exists
+    if (strlen(path)) {
+        if (platform_mkdir(path)) {
+            fprintf(stderr, "__extract_directory: unable to create directory %s\n", path);
+            return -1;
+        }
+    }
+
+    do {
+        status = vafs_directory_read(directoryHandle, &dp);
+        if (status) {
+            if (errno != ENOENT) {
+                fprintf(stderr, "__extract_directory: failed to read directory '%s' - %i\n",
+                    __get_relative_path(root, path), status);
+                return -1;
+            }
+            break;
+        }
+
+        filepathBuffer = strpathcombine(path, dp.Name);
+        if (filepathBuffer == NULL) {
+            fprintf(stderr, "__extract_directory: unable to allocate memory for filepath\n");
+            return -1;
+        }
+
+        if (progressCB != NULL) {
+            progressCB(dp.Name, INGREDIENT_PROGRESS_START, context);
+        }
+        if (dp.Type == VaFsEntryType_Directory) {
+            struct VaFsDirectoryHandle* subdirectoryHandle;
+            status = vafs_directory_open_directory(directoryHandle, dp.Name, &subdirectoryHandle);
+            if (status) {
+                fprintf(stderr, "__extract_directory: failed to open directory '%s'\n", __get_relative_path(root, filepathBuffer));
+                return -1;
+            }
+
+            status = __extract_directory(subdirectoryHandle, root, filepathBuffer, progressCB, context);
+            if (status) {
+                fprintf(stderr, "__extract_directory: unable to extract directory '%s'\n", __get_relative_path(root, path));
+                return -1;
+            }
+
+            status = vafs_directory_close(subdirectoryHandle);
+            if (status) {
+                fprintf(stderr, "__extract_directory: failed to close directory '%s'\n", __get_relative_path(root, filepathBuffer));
+                return -1;
+            }
+            if (progressCB != NULL) {
+                progressCB(dp.Name, INGREDIENT_PROGRESS_DIRECTORY, context);
+            }
+        } else if (dp.Type == VaFsEntryType_File) {
+            struct VaFsFileHandle* fileHandle;
+            status = vafs_directory_open_file(directoryHandle, dp.Name, &fileHandle);
+            if (status) {
+                fprintf(stderr, "__extract_directory: failed to open file '%s' - %i\n",
+                    __get_relative_path(root, filepathBuffer), status);
+                return -1;
+            }
+
+            status = __extract_file(fileHandle, filepathBuffer);
+            if (status) {
+                fprintf(stderr, "__extract_directory: unable to extract file '%s'\n", __get_relative_path(root, path));
+                return -1;
+            }
+
+            status = vafs_file_close(fileHandle);
+            if (status) {
+                fprintf(stderr, "__extract_directory: failed to close file '%s'\n", __get_relative_path(root, filepathBuffer));
+                return -1;
+            }
+            if (progressCB != NULL) {
+                progressCB(dp.Name, INGREDIENT_PROGRESS_FILE, context);
+            }
+        } else if (dp.Type == VaFsEntryType_Symlink) {
+            const char* symlinkTarget;
+            
+            status = vafs_directory_read_symlink(directoryHandle, dp.Name, &symlinkTarget);
+            if (status) {
+                fprintf(stderr, "__extract_directory: failed to read symlink '%s' - %i\n",
+                    __get_relative_path(root, filepathBuffer), status);
+                return -1;
+            }
+
+            status = platform_symlink(filepathBuffer, symlinkTarget, 0 /* TODO */);
+            if (status) {
+                fprintf(stderr, "__extract_directory: failed to create symlink '%s' - %i\n",
+                    __get_relative_path(root, filepathBuffer), status);
+                return -1;
+            }
+            if (progressCB != NULL) {
+                progressCB(dp.Name, INGREDIENT_PROGRESS_SYMLINK, context);
+            }
+        } else {
+            fprintf(stderr, "__extract_directory: unable to extract unknown type '%s'\n", __get_relative_path(root, filepathBuffer));
+            return -1;
+        }
+        free(filepathBuffer);
+    } while(1);
+
+    return 0;
+}
+
+int ingredient_unpack(struct ingredient* ingredient, const char* path, ingredient_progress_cb progressCB, void* context)
+{
+    if (ingredient == NULL || path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    return __extract_directory(ingredient->root_handle, path, path, progressCB, context);
 }

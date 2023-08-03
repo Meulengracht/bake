@@ -41,7 +41,7 @@ int meson_build_main(struct oven_backend_data* data, union oven_backend_options*
     // lets make it 64 to cover some extra grounds
     length = 64 + strlen(data->paths.project);
 
-    mesonCommand = malloc(args);
+    mesonCommand = malloc(length);
     if (mesonCommand == NULL) {
         errno = ENOMEM;
         goto cleanup;

@@ -313,3 +313,46 @@ void chef_commands_free(struct chef_command* commands, int count)
     }
     free(commands);
 }
+
+int chef_version_from_string(const char* string, struct chef_version* version)
+{
+    // parse a version string of format "1.2.3(+tag)"
+    // where tag is optional
+    char* pointer    = (char*)string;
+    char* pointerEnd = strchr(pointer, '.');
+
+    // if '.' was not found, then the revision is provided, so we use that
+    if (pointerEnd == NULL) {
+        version->major    = 0;
+        version->minor    = 0;
+        version->patch    = 0;
+        version->revision = (int)strtol(pointer, &pointerEnd, 10);
+        if (version->revision == 0) {
+            errno = EINVAL;
+            return -1;
+        }
+
+        version->tag = NULL;
+        return 0;
+    }
+    
+    // extract first part
+    version->major = (int)strtol(pointer, &pointerEnd, 10);
+    
+    // extract second part
+    pointer    = pointerEnd + 1;
+    pointerEnd = strchr(pointer, '.');
+    if (pointerEnd == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    version->minor = strtol(pointer, &pointerEnd, 10);
+    
+    pointer    = pointerEnd + 1;
+    pointerEnd = NULL;
+    
+    // extract the 3rd part, patch
+    version->patch = strtol(pointer, &pointerEnd, 10);
+    version->tag   = NULL;
+    return 0;
+}

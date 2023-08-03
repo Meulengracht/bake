@@ -21,7 +21,7 @@
 //
 // Execute a command and get the results. (Only standard output)
 //
-const char* platform_exec(const char* cmd)
+char* platform_exec(const char* cmd)
 {
     const char* strResult;
     HANDLE hPipeRead, hPipeWrite;

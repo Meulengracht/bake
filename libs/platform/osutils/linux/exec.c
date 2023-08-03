@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-const char* platform_exec(const char* cmd)
+char* platform_exec(const char* cmd)
 {
     FILE*  stream;
     int    status;

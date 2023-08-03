@@ -53,7 +53,7 @@ int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
     
-    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR);
+    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR, NULL);
     if (status != 0) {
         fprintf(stderr, "bake: failed to initialize fridge\n");
         return -1;

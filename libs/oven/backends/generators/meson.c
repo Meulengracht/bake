@@ -204,6 +204,10 @@ static int __initiate_meson_dep(struct oven_backend_data* data, struct meson_wra
 static struct oven_ingredient* __find_ingredient(struct oven_backend_data* data, const char* name)
 {
     struct list_item* i;
+    if (data->ingredients == NULL) {
+        return NULL;
+    }
+
     list_foreach(data->ingredients, i) {
         struct oven_ingredient* ing = (struct oven_ingredient*)i;
         if (strcmp(ing->name, name) == 0) {
@@ -393,10 +397,10 @@ static int __write_project_file(struct oven_backend_data* data, struct meson_wra
      * meson.override_dependency('bob', bob_dep)
      */
     fprintf(file, "project(%s, ['c', 'cpp'])\n\n", item->name);
-    fprintf(file, "# add c compiler magic\n")
-    fprintf(file, "cc = meson.get_compiler('c')\n")
-    fprintf(file, "%s_dep = declare_dependecy(\n", item->name)
-    fprintf(file, "    dependencies : cc.find_library('%s', dirs : meson.current_source_dir()),\n", item->name)
+    fprintf(file, "# add c compiler magic\n");
+    fprintf(file, "cc = meson.get_compiler('c')\n");
+    fprintf(file, "%s_dep = declare_dependecy(\n", item->name);
+    fprintf(file, "    dependencies : cc.find_library('%s', dirs : meson.current_source_dir()),\n", item->name);
 
     free(filePath);
     return 0;

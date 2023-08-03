@@ -180,6 +180,7 @@ static int __make_recipe(struct recipe* recipe)
     struct list                ingredients;
 
     // prepare the list of ingredients for the recipe parts
+    list_init(&ingredients);
 
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
@@ -347,7 +348,7 @@ static int __reset_recipe_steps(struct recipe* recipe, const char* step)
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
 
-        __initialize_recipe_options(&options, part);
+        __initialize_recipe_options(&options, part, NULL);
         status = oven_recipe_start(&options);
         __destroy_recipe_options(&options);
 

@@ -28,6 +28,7 @@ enum chef_package_type {
     CHEF_PACKAGE_TYPE_UNKNOWN,
     CHEF_PACKAGE_TYPE_BOOTLOADER,
     CHEF_PACKAGE_TYPE_TOOLCHAIN,
+    CHEF_PACKAGE_TYPE_OSBASE,
     CHEF_PACKAGE_TYPE_INGREDIENT,
     CHEF_PACKAGE_TYPE_APPLICATION
 };
@@ -151,5 +152,10 @@ extern void chef_version_free(struct chef_version* version);
  * @param[In] count    The size of the array passed.
  */
 extern void chef_commands_free(struct chef_command* commands, int count);
+
+/**
+ * @brief Parses a string containing a chef version.
+ */
+extern int chef_version_from_string(const char* string, struct chef_version* version);
 
 #endif //!__PLATFORM_PACKAGE_H__

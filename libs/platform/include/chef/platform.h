@@ -235,7 +235,7 @@ extern int platform_spawn(const char* path, const char* arguments, const char* c
 /**
  * @brief Spawns a child process and returns the stdout as a string.
  */
-extern const char* platform_exec(const char* cmd);
+extern char* platform_exec(const char* cmd);
 
 /**
  * @brief Execute the provided shell script.
