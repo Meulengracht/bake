@@ -9,4 +9,4 @@ add_subdirectory(commands)
 add_subdirectory(parser)
 
 target_include_directories(bake PRIVATE include)
-target_link_libraries(bake PRIVATE bake-commands bake-parser yaml)
+target_link_libraries(bake PRIVATE bake-commands bake-parser yaml vlog)

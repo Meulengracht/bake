@@ -55,7 +55,6 @@ This should create a new (or multiple based on your recipe) *.pack file in the c
 chef will expose the following variables to help control the build process:
 
   * `PROJECT_PATH`: path to the root of the project (where bake was invoked)
-  * `INGREDIENTS_PREFIX`: path to where ingredients are unpacked
   * `INSTALL_PREFIX`: path to where the steps will install files to be packed
   * `CHEF_HOST_PLATFORM`: the platform for which the package is being built
   * `CHEF_HOST_ARCHITECTURE`: the architecture for which the package is being built
@@ -176,9 +175,6 @@ project:
 #
 # Ingredients are the same as dependencies. They are either
 # libraries or toolchains the project needs to build correctly.
-# Ingredients are unpacked to ${{ INGREDIENTS_PREFIX }}
-# Toolchains are unpacked to ${{ TOOLCHAIN_PREFIX }}. Only one
-# toolchain can be used per recipe. 
 ingredients:
     ###########################
     # name - Required

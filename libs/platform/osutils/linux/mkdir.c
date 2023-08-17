@@ -67,7 +67,7 @@ int platform_mkdir(const char* path)
         if (*p == '/') {
             *p = 0;
             
-            status = __mkdir(ccpath, S_IRWXU);
+            status = __mkdir(ccpath, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
             if (status) {
                 return status;
             }
@@ -75,5 +75,5 @@ int platform_mkdir(const char* path)
             *p = '/';
         }
     }
-    return __mkdir(ccpath, S_IRWXU);
+    return __mkdir(ccpath, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
 }

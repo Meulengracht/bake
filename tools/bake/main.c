@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vlog.h>
 #include "chef-config.h"
 
 extern int init_main(int argc, char** argv, char** envp, struct recipe* recipe);
@@ -80,7 +81,7 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
 {
     FILE*  file;
     void*  buffer;
-    size_t size;
+    size_t size, read;
 
     if (path == NULL) {
         errno = EINVAL;
@@ -89,6 +90,7 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
 
     file = fopen(path, "r");
     if (!file) {
+        fprintf(stderr, "bake: failed to read recipe path: %s\n", path);
         return -1;
     }
 
@@ -98,11 +100,18 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
     
     buffer = malloc(size);
     if (!buffer) {
+        fprintf(stderr, "bake: failed to allocate memory for recipe: %s\n", strerror(errno));
         fclose(file);
         return -1;
     }
 
-    fread(buffer, size, 1, file);
+    read = fread(buffer, 1, size, file);
+    if (read < size) {
+        fprintf(stderr, "bake: failed to read recipe: %s\n", strerror(errno));
+        fclose(file);
+        return -1;
+    }
+    
     fclose(file);
 
     *bufferOut = buffer;
@@ -124,6 +133,19 @@ static int __is_devel(const char* name)
         return 0;
     }
     return -1;
+}
+
+static int __needs_base(struct recipe* recipe)
+{
+    struct list_item* i;
+
+    list_foreach(&recipe->packs, i) {
+        struct recipe_pack* pack = (struct recipe_pack*)i;
+        if (pack->type == CHEF_PACKAGE_TYPE_OSBASE) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static int __needs_devel(struct recipe* recipe)
@@ -153,9 +175,9 @@ static int __add_ingredient(struct recipe* recipe, const char* name)
     ingredient->ingredient.arch = strdup(CHEF_ARCHITECTURE_STR);
     ingredient->ingredient.platform = strdup(CHEF_PLATFORM_STR);
     if (ingredient->ingredient.name == NULL || ingredient->ingredient.arch == NULL || ingredient->ingredient.platform == NULL) {
-        free(ingredient->ingredient.name);
-        free(ingredient->ingredient.arch);
-        free(ingredient->ingredient.platform);
+        free((void*)ingredient->ingredient.name);
+        free((void*)ingredient->ingredient.arch);
+        free((void*)ingredient->ingredient.platform);
         free(ingredient);
         return -1;
     }
@@ -182,11 +204,10 @@ static int __add_devel(struct recipe* recipe)
 static int __add_implicit_ingredients(struct recipe* recipe)
 {
     struct list_item* i;
-    int               needsOs = 1;
+    int               needsOs = __needs_base(recipe);
     int               needsDevel = __needs_devel(recipe);
 
-    list_foreach(&recipe->ingredients, i)
-    {
+    list_foreach(&recipe->ingredients, i) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)i;
         if (__is_osbase(ingredient->ingredient.name) == 0) {
             needsOs = 0;
@@ -247,7 +268,7 @@ int main(int argc, char** argv, char** envp)
                         arch = argv[i + 1];
                     } else {
                         fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
-                        return 1;
+                        return -1;
                     }
                 } else if (argv[i][0] != '-') {
                     recipePath = argv[i];
@@ -256,26 +277,27 @@ int main(int argc, char** argv, char** envp)
         }
     }
 
-    result = __read_recipe(recipePath, &buffer, &length);
-    if (!result) {
-        result = recipe_parse(buffer, length, &recipe);
-        free(buffer);
-        if (result) {
-            fprintf(stderr, "bake: failed to parse recipe\n");
-            return result;
+    if (recipePath != NULL) {
+        result = __read_recipe(recipePath, &buffer, &length);
+        if (!result) {
+            result = recipe_parse(buffer, length, &recipe);
+            free(buffer);
+            if (result) {
+                fprintf(stderr, "bake: failed to parse recipe\n");
+                return result;
+            }
+            
+            result = __add_implicit_ingredients(recipe);
+            if (result) {
+                fprintf(stderr, "bake: failed to add implicit ingredients\n");
+                return result;
+            }
         }
     }
 
-    result = __add_implicit_ingredients(recipe);
-    if (result) {
-        fprintf(stderr, "bake: failed to add implicit ingredients\n");
-        return result;
-    }
-
+    vlog_initialize();
     result = command->handler(argc, argv, envp, recipe);
     recipe_destroy(recipe);
-    if (result != 0) {
-        return result;
-    }
-    return 0;
+    vlog_cleanup();
+    return result;
 }

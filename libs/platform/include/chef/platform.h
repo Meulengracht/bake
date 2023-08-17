@@ -152,6 +152,7 @@ struct platform_file_entry {
 };
 
 extern void   strbasename(const char* path, char* buffer, size_t bufferSize);
+extern char*  strpathjoin(const char* base, ...);
 extern char*  strpathcombine(const char* path1, const char* path2);
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);

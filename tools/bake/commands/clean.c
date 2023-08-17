@@ -91,7 +91,6 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
     ovenParams.target_platform = CHEF_PLATFORM_STR;
     ovenParams.target_architecture = CHEF_ARCHITECTURE_STR;
     ovenParams.recipe_name = name;
-    ovenParams.ingredients_prefix = fridge_get_prep_directory();
 
     status = oven_initialize(&ovenParams);
     if (status) {

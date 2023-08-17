@@ -16,14 +16,16 @@
  * 
  */
 
+#include <chef/platform.h>
 #include <chef/utils_vafs.h>
 #include <errno.h>
 #include <libingredient.h>
-#include <vafs/vafs.h>
-#include <vafs/directory.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vafs/vafs.h>
+#include <vafs/file.h>
+#include <vafs/directory.h>
 #include <zstd.h>
 
 struct VaFsFeatureFilter {
@@ -188,6 +190,15 @@ void ingredient_close(struct ingredient* ingredient)
     __ingredient_delete(ingredient);
 }
 
+static const char* __get_relative_path(
+    const char* root,
+    const char* path)
+{
+    const char* relative = path;
+    if (strncmp(path, root, strlen(root)) == 0)
+        relative = path + strlen(root);
+    return relative;
+}
 
 static int __extract_file(
     struct VaFsFileHandle* fileHandle,

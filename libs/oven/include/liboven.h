@@ -63,6 +63,11 @@ struct oven_pack_command {
     struct list            arguments; // list<oven_value_item>
 };
 
+struct oven_package_import {
+    struct list_item list_header;
+    const char*      name;
+};
+
 struct oven_ingredient {
     struct list_item     list_header;
     const char*          file_path;
@@ -78,6 +83,7 @@ struct oven_recipe_options {
     // can be useful for backends to have access to in case they need to probe
     // the ingredients.
     struct list* ingredients; // list<oven_ingredient>
+    struct list* imports;     // list<oven_package_import>
 };
 
 struct oven_generate_options {
@@ -125,10 +131,6 @@ struct oven_parameters {
     const char*        recipe_name;
     const char*        target_platform;
     const char*        target_architecture;
-    // ingredients_prefix is the path where ingredients are unpacked when
-    // they have been prepared. This path is nice for the configure/build
-    // system to know when setting up include paths.
-    const char* ingredients_prefix;
 };
 
 /**

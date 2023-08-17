@@ -74,7 +74,10 @@
         "*.inc": "c",
         "zip.h": "c",
         "limits.h": "c",
-        "variant": "c"
+        "variant": "c",
+        "store.h": "c",
+        "libingredient.h": "c",
+        "liboven.h": "c"
     },
     "cmake.configureArgs": [
         "-DCMAKE_BUILD_TYPE=Debug"

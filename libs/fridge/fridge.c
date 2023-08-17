@@ -23,7 +23,6 @@
 #include <libfridge.h>
 #include <limits.h>
 #include <chef/platform.h>
-#include "packaging.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,16 +64,6 @@ struct fridge_context {
 };
 
 static struct fridge_context g_fridge = { 0 };
-
-static const char* __get_relative_path(
-    const char* root,
-    const char* path)
-{
-    const char* relative = path;
-    if (strncmp(path, root, strlen(root)) == 0)
-        relative = path + strlen(root);
-    return relative;
-}
 
 static int __get_cwd(char** bufferOut)
 {
@@ -225,27 +214,12 @@ int fridge_initialize(const char* platform, const char* architecture, struct lis
         fridge_cleanup();
         return -1;
     }
-
-    status = packaging_load(&(struct packaging_params) {
-        .prep_path   = g_fridge.prep_path,
-        .environment = &g_fridge.environment,
-        .imports = packages
-    });
-    if (status) {
-        fprintf(stderr, "fridge_initialize: failed to load packaging subsystem\n");
-        fridge_cleanup();
-        return -1;
-    }
     return 0;
 }
 
 void fridge_purge(void)
 {
-    // make all packages unavailable
-    int status = packaging_clear(g_fridge.prep_path);
-    if (status) {
-        fprintf(stderr, "fridge_purge: failed to clear packaging store\n");
-    }
+    int status;
 
     // remove the prep area
     if (g_fridge.prep_path != NULL) {
@@ -282,11 +256,6 @@ void fridge_cleanup(void)
 
     // reset context
     memset(&g_fridge, 0, sizeof(struct fridge_context));
-}
-
-const char* fridge_get_prep_directory(void)
-{
-    return g_fridge.prep_path;
 }
 
 static const char* __get_unpack_path(enum chef_package_type type, const char* packageName)
@@ -368,17 +337,6 @@ static int __fridge_unpack(struct fridge_inventory_pack* pack)
 
     // awesome, lets mark it unpacked
     inventory_pack_set_unpacked(pack);
-
-    // make it available for the packaging detction
-    status = packaging_make_available(g_fridge.prep_path, &(struct package_desc) {
-        .path = unpackPath,
-        .publisher = ingredient->package->publisher,
-        .package = ingredient->package->package,
-        .version = ingredient->version
-    });
-    if (status) {
-        fprintf(stderr, "__fridge_unpack: failed to make packaging available\n");
-    }
 
     ingredient_close(ingredient);
     free((void*)unpackPath);

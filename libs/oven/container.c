@@ -51,7 +51,6 @@ struct VaFsFeatureFilter {
     struct VaFsFeatureHeader Header;
 };
 
-extern const char* __get_build_root(void);
 extern const char* __get_install_path(void);
 extern const char* __get_platform(void);
 extern const char* __get_architecture(void);
@@ -799,7 +798,10 @@ static size_t __serialize_command(struct oven_pack_command* command, char* buffe
     if (app->icon_length > 0) {
         FILE* file = fopen(command->icon, "rb");
         if (file) {
-            fread(buffer, 1, app->icon_length, file);
+            if (fread(buffer, 1, app->icon_length, file) < app->icon_length) {
+                fclose(file);
+                return 0;
+            }
             fclose(file);
         } else {
             app->icon_length = 0;

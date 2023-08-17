@@ -9,4 +9,4 @@ add_library(platform STATIC
     package.c
 )
 target_include_directories(platform PUBLIC include)
-target_link_libraries(platform PUBLIC platform-osutils platform-ioutils platform-strutils vafs)
+target_link_libraries(platform PUBLIC platform-osutils platform-ioutils platform-strutils vafs vlog)

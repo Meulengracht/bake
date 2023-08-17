@@ -50,13 +50,6 @@ struct oven_backend_data_paths {
      * the backend is supposed to store the files that should be installed.
      */
     const char* install;
-
-    /**
-     * @brief The path where the fridge keeps it's ingredients. This is the prep area
-     * path and not the storage path. The prep area will usually contain bin/, lib/ and
-     * include/
-     */
-    const char* ingredients;
 };
 
 struct oven_backend_data_platform {

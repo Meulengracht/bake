@@ -74,13 +74,6 @@ extern void fridge_purge(void);
 extern void fridge_cleanup(void);
 
 /**
- * @brief 
- * 
- * @return char* 
- */
-extern const char* fridge_get_prep_directory(void);
-
-/**
  * @brief Stores the given ingredient, making sure we have a local copy of it in
  * our fridge storage.
  * 

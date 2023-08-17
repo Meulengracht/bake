@@ -6,10 +6,6 @@ set(SRCS
     store.c
 )
 
-if (UNIX)
-    set(SRCS ${SRCS} packaging/pkg-config.c)
-endif ()
-
 add_library(fridge STATIC ${SRCS})
 target_include_directories(fridge PUBLIC include)
 target_link_libraries(fridge PRIVATE platform)
