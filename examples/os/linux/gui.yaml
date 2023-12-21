@@ -1,0 +1,39 @@
+project: 
+  summary: The linux OS base
+  description: |
+    This is the base OS linux ingredient, which can be used as the base for all
+    other chef packages built for linux.
+  author: Philip Meulengracht
+  email: the_meulengracht@hotmail.com
+  version: 1.0.0
+  license: MIT
+
+recipes:
+  - name: build-os
+    path: ./
+    steps:
+    - name: construct
+      type: script
+      script: |
+        SYSROOT="${{ INSTALL_PREFIX }}"
+        install_package() {
+          FILES=$(dpkg-query -L "$1")
+          for f in $FILES
+          do
+            echo "Installing $f"
+            if [ -d "$f" ]; then
+              mkdir -p "$SYSROOT"/"$f"
+            else
+              cp "$f" "$SYSROOT"/"$f"
+            fi
+          done
+        }
+
+        for pkg in libc6
+        do
+          install_package "$pkg"
+        done
+
+packs:
+- name: linux-1
+  type: os
