@@ -62,6 +62,7 @@ static struct VaFsGuid g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
 static struct VaFsGuid g_versionGuid   = CHEF_PACKAGE_VERSION_GUID;
 static struct VaFsGuid g_iconGuid      = CHEF_PACKAGE_ICON_GUID;
 static struct VaFsGuid g_commandsGuid  = CHEF_PACKAGE_APPS_GUID;
+static struct VaFsGuid g_optionsGuid   = CHEF_PACKAGE_INGREDIENT_OPTS_GUID;
 
 static const char* __get_filename(
     const char* path)
@@ -551,11 +552,6 @@ static int __safe_strlen(const char* string)
     return strlen(string);
 }
 
-#define WRITE_IF_PRESENT(__MEM) if (options->__MEM != NULL) { \
-        memcpy(dataPointer, options->__MEM, packageHeader->__MEM ## _length); \
-        dataPointer += packageHeader->__MEM ## _length; \
-    }
-
 static int __write_header_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
 {
     struct chef_vafs_feature_package_header*  packageHeader;
@@ -616,6 +612,11 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
     memcpy(dataPointer, name, packageHeader->package_length);
     dataPointer += packageHeader->package_length;
 
+#define WRITE_IF_PRESENT(__MEM) if (options->__MEM != NULL) { \
+        memcpy(dataPointer, options->__MEM, packageHeader->__MEM ## _length); \
+        dataPointer += packageHeader->__MEM ## _length; \
+    }
+
     WRITE_IF_PRESENT(summary)
     WRITE_IF_PRESENT(description)
     WRITE_IF_PRESENT(homepage)
@@ -623,6 +624,8 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
     WRITE_IF_PRESENT(eula)
     WRITE_IF_PRESENT(maintainer)
     WRITE_IF_PRESENT(maintainer_email)
+
+#undef WRITE_IF_PRESENT
     
     // write the package header
     status = vafs_feature_add(vafs, &packageHeader->header);
@@ -857,6 +860,88 @@ static int __write_commands_metadata(struct VaFs* vafs, struct list* commands)
     return status;
 }
 
+static char* __write_list_as_string(struct list* list)
+{
+    struct list_item* i;
+    char*             buffer;
+    int               index = 0;
+
+    if (list == NULL || list->count == 0) {
+        return NULL;
+    }
+
+    // TODO: what should this value be
+    buffer = calloc(4096, 1);
+    if (buffer == NULL) {
+        return NULL;
+    }
+
+    list_foreach(list, i) {
+        struct oven_value_item* str = (struct oven_value_item*)i;
+        size_t                  len = strlen(str->value);
+        if (index != 0) {
+            memcpy(&buffer[index++], ",", 1);
+        }
+        memcpy(&buffer[index], str->value, len);
+        index += len;
+    }
+    return buffer;
+}
+
+static int __write_ingredient_options_metadata(struct VaFs* vafs, struct oven_pack_options* options)
+{
+    char  *bins,    *incs,    *libs,    *compiler_flags,    *linker_flags;
+    size_t bins_len, incs_len, libs_len, compiler_flags_len, linker_flags_len;
+    struct chef_vafs_feature_ingredient_opts* ingOptions;
+    size_t totalSize;
+    char*  data;
+    int    status;
+
+    if (options->type != CHEF_PACKAGE_TYPE_INGREDIENT) {
+        return 0;
+    }
+    
+    bins = __write_list_as_string(options->bin_dirs);
+    incs = __write_list_as_string(options->inc_dirs);
+    libs = __write_list_as_string(options->lib_dirs);
+    compiler_flags = __write_list_as_string(options->compiler_flags);
+    linker_flags = __write_list_as_string(options->linker_flags);
+    bins_len = __safe_strlen(bins);
+    incs_len = __safe_strlen(incs);
+    libs_len = __safe_strlen(libs);
+    compiler_flags_len = __safe_strlen(compiler_flags);
+    linker_flags_len = __safe_strlen(linker_flags);
+    
+    totalSize += sizeof(struct chef_vafs_feature_ingredient_opts) + 
+        bins_len + incs_len + libs_len + compiler_flags_len + linker_flags_len;
+    ingOptions = malloc(totalSize);
+    if (ingOptions == NULL) {
+        return -1;
+    }
+
+    data = (char*)ingOptions + sizeof(struct chef_vafs_feature_ingredient_opts);
+#define WRITE_IF_PRESENT(name) if (name ## _len) { memcpy(data, name, name ## _len); data += name ## _len; }
+
+    WRITE_IF_PRESENT(bins)
+    WRITE_IF_PRESENT(incs)
+    WRITE_IF_PRESENT(libs)
+    WRITE_IF_PRESENT(compiler_flags)
+    WRITE_IF_PRESENT(linker_flags)
+
+#undef WRITE_IF_PRESENT
+    memcpy(&ingOptions->header.Guid, &g_optionsGuid, sizeof(struct VaFsGuid));
+    ingOptions->header.Length = totalSize;
+    ingOptions->bin_dirs_length = bins_len;
+    ingOptions->inc_dirs_length = incs_len;
+    ingOptions->lib_dirs_length = libs_len;
+    ingOptions->compiler_flags_length = compiler_flags_len;
+    ingOptions->linker_flags_length = linker_flags_len;
+
+    status = vafs_feature_add(vafs, &ingOptions->header);
+    free(ingOptions);
+    return status;
+}
+
 static int __write_package_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
 {
     int status;
@@ -876,6 +961,12 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
     status = __write_icon_metadata(vafs, options->icon);
     if (status) {
         fprintf(stderr, "oven: failed to write package icon\n");
+        return -1;
+    }
+
+    status = __write_ingredient_options_metadata(vafs, options);
+    if (status) {
+        fprintf(stderr, "oven: failed to write package ingredient options\n");
         return -1;
     }
 

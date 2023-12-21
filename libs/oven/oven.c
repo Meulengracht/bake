@@ -35,14 +35,6 @@
 #include <dirent.h>
 #endif
 
-// <root>/.oven/output
-// <root>/.oven/<package>/bin
-// <root>/.oven/<package>/lib
-// <root>/.oven/<package>/share
-// <root>/.oven/<package>/usr/...
-// <root>/.oven/<package>/chef/build
-// <root>/.oven/<package>/chef/install => <root>/.oven/output
-// <root>/.oven/<package>/chef/project => <root>
 #define OVEN_ROOT ".oven"
 #define OVEN_INSTALL_ROOT OVEN_ROOT CHEF_PATH_SEPARATOR_S "output"
 
@@ -144,7 +136,7 @@ int oven_initialize(struct oven_parameters* parameters)
     char* root;
     char* installRoot;
     char  tmp[128];
-    VLOG_DEBUG("oven", "oven_initialize()");
+    VLOG_DEBUG("oven", "oven_initialize()\n");
 
     if (parameters == NULL) {
         errno = EINVAL;
@@ -233,8 +225,7 @@ int oven_recipe_start(struct oven_recipe_options* options)
     char*          checkpointPath;
     size_t         relativePathLength;
     int            status;
-    struct scratch scratch;
-    VLOG_DEBUG("oven", "oven_recipe_start()");
+    VLOG_DEBUG("oven", "oven_recipe_start()\n");
 
     if (g_oven.recipe.name) {
         VLOG_ERROR("oven", "oven: recipe already started\n");
@@ -254,7 +245,8 @@ int oven_recipe_start(struct oven_recipe_options* options)
         .project_path = g_oven.variables.cwd,
         .ingredients = options->ingredients,
         .imports = options->imports,
-    }, &scratch);
+        .os_base = options->os_base,
+    }, &g_oven.recipe.scratch);
     if (status) {
         VLOG_ERROR("oven", "oven: failed to setup scratch directory: %s\n", strerror(errno));
         return status;
@@ -264,7 +256,7 @@ int oven_recipe_start(struct oven_recipe_options* options)
 
 void oven_recipe_end(void)
 {
-    VLOG_DEBUG("oven", "oven_recipe_end()");
+    VLOG_DEBUG("oven", "oven_recipe_end()\n");
     free((void*)g_oven.recipe.name);
     free((void*)g_oven.recipe.relative_path);
     free((void*)g_oven.recipe.toolchain);
@@ -316,9 +308,15 @@ static const char* __get_variable(const char* name)
         return g_oven.recipe.toolchain;
     }
     if (strcmp(name, "PROJECT_PATH") == 0) {
+        if (g_oven.recipe.scratch.os_base) {
+            return g_oven.variables.cwd;
+        }
         return g_oven.recipe.scratch.project_root;
     }
     if (strcmp(name, "INSTALL_PREFIX") == 0) {
+        if (g_oven.recipe.scratch.os_base) {
+            return g_oven.install_root;
+        }
         return g_oven.recipe.scratch.install_root;
     }
     return NULL;
@@ -795,7 +793,7 @@ int oven_configure(struct oven_generate_options* options)
 
     status = scratch_enter(&g_oven.recipe.scratch);
     if (status) {
-        VLOG_ERROR("oven", "oven_configure: failed to enter scratch area: %s", strerror(errno));
+        VLOG_ERROR("oven", "oven_configure: failed to enter scratch area: %s\n", strerror(errno));
         return status;
     }
 
@@ -806,7 +804,7 @@ int oven_configure(struct oven_generate_options* options)
 
     status = scratch_leave(&g_oven.recipe.scratch);
     if (status) {
-        VLOG_ERROR("oven", "oven_configure: failed to leave scratch area: %s", strerror(errno));
+        VLOG_ERROR("oven", "oven_configure: failed to leave scratch area: %s\n", strerror(errno));
         return status;
     }
 
@@ -857,7 +855,7 @@ int oven_build(struct oven_build_options* options)
 
     status = scratch_enter(&g_oven.recipe.scratch);
     if (status) {
-        VLOG_ERROR("oven", "oven_build: failed to enter scratch area: %s", strerror(errno));
+        VLOG_ERROR("oven", "oven_build: failed to enter scratch area: %s\n", strerror(errno));
         return status;
     }
 
@@ -868,7 +866,7 @@ int oven_build(struct oven_build_options* options)
 
     status = scratch_leave(&g_oven.recipe.scratch);
     if (status) {
-        VLOG_ERROR("oven", "oven_build: failed to leave scratch area: %s", strerror(errno));
+        VLOG_ERROR("oven", "oven_build: failed to leave scratch area: %s\n", strerror(errno));
         return status;
     }
 
@@ -903,16 +901,19 @@ int oven_script(struct oven_script_options* options)
 
     status = scratch_enter(&g_oven.recipe.scratch);
     if (status) {
-        VLOG_ERROR("oven", "oven_build: failed to enter scratch area: %s", strerror(errno));
+        VLOG_ERROR("oven", "oven_script: failed to enter scratch area: %s\n", strerror(errno));
         return status;
     }
 
     status = platform_script(preprocessedScript);
+    if (status) {
+        VLOG_ERROR("oven", "oven_script: failed to execute script\n");
+    }
     free((void*)preprocessedScript);
 
     status = scratch_leave(&g_oven.recipe.scratch);
     if (status) {
-        VLOG_ERROR("oven", "oven_build: failed to leave scratch area: %s", strerror(errno));
+        VLOG_ERROR("oven", "oven_script: failed to leave scratch area: %s\n", strerror(errno));
         return status;
     }
 

@@ -79,6 +79,7 @@ struct oven_recipe_options {
     const char* name;
     const char* relative_path;
     const char* toolchain;
+    int         os_base;
     // ingredients is the list of ingredients used by the current recipe. This
     // can be useful for backends to have access to in case they need to probe
     // the ingredients.
@@ -121,6 +122,12 @@ struct oven_pack_options {
     const char*            maintainer;
     const char*            maintainer_email;
     const char*            homepage;
+
+    struct list*           bin_dirs; // list<oven_value_item>
+    struct list*           inc_dirs; // list<oven_value_item>
+    struct list*           lib_dirs; // list<oven_value_item>
+    struct list*           compiler_flags; // list<oven_value_item>
+    struct list*           linker_flags; // list<oven_value_item>
 
     struct list*           filters;  // list<oven_value_item>
     struct list*           commands; // list<oven_pack_command>

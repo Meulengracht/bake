@@ -131,7 +131,7 @@ static int __generate_cmake_file(const char* path, struct oven_backend_data* dat
         goto cleanup;
     }
 
-    if (data->paths.ingredients) {
+    /*if (data->paths.ingredients) {
         if (strcmp(data->platform.target_platform, "linux") == 0) {
             __write_linux_prefix(file, data->paths.ingredients);
             __write_linux_include(file, data->paths.ingredients);
@@ -142,7 +142,7 @@ static int __generate_cmake_file(const char* path, struct oven_backend_data* dat
             __write_default_prefix(file, data->paths.ingredients);
             __write_default_include(file, data->paths.ingredients);
         }
-    }
+    }*/
 
 cleanup:
     fclose(file);

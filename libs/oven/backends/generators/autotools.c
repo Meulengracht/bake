@@ -137,11 +137,11 @@ static int __generate_site_file(const char* path, struct oven_backend_data* data
 
     fwrite(g_siteTemplate, strlen(g_siteTemplate), 1, file);
     fprintf(file, "CFLAGS=-I%s/include -I%s/usr/include -I%s/usr/local/include\n",
-        data->paths.ingredients, data->paths.ingredients, data->paths.ingredients);
+        "data->paths.ingredients", "data->paths.ingredients", "data->paths.ingredients");
     fprintf(file, "CPPFLAGS=-I%s/include -I%s/usr/include -I%s/usr/local/include\n",
-        data->paths.ingredients, data->paths.ingredients, data->paths.ingredients);
+        "data->paths.ingredients", "data->paths.ingredients", "data->paths.ingredients");
     fprintf(file, "LDFLAGS=-L%s/lib -L%s/usr/lib -L%s/usr/local/lib\n",
-        data->paths.ingredients, data->paths.ingredients, data->paths.ingredients);
+        "data->paths.ingredients", "data->paths.ingredients", "data->paths.ingredients");
     fclose(file);
     return 0;
 }

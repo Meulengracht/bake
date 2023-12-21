@@ -373,6 +373,19 @@ packs:
     type: application
 
     ###########################
+    # ingredient options - Optional
+    # 
+    # Options provided by this ingredient pack. This can be additional include paths
+    # or library paths, or specific compiler/links options that must be added when using
+    # this ingredient. All the below options are lists.
+    ingredient-options:
+      bin-paths: [/bin]
+      include-paths: [/include]
+      lib-paths: [/libs]
+      compiler-args: [--arg1]
+      linker-args: [--arg1]
+
+    ###########################
     # filters - Optional
     #
     # Array of filters that should be used to filter files from the install path

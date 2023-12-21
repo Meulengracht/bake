@@ -127,14 +127,6 @@ static int __is_osbase(const char* name)
     return -1;
 }
 
-static int __is_devel(const char* name)
-{
-    if (strcmp(name, "vali/devel-1") == 0) {
-        return 0;
-    }
-    return -1;
-}
-
 static int __needs_base(struct recipe* recipe)
 {
     struct list_item* i;
@@ -146,19 +138,6 @@ static int __needs_base(struct recipe* recipe)
         }
     }
     return 1;
-}
-
-static int __needs_devel(struct recipe* recipe)
-{
-    struct list_item* i;
-
-    list_foreach(&recipe->packs, i) {
-        struct recipe_pack* pack = (struct recipe_pack*)i;
-        if (pack->type == CHEF_PACKAGE_TYPE_INGREDIENT) {
-            return 1;
-        }
-    }
-    return 0;
 }
 
 static int __add_ingredient(struct recipe* recipe, const char* name)
@@ -205,21 +184,15 @@ static int __add_implicit_ingredients(struct recipe* recipe)
 {
     struct list_item* i;
     int               needsOs = __needs_base(recipe);
-    int               needsDevel = __needs_devel(recipe);
 
     list_foreach(&recipe->ingredients, i) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)i;
         if (__is_osbase(ingredient->ingredient.name) == 0) {
             needsOs = 0;
-        } else if (__is_devel(ingredient->ingredient.name)) {
-            needsDevel = 0;
         }
     }
 
     if (needsOs && __add_osbase(recipe)) {
-        return -1;
-    }
-    if (needsDevel && __add_devel(recipe)) {
         return -1;
     }
     return 0;
@@ -296,6 +269,8 @@ int main(int argc, char** argv, char** envp)
     }
 
     vlog_initialize();
+    vlog_set_level(VLOG_LEVEL_DEBUG);
+    vlog_add_output(stdout, 0);
     result = command->handler(argc, argv, envp, recipe);
     recipe_destroy(recipe);
     vlog_cleanup();

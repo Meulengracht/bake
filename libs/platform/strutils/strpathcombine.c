@@ -23,6 +23,28 @@
 #include <stdlib.h>
 #include <string.h>
 
+static size_t __append_path_part(char* path, size_t pathLength, const char* part)
+{
+    char*       current = path;
+    const char* toAdd   = part;
+    size_t      i       = pathLength;
+
+    // ensure path always ends on a '/' before adding the next part
+    if (i > 0 && current[i - 1] != CHEF_PATH_SEPARATOR) {
+        current[i++] = CHEF_PATH_SEPARATOR;
+    }
+
+    while (*toAdd == CHEF_PATH_SEPARATOR) {
+        toAdd++;
+    }
+
+    while (*toAdd) {
+        current[i++] = *toAdd;
+        toAdd++;
+    }
+    return i - pathLength;
+}
+
 char* strpathjoin(const char* base, ...)
 {
     char*   joined;
@@ -54,7 +76,10 @@ char* strpathjoin(const char* base, ...)
             errno = E2BIG;
             return NULL;
         }
-        strcat(joined, part);
+
+        // this returns the actual number of bytes copied, which can
+        // be less than the actual length of the part
+        partLen = __append_path_part(joined, len, part);
         len += partLen;
     }
     va_end(args);

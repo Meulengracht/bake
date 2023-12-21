@@ -77,7 +77,8 @@
         "variant": "c",
         "store.h": "c",
         "libingredient.h": "c",
-        "liboven.h": "c"
+        "liboven.h": "c",
+        "unistd.h": "c"
     },
     "cmake.configureArgs": [
         "-DCMAKE_BUILD_TYPE=Debug"

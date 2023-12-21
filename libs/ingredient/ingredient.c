@@ -33,6 +33,7 @@ struct VaFsFeatureFilter {
 };
 
 static struct VaFsGuid g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
+static struct VaFsGuid g_optionsGuid   = CHEF_PACKAGE_INGREDIENT_OPTS_GUID;
 static struct VaFsGuid g_overviewGuid  = VA_FS_FEATURE_OVERVIEW;
 static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
 static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
@@ -99,13 +100,49 @@ static int __handle_overview(struct VaFs* vafsHandle, struct ingredient* ingredi
 
     status = vafs_feature_query(vafsHandle, &g_overviewGuid, (struct VaFsFeatureHeader**)&overview);
     if (status) {
-        fprintf(stderr, "unmkvafs: failed to query feature overview - %i\n", errno);
+        fprintf(stderr, "__handle_overview: failed to query feature overview - %i\n", errno);
         return -1;
     }
 
     ingredient->file_count      = overview->Counts.Files;
     ingredient->directory_count = overview->Counts.Directories;
     ingredient->symlink_count   = overview->Counts.Symlinks;
+    return 0;
+}
+
+static int __handle_options(struct VaFs* vafsHandle, struct ingredient* ingredient)
+{
+    struct chef_vafs_feature_ingredient_opts* options;
+    int                                       status;
+    char*                                     data;
+
+    // options are optional - ignore if the guid is not present
+    status = vafs_feature_query(vafsHandle, &g_optionsGuid, (struct VaFsFeatureHeader**)&options);
+    if (status) {
+        return 0;
+    }
+
+    ingredient->options = malloc(sizeof(struct ingredient_options));
+    if (ingredient->options == NULL) {
+        return -1;
+    }
+
+    data = (char*)options + sizeof(struct chef_vafs_feature_ingredient_opts);
+
+#define READ_IF_PRESENT(__MEM) if (options->__MEM ## _length > 0) { \
+        char* line = strndup(data, options->__MEM ## _length); \
+        ingredient->options->__MEM = strsplit(line, ','); \
+        data += options->__MEM ## _length; \
+        free(line); \
+    }
+
+    READ_IF_PRESENT(bin_dirs)
+    READ_IF_PRESENT(inc_dirs)
+    READ_IF_PRESENT(lib_dirs)
+    READ_IF_PRESENT(compiler_flags)
+    READ_IF_PRESENT(linker_flags)
+
+#undef READ_IF_PRESENT
     return 0;
 }
 
@@ -163,6 +200,13 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
     status = __handle_overview(vafsHandle, ingredient);
     if (status) {
         fprintf(stderr, "ingredient_open: failed to handle image overview\n");
+        __ingredient_delete(ingredient);
+        return status;
+    }
+
+    status = __handle_options(vafsHandle, ingredient);
+    if (status) {
+        fprintf(stderr, "ingredient_open: failed to handle ingredient options\n");
         __ingredient_delete(ingredient);
         return status;
     }

@@ -25,11 +25,20 @@
 struct VaFs;
 struct VaFsDirectoryHandle;
 
+struct ingredient_options {
+    char** bin_dirs;
+    char** inc_dirs;
+    char** lib_dirs;
+    char** compiler_flags;
+    char** linker_flags;
+};
+
 struct ingredient {
     struct VaFs*                vafs;
     struct VaFsDirectoryHandle* root_handle;
     struct chef_package*        package;
     struct chef_version*        version;
+    struct ingredient_options*  options;
     int                         file_count;
     int                         directory_count;
     int                         symlink_count;

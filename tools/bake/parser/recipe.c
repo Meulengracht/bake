@@ -91,8 +91,15 @@ enum state {
     STATE_PACK,            // MAPPING_START
     STATE_PACK_NAME,
     STATE_PACK_TYPE,
+    STATE_PACK_INGREDIENT_OPTIONS,
     STATE_PACK_FILTER_LIST,
     STATE_PACK_COMMANDS_LIST,
+
+    STATE_PACK_INGREDIENT_OPTIONS_BIN_PATHS_LIST,
+    STATE_PACK_INGREDIENT_OPTIONS_INC_PATHS_LIST,
+    STATE_PACK_INGREDIENT_OPTIONS_LIB_PATHS_LIST,
+    STATE_PACK_INGREDIENT_OPTIONS_COMPILER_ARGS_LIST,
+    STATE_PACK_INGREDIENT_OPTIONS_LINKER_ARGS_LIST,
 
     STATE_COMMAND,         // MAPPING_START
     STATE_COMMAND_NAME,
@@ -452,6 +459,11 @@ static void __finalize_command(struct parser_state* state)
     memset(&state->command, 0, sizeof(struct oven_pack_command));
 }
 
+static void __finalize_pack_ingredient_options(struct parser_state* state)
+{
+    // todo
+}
+
 static void __finalize_pack(struct parser_state* state)
 {
     struct recipe_pack* pack;
@@ -535,8 +547,8 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
 }
 
 // TODO error handling
-#define DEFINE_LIST_STRING_ADD(structure, field) \
-    static void __add_##structure ##_##field(struct parser_state* state, const char* value) \
+#define DEFINE_LIST_STRING_ADD(_fname, _stname, _field) \
+    static void __add_##_fname ##_##_field(struct parser_state* state, const char* value) \
     { \
         struct oven_value_item* argument; \
         if (value == NULL || strlen(value) == 0) { \
@@ -551,15 +563,20 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
         \
         argument->value = strdup(value); \
         \
-        list_add(&state->structure.field, &argument->list_header); \
+        list_add(&state->_stname._field, &argument->list_header); \
     }
 
-DEFINE_LIST_STRING_ADD(recipe, packages)
-DEFINE_LIST_STRING_ADD(ingredient, filters)
-DEFINE_LIST_STRING_ADD(step, depends)
-DEFINE_LIST_STRING_ADD(step, arguments)
-DEFINE_LIST_STRING_ADD(pack, filters)
-DEFINE_LIST_STRING_ADD(command, arguments)
+DEFINE_LIST_STRING_ADD(recipe, recipe, packages)
+DEFINE_LIST_STRING_ADD(ingredient, ingredient, filters)
+DEFINE_LIST_STRING_ADD(step, step, depends)
+DEFINE_LIST_STRING_ADD(step, step, arguments)
+DEFINE_LIST_STRING_ADD(pack, pack, filters)
+DEFINE_LIST_STRING_ADD(pack_options, pack.options, bin_dirs)
+DEFINE_LIST_STRING_ADD(pack_options, pack.options, inc_dirs)
+DEFINE_LIST_STRING_ADD(pack_options, pack.options, lib_dirs)
+DEFINE_LIST_STRING_ADD(pack_options, pack.options, compiler_flags)
+DEFINE_LIST_STRING_ADD(pack_options, pack.options, linker_flags)
+DEFINE_LIST_STRING_ADD(command, command, arguments)
 
 static int __parse_boolean(const char* string)
 {
@@ -671,32 +688,23 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "summary") == 0) {
                         s->state = STATE_PROJECT_SUMMARY;
-                    }
-                    else if (strcmp(value, "description") == 0) {
+                    } else if (strcmp(value, "description") == 0) {
                         s->state = STATE_PROJECT_DESCRIPTION;
-                    }
-                    else if (strcmp(value, "icon") == 0) {
+                    } else if (strcmp(value, "icon") == 0) {
                         s->state = STATE_PROJECT_ICON;
-                    }
-                    else if (strcmp(value, "author") == 0) {
+                    } else if (strcmp(value, "author") == 0) {
                         s->state = STATE_PROJECT_AUTHOR;
-                    }
-                    else if (strcmp(value, "email") == 0) {
+                    } else if (strcmp(value, "email") == 0) {
                         s->state = STATE_PROJECT_EMAIL;
-                    }
-                    else if (strcmp(value, "version") == 0) {
+                    } else if (strcmp(value, "version") == 0) {
                         s->state = STATE_PROJECT_VERSION;
-                    }
-                    else if (strcmp(value, "license") == 0) {
+                    } else if (strcmp(value, "license") == 0) {
                         s->state = STATE_PROJECT_LICENSE;
-                    }
-                    else if (strcmp(value, "eula") == 0) {
+                    } else if (strcmp(value, "eula") == 0) {
                         s->state = STATE_PROJECT_EULA;
-                    }
-                    else if (strcmp(value, "homepage") == 0) {
+                    } else if (strcmp(value, "homepage") == 0) {
                         s->state = STATE_PROJECT_HOMEPAGE;
-                    }
-                    else {
+                    } else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
                     }
@@ -795,32 +803,23 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "name") == 0) {
                         s->state = STATE_INGREDIENT_NAME;
-                    }
-                    else if (strcmp(value, "description") == 0) {
+                    } else if (strcmp(value, "description") == 0) {
                         s->state = STATE_INGREDIENT_DESCRIPTION;
-                    }
-                    else if (strcmp(value, "platform") == 0) {
+                    } else if (strcmp(value, "platform") == 0) {
                         s->state = STATE_INGREDIENT_PLATFORM;
-                    }
-                    else if (strcmp(value, "arch") == 0) {
+                    } else if (strcmp(value, "arch") == 0) {
                         s->state = STATE_INGREDIENT_ARCH;
-                    }
-                    else if (strcmp(value, "channel") == 0) {
+                    } else if (strcmp(value, "channel") == 0) {
                         s->state = STATE_INGREDIENT_CHANNEL;
-                    }
-                    else if (strcmp(value, "version") == 0) {
+                    } else if (strcmp(value, "version") == 0) {
                         s->state = STATE_INGREDIENT_VERSION;
-                    }
-                    else if (strcmp(value, "include-filters") == 0) {
+                    } else if (strcmp(value, "include-filters") == 0) {
                         s->state = STATE_INGREDIENT_INCLUDE_FILTERS_LIST;
-                    }
-                    else if (strcmp(value, "include") == 0) {
+                    } else if (strcmp(value, "include") == 0) {
                         s->state = STATE_INGREDIENT_INCLUDE;
-                    }
-                    else if (strcmp(value, "source") == 0) {
+                    } else if (strcmp(value, "source") == 0) {
                         s->state = STATE_INGREDIENT_SOURCE;
-                    }
-                    else {
+                    } else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
                     } break;
@@ -855,14 +854,11 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "type") == 0) {
                         s->state = STATE_INGREDIENT_SOURCE_TYPE;
-                    }
-                    else if (strcmp(value, "url") == 0) {
+                    } else if (strcmp(value, "url") == 0) {
                         s->state = STATE_INGREDIENT_SOURCE_URL;
-                    }
-                    else if (strcmp(value, "channel") == 0) {
+                    } else if (strcmp(value, "channel") == 0) {
                         s->state = STATE_INGREDIENT_SOURCE_CHANNEL;
-                    }
-                    else {
+                    } else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
                     } break;
@@ -1049,17 +1045,15 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "name") == 0) {
                         s->state = STATE_PACK_NAME;
-                    }
-                    else if (strcmp(value, "type") == 0) {
+                    } else if (strcmp(value, "type") == 0) {
                         s->state = STATE_PACK_TYPE;
-                    }
-                    else if (strcmp(value, "filters") == 0) {
+                    } else if (strcmp(value, "ingredient-options") == 0) {
+                        s->state = STATE_PACK_INGREDIENT_OPTIONS;
+                    } else if (strcmp(value, "filters") == 0) {
                         s->state = STATE_PACK_FILTER_LIST;
-                    }
-                    else if (strcmp(value, "commands") == 0) {
+                    } else if (strcmp(value, "commands") == 0) {
                         s->state = STATE_PACK_COMMANDS_LIST;
-                    }
-                    else {
+                    } else {
                         fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
                         return -1;
                     } break;
@@ -1074,6 +1068,43 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_PACK, STATE_PACK_TYPE, pack.type, __parse_pack_type)
         __consume_sequence_unmapped(STATE_PACK, STATE_PACK_FILTER_LIST, __add_pack_filters)
         __consume_sequence_mapped(STATE_PACK, STATE_PACK_COMMANDS_LIST, STATE_COMMAND)
+
+        case STATE_PACK_INGREDIENT_OPTIONS:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __finalize_pack_ingredient_options(s);
+                    s->state = STATE_PACK;
+                    break;
+                
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "bin-paths") == 0) {
+                        s->state = STATE_PACK_INGREDIENT_OPTIONS_BIN_PATHS_LIST;
+                    } else if (strcmp(value, "include-paths") == 0) {
+                        s->state = STATE_PACK_INGREDIENT_OPTIONS_INC_PATHS_LIST;
+                    } else if (strcmp(value, "lib-paths") == 0) {
+                        s->state = STATE_PACK_INGREDIENT_OPTIONS_LIB_PATHS_LIST;
+                    } else if (strcmp(value, "compiler-args") == 0) {
+                        s->state = STATE_PACK_INGREDIENT_OPTIONS_COMPILER_ARGS_LIST;
+                    } else if (strcmp(value, "linker-args") == 0) {
+                        s->state = STATE_PACK_INGREDIENT_OPTIONS_LINKER_ARGS_LIST;
+                    } else {
+                        fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
+                        return -1;
+                    }
+                    break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+        __consume_sequence_unmapped(STATE_PACK_INGREDIENT_OPTIONS, STATE_PACK_INGREDIENT_OPTIONS_BIN_PATHS_LIST, __add_pack_options_bin_dirs)
+        __consume_sequence_unmapped(STATE_PACK_INGREDIENT_OPTIONS, STATE_PACK_INGREDIENT_OPTIONS_INC_PATHS_LIST, __add_pack_options_inc_dirs)
+        __consume_sequence_unmapped(STATE_PACK_INGREDIENT_OPTIONS, STATE_PACK_INGREDIENT_OPTIONS_LIB_PATHS_LIST, __add_pack_options_lib_dirs)
+        __consume_sequence_unmapped(STATE_PACK_INGREDIENT_OPTIONS, STATE_PACK_INGREDIENT_OPTIONS_COMPILER_ARGS_LIST, __add_pack_options_compiler_flags)
+        __consume_sequence_unmapped(STATE_PACK_INGREDIENT_OPTIONS, STATE_PACK_INGREDIENT_OPTIONS_LINKER_ARGS_LIST, __add_pack_options_linker_flags)
 
         case STATE_COMMAND:
             switch (event->type) {
@@ -1248,8 +1279,18 @@ static void __destroy_command(struct oven_pack_command* command)
     free(command);
 }
 
+static void __destroy_pack_ingredient_options(struct recipe_pack_ingredient_options* options)
+{
+    __destroy_list(string, options->bin_dirs.head, struct oven_value_item);
+    __destroy_list(string, options->inc_dirs.head, struct oven_value_item);
+    __destroy_list(string, options->lib_dirs.head, struct oven_value_item);
+    __destroy_list(string, options->compiler_flags.head, struct oven_value_item);
+    __destroy_list(string, options->linker_flags.head, struct oven_value_item);
+}
+
 static void __destroy_pack(struct recipe_pack* pack)
 {
+    __destroy_pack_ingredient_options(&pack->options);
     __destroy_list(command, pack->commands.head, struct oven_pack_command);
     __destroy_list(string, pack->filters.head, struct oven_value_item);
     free((void*)pack->name);

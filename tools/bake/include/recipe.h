@@ -71,12 +71,21 @@ struct recipe_ingredient {
     struct list              filters;  // list<oven_value_item>
 };
 
+struct recipe_pack_ingredient_options {
+    struct list bin_dirs;
+    struct list inc_dirs;
+    struct list lib_dirs;
+    struct list compiler_flags;
+    struct list linker_flags;
+};
+
 struct recipe_pack {
-    struct list_item       list_header;
-    const char*            name;
-    enum chef_package_type type;
-    struct list            filters;  // list<oven_value_item>
-    struct list            commands; // list<oven_pack_command>
+    struct list_item                      list_header;
+    const char*                           name;
+    enum chef_package_type                type;
+    struct recipe_pack_ingredient_options options;
+    struct list                           filters;  // list<oven_value_item>
+    struct list                           commands; // list<oven_pack_command>
 };
 
 struct recipe {

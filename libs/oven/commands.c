@@ -25,7 +25,6 @@
 #include <string.h>
 
 extern const char* __get_install_path(void);
-extern const char* __get_ingredients_path(void);
 
 static int __verify_commands(struct list* commands)
 {
@@ -72,14 +71,6 @@ static int __resolve_dependency_path(struct oven_resolve* resolve, struct oven_r
     status = platform_getfiles(__get_install_path(), &files);
     if (status) {
         fprintf(stderr, "oven: failed to get install file list\n");
-        return -1;
-    }
-
-    // priority 2 - check in ingredient path
-    status = platform_getfiles(__get_ingredients_path(), &files);
-    if (status) {
-        fprintf(stderr, "oven: failed to get ingredient file list\n");
-        platform_getfiles_destroy(&files);
         return -1;
     }
 
