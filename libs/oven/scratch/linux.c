@@ -69,6 +69,11 @@ static int __make_available(const char* hostRoot, const char* root, struct ingre
     char* cflags;
     char* libs;
 
+    // Skip os-bases, they should come with their own pc files
+    if (ingredient->package->type == CHEF_PACKAGE_TYPE_OSBASE) {
+        return 0;
+    }
+
     if (ingredient->options == NULL) {
         // Can't add a pkg-config file if the ingredient didn't specify any
         // options for consumers.
@@ -97,8 +102,8 @@ static int __make_available(const char* hostRoot, const char* root, struct ingre
         return -1;
     }
 
-    cflags = __string_array_join(ingredient->options->inc_dirs, "-I{prefix}", " ");
-    libs = __string_array_join(ingredient->options->lib_dirs, "-L{prefix}", " ");
+    cflags = __string_array_join((const char* const*)ingredient->options->inc_dirs, "-I{prefix}", " ");
+    libs = __string_array_join((const char* const*)ingredient->options->lib_dirs, "-L{prefix}", " ");
     if (cflags == NULL || libs == NULL) {
         free(cflags);
         free(libs);

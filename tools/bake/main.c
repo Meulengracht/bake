@@ -173,13 +173,6 @@ static int __add_osbase(struct recipe* recipe)
     return __add_ingredient(recipe, &nameBuffer[0]);
 }
 
-static int __add_devel(struct recipe* recipe)
-{
-    char nameBuffer[32];
-    snprintf(&nameBuffer[0], sizeof(nameBuffer), "vali/devel-1");
-    return __add_ingredient(recipe, &nameBuffer[0]);
-}
-
 static int __add_implicit_ingredients(struct recipe* recipe)
 {
     struct list_item* i;
