@@ -49,6 +49,7 @@ struct recipe_part {
     const char*      name;
     const char*      path;
     const char*      toolchain;
+    int              confinement;
     struct list      steps;
 };
 
@@ -88,12 +89,17 @@ struct recipe_pack {
     struct list                           commands; // list<oven_pack_command>
 };
 
+struct recipe_ingredients {
+    int         base;
+    struct list list; // list<recipe_ingredient>
+};
+
 struct recipe {
-    struct recipe_project  project;
-    struct list            ingredients; // list<recipe_ingredient>
-    struct list            packages;    // list<packages>
-    struct list            parts;       // list<recipe_part>
-    struct list            packs;       // list<recipe_pack>
+    struct recipe_project     project;
+    struct recipe_ingredients ingredients;
+    struct list               packages;    // list<packages>
+    struct list               parts;       // list<recipe_part>
+    struct list               packs;       // list<recipe_pack>
 };
 
 /**

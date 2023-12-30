@@ -69,11 +69,6 @@ static int __make_available(const char* hostRoot, const char* root, struct ingre
     char* cflags;
     char* libs;
 
-    // Skip os-bases, they should come with their own pc files
-    if (ingredient->package->type == CHEF_PACKAGE_TYPE_OSBASE) {
-        return 0;
-    }
-
     if (ingredient->options == NULL) {
         // Can't add a pkg-config file if the ingredient didn't specify any
         // options for consumers.
@@ -319,7 +314,7 @@ static int __scratch_construct(struct scratch_options* options, struct scratch* 
     scratch->project_root = strdup("/chef/project");
     scratch->build_root = strdup("/chef/build");
     scratch->install_root = strdup("/chef/install");
-    scratch->os_base = options->os_base;
+    scratch->confined = options->confined;
     return 0;
 }
 
@@ -376,11 +371,11 @@ int scratch_setup(struct scratch_options* options, struct scratch* scratch)
 
 int scratch_enter(struct scratch* scratch)
 {
-    VLOG_DEBUG("oven", "scratch_enter(base=%i)\n", scratch->os_base);
+    VLOG_DEBUG("oven", "scratch_enter(confined=%i)\n", scratch->confined);
     
-    if (scratch->os_base) {
-        // for an os-base we do not chroot, instead we allow full access
-        // to the base operating system to allow the os-base to include all
+    if (!scratch->confined) {
+        // for an unconfined we do not chroot, instead we allow full access
+        // to the base operating system to allow the the part to include all
         // it needs.
         return 0;
     }
@@ -413,8 +408,8 @@ int scratch_leave(struct scratch* scratch)
 {
     VLOG_DEBUG("oven", "scratch_leave()\n");
 
-    if (scratch->os_base) {
-        // nothing to do for os-bases
+    if (!scratch->confined) {
+        // nothing to do for unconfined
         return 0;
     }
     

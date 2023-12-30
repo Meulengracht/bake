@@ -25,7 +25,7 @@ struct scratch_options {
     const char*  name;
     const char*  install_path;
     const char*  project_path;
-    int          os_base;
+    int          confined;
     struct list* ingredients; // list<oven_ingredient>
     struct list* imports; // list<packaging_import>
 };
@@ -33,8 +33,8 @@ struct scratch_options {
 struct scratch {
     // internal: original_root_fd
     int original_root_fd;
-    // internal: os_base
-    int os_base;
+    // internal: confined
+    int confined;
 
     char* host_chroot;
     char* host_target_ingredients_path;

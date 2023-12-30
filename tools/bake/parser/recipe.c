@@ -44,6 +44,8 @@ enum state {
 
     STATE_INGREDIENT_LIST,
 
+    STATE_INGREDIENTS_BASE,
+
     STATE_INGREDIENT,       // MAPPING_START
     STATE_INGREDIENT_NAME,
     STATE_INGREDIENT_VERSION,
@@ -64,6 +66,7 @@ enum state {
     STATE_RECIPE_NAME,
     STATE_RECIPE_PATH,
     STATE_RECIPE_TOOLCHAIN,
+    STATE_RECIPE_CONFINEMENT,
 
     STATE_RECIPE_STEP_LIST,
     STATE_RECIPE_STEP,     // MAPPING_START
@@ -142,6 +145,8 @@ static enum chef_package_type __parse_pack_type(const char* value)
         return CHEF_PACKAGE_TYPE_OSBASE;
     } else if (strcmp(value, "ingredient") == 0) {
         return CHEF_PACKAGE_TYPE_INGREDIENT;
+    } else if (strcmp(value, "content") == 0) {
+        return CHEF_PACKAGE_TYPE_CONTENT;
     } else if (strcmp(value, "application") == 0) {
         return CHEF_PACKAGE_TYPE_APPLICATION;
     } else if (strcmp(value, "toolchain") == 0) {
@@ -325,6 +330,7 @@ static void __finalize_part(struct parser_state* state)
 
     // reset the structure in state
     memset(&state->part, 0, sizeof(struct recipe_part));
+    state->part.confinement = 1;
 }
 
 static int __find_step(struct parser_state* state, const char* name)
@@ -503,7 +509,7 @@ static int __resolve_ingredient(struct parser_state* state, const char* name)
 {
     struct list_item* i;
 
-    list_foreach(&state->recipe.ingredients, i) {
+    list_foreach(&state->recipe.ingredients.list, i) {
         struct recipe_ingredient* ing = (struct recipe_ingredient*)i;
         if (strcmp(ing->ingredient.name, name) == 0) {
             return 1;
@@ -795,7 +801,31 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_sequence_unmapped(STATE_SECTION, STATE_PACKAGE_LIST, __add_recipe_packages)
 
-        __consume_sequence_mapped(STATE_SECTION, STATE_INGREDIENT_LIST, STATE_INGREDIENT)
+        case STATE_INGREDIENT_LIST: 
+            switch (event->type) {
+                case YAML_SEQUENCE_START_EVENT:
+                    break;
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "base") == 0) {
+                        s->state = STATE_INGREDIENTS_BASE;
+                    } else {
+                        fprintf(stderr, "__consume_event: unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
+                case YAML_SEQUENCE_END_EVENT:
+                    s->state = STATE_SECTION;
+                    break;
+                case YAML_MAPPING_START_EVENT:
+                    s->state = STATE_INGREDIENT;
+                    break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+    
+        __consume_scalar_fn(STATE_INGREDIENT_LIST, STATE_INGREDIENTS_BASE, recipe.ingredients.base, __parse_boolean)
 
         case STATE_INGREDIENT:
             switch (event->type) {
@@ -889,6 +919,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         s->state = STATE_RECIPE_NAME;
                     } else if (strcmp(value, "path") == 0) {
                         s->state = STATE_RECIPE_PATH;
+                    } else if (strcmp(value, "confinement") == 0) {
+                        s->state = STATE_RECIPE_CONFINEMENT;
                     } else if (strcmp(value, "toolchain") == 0) {
                         s->state = STATE_RECIPE_TOOLCHAIN;
                     } else if (strcmp(value, "steps") == 0) {
@@ -906,6 +938,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_NAME, part.name, __parse_string)
         __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_PATH, part.path, __parse_string)
+        __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_CONFINEMENT, part.confinement, __parse_boolean)
         __consume_scalar_fn(STATE_RECIPE, STATE_RECIPE_TOOLCHAIN, part.toolchain, __parse_string)
 
         __consume_sequence_mapped(STATE_RECIPE, STATE_RECIPE_STEP_LIST, STATE_RECIPE_STEP)
@@ -1168,6 +1201,8 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
 
     // initialize some default options
     state.ingredient.ingredient.source = INGREDIENT_SOURCE_REPO;
+    state.recipe.ingredients.base = 1;
+    state.part.confinement = 1;
 
     yaml_parser_initialize(&parser);
     yaml_parser_set_input_string(&parser, buffer, length);
@@ -1304,7 +1339,7 @@ void recipe_destroy(struct recipe* recipe)
     }
 
     __destroy_project(&recipe->project);
-    __destroy_list(ingredient, recipe->ingredients.head, struct recipe_ingredient);
+    __destroy_list(ingredient, recipe->ingredients.list.head, struct recipe_ingredient);
     __destroy_list(string, recipe->packages.head, struct oven_value_item);
     __destroy_list(part, recipe->parts.head, struct recipe_part);
     __destroy_list(pack, recipe->packs.head, struct recipe_pack);

@@ -12,7 +12,7 @@ ingredients:
   base: false
 
 recipes:
-  - name: build-os
+  - name: construct
     path: ./
     confinement: false
     steps:
@@ -33,15 +33,39 @@ recipes:
           done
         }
         
-        # Packages for a basic linux/bash environment:
-        # coreutils (libacl1 libattr1 libgmp10 libselinux1, libc)
-        # bash (libtinfo6, libc)
-        # pkg-config (libglib2.0-0, libpcre3)
-        for pkg in libc6 libc-bin libacl1 libattr1 libgmp10 libselinux1 coreutils bash libtinfo6
+        PACKAGES=(
+          libc6-dev
+          libgmp3-dev
+          libmpc-dev
+          binutils-dev
+          libmpfr-dev
+          libelf-dev
+          zlib1g-dev
+          gcc
+          g++
+          coreutils
+          dash
+          debianutils
+          diffutils
+          findutils
+          grep
+          gzip
+          perl-base
+          sed
+          tar
+          make
+          autoconf
+          libtool
+          gawk
+          flex
+          bison
+          texinfo
+        )
+        for pkg in "${PACKAGES[@]}"
         do
           install_package "$pkg"
         done
 
 packs:
-- name: linux-1
+- name: gcc-bootstrap
   type: ingredient

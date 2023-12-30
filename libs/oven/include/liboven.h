@@ -79,7 +79,7 @@ struct oven_recipe_options {
     const char* name;
     const char* relative_path;
     const char* toolchain;
-    int         os_base;
+    int         confined;
     // ingredients is the list of ingredients used by the current recipe. This
     // can be useful for backends to have access to in case they need to probe
     // the ingredients.

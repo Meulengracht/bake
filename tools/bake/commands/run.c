@@ -105,12 +105,12 @@ static int __prep_ingredients(struct recipe* recipe)
     struct list_item* item;
     int               status;
 
-    if (recipe->ingredients.count == 0) {
+    if (recipe->ingredients.list.count == 0) {
         return 0;
     }
 
-    printf("preparing %i ingredients\n", recipe->ingredients.count);
-    list_foreach(&recipe->ingredients, item) {
+    printf("preparing %i ingredients\n", recipe->ingredients.list.count);
+    list_foreach(&recipe->ingredients.list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         status = fridge_store_ingredient(&ingredient->ingredient);
         if (status != 0) {
@@ -119,7 +119,7 @@ static int __prep_ingredients(struct recipe* recipe)
         }
     }
 
-    list_foreach(&recipe->ingredients, item) {
+    list_foreach(&recipe->ingredients.list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         status = fridge_use_ingredient(&ingredient->ingredient);
         if (status != 0) {
@@ -169,32 +169,19 @@ static int __make_recipe_steps(struct list* steps)
     return 0;
 }
 
-static void __initialize_recipe_options(struct oven_recipe_options* options, struct recipe_part* part, int osBase, struct list* ingredients)
+static void __initialize_recipe_options(struct oven_recipe_options* options, struct recipe_part* part, int confined, struct list* ingredients)
 {
     options->name          = part->name;
     options->relative_path = part->path;
     options->toolchain     = fridge_get_utensil_location(part->toolchain);
     options->ingredients   = ingredients;
     options->imports       = NULL;
-    options->os_base       = osBase;
+    options->confined      = confined;
 }
 
 static void __destroy_recipe_options(struct oven_recipe_options* options)
 {
     free((void*)options->toolchain);
-}
-
-static int __building_bases(struct recipe* recipe)
-{
-    struct list_item* i;
-
-    list_foreach(&recipe->packs, i) {
-        struct recipe_pack* pack = (struct recipe_pack*)i;
-        if (pack->type == CHEF_PACKAGE_TYPE_OSBASE) {
-            return 1;
-        }
-    }
-    return 0;
 }
 
 static int __make_recipe(struct recipe* recipe)
@@ -203,7 +190,6 @@ static int __make_recipe(struct recipe* recipe)
     struct list_item*          item;
     int                        status;
     struct list                ingredients;
-    int                        os_base = __building_bases(recipe);
 
     // prepare the list of ingredients for the recipe parts
     list_init(&ingredients);
@@ -211,7 +197,7 @@ static int __make_recipe(struct recipe* recipe)
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
 
-        __initialize_recipe_options(&options, part, os_base, &ingredients);
+        __initialize_recipe_options(&options, part, part->confinement, &ingredients);
         status = oven_recipe_start(&options);
         __destroy_recipe_options(&options);
 
@@ -238,7 +224,7 @@ static int __make_packs(struct recipe* recipe)
     int                      status;
 
     // include ingredients marked for packing
-    list_foreach(&recipe->ingredients, item) {
+    list_foreach(&recipe->ingredients.list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         if (ingredient->include) {
             status = oven_include_filters(&ingredient->filters);
@@ -429,36 +415,6 @@ static int __parse_cc_switch(const char* value, char** platformOut, char** archO
     return 0;
 }
 
-static int __if_base_has_only_bases(struct recipe* recipe)
-{
-    struct list_item* i;
-    int               has_base = 0;
-    int               has_others = 0;
-
-    list_foreach(&recipe->packs, i) {
-        struct recipe_pack* pack = (struct recipe_pack*)i;
-        if (pack->type == CHEF_PACKAGE_TYPE_OSBASE) {
-            has_base = 1;
-        } else {
-            has_others = 1;
-        }
-    }
-    if (has_base && has_others) {
-        return 0;
-    }
-    return 1;
-}
-
-static int __validate_recipe(struct recipe* recipe)
-{
-    // When building bases the recipe can *only* contain bases.
-    if (!__if_base_has_only_bases(recipe)) {
-        VLOG_ERROR("bake", "__validate_recipe: if a recipe builds a base-pack it can only build base-packs");
-        return -1;
-    }
-    return 0;
-}
-
 int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     struct oven_parameters ovenParams;
@@ -499,11 +455,6 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     if (name == NULL || recipe == NULL) {
         VLOG_ERROR("bake", "no recipe provided\n");
         __print_help();
-        return -1;
-    }
-
-    if (__validate_recipe(recipe)) {
-        VLOG_ERROR("bake", "failed recipe validation\n");
         return -1;
     }
 

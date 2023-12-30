@@ -127,19 +127,6 @@ static int __is_osbase(const char* name)
     return -1;
 }
 
-static int __needs_base(struct recipe* recipe)
-{
-    struct list_item* i;
-
-    list_foreach(&recipe->packs, i) {
-        struct recipe_pack* pack = (struct recipe_pack*)i;
-        if (pack->type == CHEF_PACKAGE_TYPE_OSBASE) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
 static int __add_ingredient(struct recipe* recipe, const char* name)
 {
     struct recipe_ingredient* ingredient;
@@ -176,9 +163,9 @@ static int __add_osbase(struct recipe* recipe)
 static int __add_implicit_ingredients(struct recipe* recipe)
 {
     struct list_item* i;
-    int               needsOs = __needs_base(recipe);
+    int               needsOs = recipe->ingredients.base;
 
-    list_foreach(&recipe->ingredients, i) {
+    list_foreach(&recipe->ingredients.list, i) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)i;
         if (__is_osbase(ingredient->ingredient.name) == 0) {
             needsOs = 0;
