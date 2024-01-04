@@ -137,19 +137,16 @@ static int __add_ingredient(struct recipe* recipe, const char* name)
     }
 
     memset(ingredient, 0, sizeof(struct recipe_ingredient));
-    ingredient->ingredient.name = strdup(name);
-    ingredient->ingredient.arch = strdup(CHEF_ARCHITECTURE_STR);
-    ingredient->ingredient.platform = strdup(CHEF_PLATFORM_STR);
-    if (ingredient->ingredient.name == NULL || ingredient->ingredient.arch == NULL || ingredient->ingredient.platform == NULL) {
-        free((void*)ingredient->ingredient.name);
-        free((void*)ingredient->ingredient.arch);
-        free((void*)ingredient->ingredient.platform);
+    ingredient->name = strdup(name);
+    ingredient->type = RECIPE_INGREDIENT_TYPE_HOST;
+    ingredient->source.type = INGREDIENT_SOURCE_TYPE_REPO;
+    if (ingredient->name == NULL) {
         free(ingredient);
         return -1;
     }
 
-    ingredient->ingredient.channel = "devel"; // TODO: should be something else
-    list_add(&recipe->ingredients, &ingredient->list_header);
+    ingredient->channel = "devel"; // TODO: should be something else
+    list_add(&recipe->environment.host.ingredients, &ingredient->list_header);
     return 0;
 }
 
@@ -163,11 +160,11 @@ static int __add_osbase(struct recipe* recipe)
 static int __add_implicit_ingredients(struct recipe* recipe)
 {
     struct list_item* i;
-    int               needsOs = recipe->ingredients.base;
+    int               needsOs = recipe->environment.host.base;
 
-    list_foreach(&recipe->ingredients.list, i) {
+    list_foreach(&recipe->environment.host.ingredients, i) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)i;
-        if (__is_osbase(ingredient->ingredient.name) == 0) {
+        if (__is_osbase(ingredient->name) == 0) {
             needsOs = 0;
         }
     }

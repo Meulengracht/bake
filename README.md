@@ -321,7 +321,7 @@ recipes:
       # 
       # Shell script that should be executed. The working directory of the script
       # will be the build directory for this recipe. The project directory and install
-      # directories can be refered to through ${{ PROJECT_PATH }} and ${{ INSTALL_PREFIX }}.
+      # directories can be refered to through $[[ PROJECT_PATH ]] and $[[ INSTALL_PREFIX ]].
       # On linux, this will be run as a shell script, while on windows it will run as a 
       # powershell script
       script: |

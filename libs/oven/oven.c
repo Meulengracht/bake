@@ -245,7 +245,7 @@ int oven_recipe_start(struct oven_recipe_options* options)
         .project_path = g_oven.variables.cwd,
         .ingredients = options->ingredients,
         .imports = options->imports,
-        .os_base = options->os_base,
+        .confined = options->confined,
     }, &g_oven.recipe.scratch);
     if (status) {
         VLOG_ERROR("oven", "oven: failed to setup scratch directory: %s\n", strerror(errno));
@@ -308,13 +308,13 @@ static const char* __get_variable(const char* name)
         return g_oven.recipe.toolchain;
     }
     if (strcmp(name, "PROJECT_PATH") == 0) {
-        if (g_oven.recipe.scratch.os_base) {
+        if (!g_oven.recipe.scratch.confined) {
             return g_oven.variables.cwd;
         }
         return g_oven.recipe.scratch.project_root;
     }
     if (strcmp(name, "INSTALL_PREFIX") == 0) {
-        if (g_oven.recipe.scratch.os_base) {
+        if (!g_oven.recipe.scratch.confined) {
             return g_oven.install_root;
         }
         return g_oven.recipe.scratch.install_root;
@@ -325,14 +325,14 @@ static const char* __get_variable(const char* name)
 static int __expand_variable(char** at, char** buffer, int* index, size_t* maxLength)
 {
     const char* start = *at;
-    char*       end   = strchr(start, '}');
-    if (end && end[1] == '}') {
+    char*       end   = strchr(start, ']');
+    if (end && end[1] == ']') {
         char* variable;
 
         // fixup at
         *at = (end + 2);
 
-        start += 3; // skip ${{
+        start += 3; // skip $[[
 
         // trim leading spaces
         while (*start == ' ') {
@@ -462,7 +462,7 @@ const char* oven_preprocess_text(const char* original)
     
     index = 0;
     while (*itr) {
-        if (strncmp(itr, "${{", 3) == 0) {
+        if (strncmp(itr, "$[[", 3) == 0) {
             // handle variables
             size_t spaceLeft = bufferSize - index;
             int    status;
@@ -480,7 +480,7 @@ const char* oven_preprocess_text(const char* original)
                     }
                 }
             } while (status != 0);
-        } else if (strncmp(itr, "${", 2) == 0) {
+        } else if (strncmp(itr, "$[", 2) == 0) {
             // handle environment variables
             size_t spaceLeft = bufferSize - index;
             int    status;

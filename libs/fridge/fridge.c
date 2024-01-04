@@ -181,7 +181,7 @@ static int __make_folders(void)
     return 0;
 }
 
-int fridge_initialize(const char* platform, const char* architecture, struct list* packages)
+int fridge_initialize(const char* platform, const char* architecture)
 {
     int status;
 

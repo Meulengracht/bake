@@ -1,5 +1,5 @@
 /**
- * Copyright 2023, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,11 +17,10 @@
  */
 
 #include <errno.h>
-#include "../private.h"
+#include <chef/kitchen.h>
 #include <chef/platform.h>
 #include <fcntl.h>
 #include <libingredient.h>
-#include <liboven.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -119,7 +118,7 @@ static int __make_available(const char* hostRoot, const char* root, struct ingre
     return fclose(file);
 }
 
-static int __setup_ingredients(struct scratch* scratch, struct list* ingredients)
+static int __setup_ingredients(struct kitchen* kitchen, struct list* ingredients)
 {
     struct list_item* i;
     int               status;
@@ -132,7 +131,7 @@ static int __setup_ingredients(struct scratch* scratch, struct list* ingredients
         struct oven_ingredient* ovenIngredient = (struct oven_ingredient*)i;
         struct ingredient*      ingredient;
         const char*             targetPath = "";
-        const char*             hostTargetPath = scratch->host_chroot;
+        const char*             hostTargetPath = kitchen->host_chroot;
 
         status = ingredient_open(ovenIngredient->file_path, &ingredient);
         if (status) {
@@ -144,8 +143,8 @@ static int __setup_ingredients(struct scratch* scratch, struct list* ingredients
         // then the ingredient should be installed differently
         if (strcmp(ingredient->package->platform, CHEF_PLATFORM_STR) ||
             strcmp(ingredient->package->arch, CHEF_ARCHITECTURE_STR)) {
-            targetPath = scratch->target_ingredients_path;
-            hostTargetPath = scratch->host_target_ingredients_path;
+            targetPath = kitchen->target_ingredients_path;
+            hostTargetPath = kitchen->host_target_ingredients_path;
         }
 
         status = ingredient_unpack(ingredient, targetPath, NULL, NULL);
@@ -203,7 +202,7 @@ static unsigned int __hash(unsigned int hash, const char* data, size_t length)
 }
 
 // hash of ingredients and imports
-static unsigned int __setup_hash(struct scratch_options* options)
+static unsigned int __setup_hash(struct kitchen_options* options)
 {
     unsigned int      hash = 5381;
     struct list_item* i;
@@ -231,14 +230,14 @@ static unsigned int __setup_hash(struct scratch_options* options)
 
 static unsigned int __read_hash(const char* name)
 {
-    char  scratchPad[512];
+    char  buff[512];
     FILE* hashFile;
     long  size;
     char* end = NULL;
     VLOG_TRACE("oven", "__read_hash()\n");
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/.hash", name);
-    hashFile = fopen(&scratchPad[0], "r");
+    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/.hash", name);
+    hashFile = fopen(&buff[0], "r");
     if (hashFile == NULL) {
         VLOG_TRACE("oven", "__read_hash: no hash file\n");
         return 0;
@@ -248,30 +247,30 @@ static unsigned int __read_hash(const char* name)
     size = ftell(hashFile);
     rewind(hashFile);
 
-    if (size >= sizeof(scratchPad)) {
+    if (size >= sizeof(buff)) {
         VLOG_ERROR("oven", "__read_hash: the hash file was invalid\n");
         fclose(hashFile);
         return 0;
     }
-    if (fread(&scratchPad[0], 1, size, hashFile) < size) {
+    if (fread(&buff[0], 1, size, hashFile) < size) {
         VLOG_ERROR("oven", "__read_hash: failed to read hash file\n");
         fclose(hashFile);
         return 0;
     }
     
     fclose(hashFile);
-    return (unsigned int)strtoul(&scratchPad[0], &end, 10);
+    return (unsigned int)strtoul(&buff[0], &end, 10);
 }
 
-static int __write_hash(struct scratch_options* options)
+static int __write_hash(struct kitchen_options* options)
 {
-    char         scratchPad[512];
+    char         kitchenPad[512];
     FILE*        hashFile;
     unsigned int hash;
     VLOG_TRACE("oven", "__write_hash(name=%s)\n", options->name);
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/.hash", options->name);
-    hashFile = fopen(&scratchPad[0], "w");
+    snprintf(&kitchenPad[0], sizeof(kitchenPad), ".oven/%s/chef/.hash", options->name);
+    hashFile = fopen(&kitchenPad[0], "w");
     if (hashFile == NULL) {
         VLOG_TRACE("oven", "__read_hash: no hash file");
         return 0;
@@ -283,82 +282,82 @@ static int __write_hash(struct scratch_options* options)
     return 0;
 }
 
-static int __should_skip_setup(struct scratch_options* options)
+static int __should_skip_setup(struct kitchen_options* options)
 {
     unsigned int currentHash  = __setup_hash(options);
     unsigned int existingHash = __read_hash(options->name);
     return currentHash == existingHash;
 }
 
-static int __scratch_construct(struct scratch_options* options, struct scratch* scratch)
+static int __kitchen_construct(struct kitchen_options* options, struct kitchen* kitchen)
 {
-    char scratchPad[512];
-    VLOG_DEBUG("oven", "__scratch_construct(name=%s)\n", options->name);
+    char buff[512];
+    VLOG_DEBUG("oven", "__kitchen_construct(name=%s)\n", options->name);
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s", options->name);
-    scratch->host_chroot = strdup(&scratchPad[0]);
+    snprintf(&buff[0], sizeof(buff), ".oven/%s", options->name);
+    kitchen->host_chroot = strdup(&buff[0]);
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/target/ingredients", options->name);
-    scratch->host_target_ingredients_path = strdup(&scratchPad[0]);
+    snprintf(&buff[0], sizeof(buff), ".oven/%s/target/ingredients", options->name);
+    kitchen->host_target_ingredients_path = strdup(&buff[0]);
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/build", options->name);
-    scratch->host_build_path = strdup(&scratchPad[0]);
+    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/build", options->name);
+    kitchen->host_build_path = strdup(&buff[0]);
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/install", options->name);
-    scratch->host_install_path = strdup(&scratchPad[0]);
+    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/install", options->name);
+    kitchen->host_install_path = strdup(&buff[0]);
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/.checkpoint", options->name);
-    scratch->host_checkpoint_path = strdup(&scratchPad[0]);
+    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/.checkpoint", options->name);
+    kitchen->host_checkpoint_path = strdup(&buff[0]);
 
-    scratch->target_ingredients_path = strdup("/target/ingredients");
-    scratch->project_root = strdup("/chef/project");
-    scratch->build_root = strdup("/chef/build");
-    scratch->install_root = strdup("/chef/install");
-    scratch->confined = options->confined;
+    kitchen->target_ingredients_path = strdup("/target/ingredients");
+    kitchen->project_root = strdup("/chef/project");
+    kitchen->build_root = strdup("/chef/build");
+    kitchen->install_root = strdup("/chef/install");
+    kitchen->confined = options->confined;
     return 0;
 }
 
-int scratch_setup(struct scratch_options* options, struct scratch* scratch)
+int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
 {
-    char  scratchPad[512];
+    char  buff[512];
     char* includes;
     int   status;
-    VLOG_DEBUG("oven", "scratch_setup(name=%s)\n", options->name);
+    VLOG_DEBUG("oven", "kitchen_setup(name=%s)\n", options->name);
 
     if (__should_skip_setup(options)) {
-        return __scratch_construct(options, scratch);
+        return __kitchen_construct(options, kitchen);
     }
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/target/ingredients", options->name);
-    if (platform_mkdir(&scratchPad[0])) {
-        VLOG_ERROR("oven", "scratch_setup: failed to create %s\n", &scratchPad[0]);
+    snprintf(&buff[0], sizeof(buff), ".oven/%s/target/ingredients", options->name);
+    if (platform_mkdir(&buff[0])) {
+        VLOG_ERROR("oven", "kitchen_setup: failed to create %s\n", &buff[0]);
         return -1;
     }
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/build", options->name);
-    if (platform_mkdir(&scratchPad[0])) {
-        VLOG_ERROR("oven", "scratch_setup: failed to create %s\n", &scratchPad[0]);
+    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/build", options->name);
+    if (platform_mkdir(&buff[0])) {
+        VLOG_ERROR("oven", "kitchen_setup: failed to create %s\n", &buff[0]);
         return -1;
     }
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/install", options->name);
-    if (platform_symlink(&scratchPad[0], options->install_path, 1)) {
-        VLOG_ERROR("oven", "scratch_setup: failed to link %s\n", &scratchPad[0]);
+    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/install", options->name);
+    if (platform_symlink(&buff[0], options->install_path, 1)) {
+        VLOG_ERROR("oven", "kitchen_setup: failed to link %s\n", &buff[0]);
         return -1;
     }
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), ".oven/%s/chef/project", options->name);
-    if (platform_symlink(&scratchPad[0], options->project_path, 1)) {
-        VLOG_ERROR("oven", "scratch_setup: failed to link %s\n", &scratchPad[0]);
+    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/project", options->name);
+    if (platform_symlink(&buff[0], options->project_path, 1)) {
+        VLOG_ERROR("oven", "kitchen_setup: failed to link %s\n", &buff[0]);
         return -1;
     }
 
-    if (__scratch_construct(options, scratch)) {
+    if (__kitchen_construct(options, kitchen)) {
         return -1;
     }
 
     // extract os/ingredients/toolchain
-    if (__setup_ingredients(scratch, options->ingredients)) {
+    if (__setup_ingredients(kitchen, options->ingredients)) {
         return -1;
     }
 
@@ -369,61 +368,61 @@ int scratch_setup(struct scratch_options* options, struct scratch* scratch)
     return 0;
 }
 
-int scratch_enter(struct scratch* scratch)
+int kitchen_enter(struct kitchen* kitchen)
 {
-    VLOG_DEBUG("oven", "scratch_enter(confined=%i)\n", scratch->confined);
+    VLOG_DEBUG("oven", "kitchen_enter(confined=%i)\n", kitchen->confined);
     
-    if (!scratch->confined) {
+    if (!kitchen->confined) {
         // for an unconfined we do not chroot, instead we allow full access
         // to the base operating system to allow the the part to include all
         // it needs.
         return 0;
     }
 
-    if (scratch->original_root_fd > 0) {
-        VLOG_ERROR("oven", "scratch_enter: cannot recursively enter scratch root\n");
+    if (kitchen->original_root_fd > 0) {
+        VLOG_ERROR("oven", "kitchen_enter: cannot recursively enter kitchen root\n");
         return -1;
     }
 
-    scratch->original_root_fd = open("/", __O_PATH);
-    if (scratch->original_root_fd < 0) {
-        VLOG_ERROR("oven", "scratch_enter: failed to get a handle on root: %s\n", strerror(errno));
+    kitchen->original_root_fd = open("/", __O_PATH);
+    if (kitchen->original_root_fd < 0) {
+        VLOG_ERROR("oven", "kitchen_enter: failed to get a handle on root: %s\n", strerror(errno));
         return -1;
     }
 
-    if (chroot(scratch->host_chroot)) {
-        VLOG_ERROR("oven", "scratch_enter: failed to change root environment to %s\n", scratch->host_chroot);
+    if (chroot(kitchen->host_chroot)) {
+        VLOG_ERROR("oven", "kitchen_enter: failed to change root environment to %s\n", kitchen->host_chroot);
         return -1;
     }
 
     // Change working directory to the known project root
-    if (chdir(scratch->project_root)) {
-        VLOG_ERROR("oven", "scratch_enter: failed to change working directory to %s\n", scratch->project_root);
+    if (chdir(kitchen->project_root)) {
+        VLOG_ERROR("oven", "kitchen_enter: failed to change working directory to %s\n", kitchen->project_root);
         return -1;
     }
     return 0;
 }
 
-int scratch_leave(struct scratch* scratch)
+int kitchen_leave(struct kitchen* kitchen)
 {
-    VLOG_DEBUG("oven", "scratch_leave()\n");
+    VLOG_DEBUG("oven", "kitchen_leave()\n");
 
-    if (!scratch->confined) {
+    if (!kitchen->confined) {
         // nothing to do for unconfined
         return 0;
     }
     
-    if (scratch->original_root_fd <= 0) {
+    if (kitchen->original_root_fd <= 0) {
         return -1;
     }
 
-    if (fchdir(scratch->original_root_fd)) {
+    if (fchdir(kitchen->original_root_fd)) {
         return -1;
     }
     if (chroot(".")) {
         return -1;
     }
-    close(scratch->original_root_fd);
-    scratch->original_root_fd = 0;
+    close(kitchen->original_root_fd);
+    kitchen->original_root_fd = 0;
     return 0;
 }

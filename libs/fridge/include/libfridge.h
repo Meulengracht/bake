@@ -21,11 +21,11 @@
 
 #include <chef/list.h>
 
-enum ingredient_source {
-    INGREDIENT_SOURCE_UNKNOWN,
-    INGREDIENT_SOURCE_REPO,
-    INGREDIENT_SOURCE_URL,
-    INGREDIENT_SOURCE_FILE,
+enum ingredient_source_type {
+    INGREDIENT_SOURCE_TYPE_UNKNOWN,
+    INGREDIENT_SOURCE_TYPE_REPO,
+    INGREDIENT_SOURCE_TYPE_URL,
+    INGREDIENT_SOURCE_TYPE_FILE,
 };
 
 struct ingredient_source_repo {
@@ -40,15 +40,8 @@ struct ingredient_source_file {
     const char* path;
 };
 
-struct fridge_ingredient {
-    const char* name;
-    const char* description;
-    const char* platform;
-    const char* arch;
-    const char* channel;
-    const char* version;
-
-    enum ingredient_source source;
+struct ingredient_source {
+    enum ingredient_source_type type;
     union {
         struct ingredient_source_repo repo;
         struct ingredient_source_url  url;
@@ -56,12 +49,21 @@ struct fridge_ingredient {
     };
 };
 
+struct fridge_ingredient {
+    const char*              name;
+    const char*              channel;
+    const char*              version;
+    const char*              platform;
+    const char*              arch;
+    struct ingredient_source source;
+};
+
 /**
  * @brief 
  * 
  * @return int 
  */
-extern int fridge_initialize(const char* platform, const char* architecture, struct list* packages);
+extern int fridge_initialize(const char* platform, const char* architecture);
 
 /**
  * @brief 

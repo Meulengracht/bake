@@ -49,7 +49,6 @@ struct recipe_part {
     const char*      name;
     const char*      path;
     const char*      toolchain;
-    int              confinement;
     struct list      steps;
 };
 
@@ -65,11 +64,20 @@ struct recipe_project {
     const char* url;
 };
 
+enum recipe_ingredient_type {
+    RECIPE_INGREDIENT_TYPE_HOST,
+    RECIPE_INGREDIENT_TYPE_BUILD,
+    RECIPE_INGREDIENT_TYPE_RUNTIME
+};
+
 struct recipe_ingredient {
-    struct list_item         list_header;
-    struct fridge_ingredient ingredient;
-    int                      include;
-    struct list              filters;  // list<oven_value_item>
+    struct list_item            list_header;
+    enum recipe_ingredient_type type;
+    const char*                 name;
+    const char*                 channel;
+    const char*                 version;
+    struct ingredient_source    source;
+    struct list                 filters;  // list<oven_value_item>
 };
 
 struct recipe_pack_ingredient_options {
@@ -89,14 +97,29 @@ struct recipe_pack {
     struct list                           commands; // list<oven_pack_command>
 };
 
-struct recipe_ingredients {
+struct recipe_host_environment {
     int         base;
-    struct list list; // list<recipe_ingredient>
+    struct list ingredients; // list<recipe_ingredient>
+};
+
+struct recipe_build_environment {
+    int         confinement;
+    struct list ingredients; // list<recipe_ingredient>
+};
+
+struct recipe_rt_environment {
+    struct list ingredients; // list<recipe_ingredient>
+};
+
+struct recipe_environment {
+    struct recipe_host_environment  host;
+    struct recipe_build_environment build;
+    struct recipe_rt_environment    runtime;
 };
 
 struct recipe {
     struct recipe_project     project;
-    struct recipe_ingredients ingredients;
+    struct recipe_environment environment;
     struct list               packages;    // list<packages>
     struct list               parts;       // list<recipe_part>
     struct list               packs;       // list<recipe_pack>

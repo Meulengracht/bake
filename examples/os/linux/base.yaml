@@ -8,39 +8,48 @@ project:
   version: 1.0.0
   license: MIT
 
-ingredients:
-  base: false
+environment:
+  host:
+    base: false
+  build:
+    confinement: false
 
 recipes:
   - name: build-os
     path: ./
-    confinement: false
     steps:
     - name: construct
       type: script
       script: |
-        SYSROOT="${{ INSTALL_PREFIX }}"
-        install_package() {
-          FILES=$(dpkg-query -L "$1")
-          for f in $FILES
-          do
-            echo "Installing $f"
-            if [ -d "$f" ]; then
-              mkdir -p "$SYSROOT"/"$f"
-            else
-              cp "$f" "$SYSROOT"/"$f"
-            fi
-          done
-        }
-        
         # Packages for a basic linux/bash environment:
-        # coreutils (libacl1 libattr1 libgmp10 libselinux1, libc)
-        # bash (libtinfo6, libc)
-        # pkg-config (libglib2.0-0, libpcre3)
-        for pkg in libc6 libc-bin libacl1 libattr1 libgmp10 libselinux1 coreutils bash libtinfo6
-        do
-          install_package "$pkg"
+        PACKAGES=(
+          libacl1
+          libattr1
+          libgmp10
+          libc6-dev
+          libgmp3-dev
+          libmpc-dev
+          binutils-dev
+          libmpfr-dev
+          libelf-dev
+          zlib1g-dev
+          gcc
+          g++
+          build-essential
+          flex
+          bison
+          texinfo
+        )
+
+        delim=""
+        joined=""
+        for item in "${PACKAGES[@]}"; do
+          joined="$joined$delim$item"
+          delim=","
         done
+
+        sudo debootstrap --variant=minbase --include="$joined" --arch=$[[ CHEF_TARGET_ARCHITECTURE ]] stable $[[ INSTALL_PREFIX ]] http://deb.debian.org/debian/
+        sudo rm -rf $[[ INSTALL_PREFIX ]]/dev
 
 packs:
 - name: linux-1

@@ -15,7 +15,7 @@ recipes:
     - name: construct
       type: script
       script: |
-        SYSROOT="${{ INSTALL_PREFIX }}"
+        SYSROOT="$[[ INSTALL_PREFIX ]]"
         install_package() {
           FILES=$(dpkg-query -L "$1")
           for f in $FILES

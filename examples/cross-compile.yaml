@@ -27,7 +27,7 @@ recipes:
     env:
       # Use the toolchain path defined by chef when using the 'toolchain'
       # member in the recipe
-      CROSS: ${{ TOOLCHAIN_PREFIX }}
+      CROSS: $[[ TOOLCHAIN_PREFIX ]]
 
   - name: build
     type: build

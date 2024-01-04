@@ -100,32 +100,78 @@ static void __initialize_pack_options(
     }
 }
 
-static int __prep_ingredients(struct recipe* recipe)
+static int __prep_ingredient_list(struct list* list, const char* platform, const char* arch)
+{
+    struct list_item* item;
+    int               status;
+;
+    list_foreach(list, item) {
+        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
+        status = fridge_store_ingredient(&(struct fridge_ingredient) {
+            .name = ingredient->name,
+            .channel = ingredient->channel,
+            .version = ingredient->version,
+            .source = ingredient->source,
+            .arch = arch,
+            .platform = platform
+        });
+        if (status != 0) {
+            VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->name);
+            return status;
+        }
+    }
+
+    list_foreach(list, item) {
+        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
+        status = fridge_use_ingredient(&(struct fridge_ingredient) {
+            .name = ingredient->name,
+            .channel = ingredient->channel,
+            .version = ingredient->version,
+            .source = ingredient->source,
+            .arch = arch,
+            .platform = platform
+        });
+        if (status != 0) {
+            VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->name);
+            return status;
+        }
+    }
+    return 0;
+}
+
+static int __prep_ingredients(struct recipe* recipe, const char* platform, const char* arch)
 {
     struct list_item* item;
     int               status;
 
-    if (recipe->ingredients.list.count == 0) {
-        return 0;
+    printf("preparing %i host ingredients\n", recipe->environment.host.ingredients.count);
+    status = __prep_ingredient_list(
+        &recipe->environment.host.ingredients,
+        CHEF_PLATFORM_STR,
+        CHEF_ARCHITECTURE_STR
+    );
+    if (status) {
+        return status;
     }
 
-    printf("preparing %i ingredients\n", recipe->ingredients.list.count);
-    list_foreach(&recipe->ingredients.list, item) {
-        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        status = fridge_store_ingredient(&ingredient->ingredient);
-        if (status != 0) {
-            VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->ingredient.name);
-            return status;
-        }
+    printf("preparing %i build ingredients\n", recipe->environment.build.ingredients.count);
+    status = __prep_ingredient_list(
+        &recipe->environment.build.ingredients,
+        platform,
+        arch
+    );
+    if (status) {
+        return status;
     }
 
-    list_foreach(&recipe->ingredients.list, item) {
-        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        status = fridge_use_ingredient(&ingredient->ingredient);
-        if (status != 0) {
-            VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->ingredient.name);
-            return status;
-        }
+    printf("preparing %i runtime ingredients\n", recipe->environment.runtime.ingredients.count);
+    status = __prep_ingredient_list(
+        &recipe->environment.runtime.ingredients,
+        platform,
+        arch
+    );
+    if (status) {
+        return status;
     }
     return 0;
 }
@@ -197,7 +243,7 @@ static int __make_recipe(struct recipe* recipe)
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
 
-        __initialize_recipe_options(&options, part, part->confinement, &ingredients);
+        __initialize_recipe_options(&options, part, recipe->environment.build.confinement, &ingredients);
         status = oven_recipe_start(&options);
         __destroy_recipe_options(&options);
 
@@ -224,14 +270,13 @@ static int __make_packs(struct recipe* recipe)
     int                      status;
 
     // include ingredients marked for packing
-    list_foreach(&recipe->ingredients.list, item) {
+    list_foreach(&recipe->environment.runtime.ingredients, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        if (ingredient->include) {
-            status = oven_include_filters(&ingredient->filters);
-            if (status) {
-                VLOG_ERROR("bake", "failed to include ingredient %s\n", ingredient->ingredient.name);
-                return status;
-            }
+        
+        status = oven_include_filters(&ingredient->filters);
+        if (status) {
+            VLOG_ERROR("bake", "failed to include ingredient %s\n", ingredient->name);
+            return status;
         }
     }
 
@@ -351,7 +396,6 @@ static int __reset_recipe_steps(struct recipe* recipe, const char* step)
     struct oven_recipe_options options;
     struct list_item*          item;
     int                        status;
-    int                        os_base = __building_bases(recipe);
 
     // ok nothing was specifically requested
     if (strcmp(step, "run") == 0) {
@@ -361,7 +405,7 @@ static int __reset_recipe_steps(struct recipe* recipe, const char* step)
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
 
-        __initialize_recipe_options(&options, part, os_base, NULL);
+        __initialize_recipe_options(&options, part, recipe->environment.build.confinement, NULL);
         status = oven_recipe_start(&options);
         __destroy_recipe_options(&options);
 
@@ -458,7 +502,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = fridge_initialize(platform, arch, &recipe->packages);
+    status = fridge_initialize(platform, arch);
     if (status != 0) {
         VLOG_ERROR("bake", "failed to initialize fridge\n");
         return -1;
@@ -472,7 +516,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     }
     atexit(chefclient_cleanup);
 
-    status = __prep_ingredients(recipe);
+    status = __prep_ingredients(recipe, platform, arch);
     if (status) {
         VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
         return -1;

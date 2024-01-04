@@ -46,7 +46,7 @@ int platform_script(const char* script)
         return -1;
     }
     
-    fprintf(sfile, "#!/bin/sh\n");
+    fprintf(sfile, "#!/bin/bash\n");
     fputs(script, sfile);
     fclose(sfile);
 

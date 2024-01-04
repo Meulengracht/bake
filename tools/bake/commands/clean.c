@@ -80,7 +80,7 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR, NULL);
+    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR);
     if (status != 0) {
         fprintf(stderr, "bake: failed to initialize fridge\n");
         return -1;
