@@ -47,17 +47,6 @@ static char* __string_array_join(const char* const* items, const char* prefix, c
     return buffer;
 }
 
-
-// <root>/.oven/output
-// <root>/.oven/<package>/bin
-// <root>/.oven/<package>/lib
-// <root>/.oven/<package>/share
-// <root>/.oven/<package>/usr/...
-// <root>/.oven/<package>/target/
-// <root>/.oven/<package>/target/ingredients
-// <root>/.oven/<package>/chef/build
-// <root>/.oven/<package>/chef/install => <root>/.oven/output
-// <root>/.oven/<package>/chef/project => <root>
 static int __make_available(const char* hostRoot, const char* root, struct ingredient* ingredient)
 {
     FILE* file;
@@ -91,7 +80,7 @@ static int __make_available(const char* hostRoot, const char* root, struct ingre
     
     file = fopen(pcPath, "w");
     if(!file) {
-        VLOG_ERROR("oven", "__make_available: failed to open %s for writing: %s\n", pcPath, strerror(errno));
+        VLOG_ERROR("kitchen", "__make_available: failed to open %s for writing: %s\n", pcPath, strerror(errno));
         free(pcPath);
         return -1;
     }
@@ -118,7 +107,8 @@ static int __make_available(const char* hostRoot, const char* root, struct ingre
     return fclose(file);
 }
 
-static int __setup_ingredients(struct kitchen* kitchen, struct list* ingredients)
+
+static int __setup_ingredients(struct list* ingredients, const char* hostPath, const char* chrootPath)
 {
     struct list_item* i;
     int               status;
@@ -128,38 +118,49 @@ static int __setup_ingredients(struct kitchen* kitchen, struct list* ingredients
     }
 
     list_foreach(ingredients, i) {
-        struct oven_ingredient* ovenIngredient = (struct oven_ingredient*)i;
-        struct ingredient*      ingredient;
-        const char*             targetPath = "";
-        const char*             hostTargetPath = kitchen->host_chroot;
+        struct kitchen_ingredient* kitchenIngredient = (struct kitchen_ingredient*)i;
+        struct ingredient*         ingredient;
 
-        status = ingredient_open(ovenIngredient->file_path, &ingredient);
+        status = ingredient_open(kitchenIngredient->path, &ingredient);
         if (status) {
-            VLOG_ERROR("oven", "__setup_ingredients: failed to open %s\n", ovenIngredient->name);
+            VLOG_ERROR("kitchen", "__setup_ingredients: failed to open %s\n", kitchenIngredient->name);
             return -1;
         }
 
-        // If the ingredient has a different platform or arch than host
-        // then the ingredient should be installed differently
-        if (strcmp(ingredient->package->platform, CHEF_PLATFORM_STR) ||
-            strcmp(ingredient->package->arch, CHEF_ARCHITECTURE_STR)) {
-            targetPath = kitchen->target_ingredients_path;
-            hostTargetPath = kitchen->host_target_ingredients_path;
-        }
-
-        status = ingredient_unpack(ingredient, targetPath, NULL, NULL);
+        status = ingredient_unpack(ingredient, hostPath, NULL, NULL);
         if (status) {
             ingredient_close(ingredient);
-            VLOG_ERROR("oven", "__setup_ingredients: failed to setup %s\n", ovenIngredient->name);
+            VLOG_ERROR("kitchen", "__setup_ingredients: failed to setup %s\n", kitchenIngredient->name);
             return -1;
         }
 
-        status = __make_available(hostTargetPath, targetPath, ingredient);
+        status = __make_available(hostPath, chrootPath, ingredient);
         ingredient_close(ingredient);
         if (status) {
-            VLOG_ERROR("oven", "__setup_ingredients: failed to make %s available\n", ovenIngredient->name);
+            VLOG_ERROR("kitchen", "__setup_ingredients: failed to make %s available\n", kitchenIngredient->name);
             return -1;
         }
+    }
+    return 0;
+}
+
+static int __setup_ingredients(struct kitchen* kitchen, struct kitchen_options* options)
+{
+    int status;
+
+    status = __setup_ingredients(&options->host_ingredients, kitchen->host_chroot, ".");
+    if (status) {
+        return status;
+    }
+
+    status = __setup_ingredients(&options->build_ingredients, kitchen->host_chroot, ".");
+    if (status) {
+        return status;
+    }
+
+    status = __setup_ingredients(&options->runtime_ingredients, kitchen->host_install_path, kitchen->install_root);
+    if (status) {
+        return status;
     }
     return 0;
 }
@@ -234,12 +235,12 @@ static unsigned int __read_hash(const char* name)
     FILE* hashFile;
     long  size;
     char* end = NULL;
-    VLOG_TRACE("oven", "__read_hash()\n");
+    VLOG_TRACE("kitchen", "__read_hash()\n");
 
-    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/.hash", name);
+    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/.hash", name);
     hashFile = fopen(&buff[0], "r");
     if (hashFile == NULL) {
-        VLOG_TRACE("oven", "__read_hash: no hash file\n");
+        VLOG_TRACE("kitchen", "__read_hash: no hash file\n");
         return 0;
     }
 
@@ -248,12 +249,12 @@ static unsigned int __read_hash(const char* name)
     rewind(hashFile);
 
     if (size >= sizeof(buff)) {
-        VLOG_ERROR("oven", "__read_hash: the hash file was invalid\n");
+        VLOG_ERROR("kitchen", "__read_hash: the hash file was invalid\n");
         fclose(hashFile);
         return 0;
     }
     if (fread(&buff[0], 1, size, hashFile) < size) {
-        VLOG_ERROR("oven", "__read_hash: failed to read hash file\n");
+        VLOG_ERROR("kitchen", "__read_hash: failed to read hash file\n");
         fclose(hashFile);
         return 0;
     }
@@ -267,12 +268,12 @@ static int __write_hash(struct kitchen_options* options)
     char         kitchenPad[512];
     FILE*        hashFile;
     unsigned int hash;
-    VLOG_TRACE("oven", "__write_hash(name=%s)\n", options->name);
+    VLOG_TRACE("kitchen", "__write_hash(name=%s)\n", options->name);
 
-    snprintf(&kitchenPad[0], sizeof(kitchenPad), ".oven/%s/chef/.hash", options->name);
+    snprintf(&kitchenPad[0], sizeof(kitchenPad), ".kitchen/%s/chef/.hash", options->name);
     hashFile = fopen(&kitchenPad[0], "w");
     if (hashFile == NULL) {
-        VLOG_TRACE("oven", "__read_hash: no hash file");
+        VLOG_TRACE("kitchen", "__read_hash: no hash file");
         return 0;
     }
 
@@ -289,24 +290,34 @@ static int __should_skip_setup(struct kitchen_options* options)
     return currentHash == existingHash;
 }
 
+// <root>/.kitchen/output
+// <root>/.kitchen/<recipe>/bin
+// <root>/.kitchen/<recipe>/lib
+// <root>/.kitchen/<recipe>/share
+// <root>/.kitchen/<recipe>/usr/...
+// <root>/.kitchen/<recipe>/chef/build
+// <root>/.kitchen/<recipe>/chef/build/ingredients
+// <root>/.kitchen/<recipe>/chef/target/
+// <root>/.kitchen/<recipe>/chef/install => <root>/.kitchen/output
+// <root>/.kitchen/<recipe>/chef/project => <root>
 static int __kitchen_construct(struct kitchen_options* options, struct kitchen* kitchen)
 {
     char buff[512];
-    VLOG_DEBUG("oven", "__kitchen_construct(name=%s)\n", options->name);
+    VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->name);
 
-    snprintf(&buff[0], sizeof(buff), ".oven/%s", options->name);
+    snprintf(&buff[0], sizeof(buff), ".kitchen/%s", options->name);
     kitchen->host_chroot = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), ".oven/%s/target/ingredients", options->name);
+    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/target/ingredients", options->name);
     kitchen->host_target_ingredients_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/build", options->name);
+    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/build", options->name);
     kitchen->host_build_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/install", options->name);
+    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/install", options->name);
     kitchen->host_install_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/.checkpoint", options->name);
+    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/.checkpoint", options->name);
     kitchen->host_checkpoint_path = strdup(&buff[0]);
 
     kitchen->target_ingredients_path = strdup("/target/ingredients");
@@ -322,33 +333,33 @@ int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
     char  buff[512];
     char* includes;
     int   status;
-    VLOG_DEBUG("oven", "kitchen_setup(name=%s)\n", options->name);
+    VLOG_DEBUG("kitchen", "kitchen_setup(name=%s)\n", options->name);
 
     if (__should_skip_setup(options)) {
         return __kitchen_construct(options, kitchen);
     }
 
-    snprintf(&buff[0], sizeof(buff), ".oven/%s/target/ingredients", options->name);
+    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/target/ingredients", options->name);
     if (platform_mkdir(&buff[0])) {
-        VLOG_ERROR("oven", "kitchen_setup: failed to create %s\n", &buff[0]);
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to create %s\n", &buff[0]);
         return -1;
     }
 
-    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/build", options->name);
+    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/build", options->name);
     if (platform_mkdir(&buff[0])) {
-        VLOG_ERROR("oven", "kitchen_setup: failed to create %s\n", &buff[0]);
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to create %s\n", &buff[0]);
         return -1;
     }
 
-    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/install", options->name);
-    if (platform_symlink(&buff[0], options->install_path, 1)) {
-        VLOG_ERROR("oven", "kitchen_setup: failed to link %s\n", &buff[0]);
+    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/install", options->name);
+    if (platform_symlink(&buff[0], ".kitchen/output", 1)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to link %s\n", &buff[0]);
         return -1;
     }
 
-    snprintf(&buff[0], sizeof(buff), ".oven/%s/chef/project", options->name);
+    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/project", options->name);
     if (platform_symlink(&buff[0], options->project_path, 1)) {
-        VLOG_ERROR("oven", "kitchen_setup: failed to link %s\n", &buff[0]);
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to link %s\n", &buff[0]);
         return -1;
     }
 
@@ -370,7 +381,7 @@ int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
 
 int kitchen_enter(struct kitchen* kitchen)
 {
-    VLOG_DEBUG("oven", "kitchen_enter(confined=%i)\n", kitchen->confined);
+    VLOG_DEBUG("kitchen", "kitchen_enter(confined=%i)\n", kitchen->confined);
     
     if (!kitchen->confined) {
         // for an unconfined we do not chroot, instead we allow full access
@@ -380,24 +391,24 @@ int kitchen_enter(struct kitchen* kitchen)
     }
 
     if (kitchen->original_root_fd > 0) {
-        VLOG_ERROR("oven", "kitchen_enter: cannot recursively enter kitchen root\n");
+        VLOG_ERROR("kitchen", "kitchen_enter: cannot recursively enter kitchen root\n");
         return -1;
     }
 
     kitchen->original_root_fd = open("/", __O_PATH);
     if (kitchen->original_root_fd < 0) {
-        VLOG_ERROR("oven", "kitchen_enter: failed to get a handle on root: %s\n", strerror(errno));
+        VLOG_ERROR("kitchen", "kitchen_enter: failed to get a handle on root: %s\n", strerror(errno));
         return -1;
     }
 
     if (chroot(kitchen->host_chroot)) {
-        VLOG_ERROR("oven", "kitchen_enter: failed to change root environment to %s\n", kitchen->host_chroot);
+        VLOG_ERROR("kitchen", "kitchen_enter: failed to change root environment to %s\n", kitchen->host_chroot);
         return -1;
     }
 
     // Change working directory to the known project root
     if (chdir(kitchen->project_root)) {
-        VLOG_ERROR("oven", "kitchen_enter: failed to change working directory to %s\n", kitchen->project_root);
+        VLOG_ERROR("kitchen", "kitchen_enter: failed to change working directory to %s\n", kitchen->project_root);
         return -1;
     }
     return 0;
@@ -405,7 +416,7 @@ int kitchen_enter(struct kitchen* kitchen)
 
 int kitchen_leave(struct kitchen* kitchen)
 {
-    VLOG_DEBUG("oven", "kitchen_leave()\n");
+    VLOG_DEBUG("kitchen", "kitchen_leave()\n");
 
     if (!kitchen->confined) {
         // nothing to do for unconfined

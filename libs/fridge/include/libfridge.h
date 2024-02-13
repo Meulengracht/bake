@@ -68,21 +68,18 @@ extern int fridge_initialize(const char* platform, const char* architecture);
 /**
  * @brief 
  */
-extern void fridge_purge(void);
-
-/**
- * @brief 
- */
 extern void fridge_cleanup(void);
 
 /**
  * @brief Stores the given ingredient, making sure we have a local copy of it in
- * our fridge storage.
+ * our local store.
  * 
- * @param[In] ingredient 
+ * @param[In]  ingredient Options describing the ingredient that should be fetched from store.
+ * @param[Out] pathOut    Returns a zero-terminated string with the path of the ingredient. This
+ *                        string should not be freed. It will be valid until fridge_cleanup is called.
  * @return int  
  */
-extern int fridge_store_ingredient(struct fridge_ingredient* ingredient);
+extern int fridge_ensure_ingredient(struct fridge_ingredient* ingredient, const char** pathOut);
 
 /**
  * @brief Tells the fridge that we want to use a specific ingredient for our recipe. If

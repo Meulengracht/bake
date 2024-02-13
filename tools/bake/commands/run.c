@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <liboven.h>
 #include <chef/platform.h>
+#include <chef/kitchen.h>
 #include <recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -100,46 +101,54 @@ static void __initialize_pack_options(
     }
 }
 
-static int __prep_ingredient_list(struct list* list, const char* platform, const char* arch)
+static int __add_kitchen_ingredient(const char* name, const char* path, struct list* kitchenIngredients)
+{
+    struct kitchen_ingredient* ingredient;
+
+    ingredient = malloc(sizeof(struct kitchen_ingredient));
+    if (ingredient == NULL) {
+        return -1;
+    }
+    memset(ingredient, 0, sizeof(struct kitchen_ingredient));
+
+    ingredient->name = name;
+    ingredient->path = path;
+
+    list_add(kitchenIngredients, &ingredient->list_header);
+}
+
+static int __prep_ingredient_list(struct list* list, const char* platform, const char* arch, struct list* kitchenIngredients)
 {
     struct list_item* item;
     int               status;
 ;
     list_foreach(list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        status = fridge_store_ingredient(&(struct fridge_ingredient) {
+        const char*               path = NULL;
+
+        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
             .name = ingredient->name,
             .channel = ingredient->channel,
             .version = ingredient->version,
             .source = ingredient->source,
             .arch = arch,
             .platform = platform
-        });
-        if (status != 0) {
+        }, &path);
+        if (status) {
             VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->name);
             return status;
         }
-    }
-
-    list_foreach(list, item) {
-        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        status = fridge_use_ingredient(&(struct fridge_ingredient) {
-            .name = ingredient->name,
-            .channel = ingredient->channel,
-            .version = ingredient->version,
-            .source = ingredient->source,
-            .arch = arch,
-            .platform = platform
-        });
-        if (status != 0) {
-            VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->name);
+        
+        status = __add_kitchen_ingredient(ingredient->name, path, kitchenIngredients);
+        if (status) {
+            VLOG_ERROR("bake", "failed to mark ingredient %s\n", ingredient->name);
             return status;
         }
     }
     return 0;
 }
 
-static int __prep_ingredients(struct recipe* recipe, const char* platform, const char* arch)
+static int __prep_ingredients(struct recipe* recipe, const char* platform, const char* arch, struct kitchen_options* kitchenOptions)
 {
     struct list_item* item;
     int               status;
@@ -148,7 +157,8 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
     status = __prep_ingredient_list(
         &recipe->environment.host.ingredients,
         CHEF_PLATFORM_STR,
-        CHEF_ARCHITECTURE_STR
+        CHEF_ARCHITECTURE_STR,
+        &kitchenOptions->host_ingredients
     );
     if (status) {
         return status;
@@ -158,7 +168,8 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
     status = __prep_ingredient_list(
         &recipe->environment.build.ingredients,
         platform,
-        arch
+        arch,
+        &kitchenOptions->build_ingredients
     );
     if (status) {
         return status;
@@ -168,7 +179,8 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
     status = __prep_ingredient_list(
         &recipe->environment.runtime.ingredients,
         platform,
-        arch
+        arch,
+        &kitchenOptions->runtime_ingredients
     );
     if (status) {
         return status;
@@ -461,7 +473,8 @@ static int __parse_cc_switch(const char* value, char** platformOut, char** archO
 
 int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    struct oven_parameters ovenParams;
+    struct oven_parameters ovenParams = { 0 };
+    struct kitchen_options kitchenOptions = { 0 };
     char*                  name     = NULL;
     char*                  platform = CHEF_PLATFORM_STR;
     char*                  arch     = CHEF_ARCHITECTURE_STR;
@@ -516,7 +529,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     }
     atexit(chefclient_cleanup);
 
-    status = __prep_ingredients(recipe, platform, arch);
+    status = __prep_ingredients(recipe, platform, arch, &kitchenOptions);
     if (status) {
         VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
         return -1;

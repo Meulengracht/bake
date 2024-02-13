@@ -120,7 +120,6 @@ struct recipe_environment {
 struct recipe {
     struct recipe_project     project;
     struct recipe_environment environment;
-    struct list               packages;    // list<packages>
     struct list               parts;       // list<recipe_part>
     struct list               packs;       // list<recipe_pack>
 };

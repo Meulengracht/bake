@@ -73,14 +73,14 @@ int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe)
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         
         // fetch the ingredient
-        status = fridge_store_ingredient(&(struct fridge_ingredient) {
+        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
             .name = ingredient->name,
             .channel = ingredient->channel,
             .version = ingredient->version,
             .source = ingredient->source,
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
-        });
+        }, NULL);
         if (status != 0) {
             fprintf(stderr, "bake: failed to fetch ingredient %s\n", ingredient->name);
         }

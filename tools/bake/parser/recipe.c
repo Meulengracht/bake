@@ -580,7 +580,6 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
         list_add(&state->_stname._field, &argument->list_header); \
     }
 
-DEFINE_LIST_STRING_ADD(recipe, recipe, packages)
 DEFINE_LIST_STRING_ADD(ingredient, ingredient, filters)
 DEFINE_LIST_STRING_ADD(step, step, depends)
 DEFINE_LIST_STRING_ADD(step, step, arguments)
@@ -1417,7 +1416,6 @@ void recipe_destroy(struct recipe* recipe)
     __destroy_list(ingredient, recipe->environment.host.ingredients.head, struct recipe_ingredient);
     __destroy_list(ingredient, recipe->environment.build.ingredients.head, struct recipe_ingredient);
     __destroy_list(ingredient, recipe->environment.runtime.ingredients.head, struct recipe_ingredient);
-    __destroy_list(string, recipe->packages.head, struct oven_value_item);
     __destroy_list(part, recipe->parts.head, struct recipe_part);
     __destroy_list(pack, recipe->packs.head, struct recipe_pack);
     free(recipe);

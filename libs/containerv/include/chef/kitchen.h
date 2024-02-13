@@ -19,13 +19,21 @@
 #ifndef __CHEF_KITCHEN_H__
 #define __CHEF_KITCHEN_H__
 
+#include <chef/list.h>
+
+struct kitchen_ingredient {
+    struct list_item list_header;
+    const char*      name;
+    const char*      path;
+};
 
 struct kitchen_options {
     const char*  name;
-    const char*  install_path;
     const char*  project_path;
     int          confined;
-    struct list* ingredients; // list<oven_ingredient>
+    struct list  host_ingredients; // list<kitchen_ingredient>
+    struct list  build_ingredients; // list<kitchen_ingredient>
+    struct list  runtime_ingredients; // list<kitchen_ingredient>
     struct list* imports; // list<packaging_import>
 };
 
@@ -35,12 +43,16 @@ struct kitchen {
     // internal: confined
     int confined;
 
+    // external paths
+    // i.e paths valid outside chroot
     char* host_chroot;
     char* host_target_ingredients_path;
     char* host_build_path;
     char* host_install_path;
     char* host_checkpoint_path;
 
+    // internal paths
+    // i.e paths valid during chroot
     char* project_root;
     char* build_root;
     char* install_root;
