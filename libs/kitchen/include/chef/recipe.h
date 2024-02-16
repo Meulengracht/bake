@@ -16,8 +16,8 @@
  * 
  */
 
-#ifndef __BAKE_RECIPE_H__
-#define __BAKE_RECIPE_H__
+#ifndef __CHEF_RECIPE_H__
+#define __CHEF_RECIPE_H__
 
 #include <stddef.h>
 #include <chef/package.h>
@@ -141,4 +141,4 @@ extern int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut);
  */
 extern void recipe_destroy(struct recipe* recipe);
 
-#endif //!__BAKE_RECIPE_H__
+#endif //!__CHEF_RECIPE_H__

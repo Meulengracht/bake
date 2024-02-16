@@ -26,7 +26,6 @@
 #include <liboven.h>
 #include <chef/platform.h>
 #include <chef/kitchen.h>
-#include <recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,61 +43,6 @@ static void __print_help(void)
     printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
-}
-
-static void __initialize_generator_options(struct oven_generate_options* options, struct recipe_step* step)
-{
-    options->name           = step->name;
-    options->profile        = NULL;
-    options->system         = step->system;
-    options->system_options = &step->options;
-    options->arguments      = &step->arguments;
-    options->environment    = &step->env_keypairs;
-}
-
-static void __initialize_build_options(struct oven_build_options* options, struct recipe_step* step)
-{
-    options->name           = step->name;
-    options->profile        = NULL;
-    options->system         = step->system;
-    options->system_options = &step->options;
-    options->arguments      = &step->arguments;
-    options->environment    = &step->env_keypairs;
-}
-
-static void __initialize_script_options(struct oven_script_options* options, struct recipe_step* step)
-{
-    options->name   = step->name;
-    options->script = step->script;
-}
-
-static void __initialize_pack_options(
-    struct oven_pack_options* options, 
-    struct recipe*            recipe,
-    struct recipe_pack*       pack)
-{
-    memset(options, 0, sizeof(struct oven_pack_options));
-    options->name             = pack->name;
-    options->type             = pack->type;
-    options->summary          = recipe->project.summary;
-    options->description      = recipe->project.description;
-    options->icon             = recipe->project.icon;
-    options->version          = recipe->project.version;
-    options->license          = recipe->project.license;
-    options->eula             = recipe->project.eula;
-    options->maintainer       = recipe->project.author;
-    options->maintainer_email = recipe->project.email;
-    options->homepage         = recipe->project.url;
-    options->filters          = &pack->filters;
-    options->commands         = &pack->commands;
-    
-    if (pack->type == CHEF_PACKAGE_TYPE_INGREDIENT) {
-        options->bin_dirs = &pack->options.bin_dirs;
-        options->inc_dirs = &pack->options.inc_dirs;
-        options->lib_dirs = &pack->options.lib_dirs;
-        options->compiler_flags = &pack->options.compiler_flags;
-        options->linker_flags = &pack->options.linker_flags;
-    }
 }
 
 static int __add_kitchen_ingredient(const char* name, const char* path, struct list* kitchenIngredients)
@@ -188,122 +132,6 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
     return 0;
 }
 
-static int __make_recipe_steps(struct list* steps)
-{
-    struct list_item* item;
-    int               status;
-    
-    list_foreach(steps, item) {
-        struct recipe_step* step = (struct recipe_step*)item;
-        printf("executing step '%s'\n", step->system);
-
-        if (step->type == RECIPE_STEP_TYPE_GENERATE) {
-            struct oven_generate_options genOptions;
-            __initialize_generator_options(&genOptions, step);
-            status = oven_configure(&genOptions);
-            if (status) {
-                VLOG_ERROR("bake", "failed to configure target: %s\n", step->system);
-                return status;
-            }
-        } else if (step->type == RECIPE_STEP_TYPE_BUILD) {
-            struct oven_build_options buildOptions;
-            __initialize_build_options(&buildOptions, step);
-            status = oven_build(&buildOptions);
-            if (status) {
-                VLOG_ERROR("bake", "failed to build target: %s\n", step->system);
-                return status;
-            }
-        } else if (step->type == RECIPE_STEP_TYPE_SCRIPT) {
-            struct oven_script_options scriptOptions;
-            __initialize_script_options(&scriptOptions, step);
-            status = oven_script(&scriptOptions);
-            if (status) {
-                VLOG_ERROR("bake", "failed to execute script\n");
-                return status;
-            }
-        }
-    }
-    
-    return 0;
-}
-
-static void __initialize_recipe_options(struct oven_recipe_options* options, struct recipe_part* part, int confined, struct list* ingredients)
-{
-    options->name          = part->name;
-    options->relative_path = part->path;
-    options->toolchain     = fridge_get_utensil_location(part->toolchain);
-    options->ingredients   = ingredients;
-    options->confined      = confined;
-}
-
-static void __destroy_recipe_options(struct oven_recipe_options* options)
-{
-    free((void*)options->toolchain);
-}
-
-static int __make_recipe(struct recipe* recipe)
-{
-    struct oven_recipe_options options;
-    struct list_item*          item;
-    int                        status;
-    struct list                ingredients;
-
-    // prepare the list of ingredients for the recipe parts
-    list_init(&ingredients);
-
-    list_foreach(&recipe->parts, item) {
-        struct recipe_part* part = (struct recipe_part*)item;
-
-        __initialize_recipe_options(&options, part, recipe->environment.build.confinement, &ingredients);
-        status = oven_recipe_start(&options);
-        __destroy_recipe_options(&options);
-
-        if (status) {
-            return status;
-        }
-
-        status = __make_recipe_steps(&part->steps);
-        oven_recipe_end();
-
-        if (status) {
-            VLOG_ERROR("bake", "failed to build recipe %s\n", part->name);
-            return status;
-        }
-    }
-
-    return 0;
-}
-
-static int __make_packs(struct recipe* recipe)
-{
-    struct oven_pack_options packOptions;
-    struct list_item*        item;
-    int                      status;
-
-    // include ingredients marked for packing
-    list_foreach(&recipe->environment.runtime.ingredients, item) {
-        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        
-        status = oven_include_filters(&ingredient->filters);
-        if (status) {
-            VLOG_ERROR("bake", "failed to include ingredient %s\n", ingredient->name);
-            return status;
-        }
-    }
-
-    list_foreach(&recipe->packs, item) {
-        struct recipe_pack* pack = (struct recipe_pack*)item;
-
-        __initialize_pack_options(&packOptions, recipe, pack);
-        status = oven_pack(&packOptions);
-        if (status) {
-            VLOG_ERROR("bake", "failed to construct pack %s\n", pack->name);
-            return status;
-        }
-    }
-    return 0;
-}
-
 static void __cleanup_systems(int sig)
 {
     (void)sig;
@@ -325,115 +153,6 @@ static int __is_step_name(const char* name)
            strcmp(name, "build") == 0 ||
            strcmp(name, "script") == 0 ||
            strcmp(name, "pack") == 0;
-}
-
-static int __reset_steps(struct list* steps, const char* step, const char* name);
-
-static int __step_depends_on(struct list* dependencies, const char* step)
-{
-    struct list_item* item;
-
-    list_foreach(dependencies, item) {
-        struct oven_value_item* value = (struct oven_value_item*)item;
-        if (strcmp(value->value, step) == 0) {
-            // OK this step depends on the step we are resetting
-            // so reset this step too
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int __reset_depending_steps(struct list* steps, const char* name)
-{
-    struct list_item* item;
-    int               status;
-
-    list_foreach(steps, item) {
-        struct recipe_step* recipeStep = (struct recipe_step*)item;
-
-        // skip ourselves
-        if (strcmp(recipeStep->name, name) != 0) {
-            if (__step_depends_on(&recipeStep->depends, name)) {
-                status = __reset_steps(steps, NULL, recipeStep->name);
-                if (status) {
-                    VLOG_ERROR("bake", "failed to reset step %s\n", recipeStep->name);
-                    return status;
-                }
-            }
-        }
-    }
-    return 0;
-}
-
-static enum recipe_step_type __string_to_step_type(const char* type)
-{
-    if (strcmp(type, "generate") == 0) {
-        return RECIPE_STEP_TYPE_GENERATE;
-    } else if (strcmp(type, "build") == 0) {
-        return RECIPE_STEP_TYPE_BUILD;
-    } else if (strcmp(type, "script") == 0) {
-        return RECIPE_STEP_TYPE_SCRIPT;
-    } else {
-        return RECIPE_STEP_TYPE_UNKNOWN;
-    }
-}
-
-static int __reset_steps(struct list* steps, const char* step, const char* name)
-{
-    struct list_item* item;
-    int               status;
-
-    list_foreach(steps, item) {
-        struct recipe_step* recipeStep = (struct recipe_step*)item;
-        if ((step && recipeStep->type == __string_to_step_type(step)) ||
-            (name && strcmp(recipeStep->name, name) == 0)) {
-            // this should be deleted
-            status = oven_clear_recipe_checkpoint(recipeStep->name);
-            if (status) {
-                VLOG_ERROR("bake", "failed to clear checkpoint %s\n", recipeStep->name);
-                return status;
-            }
-
-            // clear dependencies
-            status = __reset_depending_steps(steps, recipeStep->name);
-        }
-    }
-    return 0;
-}
-
-static int __reset_recipe_steps(struct recipe* recipe, const char* step)
-{
-    struct oven_recipe_options options;
-    struct list_item*          item;
-    int                        status;
-
-    // ok nothing was specifically requested
-    if (strcmp(step, "run") == 0) {
-        return 0;
-    }
-
-    list_foreach(&recipe->parts, item) {
-        struct recipe_part* part = (struct recipe_part*)item;
-
-        __initialize_recipe_options(&options, part, recipe->environment.build.confinement, NULL);
-        status = oven_recipe_start(&options);
-        __destroy_recipe_options(&options);
-
-        if (status) {
-            return status;
-        }
-
-        status = __reset_steps(&part->steps, step, NULL);
-        oven_recipe_end();
-
-        if (status) {
-            VLOG_ERROR("bake", "failed to build recipe %s\n", part->name);
-            return status;
-        }
-    }
-
-    return 0;
 }
 
 static int __parse_cc_switch(const char* value, char** platformOut, char** archOut)
@@ -470,15 +189,52 @@ static int __parse_cc_switch(const char* value, char** platformOut, char** archO
     return 0;
 }
 
+static int __get_cwd(char** bufferOut)
+{
+    char*  cwd;
+    int    status;
+
+    cwd = malloc(4096);
+    if (cwd == NULL) {
+        return -1;
+    }
+
+    status = platform_getcwd(cwd, 4096);
+    if (status) {
+        // buffer was too small
+        VLOG_ERROR("oven", "could not get current working directory, buffer too small?\n");
+        free(cwd);
+        return -1;
+    }
+    *bufferOut = cwd;
+    return 0;
+}
+
+static enum recipe_step_type __string_to_step_type(const char* type)
+{
+    if (strcmp(type, "generate") == 0) {
+        return RECIPE_STEP_TYPE_GENERATE;
+    } else if (strcmp(type, "build") == 0) {
+        return RECIPE_STEP_TYPE_BUILD;
+    } else if (strcmp(type, "script") == 0) {
+        return RECIPE_STEP_TYPE_SCRIPT;
+    } else {
+        return RECIPE_STEP_TYPE_UNKNOWN;
+    }
+}
+
 int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     struct oven_parameters ovenParams = { 0 };
     struct kitchen_options kitchenOptions = { 0 };
+    struct kitchen         kitchen;
     char*                  name     = NULL;
     char*                  platform = CHEF_PLATFORM_STR;
     char*                  arch     = CHEF_ARCHITECTURE_STR;
     char*                  step     = "run";
     int                    debug    = 0;
+    char                   tmp[128];
+    char*                  cwd;
     int                    status;
 
     // catch CTRL-C
@@ -514,6 +270,15 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
+    // get the current working directory
+    status = __get_cwd(&cwd);
+    if (status) {
+        return -1;
+    }
+
+    // get basename of recipe
+    strbasename(name, tmp, sizeof(tmp));
+
     status = fridge_initialize(platform, arch);
     if (status != 0) {
         VLOG_ERROR("bake", "failed to initialize fridge\n");
@@ -528,16 +293,10 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     }
     atexit(chefclient_cleanup);
 
-    status = __prep_ingredients(recipe, platform, arch, &kitchenOptions);
-    if (status) {
-        VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
-        return -1;
-    }
-
     ovenParams.envp = (const char* const*)envp;
     ovenParams.target_platform = platform;
     ovenParams.target_architecture = arch;
-    ovenParams.recipe_name = name;
+    ovenParams.project_path = cwd;
 
     status = oven_initialize(&ovenParams);
     if (status) {
@@ -545,14 +304,30 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
     atexit(oven_cleanup);
-    
-    status = __reset_recipe_steps(recipe, step);
+
+    status = __prep_ingredients(recipe, platform, arch, &kitchenOptions);
+    if (status) {
+        VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
+        return -1;
+    }
+
+    // prepare kitchen parameters, lists are already filled at this point
+    kitchenOptions.name = &tmp[0];
+    kitchenOptions.project_path = cwd;
+    kitchenOptions.confined = recipe->environment.build.confinement;
+    status = kitchen_setup(&kitchenOptions, &kitchen);
+    if (status) {
+        VLOG_ERROR("bake", "failed to setup kitchen: %s\n", strerror(errno));
+        return -1;
+    }
+
+    status = kitchen_prepare_recipe(&kitchen, recipe, __string_to_step_type(step));
     if (status) {
         VLOG_ERROR("bake", "failed to reset steps: %s\n", strerror(errno));
         return -1;
     }
 
-    status = __make_recipe(recipe);
+    status = kitchen_make_recipe(&kitchen, recipe);
     if (status) {
         VLOG_ERROR("bake", "failed to make recipes\n");
         if (debug) {
@@ -562,7 +337,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     }
 
     if (strcmp(step, "run") == 0 || strcmp(step, "pack") == 0) {
-        status = __make_packs(recipe);
+        status = kitchen_make_packs(&kitchen, recipe);
         if (status) {
             VLOG_ERROR("bake", "failed to construct packs\n");
             if (debug) {
@@ -571,6 +346,5 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
             return -1;
         }
     }
-
     return status;
 }

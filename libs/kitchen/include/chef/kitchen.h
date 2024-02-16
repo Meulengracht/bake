@@ -20,6 +20,7 @@
 #define __CHEF_KITCHEN_H__
 
 #include <chef/list.h>
+#include <chef/recipe.h>
 
 struct kitchen_ingredient {
     struct list_item list_header;
@@ -42,11 +43,13 @@ struct kitchen {
     // internal: confined
     int confined;
 
-    // external paths
+    // external paths that point inside chroot
     // i.e paths valid outside chroot
     char* host_chroot;
-    char* host_target_ingredients_path;
     char* host_build_path;
+    char* host_build_ingredients_path;
+    char* host_build_toolchains_path;
+    char* host_project_path;
     char* host_install_path;
     char* host_checkpoint_path;
 
@@ -54,14 +57,43 @@ struct kitchen {
     // i.e paths valid during chroot
     char* project_root;
     char* build_root;
+    char* build_ingredients_path;
+    char* build_toolchains_path;
     char* install_root;
-    char* target_ingredients_path;
 };
 
 /**
  * @brief
  */
 extern int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen);
+
+/**
+ * @brief 
+ * 
+ * @param kitchen 
+ * @param recipe 
+ * @param stepType 
+ * @return int 
+ */
+extern int kitchen_prepare_recipe(struct kitchen* kitchen, struct recipe* recipe, enum recipe_step_type stepType);
+
+/**
+ * @brief 
+ * 
+ * @param kitchen 
+ * @param recipe 
+ * @return int 
+ */
+extern int kitchen_make_recipe(struct kitchen* kitchen, struct recipe* recipe);
+
+/**
+ * @brief 
+ * 
+ * @param kitchen 
+ * @param recipe 
+ * @return int 
+ */
+extern int kitchen_make_packs(struct kitchen* kitchen, struct recipe* recipe);
 
 /**
  * @brief

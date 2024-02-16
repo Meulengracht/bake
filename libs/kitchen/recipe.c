@@ -18,7 +18,7 @@
 
 #include <ctype.h>
 #include <chef/platform.h>
-#include <recipe.h>
+#include <chef/recipe.h>
 #include <yaml/yaml.h>
 #include <stdio.h>
 #include <stdlib.h>

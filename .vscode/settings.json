@@ -79,7 +79,8 @@
         "libingredient.h": "c",
         "liboven.h": "c",
         "unistd.h": "c",
-        "package.h": "c"
+        "package.h": "c",
+        "kitchen.h": "c"
     },
     "cmake.configureArgs": [
         "-DCMAKE_BUILD_TYPE=Debug"

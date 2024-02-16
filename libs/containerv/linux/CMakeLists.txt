@@ -1,6 +1,5 @@
 add_library(containerv-linux STATIC
     container.c
-    kitchen.c
     utils.c
 )
 target_include_directories(containerv-linux PRIVATE ../include)

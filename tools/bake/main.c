@@ -18,7 +18,7 @@
 
 #include <errno.h>
 #include <chef/platform.h>
-#include <recipe.h>
+#include <chef/recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

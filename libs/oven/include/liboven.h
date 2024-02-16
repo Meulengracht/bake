@@ -129,9 +129,9 @@ struct oven_pack_options {
 
 struct oven_parameters {
     const char* const* envp;
-    const char*        recipe_name;
     const char*        target_platform;
     const char*        target_architecture;
+    const char*        project_path;
 };
 
 /**

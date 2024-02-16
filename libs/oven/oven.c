@@ -118,68 +118,26 @@ static int __get_cwd(char** bufferOut)
     return 0;
 }
 
-static int __create_path(const char* path)
-{
-    if (platform_mkdir(path)) {
-        if (errno != EEXIST) {
-            VLOG_ERROR("oven", "oven: failed to create %s: %s\n", path, strerror(errno));
-            return -1;
-        }
-    }
-    return 0;
-}
-
 int oven_initialize(struct oven_parameters* parameters)
 {
-    int   status;
-    char* cwd;
-    char* root;
-    char* installRoot;
-    char  tmp[128];
     VLOG_DEBUG("oven", "oven_initialize()\n");
 
     if (parameters == NULL) {
         errno = EINVAL;
         return -1;
     }
-
-    // get the current working directory
-    status = __get_cwd(&cwd);
-    if (status) {
-        return -1;
-    }
-
-    // get basename of recipe
-    strbasename(parameters->recipe_name, tmp, sizeof(tmp));
-
-    // initialize oven paths
-    root        = strpathcombine(cwd, OVEN_ROOT);
-    installRoot = strpathcombine(cwd, OVEN_INSTALL_ROOT);
-    if (root == NULL || installRoot == NULL) {
-        free(root);
-        return -1;
-    }
-
+    
     // update oven variables
     g_oven.variables.target_platform = strdup(parameters->target_platform);
     g_oven.variables.target_arch     = strdup(parameters->target_architecture);
-    g_oven.variables.cwd             = cwd;
+    g_oven.variables.cwd             = strdup(parameters->project_path);
 
     // update oven context
     g_oven.process_environment = parameters->envp;
-    g_oven.install_root = installRoot;
 
     // no active recipe
     memset(&g_oven.recipe, 0, sizeof(struct oven_recipe_context));
-
-    // create paths
-    status = __create_path(root);
-    free(root);
-    if (status) {
-        return status;
-    }
-    status = __create_path(installRoot);
-    return status;
+    return 0;
 }
 
 void oven_cleanup(void)
