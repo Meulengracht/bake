@@ -116,7 +116,6 @@ void fridge_cleanup(void)
     memset(&g_fridge, 0, sizeof(struct fridge_context));
 }
 
-
 int fridge_ensure_ingredient(struct fridge_ingredient* ingredient, const char** pathOut)
 {
     struct fridge_inventory_pack* pack = NULL;

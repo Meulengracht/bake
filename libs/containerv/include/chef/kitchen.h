@@ -34,7 +34,6 @@ struct kitchen_options {
     struct list  host_ingredients; // list<kitchen_ingredient>
     struct list  build_ingredients; // list<kitchen_ingredient>
     struct list  runtime_ingredients; // list<kitchen_ingredient>
-    struct list* imports; // list<packaging_import>
 };
 
 struct kitchen {

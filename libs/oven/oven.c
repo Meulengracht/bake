@@ -244,7 +244,6 @@ int oven_recipe_start(struct oven_recipe_options* options)
         .install_path = g_oven.install_root,
         .project_path = g_oven.variables.cwd,
         .ingredients = options->ingredients,
-        .imports = options->imports,
         .confined = options->confined,
     }, &g_oven.recipe.scratch);
     if (status) {

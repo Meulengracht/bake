@@ -63,11 +63,6 @@ struct oven_pack_command {
     struct list            arguments; // list<oven_value_item>
 };
 
-struct oven_package_import {
-    struct list_item list_header;
-    const char*      name;
-};
-
 struct oven_ingredient {
     struct list_item     list_header;
     const char*          file_path;
@@ -84,7 +79,6 @@ struct oven_recipe_options {
     // can be useful for backends to have access to in case they need to probe
     // the ingredients.
     struct list* ingredients; // list<oven_ingredient>
-    struct list* imports;     // list<oven_package_import>
 };
 
 struct oven_generate_options {

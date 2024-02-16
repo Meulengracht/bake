@@ -233,7 +233,6 @@ static void __initialize_recipe_options(struct oven_recipe_options* options, str
     options->relative_path = part->path;
     options->toolchain     = fridge_get_utensil_location(part->toolchain);
     options->ingredients   = ingredients;
-    options->imports       = NULL;
     options->confined      = confined;
 }
 

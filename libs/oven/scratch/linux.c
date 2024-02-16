@@ -165,34 +165,6 @@ static int __setup_ingredients(struct scratch* scratch, struct list* ingredients
     return 0;
 }
 
-static char* __build_include_string(struct list* imports)
-{
-    struct list_item* i;
-    char*             buffer;
-
-    // --include=nano,gcc,clang,tcc,pcc,g++,git,make
-    if (imports == NULL || imports->count == 0) {
-        return NULL;
-    }
-
-    buffer = calloc(4096, 1); 
-    if (buffer == NULL) {
-        return NULL;
-    }
-
-    list_foreach(imports, i) {
-        struct oven_package_import* import = (struct oven_package_import*)i;
-        if (buffer[0] == 0) {
-            strcpy(buffer, "--include=");
-            strcat(buffer, import->name);
-        } else {
-            strcat(buffer, ",");
-            strcat(buffer, import->name);
-        }
-    }
-    return buffer;
-}
-
 static unsigned int __hash(unsigned int hash, const char* data, size_t length)
 {
     for (unsigned int i = 0; i < length; i++) {
@@ -216,14 +188,6 @@ static unsigned int __setup_hash(struct scratch_options* options)
         list_foreach(options->ingredients, i) {
             struct oven_ingredient* ovenIngredient = (struct oven_ingredient*)i;
             hash = __hash(hash, ovenIngredient->name, strlen(ovenIngredient->name));
-        }
-    }
-    
-    // hash imports
-    if (options->imports != NULL) {
-        list_foreach(options->imports, i) {
-            struct oven_package_import* import = (struct oven_package_import*)i;
-            hash = __hash(hash, import->name, strlen(import->name));
         }
     }
     return hash;

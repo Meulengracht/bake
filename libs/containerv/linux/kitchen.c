@@ -108,7 +108,7 @@ static int __make_available(const char* hostRoot, const char* root, struct ingre
 }
 
 
-static int __setup_ingredients(struct list* ingredients, const char* hostPath, const char* chrootPath)
+static int __setup_ingredient(struct list* ingredients, const char* hostPath, const char* chrootPath)
 {
     struct list_item* i;
     int               status;
@@ -148,49 +148,21 @@ static int __setup_ingredients(struct kitchen* kitchen, struct kitchen_options* 
 {
     int status;
 
-    status = __setup_ingredients(&options->host_ingredients, kitchen->host_chroot, ".");
+    status = __setup_ingredient(&options->host_ingredients, kitchen->host_chroot, ".");
     if (status) {
         return status;
     }
 
-    status = __setup_ingredients(&options->build_ingredients, kitchen->host_chroot, ".");
+    status = __setup_ingredient(&options->build_ingredients, kitchen->host_chroot, ".");
     if (status) {
         return status;
     }
 
-    status = __setup_ingredients(&options->runtime_ingredients, kitchen->host_install_path, kitchen->install_root);
+    status = __setup_ingredient(&options->runtime_ingredients, kitchen->host_install_path, kitchen->install_root);
     if (status) {
         return status;
     }
     return 0;
-}
-
-static char* __build_include_string(struct list* imports)
-{
-    struct list_item* i;
-    char*             buffer;
-
-    // --include=nano,gcc,clang,tcc,pcc,g++,git,make
-    if (imports == NULL || imports->count == 0) {
-        return NULL;
-    }
-
-    buffer = calloc(4096, 1); 
-    if (buffer == NULL) {
-        return NULL;
-    }
-
-    list_foreach(imports, i) {
-        struct oven_package_import* import = (struct oven_package_import*)i;
-        if (buffer[0] == 0) {
-            strcpy(buffer, "--include=");
-            strcat(buffer, import->name);
-        } else {
-            strcat(buffer, ",");
-            strcat(buffer, import->name);
-        }
-    }
-    return buffer;
 }
 
 static unsigned int __hash(unsigned int hash, const char* data, size_t length)
@@ -202,30 +174,30 @@ static unsigned int __hash(unsigned int hash, const char* data, size_t length)
     return hash;
 }
 
+static unsigned int __hash_ingredients(struct list* ingredients, unsigned int seed)
+{
+    unsigned int      hash = seed;
+    struct list_item* i;
+
+    list_foreach(ingredients, i) {
+        struct kitchen_ingredient* ing = (struct kitchen_ingredient*)i;
+        hash = __hash(hash, ing->name, strlen(ing->name));
+    }
+    return hash;
+}
+
 // hash of ingredients and imports
 static unsigned int __setup_hash(struct kitchen_options* options)
 {
-    unsigned int      hash = 5381;
-    struct list_item* i;
+    unsigned int hash = 5381;
 
     // hash name
     hash = __hash(hash, options->name, strlen(options->name));
 
     // hash ingredients
-    if (options->ingredients != NULL) {
-        list_foreach(options->ingredients, i) {
-            struct oven_ingredient* ovenIngredient = (struct oven_ingredient*)i;
-            hash = __hash(hash, ovenIngredient->name, strlen(ovenIngredient->name));
-        }
-    }
-    
-    // hash imports
-    if (options->imports != NULL) {
-        list_foreach(options->imports, i) {
-            struct oven_package_import* import = (struct oven_package_import*)i;
-            hash = __hash(hash, import->name, strlen(import->name));
-        }
-    }
+    hash = __hash_ingredients(&options->host_ingredients, hash);
+    hash = __hash_ingredients(&options->build_ingredients, hash);
+    hash = __hash_ingredients(&options->runtime_ingredients, hash);
     return hash;
 }
 
@@ -368,7 +340,7 @@ int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
     }
 
     // extract os/ingredients/toolchain
-    if (__setup_ingredients(kitchen, options->ingredients)) {
+    if (__setup_ingredients(kitchen, options)) {
         return -1;
     }
 
