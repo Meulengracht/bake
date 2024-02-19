@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,33 +21,6 @@
 
 struct list;
 
-struct scratch_options {
-    const char*  name;
-    const char*  install_path;
-    const char*  project_path;
-    int          confined;
-    struct list* ingredients; // list<oven_ingredient>
-    struct list* imports; // list<packaging_import>
-};
-
-struct scratch {
-    // internal: original_root_fd
-    int original_root_fd;
-    // internal: confined
-    int confined;
-
-    char* host_chroot;
-    char* host_target_ingredients_path;
-    char* host_build_path;
-    char* host_install_path;
-    char* host_checkpoint_path;
-
-    char* project_root;
-    char* build_root;
-    char* install_root;
-    char* target_ingredients_path;
-};
-
 /**
  * @brief 
  * 
@@ -63,21 +36,5 @@ extern int oven_resolve_commands(struct list* commands, struct list* resolves);
  * @param resolves 
  */
 extern void oven_resolve_destroy(struct list* resolves);
-
-
-/**
- * @brief
- */
-extern int scratch_setup(struct scratch_options* options, struct scratch* scratch);
-
-/**
- * @brief
- */
-extern int scratch_enter(struct scratch* scratch);
-
-/**
- * @brief 
- */
-extern int scratch_leave(struct scratch* scratch);
 
 #endif //!__OVEN_PRIVATE_H__

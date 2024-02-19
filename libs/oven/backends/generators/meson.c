@@ -29,7 +29,7 @@
 #include <zip.h>
 
 // import this while we find a suitiable place
-extern const char* oven_preprocess_text(const char* original);
+extern char* oven_preprocess_text(const char* original);
 
 static char* __processed_path(struct oven_backend_data* data)
 {
@@ -72,7 +72,6 @@ static int __write_file(const char* path, const char* buffer)
     file = fopen(path, "w");
     if (file == NULL) {
         fprintf(stderr, "Failed to open %s for writing: %s\n", path, strerror(errno));
-        free(path);
         return -1;
     }
 
@@ -156,7 +155,7 @@ int meson_config_main(struct oven_backend_data* data, union oven_backend_options
     if (args) {
         length += strlen(args);
     }
-    mesonCommand = malloc(args);
+    mesonCommand = malloc(length);
     if (mesonCommand == NULL) {
         errno = ENOMEM;
         goto cleanup;

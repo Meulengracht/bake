@@ -29,12 +29,15 @@ struct kitchen_ingredient {
 };
 
 struct kitchen_options {
-    const char*  name;
-    const char*  project_path;
-    int          confined;
-    struct list  host_ingredients; // list<kitchen_ingredient>
-    struct list  build_ingredients; // list<kitchen_ingredient>
-    struct list  runtime_ingredients; // list<kitchen_ingredient>
+    const char*        name;
+    const char*        project_path;
+    int                confined;
+    const char* const* envp;
+    const char*        target_platform;
+    const char*        target_architecture;
+    struct list        host_ingredients; // list<kitchen_ingredient>
+    struct list        build_ingredients; // list<kitchen_ingredient>
+    struct list        runtime_ingredients; // list<kitchen_ingredient>
 };
 
 struct kitchen {
@@ -60,6 +63,7 @@ struct kitchen {
     char* build_ingredients_path;
     char* build_toolchains_path;
     char* install_root;
+    char* checkpoint_root;
 };
 
 /**
@@ -75,7 +79,7 @@ extern int kitchen_setup(struct kitchen_options* options, struct kitchen* kitche
  * @param stepType 
  * @return int 
  */
-extern int kitchen_prepare_recipe(struct kitchen* kitchen, struct recipe* recipe, enum recipe_step_type stepType);
+extern int kitchen_recipe_prepare(struct kitchen* kitchen, struct recipe* recipe, enum recipe_step_type stepType);
 
 /**
  * @brief 
@@ -84,7 +88,15 @@ extern int kitchen_prepare_recipe(struct kitchen* kitchen, struct recipe* recipe
  * @param recipe 
  * @return int 
  */
-extern int kitchen_make_recipe(struct kitchen* kitchen, struct recipe* recipe);
+extern int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe);
+
+/**
+ * @brief Cleans up the build and install areas, resetting the entire state
+ * of the current project context.
+ * 
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
+ */
+extern int kitchen_recipe_clean(struct recipe* recipe);
 
 /**
  * @brief 
@@ -93,16 +105,6 @@ extern int kitchen_make_recipe(struct kitchen* kitchen, struct recipe* recipe);
  * @param recipe 
  * @return int 
  */
-extern int kitchen_make_packs(struct kitchen* kitchen, struct recipe* recipe);
-
-/**
- * @brief
- */
-extern int kitchen_enter(struct kitchen* kitchen);
-
-/**
- * @brief 
- */
-extern int kitchen_leave(struct kitchen* kitchen);
+extern int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe);
 
 #endif //!__CHEF_KITCHEN_H__

@@ -23,9 +23,8 @@
  */
 
 #include <errno.h>
-#include <liboven.h>
 #include <chef/platform.h>
-#include <recipe.h>
+#include <chef/recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,30 +79,7 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR);
-    if (status != 0) {
-        fprintf(stderr, "bake: failed to initialize fridge\n");
-        return -1;
-    }
-    atexit(fridge_cleanup);
-
-    ovenParams.envp = (const char* const*)envp;
-    ovenParams.target_platform = CHEF_PLATFORM_STR;
-    ovenParams.target_architecture = CHEF_ARCHITECTURE_STR;
-    ovenParams.recipe_name = name;
-
-    status = oven_initialize(&ovenParams);
-    if (status) {
-        fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
-        return -1;
-    }
-    atexit(oven_cleanup);
-    
-    status = oven_clean();
-    if (status) {
-        fprintf(stderr, "bake: failed to clean project: %s\n", strerror(errno));
-        return -1;
-    }
+    // TODO: use kitchen_recipe_clean
 
     return status;
 }

@@ -74,11 +74,6 @@ struct oven_recipe_options {
     const char* name;
     const char* relative_path;
     const char* toolchain;
-    int         confined;
-    // ingredients is the list of ingredients used by the current recipe. This
-    // can be useful for backends to have access to in case they need to probe
-    // the ingredients.
-    struct list* ingredients; // list<oven_ingredient>
 };
 
 struct oven_generate_options {
@@ -127,11 +122,18 @@ struct oven_pack_options {
     struct list*           commands; // list<oven_pack_command>
 };
 
+struct oven_paths {
+    const char* project_root;
+    const char* build_root;
+    const char* install_root;
+    const char* checkpoint_root;
+};
+
 struct oven_parameters {
     const char* const* envp;
     const char*        target_platform;
     const char*        target_architecture;
-    const char*        project_path;
+    struct oven_paths  paths;
 };
 
 /**
@@ -163,14 +165,6 @@ extern void oven_recipe_end(void);
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
 extern int oven_clear_recipe_checkpoint(const char* name);
-
-/**
- * @brief Cleans up the build and install areas, resetting the entire state
- * of the current project context.
- * 
- * @return int Returns 0 on success, -1 on failure with errno set accordingly.
- */
-extern int oven_clean(void);
 
 /**
  * @brief 

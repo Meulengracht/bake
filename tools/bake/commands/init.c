@@ -16,7 +16,7 @@
  * 
  */
 
-#include <recipe.h>
+#include <chef/recipe.h>
 #include <stdio.h>
 #include <string.h>
 

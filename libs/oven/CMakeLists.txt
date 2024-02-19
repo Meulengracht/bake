@@ -15,7 +15,6 @@ set(SRCS
 # add platform libraries
 set(ADDITIONAL_LIBS)
 if (UNIX)
-    set(SRCS ${SRCS} scratch/linux.c)
     set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} -lpthread)
 endif (UNIX)
 

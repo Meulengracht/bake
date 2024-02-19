@@ -225,7 +225,6 @@ static enum recipe_step_type __string_to_step_type(const char* type)
 
 int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    struct oven_parameters ovenParams = { 0 };
     struct kitchen_options kitchenOptions = { 0 };
     struct kitchen         kitchen;
     char*                  name     = NULL;
@@ -279,13 +278,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     // get basename of recipe
     strbasename(name, tmp, sizeof(tmp));
 
-    status = fridge_initialize(platform, arch);
-    if (status != 0) {
-        VLOG_ERROR("bake", "failed to initialize fridge\n");
-        return -1;
-    }
-    atexit(fridge_cleanup);
-
+    // TODO: make chefclient instanced, move to fridge
     status = chefclient_initialize();
     if (status != 0) {
         VLOG_ERROR("bake", "failed to initialize chef client\n");
@@ -293,17 +286,12 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     }
     atexit(chefclient_cleanup);
 
-    ovenParams.envp = (const char* const*)envp;
-    ovenParams.target_platform = platform;
-    ovenParams.target_architecture = arch;
-    ovenParams.project_path = cwd;
-
-    status = oven_initialize(&ovenParams);
-    if (status) {
-        VLOG_ERROR("bake", "failed to initialize oven: %s\n", strerror(errno));
+    status = fridge_initialize(platform, arch);
+    if (status != 0) {
+        VLOG_ERROR("bake", "failed to initialize fridge\n");
         return -1;
     }
-    atexit(oven_cleanup);
+    atexit(fridge_cleanup);
 
     status = __prep_ingredients(recipe, platform, arch, &kitchenOptions);
     if (status) {
@@ -315,19 +303,22 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     kitchenOptions.name = &tmp[0];
     kitchenOptions.project_path = cwd;
     kitchenOptions.confined = recipe->environment.build.confinement;
+    kitchenOptions.envp = (const char* const*)envp;
+    kitchenOptions.target_platform = platform;
+    kitchenOptions.target_architecture = arch;
     status = kitchen_setup(&kitchenOptions, &kitchen);
     if (status) {
         VLOG_ERROR("bake", "failed to setup kitchen: %s\n", strerror(errno));
         return -1;
     }
 
-    status = kitchen_prepare_recipe(&kitchen, recipe, __string_to_step_type(step));
+    status = kitchen_recipe_prepare(&kitchen, recipe, __string_to_step_type(step));
     if (status) {
         VLOG_ERROR("bake", "failed to reset steps: %s\n", strerror(errno));
         return -1;
     }
 
-    status = kitchen_make_recipe(&kitchen, recipe);
+    status = kitchen_recipe_make(&kitchen, recipe);
     if (status) {
         VLOG_ERROR("bake", "failed to make recipes\n");
         if (debug) {
@@ -337,7 +328,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     }
 
     if (strcmp(step, "run") == 0 || strcmp(step, "pack") == 0) {
-        status = kitchen_make_packs(&kitchen, recipe);
+        status = kitchen_recipe_pack(&kitchen, recipe);
         if (status) {
             VLOG_ERROR("bake", "failed to construct packs\n");
             if (debug) {

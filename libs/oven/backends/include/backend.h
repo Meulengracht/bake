@@ -95,12 +95,6 @@ struct oven_backend_data {
      * @brief The paths relevant to the project.
      */
     struct oven_backend_data_paths paths;
-
-    /**
-     * @brief The list of ingredients associated with the current project.
-     * The list contains entries of <struct oven_ingredient>.
-     */
-    struct list* ingredients;
 };
 
 //****************************************************************************//
