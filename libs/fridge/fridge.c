@@ -31,8 +31,6 @@
 #include <vafs/file.h>
 #include <vafs/directory.h>
 
-#define FRIDGE_ROOT_PATH "~/.chef/fridge"
-
 struct progress_context {
     struct ingredient* ingredient;
     int                disabled;
@@ -43,6 +41,7 @@ struct progress_context {
 };
 
 struct fridge_context {
+    char*                    root;
     struct fridge_inventory* inventory;
     struct fridge_store*     store;
     struct list              environment;
@@ -50,11 +49,11 @@ struct fridge_context {
 
 static struct fridge_context g_fridge = { 0 };
 
-static int __make_folders(void)
+static int __make_folders(const char* root)
 {
     int status;
 
-    status = platform_mkdir(FRIDGE_ROOT_PATH);
+    status = platform_mkdir(root);
     if (status) {
         fprintf(stderr, "__make_folders: failed to create root directory\n");
         return -1;
@@ -65,7 +64,9 @@ static int __make_folders(void)
 
 int fridge_initialize(const char* platform, const char* architecture)
 {
-    int status;
+    int   status;
+    char  temp[512] = { 0 };
+    char* root;
 
     if (platform == NULL || architecture == NULL) {
         fprintf(stderr, "fridge_initialize: platform and architecture must be specified\n");
@@ -75,7 +76,19 @@ int fridge_initialize(const char* platform, const char* architecture)
     // initialize members
     list_init(&g_fridge.environment);
 
-    status = __make_folders();
+    status = platform_getuserdir(&temp[0], sizeof(temp) - 1);
+    if (status) {
+        fprintf(stderr, "fridge_initialize: failed to resolve user homedir\n");
+        return -1;
+    }
+
+    g_fridge.root = strpathjoin(&temp[0], ".chef", "fridge", NULL);
+    if (g_fridge.root == NULL) {
+        fprintf(stderr, "fridge_initialize: failed to allocate memory for root directory\n");
+        return -1;
+    }
+
+    status = __make_folders(g_fridge.root);
     if (status) {
         fprintf(stderr, "fridge_initialize: failed to create folders\n");
         fridge_cleanup();
@@ -90,7 +103,7 @@ int fridge_initialize(const char* platform, const char* architecture)
         return -1;
     }
 
-    status = inventory_load(FRIDGE_ROOT_PATH, &g_fridge.inventory);
+    status = inventory_load(g_fridge.root, &g_fridge.inventory);
     if (status) {
         fprintf(stderr, "fridge_initialize: failed to load inventory\n");
         fridge_cleanup();
@@ -111,6 +124,9 @@ void fridge_cleanup(void)
         }
         inventory_free(g_fridge.inventory);
     }
+
+    // free memory
+    free(g_fridge.root);
 
     // reset context
     memset(&g_fridge, 0, sizeof(struct fridge_context));

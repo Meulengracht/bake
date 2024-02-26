@@ -347,28 +347,28 @@ static int __should_skip_setup(struct kitchen_options* options)
 // <root>/.kitchen/<recipe>/chef/project => <root>
 static int __kitchen_construct(struct kitchen_options* options, struct kitchen* kitchen)
 {
-    char buff[512];
+    char buff[2048];
     VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->name);
 
-    snprintf(&buff[0], sizeof(buff), ".kitchen/%s", options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s", options->project_path, options->name);
     kitchen->host_chroot = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/build", options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/build", options->project_path, options->name);
     kitchen->host_build_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/build/ingredients", options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/build/ingredients", options->project_path, options->name);
     kitchen->host_build_ingredients_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/build/toolchains", options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/build/toolchains", options->project_path, options->name);
     kitchen->host_build_toolchains_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/project", options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/project", options->project_path, options->name);
     kitchen->host_project_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/install", options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/install", options->project_path, options->name);
     kitchen->host_install_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef", options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef", options->project_path, options->name);
     kitchen->host_checkpoint_path = strdup(&buff[0]);
 
     kitchen->project_root = strdup("/chef/project");
@@ -378,6 +378,39 @@ static int __kitchen_construct(struct kitchen_options* options, struct kitchen* 
     kitchen->install_root = strdup("/chef/install");
     kitchen->checkpoint_root = strdup("/chef");
     kitchen->confined = options->confined;
+    return 0;
+}
+
+static int __ensure_hostdirs(struct kitchen* kitchen)
+{
+    if (platform_mkdir(kitchen->host_build_ingredients_path)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to create %s\n", kitchen->host_build_ingredients_path);
+        return -1;
+    }
+
+    if (platform_mkdir(kitchen->host_build_toolchains_path)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to create %s\n", kitchen->host_build_toolchains_path);
+        return -1;
+    }
+
+    if (platform_mkdir(kitchen->host_install_path)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to create %s\n", kitchen->host_install_path);
+        return -1;
+    }
+    return 0;
+}
+
+static int __ensure_symlinks(struct kitchen* kitchen, const char* projectPath)
+{
+    if (platform_symlink(".kitchen/output", kitchen->host_install_path, 1)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to link %s\n", kitchen->host_install_path);
+        return -1;
+    }
+
+    if (platform_symlink(kitchen->host_project_path, projectPath, 1)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to link %s\n", kitchen->host_project_path);
+        return -1;
+    }
     return 0;
 }
 
@@ -416,23 +449,13 @@ int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
         return 0;
     }
 
-    if (platform_mkdir(kitchen->host_build_ingredients_path)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to create %s\n", kitchen->host_build_ingredients_path);
+    if (__ensure_hostdirs(kitchen)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to create host directories\n");
         return -1;
     }
 
-    if (platform_mkdir(kitchen->host_build_toolchains_path)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to create %s\n", kitchen->host_build_toolchains_path);
-        return -1;
-    }
-
-    if (platform_symlink(kitchen->host_install_path, ".kitchen/output", 1)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to link %s\n", kitchen->host_install_path);
-        return -1;
-    }
-
-    if (platform_symlink(kitchen->host_project_path, options->project_path, 1)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to link %s\n", kitchen->host_project_path);
+    if (__ensure_symlinks(kitchen, options->project_path)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to create host symlinks\n");
         return -1;
     }
 
