@@ -144,7 +144,7 @@ int oven_recipe_start(struct oven_recipe_options* options)
     VLOG_DEBUG("oven", "oven_recipe_start()\n");
 
     if (g_oven.recipe.name) {
-        VLOG_ERROR("oven", "oven: recipe already started\n");
+        VLOG_ERROR("oven", "recipe already started\n");
         errno = ENOSYS;
         return -1;
     }
@@ -475,7 +475,7 @@ static struct list* __preprocess_keypair_list(struct list* original)
     struct list_item* item;
 
     if (!processed) {
-        VLOG_ERROR("oven", "oven: failed to allocate memory environment preprocessor\n");
+        VLOG_ERROR("oven", "failed to allocate memory environment preprocessor\n");
         return original;
     }
 
@@ -484,7 +484,7 @@ static struct list* __preprocess_keypair_list(struct list* original)
         struct chef_keypair_item* keypair          = (struct chef_keypair_item*)item;
         struct chef_keypair_item* processedKeypair = __preprocess_keypair(keypair);
         if (!processedKeypair) {
-            VLOG_ERROR("oven", "oven: failed to allocate memory environment preprocessor\n");
+            VLOG_ERROR("oven", "failed to allocate memory environment preprocessor\n");
             break;
         }
 
