@@ -65,6 +65,17 @@ static struct VaFsGuid g_iconGuid      = CHEF_PACKAGE_ICON_GUID;
 static struct VaFsGuid g_commandsGuid  = CHEF_PACKAGE_APPS_GUID;
 static struct VaFsGuid g_optionsGuid   = CHEF_PACKAGE_INGREDIENT_OPTS_GUID;
 
+/**
+ * ZSTD Compression
+ * Compression can be between 1-22, which 20+ being extremely consuming.
+ * Default compression being (3) => ZSTD_defaultCLevel()
+ */
+#define __CHEF_ZSTD_COMPRESSION_LEVEL 15
+
+// static context, should be part of something, luckily we don't
+// expect parallel packing operations (even though good idea)
+static ZSTD_CCtx* g_compressContext = NULL;
+
 static const char* __get_filename(
     const char* path)
 {
@@ -446,7 +457,14 @@ static int __zstd_encode(void* Input, uint32_t InputLength, void** Output, uint3
         return -1;
     }
 
-    checkSize = ZSTD_compress(compressedData, compressedSize, Input, InputLength, ZSTD_defaultCLevel());
+    checkSize = ZSTD_compressCCtx(
+        g_compressContext,
+        compressedData,
+        compressedSize,
+        Input,
+        InputLength,
+        __CHEF_ZSTD_COMPRESSION_LEVEL
+    );
     if (ZSTD_isError(checkSize)) {
         return -1;
     }
@@ -914,11 +932,11 @@ static int __write_ingredient_options_metadata(struct VaFs* vafs, struct oven_pa
     compiler_flags_len = __safe_strlen(compiler_flags);
     linker_flags_len = __safe_strlen(linker_flags);
     
-    totalSize += sizeof(struct chef_vafs_feature_ingredient_opts) + 
+    totalSize = sizeof(struct chef_vafs_feature_ingredient_opts) + 
         bins_len + incs_len + libs_len + compiler_flags_len + linker_flags_len;
     ingOptions = malloc(totalSize);
     if (ingOptions == NULL) {
-        VLOG_ERROR("oven", "failed to allocate %u bytes for options metadata", totalSize);
+        VLOG_ERROR("oven", "failed to allocate %u bytes for options metadata\n", totalSize);
         return -1;
     }
 
@@ -1068,6 +1086,9 @@ int oven_pack(struct oven_pack_options* options)
         free(name);
         goto cleanup;
     }
+
+    // Setup compression context
+    g_compressContext = ZSTD_createCCtx();
     
     // install the compression for the pack
     status = __install_filter(vafs);
@@ -1107,6 +1128,7 @@ cleanup:
     vafs_close(vafs);
     platform_getfiles_destroy(&files);
     oven_resolve_destroy(&resolves);
+    ZSTD_freeCCtx(g_compressContext);
     free(name);
     return status;
 }
