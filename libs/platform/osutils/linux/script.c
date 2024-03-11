@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 int platform_script(const char* script)
@@ -40,6 +41,13 @@ int platform_script(const char* script)
         return -1;
     }
 
+    // set executable
+    status = fchmod(sfilefd, 0755);
+    if (status) {
+        fprintf(stderr, "platform_script: failed to set executable bit for %s: %s\n", &tmpPath[0], strerror(errno));
+        return status;
+    }
+
     sfile = fdopen(sfilefd, "w+");
     if (sfile == NULL) {
         fprintf(stderr, "platform_script: fdopen failed for path %s: %s\n", &tmpPath[0], strerror(errno));
@@ -49,14 +57,6 @@ int platform_script(const char* script)
     fprintf(sfile, "#!/bin/bash\n");
     fputs(script, sfile);
     fclose(sfile);
-
-    // set executable
-    snprintf(&cmdBuffer[0], sizeof(cmdBuffer), "chmod +x %s", &tmpPath[0]);
-    status = system(&cmdBuffer[0]);
-    if (status) {
-        fprintf(stderr, "platform_script: chmod +x %s failed: %s\n", &cmdBuffer[0], strerror(errno));
-        return status;
-    }
 
     // execute and unlink
     status = system(&tmpPath[0]);

@@ -299,6 +299,9 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
+    // setup linux options
+    kitchenOptions.packages = &recipe->environment.host.packages;
+
     // prepare kitchen parameters, lists are already filled at this point
     kitchenOptions.name = &tmp[0];
     kitchenOptions.project_path = cwd;

@@ -38,6 +38,9 @@ struct kitchen_options {
     struct list        host_ingredients; // list<kitchen_ingredient>
     struct list        build_ingredients; // list<kitchen_ingredient>
     struct list        runtime_ingredients; // list<kitchen_ingredient>
+
+    // linux specifics
+    struct list* packages; // list<oven_value_item>
 };
 
 struct kitchen {

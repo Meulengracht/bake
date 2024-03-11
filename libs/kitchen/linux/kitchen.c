@@ -259,6 +259,18 @@ static unsigned int __hash_ingredients(struct list* ingredients, unsigned int se
     return hash;
 }
 
+static unsigned int __hash_packages(struct list* packages, unsigned int seed)
+{
+    unsigned int      hash = seed;
+    struct list_item* i;
+
+    list_foreach(packages, i) {
+        struct oven_value_item* ing = (struct oven_value_item*)i;
+        hash = __hash(hash, ing->value, strlen(ing->value));
+    }
+    return hash;
+}
+
 // hash of ingredients and imports
 static unsigned int __setup_hash(struct kitchen_options* options)
 {
@@ -271,6 +283,10 @@ static unsigned int __setup_hash(struct kitchen_options* options)
     hash = __hash_ingredients(&options->host_ingredients, hash);
     hash = __hash_ingredients(&options->build_ingredients, hash);
     hash = __hash_ingredients(&options->runtime_ingredients, hash);
+
+    // hash packages
+    hash = __hash_packages(options->packages, hash);
+
     return hash;
 }
 
@@ -280,12 +296,12 @@ static unsigned int __read_hash(const char* name)
     FILE* hashFile;
     long  size;
     char* end = NULL;
-    VLOG_TRACE("kitchen", "__read_hash()\n");
+    VLOG_DEBUG("kitchen", "__read_hash()\n");
 
     snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/.hash", name);
     hashFile = fopen(&buff[0], "r");
     if (hashFile == NULL) {
-        VLOG_TRACE("kitchen", "__read_hash: no hash file\n");
+        VLOG_DEBUG("kitchen", "__read_hash: no hash file\n");
         return 0;
     }
 
@@ -313,12 +329,12 @@ static int __write_hash(struct kitchen_options* options)
     char         kitchenPad[512];
     FILE*        hashFile;
     unsigned int hash;
-    VLOG_TRACE("kitchen", "__write_hash(name=%s)\n", options->name);
+    VLOG_DEBUG("kitchen", "__write_hash(name=%s)\n", options->name);
 
     snprintf(&kitchenPad[0], sizeof(kitchenPad), ".kitchen/%s/chef/.hash", options->name);
     hashFile = fopen(&kitchenPad[0], "w");
     if (hashFile == NULL) {
-        VLOG_TRACE("kitchen", "__read_hash: no hash file");
+        VLOG_DEBUG("kitchen", "__write_hash: no hash file");
         return 0;
     }
 
@@ -378,6 +394,80 @@ static int __kitchen_construct(struct kitchen_options* options, struct kitchen* 
     kitchen->install_root = strdup("/chef/install");
     kitchen->checkpoint_root = strdup("/chef");
     kitchen->confined = options->confined;
+    return 0;
+}
+
+static char* __build_include_string(struct list* packages)
+{
+    struct list_item* i;
+    char*             buffer;
+
+    // --include=nano,gcc,clang,tcc,pcc,g++,git,make
+    if (packages == NULL || packages->count == 0) {
+        return NULL;
+    }
+
+    buffer = calloc(4096, 1); 
+    if (buffer == NULL) {
+        return NULL;
+    }
+
+    list_foreach(packages, i) {
+        struct oven_value_item* pkg = (struct oven_value_item*)i;
+        if (buffer[0] == 0) {
+            strcpy(buffer, "--include=");
+            strcat(buffer, pkg->value);
+        } else {
+            strcat(buffer, ",");
+            strcat(buffer, pkg->value);
+        }
+    }
+    return buffer;
+}
+
+static int __clean_environment(const char* chrootPath)
+{
+    int status;
+    
+    // remove the root of the chroot
+    // ignore if the directory doesn't exist
+    status = platform_rmdir(chrootPath);
+    if (status && errno != ENOENT) {
+        return status;
+    }
+
+    return 0;
+}
+
+static int __setup_environment(struct list* packages, int confined, const char* chrootPath)
+{
+    char  scratchPad[512];
+    char* includes;
+    int   status;
+
+    // If we are running unconfined we don't setup environment
+    if (!confined) {
+        return 0;
+    }
+
+    if (platform_spawn("debootstrap", "--version", NULL, NULL)) {
+        VLOG_ERROR("oven", "scratch_setup: \"debootstrap\" package must be installed\n");
+        return -1;
+    }
+
+    includes = __build_include_string(packages);
+    if (includes != NULL) {
+        snprintf(&scratchPad[0], sizeof(scratchPad), "--variant=minbase %s stable %s http://deb.debian.org/debian/", includes, chrootPath);
+        free(includes);
+    } else {
+        snprintf(&scratchPad[0], sizeof(scratchPad), "--variant=minbase stable %s http://deb.debian.org/debian/", chrootPath);
+    }
+
+    status = platform_spawn("debootstrap", &scratchPad[0], NULL, NULL);
+    if (status) {
+        VLOG_ERROR("oven", "scratch_setup: \"debootstrap\" failed: %i\n", status);
+        return -1;
+    }
     return 0;
 }
 
@@ -449,6 +539,18 @@ int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
         return 0;
     }
 
+    VLOG_TRACE("kitchen", "cleaning project environment\n");
+    if (__clean_environment(kitchen->host_chroot)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to clean project environment\n");
+        return -1;
+    }
+
+    VLOG_TRACE("kitchen", "initializing project environment\n");
+    if (__setup_environment(options->packages, options->confined, kitchen->host_chroot)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to setup project environment\n");
+        return -1;
+    }
+
     if (__ensure_hostdirs(kitchen)) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to create host directories\n");
         return -1;
@@ -460,6 +562,7 @@ int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
     }
 
     // extract os/ingredients/toolchain
+    VLOG_TRACE("kitchen", "installing project ingredients\n");
     if (__setup_ingredients(kitchen, options)) {
         return -1;
     }
@@ -684,7 +787,7 @@ static int __make_recipe_steps(struct list* steps)
     
     list_foreach(steps, item) {
         struct recipe_step* step = (struct recipe_step*)item;
-        printf("executing step '%s'\n", step->system);
+        VLOG_TRACE("bake", "executing step '%s'\n", step->system);
 
         if (step->type == RECIPE_STEP_TYPE_GENERATE) {
             struct oven_generate_options genOptions;

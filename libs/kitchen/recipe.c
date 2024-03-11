@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,6 +46,7 @@ enum state {
     STATE_ENVIRONMENT_RUNTIME,
 
     STATE_ENVIRONMENT_HOST_BASE,
+    STATE_ENVIRONMENT_HOST_PACKAGES_LIST,
 
     STATE_ENVIRONMENT_BUILD_CONFINEMENT,
 
@@ -580,6 +581,7 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
         list_add(&state->_stname._field, &argument->list_header); \
     }
 
+DEFINE_LIST_STRING_ADD(recipe, recipe.environment.host, packages)
 DEFINE_LIST_STRING_ADD(ingredient, ingredient, filters)
 DEFINE_LIST_STRING_ADD(step, step, depends)
 DEFINE_LIST_STRING_ADD(step, step, arguments)
@@ -850,6 +852,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         s->ingredients_type = RECIPE_INGREDIENT_TYPE_HOST;
                         s->ingredients = &s->recipe.environment.host.ingredients;
                         __parser_push_state(s, STATE_INGREDIENT_LIST);
+                    } else if (strcmp(value, "packages") == 0) {
+                        __parser_push_state(s, STATE_ENVIRONMENT_HOST_PACKAGES_LIST);
                     } else {
                         fprintf(stderr, "__consume_event: (STATE_ENVIRONMENT_HOST) unexpected scalar: %s.\n", value);
                         return -1;
@@ -862,6 +866,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             break;
 
         __consume_scalar_fn(STATE_ENVIRONMENT_HOST_BASE, recipe.environment.host.base, __parse_boolean)
+        __consume_sequence_unmapped(STATE_ENVIRONMENT_HOST_PACKAGES_LIST, __add_recipe_packages)
 
         case STATE_ENVIRONMENT_BUILD:
             switch (event->type) {

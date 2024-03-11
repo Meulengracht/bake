@@ -100,6 +100,9 @@ struct recipe_pack {
 struct recipe_host_environment {
     int         base;
     struct list ingredients; // list<recipe_ingredient>
+
+    // linux specific host options
+    struct list packages; // list<oven_value_item>
 };
 
 struct recipe_build_environment {

@@ -10,6 +10,13 @@ project:
   version: 11.3.0
   license: MIT
 
+environment:
+  host:
+    packages:
+      - gcc
+      - g++
+      - build-essentials
+
 recipes:
   - name: gcc
     path: /

@@ -676,11 +676,11 @@ int oven_configure(struct oven_generate_options* options)
 
     // check if we already have done this step
     if (oven_checkpoint_contains(g_oven.recipe.checkpoint_file, options->name)) {
-        printf("nothing to be done for %s\n", options->name);
+        VLOG_TRACE("oven", "nothing to be done for %s\n", options->name);
         return 0;
     }
     
-    printf("running step %s\n", options->name);
+    VLOG_TRACE("oven", "running step %s\n", options->name);
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
@@ -725,11 +725,11 @@ int oven_build(struct oven_build_options* options)
 
     // check if we already have done this step
     if (oven_checkpoint_contains(g_oven.recipe.checkpoint_file, options->name)) {
-        printf("nothing to be done for %s\n", options->name);
+        VLOG_TRACE("oven", "nothing to be done for %s\n", options->name);
         return 0;
     }
 
-    printf("running step %s\n", options->name);
+    VLOG_TRACE("oven", "running step %s\n", options->name);
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
@@ -759,11 +759,11 @@ int oven_script(struct oven_script_options* options)
 
     // check if we already have done this step
     if (oven_checkpoint_contains(g_oven.recipe.checkpoint_file, options->name)) {
-        printf("nothing to be done for %s\n", options->name);
+        VLOG_TRACE("oven", "nothing to be done for %s\n", options->name);
         return 0;
     }
 
-    printf("running step %s\n", options->name);
+    VLOG_TRACE("oven", "running step %s\n", options->name);
     preprocessedScript = oven_preprocess_text(options->script);
     if (preprocessedScript == NULL) {
         return -1;

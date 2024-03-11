@@ -169,9 +169,11 @@ static int __add_implicit_ingredients(struct recipe* recipe)
         }
     }
 
+#if defined(__MOLLENOS__)
     if (needsOs && __add_osbase(recipe)) {
         return -1;
     }
+#endif
     return 0;
 }
 
