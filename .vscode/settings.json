@@ -81,7 +81,8 @@
         "unistd.h": "c",
         "package.h": "c",
         "kitchen.h": "c",
-        "list.h": "c"
+        "list.h": "c",
+        "pwd.h": "c"
     },
     "cmake.configureArgs": [
         "-DCMAKE_BUILD_TYPE=Debug"

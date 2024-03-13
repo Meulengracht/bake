@@ -21,10 +21,87 @@
 #include <chef/platform.h>
 #include <fcntl.h>
 #include <libingredient.h>
+#include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mount.h>
 #include <unistd.h>
 #include <vlog.h>
+
+struct __chef_user {
+    char*        caller_name;
+    unsigned int caller_uid;
+    unsigned int caller_gid;
+
+    char*        effective_name;
+    unsigned int effective_uid;
+    unsigned int effective_gid;
+};
+
+static int __chef_user_new(struct __chef_user* user)
+{
+    struct passwd *caller = getpwuid(getuid());
+    if (caller == NULL) {
+        VLOG_ERROR("kitchen", "failed to retrieve current user details: %s\n", strerror(errno));
+        return -1;
+    }
+    struct passwd *effective = getpwuid(geteuid());
+    if (effective == NULL) {
+        VLOG_ERROR("kitchen", "failed to retrieve executing user details: %s\n", strerror(errno));
+        return -1;
+    }
+
+    // effective should be set to root
+    if (effective->pw_uid != 0 && effective->pw_gid != 0) {
+        VLOG_ERROR("kitchen", "bake must run under the root account/group\n");
+        return -1;
+    }
+
+    // caller is the current actual user.
+    user->caller_name = strdup(caller->pw_name);
+    user->caller_uid = caller->pw_uid;
+    user->caller_gid = caller->pw_gid;
+    VLOG_DEBUG("kitchen", "caller: %u/%u (%s)\n", caller->pw_uid, caller->pw_gid, caller->pw_name);
+
+    user->effective_name = strdup(effective->pw_name);
+    user->effective_uid = effective->pw_uid;
+    user->effective_gid = effective->pw_gid;
+    VLOG_DEBUG("kitchen", "effective: %u/%u (%s)\n", effective->pw_uid, effective->pw_gid, effective->pw_name);
+    return 0;
+}
+
+static int __chef_user_switch(struct __chef_user* user, unsigned int uid, unsigned int gid)
+{
+    int status;
+
+    status = setgid(uid);
+    if (status) {
+        VLOG_ERROR("kitchen", "failed setgid: %s\n", strerror(errno));
+        return status;
+    }
+    status = setuid(gid);
+    if (status) {
+        VLOG_ERROR("kitchen", "failed setuid: %s\n", strerror(errno));
+        return status;
+    }
+    return 0;
+}
+
+static int __chef_user_switch_root(struct __chef_user* user)
+{
+    return __chef_user_switch(user, user->effective_uid, user->effective_gid);
+}
+
+static int __chef_user_restore(struct __chef_user* user)
+{
+    return __chef_user_switch(user, user->caller_uid, user->caller_uid);
+}
+
+static void __chef_user_delete(struct __chef_user* user)
+{
+    free(user->caller_name);
+    free(user->effective_name);
+}
 
 static int __recreate_dir(const char* path)
 {
@@ -33,14 +110,14 @@ static int __recreate_dir(const char* path)
     status = platform_rmdir(path);
     if (status) {
         if (errno != ENOENT) {
-            VLOG_ERROR("oven", "oven: failed to remove directory: %s\n", strerror(errno));
+            VLOG_ERROR("kitchen", "__recreate_dir: failed to remove directory: %s\n", strerror(errno));
             return -1;
         }
     }
 
     status = platform_mkdir(path);
     if (status) {
-        VLOG_ERROR("oven", "oven: failed to create directory: %s\n", strerror(errno));
+        VLOG_ERROR("kitchen", "__recreate_dir: failed to create directory: %s\n", strerror(errno));
         return -1;
     }
     return 0;
@@ -450,9 +527,10 @@ static int __setup_environment(struct list* packages, int confined, const char* 
         return 0;
     }
 
-    if (platform_spawn("debootstrap", "--version", NULL, NULL)) {
-        VLOG_ERROR("oven", "scratch_setup: \"debootstrap\" package must be installed\n");
-        return -1;
+    status = platform_spawn("debootstrap", "--version", NULL, NULL);
+    if (status) {
+        VLOG_ERROR("kitchen", "__setup_environment: \"debootstrap\" package must be installed\n");
+        return status;
     }
 
     includes = __build_include_string(packages);
@@ -465,10 +543,9 @@ static int __setup_environment(struct list* packages, int confined, const char* 
 
     status = platform_spawn("debootstrap", &scratchPad[0], NULL, NULL);
     if (status) {
-        VLOG_ERROR("oven", "scratch_setup: \"debootstrap\" failed: %i\n", status);
-        return -1;
+        VLOG_ERROR("kitchen", "__setup_environment: \"debootstrap\" failed: %i\n", status);
     }
-    return 0;
+    return status;
 }
 
 static int __ensure_hostdirs(struct kitchen* kitchen)
@@ -490,14 +567,14 @@ static int __ensure_hostdirs(struct kitchen* kitchen)
     return 0;
 }
 
-static int __ensure_symlinks(struct kitchen* kitchen, const char* projectPath)
+static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPath)
 {
-    if (platform_symlink(".kitchen/output", kitchen->host_install_path, 1)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to link %s\n", kitchen->host_install_path);
+    if (mount(".kitchen/output", kitchen->host_install_path, NULL, MS_BIND | MS_SHARED, NULL)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_install_path);
         return -1;
     }
 
-    if (platform_symlink(kitchen->host_project_path, projectPath, 1)) {
+    if (mount(projectPath, kitchen->host_project_path, NULL, MS_BIND | MS_PRIVATE | MS_RDONLY, NULL)) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to link %s\n", kitchen->host_project_path);
         return -1;
     }
@@ -506,7 +583,8 @@ static int __ensure_symlinks(struct kitchen* kitchen, const char* projectPath)
 
 int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
 {
-    int status;
+    struct __chef_user user;
+    int                status;
 
     VLOG_DEBUG("kitchen", "kitchen_setup(name=%s)\n", options->name);
 
@@ -539,38 +617,60 @@ int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
         return 0;
     }
 
-    VLOG_TRACE("kitchen", "cleaning project environment\n");
-    if (__clean_environment(kitchen->host_chroot)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to clean project environment\n");
+    if (__chef_user_new(&user)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to get current user\n");
         return -1;
+    }
+
+    status = __chef_user_switch_root(&user);
+    if (status) {
+        VLOG_ERROR("kitchen", "__setup_environment: failed to switch to root\n");
+        __chef_user_delete(&user);
+        return -1;
+    }
+
+    VLOG_TRACE("kitchen", "cleaning project environment\n");
+    status = __clean_environment(kitchen->host_chroot);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to clean project environment\n");
+        goto cleanup;
     }
 
     VLOG_TRACE("kitchen", "initializing project environment\n");
-    if (__setup_environment(options->packages, options->confined, kitchen->host_chroot)) {
+    status = __setup_environment(options->packages, options->confined, kitchen->host_chroot);
+    if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to setup project environment\n");
-        return -1;
+        goto cleanup;
     }
 
-    if (__ensure_hostdirs(kitchen)) {
+    status = __ensure_hostdirs(kitchen);
+    if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to create host directories\n");
-        return -1;
+        goto cleanup;
     }
 
-    if (__ensure_symlinks(kitchen, options->project_path)) {
+    status = __ensure_mounted_dirs(kitchen, options->project_path);
+    if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to create host symlinks\n");
-        return -1;
+        goto cleanup;
     }
 
     // extract os/ingredients/toolchain
     VLOG_TRACE("kitchen", "installing project ingredients\n");
-    if (__setup_ingredients(kitchen, options)) {
-        return -1;
+    status = __setup_ingredients(kitchen, options);
+    if (status) {
+        goto cleanup;
     }
 
     // write hash
-    if (__write_hash(options)) {
-        return -1;
+    status = __write_hash(options);
+    if (status) {
+        goto cleanup;
     }
+
+cleanup:
+    __chef_user_restore(&user);
+    __chef_user_delete(&user);
     return 0;
 }
 
