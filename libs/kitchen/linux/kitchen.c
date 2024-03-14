@@ -40,6 +40,7 @@ struct __chef_user {
 
 static int __chef_user_new(struct __chef_user* user)
 {
+    // getresuid
     struct passwd *caller = getpwuid(getuid());
     if (caller == NULL) {
         VLOG_ERROR("kitchen", "failed to retrieve current user details: %s\n", strerror(errno));
