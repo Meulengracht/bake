@@ -73,12 +73,10 @@ static int __chef_user_new(struct __chef_user* user)
     user->caller_name = strdup(caller->pw_name);
     user->caller_uid = caller->pw_uid;
     user->caller_gid = caller->pw_gid;
-    VLOG_DEBUG("kitchen", "caller: %u/%u (%s)\n", caller->pw_uid, caller->pw_gid, caller->pw_name);
 
     user->effective_name = strdup(effective->pw_name);
     user->effective_uid = effective->pw_uid;
     user->effective_gid = effective->pw_gid;
-    VLOG_DEBUG("kitchen", "effective: %u/%u (%s)\n", effective->pw_uid, effective->pw_gid, effective->pw_name);
     return 0;
 }
 
@@ -1117,5 +1115,49 @@ error:
 
 int kitchen_recipe_clean(struct recipe* recipe, struct kitchen_clean_options* options)
 {
+    struct __chef_user user;
+    int                status;
+    char*              kitchenPath;
+    char               scratchPad[512];
+
+    VLOG_DEBUG("kitchen", "kitchen_recipe_clean()\n");
+
+    if (__chef_user_new(&user)) {
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to get current user\n");
+        return -1;
+    }
+
+    status = __chef_user_switch_root(&user);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to switch to root\n");
+        __chef_user_delete(&user);
+        return -1;
+    }
+
+    kitchenPath = strpathjoin(options->project_path, ".kitchen", options->name, NULL);
+    if (kitchenPath == NULL) {
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to allocate memory for path\n");
+        goto cleanup;
+    }
+
+    snprintf(&scratchPad[0], sizeof(scratchPad), "-A --recursive %s", kitchenPath);
+    status = platform_spawn("umount", &scratchPad[0], NULL, NULL);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to unmount all kitchen mounts\n");
+        return status;
+    }
+
+    status = platform_rmdir(kitchenPath);
+    if (status) {
+        if (errno != ENOENT) {
+            VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed: %s\n", strerror(errno));
+            goto cleanup;
+        }
+    }
+
+cleanup:
+    free(kitchenPath);
+    __chef_user_restore(&user);
+    __chef_user_delete(&user);
     return 0;
 }

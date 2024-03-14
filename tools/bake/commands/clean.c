@@ -75,6 +75,7 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
     int   purge = 0;
     char* name = NULL;
     char* cwd;
+    char  tmp[128];
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -112,8 +113,13 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
         __print_help();
         return -1;
     }
+
+    // get basename of recipe
+    strbasename(name, tmp, sizeof(tmp));
+
     return kitchen_recipe_clean(recipe, 
         &(struct kitchen_clean_options) {
+            .name = &tmp[0],
             .project_path = cwd
         }
     );

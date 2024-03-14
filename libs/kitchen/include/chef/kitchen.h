@@ -48,6 +48,7 @@ struct kitchen_purge_options {
 };
 
 struct kitchen_clean_options {
+    const char* name;
     const char* project_path;
 };
 
