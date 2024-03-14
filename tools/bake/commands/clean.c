@@ -25,10 +25,12 @@
 #include <errno.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
+#include <chef/kitchen.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <vlog.h>
 
 static void __print_help(void)
 {
@@ -46,11 +48,33 @@ static void __cleanup_systems(int sig)
     exit(0);
 }
 
+static int __get_cwd(char** bufferOut)
+{
+    char*  cwd;
+    int    status;
+
+    cwd = malloc(4096);
+    if (cwd == NULL) {
+        return -1;
+    }
+
+    status = platform_getcwd(cwd, 4096);
+    if (status) {
+        // buffer was too small
+        VLOG_ERROR("oven", "could not get current working directory, buffer too small?\n");
+        free(cwd);
+        return -1;
+    }
+    *bufferOut = cwd;
+    return 0;
+}
+
 int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    struct oven_parameters ovenParams;
-    int                    status;
-    char*                  name = NULL;
+    int   status;
+    int   purge = 0;
+    char* name = NULL;
+    char* cwd;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -61,25 +85,36 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
+            } else if (!strcmp(argv[i], "--purge")) {
+                purge = 1;
             } else if (argv[i][0] != '-') {
                 name = argv[i];
             }
         }
     }
 
-    if (name == NULL) {
-        // should not happen
-        fprintf(stderr, "bake: missing recipe name\n");
+    // get the current working directory
+    status = __get_cwd(&cwd);
+    if (status) {
+        VLOG_ERROR("bake", "failed to determine project directory\n");
         return -1;
     }
 
-    if (recipe == NULL) {
-        fprintf(stderr, "bake: no recipe provided\n");
+    // if purge was set, then clean the entire kitchen
+    if (purge) {
+        return kitchen_purge(&(struct kitchen_purge_options) {
+            .project_path = cwd
+        });
+    }
+
+    if (name == NULL || recipe == NULL) {
+        VLOG_ERROR("bake", "no recipe provided\n");
         __print_help();
         return -1;
     }
-
-    // TODO: use kitchen_recipe_clean
-
-    return status;
+    return kitchen_recipe_clean(recipe, 
+        &(struct kitchen_clean_options) {
+            .project_path = cwd
+        }
+    );
 }

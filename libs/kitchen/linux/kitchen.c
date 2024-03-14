@@ -16,17 +16,22 @@
  * 
  */
 
-#include <errno.h>
+#define _GNU_SOURCE // needed for getresuid and friends
+
 #include <chef/kitchen.h>
 #include <chef/platform.h>
-#include <fcntl.h>
 #include <libingredient.h>
-#include <pwd.h>
+#include <vlog.h>
+
+#include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <pwd.h>
+#include <sys/types.h>
 #include <sys/mount.h>
 #include <unistd.h>
-#include <vlog.h>
 
 struct __chef_user {
     char*        caller_name;
@@ -40,13 +45,19 @@ struct __chef_user {
 
 static int __chef_user_new(struct __chef_user* user)
 {
-    // getresuid
-    struct passwd *caller = getpwuid(getuid());
+    uid_t ruid, euid, suid;
+    if (getresuid(&ruid, &euid, &suid)) {
+        VLOG_ERROR("kitchen", "failed to retrieve user details: %s\n", strerror(errno));
+        return -1;
+    }
+    VLOG_DEBUG("kitchen", "real: %u, effective: %u, saved: %u\n", ruid, euid, suid);
+
+    struct passwd *caller = getpwuid(ruid);
     if (caller == NULL) {
         VLOG_ERROR("kitchen", "failed to retrieve current user details: %s\n", strerror(errno));
         return -1;
     }
-    struct passwd *effective = getpwuid(geteuid());
+    struct passwd *effective = getpwuid(euid);
     if (effective == NULL) {
         VLOG_ERROR("kitchen", "failed to retrieve executing user details: %s\n", strerror(errno));
         return -1;
@@ -71,7 +82,7 @@ static int __chef_user_new(struct __chef_user* user)
     return 0;
 }
 
-static int __chef_user_switch(struct __chef_user* user, unsigned int uid, unsigned int gid)
+static int __chef_user_switch(unsigned int uid, unsigned int gid)
 {
     int status;
 
@@ -90,12 +101,12 @@ static int __chef_user_switch(struct __chef_user* user, unsigned int uid, unsign
 
 static int __chef_user_switch_root(struct __chef_user* user)
 {
-    return __chef_user_switch(user, user->effective_uid, user->effective_gid);
+    return __chef_user_switch(user->effective_uid, user->effective_gid);
 }
 
 static int __chef_user_restore(struct __chef_user* user)
 {
-    return __chef_user_switch(user, user->caller_uid, user->caller_uid);
+    return __chef_user_switch(user->caller_uid, user->caller_uid);
 }
 
 static void __chef_user_delete(struct __chef_user* user)
@@ -290,7 +301,7 @@ static int __setup_toolchains(struct list* ingredients, const char* hostPath)
     return 0;
 }
 
-static int __setup_ingredients(struct kitchen* kitchen, struct kitchen_options* options)
+static int __setup_ingredients(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
     int status;
 
@@ -350,7 +361,7 @@ static unsigned int __hash_packages(struct list* packages, unsigned int seed)
 }
 
 // hash of ingredients and imports
-static unsigned int __setup_hash(struct kitchen_options* options)
+static unsigned int __setup_hash(struct kitchen_setup_options* options)
 {
     unsigned int hash = 5381;
 
@@ -402,7 +413,7 @@ static unsigned int __read_hash(const char* name)
     return (unsigned int)strtoul(&buff[0], &end, 10);
 }
 
-static int __write_hash(struct kitchen_options* options)
+static int __write_hash(struct kitchen_setup_options* options)
 {
     char         kitchenPad[512];
     FILE*        hashFile;
@@ -422,7 +433,7 @@ static int __write_hash(struct kitchen_options* options)
     return 0;
 }
 
-static int __should_skip_setup(struct kitchen_options* options)
+static int __should_skip_setup(struct kitchen_setup_options* options)
 {
     unsigned int currentHash  = __setup_hash(options);
     unsigned int existingHash = __read_hash(options->name);
@@ -439,7 +450,7 @@ static int __should_skip_setup(struct kitchen_options* options)
 // <root>/.kitchen/<recipe>/chef/build/toolchains
 // <root>/.kitchen/<recipe>/chef/install => <root>/.kitchen/output
 // <root>/.kitchen/<recipe>/chef/project => <root>
-static int __kitchen_construct(struct kitchen_options* options, struct kitchen* kitchen)
+static int __kitchen_construct(struct kitchen_setup_options* options, struct kitchen* kitchen)
 {
     char buff[2048];
     VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->name);
@@ -565,6 +576,17 @@ static int __ensure_hostdirs(struct kitchen* kitchen)
         VLOG_ERROR("kitchen", "kitchen_setup: failed to create %s\n", kitchen->host_install_path);
         return -1;
     }
+
+
+    if (platform_mkdir(kitchen->host_project_path)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to create %s\n", kitchen->host_project_path);
+        return -1;
+    }
+
+    if (platform_mkdir(".kitchen/output")) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to create .kitchen/output\n");
+        return -1;
+    }
     return 0;
 }
 
@@ -576,13 +598,23 @@ static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPat
     }
 
     if (mount(projectPath, kitchen->host_project_path, NULL, MS_BIND | MS_PRIVATE | MS_RDONLY, NULL)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to link %s\n", kitchen->host_project_path);
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_project_path);
         return -1;
     }
     return 0;
 }
 
-int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
+static void __ensure_mounts_cleanup(struct kitchen* kitchen)
+{
+    if (umount(kitchen->host_install_path)) {
+        VLOG_DEBUG("kitchen", "kitchen_setup: failed to unmount %s\n", kitchen->host_install_path);
+    }
+    if (umount(kitchen->host_project_path)) {
+        VLOG_DEBUG("kitchen", "kitchen_setup: failed to unmount %s\n", kitchen->host_project_path);
+    }
+}
+
+int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen)
 {
     struct __chef_user user;
     int                status;
@@ -670,6 +702,55 @@ int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen)
     }
 
 cleanup:
+    __chef_user_restore(&user);
+    __chef_user_delete(&user);
+    return 0;
+}
+
+int kitchen_purge(struct kitchen_purge_options* options)
+{
+    struct __chef_user user;
+    int                status;
+    char*              kitchenPath;
+    char               scratchPad[512];
+
+    VLOG_DEBUG("kitchen", "kitchen_purge()\n");
+
+    if (__chef_user_new(&user)) {
+        VLOG_ERROR("kitchen", "kitchen_purge: failed to get current user\n");
+        return -1;
+    }
+
+    status = __chef_user_switch_root(&user);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_purge: failed to switch to root\n");
+        __chef_user_delete(&user);
+        return -1;
+    }
+
+    kitchenPath = strpathcombine(options->project_path, ".kitchen");
+    if (kitchenPath == NULL) {
+        VLOG_ERROR("kitchen", "kitchen_purge: failed to allocate memory for path\n");
+        goto cleanup;
+    }
+
+    snprintf(&scratchPad[0], sizeof(scratchPad), "-A --recursive %s", kitchenPath);
+    status = platform_spawn("umount", &scratchPad[0], NULL, NULL);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_purge: failed to unmount all kitchen mounts\n");
+        return status;
+    }
+
+    status = platform_rmdir(kitchenPath);
+    if (status) {
+        if (errno != ENOENT) {
+            VLOG_ERROR("kitchen", "kitchen_purge: failed: %s\n", strerror(errno));
+            goto cleanup;
+        }
+    }
+
+cleanup:
+    free(kitchenPath);
     __chef_user_restore(&user);
     __chef_user_delete(&user);
     return 0;
@@ -1032,4 +1113,9 @@ error:
         VLOG_ERROR("kitchen", "__end_cooking failed");
     }
     return status;
+}
+
+int kitchen_recipe_clean(struct recipe* recipe, struct kitchen_clean_options* options)
+{
+    return 0;
 }

@@ -28,7 +28,7 @@ struct kitchen_ingredient {
     const char*      path;
 };
 
-struct kitchen_options {
+struct kitchen_setup_options {
     const char*        name;
     const char*        project_path;
     int                confined;
@@ -41,6 +41,14 @@ struct kitchen_options {
 
     // linux specifics
     struct list* packages; // list<oven_value_item>
+};
+
+struct kitchen_purge_options {
+    const char* project_path;
+};
+
+struct kitchen_clean_options {
+    const char* project_path;
 };
 
 struct kitchen {
@@ -70,9 +78,21 @@ struct kitchen {
 };
 
 /**
- * @brief
+ * @brief 
+ * 
+ * @param options 
+ * @param kitchen 
+ * @return int 
  */
-extern int kitchen_setup(struct kitchen_options* options, struct kitchen* kitchen);
+extern int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen);
+
+/**
+ * @brief 
+ * 
+ * @param options 
+ * @return int 
+ */
+extern int kitchen_purge(struct kitchen_purge_options* options);
 
 /**
  * @brief 
@@ -94,14 +114,6 @@ extern int kitchen_recipe_prepare(struct kitchen* kitchen, struct recipe* recipe
 extern int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe);
 
 /**
- * @brief Cleans up the build and install areas, resetting the entire state
- * of the current project context.
- * 
- * @return int Returns 0 on success, -1 on failure with errno set accordingly.
- */
-extern int kitchen_recipe_clean(struct recipe* recipe);
-
-/**
  * @brief 
  * 
  * @param kitchen 
@@ -109,5 +121,13 @@ extern int kitchen_recipe_clean(struct recipe* recipe);
  * @return int 
  */
 extern int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe);
+
+/**
+ * @brief Cleans up the build and install areas, resetting the entire state
+ * of the current project context.
+ * 
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
+ */
+extern int kitchen_recipe_clean(struct recipe* recipe, struct kitchen_clean_options* options);
 
 #endif //!__CHEF_KITCHEN_H__

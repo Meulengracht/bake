@@ -92,7 +92,7 @@ static int __prep_ingredient_list(struct list* list, const char* platform, const
     return 0;
 }
 
-static int __prep_ingredients(struct recipe* recipe, const char* platform, const char* arch, struct kitchen_options* kitchenOptions)
+static int __prep_ingredients(struct recipe* recipe, const char* platform, const char* arch, struct kitchen_setup_options* kitchenOptions)
 {
     struct list_item* item;
     int               status;
@@ -225,7 +225,7 @@ static enum recipe_step_type __string_to_step_type(const char* type)
 
 int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    struct kitchen_options kitchenOptions = { 0 };
+    struct kitchen_setup_options kitchenOptions = { 0 };
     struct kitchen         kitchen;
     char*                  name     = NULL;
     char*                  platform = CHEF_PLATFORM_STR;
