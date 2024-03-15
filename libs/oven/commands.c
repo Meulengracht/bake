@@ -68,7 +68,7 @@ static int __resolve_dependency_path(struct oven_resolve* resolve, struct oven_r
     int               status;
 
     // priority 1 - check in install path
-    status = platform_getfiles(__get_install_path(), &files);
+    status = platform_getfiles(__get_install_path(), 1, &files);
     if (status) {
         fprintf(stderr, "oven: failed to get install file list\n");
         return -1;

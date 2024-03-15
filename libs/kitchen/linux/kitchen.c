@@ -602,16 +602,6 @@ static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPat
     return 0;
 }
 
-static void __ensure_mounts_cleanup(struct kitchen* kitchen)
-{
-    if (umount(kitchen->host_install_path)) {
-        VLOG_DEBUG("kitchen", "kitchen_setup: failed to unmount %s\n", kitchen->host_install_path);
-    }
-    if (umount(kitchen->host_project_path)) {
-        VLOG_DEBUG("kitchen", "kitchen_setup: failed to unmount %s\n", kitchen->host_project_path);
-    }
-}
-
 int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen)
 {
     struct __chef_user user;
@@ -705,12 +695,28 @@ cleanup:
     return 0;
 }
 
+static void __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)
+{
+    char buff[2048];
+
+    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/install", kitchenRoot, name);
+    if (umount(&buff[0])) {
+        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+    }
+
+    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/project", kitchenRoot, name);
+    if (umount(&buff[0])) {
+        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+    }
+}
+
 int kitchen_purge(struct kitchen_purge_options* options)
 {
     struct __chef_user user;
+    struct list        recipes;
+    struct list_item*  i;
     int                status;
     char*              kitchenPath;
-    char               scratchPad[512];
 
     VLOG_DEBUG("kitchen", "kitchen_purge()\n");
 
@@ -732,11 +738,19 @@ int kitchen_purge(struct kitchen_purge_options* options)
         goto cleanup;
     }
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), "-A --recursive %s", kitchenPath);
-    status = platform_spawn("umount", &scratchPad[0], NULL, NULL);
+    list_init(&recipes);
+    status = platform_getfiles(kitchenPath, 0, &recipes);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_purge: failed to unmount all kitchen mounts\n");
-        return status;
+        VLOG_ERROR("kitchen", "kitchen_purge: failed to get current recipes\n");
+        goto cleanup;
+    }
+
+    list_foreach (&recipes, i) {
+        struct platform_file_entry* entry = (struct platform_file_entry*)i;
+        if (!strcmp(entry->name, "output")) {
+            continue;
+        }
+        __ensure_mounts_cleanup(kitchenPath, entry->name);
     }
 
     status = platform_rmdir(kitchenPath);
@@ -748,9 +762,10 @@ int kitchen_purge(struct kitchen_purge_options* options)
     }
 
 cleanup:
-    free(kitchenPath);
     __chef_user_restore(&user);
     __chef_user_delete(&user);
+    platform_getfiles_destroy(&recipes);
+    free(kitchenPath);
     return 0;
 }
 
@@ -1134,19 +1149,13 @@ int kitchen_recipe_clean(struct recipe* recipe, struct kitchen_clean_options* op
         return -1;
     }
 
-    kitchenPath = strpathjoin(options->project_path, ".kitchen", options->name, NULL);
+    kitchenPath = strpathcombine(options->project_path, ".kitchen");
     if (kitchenPath == NULL) {
         VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to allocate memory for path\n");
         goto cleanup;
     }
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), "-A --recursive %s", kitchenPath);
-    status = platform_spawn("umount", &scratchPad[0], NULL, NULL);
-    if (status) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to unmount all kitchen mounts\n");
-        return status;
-    }
-
+    __ensure_mounts_cleanup(kitchenPath, options->name);
     status = platform_rmdir(kitchenPath);
     if (status) {
         if (errno != ENOENT) {

@@ -1041,7 +1041,7 @@ int oven_pack(struct oven_pack_options* options)
         return -1;
     }
 
-    status = platform_getfiles(__get_install_path(), &files);
+    status = platform_getfiles(__get_install_path(), 1, &files);
     if (status) {
         VLOG_ERROR("oven", "failed to get files marked for install\n");
         return -1;
