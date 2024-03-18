@@ -30,6 +30,7 @@
 #include <vafs/vafs.h>
 #include <vafs/file.h>
 #include <vafs/directory.h>
+#include <vlog.h>
 
 struct progress_context {
     struct ingredient* ingredient;
@@ -55,7 +56,7 @@ static int __make_folders(const char* root)
 
     status = platform_mkdir(root);
     if (status) {
-        fprintf(stderr, "__make_folders: failed to create root directory\n");
+        VLOG_ERROR("fridge", "__make_folders: failed to create root directory\n");
         return -1;
     }
     
@@ -69,7 +70,7 @@ int fridge_initialize(const char* platform, const char* architecture)
     char* root;
 
     if (platform == NULL || architecture == NULL) {
-        fprintf(stderr, "fridge_initialize: platform and architecture must be specified\n");
+        VLOG_ERROR("fridge", "fridge_initialize: platform and architecture must be specified\n");
         return -1;
     }
 
@@ -78,19 +79,19 @@ int fridge_initialize(const char* platform, const char* architecture)
 
     status = platform_getuserdir(&temp[0], sizeof(temp) - 1);
     if (status) {
-        fprintf(stderr, "fridge_initialize: failed to resolve user homedir\n");
+        VLOG_ERROR("fridge", "fridge_initialize: failed to resolve user homedir\n");
         return -1;
     }
 
     g_fridge.root = strpathjoin(&temp[0], ".chef", "fridge", NULL);
     if (g_fridge.root == NULL) {
-        fprintf(stderr, "fridge_initialize: failed to allocate memory for root directory\n");
+        VLOG_ERROR("fridge", "fridge_initialize: failed to allocate memory for root directory\n");
         return -1;
     }
 
     status = __make_folders(g_fridge.root);
     if (status) {
-        fprintf(stderr, "fridge_initialize: failed to create folders\n");
+        VLOG_ERROR("fridge", "fridge_initialize: failed to create folders\n");
         fridge_cleanup();
         return -1;
     }
@@ -98,14 +99,14 @@ int fridge_initialize(const char* platform, const char* architecture)
     // initialize the store inventory
     status = fridge_store_load(platform, architecture, &g_fridge.store);
     if (status) {
-        fprintf(stderr, "fridge_initialize: failed to load store inventory\n");
+        VLOG_ERROR("fridge", "fridge_initialize: failed to load store inventory\n");
         fridge_cleanup();
         return -1;
     }
 
     status = inventory_load(g_fridge.root, &g_fridge.inventory);
     if (status) {
-        fprintf(stderr, "fridge_initialize: failed to load inventory\n");
+        VLOG_ERROR("fridge", "fridge_initialize: failed to load inventory\n");
         fridge_cleanup();
         return -1;
     }
@@ -120,7 +121,7 @@ void fridge_cleanup(void)
     if (g_fridge.inventory != NULL) {
         status = inventory_save(g_fridge.inventory);
         if (status) {
-            fprintf(stderr, "fridge_cleanup: failed to save inventory: %i\n", status);
+            VLOG_ERROR("fridge", "fridge_cleanup: failed to save inventory: %i\n", errno);
         }
         inventory_free(g_fridge.inventory);
     }

@@ -296,7 +296,9 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
         "cmake",
         argument,
         (const char* const*)environment,
-        data->paths.build
+        &(struct platform_spawn_options) {
+            .cwd = data->paths.build
+        }
     );
     
 cleanup:

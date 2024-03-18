@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <string.h>
+#include <unistd.h>
 
 static int __get_arg_count(const char* arguments)
 {
@@ -142,27 +143,28 @@ static void __split_arguments(char* arguments, char** argv)
 
 // 0 => stdout
 // 1 => stderr
-int __wait_and_read_stds(struct pollfd* fds, struct platform_spawn_options* options)
+void __wait_and_read_stds(struct pollfd* fds, struct platform_spawn_options* options)
 {
     char line[2048] = { 0 };
 
     for (;;) {
         int status = poll(fds, 2, -1);
         if (status <= 0) {
-            return status;
+            return;
         }
         if (fds[0].revents & POLLIN) {
             status = read(fds[0].fd, &line[0], sizeof(line));
+            line[status] = 0;
             options->output_handler(&line[0], PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT);
         } else if (fds[1].revents & POLLIN) {
-            status = read(fds[0].fd, &line[0], sizeof(line));
+            status = read(fds[1].fd, &line[0], sizeof(line));
+            line[status] = 0;
             options->output_handler(&line[0], PLATFORM_SPAWN_OUTPUT_TYPE_STDERR);
         } else {
             break;
         }
         memset(&line[0], sizeof(line), 0);
     }
-    return 0;
 }
 
 int platform_spawn(const char* path, const char* arguments, const char* const* envp, struct platform_spawn_options* options)
@@ -218,12 +220,8 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
             fprintf(stderr, "platform_spawn: failed to create descriptors: %s\n", strerror(errno));
             return -1;
         }
-        posix_spawn_file_actions_addclose(&actions, outp[0]);
-        posix_spawn_file_actions_addclose(&actions, errp[0]);
         posix_spawn_file_actions_adddup2(&actions, outp[1], STDOUT_FILENO);
         posix_spawn_file_actions_adddup2(&actions, errp[1], STDERR_FILENO);
-        posix_spawn_file_actions_addclose(&actions, outp[1]);
-        posix_spawn_file_actions_addclose(&actions, errp[1]);
     }
 
     // perform the spawn
@@ -234,23 +232,26 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
     }
 
     if (options && options->output_handler) {
-        struct pollfd* fds[2] = { outp[0], outp[1] };
+        struct pollfd fds[2] = { 
+            { 
+                .fd = outp[0],
+                .events = POLLIN
+            },
+            {
+                .fd = errp[0],
+                .events = POLLIN
+            }
+        };
 
         // close child-side of pipes
         close(outp[1]);
         close(errp[1]); 
 
-        status = __wait_and_read_stds(&fds[0], 2);
-        if (status) {
-            goto cleanup;
-        }
+        __wait_and_read_stds(&fds[0], options);
     }
 
     // wait for the process to complete
-    status = waitpid(pid, &argc, 0);
-    if (status == 0) {
-        status = argc;
-    }
+    waitpid(pid, &status, 0);
 
 cleanup:
     posix_spawn_file_actions_destroy(&actions);

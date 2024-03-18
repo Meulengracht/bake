@@ -547,7 +547,6 @@ static int __setup_environment(struct list* packages, int confined, const char* 
     }
 
     status = platform_spawn("debootstrap", "--version", NULL, &(struct platform_spawn_options) {
-        .cwd = NULL,
         .output_handler = __debootstrap_output_handler
     });
     if (status) {
@@ -707,7 +706,7 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
 cleanup:
     __chef_user_restore(&user);
     __chef_user_delete(&user);
-    return 0;
+    return status;
 }
 
 static void __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)

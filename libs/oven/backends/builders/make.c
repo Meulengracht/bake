@@ -60,7 +60,10 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
     }
 
     // perform the build operation
-    status = platform_spawn("make", argument, (const char* const*)environment, cwd);
+    status = platform_spawn("make", argument, (const char* const*)environment, 
+        &(struct platform_spawn_options) {
+            .cwd = cwd
+        });
     if (status != 0) {
         errno = status;
         VLOG_ERROR("make", "failed to execute 'make %s'\n", argument);
@@ -68,7 +71,10 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
     }
 
     // perform the installation operation, ignore any other parameters
-    status = platform_spawn("make", "install", (const char* const*)environment, cwd);
+    status = platform_spawn("make", "install", (const char* const*)environment, 
+        &(struct platform_spawn_options) {
+            .cwd = cwd
+        });
     if (status != 0) {
         errno = status;
         VLOG_ERROR("make", "failed to execute 'make install'\n");
