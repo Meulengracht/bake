@@ -222,16 +222,32 @@ extern int platform_unlockfile(int fd);
  */
 extern int platform_sleep(unsigned int milliseconds);
 
+enum platform_spawn_output_type {
+    PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT,
+    PLATFORM_SPAWN_OUTPUT_TYPE_STDERR
+};
+
+typedef void (*platform_spawn_output_handler)(const char* line, enum platform_spawn_output_type type);
+
+struct platform_spawn_options {
+    // cwd allows the possibility of spawning the process with
+    // a new working directory instead of the one of the host.
+    const char* cwd;
+    // output_handler if provided will allow the spawner to handle
+    // line output by the child process.
+    platform_spawn_output_handler output_handler;
+};
+
 /**
  * @brief Spawns a new process, and waits for the process to complete. 
  * 
  * @param[In] path      The path to the executable 
  * @param[In] arguments The arguments to pass to the executable
  * @param[In] envp      The environment variables to pass to the executable
- * @param[In] cwd       The working directory to pass to the executable
+ * @param[In] options   Options to customize how the spawn must be handled.
  * @#define CHEF_ARCHITECTURE_STR int 0 on success, -1 on error
  */
-extern int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd);
+extern int platform_spawn(const char* path, const char* arguments, const char* const* envp, struct platform_spawn_options* options);
 
 /**
  * @brief Spawns a child process and returns the stdout as a string.

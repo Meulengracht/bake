@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <utils.h>
+#include <vlog.h>
 
 int make_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
@@ -62,7 +63,7 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
     status = platform_spawn("make", argument, (const char* const*)environment, cwd);
     if (status != 0) {
         errno = status;
-        fprintf(stderr, "oven-make: failed to execute 'make %s'\n", argument);
+        VLOG_ERROR("make", "failed to execute 'make %s'\n", argument);
         goto cleanup;
     }
 
@@ -70,7 +71,7 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
     status = platform_spawn("make", "install", (const char* const*)environment, cwd);
     if (status != 0) {
         errno = status;
-        fprintf(stderr, "oven-make: failed to execute 'make install'\n");
+        VLOG_ERROR("make", "failed to execute 'make install'\n");
     }
 
 cleanup:

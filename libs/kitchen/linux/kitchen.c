@@ -526,6 +526,15 @@ static int __clean_environment(const char* chrootPath)
     return 0;
 }
 
+static void __debootstrap_output_handler(const char* line, enum platform_spawn_output_type type) 
+{
+    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
+        VLOG_DEBUG("kitchen", line);
+    } else {
+        VLOG_ERROR("kitchen", line);
+    }
+}
+
 static int __setup_environment(struct list* packages, int confined, const char* chrootPath)
 {
     char  scratchPad[512];
@@ -537,7 +546,10 @@ static int __setup_environment(struct list* packages, int confined, const char* 
         return 0;
     }
 
-    status = platform_spawn("debootstrap", "--version", NULL, NULL);
+    status = platform_spawn("debootstrap", "--version", NULL, &(struct platform_spawn_options) {
+        .cwd = NULL,
+        .output_handler = __debootstrap_output_handler
+    });
     if (status) {
         VLOG_ERROR("kitchen", "__setup_environment: \"debootstrap\" package must be installed\n");
         return status;
@@ -551,7 +563,10 @@ static int __setup_environment(struct list* packages, int confined, const char* 
         snprintf(&scratchPad[0], sizeof(scratchPad), "--variant=minbase stable %s http://deb.debian.org/debian/", chrootPath);
     }
 
-    status = platform_spawn("debootstrap", &scratchPad[0], NULL, NULL);
+    status = platform_spawn("debootstrap", &scratchPad[0], NULL, &(struct platform_spawn_options) {
+        .cwd = NULL,
+        .output_handler = __debootstrap_output_handler
+    });
     if (status) {
         VLOG_ERROR("kitchen", "__setup_environment: \"debootstrap\" failed: %i\n", status);
     }

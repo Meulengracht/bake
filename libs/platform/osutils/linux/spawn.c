@@ -16,13 +16,12 @@
  * 
  */
 
-#ifdef __linux__
 // enable _GNU_SOURCE for chdir on spawn
 #define _GNU_SOURCE
-#endif
 
 #include <errno.h>
 #include <chef/platform.h>
+#include <poll.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,7 +140,32 @@ static void __split_arguments(char* arguments, char** argv)
     }
 }
 
-int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd)
+// 0 => stdout
+// 1 => stderr
+int __wait_and_read_stds(struct pollfd* fds, struct platform_spawn_options* options)
+{
+    char line[2048] = { 0 };
+
+    for (;;) {
+        int status = poll(fds, 2, -1);
+        if (status <= 0) {
+            return status;
+        }
+        if (fds[0].revents & POLLIN) {
+            status = read(fds[0].fd, &line[0], sizeof(line));
+            options->output_handler(&line[0], PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT);
+        } else if (fds[1].revents & POLLIN) {
+            status = read(fds[0].fd, &line[0], sizeof(line));
+            options->output_handler(&line[0], PLATFORM_SPAWN_OUTPUT_TYPE_STDERR);
+        } else {
+            break;
+        }
+        memset(&line[0], sizeof(line), 0);
+    }
+    return 0;
+}
+
+int platform_spawn(const char* path, const char* arguments, const char* const* envp, struct platform_spawn_options* options)
 {
     posix_spawn_file_actions_t actions;
     pid_t                      pid;
@@ -149,6 +173,8 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
     int                        argc;
     int                        status;
     char*                      argumentCopy = NULL;
+    int                        outp[2] = { 0 };
+    int                        errp[2] = { 0 };
 
     // initialize the argv array
     argc = __get_arg_count(arguments);
@@ -173,26 +199,62 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
 
     // split the arguments into the argv array
     __split_arguments(argumentCopy, argv);
-    
+
     // initialize the file actions
     posix_spawn_file_actions_init(&actions);
-    if (cwd) {
+    
+    if (options && options->cwd) {
         // change the working directory
-        posix_spawn_file_actions_addchdir_np(&actions, cwd);
+        posix_spawn_file_actions_addchdir_np(&actions, options->cwd);
     }
 
+    if (options && options->output_handler) {
+        // let's redirect and poll for output
+        if (pipe(outp) || pipe(errp)) {
+            if (outp[0] > 0) {
+                close(outp[0]);
+                close(outp[1]);
+            }
+            fprintf(stderr, "platform_spawn: failed to create descriptors: %s\n", strerror(errno));
+            return -1;
+        }
+        posix_spawn_file_actions_addclose(&actions, outp[0]);
+        posix_spawn_file_actions_addclose(&actions, errp[0]);
+        posix_spawn_file_actions_adddup2(&actions, outp[1], STDOUT_FILENO);
+        posix_spawn_file_actions_adddup2(&actions, errp[1], STDERR_FILENO);
+        posix_spawn_file_actions_addclose(&actions, outp[1]);
+        posix_spawn_file_actions_addclose(&actions, errp[1]);
+    }
+
+    // perform the spawn
     status = posix_spawnp(&pid, path, &actions, NULL, argv, (char* const*)envp);
-    posix_spawn_file_actions_destroy(&actions);
-    free(argumentCopy);
-    free(argv);
     if (status) {
         fprintf(stderr, "platform_spawn: failed to spawn process: %s\n", strerror(errno));
-        return -1;
+        goto cleanup;
+    }
+
+    if (options && options->output_handler) {
+        struct pollfd* fds[2] = { outp[0], outp[1] };
+
+        // close child-side of pipes
+        close(outp[1]);
+        close(errp[1]); 
+
+        status = __wait_and_read_stds(&fds[0], 2);
+        if (status) {
+            goto cleanup;
+        }
     }
 
     // wait for the process to complete
-    if (waitpid(pid, &status, 0) == -1) {
-        return -1;
+    status = waitpid(pid, &argc, 0);
+    if (status == 0) {
+        status = argc;
     }
+
+cleanup:
+    posix_spawn_file_actions_destroy(&actions);
+    free(argumentCopy);
+    free(argv);
     return status;
 }
