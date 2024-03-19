@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <vlog.h>
 #include "chef-config.h"
 
@@ -45,6 +46,36 @@ static struct command_handler g_commands[] = {
     { "pack",     run_main },
     { "clean",    clean_main }
 };
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#include <windows.h>
+int __get_column_count(void)
+{
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    int                        columns;
+
+    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+    columns = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    // rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    return columns;
+}
+#else
+#include <sys/ioctl.h>
+#include <unistd.h>
+int __get_column_count(void)
+{
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    return (int)w.ws_col;
+}
+#endif
+
+void __winch_handler(int sig)
+{
+    signal(SIGWINCH, SIG_IGN);
+    vlog_set_output_width(stdout, __get_column_count());
+    signal(SIGWINCH, __winch_handler);
+}
 
 static void __print_help(void)
 {
@@ -250,6 +281,7 @@ int main(int argc, char** argv, char** envp)
     vlog_initialize();
     vlog_set_level(VLOG_LEVEL_DEBUG);
     vlog_add_output(stdout, 0);
+    vlog_set_output_width(stdout, __get_column_count());
     result = command->handler(argc, argv, envp, recipe);
     recipe_destroy(recipe);
     vlog_cleanup();

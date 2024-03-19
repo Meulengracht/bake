@@ -81,6 +81,14 @@ extern void vlog_clear_output_options(FILE* output, unsigned int flags);
 extern void vlog_set_output_level(FILE* output, enum vlog_level level);
 
 /**
+ * @brief Sets the current width of the output. This is useful for terminal
+ * outputs where we want to keep proper retracing support.
+ *
+ * @param columns The number of columns for the output
+ */
+extern void vlog_set_output_width(FILE* output, int columns);
+
+/**
  * @brief
  *
  * @param tag

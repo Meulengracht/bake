@@ -232,8 +232,14 @@ static char* __replace_or_add_cmake_prefix(const char* platform, const char* arg
 static void __cmake_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_DEBUG("kitchen", line);
+        VLOG_TRACE("kitchen", line);
+
+        // re-enable again if it continues to print
+        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     } else {
+        // clear retrace on error output
+        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        
         VLOG_ERROR("kitchen", line);
     }
 }
@@ -301,6 +307,7 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
 
     // perform the spawn operation
     VLOG_TRACE("cmake", "executing 'cmake %s'\n", argument);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = platform_spawn(
         "cmake",
         argument,
@@ -310,6 +317,7 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
             .output_handler = __cmake_output_handler
         }
     );
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     
 cleanup:
     oven_environment_destroy(environment);

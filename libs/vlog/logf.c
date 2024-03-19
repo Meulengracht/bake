@@ -25,7 +25,9 @@
 
 #define __VLOG_RESET_CURSOR "\r"
 #define __VLOG_CLEAR_LINE "\x1b[2K"
+#define __VLOG_CLEAR_TOCURSOR "\x1b[0J"
 #define __VLOG_MOVEUP_CURSOR "\x1b[1A"
+#define __VLOG_MOVEUP_CURSOR_FMT "\x1b[%iF"
 
 #define VLOG_MAX_OUTPUTS 4
 
@@ -34,6 +36,8 @@ struct vlog_output {
     enum vlog_level level;
     int             shouldClose;
     unsigned int    options;
+    int             columns;
+    int             lastRowCount;
 };
 
 struct vlog_context {
@@ -53,7 +57,7 @@ static const char*         g_levelNames[] = {
 
 void vlog_initialize(void)
 {
-    // nothing to do yet
+    // nothing to do
 }
 
 void vlog_cleanup(void)
@@ -81,9 +85,12 @@ int vlog_add_output(FILE* output, int shouldClose)
         return -1;
     }
 
-    g_vlog.outputs[g_vlog.outputs_count].shouldClose = shouldClose;
-    g_vlog.outputs[g_vlog.outputs_count].handle      = output;
-    g_vlog.outputs[g_vlog.outputs_count].level       = g_vlog.default_level;
+    g_vlog.outputs[g_vlog.outputs_count].shouldClose  = shouldClose;
+    g_vlog.outputs[g_vlog.outputs_count].handle       = output;
+    g_vlog.outputs[g_vlog.outputs_count].level        = g_vlog.default_level;
+    g_vlog.outputs[g_vlog.outputs_count].options      = 0;
+    g_vlog.outputs[g_vlog.outputs_count].columns      = 0;
+    g_vlog.outputs[g_vlog.outputs_count].lastRowCount = 1;
     g_vlog.outputs_count++;
     return 0;
 }
@@ -118,12 +125,23 @@ void vlog_set_output_level(FILE* output, enum vlog_level level)
     }
 }
 
+void vlog_set_output_width(FILE* output, int columns)
+{
+    for (int i = 0; i < g_vlog.outputs_count; i++) {
+        if (g_vlog.outputs[i].handle == output) {
+            g_vlog.outputs[i].columns = columns;
+            break;
+        }
+    }
+}
+
 void vlog_output(enum vlog_level level, const char* tag, const char* format, ...)
 {
     va_list    args;
     char       dateTime[32];
     time_t     now;
     struct tm* timeInfo;
+    char       cc[32] = { 0 };
 
     if (!g_vlog.outputs_count) {
         return;
@@ -134,25 +152,36 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
 
     strftime(&dateTime[0], sizeof(dateTime) - 1, "%F %T", timeInfo);
     for (int i = 0; i < g_vlog.outputs_count; i++) {
-        const char* cc = "";
+        struct vlog_output* output      = &g_vlog.outputs[i];
+        int                 colsWritten = 0;
 
         // ensure level is appropriate for output
-        if (level > g_vlog.outputs[i].level) {
+        if (level > output->level) {
             continue;
         }
-        
+
         // select control-code if any
-        if (g_vlog.outputs[i].options & VLOG_OUTPUT_OPTION_RETRACE) {
-            cc = __VLOG_MOVEUP_CURSOR __VLOG_CLEAR_LINE __VLOG_RESET_CURSOR;
+        if (output->options & VLOG_OUTPUT_OPTION_RETRACE) {
+            snprintf(
+                &cc[0],
+                sizeof(cc),
+                __VLOG_MOVEUP_CURSOR_FMT __VLOG_CLEAR_TOCURSOR,
+                output->lastRowCount
+            );
         }
 
         va_start(args, format);
-        fprintf(g_vlog.outputs[i].handle, "%s[%s] %s | %s | ", cc, &dateTime[0], g_levelNames[level], tag);
+        colsWritten += fprintf(output->handle, "%s[%s] %s | %s | ", cc, &dateTime[0], g_levelNames[level], tag);
         if (level == VLOG_LEVEL_ERROR) {
-            fprintf(g_vlog.outputs[i].handle, "[errno = %i, %s] | ", errno, strerror(errno));
+            colsWritten += fprintf(output->handle, "[errno = %i, %s] | ", errno, strerror(errno));
         }
-        vfprintf(g_vlog.outputs[i].handle, format, args);
+        colsWritten += vfprintf(output->handle, format, args);
         va_end(args);
+
+        // calculate the last printed row-count
+        if (output->columns) {
+            output->lastRowCount = (colsWritten + (output->columns - 1)) / output->columns;
+        }
     }
 }
 
