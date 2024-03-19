@@ -37,6 +37,8 @@ static void __print_help(void)
     printf("Usage: bake clean [options]\n");
     printf("\n");
     printf("Options:\n");
+    printf("  --purge\n");
+    printf("      cleans all active recipes in the kitchen area\n");
     printf("  -h, --help\n");
     printf("      Shows this help message\n");
 }

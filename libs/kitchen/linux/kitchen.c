@@ -529,8 +529,10 @@ static int __clean_environment(const char* chrootPath)
 static void __debootstrap_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_DEBUG("kitchen", line);
+        VLOG_TRACE("kitchen", line);
     } else {
+        // clear retrace on error output
+        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
         VLOG_ERROR("kitchen", line);
     }
 }
@@ -562,10 +564,12 @@ static int __setup_environment(struct list* packages, int confined, const char* 
         snprintf(&scratchPad[0], sizeof(scratchPad), "--variant=minbase stable %s http://deb.debian.org/debian/", chrootPath);
     }
 
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = platform_spawn("debootstrap", &scratchPad[0], NULL, &(struct platform_spawn_options) {
         .cwd = NULL,
         .output_handler = __debootstrap_output_handler
     });
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     if (status) {
         VLOG_ERROR("kitchen", "__setup_environment: \"debootstrap\" failed: %i\n", status);
     }

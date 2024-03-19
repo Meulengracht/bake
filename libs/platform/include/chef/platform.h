@@ -233,6 +233,9 @@ struct platform_spawn_options {
     // cwd allows the possibility of spawning the process with
     // a new working directory instead of the one of the host.
     const char* cwd;
+    // argv0 allows the caller to override the argv[0] argument used
+    // for spawning the process.
+    const char* argv0;
     // output_handler if provided will allow the spawner to handle
     // line output by the child process.
     platform_spawn_output_handler output_handler;

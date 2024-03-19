@@ -186,8 +186,14 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
     }
     
     // first parameter is the executable
+    if (options && options->argv0) {
+        argv[0] = (char*)options->argv0;
+    } else {
+        // default to the path of the spawned exec
+        argv[0] = (char*)path;
+    }
+
     // last parameter is NULL
-    argv[0] = (char*)path;
     argv[argc + 1] = NULL;
 
     // create a copy of the arguments to work on

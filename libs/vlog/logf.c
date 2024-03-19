@@ -23,17 +23,23 @@
 #include <time.h>
 #include <vlog.h>
 
+#define __VLOG_RESET_CURSOR "\r"
+#define __VLOG_CLEAR_LINE "\x1b[2K"
+#define __VLOG_MOVEUP_CURSOR "\x1b[1A"
+
 #define VLOG_MAX_OUTPUTS 4
 
 struct vlog_output {
-    FILE* handle;
-    int   shouldClose;
+    FILE*           handle;
+    enum vlog_level level;
+    int             shouldClose;
+    unsigned int    options;
 };
 
 struct vlog_context {
     struct vlog_output outputs[VLOG_MAX_OUTPUTS];
     int                outputs_count;
-    enum vlog_level    level;
+    enum vlog_level    default_level;
 };
 
 static struct vlog_context g_vlog = { { NULL, 0 } , 0, VLOG_LEVEL_DISABLED };
@@ -62,7 +68,10 @@ void vlog_cleanup(void)
 
 void vlog_set_level(enum vlog_level level)
 {
-    g_vlog.level = level;
+    for (int i = 0; i < g_vlog.outputs_count; i++) {
+        g_vlog.outputs[i].level = level;
+    }
+    g_vlog.default_level = level;
 }
 
 int vlog_add_output(FILE* output, int shouldClose)
@@ -74,8 +83,39 @@ int vlog_add_output(FILE* output, int shouldClose)
 
     g_vlog.outputs[g_vlog.outputs_count].shouldClose = shouldClose;
     g_vlog.outputs[g_vlog.outputs_count].handle      = output;
+    g_vlog.outputs[g_vlog.outputs_count].level       = g_vlog.default_level;
     g_vlog.outputs_count++;
     return 0;
+}
+
+void vlog_set_output_options(FILE* output, unsigned int flags)
+{
+    for (int i = 0; i < g_vlog.outputs_count; i++) {
+        if (g_vlog.outputs[i].handle == output) {
+            g_vlog.outputs[i].options |= flags;
+            break;
+        }
+    }
+}
+
+void vlog_clear_output_options(FILE* output, unsigned int flags)
+{
+    for (int i = 0; i < g_vlog.outputs_count; i++) {
+        if (g_vlog.outputs[i].handle == output) {
+            g_vlog.outputs[i].options &= ~(flags);
+            break;
+        }
+    }
+}
+
+void vlog_set_output_level(FILE* output, enum vlog_level level)
+{
+    for (int i = 0; i < g_vlog.outputs_count; i++) {
+        if (g_vlog.outputs[i].handle == output) {
+            g_vlog.outputs[i].level = level;
+            break;
+        }
+    }
 }
 
 void vlog_output(enum vlog_level level, const char* tag, const char* format, ...)
@@ -85,7 +125,7 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
     time_t     now;
     struct tm* timeInfo;
 
-    if (!g_vlog.outputs_count || level > g_vlog.level) {
+    if (!g_vlog.outputs_count) {
         return;
     }
 
@@ -94,10 +134,22 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
 
     strftime(&dateTime[0], sizeof(dateTime) - 1, "%F %T", timeInfo);
     for (int i = 0; i < g_vlog.outputs_count; i++) {
+        const char* cc = "";
+
+        // ensure level is appropriate for output
+        if (level > g_vlog.outputs[i].level) {
+            continue;
+        }
+        
+        // select control-code if any
+        if (g_vlog.outputs[i].options & VLOG_OUTPUT_OPTION_RETRACE) {
+            cc = __VLOG_MOVEUP_CURSOR __VLOG_CLEAR_LINE __VLOG_RESET_CURSOR;
+        }
+
         va_start(args, format);
-        fprintf(g_vlog.outputs[i].handle, "[%s] %s | %s | ", &dateTime[0], g_levelNames[level], tag);
+        fprintf(g_vlog.outputs[i].handle, "%s[%s] %s | %s | ", cc, &dateTime[0], g_levelNames[level], tag);
         if (level == VLOG_LEVEL_ERROR) {
-            fprintf(g_vlog.outputs[i].handle, "[errno = %i, desc = %s] | ", errno, strerror(errno));
+            fprintf(g_vlog.outputs[i].handle, "[errno = %i, %s] | ", errno, strerror(errno));
         }
         vfprintf(g_vlog.outputs[i].handle, format, args);
         va_end(args);

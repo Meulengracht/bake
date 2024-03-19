@@ -229,6 +229,15 @@ static char* __replace_or_add_cmake_prefix(const char* platform, const char* arg
     return newArguments;
 }
 
+static void __cmake_output_handler(const char* line, enum platform_spawn_output_type type) 
+{
+    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
+        VLOG_DEBUG("kitchen", line);
+    } else {
+        VLOG_ERROR("kitchen", line);
+    }
+}
+
 int cmake_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
     char*  workspacePath;
@@ -297,7 +306,8 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
         argument,
         (const char* const*)environment,
         &(struct platform_spawn_options) {
-            .cwd = data->paths.build
+            .cwd = data->paths.build,
+            .output_handler = __cmake_output_handler
         }
     );
     

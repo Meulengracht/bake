@@ -34,6 +34,8 @@ enum vlog_level {
 #define VLOG_TRACE(tag, ...)   vlog_output(VLOG_LEVEL_TRACE, tag, __VA_ARGS__)
 #define VLOG_DEBUG(tag, ...)   vlog_output(VLOG_LEVEL_DEBUG, tag, __VA_ARGS__)
 
+#define VLOG_OUTPUT_OPTION_RETRACE 0x1
+
 /**
  * @brief Initializes vlog system. This should be invoked before any calls done to
  * to the vlog_* namespace.
@@ -49,9 +51,10 @@ extern void vlog_initialize(void);
 extern void vlog_cleanup(void);
 
 /**
- * @brief
+ * @brief Sets the current logging level for all active outputs, and the default
+ * level for any added outputs after this call.
  *
- * @param level
+ * @param level The log level that should be applied
  */
 extern void vlog_set_level(enum vlog_level level);
 
@@ -65,6 +68,19 @@ extern void vlog_set_level(enum vlog_level level);
 extern int vlog_add_output(FILE* output, int shouldClose);
 
 /**
+ * @brief 
+ */
+extern void vlog_set_output_options(FILE* output, unsigned int flags);
+extern void vlog_clear_output_options(FILE* output, unsigned int flags);
+
+/**
+ * @brief Sets the current logging level for the specified output.
+ *
+ * @param level The log level that should be applied
+ */
+extern void vlog_set_output_level(FILE* output, enum vlog_level level);
+
+/**
  * @brief
  *
  * @param tag
@@ -74,9 +90,9 @@ extern int vlog_add_output(FILE* output, int shouldClose);
 extern void vlog_output(enum vlog_level level, const char* tag, const char* format, ...);
 
 /**
- * @brief
- *
+ * @brief Flushes any remaining log data in active outputs.
  */
 extern void vlog_flush(void);
+
 
 #endif //!__VLOG_H__
