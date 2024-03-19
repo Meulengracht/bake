@@ -26,6 +26,21 @@
 #include <utils.h>
 #include <vlog.h>
 
+static void __make_output_handler(const char* line, enum platform_spawn_output_type type) 
+{
+    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
+        VLOG_TRACE("kitchen", line);
+
+        // re-enable again if it continues to print
+        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+    } else {
+        // clear retrace on error output
+        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        
+        VLOG_ERROR("kitchen", line);
+    }
+}
+
 int make_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
     int         status      = -1;
@@ -60,10 +75,18 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
     }
 
     // perform the build operation
-    status = platform_spawn("make", argument, (const char* const*)environment, 
+    VLOG_TRACE("make", "executing 'make %s'\n", argument);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+    status = platform_spawn(
+        "make",
+        argument,
+        (const char* const*)environment, 
         &(struct platform_spawn_options) {
-            .cwd = cwd
-        });
+            .cwd = cwd,
+            .output_handler = __make_output_handler
+        }
+    );
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     if (status != 0) {
         errno = status;
         VLOG_ERROR("make", "failed to execute 'make %s'\n", argument);
@@ -71,10 +94,18 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
     }
 
     // perform the installation operation, ignore any other parameters
-    status = platform_spawn("make", "install", (const char* const*)environment, 
+    VLOG_TRACE("make", "executing 'make install'\n");
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+    status = platform_spawn(
+        "make",
+        "install",
+        (const char* const*)environment, 
         &(struct platform_spawn_options) {
-            .cwd = cwd
-        });
+            .cwd = cwd,
+            .output_handler = __make_output_handler
+        }
+    );
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     if (status != 0) {
         errno = status;
         VLOG_ERROR("make", "failed to execute 'make install'\n");

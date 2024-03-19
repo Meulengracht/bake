@@ -280,7 +280,7 @@ int main(int argc, char** argv, char** envp)
 
     vlog_initialize();
     vlog_set_level(VLOG_LEVEL_DEBUG);
-    vlog_add_output(stdout, 0);
+    vlog_add_output(stdout);
     vlog_set_output_width(stdout, __get_column_count());
     result = command->handler(argc, argv, envp, recipe);
     recipe_destroy(recipe);

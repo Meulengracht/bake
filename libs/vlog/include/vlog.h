@@ -34,7 +34,8 @@ enum vlog_level {
 #define VLOG_TRACE(tag, ...)   vlog_output(VLOG_LEVEL_TRACE, tag, __VA_ARGS__)
 #define VLOG_DEBUG(tag, ...)   vlog_output(VLOG_LEVEL_DEBUG, tag, __VA_ARGS__)
 
-#define VLOG_OUTPUT_OPTION_RETRACE 0x1
+#define VLOG_OUTPUT_OPTION_CLOSE   0x1
+#define VLOG_OUTPUT_OPTION_RETRACE 0x2
 
 /**
  * @brief Initializes vlog system. This should be invoked before any calls done to
@@ -62,10 +63,9 @@ extern void vlog_set_level(enum vlog_level level);
  * @brief
  *
  * @param output
- * @param shouldClose
  * @return
  */
-extern int vlog_add_output(FILE* output, int shouldClose);
+extern int vlog_add_output(FILE* output);
 
 /**
  * @brief 

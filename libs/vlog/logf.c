@@ -34,7 +34,6 @@
 struct vlog_output {
     FILE*           handle;
     enum vlog_level level;
-    int             shouldClose;
     unsigned int    options;
     int             columns;
     int             lastRowCount;
@@ -63,7 +62,7 @@ void vlog_initialize(void)
 void vlog_cleanup(void)
 {
     for (int i = 0; i < g_vlog.outputs_count; i++) {
-        if (g_vlog.outputs[i].shouldClose) {
+        if (g_vlog.outputs[i].options & VLOG_OUTPUT_OPTION_CLOSE) {
             fclose(g_vlog.outputs[i].handle);
         }
     }
@@ -78,19 +77,18 @@ void vlog_set_level(enum vlog_level level)
     g_vlog.default_level = level;
 }
 
-int vlog_add_output(FILE* output, int shouldClose)
+int vlog_add_output(FILE* output)
 {
     if (g_vlog.outputs_count == 4) {
         errno = ENOSPC;
         return -1;
     }
 
-    g_vlog.outputs[g_vlog.outputs_count].shouldClose  = shouldClose;
     g_vlog.outputs[g_vlog.outputs_count].handle       = output;
     g_vlog.outputs[g_vlog.outputs_count].level        = g_vlog.default_level;
     g_vlog.outputs[g_vlog.outputs_count].options      = 0;
     g_vlog.outputs[g_vlog.outputs_count].columns      = 0;
-    g_vlog.outputs[g_vlog.outputs_count].lastRowCount = 1;
+    g_vlog.outputs[g_vlog.outputs_count].lastRowCount = 0;
     g_vlog.outputs_count++;
     return 0;
 }
@@ -110,6 +108,11 @@ void vlog_clear_output_options(FILE* output, unsigned int flags)
     for (int i = 0; i < g_vlog.outputs_count; i++) {
         if (g_vlog.outputs[i].handle == output) {
             g_vlog.outputs[i].options &= ~(flags);
+
+            // when clearing RETRACE we reset the row count
+            if (flags & VLOG_OUTPUT_OPTION_RETRACE) {
+                g_vlog.outputs[i].lastRowCount = 0;
+            }
             break;
         }
     }
@@ -160,8 +163,8 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
             continue;
         }
 
-        // select control-code if any
-        if (output->options & VLOG_OUTPUT_OPTION_RETRACE) {
+        // select control-code if any, and provided row count is valid
+        if ((output->options & VLOG_OUTPUT_OPTION_RETRACE) && output->lastRowCount > 0) {
             snprintf(
                 &cc[0],
                 sizeof(cc),
@@ -171,15 +174,15 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
         }
 
         va_start(args, format);
-        colsWritten += fprintf(output->handle, "%s[%s] %s | %s | ", cc, &dateTime[0], g_levelNames[level], tag);
+        colsWritten += fprintf(output->handle, "%s[%s] %s | %s | ", &cc[0], &dateTime[0], g_levelNames[level], tag);
         if (level == VLOG_LEVEL_ERROR) {
             colsWritten += fprintf(output->handle, "[errno = %i, %s] | ", errno, strerror(errno));
         }
         colsWritten += vfprintf(output->handle, format, args);
         va_end(args);
 
-        // calculate the last printed row-count
-        if (output->columns) {
+        // calculate the last printed row-count if we have columns configured
+        if ((output->options & VLOG_OUTPUT_OPTION_RETRACE) && output->columns > 0) {
             output->lastRowCount = (colsWritten + (output->columns - 1)) / output->columns;
         }
     }

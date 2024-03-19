@@ -773,8 +773,9 @@ int kitchen_purge(struct kitchen_purge_options* options)
 
     status = platform_rmdir(kitchenPath);
     if (status) {
+        VLOG_ERROR("kitchen", "purge: failed to clean path %s\n", kitchenPath);
         if (errno != ENOENT) {
-            VLOG_ERROR("kitchen", "kitchen_purge: failed: %s\n", strerror(errno));
+            VLOG_ERROR("kitchen", "kitchen_purge: failed to remove the kitchen data\n");
             goto cleanup;
         }
     }

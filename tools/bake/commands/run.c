@@ -97,7 +97,7 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
     struct list_item* item;
     int               status;
 
-    printf("preparing %i host ingredients\n", recipe->environment.host.ingredients.count);
+    VLOG_TRACE("bake", "preparing %i host ingredients\n", recipe->environment.host.ingredients.count);
     status = __prep_ingredient_list(
         &recipe->environment.host.ingredients,
         CHEF_PLATFORM_STR,
@@ -108,7 +108,7 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
         return status;
     }
 
-    printf("preparing %i build ingredients\n", recipe->environment.build.ingredients.count);
+    VLOG_TRACE("bake", "preparing %i build ingredients\n", recipe->environment.build.ingredients.count);
     status = __prep_ingredient_list(
         &recipe->environment.build.ingredients,
         platform,
@@ -119,7 +119,7 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
         return status;
     }
 
-    printf("preparing %i runtime ingredients\n", recipe->environment.runtime.ingredients.count);
+    VLOG_TRACE("bake", "preparing %i runtime ingredients\n", recipe->environment.runtime.ingredients.count);
     status = __prep_ingredient_list(
         &recipe->environment.runtime.ingredients,
         platform,
