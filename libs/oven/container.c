@@ -1081,6 +1081,11 @@ int oven_pack(struct oven_pack_options* options)
     vafs_config_initialize(&configuration);
     vafs_config_set_architecture(&configuration, __parse_arch(__get_architecture()));
 
+    // use 1mb block sizes for container packs
+    // TODO: optimally we should select this based on expected container filesize
+    // but we tend to produce larger packs atm
+    vafs_config_set_block_size(&configuration, 1024 * 1024);
+
     status = vafs_create(&tmp[0], &configuration, &vafs);
     if (status) {
         free(name);
