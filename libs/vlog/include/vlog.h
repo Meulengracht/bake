@@ -36,6 +36,7 @@ enum vlog_level {
 
 #define VLOG_OUTPUT_OPTION_CLOSE   0x1
 #define VLOG_OUTPUT_OPTION_RETRACE 0x2
+#define VLOG_OUTPUT_OPTION_NODECO  0x4
 
 /**
  * @brief Initializes vlog system. This should be invoked before any calls done to

@@ -144,7 +144,6 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
     char       dateTime[32];
     time_t     now;
     struct tm* timeInfo;
-    char       cc[32] = { 0 };
 
     if (!g_vlog.outputs_count) {
         return;
@@ -163,20 +162,20 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
             continue;
         }
 
-        // select control-code if any, and provided row count is valid
+        // output control-code if any, and provided row count is valid
         if ((output->options & VLOG_OUTPUT_OPTION_RETRACE) && output->lastRowCount > 0) {
-            snprintf(
-                &cc[0],
-                sizeof(cc),
+            fprintf(output->handle,
                 __VLOG_MOVEUP_CURSOR_FMT __VLOG_CLEAR_TOCURSOR,
                 output->lastRowCount
             );
         }
 
         va_start(args, format);
-        colsWritten += fprintf(output->handle, "%s[%s] %s | %s | ", &cc[0], &dateTime[0], g_levelNames[level], tag);
-        if (level == VLOG_LEVEL_ERROR) {
-            colsWritten += fprintf(output->handle, "[errno = %i, %s] | ", errno, strerror(errno));
+        if (output->options & VLOG_OUTPUT_OPTION_NODECO) {
+            colsWritten += fprintf(output->handle, "[%s] %s | %s | ", &dateTime[0], g_levelNames[level], tag);
+            if (level == VLOG_LEVEL_ERROR) {
+                colsWritten += fprintf(output->handle, "[e%i, %s] | ", errno, strerror(errno));
+            }
         }
         colsWritten += vfprintf(output->handle, format, args);
         va_end(args);

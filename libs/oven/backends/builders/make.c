@@ -76,7 +76,7 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
 
     // perform the build operation
     VLOG_TRACE("make", "executing 'make %s'\n", argument);
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "make",
         argument,
@@ -86,7 +86,7 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
             .output_handler = __make_output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         errno = status;
         VLOG_ERROR("make", "failed to execute 'make %s'\n", argument);
@@ -95,7 +95,7 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
 
     // perform the installation operation, ignore any other parameters
     VLOG_TRACE("make", "executing 'make install'\n");
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "make",
         "install",
@@ -105,7 +105,7 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
             .output_handler = __make_output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         errno = status;
         VLOG_ERROR("make", "failed to execute 'make install'\n");

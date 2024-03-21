@@ -140,7 +140,7 @@ int __get_install_stats(
     return 0;
 }
 
-static void __write_progress(const char* prefix, struct progress_context* context, int verbose)
+static void __write_progress(const char* prefix, struct progress_context* context)
 {
     static int last = 0;
     int        current;
@@ -158,25 +158,7 @@ static void __write_progress(const char* prefix, struct progress_context* contex
         percent = 100;
     }
 
-    printf("\33[2K\r%-10.10s [", prefix);
-    for (int i = 0; i < 20; i++) {
-        if (i < percent / 5) {
-            printf("#");
-        }
-        else {
-            printf(" ");
-        }
-    }
-    printf("| %3d%%]", percent);
-    if (verbose) {
-        if (context->files_total) {
-            printf(" %i/%i files", context->files, context->files_total);
-        }
-        if (context->symlinks_total) {
-            printf(" %i/%i symlinks", context->symlinks, context->symlinks_total);
-        }
-    }
-    fflush(stdout);
+    VLOG_TRACE("oven", "%3d%% | %s\n", percent, prefix);
 }
 
 static int __write_file(
@@ -280,7 +262,7 @@ static int __write_directory(
         }
 
         // write progress before to update the file/folder in progress
-        __write_progress(dp->d_name, progress, 0);
+        __write_progress(dp->d_name, progress);
 
         // I under normal circumstances do absolutely revolt this type of christmas
         // tree style code, however to avoid 7000 breaks and remembering to cleanup
@@ -333,7 +315,7 @@ static int __write_directory(
         }
 
         // write progress after to update the file/folder in progress
-        __write_progress(dp->d_name, progress, 0);
+        __write_progress(dp->d_name, progress);
     }
 
     closedir(dfd);
@@ -430,7 +412,7 @@ static int __write_dependencies(
     list_foreach(files, item) {
         struct oven_resolve_dependency* dependency = (struct oven_resolve_dependency*)item;
         
-        __write_progress(dependency->name, progress, 0);
+        __write_progress(dependency->name, progress);
         if (dependency->system_library) {
             status = __write_syslib(progress, directoryHandle, dependency);
         } else {
@@ -441,7 +423,7 @@ static int __write_dependencies(
             VLOG_ERROR("oven", "failed to write dependency %s\n", dependency->path);
             return -1;
         }
-        __write_progress(dependency->name, progress, 0);
+        __write_progress(dependency->name, progress);
     }
     return 0;
 }
@@ -1016,9 +998,7 @@ static void __finalize_progress(struct progress_context* progress, const char* p
 {
     progress->files = progress->files_total;
     progress->symlinks = progress->symlinks_total;
-
-    __write_progress(packName, progress, 0);
-    printf("\n");
+    __write_progress(packName, progress);
 }
 
 int oven_pack(struct oven_pack_options* options)
@@ -1060,7 +1040,7 @@ int oven_pack(struct oven_pack_options* options)
 
     // we do not want any empty packs
     if (progressContext.files_total == 0) {
-        printf("oven: skipping pack %s, no files to pack\n", options->name);
+        VLOG_TRACE("oven", "skipping pack %s, no files to pack\n", options->name);
         status = 0;
         goto cleanup;
     }
@@ -1108,6 +1088,8 @@ int oven_pack(struct oven_pack_options* options)
         goto cleanup;
     }
 
+
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = __write_directory(&progressContext, options->filters, directoryHandle, __get_install_path(), NULL);
     if (status != 0) {
         VLOG_ERROR("oven", "unable to write directory\n");
@@ -1130,6 +1112,7 @@ int oven_pack(struct oven_pack_options* options)
     }
 
 cleanup:
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     vafs_close(vafs);
     platform_getfiles_destroy(&files);
     oven_resolve_destroy(&resolves);
