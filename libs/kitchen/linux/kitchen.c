@@ -52,8 +52,8 @@ static int __chef_user_new(struct __chef_user* user)
     }
     VLOG_DEBUG("kitchen", "real: %u, effective: %u, saved: %u\n", ruid, euid, suid);
 
-    struct passwd *caller = getpwuid(ruid);
-    if (caller == NULL) {
+    struct passwd *real = getpwuid(ruid);
+    if (real == NULL) {
         VLOG_ERROR("kitchen", "failed to retrieve current user details: %s\n", strerror(errno));
         return -1;
     }
@@ -70,9 +70,9 @@ static int __chef_user_new(struct __chef_user* user)
     }
 
     // caller is the current actual user.
-    user->caller_name = strdup(caller->pw_name);
-    user->caller_uid = caller->pw_uid;
-    user->caller_gid = caller->pw_gid;
+    user->caller_name = strdup(real->pw_name);
+    user->caller_uid = real->pw_uid;
+    user->caller_gid = real->pw_gid;
 
     user->effective_name = strdup(effective->pw_name);
     user->effective_uid = effective->pw_uid;
