@@ -171,13 +171,13 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
         }
 
         va_start(args, format);
-        if (output->options & VLOG_OUTPUT_OPTION_NODECO) {
+        if (!(output->options & VLOG_OUTPUT_OPTION_NODECO)) {
             colsWritten += fprintf(output->handle, "[%s] %s | %s | ", &dateTime[0], g_levelNames[level], tag);
             if (level == VLOG_LEVEL_ERROR) {
                 colsWritten += fprintf(output->handle, "[e%i, %s] | ", errno, strerror(errno));
             }
         }
-        colsWritten += vfprintf(output->handle, format, args);
+        colsWritten += vfprintf(output->handle, format, args) - 1;
         va_end(args);
 
         // calculate the last printed row-count if we have columns configured
