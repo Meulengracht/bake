@@ -635,7 +635,7 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     data->platform.target_architecture = g_oven.variables.target_arch;
     
     data->paths.install = g_oven.paths.install_root;
-    data->paths.build   = g_oven.paths.install_root;
+    data->paths.build   = g_oven.paths.build_root;
     
     data->environment = __preprocess_keypair_list(environment);
     if (!data->environment) {
