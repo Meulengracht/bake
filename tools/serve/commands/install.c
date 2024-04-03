@@ -26,7 +26,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define WOLFSSL_SHA512
 #include <wolfssl/wolfcrypt/sha512.h>
 #include <wolfssl/wolfcrypt/rsa.h>
 #include <wolfssl/wolfcrypt/signature.h>

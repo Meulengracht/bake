@@ -37,3 +37,4 @@ build/
 .oven
 .kitchen
 *.pack
+.vscode
