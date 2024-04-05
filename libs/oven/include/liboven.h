@@ -101,6 +101,7 @@ struct oven_script_options {
 
 struct oven_pack_options {
     const char*            name;
+    const char*            pack_dir;
     enum chef_package_type type;
     const char*            summary;
     const char*            description;

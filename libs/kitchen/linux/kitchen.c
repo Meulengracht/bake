@@ -28,9 +28,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <libgen.h> // dirname()
 #include <pwd.h>
-#include <sys/types.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -151,6 +153,44 @@ static void __chef_user_delete(struct __chef_user* user)
 {
     free(user->caller_name);
     free(user->effective_name);
+}
+
+static int __is_mountpoint(const char* path)
+{
+    struct stat pathStat;
+    struct stat parentStat;
+    char*       parentPath;
+    char*       pathCopy;
+
+    // The path supplied must point to a directory
+    if (stat(path, &pathStat)) {
+        return -1;
+    }
+    if (!(pathStat.st_mode & S_IFDIR)) {
+        return -1;
+    }
+
+    // dirname unfortunately modifies it's copy, so create one that can
+    // be changed
+    pathCopy = strdup(path);
+    if (pathCopy == NULL) {
+        return -1;
+    }
+    parentPath = dirname(pathCopy);
+
+    // get the parent's stat info
+    if (stat(parentPath, &parentStat)) {
+        free(pathCopy);
+        return -1;
+    }
+
+    // If the have different device ids, then it's most likely a mountpoint
+    if (pathStat.st_dev != parentStat.st_dev ||
+        (pathStat.st_dev == parentStat.st_dev &&
+         pathStat.st_ino == parentStat.st_ino)) {
+        return 1;
+    }
+    return 0;
 }
 
 static int __recreate_dir(const char* path)
@@ -746,6 +786,21 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
     atexit(oven_cleanup);
 
     if (__should_skip_setup(options)) {
+        // ensure dirs are mounted still, they only persist till reboot
+        status = __is_mountpoint(kitchen->host_install_path);
+        if (status < 0) {
+            VLOG_ERROR("kitchen", "failed to determine whether or not directories are mounted\n");
+            return status;
+        }
+
+        // __is_mountpoint returns 0 if dir was not a mount
+        if (status == 0) {
+            status = __ensure_mounted_dirs(kitchen, options->project_path);
+            if (status) {
+                VLOG_ERROR("kitchen", "kitchen_setup: failed to create project mounts\n");
+                return status;
+            }
+        }
         return 0;
     }
 
@@ -776,7 +831,7 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
 
     status = __ensure_mounted_dirs(kitchen, options->project_path);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to create host symlinks\n");
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to create project mounts\n");
         goto cleanup;
     }
 
@@ -1185,10 +1240,12 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
 static void __initialize_pack_options(
     struct oven_pack_options* options, 
     struct recipe*            recipe,
-    struct recipe_pack*       pack)
+    struct recipe_pack*       pack,
+    const char*               outputPath)
 {
     memset(options, 0, sizeof(struct oven_pack_options));
     options->name             = pack->name;
+    options->pack_dir      = outputPath;
     options->type             = pack->type;
     options->summary          = recipe->project.summary;
     options->description      = recipe->project.description;
@@ -1213,10 +1270,9 @@ static void __initialize_pack_options(
 
 int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
 {
-    struct oven_pack_options packOptions;
-    struct list_item*        item;
-    struct __chef_user       user;
-    int                      status;
+    struct list_item*  item;
+    struct __chef_user user;
+    int                status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_pack()\n");
 
     if (__chef_user_new(&user)) {
@@ -1247,9 +1303,10 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
     }
 
     list_foreach(&recipe->packs, item) {
-        struct recipe_pack* pack = (struct recipe_pack*)item;
+        struct recipe_pack*      pack = (struct recipe_pack*)item;
+        struct oven_pack_options packOptions;
 
-        __initialize_pack_options(&packOptions, recipe, pack);
+        __initialize_pack_options(&packOptions, recipe, pack, kitchen->install_root);
         status = oven_pack(&packOptions);
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);

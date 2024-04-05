@@ -1001,6 +1001,25 @@ static void __finalize_progress(struct progress_context* progress, const char* p
     __write_progress(packName, progress);
 }
 
+static int __build_pack_names(const char* name, const char* imageDir, char** basenameOut, char** imagePathOut)
+{
+    char tmp[4096];
+
+    strbasename(name, &tmp[0], sizeof(tmp));
+    *basenameOut = strdup(&tmp[0]);
+    if (*basenameOut == NULL) {
+        return -1;
+    }
+
+    snprintf(&tmp[0], sizeof(tmp), "%s/%s.pack", imageDir, *basenameOut);
+    *imagePathOut = strdup(&tmp[0]);
+    if (*basenameOut == NULL) {
+        free(*basenameOut);
+        return -1;
+    }
+    return 0;
+}
+
 int oven_pack(struct oven_pack_options* options)
 {
     struct VaFsDirectoryHandle* directoryHandle;
@@ -1011,25 +1030,30 @@ int oven_pack(struct oven_pack_options* options)
     struct list_item*           item;
     struct progress_context     progressContext = { 0 };
     int                         status;
-    char                        tmp[128];
     char*                       start;
     char*                       name;
+    char*                       path;
     int                         i;
+    VLOG_DEBUG("oven", "oven_pack(name=%s, path=%s)", options->name, options->pack_dir);
 
-    if (!options) {
+    if (options == NULL) {
         errno = EINVAL;
         return -1;
     }
 
+    VLOG_DEBUG("oven", "enumerating files in %s\n", __get_install_path());
     status = platform_getfiles(__get_install_path(), 1, &files);
     if (status) {
         VLOG_ERROR("oven", "failed to get files marked for install\n");
         return -1;
     }
 
-    strbasename(options->name, tmp, sizeof(tmp));
-    name = strdup(tmp);
-    strcat(tmp, ".pack");
+    status = __build_pack_names(options->name, options->pack_dir, &name, &path);
+    if (status) {
+        platform_getfiles_destroy(&files);
+        VLOG_ERROR("oven", "failed to get files marked for install\n");
+        return -1;
+    }
 
     __get_install_stats(
         &files,
@@ -1066,9 +1090,8 @@ int oven_pack(struct oven_pack_options* options)
     // but we tend to produce larger packs atm
     vafs_config_set_block_size(&configuration, 1024 * 1024);
 
-    status = vafs_create(&tmp[0], &configuration, &vafs);
+    status = vafs_create(path, &configuration, &vafs);
     if (status) {
-        free(name);
         goto cleanup;
     }
 
@@ -1104,7 +1127,7 @@ int oven_pack(struct oven_pack_options* options)
             goto cleanup;
         }
     }
-    __finalize_progress(&progressContext, &tmp[0]);
+    __finalize_progress(&progressContext, name);
 
     status = __write_package_metadata(vafs, name, options);
     if (status != 0) {
@@ -1114,9 +1137,13 @@ int oven_pack(struct oven_pack_options* options)
 cleanup:
     vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     vafs_close(vafs);
+    free(name);
+    free(path);
     platform_getfiles_destroy(&files);
     oven_resolve_destroy(&resolves);
-    ZSTD_freeCCtx(g_compressContext);
-    free(name);
+    if (g_compressContext != NULL) {
+        ZSTD_freeCCtx(g_compressContext);
+        g_compressContext = NULL;
+    }
     return status;
 }
