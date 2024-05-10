@@ -777,6 +777,7 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
             .build_root = options->confined ? kitchen->build_root : kitchen->host_build_path,
             .install_root = options->confined ? kitchen->install_root : kitchen->host_install_path,
             .checkpoint_root = options->confined ? kitchen->checkpoint_root : kitchen->host_checkpoint_path,
+            .toolchains_root = options->confined ? kitchen->build_toolchains_path : kitchen->host_build_toolchains_path,
         }
     });
     if (status) {
@@ -1245,7 +1246,7 @@ static void __initialize_pack_options(
 {
     memset(options, 0, sizeof(struct oven_pack_options));
     options->name             = pack->name;
-    options->pack_dir      = outputPath;
+    options->pack_dir         = outputPath;
     options->type             = pack->type;
     options->summary          = recipe->project.summary;
     options->description      = recipe->project.description;
@@ -1266,6 +1267,35 @@ static void __initialize_pack_options(
         options->compiler_flags = &pack->options.compiler_flags;
         options->linker_flags = &pack->options.linker_flags;
     }
+}
+
+static char* __build_pack_name(const char* root, const char* name)
+{
+    char tmp[4096] = { 0 };
+    snprintf(&tmp[0], sizeof(tmp), "%s/%s.pack", root, name);
+    return strdup(&tmp[0]);
+}
+
+static int __move_pack(struct kitchen* kitchen, struct recipe_pack* pack)
+{
+    char* src = __build_pack_name(kitchen->install_root, pack->name);
+    char* dst = __build_pack_name(kitchen->host_project_path, pack->name);
+    int   status;
+
+    if (src == NULL || dst == NULL) {
+        status = -1;
+        goto exit;
+    }
+
+    status = rename(src, dst);
+    if (status) {
+        VLOG_DEBUG("kitchen", "__move_pack: %s => %s\n", src, dst);
+    }
+
+exit:
+    free(src);
+    free(dst);
+    return status;
 }
 
 int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
@@ -1321,6 +1351,14 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
 
     if (__end_cooking(kitchen)) {
         VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to end cooking\n");
+    }
+
+    // move packs out of the output directory and into root project folder
+    list_foreach(&recipe->packs, item) {
+        struct recipe_pack* pack = (struct recipe_pack*)item;
+        if (__move_pack(kitchen, pack)) {
+            VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to move pack %s to project directory\n", pack->name);
+        }
     }
     return status;
 }

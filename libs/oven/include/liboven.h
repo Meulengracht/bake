@@ -128,6 +128,7 @@ struct oven_paths {
     const char* build_root;
     const char* install_root;
     const char* checkpoint_root;
+    const char* toolchains_root;
 };
 
 struct oven_parameters {

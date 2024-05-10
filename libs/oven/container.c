@@ -1034,7 +1034,7 @@ int oven_pack(struct oven_pack_options* options)
     char*                       name;
     char*                       path;
     int                         i;
-    VLOG_DEBUG("oven", "oven_pack(name=%s, path=%s)", options->name, options->pack_dir);
+    VLOG_DEBUG("oven", "oven_pack(name=%s, path=%s)\n", options->name, options->pack_dir);
 
     if (options == NULL) {
         errno = EINVAL;

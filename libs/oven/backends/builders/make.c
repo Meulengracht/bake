@@ -26,6 +26,8 @@
 #include <utils.h>
 #include <vlog.h>
 
+#define __INTERNAL_MAX(a,b) (((a) > (b)) ? (a) : (b))
+
 static void __make_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
@@ -39,6 +41,15 @@ static void __make_output_handler(const char* line, enum platform_spawn_output_t
         
         VLOG_ERROR("kitchen", line);
     }
+}
+
+static int __cpu_workers(union oven_backend_options* options)
+{
+    if (options->make.parallel > 0) {
+        return options->make.parallel;
+    }
+    // Never use the maximum number of cpus, that can make a system unstable/hang
+    return __INTERNAL_MAX(platform_cpucount() - 2, 1);
 }
 
 int make_main(struct oven_backend_data* data, union oven_backend_options* options)
@@ -63,7 +74,7 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
     }
 
     // build the make parameters, execute from build folder
-    sprintf(argument, "-j%i", options->make.parallel <= 0 ? platform_cpucount() : options->make.parallel);
+    sprintf(argument, "-j%i", __cpu_workers(options));
     if (strlen(data->arguments) > 0) {
         strcat(argument, " ");
         strcat(argument, data->arguments);

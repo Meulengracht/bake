@@ -278,10 +278,16 @@ int main(int argc, char** argv, char** envp)
         }
     }
 
+    // initialize the logging system
     vlog_initialize();
     vlog_set_level(VLOG_LEVEL_DEBUG);
     vlog_add_output(stdout);
     vlog_set_output_width(stdout, __get_column_count());
+
+    // register the handler that will update the terminal stats correctly
+    // once the user resizes the terminal
+    signal(SIGWINCH, __winch_handler);
+
     result = command->handler(argc, argv, envp, recipe);
     recipe_destroy(recipe);
     vlog_cleanup();

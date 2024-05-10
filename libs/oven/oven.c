@@ -139,7 +139,7 @@ void oven_cleanup(void)
 
 int oven_recipe_start(struct oven_recipe_options* options)
 {
-    char tmp[128];
+    char tmp[512];
 
     VLOG_DEBUG("oven", "oven_recipe_start()\n");
 
@@ -151,7 +151,12 @@ int oven_recipe_start(struct oven_recipe_options* options)
 
     g_oven.recipe.name          = strdup(options->name);
     g_oven.recipe.relative_path = strdup(options->relative_path);
-    g_oven.recipe.toolchain     = options->toolchain != NULL ? strdup(options->toolchain) : NULL;
+
+    // build the toolchain path
+    if (options->toolchain != NULL) {
+        snprintf(&tmp[0], sizeof(tmp), "%s/%s", g_oven.paths.toolchains_root, options->toolchain);
+        g_oven.recipe.toolchain = strdup(&tmp[0]);
+    }
 
     // setup the checkpoint file
     snprintf(&tmp[0], sizeof(tmp), ".%s-checks", options->name);
