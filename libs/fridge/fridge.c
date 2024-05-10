@@ -126,7 +126,7 @@ int fridge_ensure_ingredient(struct fridge_ingredient* ingredient, const char** 
         return status;
     }
     if (pathOut != NULL) {
-        *pathOut = inventory_pack_path(pack);
+        *pathOut = strdup(inventory_pack_path(pack));
     }
     return fridge_store_close(g_fridge.store);
 }

@@ -172,11 +172,10 @@ static void __ingredient_delete(struct ingredient* ingredient)
 
 int ingredient_open(const char* path, struct ingredient** ingredientOut)
 {
-    struct VaFs*                vafsHandle;
-    struct VaFsDirectoryHandle* directoryHandle;
-    struct ingredient*          ingredient;
-    enum chef_package_type      packType;
-    int                         status;
+    struct VaFs*           vafsHandle;
+    struct ingredient*     ingredient;
+    enum chef_package_type packType;
+    int                    status;
 
     ingredient = __ingredient_new();
     if (ingredient == NULL) {
@@ -218,7 +217,7 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
         return status;
     }
 
-    status = vafs_directory_open(vafsHandle, "/", &directoryHandle);
+    status = vafs_directory_open(vafsHandle, "/", &ingredient->root_handle);
     if (status) {
         fprintf(stderr, "ingredient_open: cannot open root directory: /\n");
         __ingredient_delete(ingredient);

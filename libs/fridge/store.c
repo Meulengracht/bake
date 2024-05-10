@@ -199,7 +199,7 @@ static int __store_download(
 {
     struct chef_download_params downloadParams;
     int                         status;
-    char                        pathBuffer[512];
+    char                        pathBuffer[2048];
     VLOG_DEBUG("store", "__store_download()\n");
 
     // initialize download params
@@ -327,9 +327,6 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
         &pack
     );
     if (status == 0) {
-        if (packOut) {
-            *packOut = pack;
-        }
         goto cleanup;
     }
     
@@ -373,11 +370,10 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
         goto cleanup;
     }
 
+cleanup:
     if (packOut) {
         *packOut = pack;
     }
-
-cleanup:
     strsplit_free(names);
     return status;
 }

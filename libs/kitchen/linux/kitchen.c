@@ -315,7 +315,7 @@ static int __setup_ingredient(struct list* ingredients, const char* hostPath, co
 
         // Only unpack ingredients, we may encounter toolchains here.
         if (ingredient->package->type != CHEF_PACKAGE_TYPE_INGREDIENT) {
-            VLOG_TRACE("kitchen", "__setup_ingredients: skipping %s of type %i", kitchenIngredient->name, ingredient->package->type);
+            VLOG_TRACE("kitchen", "__setup_ingredients: skipping %s of type %i\n", kitchenIngredient->name, ingredient->package->type);
             ingredient_close(ingredient);
             continue;
         }
