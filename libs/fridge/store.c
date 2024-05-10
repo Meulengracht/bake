@@ -194,7 +194,8 @@ static int __store_download(
     const char*          arch,
     const char*          channel,
     struct chef_version* version,
-    int*                 revisionDownloaded)
+    int*                 revisionDownloaded,
+    char**               pathOut)
 {
     struct chef_download_params downloadParams;
     int                         status;
@@ -243,6 +244,10 @@ static int __store_download(
         VLOG_ERROR("store", "__store_download: failed to remove temporary artifact\n");
         return -1;
     }
+
+    if (pathOut != NULL) {
+        *pathOut = strdup(&pathBuffer[0]);
+    }
     
     *revisionDownloaded = downloadParams.revision;
     return status;
@@ -273,6 +278,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     int                           namesCount;
     int                           status;
     int                           revision;
+    char*                         packPath;
     VLOG_DEBUG("store", "fridge_store_ensure_ingredient(name=%s)\n", ingredient->name);
 
     if (ingredient == NULL) {
@@ -335,7 +341,8 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
         __get_ingredient_arch(store, ingredient),
         ingredient->channel,
         versionPtr,
-        &revision
+        &revision,
+        &packPath
     );
     if (status) {
         VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to download ingredient\n");
@@ -352,7 +359,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     VLOG_DEBUG("store", "registering pack in inventory\n");
     status = inventory_add(
         store->inventory,
-        PACKAGE_TEMP_PATH,
+        packPath,
         names[0], names[1],
         __get_ingredient_platform(store, ingredient),
         __get_ingredient_arch(store, ingredient),
@@ -360,6 +367,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
         versionPtr,
         &pack
     );
+    free(packPath);
     if (status) {
         VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to add ingredient\n");
         goto cleanup;
