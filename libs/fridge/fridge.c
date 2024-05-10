@@ -42,10 +42,8 @@ struct progress_context {
 };
 
 struct fridge_context {
-    char*                    root;
-    struct fridge_inventory* inventory;
-    struct fridge_store*     store;
-    struct list              environment;
+    char*                root;
+    struct fridge_store* store;
 };
 
 static struct fridge_context g_fridge = { 0 };
@@ -66,16 +64,13 @@ static int __make_folders(const char* root)
 int fridge_initialize(const char* platform, const char* architecture)
 {
     int   status;
-    char  temp[512] = { 0 };
+    char  temp[2048] = { 0 };
     char* root;
 
     if (platform == NULL || architecture == NULL) {
         VLOG_ERROR("fridge", "fridge_initialize: platform and architecture must be specified\n");
         return -1;
     }
-
-    // initialize members
-    list_init(&g_fridge.environment);
 
     status = platform_getuserdir(&temp[0], sizeof(temp) - 1);
     if (status) {
@@ -103,29 +98,11 @@ int fridge_initialize(const char* platform, const char* architecture)
         fridge_cleanup();
         return -1;
     }
-
-    status = inventory_load(g_fridge.root, &g_fridge.inventory);
-    if (status) {
-        VLOG_ERROR("fridge", "fridge_initialize: failed to load inventory\n");
-        fridge_cleanup();
-        return -1;
-    }
     return 0;
 }
 
 void fridge_cleanup(void)
 {
-    int status;
-
-    // save inventory if loaded
-    if (g_fridge.inventory != NULL) {
-        status = inventory_save(g_fridge.inventory);
-        if (status) {
-            VLOG_ERROR("fridge", "fridge_cleanup: failed to save inventory: %i\n", errno);
-        }
-        inventory_free(g_fridge.inventory);
-    }
-
     // free memory
     free(g_fridge.root);
 

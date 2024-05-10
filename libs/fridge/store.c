@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "store.h"
+#include <vlog.h>
 
 #define PACKAGE_TEMP_PATH "pack.inprogress"
 
@@ -40,6 +41,7 @@ static int __get_store_path(char** pathOut)
 {
     char* path;
     int   status;
+    VLOG_DEBUG("store", "__get_store_path()\n");
 
     path = malloc(PATH_MAX);
     if (path == NULL) {
@@ -60,6 +62,7 @@ static int __get_store_path(char** pathOut)
 static struct fridge_store* __store_new(const char* platform, const char* arch)
 {
     struct fridge_store* store;
+    VLOG_DEBUG("store", "__store_new(platform=%s, arch=%s)\n", platform, arch);
 
     store = malloc(sizeof(struct fridge_store));
     if (store == NULL) {
@@ -73,6 +76,7 @@ static struct fridge_store* __store_new(const char* platform, const char* arch)
 
 static void __store_delete(struct fridge_store* store)
 {
+    VLOG_DEBUG("store", "__store_delete()\n");
     if (store == NULL) {
         return;
     }
@@ -87,23 +91,26 @@ int fridge_store_load(const char* platform, const char* arch, struct fridge_stor
 {
     struct fridge_store* store;
     int                  status;
+    VLOG_DEBUG("store", "fridge_store_load(platform=%s, arch=%s)\n", platform, arch);
 
     store = __store_new(platform, arch);
     if (store == NULL) {
+        VLOG_ERROR("store", "fridge_store_load: failed to allocate a new store\n");
         return -1;
     }
 
     status = __get_store_path(&store->path);
     if (status) {
-        fprintf(stderr, "fridge_store_load: failed to get global store directory\n");
+        VLOG_ERROR("store", "fridge_store_load: failed to get global store directory\n");
         __store_delete(store);
         return status;
     }
 
     status = platform_mkdir(store->path);
     if (status) {
-        fprintf(stderr, "fridge_store_load: failed to create global store directory\n");
-        return -1;
+        VLOG_ERROR("store", "fridge_store_load: failed to create global store directory\n");
+        __store_delete(store);
+        return status;
     }
 
     *storeOut = store;
@@ -112,6 +119,7 @@ int fridge_store_load(const char* platform, const char* arch, struct fridge_stor
 
 int fridge_store_open(struct fridge_store* store)
 {
+    VLOG_DEBUG("store", "fridge_store_open()\n");
     if (store == NULL) {
         errno = EINVAL;
         return -1;
@@ -122,6 +130,7 @@ int fridge_store_open(struct fridge_store* store)
 int fridge_store_close(struct fridge_store* store)
 {
     int status;
+    VLOG_DEBUG("store", "fridge_store_close()\n");
 
     if (store == NULL) {
         errno = EINVAL;
@@ -146,9 +155,11 @@ static int __package_path(
     size_t               bufferSize)
 {
     int written;
+    VLOG_DEBUG("store", "__package_path(publisher=%s, package=%s, platform=%s, arch=%s, channel=%s)\n",
+        publisher, package, platform, arch, channel);
 
     if (revision == 0) {
-        fprintf(stderr, "__package_path: revision is not provided, but is required.\n");
+        VLOG_ERROR("store", "__package_path: revision is not provided, but is required.\n");
         errno = EINVAL;
         return -1;
     }
@@ -188,6 +199,7 @@ static int __store_download(
     struct chef_download_params downloadParams;
     int                         status;
     char                        pathBuffer[512];
+    VLOG_DEBUG("store", "__store_download()\n");
 
     // initialize download params
     downloadParams.publisher = publisher;
@@ -199,7 +211,7 @@ static int __store_download(
 
     status = chefclient_pack_download(&downloadParams, PACKAGE_TEMP_PATH);
     if (status) {
-        fprintf(stderr, "__inventory_download: failed to download %s/%s\n", publisher, package);
+        VLOG_ERROR("store", "__store_download: failed to download %s/%s\n", publisher, package);
         return -1;
     }
 
@@ -216,13 +228,19 @@ static int __store_download(
         sizeof(pathBuffer)
     );
     if (status) {
-        fprintf(stderr, "__inventory_download: package path too long!\n");
+        VLOG_ERROR("store", "__store_download: package path too long!\n");
         return -1;
     }
-    
-    status = rename(PACKAGE_TEMP_PATH, &pathBuffer[0]);
+
+    status = platform_copyfile(PACKAGE_TEMP_PATH, &pathBuffer[0]);
     if (status) {
-        fprintf(stderr, "inventory_add: failed to move pack into inventory!\n");
+        VLOG_ERROR("store", "__store_download: failed to copy %s => %s\n", PACKAGE_TEMP_PATH, &pathBuffer[0]);
+        return -1;
+    }
+
+    status = remove(PACKAGE_TEMP_PATH);
+    if (status) {
+        VLOG_ERROR("store", "__store_download: failed to remove temporary artifact\n");
         return -1;
     }
     
@@ -255,7 +273,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     int                           namesCount;
     int                           status;
     int                           revision;
-    struct fridge_inventory*      inventory;
+    VLOG_DEBUG("store", "fridge_store_ensure_ingredient(name=%s)\n", ingredient->name);
 
     if (ingredient == NULL) {
         errno = EINVAL;
@@ -266,7 +284,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     if (ingredient->version != NULL) {
         status = chef_version_from_string(ingredient->version, &version);
         if (status) {
-            fprintf(stderr, "fridge_store_ensure_ingredient: failed to parse version '%s'\n", ingredient->version);
+            VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to parse version '%s'\n", ingredient->version);
             return -1;
         }
         versionPtr = &version;
@@ -275,7 +293,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     // split the publisher/package
     names = strsplit(ingredient->name, '/');
     if (names == NULL) {
-        fprintf(stderr, "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        VLOG_ERROR("store", "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
         return -1;
     }
     
@@ -285,15 +303,16 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     }
 
     if (namesCount != 2) {
-        fprintf(stderr, "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        VLOG_ERROR("store", "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
         status = -1;
         goto cleanup;
     }
 
     // check if we have the requested ingredient in store already, otherwise
     // download the ingredient
+    VLOG_DEBUG("store", "looking up path in inventory\n");
     status = inventory_get_pack(
-        inventory,
+        store->inventory,
         names[0], names[1],
         __get_ingredient_platform(store, ingredient),
         __get_ingredient_arch(store, ingredient),
@@ -308,6 +327,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
         goto cleanup;
     }
     
+    VLOG_DEBUG("store", "downloading pack\n");
     status = __store_download(
         store,
         names[0], names[1],
@@ -318,6 +338,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
         &revision
     );
     if (status) {
+        VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to download ingredient\n");
         return -1;
     }
 
@@ -328,8 +349,9 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
         versionPtr = &version;
     }
 
+    VLOG_DEBUG("store", "registering pack in inventory\n");
     status = inventory_add(
-        inventory,
+        store->inventory,
         PACKAGE_TEMP_PATH,
         names[0], names[1],
         __get_ingredient_platform(store, ingredient),
@@ -339,7 +361,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
         &pack
     );
     if (status) {
-        fprintf(stderr, "fridge_store_ensure_ingredient: failed to add ingredient\n");
+        VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to add ingredient\n");
         goto cleanup;
     }
 

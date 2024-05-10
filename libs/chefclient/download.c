@@ -269,9 +269,13 @@ cleanup:
     return status;
 }
 
-static void __format_version(char* buffer, struct chef_version* version)
+static void __format_version(char* buffer, struct chef_version* version, int revision)
 {
-    sprintf(&buffer[0], "%i.%i.%i", version->major, version->minor, version->patch);
+    if (version != NULL) {
+        sprintf(&buffer[0], "%i.%i.%i", version->major, version->minor, version->patch);
+    } else {
+        sprintf(&buffer[0], "%i", revision);
+    }
 }
 
 int chefclient_pack_download(struct chef_download_params* params, const char* path)
@@ -292,7 +296,7 @@ int chefclient_pack_download(struct chef_download_params* params, const char* pa
     // prepare download context
     downloadContext.publisher = params->publisher;
     downloadContext.package   = params->package;
-    __format_version(&downloadContext.version[0], params->version);
+    __format_version(&downloadContext.version[0], params->version, packResponse.revision);
 
     // print initial banner
     printf("initiating download of %s/%s", params->publisher, params->package);

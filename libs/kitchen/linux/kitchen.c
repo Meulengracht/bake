@@ -388,12 +388,12 @@ static int __setup_ingredients(struct kitchen* kitchen, struct kitchen_setup_opt
         return status;
     }
 
-    status = __setup_ingredient(&options->build_ingredients, kitchen->host_build_ingredients_path, kitchen->build_ingredients_path);
+    status = __setup_toolchains(&options->host_ingredients, kitchen->host_build_toolchains_path);
     if (status) {
         return status;
     }
 
-    status = __setup_toolchains(&options->build_ingredients, kitchen->host_build_toolchains_path);
+    status = __setup_ingredient(&options->build_ingredients, kitchen->host_build_ingredients_path, kitchen->build_ingredients_path);
     if (status) {
         return status;
     }

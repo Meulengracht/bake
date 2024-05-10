@@ -59,6 +59,7 @@ static int __add_kitchen_ingredient(const char* name, const char* path, struct l
     ingredient->path = path;
 
     list_add(kitchenIngredients, &ingredient->list_header);
+    return 0;
 }
 
 static int __prep_ingredient_list(struct list* list, const char* platform, const char* arch, struct list* kitchenIngredients)

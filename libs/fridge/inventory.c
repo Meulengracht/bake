@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <vlog.h>
 
 struct fridge_inventory_pack {
     // yay, parent pointers!
@@ -70,13 +71,15 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
     json_t*                  root;
     json_t*                  last_check;
     json_t*                  packs;
+    size_t                   pack_count;
     int                      status;
+    VLOG_DEBUG("inventory", "__parse_inventory()\n");
 
     // instantiate a new inventory
     inventory = __inventory_new();
     if (json == NULL) {
-        *inventoryOut = inventory;
-        return 0;
+        status = 0;
+        goto exit;
     }
 
     root = json_loads(json, 0, &error);
@@ -92,8 +95,9 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
     }
 
     packs = json_object_get(root, "packs");
-    if (packs) {
-        size_t pack_count = json_array_size(packs);
+    pack_count = json_array_size(packs);
+    VLOG_DEBUG("inventory", "__parse_inventory: number of packs %zu\n", pack_count);
+    if (packs && pack_count > 0) {
         inventory->packs = (struct fridge_inventory_pack*)malloc(sizeof(struct fridge_inventory_pack) * pack_count);
         if (inventory->packs == NULL) {
             errno = ENOMEM;
@@ -148,6 +152,7 @@ static int __inventory_load_file(const char* path, char** jsonOut)
     FILE* file;
     long  size;
     char* json = NULL;
+    VLOG_DEBUG("inventory", "__inventory_load_file(path=%s)\n", path);
 
     file = fopen(path, "r+");
     if (file == NULL) {
@@ -172,7 +177,7 @@ static int __inventory_load_file(const char* path, char** jsonOut)
         memset(json, 0, size + 1);
         bytesRead = fread(json, 1, size, file);
         if (bytesRead != size) {
-            fprintf(stderr, "__inventory_load_file: failed to read file: %s\n", strerror(errno));
+            VLOG_ERROR("inventory", "__inventory_load_file: failed to read file: %s\n", strerror(errno));
             fclose(file);
             return -1;
         }
@@ -189,6 +194,7 @@ int inventory_load(const char* path, struct fridge_inventory** inventoryOut)
     int                      status;
     char*                    json;
     char*                    filePath;
+    VLOG_DEBUG("inventory", "inventory_load(path=%s)\n", path);
     
     if (path == NULL || inventoryOut == NULL) {
         errno = EINVAL;
@@ -197,13 +203,14 @@ int inventory_load(const char* path, struct fridge_inventory** inventoryOut)
 
     filePath = strpathcombine(path, "inventory.json");
     if (filePath == NULL) {
+        VLOG_ERROR("inventory", "inventory_load: failed to allocate memory for path\n");
         return -1;
     }
 
     status = __inventory_load_file(filePath, &json);
     if (status) {
         free(filePath);
-        fprintf(stderr, "inventory_load: failed to load %s\n", filePath);
+        VLOG_ERROR("inventory", "inventory_load: failed to load %s\n", filePath);
         return -1;
     }
     free(filePath);
@@ -212,9 +219,10 @@ int inventory_load(const char* path, struct fridge_inventory** inventoryOut)
     free(json);
 
     if (status) {
-        fprintf(stderr, "inventory_load: failed to parse the inventory, file corrupt??\n");
+        VLOG_ERROR("inventory", "inventory_load: failed to parse the inventory, file corrupt??\n");
         return -1;
     }
+    VLOG_TRACE("inventory", "inventory loaded, %i packs available\n", inventory->packs_count);
 
     // store the base path of the inventory
     inventory->path = strdup(path);
@@ -246,6 +254,7 @@ int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher
     struct chef_version* version, struct fridge_inventory_pack** packOut)
 {
     struct fridge_inventory_pack* result = NULL;
+    VLOG_DEBUG("inventory", "inventory_get_pack()\n");
 
     if (inventory == NULL || publisher == NULL || package == NULL || channel == NULL) {
         errno = EINVAL;
