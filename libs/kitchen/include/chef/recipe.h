@@ -114,10 +114,16 @@ struct recipe_rt_environment {
     struct list ingredients; // list<recipe_ingredient>
 };
 
+struct recipe_environment_hooks {
+    const char* bash;
+    const char* powershell;
+};
+
 struct recipe_environment {
     struct recipe_host_environment  host;
     struct recipe_build_environment build;
     struct recipe_rt_environment    runtime;
+    struct recipe_environment_hooks hooks;
 };
 
 struct recipe {

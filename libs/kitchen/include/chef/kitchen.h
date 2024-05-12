@@ -28,6 +28,11 @@ struct kitchen_ingredient {
     const char*      path;
 };
 
+struct kitchen_setup_hook {
+    const char* bash;
+    const char* powershell;
+};
+
 struct kitchen_setup_options {
     const char*        name;
     const char*        project_path;
@@ -38,6 +43,9 @@ struct kitchen_setup_options {
     struct list        host_ingredients; // list<kitchen_ingredient>
     struct list        build_ingredients; // list<kitchen_ingredient>
     struct list        runtime_ingredients; // list<kitchen_ingredient>
+
+    // supported hooks during setup
+    struct kitchen_setup_hook setup_hook;
 
     // linux specifics
     struct list* packages; // list<oven_value_item>

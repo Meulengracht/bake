@@ -155,6 +155,9 @@ static void __chef_user_delete(struct __chef_user* user)
     free(user->effective_name);
 }
 
+static int __start_cooking(struct kitchen* kitchen);
+static int __end_cooking(struct kitchen* kitchen);
+
 static int __is_mountpoint(const char* path)
 {
     struct stat pathStat;
@@ -315,7 +318,6 @@ static int __setup_ingredient(struct list* ingredients, const char* hostPath, co
 
         // Only unpack ingredients, we may encounter toolchains here.
         if (ingredient->package->type != CHEF_PACKAGE_TYPE_INGREDIENT) {
-            VLOG_TRACE("kitchen", "__setup_ingredients: skipping %s of type %i\n", kitchenIngredient->name, ingredient->package->type);
             ingredient_close(ingredient);
             continue;
         }
@@ -403,6 +405,45 @@ static int __setup_ingredients(struct kitchen* kitchen, struct kitchen_setup_opt
         return status;
     }
     return 0;
+}
+
+static int __setup_hook(struct kitchen* kitchen, struct kitchen_setup_options* options)
+{
+    int   status;
+    pid_t child, wt;
+    VLOG_DEBUG("kitchen", "__setup_hook(hook=%s)\n", options->setup_hook.bash);
+
+    status = __start_cooking(kitchen);
+    if (status) {
+        VLOG_ERROR("kitchen", "__setup_hook: failed to enter environment\n");
+        return status;
+    }
+
+    child = fork();
+    if (child == 0) {
+        // execute the script as root, as we allow hooks to run in root context
+        if (setuid(geteuid())) {
+            VLOG_ERROR("kitchen", "__setup_hook: failed to switch to root\n");
+            // In this sub-process we make a clean quick exit
+            _Exit(-1);
+        }
+
+        status = system(options->setup_hook.bash);
+        if (status) {
+            VLOG_ERROR("kitchen", "__setup_hook: hook failed to execute\n");
+        }
+
+        // In this sub-process we make a clean quick exit
+        _Exit(status);
+    } else {
+        wt = wait(&status);
+    }
+
+    status = __end_cooking(kitchen); 
+    if (status) {
+        VLOG_ERROR("kitchen", "__setup_hook: failed to cleanup the environment\n");
+    }
+    return status;
 }
 
 static unsigned int __hash(unsigned int hash, const char* data, size_t length)
@@ -564,18 +605,18 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     return 0;
 }
 
+// --include=nano,gcc,clang,tcc,pcc,g++,git,make
 static char* __build_include_string(struct list* packages)
 {
     struct list_item* i;
     char*             buffer;
 
-    // --include=nano,gcc,clang,tcc,pcc,g++,git,make
-    if (packages == NULL || packages->count == 0) {
+    buffer = calloc(4096, 1); 
+    if (buffer == NULL) {
         return NULL;
     }
 
-    buffer = calloc(4096, 1); 
-    if (buffer == NULL) {
+    if (packages == NULL || packages->count == 0) {
         return NULL;
     }
 
@@ -590,6 +631,22 @@ static char* __build_include_string(struct list* packages)
         }
     }
     return buffer;
+}
+
+static void __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)
+{
+    char buff[2048];
+    VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup()\n");
+
+    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/install", kitchenRoot, name);
+    if (umount(&buff[0])) {
+        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+    }
+
+    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/project", kitchenRoot, name);
+    if (umount(&buff[0])) {
+        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+    }
 }
 
 static int __clean_environment(const char* path)
@@ -811,6 +868,7 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
     }
 
     VLOG_TRACE("kitchen", "cleaning project environment\n");
+    __ensure_mounts_cleanup(kitchen->host_chroot, options->name);
     status = __clean_environment(kitchen->host_chroot);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to clean project environment\n");
@@ -843,6 +901,15 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
         goto cleanup;
     }
 
+    // Run the setup hook if any
+    if (options->setup_hook.bash) {
+        VLOG_TRACE("kitchen", "executing setup hook\n");
+        status = __setup_hook(kitchen, options);
+        if (status) {
+            goto cleanup;
+        }
+    }
+
     // write hash
     status = __write_hash(options);
     if (status) {
@@ -852,22 +919,6 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
 cleanup:
     __chef_user_delete(&user);
     return status;
-}
-
-static void __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)
-{
-    char buff[2048];
-    VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup()\n");
-
-    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/install", kitchenRoot, name);
-    if (umount(&buff[0])) {
-        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
-    }
-
-    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/project", kitchenRoot, name);
-    if (umount(&buff[0])) {
-        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
-    }
 }
 
 int kitchen_purge(struct kitchen_purge_options* options)
@@ -894,7 +945,10 @@ int kitchen_purge(struct kitchen_purge_options* options)
     list_init(&recipes);
     status = platform_getfiles(kitchenPath, 0, &recipes);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_purge: failed to get current recipes\n");
+        // ignore this error, just means there is no cleanup to be done
+        if (errno != ENOENT) {
+            VLOG_ERROR("kitchen", "kitchen_purge: failed to get current recipes\n");
+        }
         goto cleanup;
     }
 

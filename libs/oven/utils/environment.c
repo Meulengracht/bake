@@ -73,6 +73,7 @@ char** oven_environment_create(const char* const* parent, struct list* additiona
         }
 
         sprintf(line, "%s=%s", keypair->key, keypair->value);
+        printf("env: %s=%s\n", keypair->key, keypair->value);
         environment[j++] = line;
     }
     

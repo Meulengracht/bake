@@ -303,6 +303,10 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     // setup linux options
     kitchenOptions.packages = &recipe->environment.host.packages;
 
+    // setup kitchen hooks
+    kitchenOptions.setup_hook.bash = recipe->environment.hooks.bash;
+    kitchenOptions.setup_hook.powershell = recipe->environment.hooks.powershell;
+
     // prepare kitchen parameters, lists are already filled at this point
     kitchenOptions.name = &tmp[0];
     kitchenOptions.project_path = cwd;

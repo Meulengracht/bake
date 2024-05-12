@@ -44,11 +44,15 @@ enum state {
     STATE_ENVIRONMENT_HOST,
     STATE_ENVIRONMENT_BUILD,
     STATE_ENVIRONMENT_RUNTIME,
+    STATE_ENVIRONMENT_HOOKS,
 
     STATE_ENVIRONMENT_HOST_BASE,
     STATE_ENVIRONMENT_HOST_PACKAGES_LIST,
 
     STATE_ENVIRONMENT_BUILD_CONFINEMENT,
+
+    STATE_ENVIRONMENT_HOOKS_BASH,
+    STATE_ENVIRONMENT_HOOKS_POWERSHELL,
 
     STATE_INGREDIENT_LIST,
 
@@ -825,6 +829,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_ENVIRONMENT_BUILD);
                     } else if (strcmp(value, "runtime") == 0) {
                         __parser_push_state(s, STATE_ENVIRONMENT_RUNTIME);
+                    } else if (strcmp(value, "hooks") == 0) {
+                        __parser_push_state(s, STATE_ENVIRONMENT_HOOKS);
                     } else {
                         fprintf(stderr, "__consume_event: (STATE_ENVIRONMENT) unexpected scalar: %s.\n", value);
                         return -1;
@@ -921,6 +927,35 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     return -1;
             }
             break;
+
+
+        case STATE_ENVIRONMENT_HOOKS:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __parser_pop_state(s);
+                    break;
+                
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "bash") == 0) {
+                        __parser_push_state(s, STATE_ENVIRONMENT_HOOKS_BASH);
+                    } else if (strcmp(value, "powershell") == 0) {
+                        __parser_push_state(s, STATE_ENVIRONMENT_HOOKS_POWERSHELL);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_ENVIRONMENT_HOOKS) unexpected scalar: %s.\n", value);
+                        return -1;
+                    }
+                    break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_ENVIRONMENT_HOOKS_BASH, recipe.environment.hooks.bash, __parse_string)
+        __consume_scalar_fn(STATE_ENVIRONMENT_HOOKS_POWERSHELL, recipe.environment.hooks.powershell, __parse_string)
 
         __consume_sequence_mapped(STATE_INGREDIENT_LIST, STATE_INGREDIENT)
 

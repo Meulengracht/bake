@@ -106,6 +106,7 @@ int oven_initialize(struct oven_parameters* parameters)
     g_oven.paths.build_root = strdup(parameters->paths.build_root);
     g_oven.paths.install_root = strdup(parameters->paths.install_root);
     g_oven.paths.checkpoint_root = strdup(parameters->paths.checkpoint_root);
+    g_oven.paths.toolchains_root = strdup(parameters->paths.toolchains_root);
     
     // update oven variables
     g_oven.variables.target_platform = strdup(parameters->target_platform);
@@ -129,6 +130,7 @@ void oven_cleanup(void)
     free((void*)g_oven.paths.build_root);
     free((void*)g_oven.paths.install_root);
     free((void*)g_oven.paths.checkpoint_root);
+    free((void*)g_oven.paths.toolchains_root);
 
     // cleanup variables
     free((void*)g_oven.variables.target_platform);
@@ -193,34 +195,29 @@ int oven_clear_recipe_checkpoint(const char* name)
 
 static const char* __get_variable(const char* name)
 {
-    // Cross-compilation target variables.
-    if (strcmp(name, "CHEF_TARGET_PLATFORM") == 0) {
-        printf("CHEF_TARGET_PLATFORM: %s\n", g_oven.variables.target_platform);
-        return g_oven.variables.target_platform;
-    }
-    if (strcmp(name, "CHEF_TARGET_ARCHITECTURE") == 0) {
-        printf("CHEF_TARGET_ARCHITECTURE: %s\n", g_oven.variables.target_arch);
-        return g_oven.variables.target_arch;
-    }
+    // fixed values
+    static const char* hostArch = CHEF_ARCHITECTURE_STR;
+    static const char* hostPlatform = CHEF_PLATFORM_STR;
 
-    // Cross-compilation host variables.
-    if (strcmp(name, "CHEF_HOST_PLATFORM") == 0) {
-        printf("CHEF_HOST_PLATFORM: " CHEF_PLATFORM_STR "\n");
-        return CHEF_PLATFORM_STR;
-    }
-    if (strcmp(name, "CHEF_HOST_ARCHITECTURE") == 0) {
-        printf("CHEF_HOST_ARCHITECTURE: " CHEF_ARCHITECTURE_STR "\n");
-        return CHEF_ARCHITECTURE_STR;
-    }
+    static const struct {
+        const char*  name;
+        const char** value;
+    } variables[] = {
+        { "CHEF_TARGET_PLATFORM", &g_oven.variables.target_platform },
+        { "CHEF_TARGET_ARCHITECTURE", &g_oven.variables.target_arch },
+        { "CHEF_HOST_PLATFORM", &hostPlatform },
+        { "CHEF_HOST_ARCHITECTURE", &hostArch },
+        { "TOOLCHAIN_PREFIX", &g_oven.recipe.toolchain },
+        { "PROJECT_PATH", &g_oven.paths.project_root },
+        { "INSTALL_PREFIX", &g_oven.paths.install_root },
+        { NULL, NULL }
+    };
 
-    if (strcmp(name, "TOOLCHAIN_PREFIX") == 0) {
-        return g_oven.recipe.toolchain;
-    }
-    if (strcmp(name, "PROJECT_PATH") == 0) {
-        return g_oven.paths.project_root;
-    }
-    if (strcmp(name, "INSTALL_PREFIX") == 0) {
-        return g_oven.paths.install_root;
+    for (int i = 0; variables[i].name != NULL; i++) {
+        if (strcmp(variables[i].name, name) == 0) {
+            printf("RESOLVED: %s => %s\n", variables[i].name, *(variables[i].value));
+            return *(variables[i].value);
+        }
     }
     return NULL;
 }
