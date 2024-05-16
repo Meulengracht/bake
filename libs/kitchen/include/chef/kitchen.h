@@ -65,6 +65,8 @@ struct kitchen {
     int original_root_fd;
     // internal: confined
     int confined;
+    // internal: hash
+    unsigned int hash;
 
     // external paths that point inside chroot
     // i.e paths valid outside chroot
@@ -75,6 +77,7 @@ struct kitchen {
     char* host_project_path;
     char* host_install_path;
     char* host_checkpoint_path;
+    char* host_hash_file;
 
     // internal paths
     // i.e paths valid during chroot

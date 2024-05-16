@@ -9,6 +9,11 @@ project:
   license: LGPL
   homepage: www.mollenos.com
 
+targets:
+  linux:
+    - vali/amd64
+    - vali/i386
+
 ingredients:
 - name: vali/clang-cc
   platform: host

@@ -46,6 +46,8 @@ char** oven_environment_create(const char* const* parent, struct list* additiona
     int               i = 0;
     int               j = 0; // keeps track of index into environment
 
+    // unreadable mess that simply uses 'entryCount' as an
+    // iterator from 0.
     while (parent[entryCount - additional->count]) {
         entryCount++;
     }
@@ -73,7 +75,6 @@ char** oven_environment_create(const char* const* parent, struct list* additiona
         }
 
         sprintf(line, "%s=%s", keypair->key, keypair->value);
-        printf("env: %s=%s\n", keypair->key, keypair->value);
         environment[j++] = line;
     }
     

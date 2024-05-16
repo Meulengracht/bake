@@ -498,16 +498,15 @@ static unsigned int __setup_hash(struct kitchen_setup_options* options)
     return hash;
 }
 
-static unsigned int __read_hash(const char* name)
+static unsigned int __read_hash(const char* path)
 {
-    char  buff[512];
+    char  buff[128];
     FILE* hashFile;
     long  size;
     char* end = NULL;
     VLOG_DEBUG("kitchen", "__read_hash()\n");
 
-    snprintf(&buff[0], sizeof(buff), ".kitchen/%s/chef/.hash", name);
-    hashFile = fopen(&buff[0], "r");
+    hashFile = fopen(path, "r");
     if (hashFile == NULL) {
         VLOG_DEBUG("kitchen", "__read_hash: no hash file\n");
         return 0;
@@ -518,7 +517,7 @@ static unsigned int __read_hash(const char* name)
     rewind(hashFile);
 
     if (size >= sizeof(buff)) {
-        VLOG_ERROR("kitchen", "__read_hash: the hash file was invalid\n");
+        VLOG_ERROR("kitchen", "__read_hash: the hash file is invalid\n");
         fclose(hashFile);
         return 0;
     }
@@ -532,31 +531,25 @@ static unsigned int __read_hash(const char* name)
     return (unsigned int)strtoul(&buff[0], &end, 10);
 }
 
-static int __write_hash(struct kitchen_setup_options* options)
+static int __write_hash(const char* path, unsigned int hash)
 {
-    char         kitchenPad[512];
-    FILE*        hashFile;
-    unsigned int hash;
-    VLOG_DEBUG("kitchen", "__write_hash(name=%s)\n", options->name);
+    FILE* hashFile;
+    VLOG_DEBUG("kitchen", "__write_hash(hash=%d)\n", hash);
 
-    snprintf(&kitchenPad[0], sizeof(kitchenPad), ".kitchen/%s/chef/.hash", options->name);
-    hashFile = fopen(&kitchenPad[0], "w");
+    hashFile = fopen(path, "w");
     if (hashFile == NULL) {
-        VLOG_DEBUG("kitchen", "__write_hash: no hash file");
+        VLOG_ERROR("kitchen", "__write_hash: failed to write hashfile: %s\n", path);
         return 0;
     }
-
-    hash = __setup_hash(options);
     fprintf(hashFile, "%u", hash);
     fclose(hashFile);
     return 0;
 }
 
-static int __should_skip_setup(struct kitchen_setup_options* options)
+static int __should_skip_setup(struct kitchen* kitchen)
 {
-    unsigned int currentHash  = __setup_hash(options);
-    unsigned int existingHash = __read_hash(options->name);
-    return currentHash == existingHash;
+    unsigned int existingHash = __read_hash(kitchen->host_hash_file);
+    return kitchen->hash == existingHash;
 }
 
 // <root>/.kitchen/output
@@ -595,6 +588,9 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/data", options->project_path, options->name);
     kitchen->host_checkpoint_path = strdup(&buff[0]);
 
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/.hash", options->project_path, options->name);
+    kitchen->host_hash_file = strdup(&buff[0]);
+
     kitchen->project_root = strdup("/chef/project");
     kitchen->build_root = strdup("/chef/build");
     kitchen->build_ingredients_path = strdup("/chef/ingredients");
@@ -602,6 +598,7 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     kitchen->install_root = strdup("/chef/install");
     kitchen->checkpoint_root = strdup("/chef/data");
     kitchen->confined = options->confined;
+    kitchen->hash = __setup_hash(options);
     return 0;
 }
 
@@ -843,7 +840,7 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
     }
     atexit(oven_cleanup);
 
-    if (__should_skip_setup(options)) {
+    if (__should_skip_setup(kitchen)) {
         // ensure dirs are mounted still, they only persist till reboot
         status = __is_mountpoint(kitchen->host_install_path);
         if (status < 0) {
@@ -911,7 +908,7 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
     }
 
     // write hash
-    status = __write_hash(options);
+    status = __write_hash(kitchen->host_hash_file, kitchen->hash);
     if (status) {
         goto cleanup;
     }
