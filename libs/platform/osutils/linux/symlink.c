@@ -24,6 +24,34 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+char* __prefix_path(const char* base, const char* path)
+{
+	// If 'path' is not an absolute path, then we assume it is relative to the
+	// 'base' path, but the base path is a file path, so we need to remove the last
+	// component
+	if (path[0] != '/') {
+		char* result = calloc(1, strlen(base) + strlen(path) + 2);
+		char* last;
+		if (result == NULL) {
+			errno = ENOMEM;
+			return NULL;
+		}
+
+		last = strrchr(base, CHEF_PATH_SEPARATOR);
+		if (last == NULL) {
+			size_t length = strlen(result);
+			result[length] = CHEF_PATH_SEPARATOR;
+			result[length + 1] = '\0';
+		} else {
+			strncpy(result, base, (last - base) + 1);
+			result[(last - base) + 1] = '\0';
+		}
+		strcat(result, path);
+		return result;
+	}
+	return strdup(path);
+}
+
 static int __create_dummy_dir_if_not_exists(const char* path)
 {
 	struct stat st;
@@ -56,21 +84,31 @@ static int __create_dummy_file_if_not_exists(const char* path)
 
 int platform_symlink(const char* path, const char* target, int directory)
 {
-	int status;
+	char* targetFullPath;
+	int   status;
 
 	if (path == NULL || target == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
 
+	// When creating the dummy path we need to do it at the actual path,
+	// not just the relative
+	targetFullPath = __prefix_path(path, target);
+	if (targetFullPath == NULL) {
+		return -1;
+	}
+
 	// it's actually a bit confusing, but path is actually the name of the
 	// symlink, and target is the target of the symlink.
 	if (directory) {
-		status = __create_dummy_dir_if_not_exists(target);
+		status = __create_dummy_dir_if_not_exists(targetFullPath);
 	} else {
-		status = __create_dummy_file_if_not_exists(target);
+		status = __create_dummy_file_if_not_exists(targetFullPath);
 	}
-	
+
+	// At this point we can clean it up
+	free(targetFullPath);
 	if (status) {
 		return status;
 	}
