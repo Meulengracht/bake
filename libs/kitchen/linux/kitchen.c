@@ -1035,12 +1035,12 @@ static int __end_cooking(struct kitchen* kitchen)
     return 0;
 }
 
-static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, const char* platform)
+static const char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, const char* platform)
 {
     if (strcmp(toolchain, "platform") == 0) {
         return recipe_find_platform_toolchain(recipe, platform);
     }
-    return strdup(toolchain);
+    return toolchain;
 }
 
 static void __initialize_recipe_options(struct oven_recipe_options* options, struct recipe_part* part, const char* toolchain)
@@ -1145,7 +1145,7 @@ int kitchen_recipe_prepare(struct kitchen* kitchen, struct recipe* recipe, enum 
 
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
-        char*               toolchain = NULL;
+        const char*         toolchain = NULL;
 
         if (part->toolchain != NULL) {
             toolchain = __resolve_toolchain(recipe, part->toolchain, kitchen->target_platform);
@@ -1157,8 +1157,6 @@ int kitchen_recipe_prepare(struct kitchen* kitchen, struct recipe* recipe, enum 
 
         __initialize_recipe_options(&options, part, toolchain);
         status = oven_recipe_start(&options);
-        free(toolchain);
-
         if (status) {
             break;
         }
@@ -1275,7 +1273,7 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
 
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
-        char*               toolchain = NULL;
+        const char*         toolchain = NULL;
 
         if (part->toolchain != NULL) {
             toolchain = __resolve_toolchain(recipe, part->toolchain, kitchen->target_platform);
@@ -1287,7 +1285,6 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
 
         __initialize_recipe_options(&options, part, toolchain);
         status = oven_recipe_start(&options);
-
         if (status) {
             break;
         }

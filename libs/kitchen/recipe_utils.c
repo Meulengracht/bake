@@ -67,7 +67,7 @@ int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, ch
     return 0;
 }
 
-char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform)
+const char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform)
 {
     struct recipe_platform* p = NULL;
     struct list_item*       i;
@@ -85,7 +85,7 @@ char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform
     return p->toolchain;
 }
 
-static int __determine_recipe_target(struct recipe* recipe, char** platformOverride, char** archOverride)
+static int __determine_recipe_target(struct recipe* recipe, const char** platformOverride, const char** archOverride)
 {
     struct recipe_platform* platform = NULL;
     struct list_item*       i;
@@ -100,13 +100,13 @@ static int __determine_recipe_target(struct recipe* recipe, char** platformOverr
         }
 
         if (platform == NULL) {
-            fprintf(stderr, "error: %s is not a supported platform for build\n", *platformOverride);
+            VLOG_ERROR("recipe", "%s is not a supported platform for build\n", *platformOverride);
             return -1;
         }
     } else {
         platform = (struct recipe_platform*)recipe->platforms.head;
         if (platform == NULL) {
-            fprintf(stderr, "error: no supported platform for build\n");
+            VLOG_ERROR("recipe", "no supported platform for build\n");
             return -1;
         }
         *platformOverride = platform->name;
@@ -128,11 +128,11 @@ static int __determine_recipe_target(struct recipe* recipe, char** platformOverr
         }
     }
 
-    fprintf(stderr, "error: architecture target %s was not supported for target platform, use -cc switch to select another\n", *archOverride);
+    VLOG_ERROR("recipe", "architecture target %s was not supported for target platform, use -cc switch to select another\n", *archOverride);
     return -1;
 }
 
-int recipe_validate_target(struct recipe* recipe, char** expectedPlatform, char** expectedArch)
+int recipe_validate_target(struct recipe* recipe, const char** expectedPlatform, const char** expectedArch)
 {
     // First of all, let's check if there are any constraints provided by
     // recipe in terms of platform/arch setup
