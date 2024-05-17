@@ -1,0 +1,153 @@
+/**
+ * Copyright 2024, Philip Meulengracht
+ *
+ * This program is free software : you can redistribute it and / or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation ? , either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * 
+ */
+
+
+#include <ctype.h>
+#include <chef/platform.h>
+#include <chef/recipe.h>
+#include <string.h>
+#include <vlog.h>
+
+#define __MIN(a, b) (((a) < (b)) ? (a) : (b))
+
+enum recipe_step_type recipe_step_type_from_string(const char* type)
+{
+    if (strcmp(type, "generate") == 0) {
+        return RECIPE_STEP_TYPE_GENERATE;
+    } else if (strcmp(type, "build") == 0) {
+        return RECIPE_STEP_TYPE_BUILD;
+    } else if (strcmp(type, "script") == 0) {
+        return RECIPE_STEP_TYPE_SCRIPT;
+    } else {
+        return RECIPE_STEP_TYPE_UNKNOWN;
+    }
+}
+
+int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, char** channel, char** version)
+{
+    const char* split;
+    char        name[128] = { 0 };
+    char        verr[128] = { 0 };
+    
+    split = strchr(toolchain, '=');
+    if (split == NULL) {
+        *ingredient = strdup(toolchain);
+        *channel = strdup("stable");
+        *version = NULL;
+        return 0;
+    }
+
+    strncpy(&name[0], toolchain, __MIN((split - toolchain), sizeof(name)));
+    strncpy(&verr[0], split+1, sizeof(verr));
+
+    // If the first character is a digit, assume version, installing by version
+    // always tracks stable
+    if (isdigit(verr[0])) {
+        *channel = strdup("stable");
+        *version = strdup(&verr[0]);
+    } else {
+        *channel = strdup(&verr[0]);
+        *version = NULL;
+    }
+    return 0;
+}
+
+char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform)
+{
+    struct recipe_platform* p = NULL;
+    struct list_item*       i;
+
+    list_foreach(&recipe->platforms, i) {
+        if (strcmp(((struct recipe_platform*)i)->name, platform) == 0) {
+            p = (struct recipe_platform*)i;
+            break;
+        }
+    }
+
+    if (p == NULL) {
+        return NULL;
+    }
+    return p->toolchain;
+}
+
+static int __determine_recipe_target(struct recipe* recipe, char** platformOverride, char** archOverride)
+{
+    struct recipe_platform* platform = NULL;
+    struct list_item*       i;
+
+    if (*platformOverride != NULL) {
+        // If there is a platform override, make sure it appears in the list
+        list_foreach(&recipe->platforms, i) {
+            if (strcmp(((struct recipe_platform*)i)->name, *platformOverride) == 0) {
+                platform = (struct recipe_platform*)i;
+                break;
+            }
+        }
+
+        if (platform == NULL) {
+            fprintf(stderr, "error: %s is not a supported platform for build\n", *platformOverride);
+            return -1;
+        }
+    } else {
+        platform = (struct recipe_platform*)recipe->platforms.head;
+        if (platform == NULL) {
+            fprintf(stderr, "error: no supported platform for build\n");
+            return -1;
+        }
+        *platformOverride = platform->name;
+    }
+
+    // default to host architecture
+    if (*archOverride == NULL) {
+        *archOverride = CHEF_ARCHITECTURE_STR;
+    }
+
+    // if there are archs specified, then check against the override
+    if (platform->archs.count == 0) {
+        return 0;
+    }
+
+    list_foreach(&platform->archs, i) {
+        if (strcmp(((struct oven_value_item*)i)->value, *platformOverride) == 0) {
+            return 0;
+        }
+    }
+
+    fprintf(stderr, "error: architecture target %s was not supported for target platform, use -cc switch to select another\n", *archOverride);
+    return -1;
+}
+
+int recipe_validate_target(struct recipe* recipe, char** expectedPlatform, char** expectedArch)
+{
+    // First of all, let's check if there are any constraints provided by
+    // recipe in terms of platform/arch setup
+    if (recipe->platforms.count > 0) {
+        return __determine_recipe_target(recipe, expectedPlatform, expectedArch);
+    }
+
+    // No constraints, we simply just check overrides
+    if (*expectedPlatform == NULL) {
+        // no platform override, we default to host
+        *expectedPlatform = CHEF_PLATFORM_STR;
+    }
+    if (*expectedArch == NULL) {
+        // no arch override, we default to host
+        *expectedArch = CHEF_ARCHITECTURE_STR;
+    }
+    return 0;
+}

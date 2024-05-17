@@ -24,8 +24,10 @@
 #include <chef/client.h>
 #include <errno.h>
 #include <liboven.h>
+#include <chef/list.h>
 #include <chef/platform.h>
 #include <chef/kitchen.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -62,11 +64,60 @@ static int __add_kitchen_ingredient(const char* name, const char* path, struct l
     return 0;
 }
 
+static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredients)
+{
+    struct list_item* item;
+
+    list_foreach(platforms, item) {
+        struct recipe_platform* platform = (struct recipe_platform*)item;
+        int                     status;
+        const char*             path;
+        char*                   name;
+        char*                   channel;
+        char*                   version;
+        if (platform->toolchain == NULL) {
+            continue;
+        }
+        
+        status = recipe_parse_platform_toolchain(platform->toolchain, &name, &channel, &version);
+        if (status) {
+            VLOG_ERROR("bake", "failed to parse toolchain %s for platform %s", platform->toolchain, platform->name);
+            return status;
+        }
+
+        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
+            .name = name,
+            .channel = channel,
+            .version = version,
+            .source = INGREDIENT_SOURCE_TYPE_REPO, // for now
+            .arch = CHEF_ARCHITECTURE_STR,
+            .platform = CHEF_PLATFORM_STR
+        }, &path);
+        if (status) {
+            free(name);
+            free(channel);
+            free(version);
+            VLOG_ERROR("bake", "failed to fetch ingredient %s\n", name);
+            return status;
+        }
+        
+        status = __add_kitchen_ingredient(name, path, kitchenIngredients);
+        if (status) {
+            free(name);
+            free(channel);
+            free(version);
+            VLOG_ERROR("bake", "failed to mark ingredient %s\n", name);
+            return status;
+        }
+    }
+    return 0;
+}
+
 static int __prep_ingredient_list(struct list* list, const char* platform, const char* arch, struct list* kitchenIngredients)
 {
     struct list_item* item;
     int               status;
-;
+
     list_foreach(list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         const char*               path = NULL;
@@ -98,37 +149,54 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
     struct list_item* item;
     int               status;
 
-    VLOG_TRACE("bake", "preparing %i host ingredients\n", recipe->environment.host.ingredients.count);
-    status = __prep_ingredient_list(
-        &recipe->environment.host.ingredients,
-        CHEF_PLATFORM_STR,
-        CHEF_ARCHITECTURE_STR,
-        &kitchenOptions->host_ingredients
-    );
-    if (status) {
-        return status;
+    if (recipe->platforms.count > 0) {
+        VLOG_TRACE("bake", "preparing %i platforms\n", recipe->platforms.count);
+        status = __prep_toolchains(
+            &recipe->platforms,
+            &kitchenOptions->host_ingredients
+        );
+        if (status) {
+            return status;
+        }
     }
 
-    VLOG_TRACE("bake", "preparing %i build ingredients\n", recipe->environment.build.ingredients.count);
-    status = __prep_ingredient_list(
-        &recipe->environment.build.ingredients,
-        platform,
-        arch,
-        &kitchenOptions->build_ingredients
-    );
-    if (status) {
-        return status;
+    if (recipe->environment.host.ingredients.count > 0) {
+        VLOG_TRACE("bake", "preparing %i host ingredients\n", recipe->environment.host.ingredients.count);
+        status = __prep_ingredient_list(
+            &recipe->environment.host.ingredients,
+            CHEF_PLATFORM_STR,
+            CHEF_ARCHITECTURE_STR,
+            &kitchenOptions->host_ingredients
+        );
+        if (status) {
+            return status;
+        }
     }
 
-    VLOG_TRACE("bake", "preparing %i runtime ingredients\n", recipe->environment.runtime.ingredients.count);
-    status = __prep_ingredient_list(
-        &recipe->environment.runtime.ingredients,
-        platform,
-        arch,
-        &kitchenOptions->runtime_ingredients
-    );
-    if (status) {
-        return status;
+    if (recipe->environment.build.ingredients.count > 0) {
+        VLOG_TRACE("bake", "preparing %i build ingredients\n", recipe->environment.build.ingredients.count);
+        status = __prep_ingredient_list(
+            &recipe->environment.build.ingredients,
+            platform,
+            arch,
+            &kitchenOptions->build_ingredients
+        );
+        if (status) {
+            return status;
+        }
+    }
+
+    if (recipe->environment.runtime.ingredients.count > 0) {
+        VLOG_TRACE("bake", "preparing %i runtime ingredients\n", recipe->environment.runtime.ingredients.count);
+        status = __prep_ingredient_list(
+            &recipe->environment.runtime.ingredients,
+            platform,
+            arch,
+            &kitchenOptions->runtime_ingredients
+        );
+        if (status) {
+            return status;
+        }
     }
     return 0;
 }
@@ -211,26 +279,13 @@ static int __get_cwd(char** bufferOut)
     return 0;
 }
 
-static enum recipe_step_type __string_to_step_type(const char* type)
-{
-    if (strcmp(type, "generate") == 0) {
-        return RECIPE_STEP_TYPE_GENERATE;
-    } else if (strcmp(type, "build") == 0) {
-        return RECIPE_STEP_TYPE_BUILD;
-    } else if (strcmp(type, "script") == 0) {
-        return RECIPE_STEP_TYPE_SCRIPT;
-    } else {
-        return RECIPE_STEP_TYPE_UNKNOWN;
-    }
-}
-
 int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     struct kitchen_setup_options kitchenOptions = { 0 };
     struct kitchen         kitchen;
     char*                  name     = NULL;
-    char*                  platform = CHEF_PLATFORM_STR;
-    char*                  arch     = CHEF_ARCHITECTURE_STR;
+    char*                  platform = NULL;
+    char*                  arch     = NULL;
     char*                  step     = "run";
     int                    debug    = 0;
     char                   tmp[128];
@@ -251,7 +306,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
             } else if (!strncmp(argv[i], "-cc", 3) || !strncmp(argv[i], "--cross-compile", 15)) {
                 status = __parse_cc_switch(argv[i], &platform, &arch);
                 if (status) {
-                    VLOG_ERROR("bake", "failed to parse cross-compile switch\n");
+                    VLOG_ERROR("bake", "invalid format: %s\n", argv[i]);
                     return status;
                 }
             } else if (argv[i][0] != '-') {
@@ -267,6 +322,11 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     if (name == NULL || recipe == NULL) {
         VLOG_ERROR("bake", "no recipe provided\n");
         __print_help();
+        return -1;
+    }
+
+    status = recipe_validate_target(recipe, &platform, &arch);
+    if (status) {
         return -1;
     }
 
@@ -320,7 +380,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = kitchen_recipe_prepare(&kitchen, recipe, __string_to_step_type(step));
+    status = kitchen_recipe_prepare(&kitchen, recipe, recipe_step_type_from_string(step));
     if (status) {
         VLOG_ERROR("bake", "failed to reset steps: %s\n", strerror(errno));
         return -1;

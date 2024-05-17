@@ -9,21 +9,15 @@ project:
   license: LGPL
   homepage: www.mollenos.com
 
-targets:
-  linux:
-    - vali/amd64
-    - vali/i386
-
-ingredients:
-- name: vali/clang-cc
-  platform: host
-  arch: host
-  channel: devel
+platforms:
+  - name: vali
+    toolchain: vali/clang-cc=devel
+    architectures: [amd64, i386]
 
 recipes:
 - name: vali
   path: /
-  toolchain: vali/clang-cc
+  toolchain: platform
   steps:
   - name: config
     type: generate

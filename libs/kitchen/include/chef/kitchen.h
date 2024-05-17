@@ -61,12 +61,13 @@ struct kitchen_clean_options {
 };
 
 struct kitchen {
-    // internal: original_root_fd
-    int original_root_fd;
-    // internal: confined
-    int confined;
-    // internal: hash
+    // internal state
+    int          original_root_fd;
+    int          confined;
     unsigned int hash;
+
+    char* target_platform;
+    char* target_architecture;
 
     // external paths that point inside chroot
     // i.e paths valid outside chroot

@@ -64,6 +64,13 @@ struct recipe_project {
     const char* url;
 };
 
+struct recipe_platform {
+    struct list_item list_header;
+    const char*      name;
+    const char*      toolchain;
+    struct list      archs;  // list<oven_value_item>
+};
+
 enum recipe_ingredient_type {
     RECIPE_INGREDIENT_TYPE_HOST,
     RECIPE_INGREDIENT_TYPE_BUILD,
@@ -128,6 +135,7 @@ struct recipe_environment {
 
 struct recipe {
     struct recipe_project     project;
+    struct list               platforms;   // list<recipe_platform>
     struct recipe_environment environment;
     struct list               parts;       // list<recipe_part>
     struct list               packs;       // list<recipe_pack>
@@ -149,5 +157,12 @@ extern int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut);
  * @param[In] recipe 
  */
 extern void recipe_destroy(struct recipe* recipe);
+
+
+// Recipe parser utilities
+extern enum recipe_step_type recipe_step_type_from_string(const char* type);
+extern int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, char** channel, char** version);
+extern char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform);
+extern int recipe_validate_target(struct recipe* recipe, char** expectedPlatform, char** expectedArch);
 
 #endif //!__CHEF_RECIPE_H__

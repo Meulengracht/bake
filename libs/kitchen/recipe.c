@@ -54,6 +54,13 @@ enum state {
     STATE_ENVIRONMENT_HOOKS_BASH,
     STATE_ENVIRONMENT_HOOKS_POWERSHELL,
 
+    STATE_PLATFORM_LIST,
+
+    STATE_PLATFORM,       // MAPPING_START
+    STATE_PLATFORM_NAME,
+    STATE_PLATFORM_TOOLCHAIN,
+    STATE_PLATFORM_ARCH_LIST,
+
     STATE_INGREDIENT_LIST,
 
     STATE_INGREDIENT,       // MAPPING_START
@@ -128,6 +135,7 @@ struct parser_state {
     struct list*                ingredients;
     enum recipe_ingredient_type ingredients_type;
     struct recipe               recipe;
+    struct recipe_platform      platform;
     struct recipe_ingredient    ingredient;
     struct recipe_part          part;
     struct recipe_step          step;
@@ -242,6 +250,30 @@ static void __finalize_project(struct parser_state* state)
         fprintf(stderr, "parse error: project author email is required\n");
         exit(EXIT_FAILURE);
     }
+}
+
+static void __finalize_platform(struct parser_state* state)
+{
+    struct recipe_platform* platform;
+
+    if (state->platform.name == NULL) {
+        fprintf(stderr, "parse error: platform name is required\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    // now we copy and reset
+    platform = malloc(sizeof(struct recipe_platform));
+    if (platform == NULL) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // copy the set values
+    memcpy(platform, &state->platform, sizeof(struct recipe_platform));
+    list_add(&state->recipe.platforms, &platform->list_header);
+
+    // reset the structure in state
+    memset(&state->platform, 0, sizeof(struct recipe_platform));
 }
 
 static void __finalize_ingredient(struct parser_state* state)
@@ -586,6 +618,7 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
     }
 
 DEFINE_LIST_STRING_ADD(recipe, recipe.environment.host, packages)
+DEFINE_LIST_STRING_ADD(platform, platform, archs)
 DEFINE_LIST_STRING_ADD(ingredient, ingredient, filters)
 DEFINE_LIST_STRING_ADD(step, step, depends)
 DEFINE_LIST_STRING_ADD(step, step, arguments)
@@ -672,8 +705,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_PROJECT);
                     } else if (strcmp(value, "environment") == 0) {
                         __parser_push_state(s, STATE_ENVIRONMENT);
-                    } else if (strcmp(value, "ingredients") == 0) {
-                        __parser_push_state(s, STATE_INGREDIENT_LIST);
+                    } else if (strcmp(value, "platforms") == 0) {
+                        __parser_push_state(s, STATE_PLATFORM_LIST);
                     } else if (strcmp(value, "recipes") == 0) {
                         __parser_push_state(s, STATE_RECIPE_LIST);
                     } else if (strcmp(value, "packs") == 0) {
@@ -812,6 +845,33 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_PROJECT_EULA, recipe.project.eula, __parse_string)
         __consume_scalar_fn(STATE_PROJECT_HOMEPAGE, recipe.project.url, __parse_string)
 
+        __consume_sequence_mapped(STATE_PLATFORM_LIST, STATE_PLATFORM)
+
+        case STATE_PLATFORM:
+            switch (event->type) {
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "name") == 0) {
+                        __parser_push_state(s, STATE_PLATFORM_NAME);
+                    } else if (strcmp(value, "toolchain") == 0) {
+                        __parser_push_state(s, STATE_PLATFORM_TOOLCHAIN);
+                    } else if (strcmp(value, "architectures") == 0) {
+                        __parser_push_state(s, STATE_PLATFORM_ARCH_LIST);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_PLATFORM) unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
+                case YAML_MAPPING_END_EVENT:
+                    __finalize_platform(s);
+                    __parser_pop_state(s);
+                    break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_sequence_unmapped(STATE_PLATFORM_ARCH_LIST, __add_platform_archs)
 
         case STATE_ENVIRONMENT:
             switch (event->type) {

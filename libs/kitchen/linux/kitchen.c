@@ -567,6 +567,9 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     char buff[2048];
     VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->name);
 
+    kitchen->target_platform = strdup(options->target_platform);
+    kitchen->target_architecture = strdup(options->target_architecture);
+
     snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s", options->project_path, options->name);
     kitchen->host_chroot = strdup(&buff[0]);
 
@@ -1032,16 +1035,19 @@ static int __end_cooking(struct kitchen* kitchen)
     return 0;
 }
 
-static void __initialize_recipe_options(struct oven_recipe_options* options, struct recipe_part* part)
+static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, const char* platform)
+{
+    if (strcmp(toolchain, "platform") == 0) {
+        return recipe_find_platform_toolchain(recipe, platform);
+    }
+    return strdup(toolchain);
+}
+
+static void __initialize_recipe_options(struct oven_recipe_options* options, struct recipe_part* part, const char* toolchain)
 {
     options->name          = part->name;
     options->relative_path = part->path;
-    options->toolchain     = part->toolchain;
-}
-
-static void __destroy_recipe_options(struct oven_recipe_options* options)
-{
-    free((void*)options->toolchain);
+    options->toolchain     = toolchain;
 }
 
 static int __reset_steps(struct list* steps, enum recipe_step_type stepType, const char* name);
@@ -1139,10 +1145,19 @@ int kitchen_recipe_prepare(struct kitchen* kitchen, struct recipe* recipe, enum 
 
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
+        char*               toolchain = NULL;
 
-        __initialize_recipe_options(&options, part);
+        if (part->toolchain != NULL) {
+            toolchain = __resolve_toolchain(recipe, part->toolchain, kitchen->target_platform);
+            if (toolchain == NULL) {
+                VLOG_ERROR("kitchen", "part %s was marked for platform toolchain, but no matching toolchain specified for platform %s\n", part->name, kitchen->target_platform);
+                return -1;
+            }
+        }
+
+        __initialize_recipe_options(&options, part, toolchain);
         status = oven_recipe_start(&options);
-        __destroy_recipe_options(&options);
+        free(toolchain);
 
         if (status) {
             break;
@@ -1260,10 +1275,18 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
 
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
+        char*               toolchain = NULL;
 
-        __initialize_recipe_options(&options, part);
+        if (part->toolchain != NULL) {
+            toolchain = __resolve_toolchain(recipe, part->toolchain, kitchen->target_platform);
+            if (toolchain == NULL) {
+                VLOG_ERROR("kitchen", "part %s was marked for platform toolchain, but no matching toolchain specified for platform %s\n", part->name, kitchen->target_platform);
+                return -1;
+            }
+        }
+
+        __initialize_recipe_options(&options, part, toolchain);
         status = oven_recipe_start(&options);
-        __destroy_recipe_options(&options);
 
         if (status) {
             break;
