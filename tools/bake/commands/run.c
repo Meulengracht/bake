@@ -224,7 +224,7 @@ static int __is_step_name(const char* name)
            strcmp(name, "pack") == 0;
 }
 
-static int __parse_cc_switch(const char* value, char** platformOut, char** archOut)
+static int __parse_cc_switch(const char* value, const char** platformOut, const char** archOut)
 {
     // value is either of two forms
     // platform/arch
@@ -284,8 +284,8 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     struct kitchen_setup_options kitchenOptions = { 0 };
     struct kitchen         kitchen;
     char*                  name     = NULL;
-    char*                  platform = NULL;
-    char*                  arch     = NULL;
+    const char*            platform = NULL;
+    const char*            arch     = NULL;
     char*                  step     = "run";
     int                    debug    = 0;
     char                   tmp[128];
@@ -304,6 +304,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
             } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--debug")) {
                 debug = 1;
             } else if (!strncmp(argv[i], "-cc", 3) || !strncmp(argv[i], "--cross-compile", 15)) {
+                // THIS ALLOCS MEMORY, WE NEED TO HANDLE THIS
                 status = __parse_cc_switch(argv[i], &platform, &arch);
                 if (status) {
                     VLOG_ERROR("bake", "invalid format: %s\n", argv[i]);
