@@ -76,6 +76,7 @@ struct kitchen {
     char* host_build_ingredients_path;
     char* host_build_toolchains_path;
     char* host_project_path;
+    char* host_install_root;
     char* host_install_path;
     char* host_checkpoint_path;
     char* host_hash_file;
@@ -87,6 +88,7 @@ struct kitchen {
     char* build_ingredients_path;
     char* build_toolchains_path;
     char* install_root;
+    char* install_path;
     char* checkpoint_root;
 };
 

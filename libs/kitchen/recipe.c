@@ -871,6 +871,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
+        __consume_scalar_fn(STATE_PLATFORM_NAME, platform.name, __parse_string)
+        __consume_scalar_fn(STATE_PLATFORM_TOOLCHAIN, platform.toolchain, __parse_string)
         __consume_sequence_unmapped(STATE_PLATFORM_ARCH_LIST, __add_platform_archs)
 
         case STATE_ENVIRONMENT:
@@ -1391,7 +1393,7 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
             return -1;
         }
 
-        status = __consume_event(&state, &event );
+        status = __consume_event(&state, &event);
         if (status) {
             fprintf(stderr, "error: failed to parse recipe at line %u\n",
                 (unsigned int)event.start_mark.line);

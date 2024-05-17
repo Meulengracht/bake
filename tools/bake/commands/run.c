@@ -50,6 +50,7 @@ static void __print_help(void)
 static int __add_kitchen_ingredient(const char* name, const char* path, struct list* kitchenIngredients)
 {
     struct kitchen_ingredient* ingredient;
+    VLOG_DEBUG("bake", "__add_kitchen_ingredient(name=%s, path=%s)\n", name, path);
 
     ingredient = malloc(sizeof(struct kitchen_ingredient));
     if (ingredient == NULL) {
@@ -67,6 +68,7 @@ static int __add_kitchen_ingredient(const char* name, const char* path, struct l
 static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredients)
 {
     struct list_item* item;
+    VLOG_DEBUG("bake", "__prep_toolchains()\n");
 
     list_foreach(platforms, item) {
         struct recipe_platform* platform = (struct recipe_platform*)item;
@@ -117,6 +119,7 @@ static int __prep_ingredient_list(struct list* list, const char* platform, const
 {
     struct list_item* item;
     int               status;
+    VLOG_DEBUG("bake", "__prep_ingredient_list(platform=%s, arch=%s)\n", platform, arch);
 
     list_foreach(list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;

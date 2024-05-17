@@ -55,6 +55,7 @@ int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, ch
     strncpy(&name[0], toolchain, __MIN((split - toolchain), sizeof(name)));
     strncpy(&verr[0], split+1, sizeof(verr));
 
+    *ingredient = strdup(&name[0]);
     // If the first character is a digit, assume version, installing by version
     // always tracks stable
     if (isdigit(verr[0])) {
@@ -123,7 +124,7 @@ static int __determine_recipe_target(struct recipe* recipe, const char** platfor
     }
 
     list_foreach(&platform->archs, i) {
-        if (strcmp(((struct oven_value_item*)i)->value, *platformOverride) == 0) {
+        if (strcmp(((struct oven_value_item*)i)->value, *archOverride) == 0) {
             return 0;
         }
     }

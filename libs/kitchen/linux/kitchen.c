@@ -400,7 +400,7 @@ static int __setup_ingredients(struct kitchen* kitchen, struct kitchen_setup_opt
         return status;
     }
 
-    status = __setup_ingredient(&options->runtime_ingredients, kitchen->host_install_path, kitchen->install_root);
+    status = __setup_ingredient(&options->runtime_ingredients, kitchen->host_install_path, kitchen->install_path);
     if (status) {
         return status;
     }
@@ -569,39 +569,78 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
 
     kitchen->target_platform = strdup(options->target_platform);
     kitchen->target_architecture = strdup(options->target_architecture);
+    kitchen->confined = options->confined;
+    kitchen->hash = __setup_hash(options);
 
+    // Format external chroot paths that are arch/platform agnostic
     snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s", options->project_path, options->name);
     kitchen->host_chroot = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/build", options->project_path, options->name);
-    kitchen->host_build_path = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/ingredients", options->project_path, options->name);
-    kitchen->host_build_ingredients_path = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/toolchains", options->project_path, options->name);
-    kitchen->host_build_toolchains_path = strdup(&buff[0]);
 
     snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/project", options->project_path, options->name);
     kitchen->host_project_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/install", options->project_path, options->name);
-    kitchen->host_install_path = strdup(&buff[0]);
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/install",
+        options->project_path, options->name
+    );
+    kitchen->host_install_root = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/data", options->project_path, options->name);
-    kitchen->host_checkpoint_path = strdup(&buff[0]);
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/toolchains", options->project_path, options->name);
+    kitchen->host_build_toolchains_path = strdup(&buff[0]);
 
     snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/.hash", options->project_path, options->name);
     kitchen->host_hash_file = strdup(&buff[0]);
 
+    // Build/ingredients/install/checkpoint paths are different for each target
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/build/%s/%s",
+        options->project_path, options->name,
+        options->target_platform, options->target_architecture
+    );
+    kitchen->host_build_path = strdup(&buff[0]);
+
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/ingredients/%s/%s",
+        options->project_path, options->name,
+        options->target_platform, options->target_architecture
+    );
+    kitchen->host_build_ingredients_path = strdup(&buff[0]);
+
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/install/%s/%s",
+        options->project_path, options->name,
+        options->target_platform, options->target_architecture
+    );
+    kitchen->host_install_path = strdup(&buff[0]);
+
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/data/%s/%s",
+        options->project_path, options->name,
+        options->target_platform, options->target_architecture
+    );
+    kitchen->host_checkpoint_path = strdup(&buff[0]);
+
+    // Format the internal chroot paths, again, we have paths that are shared between
+    // platforms and archs
     kitchen->project_root = strdup("/chef/project");
-    kitchen->build_root = strdup("/chef/build");
-    kitchen->build_ingredients_path = strdup("/chef/ingredients");
     kitchen->build_toolchains_path = strdup("/chef/toolchains");
     kitchen->install_root = strdup("/chef/install");
-    kitchen->checkpoint_root = strdup("/chef/data");
-    kitchen->confined = options->confined;
-    kitchen->hash = __setup_hash(options);
+
+    // And those that are not
+    snprintf(&buff[0], sizeof(buff), "/chef/data/%s/%s",
+        options->target_platform, options->target_architecture
+    );
+    kitchen->checkpoint_root = strdup(&buff[0]);
+
+    snprintf(&buff[0], sizeof(buff), "/chef/build/%s/%s",
+        options->target_platform, options->target_architecture
+    );
+    kitchen->build_root = strdup(&buff[0]);
+
+    snprintf(&buff[0], sizeof(buff), "/chef/ingredients/%s/%s",
+        options->target_platform, options->target_architecture
+    );
+    kitchen->build_ingredients_path = strdup(&buff[0]);
+
+    snprintf(&buff[0], sizeof(buff), "/chef/install/%s/%s",
+        options->target_platform, options->target_architecture
+    );
+    kitchen->install_path = strdup(&buff[0]);
     return 0;
 }
 
@@ -783,8 +822,8 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct __chef_user* user)
     }
 
     // Also a good idea for the output folders
-    if (chown(kitchen->host_install_path, user->caller_uid, user->caller_gid)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", kitchen->host_install_path);
+    if (chown(kitchen->host_install_root, user->caller_uid, user->caller_gid)) {
+        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", kitchen->host_install_root);
         return -1;
     }
     if (chown(".kitchen/output", user->caller_uid, user->caller_gid)) {
@@ -798,8 +837,8 @@ static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPat
 {
     VLOG_DEBUG("kitchen", "__ensure_mounted_dirs()\n");
     
-    if (mount(".kitchen/output", kitchen->host_install_path, NULL, MS_BIND | MS_SHARED, NULL)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_install_path);
+    if (mount(".kitchen/output", kitchen->host_install_root, NULL, MS_BIND | MS_SHARED, NULL)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_install_root);
         return -1;
     }
 
@@ -832,7 +871,7 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
         .paths = {
             .project_root = options->confined ? kitchen->project_root : kitchen->host_project_path,
             .build_root = options->confined ? kitchen->build_root : kitchen->host_build_path,
-            .install_root = options->confined ? kitchen->install_root : kitchen->host_install_path,
+            .install_root = options->confined ? kitchen->install_path : kitchen->host_install_path,
             .checkpoint_root = options->confined ? kitchen->checkpoint_root : kitchen->host_checkpoint_path,
             .toolchains_root = options->confined ? kitchen->build_toolchains_path : kitchen->host_build_toolchains_path,
         }
@@ -845,7 +884,7 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
 
     if (__should_skip_setup(kitchen)) {
         // ensure dirs are mounted still, they only persist till reboot
-        status = __is_mountpoint(kitchen->host_install_path);
+        status = __is_mountpoint(kitchen->host_install_root);
         if (status < 0) {
             VLOG_ERROR("kitchen", "failed to determine whether or not directories are mounted\n");
             return status;
