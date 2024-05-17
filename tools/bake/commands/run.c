@@ -331,6 +331,9 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
+    VLOG_TRACE("bake", "target platform: %s\n", platform);
+    VLOG_TRACE("bake", "target architecture: %s\n", arch);
+
     // get the current working directory
     status = __get_cwd(&cwd);
     if (status) {
