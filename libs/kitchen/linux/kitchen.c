@@ -1074,12 +1074,24 @@ static int __end_cooking(struct kitchen* kitchen)
     return 0;
 }
 
-static const char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, const char* platform)
+static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, const char* platform)
 {
     if (strcmp(toolchain, "platform") == 0) {
-        return recipe_find_platform_toolchain(recipe, platform);
+        const char* fullChain = recipe_find_platform_toolchain(recipe, platform);
+        char*       name;
+        char*       channel;
+        char*       version;
+        if (fullChain == NULL) {
+            return NULL;
+        }
+        if (recipe_parse_platform_toolchain(fullChain, &name, &channel, &version)) {
+            return NULL;
+        }
+        free(channel);
+        free(version);
+        return name;
     }
-    return toolchain;
+    return strdup(toolchain);
 }
 
 static void __initialize_recipe_options(struct oven_recipe_options* options, struct recipe_part* part, const char* toolchain)
@@ -1184,7 +1196,7 @@ int kitchen_recipe_prepare(struct kitchen* kitchen, struct recipe* recipe, enum 
 
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
-        const char*         toolchain = NULL;
+        char*               toolchain = NULL;
 
         if (part->toolchain != NULL) {
             toolchain = __resolve_toolchain(recipe, part->toolchain, kitchen->target_platform);
@@ -1196,6 +1208,7 @@ int kitchen_recipe_prepare(struct kitchen* kitchen, struct recipe* recipe, enum 
 
         __initialize_recipe_options(&options, part, toolchain);
         status = oven_recipe_start(&options);
+        free(toolchain);
         if (status) {
             break;
         }
@@ -1312,7 +1325,7 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
 
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
-        const char*         toolchain = NULL;
+        char*               toolchain = NULL;
 
         if (part->toolchain != NULL) {
             toolchain = __resolve_toolchain(recipe, part->toolchain, kitchen->target_platform);
@@ -1324,6 +1337,7 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
 
         __initialize_recipe_options(&options, part, toolchain);
         status = oven_recipe_start(&options);
+        free(toolchain);
         if (status) {
             break;
         }
