@@ -758,8 +758,6 @@ static int __setup_environment(struct list* packages, int confined, const char* 
         // to root as the real user.
         if (setuid(geteuid())) {
             VLOG_ERROR("kitchen", "__setup_environment: failed to switch to root\n");
-
-            // In this sub-process we make a clean quick exit
             _Exit(-1);
         }
 
@@ -771,10 +769,9 @@ static int __setup_environment(struct list* packages, int confined, const char* 
         if (status) {
             VLOG_ERROR("kitchen", "__setup_environment: \"debootstrap\" failed: %i\n", status);
             VLOG_ERROR("kitchen", "see %s/debootstrap/debootstrap.log for details\n", path);
+            _Exit(-1);
         }
-
-        // In this sub-process we make a clean quick exit
-        _Exit(status);
+        _Exit(0);
     } else {
         wt = wait(&status);
     }
