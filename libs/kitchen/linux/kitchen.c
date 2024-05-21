@@ -644,13 +644,14 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     return 0;
 }
 
-// --include=nano,gcc,clang,tcc,pcc,g++,git,make
 static char* __build_include_string(struct list* packages)
 {
     struct list_item* i;
     char*             buffer;
+    size_t            bufferLength = 64 * 1024; // 64KB buffer for packages
+    size_t            length = 0;
 
-    buffer = calloc(4096, 1); 
+    buffer = calloc(bufferLength, 1); 
     if (buffer == NULL) {
         return NULL;
     }
@@ -661,12 +662,21 @@ static char* __build_include_string(struct list* packages)
 
     list_foreach(packages, i) {
         struct oven_value_item* pkg = (struct oven_value_item*)i;
+        size_t                  pkgLength = strlen(pkg->value);
+        if ((length + pkgLength) >= bufferLength) {
+            VLOG_ERROR("kitchen", "the length of package %s exceeded the total length of package names\n", pkg->value);
+            free(buffer);
+            return NULL;
+        }
+
         if (buffer[0] == 0) {
             strcpy(buffer, "--include=");
             strcat(buffer, pkg->value);
+            length += pkgLength + 10;
         } else {
             strcat(buffer, ",");
             strcat(buffer, pkg->value);
+            length += pkgLength + 1;
         }
     }
     return buffer;
@@ -757,13 +767,14 @@ static int __setup_environment(struct list* packages, int confined, const char* 
         status = platform_spawn("debootstrap", &scratchPad[0], NULL, &(struct platform_spawn_options) {
             .output_handler = __debootstrap_output_handler
         });
+        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
         if (status) {
             VLOG_ERROR("kitchen", "__setup_environment: \"debootstrap\" failed: %i\n", status);
+            VLOG_ERROR("kitchen", "see %s/debootstrap/debootstrap.log for details\n", path);
         }
-        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
 
         // In this sub-process we make a clean quick exit
-        _Exit(0);
+        _Exit(status);
     } else {
         wt = wait(&status);
     }
