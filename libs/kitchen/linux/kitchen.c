@@ -1398,17 +1398,24 @@ static void __initialize_pack_options(
     }
 }
 
-static char* __build_pack_name(const char* root, const char* name)
+static char* __source_pack_name(const char* root, const char* name)
 {
     char tmp[4096] = { 0 };
     snprintf(&tmp[0], sizeof(tmp), "%s/%s.pack", root, name);
     return strdup(&tmp[0]);
 }
-    
+
+static char* __destination_pack_name(const char* root, const char* platform, const char* arch, const char* name)
+{
+    char tmp[4096] = { 0 };
+    snprintf(&tmp[0], sizeof(tmp), "%s/%s_%s_%s.pack", root, platform, arch, name);
+    return strdup(&tmp[0]);
+}
+
 static int __move_pack(struct kitchen* kitchen, struct recipe_pack* pack)
 {
-    char* src = __build_pack_name(kitchen->shared_output_path, pack->name);
-    char* dst = __build_pack_name(kitchen->real_project_path, pack->name);
+    char* src = __source_pack_name(kitchen->shared_output_path, pack->name);
+    char* dst = __destination_pack_name(kitchen->real_project_path, pack->name);
     int   status;
 
     if (src == NULL || dst == NULL) {
