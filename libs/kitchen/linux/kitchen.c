@@ -1415,7 +1415,7 @@ static char* __destination_pack_name(const char* root, const char* platform, con
 static int __move_pack(struct kitchen* kitchen, struct recipe_pack* pack)
 {
     char* src = __source_pack_name(kitchen->shared_output_path, pack->name);
-    char* dst = __destination_pack_name(kitchen->real_project_path, pack->name);
+    char* dst = __destination_pack_name(kitchen->real_project_path, kitchen->target_platform, kitchen->target_architecture, pack->name);
     int   status;
 
     if (src == NULL || dst == NULL) {
