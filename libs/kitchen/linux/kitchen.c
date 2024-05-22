@@ -591,8 +591,10 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     char buff[2048];
     VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->name);
 
+    memset(kitchen, 0, sizeof(struct kitchen));
     kitchen->target_platform = strdup(options->target_platform);
     kitchen->target_architecture = strdup(options->target_architecture);
+    kitchen->real_project_path = strdup(options->project_path);
     kitchen->confined = options->confined;
     kitchen->hash = __setup_hash(options);
 
@@ -1402,11 +1404,11 @@ static char* __build_pack_name(const char* root, const char* name)
     snprintf(&tmp[0], sizeof(tmp), "%s/%s.pack", root, name);
     return strdup(&tmp[0]);
 }
-
+    
 static int __move_pack(struct kitchen* kitchen, struct recipe_pack* pack)
 {
-    char* src = __build_pack_name(kitchen->install_root, pack->name);
-    char* dst = __build_pack_name(kitchen->host_project_path, pack->name);
+    char* src = __build_pack_name(kitchen->shared_output_path, pack->name);
+    char* dst = __build_pack_name(kitchen->real_project_path, pack->name);
     int   status;
 
     if (src == NULL || dst == NULL) {

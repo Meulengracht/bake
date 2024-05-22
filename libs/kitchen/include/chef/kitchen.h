@@ -68,6 +68,7 @@ struct kitchen {
 
     char* target_platform;
     char* target_architecture;
+    char* real_project_path;
     char* shared_output_path;
 
     // external paths that point inside chroot
