@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include <libgen.h> // dirname()
+#include <mntent.h>
 #include <pwd.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -160,40 +161,63 @@ static int __end_cooking(struct kitchen* kitchen);
 
 static int __is_mountpoint(const char* path)
 {
-    struct stat pathStat;
-    struct stat parentStat;
-    char*       parentPath;
-    char*       pathCopy;
+    struct mntent* ent;
+    FILE*          mtab;
+    char*          resolved;
+    int            found = 0;
 
-    // The path supplied must point to a directory
-    if (stat(path, &pathStat)) {
-        return -1;
-    }
-    if (!(pathStat.st_mode & S_IFDIR)) {
+    resolved = realpath(path, NULL);
+    if (resolved == NULL) {
         return -1;
     }
 
-    // dirname unfortunately modifies it's copy, so create one that can
-    // be changed
-    pathCopy = strdup(path);
-    if (pathCopy == NULL) {
-        return -1;
-    }
-    parentPath = dirname(pathCopy);
-
-    // get the parent's stat info
-    if (stat(parentPath, &parentStat)) {
-        free(pathCopy);
+    mtab = setmntent("/etc/mtab", "r");
+    if (mtab == NULL) {
+        free(resolved);
         return -1;
     }
 
-    // If the have different device ids, then it's most likely a mountpoint
-    if (pathStat.st_dev != parentStat.st_dev ||
-        (pathStat.st_dev == parentStat.st_dev &&
-         pathStat.st_ino == parentStat.st_ino)) {
-        return 1;
+    while (NULL != (ent = getmntent(mtab))) {
+        if (strcmp(ent->mnt_dir, resolved) == 0) {
+            found = 1;
+            break;
+        }
+    }
+    endmntent(mtab);
+    free(resolved);
+    return found;
+}
+
+static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPath)
+{
+    VLOG_DEBUG("kitchen", "__ensure_mounted_dirs()\n");
+    
+    if (mount(kitchen->shared_output_path, kitchen->host_install_root, NULL, MS_BIND | MS_SHARED, NULL)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_install_root);
+        return -1;
+    }
+
+    if (mount(projectPath, kitchen->host_project_path, NULL, MS_BIND | MS_PRIVATE | MS_RDONLY, NULL)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_project_path);
+        return -1;
     }
     return 0;
+}
+
+static void __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)
+{
+    char buff[2048];
+    VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup()\n");
+
+    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/install", kitchenRoot, name);
+    if (umount(&buff[0])) {
+        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+    }
+
+    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/project", kitchenRoot, name);
+    if (umount(&buff[0])) {
+        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+    }
 }
 
 static int __recreate_dir(const char* path)
@@ -572,6 +596,9 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     kitchen->confined = options->confined;
     kitchen->hash = __setup_hash(options);
 
+    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/output", options->project_path);
+    kitchen->shared_output_path = strdup(&buff[0]);
+
     // Format external chroot paths that are arch/platform agnostic
     snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s", options->project_path, options->name);
     kitchen->host_chroot = strdup(&buff[0]);
@@ -680,22 +707,6 @@ static char* __build_include_string(struct list* packages)
         }
     }
     return buffer;
-}
-
-static void __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)
-{
-    char buff[2048];
-    VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup()\n");
-
-    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/install", kitchenRoot, name);
-    if (umount(&buff[0])) {
-        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
-    }
-
-    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/project", kitchenRoot, name);
-    if (umount(&buff[0])) {
-        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
-    }
 }
 
 static int __clean_environment(const char* path)
@@ -812,8 +823,8 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct __chef_user* user)
         return -1;
     }
 
-    if (platform_mkdir(".kitchen/output")) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create .kitchen/output\n");
+    if (platform_mkdir(kitchen->shared_output_path)) {
+        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->shared_output_path);
         return -1;
     }
 
@@ -834,24 +845,8 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct __chef_user* user)
         VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", kitchen->host_install_root);
         return -1;
     }
-    if (chown(".kitchen/output", user->caller_uid, user->caller_gid)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for output\n");
-        return -1;
-    }
-    return 0;
-}
-
-static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPath)
-{
-    VLOG_DEBUG("kitchen", "__ensure_mounted_dirs()\n");
-    
-    if (mount(".kitchen/output", kitchen->host_install_root, NULL, MS_BIND | MS_SHARED, NULL)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_install_root);
-        return -1;
-    }
-
-    if (mount(projectPath, kitchen->host_project_path, NULL, MS_BIND | MS_PRIVATE | MS_RDONLY, NULL)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_project_path);
+    if (chown(kitchen->shared_output_path, user->caller_uid, user->caller_gid)) {
+        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", kitchen->shared_output_path);
         return -1;
     }
     return 0;
@@ -1516,7 +1511,6 @@ int kitchen_recipe_clean(struct recipe* recipe, struct kitchen_clean_options* op
     }
 
     __ensure_mounts_cleanup(kitchenPath, options->name);
-
     status = __clean_environment(kitchenPath);
     if (status) {
         if (errno != ENOENT) {
