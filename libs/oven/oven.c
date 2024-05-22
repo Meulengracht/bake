@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@ struct oven_recipe_context {
     const char* relative_path;
     const char* toolchain;
     const char* checkpoint_file;
+    const char* pkgconfig_root;
 };
 
 struct oven_variables {
@@ -495,46 +496,48 @@ static struct list* __preprocess_keypair_list(struct list* original)
     return processed;
 }
 
-static const char* __append_ingredients_system_path(const char* original)
+static const char* __append_ingredients_system_path(const char* original, const char* systemRoot)
 {
     // '-isystem-after ' (15)
     // '/include' (8)
     // space between (1)
     // zero terminator (1)
-    size_t length = strlen(original) + strlen("") + 26;
+    size_t length = strlen(original) + strlen(systemRoot) + 26;
     char*  buffer = calloc(length, 1);
     if (buffer == NULL) {
-        return NULL;    
+        return NULL;
     }
-    
-    snprintf(buffer, length - 1, "%s -isystem-after %s/include", original, "");
+
+    snprintf(buffer, length - 1, "%s -isystem-after %s/include", original, systemRoot);
     return buffer;
 }
 
-static struct chef_keypair_item* __build_ingredients_system_path_keypair(const char* key)
+static struct chef_keypair_item* __compose_keypair(const char* key, const char* value)
 {
-    // '-isystem-after ' (15)
-    // '/include' (8)
-    // zero terminator (1)
-    size_t length = strlen("") + 25;
-    char*  buffer = calloc(length, 1);
     struct chef_keypair_item* item = calloc(sizeof(struct chef_keypair_item), 1);
-    if (buffer == NULL || item == NULL) {
-        free(buffer);
+    if (item == NULL) {
         return NULL;
     }
     item->key = strdup(key);
     if (item->key == NULL) {
-        free(buffer);
         free(item);
     }
-
-    snprintf(buffer, length - 1, "-isystem-after %s/include", "");
-    item->value = buffer;
+    item->value = strdup(value);
+    if (item->value == NULL) {
+        free(item->key);
+        free(item);
+    }
     return item;
 }
 
-static int __append_or_update_environ_flags(struct list* environment)
+static struct chef_keypair_item* __build_ingredients_system_path_keypair(const char* key, const char* systemRoot)
+{
+    char tmp[512] = { 0 };
+    snprintf(&tmp[0], sizeof(tmp), "-isystem-after %s/include", systemRoot);
+    return __compose_keypair(key, &tmp[0]);
+}
+
+static int __append_or_update_environ_flags(struct list* environment, const char* systemRoot)
 {
     // Look and update/add the following language flags to account for
     // ingredient include paths
@@ -554,7 +557,7 @@ static int __append_or_update_environ_flags(struct list* environment)
         for (int i = 0; idents[i].ident != NULL; i++) {
             if (!strcmp(keypair->key, idents[i].ident)) {
                 const char* tmp = keypair->value;
-                keypair->value = __append_ingredients_system_path(tmp);
+                keypair->value = __append_ingredients_system_path(tmp, systemRoot);
                 if (keypair->value == NULL) {
                     keypair->value = tmp;
                     return -1;
@@ -568,7 +571,51 @@ static int __append_or_update_environ_flags(struct list* environment)
     // Add any that was not provided
     for (int i = 0; idents[i].ident != NULL; i++) {
         if (!idents[i].fixed) {
-            item = (struct list_item*)__build_ingredients_system_path_keypair(idents[i].ident);
+            item = (struct list_item*)__build_ingredients_system_path_keypair(idents[i].ident, systemRoot);
+            if (item == NULL) {
+                return -1;
+            }
+            list_add(environment, item);
+        }
+    }
+    return 0;
+}
+
+static int __add_or_replace_pkgconfig_paths(struct list* environment, const char* pkgconfigRoot)
+{
+    // Look and update/add the following language flags to account for
+    // ingredient include paths
+    struct list_item* item;
+    struct {
+        const char* ident;
+        int         fixed;
+    } idents[] = {
+        { "PKG_CONFIG_PATH", 0 },
+        { "PKG_CONFIG_LIBDIR", 0 },
+        { NULL, 0 }
+    };
+
+    // Replace any environmental variable already provided by recipe
+    list_foreach(environment, item) {
+        struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
+        for (int i = 0; idents[i].ident != NULL; i++) {
+            if (!strcmp(keypair->key, idents[i].ident)) {
+                const char* tmp = keypair->value;
+                keypair->value = strdup(pkgconfigRoot);
+                if (keypair->value == NULL) {
+                    keypair->value = tmp;
+                    return -1;
+                }
+                free((void*)tmp);
+                idents[i].fixed = 1;
+            }
+        }
+    }
+
+    // Add any that was not provided
+    for (int i = 0; idents[i].ident != NULL; i++) {
+        if (!idents[i].fixed) {
+            item = (struct list_item*)__compose_keypair(idents[i].ident, pkgconfigRoot);
             if (item == NULL) {
                 return -1;
             }
@@ -643,6 +690,16 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     if (!data->environment) {
         __cleanup_backend_data(data);
         return -1;
+    }
+
+    // If we are indeed cross-compiling for another platform, let us redirect pkgconfig
+    // towards generated profiles.
+    if (strcmp(CHEF_PLATFORM_STR,  g_oven.variables.target_platform)) {
+        VLOG_TRACE("oven", "redirecting pkg-config to %s\n", g_oven.recipe.pkgconfig_root);
+        if (__add_or_replace_pkgconfig_paths(data->environment, g_oven.recipe.pkgconfig_root)) {
+            __cleanup_backend_data(data);
+            return -1;
+        }
     }
 
     //if (__append_or_update_environ_flags(data->environment)) {
