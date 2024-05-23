@@ -65,7 +65,7 @@ static char* __source_pack_name(const char* root, const char* name)
 static char* __destination_pack_name(const char* root, const char* platform, const char* arch, const char* name)
 {
     char tmp[4096] = { 0 };
-    snprintf(&tmp[0], sizeof(tmp), "%s/%s_%s_%s.pack", root, platform, arch, name);
+    snprintf(&tmp[0], sizeof(tmp), "%s/%s_%s_%s.pack", root, name, platform, arch);
     return strdup(&tmp[0]);
 }
 
