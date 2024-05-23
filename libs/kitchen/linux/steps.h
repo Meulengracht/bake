@@ -16,19 +16,19 @@
  * 
  */
 
-#ifndef __OVEN_PKGMNGRS_H__
-#define __OVEN_PKGMNGRS_H__
+#ifndef __KITCHEN_STEPS_H__
+#define __KITCHEN_STEPS_H__
 
-// imports
-struct ingredient;
-struct list;
+// imports where we do not actually care about the .h
+struct kitchen;
+struct recipe;
+struct oven_recipe_options;
+struct recipe_part;
 
-struct pkgmngr {
-    int  (*make_available)(struct pkgmngr*, struct ingredient* ingredient);
-    int  (*add_overrides)(struct pkgmngr*, struct list* environment);
-    void (*destroy)(struct pkgmngr*);
-};
+extern int   kitchen_cooking_start(struct kitchen* kitchen);
+extern int   kitchen_cooking_end(struct kitchen* kitchen);
+extern char* kitchen_toolchain_resolve(struct recipe* recipe, const char* toolchain, const char* platform);
+extern void  oven_recipe_options_construct(struct oven_recipe_options* options, struct recipe_part* part, const char* toolchain);
 
-extern struct pkgmngr* pkgmngr_pkgconfig_new(const char* root);
 
-#endif //!__OVEN_PKGMNGRS_H__
+#endif //!__KITCHEN_STEPS_H__

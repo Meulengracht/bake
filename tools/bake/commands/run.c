@@ -377,6 +377,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     // prepare kitchen parameters, lists are already filled at this point
     kitchenOptions.name = &tmp[0];
     kitchenOptions.project_path = cwd;
+    kitchenOptions.pkg_environment = NULL;
     kitchenOptions.confined = recipe->environment.build.confinement;
     kitchenOptions.envp = (const char* const*)envp;
     kitchenOptions.target_platform = platform;

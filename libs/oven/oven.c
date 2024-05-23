@@ -40,7 +40,6 @@ struct oven_recipe_context {
     const char* relative_path;
     const char* toolchain;
     const char* checkpoint_file;
-    const char* pkgconfig_root;
 };
 
 struct oven_variables {
@@ -524,7 +523,7 @@ static struct chef_keypair_item* __compose_keypair(const char* key, const char* 
     }
     item->value = strdup(value);
     if (item->value == NULL) {
-        free(item->key);
+        free((void*)item->key);
         free(item);
     }
     return item;
@@ -572,50 +571,6 @@ static int __append_or_update_environ_flags(struct list* environment, const char
     for (int i = 0; idents[i].ident != NULL; i++) {
         if (!idents[i].fixed) {
             item = (struct list_item*)__build_ingredients_system_path_keypair(idents[i].ident, systemRoot);
-            if (item == NULL) {
-                return -1;
-            }
-            list_add(environment, item);
-        }
-    }
-    return 0;
-}
-
-static int __add_or_replace_pkgconfig_paths(struct list* environment, const char* pkgconfigRoot)
-{
-    // Look and update/add the following language flags to account for
-    // ingredient include paths
-    struct list_item* item;
-    struct {
-        const char* ident;
-        int         fixed;
-    } idents[] = {
-        { "PKG_CONFIG_PATH", 0 },
-        { "PKG_CONFIG_LIBDIR", 0 },
-        { NULL, 0 }
-    };
-
-    // Replace any environmental variable already provided by recipe
-    list_foreach(environment, item) {
-        struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
-        for (int i = 0; idents[i].ident != NULL; i++) {
-            if (!strcmp(keypair->key, idents[i].ident)) {
-                const char* tmp = keypair->value;
-                keypair->value = strdup(pkgconfigRoot);
-                if (keypair->value == NULL) {
-                    keypair->value = tmp;
-                    return -1;
-                }
-                free((void*)tmp);
-                idents[i].fixed = 1;
-            }
-        }
-    }
-
-    // Add any that was not provided
-    for (int i = 0; idents[i].ident != NULL; i++) {
-        if (!idents[i].fixed) {
-            item = (struct list_item*)__compose_keypair(idents[i].ident, pkgconfigRoot);
             if (item == NULL) {
                 return -1;
             }
@@ -690,16 +645,6 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     if (!data->environment) {
         __cleanup_backend_data(data);
         return -1;
-    }
-
-    // If we are indeed cross-compiling for another platform, let us redirect pkgconfig
-    // towards generated profiles.
-    if (strcmp(CHEF_PLATFORM_STR,  g_oven.variables.target_platform)) {
-        VLOG_TRACE("oven", "redirecting pkg-config to %s\n", g_oven.recipe.pkgconfig_root);
-        if (__add_or_replace_pkgconfig_paths(data->environment, g_oven.recipe.pkgconfig_root)) {
-            __cleanup_backend_data(data);
-            return -1;
-        }
     }
 
     //if (__append_or_update_environ_flags(data->environment)) {

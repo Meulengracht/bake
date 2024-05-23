@@ -22,6 +22,9 @@
 #include <chef/list.h>
 #include <chef/recipe.h>
 
+// imports that don't really need to be exposed
+struct pkgmngr;
+
 struct kitchen_ingredient {
     struct list_item list_header;
     const char*      name;
@@ -36,6 +39,7 @@ struct kitchen_setup_hook {
 struct kitchen_setup_options {
     const char*        name;
     const char*        project_path;
+    const char*        pkg_environment;
     int                confined;
     const char* const* envp;
     const char*        target_platform;
@@ -70,6 +74,8 @@ struct kitchen {
     char* target_architecture;
     char* real_project_path;
     char* shared_output_path;
+
+    struct pkgmngr* pkg_manager;
 
     // external paths that point inside chroot
     // i.e paths valid outside chroot
