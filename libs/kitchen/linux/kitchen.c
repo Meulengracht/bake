@@ -373,7 +373,7 @@ static int __should_skip_setup(struct kitchen* kitchen)
     return kitchen->hash == existingHash;
 }
 
-static struct pkgmngr* __setup_pkgenvironment(struct kitchen_setup_options* options)
+static struct pkgmngr* __setup_pkg_environment(struct kitchen_setup_options* options, const char* chroot)
 {
     static struct {
         const char* environment;
@@ -391,7 +391,12 @@ static struct pkgmngr* __setup_pkgenvironment(struct kitchen_setup_options* opti
 
     for (int i = 0; systems[i].environment != NULL; i++) {
         if (strcmp(env, systems[i].environment) == 0) {
-            return systems[i].create(NULL);
+            VLOG_TRACE("kitchen", "initializing %s environment\n", env);
+            return systems[i].create(&(struct pkgmngr_options) {
+                .root = chroot, 
+                .target_platform = options->target_platform,
+                .target_architecture = options->target_architecture
+            });
         }
     }
     return NULL;
@@ -418,7 +423,6 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     kitchen->real_project_path = strdup(options->project_path);
     kitchen->confined = options->confined;
     kitchen->hash = __setup_hash(options);
-    kitchen->pkg_manager = __setup_pkgenvironment(options);
 
     snprintf(&buff[0], sizeof(buff), "%s/.kitchen/output", options->project_path);
     kitchen->shared_output_path = strdup(&buff[0]);
@@ -426,6 +430,7 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     // Format external chroot paths that are arch/platform agnostic
     snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s", options->project_path, options->name);
     kitchen->host_chroot = strdup(&buff[0]);
+    kitchen->pkg_manager = __setup_pkg_environment(options, &buff[0]);
 
     snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/project", options->project_path, options->name);
     kitchen->host_project_path = strdup(&buff[0]);
