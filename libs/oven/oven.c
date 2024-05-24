@@ -107,6 +107,7 @@ int oven_initialize(struct oven_parameters* parameters)
     g_oven.paths.install_root = strdup(parameters->paths.install_root);
     g_oven.paths.checkpoint_root = strdup(parameters->paths.checkpoint_root);
     g_oven.paths.toolchains_root = strdup(parameters->paths.toolchains_root);
+    g_oven.paths.build_ingredients_root = strdup(parameters->paths.build_ingredients_root);
     
     // update oven variables
     g_oven.variables.target_platform = strdup(parameters->target_platform);
@@ -131,6 +132,7 @@ void oven_cleanup(void)
     free((void*)g_oven.paths.install_root);
     free((void*)g_oven.paths.checkpoint_root);
     free((void*)g_oven.paths.toolchains_root);
+    free((void*)g_oven.paths.build_ingredients_root);
 
     // cleanup variables
     free((void*)g_oven.variables.target_platform);
@@ -210,6 +212,7 @@ static const char* __get_variable(const char* name)
         { "TOOLCHAIN_PREFIX", &g_oven.recipe.toolchain },
         { "PROJECT_PATH", &g_oven.paths.project_root },
         { "INSTALL_PREFIX", &g_oven.paths.install_root },
+        { "BUILD_INGREDIENTS_PREFIX", &g_oven.paths.build_ingredients_root },
         { NULL, NULL }
     };
 

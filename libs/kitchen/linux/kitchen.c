@@ -706,6 +706,7 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
             .install_root = options->confined ? kitchen->install_path : kitchen->host_install_path,
             .checkpoint_root = options->confined ? kitchen->checkpoint_root : kitchen->host_checkpoint_path,
             .toolchains_root = options->confined ? kitchen->build_toolchains_path : kitchen->host_build_toolchains_path,
+            .build_ingredients_root = options->confined ? kitchen->build_ingredients_path : kitchen->host_build_ingredients_path
         }
     });
     if (status) {
