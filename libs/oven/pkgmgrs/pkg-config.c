@@ -70,6 +70,10 @@ static const char* __get_pcroot2(struct pkgconfig* pkgconfig)
 static char* __string_array_join(const char* const* items, const char* prefix, const char* separator)
 {
     char* buffer;
+    
+    if (items == NULL || *items == NULL) {
+        return NULL;
+    }
 
     buffer = calloc(4096, 1); 
     if (buffer == NULL) {
@@ -102,7 +106,6 @@ static int __make_available(struct pkgmngr* pkgmngr, struct ingredient* ingredie
     if (ingredient->options == NULL) {
         // Can't add a pkg-config file if the ingredient didn't specify any
         // options for consumers.
-        // TODO: Add defaults?
         return 0;
     }
 
@@ -128,9 +131,8 @@ static int __make_available(struct pkgmngr* pkgmngr, struct ingredient* ingredie
     }
 
     cflags = __string_array_join((const char* const*)ingredient->options->inc_dirs, "-I{prefix}", " ");
-    libs = __string_array_join((const char* const*)ingredient->options->lib_dirs, "-L{prefix}", " ");
-    if (cflags == NULL || libs == NULL) {
-        status = -1;
+    libs   = __string_array_join((const char* const*)ingredient->options->lib_dirs, "-L{prefix}", " ");
+    if (cflags == NULL && libs == NULL) {
         goto cleanup;
     }
 
@@ -140,8 +142,12 @@ static int __make_available(struct pkgmngr* pkgmngr, struct ingredient* ingredie
     fprintf(file, "Name: %s\n", ingredient->package->package);
     fprintf(file, "Description: %s by %s\n", ingredient->package->package, ingredient->package->publisher);
     fprintf(file, "Version: %i.%i.%i\n", ingredient->version->major, ingredient->version->minor, ingredient->version->patch);
-    fprintf(file, "Cflags: %s\n", cflags);
-    fprintf(file, "Libs: %s\n", libs);
+    if (cflags != NULL) {
+        fprintf(file, "Cflags: %s\n", cflags);
+    }
+    if (libs != NULL) {
+        fprintf(file, "Libs: %s\n", libs);
+    }
 
 cleanup:
     free(pcPath);
@@ -217,12 +223,15 @@ static int __add_or_replace_pkgconfig_paths(struct pkgmngr* pkgmngr, struct list
 static void __destroy(struct pkgmngr* pkgmngr)
 {
     struct pkgconfig* pkgconfig = (struct pkgconfig*)pkgmngr;
-    if (pkgconfig != NULL) {
-        free(pkgconfig->root);
-        free(pkgconfig->ccroot);
-        free(pkgconfig->pcroot);
-        free(pkgconfig->ccpcroot);
+    if (pkgconfig == NULL) {
+        return;
     }
+    free(pkgconfig->root);
+    free(pkgconfig->ccroot);
+    free(pkgconfig->pcroot);
+    free(pkgconfig->ccpcroot);
+    free(pkgconfig->target_platform);
+    free(pkgconfig->target_architecture);
     free(pkgconfig);
 }
 

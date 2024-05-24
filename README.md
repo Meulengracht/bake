@@ -12,6 +12,13 @@ Chef is a cross-platform package management system, specifically built to suppor
 
 The best way to get started is to install the latest version of Chef using the [snap store](https://snapcraft.io/vchef). However not everyone likes or uses snaps, and in this case it's recommended to build chef from source, as chef is not distributed as a debian package yet!
 
+## TODO
+
+Features that we want to include in upcoming releases:
+- Split the stages of preparing host packages and the container environment.
+- Better diff detection in recipes.
+- Simpler UX experience.
+
 ## Account Setup
 
 To get started with your account setup, you will need to activate one of the privileged commands provided by 'order'
@@ -70,6 +77,7 @@ $ bake my-recipe.yaml --cross-compile=linux/i386
 The above will trigger chef to download ingredients for the linux/i386 platform, and then build the package for that platform. During execution of the different steps, chef will expose the following additional environment variables:
 
   * `TOOLCHAIN_PREFIX`: path to where the toolchain ingredient is unpacked
+  * `BUILD_INGREDIENTS_PREFIX`: path to where the build ingredients are unpacked
   * `CHEF_TARGET_PLATFORM`: the platform which was provided on the commandline
   * `CHEF_TARGET_ARCHITECTURE`: the architecture which was provided on the commandline
 
