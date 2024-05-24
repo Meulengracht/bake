@@ -230,6 +230,7 @@ struct pkgmngr* pkgmngr_pkgconfig_new(struct pkgmngr_options* options)
 {
     struct pkgconfig* pkgconfig;
     char              tmp[2048];
+    int               status;
 
     pkgconfig = malloc(sizeof(struct pkgconfig));
     if (pkgconfig == NULL) {
@@ -255,5 +256,19 @@ struct pkgmngr* pkgmngr_pkgconfig_new(struct pkgmngr_options* options)
     pkgconfig->target_platform = strdup(options->target_platform);
     pkgconfig->target_architecture = strdup(options->target_architecture);
 
+    // ensure pc-roots exists
+    status = platform_mkdir(pkgconfig->pcroot);
+    if (status && errno != EEXIST) {
+        VLOG_ERROR("pkg-config", "failed to ensure that directory %s exists\n", pkgconfig->pcroot);
+        __destroy(&pkgconfig->base);
+        return NULL;
+    }
+    
+    status = platform_mkdir(pkgconfig->ccpcroot);
+    if (status && errno != EEXIST) {
+        VLOG_ERROR("pkg-config", "failed to ensure that directory %s exists\n", pkgconfig->ccpcroot);
+        __destroy(&pkgconfig->base);
+        return NULL;
+    }
     return &pkgconfig->base;
 }
