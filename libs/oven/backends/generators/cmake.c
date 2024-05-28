@@ -158,31 +158,74 @@ static const char* __get_cmake_default_install_path(const char* platform)
         return "Program Files";
     } else if (strcmp(platform, "linux") == 0) {
         return "/usr/local";
-    } else if (strcmp(platform, "vali") == 0) {
-        return "";
     } else {
         return "";
     }
 }
 
-static char* __add_cmake_prefix(const char* platform, const char* arguments, const char* installPath)
+static char* __get_default_path_prefixes(const char* platform, const char* buildIngredientsRoot)
 {
-    // build a new argument string with the prefix added
-    char* newArguments = malloc(strlen(arguments) + 1024);
-    char* defaultInstallPath = strpathcombine(installPath, __get_cmake_default_install_path(platform));
-    if (newArguments == NULL || defaultInstallPath == NULL) {
-        free(newArguments);
-        free(defaultInstallPath);
+
+}
+
+static char* __replace_or_add_cmake_prefixes(const char* platform, const char* arguments, struct oven_backend_data_paths* paths)
+{
+    char* installPath = strpathcombine(paths->install, __get_cmake_default_install_path(platform));
+    char* newArguments;
+    struct {
+        const char* prefix;
+        const char* value;
+    } prefixes[] = {
+        { "CMAKE_INSTALL_PREFIX", installPath },
+        { "CMAKE_PREFIX_PATH", paths->build_ingredients },
+        { NULL, NULL }
+    };
+
+    if (installPath == NULL) {
         return NULL;
     }
 
-    sprintf(newArguments, "%s -DCMAKE_INSTALL_PREFIX=%s", arguments, defaultInstallPath);
-    free(defaultInstallPath);
-    return newArguments;
-}
+    // allocate new space for arguments
+    newArguments = malloc(strlen(arguments) + 4096);
+    if (newArguments == NULL) {
+        free(installPath);
+        return NULL;
+    }
+    memset(newArguments, 0, strlen(arguments) + 4096);
+    strcpy(newArguments, arguments);
 
-static char* __replace_or_add_cmake_prefix(const char* platform, const char* arguments, const char* installPath)
-{
+    for (int i = 0; prefixes[i].prefix != NULL; i++) {
+        char* exists = strstr(arguments, prefixes[i].prefix);
+        int   status;
+
+        if (!exists) {
+            strcat(newArguments, " -D");
+            strcat(newArguments, prefixes[i].prefix);
+            strcat(newArguments, "=");
+            strcat(newArguments, prefixes[i].value);
+            continue;
+        }
+
+        char* startOfValue;
+        char* endOfValue;
+        char* oldValue;
+        char* newValue;
+
+        // replace the prefix with the new one
+        startOfValue = strchr(exists, '=') + 1;
+        endOfValue   = strchr(startOfValue, ' ');
+        if (!endOfValue) {
+            endOfValue = strchr(startOfValue, '\0');
+        }
+        oldValue = strndup(startOfValue, endOfValue - startOfValue);
+        if (strstr(oldValue, prefixes[i].value) != NULL) {
+            // already contains the value
+            continue;
+        }
+        newValue = strpathcombine(installPath, oldValue);
+    }
+
+
     char* prefix = strstr(arguments, "CMAKE_INSTALL_PREFIX=");
     char* newArguments;
     char* oldPath;
@@ -191,7 +234,7 @@ static char* __replace_or_add_cmake_prefix(const char* platform, const char* arg
     char* endOfValue;
 
     if (!prefix) {
-        return __add_cmake_prefix(platform, arguments, installPath);
+        return __add_cmake_option(platform, arguments, installPath);
     }
 
     // replace the prefix with the new one
@@ -244,9 +287,38 @@ static void __cmake_output_handler(const char* line, enum platform_spawn_output_
     }
 }
 
-int cmake_main(struct oven_backend_data* data, union oven_backend_options* options)
+static void __use_workspace_file(struct oven_backend_data* data)
 {
     char*  workspacePath;
+    int    status = -1;
+    int    written;
+
+    workspacePath = strpathcombine(data->paths.build, "workspace.cmake");
+    if (workspacePath == NULL) {
+        return -1;
+    }
+
+
+    status = __generate_cmake_file(workspacePath, data);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    // build the cmake command, execute from build folder
+    // if cross compiling set -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF
+    written = snprintf(
+        argument,
+        argumentLength - 1,
+        "%s -DCMAKE_PROJECT_INCLUDE=%s %s",
+        newArguments,
+        workspacePath,
+        data->paths.project
+    );
+    argument[written] = '\0';
+}
+
+int cmake_main(struct oven_backend_data* data, union oven_backend_options* options)
+{
     char*  argument    = NULL;
     char*  newArguments;
     char** environment = NULL;
@@ -254,14 +326,12 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
     int    status = -1;
     size_t argumentLength;
 
-    workspacePath = strpathcombine(data->paths.build, "workspace.cmake");
-    newArguments  = __replace_or_add_cmake_prefix(
+    newArguments = __replace_or_add_cmake_prefixes(
         data->platform.target_platform,
         data->arguments,
         data->paths.install
     );
-    if (workspacePath == NULL || newArguments == NULL) {
-        free(workspacePath);
+    if (newArguments == NULL) {
         free(newArguments);
         return -1;
     }
@@ -278,31 +348,13 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
         goto cleanup;
     }
 
-    if (options == NULL) {
-        status = __generate_cmake_file(workspacePath, data);
-        if (status != 0) {
-            goto cleanup;
-        }
-
-        // build the cmake command, execute from build folder
-        // if cross compiling set -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF
-        written = snprintf(
-            argument,
-            argumentLength - 1,
-            "%s -DCMAKE_PROJECT_INCLUDE=%s %s",
-            newArguments,
-            workspacePath,
-            data->paths.project
-        );
-    } else {
-        written = snprintf(
-            argument,
-            argumentLength - 1,
-            "%s %s",
-            newArguments,
-            data->paths.project
-        );
-    }
+    written = snprintf(
+        argument,
+        argumentLength - 1,
+        "%s %s",
+        newArguments,
+        data->paths.project
+    );
     argument[written] = '\0';
 
     // perform the spawn operation
@@ -322,7 +374,6 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
 cleanup:
     oven_environment_destroy(environment);
     free(argument);
-    free(workspacePath);
     free(newArguments);
     return status;
 }

@@ -608,8 +608,6 @@ static void __cleanup_backend_data(struct oven_backend_data* data)
 {
     __cleanup_environment(data->environment);
     free((void*)data->arguments);
-
-    free((void*)data->paths.root);
     free((void*)data->paths.project);
 }
 
@@ -617,19 +615,19 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
 {
     char* path;
 
+    path = strpathcombine(g_oven.paths.project_root, g_oven.recipe.relative_path);
+    if (path == NULL) {
+        return -1;
+    }
+
     // reset the datastructure
     memset(data, 0, sizeof(struct oven_backend_data));
 
-    data->paths.root = strdup(g_oven.paths.project_root);
-    if (data->paths.root == NULL) {
-        return -1;
-    }
-    
-    path = strpathcombine(data->paths.root, g_oven.recipe.relative_path);
-    if (path == NULL) {
-        free((void*)data->paths.root);
-        return -1;
-    }
+    // setup expected paths
+    data->paths.root = g_oven.paths.project_root;
+    data->paths.install = g_oven.paths.install_root;
+    data->paths.build   = g_oven.paths.build_root;
+    data->paths.build_ingredients = g_oven.paths.build_ingredients_root;
     data->paths.project = path;
 
     data->project_name        = g_oven.recipe.name;
@@ -640,9 +638,6 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     data->platform.host_architecture = CHEF_ARCHITECTURE_STR;
     data->platform.target_platform = g_oven.variables.target_platform;
     data->platform.target_architecture = g_oven.variables.target_arch;
-    
-    data->paths.install = g_oven.paths.install_root;
-    data->paths.build   = g_oven.paths.build_root;
     
     data->environment = __preprocess_keypair_list(environment);
     if (!data->environment) {

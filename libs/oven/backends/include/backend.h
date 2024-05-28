@@ -50,6 +50,13 @@ struct oven_backend_data_paths {
      * the backend is supposed to store the files that should be installed.
      */
     const char* install;
+
+    /**
+     * @brief The path to the build ingredients root directory. This is where
+     * ingredients used specifically for building are stored. This is usually
+     * only relevant for cross-compilation.
+     */
+    const char* build_ingredients;
 };
 
 struct oven_backend_data_platform {
