@@ -1,5 +1,5 @@
 name: vchef
-version: '1.0'
+version: '1.2'
 summary: The Vali Chef Package Mangement System
 description: |
   Originally developed for the Vali/MollenOS operating system, this is a generic package management system that is 
