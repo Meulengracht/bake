@@ -158,6 +158,8 @@ static const char* __get_cmake_default_install_path(const char* platform)
         return "Program Files";
     } else if (strcmp(platform, "linux") == 0) {
         return "/usr";
+    } else if (strcmp(platform, "vali") == 0) {
+        return "";
     } else {
         return "";
     }
@@ -191,6 +193,10 @@ static void __add_default_prefix_paths(char* output, const char* platform, const
         strcat(&output[0], ";");
         strcat(&output[0], buildIngredientsRoot);
         strcat(&output[0], "/usr");
+    } else if (strcmp(platform, "vali") == 0) {
+        strcat(&output[0], buildIngredientsRoot);
+    } else {
+        return "";
     }
 }
 
