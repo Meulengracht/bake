@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -157,118 +157,191 @@ static const char* __get_cmake_default_install_path(const char* platform)
     if (strcmp(platform, "windows") == 0) {
         return "Program Files";
     } else if (strcmp(platform, "linux") == 0) {
-        return "/usr/local";
+        return "/usr";
     } else {
         return "";
     }
 }
 
-static char* __get_default_path_prefixes(const char* platform, const char* buildIngredientsRoot)
+static char* __replace_install_prefix(const char* previousValue, const char* platform, struct oven_backend_data_paths* paths)
 {
+    // On new values, just return the default for the platform
+    if (previousValue == NULL) {
+        return strpathcombine(paths->install, __get_cmake_default_install_path(platform));
+    }
+    
+    // On existing, there are two cases
+    // 1. They already specified the INSTALL prefix
+    // 2. They have a normal path specified.
+    if (strncmp(previousValue, paths->install, strlen(paths->install))) {
+        // no, let us modify
+        return strpathcombine(paths->install, previousValue);
+    }
+    // it seems this was set up correctly by the recipe, let it be
+    return strdup(previousValue);
+}
 
+static void __add_default_prefix_paths(char* output, const char* platform, const char* buildIngredientsRoot)
+{
+    if (strcmp(platform, "windows") == 0) {
+        // TODO
+    } else if (strcmp(platform, "linux") == 0) {
+        // Add defaults like the root and /usr prefix
+        strcat(&output[0], buildIngredientsRoot);
+        strcat(&output[0], ";");
+        strcat(&output[0], buildIngredientsRoot);
+        strcat(&output[0], "/usr");
+    }
+}
+
+static char* __replace_path_prefix(const char* previousValue, const char* platform, struct oven_backend_data_paths* paths)
+{
+    char   tmp[4096] = { 0 };
+    size_t length;
+
+    // Expect generally that people don't modify this
+    if (previousValue == NULL) {
+        __add_default_prefix_paths(&tmp[0], platform, paths->build_ingredients);
+        return strdup(&tmp[0]);
+    }
+
+    // However if they do, let us produce a modified version
+    strcpy(tmp, previousValue);
+    length = strlen(tmp);
+    tmp[length++] = ';';
+    __add_default_prefix_paths(&tmp[length], platform, paths->build_ingredients);
+    return strdup(&tmp[0]);
+}
+
+static char* __extract_cmake_option_value(const char* startOfOption)
+{
+    char* startOfValue;
+    char* endOfValue;
+    char* oldValue;
+    char* newValue;
+
+    startOfValue = strchr(startOfOption, '=') + 1;
+    endOfValue   = strchr(startOfValue, ' ');
+    if (endOfValue == NULL) {
+        endOfValue = strchr(startOfValue, '\0');
+        if (endOfValue == NULL) {
+            return NULL;
+        }
+    }
+    return strndup(startOfValue, endOfValue - startOfValue);
+}
+
+static void __replace_cmake_option_value(char* arguments, const char* option, const char* value)
+{
+    size_t length = strlen(arguments);
+    size_t optionStartIndex;
+    size_t optionValueStartIndex;
+    size_t optionValueEndIndex;
+    char*  endOfOption;
+
+    // find start of the option
+    optionStartIndex = (size_t)(strstr(arguments, option) - arguments);
+    optionValueStartIndex = (size_t)((strchr(&arguments[optionStartIndex], '=') + 1) - arguments);
+
+    // at this point, find end of option+value
+    endOfOption = strchr(&arguments[optionValueStartIndex], ' ');
+    if (endOfOption == NULL) {
+        endOfOption = strchr(&arguments[optionValueStartIndex], '\0');
+        if (endOfOption == NULL) {
+            VLOG_ERROR("cmake",  "failed to find end of option: %s\n", option);
+            return;
+        }
+    }
+    optionValueEndIndex = (size_t)(endOfOption - arguments);
+
+    // Now we have the indices, then we can calculate the current length, and the new length
+    size_t currentLength = optionValueEndIndex - optionValueStartIndex;
+    size_t newLength = strlen(value);
+    if (currentLength > newLength) {
+        // we need to replace, then shorten the argument
+        memcpy(&arguments[optionValueStartIndex], value, newLength);
+        memcpy(&arguments[optionValueStartIndex + newLength], endOfOption, length - optionValueEndIndex);
+
+        // since the string is now shorter, make sure it gets terminated
+        arguments[length - (currentLength - newLength)] = '\0';
+    } else if (currentLength == newLength) {
+        memcpy(&arguments[optionValueStartIndex], value, newLength);
+    } else {
+        // new length is longer, we need to move it, then replace
+        char* remaining = strdup(&arguments[optionValueEndIndex]);
+        if (remaining == NULL) {
+            VLOG_ERROR("cmake", "failed to replace option %s with %s\n", option, value);
+            return;
+        }
+        memcpy(&arguments[optionValueStartIndex], value, newLength);
+        memcpy(&arguments[optionValueStartIndex + newLength], remaining, length - optionValueEndIndex);
+        free(remaining);
+        
+        // since the string is now longer, make sure it gets terminated
+        arguments[length + (newLength - currentLength)] = '\0';
+    }
 }
 
 static char* __replace_or_add_cmake_prefixes(const char* platform, const char* arguments, struct oven_backend_data_paths* paths)
 {
-    char* installPath = strpathcombine(paths->install, __get_cmake_default_install_path(platform));
     char* newArguments;
     struct {
         const char* prefix;
-        const char* value;
+        char* (*replace)(const char* previousValue, const char* platform, struct oven_backend_data_paths* paths);
     } prefixes[] = {
-        { "CMAKE_INSTALL_PREFIX", installPath },
-        { "CMAKE_PREFIX_PATH", paths->build_ingredients },
+        { "CMAKE_INSTALL_PREFIX", __replace_install_prefix },
+        { "CMAKE_PREFIX_PATH", __replace_path_prefix },
         { NULL, NULL }
     };
-
-    if (installPath == NULL) {
-        return NULL;
-    }
 
     // allocate new space for arguments
     newArguments = malloc(strlen(arguments) + 4096);
     if (newArguments == NULL) {
-        free(installPath);
         return NULL;
     }
     memset(newArguments, 0, strlen(arguments) + 4096);
     strcpy(newArguments, arguments);
 
     for (int i = 0; prefixes[i].prefix != NULL; i++) {
-        char* exists = strstr(arguments, prefixes[i].prefix);
+        char* exists = strstr(newArguments, prefixes[i].prefix);
+        char* oldValue;
+        char* newValue;
         int   status;
 
+        // The value did not exist, let us add it
         if (!exists) {
+            newValue = prefixes[i].replace(NULL, platform, paths);
+            if (newValue == NULL) {
+                VLOG_ERROR("cmake", "failed to add option %s\n", prefixes[i].prefix);
+                free(newArguments);
+                return NULL;
+            }
             strcat(newArguments, " -D");
             strcat(newArguments, prefixes[i].prefix);
             strcat(newArguments, "=");
-            strcat(newArguments, prefixes[i].value);
+            strcat(newArguments, newValue);
+            free(newValue);
             continue;
         }
 
-        char* startOfValue;
-        char* endOfValue;
-        char* oldValue;
-        char* newValue;
-
-        // replace the prefix with the new one
-        startOfValue = strchr(exists, '=') + 1;
-        endOfValue   = strchr(startOfValue, ' ');
-        if (!endOfValue) {
-            endOfValue = strchr(startOfValue, '\0');
+        oldValue = __extract_cmake_option_value(exists);
+        if (oldValue == NULL) {
+            VLOG_ERROR("cmake", "failed to get existing option value of %s\n", prefixes[i].prefix);
+            free(newArguments);
+            return NULL;
         }
-        oldValue = strndup(startOfValue, endOfValue - startOfValue);
-        if (strstr(oldValue, prefixes[i].value) != NULL) {
-            // already contains the value
-            continue;
+
+        newValue = prefixes[i].replace(oldValue, platform, paths);
+        if (newValue == NULL) {
+            VLOG_ERROR("cmake", "failed to replace option %s\n", prefixes[i].prefix);
+            free(oldValue);
+            free(newArguments);
+            return NULL;
         }
-        newValue = strpathcombine(installPath, oldValue);
+        __replace_cmake_option_value(newArguments, prefixes[i].prefix, newValue);
+        free(oldValue);
+        free(newValue);
     }
-
-
-    char* prefix = strstr(arguments, "CMAKE_INSTALL_PREFIX=");
-    char* newArguments;
-    char* oldPath;
-    char* newPath;
-    char* startOfValue;
-    char* endOfValue;
-
-    if (!prefix) {
-        return __add_cmake_option(platform, arguments, installPath);
-    }
-
-    // replace the prefix with the new one
-    startOfValue = prefix + 21; // 'CMAKE_INSTALL_PREFIX=' is 21 characters long
-    endOfValue   = strchr(startOfValue, ' ');
-    if (!endOfValue) {
-        endOfValue = strchr(startOfValue, '\0');
-    }
-
-    oldPath      = strndup(startOfValue, endOfValue - startOfValue);
-    newArguments = malloc(strlen(arguments) + 1024);
-    if (oldPath == NULL|| newArguments == NULL) {
-        free(oldPath);
-        free(newArguments);
-        return NULL;
-    }
-
-    // build the new path which is a combination of oldPath and install directory
-    newPath = strpathcombine(installPath, oldPath);
-    if (newPath == NULL) {
-        free(oldPath);
-        free(newArguments);
-        return NULL;
-    }
-
-    strncpy(newArguments, arguments, prefix - arguments);
-    strcat(newArguments, "CMAKE_INSTALL_PREFIX=");
-    strcat(newArguments, newPath);
-    if (*endOfValue) {
-        strcat(newArguments, endOfValue);
-    }
-
-    free(oldPath);
-    free(newPath);
     return newArguments;
 }
 
@@ -287,21 +360,24 @@ static void __cmake_output_handler(const char* line, enum platform_spawn_output_
     }
 }
 
+#if 0
 static void __use_workspace_file(struct oven_backend_data* data)
 {
+    char*  argument = NULL;
+    size_t argumentLength;
     char*  workspacePath;
     int    status = -1;
     int    written;
 
     workspacePath = strpathcombine(data->paths.build, "workspace.cmake");
     if (workspacePath == NULL) {
-        return -1;
+        return;
     }
 
 
     status = __generate_cmake_file(workspacePath, data);
     if (status != 0) {
-        goto cleanup;
+        return;
     }
 
     // build the cmake command, execute from build folder
@@ -310,12 +386,13 @@ static void __use_workspace_file(struct oven_backend_data* data)
         argument,
         argumentLength - 1,
         "%s -DCMAKE_PROJECT_INCLUDE=%s %s",
-        newArguments,
+        NULL,
         workspacePath,
         data->paths.project
     );
     argument[written] = '\0';
 }
+#endif
 
 int cmake_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
@@ -329,7 +406,7 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
     newArguments = __replace_or_add_cmake_prefixes(
         data->platform.target_platform,
         data->arguments,
-        data->paths.install
+        &data->paths
     );
     if (newArguments == NULL) {
         free(newArguments);
