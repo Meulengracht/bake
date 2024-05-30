@@ -195,8 +195,6 @@ static void __add_default_prefix_paths(char* output, const char* platform, const
         strcat(&output[0], "/usr");
     } else if (strcmp(platform, "vali") == 0) {
         strcat(&output[0], buildIngredientsRoot);
-    } else {
-        return "";
     }
 }
 
