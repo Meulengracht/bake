@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -13,17 +13,22 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- *
+ * 
  */
 
-#ifndef __CONTAINER_H__
-#define __CONTAINER_H__
+#ifndef __KITCHEN_STEPS_H__
+#define __KITCHEN_STEPS_H__
 
-#include <sys/types.h>
+// imports where we do not actually care about the .h
+struct kitchen;
+struct recipe;
+struct oven_recipe_options;
+struct recipe_part;
 
-struct containerv_container {
-    pid_t pid;
-    int   event_fd;
-};
+extern int   kitchen_cooking_start(struct kitchen* kitchen);
+extern int   kitchen_cooking_end(struct kitchen* kitchen);
+extern char* kitchen_toolchain_resolve(struct recipe* recipe, const char* toolchain, const char* platform);
+extern void  oven_recipe_options_construct(struct oven_recipe_options* options, struct recipe_part* part, const char* toolchain);
 
-#endif //!__CONTAINER_H__
+
+#endif //!__KITCHEN_STEPS_H__

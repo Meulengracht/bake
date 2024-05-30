@@ -18,9 +18,73 @@
 
 #include <errno.h>
 #include <chef/platform.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static size_t __append_path_part(char* path, size_t pathLength, const char* part)
+{
+    char*       current = path;
+    const char* toAdd   = part;
+    size_t      i       = pathLength;
+
+    // ensure path always ends on a '/' before adding the next part
+    if (i > 0 && current[i - 1] != CHEF_PATH_SEPARATOR) {
+        current[i++] = CHEF_PATH_SEPARATOR;
+    }
+
+    while (*toAdd == CHEF_PATH_SEPARATOR) {
+        toAdd++;
+    }
+
+    while (*toAdd) {
+        current[i++] = *toAdd;
+        toAdd++;
+    }
+    return i - pathLength;
+}
+
+char* strpathjoin(const char* base, ...)
+{
+    char*   joined;
+    va_list args;
+    size_t  len;
+
+    if (base == NULL) {
+        return NULL;
+    }
+    len = strlen(base);
+
+    joined = malloc(4096);
+    if (joined == NULL) {
+        return NULL;
+    }
+    strcpy(joined, base);
+
+    va_start(args, base);
+    while (1) {
+        const char* part = va_arg(args, const char*);
+        size_t      partLen;
+        if (part == NULL) {
+            break;
+        }
+
+        partLen = strlen(part);
+        if ((partLen + len) > 4095) {
+            free(joined);
+            errno = E2BIG;
+            return NULL;
+        }
+
+        // this returns the actual number of bytes copied, which can
+        // be less than the actual length of the part
+        partLen = __append_path_part(joined, len, part);
+        len += partLen;
+    }
+    va_end(args);
+    return joined;
+}
 
 char* strpathcombine(const char* path1, const char* path2)
 {

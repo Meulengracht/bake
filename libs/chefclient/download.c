@@ -35,19 +35,37 @@ struct pack_response {
 struct download_context {
     const char* publisher;
     const char* package;
+    char        version[32];
     size_t      bytes_downloaded;
     size_t      bytes_total;
 };
 
+static void __format_quantity(long long size, char* buffer, size_t bufferSize)
+{
+	char*  suffix[]       = { "B", "KB", "MB", "GB", "TB" };
+    int    i              = 0;
+	double remainingBytes = (double)size;
+
+	if (size >= 1024) {
+        long long count = size;
+		for (; (count / 1024) > 0 && i < 4 /* len(suffix)-1 */; i++, count /= 1024) {
+			remainingBytes = count / 1024.0;
+        }
+	}
+	snprintf(&buffer[0], bufferSize, "%.02lf%s", remainingBytes, suffix[i]);
+}
+
 static void __update_progress(struct download_context* downloadContext)
 {
-    int percent;
+    char progressBuffer[32];
+    char totalSizeBuffer[32];
+    int  percent;
 
     percent = (downloadContext->bytes_downloaded * 100) / downloadContext->bytes_total;
     
     // print a fancy progress bar with percentage, upload progress and a moving
     // bar being filled
-    printf("\33[2K\r%s/%s [", downloadContext->publisher, downloadContext->package);
+    printf("\33[2K\rdownloading %s/%s (%s) [", downloadContext->publisher, downloadContext->package, downloadContext->version);
     for (int i = 0; i < 20; i++) {
         if (i < percent / 5) {
             printf("#");
@@ -56,9 +74,10 @@ static void __update_progress(struct download_context* downloadContext)
             printf(" ");
         }
     }
-    printf("| %3d%%] %6zu / %6zu bytes", percent, 
-        downloadContext->bytes_downloaded, 
-        downloadContext->bytes_total
+    __format_quantity(downloadContext->bytes_downloaded, &progressBuffer[0], sizeof(progressBuffer));
+    __format_quantity(downloadContext->bytes_total, &totalSizeBuffer[0], sizeof(totalSizeBuffer));
+    printf("| %3d%%] %s / %s", percent, 
+        &progressBuffer[0], &totalSizeBuffer[0]
     );
     fflush(stdout);
 }
@@ -250,6 +269,15 @@ cleanup:
     return status;
 }
 
+static void __format_version(char* buffer, struct chef_version* version, int revision)
+{
+    if (version != NULL) {
+        sprintf(&buffer[0], "%i.%i.%i", version->major, version->minor, version->patch);
+    } else {
+        sprintf(&buffer[0], "%i", revision);
+    }
+}
+
 int chefclient_pack_download(struct chef_download_params* params, const char* path)
 {
     struct pack_response    packResponse = { 0 };
@@ -268,6 +296,7 @@ int chefclient_pack_download(struct chef_download_params* params, const char* pa
     // prepare download context
     downloadContext.publisher = params->publisher;
     downloadContext.package   = params->package;
+    __format_version(&downloadContext.version[0], params->version, packResponse.revision);
 
     // print initial banner
     printf("initiating download of %s/%s", params->publisher, params->package);

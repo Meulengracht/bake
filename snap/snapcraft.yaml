@@ -6,7 +6,7 @@ description: |
   built as a lightweight alternative to current package managers. Its not only for package management, 
   but also as an application format. 
 
-base: core20
+base: core22
 grade: stable
 confinement: strict
 
@@ -31,6 +31,7 @@ parts:
     cmake-parameters:
       - -DCMAKE_INSTALL_PREFIX=/usr
     build-packages:
+      - debootstrap
       - libfuse3-dev
     stage-packages:
       - libfuse3-3

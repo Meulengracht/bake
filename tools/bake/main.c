@@ -18,10 +18,12 @@
 
 #include <errno.h>
 #include <chef/platform.h>
-#include <recipe.h>
+#include <chef/recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <vlog.h>
 #include "chef-config.h"
 
 extern int init_main(int argc, char** argv, char** envp, struct recipe* recipe);
@@ -44,6 +46,36 @@ static struct command_handler g_commands[] = {
     { "pack",     run_main },
     { "clean",    clean_main }
 };
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#include <windows.h>
+int __get_column_count(void)
+{
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    int                        columns;
+
+    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+    columns = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    // rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    return columns;
+}
+#else
+#include <sys/ioctl.h>
+#include <unistd.h>
+int __get_column_count(void)
+{
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    return (int)w.ws_col;
+}
+#endif
+
+void __winch_handler(int sig)
+{
+    signal(SIGWINCH, SIG_IGN);
+    vlog_set_output_width(stdout, __get_column_count());
+    signal(SIGWINCH, __winch_handler);
+}
 
 static void __print_help(void)
 {
@@ -80,7 +112,7 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
 {
     FILE*  file;
     void*  buffer;
-    size_t size;
+    size_t size, read;
 
     if (path == NULL) {
         errno = EINVAL;
@@ -89,6 +121,7 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
 
     file = fopen(path, "r");
     if (!file) {
+        fprintf(stderr, "bake: failed to read recipe path: %s\n", path);
         return -1;
     }
 
@@ -98,15 +131,80 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
     
     buffer = malloc(size);
     if (!buffer) {
+        fprintf(stderr, "bake: failed to allocate memory for recipe: %s\n", strerror(errno));
         fclose(file);
         return -1;
     }
 
-    fread(buffer, size, 1, file);
+    read = fread(buffer, 1, size, file);
+    if (read < size) {
+        fprintf(stderr, "bake: failed to read recipe: %s\n", strerror(errno));
+        fclose(file);
+        return -1;
+    }
+    
     fclose(file);
 
     *bufferOut = buffer;
     *lengthOut = size;
+    return 0;
+}
+
+static int __is_osbase(const char* name)
+{
+    if (strcmp(name, "vali/linux-1") == 0) {
+        return 0;
+    }
+    return -1;
+}
+
+static int __add_ingredient(struct recipe* recipe, const char* name)
+{
+    struct recipe_ingredient* ingredient;
+
+    ingredient = malloc(sizeof(struct recipe_ingredient));
+    if (ingredient == NULL) {
+        return -1;
+    }
+
+    memset(ingredient, 0, sizeof(struct recipe_ingredient));
+    ingredient->name = strdup(name);
+    ingredient->type = RECIPE_INGREDIENT_TYPE_HOST;
+    ingredient->source.type = INGREDIENT_SOURCE_TYPE_REPO;
+    if (ingredient->name == NULL) {
+        free(ingredient);
+        return -1;
+    }
+
+    ingredient->channel = "devel"; // TODO: should be something else
+    list_add(&recipe->environment.host.ingredients, &ingredient->list_header);
+    return 0;
+}
+
+static int __add_osbase(struct recipe* recipe)
+{
+    char nameBuffer[32];
+    snprintf(&nameBuffer[0], sizeof(nameBuffer), "vali/%s-1", CHEF_PLATFORM_STR);
+    return __add_ingredient(recipe, &nameBuffer[0]);
+}
+
+static int __add_implicit_ingredients(struct recipe* recipe)
+{
+    struct list_item* i;
+    int               needsOs = recipe->environment.host.base;
+
+    list_foreach(&recipe->environment.host.ingredients, i) {
+        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)i;
+        if (__is_osbase(ingredient->name) == 0) {
+            needsOs = 0;
+        }
+    }
+
+#if defined(__MOLLENOS__)
+    if (needsOs && __add_osbase(recipe)) {
+        return -1;
+    }
+#endif
     return 0;
 }
 
@@ -153,7 +251,7 @@ int main(int argc, char** argv, char** envp)
                         arch = argv[i + 1];
                     } else {
                         fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
-                        return 1;
+                        return -1;
                     }
                 } else if (argv[i][0] != '-') {
                     recipePath = argv[i];
@@ -162,20 +260,36 @@ int main(int argc, char** argv, char** envp)
         }
     }
 
-    result = __read_recipe(recipePath, &buffer, &length);
-    if (!result) {
-        result = recipe_parse(buffer, length, &recipe);
-        free(buffer);
-        if (result) {
-            fprintf(stderr, "bake: failed to parse recipe\n");
-            return result;
+    if (recipePath != NULL) {
+        result = __read_recipe(recipePath, &buffer, &length);
+        if (!result) {
+            result = recipe_parse(buffer, length, &recipe);
+            free(buffer);
+            if (result) {
+                fprintf(stderr, "bake: failed to parse recipe\n");
+                return result;
+            }
+            
+            result = __add_implicit_ingredients(recipe);
+            if (result) {
+                fprintf(stderr, "bake: failed to add implicit ingredients\n");
+                return result;
+            }
         }
     }
 
+    // initialize the logging system
+    vlog_initialize();
+    vlog_set_level(VLOG_LEVEL_DEBUG);
+    vlog_add_output(stdout);
+    vlog_set_output_width(stdout, __get_column_count());
+
+    // register the handler that will update the terminal stats correctly
+    // once the user resizes the terminal
+    signal(SIGWINCH, __winch_handler);
+
     result = command->handler(argc, argv, envp, recipe);
     recipe_destroy(recipe);
-    if (result != 0) {
-        return result;
-    }
-    return 0;
+    vlog_cleanup();
+    return result;
 }

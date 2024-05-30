@@ -124,6 +124,12 @@
 extern "C" {
 #endif
 
+struct chef_keypair_item {
+    struct list_item list_header;
+    const char*      key;
+    const char*      value;
+};
+
 enum platform_filetype {
     PLATFORM_FILETYPE_DIRECTORY,
     PLATFORM_FILETYPE_FILE,
@@ -146,6 +152,7 @@ struct platform_file_entry {
 };
 
 extern void   strbasename(const char* path, char* buffer, size_t bufferSize);
+extern char*  strpathjoin(const char* base, ...);
 extern char*  strpathcombine(const char* path1, const char* path2);
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
@@ -200,10 +207,12 @@ extern char* platform_abspath(const char* path);
 extern int platform_getcwd(char* buffer, size_t length);
 extern int platform_getuserdir(char* buffer, size_t length);
 extern int platform_chmod(const char* path, uint32_t permissions);
-extern int platform_getfiles(const char* path, struct list* files);
+extern int platform_getfiles(const char* path, int recursive, struct list* files);
 extern int platform_getfiles_destroy(struct list* files);
 extern int platform_cpucount(void);
 extern int platform_copyfile(const char* source, const char* destination);
+extern int platform_lockfile(int fd);
+extern int platform_unlockfile(int fd);
 
 /**
  * @brief 
@@ -213,16 +222,40 @@ extern int platform_copyfile(const char* source, const char* destination);
  */
 extern int platform_sleep(unsigned int milliseconds);
 
+enum platform_spawn_output_type {
+    PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT,
+    PLATFORM_SPAWN_OUTPUT_TYPE_STDERR
+};
+
+typedef void (*platform_spawn_output_handler)(const char* line, enum platform_spawn_output_type type);
+
+struct platform_spawn_options {
+    // cwd allows the possibility of spawning the process with
+    // a new working directory instead of the one of the host.
+    const char* cwd;
+    // argv0 allows the caller to override the argv[0] argument used
+    // for spawning the process.
+    const char* argv0;
+    // output_handler if provided will allow the spawner to handle
+    // line output by the child process.
+    platform_spawn_output_handler output_handler;
+};
+
 /**
  * @brief Spawns a new process, and waits for the process to complete. 
  * 
  * @param[In] path      The path to the executable 
  * @param[In] arguments The arguments to pass to the executable
  * @param[In] envp      The environment variables to pass to the executable
- * @param[In] cwd       The working directory to pass to the executable
+ * @param[In] options   Options to customize how the spawn must be handled.
  * @#define CHEF_ARCHITECTURE_STR int 0 on success, -1 on error
  */
-extern int platform_spawn(const char* path, const char* arguments, const char* const* envp, const char* cwd);
+extern int platform_spawn(const char* path, const char* arguments, const char* const* envp, struct platform_spawn_options* options);
+
+/**
+ * @brief Spawns a child process and returns the stdout as a string.
+ */
+extern char* platform_exec(const char* cmd);
 
 /**
  * @brief Execute the provided shell script.

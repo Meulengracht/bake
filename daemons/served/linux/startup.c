@@ -96,6 +96,11 @@ static int __ensure_chef_paths(void)
         VLOG_ERROR("startup", "failed to create path /var/chef/packs\n");
         return -1;
     }
+
+    if (platform_mkdir("/var/chef/mnt") != 0) {
+        VLOG_ERROR("startup", "failed to create path /var/chef/packs\n");
+        return -1;
+    }
     return 0;
 }
 
@@ -132,21 +137,10 @@ int served_startup(void)
 
     VLOG_DEBUG("startup", "initializing %i applications\n", applicationCount);
     for (int i = 0; i < applicationCount; i++) {
-        status = served_application_ensure_paths(applications[i]);
+        status = served_application_load(applications[i]);
         if (status != 0) {
-            VLOG_WARNING("startup", "failed to create application paths for %s\n", applications[i]->name);
+            VLOG_WARNING("startup", "failed to initialize application %s\n", applications[i]->name);
             continue;
-        }
-
-        status = served_application_mount(applications[i]);
-        if (status != 0) {
-            VLOG_WARNING("startup", "failed to mount application %s\n", applications[i]->name);
-            continue;
-        }
-
-        status = served_application_start_daemons(applications[i]);
-        if (status != 0) {
-            VLOG_WARNING("startup", "failed to start daemons for application %s\n", applications[i]->name);
         }
     }
 

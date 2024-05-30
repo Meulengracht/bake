@@ -9,16 +9,15 @@ project:
   license: LGPL
   homepage: www.mollenos.com
 
-ingredients:
-- name: vali/clang-cc
-  platform: host
-  arch: host
-  channel: devel
+platforms:
+  - name: vali
+    toolchain: vali/clang-cc=devel
+    architectures: [amd64, i386]
 
 recipes:
 - name: vali
   path: /
-  toolchain: vali/clang-cc
+  toolchain: platform
   steps:
   - name: config
     type: generate
@@ -27,7 +26,7 @@ recipes:
     env:
       # Use the toolchain path defined by chef when using the 'toolchain'
       # member in the recipe
-      CROSS: ${{ TOOLCHAIN_PREFIX }}
+      CROSS: $[[ TOOLCHAIN_PREFIX ]]
 
   - name: build
     type: build

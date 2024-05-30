@@ -24,23 +24,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <utils.h>
-#include <unistd.h>
 #include <vlog.h>
-
-static char* __get_command_path(struct served_application* application, struct served_command* command)
-{
-    char* path;
-    int   status;
-
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        return NULL;
-    }
-    
-    sprintf(path, "/run/chef/%s-%s/%s", application->publisher,
-        application->package, command->path);
-    return path;
-}
 
 static int __create_application_symlinks(struct served_application* application)
 {
@@ -52,16 +36,13 @@ static int __create_application_symlinks(struct served_application* application)
     for (int i = 0; i < application->commands_count; i++) {
         struct served_command* command = &application->commands[i];
         const char*            symlinkPath;
-        const char*            cmdPath;
         const char*            dataPath;
         int                    status;
 
         symlinkPath = served_application_get_command_symlink_path(application, command);
-        cmdPath     = __get_command_path(application, command);
         dataPath    = served_application_get_data_path(application);
-        if (symlinkPath == NULL || cmdPath == NULL || dataPath == NULL) {
+        if (symlinkPath == NULL || dataPath == NULL) {
             free((void*)symlinkPath);
-            free((void*)cmdPath);
             free((void*)dataPath);
             VLOG_WARNING("mount", "failed to allocate paths for command %s in app %s",
                 command->name, application->name);
@@ -72,7 +53,6 @@ static int __create_application_symlinks(struct served_application* application)
         status = platform_symlink(symlinkPath, CHEF_INSTALL_DIR "/bin/serve-exec", 0);
         if (status != 0) {
             free((void*)symlinkPath);
-            free((void*)cmdPath);
             free((void*)dataPath);
             VLOG_WARNING("mount", "failed to create symlink for command %s in app %s",
                 command->name, application->name);
@@ -81,7 +61,6 @@ static int __create_application_symlinks(struct served_application* application)
 
         // store the command mount path which is read by serve-exec
         command->symlink = symlinkPath;
-        command->mount   = cmdPath;
         command->data    = dataPath;
     }
     free((void*)mountRoot);
@@ -101,10 +80,8 @@ static void __remove_application_symlinks(struct served_application* application
 
         // then we free resources and NULL them so we are ready to remount
         free((char*)application->commands[i].symlink);
-        free((char*)application->commands[i].mount);
         free((char*)application->commands[i].data);
         application->commands[i].symlink = NULL;
-        application->commands[i].mount   = NULL;
         application->commands[i].data    = NULL;
 
         // and then we handle the error code, and by handling we mean just

@@ -159,25 +159,14 @@ static int __load_package_commands(struct VaFs* vafs, struct chef_command** comm
     return 0;
 }
 
-int chef_package_load(
-        const char*           path,
-        struct chef_package** packageOut,
-        struct chef_version** versionOut,
-        struct chef_command** commandsOut,
-        int*                  commandCountOut)
+int chef_package_load_vafs(
+    struct VaFs*          vafs,
+    struct chef_package** packageOut,
+    struct chef_version** versionOut,
+    struct chef_command** commandsOut,
+    int*                  commandCountOut)
 {
-    struct VaFs* vafs;
-    int          status;
-
-    if (path == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    status = vafs_open_file(path, &vafs);
-    if (status != 0) {
-        return status;
-    }
+    int status = 0;
 
     if (packageOut) {
         status = __load_package_header(vafs, packageOut);
@@ -209,9 +198,38 @@ int chef_package_load(
             *commandCountOut = 0;
         }
     }
+    return status;
+}
 
+int chef_package_load(
+        const char*           path,
+        struct chef_package** packageOut,
+        struct chef_version** versionOut,
+        struct chef_command** commandsOut,
+        int*                  commandCountOut)
+{
+    struct VaFs* vafs;
+    int          status;
+
+    if (path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    status = vafs_open_file(path, &vafs);
+    if (status != 0) {
+        return status;
+    }
+
+    status = chef_package_load_vafs(
+        vafs,
+        packageOut,
+        versionOut,
+        commandsOut,
+        commandCountOut
+    );
     vafs_close(vafs);
-    return 0;
+    return status;
 }
 
 static void __free_version(struct chef_version* version)
@@ -294,4 +312,47 @@ void chef_commands_free(struct chef_command* commands, int count)
         free((void*)commands[i].icon_buffer);
     }
     free(commands);
+}
+
+int chef_version_from_string(const char* string, struct chef_version* version)
+{
+    // parse a version string of format "1.2.3(+tag)"
+    // where tag is optional
+    char* pointer    = (char*)string;
+    char* pointerEnd = strchr(pointer, '.');
+
+    // if '.' was not found, then the revision is provided, so we use that
+    if (pointerEnd == NULL) {
+        version->major    = 0;
+        version->minor    = 0;
+        version->patch    = 0;
+        version->revision = (int)strtol(pointer, &pointerEnd, 10);
+        if (version->revision == 0) {
+            errno = EINVAL;
+            return -1;
+        }
+
+        version->tag = NULL;
+        return 0;
+    }
+    
+    // extract first part
+    version->major = (int)strtol(pointer, &pointerEnd, 10);
+    
+    // extract second part
+    pointer    = pointerEnd + 1;
+    pointerEnd = strchr(pointer, '.');
+    if (pointerEnd == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    version->minor = strtol(pointer, &pointerEnd, 10);
+    
+    pointer    = pointerEnd + 1;
+    pointerEnd = NULL;
+    
+    // extract the 3rd part, patch
+    version->patch = strtol(pointer, &pointerEnd, 10);
+    version->tag   = NULL;
+    return 0;
 }

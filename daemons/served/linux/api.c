@@ -49,7 +49,7 @@ static void __cleanup_info(struct chef_served_package* info)
 static void __convert_cmd_to_protocol(struct served_command* command, struct chef_served_command* proto)
 {
     proto->type      = command->type;
-    proto->path      = (char*)command->mount;
+    proto->path      = (char*)command->path;
     proto->arguments = (char*)command->arguments;
     proto->data_path = (char*)command->data;
 }

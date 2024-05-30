@@ -24,6 +24,33 @@
 #include <stdlib.h>
 #include <string.h>
 #include <utils.h>
+#include <vlog.h>
+
+#define __INTERNAL_MAX(a,b) (((a) > (b)) ? (a) : (b))
+
+static void __make_output_handler(const char* line, enum platform_spawn_output_type type) 
+{
+    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
+        VLOG_TRACE("kitchen", line);
+
+        // re-enable again if it continues to print
+        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+    } else {
+        // clear retrace on error output
+        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        
+        VLOG_ERROR("kitchen", line);
+    }
+}
+
+static int __cpu_workers(union oven_backend_options* options)
+{
+    if (options->make.parallel > 0) {
+        return options->make.parallel;
+    }
+    // Never use the maximum number of cpus, that can make a system unstable/hang
+    return __INTERNAL_MAX(platform_cpucount() - 2, 1);
+}
 
 int make_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
@@ -47,7 +74,7 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
     }
 
     // build the make parameters, execute from build folder
-    sprintf(argument, "-j%i", options->make.parallel <= 0 ? platform_cpucount() : options->make.parallel);
+    sprintf(argument, "-j%i", __cpu_workers(options));
     if (strlen(data->arguments) > 0) {
         strcat(argument, " ");
         strcat(argument, data->arguments);
@@ -59,18 +86,40 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
     }
 
     // perform the build operation
-    status = platform_spawn("make", argument, (const char* const*)environment, cwd);
+    VLOG_TRACE("make", "executing 'make %s'\n", argument);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    status = platform_spawn(
+        "make",
+        argument,
+        (const char* const*)environment, 
+        &(struct platform_spawn_options) {
+            .cwd = cwd,
+            .output_handler = __make_output_handler
+        }
+    );
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         errno = status;
-        fprintf(stderr, "oven-make: failed to execute 'make %s'\n", argument);
+        VLOG_ERROR("make", "failed to execute 'make %s'\n", argument);
         goto cleanup;
     }
 
     // perform the installation operation, ignore any other parameters
-    status = platform_spawn("make", "install", (const char* const*)environment, cwd);
+    VLOG_TRACE("make", "executing 'make install'\n");
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    status = platform_spawn(
+        "make",
+        "install",
+        (const char* const*)environment, 
+        &(struct platform_spawn_options) {
+            .cwd = cwd,
+            .output_handler = __make_output_handler
+        }
+    );
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         errno = status;
-        fprintf(stderr, "oven-make: failed to execute 'make install'\n");
+        VLOG_ERROR("make", "failed to execute 'make install'\n");
     }
 
 cleanup:

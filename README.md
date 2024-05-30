@@ -12,6 +12,13 @@ Chef is a cross-platform package management system, specifically built to suppor
 
 The best way to get started is to install the latest version of Chef using the [snap store](https://snapcraft.io/vchef). However not everyone likes or uses snaps, and in this case it's recommended to build chef from source, as chef is not distributed as a debian package yet!
 
+## TODO
+
+Features that we want to include in upcoming releases:
+- Split the stages of preparing host packages and the container environment.
+- Better diff detection in recipes.
+- Simpler UX experience.
+
 ## Account Setup
 
 To get started with your account setup, you will need to activate one of the privileged commands provided by 'order'
@@ -55,7 +62,6 @@ This should create a new (or multiple based on your recipe) *.pack file in the c
 chef will expose the following variables to help control the build process:
 
   * `PROJECT_PATH`: path to the root of the project (where bake was invoked)
-  * `INGREDIENTS_PREFIX`: path to where ingredients are unpacked
   * `INSTALL_PREFIX`: path to where the steps will install files to be packed
   * `CHEF_HOST_PLATFORM`: the platform for which the package is being built
   * `CHEF_HOST_ARCHITECTURE`: the architecture for which the package is being built
@@ -71,6 +77,7 @@ $ bake my-recipe.yaml --cross-compile=linux/i386
 The above will trigger chef to download ingredients for the linux/i386 platform, and then build the package for that platform. During execution of the different steps, chef will expose the following additional environment variables:
 
   * `TOOLCHAIN_PREFIX`: path to where the toolchain ingredient is unpacked
+  * `BUILD_INGREDIENTS_PREFIX`: path to where the build ingredients are unpacked
   * `CHEF_TARGET_PLATFORM`: the platform which was provided on the commandline
   * `CHEF_TARGET_ARCHITECTURE`: the architecture which was provided on the commandline
 
@@ -176,9 +183,6 @@ project:
 #
 # Ingredients are the same as dependencies. They are either
 # libraries or toolchains the project needs to build correctly.
-# Ingredients are unpacked to ${{ INGREDIENTS_PREFIX }}
-# Toolchains are unpacked to ${{ TOOLCHAIN_PREFIX }}. Only one
-# toolchain can be used per recipe. 
 ingredients:
     ###########################
     # name - Required
@@ -325,7 +329,7 @@ recipes:
       # 
       # Shell script that should be executed. The working directory of the script
       # will be the build directory for this recipe. The project directory and install
-      # directories can be refered to through ${{ PROJECT_PATH }} and ${{ INSTALL_PREFIX }}.
+      # directories can be refered to through $[[ PROJECT_PATH ]] and $[[ INSTALL_PREFIX ]].
       # On linux, this will be run as a shell script, while on windows it will run as a 
       # powershell script
       script: |
@@ -375,6 +379,19 @@ packs:
     # by the application system, and should only contain the neccessary files to be installed,
     # while ingredients might contains headers, build files etc.
     type: application
+
+    ###########################
+    # ingredient options - Optional
+    # 
+    # Options provided by this ingredient pack. This can be additional include paths
+    # or library paths, or specific compiler/links options that must be added when using
+    # this ingredient. All the below options are lists.
+    ingredient-options:
+      bin-paths: [/bin]
+      include-paths: [/include]
+      lib-paths: [/libs]
+      compiler-args: [--arg1]
+      linker-args: [--arg1]
 
     ###########################
     # filters - Optional

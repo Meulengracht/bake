@@ -2,6 +2,7 @@
 # can link against it. The platform library must be independant
 add_subdirectory(platform)
 add_subdirectory(vlog)
+add_subdirectory(containerv)
 
 # Build utility libraries before the system libraries
 set(VAFS_BUILD_TOOLS OFF CACHE BOOL "Do not build vafs utilities")
@@ -9,16 +10,8 @@ add_subdirectory(vafs)
 add_subdirectory(yaml)
 add_subdirectory(gracht)
 
-# build zstd
-set(ZSTD_LEGACY_SUPPORT OFF CACHE BOOL "Disable legacy support for zstd")
-set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "Do not build zstd programs")
-set(ZSTD_BUILD_CONTRIB  OFF CACHE BOOL "Do not build zstd contrib")
-set(ZSTD_BUILD_TESTS    OFF CACHE BOOL "Do not build zstd tests")
-add_subdirectory(zstd/build/cmake)
-
-# create an interface library for zstd
-add_library(zstd-api INTERFACE)
-target_include_directories(zstd-api INTERFACE zstd/lib)
+# Build the compression libraries for our support libraries
+add_subdirectory(compression)
 
 # build jansson for json requests and responses
 set(JANSSON_BUILD_DOCS OFF CACHE BOOL "Do not build jansson documentation")
@@ -45,5 +38,7 @@ add_subdirectory(curl)
 add_subdirectory(chefclient)
 
 # build support libraries for tools
+add_subdirectory(ingredient)
 add_subdirectory(oven)
 add_subdirectory(fridge)
+add_subdirectory(kitchen)

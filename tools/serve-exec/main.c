@@ -86,8 +86,15 @@ static int __spawn_command(struct chef_served_command* command, int argc, char**
         return -1;
     }
 
-    // TODO proxy argv[0]
-    status = platform_spawn(command->path, arguments, (const char* const*)envp, command->data_path);
+    status = platform_spawn(
+        command->path,
+        arguments,
+        (const char* const*)envp, 
+        &(struct platform_spawn_options) {
+            .cwd = command->data_path,
+            .argv0 = argv[0]
+        }
+    );
     free(arguments);
     return status;
 }

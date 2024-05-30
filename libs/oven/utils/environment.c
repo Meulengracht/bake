@@ -16,7 +16,7 @@
  * 
  */
 
-#include <liboven.h>
+#include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,7 +27,7 @@ static int __contains_envkey(struct list* list, const char* key)
     struct list_item* item;
 
     list_foreach(list, item) {
-        struct oven_keypair_item* keypair = (struct oven_keypair_item*)item;
+        struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
         char*                     end     = strchr(key, '=');
 
         // we need to make sure lengths are equal as well to avoid false positives
@@ -46,6 +46,8 @@ char** oven_environment_create(const char* const* parent, struct list* additiona
     int               i = 0;
     int               j = 0; // keeps track of index into environment
 
+    // unreadable mess that simply uses 'entryCount' as an
+    // iterator from 0.
     while (parent[entryCount - additional->count]) {
         entryCount++;
     }
@@ -65,7 +67,7 @@ char** oven_environment_create(const char* const* parent, struct list* additiona
     }
 
     list_foreach(additional, item) {
-        struct oven_keypair_item* keypair    = (struct oven_keypair_item*)item;
+        struct chef_keypair_item* keypair    = (struct chef_keypair_item*)item;
         size_t                    lineLength = strlen(keypair->key) + strlen(keypair->value) + 2;
         char*                     line       = (char*)calloc(lineLength, sizeof(char));
         if (!line) {

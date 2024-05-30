@@ -9,6 +9,17 @@ add_subdirectory(serve)
 add_subdirectory(serve-exec)
 
 install(
-    TARGETS bake order serve serve-exec
+    TARGETS order serve
     RUNTIME DESTINATION bin
 )
+
+install(
+    TARGETS bake serve-exec
+    PERMISSIONS SETGID SETUID OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    RUNTIME DESTINATION bin
+)
+
+if (UNIX)
+    install(CODE "execute_process(COMMAND sh -c \"chown root:root $<TARGET_FILE:bake>\" )")
+    install(CODE "execute_process(COMMAND sh -c \"chown root:root $<TARGET_FILE:serve-exec>\" )")
+endif()

@@ -92,6 +92,8 @@ int platform_symlink(const char* path, const char* target, int directory)
 		return -1;
 	}
 
+	// When creating the dummy path we need to do it at the actual path,
+	// not just the relative
 	targetFullPath = __prefix_path(path, target);
 	if (targetFullPath == NULL) {
 		return -1;
@@ -104,13 +106,14 @@ int platform_symlink(const char* path, const char* target, int directory)
 	} else {
 		status = __create_dummy_file_if_not_exists(targetFullPath);
 	}
-	
+
+	// At this point we can clean it up
+	free(targetFullPath);
 	if (status) {
-		free(targetFullPath);
 		return status;
 	}
 
-	status = symlink(targetFullPath, path);
+	status = symlink(target, path);
 	if (status) {
         // ignore it if it exists, in theory we would like to 'update it' if 
         // exists, but for now just ignore
@@ -118,13 +121,11 @@ int platform_symlink(const char* path, const char* target, int directory)
 			// update it to be the correct symlink
 			status = unlink(path);
 			if (status != 0) {
-				free(targetFullPath);
 				return status;
 			}
 
-            status = symlink(targetFullPath, path);
+            status = symlink(target, path);
         }
 	}
-	free(targetFullPath);
 	return status;
 }

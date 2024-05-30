@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,12 +18,15 @@
 
 #include <backend.h>
 #include <errno.h>
+#include <libingredient.h>
 #include <liboven.h>
 #include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <utils.h>
+#include "private.h"
+#include <vlog.h>
 
 // include dirent.h for directory operations
 #if defined(_WIN32) || defined(_WIN64)
@@ -32,31 +35,21 @@
 #include <dirent.h>
 #endif
 
-#define OVEN_ROOT         ".oven"
-#define OVEN_BUILD_ROOT   OVEN_ROOT CHEF_PATH_SEPARATOR_S "build"
-#define OVEN_INSTALL_ROOT OVEN_ROOT CHEF_PATH_SEPARATOR_S "install"
-
 struct oven_recipe_context {
     const char* name;
     const char* relative_path;
     const char* toolchain;
-
-    const char* build_root;
-    const char* install_root;
-    const char* checkpoint_path;
+    const char* checkpoint_file;
 };
 
 struct oven_variables {
     const char* target_platform;
     const char* target_arch;
-    const char* cwd;
-    const char* fridge_prep_directory;
 };
 
 struct oven_context {
     const char* const*         process_environment;
-    const char*                build_root;
-    const char*                install_root;
+    struct oven_paths          paths;
     struct oven_variables      variables;
     struct oven_recipe_context recipe;
 };
@@ -72,30 +65,21 @@ struct build_backend {
 };
 
 static struct generate_backend g_genbackends[] = {
-    { "configure", configure_main },
-    { "cmake",     cmake_main     },
-    { "meson",     meson_main     }
+    { "configure", configure_main    },
+    { "cmake",     cmake_main        },
+    { "meson",     meson_config_main }
 };
 
 static struct build_backend g_buildbackends[] = {
-    { "make", make_main }
+    { "make",  make_main },
+    { "meson", meson_build_main }
 };
 
 static struct oven_context g_oven = { 0 };
 
-const char* __get_build_root(void)
-{
-    return g_oven.build_root;
-}
-
 const char* __get_install_path(void)
 {
-    return g_oven.install_root;
-}
-
-const char* __get_ingredients_path(void)
-{
-    return g_oven.variables.fridge_prep_directory;
+    return g_oven.paths.install_root;
 }
 
 const char* __get_platform(void)
@@ -108,221 +92,92 @@ const char* __get_architecture(void)
     return g_oven.variables.target_arch;
 }
 
-static int __get_cwd(char** bufferOut)
-{
-    char*  cwd;
-    int    status;
-
-    cwd = malloc(4096);
-    if (cwd == NULL) {
-        return -1;
-    }
-
-    status = platform_getcwd(cwd, 4096);
-    if (status) {
-        // buffer was too small
-        fprintf(stderr, "could not get current working directory, buffer too small?\n");
-        free(cwd);
-        return -1;
-    }
-    *bufferOut = cwd;
-    return 0;
-}
-
-static int __create_path(const char* path)
-{
-    if (platform_mkdir(path)) {
-        if (errno != EEXIST) {
-            fprintf(stderr, "oven: failed to create %s: %s\n", path, strerror(errno));
-            return -1;
-        }
-    }
-    return 0;
-}
-
 int oven_initialize(struct oven_parameters* parameters)
 {
-    int         status;
-    char*       cwd;
-    const char* root;
-    const char* buildRoot;
-    const char* installRoot;
-    char        tmp[128];
+    VLOG_DEBUG("oven", "oven_initialize()\n");
 
     if (parameters == NULL) {
         errno = EINVAL;
         return -1;
     }
 
-    // get the current working directory
-    status = __get_cwd(&cwd);
-    if (status) {
-        return -1;
-    }
-
-    // get basename of recipe
-    strbasename(parameters->recipe_name, tmp, sizeof(tmp));
-
-    // initialize oven paths
-    root        = strpathcombine(cwd, OVEN_ROOT);
-    buildRoot   = strpathcombine(cwd, OVEN_BUILD_ROOT);
-    installRoot = strpathcombine(cwd, OVEN_INSTALL_ROOT);
-
-    if (root == NULL || buildRoot == NULL || installRoot == NULL) {
-        free((void*)root);
-        free((void*)buildRoot);
-        free((void*)installRoot);
-        return -1;
-    }
-
+    // copy relevant paths
+    g_oven.paths.project_root = strdup(parameters->paths.project_root);
+    g_oven.paths.build_root = strdup(parameters->paths.build_root);
+    g_oven.paths.install_root = strdup(parameters->paths.install_root);
+    g_oven.paths.checkpoint_root = strdup(parameters->paths.checkpoint_root);
+    g_oven.paths.toolchains_root = strdup(parameters->paths.toolchains_root);
+    g_oven.paths.build_ingredients_root = strdup(parameters->paths.build_ingredients_root);
+    
     // update oven variables
-    g_oven.variables.target_platform       = strdup(parameters->target_platform);
-    g_oven.variables.target_arch           = strdup(parameters->target_architecture);
-    g_oven.variables.cwd                   = cwd;
-    g_oven.variables.fridge_prep_directory = strdup(parameters->ingredients_prefix);
+    g_oven.variables.target_platform = strdup(parameters->target_platform);
+    g_oven.variables.target_arch     = strdup(parameters->target_architecture);
 
     // update oven context
-    g_oven.process_environment   = parameters->envp;
-    g_oven.build_root            = strpathcombine(buildRoot, &tmp[0]);
-    g_oven.install_root          = strpathcombine(installRoot, &tmp[0]);;
-    if (g_oven.build_root == NULL || g_oven.install_root == NULL) {
-        free((void*)root);
-        free((void*)buildRoot);
-        free((void*)installRoot);
-        return -1;
-    }
+    g_oven.process_environment = parameters->envp;
 
     // no active recipe
-    g_oven.recipe.name            = NULL;
-    g_oven.recipe.relative_path   = NULL;
-    g_oven.recipe.build_root      = NULL;
-    g_oven.recipe.install_root    = NULL;
-    g_oven.recipe.toolchain       = NULL;
-    g_oven.recipe.checkpoint_path = NULL;
-
-    // create all paths
-    if (__create_path(root) || __create_path(buildRoot) || __create_path(installRoot) ||
-        __create_path(g_oven.build_root) || __create_path(g_oven.install_root)) {
-        free((void*)root);
-        free((void*)buildRoot);
-        free((void*)installRoot);
-        free((void*)g_oven.build_root);
-        free((void*)g_oven.install_root);
-        return -1;
-    }
-
-    // free the intermediate paths
-    free((void*)root);
-    free((void*)buildRoot);
-    free((void*)installRoot);
+    memset(&g_oven.recipe, 0, sizeof(struct oven_recipe_context));
     return 0;
 }
-
 
 void oven_cleanup(void)
 {
     // cleanup resources by recipe context
     oven_recipe_end();
 
-    free((void*)g_oven.build_root);
-    free((void*)g_oven.install_root);
+    // cleanup paths
+    free((void*)g_oven.paths.project_root);
+    free((void*)g_oven.paths.build_root);
+    free((void*)g_oven.paths.install_root);
+    free((void*)g_oven.paths.checkpoint_root);
+    free((void*)g_oven.paths.toolchains_root);
+    free((void*)g_oven.paths.build_ingredients_root);
+
+    // cleanup variables
     free((void*)g_oven.variables.target_platform);
     free((void*)g_oven.variables.target_arch);
-    free((void*)g_oven.variables.cwd);
-    free((void*)g_oven.variables.fridge_prep_directory);
 
     memset(&g_oven, 0, sizeof(struct oven_context));
 }
 
-static int __recreate_dir(const char* path)
-{
-    int status;
-
-    status = platform_rmdir(path);
-    if (status) {
-        if (errno != ENOENT) {
-            fprintf(stderr, "oven: failed to remove directory: %s\n", strerror(errno));
-            return -1;
-        }
-    }
-
-    status = platform_mkdir(path);
-    if (status) {
-        fprintf(stderr, "oven: failed to create directory: %s\n", strerror(errno));
-        return -1;
-    }
-    return 0;
-}
-
-int oven_clean(void)
-{
-    int status;
-
-    status = __recreate_dir(g_oven.build_root);
-    if (status) {
-        return status;
-    }
-    
-    status = __recreate_dir(g_oven.install_root);
-    if (status) {
-        return status;
-    }
-    return 0;
-}
-
 int oven_recipe_start(struct oven_recipe_options* options)
 {
-    char*  buildRoot;
-    char*  checkpointPath;
-    size_t relativePathLength;
-    int    status;
+    char tmp[512];
+
+    VLOG_DEBUG("oven", "oven_recipe_start()\n");
 
     if (g_oven.recipe.name) {
-        fprintf(stderr, "oven: recipe already started\n");
+        VLOG_ERROR("oven", "recipe already started\n");
         errno = ENOSYS;
         return -1;
     }
 
     g_oven.recipe.name          = strdup(options->name);
     g_oven.recipe.relative_path = strdup(options->relative_path);
-    g_oven.recipe.toolchain     = options->toolchain != NULL ? strdup(options->toolchain) : NULL;
-    
-    // generate build and install directories
-    buildRoot = strpathcombine(g_oven.build_root, options->relative_path);
-    if (!buildRoot) {
-        errno = ENOMEM;
+
+    // build the toolchain path
+    if (options->toolchain != NULL) {
+        snprintf(&tmp[0], sizeof(tmp), "%s/%s", g_oven.paths.toolchains_root, options->toolchain);
+        g_oven.recipe.toolchain = strdup(&tmp[0]);
+    }
+
+    // setup the checkpoint file
+    snprintf(&tmp[0], sizeof(tmp), ".%s-checks", options->name);
+    g_oven.recipe.checkpoint_file = strpathcombine(g_oven.paths.checkpoint_root, &tmp[0]);
+    if (g_oven.recipe.checkpoint_file == NULL) {
         return -1;
     }
-
-    status = platform_mkdir(buildRoot);
-    if (status) {
-        fprintf(stderr, "oven: failed to create build directory: %s\n", strerror(errno));
-        free(buildRoot);
-        return status;
-    }
-
-    checkpointPath = strpathcombine(buildRoot, ".checkpoints");
-    if (!checkpointPath) {
-        errno = ENOMEM;
-        free(buildRoot);
-        return -1;
-    }
-
-    // store members as const
-    g_oven.recipe.build_root      = buildRoot;
-    g_oven.recipe.install_root    = strdup(g_oven.install_root);
-    g_oven.recipe.checkpoint_path = checkpointPath;
     return 0;
 }
 
 void oven_recipe_end(void)
 {
+    VLOG_DEBUG("oven", "oven_recipe_end()\n");
     free((void*)g_oven.recipe.name);
     free((void*)g_oven.recipe.relative_path);
     free((void*)g_oven.recipe.toolchain);
-    free((void*)g_oven.recipe.build_root);
-    free((void*)g_oven.recipe.install_root);
-    free((void*)g_oven.recipe.checkpoint_path);
+    free((void*)g_oven.recipe.checkpoint_file);
     memset(&g_oven.recipe, 0, sizeof(struct oven_recipe_context));
 }
 
@@ -333,50 +188,39 @@ int oven_clear_recipe_checkpoint(const char* name)
         return -1;
     }
 
-    if (g_oven.recipe.checkpoint_path == NULL) {
+    if (g_oven.recipe.checkpoint_file == NULL) {
         errno = ENOSYS;
         return -1;
     }
-    return oven_checkpoint_remove(g_oven.recipe.checkpoint_path, name);
+    return oven_checkpoint_remove(g_oven.recipe.checkpoint_file, name);
 }
 
 static const char* __get_variable(const char* name)
 {
-    // Cross-compilation target variables.
-    if (strcmp(name, "CHEF_TARGET_PLATFORM") == 0) {
-        printf("CHEF_TARGET_PLATFORM: %s\n", g_oven.variables.target_platform);
-        return g_oven.variables.target_platform;
-    }
-    if (strcmp(name, "CHEF_TARGET_ARCHITECTURE") == 0) {
-        printf("CHEF_TARGET_ARCHITECTURE: %s\n", g_oven.variables.target_arch);
-        return g_oven.variables.target_arch;
-    }
+    // fixed values
+    static const char* hostArch = CHEF_ARCHITECTURE_STR;
+    static const char* hostPlatform = CHEF_PLATFORM_STR;
 
-    // Cross-compilation host variables.
-    if (strcmp(name, "CHEF_HOST_PLATFORM") == 0) {
-        printf("CHEF_HOST_PLATFORM: " CHEF_PLATFORM_STR "\n");
-        return CHEF_PLATFORM_STR;
-    }
-    if (strcmp(name, "CHEF_HOST_ARCHITECTURE") == 0) {
-        printf("CHEF_HOST_ARCHITECTURE: " CHEF_ARCHITECTURE_STR "\n");
-        return CHEF_ARCHITECTURE_STR;
-    }
+    static const struct {
+        const char*  name;
+        const char** value;
+    } variables[] = {
+        { "CHEF_TARGET_PLATFORM", &g_oven.variables.target_platform },
+        { "CHEF_TARGET_ARCHITECTURE", &g_oven.variables.target_arch },
+        { "CHEF_HOST_PLATFORM", &hostPlatform },
+        { "CHEF_HOST_ARCHITECTURE", &hostArch },
+        { "TOOLCHAIN_PREFIX", &g_oven.recipe.toolchain },
+        { "PROJECT_PATH", &g_oven.paths.project_root },
+        { "INSTALL_PREFIX", &g_oven.paths.install_root },
+        { "BUILD_INGREDIENTS_PREFIX", &g_oven.paths.build_ingredients_root },
+        { NULL, NULL }
+    };
 
-    if (strcmp(name, "PROJECT_PATH") == 0) {
-        printf("PROJECT_PATH: %s\n", g_oven.variables.cwd);
-        return g_oven.variables.cwd;
-    }
-    if (strcmp(name, "INGREDIENTS_PREFIX") == 0) {
-        printf("INGREDIENTS_PREFIX: %s\n", g_oven.variables.fridge_prep_directory);
-        return g_oven.variables.fridge_prep_directory;
-    }
-    if (strcmp(name, "TOOLCHAIN_PREFIX") == 0) {
-        printf("TOOLCHAIN_PREFIX: %s\n", g_oven.recipe.toolchain);
-        return g_oven.recipe.toolchain;
-    }
-    if (strcmp(name, "INSTALL_PREFIX") == 0) {
-        printf("INSTALL_PREFIX: %s\n", g_oven.recipe.install_root);
-        return g_oven.recipe.install_root;
+    for (int i = 0; variables[i].name != NULL; i++) {
+        if (strcmp(variables[i].name, name) == 0) {
+            printf("RESOLVED: %s => %s\n", variables[i].name, *(variables[i].value));
+            return *(variables[i].value);
+        }
     }
     return NULL;
 }
@@ -384,14 +228,14 @@ static const char* __get_variable(const char* name)
 static int __expand_variable(char** at, char** buffer, int* index, size_t* maxLength)
 {
     const char* start = *at;
-    char*       end   = strchr(start, '}');
-    if (end && end[1] == '}') {
+    char*       end   = strchr(start, ']');
+    if (end && end[1] == ']') {
         char* variable;
 
         // fixup at
         *at = (end + 2);
 
-        start += 3; // skip ${{
+        start += 3; // skip $[[
 
         // trim leading spaces
         while (*start == ' ') {
@@ -496,10 +340,10 @@ static void* __resize_buffer(void* buffer, size_t length)
     return biggerBuffer;
 }
 
-static const char* __preprocess_value(const char* original)
+char* oven_preprocess_text(const char* original)
 {
     const char* itr = original;
-    const char* result;
+    char*       result;
     char*       buffer;
     size_t      bufferSize = 4096;
     int         index;
@@ -521,7 +365,7 @@ static const char* __preprocess_value(const char* original)
     
     index = 0;
     while (*itr) {
-        if (strncmp(itr, "${{", 3) == 0) {
+        if (strncmp(itr, "$[[", 3) == 0) {
             // handle variables
             size_t spaceLeft = bufferSize - index;
             int    status;
@@ -539,7 +383,7 @@ static const char* __preprocess_value(const char* original)
                     }
                 }
             } while (status != 0);
-        } else if (strncmp(itr, "${", 2) == 0) {
+        } else if (strncmp(itr, "$[", 2) == 0) {
             // handle environment variables
             size_t spaceLeft = bufferSize - index;
             int    status;
@@ -588,7 +432,7 @@ const char* __build_argument_string(struct list* argumentList)
     argumentItr = argumentString;
     list_foreach(argumentList, item) {
         struct oven_value_item* value = (struct oven_value_item*)item;
-        const char*             valueString = __preprocess_value(value->value);
+        char*                   valueString = oven_preprocess_text(value->value);
         size_t                  valueLength = strlen(valueString);
 
         if (valueLength > 0 && (totalLength + valueLength + 2) < 4096) {
@@ -601,7 +445,7 @@ const char* __build_argument_string(struct list* argumentList)
                 argumentItr++;
             }
         }
-        free((void*)valueString);
+        free(valueString);
     }
     return argumentString;
 }
@@ -616,17 +460,17 @@ static struct generate_backend* __get_generate_backend(const char* name)
     return NULL;
 }
 
-static struct oven_keypair_item* __preprocess_keypair(struct oven_keypair_item* original)
+static struct chef_keypair_item* __preprocess_keypair(struct chef_keypair_item* original)
 {
-    struct oven_keypair_item* keypair;
+    struct chef_keypair_item* keypair;
 
-    keypair = (struct oven_keypair_item*)malloc(sizeof(struct oven_keypair_item));
+    keypair = (struct chef_keypair_item*)malloc(sizeof(struct chef_keypair_item));
     if (!keypair) {
         return NULL;
     }
 
     keypair->key   = strdup(original->key);
-    keypair->value = __preprocess_value(original->value);
+    keypair->value = oven_preprocess_text(original->value);
     return keypair;
 }
 
@@ -636,22 +480,107 @@ static struct list* __preprocess_keypair_list(struct list* original)
     struct list_item* item;
 
     if (!processed) {
-        fprintf(stderr, "oven: failed to allocate memory environment preprocessor\n");
+        VLOG_ERROR("oven", "failed to allocate memory environment preprocessor\n");
         return original;
     }
 
     list_init(processed);
     list_foreach(original, item) {
-        struct oven_keypair_item* keypair          = (struct oven_keypair_item*)item;
-        struct oven_keypair_item* processedKeypair = __preprocess_keypair(keypair);
+        struct chef_keypair_item* keypair          = (struct chef_keypair_item*)item;
+        struct chef_keypair_item* processedKeypair = __preprocess_keypair(keypair);
         if (!processedKeypair) {
-            fprintf(stderr, "oven: failed to allocate memory environment preprocessor\n");
+            VLOG_ERROR("oven", "failed to allocate memory environment preprocessor\n");
             break;
         }
 
         list_add(processed, &processedKeypair->list_header);
     }
     return processed;
+}
+
+static const char* __append_ingredients_system_path(const char* original, const char* systemRoot)
+{
+    // '-isystem-after ' (15)
+    // '/include' (8)
+    // space between (1)
+    // zero terminator (1)
+    size_t length = strlen(original) + strlen(systemRoot) + 26;
+    char*  buffer = calloc(length, 1);
+    if (buffer == NULL) {
+        return NULL;
+    }
+
+    snprintf(buffer, length - 1, "%s -isystem-after %s/include", original, systemRoot);
+    return buffer;
+}
+
+static struct chef_keypair_item* __compose_keypair(const char* key, const char* value)
+{
+    struct chef_keypair_item* item = calloc(sizeof(struct chef_keypair_item), 1);
+    if (item == NULL) {
+        return NULL;
+    }
+    item->key = strdup(key);
+    if (item->key == NULL) {
+        free(item);
+    }
+    item->value = strdup(value);
+    if (item->value == NULL) {
+        free((void*)item->key);
+        free(item);
+    }
+    return item;
+}
+
+static struct chef_keypair_item* __build_ingredients_system_path_keypair(const char* key, const char* systemRoot)
+{
+    char tmp[512] = { 0 };
+    snprintf(&tmp[0], sizeof(tmp), "-isystem-after %s/include", systemRoot);
+    return __compose_keypair(key, &tmp[0]);
+}
+
+static int __append_or_update_environ_flags(struct list* environment, const char* systemRoot)
+{
+    // Look and update/add the following language flags to account for
+    // ingredient include paths
+    struct list_item* item;
+    struct {
+        const char* ident;
+        int         fixed;
+    } idents[] = {
+        { "CFLAGS", 0 },
+        { "CXXFLAGS", 0 },
+        { NULL, 0 }
+    };
+
+    // Update any environmental variable already provided by recipe
+    list_foreach(environment, item) {
+        struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
+        for (int i = 0; idents[i].ident != NULL; i++) {
+            if (!strcmp(keypair->key, idents[i].ident)) {
+                const char* tmp = keypair->value;
+                keypair->value = __append_ingredients_system_path(tmp, systemRoot);
+                if (keypair->value == NULL) {
+                    keypair->value = tmp;
+                    return -1;
+                }
+                free((void*)tmp);
+                idents[i].fixed = 1;
+            }
+        }
+    }
+
+    // Add any that was not provided
+    for (int i = 0; idents[i].ident != NULL; i++) {
+        if (!idents[i].fixed) {
+            item = (struct list_item*)__build_ingredients_system_path_keypair(idents[i].ident, systemRoot);
+            if (item == NULL) {
+                return -1;
+            }
+            list_add(environment, item);
+        }
+    }
+    return 0;
 }
 
 static void __cleanup_environment(struct list* keypairs)
@@ -664,7 +593,7 @@ static void __cleanup_environment(struct list* keypairs)
 
     for (item = keypairs->head; item != NULL;) {
         struct list_item*         next    = item->next;
-        struct oven_keypair_item* keypair = (struct oven_keypair_item*)item;
+        struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
 
         free((void*)keypair->key);
         free((void*)keypair->value);
@@ -679,30 +608,26 @@ static void __cleanup_backend_data(struct oven_backend_data* data)
 {
     __cleanup_environment(data->environment);
     free((void*)data->arguments);
-
-    free((void*)data->paths.root);
     free((void*)data->paths.project);
 }
 
 static int __initialize_backend_data(struct oven_backend_data* data, const char* profile, struct list* arguments, struct list* environment)
 {
-    int                      status;
-    char*                    path;
+    char* path;
+
+    path = strpathcombine(g_oven.paths.project_root, g_oven.recipe.relative_path);
+    if (path == NULL) {
+        return -1;
+    }
 
     // reset the datastructure
     memset(data, 0, sizeof(struct oven_backend_data));
 
-    status = __get_cwd(&path);
-    if (status) {
-        return status;
-    }
-    data->paths.root = path;
-    
-    path = strpathcombine(data->paths.root, g_oven.recipe.relative_path);
-    if (path == NULL) {
-        free((void*)data->paths.root);
-        return status;
-    }
+    // setup expected paths
+    data->paths.root = g_oven.paths.project_root;
+    data->paths.install = g_oven.paths.install_root;
+    data->paths.build   = g_oven.paths.build_root;
+    data->paths.build_ingredients = g_oven.paths.build_ingredients_root;
     data->paths.project = path;
 
     data->project_name        = g_oven.recipe.name;
@@ -714,15 +639,16 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     data->platform.target_platform = g_oven.variables.target_platform;
     data->platform.target_architecture = g_oven.variables.target_arch;
     
-    data->paths.install       = g_oven.recipe.install_root;
-    data->paths.build         = g_oven.recipe.build_root;
-    data->paths.ingredients   = g_oven.variables.fridge_prep_directory;
-    
     data->environment = __preprocess_keypair_list(environment);
     if (!data->environment) {
         __cleanup_backend_data(data);
         return -1;
     }
+
+    //if (__append_or_update_environ_flags(data->environment)) {
+    //    __cleanup_backend_data(data);
+    //    return -1;
+    //}
 
     data->arguments = __build_argument_string(arguments);
     if (!data->arguments) {
@@ -751,20 +677,20 @@ int oven_configure(struct oven_generate_options* options)
     }
 
     // check if we already have done this step
-    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_path, options->name)) {
-        printf("nothing to be done for %s\n", options->name);
+    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_file, options->name)) {
+        VLOG_TRACE("oven", "nothing to be done for %s\n", options->name);
         return 0;
     }
     
-    printf("running step %s\n", options->name);
+    VLOG_TRACE("oven", "running step %s\n", options->name);
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
     }
-
+    
     status = backend->generate(&data, options->system_options);
     if (status == 0) {
-        status = oven_checkpoint_create(g_oven.recipe.checkpoint_path, options->name);
+        status = oven_checkpoint_create(g_oven.recipe.checkpoint_file, options->name);
     }
 
 cleanup:
@@ -787,7 +713,6 @@ int oven_build(struct oven_build_options* options)
     struct build_backend*    backend;
     struct oven_backend_data data;
     int                      status;
-    char*                    path;
 
     if (!options) {
         errno = EINVAL;
@@ -801,20 +726,20 @@ int oven_build(struct oven_build_options* options)
     }
 
     // check if we already have done this step
-    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_path, options->name)) {
-        printf("nothing to be done for %s\n", options->name);
+    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_file, options->name)) {
+        VLOG_TRACE("oven", "nothing to be done for %s\n", options->name);
         return 0;
     }
 
-    printf("running step %s\n", options->name);
+    VLOG_TRACE("oven", "running step %s\n", options->name);
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
     }
-
+    
     status = backend->build(&data, options->system_options);
     if (status == 0) {
-        status = oven_checkpoint_create(g_oven.recipe.checkpoint_path, options->name);
+        status = oven_checkpoint_create(g_oven.recipe.checkpoint_file, options->name);
     }
 
 cleanup:
@@ -824,8 +749,8 @@ cleanup:
 
 int oven_script(struct oven_script_options* options)
 {
-    const char* preprocessedScript;
-    int         status;
+    char* preprocessedScript;
+    int   status;
 
     // handle script substitution first, then we pass it on
     // to the platform handler
@@ -835,22 +760,25 @@ int oven_script(struct oven_script_options* options)
     }
 
     // check if we already have done this step
-    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_path, options->name)) {
-        printf("nothing to be done for %s\n", options->name);
+    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_file, options->name)) {
+        VLOG_TRACE("oven", "nothing to be done for %s\n", options->name);
         return 0;
     }
 
-    printf("running step %s\n", options->name);
-    preprocessedScript = __preprocess_value(options->script);
+    VLOG_TRACE("oven", "running step %s\n", options->name);
+    preprocessedScript = oven_preprocess_text(options->script);
     if (preprocessedScript == NULL) {
         return -1;
     }
 
     status = platform_script(preprocessedScript);
+    if (status) {
+        VLOG_ERROR("oven", "oven_script: failed to execute script\n");
+    }
     free((void*)preprocessedScript);
 
     if (status == 0) {
-        status = oven_checkpoint_create(g_oven.recipe.checkpoint_path, options->name);
+        return oven_checkpoint_create(g_oven.recipe.checkpoint_file, options->name);
     }
     return status;
 }
@@ -963,9 +891,9 @@ int oven_include_filters(struct list* filters)
     }
 
     return __copy_files_with_filters(
-        g_oven.variables.fridge_prep_directory,
+        "",
         NULL,
         filters,
-        g_oven.recipe.install_root
+        g_oven.paths.install_root
     );
 }

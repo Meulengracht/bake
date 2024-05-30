@@ -19,11 +19,13 @@
 #ifndef __LIBFRIDGE_H__
 #define __LIBFRIDGE_H__
 
-enum ingredient_source {
-    INGREDIENT_SOURCE_UNKNOWN,
-    INGREDIENT_SOURCE_REPO,
-    INGREDIENT_SOURCE_URL,
-    INGREDIENT_SOURCE_FILE,
+#include <chef/list.h>
+
+enum ingredient_source_type {
+    INGREDIENT_SOURCE_TYPE_UNKNOWN,
+    INGREDIENT_SOURCE_TYPE_REPO,
+    INGREDIENT_SOURCE_TYPE_URL,
+    INGREDIENT_SOURCE_TYPE_FILE,
 };
 
 struct ingredient_source_repo {
@@ -38,20 +40,22 @@ struct ingredient_source_file {
     const char* path;
 };
 
-struct fridge_ingredient {
-    const char* name;
-    const char* description;
-    const char* platform;
-    const char* arch;
-    const char* channel;
-    const char* version;
-
-    enum ingredient_source source;
+struct ingredient_source {
+    enum ingredient_source_type type;
     union {
         struct ingredient_source_repo repo;
         struct ingredient_source_url  url;
         struct ingredient_source_file file;
     };
+};
+
+struct fridge_ingredient {
+    const char*              name;
+    const char*              channel;
+    const char*              version;
+    const char*              platform;
+    const char*              arch;
+    struct ingredient_source source;
 };
 
 /**
@@ -67,37 +71,14 @@ extern int fridge_initialize(const char* platform, const char* architecture);
 extern void fridge_cleanup(void);
 
 /**
- * @brief 
- * 
- * @return char* 
- */
-extern const char* fridge_get_prep_directory(void);
-
-/**
  * @brief Stores the given ingredient, making sure we have a local copy of it in
- * our fridge storage.
+ * our local store.
  * 
- * @param[In] ingredient 
+ * @param[In]  ingredient Options describing the ingredient that should be fetched from store.
+ * @param[Out] pathOut    Returns a zero-terminated string with the path of the ingredient. This
+ *                        string should not be freed. It will be valid until fridge_cleanup is called.
  * @return int  
  */
-extern int fridge_store_ingredient(struct fridge_ingredient* ingredient);
-
-/**
- * @brief Tells the fridge that we want to use a specific ingredient for our recipe. If
- * the ingredient doesn't exist, it will be fetched from chef.
- * 
- * @param[In] ingredient 
- * @return int  
- */
-extern int fridge_use_ingredient(struct fridge_ingredient* ingredient);
-
-/**
- * @brief Resolves the path of a utensils package. This will return the prefix path
- * that can be exposed to the building of the package.
- * 
- * @param[In] ingredient The name of the ingredient to resolve in the format of publisher/name
- * @return char* A malloc'd copy of the path prefix to the unpacked utensils package.
- */
-extern char* fridge_get_utensil_location(const char* ingredient);
+extern int fridge_ensure_ingredient(struct fridge_ingredient* ingredient, const char** pathOut);
 
 #endif //!__LIBFRIDGE_H__

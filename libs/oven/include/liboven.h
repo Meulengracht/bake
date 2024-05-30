@@ -31,19 +31,20 @@ struct oven_backend_make_options {
     int parallel;
 };
 
+struct meson_wrap_item {
+    struct list_item list_header;
+    const char*      name;
+    const char*      ingredient;
+};
+
 struct oven_backend_meson_options {
     const char* cross_file;
+    struct list wraps; // list<meson_wrap_item>
 };
 
 union oven_backend_options {
     struct oven_backend_make_options  make;
     struct oven_backend_meson_options meson;
-};
-
-struct oven_keypair_item {
-    struct list_item list_header;
-    const char*      key;
-    const char*      value;
 };
 
 struct oven_value_item {
@@ -60,6 +61,13 @@ struct oven_pack_command {
     int                    allow_system_libraries;
     const char*            path;
     struct list            arguments; // list<oven_value_item>
+};
+
+struct oven_ingredient {
+    struct list_item     list_header;
+    const char*          file_path;
+    const char*          name;
+    struct chef_version* version;
 };
 
 struct oven_recipe_options {
@@ -93,6 +101,7 @@ struct oven_script_options {
 
 struct oven_pack_options {
     const char*            name;
+    const char*            pack_dir;
     enum chef_package_type type;
     const char*            summary;
     const char*            description;
@@ -104,16 +113,30 @@ struct oven_pack_options {
     const char*            maintainer_email;
     const char*            homepage;
 
+    struct list*           bin_dirs; // list<oven_value_item>
+    struct list*           inc_dirs; // list<oven_value_item>
+    struct list*           lib_dirs; // list<oven_value_item>
+    struct list*           compiler_flags; // list<oven_value_item>
+    struct list*           linker_flags; // list<oven_value_item>
+
     struct list*           filters;  // list<oven_value_item>
     struct list*           commands; // list<oven_pack_command>
 };
 
+struct oven_paths {
+    const char* project_root;
+    const char* build_root;
+    const char* install_root;
+    const char* checkpoint_root;
+    const char* toolchains_root;
+    const char* build_ingredients_root;
+};
+
 struct oven_parameters {
     const char* const* envp;
-    const char*        recipe_name;
     const char*        target_platform;
     const char*        target_architecture;
-    const char*        ingredients_prefix;
+    struct oven_paths  paths;
 };
 
 /**
@@ -145,14 +168,6 @@ extern void oven_recipe_end(void);
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
 extern int oven_clear_recipe_checkpoint(const char* name);
-
-/**
- * @brief Cleans up the build and install areas, resetting the entire state
- * of the current project context.
- * 
- * @return int Returns 0 on success, -1 on failure with errno set accordingly.
- */
-extern int oven_clean(void);
 
 /**
  * @brief 

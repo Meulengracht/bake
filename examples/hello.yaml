@@ -1,0 +1,31 @@
+project: 
+  summary: Test projects
+  description: |
+    Example program for how to build simple applications
+  author: Philip Meulengracht
+  email: the_meulengracht@hotmail.com
+  version: 1.0.0
+  license: MIT
+
+recipes:
+  - name: hello-world
+    path: hello-world
+    steps:
+    - name: config
+      type: generate
+      system: cmake
+      arguments:
+        - -G
+        - '"Unix Makefiles"'
+    - name: build
+      type: build
+      depends: [config]
+      system: make
+
+packs:
+- name: hello-world
+  type: application
+  commands:
+  - name: hello
+    path: /usr/local/bin/hello-world
+    type: executable

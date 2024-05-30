@@ -29,7 +29,7 @@ static void __print_help(void)
     printf("Usage: order find <publisher/pack> [options]\n");
     printf("Examples:\n");
     printf("  order find chef     retrieves a list of all packs that contain the word 'chef'\n");
-    printf("  order find pub/*    retrieves a list of all packs from the publisher 'pub'\n");
+    printf("  order find pub/     retrieves a list of all packs from the publisher 'pub'\n");
     printf("  order find pub/chef retrieves a list of all packs from the publisher 'pub', which also contains the word 'chef'\n");
     printf("Options:\n");
     printf("  -h, --help\n");

@@ -18,18 +18,130 @@
 
 #include <backend.h>
 #include <errno.h>
+#include <libingredient.h>
 #include <liboven.h>
 #include <chef/platform.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <utils.h>
+#include <vafs/vafs.h>
+#include <zip.h>
 
-int meson_main(struct oven_backend_data* data, union oven_backend_options* options)
+// import this while we find a suitiable place
+extern char* oven_preprocess_text(const char* original);
+
+static char* __processed_path(struct oven_backend_data* data)
+{
+    return strpathcombine(data->paths.build, "cross-file.txt");
+}
+
+static int __read_file(const char* path, char** bufferOut)
+{
+    FILE* file;
+    long  size;
+    char* buffer;
+
+    file = fopen(path, "rb");
+    if (file == NULL) {
+        fprintf(stderr, "Failed to open %s for reading: %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    fseek(file, 0, SEEK_END);
+    size = ftell(file);
+    rewind(file);
+
+    buffer = malloc(size);
+    if (buffer == NULL) {
+        fprintf(stderr, "Failed to read %s: %s\n", path, strerror(errno));
+        fclose(file);
+        return -1;
+    }
+
+    fread(buffer, 1, size, file);
+    fclose(file);
+    return 0;
+}
+
+static int __write_file(const char* path, const char* buffer)
+{
+    FILE* file;
+    int   status;
+
+    file = fopen(path, "w");
+    if (file == NULL) {
+        fprintf(stderr, "Failed to open %s for writing: %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    fputs(buffer, file);
+    fclose(file);
+    return 0;
+}
+
+static char* __compute_arguments(struct oven_backend_data* data, union oven_backend_options* options)
+{
+    size_t length;
+    char*  args;
+    int    status;
+    FILE*  stream;
+
+    stream = open_memstream(&args, &length);
+    if (stream == NULL) {
+        return NULL;
+    }
+
+    if (options->meson.cross_file != NULL) {
+        char* original, *processed, *path;
+        
+        path = __processed_path(data);
+        if (path == NULL) {
+            return NULL;
+        }
+
+        /**
+         * @brief The cross-file we take in, is a template. We will be pre-processing it a bit
+         * before writing a final cross-file to handle any variables present.
+         */
+        status = __read_file(options->meson.cross_file, &original);
+        if (status) {
+            free(path);
+            return NULL;
+        }
+
+        processed = oven_preprocess_text(original);
+        if (processed == NULL) {
+            free(path);
+            free(original);
+            return NULL;
+        }
+
+        status = __write_file(path, processed);
+        free(original);
+        free(processed);
+
+        if (status) {
+            free(path);
+            return NULL;
+        }
+        fprintf(stream, "--cross-file %s", path);
+        free(path);
+    }
+
+    // --force-fallback-for=llvm
+
+    fclose(stream);
+    return args;
+}
+
+int meson_config_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
     char*  mesonCommand = NULL;
     char** environment  = NULL;
-    int    status       = -1;
+    char*  args         = NULL;
+    int    status = -1;
+    size_t length;
 
     environment = oven_environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
@@ -37,22 +149,36 @@ int meson_main(struct oven_backend_data* data, union oven_backend_options* optio
         return -1;
     }
 
-    mesonCommand = malloc(strlen("meson") + strlen(data->paths.build) + 16);
+    // lets make it 64 to cover some extra grounds
+    length = 64 + strlen(data->paths.project);
+    args = __compute_arguments(data, options);
+    if (args) {
+        length += strlen(args);
+    }
+    mesonCommand = malloc(length);
     if (mesonCommand == NULL) {
         errno = ENOMEM;
         goto cleanup;
     }
-    sprintf(mesonCommand, "meson %s", data->paths.build);
+
+    if (args) {
+        sprintf(mesonCommand, "meson setup %s %s", args, data->paths.project);
+    } else {
+        sprintf(mesonCommand, "meson setup %s", data->paths.project);
+    }
 
     // use the project directory (cwd) as the current build directory
     status = platform_spawn(
         mesonCommand,
         data->arguments,
         (const char* const*)environment,
-        NULL
+        &(struct platform_spawn_options) {
+            .cwd = data->paths.build
+        }
     );
 
 cleanup:
+    free(args);
     free(mesonCommand);
     oven_environment_destroy(environment);
     return status;

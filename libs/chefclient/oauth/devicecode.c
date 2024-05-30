@@ -206,11 +206,10 @@ static void __parse_token_error_response(const char* responseBuffer)
     statusText = json_string_value(json_object_get(root, "error"));
     if (strncmp(statusText, "authorization_pending", 21) == 0) {
         errno = EAGAIN;
-    }
-    else if (strncmp(statusText, "slow_down", 9) == 0) {
+    } else if (strncmp(statusText, "slow_down", 9) == 0) {
         errno = EBUSY;
-    }
-    else {
+    } else {
+        fprintf(stderr, "__parse_token_error_response: error %s", statusText);
         errno = EPIPE;
     }
     json_decref(root);
@@ -261,8 +260,7 @@ static int __deviceflow_get_token(struct devicecode_context* deviceContext, stru
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode == 200 && code != CURLE_ABORTED_BY_CALLBACK) {
         status = __parse_token_response(request->response, tokenContext);
-    }
-    else {
+    } else {
         // this will set errno appropriately
         __parse_token_error_response(request->response);
         status = -1;
@@ -290,8 +288,7 @@ static int __deviceflow_poll(struct devicecode_context* deviceContext, struct to
         if (errno == EBUSY) {
             // slow down, increase interval
             deviceContext->interval += 5;
-        }
-        else if (errno != EAGAIN) {
+        } else if (errno != EAGAIN) {
             break;
         }
     }

@@ -19,7 +19,7 @@
 #include <chef/client.h>
 #include <libfridge.h>
 #include <chef/platform.h>
-#include <recipe.h>
+#include <chef/recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,14 +68,21 @@ int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe)
     atexit(chefclient_cleanup);
 
     // iterate through all ingredients
-    printf("bake: fetching %i ingredients\n", recipe->ingredients.count);
-    for (item = recipe->ingredients.head; item != NULL; item = item->next) {
+    printf("bake: fetching %i host ingredients\n", recipe->environment.host.ingredients.count);
+    for (item = recipe->environment.host.ingredients.head; item != NULL; item = item->next) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         
         // fetch the ingredient
-        status = fridge_store_ingredient(&ingredient->ingredient);
+        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
+            .name = ingredient->name,
+            .channel = ingredient->channel,
+            .version = ingredient->version,
+            .source = ingredient->source,
+            .arch = CHEF_ARCHITECTURE_STR,
+            .platform = CHEF_PLATFORM_STR
+        }, NULL);
         if (status != 0) {
-            fprintf(stderr, "bake: failed to fetch ingredient %s\n", ingredient->ingredient.name);
+            fprintf(stderr, "bake: failed to fetch ingredient %s\n", ingredient->name);
         }
     }
     return 0;

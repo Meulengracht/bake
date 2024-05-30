@@ -20,6 +20,7 @@
 #define __SERVED_APPLICATION_H__
 
 struct served_mount;
+struct containerv_container;
 
 struct served_command {
     const char* name;
@@ -29,7 +30,6 @@ struct served_command {
 
     // these are runtime state variables
     // and are not serialized to disk.
-    const char* mount;
     const char* symlink;
     const char* data;
 };
@@ -48,7 +48,8 @@ struct served_application {
 
     // these are runtime state variables
     // and are not serialized to disk.
-    struct served_mount* mount;
+    struct served_mount*         mount;
+    struct containerv_container* container;
 };
 
 /**

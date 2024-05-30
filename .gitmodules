@@ -2,7 +2,7 @@
 	path = libs/vafs
 	url = ../vali-rofs.git
 [submodule "libs/zstd"]
-	path = libs/zstd
+	path = libs/compression/zstd
 	url = ../../umbrella-c/zstd.git
 [submodule "libs/curl"]
 	path = libs/curl
@@ -16,3 +16,6 @@
 [submodule "libs/gracht"]
 	path = libs/gracht
 	url = ../libgracht.git
+[submodule "libs/compression/zip"]
+	path = libs/compression/zip
+	url = ../../umbrella-c/zip.git

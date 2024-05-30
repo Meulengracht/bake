@@ -1,0 +1,41 @@
+project: 
+  summary: The linux OS base
+  description: |
+    This is the base OS linux ingredient, which is used as the base for all
+    other chef packages built for linux.
+  author: Philip Meulengracht
+  email: the_meulengracht@hotmail.com
+  version: 1.0.0
+  license: MIT
+
+environment:
+  host:
+    base: false
+  build:
+    confinement: false
+
+recipes:
+  - name: build-base
+    path: ./
+    steps:
+    - name: construct
+      type: script
+      script: |
+        # Packages for a basic linux/bash environment:
+        PACKAGES=(
+          bash
+        )
+
+        delim=""
+        joined=""
+        for item in "${PACKAGES[@]}"; do
+          joined="$joined$delim$item"
+          delim=","
+        done
+
+        sudo debootstrap --variant=minbase --include="$joined" --arch=$[[ CHEF_TARGET_ARCHITECTURE ]] stable $[[ INSTALL_PREFIX ]] http://deb.debian.org/debian/
+        sudo rm -rf $[[ INSTALL_PREFIX ]]/dev
+
+packs:
+- name: linux-base
+  type: ingredient

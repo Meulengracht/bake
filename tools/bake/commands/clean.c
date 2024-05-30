@@ -23,19 +23,22 @@
  */
 
 #include <errno.h>
-#include <liboven.h>
 #include <chef/platform.h>
-#include <recipe.h>
+#include <chef/recipe.h>
+#include <chef/kitchen.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <vlog.h>
 
 static void __print_help(void)
 {
     printf("Usage: bake clean [options]\n");
     printf("\n");
     printf("Options:\n");
+    printf("  --purge\n");
+    printf("      cleans all active recipes in the kitchen area\n");
     printf("  -h, --help\n");
     printf("      Shows this help message\n");
 }
@@ -47,11 +50,34 @@ static void __cleanup_systems(int sig)
     exit(0);
 }
 
+static int __get_cwd(char** bufferOut)
+{
+    char*  cwd;
+    int    status;
+
+    cwd = malloc(4096);
+    if (cwd == NULL) {
+        return -1;
+    }
+
+    status = platform_getcwd(cwd, 4096);
+    if (status) {
+        // buffer was too small
+        VLOG_ERROR("oven", "could not get current working directory, buffer too small?\n");
+        free(cwd);
+        return -1;
+    }
+    *bufferOut = cwd;
+    return 0;
+}
+
 int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
-    struct oven_parameters ovenParams;
-    int                    status;
-    char*                  name = NULL;
+    int   status;
+    int   purge = 0;
+    char* name = NULL;
+    char* cwd;
+    char  tmp[128];
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -62,49 +88,41 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
+            } else if (!strcmp(argv[i], "--purge")) {
+                purge = 1;
             } else if (argv[i][0] != '-') {
                 name = argv[i];
             }
         }
     }
 
-    if (name == NULL) {
-        // should not happen
-        fprintf(stderr, "bake: missing recipe name\n");
+    // get the current working directory
+    status = __get_cwd(&cwd);
+    if (status) {
+        VLOG_ERROR("bake", "failed to determine project directory\n");
         return -1;
     }
 
-    if (recipe == NULL) {
-        fprintf(stderr, "bake: no recipe provided\n");
+    // if purge was set, then clean the entire kitchen
+    if (purge) {
+        return kitchen_purge(&(struct kitchen_purge_options) {
+            .project_path = cwd
+        });
+    }
+
+    if (name == NULL || recipe == NULL) {
+        VLOG_ERROR("bake", "no recipe provided\n");
         __print_help();
         return -1;
     }
 
-    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR);
-    if (status != 0) {
-        fprintf(stderr, "bake: failed to initialize fridge\n");
-        return -1;
-    }
-    atexit(fridge_cleanup);
+    // get basename of recipe
+    strbasename(name, tmp, sizeof(tmp));
 
-    ovenParams.envp = (const char* const*)envp;
-    ovenParams.target_platform = CHEF_PLATFORM_STR;
-    ovenParams.target_architecture = CHEF_ARCHITECTURE_STR;
-    ovenParams.recipe_name = name;
-    ovenParams.ingredients_prefix = fridge_get_prep_directory();
-
-    status = oven_initialize(&ovenParams);
-    if (status) {
-        fprintf(stderr, "bake: failed to initialize oven: %s\n", strerror(errno));
-        return -1;
-    }
-    atexit(oven_cleanup);
-    
-    status = oven_clean();
-    if (status) {
-        fprintf(stderr, "bake: failed to clean project: %s\n", strerror(errno));
-        return -1;
-    }
-
-    return status;
+    return kitchen_recipe_clean(recipe, 
+        &(struct kitchen_clean_options) {
+            .name = &tmp[0],
+            .project_path = cwd
+        }
+    );
 }

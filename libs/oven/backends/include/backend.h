@@ -52,11 +52,11 @@ struct oven_backend_data_paths {
     const char* install;
 
     /**
-     * @brief The path where the fridge keeps it's ingredients. This is the prep area
-     * path and not the storage path. The prep area will usually contain bin/, lib/ and
-     * include/
+     * @brief The path to the build ingredients root directory. This is where
+     * ingredients used specifically for building are stored. This is usually
+     * only relevant for cross-compilation.
      */
-    const char* ingredients;
+    const char* build_ingredients;
 };
 
 struct oven_backend_data_platform {
@@ -109,11 +109,12 @@ struct oven_backend_data {
 //****************************************************************************//
 extern int configure_main(struct oven_backend_data* data, union oven_backend_options* options);
 extern int cmake_main(struct oven_backend_data* data, union oven_backend_options* options);
-extern int meson_main(struct oven_backend_data* data, union oven_backend_options* options);
+extern int meson_config_main(struct oven_backend_data* data, union oven_backend_options* options);
 
 //****************************************************************************//
 // Build backend entries                                                      //
 //****************************************************************************//
 extern int make_main(struct oven_backend_data* data, union oven_backend_options* options);
+extern int meson_build_main(struct oven_backend_data* data, union oven_backend_options* options);
 
 #endif //!__LIBOVEN_BACKEND_H__

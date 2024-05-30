@@ -342,6 +342,11 @@ int elf_resolve_dependencies(const char* path, struct list* dependencies)
     return 0;
 }
 
+/**
+ * @brief We may need to use patchelf on linux binaries built patchelf --set-soname libfoo.so libfoo.so
+ * This is a TODO
+ */
+
 #ifdef TEST
 // gcc -I../../platform/include -DTEST ./elf.c
 int main(int argc, char** argv)

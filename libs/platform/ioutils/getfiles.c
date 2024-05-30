@@ -67,7 +67,7 @@ static int __add_file(const struct dirent* dp, const char* path, const char* sub
     return 0;
 }
 
-static int __read_directory(const char* path, const char* subPath, struct list* files)
+static int __read_directory(const char* path, const char* subPath, int recursive, struct list* files)
 {
     struct dirent* dp;
     DIR*           d;
@@ -97,8 +97,8 @@ static int __read_directory(const char* path, const char* subPath, struct list* 
             break;
         }
 
-        if (dp->d_type == DT_DIR) {
-            status = __read_directory(combinedPath, combinedSubPath, files);
+        if (recursive && dp->d_type == DT_DIR) {
+            status = __read_directory(combinedPath, combinedSubPath, recursive, files);
         }
         else {
             status = __add_file(dp, combinedPath, combinedSubPath, files);
@@ -114,14 +114,14 @@ static int __read_directory(const char* path, const char* subPath, struct list* 
     return status;
 }
 
-int platform_getfiles(const char* path, struct list* files)
+int platform_getfiles(const char* path, int recursive, struct list* files)
 {
     if (!path || !files) {
         errno = EINVAL;
         return -1;
     }
 
-    return __read_directory(path, NULL, files);
+    return __read_directory(path, NULL, recursive, files);
 }
 
 int platform_getfiles_destroy(struct list* files)
