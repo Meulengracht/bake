@@ -821,11 +821,11 @@ static int __kitchen_refresh(struct kitchen_setup_options* options, struct kitch
     }
 
     // update packages if there are any changes
-    status = __run_in_chroot(kitchen, __perform_package_operations, options->packages);
-    if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to initialize host packages\n");
-        return status;
-    }
+    // status = __run_in_chroot(kitchen, __perform_package_operations, options->packages);
+    // if (status) {
+    //     VLOG_ERROR("kitchen", "kitchen_setup: failed to initialize host packages\n");
+    //     return status;
+    // }
     return 0;
 }
 
