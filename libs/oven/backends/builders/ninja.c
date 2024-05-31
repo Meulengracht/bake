@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,29 +43,10 @@ static void __ninja_output_handler(const char* line, enum platform_spawn_output_
     }
 }
 
-static int __cpu_workers(union oven_backend_options* options)
+int ninja_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
-    if (options->make.parallel > 0) {
-        return options->make.parallel;
-    }
-    // Never use the maximum number of cpus, that can make a system unstable/hang
-    return __INTERNAL_MAX(platform_cpucount() - 2, 1);
-}
-
-int make_main(struct oven_backend_data* data, union oven_backend_options* options)
-{
-    int         status      = -1;
-    char**      environment = NULL;
-    char*       argument    = NULL;
-    size_t      argumentLength;
-    const char* cwd = data->paths.build;
-
-    argumentLength = strlen(data->arguments) + 32;
-    argument       = calloc(argumentLength, 1);
-    if (argument == NULL) {
-        errno = ENOMEM;
-        goto cleanup;
-    }
+    int    status      = -1;
+    char** environment = NULL;
 
     environment = oven_environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
@@ -73,57 +54,44 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
         goto cleanup;
     }
 
-    // build the make parameters, execute from build folder
-    sprintf(argument, "-j%i", __cpu_workers(options));
-    if (strlen(data->arguments) > 0) {
-        strcat(argument, " ");
-        strcat(argument, data->arguments);
-    }
-
-    // handle in-tree builds
-    if (options->make.in_tree) {
-        cwd = NULL;
-    }
-
     // perform the build operation
-    VLOG_TRACE("make", "executing 'make %s'\n", argument);
+    VLOG_TRACE("ninja", "executing 'ninja %s'\n", data->arguments);
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
-        "make",
-        argument,
+        "ninja",
+        data->arguments,
         (const char* const*)environment, 
         &(struct platform_spawn_options) {
-            .cwd = cwd,
+            .cwd = data->paths.build,
             .output_handler = __ninja_output_handler
         }
     );
     vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         errno = status;
-        VLOG_ERROR("make", "failed to execute 'make %s'\n", argument);
+        VLOG_ERROR("ninja", "failed to execute 'ninja %s'\n", data->arguments);
         goto cleanup;
     }
 
     // perform the installation operation, ignore any other parameters
-    VLOG_TRACE("make", "executing 'make install'\n");
+    VLOG_TRACE("ninja", "executing 'ninja install'\n");
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
-        "make",
+        "ninja",
         "install",
         (const char* const*)environment, 
         &(struct platform_spawn_options) {
-            .cwd = cwd,
+            .cwd = data->paths.build,
             .output_handler = __ninja_output_handler
         }
     );
     vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         errno = status;
-        VLOG_ERROR("make", "failed to execute 'make install'\n");
+        VLOG_ERROR("ninja", "failed to execute 'ninja install'\n");
     }
 
 cleanup:
-    free(argument);
     oven_environment_destroy(environment);
     return status;
 }

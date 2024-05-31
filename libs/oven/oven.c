@@ -72,7 +72,8 @@ static struct generate_backend g_genbackends[] = {
 
 static struct build_backend g_buildbackends[] = {
     { "make",  make_main },
-    { "meson", meson_build_main }
+    { "meson", meson_build_main },
+    { "ninja", ninja_main }
 };
 
 static struct oven_context g_oven = { 0 };

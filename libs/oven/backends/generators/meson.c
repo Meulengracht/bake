@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,15 +18,13 @@
 
 #include <backend.h>
 #include <errno.h>
-#include <libingredient.h>
 #include <liboven.h>
 #include <chef/platform.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <utils.h>
-#include <vafs/vafs.h>
-#include <zip.h>
+#include <vlog.h>
 
 // import this while we find a suitiable place
 extern char* oven_preprocess_text(const char* original);
@@ -135,9 +133,24 @@ static char* __compute_arguments(struct oven_backend_data* data, union oven_back
     return args;
 }
 
+static void __meson_output_handler(const char* line, enum platform_spawn_output_type type) 
+{
+    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
+        VLOG_TRACE("meson", line);
+
+        // re-enable again if it continues to print
+        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+    } else {
+        // clear retrace on error output
+        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        
+        VLOG_ERROR("meson", line);
+    }
+}
+
 int meson_config_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
-    char*  mesonCommand = NULL;
+    char*  finalArguments = NULL;
     char** environment  = NULL;
     char*  args         = NULL;
     int    status = -1;
@@ -149,37 +162,41 @@ int meson_config_main(struct oven_backend_data* data, union oven_backend_options
         return -1;
     }
 
-    // lets make it 64 to cover some extra grounds
-    length = 64 + strlen(data->paths.project);
+    // lets make it 128 to cover some extra grounds
+    length = 128 + strlen(data->arguments) + strlen(data->paths.project);
     args = __compute_arguments(data, options);
     if (args) {
         length += strlen(args);
     }
-    mesonCommand = malloc(length);
-    if (mesonCommand == NULL) {
+    
+    finalArguments = malloc(length);
+    if (finalArguments == NULL) {
         errno = ENOMEM;
         goto cleanup;
     }
 
     if (args) {
-        sprintf(mesonCommand, "meson setup %s %s", args, data->paths.project);
+        snprintf(finalArguments, length, "setup %s %s %s", data->arguments, args, data->paths.project);
     } else {
-        sprintf(mesonCommand, "meson setup %s", data->paths.project);
+        snprintf(finalArguments, length, "setup %s %s", data->arguments, data->paths.project);
     }
 
-    // use the project directory (cwd) as the current build directory
+    VLOG_TRACE("meson", "executing 'meson %s'\n", finalArguments);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = platform_spawn(
-        mesonCommand,
-        data->arguments,
+        "meson",
+        finalArguments,
         (const char* const*)environment,
         &(struct platform_spawn_options) {
-            .cwd = data->paths.build
+            .cwd = data->paths.build,
+            .output_handler = __meson_output_handler
         }
     );
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
 
 cleanup:
     free(args);
-    free(mesonCommand);
+    free(finalArguments);
     oven_environment_destroy(environment);
     return status;
 }

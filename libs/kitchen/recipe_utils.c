@@ -16,7 +16,6 @@
  * 
  */
 
-
 #include <ctype.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>

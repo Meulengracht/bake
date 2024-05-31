@@ -47,11 +47,11 @@ int meson_build_main(struct oven_backend_data* data, union oven_backend_options*
         goto cleanup;
     }
 
-    sprintf(mesonCommand, "meson compile -C %s", data->paths.project);
+    sprintf(mesonCommand, "compile -C %s", data->paths.project);
     
     // use the project directory (cwd) as the current build directory
     status = platform_spawn(
-        mesonCommand,
+        "meson",
         data->arguments,
         (const char* const*)environment,
         &(struct platform_spawn_options) {

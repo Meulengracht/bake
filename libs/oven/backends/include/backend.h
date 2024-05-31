@@ -116,5 +116,6 @@ extern int meson_config_main(struct oven_backend_data* data, union oven_backend_
 //****************************************************************************//
 extern int make_main(struct oven_backend_data* data, union oven_backend_options* options);
 extern int meson_build_main(struct oven_backend_data* data, union oven_backend_options* options);
+extern int ninja_main(struct oven_backend_data* data, union oven_backend_options* options);
 
 #endif //!__LIBOVEN_BACKEND_H__

@@ -349,10 +349,10 @@ static char* __replace_or_add_cmake_prefixes(const char* platform, const char* a
     return newArguments;
 }
 
-static void __cmake_output_handler(const char* line, enum platform_spawn_output_type type) 
+static void __meson_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_TRACE("kitchen", line);
+        VLOG_TRACE("cmake", line);
 
         // re-enable again if it continues to print
         vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
@@ -360,7 +360,7 @@ static void __cmake_output_handler(const char* line, enum platform_spawn_output_
         // clear retrace on error output
         vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
         
-        VLOG_ERROR("kitchen", line);
+        VLOG_ERROR("cmake", line);
     }
 }
 
@@ -447,7 +447,7 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
         (const char* const*)environment,
         &(struct platform_spawn_options) {
             .cwd = data->paths.build,
-            .output_handler = __cmake_output_handler
+            .output_handler = __meson_output_handler
         }
     );
     vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
