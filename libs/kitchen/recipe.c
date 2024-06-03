@@ -30,6 +30,7 @@ enum state {
     STATE_SECTION,  /* top level */
 
     STATE_PROJECT,
+    STATE_PROJECT_NAME,
     STATE_PROJECT_SUMMARY,
     STATE_PROJECT_DESCRIPTION,
     STATE_PROJECT_ICON,
@@ -228,9 +229,30 @@ static void __finalize_recipe(struct parser_state* state)
     // todo
 }
 
+static int __is_valid_name(const char* name)
+{
+    if (name == NULL || strlen(name) == 0) {
+        return -1;
+    }
+
+    // step names must only contain a-z and '-_'
+    while (*name != '\0') {
+        if (!(isascii(*name) || (*name == '_') || (*name == '-'))) {
+            return -1;
+        }
+        name++;
+    }
+    return 0;
+}
+
 static void __finalize_project(struct parser_state* state)
 {
     // verify required project members
+    if (__is_valid_name(state->recipe.project.name)) {
+        fprintf(stderr, "parse error: project name must be provided and only contain [a-zA-Z_-]\n");
+        exit(EXIT_FAILURE);
+    }
+
     if (state->recipe.project.summary == NULL) {
         fprintf(stderr, "parse error: project summary is required\n");
         exit(EXIT_FAILURE);
@@ -330,22 +352,6 @@ static void __finalize_ingredient(struct parser_state* state)
     // reset the structure in state
     memset(&state->ingredient, 0, sizeof(struct recipe_ingredient));
     state->ingredient.source.type = INGREDIENT_SOURCE_TYPE_REPO;
-}
-
-static int __is_valid_name(const char* name)
-{
-    if (name == NULL || strlen(name) == 0) {
-        return -1;
-    }
-
-    // step names must only contain a-z and '-_'
-    while (*name != '\0') {
-        if (!(isascii(*name) || (*name == '_') || (*name == '-'))) {
-            return -1;
-        }
-        name++;
-    }
-    return 0;
 }
 
 static void __finalize_part(struct parser_state* state)
@@ -738,7 +744,9 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
-                    if (strcmp(value, "summary") == 0) {
+                    if (strcmp(value, "name") == 0) {
+                        __parser_push_state(s, STATE_PROJECT_NAME);
+                    } else if (strcmp(value, "summary") == 0) {
                         __parser_push_state(s, STATE_PROJECT_SUMMARY);
                     } else if (strcmp(value, "description") == 0) {
                         __parser_push_state(s, STATE_PROJECT_DESCRIPTION);
@@ -835,6 +843,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             break;
 
 
+        __consume_scalar_fn(STATE_PROJECT_NAME, recipe.project.name, __parse_string)
         __consume_scalar_fn(STATE_PROJECT_SUMMARY, recipe.project.summary, __parse_string)
         __consume_scalar_fn(STATE_PROJECT_DESCRIPTION, recipe.project.description, __parse_string)
         __consume_scalar_fn(STATE_PROJECT_ICON, recipe.project.icon, __parse_string)

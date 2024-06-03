@@ -29,6 +29,7 @@ enum vlog_level {
     VLOG_LEVEL_DEBUG
 };
 
+#define VLOG_FATAL(tag, ...)   vlog_output(VLOG_LEVEL_ERROR, tag, __VA_ARGS__); exit(EXIT_FAILURE)
 #define VLOG_ERROR(tag, ...)   vlog_output(VLOG_LEVEL_ERROR, tag, __VA_ARGS__)
 #define VLOG_WARNING(tag, ...) vlog_output(VLOG_LEVEL_WARNING, tag, __VA_ARGS__)
 #define VLOG_TRACE(tag, ...)   vlog_output(VLOG_LEVEL_TRACE, tag, __VA_ARGS__)

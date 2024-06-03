@@ -36,7 +36,7 @@
 
 static void __print_help(void)
 {
-    printf("Usage: bake pack [options]\n");
+    printf("Usage: bake run [options]\n");
     printf("\n");
     printf("Options:\n");
     printf("  -cc, --cross-compile\n");
@@ -286,12 +286,10 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     struct kitchen_setup_options kitchenOptions = { 0 };
     struct kitchen         kitchen;
-    char*                  name     = NULL;
     const char*            platform = NULL;
     const char*            arch     = NULL;
     char*                  step     = "run";
     int                    debug    = 0;
-    char                   tmp[128];
     char*                  cwd;
     int                    status;
 
@@ -316,14 +314,12 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
             } else if (argv[i][0] != '-') {
                 if (__is_step_name(argv[i])) {
                     step = argv[i];
-                } else {
-                    name = argv[i];
                 }
             }
         }
     }
 
-    if (name == NULL || recipe == NULL) {
+    if (recipe == NULL) {
         VLOG_ERROR("bake", "no recipe provided\n");
         __print_help();
         return -1;
@@ -342,9 +338,6 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     if (status) {
         return -1;
     }
-
-    // get basename of recipe
-    strbasename(name, tmp, sizeof(tmp));
 
     // TODO: make chefclient instanced, move to fridge
     status = chefclient_initialize();
@@ -375,7 +368,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     kitchenOptions.setup_hook.powershell = recipe->environment.hooks.powershell;
 
     // prepare kitchen parameters, lists are already filled at this point
-    kitchenOptions.name = &tmp[0];
+    kitchenOptions.name = recipe->project.name;
     kitchenOptions.project_path = cwd;
     kitchenOptions.pkg_environment = NULL;
     kitchenOptions.confined = recipe->environment.build.confinement;

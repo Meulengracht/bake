@@ -53,6 +53,7 @@ struct recipe_part {
 };
 
 struct recipe_project {
+    const char* name;
     const char* summary;
     const char* description;
     const char* icon;
