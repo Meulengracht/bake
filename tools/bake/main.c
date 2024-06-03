@@ -81,6 +81,9 @@ static void __print_help(void)
 {
     printf("Usage: bake <command> <recipe> [options]\n");
     printf("\n");
+    printf("If no recipe is specified, it will search for default recipe names as follows:\n");
+    printf("  chef/recipe.yaml\n");
+    printf("\n");
     printf("Commands:\n");
     printf("  init        initializes a new recipe in the current directory\n");
     printf("  fetch       refreshes/fetches all ingredients\n");
@@ -208,6 +211,15 @@ static int __add_implicit_ingredients(struct recipe* recipe)
     return 0;
 }
 
+static const char* __find_default_recipe(void)
+{
+    struct platform_stat stats;
+    if (platform_stat("chef/recipe.yaml", &stats) == 0) {
+        return "chef/recipe.yaml";
+    }
+    return NULL;
+}
+
 int main(int argc, char** argv, char** envp)
 {
     struct command_handler* command    = &g_commands[2]; // run step is default
@@ -258,6 +270,10 @@ int main(int argc, char** argv, char** envp)
                 }
             }
         }
+    }
+
+    if (recipePath == NULL) {
+        recipePath = (char*)__find_default_recipe();
     }
 
     if (recipePath != NULL) {

@@ -729,15 +729,9 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct kitchen_user* user)
     return 0;
 }
 
-static int __kitchen_install(struct kitchen_setup_options* options, struct kitchen* kitchen)
+static int __kitchen_install(struct kitchen* kitchen, struct kitchen_user* user, struct kitchen_setup_options* options)
 {
-    struct kitchen_user user;
-    int                 status;
-
-    if (kitchen_user_new(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to get current user\n");
-        return -1;
-    }
+    int status;
 
     VLOG_TRACE("kitchen", "cleaning project environment\n");
     __ensure_mounts_cleanup(kitchen->host_chroot, options->name);
@@ -754,7 +748,7 @@ static int __kitchen_install(struct kitchen_setup_options* options, struct kitch
         goto cleanup;
     }
 
-    status = __ensure_hostdirs(kitchen, &user);
+    status = __ensure_hostdirs(kitchen, user);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to create host directories\n");
         goto cleanup;
@@ -796,11 +790,10 @@ static int __kitchen_install(struct kitchen_setup_options* options, struct kitch
     }
 
 cleanup:
-    kitchen_user_delete(&user);
     return status;
 }
 
-static int __kitchen_refresh(struct kitchen_setup_options* options, struct kitchen* kitchen)
+static int __kitchen_refresh(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
     int status;
 
@@ -829,22 +822,60 @@ static int __kitchen_refresh(struct kitchen_setup_options* options, struct kitch
     return 0;
 }
 
+static char* __fmt_env_option(const char* name, const char* value)
+{
+    char  tmp[512];
+    char* result;
+    snprintf(&tmp[0], sizeof(tmp), "%s=%s", name, value);
+    result = strdup(&tmp[0]);
+    if (result == NULL) {
+        VLOG_FATAL("kitchen", "failed to allocate memory for environment option\n");
+    }
+    return result;
+}
+
+static char** __initialize_env(struct kitchen_user* user, const char* const* envp)
+{
+    char** env = calloc(6, sizeof(char*));
+    if (env == NULL) {
+        VLOG_FATAL("kitchen", "failed to allocate memory for environment\n");
+    }
+
+    // we are not using the parent environment yet
+    (void)envp;
+
+    env[0] = __fmt_env_option("USER", user->caller_name);
+    env[1] = __fmt_env_option("USERNAME", user->caller_name);
+    env[2] = __fmt_env_option("HOME", "/chef");
+    env[3] = __fmt_env_option("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:");
+    env[4] = __fmt_env_option("LD_LIBRARY_PATH", "/usr/local/lib");
+    env[5] = NULL;
+    return env;
+}
+
 int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen)
 {
-    int status;
+    struct kitchen_user user;
+    int                 status;
 
     VLOG_DEBUG("kitchen", "kitchen_setup(name=%s)\n", options->name);
+
+    if (kitchen_user_new(&user)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to get current user\n");
+        return -1;
+    }
 
     // Start out by constructing the kitchen. The reason for this is we need all the
     // paths calculated for pretty much all other operations.
     if (__kitchen_construct(options, kitchen)) {
+        kitchen_user_delete(&user);
         return -1;
     }
 
     // Now that we have the paths, we can start the oven
     // we need to ensure that the paths we provide change based on .confine status
     status = oven_initialize(&(struct oven_parameters){
-        .envp = options->envp,
+        .envp = (const char* const*)__initialize_env(&user, options->envp),
         .target_architecture = options->target_architecture,
         .target_platform = options->target_platform,
         .paths = {
@@ -858,14 +889,19 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
     });
     if (status) {
         VLOG_ERROR("kitchen", "failed to initialize oven: %s\n", strerror(errno));
+        kitchen_user_delete(&user);
         return -1;
     }
     atexit(oven_cleanup);
 
     if (__should_skip_setup(kitchen)) {
-        return __kitchen_refresh(options, kitchen);
+        status = __kitchen_refresh(kitchen, options);
+    } else {
+        status = __kitchen_install(kitchen, &user, options);
     }
-    return __kitchen_install(options, kitchen);
+    
+    kitchen_user_delete(&user);
+    return status;
 }
 
 int kitchen_purge(struct kitchen_purge_options* options)
