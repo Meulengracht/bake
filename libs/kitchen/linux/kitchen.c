@@ -87,25 +87,36 @@ static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPat
     return 0;
 }
 
-static void __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)
+static int __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)
 {
     char buff[2048];
     VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup()\n");
 
     snprintf(&buff[0], sizeof(buff), "%s/%s/chef/install", kitchenRoot, name);
-    if (umount(&buff[0])) {
-        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+    if (__is_mountpoint(&buff[0]) == 1) {
+        if (umount2(&buff[0], MNT_FORCE)) {
+            VLOG_ERROR("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+            return -1;
+        }
     }
 
     snprintf(&buff[0], sizeof(buff), "%s/%s/chef/project", kitchenRoot, name);
-    if (umount(&buff[0])) {
-        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+    if (__is_mountpoint(&buff[0]) == 1) {
+        if (umount2(&buff[0], MNT_FORCE)) {
+            VLOG_ERROR("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+            return -1;
+        }
     }
 
     snprintf(&buff[0], sizeof(buff), "%s/proc", kitchenRoot);
-    if (umount(&buff[0])) {
-        VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+    if (__is_mountpoint(&buff[0]) == 1) {
+        if (umount(&buff[0])) {
+            VLOG_ERROR("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
+            return -1;
+        }
     }
+
+    return 0;
 }
 
 static int __recreate_dir(const char* path)
@@ -734,7 +745,13 @@ static int __kitchen_install(struct kitchen* kitchen, struct kitchen_user* user,
     int status;
 
     VLOG_TRACE("kitchen", "cleaning project environment\n");
-    __ensure_mounts_cleanup(kitchen->host_chroot, options->name);
+    
+    status = __ensure_mounts_cleanup(kitchen->host_chroot, options->name);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to unmount existing mounts\n");
+        goto cleanup;
+    }
+    
     status = __clean_environment(kitchen->host_chroot);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to clean project environment\n");
@@ -940,7 +957,12 @@ int kitchen_purge(struct kitchen_purge_options* options)
         if (!strcmp(entry->name, "output")) {
             continue;
         }
-        __ensure_mounts_cleanup(kitchenPath, entry->name);
+        
+        status = __ensure_mounts_cleanup(kitchenPath, entry->name);
+        if (status) {
+            VLOG_ERROR("kitchen", "kitchen_purge: failed to remove mounts for %s\n", entry->name);
+            goto cleanup;
+        }
     }
 
     status = __clean_environment(kitchenPath);
@@ -979,7 +1001,12 @@ int kitchen_recipe_clean(struct recipe* recipe, struct kitchen_clean_options* op
         goto cleanup;
     }
 
-    __ensure_mounts_cleanup(kitchenPath, options->name);
+    status = __ensure_mounts_cleanup(kitchenPath, options->name);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to cleanup mounts\n");
+        goto cleanup;
+    }
+
     status = __clean_environment(kitchenPath);
     if (status) {
         if (errno != ENOENT) {
