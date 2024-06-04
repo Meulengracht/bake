@@ -629,7 +629,6 @@ static void __cleanup_backend_data(struct oven_backend_data* data)
 {
     __cleanup_environment(data->environment);
     free((void*)data->arguments);
-    free((void*)data->paths.project);
 }
 
 static int __initialize_backend_data(struct oven_backend_data* data, const char* profile, struct list* arguments, struct list* environment)
