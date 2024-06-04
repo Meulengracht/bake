@@ -37,9 +37,10 @@
 
 struct oven_recipe_context {
     const char* name;
-    const char* relative_path;
     const char* toolchain;
     const char* checkpoint_file;
+    const char* source_root;
+    const char* build_root;
 };
 
 struct oven_variables {
@@ -142,6 +143,15 @@ void oven_cleanup(void)
     memset(&g_oven, 0, sizeof(struct oven_context));
 }
 
+static int __ensure_recipe_dirs(struct oven_recipe_options* options)
+{
+    if (platform_mkdir(g_oven.recipe.build_root)) {
+        VLOG_ERROR("oven", "__ensure_recipe_dirs: failed to create %s\n", g_oven.recipe.build_root);
+        return -1;
+    }
+    return 0;
+}
+
 int oven_recipe_start(struct oven_recipe_options* options)
 {
     char tmp[512];
@@ -149,36 +159,46 @@ int oven_recipe_start(struct oven_recipe_options* options)
     VLOG_DEBUG("oven", "oven_recipe_start()\n");
 
     if (g_oven.recipe.name) {
-        VLOG_ERROR("oven", "recipe already started\n");
+        VLOG_ERROR("oven", "oven_recipe_start: recipe already started\n");
         errno = ENOSYS;
         return -1;
     }
 
-    g_oven.recipe.name          = strdup(options->name);
-    g_oven.recipe.relative_path = strdup(options->relative_path);
+    g_oven.recipe.name = strdup(options->name);
+
+    // construct the recipe paths
+    g_oven.recipe.source_root = strpathcombine(g_oven.paths.project_root, options->relative_path);
+    g_oven.recipe.build_root = strpathcombine(g_oven.paths.build_root, options->name);
 
     // build the toolchain path
     if (options->toolchain != NULL) {
-        snprintf(&tmp[0], sizeof(tmp), "%s/%s", g_oven.paths.toolchains_root, options->toolchain);
-        g_oven.recipe.toolchain = strdup(&tmp[0]);
+        g_oven.recipe.toolchain = strpathcombine(g_oven.paths.toolchains_root, options->toolchain);
     }
 
     // setup the checkpoint file
     snprintf(&tmp[0], sizeof(tmp), ".%s-checks", options->name);
     g_oven.recipe.checkpoint_file = strpathcombine(g_oven.paths.checkpoint_root, &tmp[0]);
-    if (g_oven.recipe.checkpoint_file == NULL) {
-        return -1;
+    
+    // create directories, last as it uses the global access
+    if (__ensure_recipe_dirs(options)) {
+        VLOG_ERROR("oven", "oven_recipe_start: failed to create directories for recipe\n");
+        goto error;
     }
     return 0;
+
+error:
+    oven_recipe_end();
+    return -1;
 }
 
 void oven_recipe_end(void)
 {
     VLOG_DEBUG("oven", "oven_recipe_end()\n");
     free((void*)g_oven.recipe.name);
-    free((void*)g_oven.recipe.relative_path);
     free((void*)g_oven.recipe.toolchain);
     free((void*)g_oven.recipe.checkpoint_file);
+    free((void*)g_oven.recipe.source_root);
+    free((void*)g_oven.recipe.build_root);
     memset(&g_oven.recipe, 0, sizeof(struct oven_recipe_context));
 }
 
@@ -614,22 +634,15 @@ static void __cleanup_backend_data(struct oven_backend_data* data)
 
 static int __initialize_backend_data(struct oven_backend_data* data, const char* profile, struct list* arguments, struct list* environment)
 {
-    char* path;
-
-    path = strpathcombine(g_oven.paths.project_root, g_oven.recipe.relative_path);
-    if (path == NULL) {
-        return -1;
-    }
-
     // reset the datastructure
     memset(data, 0, sizeof(struct oven_backend_data));
 
     // setup expected paths
     data->paths.root = g_oven.paths.project_root;
     data->paths.install = g_oven.paths.install_root;
-    data->paths.build   = g_oven.paths.build_root;
+    data->paths.build   = g_oven.recipe.build_root;
     data->paths.build_ingredients = g_oven.paths.build_ingredients_root;
-    data->paths.project = path;
+    data->paths.project = g_oven.recipe.source_root;
 
     data->project_name        = g_oven.recipe.name;
     data->profile_name        = profile != NULL ? profile : "Release";
