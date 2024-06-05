@@ -60,6 +60,7 @@ char* strpathjoin(const char* base, ...)
     if (joined == NULL) {
         return NULL;
     }
+    memset(joined, 0, 4096);
     strcpy(joined, base);
 
     va_start(args, base);
