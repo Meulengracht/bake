@@ -61,7 +61,6 @@ struct kitchen_purge_options {
 
 struct kitchen_clean_options {
     const char* name;
-    const char* project_path;
 };
 
 struct kitchen {
@@ -151,6 +150,6 @@ extern int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe);
  * 
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int kitchen_recipe_clean(struct recipe* recipe, struct kitchen_clean_options* options);
+extern int kitchen_recipe_clean(struct kitchen_clean_options* options);
 
 #endif //!__CHEF_KITCHEN_H__
