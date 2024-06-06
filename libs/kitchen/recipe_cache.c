@@ -22,9 +22,64 @@
 #include <string.h>
 #include <vlog.h>
 
-void recipe_cache_initialize(struct recipe* current)
+struct recipe_cache_package {
+
+};
+
+struct recipe_cache {
+    char uuid[40];
+};
+
+static const char*         g_uuidFmt = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
+static const char*         g_hex = "0123456789ABCDEF-";
+static struct recipe_cache g_cache = { 0 };
+
+static void __generate_cache_uuid(char uuid[40])
+{
+    int length = strlen(g_uuidFmt);
+    for (int i = 0; i < (length + 1); i++) {
+        int r = rand() % 16;
+        char c = ' ';   
+        
+        switch (g_uuidFmt[i]) {
+            case 'x' : { c = g_hex[r]; } break;
+            case 'y' : { c = g_hex[r & 0x03 | 0x08]; } break;
+            case '-' : { c = '-'; } break;
+            case '4' : { c = '4'; } break;
+        }
+        uuid[i] = (i < length) ? c : 0x00;
+    }
+}
+
+static int __load_cache(struct recipe_cache* cache)
 {
 
+}
+
+static int __save_cache(struct recipe_cache* cache)
+{
+    
+}
+
+int recipe_cache_initialize(struct recipe* current)
+{
+    int status;
+
+    // initialize the random counter for guid's
+    srand(clock());
+
+    status = __load_cache(&g_cache);
+    if (status) {
+        VLOG_ERROR("cache", "failed to load or initialize the recipe cache\n");
+        return status;
+    }
+
+    return 0;
+}
+
+const char* recipe_cache_uuid(void)
+{
+    return &g_cache.uuid[0];
 }
 
 void recipe_cache_calculate_package_changes()
