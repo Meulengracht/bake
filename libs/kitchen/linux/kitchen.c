@@ -69,12 +69,12 @@ static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPat
     char buff[2048];
     VLOG_DEBUG("kitchen", "__ensure_mounted_dirs()\n");
     
-    if (mount(kitchen->shared_output_path, kitchen->host_install_root, NULL, MS_BIND | MS_SHARED, NULL)) {
+    if (mount(kitchen->shared_output_path, kitchen->host_install_root, NULL, MS_BIND | MS_REC, NULL)) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_install_root);
         return -1;
     }
 
-    if (mount(projectPath, kitchen->host_project_path, NULL, MS_BIND | MS_PRIVATE | MS_RDONLY, NULL)) {
+    if (mount(projectPath, kitchen->host_project_path, NULL, MS_BIND | MS_RDONLY, NULL)) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_project_path);
         return -1;
     }
@@ -439,6 +439,25 @@ static struct pkgmngr* __setup_pkg_environment(struct kitchen_setup_options* opt
     return NULL;
 }
 
+static int __get_kitchen_root(char* buffer, size_t maxLength, const char* uuid)
+{
+    char root[2048];
+    int  status;
+
+    status = platform_getuserdir(&root[0], sizeof(root));
+    if (status) {
+        VLOG_ERROR("kitchen", "__get_kitchen_root: failed to resolve user homedir\n");
+        return -1;
+    }
+
+    if (uuid != NULL) {
+        snprintf(buffer, maxLength, "%s/.chef/kitchen/%s", &root[0], uuid);
+    } else {
+        snprintf(buffer, maxLength, "%s/.chef/kitchen", &root[0]);
+    }
+    return 0;
+}
+
 // <root>/.kitchen/output
 // <root>/.kitchen/<recipe>/bin
 // <root>/.kitchen/<recipe>/lib
@@ -452,7 +471,15 @@ static struct pkgmngr* __setup_pkg_environment(struct kitchen_setup_options* opt
 static int __kitchen_construct(struct kitchen_setup_options* options, struct kitchen* kitchen)
 {
     char buff[2048];
+    char root[2048] = { 0 };
+    int  status;
     VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->name);
+
+    status = __get_kitchen_root(&root[0], sizeof(root) - 1, recipe_cache_uuid());
+    if (status) {
+        VLOG_ERROR("kitchen", "__kitchen_construct: failed to resolve root directory\n");
+        return -1;
+    }
 
     memset(kitchen, 0, sizeof(struct kitchen));
     kitchen->target_platform = strdup(options->target_platform);
@@ -461,49 +488,47 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     kitchen->confined = options->confined;
     kitchen->hash = __setup_hash(options);
 
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/output", options->project_path);
+    snprintf(&buff[0], sizeof(buff), "%s/%s/output", &root[0], options->name);
     kitchen->shared_output_path = strdup(&buff[0]);
 
     // Format external chroot paths that are arch/platform agnostic
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s", options->project_path, options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/%s/ns", &root[0], options->name);
     kitchen->host_chroot = strdup(&buff[0]);
     kitchen->pkg_manager = __setup_pkg_environment(options, &buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/project", options->project_path, options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/project", &root[0], options->name);
     kitchen->host_project_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/install",
-        options->project_path, options->name
-    );
+    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/install", &root[0], options->name);
     kitchen->host_install_root = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/toolchains", options->project_path, options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/toolchains", &root[0], options->name);
     kitchen->host_build_toolchains_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/.hash", options->project_path, options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/.hash", &root[0], options->name);
     kitchen->host_hash_file = strdup(&buff[0]);
 
     // Build/ingredients/install/checkpoint paths are different for each target
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/build/%s/%s",
-        options->project_path, options->name,
+    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/build/%s/%s",
+        &root[0], options->name,
         options->target_platform, options->target_architecture
     );
     kitchen->host_build_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/ingredients/%s/%s",
-        options->project_path, options->name,
+    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/ingredients/%s/%s",
+        &root[0], options->name,
         options->target_platform, options->target_architecture
     );
     kitchen->host_build_ingredients_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/install/%s/%s",
-        options->project_path, options->name,
+    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/install/%s/%s",
+        &root[0], options->name,
         options->target_platform, options->target_architecture
     );
     kitchen->host_install_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/.kitchen/%s/chef/data/%s/%s",
-        options->project_path, options->name,
+    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/data/%s/%s",
+        &root[0], options->name,
         options->target_platform, options->target_architecture
     );
     kitchen->host_checkpoint_path = strdup(&buff[0]);
@@ -921,29 +946,34 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
     return status;
 }
 
+static int __recipe_clean()
+{
+
+}
+
 int kitchen_purge(struct kitchen_purge_options* options)
 {
     struct kitchen_user user;
-    struct list        recipes;
-    struct list_item*  i;
-    int                status;
-    char*              kitchenPath;
-
+    struct list         recipes;
+    struct list_item*   i;
+    int                 status;
+    char                root[2048] = { 0 };
     VLOG_DEBUG("kitchen", "kitchen_purge()\n");
 
-    if (kitchen_user_new(&user)) {
+    status = __get_kitchen_root(&root[0], sizeof(root) - 1, NULL);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_purge: failed to resolve root directory\n");
+        return -1;
+    }
+
+    status = kitchen_user_new(&user);
+    if (status) {
         VLOG_ERROR("kitchen", "kitchen_purge: failed to get current user\n");
         return -1;
     }
 
-    kitchenPath = strpathcombine(options->project_path, ".kitchen");
-    if (kitchenPath == NULL) {
-        VLOG_ERROR("kitchen", "kitchen_purge: failed to allocate memory for path\n");
-        goto cleanup;
-    }
-
     list_init(&recipes);
-    status = platform_getfiles(kitchenPath, 0, &recipes);
+    status = platform_getfiles(&root[0], 0, &recipes);
     if (status) {
         // ignore this error, just means there is no cleanup to be done
         if (errno != ENOENT) {
@@ -981,7 +1011,7 @@ cleanup:
     return 0;
 }
 
-int kitchen_recipe_clean(struct recipe* recipe, struct kitchen_clean_options* options)
+int kitchen_recipe_clean(struct kitchen_clean_options* options)
 {
     struct kitchen_user user;
     int                status;
