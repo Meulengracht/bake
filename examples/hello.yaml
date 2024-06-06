@@ -1,4 +1,5 @@
-project: 
+project:
+  name: hello-world
   summary: Test projects
   description: |
     Example program for how to build simple applications
@@ -8,7 +9,7 @@ project:
   license: MIT
 
 recipes:
-  - name: hello-world
+  - name: hello
     path: hello-world
     steps:
     - name: config

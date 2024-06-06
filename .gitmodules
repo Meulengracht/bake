@@ -1,6 +1,6 @@
 [submodule "libs/vafs"]
 	path = libs/vafs
-	url = ../vali-rofs.git
+	url = ../../meulengracht/vali-rofs.git
 [submodule "libs/zstd"]
 	path = libs/compression/zstd
 	url = ../../umbrella-c/zstd.git
@@ -15,7 +15,7 @@
 	url = ../../umbrella-c/jansson.git
 [submodule "libs/gracht"]
 	path = libs/gracht
-	url = ../libgracht.git
+	url = ../../meulengracht/libgracht.git
 [submodule "libs/compression/zip"]
 	path = libs/compression/zip
 	url = ../../umbrella-c/zip.git
