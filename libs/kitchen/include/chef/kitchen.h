@@ -142,7 +142,7 @@ extern int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe);
  * @param stepType 
  * @return int 
  */
-extern int kitchen_recipe_clean(struct kitchen* kitchen, struct recipe* recipe);
+extern int kitchen_recipe_clean(struct recipe* recipe);
 
 /**
  * @brief Cleans up the build and install areas, resetting the entire state
