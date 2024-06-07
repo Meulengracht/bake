@@ -56,11 +56,11 @@ struct kitchen_setup_options {
 };
 
 struct kitchen_purge_options {
-    const char* project_path;
+    // TODO
 };
 
-struct kitchen_clean_options {
-    const char* name;
+struct kitchen_recipe_purge_options {
+    // TODO
 };
 
 struct kitchen {
@@ -121,16 +121,6 @@ extern int kitchen_purge(struct kitchen_purge_options* options);
  * 
  * @param kitchen 
  * @param recipe 
- * @param stepType 
- * @return int 
- */
-extern int kitchen_recipe_prepare(struct kitchen* kitchen, struct recipe* recipe, enum recipe_step_type stepType);
-
-/**
- * @brief 
- * 
- * @param kitchen 
- * @param recipe 
  * @return int 
  */
 extern int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe);
@@ -145,11 +135,21 @@ extern int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe);
 extern int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe);
 
 /**
+ * @brief 
+ * 
+ * @param kitchen 
+ * @param recipe 
+ * @param stepType 
+ * @return int 
+ */
+extern int kitchen_recipe_clean(struct kitchen* kitchen, struct recipe* recipe);
+
+/**
  * @brief Cleans up the build and install areas, resetting the entire state
  * of the current project context.
  * 
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int kitchen_recipe_clean(struct kitchen_clean_options* options);
+extern int kitchen_recipe_purge(struct recipe* recipe, struct kitchen_recipe_purge_options* options);
 
 #endif //!__CHEF_KITCHEN_H__

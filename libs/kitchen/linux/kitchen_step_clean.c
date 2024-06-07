@@ -89,31 +89,27 @@ static int __reset_steps(struct list* steps, enum recipe_step_type stepType, con
     return 0;
 }
 
-int kitchen_recipe_prepare(struct kitchen* kitchen, struct recipe* recipe, enum recipe_step_type stepType)
+int kitchen_recipe_clean(struct kitchen* kitchen, struct recipe* recipe)
 {
     struct oven_recipe_options options;
     struct list_item*          item;
-    struct kitchen_user         user;
+    struct kitchen_user        user;
     int                        status;
-    VLOG_DEBUG("kitchen", "kitchen_recipe_prepare()\n");
-
-    if (stepType == RECIPE_STEP_TYPE_UNKNOWN) {
-        return 0;
-    }
+    VLOG_DEBUG("kitchen", "kitchen_recipe_clean()\n");
 
     if (kitchen_user_new(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_prepare: failed to get current user\n");
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to get current user\n");
         return -1;
     }
 
     status = kitchen_cooking_start(kitchen);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_prepare: failed with code: %i\n", status);
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed with code: %i\n", status);
         return status;
     }
 
     if (kitchen_user_drop_privs(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_prepare: failed to drop privileges\n");
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to drop privileges\n");
         return -1;
     }
 
@@ -136,22 +132,22 @@ int kitchen_recipe_prepare(struct kitchen* kitchen, struct recipe* recipe, enum 
             break;
         }
 
-        status = __reset_steps(&part->steps, stepType, NULL);
+        status = __reset_steps(&part->steps, RECIPE_STEP_TYPE_UNKNOWN, NULL);
         oven_recipe_end();
 
         if (status) {
-            VLOG_ERROR("kitchen", "kitchen_recipe_prepare: failed to build recipe %s\n", part->name);
+            VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to build recipe %s\n", part->name);
             break;
         }
     }
 
     if (kitchen_user_regain_privs(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_prepare: failed to re-escalate privileges\n");
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to re-escalate privileges\n");
         return -1;
     }
 
     if (kitchen_cooking_end(kitchen)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_prepare: failed to end cooking\n");
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to end cooking\n");
     }
     return status;
 }

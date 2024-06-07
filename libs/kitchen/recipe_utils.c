@@ -24,19 +24,6 @@
 
 #define __MIN(a, b) (((a) < (b)) ? (a) : (b))
 
-enum recipe_step_type recipe_step_type_from_string(const char* type)
-{
-    if (strcmp(type, "generate") == 0) {
-        return RECIPE_STEP_TYPE_GENERATE;
-    } else if (strcmp(type, "build") == 0) {
-        return RECIPE_STEP_TYPE_BUILD;
-    } else if (strcmp(type, "script") == 0) {
-        return RECIPE_STEP_TYPE_SCRIPT;
-    } else {
-        return RECIPE_STEP_TYPE_UNKNOWN;
-    }
-}
-
 int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, char** channel, char** version)
 {
     const char* split;

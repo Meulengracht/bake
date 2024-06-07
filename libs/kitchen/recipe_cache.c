@@ -19,6 +19,7 @@
 #include <ctype.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
+#include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
@@ -26,8 +27,19 @@ struct recipe_cache_package {
 
 };
 
+struct recipe_cache_ingredient {
+
+};
+
+struct recipe_cache_item {
+    const char* name;
+    const char* uuid;
+};
+
 struct recipe_cache {
-    char uuid[40];
+    struct recipe*            current;
+    struct recipe_cache_item* items;
+    int                       item_count;
 };
 
 static const char*         g_uuidFmt = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
@@ -77,17 +89,55 @@ int recipe_cache_initialize(struct recipe* current)
     return 0;
 }
 
+const char* recipe_cache_uuid_for(const char* name)
+{
+    for (int i = 0; i < g_cache.item_count; i++) {
+        if (strcmp(g_cache.items[i].name, name) == 0) {
+            return g_cache.items[i].uuid;
+        }
+    }
+
+    VLOG_FATAL("cache", "no cache entry for %s\n", name);
+    return NULL;
+}
+
 const char* recipe_cache_uuid(void)
 {
-    return &g_cache.uuid[0];
+    if (g_cache.current != NULL) {
+        return recipe_cache_uuid_for(g_cache.current->project.name);
+    }
+
+    VLOG_FATAL("cache", "no recipe specified\n");
+    return NULL;
 }
 
-void recipe_cache_calculate_package_changes()
+static struct recipe_cache_item* __get_cache_item(void)
 {
+    for (int i = 0; i < g_cache.item_count; i++) {
+        if (strcmp(g_cache.items[i].name, g_cache.current->project.name) == 0) {
+            return &g_cache.items[i];
+        }
+    }
 
+    VLOG_FATAL("cache", "no cache entry for %s\n", g_cache.current->project.name);
+    return NULL;
 }
 
-void recipe_cache_commit_package_changes()
+int recipe_cache_calculate_package_changes(struct recipe_cache_package_change* changes, int* changeCount)
 {
+    struct recipe_cache_item* cache = __get_cache_item();
+}
+
+int recipe_cache_commit_package_changes()
+{
+    struct recipe_cache_item* cache = __get_cache_item();
+    int                       status;
+
     
+    status = __save_cache(&g_cache);
+    if (status) {
+        VLOG_FATAL("cache", "failed to save cache\n");
+        return status;
+    }
+    return 0;
 }

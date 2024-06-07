@@ -47,36 +47,6 @@ static struct command_handler g_commands[] = {
     { "clean",    clean_main }
 };
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-#include <windows.h>
-int __get_column_count(void)
-{
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    int                        columns;
-
-    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-    columns = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-    // rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
-    return columns;
-}
-#else
-#include <sys/ioctl.h>
-#include <unistd.h>
-int __get_column_count(void)
-{
-    struct winsize w;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-    return (int)w.ws_col;
-}
-#endif
-
-void __winch_handler(int sig)
-{
-    signal(SIGWINCH, SIG_IGN);
-    vlog_set_output_width(stdout, __get_column_count());
-    signal(SIGWINCH, __winch_handler);
-}
-
 static void __print_help(void)
 {
     printf("Usage: bake <command> <recipe> [options]\n");
@@ -298,11 +268,6 @@ int main(int argc, char** argv, char** envp)
     vlog_initialize();
     vlog_set_level(VLOG_LEVEL_DEBUG);
     vlog_add_output(stdout);
-    vlog_set_output_width(stdout, __get_column_count());
-
-    // register the handler that will update the terminal stats correctly
-    // once the user resizes the terminal
-    signal(SIGWINCH, __winch_handler);
 
     result = command->handler(argc, argv, envp, recipe);
     recipe_destroy(recipe);

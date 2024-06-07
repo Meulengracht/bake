@@ -161,13 +161,24 @@ extern void recipe_destroy(struct recipe* recipe);
 
 
 // recipe parser utilities
-extern enum recipe_step_type recipe_step_type_from_string(const char* type);
 extern int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, char** channel, char** version);
 extern const char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform);
 extern int recipe_validate_target(struct recipe* recipe, const char** expectedPlatform, const char** expectedArch);
 
 // recipe cache
+enum recipe_cache_change_type {
+    RECIPE_CACHE_CHANGE_ADDED,
+    RECIPE_CACHE_CHANGE_UPDATED,
+    RECIPE_CACHE_CHANGE_REMOVED
+};
+
+struct recipe_cache_package_change {
+    enum recipe_cache_change_type type;
+    const char*                   name;
+};
+
 extern int recipe_cache_initialize(struct recipe* current);
 extern const char* recipe_cache_uuid(void);
+extern const char* recipe_cache_uuid_for(const char* name);
 
 #endif //!__CHEF_RECIPE_H__

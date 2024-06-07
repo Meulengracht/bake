@@ -79,7 +79,7 @@ static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPat
         return -1;
     }
 
-    snprintf(&buff[0], sizeof(buff), "%s/proc", kitchen->host_chroot);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/proc", kitchen->host_chroot);
     if (mount("none", &buff[0], "proc", 0, NULL)) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", &buff[0]);
         return -1;
@@ -87,12 +87,12 @@ static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPat
     return 0;
 }
 
-static int __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)
+static int __ensure_mounts_cleanup(const char* kitchenRoot)
 {
     char buff[2048];
     VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup()\n");
 
-    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/install", kitchenRoot, name);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install", kitchenRoot);
     if (__is_mountpoint(&buff[0]) == 1) {
         if (umount2(&buff[0], MNT_FORCE)) {
             VLOG_ERROR("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
@@ -100,7 +100,7 @@ static int __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)
         }
     }
 
-    snprintf(&buff[0], sizeof(buff), "%s/%s/chef/project", kitchenRoot, name);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/project", kitchenRoot);
     if (__is_mountpoint(&buff[0]) == 1) {
         if (umount2(&buff[0], MNT_FORCE)) {
             VLOG_ERROR("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
@@ -108,7 +108,7 @@ static int __ensure_mounts_cleanup(const char* kitchenRoot, const char* name)
         }
     }
 
-    snprintf(&buff[0], sizeof(buff), "%s/proc", kitchenRoot);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/proc", kitchenRoot);
     if (__is_mountpoint(&buff[0]) == 1) {
         if (umount(&buff[0])) {
             VLOG_ERROR("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
@@ -488,48 +488,44 @@ static int __kitchen_construct(struct kitchen_setup_options* options, struct kit
     kitchen->confined = options->confined;
     kitchen->hash = __setup_hash(options);
 
-    snprintf(&buff[0], sizeof(buff), "%s/%s/output", &root[0], options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/output", &root[0]);
     kitchen->shared_output_path = strdup(&buff[0]);
 
     // Format external chroot paths that are arch/platform agnostic
-    snprintf(&buff[0], sizeof(buff), "%s/%s/ns", &root[0], options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/ns", &root[0]);
     kitchen->host_chroot = strdup(&buff[0]);
     kitchen->pkg_manager = __setup_pkg_environment(options, &buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/project", &root[0], options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/project", &root[0]);
     kitchen->host_project_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/install", &root[0], options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install", &root[0]);
     kitchen->host_install_root = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/toolchains", &root[0], options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/toolchains", &root[0]);
     kitchen->host_build_toolchains_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/.hash", &root[0], options->name);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/.hash", &root[0]);
     kitchen->host_hash_file = strdup(&buff[0]);
 
     // Build/ingredients/install/checkpoint paths are different for each target
-    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/build/%s/%s",
-        &root[0], options->name,
-        options->target_platform, options->target_architecture
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/build/%s/%s",
+        &root[0], options->target_platform, options->target_architecture
     );
     kitchen->host_build_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/ingredients/%s/%s",
-        &root[0], options->name,
-        options->target_platform, options->target_architecture
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/ingredients/%s/%s",
+        &root[0], options->target_platform, options->target_architecture
     );
     kitchen->host_build_ingredients_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/install/%s/%s",
-        &root[0], options->name,
-        options->target_platform, options->target_architecture
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install/%s/%s",
+        &root[0], options->target_platform, options->target_architecture
     );
     kitchen->host_install_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/%s/ns/chef/data/%s/%s",
-        &root[0], options->name,
-        options->target_platform, options->target_architecture
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/data/%s/%s",
+        &root[0], options->target_platform, options->target_architecture
     );
     kitchen->host_checkpoint_path = strdup(&buff[0]);
 
@@ -771,7 +767,7 @@ static int __kitchen_install(struct kitchen* kitchen, struct kitchen_user* user,
 
     VLOG_TRACE("kitchen", "cleaning project environment\n");
     
-    status = __ensure_mounts_cleanup(kitchen->host_chroot, options->name);
+    status = __ensure_mounts_cleanup(kitchen->host_chroot);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to unmount existing mounts\n");
         goto cleanup;
@@ -946,9 +942,31 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
     return status;
 }
 
-static int __recipe_clean()
+static int __recipe_clean(const char* uuid)
 {
+    char root[2048] = { 0 };
+    int  status;
 
+    status = __get_kitchen_root(&root[0], sizeof(root) - 1, uuid);
+    if (status) {
+        VLOG_ERROR("kitchen", "__recipe_clean: failed to resolve root directory\n");
+        return -1;
+    }
+
+    status = __ensure_mounts_cleanup(&root[0]);
+    if (status) {
+        VLOG_ERROR("kitchen", "__recipe_clean: failed to cleanup mounts\n");
+        return -1;
+    }
+
+    status = __clean_environment(&root[0]);
+    if (status) {
+        if (errno != ENOENT) {
+            VLOG_ERROR("kitchen", "__recipe_clean: failed: %s\n", strerror(errno));
+            return -1;
+        }
+    }
+    return 0;
 }
 
 int kitchen_purge(struct kitchen_purge_options* options)
@@ -984,22 +1002,9 @@ int kitchen_purge(struct kitchen_purge_options* options)
 
     list_foreach (&recipes, i) {
         struct platform_file_entry* entry = (struct platform_file_entry*)i;
-        if (!strcmp(entry->name, "output")) {
-            continue;
-        }
-        
-        status = __ensure_mounts_cleanup(kitchenPath, entry->name);
+        status = __recipe_clean(entry->name);
         if (status) {
             VLOG_ERROR("kitchen", "kitchen_purge: failed to remove mounts for %s\n", entry->name);
-            goto cleanup;
-        }
-    }
-
-    status = __clean_environment(kitchenPath);
-    if (status) {
-        VLOG_ERROR("kitchen", "purge: failed to clean path %s\n", kitchenPath);
-        if (errno != ENOENT) {
-            VLOG_ERROR("kitchen", "kitchen_purge: failed to remove the kitchen data\n");
             goto cleanup;
         }
     }
@@ -1007,46 +1012,26 @@ int kitchen_purge(struct kitchen_purge_options* options)
 cleanup:
     kitchen_user_delete(&user);
     platform_getfiles_destroy(&recipes);
-    free(kitchenPath);
     return 0;
 }
 
-int kitchen_recipe_clean(struct kitchen_clean_options* options)
+int kitchen_recipe_purge(struct recipe* recipe, struct kitchen_clean_options* options)
 {
     struct kitchen_user user;
-    int                status;
-    char*              kitchenPath;
-    char               scratchPad[512];
+    int                 status;
 
-    VLOG_DEBUG("kitchen", "kitchen_recipe_clean()\n");
+    VLOG_DEBUG("kitchen", "kitchen_recipe_purge()\n");
 
     if (kitchen_user_new(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to get current user\n");
+        VLOG_ERROR("kitchen", "kitchen_recipe_purge: failed to get current user\n");
         return -1;
     }
 
-    kitchenPath = strpathcombine(options->project_path, ".kitchen");
-    if (kitchenPath == NULL) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to allocate memory for path\n");
-        goto cleanup;
-    }
-
-    status = __ensure_mounts_cleanup(kitchenPath, options->name);
+    status = __recipe_clean(recipe_cache_uuid());
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to cleanup mounts\n");
-        goto cleanup;
+        VLOG_ERROR("kitchen", "kitchen_recipe_purge: failed to cleanup mounts\n");
     }
 
-    status = __clean_environment(kitchenPath);
-    if (status) {
-        if (errno != ENOENT) {
-            VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed: %s\n", strerror(errno));
-            goto cleanup;
-        }
-    }
-
-cleanup:
-    free(kitchenPath);
     kitchen_user_delete(&user);
-    return 0;
+    return status;
 }

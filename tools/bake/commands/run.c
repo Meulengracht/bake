@@ -218,15 +218,6 @@ static void __debug(void)
     getchar();
 }
 
-static int __is_step_name(const char* name)
-{
-    return strcmp(name, "run") == 0 ||
-           strcmp(name, "generate") == 0 ||
-           strcmp(name, "build") == 0 ||
-           strcmp(name, "script") == 0 ||
-           strcmp(name, "pack") == 0;
-}
-
 static int __parse_cc_switch(const char* value, const char** platformOut, const char** archOut)
 {
     // value is either of two forms
@@ -288,7 +279,6 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     struct kitchen         kitchen;
     const char*            platform = NULL;
     const char*            arch     = NULL;
-    char*                  step     = "run";
     int                    debug    = 0;
     char*                  cwd;
     int                    status;
@@ -311,10 +301,6 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
                     VLOG_ERROR("bake", "invalid format: %s\n", argv[i]);
                     return status;
                 }
-            } else if (argv[i][0] != '-') {
-                if (__is_step_name(argv[i])) {
-                    step = argv[i];
-                }
             }
         }
     }
@@ -322,6 +308,12 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     if (recipe == NULL) {
         VLOG_ERROR("bake", "no recipe provided\n");
         __print_help();
+        return -1;
+    }
+
+    // initialize the recipe cache
+    if (recipe_cache_initialize(recipe)) {
+        fprintf(stderr, "bake: failed to initialize recipe cache\n");
         return -1;
     }
 
@@ -381,7 +373,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = kitchen_recipe_prepare(&kitchen, recipe, recipe_step_type_from_string(step));
+    status = kitchen_recipe_prepare(&kitchen, recipe);
     if (status) {
         VLOG_ERROR("bake", "failed to reset steps: %s\n", strerror(errno));
         return -1;
@@ -396,15 +388,13 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    if (strcmp(step, "run") == 0 || strcmp(step, "pack") == 0) {
-        status = kitchen_recipe_pack(&kitchen, recipe);
-        if (status) {
-            VLOG_ERROR("bake", "failed to construct packs\n");
-            if (debug) {
-                __debug();
-            }
-            return -1;
+    status = kitchen_recipe_pack(&kitchen, recipe);
+    if (status) {
+        VLOG_ERROR("bake", "failed to construct packs\n");
+        if (debug) {
+            __debug();
         }
+        return -1;
     }
     return status;
 }

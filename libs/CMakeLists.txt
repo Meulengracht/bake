@@ -24,6 +24,7 @@ add_library(jansson-api INTERFACE)
 target_include_directories(jansson-api INTERFACE ${CMAKE_BINARY_DIR}/libs/jansson/include)
 
 # build wolfssl
+set(WOLFSSL_CURL ON CACHE BOOL "Enable Curl support")
 set(WOLFSSL_OPENSSLEXTRA ON CACHE BOOL "Enable OpenSSL compatibility")
 set(WOLFSSL_EXAMPLES OFF CACHE BOOL "Do not build wolfssl examples")
 set(WOLFSSL_CRYPT_TESTS OFF CACHE BOOL "Do not build wolfssl crypt tests")
