@@ -89,29 +89,12 @@ static int __reset_steps(struct list* steps, enum recipe_step_type stepType, con
     return 0;
 }
 
-int kitchen_recipe_clean(struct kitchen* kitchen, struct recipe* recipe)
+int kitchen_recipe_clean(struct recipe* recipe)
 {
     struct oven_recipe_options options;
     struct list_item*          item;
-    struct kitchen_user        user;
     int                        status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_clean()\n");
-
-    if (kitchen_user_new(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to get current user\n");
-        return -1;
-    }
-
-    status = kitchen_cooking_start(kitchen);
-    if (status) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed with code: %i\n", status);
-        return status;
-    }
-
-    if (kitchen_user_drop_privs(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to drop privileges\n");
-        return -1;
-    }
 
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
@@ -139,15 +122,6 @@ int kitchen_recipe_clean(struct kitchen* kitchen, struct recipe* recipe)
             VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to build recipe %s\n", part->name);
             break;
         }
-    }
-
-    if (kitchen_user_regain_privs(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to re-escalate privileges\n");
-        return -1;
-    }
-
-    if (kitchen_cooking_end(kitchen)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to end cooking\n");
     }
     return status;
 }
