@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <signal.h>
 #include <time.h>
 #include <vlog.h>
 
@@ -54,9 +55,43 @@ static const char*         g_levelNames[] = {
         "debug"
 };
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#include <windows.h>
+int __get_column_count(void)
+{
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    int                        columns;
+
+    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+    columns = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    // rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    return columns;
+}
+#else
+#include <sys/ioctl.h>
+#include <unistd.h>
+int __get_column_count(void)
+{
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    return (int)w.ws_col;
+}
+
+void __winch_handler(int sig)
+{
+    signal(SIGWINCH, SIG_IGN);
+    vlog_set_output_width(stdout, __get_column_count());
+    signal(SIGWINCH, __winch_handler);
+}
+#endif
+
 void vlog_initialize(void)
 {
-    // nothing to do
+#if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
+    // register the handler that will update the terminal stats correctly
+    // once the user resizes the terminal
+    signal(SIGWINCH, __winch_handler);
+#endif
 }
 
 void vlog_cleanup(void)
@@ -87,8 +122,13 @@ int vlog_add_output(FILE* output)
     g_vlog.outputs[g_vlog.outputs_count].handle       = output;
     g_vlog.outputs[g_vlog.outputs_count].level        = g_vlog.default_level;
     g_vlog.outputs[g_vlog.outputs_count].options      = 0;
-    g_vlog.outputs[g_vlog.outputs_count].columns      = 0;
     g_vlog.outputs[g_vlog.outputs_count].lastRowCount = 0;
+    if (output == stdout) {
+        g_vlog.outputs[g_vlog.outputs_count].columns = __get_column_count();
+    } else {
+        g_vlog.outputs[g_vlog.outputs_count].columns = 0;
+    }
+
     g_vlog.outputs_count++;
     return 0;
 }
@@ -161,6 +201,14 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
         if (level > output->level) {
             continue;
         }
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+        // update column count on output to stdout if on windows, we can
+        // only poll
+        if (output->handle == stdout) {
+            output->columns = __get_column_count();
+        }
+#endif
 
         // output control-code if any, and provided row count is valid
         if ((output->options & VLOG_OUTPUT_OPTION_RETRACE) && output->lastRowCount > 0) {

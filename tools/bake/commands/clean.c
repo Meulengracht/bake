@@ -34,7 +34,7 @@
 
 static void __print_help(void)
 {
-    printf("Usage: bake clean [options|recipe-name]\n");
+    printf("Usage: bake clean [options|type]\n");
     printf("\n");
     printf("Options:\n");
     printf("  --purge\n");
@@ -60,10 +60,20 @@ static int __ask_yes_no_question(const char* question)
     return answer[0] == 'Y';
 }
 
+static int __is_clean_type(const char* type)
+{
+    if (strcmp(type, "all") == 0) {
+        return 1;
+    } else if (strcmp(type, "build") == 0) {
+        return 0;
+    }
+    return 0;
+}
+
 int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
 {
     int   purge = 0;
-    char* name = NULL;
+    char* type = "all";
 
     // handle individual help command
     if (argc > 2) {
@@ -73,10 +83,16 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
                 return 0;
             } else if (!strcmp(argv[i], "--purge")) {
                 purge = 1;
-            } else if (argv[i][0] != '-') {
-                name = argv[i];
+            } else if (argv[i][0] != '-' && __is_clean_type(argv[i])) {
+                type = argv[i];
             }
         }
+    }
+
+    // initialize the recipe cache
+    if (recipe_cache_initialize(recipe)) {
+        fprintf(stderr, "bake: failed to initialize recipe cache\n");
+        return -1;
     }
 
     // if purge was set, then clean the entire kitchen
@@ -93,11 +109,21 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return kitchen_purge(NULL);
     }
 
+    if (recipe == NULL) {
+        fprintf(stderr, "bake: no recipe provided\n");
+        __print_help();
+        return -1;
+    }
+
     // ignore CTRL-C request once cleanup starts
     signal(SIGINT, SIG_IGN);
 
-    return kitchen_recipe_clean(&(struct kitchen_clean_options) {
-            .name = name
-        }
-    );
+    if (strcmp(type, "build") == 0) {
+        return kitchen_recipe_clean(recipe);
+    } else if (strcmp(type, "all") == 0) {
+        return kitchen_recipe_purge(recipe, NULL);
+    }
+    
+    fprintf(stderr, "bake: %s is not recognized as an action\n", type);
+    return -1;
 }
