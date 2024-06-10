@@ -52,7 +52,7 @@ char* platform_exec(const char* cmd)
         return NULL;
     }
 
-    bool bProcessEnded = false;
+    BOOL bProcessEnded = FALSE;
     for (; !bProcessEnded ;)
     {
         // Give some timeslice (50 ms), so we won't waste 100% CPU.
@@ -66,18 +66,20 @@ char* platform_exec(const char* cmd)
             DWORD dwRead = 0;
             DWORD dwAvail = 0;
 
-            if (!::PeekNamedPipe(hPipeRead, NULL, 0, NULL, &dwAvail, NULL))
+            if (!PeekNamedPipe(hPipeRead, NULL, 0, NULL, &dwAvail, NULL)) {
                 break;
+            }
 
             if (!dwAvail) // No data available, return
                 break;
 
-            if (!::ReadFile(hPipeRead, buf, min(sizeof(buf) - 1, dwAvail), &dwRead, NULL) || !dwRead)
+            if (!ReadFile(hPipeRead, buf, min(sizeof(buf) - 1, dwAvail), &dwRead, NULL) || !dwRead)
                 // Error, the child process might ended
                 break;
 
             buf[dwRead] = 0;
-            strResult += buf;
+            size_t buflen = strlen(buf);
+            strResult += buflen;
         }
     } //for
 
