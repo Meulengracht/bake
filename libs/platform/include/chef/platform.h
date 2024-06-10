@@ -120,6 +120,20 @@
 #define CHEF_PATH_SEPARATOR_S "\\"
 #endif
 
+#if defined(_MSC_VER)
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
+#if defined(_WIN32) || defined(_WIN64)
+    #define WIN32_LEAN_AND_MEAN
+    #include <Windows.h>
+    #undef PATH_MAX
+    #define PATH_MAX MAX_PATH
+#else
+   #include <limits.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
