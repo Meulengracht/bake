@@ -123,12 +123,12 @@ static struct recipe_cache_item* __get_cache_item(void)
     return NULL;
 }
 
-int recipe_cache_calculate_package_changes(struct recipe_cache_package_change* changes, int* changeCount)
+int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** changes, int* changeCount)
 {
     struct recipe_cache_item* cache = __get_cache_item();
 }
 
-int recipe_cache_commit_package_changes()
+int recipe_cache_commit_package_changes(struct recipe_cache_package_change* changes, int count)
 {
     struct recipe_cache_item* cache = __get_cache_item();
     int                       status;
@@ -141,3 +141,9 @@ int recipe_cache_commit_package_changes()
     }
     return 0;
 }
+
+extern int recipe_cache_clear_for(const char* name);
+extern const char* recipe_cache_key_string(const char* key);
+extern int recipe_cache_key_set_string(const char* key, const char* value);
+extern int recipe_cache_key_bool(const char* key);
+extern int recipe_cache_key_set_bool(const char* key, int value);

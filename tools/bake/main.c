@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,25 +25,22 @@
 #include <signal.h>
 #include <vlog.h>
 #include "chef-config.h"
+#include "commands/commands.h"
 
-extern int init_main(int argc, char** argv, char** envp, struct recipe* recipe);
-extern int fetch_main(int argc, char** argv, char** envp, struct recipe* recipe);
-extern int run_main(int argc, char** argv, char** envp, struct recipe* recipe);
-extern int clean_main(int argc, char** argv, char** envp, struct recipe* recipe);
+extern int init_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int fetch_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int run_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 
 struct command_handler {
     char* name;
-    int (*handler)(int argc, char** argv, char** envp, struct recipe* recipe);
+    int (*handler)(int argc, char** argv, char** envp, struct bake_command_options* options);
 };
 
 static struct command_handler g_commands[] = {
     { "init",     init_main },
     { "fetch",    fetch_main },
     { "run",      run_main },
-    { "generate", run_main },
-    { "build",    run_main },
-    { "script",   run_main },
-    { "pack",     run_main },
     { "clean",    clean_main }
 };
 
@@ -58,10 +55,6 @@ static void __print_help(void)
     printf("  init        initializes a new recipe in the current directory\n");
     printf("  fetch       refreshes/fetches all ingredients\n");
     printf("  run         runs all recipe steps that have not already been completed\n");
-    printf("  generate    run configure step and its dependencies\n");
-    printf("  build       run the build step and its dependencies\n");
-    printf("  script      run the script step and its dependencies\n");
-    printf("  pack        run the pack step\n");
     printf("  clean       cleanup all build and intermediate directories\n");
     printf("\n");
     printf("Options:\n");
@@ -69,6 +62,10 @@ static void __print_help(void)
     printf("      Print this help message\n");
     printf("  -v, --version\n");
     printf("      Print the version of bake\n");
+    printf("  -cc, --cross-compile\n");
+    printf("      Cross-compile for another platform or/and architecture. This switch\n");
+    printf("      can be used with two different formats, either just like\n");
+    printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
 }
 
 static struct command_handler* __get_command(const char* command)
@@ -190,15 +187,70 @@ static const char* __find_default_recipe(void)
     return NULL;
 }
 
+
+static int __parse_cc_switch(const char* value, const char** platformOut, const char** archOut)
+{
+    // value is either of two forms
+    // platform/arch
+    // arch
+    char* separator;
+    char* equal;
+
+    if (value == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    equal = strchr(value, '=');
+    if (equal == NULL) {
+        fprintf(stderr, "bake: invalid format of %s (must be -cc=... or --cross-compile=...)\n", value);
+        errno = EINVAL;
+        return -1;
+    }
+
+    // skip the '='
+    equal++;
+
+    separator = strchr(equal, '/');
+    if (separator) {
+        *platformOut = strndup(equal, separator - equal);
+        *archOut     = strdup(separator + 1);
+    } else {
+        *platformOut = strdup(CHEF_PLATFORM_STR);
+        *archOut     = strdup(equal);
+    }
+    return 0;
+}
+
+static int __get_cwd(char** bufferOut)
+{
+    char*  cwd;
+    int    status;
+
+    cwd = malloc(4096);
+    if (cwd == NULL) {
+        return -1;
+    }
+
+    status = platform_getcwd(cwd, 4096);
+    if (status) {
+        // buffer was too small
+        fprintf(stderr, "bake: could not get current working directory, buffer too small?\n");
+        free(cwd);
+        return -1;
+    }
+    *bufferOut = cwd;
+    return 0;
+}
+
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler* command    = &g_commands[2]; // run step is default
-    struct recipe*          recipe     = NULL;
-    char*                   recipePath = NULL;
-    char*                   arch       = CHEF_ARCHITECTURE_STR;
+    struct command_handler* command     = &g_commands[2]; // run step is default
+    struct bake_command_options options = { 0 };
+    char*                   recipePath  = NULL;
     void*                   buffer;
     size_t                  length;
-    int                     result;
+    int                     status;
     
     // first argument must be the command if not --help or --version
     if (argc > 1) {
@@ -228,12 +280,12 @@ int main(int argc, char** argv, char** envp)
 
         if (argc > 2) {
             for (int i = 2; i < argc; i++) {
-                if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--arch")) {
-                    if (i + 1 < argc) {
-                        arch = argv[i + 1];
-                    } else {
-                        fprintf(stderr, "bake: missing argument for option: %s\n", argv[i]);
-                        return -1;
+                if (!strncmp(argv[i], "-cc", 3) || !strncmp(argv[i], "--cross-compile", 15)) {
+                    // THIS ALLOCS MEMORY, WE NEED TO HANDLE THIS
+                    status = __parse_cc_switch(argv[i], &options.platform, &options.architecture);
+                    if (status) {
+                        fprintf(stderr, "bake: invalid format: %s\n", argv[i]);
+                        return status;
                     }
                 } else if (argv[i][0] != '-') {
                     recipePath = argv[i];
@@ -242,25 +294,38 @@ int main(int argc, char** argv, char** envp)
         }
     }
 
+    // get the current working directory
+    status = __get_cwd(&options.cwd);
+    if (status) {
+        return -1;
+    }
+
     if (recipePath == NULL) {
         recipePath = (char*)__find_default_recipe();
     }
 
     if (recipePath != NULL) {
-        result = __read_recipe(recipePath, &buffer, &length);
-        if (!result) {
-            result = recipe_parse(buffer, length, &recipe);
+        status = __read_recipe(recipePath, &buffer, &length);
+        if (!status) {
+            status = recipe_parse(buffer, length, &options.recipe);
             free(buffer);
-            if (result) {
+            if (status) {
                 fprintf(stderr, "bake: failed to parse recipe\n");
-                return result;
+                return status;
             }
             
-            result = __add_implicit_ingredients(recipe);
-            if (result) {
+            status = __add_implicit_ingredients(options.recipe);
+            if (status) {
                 fprintf(stderr, "bake: failed to add implicit ingredients\n");
-                return result;
+                return status;
             }
+
+            status = recipe_validate_target(options.recipe, &options.platform, &options.architecture);
+            if (status) {
+                return -1;
+            }
+            printf("bake: target platform: %s\n", options.platform);
+            printf("bake: target architecture: %s\n", options.architecture);
         }
     }
 
@@ -269,8 +334,8 @@ int main(int argc, char** argv, char** envp)
     vlog_set_level(VLOG_LEVEL_DEBUG);
     vlog_add_output(stdout);
 
-    result = command->handler(argc, argv, envp, recipe);
-    recipe_destroy(recipe);
+    status = command->handler(argc, argv, envp, &options);
+    recipe_destroy(options.recipe);
     vlog_cleanup();
-    return result;
+    return status;
 }

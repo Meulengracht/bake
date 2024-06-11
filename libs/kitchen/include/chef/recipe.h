@@ -177,8 +177,44 @@ struct recipe_cache_package_change {
     const char*                   name;
 };
 
-extern int recipe_cache_initialize(struct recipe* current);
+extern int         recipe_cache_initialize(struct recipe* current);
 extern const char* recipe_cache_uuid(void);
 extern const char* recipe_cache_uuid_for(const char* name);
+
+extern int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** changes, int* changeCount);
+extern int recipe_cache_commit_package_changes(struct recipe_cache_package_change* changes, int count);
+
+/**
+ * @brief Clears all cache data for the given cache name.
+ * @return 0 for success, non-zero for error.
+ */
+extern int recipe_cache_clear_for(const char* name);
+
+/**
+ * @brief Reads a string value from the recipe cache by the given key.
+ * @return Non-null if the key was set, otherwise NULL.
+ */
+extern const char* recipe_cache_key_string(const char* key);
+
+/**
+ * @brief Writes a string value to the recipe cache under the given key.
+ * Any pre-existing value for this key is overwritten.
+ * @return 0 for success, non-zero for error.
+ */
+extern int recipe_cache_key_set_string(const char* key, const char* value);
+
+/**
+ * @brief Wrapper around recipe_cache_key_string that reads a boolean value
+ * from the cache under the given key. 
+ * @return 1 if key exists and was set to true, 0 otherwise.
+ */
+extern int recipe_cache_key_bool(const char* key);
+
+/**
+ * @brief Wrapper around recipe_cache_key_set_string that writes a boolean value
+ * to the cache for the given key.
+ * @return 0 if the key was set, non-zero for error.
+ */
+extern int recipe_cache_key_set_bool(const char* key, int value);
 
 #endif //!__CHEF_RECIPE_H__

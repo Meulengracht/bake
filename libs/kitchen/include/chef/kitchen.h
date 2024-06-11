@@ -21,6 +21,7 @@
 
 #include <chef/list.h>
 #include <chef/recipe.h>
+#include <stdint.h>
 
 // imports that don't really need to be exposed
 struct pkgmngr;
@@ -36,14 +37,17 @@ struct kitchen_setup_hook {
     const char* powershell;
 };
 
+struct kitchen_init_options {
+    struct recipe* recipe;
+    const char*    project_path;
+    const char*    pkg_environment;
+    int            confined;
+    const char*    target_platform;
+    const char*    target_architecture;
+};
+
 struct kitchen_setup_options {
-    const char*        name;
-    const char*        project_path;
-    const char*        pkg_environment;
-    int                confined;
     const char* const* envp;
-    const char*        target_platform;
-    const char*        target_architecture;
     struct list        host_ingredients; // list<kitchen_ingredient>
     struct list        build_ingredients; // list<kitchen_ingredient>
     struct list        runtime_ingredients; // list<kitchen_ingredient>
@@ -65,9 +69,10 @@ struct kitchen_recipe_purge_options {
 
 struct kitchen {
     // internal state
-    int          original_root_fd;
-    int          confined;
-    unsigned int hash;
+    uint32_t       magic;
+    int            original_root_fd;
+    int            confined;
+    struct recipe* recipe;
 
     char* target_platform;
     char* target_architecture;
@@ -86,7 +91,6 @@ struct kitchen {
     char* host_install_root;
     char* host_install_path;
     char* host_checkpoint_path;
-    char* host_hash_file;
 
     // internal paths
     // i.e paths valid during chroot
@@ -98,6 +102,15 @@ struct kitchen {
     char* install_path;
     char* checkpoint_root;
 };
+
+/**
+ * @brief 
+ * 
+ * @param options 
+ * @param kitchen 
+ * @return int 
+ */
+extern int kitchen_initialize(struct kitchen_init_options* options, struct kitchen* kitchen);
 
 /**
  * @brief 
@@ -142,7 +155,7 @@ extern int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe);
  * @param stepType 
  * @return int 
  */
-extern int kitchen_recipe_clean(struct recipe* recipe);
+extern int kitchen_recipe_clean(struct kitchen* kitchen);
 
 /**
  * @brief Cleans up the build and install areas, resetting the entire state
@@ -150,6 +163,6 @@ extern int kitchen_recipe_clean(struct recipe* recipe);
  * 
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int kitchen_recipe_purge(struct recipe* recipe, struct kitchen_recipe_purge_options* options);
+extern int kitchen_recipe_purge(struct kitchen* kitchen, struct kitchen_recipe_purge_options* options);
 
 #endif //!__CHEF_KITCHEN_H__
