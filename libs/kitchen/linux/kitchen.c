@@ -120,26 +120,6 @@ static int __ensure_mounts_cleanup(const char* kitchenRoot)
     return 0;
 }
 
-static int __recreate_dir(const char* path)
-{
-    int status;
-
-    status = platform_rmdir(path);
-    if (status) {
-        if (errno != ENOENT) {
-            VLOG_ERROR("kitchen", "__recreate_dir: failed to remove directory: %s\n", strerror(errno));
-            return -1;
-        }
-    }
-
-    status = platform_mkdir(path);
-    if (status) {
-        VLOG_ERROR("kitchen", "__recreate_dir: failed to create directory: %s\n", strerror(errno));
-        return -1;
-    }
-    return 0;
-}
-
 static int __setup_ingredient(struct kitchen* kitchen, struct list* ingredients, const char* hostPath)
 {
     struct list_item* i;
@@ -478,6 +458,11 @@ static int __perform_package_operations(void* context)
         }
     }
 
+    // Then commit changes
+    status = recipe_cache_commit_package_changes(changes, count);
+    if (status) {
+        return status;
+    }
     return 0;
 }
 
@@ -487,11 +472,6 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct kitchen_user* user)
 
     if (platform_mkdir(kitchen->host_build_path)) {
         VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_build_path);
-        return -1;
-    }
-
-    if (platform_mkdir(kitchen->host_checkpoint_path)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_checkpoint_path);
         return -1;
     }
 
@@ -523,12 +503,6 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct kitchen_user* user)
     // Since we need write permissions to the build folders
     if (chown(kitchen->host_build_path, user->caller_uid, user->caller_gid)) {
         VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", kitchen->host_build_path);
-        return -1;
-    }
-
-    // And the data path
-    if (chown(kitchen->host_checkpoint_path, user->caller_uid, user->caller_gid)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", kitchen->host_checkpoint_path);
         return -1;
     }
 
@@ -694,7 +668,6 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
             .project_root = kitchen->confined ? kitchen->project_root : kitchen->host_project_path,
             .build_root = kitchen->confined ? kitchen->build_root : kitchen->host_build_path,
             .install_root = kitchen->confined ? kitchen->install_path : kitchen->host_install_path,
-            .checkpoint_root = kitchen->confined ? kitchen->checkpoint_root : kitchen->host_checkpoint_path,
             .toolchains_root = kitchen->confined ? kitchen->build_toolchains_path : kitchen->host_build_toolchains_path,
             .build_ingredients_root = kitchen->confined ? kitchen->build_ingredients_path : kitchen->host_build_ingredients_path
         }

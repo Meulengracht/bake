@@ -297,12 +297,6 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         return -1;
     }
 
-    status = kitchen_recipe_prepare(&kitchen, options->recipe);
-    if (status) {
-        VLOG_ERROR("bake", "failed to reset steps: %s\n", strerror(errno));
-        return -1;
-    }
-
     status = kitchen_recipe_make(&kitchen, options->recipe);
     if (status) {
         VLOG_ERROR("bake", "failed to make recipes\n");

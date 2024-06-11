@@ -133,7 +133,7 @@ int recipe_cache_commit_package_changes(struct recipe_cache_package_change* chan
     struct recipe_cache_item* cache = __get_cache_item();
     int                       status;
 
-    
+
     status = __save_cache(&g_cache);
     if (status) {
         VLOG_FATAL("cache", "failed to save cache\n");
@@ -141,6 +141,10 @@ int recipe_cache_commit_package_changes(struct recipe_cache_package_change* chan
     }
     return 0;
 }
+
+extern int recipe_cache_mark_step_complete(const char* part, const char* step);
+extern int recipe_cache_mark_step_incomplete(const char* part, const char* step);
+extern int recipe_cache_is_step_complete(const char* part, const char* step);
 
 extern int recipe_cache_clear_for(const char* name);
 extern const char* recipe_cache_key_string(const char* key);

@@ -19,6 +19,7 @@
 #include <chef/recipe.h>
 #include <stdio.h>
 #include <string.h>
+#include "commands.h"
 
 extern const char* g_baseYaml;
 

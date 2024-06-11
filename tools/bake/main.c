@@ -295,7 +295,7 @@ int main(int argc, char** argv, char** envp)
     }
 
     // get the current working directory
-    status = __get_cwd(&options.cwd);
+    status = __get_cwd((char**)&options.cwd);
     if (status) {
         return -1;
     }

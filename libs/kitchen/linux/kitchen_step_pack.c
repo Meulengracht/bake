@@ -106,12 +106,14 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
     status = kitchen_cooking_start(kitchen);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to start cooking: %i\n", status);
-        return status;
+        goto cleanup;
     }
 
-    if (kitchen_user_drop_privs(&user)) {
+    status = kitchen_user_drop_privs(&user);
+    if (status) {
         VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to switch to root\n");
-        return -1;
+        kitchen_cooking_end(kitchen);
+        goto cleanup;
     }
 
     // include ingredients marked for packing
@@ -121,7 +123,8 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
         status = oven_include_filters(&ingredient->filters);
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to include ingredient %s\n", ingredient->name);
-            return -1;
+            kitchen_cooking_end(kitchen);
+            goto cleanup;
         }
     }
 
@@ -133,13 +136,13 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
         status = oven_pack(&packOptions);
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);
-            return -1;
+            kitchen_cooking_end(kitchen);
+            goto cleanup;
         }
     }
 
     if (kitchen_user_regain_privs(&user)) {
         VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to re-escalate privileges\n");
-        return -1;
     }
 
     if (kitchen_cooking_end(kitchen)) {
@@ -153,5 +156,8 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
             VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to move pack %s to project directory\n", pack->name);
         }
     }
+
+cleanup:
+    kitchen_user_delete(&user);
     return status;
 }

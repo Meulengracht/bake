@@ -184,6 +184,10 @@ extern const char* recipe_cache_uuid_for(const char* name);
 extern int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** changes, int* changeCount);
 extern int recipe_cache_commit_package_changes(struct recipe_cache_package_change* changes, int count);
 
+extern int recipe_cache_mark_step_complete(const char* part, const char* step);
+extern int recipe_cache_mark_step_incomplete(const char* part, const char* step);
+extern int recipe_cache_is_step_complete(const char* part, const char* step);
+
 /**
  * @brief Clears all cache data for the given cache name.
  * @return 0 for success, non-zero for error.
