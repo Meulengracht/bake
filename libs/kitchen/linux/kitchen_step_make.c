@@ -51,14 +51,19 @@ static void __initialize_script_options(struct oven_script_options* options, str
     options->script = step->script;
 }
 
-static int __make_recipe_steps(struct kitchen* kitchen, struct list* steps)
+static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct list* steps)
 {
     struct list_item* item;
     int               status;
-    VLOG_DEBUG("kitchen", "__make_recipe_steps()\n");
+    VLOG_DEBUG("kitchen", "__make_recipe_steps(part=%s)\n", part);
     
     list_foreach(steps, item) {
         struct recipe_step* step = (struct recipe_step*)item;
+        if (recipe_cache_is_step_complete(part, step->name)) {
+            VLOG_TRACE("bake", "nothing to be done for step %s/%s\n", part, step->name);
+            continue;
+        }
+
         VLOG_TRACE("bake", "preparing step '%s'\n", step->system);
         if (kitchen->pkg_manager != NULL) {
             kitchen->pkg_manager->add_overrides(kitchen->pkg_manager, &step->env_keypairs);
@@ -90,6 +95,12 @@ static int __make_recipe_steps(struct kitchen* kitchen, struct list* steps)
                 return status;
             }
         }
+
+        status = recipe_cache_mark_step_complete(part, step->name);
+        if (status) {
+            VLOG_ERROR("bake", "failed to mark step %s/%s complete\n", part, step->name);
+            return status;
+        }
     }
     
     return 0;
@@ -99,7 +110,7 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
 {
     struct oven_recipe_options options;
     struct list_item*          item;
-    struct kitchen_user         user;
+    struct kitchen_user        user;
     int                        status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_make()\n");
 
@@ -111,12 +122,13 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
     status = kitchen_cooking_start(kitchen);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to start cooking: %i\n", status);
+        kitchen_user_delete(&user);
         return status;
     }
 
     if (kitchen_user_drop_privs(&user)) {
         VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to drop privileges\n");
-        return -1;
+        goto cleanup;
     }
 
     list_foreach(&recipe->parts, item) {
@@ -138,7 +150,7 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
             break;
         }
 
-        status = __make_recipe_steps(kitchen, &part->steps);
+        status = __make_recipe_steps(kitchen, part->name, &part->steps);
         oven_recipe_end();
 
         if (status) {
@@ -147,14 +159,16 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
         }
     }
 
-    if (kitchen_user_regain_privs(&user)) {
+    status = kitchen_user_regain_privs(&user);
+    if (status) {
         VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to re-escalate privileges\n");
-        return -1;
     }
 
+cleanup:
     if (kitchen_cooking_end(kitchen)) {
         VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to end cooking\n");
     }
+    kitchen_user_delete(&user);
     return status;
 }
 

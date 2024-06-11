@@ -127,7 +127,6 @@ struct oven_paths {
     const char* project_root;
     const char* build_root;
     const char* install_root;
-    const char* checkpoint_root;
     const char* toolchains_root;
     const char* build_ingredients_root;
 };
@@ -161,13 +160,6 @@ extern int oven_recipe_start(struct oven_recipe_options* options);
  * 
  */
 extern void oven_recipe_end(void);
-
-/**
- * @brief 
- * 
- * @return int Returns 0 on success, -1 on failure with errno set accordingly.
- */
-extern int oven_clear_recipe_checkpoint(const char* name);
 
 /**
  * @brief 

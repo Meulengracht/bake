@@ -21,7 +21,6 @@
 #include <chef/client.h>
 #include <chef/platform.h>
 #include "inventory.h"
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

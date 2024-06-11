@@ -7,8 +7,9 @@ if (UNIX)
 endif()
 
 add_library(kitchen STATIC
-    recipe.c
+    recipe_cache.c
     recipe_utils.c
+    recipe.c
 )
 
 target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} oven fridge yaml platform)

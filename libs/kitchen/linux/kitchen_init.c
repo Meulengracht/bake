@@ -141,11 +141,6 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     );
     kitchen->host_install_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/data/%s/%s",
-        &root[0], options->target_platform, options->target_architecture
-    );
-    kitchen->host_checkpoint_path = strdup(&buff[0]);
-
     // Format the internal chroot paths, again, we have paths that are shared between
     // platforms and archs
     kitchen->project_root = strdup("/chef/project");
@@ -153,11 +148,6 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     kitchen->install_root = strdup("/chef/install");
 
     // And those that are not
-    snprintf(&buff[0], sizeof(buff), "/chef/data/%s/%s",
-        options->target_platform, options->target_architecture
-    );
-    kitchen->checkpoint_root = strdup(&buff[0]);
-
     snprintf(&buff[0], sizeof(buff), "/chef/build/%s/%s",
         options->target_platform, options->target_architecture
     );

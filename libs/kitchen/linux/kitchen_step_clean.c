@@ -16,15 +16,18 @@
  * 
  */
 
+#include <errno.h>
 #include <chef/list.h>
 #include <chef/kitchen.h>
+#include <chef/platform.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "steps.h"
 #include "user.h"
 #include <vlog.h>
 
-static int __reset_steps(struct list* steps, enum recipe_step_type stepType, const char* name);
+static int __reset_steps(const char* part, struct list* steps, enum recipe_step_type stepType, const char* name);
 
 static int __step_depends_on(struct list* dependencies, const char* step)
 {
@@ -42,7 +45,7 @@ static int __step_depends_on(struct list* dependencies, const char* step)
     return 0;
 }
 
-static int __reset_depending_steps(struct list* steps, const char* name)
+static int __reset_depending_steps(const char* part, struct list* steps, const char* name)
 {
     struct list_item* item;
     int               status;
@@ -54,7 +57,7 @@ static int __reset_depending_steps(struct list* steps, const char* name)
         // skip ourselves
         if (strcmp(recipeStep->name, name) != 0) {
             if (__step_depends_on(&recipeStep->depends, name)) {
-                status = __reset_steps(steps, RECIPE_STEP_TYPE_UNKNOWN, recipeStep->name);
+                status = __reset_steps(part, steps, RECIPE_STEP_TYPE_UNKNOWN, recipeStep->name);
                 if (status) {
                     VLOG_ERROR("bake", "failed to reset step %s\n", recipeStep->name);
                     return status;
@@ -65,7 +68,7 @@ static int __reset_depending_steps(struct list* steps, const char* name)
     return 0;
 }
 
-static int __reset_steps(struct list* steps, enum recipe_step_type stepType, const char* name)
+static int __reset_steps(const char* part, struct list* steps, enum recipe_step_type stepType, const char* name)
 {
     struct list_item* item;
     int               status;
@@ -76,15 +79,41 @@ static int __reset_steps(struct list* steps, enum recipe_step_type stepType, con
         if ((stepType == RECIPE_STEP_TYPE_UNKNOWN) || (recipeStep->type == stepType) ||
             (name && strcmp(recipeStep->name, name) == 0)) {
             // this should be deleted
-            status = oven_clear_recipe_checkpoint(recipeStep->name);
+            status = recipe_cache_mark_step_incomplete(part, recipeStep->name);
             if (status) {
-                VLOG_ERROR("bake", "failed to clear checkpoint %s\n", recipeStep->name);
+                VLOG_ERROR("bake", "failed to clear step %s\n", recipeStep->name);
                 return status;
             }
 
             // clear dependencies
-            status = __reset_depending_steps(steps, recipeStep->name);
+            status = __reset_depending_steps(part, steps, recipeStep->name);
         }
+    }
+    return 0;
+}
+
+static int __recreate_dir_as_user(const char* path, struct kitchen_user* user)
+{
+    int status;
+
+    status = platform_rmdir(path);
+    if (status) {
+        if (errno != ENOENT) {
+            VLOG_ERROR("kitchen", "__recreate_dir_as_user: failed to remove directory: %s\n", strerror(errno));
+            return -1;
+        }
+    }
+
+    status = platform_mkdir(path);
+    if (status) {
+        VLOG_ERROR("kitchen", "__recreate_dir_as_user: failed to create directory: %s\n", strerror(errno));
+        return -1;
+    }
+
+    // Since we need write permissions to the build folders
+    if (chown(path, user->caller_uid, user->caller_gid)) {
+        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", path);
+        return -1;
     }
     return 0;
 }
@@ -93,35 +122,32 @@ int kitchen_recipe_clean(struct kitchen* kitchen)
 {
     struct oven_recipe_options options;
     struct list_item*          item;
+    struct kitchen_user        user;
     int                        status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_clean()\n");
 
-    list_foreach(&recipe->parts, item) {
+    if (kitchen_user_new(&user)) {
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to get current user\n");
+        return -1;
+    }
+
+    status = __recreate_dir_as_user(kitchen->host_build_path, &user);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to clean current build directory\n");
+        goto cleanup;
+    }
+
+    list_foreach(&kitchen->recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
-        char*               toolchain = NULL;
-
-        if (part->toolchain != NULL) {
-            toolchain = kitchen_toolchain_resolve(recipe, part->toolchain, kitchen->target_platform);
-            if (toolchain == NULL) {
-                VLOG_ERROR("kitchen", "part %s was marked for platform toolchain, but no matching toolchain specified for platform %s\n", part->name, kitchen->target_platform);
-                return -1;
-            }
-        }
-
-        oven_recipe_options_construct(&options, part, toolchain);
-        status = oven_recipe_start(&options);
-        free(toolchain);
-        if (status) {
-            break;
-        }
-
-        status = __reset_steps(&part->steps, RECIPE_STEP_TYPE_UNKNOWN, NULL);
-        oven_recipe_end();
-
+        
+        status = __reset_steps(part->name, &part->steps, RECIPE_STEP_TYPE_UNKNOWN, NULL);
         if (status) {
             VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to build recipe %s\n", part->name);
             break;
         }
     }
+
+cleanup:
+    kitchen_user_delete(&user);
     return status;
 }

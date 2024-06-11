@@ -38,7 +38,6 @@
 struct oven_recipe_context {
     const char* name;
     const char* toolchain;
-    const char* checkpoint_file;
     const char* source_root;
     const char* build_root;
 };
@@ -107,7 +106,6 @@ int oven_initialize(struct oven_parameters* parameters)
     g_oven.paths.project_root = strdup(parameters->paths.project_root);
     g_oven.paths.build_root = strdup(parameters->paths.build_root);
     g_oven.paths.install_root = strdup(parameters->paths.install_root);
-    g_oven.paths.checkpoint_root = strdup(parameters->paths.checkpoint_root);
     g_oven.paths.toolchains_root = strdup(parameters->paths.toolchains_root);
     g_oven.paths.build_ingredients_root = strdup(parameters->paths.build_ingredients_root);
     
@@ -132,7 +130,6 @@ void oven_cleanup(void)
     free((void*)g_oven.paths.project_root);
     free((void*)g_oven.paths.build_root);
     free((void*)g_oven.paths.install_root);
-    free((void*)g_oven.paths.checkpoint_root);
     free((void*)g_oven.paths.toolchains_root);
     free((void*)g_oven.paths.build_ingredients_root);
 
@@ -154,8 +151,6 @@ static int __ensure_recipe_dirs(struct oven_recipe_options* options)
 
 int oven_recipe_start(struct oven_recipe_options* options)
 {
-    char tmp[512];
-
     VLOG_DEBUG("oven", "oven_recipe_start()\n");
 
     if (g_oven.recipe.name) {
@@ -163,7 +158,6 @@ int oven_recipe_start(struct oven_recipe_options* options)
         errno = ENOSYS;
         return -1;
     }
-
     g_oven.recipe.name = strdup(options->name);
 
     // construct the recipe paths
@@ -175,10 +169,6 @@ int oven_recipe_start(struct oven_recipe_options* options)
         g_oven.recipe.toolchain = strpathcombine(g_oven.paths.toolchains_root, options->toolchain);
     }
 
-    // setup the checkpoint file
-    snprintf(&tmp[0], sizeof(tmp), ".%s-checks", options->name);
-    g_oven.recipe.checkpoint_file = strpathcombine(g_oven.paths.checkpoint_root, &tmp[0]);
-    
     // create directories, last as it uses the global access
     if (__ensure_recipe_dirs(options)) {
         VLOG_ERROR("oven", "oven_recipe_start: failed to create directories for recipe\n");
@@ -196,24 +186,9 @@ void oven_recipe_end(void)
     VLOG_DEBUG("oven", "oven_recipe_end()\n");
     free((void*)g_oven.recipe.name);
     free((void*)g_oven.recipe.toolchain);
-    free((void*)g_oven.recipe.checkpoint_file);
     free((void*)g_oven.recipe.source_root);
     free((void*)g_oven.recipe.build_root);
     memset(&g_oven.recipe, 0, sizeof(struct oven_recipe_context));
-}
-
-int oven_clear_recipe_checkpoint(const char* name)
-{
-    if (name == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (g_oven.recipe.checkpoint_file == NULL) {
-        errno = ENOSYS;
-        return -1;
-    }
-    return oven_checkpoint_remove(g_oven.recipe.checkpoint_file, name);
 }
 
 static const char* __get_variable(const char* name)
@@ -689,12 +664,6 @@ int oven_configure(struct oven_generate_options* options)
         return -1;
     }
 
-    // check if we already have done this step
-    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_file, options->name)) {
-        VLOG_TRACE("oven", "nothing to be done for %s\n", options->name);
-        return 0;
-    }
-    
     VLOG_TRACE("oven", "running step %s\n", options->name);
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
@@ -702,11 +671,6 @@ int oven_configure(struct oven_generate_options* options)
     }
     
     status = backend->generate(&data, options->system_options);
-    if (status == 0) {
-        status = oven_checkpoint_create(g_oven.recipe.checkpoint_file, options->name);
-    }
-
-cleanup:
     __cleanup_backend_data(&data);
     return status;
 }
@@ -738,12 +702,6 @@ int oven_build(struct oven_build_options* options)
         return -1;
     }
 
-    // check if we already have done this step
-    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_file, options->name)) {
-        VLOG_TRACE("oven", "nothing to be done for %s\n", options->name);
-        return 0;
-    }
-
     VLOG_TRACE("oven", "running step %s\n", options->name);
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
@@ -751,11 +709,6 @@ int oven_build(struct oven_build_options* options)
     }
     
     status = backend->build(&data, options->system_options);
-    if (status == 0) {
-        status = oven_checkpoint_create(g_oven.recipe.checkpoint_file, options->name);
-    }
-
-cleanup:
     __cleanup_backend_data(&data);
     return status;
 }
@@ -772,12 +725,6 @@ int oven_script(struct oven_script_options* options)
         return -1;
     }
 
-    // check if we already have done this step
-    if (oven_checkpoint_contains(g_oven.recipe.checkpoint_file, options->name)) {
-        VLOG_TRACE("oven", "nothing to be done for %s\n", options->name);
-        return 0;
-    }
-
     VLOG_TRACE("oven", "running step %s\n", options->name);
     preprocessedScript = oven_preprocess_text(options->script);
     if (preprocessedScript == NULL) {
@@ -789,10 +736,6 @@ int oven_script(struct oven_script_options* options)
         VLOG_ERROR("oven", "oven_script: failed to execute script\n");
     }
     free((void*)preprocessedScript);
-
-    if (status == 0) {
-        return oven_checkpoint_create(g_oven.recipe.checkpoint_file, options->name);
-    }
     return status;
 }
 
