@@ -34,6 +34,7 @@
 
 #include "steps.h"
 #include "user.h"
+#include "private.h"
 
 static int __is_mountpoint(const char* path)
 {
@@ -307,258 +308,7 @@ static int __setup_hook(void* context)
     return status;
 }
 
-static unsigned int __hash(unsigned int hash, const char* data, size_t length)
-{
-    for (unsigned int i = 0; i < length; i++) {
-        unsigned char c = (unsigned char)data[i];
-        hash = ((hash << 5) + hash) + c;
-    }
-    return hash;
-}
-
-static unsigned int __hash_ingredients(struct list* ingredients, unsigned int seed)
-{
-    unsigned int      hash = seed;
-    struct list_item* i;
-
-    list_foreach(ingredients, i) {
-        struct kitchen_ingredient* ing = (struct kitchen_ingredient*)i;
-        hash = __hash(hash, ing->name, strlen(ing->name));
-    }
-    return hash;
-}
-
-static unsigned int __hash_packages(struct list* packages, unsigned int seed)
-{
-    unsigned int      hash = seed;
-    struct list_item* i;
-
-    list_foreach(packages, i) {
-        struct oven_value_item* ing = (struct oven_value_item*)i;
-        hash = __hash(hash, ing->value, strlen(ing->value));
-    }
-    return hash;
-}
-
-// hash of ingredients and imports
-static unsigned int __setup_hash(struct kitchen_setup_options* options)
-{
-    unsigned int hash = 5381;
-
-    // hash name
-    hash = __hash(hash, options->name, strlen(options->name));
-
-    // hash ingredients
-    hash = __hash_ingredients(&options->host_ingredients, hash);
-    hash = __hash_ingredients(&options->build_ingredients, hash);
-    hash = __hash_ingredients(&options->runtime_ingredients, hash);
-
-    return hash;
-}
-
-static unsigned int __read_hash(const char* path)
-{
-    char  buff[128];
-    FILE* hashFile;
-    long  size;
-    char* end = NULL;
-    VLOG_DEBUG("kitchen", "__read_hash()\n");
-
-    hashFile = fopen(path, "r");
-    if (hashFile == NULL) {
-        VLOG_DEBUG("kitchen", "__read_hash: no hash file\n");
-        return 0;
-    }
-
-    fseek(hashFile, 0, SEEK_END);
-    size = ftell(hashFile);
-    rewind(hashFile);
-
-    if (size >= sizeof(buff)) {
-        VLOG_ERROR("kitchen", "__read_hash: the hash file is invalid\n");
-        fclose(hashFile);
-        return 0;
-    }
-    if (fread(&buff[0], 1, size, hashFile) < size) {
-        VLOG_ERROR("kitchen", "__read_hash: failed to read hash file\n");
-        fclose(hashFile);
-        return 0;
-    }
-    
-    fclose(hashFile);
-    return (unsigned int)strtoul(&buff[0], &end, 10);
-}
-
-static int __write_hash(const char* path, unsigned int hash)
-{
-    FILE* hashFile;
-    VLOG_DEBUG("kitchen", "__write_hash(hash=%d)\n", hash);
-
-    hashFile = fopen(path, "w");
-    if (hashFile == NULL) {
-        VLOG_ERROR("kitchen", "__write_hash: failed to write hashfile: %s\n", path);
-        return 0;
-    }
-    fprintf(hashFile, "%u", hash);
-    fclose(hashFile);
-    return 0;
-}
-
-static int __should_skip_setup(struct kitchen* kitchen)
-{
-    unsigned int existingHash = __read_hash(kitchen->host_hash_file);
-    return kitchen->hash == existingHash;
-}
-
-static struct pkgmngr* __setup_pkg_environment(struct kitchen_setup_options* options, const char* chroot)
-{
-    static struct {
-        const char* environment;
-        struct pkgmngr* (*create)(struct pkgmngr_options*);
-    } systems[] = {
-        { "pkg-config", pkgmngr_pkgconfig_new },
-        { NULL, NULL }
-    };
-    const char* env = options->pkg_environment;
-
-    // default to pkg-config
-    if (env == NULL) {
-        env = "pkg-config";
-    }
-
-    for (int i = 0; systems[i].environment != NULL; i++) {
-        if (strcmp(env, systems[i].environment) == 0) {
-            VLOG_TRACE("kitchen", "initializing %s environment\n", env);
-            return systems[i].create(&(struct pkgmngr_options) {
-                .root = chroot, 
-                .target_platform = options->target_platform,
-                .target_architecture = options->target_architecture
-            });
-        }
-    }
-    return NULL;
-}
-
-static int __get_kitchen_root(char* buffer, size_t maxLength, const char* uuid)
-{
-    char root[2048];
-    int  status;
-
-    status = platform_getuserdir(&root[0], sizeof(root));
-    if (status) {
-        VLOG_ERROR("kitchen", "__get_kitchen_root: failed to resolve user homedir\n");
-        return -1;
-    }
-
-    if (uuid != NULL) {
-        snprintf(buffer, maxLength, "%s/.chef/kitchen/%s", &root[0], uuid);
-    } else {
-        snprintf(buffer, maxLength, "%s/.chef/kitchen", &root[0]);
-    }
-    return 0;
-}
-
-// <root>/.kitchen/output
-// <root>/.kitchen/<recipe>/bin
-// <root>/.kitchen/<recipe>/lib
-// <root>/.kitchen/<recipe>/share
-// <root>/.kitchen/<recipe>/usr/...
-// <root>/.kitchen/<recipe>/chef/build
-// <root>/.kitchen/<recipe>/chef/ingredients
-// <root>/.kitchen/<recipe>/chef/toolchains
-// <root>/.kitchen/<recipe>/chef/install => <root>/.kitchen/output
-// <root>/.kitchen/<recipe>/chef/project => <root>
-static int __kitchen_construct(struct kitchen_setup_options* options, struct kitchen* kitchen)
-{
-    char buff[2048];
-    char root[2048] = { 0 };
-    int  status;
-    VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->name);
-
-    status = __get_kitchen_root(&root[0], sizeof(root) - 1, recipe_cache_uuid());
-    if (status) {
-        VLOG_ERROR("kitchen", "__kitchen_construct: failed to resolve root directory\n");
-        return -1;
-    }
-
-    memset(kitchen, 0, sizeof(struct kitchen));
-    kitchen->target_platform = strdup(options->target_platform);
-    kitchen->target_architecture = strdup(options->target_architecture);
-    kitchen->real_project_path = strdup(options->project_path);
-    kitchen->confined = options->confined;
-    kitchen->hash = __setup_hash(options);
-
-    snprintf(&buff[0], sizeof(buff), "%s/output", &root[0]);
-    kitchen->shared_output_path = strdup(&buff[0]);
-
-    // Format external chroot paths that are arch/platform agnostic
-    snprintf(&buff[0], sizeof(buff), "%s/ns", &root[0]);
-    kitchen->host_chroot = strdup(&buff[0]);
-    kitchen->pkg_manager = __setup_pkg_environment(options, &buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/project", &root[0]);
-    kitchen->host_project_path = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install", &root[0]);
-    kitchen->host_install_root = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/toolchains", &root[0]);
-    kitchen->host_build_toolchains_path = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/.hash", &root[0]);
-    kitchen->host_hash_file = strdup(&buff[0]);
-
-    // Build/ingredients/install/checkpoint paths are different for each target
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/build/%s/%s",
-        &root[0], options->target_platform, options->target_architecture
-    );
-    kitchen->host_build_path = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/ingredients/%s/%s",
-        &root[0], options->target_platform, options->target_architecture
-    );
-    kitchen->host_build_ingredients_path = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install/%s/%s",
-        &root[0], options->target_platform, options->target_architecture
-    );
-    kitchen->host_install_path = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/data/%s/%s",
-        &root[0], options->target_platform, options->target_architecture
-    );
-    kitchen->host_checkpoint_path = strdup(&buff[0]);
-
-    // Format the internal chroot paths, again, we have paths that are shared between
-    // platforms and archs
-    kitchen->project_root = strdup("/chef/project");
-    kitchen->build_toolchains_path = strdup("/chef/toolchains");
-    kitchen->install_root = strdup("/chef/install");
-
-    // And those that are not
-    snprintf(&buff[0], sizeof(buff), "/chef/data/%s/%s",
-        options->target_platform, options->target_architecture
-    );
-    kitchen->checkpoint_root = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "/chef/build/%s/%s",
-        options->target_platform, options->target_architecture
-    );
-    kitchen->build_root = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "/chef/ingredients/%s/%s",
-        options->target_platform, options->target_architecture
-    );
-    kitchen->build_ingredients_path = strdup(&buff[0]);
-
-    snprintf(&buff[0], sizeof(buff), "/chef/install/%s/%s",
-        options->target_platform, options->target_architecture
-    );
-    kitchen->install_path = strdup(&buff[0]);
-    return 0;
-}
-
-static char* __join_packages(struct list* packages)
+static char* __join_packages(struct recipe_cache_package_change* changes, int count, enum recipe_cache_change_type changeType)
 {
     struct list_item* i;
     char*             buffer;
@@ -570,25 +320,30 @@ static char* __join_packages(struct list* packages)
         return NULL;
     }
 
-    if (packages == NULL || packages->count == 0) {
+    if (changes == NULL || count == 0) {
         return NULL;
     }
 
-    list_foreach(packages, i) {
-        struct oven_value_item* pkg = (struct oven_value_item*)i;
-        size_t                  pkgLength = strlen(pkg->value);
+    for (int i = 0; i < count; i++) {
+        struct recipe_cache_package_change* pkg = &changes[i];
+        size_t                              pkgLength;
+        if (pkg->type != changeType) {
+            continue;
+        }
+
+        pkgLength = strlen(pkg->name);
         if ((length + pkgLength) >= bufferLength) {
-            VLOG_ERROR("kitchen", "the length of package %s exceeded the total length of package names\n", pkg->value);
+            VLOG_ERROR("kitchen", "the length of package %s exceeded the total length of package names\n", pkg->name);
             free(buffer);
             return NULL;
         }
 
         if (buffer[0] == 0) {
-            strcat(buffer, pkg->value);
+            strcat(buffer, pkg->name);
             length += pkgLength;
         } else {
             strcat(buffer, " ");
-            strcat(buffer, pkg->value);
+            strcat(buffer, pkg->name);
             length += pkgLength + 1;
         }
     }
@@ -671,31 +426,59 @@ static int __setup_environment(int confined, const char* path)
 
 static int __perform_package_operations(void* context)
 {
-    struct list* packages = context;
-    char         scratchPad[4096];
-    char*        aptpkgs;
-    int          status;
+    struct recipe_cache_package_change* changes;
+    int                                 count;
+    char                                scratchPad[4096];
+    char*                               aptpkgs;
+    int                                 status;
+    (void)context;
+
+    status = recipe_cache_calculate_package_changes(&changes, &count);
+    if (status) {
+        VLOG_ERROR("kitchen", "__perform_package_operations: failed to calculate package differences\n");
+        return status;
+    }
 
     // Skip if there are no package operations
-    if (packages->count == 0) {
+    if (count == 0) {
         return 0;
     }
 
-    aptpkgs = __join_packages(packages);
-    if (aptpkgs == NULL) {
-        return -1;
+    // Start with packages to remove
+    aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_REMOVED);
+    if (aptpkgs != NULL) {
+        snprintf(&scratchPad[0], sizeof(scratchPad), "-y -qq remove %s", aptpkgs);
+        free(aptpkgs);
+
+        VLOG_DEBUG("kitchen", "executing 'apt-get %s'\n", &scratchPad[0]);
+        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        status = platform_spawn("apt-get", &scratchPad[0], NULL, &(struct platform_spawn_options) {
+            .output_handler = __debootstrap_output_handler
+        });
+        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        if (status) {
+            return status;
+        }
     }
 
-    snprintf(&scratchPad[0], sizeof(scratchPad), "-y -qq install --no-install-recommends %s", aptpkgs);
-    free(aptpkgs);
+    // Then packages to install
+    aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_ADDED);
+    if (aptpkgs != NULL) {
+        snprintf(&scratchPad[0], sizeof(scratchPad), "-y -qq install --no-install-recommends %s", aptpkgs);
+        free(aptpkgs);
 
-    VLOG_DEBUG("kitchen", "executing 'apt-get %s'\n", &scratchPad[0]);
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-    status = platform_spawn("apt-get", &scratchPad[0], NULL, &(struct platform_spawn_options) {
-        .output_handler = __debootstrap_output_handler
-    });
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-    return status;
+        VLOG_DEBUG("kitchen", "executing 'apt-get %s'\n", &scratchPad[0]);
+        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        status = platform_spawn("apt-get", &scratchPad[0], NULL, &(struct platform_spawn_options) {
+            .output_handler = __debootstrap_output_handler
+        });
+        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        if (status) {
+            return status;
+        }
+    }
+
+    return 0;
 }
 
 static int __ensure_hostdirs(struct kitchen* kitchen, struct kitchen_user* user)
@@ -764,99 +547,93 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct kitchen_user* user)
 static int __kitchen_install(struct kitchen* kitchen, struct kitchen_user* user, struct kitchen_setup_options* options)
 {
     int status;
+    VLOG_TRACE("kitchen", "initializing project environment\n");
 
-    VLOG_TRACE("kitchen", "cleaning project environment\n");
+    if (recipe_cache_key_bool("setup")) {
+        return 0;
+    }
     
     status = __ensure_mounts_cleanup(kitchen->host_chroot);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to unmount existing mounts\n");
-        goto cleanup;
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to unmount existing mounts\n");
+        return status;
     }
     
     status = __clean_environment(kitchen->host_chroot);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to clean project environment\n");
-        goto cleanup;
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to clean project environment\n");
+        return status;
     }
 
     VLOG_TRACE("kitchen", "initializing project environment\n");
-    status = __setup_environment(options->confined, kitchen->host_chroot);
+    status = __setup_environment(kitchen->confined, kitchen->host_chroot);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to setup project environment\n");
-        goto cleanup;
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to setup project environment\n");
+        return status;
     }
 
     status = __ensure_hostdirs(kitchen, user);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to create host directories\n");
-        goto cleanup;
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to create host directories\n");
+        return status;
     }
 
-    status = __ensure_mounted_dirs(kitchen, options->project_path);
+    status = recipe_cache_key_set_bool("setup", 1);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to create project mounts\n");
-        goto cleanup;
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to mark install as done\n");
+        return status;
     }
 
-    // install packages
-    status = __run_in_chroot(kitchen, __perform_package_operations, options->packages);
-    if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to initialize host packages\n");
-        goto cleanup;
-    }
-
-    // extract os/ingredients/toolchain
-    VLOG_TRACE("kitchen", "installing project ingredients\n");
-    status = __setup_ingredients(kitchen, options);
-    if (status) {
-        goto cleanup;
-    }
-
-    // Run the setup hook if any
-    if (options->setup_hook.bash) {
-        VLOG_TRACE("kitchen", "executing setup hook\n");
-        status = __run_in_chroot(kitchen, __setup_hook, options);
-        if (status) {
-            goto cleanup;
-        }
-    }
-
-    // write hash
-    status = __write_hash(kitchen->host_hash_file, kitchen->hash);
-    if (status) {
-        goto cleanup;
-    }
-
-cleanup:
-    return status;
+    return 0;
 }
 
 static int __kitchen_refresh(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
     int status;
 
-    // ensure dirs are mounted still, they only persist till reboot
-    status = __is_mountpoint(kitchen->host_install_root);
-    if (status < 0) {
-        VLOG_ERROR("kitchen", "failed to determine whether or not directories are mounted\n");
-        return status;
+    status = __ensure_mounted_dirs(kitchen, kitchen->real_project_path);
+    if (status) {
+        VLOG_ERROR("kitchen", "__kitchen_refresh: failed to create project mounts\n");
+        return -1;
     }
 
-    // __is_mountpoint returns 0 if dir was not a mount
-    if (status == 0) {
-        status = __ensure_mounted_dirs(kitchen, options->project_path);
+    // install packages
+    status = __run_in_chroot(kitchen, __perform_package_operations, options->packages);
+    if (status) {
+        VLOG_ERROR("kitchen", "__kitchen_refresh: failed to initialize host packages\n");
+        return -1;
+    }
+
+    // extract os/ingredients/toolchain
+    if (!recipe_cache_key_bool("setup_ingredients")) {
+        VLOG_TRACE("kitchen", "installing project ingredients\n");
+        status = __setup_ingredients(kitchen, options);
         if (status) {
-            VLOG_ERROR("kitchen", "kitchen_setup: failed to create project mounts\n");
+            return -1;
+        }
+
+        status = recipe_cache_key_set_bool("setup_ingredients", 1);
+        if (status) {
+            VLOG_ERROR("kitchen", "__kitchen_refresh: failed to mark ingredients step as done\n");
             return status;
         }
     }
 
-    // update packages if there are any changes
-    // status = __run_in_chroot(kitchen, __perform_package_operations, options->packages);
-    // if (status) {
-    //     VLOG_ERROR("kitchen", "kitchen_setup: failed to initialize host packages\n");
-    //     return status;
-    // }
+    // Run the setup hook if any
+    if (options->setup_hook.bash && !recipe_cache_key_bool("setup_hook")) {
+        VLOG_TRACE("kitchen", "executing setup hook\n");
+        status = __run_in_chroot(kitchen, __setup_hook, options);
+        if (status) {
+            return -1;
+        }
+
+        status = recipe_cache_key_set_bool("setup_hook", 1);
+        if (status) {
+            VLOG_ERROR("kitchen", "__kitchen_refresh: failed to mark setup hook as done\n");
+            return status;
+        }
+    }
+
     return 0;
 }
 
@@ -895,18 +672,15 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
 {
     struct kitchen_user user;
     int                 status;
-
-    VLOG_DEBUG("kitchen", "kitchen_setup(name=%s)\n", options->name);
-
-    if (kitchen_user_new(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to get current user\n");
+    VLOG_DEBUG("kitchen", "kitchen_setup(name=%s)\n", kitchen->recipe->project.name);
+    
+    if (kitchen->magic != __KITCHEN_INIT_MAGIC) {
+        VLOG_ERROR("kitchen", "kitchen_setup: kitchen must be initialized before calling this\n");
         return -1;
     }
 
-    // Start out by constructing the kitchen. The reason for this is we need all the
-    // paths calculated for pretty much all other operations.
-    if (__kitchen_construct(options, kitchen)) {
-        kitchen_user_delete(&user);
+    if (kitchen_user_new(&user)) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to get current user\n");
         return -1;
     }
 
@@ -914,30 +688,36 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
     // we need to ensure that the paths we provide change based on .confine status
     status = oven_initialize(&(struct oven_parameters){
         .envp = (const char* const*)__initialize_env(&user, options->envp),
-        .target_architecture = options->target_architecture,
-        .target_platform = options->target_platform,
+        .target_architecture = kitchen->target_architecture,
+        .target_platform = kitchen->target_platform,
         .paths = {
-            .project_root = options->confined ? kitchen->project_root : kitchen->host_project_path,
-            .build_root = options->confined ? kitchen->build_root : kitchen->host_build_path,
-            .install_root = options->confined ? kitchen->install_path : kitchen->host_install_path,
-            .checkpoint_root = options->confined ? kitchen->checkpoint_root : kitchen->host_checkpoint_path,
-            .toolchains_root = options->confined ? kitchen->build_toolchains_path : kitchen->host_build_toolchains_path,
-            .build_ingredients_root = options->confined ? kitchen->build_ingredients_path : kitchen->host_build_ingredients_path
+            .project_root = kitchen->confined ? kitchen->project_root : kitchen->host_project_path,
+            .build_root = kitchen->confined ? kitchen->build_root : kitchen->host_build_path,
+            .install_root = kitchen->confined ? kitchen->install_path : kitchen->host_install_path,
+            .checkpoint_root = kitchen->confined ? kitchen->checkpoint_root : kitchen->host_checkpoint_path,
+            .toolchains_root = kitchen->confined ? kitchen->build_toolchains_path : kitchen->host_build_toolchains_path,
+            .build_ingredients_root = kitchen->confined ? kitchen->build_ingredients_path : kitchen->host_build_ingredients_path
         }
     });
     if (status) {
-        VLOG_ERROR("kitchen", "failed to initialize oven: %s\n", strerror(errno));
-        kitchen_user_delete(&user);
-        return -1;
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to initialize oven: %s\n", strerror(errno));
+        goto cleanup;
     }
     atexit(oven_cleanup);
 
-    if (__should_skip_setup(kitchen)) {
-        status = __kitchen_refresh(kitchen, options);
-    } else {
-        status = __kitchen_install(kitchen, &user, options);
+    status = __kitchen_install(kitchen, &user, options);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to initialize environment: %s\n", strerror(errno));
+        goto cleanup;
     }
-    
+
+    status = __kitchen_refresh(kitchen, options);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to refresh kitchen: %s\n", strerror(errno));
+        goto cleanup;
+    }
+
+cleanup:
     kitchen_user_delete(&user);
     return status;
 }
@@ -1004,7 +784,12 @@ int kitchen_purge(struct kitchen_purge_options* options)
         struct platform_file_entry* entry = (struct platform_file_entry*)i;
         status = __recipe_clean(entry->name);
         if (status) {
-            VLOG_ERROR("kitchen", "kitchen_purge: failed to remove mounts for %s\n", entry->name);
+            VLOG_ERROR("kitchen", "kitchen_purge: failed to remove data for %s\n", entry->name);
+            goto cleanup;
+        }
+        status = recipe_cache_clear_for(entry->name);
+        if (status) {
+            VLOG_ERROR("kitchen", "kitchen_purge: failed to clean cache for %s\n", entry->name);
             goto cleanup;
         }
     }
@@ -1015,7 +800,7 @@ cleanup:
     return 0;
 }
 
-int kitchen_recipe_purge(struct recipe* recipe, struct kitchen_clean_options* options)
+int kitchen_recipe_purge(struct kitchen* kitchen, struct kitchen_recipe_purge_options* options)
 {
     struct kitchen_user user;
     int                 status;

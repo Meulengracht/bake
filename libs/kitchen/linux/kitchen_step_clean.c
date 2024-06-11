@@ -89,7 +89,7 @@ static int __reset_steps(struct list* steps, enum recipe_step_type stepType, con
     return 0;
 }
 
-int kitchen_recipe_clean(struct recipe* recipe)
+int kitchen_recipe_clean(struct kitchen* kitchen)
 {
     struct oven_recipe_options options;
     struct list_item*          item;

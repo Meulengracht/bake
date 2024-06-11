@@ -1,8 +1,9 @@
 add_library(kitchen-linux STATIC
+    kitchen_init.c
+    kitchen_step_clean.c
     kitchen_step_common.c
     kitchen_step_make.c
     kitchen_step_pack.c
-    kitchen_step_prepare.c
     kitchen.c
     user.c
 )

@@ -54,11 +54,11 @@ static int __write_recipe(char* output)
     return 0;
 }
 
-int init_main(int argc, char** argv, char** envp, struct recipe* recipe)
+int init_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     char* output = "recipe.yaml";
 
-    (void)recipe;
+    (void)options;
 
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {

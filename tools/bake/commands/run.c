@@ -34,6 +34,8 @@
 #include <signal.h>
 #include <vlog.h>
 
+#include "commands.h"
+
 static void __print_help(void)
 {
     printf("Usage: bake run [options]\n");
@@ -218,67 +220,11 @@ static void __debug(void)
     getchar();
 }
 
-static int __parse_cc_switch(const char* value, const char** platformOut, const char** archOut)
+int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    // value is either of two forms
-    // platform/arch
-    // arch
-    char* separator;
-    char* equal;
-
-    if (value == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    equal = strchr(value, '=');
-    if (equal == NULL) {
-        VLOG_ERROR("bake", "invalid format of %s (must be -cc=... or --cross-compile=...)\n", value);
-        errno = EINVAL;
-        return -1;
-    }
-
-    // skip the '='
-    equal++;
-
-    separator = strchr(equal, '/');
-    if (separator) {
-        *platformOut = strndup(equal, separator - equal);
-        *archOut     = strdup(separator + 1);
-    } else {
-        *platformOut = strdup(CHEF_PLATFORM_STR);
-        *archOut     = strdup(equal);
-    }
-    return 0;
-}
-
-static int __get_cwd(char** bufferOut)
-{
-    char*  cwd;
-    int    status;
-
-    cwd = malloc(4096);
-    if (cwd == NULL) {
-        return -1;
-    }
-
-    status = platform_getcwd(cwd, 4096);
-    if (status) {
-        // buffer was too small
-        VLOG_ERROR("oven", "could not get current working directory, buffer too small?\n");
-        free(cwd);
-        return -1;
-    }
-    *bufferOut = cwd;
-    return 0;
-}
-
-int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
-{
-    struct kitchen_setup_options kitchenOptions = { 0 };
+    struct kitchen_init_options  initOptions = { 0 };
+    struct kitchen_setup_options setupOptions = { 0 };
     struct kitchen         kitchen;
-    const char*            platform = NULL;
-    const char*            arch     = NULL;
     int                    debug    = 0;
     char*                  cwd;
     int                    status;
@@ -294,40 +240,13 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
                 return 0;
             } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--debug")) {
                 debug = 1;
-            } else if (!strncmp(argv[i], "-cc", 3) || !strncmp(argv[i], "--cross-compile", 15)) {
-                // THIS ALLOCS MEMORY, WE NEED TO HANDLE THIS
-                status = __parse_cc_switch(argv[i], &platform, &arch);
-                if (status) {
-                    VLOG_ERROR("bake", "invalid format: %s\n", argv[i]);
-                    return status;
-                }
             }
         }
     }
 
-    if (recipe == NULL) {
-        VLOG_ERROR("bake", "no recipe provided\n");
+    if (options->recipe == NULL) {
+        fprintf(stderr, "bake: no recipe provided\n");
         __print_help();
-        return -1;
-    }
-
-    // initialize the recipe cache
-    if (recipe_cache_initialize(recipe)) {
-        fprintf(stderr, "bake: failed to initialize recipe cache\n");
-        return -1;
-    }
-
-    status = recipe_validate_target(recipe, &platform, &arch);
-    if (status) {
-        return -1;
-    }
-
-    VLOG_TRACE("bake", "target platform: %s\n", platform);
-    VLOG_TRACE("bake", "target architecture: %s\n", arch);
-
-    // get the current working directory
-    status = __get_cwd(&cwd);
-    if (status) {
         return -1;
     }
 
@@ -339,47 +258,52 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
     }
     atexit(chefclient_cleanup);
 
-    status = fridge_initialize(platform, arch);
+    status = fridge_initialize(options->platform, options->architecture);
     if (status != 0) {
         VLOG_ERROR("bake", "failed to initialize fridge\n");
         return -1;
     }
     atexit(fridge_cleanup);
 
-    status = __prep_ingredients(recipe, platform, arch, &kitchenOptions);
+    status = kitchen_initialize(&(struct kitchen_init_options) {
+        .recipe = options->recipe,
+        .project_path = cwd,
+        .pkg_environment = NULL,
+        .confined = options->recipe->environment.build.confinement,
+        .target_platform = options->platform,
+        .target_architecture = options->architecture,
+    }, &kitchen);
+    if (status) {
+        VLOG_ERROR("bake", "failed to initialize kitchen: %s\n", strerror(errno));
+        return -1;
+    }
+
+    status = __prep_ingredients(options->recipe, options->platform, options->architecture, &setupOptions);
     if (status) {
         VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
         return -1;
     }
 
     // setup linux options
-    kitchenOptions.packages = &recipe->environment.host.packages;
+    setupOptions.envp = (const char* const*)envp;
+    setupOptions.packages = &options->recipe->environment.host.packages;
 
     // setup kitchen hooks
-    kitchenOptions.setup_hook.bash = recipe->environment.hooks.bash;
-    kitchenOptions.setup_hook.powershell = recipe->environment.hooks.powershell;
-
-    // prepare kitchen parameters, lists are already filled at this point
-    kitchenOptions.name = recipe->project.name;
-    kitchenOptions.project_path = cwd;
-    kitchenOptions.pkg_environment = NULL;
-    kitchenOptions.confined = recipe->environment.build.confinement;
-    kitchenOptions.envp = (const char* const*)envp;
-    kitchenOptions.target_platform = platform;
-    kitchenOptions.target_architecture = arch;
-    status = kitchen_setup(&kitchenOptions, &kitchen);
+    setupOptions.setup_hook.bash = options->recipe->environment.hooks.bash;
+    setupOptions.setup_hook.powershell = options->recipe->environment.hooks.powershell;
+    status = kitchen_setup(&setupOptions, &kitchen);
     if (status) {
         VLOG_ERROR("bake", "failed to setup kitchen: %s\n", strerror(errno));
         return -1;
     }
 
-    status = kitchen_recipe_prepare(&kitchen, recipe);
+    status = kitchen_recipe_prepare(&kitchen, options->recipe);
     if (status) {
         VLOG_ERROR("bake", "failed to reset steps: %s\n", strerror(errno));
         return -1;
     }
 
-    status = kitchen_recipe_make(&kitchen, recipe);
+    status = kitchen_recipe_make(&kitchen, options->recipe);
     if (status) {
         VLOG_ERROR("bake", "failed to make recipes\n");
         if (debug) {
@@ -388,7 +312,7 @@ int run_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return -1;
     }
 
-    status = kitchen_recipe_pack(&kitchen, recipe);
+    status = kitchen_recipe_pack(&kitchen, options->recipe);
     if (status) {
         VLOG_ERROR("bake", "failed to construct packs\n");
         if (debug) {

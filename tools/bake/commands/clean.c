@@ -32,6 +32,8 @@
 #include <signal.h>
 #include <vlog.h>
 
+#include "commands.h"
+
 static void __print_help(void)
 {
     printf("Usage: bake clean [options|type]\n");
@@ -39,6 +41,10 @@ static void __print_help(void)
     printf("Options:\n");
     printf("  --purge\n");
     printf("      cleans all active recipes in the kitchen area\n");
+    printf("  -cc, --cross-compile\n");
+    printf("      Cross-compile for another platform or/and architecture. This switch\n");
+    printf("      can be used with two different formats, either just like\n");
+    printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
     printf("  -h, --help\n");
     printf("      Shows this help message\n");
 }
@@ -70,10 +76,13 @@ static int __is_clean_type(const char* type)
     return 0;
 }
 
-int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
+int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    int   purge = 0;
-    char* type = "all";
+    struct kitchen kitchen;
+    int            purge = 0;
+    char*          type = "all";
+    int            status;
+    char*          cwd;
 
     // handle individual help command
     if (argc > 2) {
@@ -87,12 +96,6 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
                 type = argv[i];
             }
         }
-    }
-
-    // initialize the recipe cache
-    if (recipe_cache_initialize(recipe)) {
-        fprintf(stderr, "bake: failed to initialize recipe cache\n");
-        return -1;
     }
 
     // if purge was set, then clean the entire kitchen
@@ -109,9 +112,22 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
         return kitchen_purge(NULL);
     }
 
-    if (recipe == NULL) {
+    if (options->recipe == NULL) {
         fprintf(stderr, "bake: no recipe provided\n");
         __print_help();
+        return -1;
+    }
+
+    status = kitchen_initialize(&(struct kitchen_init_options) {
+        .recipe = options->recipe,
+        .project_path = cwd,
+        .pkg_environment = NULL,
+        .confined = options->recipe->environment.build.confinement,
+        .target_platform = options->platform,
+        .target_architecture = options->architecture
+    }, &kitchen);
+    if (status) {
+        VLOG_ERROR("bake", "failed to initialize kitchen: %s\n", strerror(errno));
         return -1;
     }
 
@@ -119,9 +135,9 @@ int clean_main(int argc, char** argv, char** envp, struct recipe* recipe)
     signal(SIGINT, SIG_IGN);
 
     if (strcmp(type, "build") == 0) {
-        return kitchen_recipe_clean(recipe);
+        return kitchen_recipe_clean(&kitchen);
     } else if (strcmp(type, "all") == 0) {
-        return kitchen_recipe_purge(recipe, NULL);
+        return kitchen_recipe_purge(&kitchen, NULL);
     }
     
     fprintf(stderr, "bake: %s is not recognized as an action\n", type);
