@@ -10,6 +10,6 @@ add_library(kitchen STATIC
     recipe.c
     recipe_utils.c
 )
-target_link_libraries(kitchen PRIVATE oven fridge)
-target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} yaml platform)
+
+target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} oven fridge yaml platform)
 target_include_directories(kitchen PUBLIC include)
