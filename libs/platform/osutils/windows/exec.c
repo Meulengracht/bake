@@ -23,7 +23,9 @@
 //
 char* platform_exec(const char* cmd)
 {
-    const char* strResult;
+    size_t bufferSize = 4096;
+    char* strResult = (char*)calloc(1, bufferSize);
+    size_t totalSize = 0;
     HANDLE hPipeRead, hPipeWrite;
 
     SECURITY_ATTRIBUTES saAttr = {sizeof(SECURITY_ATTRIBUTES)};
@@ -78,8 +80,27 @@ char* platform_exec(const char* cmd)
                 break;
 
             buf[dwRead] = 0;
-            size_t buflen = strlen(buf);
-            strResult += buflen;
+            // Resize buffer if needed
+            if ((totalSize + dwRead + 1) > bufferSize) {
+                size_t newBufferSize = bufferSize * 2;
+
+                while ((totalSize + dwRead + 1) > newBufferSize)
+                    newBufferSize *= 2;
+
+                char* newBuffer = realloc(strResult, newBufferSize);
+				if (newBuffer == NULL) {
+                    free(strResult);
+                    return -1;
+                }
+				memset(&newBuffer[totalSize], 0, newBufferSize - totalSize);
+
+                strResult = newBuffer;
+                bufferSize = newBufferSize;
+            }
+
+            memcpy(strResult + totalSize, buf, dwRead);
+            totalSize += dwRead;
+            strResult[totalSize] = 0;
         }
     } //for
 

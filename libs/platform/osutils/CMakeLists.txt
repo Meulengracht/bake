@@ -2,8 +2,6 @@
 # of served to use
 if (UNIX)
     add_subdirectory(linux)
-endif()
-
 elseif (WIN32)
     add_subdirectory(windows)
 endif()
