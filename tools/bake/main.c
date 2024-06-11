@@ -334,13 +334,7 @@ int main(int argc, char** argv, char** envp)
     vlog_set_level(VLOG_LEVEL_DEBUG);
     vlog_add_output(stdout);
 
-<<<<<<< HEAD
     status = command->handler(argc, argv, envp, &options);
     recipe_destroy(options.recipe);
-=======
-    result = command->handler(argc, argv, envp, recipe);
-    recipe_destroy(recipe);
->>>>>>> 36eff2b (many: windows build, missing functions)
-    vlog_cleanup();
     return status;
 }
