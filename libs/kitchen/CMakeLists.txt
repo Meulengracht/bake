@@ -11,6 +11,6 @@ add_library(kitchen STATIC
     recipe_utils.c
     recipe.c
 )
-
-target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} oven fridge yaml platform)
+target_link_libraries(kitchen PRIVATE jansson-api jansson yaml)
+target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} oven fridge platform)
 target_include_directories(kitchen PUBLIC include)
