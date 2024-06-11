@@ -336,5 +336,6 @@ int main(int argc, char** argv, char** envp)
 
     status = command->handler(argc, argv, envp, &options);
     recipe_destroy(options.recipe);
+    vlog_cleanup();
     return status;
 }
