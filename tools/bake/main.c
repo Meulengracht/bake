@@ -331,6 +331,7 @@ int main(int argc, char** argv, char** envp)
 
     // initialize the logging system
     vlog_initialize();
+    // TODO switch to trace by default, allow -v for debug
     vlog_set_level(VLOG_LEVEL_DEBUG);
     vlog_add_output(stdout);
 
