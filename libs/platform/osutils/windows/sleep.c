@@ -20,7 +20,7 @@
 #include <windows.h>
 
 // From https://stackoverflow.com/questions/5801813/c-usleep-is-obsolete-workarounds-for-windows-mingw
-void usleep(__int64 usec) 
+int platform_sleep(__int64 usec) 
 { 
     HANDLE timer; 
     LARGE_INTEGER ft; 
