@@ -30,6 +30,29 @@ struct recipe_cache_package {
     const char*      name;
 };
 
+static struct recipe_cache_package* __new_recipe_cache_package(const char* name)
+{
+    struct recipe_cache_package* pkg = malloc(sizeof(struct recipe_cache_package));
+    if (pkg == NULL) {
+        return NULL;
+    }
+    memset(pkg, 0, sizeof(struct recipe_cache_package));
+    
+    pkg->name = strdup(name);
+    if (pkg->name == NULL) {
+        free(pkg);
+        return NULL;
+    }
+
+    return pkg;
+}
+
+static void __delete_recipe_cache_package(struct recipe_cache_package* pkg)
+{
+    free((void*)pkg->name);
+    free(pkg);
+}
+
 struct recipe_cache_ingredient {
     struct list_item list_header;
     const char*      name;
@@ -71,29 +94,55 @@ static void __generate_cache_uuid(char uuid[40])
     }
 }
 
-static int __parse_cache(struct recipe_cache* cache, json_t* root)
+static int __construct_recipe_cache_item(struct recipe_cache_item* cacheItem, const char* name)
+{
+    char uuid[40];
+
+    memset(cacheItem, 0, sizeof(struct recipe_cache_item));
+    __generate_cache_uuid(&uuid[0]);
+    cacheItem->name = strdup(name);
+    cacheItem->uuid = strdup(&uuid[0]);
+    if (cacheItem->name == NULL || cacheItem->uuid == NULL) {
+        free(cacheItem->name);
+        free(cacheItem->uuid);
+        return -1;
+    }
+    return 0;
+}
+
+static int __parse_cache(struct recipe_cache* cache, const char* path, json_t* root)
 {
     
 }
 
-static int __initialize_cache(struct recipe_cache* cache)
+static int __initialize_cache(struct recipe_cache* cache, const char* path)
 {
-
+    memset(cache, 0, sizeof(struct recipe_cache));
+    cache->path = strdup(path);
+    if (cache->path == NULL) {
+        return -1;
+    }
+    return 0;
 }
 
-static int __load_cache(struct recipe_cache* cache)
+static int __load_cache(struct recipe_cache* cache, const char* path)
 {
     json_error_t error;
     json_t*      root;
 
-    root = json_load_file("", 0, &error);
+    if (__initialize_cache(cache, path)) {
+        return -1;
+    }
+
+    root = json_load_file(path, 0, &error);
     if (root == NULL) {
         if (json_error_code(&error) == json_error_cannot_open_file) {
-            return __initialize_cache(cache);
+            // assume no cache
+            return 0;
         }
         return -1;
     }
-    return __parse_cache(cache, root);
+    return __parse_cache(cache, path, root);
 }
 
 static json_t* __serialize_recipe_cache_package(struct recipe_cache_package* pkg)
@@ -235,6 +284,30 @@ static int __save_cache(struct recipe_cache* cache)
     return json_dump_file(root, cache->path, JSON_INDENT(2));
 }
 
+static int __ensure_recipe_cache(struct recipe_cache* cache, struct recipe* current)
+{
+    void* expanded;
+
+    for (int i = 0; i < g_cache.item_count; i++) {
+        if (strcmp(g_cache.items[i].name, current->project.name) == 0) {
+            // exists
+            return 0;
+        }
+    }
+
+    expanded = realloc(cache->items, sizeof(struct recipe_cache_item) * (cache->item_count + 1));
+    if (expanded == NULL) {
+        return -1;
+    }
+    cache->items = expanded;
+
+    if (__construct_recipe_cache_item(&cache->items[cache->item_count], current->project.name)) {
+        return -1;
+    }
+    cache->item_count++;
+    return 0;
+}
+
 int recipe_cache_initialize(struct recipe* current)
 {
     int status;
@@ -242,9 +315,18 @@ int recipe_cache_initialize(struct recipe* current)
     // initialize the random counter for guid's
     srand(clock());
 
-    status = __load_cache(&g_cache);
+    status = __load_cache(&g_cache, "");
     if (status) {
         VLOG_ERROR("cache", "failed to load or initialize the recipe cache\n");
+        return status;
+    }
+
+    // set the current recipe
+    g_cache.current = current;
+
+    status = __ensure_recipe_cache(&g_cache, current);
+    if (status) {
+        VLOG_ERROR("cache", "failed to ensure cache for current recipe\n");
         return status;
     }
 
@@ -291,9 +373,7 @@ static void __clear_packages(struct list* packages)
     while ((i = packages->head)) {
         struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
         packages->head = i->next;
-
-        free((char*)pkg->name);
-        free(pkg);
+        __delete_recipe_cache_package(pkg);
     }
 }
 
@@ -470,11 +550,6 @@ int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** 
     return 0;
 }
 
-static struct recipe_cache_package* __new_recipe_cache_package(const char* name)
-{
-
-}
-
 int recipe_cache_commit_package_changes(struct recipe_cache_package_change* changes, int count)
 {
     struct recipe_cache_item* cache = __get_cache_item();
@@ -503,8 +578,7 @@ int recipe_cache_commit_package_changes(struct recipe_cache_package_change* chan
                     struct recipe_cache_package* toCheck = (struct recipe_cache_package*)i;
                     if (strcmp(toCheck->name, changes[i].name) == 0) {
                         list_remove(&cache->packages, &toCheck->list_header);
-                        free((char*)toCheck->name);
-                        free(toCheck);
+                        __delete_recipe_cache_package(toCheck);
                         break;
                     }
                 }
