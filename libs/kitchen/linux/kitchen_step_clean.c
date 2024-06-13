@@ -112,7 +112,7 @@ static int __recreate_dir_as_user(const char* path, struct kitchen_user* user)
 
     // Since we need write permissions to the build folders
     if (chown(path, user->caller_uid, user->caller_gid)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", path);
+        VLOG_ERROR("kitchen", "__recreate_dir_as_user: failed to set permissions for %s\n", path);
         return -1;
     }
     return 0;
