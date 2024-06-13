@@ -22,13 +22,11 @@
 char* platform_abspath(const char* path)
 {
     char *fullPath = calloc(1, MAX_PATH);
-    if (fullPath == NULL)
-    {
+    if (fullPath == NULL) {
         return NULL;
     }
 
-    if (GetFullPathName(path, MAX_PATH, fullPath, NULL) == 0)
-    {
+    if (GetFullPathName(path, MAX_PATH, fullPath, NULL) == 0) {
         free(fullPath);
         return NULL;
     }
