@@ -18,7 +18,7 @@
 
 #include <chef/platform.h>
 
-void usleep(unsigned int milliseconds) 
+int platform_sleep(unsigned int milliseconds) 
 { 
     Sleep(milliseconds);
     return 0;
