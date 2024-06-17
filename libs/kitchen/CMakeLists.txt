@@ -1,16 +1,28 @@
 project (kitchen C)
 
-set(ADDITIONAL_LIBS)
+set(KITCHEN_SRCS)
+macro (add_sources)
+    foreach (_src ${ARGN})
+        list (APPEND KITCHEN_SRCS "${_src}")
+    endforeach()
+endmacro()
+macro (add_sources_glob)
+    foreach (_src ${ARGN})
+        file (GLOB KITCHEN_SRCS "${_src}")
+    endforeach()
+endmacro()
+
 if (UNIX)
-    add_subdirectory(linux)
-    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} kitchen-linux)
+    add_sources_glob(linux/*.c)
 endif()
 
-add_library(kitchen STATIC
+add_sources(
     recipe_cache.c
     recipe_utils.c
     recipe.c
 )
+
+add_library(kitchen STATIC ${KITCHEN_SRCS})
 target_link_libraries(kitchen PRIVATE jansson-api jansson yaml)
-target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} oven fridge platform)
+target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} fridge oven ingredient platform)
 target_include_directories(kitchen PUBLIC include)
