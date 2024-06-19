@@ -70,30 +70,36 @@ static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPat
     char buff[2048];
     VLOG_DEBUG("kitchen", "__ensure_mounted_dirs()\n");
     
-    if (mount(kitchen->shared_output_path, kitchen->host_install_root, NULL, MS_BIND | MS_REC, NULL)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_install_root);
-        return -1;
+    if (__is_mountpoint(kitchen->host_install_root) == 0) {
+        if (mount(kitchen->shared_output_path, kitchen->host_install_root, NULL, MS_BIND | MS_REC, NULL)) {
+            VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_install_root);
+            return -1;
+        }
     }
 
-    if (mount(projectPath, kitchen->host_project_path, NULL, MS_BIND | MS_RDONLY, NULL)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_project_path);
-        return -1;
+    if (__is_mountpoint(kitchen->host_project_path) == 0) {
+        if (mount(projectPath, kitchen->host_project_path, NULL, MS_BIND | MS_RDONLY, NULL)) {
+            VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", kitchen->host_project_path);
+            return -1;
+        }
     }
-
-    snprintf(&buff[0], sizeof(buff), "%s/ns/proc", kitchen->host_chroot);
-    if (mount("none", &buff[0], "proc", 0, NULL)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", &buff[0]);
-        return -1;
+    
+    snprintf(&buff[0], sizeof(buff), "%s/proc", kitchen->host_chroot);
+    if (__is_mountpoint(&buff[0]) == 0) {
+        if (mount("none", &buff[0], "proc", 0, NULL)) {
+            VLOG_ERROR("kitchen", "kitchen_setup: failed to mount %s\n", &buff[0]);
+            return -1;
+        }
     }
     return 0;
 }
 
-static int __ensure_mounts_cleanup(const char* kitchenRoot)
+static int __ensure_mounts_cleanup(const char* chroot)
 {
     char buff[2048];
     VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup()\n");
 
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install", kitchenRoot);
+    snprintf(&buff[0], sizeof(buff), "%s/chef/install", chroot);
     if (__is_mountpoint(&buff[0]) == 1) {
         if (umount2(&buff[0], MNT_FORCE)) {
             VLOG_ERROR("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
@@ -101,7 +107,7 @@ static int __ensure_mounts_cleanup(const char* kitchenRoot)
         }
     }
 
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/project", kitchenRoot);
+    snprintf(&buff[0], sizeof(buff), "%s/chef/project", chroot);
     if (__is_mountpoint(&buff[0]) == 1) {
         if (umount2(&buff[0], MNT_FORCE)) {
             VLOG_ERROR("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
@@ -109,7 +115,7 @@ static int __ensure_mounts_cleanup(const char* kitchenRoot)
         }
     }
 
-    snprintf(&buff[0], sizeof(buff), "%s/ns/proc", kitchenRoot);
+    snprintf(&buff[0], sizeof(buff), "%s/proc", chroot);
     if (__is_mountpoint(&buff[0]) == 1) {
         if (umount(&buff[0])) {
             VLOG_ERROR("kitchen", "__ensure_mounts_cleanup: failed to unmount %s\n", &buff[0]);
@@ -533,7 +539,7 @@ static int __kitchen_install(struct kitchen* kitchen, struct kitchen_user* user,
         return status;
     }
     
-    status = __clean_environment(kitchen->host_chroot);
+    status = __clean_environment(kitchen->host_kitchen_project_root);
     if (status) {
         VLOG_ERROR("kitchen", "__kitchen_install: failed to clean project environment\n");
         return status;
@@ -706,11 +712,15 @@ static int __recipe_clean(const char* uuid)
         return -1;
     }
 
+    strcat(&root[0], "/ns");
     status = __ensure_mounts_cleanup(&root[0]);
     if (status) {
         VLOG_ERROR("kitchen", "__recipe_clean: failed to cleanup mounts\n");
         return -1;
     }
+
+    // remove /ns again to clean up entire folder
+    root[strlen(&root[0]) - 3] = 0;
 
     status = __clean_environment(&root[0]);
     if (status) {

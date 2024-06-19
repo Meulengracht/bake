@@ -82,7 +82,6 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
     int            purge = 0;
     char*          type = "all";
     int            status;
-    char*          cwd;
 
     // handle individual help command
     if (argc > 2) {
@@ -120,7 +119,7 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
 
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
-        .project_path = cwd,
+        .project_path = options->cwd,
         .pkg_environment = NULL,
         .confined = options->recipe->environment.build.confinement,
         .target_platform = options->platform,

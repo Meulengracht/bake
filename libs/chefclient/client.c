@@ -95,7 +95,7 @@ static int __save_settings(void)
     }
 
     status = platform_getuserdir(path, PATH_MAX);
-    if (status != 0) {
+    if (status) {
         fprintf(stderr, "__save_settings: failed to get user directory: %s\n", strerror(errno));
         free(path);
         return -1;
@@ -104,8 +104,8 @@ static int __save_settings(void)
     // append directory, and make sure directory exists
     strcat(path, CHEF_PATH_SEPARATOR_S ".chef");
     status = platform_mkdir(path);
-    if (status != 0) {
-        fprintf(stderr, "__save_settings: failed to create directory: %s\n", strerror(errno));
+    if (status) {
+        fprintf(stderr, "__save_settings: failed to create directory %s: %s\n", path, strerror(errno));
         free(path);
         return -1;
     }

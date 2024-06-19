@@ -84,6 +84,7 @@ struct kitchen {
     // external paths that point inside chroot
     // i.e paths valid outside chroot
     char* host_chroot;
+    char* host_kitchen_project_root;
     char* host_build_path;
     char* host_build_ingredients_path;
     char* host_build_toolchains_path;
