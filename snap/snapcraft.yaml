@@ -30,8 +30,9 @@ parts:
     source: .
     cmake-parameters:
       - -DCMAKE_INSTALL_PREFIX=/usr
+      - -DCHEF_BUILD_AS_SNAP=ON
     build-packages:
-      - debootstrap
       - libfuse3-dev
     stage-packages:
+      - debootstrap
       - libfuse3-3
