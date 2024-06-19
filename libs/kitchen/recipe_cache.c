@@ -165,9 +165,11 @@ static int __construct_recipe_cache_item(struct recipe_cache_item* cacheItem, co
     __generate_cache_uuid(&uuid[0]);
     cacheItem->name = strdup(name);
     cacheItem->uuid = strdup(&uuid[0]);
+    cacheItem->keystore = json_object();
     if (cacheItem->name == NULL || cacheItem->uuid == NULL) {
         free((void*)cacheItem->name);
         free((void*)cacheItem->uuid);
+        json_decref(cacheItem->keystore);
         return -1;
     }
     return 0;
@@ -279,6 +281,7 @@ static json_t* __serialize_cache_item(struct recipe_cache_item* cacheItem)
     json_t* root;
     json_t* packages;
     json_t* ingredients;
+    VLOG_DEBUG("cache", "__serialize_cache_item(cache=%s)\n", cacheItem->name);
     
     root = json_object();
     if (!root) {
@@ -379,14 +382,17 @@ static json_t* __serialize_cache(struct recipe_cache* cache)
 {
     json_t* root;
     json_t* items;
+    VLOG_DEBUG("cache", "__serialize_cache(cache=%s)\n", cache->path);
     
     root = json_object();
     if (!root) {
+        VLOG_ERROR("cache", "__serialize_cache: failed to allocate memory for root object\n");
         return NULL;
     }
     
     items = json_array();
     if (root == NULL) {
+        VLOG_ERROR("cache", "__serialize_cache: failed to allocate memory for cache array\n");
         json_decref(root);
         return NULL;
     }
@@ -394,6 +400,7 @@ static json_t* __serialize_cache(struct recipe_cache* cache)
     for (int i = 0; i < cache->item_count; i++) {
         json_t* item = __serialize_cache_item(&cache->items[i]);
         if (item == NULL) {
+            VLOG_ERROR("cache", "__serialize_cache: failed to serialize cache for %s\n", cache->items[i].name);
             return NULL;
         }
         json_array_append_new(root, item);
@@ -406,12 +413,19 @@ static json_t* __serialize_cache(struct recipe_cache* cache)
 static int __save_cache(struct recipe_cache* cache)
 {
     json_t* root;
+    VLOG_DEBUG("cache", "__save_cache(cache=%s)\n", cache->path);
 
     root = __serialize_cache(cache);
     if (root == NULL) {
+        VLOG_ERROR("cache", "__save_cache: failed to serialize cache\n");
         return -1;
     }
-    return json_dump_file(root, cache->path, JSON_INDENT(2));
+    
+    if (json_dump_file(root, cache->path, JSON_INDENT(2)) < 0) {
+        VLOG_ERROR("cache", "__save_cache: failed to write cache to file\n");
+        return -1;
+    }
+    return 0;
 }
 
 static int __ensure_recipe_cache(struct recipe_cache* cache, struct recipe* current)
@@ -546,9 +560,18 @@ int recipe_cache_key_set_string(const char* key, const char* value)
     json_t*                   obj   = json_string(value);
     int                       status;
 
-    status = json_object_set(cache->keystore, key, obj);
-    json_decref(obj);
-    return status;
+    status = json_object_set_new(cache->keystore, key, obj);
+    if (status) {
+        VLOG_ERROR("cache", "failed to update value for %s: %i\n", key, status);
+        return status;
+    }
+
+    status = __save_cache(&g_cache);
+    if (status) {
+        VLOG_ERROR("cache", "failed to save cache: %i\n", status);
+        return status;
+    }
+    return 0;
 }
 
 int recipe_cache_key_bool(const char* key)

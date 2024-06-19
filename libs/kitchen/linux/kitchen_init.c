@@ -107,6 +107,9 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     kitchen->real_project_path = strdup(options->project_path);
     kitchen->confined = options->confined;
     kitchen->magic = __KITCHEN_INIT_MAGIC;
+    kitchen->recipe = options->recipe;
+
+    kitchen->host_kitchen_project_root = strdup(&root[0]);
 
     snprintf(&buff[0], sizeof(buff), "%s/output", &root[0]);
     kitchen->shared_output_path = strdup(&buff[0]);

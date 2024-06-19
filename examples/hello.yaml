@@ -8,6 +8,13 @@ project:
   version: 1.0.0
   license: MIT
 
+environment:
+  host:
+    packages:
+      - cmake
+      - make
+      - gcc
+
 recipes:
   - name: hello
     path: hello-world

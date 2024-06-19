@@ -225,8 +225,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     struct kitchen_init_options  initOptions = { 0 };
     struct kitchen_setup_options setupOptions = { 0 };
     struct kitchen         kitchen;
-    int                    debug    = 0;
-    char*                  cwd;
+    int                    debug = 0;
     int                    status;
 
     // catch CTRL-C
@@ -267,7 +266,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
 
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
-        .project_path = cwd,
+        .project_path = options->cwd,
         .pkg_environment = NULL,
         .confined = options->recipe->environment.build.confinement,
         .target_platform = options->platform,
