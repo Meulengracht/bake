@@ -19,7 +19,7 @@ install(
     RUNTIME DESTINATION bin
 )
 
-if (UNIX)
+if (UNIX AND NOT CHEF_BUILD_AS_SNAP)
     install(CODE "execute_process(COMMAND sh -c \"chown root:root $<TARGET_FILE:bake>\" )")
     install(CODE "execute_process(COMMAND sh -c \"chown root:root $<TARGET_FILE:serve-exec>\" )")
 endif()
