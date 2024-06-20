@@ -1,6 +1,7 @@
 add_library(platform-osutils STATIC
     abspath.c
-    chsize.c    
+    chsize.c   
+    cpucount.c 
     exec.c  
     sleep.c   
     unlink.c 
