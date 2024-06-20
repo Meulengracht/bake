@@ -61,7 +61,7 @@ static struct pkgmngr* __setup_pkg_environment(struct kitchen_init_options* opti
 
 int __get_kitchen_root(char* buffer, size_t maxLength, const char* uuid)
 {
-    char root[2048];
+    char root[PATH_MAX];
     int  status;
 
     status = platform_getuserdir(&root[0], sizeof(root));
@@ -90,8 +90,8 @@ int __get_kitchen_root(char* buffer, size_t maxLength, const char* uuid)
 // <root>/.kitchen/<recipe>/chef/project => <root>
 static int __kitchen_construct(struct kitchen_init_options* options, struct kitchen* kitchen)
 {
-    char buff[4096];
-    char root[2048] = { 0 };
+    char buff[PATH_MAX*2];
+    char root[PATH_MAX] = { 0 };
     int  status;
     VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->recipe->project.name);
 
@@ -175,7 +175,7 @@ int kitchen_initialize(struct kitchen_init_options* options, struct kitchen* kit
         return -1;
     }
     
-    if (recipe_cache_initialize(options->recipe)) {
+    if (recipe_cache_initialize(options->recipe, options->project_path)) {
         VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
         return -1;
     }

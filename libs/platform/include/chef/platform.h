@@ -130,6 +130,8 @@ typedef SSIZE_T ssize_t;
 #include <Windows.h>
 #undef PATH_MAX
 #define PATH_MAX MAX_PATH
+#elif __linux__
+#include <linux/limits.h>
 #else
 #include <limits.h>
 #endif

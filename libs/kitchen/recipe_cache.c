@@ -160,13 +160,14 @@ static void __generate_cache_uuid(char uuid[40])
 static int __construct_recipe_cache_item(struct recipe_cache_item* cacheItem, const char* name)
 {
     char uuid[40];
+    VLOG_DEBUG("cache", "__construct_recipe_cache_item(name=%s)\n", name);
 
     memset(cacheItem, 0, sizeof(struct recipe_cache_item));
     __generate_cache_uuid(&uuid[0]);
     cacheItem->name = strdup(name);
     cacheItem->uuid = strdup(&uuid[0]);
     cacheItem->keystore = json_object();
-    if (cacheItem->name == NULL || cacheItem->uuid == NULL) {
+    if (cacheItem->name == NULL || cacheItem->uuid == NULL || cacheItem->keystore == NULL) {
         free((void*)cacheItem->name);
         free((void*)cacheItem->uuid);
         json_decref(cacheItem->keystore);
@@ -179,6 +180,7 @@ static int __parse_cache_item(struct recipe_cache_item* cacheItem, json_t* root)
 {
     json_t* member;
     size_t  length;
+    VLOG_DEBUG("cache", "__parse_cache_item()\n");
 
     member = json_object_get(root, "name");
     if (member == NULL) {
@@ -305,7 +307,7 @@ static json_t* __serialize_cache_item(struct recipe_cache_item* cacheItem)
     json_object_set_new(root, "uuid", json_string(cacheItem->uuid));
     json_object_set_new(root, "packages", packages);
     json_object_set_new(root, "ingredients", ingredients);
-    json_object_set_new(root, "cache", cacheItem->keystore);
+    json_object_set(root, "cache", cacheItem->keystore);
     return root;
 }
 
@@ -443,24 +445,26 @@ static int __ensure_recipe_cache(struct recipe_cache* cache, struct recipe* curr
     if (expanded == NULL) {
         return -1;
     }
-    cache->items = expanded;
-
-    if (__construct_recipe_cache_item(&cache->items[cache->item_count], current->project.name)) {
+    if (__construct_recipe_cache_item(&(((struct recipe_cache_item*)expanded)[cache->item_count]), current->project.name)) {
         return -1;
     }
+
+    cache->items = expanded;
     cache->item_count++;
     return 0;
 }
 
 // API
-int recipe_cache_initialize(struct recipe* current)
+int recipe_cache_initialize(struct recipe* current, const char* cwd)
 {
-    int status;
+    char buff[PATH_MAX] = { 0 };
+    int  status;
 
     // initialize the random counter for guid's
     srand(clock());
 
-    status = __load_cache(&g_cache, "");
+    snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S ".vchcache", cwd);
+    status = __load_cache(&g_cache, &buff[0]);
     if (status) {
         VLOG_ERROR("cache", "failed to load or initialize the recipe cache\n");
         return status;
@@ -547,22 +551,18 @@ int recipe_cache_clear_for(const char* name)
 
 const char* recipe_cache_key_string(const char* key)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
-    json_t*                   value;
-
-    value = json_object_get(cache->keystore, key);
-    return json_string_value(value);
+    struct recipe_cache_item* cacheItem = __get_cache_item();
+    return json_string_value(json_object_get(cacheItem->keystore, key));
 }
 
 int recipe_cache_key_set_string(const char* key, const char* value)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
-    json_t*                   obj   = json_string(value);
+    struct recipe_cache_item* cacheItem = __get_cache_item();
     int                       status;
 
-    status = json_object_set_new(cache->keystore, key, obj);
+    status = json_object_set_new(cacheItem->keystore, key, json_string(value));
     if (status) {
-        VLOG_ERROR("cache", "failed to update value for %s: %i\n", key, status);
+        VLOG_ERROR("cache", "failed to update value %s for %s: %i\n", key, value, status);
         return status;
     }
 

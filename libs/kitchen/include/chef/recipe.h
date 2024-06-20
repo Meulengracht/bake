@@ -177,7 +177,7 @@ struct recipe_cache_package_change {
     const char*                   name;
 };
 
-extern int         recipe_cache_initialize(struct recipe* current);
+extern int         recipe_cache_initialize(struct recipe* current, const char* cwd);
 extern const char* recipe_cache_uuid(void);
 extern const char* recipe_cache_uuid_for(const char* name);
 
