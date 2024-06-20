@@ -26,7 +26,7 @@
 #include <string.h>
 
 extern int oauth_deviceflow_start(struct token_context* tokenContexth);
-extern json_t* g_chefSettings;
+extern json_t* chefclient_settings(void);
 
 static struct token_context g_tokenContext = { 0 };
 static char                 g_token[4096]  = { 0 };
@@ -34,8 +34,8 @@ static char                 g_token[4096]  = { 0 };
 static int __load_oauth_settings(void)
 {
     // do we have oauth settings stored?
-    if (g_chefSettings != NULL) {
-        json_t* oauth = json_object_get(g_chefSettings, "oauth");
+    if (chefclient_settings() != NULL) {
+        json_t* oauth = json_object_get(chefclient_settings(), "oauth");
         if (oauth != NULL) {
             json_t* accessToken  = json_object_get(oauth, "access-token");
             json_t* refreshToken = json_object_get(oauth, "refresh-token");
@@ -54,7 +54,7 @@ static int __load_oauth_settings(void)
 
 static void __save_oauth_settings(void)
 {
-    if (g_chefSettings != NULL) {
+    if (chefclient_settings() != NULL) {
         const char* empty = "";
         json_t*     oauth;
         json_t*     accessToken;
@@ -80,7 +80,7 @@ static void __save_oauth_settings(void)
         json_object_set_new(oauth, "refresh-token", refreshToken);
 
         // store the oauth object
-        json_object_set_new(g_chefSettings, "oauth", oauth);
+        json_object_set_new(chefclient_settings(), "oauth", oauth);
     }
 }
 

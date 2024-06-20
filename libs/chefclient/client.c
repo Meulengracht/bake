@@ -27,110 +27,75 @@
 #include <string.h>
 #include <wolfssl/ssl.h>
 
+struct chefclient {
+    char*   settings_path;
+    json_t* settings;
+};
+
 static const char* g_mollenosTenantId   = "d8acf75d-9820-4522-a25b-ad672acc5fdd";
 static const char* g_chefClientId       = "17985824-571b-4bdf-b291-c25b2ff14837";
 static int         g_curlTrace          = 0;
 
-// settings object
-json_t* g_chefSettings = NULL;
+struct chefclient g_chefclient = { 0 };
 
-static void __initialize_settings(void)
+json_t* chefclient_settings(void)
 {
-    g_chefSettings = json_object();
+    return g_chefclient.settings;
 }
 
-static int __load_settings(void)
+static int __load_settings(struct chefclient* client, const char* path)
 {
+    char         buff[PATH_MAX];
     json_error_t error;
-    char*        path;
     int          status;
 
-    if (g_chefSettings != NULL) {
-        return 0;
-    }
+    snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S "client.json", path);;
 
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    status = platform_getuserdir(path, PATH_MAX);
-    if (status != 0) {
-        free(path);
-        return -1;
-    }
-
-    // append filename
-    strcat(path, CHEF_PATH_SEPARATOR_S ".chef" CHEF_PATH_SEPARATOR_S "settings.json");
-
-    g_chefSettings = json_load_file(path, 0, &error);
-    if (g_chefSettings == NULL) {
+    client->settings_path = strdup(&buff[0]);
+    client->settings = json_load_file(path, 0, &error);
+    if (client->settings == NULL) {
         // handle if file not found
         if (json_error_code(&error) == json_error_cannot_open_file) {
-            __initialize_settings();
+            client->settings = json_object();
         }
         else {
             free(path);
             return -1;
         }
     }
-    free(path);
     return 0;
 }
 
-static int __save_settings(void)
+static int __save_settings(struct chefclient* client)
 {
-    char* path;
-    int   status;
-
-    if (g_chefSettings == NULL) {
-        return 0;
-    }
-
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    status = platform_getuserdir(path, PATH_MAX);
-    if (status) {
-        fprintf(stderr, "__save_settings: failed to get user directory: %s\n", strerror(errno));
-        free(path);
-        return -1;
-    }
-
-    // append directory, and make sure directory exists
-    strcat(path, CHEF_PATH_SEPARATOR_S ".chef");
-    status = platform_mkdir(path);
-    if (status) {
-        fprintf(stderr, "__save_settings: failed to create directory %s: %s\n", path, strerror(errno));
-        free(path);
-        return -1;
-    }
-
-    // append filename
-    strcat(path, CHEF_PATH_SEPARATOR_S "settings.json");
-
-    status = json_dump_file(g_chefSettings, path, JSON_INDENT(2));
-    if (status != 0) {
-        free(path);
-        return -1;
-    }
-    free(path);
-    return 0;
+    return json_dump_file(client->settings, client->settings_path, JSON_INDENT(2));
 }
 
 int chefclient_initialize(void)
 {
-    int status;
+    char buff[PATH_MAX];
+    int  status;
+
+    if (g_chefclient.settings != NULL) {
+        return -1;
+    }
+
+    status = platform_getuserdir(&buff[0], PATH_MAX);
+    if (status) {
+        return status;
+    }
+    
+    strcat(&buff[0], CHEF_PATH_SEPARATOR_S ".chef");
+    status = platform_mkdir(&buff[0]);
+    if (status) {
+        fprintf(stderr, "__save_settings: failed to create directory %s: %s\n", &buff[0], strerror(errno));
+        return -1;
+    }
 
     // required on windows
     curl_global_init(CURL_GLOBAL_ALL);
 
-    // load settings
-    status = __load_settings();
+    status = __load_settings(&g_chefclient, &buff[0]);
     if (status != 0) {
         fprintf(stderr, "chefclient_initialize: failed to load settings\n");
         return -1;
@@ -141,7 +106,7 @@ int chefclient_initialize(void)
 void chefclient_cleanup(void)
 {
     // save settings
-    if (__save_settings() != 0) {
+    if (__save_settings(&g_chefclient) != 0) {
         fprintf(stderr, "chefclient_cleanup: failed to save settings\n");
     }
 
