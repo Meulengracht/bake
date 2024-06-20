@@ -22,37 +22,34 @@
 #include <string.h>
 #include <sys/stat.h>
 
+// https://stackoverflow.com/questions/1530760/how-do-i-recursively-create-a-folder-in-win32
 static int __directory_exists(LPCTSTR szPath)
 {
-	DWORD dwAttrib = GetFileAttributes(szPath);
+    DWORD dwAttrib = GetFileAttributes(szPath);
 
-	return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
-	(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
-}
-
-static int __directory_exists(
-    const char* path)
-{
-    struct stat st;
-    if (stat(path, &st)) {
-        if (errno == ENOENT) {
-            return 0;
-        }
-        return -1;
+    if (dwAttrib == INVALID_FILE_ATTRIBUTES) {
+        return 0; // Path does not exist
     }
-    return S_ISDIR(st.st_mode) ? 1 : -1;
+
+    if (dwAttrib & FILE_ATTRIBUTE_DIRECTORY) {
+        return 1; // Path is a directory
+    }
+
+    return 0; // Path exists but is not a directory
 }
 
-static int __mkdir(const char* path, int perms)
-{
+static int __mkdir(const char* path) {
     int status = __directory_exists(path);
     if (!status) {
-        return mkdir(path, perms);
+        if (CreateDirectory(path, NULL)) {
+            return 0;
+        } else {
+            return -1;
+        }
     }
     return status == 1 ? 0 : -1;
 }
 
-// original http://stackoverflow.com/a/2336245/119527
 int platform_mkdir(const char* path)
 {
     char   ccpath[512];
@@ -67,21 +64,21 @@ int platform_mkdir(const char* path)
     }
 
     length = strlen(ccpath);
-    if (ccpath[length - 1] == '/') {
+    if (ccpath[length - 1] == '\\' || ccpath[length - 1] == '/') {
         ccpath[length - 1] = 0;
     }
 
     for (p = ccpath + 1; *p; p++) {
-        if (*p == '/') {
+        if (*p == '\\' || *p == '/') {
             *p = 0;
             
-            status = __mkdir(ccpath, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+            status = __mkdir(ccpath);
             if (status) {
                 return status;
             }
 
-            *p = '/';
+            *p = '\\';
         }
     }
-    return __mkdir(ccpath, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    return __mkdir(ccpath);
 }
