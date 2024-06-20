@@ -67,7 +67,7 @@ static int __is_mountpoint(const char* path)
 
 static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPath)
 {
-    char buff[2048];
+    char buff[PATH_MAX];
     VLOG_DEBUG("kitchen", "__ensure_mounted_dirs()\n");
     
     if (__is_mountpoint(kitchen->host_install_root) == 0) {
@@ -96,7 +96,7 @@ static int __ensure_mounted_dirs(struct kitchen* kitchen, const char* projectPat
 
 static int __ensure_mounts_cleanup(const char* chroot)
 {
-    char buff[2048];
+    char buff[PATH_MAX];
     VLOG_DEBUG("kitchen", "__ensure_mounts_cleanup()\n");
 
     snprintf(&buff[0], sizeof(buff), "%s/chef/install", chroot);
@@ -174,7 +174,7 @@ static int __setup_toolchains(struct list* ingredients, const char* hostPath)
 {
     struct list_item* i;
     int               status;
-    char              buff[512];
+    char              buff[PATH_MAX];
 
     if (ingredients == NULL) {
         return 0;
@@ -363,7 +363,7 @@ static void __debootstrap_output_handler(const char* line, enum platform_spawn_o
 
 static int __setup_environment(int confined, const char* path)
 {
-    char  scratchPad[1024];
+    char  scratchPad[PATH_MAX];
     int   status;
     pid_t child, wt;
     VLOG_DEBUG("kitchen", "__setup_environment(confined=%i, path=%s)\n", confined, path);
@@ -414,7 +414,7 @@ static int __perform_package_operations(void* context)
 {
     struct recipe_cache_package_change* changes;
     int                                 count;
-    char                                scratchPad[4096];
+    char                                scratchPad[PATH_MAX];
     char*                               aptpkgs;
     int                                 status;
     (void)context;
@@ -703,7 +703,7 @@ cleanup:
 
 static int __recipe_clean(const char* uuid)
 {
-    char root[2048] = { 0 };
+    char root[PATH_MAX] = { 0 };
     int  status;
 
     status = __get_kitchen_root(&root[0], sizeof(root) - 1, uuid);
@@ -738,7 +738,7 @@ int kitchen_purge(struct kitchen_purge_options* options)
     struct list         recipes;
     struct list_item*   i;
     int                 status;
-    char                root[2048] = { 0 };
+    char                root[PATH_MAX] = { 0 };
     VLOG_DEBUG("kitchen", "kitchen_purge()\n");
 
     status = __get_kitchen_root(&root[0], sizeof(root) - 1, NULL);
