@@ -9,6 +9,7 @@ add_subdirectory(serve)
 add_subdirectory(serve-exec)
 
 if (CHEF_BUILD_AS_SNAP)
+    # only on linux anyway
     install(
         TARGETS bake order serve serve-exec
         RUNTIME DESTINATION bin
@@ -28,6 +29,9 @@ else()
     if (UNIX)
         install(CODE "execute_process(COMMAND sh -c \"chown root:root $<TARGET_FILE:bake>\" )")
         install(CODE "execute_process(COMMAND sh -c \"chown root:root $<TARGET_FILE:serve-exec>\" )")
+    elseif (WIN32)
+        SET_TARGET_PROPERTIES(bake PROPERTIES LINK_FLAGS "/MANIFESTUAC:\"level='requireAdministrator' uiAccess='false'\" /SUBSYSTEM:CONSOLE")
+        SET_TARGET_PROPERTIES(order-exec PROPERTIES LINK_FLAGS "/MANIFESTUAC:\"level='requireAdministrator' uiAccess='false'\" /SUBSYSTEM:CONSOLE")
     endif()
 endif()
 
