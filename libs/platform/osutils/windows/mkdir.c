@@ -25,7 +25,7 @@
 // https://stackoverflow.com/questions/1530760/how-do-i-recursively-create-a-folder-in-win32
 static int __directory_exists(LPCTSTR szPath)
 {
-    DWORD dwAttrib = GetFileAttributes(szPath);
+    DWORD dwAttrib = GetFileAttributesW(szPath);
 
     if (dwAttrib == INVALID_FILE_ATTRIBUTES) {
         return 0; // Path does not exist
@@ -38,12 +38,30 @@ static int __directory_exists(LPCTSTR szPath)
     return 0; // Path exists but is not a directory
 }
 
-static int __mkdir(const char* path) {
+
+wchar_t* mb_to_wcs(const char* path) {
+    int size_char = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
+    wchar_t* wpath = (wchar_t*)malloc(size_char * sizeof(wchar_t));
+    if (wpath) {
+        MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, size_char);
+    }
+    return wpath;
+}
+
+static int __mkdir(const char* path) {    
     int status = __directory_exists(path);
     if (!status) {
-        if (CreateDirectory(path, NULL)) {
-            return 0;
-        } else {
+        wchar_t* wpath = mb_to_wcs(path);
+        if (wpath) {
+            if (CreateDirectoryExW(NULL, wpath, NULL)) {
+                free(wpath);
+                return 0;
+            } else {
+                free(wpath);
+                return -1;
+            }
+        }
+        else {
             return -1;
         }
     }
@@ -52,27 +70,26 @@ static int __mkdir(const char* path) {
 
 int platform_mkdir(const char* path)
 {
-    char   ccpath[512];
+    wchar_t *wpath = mb_to_wcs(path);
     char*  p = NULL;
     size_t length;
     int    status;
 
-    status = snprintf(ccpath, sizeof(ccpath), "%s", path);
-    if (status >= sizeof(ccpath)) {
+    status = snprintf(wpath, sizeof(wpath), "%s", path);
+    if (status >= sizeof(wpath)) {
         errno = ENAMETOOLONG;
         return -1; 
     }
 
-    length = strlen(ccpath);
-    if (ccpath[length - 1] == '\\' || ccpath[length - 1] == '/') {
-        ccpath[length - 1] = 0;
+    length = strlen(wpath);
+    if (wpath[length - 1] == '\\' || wpath[length - 1] == '/') {
+        wpath[length - 1] = 0;
     }
 
-    for (p = ccpath + 1; *p; p++) {
+    for (p = wpath + 1; *p; p++) {
         if (*p == '\\' || *p == '/') {
             *p = 0;
-            
-            status = __mkdir(ccpath);
+            status = __mkdir(wpath);
             if (status) {
                 return status;
             }
@@ -80,5 +97,5 @@ int platform_mkdir(const char* path)
             *p = '\\';
         }
     }
-    return __mkdir(ccpath);
+    return __mkdir(wpath);
 }

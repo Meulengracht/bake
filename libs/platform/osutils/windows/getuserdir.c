@@ -22,15 +22,15 @@
 
 int platform_getuserdir(char* buffer, size_t length)
 {
-    WCHAR path[MAX_PATH];
-    HRESULT result = SHGetFolderPathW(NULL, CSIDL_PROFILE, NULL, 0, path);
-
-    if (result != S_OK) {
-        return -1;
+    PWSTR     path = NULL;
+    size_t    i;
+    HRESULT hr = SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
+    int              result = -1;
+    if (SUCCEEDED(hr)) {
+        wcstombs_s(&i, buffer, length, path, length - 1);
+        result = 0;
     }
-
-    size_t convertedChars = 0;
-    wcstombs_s(&convertedChars, buffer, length, path, _TRUNCATE);
-
-    return 0;
+    // Memory must be freed also when call fails
+    CoTaskMemFree((LPVOID)path);
+    return result;
 }
