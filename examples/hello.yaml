@@ -11,9 +11,8 @@ project:
 environment:
   host:
     packages:
+      - build-essential
       - cmake
-      - make
-      - gcc
 
 recipes:
   - name: hello
@@ -35,5 +34,5 @@ packs:
   type: application
   commands:
   - name: hello
-    path: /usr/local/bin/hello-world
+    path: /usr/bin/hello-world
     type: executable

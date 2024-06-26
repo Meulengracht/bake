@@ -137,6 +137,7 @@ int kitchen_recipe_clean(struct kitchen* kitchen)
         goto cleanup;
     }
 
+    recipe_cache_transaction_begin();
     list_foreach(&kitchen->recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
         
@@ -146,6 +147,7 @@ int kitchen_recipe_clean(struct kitchen* kitchen)
             break;
         }
     }
+    recipe_cache_transaction_commit();
 
 cleanup:
     kitchen_user_delete(&user);

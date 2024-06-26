@@ -180,6 +180,8 @@ struct recipe_cache_package_change {
 extern int         recipe_cache_initialize(struct recipe* current, const char* cwd);
 extern const char* recipe_cache_uuid(void);
 extern const char* recipe_cache_uuid_for(const char* name);
+extern void        recipe_cache_transaction_begin(void);
+extern void        recipe_cache_transaction_commit(void);
 
 extern int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** changes, int* changeCount);
 extern int recipe_cache_commit_package_changes(struct recipe_cache_package_change* changes, int count);

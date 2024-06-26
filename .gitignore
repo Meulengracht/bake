@@ -33,8 +33,7 @@
 
 # Projects
 build/
-.fridge
-.oven
 .kitchen
+.vchcache
 *.pack
 .vscode

@@ -312,6 +312,7 @@ static json_t* __serialize_cache_item(struct recipe_cache_item* cacheItem)
 }
 
 struct recipe_cache {
+    int                       xaction;
     struct recipe*            current;
     const char*               path;
     struct recipe_cache_item* items;
@@ -538,6 +539,10 @@ static void __clear_ingredients(struct list* ingredients)
 
 int recipe_cache_clear_for(const char* name)
 {
+    if (!g_cache.xaction) {
+        VLOG_FATAL("cache", "recipe_cache_clear_for: no transaction\n");
+    }
+
     for (int i = 0; i < g_cache.item_count; i++) {
         if (strcmp(g_cache.items[i].name, name) == 0) {
             __clear_packages(&g_cache.items[i].packages);
@@ -547,6 +552,26 @@ int recipe_cache_clear_for(const char* name)
         }
     }
     return -1;
+}
+
+void recipe_cache_transaction_begin(void)
+{
+    if (g_cache.xaction != 0) {
+        VLOG_FATAL("cache", "transaction already in progress\n");
+    }
+    g_cache.xaction = 1;
+}
+
+void recipe_cache_transaction_commit(void)
+{
+    if (!g_cache.xaction) {
+        VLOG_FATAL("cache", "no transaction in progress\n");
+    }
+
+    if (__save_cache(&g_cache)) {
+        VLOG_FATAL("cache", "failed to commit changes to cache\n");
+    }
+    g_cache.xaction = 0;
 }
 
 const char* recipe_cache_key_string(const char* key)
@@ -560,18 +585,15 @@ int recipe_cache_key_set_string(const char* key, const char* value)
     struct recipe_cache_item* cacheItem = __get_cache_item();
     int                       status;
 
+    if (!g_cache.xaction) {
+        VLOG_FATAL("cache", "recipe_cache_key_set_string: no transaction\n");
+    }
+
     status = json_object_set_new(cacheItem->keystore, key, json_string(value));
     if (status) {
         VLOG_ERROR("cache", "failed to update value %s for %s: %i\n", key, value, status);
-        return status;
     }
-
-    status = __save_cache(&g_cache);
-    if (status) {
-        VLOG_ERROR("cache", "failed to save cache: %i\n", status);
-        return status;
-    }
-    return 0;
+    return status;
 }
 
 int recipe_cache_key_bool(const char* key)
@@ -705,8 +727,7 @@ int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** 
 int recipe_cache_commit_package_changes(struct recipe_cache_package_change* changes, int count)
 {
     struct recipe_cache_item* cache = __get_cache_item();
-    int                       status;
-
+    
     if (changes == NULL || count == 0) {
         errno = EINVAL;
         return -1;
@@ -736,12 +757,6 @@ int recipe_cache_commit_package_changes(struct recipe_cache_package_change* chan
                 }
             } break;
         }
-    }
-
-    status = __save_cache(&g_cache);
-    if (status) {
-        VLOG_FATAL("cache", "failed to save cache\n");
-        return status;
     }
     return 0;
 }
