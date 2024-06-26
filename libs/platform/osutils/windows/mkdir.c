@@ -22,80 +22,97 @@
 #include <string.h>
 #include <sys/stat.h>
 
-// https://stackoverflow.com/questions/1530760/how-do-i-recursively-create-a-folder-in-win32
-static int __directory_exists(LPCTSTR szPath)
+int __directory_exists(const wchar_t* path) 
 {
-    DWORD dwAttrib = GetFileAttributesW(szPath);
-
-    if (dwAttrib == INVALID_FILE_ATTRIBUTES) {
-        return 0; // Path does not exist
+    DWORD attribs = GetFileAttributesW(path);
+    if (attribs == INVALID_FILE_ATTRIBUTES) {
+        return 0;
     }
-
-    if (dwAttrib & FILE_ATTRIBUTE_DIRECTORY) {
-        return 1; // Path is a directory
-    }
-
-    return 0; // Path exists but is not a directory
+    return (attribs & FILE_ATTRIBUTE_DIRECTORY) ? 1 : -1;
 }
 
-
-wchar_t* mb_to_wcs(const char* path) {
-    int size_char = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
-    wchar_t* wpath = (wchar_t*)malloc(size_char * sizeof(wchar_t));
+wchar_t* mb_to_wcs(const char* path) 
+{
+    size_t length = strlen(path) + 1;
+    wchar_t* wpath = (wchar_t*)malloc((length + 1) * sizeof(wchar_t));
     if (wpath) {
-        MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, size_char);
+        mbstowcs(wpath, path, length);
     }
     return wpath;
 }
 
-static int __mkdir(const char* path) {    
-    int status = __directory_exists(path);
-    if (!status) {
-        wchar_t* wpath = mb_to_wcs(path);
-        if (wpath) {
-            if (CreateDirectoryExW(NULL, wpath, NULL)) {
-                free(wpath);
-                return 0;
-            } else {
-                free(wpath);
-                return -1;
-            }
-        }
-        else {
+static int __mkdir(const char* path) 
+{
+    wchar_t* wpath = mb_to_wcs(path);
+    if (!wpath) {
+        return -1;
+    }
+
+    int status = __directory_exists(wpath);
+    if (status == 1) {
+        free(wpath);
+        return 0;
+    }
+
+    char* sub_path = _strdup(path);
+    if (!sub_path) {
+        free(wpath);
+        return -1;
+    }
+
+    char* last_separator = strrchr(sub_path, '\\');
+    if (last_separator != NULL) {
+        *last_separator = '\0';
+        if (__mkdir(sub_path) != 0) {
+            free(sub_path);
+            free(wpath);
             return -1;
         }
     }
-    return status == 1 ? 0 : -1;
+    free(sub_path);
+
+    if (CreateDirectoryW(wpath, NULL) || GetLastError() == ERROR_ALREADY_EXISTS) {
+        free(wpath);
+        return 0;
+    } else {
+        DWORD error = GetLastError();
+        printf("Error creating directory: %lu\n", error);
+        free(wpath);
+        return -1;
+    }
 }
 
-int platform_mkdir(const char* path)
+int platform_mkdir(const char* path) 
 {
-    wchar_t *wpath = mb_to_wcs(path);
-    char*  p = NULL;
-    size_t length;
-    int    status;
-
-    status = snprintf(wpath, sizeof(wpath), "%s", path);
-    if (status >= sizeof(wpath)) {
-        errno = ENAMETOOLONG;
-        return -1; 
+    wchar_t* wpath = mb_to_wcs(path);
+    if (!wpath) {
+        errno = ENOMEM;
+        return -1;
     }
 
-    length = strlen(wpath);
-    if (wpath[length - 1] == '\\' || wpath[length - 1] == '/') {
-        wpath[length - 1] = 0;
+    size_t length = wcslen(wpath);
+    if (wpath[length - 1] == L'\\' || wpath[length - 1] == L'/') {
+        wpath[length - 1] = L'\0';
     }
 
+    wchar_t* p;
     for (p = wpath + 1; *p; p++) {
-        if (*p == '\\' || *p == '/') {
-            *p = 0;
-            status = __mkdir(wpath);
-            if (status) {
-                return status;
+        if (*p == L'\\' || *p == L'/') {
+            *p = L'\0';
+            if (_wmkdir(wpath) != 0 && errno != EEXIST) {
+                free(wpath);
+                return -1;
             }
-
-            *p = '\\';
+            *p = L'\\';
         }
     }
-    return __mkdir(wpath);
+
+    int status = _wmkdir(wpath);
+    if (status != 0 && errno != EEXIST) {
+        free(wpath);
+        return -1;
+    }
+
+    free(wpath);
+    return 0;
 }
