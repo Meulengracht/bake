@@ -558,11 +558,13 @@ static int __kitchen_install(struct kitchen* kitchen, struct kitchen_user* user,
         return status;
     }
 
+    recipe_cache_transaction_begin();
     status = recipe_cache_key_set_bool("setup", 1);
     if (status) {
         VLOG_ERROR("kitchen", "__kitchen_install: failed to mark install as done\n");
         return status;
     }
+    recipe_cache_transaction_commit();
 
     return 0;
 }
@@ -578,11 +580,13 @@ static int __kitchen_refresh(struct kitchen* kitchen, struct kitchen_setup_optio
     }
 
     // install packages
+    recipe_cache_transaction_begin();
     status = __run_in_chroot(kitchen, __perform_package_operations, options->packages);
     if (status) {
         VLOG_ERROR("kitchen", "__kitchen_refresh: failed to initialize host packages\n");
         return -1;
     }
+    recipe_cache_transaction_commit();
 
     // extract os/ingredients/toolchain
     if (!recipe_cache_key_bool("setup_ingredients")) {
@@ -592,11 +596,13 @@ static int __kitchen_refresh(struct kitchen* kitchen, struct kitchen_setup_optio
             return -1;
         }
 
+        recipe_cache_transaction_begin();
         status = recipe_cache_key_set_bool("setup_ingredients", 1);
         if (status) {
             VLOG_ERROR("kitchen", "__kitchen_refresh: failed to mark ingredients step as done\n");
             return status;
         }
+        recipe_cache_transaction_commit();
     }
 
     // Run the setup hook if any
@@ -607,11 +613,13 @@ static int __kitchen_refresh(struct kitchen* kitchen, struct kitchen_setup_optio
             return -1;
         }
 
+        recipe_cache_transaction_begin();
         status = recipe_cache_key_set_bool("setup_hook", 1);
         if (status) {
             VLOG_ERROR("kitchen", "__kitchen_refresh: failed to mark setup hook as done\n");
             return status;
         }
+        recipe_cache_transaction_commit();
     }
 
     return 0;
@@ -770,11 +778,14 @@ int kitchen_purge(struct kitchen_purge_options* options)
             VLOG_ERROR("kitchen", "kitchen_purge: failed to remove data for %s\n", entry->name);
             goto cleanup;
         }
+
+        recipe_cache_transaction_begin();
         status = recipe_cache_clear_for(entry->name);
         if (status) {
             VLOG_ERROR("kitchen", "kitchen_purge: failed to clean cache for %s\n", entry->name);
             goto cleanup;
         }
+        recipe_cache_transaction_commit();
     }
 
 cleanup:

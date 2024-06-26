@@ -119,6 +119,7 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
         return -1;
     }
 
+    recipe_cache_transaction_begin();
     status = kitchen_cooking_start(kitchen);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to start cooking: %i\n", status);
@@ -159,8 +160,7 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
         }
     }
 
-    status = kitchen_user_regain_privs(&user);
-    if (status) {
+    if (kitchen_user_regain_privs(&user)) {
         VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to re-escalate privileges\n");
     }
 
@@ -168,6 +168,7 @@ cleanup:
     if (kitchen_cooking_end(kitchen)) {
         VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to end cooking\n");
     }
+    recipe_cache_transaction_commit();
     kitchen_user_delete(&user);
     return status;
 }

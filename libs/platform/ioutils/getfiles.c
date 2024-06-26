@@ -79,6 +79,9 @@ static int __read_directory(const char* path, const char* subPath, int recursive
     }
 
     if ((d = opendir(path)) == NULL) {
+        if (errno == ENOENT) {
+            return 0;
+        }
         return -1;
     }
 
