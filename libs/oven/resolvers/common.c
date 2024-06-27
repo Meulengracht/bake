@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/platform.h>
 #include "resolvers.h"
 #include <stdio.h>
 #include <stdlib.h>
