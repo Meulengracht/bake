@@ -23,8 +23,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vlog.h>
 
 extern const char* __get_install_path(void);
+extern const char* __get_build_ingredients_path(void);
 
 static int __verify_commands(struct list* commands)
 {
@@ -40,19 +42,19 @@ static int __verify_commands(struct list* commands)
         char*                     path;
         
         if (command->path == NULL || strlen(command->path) == 0) {
-            fprintf(stderr, "oven: command %s has no path\n", command->name);
+            VLOG_ERROR("commands", "command %s has no path\n", command->name);
             return -1;
         }
 
         // verify the command points to something correct
         path = strpathcombine(__get_install_path(), command->path);
         if (path == NULL) {
-            fprintf(stderr, "oven: failed to combine command path\n");
+            VLOG_ERROR("commands", "failed to combine command path\n");
             return -1;
         }
 
         if (platform_stat(path, &stats)) {
-            fprintf(stderr, "oven: could not find command path %s\n", path);
+            VLOG_ERROR("commands", "could not find command path %s\n", path);
             free(path);
             return -1;
         }
@@ -70,7 +72,25 @@ static int __resolve_dependency_path(struct oven_resolve* resolve, struct oven_r
     // priority 1 - check in install path
     status = platform_getfiles(__get_install_path(), 1, &files);
     if (status) {
-        fprintf(stderr, "oven: failed to get install file list\n");
+        VLOG_ERROR("commands", "resolve: failed to get install file list\n");
+        return -1;
+    }
+
+    list_foreach(&files, item) {
+        struct platform_file_entry* file = (struct platform_file_entry*)item;
+        if (!strcmp(file->name, dependency->name)) {
+            dependency->path = platform_strdup(file->path);
+            dependency->sub_path = platform_strdup(file->sub_path);
+            platform_getfiles_destroy(&files);
+            return 0;
+        }
+    }
+    platform_getfiles_destroy(&files);
+
+    // priority 2 - maybe it comes from build ingredients
+    status = platform_getfiles(__get_build_ingredients_path(), 1, &files);
+    if (status) {
+        VLOG_ERROR("commands", "resolve: failed to get install file list\n");
         return -1;
     }
 
@@ -94,6 +114,7 @@ static int __resolve_dependency_path(struct oven_resolve* resolve, struct oven_r
             return 0;
         }
     }
+    errno = ENOENT;
     return -1;
 }
 
@@ -111,14 +132,14 @@ static int __resolve_elf_dependencies(struct oven_resolve* resolve, int allowSys
                 // try to resolve the location of the dependency
                 status = __resolve_dependency_path(resolve, dependency, allowSystemLibraries);
                 if (status) {
-                    fprintf(stderr, "oven: failed to locate %s\n", dependency->name);
+                    VLOG_ERROR("commands", "resolve: failed to locate %s\n", dependency->name);
                     return -1;
                 }
 
                 // now we resolve the dependencies of this binary
                 status = elf_resolve_dependencies(dependency->path, &resolve->dependencies);
                 if (status != 0) {
-                    fprintf(stderr, "oven: failed to resolve dependencies for %s\n", dependency->name);
+                    VLOG_ERROR("commands", "failed to resolve dependencies for %s\n", dependency->name);
                     return -1;
                 }
 
@@ -148,14 +169,14 @@ static int __resolve_pe_dependencies(struct oven_resolve* resolve, int allowSyst
                 // try to resolve the location of the dependency
                 status = __resolve_dependency_path(resolve, dependency, allowSystemLibraries);
                 if (status) {
-                    fprintf(stderr, "oven: failed to locate %s\n", dependency->name);
+                    VLOG_ERROR("commands", "failed to locate %s\n", dependency->name);
                     return -1;
                 }
 
                 // now we resolve the dependencies of this binary
                 status = pe_resolve_dependencies(dependency->path, &resolve->dependencies);
                 if (status != 0) {
-                    fprintf(stderr, "oven: failed to resolve dependencies for %s\n", dependency->name);
+                    VLOG_ERROR("commands", "failed to resolve dependencies for %s\n", dependency->name);
                     return -1;
                 }
 
@@ -180,7 +201,7 @@ static int __resolve_command(struct oven_pack_command* command, struct list* res
     // verify the command points to something correct
     path = strpathcombine(__get_install_path(), command->path);
     if (path == NULL) {
-        fprintf(stderr, "oven: failed to combine command path\n");
+        VLOG_ERROR("commands", "failed to combine command path\n");
         return -1;
     }
 
@@ -202,7 +223,7 @@ static int __resolve_command(struct oven_pack_command* command, struct list* res
     }
 
     if (status != 0) {
-        fprintf(stderr, "oven: failed to resolve dependencies for command %s\n", command->name);
+        VLOG_ERROR("commands", "failed to resolve dependencies for command %s\n", command->name);
         free(resolve);
         return -1;
     }
@@ -237,7 +258,7 @@ int oven_resolve_commands(struct list* commands, struct list* resolves)
 
     status = __verify_commands(commands);
     if (status) {
-        fprintf(stderr, "oven: failed to verify commands\n");
+        VLOG_ERROR("commands", "failed to verify commands\n");
         return -1;
     }
     return __resolve_commands(commands, resolves);

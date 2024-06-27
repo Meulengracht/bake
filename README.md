@@ -456,11 +456,11 @@ packs:
 
         ###########################
         # system-libs - Optional
-        #    default: false
+        #    default: true
         #
-        # Informs the library resolver that it can also resolve libraries
+        # Informs the library resolver whether it can also resolve libraries
         # the command is linked against from system paths. This means that
         # libraries not found in ingredients will be resolved in system
-        # library paths. Use with caution.
+        # library paths.
         system-libs: true
 ```

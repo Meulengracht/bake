@@ -83,6 +83,11 @@ const char* __get_install_path(void)
     return g_oven.paths.install_root;
 }
 
+const char* __get_build_ingredients_path(void)
+{
+    return g_oven.paths.build_ingredients_root;
+}
+
 const char* __get_platform(void)
 {
     return g_oven.variables.target_platform;
