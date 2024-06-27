@@ -22,9 +22,9 @@
 #include <string.h>
 #include <sys/stat.h>
 
-wchar_t* mb_to_wcs(const char* path) 
+static wchar_t* __mbtowc(const char* path) 
 {
-    size_t pathLength = strlen(path);
+    size_t   pathLength = strlen(path);
     wchar_t* wpath = (wchar_t*)calloc(sizeof(wchar_t), pathLength + 10);
     if (wpath != NULL) {
         mbstowcs(wpath, path, pathLength);
@@ -34,18 +34,19 @@ wchar_t* mb_to_wcs(const char* path)
 
 int platform_mkdir(const char* path) 
 {
-    wchar_t* wpath = mb_to_wcs(path);
-    if (!wpath) {
-        errno = ENOMEM;
+    size_t   length;
+    int      status;
+    wchar_t* wpath = __mbtowc(path);
+    
+    if (wpath == NULL) {
         return -1;
     }
 
-    size_t length = wcslen(wpath);
+    length = wcslen(wpath);
     if (wpath[length - 1] == L'\\' || wpath[length - 1] == L'/') {
         wpath[length - 1] = L'\0';
     }
 
-    wchar_t* p;
     for (wchar_t* p = wpath + 1; *p; p++) {
         if (*p == L'\\' || *p == L'/') {
             *p = L'\0';
@@ -57,8 +58,8 @@ int platform_mkdir(const char* path)
         }
     }
 
-    int status = _wmkdir(wpath);
-    if (status != 0 && errno != EEXIST) {
+    status = _wmkdir(wpath);
+    if (status && errno != EEXIST) {
         free(wpath);
         return -1;
     }
