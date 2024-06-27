@@ -58,7 +58,7 @@ static const char* __get_publisher_name(void)
         return NULL;
     }
 
-    name = strdup(chef_account_get_publisher_name(account));
+    name = platform_strdup(chef_account_get_publisher_name(account));
     chef_account_free(account);
     return name;
 }

@@ -37,9 +37,9 @@ static int __add_file(const struct dirent* dp, const char* path, const char* sub
         return -1;
     }
 
-    entry->name     = strdup(dp->d_name);
-    entry->path     = strdup(path);
-    entry->sub_path = subPath != NULL ? strdup(subPath) : NULL;
+    entry->name     = platform_strdup(dp->d_name);
+    entry->path     = platform_strdup(path);
+    entry->sub_path = subPath != NULL ? platform_strdup(subPath) : NULL;
     if (entry->name == NULL || entry->path == NULL) {
         free(entry->name);
         free(entry->path);

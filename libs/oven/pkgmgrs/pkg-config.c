@@ -189,11 +189,11 @@ static struct chef_keypair_item* __compose_keypair(const char* key, const char* 
     if (item == NULL) {
         return NULL;
     }
-    item->key = strdup(key);
+    item->key = platform_strdup(key);
     if (item->key == NULL) {
         free(item);
     }
-    item->value = strdup(value);
+    item->value = platform_strdup(value);
     if (item->value == NULL) {
         free((void*)item->key);
         free(item);
@@ -222,7 +222,7 @@ static int __add_or_replace_pkgconfig_paths(struct pkgmngr* pkgmngr, struct list
         for (int i = 0; idents[i].ident != NULL; i++) {
             if (!strcmp(keypair->key, idents[i].ident)) {
                 const char* tmp = keypair->value;
-                keypair->value = strdup(__get_pcroot2(pkgconfig));
+                keypair->value = platform_strdup(__get_pcroot2(pkgconfig));
                 if (keypair->value == NULL) {
                     keypair->value = tmp;
                     return -1;
@@ -278,19 +278,19 @@ struct pkgmngr* pkgmngr_pkgconfig_new(struct pkgmngr_options* options)
     pkgconfig->base.destroy        = __destroy;
 
     // build roots
-    pkgconfig->root = strdup("/");
+    pkgconfig->root = platform_strdup("/");
     snprintf(&tmp[0], sizeof(tmp), "/chef/ingredients/%s/%s/", options->target_platform, options->target_architecture);
-    pkgconfig->ccroot = strdup(&tmp[0]);
+    pkgconfig->ccroot = platform_strdup(&tmp[0]);
 
     // build pcroots
     snprintf(&tmp[0], sizeof(tmp), "%s/usr/share/pkgconfig/", options->root);
-    pkgconfig->pcroot = strdup(&tmp[0]);
+    pkgconfig->pcroot = platform_strdup(&tmp[0]);
     snprintf(&tmp[0], sizeof(tmp), "%s/chef/ingredients/%s/%s/pkgconfig/", options->root, options->target_platform, options->target_architecture);
-    pkgconfig->ccpcroot = strdup(&tmp[0]);
+    pkgconfig->ccpcroot = platform_strdup(&tmp[0]);
 
     // copy system info
-    pkgconfig->target_platform = strdup(options->target_platform);
-    pkgconfig->target_architecture = strdup(options->target_architecture);
+    pkgconfig->target_platform = platform_strdup(options->target_platform);
+    pkgconfig->target_architecture = platform_strdup(options->target_architecture);
 
     return &pkgconfig->base;
 }

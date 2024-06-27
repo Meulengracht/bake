@@ -127,12 +127,12 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
             json_t* version_tag = json_object_get(version, "tag");
 
             inventory->packs[i].inventory = inventory;
-            inventory->packs[i].path = strdup(json_string_value(path));
-            inventory->packs[i].publisher = strdup(json_string_value(publisher));
-            inventory->packs[i].package = strdup(json_string_value(name));
-            inventory->packs[i].platform = strdup(json_string_value(platform));
-            inventory->packs[i].arch = strdup(json_string_value(architecture));
-            inventory->packs[i].channel = strdup(json_string_value(channel));
+            inventory->packs[i].path = platform_strdup(json_string_value(path));
+            inventory->packs[i].publisher = platform_strdup(json_string_value(publisher));
+            inventory->packs[i].package = platform_strdup(json_string_value(name));
+            inventory->packs[i].platform = platform_strdup(json_string_value(platform));
+            inventory->packs[i].arch = platform_strdup(json_string_value(architecture));
+            inventory->packs[i].channel = platform_strdup(json_string_value(channel));
             inventory->packs[i].version.major = json_integer_value(version_major);
             inventory->packs[i].version.minor = json_integer_value(version_minor);
             inventory->packs[i].version.patch = json_integer_value(version_patch);
@@ -225,7 +225,7 @@ int inventory_load(const char* path, struct fridge_inventory** inventoryOut)
     VLOG_TRACE("inventory", "inventory loaded, %i packs available\n", inventory->packs_count);
 
     // store the base path of the inventory
-    inventory->path = strdup(path);
+    inventory->path = platform_strdup(path);
     *inventoryOut = inventory;
     return 0;
 }
@@ -324,19 +324,19 @@ int inventory_add(struct fridge_inventory* inventory, const char* packPath, cons
     memset(packEntry, 0, sizeof(struct fridge_inventory_pack));
 
     packEntry->inventory = inventory;
-    packEntry->path      = strdup(packPath);
-    packEntry->publisher = strdup(publisher);
-    packEntry->package   = strdup(package);
-    packEntry->platform  = platform != NULL ? strdup(platform) : NULL;
-    packEntry->arch      = platform != NULL ? strdup(arch) : NULL;
-    packEntry->channel   = strdup(channel);
+    packEntry->path      = platform_strdup(packPath);
+    packEntry->publisher = platform_strdup(publisher);
+    packEntry->package   = platform_strdup(package);
+    packEntry->platform  = platform != NULL ? platform_strdup(platform) : NULL;
+    packEntry->arch      = platform != NULL ? platform_strdup(arch) : NULL;
+    packEntry->channel   = platform_strdup(channel);
 
     packEntry->version.major = version->major;
     packEntry->version.minor = version->minor;
     packEntry->version.patch = version->patch;
     packEntry->version.revision = version->revision;
     if (version->tag) {
-        packEntry->version.tag = strdup(version->tag);
+        packEntry->version.tag = platform_strdup(version->tag);
     }
 
     *packOut = packEntry;

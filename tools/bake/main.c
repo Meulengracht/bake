@@ -138,7 +138,7 @@ static int __add_ingredient(struct recipe* recipe, const char* name)
     }
 
     memset(ingredient, 0, sizeof(struct recipe_ingredient));
-    ingredient->name = strdup(name);
+    ingredient->name = platform_strdup(name);
     ingredient->type = RECIPE_INGREDIENT_TYPE_HOST;
     ingredient->source.type = INGREDIENT_SOURCE_TYPE_REPO;
     if (ingredient->name == NULL) {
@@ -213,11 +213,11 @@ static int __parse_cc_switch(const char* value, const char** platformOut, const 
 
     separator = strchr(equal, '/');
     if (separator) {
-        *platformOut = strndup(equal, separator - equal);
-        *archOut     = strdup(separator + 1);
+        *platformOut = platform_strndup(equal, separator - equal);
+        *archOut     = platform_strdup(separator + 1);
     } else {
-        *platformOut = strdup(CHEF_PLATFORM_STR);
-        *archOut     = strdup(equal);
+        *platformOut = platform_strdup(CHEF_PLATFORM_STR);
+        *archOut     = platform_strdup(equal);
     }
     return 0;
 }

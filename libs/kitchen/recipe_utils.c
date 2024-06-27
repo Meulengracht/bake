@@ -32,8 +32,8 @@ int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, ch
     
     split = strchr(toolchain, '=');
     if (split == NULL) {
-        *ingredient = strdup(toolchain);
-        *channel = strdup("stable");
+        *ingredient = platform_strdup(toolchain);
+        *channel = platform_strdup("stable");
         *version = NULL;
         return 0;
     }
@@ -41,14 +41,14 @@ int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, ch
     strncpy(&name[0], toolchain, __MIN((split - toolchain), sizeof(name)));
     strncpy(&verr[0], split+1, sizeof(verr));
 
-    *ingredient = strdup(&name[0]);
+    *ingredient = platform_strdup(&name[0]);
     // If the first character is a digit, assume version, installing by version
     // always tracks stable
     if (isdigit(verr[0])) {
-        *channel = strdup("stable");
-        *version = strdup(&verr[0]);
+        *channel = platform_strdup("stable");
+        *version = platform_strdup(&verr[0]);
     } else {
-        *channel = strdup(&verr[0]);
+        *channel = platform_strdup(&verr[0]);
         *version = NULL;
     }
     return 0;

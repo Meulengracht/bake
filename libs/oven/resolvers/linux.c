@@ -81,7 +81,7 @@ static int __get_ld_conf_paths(const char* path, struct list* paths)
             break;
         }
 
-        entry->path = strdup(buffer);
+        entry->path = platform_strdup(buffer);
         list_add(paths, &entry->list_header);
     }
     

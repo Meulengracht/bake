@@ -14,6 +14,8 @@ add_library(platform-osutils STATIC
     sleep.c
     spawn.c
     stat.c
+    strdup.c
+    strndup.c
     symlink.c
     unlink.c
 )

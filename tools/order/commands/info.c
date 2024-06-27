@@ -120,7 +120,7 @@ static void __print_platform(struct chef_platform* platform)
 
 static char* __strip_newlines(const char* text)
 {
-    char* result = strdup(text);
+    char* result = platform_strdup(text);
     char* ptr    = result;
     while (*ptr != '\0') {
         if (*ptr == '\n') {
@@ -323,7 +323,7 @@ int info_main(int argc, char** argv)
                 // do this only once
                 if (params.publisher == NULL) {
                 // assume this is the pack name
-                    packCopy = strdup(argv[i]);
+                    packCopy = platform_strdup(argv[i]);
                     status   = __parse_packname(packCopy, &params);
                     if (status != 0) {
                         free(packCopy);

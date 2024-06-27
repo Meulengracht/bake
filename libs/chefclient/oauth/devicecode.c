@@ -96,9 +96,9 @@ static int __parse_challenge_response(const char* responseBuffer, struct devicec
     }
 
     // get rest of values that should be there
-    context->user_code = strdup(json_string_value(json_object_get(root, "user_code")));
-    context->device_code = strdup(json_string_value(json_object_get(root, "device_code")));
-    context->verification_uri = strdup(json_string_value(json_object_get(root, "verification_uri")));
+    context->user_code = platform_strdup(json_string_value(json_object_get(root, "user_code")));
+    context->device_code = platform_strdup(json_string_value(json_object_get(root, "device_code")));
+    context->verification_uri = platform_strdup(json_string_value(json_object_get(root, "verification_uri")));
     context->expires_in = json_integer_value(json_object_get(root, "expires_in"));
     context->interval = json_integer_value(json_object_get(root, "interval"));
 
@@ -177,13 +177,13 @@ static int __parse_token_response(const char* responseBuffer, struct token_conte
     }
 
     context->expires_in = json_integer_value(json_object_get(root, "expires_in"));
-    context->access_token = strdup(json_string_value(json_object_get(root, "access_token")));
-    context->id_token = strdup(json_string_value(json_object_get(root, "id_token")));
+    context->access_token = platform_strdup(json_string_value(json_object_get(root, "access_token")));
+    context->id_token = platform_strdup(json_string_value(json_object_get(root, "id_token")));
     
     // refresh token is optional, and we only get it for offline_access
     refreshToken = json_object_get(root, "refresh_token");
     if (refreshToken != NULL) {
-        context->refresh_token = strdup(json_string_value(refreshToken));
+        context->refresh_token = platform_strdup(json_string_value(refreshToken));
     }
 
     json_decref(root);

@@ -68,8 +68,8 @@ static struct fridge_store* __store_new(const char* platform, const char* arch)
         return NULL;
     }
     memset(store, 0, sizeof(struct fridge_store));
-    store->platform = strdup(platform);
-    store->arch = strdup(arch);
+    store->platform = platform_strdup(platform);
+    store->arch = platform_strdup(arch);
     return store;
 }
 
@@ -245,7 +245,7 @@ static int __store_download(
     }
 
     if (pathOut != NULL) {
-        *pathOut = strdup(&pathBuffer[0]);
+        *pathOut = platform_strdup(&pathBuffer[0]);
     }
     
     *revisionDownloaded = downloadParams.revision;

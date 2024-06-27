@@ -61,7 +61,7 @@ char** oven_environment_create(const char* const* parent, struct list* additiona
     // list, as we want to use that one instead
     while (parent[i]) {
         if (!__contains_envkey(additional, parent[i])) {
-            environment[j++] = strdup(parent[i]);
+            environment[j++] = platform_strdup(parent[i]);
         }
         i++;
     }

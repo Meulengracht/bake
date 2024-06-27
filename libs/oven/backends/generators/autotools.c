@@ -98,7 +98,7 @@ static char* __replace_or_add_prefix(const char* platform, const char* arguments
         endOfValue = strchr(startOfValue, '\0');
     }
 
-    oldPath      = strndup(startOfValue, endOfValue - startOfValue);
+    oldPath      = platform_strndup(startOfValue, endOfValue - startOfValue);
     newArguments = malloc(strlen(arguments) + 1024);
     if (oldPath == NULL|| newArguments == NULL) {
         free(oldPath);

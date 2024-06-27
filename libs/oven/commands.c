@@ -77,8 +77,8 @@ static int __resolve_dependency_path(struct oven_resolve* resolve, struct oven_r
     list_foreach(&files, item) {
         struct platform_file_entry* file = (struct platform_file_entry*)item;
         if (!strcmp(file->name, dependency->name)) {
-            dependency->path = strdup(file->path);
-            dependency->sub_path = strdup(file->sub_path);
+            dependency->path = platform_strdup(file->path);
+            dependency->sub_path = platform_strdup(file->sub_path);
             platform_getfiles_destroy(&files);
             return 0;
         }

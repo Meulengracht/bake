@@ -375,7 +375,7 @@ static int __write_filepath(
         return 0;
     }
 
-    token = strndup(remainingPath, remaining - remainingPath);
+    token = platform_strndup(remainingPath, remaining - remainingPath);
     if (!token) {
         return -1;
     }
@@ -1006,13 +1006,13 @@ static int __build_pack_names(const char* name, const char* imageDir, char** bas
     char tmp[4096];
 
     strbasename(name, &tmp[0], sizeof(tmp));
-    *basenameOut = strdup(&tmp[0]);
+    *basenameOut = platform_strdup(&tmp[0]);
     if (*basenameOut == NULL) {
         return -1;
     }
 
     snprintf(&tmp[0], sizeof(tmp), "%s/%s.pack", imageDir, *basenameOut);
-    *imagePathOut = strdup(&tmp[0]);
+    *imagePathOut = platform_strdup(&tmp[0]);
     if (*basenameOut == NULL) {
         free(*basenameOut);
         return -1;

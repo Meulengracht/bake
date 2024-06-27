@@ -161,7 +161,7 @@ static const char* __parse_string(const char* value)
         return NULL;
     }
 
-    return strdup(value);
+    return platform_strdup(value);
 }
 
 static enum chef_package_type __parse_pack_type(const char* value)
@@ -618,7 +618,7 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
             exit(EXIT_FAILURE); \
         } \
         \
-        argument->value = strdup(value); \
+        argument->value = platform_strdup(value); \
         \
         list_add(&state->_stname._field, &argument->list_header); \
     }
