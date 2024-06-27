@@ -15,7 +15,7 @@ The best way to get started is to install the latest version of Chef using the [
 ## TODO
 
 Features that we want to include in upcoming releases:
-- Split the stages of preparing host packages and the container environment.
+- Move the kitchen container code into containerv
 - Better diff detection in recipes.
 - Simpler UX experience.
 
