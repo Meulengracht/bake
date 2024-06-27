@@ -22,14 +22,16 @@
 
 int platform_getuserdir(char* buffer, size_t length)
 {
-    PWSTR path = NULL;
-    size_t i;
+    size_t  i;
+    PWSTR   path = NULL;
     HRESULT hr = SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
-    int result = -1;
+    int     result = -1;
+    
     if (SUCCEEDED(hr)) {
         wcstombs_s(&i, buffer, length, path, length - 1);
         result = 0;
     }
+    
     // Memory must be freed also when call fails
     CoTaskMemFree((LPVOID)path);
     return result;

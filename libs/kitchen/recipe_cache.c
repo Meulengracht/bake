@@ -406,7 +406,7 @@ static json_t* __serialize_cache(struct recipe_cache* cache)
             VLOG_ERROR("cache", "__serialize_cache: failed to serialize cache for %s\n", cache->items[i].name);
             return NULL;
         }
-        json_array_append_new(root, item);
+        json_array_append_new(items, item);
     }
 
     json_object_set_new(root, "caches", items);
