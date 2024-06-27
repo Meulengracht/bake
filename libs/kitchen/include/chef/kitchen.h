@@ -61,10 +61,12 @@ struct kitchen_setup_options {
 
 struct kitchen_purge_options {
     // TODO
+    int dummy;
 };
 
 struct kitchen_recipe_purge_options {
     // TODO
+    int dummy;
 };
 
 struct kitchen {
