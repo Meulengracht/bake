@@ -17,7 +17,7 @@
  */
 
 #include <chef/platform.h>
-#include <string.h>
+#include <stdlib.h>
 
 char* platform_strndup(const char* string, size_t maxlen)
 {

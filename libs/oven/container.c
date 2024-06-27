@@ -329,7 +329,6 @@ static int __write_syslib(
     struct oven_resolve_dependency* dependency)
 {
     struct VaFsDirectoryHandle* subdirectoryHandle;
-    struct list_item*           item;
     int                         status;
 
     // write library directories as rwxr-xr-x

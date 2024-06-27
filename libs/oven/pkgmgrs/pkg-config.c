@@ -265,7 +265,6 @@ struct pkgmngr* pkgmngr_pkgconfig_new(struct pkgmngr_options* options)
 {
     struct pkgconfig* pkgconfig;
     char              tmp[2048];
-    int               status;
     VLOG_DEBUG("pkg-config", "pkgmngr_pkgconfig_new(root=%s)\n", options->root);
 
     pkgconfig = malloc(sizeof(struct pkgconfig));

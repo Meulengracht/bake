@@ -15,6 +15,10 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/chef-config.h.in"
                @ONLY
 )
 
+if(MSVC)
+    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+endif()
+
 add_subdirectory(protocols)
 add_subdirectory(libs)
 add_subdirectory(tools)

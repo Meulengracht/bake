@@ -185,12 +185,11 @@ static enum oven_resolve_arch __pe_machine_to_arch(uint16_t pe_arch)
 
 int pe_is_valid(const char* path, enum oven_resolve_arch* arch)
 {
-    MzHeader*         mz;
-    PeHeader*         pe;
-    PeOptionalHeader* optional;
-    FILE*             file;
-    size_t            read;
-    char              buffer[0x200];
+    MzHeader* mz;
+    PeHeader* pe;
+    FILE*     file;
+    size_t    read;
+    char      buffer[0x200];
 
     file = fopen(path, "rb");
     if (file == NULL) {

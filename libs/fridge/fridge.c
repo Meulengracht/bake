@@ -65,7 +65,6 @@ int fridge_initialize(const char* platform, const char* architecture)
 {
     int   status;
     char  temp[2048] = { 0 };
-    char* root;
 
     if (platform == NULL || architecture == NULL) {
         VLOG_ERROR("fridge", "fridge_initialize: platform and architecture must be specified\n");

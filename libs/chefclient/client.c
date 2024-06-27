@@ -47,7 +47,6 @@ static int __load_settings(struct chefclient* client, const char* path)
 {
     char         buff[PATH_MAX];
     json_error_t error;
-    int          status;
 
     snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S "client.json", path);;
 

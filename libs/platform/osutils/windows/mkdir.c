@@ -18,9 +18,10 @@
 
 #include <chef/platform.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
+#include <wchar.h>
 
 static wchar_t* __mbtowc(const char* path) 
 {

@@ -87,7 +87,6 @@ static int __parse_challenge_response(const char* responseBuffer, struct devicec
 {
     json_error_t error;
     json_t*      root;
-    int          status;
 
     root = json_loads(responseBuffer, 0, &error);
     if (!root) {

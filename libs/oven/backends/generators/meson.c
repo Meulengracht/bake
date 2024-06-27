@@ -65,7 +65,6 @@ static int __read_file(const char* path, char** bufferOut)
 static int __write_file(const char* path, const char* buffer)
 {
     FILE* file;
-    int   status;
 
     file = fopen(path, "w");
     if (file == NULL) {
