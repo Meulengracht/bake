@@ -508,6 +508,7 @@ static void __finalize_command(struct parser_state* state)
 
     // reset the structure in state
     memset(&state->command, 0, sizeof(struct oven_pack_command));
+    state->command.allow_system_libraries = 1;
 }
 
 static void __finalize_pack_ingredient_options(struct parser_state* state)
@@ -1391,6 +1392,7 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
     state.ingredient.source.type = INGREDIENT_SOURCE_TYPE_REPO;
     state.recipe.environment.host.base = 1;
     state.recipe.environment.build.confinement = 1;
+    state.command.allow_system_libraries = 1;
 
     yaml_parser_initialize(&parser);
     yaml_parser_set_input_string(&parser, buffer, length);
