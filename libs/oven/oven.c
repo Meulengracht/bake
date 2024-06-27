@@ -651,7 +651,6 @@ int oven_configure(struct oven_generate_options* options)
     struct generate_backend* backend;
     struct oven_backend_data data;
     int                      status;
-    char*                    path;
 
     if (!options) {
         errno = EINVAL;

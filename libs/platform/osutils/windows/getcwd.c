@@ -17,6 +17,7 @@
  */
 
 #include <chef/platform.h>
+#include <direct.h>
 
 int platform_getcwd(char* buffer, size_t length)
 {

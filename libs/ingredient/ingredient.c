@@ -130,7 +130,7 @@ static int __handle_options(struct VaFs* vafsHandle, struct ingredient* ingredie
     data = (char*)options + sizeof(struct chef_vafs_feature_ingredient_opts);
 
 #define READ_IF_PRESENT(__MEM) if (options->__MEM ## _length > 0) { \
-        char* line = strndup(data, options->__MEM ## _length); \
+        char* line = platform_strndup(data, options->__MEM ## _length); \
         ingredient->options->__MEM = strsplit(line, ','); \
         data += options->__MEM ## _length; \
         free(line); \
@@ -174,7 +174,6 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
 {
     struct VaFs*           vafsHandle;
     struct ingredient*     ingredient;
-    enum chef_package_type packType;
     int                    status;
 
     ingredient = __ingredient_new();
@@ -250,7 +249,6 @@ static int __extract_file(
     FILE* file;
     long  fileSize;
     void* fileBuffer;
-    int   status;
 
     if ((file = fopen(path, "wb+")) == NULL) {
         fprintf(stderr, "__extract_file: unable to open file %s\n", path);

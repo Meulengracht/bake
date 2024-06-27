@@ -300,7 +300,6 @@ int inventory_add(struct fridge_inventory* inventory, const char* packPath, cons
     struct fridge_inventory_pack* packEntry;
     void*                         newArray;
     void*                         oldArray;
-    int                           status;
 
     if (inventory == NULL || publisher == NULL || 
         package == NULL   || channel == NULL) {
