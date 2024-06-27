@@ -17,6 +17,7 @@
  */
 
 #include <chef/client.h>
+#include <chef/platform.h>
 #include <chef/api/package_settings.h>
 #include <curl/curl.h>
 #include <errno.h>

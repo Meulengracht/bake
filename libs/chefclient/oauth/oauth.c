@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/platform.h>
 #include <curl/curl.h>
 #include <errno.h>
 #include "oauth.h"

@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <chef/client.h>
+#include <chef/platform.h>
 #include <chef/api/package.h>
 #include <curl/curl.h>
 #include <jansson.h>
