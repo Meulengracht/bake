@@ -40,7 +40,7 @@ int __resolve_add_dependency(struct list* dependencies, const char* library)
         return -1;
     }
 
-    dependency->name = strdup(library);
+    dependency->name = platform_strdup(library);
     if (dependency->name == NULL) {
         free(dependency);
         return -1;

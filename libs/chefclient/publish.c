@@ -200,8 +200,8 @@ static int __parse_pack_response(const char* response, struct pack_response* pac
         return -1;
     }
 
-    packResponse->token = strdup(json_string_value(json_object_get(root, "sas-token")));
-    packResponse->url = strdup(json_string_value(json_object_get(root, "blob-url")));
+    packResponse->token = platform_strdup(json_string_value(json_object_get(root, "sas-token")));
+    packResponse->url = platform_strdup(json_string_value(json_object_get(root, "blob-url")));
     json_decref(root);
 
     return 0;

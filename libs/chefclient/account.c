@@ -74,12 +74,12 @@ static int __parse_account(const char* response, struct chef_account** accountOu
     // parse the account
     member = json_object_get(root, "publisher-name");
     if (member) {
-        account->publisher_name = strdup(json_string_value(member));
+        account->publisher_name = platform_strdup(json_string_value(member));
     }
 
     member = json_object_get(root, "publisher-email");
     if (member) {
-        account->publisher_email = strdup(json_string_value(member));
+        account->publisher_email = platform_strdup(json_string_value(member));
     }
 
     member = json_object_get(root, "status");
@@ -284,7 +284,7 @@ void chef_account_set_publisher_name(struct chef_account* account, const char* p
         free((void*)account->publisher_name);
     }
 
-    account->publisher_name = strdup(publisherName);
+    account->publisher_name = platform_strdup(publisherName);
 }
 
 void chef_account_set_publisher_email(struct chef_account* account, const char* publisherEmail)
@@ -298,7 +298,7 @@ void chef_account_set_publisher_email(struct chef_account* account, const char* 
         free((void*)account->publisher_email);
     }
 
-    account->publisher_email = strdup(publisherEmail);
+    account->publisher_email = platform_strdup(publisherEmail);
 }
 
 const char* chef_account_get_publisher_email(struct chef_account* account)

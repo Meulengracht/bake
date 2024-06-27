@@ -103,15 +103,15 @@ int oven_initialize(struct oven_parameters* parameters)
     }
 
     // copy relevant paths
-    g_oven.paths.project_root = strdup(parameters->paths.project_root);
-    g_oven.paths.build_root = strdup(parameters->paths.build_root);
-    g_oven.paths.install_root = strdup(parameters->paths.install_root);
-    g_oven.paths.toolchains_root = strdup(parameters->paths.toolchains_root);
-    g_oven.paths.build_ingredients_root = strdup(parameters->paths.build_ingredients_root);
+    g_oven.paths.project_root = platform_strdup(parameters->paths.project_root);
+    g_oven.paths.build_root = platform_strdup(parameters->paths.build_root);
+    g_oven.paths.install_root = platform_strdup(parameters->paths.install_root);
+    g_oven.paths.toolchains_root = platform_strdup(parameters->paths.toolchains_root);
+    g_oven.paths.build_ingredients_root = platform_strdup(parameters->paths.build_ingredients_root);
     
     // update oven variables
-    g_oven.variables.target_platform = strdup(parameters->target_platform);
-    g_oven.variables.target_arch     = strdup(parameters->target_architecture);
+    g_oven.variables.target_platform = platform_strdup(parameters->target_platform);
+    g_oven.variables.target_arch     = platform_strdup(parameters->target_architecture);
 
     // update oven context
     g_oven.process_environment = parameters->envp;
@@ -158,7 +158,7 @@ int oven_recipe_start(struct oven_recipe_options* options)
         errno = ENOSYS;
         return -1;
     }
-    g_oven.recipe.name = strdup(options->name);
+    g_oven.recipe.name = platform_strdup(options->name);
 
     // construct the recipe paths
     g_oven.recipe.source_root = strpathcombine(g_oven.paths.project_root, options->relative_path);
@@ -245,7 +245,7 @@ static int __expand_variable(char** at, char** buffer, int* index, size_t* maxLe
         }
         end++;
         
-        variable = strndup(start, end - start);
+        variable = platform_strndup(start, end - start);
         if (variable != NULL) {
             const char* value = __get_variable(variable);
             free(variable);
@@ -297,7 +297,7 @@ static int __expand_environment_variable(char** at, char** buffer, int* index, s
         }
         end++;
 
-        variable = strndup(start, end - start);
+        variable = platform_strndup(start, end - start);
         if (variable != NULL) {
             char* value = getenv(variable);
             free(variable);
@@ -404,7 +404,7 @@ char* oven_preprocess_text(const char* original)
         }
     }
     
-    result = strdup(buffer);
+    result = platform_strdup(buffer);
     free(buffer);
     return result;
 }
@@ -465,7 +465,7 @@ static struct chef_keypair_item* __preprocess_keypair(struct chef_keypair_item* 
         return NULL;
     }
 
-    keypair->key   = strdup(original->key);
+    keypair->key   = platform_strdup(original->key);
     keypair->value = oven_preprocess_text(original->value);
     return keypair;
 }
@@ -516,11 +516,11 @@ static struct chef_keypair_item* __compose_keypair(const char* key, const char* 
     if (item == NULL) {
         return NULL;
     }
-    item->key = strdup(key);
+    item->key = platform_strdup(key);
     if (item->key == NULL) {
         free(item);
     }
-    item->value = strdup(value);
+    item->value = platform_strdup(value);
     if (item->value == NULL) {
         free((void*)item->key);
         free(item);

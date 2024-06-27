@@ -99,18 +99,18 @@ char* strpathcombine(const char* path1, const char* path2)
     }
 
     if (path1 == NULL) {
-        return strdup(path2);
+        return platform_strdup(path2);
     } else if (path2 == NULL) {
-        return strdup(path1);
+        return platform_strdup(path1);
     }
 
     path1Length = strlen(path1);
     path2Length = strlen(path2);
 
     if (path1Length == 0) {
-        return strdup(path2);
+        return platform_strdup(path2);
     } else if (path2Length == 0) {
-        return strdup(path1);
+        return platform_strdup(path1);
     }
 
     if (path2[0] == CHEF_PATH_SEPARATOR) {

@@ -66,7 +66,7 @@ static int __ensure_account_setup(char** publisherOut)
         return -1;
     }
 
-    *publisherOut = strdup(chef_account_get_publisher_name(account));
+    *publisherOut = platform_strdup(chef_account_get_publisher_name(account));
 
     chef_account_free(account);
     return 0;

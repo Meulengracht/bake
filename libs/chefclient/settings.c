@@ -86,7 +86,7 @@ static int __parse_pack_settings(const char* response, struct chef_package_setti
     // read name
     name = json_object_get(root, "name");
     if (name) {
-        settings->package = strdup(json_string_value(name));
+        settings->package = platform_strdup(json_string_value(name));
     }
 
     discoverable = json_object_get(root, "discoverable");

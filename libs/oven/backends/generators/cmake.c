@@ -54,7 +54,7 @@ static int __write_header(FILE* file, const char* projectName, const char* profi
 {
     char* cmake;
 
-    cmake = strdup(g_cmakeTemplate);
+    cmake = platform_strdup(g_cmakeTemplate);
     if (cmake == NULL) {
         errno = ENOMEM;
         return -1;
@@ -180,7 +180,7 @@ static char* __replace_install_prefix(const char* previousValue, const char* pla
         return strpathcombine(paths->install, previousValue);
     }
     // it seems this was set up correctly by the recipe, let it be
-    return strdup(previousValue);
+    return platform_strdup(previousValue);
 }
 
 static void __add_default_prefix_paths(char* output, const char* platform, const char* buildIngredientsRoot)
@@ -206,7 +206,7 @@ static char* __replace_path_prefix(const char* previousValue, const char* platfo
     // Expect generally that people don't modify this
     if (previousValue == NULL) {
         __add_default_prefix_paths(&tmp[0], platform, paths->build_ingredients);
-        return strdup(&tmp[0]);
+        return platform_strdup(&tmp[0]);
     }
 
     // However if they do, let us produce a modified version
@@ -214,7 +214,7 @@ static char* __replace_path_prefix(const char* previousValue, const char* platfo
     length = strlen(tmp);
     tmp[length++] = ';';
     __add_default_prefix_paths(&tmp[length], platform, paths->build_ingredients);
-    return strdup(&tmp[0]);
+    return platform_strdup(&tmp[0]);
 }
 
 static char* __extract_cmake_option_value(const char* startOfOption)
@@ -232,7 +232,7 @@ static char* __extract_cmake_option_value(const char* startOfOption)
             return NULL;
         }
     }
-    return strndup(startOfValue, endOfValue - startOfValue);
+    return platform_strndup(startOfValue, endOfValue - startOfValue);
 }
 
 static void __replace_cmake_option_value(char* arguments, const char* option, const char* value)
@@ -272,7 +272,7 @@ static void __replace_cmake_option_value(char* arguments, const char* option, co
         memcpy(&arguments[optionValueStartIndex], value, newLength);
     } else {
         // new length is longer, we need to move it, then replace
-        char* remaining = strdup(&arguments[optionValueEndIndex]);
+        char* remaining = platform_strdup(&arguments[optionValueEndIndex]);
         if (remaining == NULL) {
             VLOG_ERROR("cmake", "failed to replace option %s with %s\n", option, value);
             return;

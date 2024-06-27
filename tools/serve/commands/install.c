@@ -96,8 +96,8 @@ static int __parse_package_identifier(const char* id, const char** publisherOut,
         return -1;
     }
 
-    *publisherOut = strdup(names[0]);
-    *nameOut      = strdup(names[1]);
+    *publisherOut = platform_strdup(names[0]);
+    *nameOut      = platform_strdup(names[1]);
     strsplit_free(names);
     return 0;
 }
@@ -310,7 +310,7 @@ static int __verify_package(const char* path, char** infoNameOut, char** publish
         }
 
         *infoNameOut  = __get_unsafe_infoname(package, version);
-        *publisherOut = strdup("unverified");
+        *publisherOut = platform_strdup("unverified");
     } else {
         // verify package signature
         status = __verify_package_signature(path, publisherOut);
@@ -397,8 +397,8 @@ int install_main(int argc, char** argv)
         }
 
         // store publisher and the informational name
-        publisher = strdup(params.publisher);
-        infoName  = strdup(package);
+        publisher = platform_strdup(params.publisher);
+        infoName  = platform_strdup(package);
 
         // we only allow installs from native packages
         params.platform = CHEF_PLATFORM_STR;

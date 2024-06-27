@@ -28,9 +28,9 @@ static const char* __get_json_string_safe(json_t* object, const char* key)
 {
     json_t* value = json_object_get(object, key);
     if (value != NULL && json_string_value(value) != NULL) {
-        return strdup(json_string_value(value));
+        return platform_strdup(json_string_value(value));
     }
-    return strdup("<not set>");
+    return platform_strdup("<not set>");
 }
 
 static int __get_find_url(struct chef_find_params* params, char* urlBuffer, size_t bufferSize)

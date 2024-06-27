@@ -46,7 +46,7 @@ static struct recipe_cache_package* __parse_recipe_cache_package(const json_t* p
         free(pkg);
         return NULL;
     }
-    pkg->name = strdup(json_string_value(member));
+    pkg->name = platform_strdup(json_string_value(member));
     return pkg;
 }
 
@@ -71,7 +71,7 @@ static struct recipe_cache_package* __new_recipe_cache_package(const char* name)
     }
     memset(pkg, 0, sizeof(struct recipe_cache_package));
     
-    pkg->name = strdup(name);
+    pkg->name = platform_strdup(name);
     if (pkg->name == NULL) {
         free(pkg);
         return NULL;
@@ -106,7 +106,7 @@ static struct recipe_cache_ingredient* __parse_recipe_cache_ingredient(const jso
         free(ing);
         return NULL;
     }
-    ing->name = strdup(json_string_value(member));
+    ing->name = platform_strdup(json_string_value(member));
     return ing;
 }
 
@@ -164,8 +164,8 @@ static int __construct_recipe_cache_item(struct recipe_cache_item* cacheItem, co
 
     memset(cacheItem, 0, sizeof(struct recipe_cache_item));
     __generate_cache_uuid(&uuid[0]);
-    cacheItem->name = strdup(name);
-    cacheItem->uuid = strdup(&uuid[0]);
+    cacheItem->name = platform_strdup(name);
+    cacheItem->uuid = platform_strdup(&uuid[0]);
     cacheItem->keystore = json_object();
     if (cacheItem->name == NULL || cacheItem->uuid == NULL || cacheItem->keystore == NULL) {
         free((void*)cacheItem->name);
@@ -186,13 +186,13 @@ static int __parse_cache_item(struct recipe_cache_item* cacheItem, json_t* root)
     if (member == NULL) {
         return -1;
     }
-    cacheItem->name = strdup(json_string_value(member));
+    cacheItem->name = platform_strdup(json_string_value(member));
 
     member = json_object_get(root, "uuid");
     if (member == NULL) {
         return -1;
     }
-    cacheItem->uuid = strdup(json_string_value(member));
+    cacheItem->uuid = platform_strdup(json_string_value(member));
 
     cacheItem->keystore = json_object_get(root, "cache");
     if (cacheItem->keystore == NULL) {
@@ -354,7 +354,7 @@ static int __parse_cache(struct recipe_cache* cache, json_t* root)
 static int __initialize_cache(struct recipe_cache* cache, const char* path)
 {
     memset(cache, 0, sizeof(struct recipe_cache));
-    cache->path = strdup(path);
+    cache->path = platform_strdup(path);
     if (cache->path == NULL) {
         return -1;
     }

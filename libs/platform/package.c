@@ -49,7 +49,7 @@ static int __load_package_header(struct VaFs* vafs, struct chef_package** packag
     package->type = header->type;
 
 #define READ_IF_PRESENT(__MEM) if (header->__MEM ## _length > 0) { \
-        package->__MEM = strndup(data, header->__MEM ## _length); \
+        package->__MEM = platform_strndup(data, header->__MEM ## _length); \
         data += header->__MEM ## _length; \
     }
 
@@ -96,7 +96,7 @@ static int __load_package_version(struct VaFs* vafs, struct chef_version** versi
     version->revision = header->revision;
 
     if (header->tag_length) {
-        version->tag = strndup(data, header->tag_length);
+        version->tag = platform_strndup(data, header->tag_length);
     }
 
     *versionOut = version;
@@ -113,7 +113,7 @@ static void __fill_command(char** dataPointer, struct chef_command* command)
     *dataPointer += sizeof(struct chef_vafs_package_app);
 
 #define READ_IF_PRESENT(__MEM) if (entry->__MEM ## _length > 0) { \
-        command->__MEM = strndup(*dataPointer, entry->__MEM ## _length); \
+        command->__MEM = platform_strndup(*dataPointer, entry->__MEM ## _length); \
         *dataPointer += entry->__MEM ## _length; \
     }
 

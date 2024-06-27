@@ -41,10 +41,10 @@ static int __load_oauth_settings(void)
             json_t* refreshToken = json_object_get(oauth, "refresh-token");
 
             if (json_string_value(refreshToken) != NULL && strlen(json_string_value(refreshToken)) > 0) {
-                g_tokenContext.refresh_token = strdup(json_string_value(refreshToken));
+                g_tokenContext.refresh_token = platform_strdup(json_string_value(refreshToken));
             }
             if (json_string_value(accessToken) != NULL && strlen(json_string_value(accessToken)) > 0) {
-                g_tokenContext.access_token = strdup(json_string_value(accessToken));
+                g_tokenContext.access_token = platform_strdup(json_string_value(accessToken));
             }
             return 0;
         }
