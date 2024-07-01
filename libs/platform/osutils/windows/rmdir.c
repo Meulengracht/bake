@@ -17,47 +17,44 @@
  */
 
 #include <chef/platform.h>
-#include <stdio.h>
-#include <Windows.h>
 
 
-int platform_rmdir(const char *path) {
-    WIN32_FIND_DATA find_file_data;
+int platform_rmdir(const char *path) 
+{
+    WIN32_FIND_DATA findFileData;
     HANDLE hFind;
-    char full_path[MAX_PATH];
-    int r = 0;
+    char fullPath[MAX_PATH];
+    int result = 0;
 
-    snprintf(full_path, sizeof(full_path), "%s\\*", path);
+    snprintf(fullPath, sizeof(fullPath), "%s\\*", path);
 
-    hFind = FindFirstFile(full_path, &find_file_data);
+    hFind = FindFirstFile(fullPath, &findFileData);
 
     if (hFind == INVALID_HANDLE_VALUE) {
         return -1;
     }
 
     do {
-        if (strcmp(find_file_data.cFileName, ".") == 0 || strcmp(find_file_data.cFileName, "..") == 0) {
+        if (strcmp(findFileData.cFileName, ".") == 0 || strcmp(findFileData.cFileName, "..") == 0) {
             continue;
         }
 
-        snprintf(full_path, sizeof(full_path), "%s\\%s", path, find_file_data.cFileName);
+        snprintf(fullPath, sizeof(fullPath), "%s\\%s", path, findFileData.cFileName);
 
-        if (find_file_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            r = remove_directory(full_path);
-        } else {
-            if (!DeleteFile(full_path)) {
-                r = -1;
-            }
+        if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            result = RemoveDirectory(fullPath);
+        } else if (!DeleteFile(fullPath)) {
+                result = -1;
         }
-    } while (!r && FindNextFile(hFind, &find_file_data));
+    } while (!result && FindNextFile(hFind, &findFileData));
 
     FindClose(hFind);
 
-    if (!r) {
+    if (!result) {
         if (!RemoveDirectory(path)) {
-            r = -1;
+            result = -1;
         }
     }
 
-    return r;
+    return result;
 }
