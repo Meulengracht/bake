@@ -18,6 +18,8 @@
 
 #include <chef/kitchen.h>
 #include <chef/platform.h>
+#include <chef/rootfs/debootstrap.h>
+#include <chef/containerv.h>
 #include <libingredient.h>
 #include <libpkgmgr.h>
 #include <vlog.h>
@@ -361,55 +363,6 @@ static void __debootstrap_output_handler(const char* line, enum platform_spawn_o
     }
 }
 
-static int __setup_environment(int confined, const char* path)
-{
-    char  scratchPad[PATH_MAX];
-    int   status;
-    pid_t child, wt;
-    VLOG_DEBUG("kitchen", "__setup_environment(confined=%i, path=%s)\n", confined, path);
-
-    // If we are running unconfined we don't setup environment
-    if (!confined) {
-        return 0;
-    }
-
-    status = platform_spawn("debootstrap", "--version", NULL, &(struct platform_spawn_options) {
-        .output_handler = __debootstrap_output_handler
-    });
-    if (status) {
-        VLOG_ERROR("kitchen", "__setup_environment: \"debootstrap\" package must be installed\n");
-        return status;
-    }
-    
-    snprintf(&scratchPad[0], sizeof(scratchPad), "--variant=minbase stable %s http://deb.debian.org/debian/", path);
-    VLOG_DEBUG("kitchen", "executing 'debootstrap %s'\n", &scratchPad[0]);
-
-    child = fork();
-    if (child == 0) {
-        // debootstrap must run under the root user, so lets make sure we've switched
-        // to root as the real user.
-        if (setuid(geteuid())) {
-            VLOG_ERROR("kitchen", "__setup_environment: failed to switch to root\n");
-            _Exit(-1);
-        }
-
-        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-        status = platform_spawn("debootstrap", &scratchPad[0], NULL, &(struct platform_spawn_options) {
-            .output_handler = __debootstrap_output_handler
-        });
-        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-        if (status) {
-            VLOG_ERROR("kitchen", "__setup_environment: \"debootstrap\" failed: %i\n", status);
-            VLOG_ERROR("kitchen", "see %s/debootstrap/debootstrap.log for details\n", path);
-            _Exit(-1);
-        }
-        _Exit(0);
-    } else {
-        wt = wait(&status);
-    }
-    return status;
-}
-
 struct __package_operation_options {
     struct recipe_cache_package_change* changes;
     int                                 count;
@@ -517,12 +470,69 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct kitchen_user* user)
     return 0;
 }
 
+static int __setup_rootfs(struct kitchen* kitchen, struct kitchen_user* user)
+{
+    int status;
+    VLOG_TRACE("kitchen", "initializing container rootfs\n");
+
+    if (recipe_cache_key_bool("setup_rootfs")) {
+        return 0;
+    }
+
+    status = __clean_environment(kitchen->host_kitchen_project_root);
+    if (status) {
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to clean project environment\n");
+        return status;
+    }
+
+    status = container_rootfs_setup_debootstrap(kitchen->host_chroot);
+    if (status) {
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to setup project environment\n");
+        return status;
+    }
+
+    status = __ensure_hostdirs(kitchen, user);
+    if (status) {
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to create host directories\n");
+        return status;
+    }
+
+    recipe_cache_transaction_begin();
+    status = recipe_cache_key_set_bool("setup_rootfs", 1);
+    if (status) {
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to mark install as done\n");
+        return status;
+    }
+    recipe_cache_transaction_commit();
+
+    return 0;
+}
+
+static int __setup_container(struct kitchen* kitchen, struct kitchen_user* user)
+{
+    struct containerv_mount*     mounts;
+    struct containerv_container* container;
+    int                          status;
+    VLOG_TRACE("kitchen", "creating build container\n");
+
+    // determine mounts
+
+    // start container
+    status = containerv_create("", CV_CAP_FILESYSTEM, mounts, 0, &container);
+    if (status) {
+        VLOG_ERROR("kitchen", "__setup_container: failed to create build container\n");
+        return status;
+    }
+
+    return 0;
+}
+
 static int __kitchen_install(struct kitchen* kitchen, struct kitchen_user* user, struct kitchen_setup_options* options)
 {
     int status;
     VLOG_TRACE("kitchen", "initializing project environment\n");
 
-    if (recipe_cache_key_bool("setup")) {
+    if (recipe_cache_key_bool("setup_rootfs")) {
         return 0;
     }
     
@@ -539,10 +549,12 @@ static int __kitchen_install(struct kitchen* kitchen, struct kitchen_user* user,
     }
 
     VLOG_TRACE("kitchen", "initializing project environment\n");
-    status = __setup_environment(kitchen->confined, kitchen->host_chroot);
-    if (status) {
-        VLOG_ERROR("kitchen", "__kitchen_install: failed to setup project environment\n");
-        return status;
+    if (kitchen->confined) {
+        status = container_rootfs_setup_debootstrap(kitchen->host_chroot);
+        if (status) {
+            VLOG_ERROR("kitchen", "__kitchen_install: failed to setup project environment\n");
+            return status;
+        }
     }
 
     status = __ensure_hostdirs(kitchen, user);
@@ -552,7 +564,7 @@ static int __kitchen_install(struct kitchen* kitchen, struct kitchen_user* user,
     }
 
     recipe_cache_transaction_begin();
-    status = recipe_cache_key_set_bool("setup", 1);
+    status = recipe_cache_key_set_bool("setup_rootfs", 1);
     if (status) {
         VLOG_ERROR("kitchen", "__kitchen_install: failed to mark install as done\n");
         return status;

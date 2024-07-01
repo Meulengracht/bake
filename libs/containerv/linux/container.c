@@ -14,6 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
+ * inspo: https://github.com/lucavallin/barco/blob/main/src/container.c
  */
 
 #define _GNU_SOURCE
@@ -50,6 +51,10 @@ struct containerv_command_spawn {
     char path[32];
 };
 
+struct containerv_command_script {
+    uint32_t length;
+};
+
 struct containerv_command_kill {
     pid_t process_id;
 };
@@ -57,14 +62,16 @@ struct containerv_command_kill {
 enum containerv_command_type {
     CV_COMMAND_SPAWN,
     CV_COMMAND_KILL,
+    CV_COMMAND_SCRIPT,
     CV_COMMAND_DESTROY
 };
 
 struct containerv_command {
     enum containerv_command_type type;
     union {
-        struct containerv_command_spawn spawn;
-        struct containerv_command_kill  kill;
+        struct containerv_command_spawn  spawn;
+        struct containerv_command_kill   kill;
+        struct containerv_command_script script;
     } command;
 };
 
@@ -313,28 +320,32 @@ static int __container_run(
         int                          mountsCount)
 {
     int status;
+    int flags = 0;
 
-    // create the mount directory, start out by removing (recursively) before
-    // creating it, so we ensure an empty space.
-    status = __container_remove_mountfs(container->mountfs);
-    if (status && errno != ENOENT) {
-        return -1;
+    if (capabilities & CV_CAP_FILESYSTEM) {
+        // bind mount all additional mounts requested by the caller
+        status = __container_map_mounts(container, mounts, mountsCount);
+        if (status) {
+            return -1;
+        }
+
+        flags |= CLONE_NEWNS;
     }
 
-    if (mkdir(container->mountfs, 0755)) {
-        return -1;
+    if (capabilities & CV_CAP_NETWORK) {
+        flags |= CLONE_NEWNET | CLONE_NEWUTS;
     }
 
-    // bind mount all directories inside rootfs
-    status = __container_map_rootfs(container);
-    if (status) {
-        return -1;
+    if (capabilities & CV_CAP_PROCESS_CONTROL) {
+        flags |= CLONE_NEWPID;
     }
 
-    // bind mount all additional mounts requested by the caller
-    status = __container_map_mounts(container, mounts, mountsCount);
-    if (status) {
-        return -1;
+    if (capabilities & CV_CAP_IPC) {
+        flags |= CLONE_NEWIPC;
+    }
+
+    if (capabilities & CV_CAP_CGROUPS) {
+        flags |= CLONE_NEWCGROUP;
     }
 
     // change the working directory so we don't accidently lock any paths
@@ -343,7 +354,7 @@ static int __container_run(
         return -1;
     }
 
-    status = unshare(CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWNS | SIGCHLD);
+    status = unshare(flags | SIGCHLD);
     if (status) {
         return -1;
     }
@@ -397,7 +408,6 @@ static int __wait_for_container_ready(struct containerv_container* container)
 
 int containerv_create(
         const char*                   rootFs,
-        const char*                   mountFs,
         enum containerv_capabilities  capabilities,
         struct containerv_mount*      mounts,
         int                           mountsCount,
@@ -412,11 +422,11 @@ int containerv_create(
         return -1;
     }
 
-    container->rootfs  = strdup(rootFs);
-    container->mountfs = strdup(mountFs);
-
+    container->rootfs = strdup(rootFs);
     container->pid = fork();
-    if (pid) {
+    if (pid == (pid_t)-1) {
+        return -1;
+    } else if (pid) {
         __close_safe(&container->status_fds[__FD_CONTAINER]);
         status = __wait_for_container_ready(container);
         if (status) {
