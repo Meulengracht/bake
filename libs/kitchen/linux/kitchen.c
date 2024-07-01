@@ -410,28 +410,26 @@ static int __setup_environment(int confined, const char* path)
     return status;
 }
 
-static int __perform_package_operations(void* context)
-{
+struct __package_operation_options {
     struct recipe_cache_package_change* changes;
     int                                 count;
+};
+
+static int __perform_package_operations(void* context)
+{
+    struct __package_operation_options* options = context;
     char                                scratchPad[PATH_MAX];
     char*                               aptpkgs;
     int                                 status;
     (void)context;
 
-    status = recipe_cache_calculate_package_changes(&changes, &count);
-    if (status) {
-        VLOG_ERROR("kitchen", "__perform_package_operations: failed to calculate package differences\n");
-        return status;
-    }
-
     // Skip if there are no package operations
-    if (count == 0) {
+    if (options == NULL || options->count == 0) {
         return 0;
     }
 
     // Start with packages to remove
-    aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_REMOVED);
+    aptpkgs = __join_packages(options->changes, options->count, RECIPE_CACHE_CHANGE_REMOVED);
     if (aptpkgs != NULL) {
         snprintf(&scratchPad[0], sizeof(scratchPad), "-y -qq remove %s", aptpkgs);
         free(aptpkgs);
@@ -448,7 +446,7 @@ static int __perform_package_operations(void* context)
     }
 
     // Then packages to install
-    aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_ADDED);
+    aptpkgs = __join_packages(options->changes, options->count, RECIPE_CACHE_CHANGE_ADDED);
     if (aptpkgs != NULL) {
         snprintf(&scratchPad[0], sizeof(scratchPad), "-y -qq install --no-install-recommends %s", aptpkgs);
         free(aptpkgs);
@@ -464,11 +462,6 @@ static int __perform_package_operations(void* context)
         }
     }
 
-    // Then commit changes
-    status = recipe_cache_commit_package_changes(changes, count);
-    if (status) {
-        return status;
-    }
     return 0;
 }
 
@@ -571,7 +564,8 @@ static int __kitchen_install(struct kitchen* kitchen, struct kitchen_user* user,
 
 static int __kitchen_refresh(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
-    int status;
+    struct __package_operation_options pkgOptions;
+    int                                status;
 
     status = __ensure_mounted_dirs(kitchen, kitchen->real_project_path);
     if (status) {
@@ -581,10 +575,21 @@ static int __kitchen_refresh(struct kitchen* kitchen, struct kitchen_setup_optio
 
     // install packages
     recipe_cache_transaction_begin();
-    status = __run_in_chroot(kitchen, __perform_package_operations, options->packages);
+    status = recipe_cache_calculate_package_changes(&pkgOptions.changes, &pkgOptions.count);
+    if (status) {
+        VLOG_ERROR("kitchen", "__kitchen_refresh: failed to calculate package differences\n");
+        return status;
+    }
+
+    status = __run_in_chroot(kitchen, __perform_package_operations, &pkgOptions);
     if (status) {
         VLOG_ERROR("kitchen", "__kitchen_refresh: failed to initialize host packages\n");
         return -1;
+    }
+
+    status = recipe_cache_commit_package_changes(pkgOptions.changes, pkgOptions.count);
+    if (status) {
+        return status;
     }
     recipe_cache_transaction_commit();
 

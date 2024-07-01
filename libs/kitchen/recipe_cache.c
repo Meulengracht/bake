@@ -53,6 +53,7 @@ static struct recipe_cache_package* __parse_recipe_cache_package(const json_t* p
 static json_t* __serialize_recipe_cache_package(struct recipe_cache_package* pkg)
 {
     json_t* root;
+    VLOG_DEBUG("cache", "__serialize_recipe_cache_package(name=%s)\n", pkg->name);
     
     root = json_object();
     if (!root) {
@@ -239,22 +240,23 @@ static int __parse_cache_item(struct recipe_cache_item* cacheItem, json_t* root)
 static json_t* __serialize_cache_item_packages(struct list* packages)
 {
     struct list_item* i;
-    json_t*           root;
+    json_t*           items;
+    VLOG_DEBUG("cache", "__serialize_cache_item_packages(count=%i)\n", packages->count);
 
-    root = json_array();
-    if (!root) {
+    items = json_array();
+    if (!items) {
         return NULL;
     }
 
     list_foreach(packages, i) {
         json_t* pkg = __serialize_recipe_cache_package((struct recipe_cache_package*)i);
         if (pkg == NULL) {
-            json_decref(root);
+            json_decref(items);
             return NULL;
         }
-        json_array_append_new(root, pkg);
+        json_array_append_new(items, pkg);
     }
-    return root;
+    return items;
 }
 
 static json_t* __serialize_cache_item_ingredients(struct list* ingredients)
@@ -676,6 +678,7 @@ int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** 
     struct recipe_cache_item* cache = __get_cache_item();
     struct list_item          *i, *j;
     int                       capacity = 0;
+    VLOG_DEBUG("cache", "recipe_cache_calculate_package_changes()\n");
 
     *changes = NULL;
     *changeCount = 0;
@@ -727,6 +730,7 @@ int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** 
 int recipe_cache_commit_package_changes(struct recipe_cache_package_change* changes, int count)
 {
     struct recipe_cache_item* cache = __get_cache_item();
+    VLOG_DEBUG("cache", "recipe_cache_commit_package_changes(count=%i)\n", count);
     
     if (changes == NULL || count == 0) {
         errno = EINVAL;
