@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -44,17 +44,21 @@ struct containerv_mount {
 enum containerv_capabilities {
     CV_CAP_NETWORK = 0x1,
     CV_CAP_PROCESS_CONTROL = 0x2,
+    CV_CAP_IPC = 0x4,
+    CV_CAP_FILESYSTEM = 0x8,
+    CV_CAP_CGROUPS = 0x10
 };
 
 extern int containerv_create(
         const char*                   rootFs,
-        const char*                   mountFs,
         enum containerv_capabilities  capabilities,
         struct containerv_mount*      mounts,
         int                           mountsCount,
         struct containerv_container** containerOut);
 
 extern int container_exec(struct containerv_container* container, const char* path, process_handle_t * pidOut);
+
+extern int container_script(struct containerv_container* container, const char* script);
 
 extern int container_kill(struct containerv_container* container, process_handle_t pid);
 
