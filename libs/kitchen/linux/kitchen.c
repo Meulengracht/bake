@@ -510,20 +510,28 @@ static int __setup_rootfs(struct kitchen* kitchen, struct kitchen_user* user)
 
 static int __setup_container(struct kitchen* kitchen, struct kitchen_user* user)
 {
-    struct containerv_mount*     mounts;
+    struct containerv_mount      mounts[2] = { 0 };
     struct containerv_container* container;
     int                          status;
     VLOG_TRACE("kitchen", "creating build container\n");
 
-    // determine mounts
+    // two mounts
+    // Installation path
+    mounts[0].source = kitchen->shared_output_path;
+    mounts[0].destination = kitchen->host_install_root;
+    mounts[0].flags = CV_MOUNT_BIND | CV_MOUNT_RECURSIVE;
 
+    // project path
+    mounts[1].source = kitchen->real_project_path;
+    mounts[1].destination = kitchen->host_project_path;
+    mounts[1].flags = CV_MOUNT_BIND | CV_MOUNT_READONLY;
+    
     // start container
-    status = containerv_create("", CV_CAP_FILESYSTEM, mounts, 0, &container);
+    status = containerv_create(kitchen->host_chroot, CV_CAP_FILESYSTEM, mounts, 2, &container);
     if (status) {
         VLOG_ERROR("kitchen", "__setup_container: failed to create build container\n");
         return status;
     }
-
     return 0;
 }
 
