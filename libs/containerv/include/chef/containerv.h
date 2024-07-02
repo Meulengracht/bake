@@ -38,6 +38,7 @@ enum containerv_mount_flags {
 struct containerv_mount {
     char*                       source;
     char*                       destination;
+    char*                       fstype;
     enum containerv_mount_flags flags;
 };
 

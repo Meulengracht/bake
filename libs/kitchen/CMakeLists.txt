@@ -14,6 +14,8 @@ endmacro()
 
 if (UNIX)
     add_sources_glob(linux/*.c)
+elseif (WIN32)
+    add_sources_glob(windows/*.c)
 endif()
 
 add_sources(

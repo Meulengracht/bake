@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,7 +14,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
- * inspo: https://github.com/lucavallin/barco/blob/main/src/container.c
  */
 
 #define _GNU_SOURCE
@@ -241,6 +240,7 @@ static int __convert_cv_mount_flags(enum containerv_mount_flags cvFlags)
     return flags;
 }
 
+// __container_map_mounts maps any outside paths into the container
 static int __container_map_mounts(
         struct containerv_container* container,
         struct containerv_mount*     mounts,
@@ -259,9 +259,15 @@ static int __container_map_mounts(
     }
 
     for (int i = 0; i < mountsCount; i++) {
-        snprintf(destination, PATH_MAX, "%s/%s", container->mountfs, mounts[i].destination);
-        status = mount(mounts[i].source, destination, NULL,
-                       __convert_cv_mount_flags(mounts[i].flags), NULL);
+        //snprintf(destination, PATH_MAX, "%s/%s", container->mountfs, mounts[i].destination);
+        status = mount(
+            mounts[i].source,
+            //destination,
+            mounts[i].destination,
+            mounts[i].fstype,
+            __convert_cv_mount_flags(mounts[i].flags),
+            NULL
+        );
         if (status) {
             break;
         }
@@ -323,12 +329,6 @@ static int __container_run(
     int flags = 0;
 
     if (capabilities & CV_CAP_FILESYSTEM) {
-        // bind mount all additional mounts requested by the caller
-        status = __container_map_mounts(container, mounts, mountsCount);
-        if (status) {
-            return -1;
-        }
-
         flags |= CLONE_NEWNS;
     }
 
@@ -348,7 +348,7 @@ static int __container_run(
         flags |= CLONE_NEWCGROUP;
     }
 
-    // change the working directory so we don't accidently lock any paths
+    // change the working directory so we don't accidentally lock any paths
     status = chdir("/");
     if (status) {
         return -1;
@@ -359,14 +359,30 @@ static int __container_run(
         return -1;
     }
 
+    // MS_PRIVATE makes the bind mount invisible outside of the namespace
+    // MS_REC makes the mount recursive
+    if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL)) {
+        return -1;
+    }
+  
+    // After the unshare we are now running in separate namespaces, this means
+    // we can start doing mount operations that still require the host file system
+    // before we chroot
+    if (capabilities & CV_CAP_FILESYSTEM) {
+        // bind mount all additional mounts requested by the caller
+        status = __container_map_mounts(container, mounts, mountsCount);
+        if (status) {
+            return -1;
+        }
+    }
+
     // change root to the containers base path
     status = chroot(container->mountfs);
     if (status) {
         return -1;
     }
 
-    // make all necessary bind mounts here to propagate stuff from original
-    // namespace into the new rootfs
+    // after the chroot we can start setting up the unique bind-mounts
     status = __container_map_capabilities(container, capabilities);
     if (status) {
         return -1;
