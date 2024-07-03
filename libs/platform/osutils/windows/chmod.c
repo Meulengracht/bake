@@ -20,5 +20,5 @@
 
 int platform_chmod(const char* path, uint32_t permissions)
 {
-	return _chmod(path, permissions);
+    return _chmod(path, permissions);
 }

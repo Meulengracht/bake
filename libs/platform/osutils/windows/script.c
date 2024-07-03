@@ -23,8 +23,6 @@
 #include <string.h>
 #include <sys/stat.h>
 
-
-
 int platform_script(const char *script) 
 {
     int    status;
@@ -35,8 +33,6 @@ int platform_script(const char *script)
     
     snprintf(&tmpPath[0], sizeof(tmpPath), "C:\\Windows\\Temp\\scriptXXXXXX");
 
-    strcat("C:\\Windows\\Temp\\scriptXXXXXX", ".ps1");
-
     // create a temporary file
     sfilefd = mkstemp(&tmpPath[0]);
     if (sfilefd < 1) {
@@ -45,7 +41,7 @@ int platform_script(const char *script)
     }
 
     // set executable
-    status = _chmod(tmpPath, _S_IREAD | _S_IWRITE);
+    status = _chmod(tmpPath);
     if (status) {
         fprintf(stderr, "platform_script: failed to set executable bit for %s: %s\n", &tmpPath[0], strerror(errno));
         return status;
@@ -57,7 +53,6 @@ int platform_script(const char *script)
         return -1;
     }
     
-    fprintf(sfile, "powershell.exe\n");
     fputs(script, sfile);
     fclose(sfile);
 
