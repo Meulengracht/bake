@@ -410,7 +410,7 @@ static int __container_entry(
     exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
 }
 
-static int __wait_for_container_ready(struct containerv_container* container)
+static int __wait_for_container_code(struct containerv_container* container)
 {
     int status;
     int exitCode;
@@ -444,7 +444,7 @@ int containerv_create(
         return -1;
     } else if (pid) {
         __close_safe(&container->status_fds[__FD_CONTAINER]);
-        status = __wait_for_container_ready(container);
+        status = __wait_for_container_code(container);
         if (status) {
             __container_delete(container);
             return status;
@@ -455,9 +455,17 @@ int containerv_create(
     exit(__container_entry(container, capabilities, mounts, mountsCount));
 }
 
-int container_exec(struct containerv_container* container, const char* path, pid_t* pidOut)
+int containerv_spawn(
+    struct containerv_container*     container,
+    const char*                      path,
+    struct containerv_spawn_options* options,
+    process_handle_t*                pidOut)
 {
 
+    if (options && (options->flags & CV_SPAWN_WAIT)) {
+        return __wait_for_container_code(container);
+    }
+    return 0;
 }
 
 int container_kill(struct containerv_container* container, pid_t pid)

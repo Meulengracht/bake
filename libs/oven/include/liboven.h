@@ -135,8 +135,7 @@ struct oven_initialize_options {
     const char* const* envp;
     const char*        target_platform;
     const char*        target_architecture;
-    struct oven_paths  host_paths;
-    struct oven_paths  confined_paths;
+    struct oven_paths  paths;
 };
 
 /**

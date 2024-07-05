@@ -247,7 +247,6 @@ int main(int argc, char** argv, char** envp)
 {
     struct command_handler* command     = &g_commands[2]; // run step is default
     struct bake_command_options options = { 0 };
-    char*                   recipePath  = NULL;
     void*                   buffer;
     size_t                  length;
     int                     status;
@@ -271,7 +270,7 @@ int main(int argc, char** argv, char** envp)
             // that the run command should be run.
             if (platform_stat(argv[1], &stats) == 0) {
                 command = &g_commands[2];
-                recipePath = argv[1];
+                options.recipe_path = argv[1];
             } else {
                 fprintf(stderr, "bake: invalid command %s\n", argv[1]);
                 return -1;
@@ -288,7 +287,7 @@ int main(int argc, char** argv, char** envp)
                         return status;
                     }
                 } else if (argv[i][0] != '-') {
-                    recipePath = argv[i];
+                    options.recipe_path = argv[i];
                 }
             }
         }
@@ -300,12 +299,12 @@ int main(int argc, char** argv, char** envp)
         return -1;
     }
 
-    if (recipePath == NULL) {
-        recipePath = (char*)__find_default_recipe();
+    if (options.recipe_path == NULL) {
+        options.recipe_path = (char*)__find_default_recipe();
     }
 
-    if (recipePath != NULL) {
-        status = __read_recipe(recipePath, &buffer, &length);
+    if (options.recipe_path != NULL) {
+        status = __read_recipe(options.recipe_path, &buffer, &length);
         if (!status) {
             status = recipe_parse(buffer, length, &options.recipe);
             free(buffer);

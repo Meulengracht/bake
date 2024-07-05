@@ -39,16 +39,16 @@ struct kitchen_setup_hook {
 };
 
 struct kitchen_init_options {
-    struct recipe* recipe;
-    const char*    project_path;
-    const char*    pkg_environment;
-    int            confined;
-    const char*    target_platform;
-    const char*    target_architecture;
+    struct recipe*     recipe;
+    const char*        recipe_path;
+    const char* const* envp;
+    const char*        project_path;
+    const char*        pkg_environment;
+    const char*        target_platform;
+    const char*        target_architecture;
 };
 
 struct kitchen_setup_options {
-    const char* const* envp;
     struct list        host_ingredients; // list<kitchen_ingredient>
     struct list        build_ingredients; // list<kitchen_ingredient>
     struct list        runtime_ingredients; // list<kitchen_ingredient>
@@ -74,8 +74,8 @@ struct kitchen {
     // internal state
     uint32_t       magic;
     int            original_root_fd;
-    int            confined;
     struct recipe* recipe;
+    const char*    recipe_path;
 
     char* target_platform;
     char* target_architecture;
@@ -84,6 +84,7 @@ struct kitchen {
 
     struct pkgmngr* pkg_manager;
     struct containerv_container* container;
+    char** base_environment;
 
     // external paths that point inside chroot
     // i.e paths valid outside chroot
