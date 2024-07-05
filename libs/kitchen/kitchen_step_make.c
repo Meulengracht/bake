@@ -21,9 +21,7 @@
 #include <libpkgmgr.h>
 #include <stdlib.h>
 #include "steps.h"
-#include "user.h"
 #include <vlog.h>
-
 
 static void __initialize_generator_options(struct oven_generate_options* options, struct recipe_step* step)
 {
@@ -110,28 +108,10 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
 {
     struct oven_recipe_options options;
     struct list_item*          item;
-    struct kitchen_user        user;
     int                        status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_make()\n");
 
-    if (kitchen_user_new(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to get current user\n");
-        return -1;
-    }
-
     recipe_cache_transaction_begin();
-    status = kitchen_cooking_start(kitchen);
-    if (status) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to start cooking: %i\n", status);
-        kitchen_user_delete(&user);
-        return status;
-    }
-
-    if (kitchen_user_drop_privs(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to drop privileges\n");
-        goto cleanup;
-    }
-
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
         char*               toolchain = NULL;
@@ -160,16 +140,8 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
         }
     }
 
-    if (kitchen_user_regain_privs(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to re-escalate privileges\n");
-    }
-
 cleanup:
-    if (kitchen_cooking_end(kitchen)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to end cooking\n");
-    }
     recipe_cache_transaction_commit();
-    kitchen_user_delete(&user);
     return status;
 }
 
