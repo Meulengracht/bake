@@ -33,7 +33,7 @@
 
 static void __print_help(void)
 {
-    printf("Usage: bake run [options]\n");
+    printf("Usage: bakectl run [options]\n");
     printf("\n");
     printf("Options:\n");
     printf("  -cc, --cross-compile\n");
@@ -51,11 +51,30 @@ static void __cleanup_systems(int sig)
     exit(0); // not safe, manually clean up systems and call _Exit()
 }
 
-static void __debug(void)
+static void __initialize_generator_options(struct oven_generate_options* options, struct recipe_step* step)
 {
-    // wait for any key and then return
-    printf("press any key to continue\n");
-    getchar();
+    options->name           = step->name;
+    options->profile        = NULL;
+    options->system         = step->system;
+    options->system_options = &step->options;
+    options->arguments      = &step->arguments;
+    options->environment    = &step->env_keypairs;
+}
+
+static void __initialize_build_options(struct oven_build_options* options, struct recipe_step* step)
+{
+    options->name           = step->name;
+    options->profile        = NULL;
+    options->system         = step->system;
+    options->system_options = &step->options;
+    options->arguments      = &step->arguments;
+    options->environment    = &step->env_keypairs;
+}
+
+static void __initialize_script_options(struct oven_script_options* options, struct recipe_step* step)
+{
+    options->name   = step->name;
+    options->script = step->script;
 }
 
 int build_main(int argc, char** argv, char** envp, struct bakectl_command_options* options)
@@ -85,18 +104,67 @@ int build_main(int argc, char** argv, char** envp, struct bakectl_command_option
         return -1;
     }
 
-    oven_recipe_options_construct(&options, part, toolchain);
-    status = oven_recipe_start(&options);
 
-    struct oven_build_options buildOptions;
-    __initialize_build_options(&buildOptions, step);
-    status = oven_build(&buildOptions);
+    snprintf(&buff[0], sizeof(buff), "/chef/build/%s/%s",
+        options->target_platform, options->target_architecture
+    );
+    kitchen->build_root = strdup(&buff[0]);
+
+    snprintf(&buff[0], sizeof(buff), "/chef/ingredients/%s/%s",
+        options->target_platform, options->target_architecture
+    );
+    kitchen->build_ingredients_path = strdup(&buff[0]);
+
+    snprintf(&buff[0], sizeof(buff), "/chef/install/%s/%s",
+        options->target_platform, options->target_architecture
+    );
+    kitchen->install_path = strdup(&buff[0]);
+
+    status = oven_initialize(&(struct oven_initialize_options){
+        .envp = (const char* const*)envp,
+        .target_architecture = getenv("CHEF_TARGET_ARCH"),
+        .target_platform = getenv("CHEF_TARGET_PLATFORM"),
+        .paths = {
+            .project_root = "/chef/project",
+            .build_root = kitchen->build_root,
+            .install_root = kitchen->install_path,
+            .toolchains_root = "/chef/toolchains",
+            .build_ingredients_root = kitchen->build_ingredients_path
+        }
+    });
     if (status) {
-        VLOG_ERROR("bake", "failed to build target: %s\n", step->system);
-        return status;
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to initialize oven: %s\n", strerror(errno));
+        goto cleanup;
     }
+
+        if (step->type == RECIPE_STEP_TYPE_GENERATE) {
+            struct oven_generate_options genOptions;
+            __initialize_generator_options(&genOptions, step);
+            status = oven_configure(&genOptions);
+            if (status) {
+                VLOG_ERROR("bake", "failed to configure target: %s\n", step->system);
+                return status;
+            }
+        } else if (step->type == RECIPE_STEP_TYPE_BUILD) {
+            struct oven_build_options buildOptions;
+            __initialize_build_options(&buildOptions, step);
+            status = oven_build(&buildOptions);
+            if (status) {
+                VLOG_ERROR("bake", "failed to build target: %s\n", step->system);
+                return status;
+            }
+        } else if (step->type == RECIPE_STEP_TYPE_SCRIPT) {
+            struct oven_script_options scriptOptions;
+            __initialize_script_options(&scriptOptions, step);
+            status = oven_script(&scriptOptions);
+            if (status) {
+                VLOG_ERROR("bake", "failed to execute script\n");
+                return status;
+            }
+        }
     
-    oven_recipe_end();
-    
+    // cleanup oven
+    oven_cleanup();
+
     return status;
 }

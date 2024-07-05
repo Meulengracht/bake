@@ -266,9 +266,10 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
 
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
+        .recipe_path = options->recipe_path,
+        .envp = envp,
         .project_path = options->cwd,
         .pkg_environment = NULL,
-        .confined = options->recipe->environment.build.confinement,
         .target_platform = options->platform,
         .target_architecture = options->architecture,
     }, &kitchen);
@@ -284,7 +285,6 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     }
 
     // setup linux options
-    setupOptions.envp = (const char* const*)envp;
     setupOptions.packages = &options->recipe->environment.host.packages;
 
     // setup kitchen hooks

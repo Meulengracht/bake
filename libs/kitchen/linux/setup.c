@@ -422,43 +422,6 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
     return 0;
 }
 
-static char* __fmt_env_option(const char* name, const char* value)
-{
-    char  tmp[512];
-    char* result;
-    snprintf(&tmp[0], sizeof(tmp), "%s=%s", name, value);
-    result = strdup(&tmp[0]);
-    if (result == NULL) {
-        VLOG_FATAL("kitchen", "failed to allocate memory for environment option\n");
-    }
-    return result;
-}
-
-static char** __initialize_env(struct kitchen_user* user, const char* const* envp)
-{
-    char** env = calloc(6, sizeof(char*));
-    if (env == NULL) {
-        VLOG_FATAL("kitchen", "failed to allocate memory for environment\n");
-    }
-
-    // we are not using the parent environment yet
-    (void)envp;
-
-    env[0] = __fmt_env_option("USER", user->caller_name);
-    env[1] = __fmt_env_option("USERNAME", user->caller_name);
-    env[2] = __fmt_env_option("HOME", "/chef");
-    env[3] = __fmt_env_option("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:");
-    env[4] = __fmt_env_option("LD_LIBRARY_PATH", "/usr/local/lib");
-    env[5] = NULL;
-    return env;
-}
-
-static int __spawn_cb(const char* path, const char* arguments, const char* const* envp, struct platform_spawn_options* options)
-{
-    
-    return platform_spawn(path, arguments, envp, options);
-}
-
 int kitchen_confined_setup(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
     struct kitchen_user user;
@@ -475,40 +438,16 @@ int kitchen_confined_setup(struct kitchen* kitchen, struct kitchen_setup_options
         return -1;
     }
 
-    status = __setup_rootfs(kitchen, options);
+    status = __setup_rootfs(kitchen, &user);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to setup rootfs of kitchen\n");
         return -1;
     }
 
-    status = __setup_container(kitchen, options);
+    status = __setup_container(kitchen, &user);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to start container\n");
         return -1;
-    }
-
-    status = oven_initialize(&(struct oven_initialize_options){
-        .envp = (const char* const*)__initialize_env(&user, options->envp),
-        .target_architecture = kitchen->target_architecture,
-        .target_platform = kitchen->target_platform,
-        .host_paths = {
-            .project_root = kitchen->host_project_path,
-            .build_root = kitchen->host_build_path,
-            .install_root = kitchen->host_install_path,
-            .toolchains_root = kitchen->host_build_toolchains_path,
-            .build_ingredients_root = kitchen->host_build_ingredients_path
-        },
-        .confined_paths = {
-            .project_root = kitchen->project_root,
-            .build_root = kitchen->build_root,
-            .install_root = kitchen->install_path,
-            .toolchains_root = kitchen->build_toolchains_path,
-            .build_ingredients_root = kitchen->build_ingredients_path
-        }
-    });
-    if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to initialize oven: %s\n", strerror(errno));
-        goto cleanup;
     }
 
     status = __kitchen_refresh(kitchen, options);
@@ -533,9 +472,6 @@ int kitchen_confined_destroy(struct kitchen* kitchen)
             return status;
         }
     }
-
-    // cleanup oven
-    oven_cleanup();
 
     // cleanup pkg manager
     if (kitchen->pkg_manager) {
