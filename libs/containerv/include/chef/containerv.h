@@ -51,13 +51,29 @@ enum containerv_capabilities {
 };
 
 extern int containerv_create(
-        const char*                   rootFs,
-        enum containerv_capabilities  capabilities,
-        struct containerv_mount*      mounts,
-        int                           mountsCount,
-        struct containerv_container** containerOut);
+    const char*                   rootFs,
+    enum containerv_capabilities  capabilities,
+    struct containerv_mount*      mounts,
+    int                           mountsCount,
+    struct containerv_container** containerOut
+);
 
-extern int container_exec(struct containerv_container* container, const char* path, process_handle_t * pidOut);
+enum container_spawn_flags {
+    CV_SPAWN_WAIT = 0x1,
+};
+
+struct containerv_spawn_options {
+    const char*                arguments;
+    const char* const*         environment;
+    enum container_spawn_flags flags;
+};
+
+extern int containerv_spawn(
+    struct containerv_container*     container,
+    const char*                      path,
+    struct containerv_spawn_options* options,
+    process_handle_t*                pidOut
+);
 
 extern int container_script(struct containerv_container* container, const char* script);
 

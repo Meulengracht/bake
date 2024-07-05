@@ -18,80 +18,41 @@
 
 #include <chef/list.h>
 #include <chef/kitchen.h>
+#include <containerv.h>
 #include <libpkgmgr.h>
 #include <stdlib.h>
-#include "steps.h"
 #include <vlog.h>
-
-static void __initialize_generator_options(struct oven_generate_options* options, struct recipe_step* step)
-{
-    options->name           = step->name;
-    options->profile        = NULL;
-    options->system         = step->system;
-    options->system_options = &step->options;
-    options->arguments      = &step->arguments;
-    options->environment    = &step->env_keypairs;
-}
-
-static void __initialize_build_options(struct oven_build_options* options, struct recipe_step* step)
-{
-    options->name           = step->name;
-    options->profile        = NULL;
-    options->system         = step->system;
-    options->system_options = &step->options;
-    options->arguments      = &step->arguments;
-    options->environment    = &step->env_keypairs;
-}
-
-static void __initialize_script_options(struct oven_script_options* options, struct recipe_step* step)
-{
-    options->name   = step->name;
-    options->script = step->script;
-}
 
 static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct list* steps)
 {
     struct list_item* item;
     int               status;
+    char              buffer[512];
     VLOG_DEBUG("kitchen", "__make_recipe_steps(part=%s)\n", part);
     
     list_foreach(steps, item) {
         struct recipe_step* step = (struct recipe_step*)item;
         if (recipe_cache_is_step_complete(part, step->name)) {
-            VLOG_TRACE("bake", "nothing to be done for step %s/%s\n", part, step->name);
+            VLOG_TRACE("bake", "nothing to be done for step '%s/%s'\n", part, step->name);
             continue;
         }
 
-        VLOG_TRACE("bake", "preparing step '%s'\n", step->system);
-        if (kitchen->pkg_manager != NULL) {
-            kitchen->pkg_manager->add_overrides(kitchen->pkg_manager, &step->env_keypairs);
-        }
+        snprintf(&buffer[0], "--recipe %s --step %s/%s", kitchen->recipe_path, part, step->system);
 
-        VLOG_TRACE("bake", "executing step '%s'\n", step->system);
-        if (step->type == RECIPE_STEP_TYPE_GENERATE) {
-            struct oven_generate_options genOptions;
-            __initialize_generator_options(&genOptions, step);
-            status = oven_configure(&genOptions);
-            if (status) {
-                VLOG_ERROR("bake", "failed to configure target: %s\n", step->system);
-                return status;
-            }
-        } else if (step->type == RECIPE_STEP_TYPE_BUILD) {
-            struct oven_build_options buildOptions;
-            __initialize_build_options(&buildOptions, step);
-            status = oven_build(&buildOptions);
-            if (status) {
-                VLOG_ERROR("bake", "failed to build target: %s\n", step->system);
-                return status;
-            }
-        } else if (step->type == RECIPE_STEP_TYPE_SCRIPT) {
-            struct oven_script_options scriptOptions;
-            __initialize_script_options(&scriptOptions, step);
-            status = oven_script(&scriptOptions);
-            if (status) {
-                VLOG_ERROR("bake", "failed to execute script\n");
-                return status;
-            }
+        VLOG_TRACE("bake", "executing step '%s/%s'\n", part, step->system);
+        status = containerv_spawn(
+            kitchen->container,
+            "bakectl",
+            &(struct containerv_spawn_options) {
+                .arguments = &buffer[0],
+                .environment = (const char* const*)kitchen->base_environment,
+                .flags = CV_SPAWN_WAIT
+            },
+            NULL
+        );
+        if (status) {
+            VLOG_ERROR("bake", "failed to execute step '%s/%s'\n", part, step->system);
+            return status;
         }
 
         status = recipe_cache_mark_step_complete(part, step->name);

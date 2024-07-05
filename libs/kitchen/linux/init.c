@@ -29,6 +29,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "private.h"
+#include "user.h"
 
 static struct pkgmngr* __setup_pkg_environment(struct kitchen_init_options* options, const char* chroot)
 {
@@ -78,6 +79,50 @@ int __get_kitchen_root(char* buffer, size_t maxLength, const char* uuid)
     return 0;
 }
 
+static char* __fmt_env_option(const char* name, const char* value)
+{
+    char  tmp[512];
+    char* result;
+    snprintf(&tmp[0], sizeof(tmp), "%s=%s", name, value);
+    result = strdup(&tmp[0]);
+    if (result == NULL) {
+        VLOG_FATAL("kitchen", "failed to allocate memory for environment option\n");
+    }
+    return result;
+}
+
+static char** __initialize_env(struct kitchen* kitchen, const char* const* parentEnv)
+{
+    struct kitchen_user user;
+    char** env = calloc(12, sizeof(char*));
+    if (env == NULL) {
+        VLOG_FATAL("kitchen", "failed to allocate memory for environment\n");
+        return NULL;
+    }
+
+    if (kitchen_user_new(&user)) {
+        VLOG_FATAL("kitchen", "kitchen_setup: failed to get current user\n");
+        return NULL;
+    }
+
+    // we are not using the parent environment yet
+    (void)parentEnv;
+
+    env[0] = __fmt_env_option("USER", user.caller_name);
+    env[1] = __fmt_env_option("USERNAME", user.caller_name);
+    env[2] = __fmt_env_option("HOME", "/chef");
+    env[3] = __fmt_env_option("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:");
+    env[4] = __fmt_env_option("LD_LIBRARY_PATH", "/usr/local/lib");
+    env[5] = __fmt_env_option("CHEF_TARGET_ARCH", kitchen->target_architecture);
+    env[6] = __fmt_env_option("CHEF_TARGET_PLATFORM", kitchen->target_platform);
+    // env[7-10] are pkgmgr overrides
+    if (kitchen->pkg_manager) {
+        kitchen->pkg_manager->add_overrides(kitchen->pkg_manager, env);
+    }
+    kitchen_user_delete(&user);
+    return env;
+}
+
 // <root>/.kitchen/output
 // <root>/.kitchen/<recipe>/bin
 // <root>/.kitchen/<recipe>/lib
@@ -105,9 +150,9 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     kitchen->target_platform = strdup(options->target_platform);
     kitchen->target_architecture = strdup(options->target_architecture);
     kitchen->real_project_path = strdup(options->project_path);
-    kitchen->confined = options->confined;
     kitchen->magic = __KITCHEN_INIT_MAGIC;
     kitchen->recipe = options->recipe;
+    kitchen->recipe_path = strdup(options->recipe_path);
 
     kitchen->host_kitchen_project_root = strdup(&root[0]);
 
@@ -118,6 +163,9 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     snprintf(&buff[0], sizeof(buff), "%s/ns", &root[0]);
     kitchen->host_chroot = strdup(&buff[0]);
     kitchen->pkg_manager = __setup_pkg_environment(options, &buff[0]);
+
+    // Before paths, but after all the other setup, setup base environment
+    kitchen->base_environment = __initialize_env(kitchen, options->envp);
 
     snprintf(&buff[0], sizeof(buff), "%s/ns/chef/project", &root[0]);
     kitchen->host_project_path = strdup(&buff[0]);

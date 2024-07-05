@@ -23,6 +23,7 @@
 
 struct bake_command_options {
     struct recipe* recipe;
+    const char*    recipe_path;
     const char*    platform;
     const char*    architecture;
     const char*    cwd;
