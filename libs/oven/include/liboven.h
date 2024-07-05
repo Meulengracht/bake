@@ -131,11 +131,12 @@ struct oven_paths {
     const char* build_ingredients_root;
 };
 
-struct oven_parameters {
+struct oven_initialize_options {
     const char* const* envp;
     const char*        target_platform;
     const char*        target_architecture;
-    struct oven_paths  paths;
+    struct oven_paths  host_paths;
+    struct oven_paths  confined_paths;
 };
 
 /**
@@ -145,7 +146,7 @@ struct oven_parameters {
  * @param[In] parameters
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int oven_initialize(struct oven_parameters* parameters);
+extern int oven_initialize(struct oven_initialize_options* parameters);
 
 /**
  * @brief 

@@ -98,7 +98,7 @@ const char* __get_architecture(void)
     return g_oven.variables.target_arch;
 }
 
-int oven_initialize(struct oven_parameters* parameters)
+int oven_initialize(struct oven_initialize_options* parameters)
 {
     VLOG_DEBUG("oven", "oven_initialize()\n");
 
