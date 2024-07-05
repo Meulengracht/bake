@@ -634,7 +634,7 @@ int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen
 
     // Now that we have the paths, we can start the oven
     // we need to ensure that the paths we provide change based on .confine status
-    status = oven_initialize(&(struct oven_parameters){
+    status = oven_initialize(&(struct oven_initialize_options){
         .envp = (const char* const*)__initialize_env(&user, options->envp),
         .target_architecture = kitchen->target_architecture,
         .target_platform = kitchen->target_platform,

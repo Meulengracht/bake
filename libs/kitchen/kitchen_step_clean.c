@@ -24,7 +24,6 @@
 #include <string.h>
 #include <unistd.h>
 #include "steps.h"
-#include "user.h"
 #include <vlog.h>
 
 static int __reset_steps(const char* part, struct list* steps, enum recipe_step_type stepType, const char* name);

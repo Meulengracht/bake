@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <vlog.h>
 
 #include "private.h"
@@ -136,9 +137,8 @@ static int __setup_rootfs(struct kitchen* kitchen, struct kitchen_user* user)
 
 static int __setup_container(struct kitchen* kitchen, struct kitchen_user* user)
 {
-    struct containerv_mount      mounts[2] = { 0 };
-    struct containerv_container* container;
-    int                          status;
+    struct containerv_mount mounts[2] = { 0 };
+    int                     status;
     VLOG_TRACE("kitchen", "creating build container\n");
 
     // two mounts
@@ -153,7 +153,7 @@ static int __setup_container(struct kitchen* kitchen, struct kitchen_user* user)
     mounts[1].flags = CV_MOUNT_BIND | CV_MOUNT_READONLY;
     
     // start container
-    status = containerv_create(kitchen->host_chroot, CV_CAP_FILESYSTEM, mounts, 2, &container);
+    status = containerv_create(kitchen->host_chroot, CV_CAP_FILESYSTEM, mounts, 2, &kitchen->container);
     if (status) {
         VLOG_ERROR("kitchen", "__setup_container: failed to create build container\n");
         return status;
@@ -211,6 +211,7 @@ static int __update_packages(struct kitchen* kitchen)
     char*                               script;
     size_t                              streamLength;
     FILE*                               stream;
+    char*                               aptpkgs;
 
     status = recipe_cache_calculate_package_changes(&changes, &count);
     if (status) {
@@ -228,44 +229,24 @@ static int __update_packages(struct kitchen* kitchen)
         return -1;
     }
 
-    // Start with packages to remove
-    aptpkgs = __join_packages(options->changes, options->count, RECIPE_CACHE_CHANGE_REMOVED);
-    if (aptpkgs != NULL) {
-        snprintf(&scratchPad[0], sizeof(scratchPad), "-y -qq remove %s", aptpkgs);
-        free(aptpkgs);
+    fprintf(stream, "#!/bin/bash\n\n");
 
-        VLOG_DEBUG("kitchen", "executing 'apt-get %s'\n", &scratchPad[0]);
-        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-        status = platform_spawn("apt-get", &scratchPad[0], NULL, &(struct platform_spawn_options) {
-            .output_handler = __debootstrap_output_handler
-        });
-        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-        if (status) {
-            return status;
-        }
+    aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_REMOVED);
+    if (aptpkgs != NULL) {
+        fprintf(stream, "apt-get -y -qq remove %s\n", aptpkgs);
+        free(aptpkgs);
     }
 
-    // Then packages to install
-    aptpkgs = __join_packages(options->changes, options->count, RECIPE_CACHE_CHANGE_ADDED);
+    aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_ADDED);
     if (aptpkgs != NULL) {
-        snprintf(&scratchPad[0], sizeof(scratchPad), "-y -qq install --no-install-recommends %s", aptpkgs);
+        fprintf(stream, "apt-get -y -qq install --no-install-recommends %s\n", aptpkgs);
         free(aptpkgs);
-
-        VLOG_DEBUG("kitchen", "executing 'apt-get %s'\n", &scratchPad[0]);
-        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-        status = platform_spawn("apt-get", &scratchPad[0], NULL, &(struct platform_spawn_options) {
-            .output_handler = __debootstrap_output_handler
-        });
-        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-        if (status) {
-            return status;
-        }
     }
 
-    // Generate script that we can execute in container
-    script = NULL;
+    // done with script generation
+    fclose(stream);
 
-    status = container_script(NULL, script);
+    status = container_script(kitchen->container, script);
     if (status) {
         VLOG_ERROR("kitchen", "__update_packages: failed to update packages\n");
         return status;
@@ -426,7 +407,7 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
     }
 
     VLOG_TRACE("kitchen", "executing setup hook\n");
-    status = container_script(NULL, options->setup_hook.bash);
+    status = container_script(kitchen->container, options->setup_hook.bash);
     if (status) {
         return status;
     }
@@ -434,11 +415,48 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
     recipe_cache_transaction_begin();
     status = recipe_cache_key_set_bool("setup_hook", 1);
     if (status) {
-        VLOG_ERROR("kitchen", "__kitchen_refresh: failed to mark setup hook as done\n");
+        VLOG_ERROR("kitchen", "__run_setup_hook: failed to mark setup hook as done\n");
         return status;
     }
     recipe_cache_transaction_commit();
     return 0;
+}
+
+static char* __fmt_env_option(const char* name, const char* value)
+{
+    char  tmp[512];
+    char* result;
+    snprintf(&tmp[0], sizeof(tmp), "%s=%s", name, value);
+    result = strdup(&tmp[0]);
+    if (result == NULL) {
+        VLOG_FATAL("kitchen", "failed to allocate memory for environment option\n");
+    }
+    return result;
+}
+
+static char** __initialize_env(struct kitchen_user* user, const char* const* envp)
+{
+    char** env = calloc(6, sizeof(char*));
+    if (env == NULL) {
+        VLOG_FATAL("kitchen", "failed to allocate memory for environment\n");
+    }
+
+    // we are not using the parent environment yet
+    (void)envp;
+
+    env[0] = __fmt_env_option("USER", user->caller_name);
+    env[1] = __fmt_env_option("USERNAME", user->caller_name);
+    env[2] = __fmt_env_option("HOME", "/chef");
+    env[3] = __fmt_env_option("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:");
+    env[4] = __fmt_env_option("LD_LIBRARY_PATH", "/usr/local/lib");
+    env[5] = NULL;
+    return env;
+}
+
+static int __spawn_cb(const char* path, const char* arguments, const char* const* envp, struct platform_spawn_options* options)
+{
+    
+    return platform_spawn(path, arguments, envp, options);
 }
 
 int kitchen_confined_setup(struct kitchen* kitchen, struct kitchen_setup_options* options)
@@ -469,16 +487,23 @@ int kitchen_confined_setup(struct kitchen* kitchen, struct kitchen_setup_options
         return -1;
     }
 
-    status = oven_initialize(&(struct oven_parameters){
+    status = oven_initialize(&(struct oven_initialize_options){
         .envp = (const char* const*)__initialize_env(&user, options->envp),
         .target_architecture = kitchen->target_architecture,
         .target_platform = kitchen->target_platform,
-        .paths = {
-            .project_root = kitchen->confined ? kitchen->project_root : kitchen->host_project_path,
-            .build_root = kitchen->confined ? kitchen->build_root : kitchen->host_build_path,
-            .install_root = kitchen->confined ? kitchen->install_path : kitchen->host_install_path,
-            .toolchains_root = kitchen->confined ? kitchen->build_toolchains_path : kitchen->host_build_toolchains_path,
-            .build_ingredients_root = kitchen->confined ? kitchen->build_ingredients_path : kitchen->host_build_ingredients_path
+        .host_paths = {
+            .project_root = kitchen->host_project_path,
+            .build_root = kitchen->host_build_path,
+            .install_root = kitchen->host_install_path,
+            .toolchains_root = kitchen->host_build_toolchains_path,
+            .build_ingredients_root = kitchen->host_build_ingredients_path
+        },
+        .confined_paths = {
+            .project_root = kitchen->project_root,
+            .build_root = kitchen->build_root,
+            .install_root = kitchen->install_path,
+            .toolchains_root = kitchen->build_toolchains_path,
+            .build_ingredients_root = kitchen->build_ingredients_path
         }
     });
     if (status) {
@@ -499,7 +524,44 @@ cleanup:
 
 int kitchen_confined_destroy(struct kitchen* kitchen)
 {
-    // cleanup oven
+    int status;
 
-    // container_destroy()
+    if (kitchen->container) {
+        status = container_destroy(kitchen->container);
+        if (status) {
+            VLOG_FATAL("kitchen", "kitchen_confined_destroy: failed to destroy container\n");
+            return status;
+        }
+    }
+
+    // cleanup oven
+    oven_cleanup();
+
+    // cleanup pkg manager
+    if (kitchen->pkg_manager) {
+        kitchen->pkg_manager->destroy(kitchen->pkg_manager);
+    }
+
+    // cleanup paths
+    free(kitchen->target_platform);
+    free(kitchen->target_architecture);
+    free(kitchen->real_project_path);
+    free(kitchen->shared_output_path);
+
+    free(kitchen->host_chroot);
+    free(kitchen->host_kitchen_project_root);
+    free(kitchen->host_build_path);
+    free(kitchen->host_build_ingredients_path);
+    free(kitchen->host_build_toolchains_path);
+    free(kitchen->host_project_path);
+    free(kitchen->host_install_root);
+    free(kitchen->host_install_path);
+
+    free(kitchen->project_root);
+    free(kitchen->build_root);
+    free(kitchen->build_ingredients_path);
+    free(kitchen->build_toolchains_path);
+    free(kitchen->install_root);
+    free(kitchen->install_path);
+    return 0;
 }

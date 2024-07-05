@@ -16,19 +16,16 @@
  * 
  */
 
-#ifndef __KITCHEN_STEPS_H__
-#define __KITCHEN_STEPS_H__
+#ifndef __BAKECTL_COMMANDS_H__
+#define __BAKECTL_COMMANDS_H__
 
-// imports where we do not actually care about the .h
-struct kitchen;
-struct recipe;
-struct oven_recipe_options;
-struct recipe_part;
+#include <chef/recipe.h>
 
-extern int   kitchen_cooking_start(struct kitchen* kitchen);
-extern int   kitchen_cooking_end(struct kitchen* kitchen);
-extern char* kitchen_toolchain_resolve(struct recipe* recipe, const char* toolchain, const char* platform);
-extern void  oven_recipe_options_construct(struct oven_recipe_options* options, struct recipe_part* part, const char* toolchain);
+struct bakectl_command_options {
+    struct recipe* recipe;
+    const char*    platform;
+    const char*    architecture;
+    const char*    cwd;
+};
 
-
-#endif //!__KITCHEN_STEPS_H__
+#endif //!__BAKECTL_COMMANDS_H__

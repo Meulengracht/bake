@@ -16,29 +16,16 @@
  * 
  */
 
-#include <chef/kitchen.h>
-#include <errno.h>
+#ifndef __KITCHEN_STEPS_H__
+#define __KITCHEN_STEPS_H__
 
-int kitchen_initialize(struct kitchen_init_options* options, struct kitchen* kitchen)
-{
-    errno = ENOTSUP;
-    return -1;
-}
+// imports where we do not actually care about the .h
+struct recipe;
+struct oven_recipe_options;
+struct recipe_part;
 
-int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen)
-{
-    errno = ENOTSUP;
-    return -1;
-}
+extern char* kitchen_toolchain_resolve(struct recipe* recipe, const char* toolchain, const char* platform);
+extern void  oven_recipe_options_construct(struct oven_recipe_options* options, struct recipe_part* part, const char* toolchain);
 
-int kitchen_purge(struct kitchen_purge_options* options)
-{
-    errno = ENOTSUP;
-    return -1;
-}
 
-int kitchen_recipe_purge(struct kitchen* kitchen, struct kitchen_recipe_purge_options* options)
-{
-    errno = ENOTSUP;
-    return -1;
-}
+#endif //!__KITCHEN_STEPS_H__

@@ -21,7 +21,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "steps.h"
-#include "user.h"
 #include <vlog.h>
 
 static void __initialize_pack_options(
@@ -93,28 +92,9 @@ exit:
 
 int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
 {
-    struct list_item*  item;
-    struct kitchen_user user;
-    int                status;
+    struct list_item* item;
+    int               status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_pack()\n");
-
-    if (kitchen_user_new(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to get current user\n");
-        return -1;
-    }
-
-    status = kitchen_cooking_start(kitchen);
-    if (status) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to start cooking: %i\n", status);
-        goto cleanup;
-    }
-
-    status = kitchen_user_drop_privs(&user);
-    if (status) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to switch to root\n");
-        kitchen_cooking_end(kitchen);
-        goto cleanup;
-    }
 
     // include ingredients marked for packing
     list_foreach(&recipe->environment.runtime.ingredients, item) {
@@ -141,14 +121,6 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
         }
     }
 
-    if (kitchen_user_regain_privs(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to re-escalate privileges\n");
-    }
-
-    if (kitchen_cooking_end(kitchen)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to end cooking\n");
-    }
-
     // move packs out of the output directory and into root project folder
     list_foreach(&recipe->packs, item) {
         struct recipe_pack* pack = (struct recipe_pack*)item;
@@ -158,6 +130,5 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
     }
 
 cleanup:
-    kitchen_user_delete(&user);
     return status;
 }

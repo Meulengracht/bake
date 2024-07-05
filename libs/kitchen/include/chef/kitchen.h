@@ -25,6 +25,7 @@
 
 // imports that don't really need to be exposed
 struct pkgmngr;
+struct containerv_container;
 
 struct kitchen_ingredient {
     struct list_item list_header;
@@ -82,6 +83,7 @@ struct kitchen {
     char* shared_output_path;
 
     struct pkgmngr* pkg_manager;
+    struct containerv_container* container;
 
     // external paths that point inside chroot
     // i.e paths valid outside chroot
