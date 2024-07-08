@@ -222,7 +222,6 @@ static void __debug(void)
 
 int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    struct kitchen_init_options  initOptions = { 0 };
     struct kitchen_setup_options setupOptions = { 0 };
     struct kitchen               kitchen;
     int                          debug = 0;
