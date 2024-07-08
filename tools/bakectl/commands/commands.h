@@ -23,9 +23,9 @@
 
 struct bakectl_command_options {
     struct recipe* recipe;
-    const char*    platform;
-    const char*    architecture;
     const char*    cwd;
+    const char*    part;
+    const char*    step;
 };
 
 #endif //!__BAKECTL_COMMANDS_H__
