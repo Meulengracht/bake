@@ -75,26 +75,8 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
     recipe_cache_transaction_begin();
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
-        char*               toolchain = NULL;
-
-        if (part->toolchain != NULL) {
-            toolchain = kitchen_toolchain_resolve(recipe, part->toolchain, kitchen->target_platform);
-            if (toolchain == NULL) {
-                VLOG_ERROR("kitchen", "part %s was marked for platform toolchain, but no matching toolchain specified for platform %s\n", part->name, kitchen->target_platform);
-                return -1;
-            }
-        }
-
-        oven_recipe_options_construct(&options, part, toolchain);
-        status = oven_recipe_start(&options);
-        free(toolchain);
-        if (status) {
-            break;
-        }
 
         status = __make_recipe_steps(kitchen, part->name, &part->steps);
-        oven_recipe_end();
-
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_make: failed to build recipe %s\n", part->name);
             break;

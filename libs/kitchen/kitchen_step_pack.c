@@ -20,7 +20,6 @@
 #include <chef/kitchen.h>
 #include <stdlib.h>
 #include <string.h>
-#include "steps.h"
 #include <vlog.h>
 
 static void __initialize_pack_options(
@@ -103,7 +102,6 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
         status = oven_include_filters(&ingredient->filters);
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to include ingredient %s\n", ingredient->name);
-            kitchen_cooking_end(kitchen);
             goto cleanup;
         }
     }
@@ -116,7 +114,6 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
         status = oven_pack(&packOptions);
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);
-            kitchen_cooking_end(kitchen);
             goto cleanup;
         }
     }

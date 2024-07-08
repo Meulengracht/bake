@@ -28,7 +28,7 @@
 #include "commands/commands.h"
 
 extern int build_main(int argc, char** argv, char** envp, struct bakectl_command_options* options);
-extern int pack_main(int argc, char** argv, char** envp, struct bakectl_command_options* options);
+extern int clean_main(int argc, char** argv, char** envp, struct bakectl_command_options* options);
 
 struct command_handler {
     char* name;
@@ -37,7 +37,7 @@ struct command_handler {
 
 static struct command_handler g_commands[] = {
     { "build", build_main },
-    { "pack",  pack_main }
+    { "clean", clean_main }
 };
 
 static void __print_help(void)
@@ -48,18 +48,14 @@ static void __print_help(void)
     printf("  chef/recipe.yaml\n");
     printf("\n");
     printf("Commands:\n");
-    printf("  build       initializes a new recipe in the current directory\n");
-    printf("  pack        refreshes/fetches all ingredients\n");
+    printf("  build       runs the build backend of the specified part and step\n");
+    printf("  clean       runs the clean backend of the specified part and step\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
     printf("  -v, --version\n");
     printf("      Print the version of bake\n");
-    printf("  -cc, --cross-compile\n");
-    printf("      Cross-compile for another platform or/and architecture. This switch\n");
-    printf("      can be used with two different formats, either just like\n");
-    printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
 }
 
 static struct command_handler* __get_command(const char* command)
@@ -114,108 +110,6 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
     return 0;
 }
 
-static int __is_osbase(const char* name)
-{
-    if (strcmp(name, "vali/linux-1") == 0) {
-        return 0;
-    }
-    return -1;
-}
-
-static int __add_ingredient(struct recipe* recipe, const char* name)
-{
-    struct recipe_ingredient* ingredient;
-
-    ingredient = malloc(sizeof(struct recipe_ingredient));
-    if (ingredient == NULL) {
-        return -1;
-    }
-
-    memset(ingredient, 0, sizeof(struct recipe_ingredient));
-    ingredient->name = platform_strdup(name);
-    ingredient->type = RECIPE_INGREDIENT_TYPE_HOST;
-    ingredient->source.type = INGREDIENT_SOURCE_TYPE_REPO;
-    if (ingredient->name == NULL) {
-        free(ingredient);
-        return -1;
-    }
-
-    ingredient->channel = "devel"; // TODO: should be something else
-    list_add(&recipe->environment.host.ingredients, &ingredient->list_header);
-    return 0;
-}
-
-static int __add_osbase(struct recipe* recipe)
-{
-    char nameBuffer[32];
-    snprintf(&nameBuffer[0], sizeof(nameBuffer), "vali/%s-1", CHEF_PLATFORM_STR);
-    return __add_ingredient(recipe, &nameBuffer[0]);
-}
-
-static int __add_implicit_ingredients(struct recipe* recipe)
-{
-    struct list_item* i;
-    int               needsOs = recipe->environment.host.base;
-
-    list_foreach(&recipe->environment.host.ingredients, i) {
-        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)i;
-        if (__is_osbase(ingredient->name) == 0) {
-            needsOs = 0;
-        }
-    }
-
-#if defined(__MOLLENOS__)
-    if (needsOs && __add_osbase(recipe)) {
-        return -1;
-    }
-#endif
-    return 0;
-}
-
-static const char* __find_default_recipe(void)
-{
-    struct platform_stat stats;
-    if (platform_stat("chef/recipe.yaml", &stats) == 0) {
-        return "chef/recipe.yaml";
-    }
-    return NULL;
-}
-
-
-static int __parse_cc_switch(const char* value, const char** platformOut, const char** archOut)
-{
-    // value is either of two forms
-    // platform/arch
-    // arch
-    char* separator;
-    char* equal;
-
-    if (value == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    equal = strchr(value, '=');
-    if (equal == NULL) {
-        fprintf(stderr, "bake: invalid format of %s (must be -cc=... or --cross-compile=...)\n", value);
-        errno = EINVAL;
-        return -1;
-    }
-
-    // skip the '='
-    equal++;
-
-    separator = strchr(equal, '/');
-    if (separator) {
-        *platformOut = platform_strndup(equal, separator - equal);
-        *archOut     = platform_strdup(separator + 1);
-    } else {
-        *platformOut = platform_strdup(CHEF_PLATFORM_STR);
-        *archOut     = platform_strdup(equal);
-    }
-    return 0;
-}
-
 static int __get_cwd(char** bufferOut)
 {
     char*  cwd;
@@ -254,38 +148,38 @@ int main(int argc, char** argv, char** envp)
         }
 
         if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
-            printf("bake: version " PROJECT_VER "\n");
+            printf("bakectl: version " PROJECT_VER "\n");
             return 0;
         }
 
         command = __get_command(argv[1]);
-        if (!command) {
-            struct platform_stat stats;
-            // was a file passed? Then it was the recipe, and we assume
-            // that the run command should be run.
-            if (platform_stat(argv[1], &stats) == 0) {
-                command = &g_commands[2];
-                recipePath = argv[1];
-            } else {
-                fprintf(stderr, "bake: invalid command %s\n", argv[1]);
-                return -1;
-            }
+        if (command == NULL) {
+            fprintf(stderr, "bakectl: invalid command %s\n", argv[1]);
+            return -1;
         }
 
         if (argc > 2) {
             for (int i = 2; i < argc; i++) {
-                if (!strncmp(argv[i], "-cc", 3) || !strncmp(argv[i], "--cross-compile", 15)) {
-                    // THIS ALLOCS MEMORY, WE NEED TO HANDLE THIS
-                    status = __parse_cc_switch(argv[i], &options.platform, &options.architecture);
-                    if (status) {
-                        fprintf(stderr, "bake: invalid format: %s\n", argv[i]);
-                        return status;
-                    }
-                } else if (argv[i][0] != '-') {
-                    recipePath = argv[i];
+                if (!strcmp(argv[i], "--recipe")) {
+                    recipePath = argv[i + 1];
+                    i++;
+                } else if (!strcmp(argv[i], "--step")) {
+                
                 }
             }
         }
+    }
+
+    if (recipePath == NULL) {
+        fprintf(stderr, "bakectl: --recipe must be provided and point to a valid chef recipe\n");
+        __print_help();
+        return -1;
+    }
+
+    if (options.part == NULL || options.step == NULL) {
+        fprintf(stderr, "bakectl: --step must be provided and have a valid format of '<part>/<step>'\n");
+        __print_help();
+        return -1;
     }
 
     // get the current working directory
@@ -294,32 +188,15 @@ int main(int argc, char** argv, char** envp)
         return -1;
     }
 
-    if (recipePath == NULL) {
-        recipePath = (char*)__find_default_recipe();
-    }
-
     if (recipePath != NULL) {
         status = __read_recipe(recipePath, &buffer, &length);
         if (!status) {
             status = recipe_parse(buffer, length, &options.recipe);
             free(buffer);
             if (status) {
-                fprintf(stderr, "bake: failed to parse recipe\n");
+                fprintf(stderr, "bakectl: failed to parse recipe\n");
                 return status;
             }
-            
-            status = __add_implicit_ingredients(options.recipe);
-            if (status) {
-                fprintf(stderr, "bake: failed to add implicit ingredients\n");
-                return status;
-            }
-
-            status = recipe_validate_target(options.recipe, &options.platform, &options.architecture);
-            if (status) {
-                return -1;
-            }
-            printf("bake: target platform: %s\n", options.platform);
-            printf("bake: target architecture: %s\n", options.architecture);
         }
     }
 
