@@ -22,46 +22,69 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 
 int platform_script(const char *script) 
 {
-    int    status;
-    int    sfilefd;
-    FILE*  sfile;
-    char   tmpPath[64];
-    char   cmdBuffer[128];
-    
-    snprintf(&tmpPath[0], sizeof(tmpPath), "C:\\Windows\\Temp\\scriptXXXXXX");
+    HANDLE hTempFile;
+    char tmpPath[MAX_PATH];
+    char tmpFileName[MAX_PATH];
+    FILE *sfile;
+    int status;
 
-    // create a temporary file
-    sfilefd = mkstemp(&tmpPath[0]);
-    if (sfilefd < 1) {
-        fprintf(stderr, "platform_script: mkstemp failed for path %s: %s\n", &tmpPath[0], strerror(errno));
+    if (!GetTempPathA(MAX_PATH, tmpPath)) {
+        fprintf(stderr, "platform_script: GetTempPathA failed: %lu\n", GetLastError());
         return -1;
     }
 
-    // set executable
-    status = _chmod(tmpPath);
-    if (status) {
-        fprintf(stderr, "platform_script: failed to set executable bit for %s: %s\n", &tmpPath[0], strerror(errno));
-        return status;
+    if (!GetTempFileNameA(tmpPath, "script_", 0, tmpFileName)) {
+        fprintf(stderr, "platform_script: GetTempFileNameA failed: %lu\n", GetLastError());
+        return -1;
     }
 
-    sfile = _fdopen(sfilefd, "w+");
+    hTempFile = CreateFileA(
+        tmpFileName,
+        GENERIC_WRITE,
+        0,
+        NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL
+    );
+
+    if (hTempFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "platform_script: CreateFileA failed: %lu\n", GetLastError());
+        return -1;
+    }
+
+    int fd = _open_osfhandle((intptr_t)hTempFile, _O_APPEND);
+    if (fd == -1) {
+        fprintf(stderr, "platform_script: _open_osfhandle failed: %s\n", strerror(errno));
+        CloseHandle(hTempFile);
+        return -1;
+    }
+
+    sfile = _fdopen(fd, "w");
     if (sfile == NULL) {
-        fprintf(stderr, "platform_script: fdopen failed for path %s: %s\n", &tmpPath[0], strerror(errno));
+        fprintf(stderr, "platform_script: _fdopen failed for path %s: %s\n", tmpFileName, strerror(errno));
+        CloseHandle(hTempFile);
         return -1;
     }
-    
+
+    fprintf(sfile, "@echo off\r\n");
     fputs(script, sfile);
     fclose(sfile);
 
-    // execute and unlink
-    snprintf(&cmdBuffer[0], sizeof(cmdBuffer), "powershell -ExecutionPolicy Bypass -File %s", tmpPath);
-    status = system(&cmdBuffer[0]);
-    _unlink(&tmpPath[0]);
+    char cmdBuffer[MAX_PATH + 50];
+    snprintf(cmdBuffer, sizeof(cmdBuffer), "cmd.exe /c \"%s\"", tmpFileName);
+
+    status = system(cmdBuffer);
+
+    DeleteFileA(tmpFileName);
+
     if (status) {
-        fprintf(stderr, "platform_script: exec %s failed: %s\n", &tmpPath[0], strerror(errno));
+        fprintf(stderr, "platform_script: exec %s failed: %d\n", tmpFileName, status);
     }
+
     return status;
 }
