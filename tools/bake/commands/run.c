@@ -266,7 +266,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
         .recipe_path = options->recipe_path,
-        .envp = envp,
+        .envp = (const char* const*)envp,
         .project_path = options->cwd,
         .pkg_environment = NULL,
         .target_platform = options->platform,
@@ -289,7 +289,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     // setup kitchen hooks
     setupOptions.setup_hook.bash = options->recipe->environment.hooks.bash;
     setupOptions.setup_hook.powershell = options->recipe->environment.hooks.powershell;
-    status = kitchen_setup(&setupOptions, &kitchen);
+    status = kitchen_setup(&kitchen, &setupOptions);
     if (status) {
         VLOG_ERROR("bake", "failed to setup kitchen: %s\n", strerror(errno));
         return -1;

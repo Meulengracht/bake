@@ -21,27 +21,27 @@
 
 #include <chef/list.h>
 
-enum oven_resolve_arch {
-    OVEN_RESOLVE_ARCH_UNKNOWN,
-    OVEN_RESOLVE_ARCH_X86,
-    OVEN_RESOLVE_ARCH_X86_64,
-    OVEN_RESOLVE_ARCH_ARM,
-    OVEN_RESOLVE_ARCH_ARM64,
-    OVEN_RESOLVE_ARCH_MIPS,
-    OVEN_RESOLVE_ARCH_MIPS64,
-    OVEN_RESOLVE_ARCH_PPC,
-    OVEN_RESOLVE_ARCH_PPC64,
-    OVEN_RESOLVE_ARCH_SPARC,
-    OVEN_RESOLVE_ARCH_SPARV9,
-    OVEN_RESOLVE_ARCH_S390,
-    OVEN_RESOLVE_ARCH_RISCV32,
-    OVEN_RESOLVE_ARCH_RISCV64,
-    OVEN_RESOLVE_ARCH_RISCV128,
+enum kitchen_resolve_arch {
+    KITCHEN_RESOLVE_ARCH_UNKNOWN,
+    KITCHEN_RESOLVE_ARCH_X86,
+    KITCHEN_RESOLVE_ARCH_X86_64,
+    KITCHEN_RESOLVE_ARCH_ARM,
+    KITCHEN_RESOLVE_ARCH_ARM64,
+    KITCHEN_RESOLVE_ARCH_MIPS,
+    KITCHEN_RESOLVE_ARCH_MIPS64,
+    KITCHEN_RESOLVE_ARCH_PPC,
+    KITCHEN_RESOLVE_ARCH_PPC64,
+    KITCHEN_RESOLVE_ARCH_SPARC,
+    KITCHEN_RESOLVE_ARCH_SPARV9,
+    KITCHEN_RESOLVE_ARCH_S390,
+    KITCHEN_RESOLVE_ARCH_RISCV32,
+    KITCHEN_RESOLVE_ARCH_RISCV64,
+    KITCHEN_RESOLVE_ARCH_RISCV128,
 
-    OVEN_RESOLVE_ARCH_MAX
+    KITCHEN_RESOLVE_ARCH_MAX
 };
 
-struct oven_resolve_dependency {
+struct kitchen_resolve_dependency {
     struct list_item list_header;
     const char*      name;
     const char*      path;
@@ -50,10 +50,10 @@ struct oven_resolve_dependency {
     int              system_library;
 };
 
-struct oven_resolve {
+struct kitchen_resolve {
     struct list_item       list_header;
     const char*            path;
-    enum oven_resolve_arch arch;
+    enum kitchen_resolve_arch arch;
     struct list            dependencies;
 };
 
@@ -63,8 +63,8 @@ struct oven_resolve {
  * @param path 
  * @return int 
  */
-extern int elf_is_valid(const char* path, enum oven_resolve_arch* arch);
-extern int pe_is_valid(const char* path, enum oven_resolve_arch* arch);
+extern int elf_is_valid(const char* path, enum kitchen_resolve_arch* arch);
+extern int pe_is_valid(const char* path, enum kitchen_resolve_arch* arch);
 
 /**
  * @brief Resolves all dependencies for the given binary. The binary must be an
@@ -81,10 +81,11 @@ extern int pe_resolve_dependencies(const char* path, struct list* dependencies);
 /**
  * @brief Tries to resolve where the dependency is located on the system.
  * 
+ * @param[In] sysroot    The root path of the system to use.
  * @param[In] resolve    The primary binary that requires this dependency
  * @param[In] dependency The dependency to resolve
  * @return const char*   The full path of the resolved dependency
  */
-extern const char* resolve_platform_dependency(struct oven_resolve* resolve, const char* dependency);
+extern const char* resolve_platform_dependency(const char* sysroot, struct kitchen_resolve* resolve, const char* dependency);
 
 #endif //!__RESOLVERS_H__

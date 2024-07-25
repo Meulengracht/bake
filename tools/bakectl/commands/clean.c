@@ -31,9 +31,13 @@
 
 static void __print_help(void)
 {
-    printf("Usage: bakectl build [options]\n");
+    printf("Usage: bakectl clean [options]\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -p,  --purge\n");
+    printf("      Purges all build configurations for the recipe\n");
+    printf("  -s,  --step\n");
+    printf("      If provided, cleans only the provided part/step configuration\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
 }
@@ -72,71 +76,36 @@ static void __construct_oven_recipe_options(struct oven_recipe_options* options,
     options->toolchain     = toolchain;
 }
 
-static void __initialize_generator_options(struct oven_generate_options* options, struct recipe_step* step)
+static void __initialize_clean_options(struct oven_clean_options* options, struct recipe_step* step)
 {
-    options->name           = step->name;
-    options->profile        = NULL;
-    options->system         = step->system;
-    options->system_options = &step->options;
-    options->arguments      = &step->arguments;
-    options->environment    = &step->env_keypairs;
+    options->name        = step->name;
+    options->profile     = NULL;
+    options->system      = step->system;
+    options->arguments   = &step->arguments;
+    options->environment = &step->env_keypairs;
 }
 
-static void __initialize_build_options(struct oven_build_options* options, struct recipe_step* step)
-{
-    options->name           = step->name;
-    options->profile        = NULL;
-    options->system         = step->system;
-    options->system_options = &step->options;
-    options->arguments      = &step->arguments;
-    options->environment    = &step->env_keypairs;
-}
-
-static void __initialize_script_options(struct oven_script_options* options, struct recipe_step* step)
-{
-    options->name   = step->name;
-    options->script = step->script;
-}
-
-static int __build_step(const char* partName, struct list* steps, const char* stepName)
+static int __clean_step(const char* partName, struct list* steps, const char* stepName)
 {
     struct list_item* item;
     int               status;
     char              buffer[512];
-    VLOG_DEBUG("bakectl", "__build_step(part=%s, step=%s)\n", partName, stepName);
+    VLOG_DEBUG("bakectl", "__clean_step(part=%s, step=%s)\n", partName, stepName);
     
     list_foreach(steps, item) {
+        struct oven_clean_options cleanOptions;
         struct recipe_step* step = (struct recipe_step*)item;
 
         // find the correct recipe step part
-        if (strcmp(step->name, stepName)) {
+        if (stepName != NULL && strcmp(step->name, stepName)) {
             continue;
         }
 
-        if (step->type == RECIPE_STEP_TYPE_GENERATE) {
-            struct oven_generate_options genOptions;
-            __initialize_generator_options(&genOptions, step);
-            status = oven_configure(&genOptions);
-            if (status) {
-                VLOG_ERROR("bakectl", "failed to configure target: %s\n", step->system);
-                return status;
-            }
-        } else if (step->type == RECIPE_STEP_TYPE_BUILD) {
-            struct oven_build_options buildOptions;
-            __initialize_build_options(&buildOptions, step);
-            status = oven_build(&buildOptions);
-            if (status) {
-                VLOG_ERROR("bakectl", "failed to build target: %s\n", step->system);
-                return status;
-            }
-        } else if (step->type == RECIPE_STEP_TYPE_SCRIPT) {
-            struct oven_script_options scriptOptions;
-            __initialize_script_options(&scriptOptions, step);
-            status = oven_script(&scriptOptions);
-            if (status) {
-                VLOG_ERROR("bakectl", "failed to execute script\n");
-                return status;
-            }
+        __initialize_clean_options(&cleanOptions, step);
+        status = oven_clean(&cleanOptions);
+        if (status) {
+            VLOG_ERROR("bakectl", "failed to clean target: %s\n", step->system);
+            return status;
         }
 
         // done
@@ -145,12 +114,12 @@ static int __build_step(const char* partName, struct list* steps, const char* st
     return 0;
 }
 
-static int __build_part(struct recipe* recipe, const char* partName, const char* stepName, const char* platform)
+static int __clean_part(struct recipe* recipe, const char* partName, const char* stepName, const char* platform)
 {
     struct oven_recipe_options options;
     struct list_item*          item;
     int                        status;
-    VLOG_DEBUG("bakectl", "__build_part()\n");
+    VLOG_DEBUG("bakectl", "__clean_part()\n");
 
     recipe_cache_transaction_begin();
     list_foreach(&recipe->parts, item) {
@@ -158,14 +127,14 @@ static int __build_part(struct recipe* recipe, const char* partName, const char*
         char*               toolchain = NULL;
 
         // find the correct recipe part
-        if (strcmp(part->name, partName)) {
+        if (partName != NULL && strcmp(part->name, partName)) {
             continue;
         }
 
         if (part->toolchain != NULL) {
             toolchain = __resolve_toolchain(recipe, part->toolchain, platform);
             if (toolchain == NULL) {
-                VLOG_ERROR("kitchen", "part %s was marked for platform toolchain, but no matching toolchain specified for platform %s\n", part->name, platform);
+                VLOG_ERROR("bakectl", "part %s was marked for platform toolchain, but no matching toolchain specified for platform %s\n", part->name, platform);
                 return -1;
             }
         }
@@ -177,11 +146,11 @@ static int __build_part(struct recipe* recipe, const char* partName, const char*
             break;
         }
 
-        status = __build_step(part->name, &part->steps, stepName);
+        status = __clean_step(part->name, &part->steps, stepName);
         oven_recipe_end();
 
         if (status) {
-            VLOG_ERROR("bakectl", "__build_part: failed to build recipe %s\n", part->name);
+            VLOG_ERROR("bakectl", "__clean_part: failed to build recipe %s\n", part->name);
             break;
         }
 
@@ -247,10 +216,31 @@ static void __destroy_oven_options(struct oven_initialize_options* options)
     free(options->paths.install_root);
 }
 
-int build_main(int argc, char** argv, char** envp, struct bakectl_command_options* options)
+static int __recreate_dir(const char* path)
+{
+    int status;
+
+    status = platform_rmdir(path);
+    if (status) {
+        if (errno != ENOENT) {
+            VLOG_ERROR("kitchen", "__recreate_dir: failed to remove directory: %s\n", strerror(errno));
+            return -1;
+        }
+    }
+
+    status = platform_mkdir(path);
+    if (status) {
+        VLOG_ERROR("kitchen", "__recreate_dir: failed to create directory: %s\n", strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+int clean_main(int argc, char** argv, char** envp, struct bakectl_command_options* options)
 {
     struct oven_initialize_options ovenOpts = { 0 };
     int                            status;
+    int                            purge = 0;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -270,11 +260,6 @@ int build_main(int argc, char** argv, char** envp, struct bakectl_command_option
         return -1;
     }
 
-    if (options->part == NULL || options->step == NULL) {
-        fprintf(stderr, "bakectl: --step must be provided and have a valid format of '<part>/<step>'\n");
-        return -1;
-    }
-
     status = __initialize_oven_options(&ovenOpts, envp);
     if (status) {
         fprintf(stderr, "bakectl: failed to allocate memory for options\n");
@@ -286,11 +271,22 @@ int build_main(int argc, char** argv, char** envp, struct bakectl_command_option
         fprintf(stderr, "bakectl: failed to initialize oven: %s\n", strerror(errno));
         goto cleanup;
     }
-    
-    status = __build_part(options->recipe, options->part, options->step, ovenOpts.target_platform);
-    if (status) {
-        fprintf(stderr, "bakectl: failed to build: %s\n", strerror(errno));
+
+    if (purge) {
+        // eh clean entire build tree
+        status = __recreate_dir(ovenOpts.paths.build_root);
+        if (status) {
+            fprintf(stderr, "bakectl: failed to clean path '%s': %s\n", 
+                ovenOpts.paths.build_root, strerror(errno));
+        }
+    } else {
+        status = __clean_part(options->recipe, options->part, options->step, ovenOpts.target_platform);
+        if (status) {
+            fprintf(stderr, "bakectl: failed to clean step '%s/%s': %s\n", 
+                options->part, options->step, strerror(errno));
+        }
     }
+    
     oven_cleanup();
 
 cleanup:

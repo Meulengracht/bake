@@ -25,15 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <utils.h>
-#include "private.h"
 #include <vlog.h>
-
-// include dirent.h for directory operations
-#if defined(_WIN32) || defined(_WIN64)
-#include <dirent_win32.h>
-#else
-#include <dirent.h>
-#endif
 
 struct oven_recipe_context {
     const char* name;
@@ -54,49 +46,22 @@ struct oven_context {
     struct oven_recipe_context recipe;
 };
 
-struct generate_backend {
+struct oven_backend {
     const char* name;
     int       (*generate)(struct oven_backend_data* data, union oven_backend_options* options);
-};
-
-struct build_backend {
-    const char* name;
     int       (*build)(struct oven_backend_data* data, union oven_backend_options* options);
+    int       (*clean)(struct oven_backend_data* data);
 };
 
-static struct generate_backend g_genbackends[] = {
-    { "configure", configure_main    },
-    { "cmake",     cmake_main        },
-    { "meson",     meson_config_main }
-};
-
-static struct build_backend g_buildbackends[] = {
-    { "make",  make_main },
-    { "meson", meson_build_main },
-    { "ninja", ninja_main }
+static struct oven_backend g_backends[] = {
+    { "configure", configure_main,    NULL,             NULL },
+    { "cmake",     cmake_main,        NULL,             NULL },
+    { "meson",     meson_config_main, meson_build_main, NULL },
+    { "make",      NULL,              make_main,        NULL },
+    { "ninja",     NULL,              ninja_main,       NULL },
 };
 
 static struct oven_context g_oven = { 0 };
-
-const char* __get_install_path(void)
-{
-    return g_oven.paths.install_root;
-}
-
-const char* __get_build_ingredients_path(void)
-{
-    return g_oven.paths.build_ingredients_root;
-}
-
-const char* __get_platform(void)
-{
-    return g_oven.variables.target_platform;
-}
-
-const char* __get_architecture(void)
-{
-    return g_oven.variables.target_arch;
-}
 
 int oven_initialize(struct oven_initialize_options* parameters)
 {
@@ -432,7 +397,7 @@ const char* __build_argument_string(struct list* argumentList)
     // copy arguments into buffer
     argumentItr = argumentString;
     list_foreach(argumentList, item) {
-        struct oven_value_item* value = (struct oven_value_item*)item;
+        struct list_item_string* value = (struct list_item_string*)item;
         char*                   valueString = oven_preprocess_text(value->value);
         size_t                  valueLength = strlen(valueString);
 
@@ -451,11 +416,11 @@ const char* __build_argument_string(struct list* argumentList)
     return argumentString;
 }
 
-static struct generate_backend* __get_generate_backend(const char* name)
+static struct oven_backend* __get_backend(const char* name)
 {
-    for (int i = 0; i < sizeof(g_genbackends) / sizeof(struct generate_backend); i++) {
-        if (!strcmp(name, g_genbackends[i].name)) {
-            return &g_genbackends[i];
+    for (int i = 0; i < sizeof(g_backends) / sizeof(struct oven_backend); i++) {
+        if (!strcmp(name, g_backends[i].name)) {
+            return &g_backends[i];
         }
     }
     return NULL;
@@ -653,7 +618,7 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
 
 int oven_configure(struct oven_generate_options* options)
 {
-    struct generate_backend* backend;
+    struct oven_backend*     backend;
     struct oven_backend_data data;
     int                      status;
 
@@ -662,8 +627,8 @@ int oven_configure(struct oven_generate_options* options)
         return -1;
     }
 
-    backend = __get_generate_backend(options->system);
-    if (!backend) {
+    backend = __get_backend(options->system);
+    if (backend == NULL || backend->generate == NULL) {
         errno = ENOSYS;
         return -1;
     }
@@ -679,19 +644,9 @@ int oven_configure(struct oven_generate_options* options)
     return status;
 }
 
-static struct build_backend* __get_build_backend(const char* name)
-{
-    for (int i = 0; i < sizeof(g_buildbackends) / sizeof(struct build_backend); i++) {
-        if (!strcmp(name, g_buildbackends[i].name)) {
-            return &g_buildbackends[i];
-        }
-    }
-    return NULL;
-}
-
 int oven_build(struct oven_build_options* options)
 {
-    struct build_backend*    backend;
+    struct oven_backend*     backend;
     struct oven_backend_data data;
     int                      status;
 
@@ -700,8 +655,8 @@ int oven_build(struct oven_build_options* options)
         return -1;
     }
 
-    backend = __get_build_backend(options->system);
-    if (!backend) {
+    backend = __get_backend(options->system);
+    if (backend == NULL || backend->build == NULL) {
         errno = ENOSYS;
         return -1;
     }
@@ -743,117 +698,30 @@ int oven_script(struct oven_script_options* options)
     return status;
 }
 
-static int __matches_filters(const char* path, struct list* filters)
+int oven_clean(struct oven_clean_options* options)
 {
-    struct list_item* item;
+    struct oven_backend*     backend;
+    struct oven_backend_data data;
+    int                      status;
 
-    if (filters->count == 0) {
-        return 0; // YES! no filters means everything matches
-    }
-
-    list_foreach(filters, item) {
-        struct oven_value_item* filter = (struct oven_value_item*)item;
-        if (strfilter(filter->value, path, 0) != 0) {
-            return -1;
-        }
-    }
-    return 0;
-}
-
-int __copy_files_with_filters(const char* sourceRoot, const char* path, struct list* filters, const char* destinationRoot)
-{
-    // recursively iterate through the directory and copy all files
-    // as long as they match the list of filters
-    int            status = -1;
-    struct dirent* entry;
-    DIR*           dir;
-    const char*    finalSource;
-    const char*    finalDestination = NULL;
-    
-    finalSource = strpathcombine(sourceRoot, path);
-    if (!finalSource) {
-        goto cleanup;
-    }
-
-    finalDestination = strpathcombine(destinationRoot, path);
-    if (!finalDestination) {
-        goto cleanup;
-    }
-
-    dir = opendir(finalSource);
-    if (!dir) {
-        goto cleanup;
-    }
-
-    // make sure target is created
-    if (platform_mkdir(finalDestination)) {
-        goto cleanup;
-    }
-
-    while ((entry = readdir(dir)) != NULL) {
-        const char* combinedSubPath;
-
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-
-        combinedSubPath = strpathcombine(path, entry->d_name);
-        if (!combinedSubPath) {
-            goto cleanup;
-        }
-
-        // does this match filters?
-        if (__matches_filters(combinedSubPath, filters)) {
-            free((void*)combinedSubPath);
-            continue;
-        }
-
-        // oh ok, is it a directory?
-        if (entry->d_type == DT_DIR) {
-            status = __copy_files_with_filters(sourceRoot, combinedSubPath, filters, destinationRoot);
-            free((void*)combinedSubPath);
-            if (status) {
-                goto cleanup;
-            }
-        } else {
-            // ok, it's a file, copy it
-            char* sourceFile      = strpathcombine(finalSource, entry->d_name);
-            char* destinationFile = strpathcombine(finalDestination, entry->d_name);
-            free((void*)combinedSubPath);
-            if (!sourceFile || !destinationFile) {
-                free((void*)sourceFile);
-                goto cleanup;
-            }
-
-            status = platform_copyfile(sourceFile, destinationFile);
-            free((void*)sourceFile);
-            free((void*)destinationFile);
-            if (status) {
-                goto cleanup;
-            }
-        }
-    }
-
-    closedir(dir);
-    status = 0;
-
-cleanup:
-    free((void*)finalSource);
-    free((void*)finalDestination);
-    return status;
-}
-
-int oven_include_filters(struct list* filters)
-{
-    if (!filters) {
+    if (!options) {
         errno = EINVAL;
         return -1;
     }
 
-    return __copy_files_with_filters(
-        "",
-        NULL,
-        filters,
-        g_oven.paths.install_root
-    );
+    backend = __get_backend(options->system);
+    if (backend == NULL || backend->clean == NULL) {
+        errno = ENOSYS;
+        return -1;
+    }
+
+    VLOG_TRACE("oven", "running step %s\n", options->name);
+    status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
+    if (status) {
+        return status;
+    }
+    
+    status = backend->clean(&data);
+    __cleanup_backend_data(&data);
+    return status;
 }

@@ -17,8 +17,7 @@
  */
 
 #include <errno.h>
-#include "elf.h"
-#include "resolvers.h"
+#include "../pack/resolvers/resolvers.h"
 #include <chef/platform.h>
 #include <chef/list.h>
 #include <stdio.h>
@@ -89,37 +88,37 @@ static int __get_ld_conf_paths(const char* path, struct list* paths)
     return result;
 }
 
-static const char* __get_platform(struct oven_resolve* resolve)
+static const char* __get_platform(struct kitchen_resolve* resolve)
 {
     switch (resolve->arch) {
-        case OVEN_RESOLVE_ARCH_X86_64:
+        case KITCHEN_RESOLVE_ARCH_X86_64:
             return "x86_64-linux-gnu";
-        case OVEN_RESOLVE_ARCH_X86:
+        case KITCHEN_RESOLVE_ARCH_X86:
             return "i386-linux-gnu";
-        case OVEN_RESOLVE_ARCH_ARM:
+        case KITCHEN_RESOLVE_ARCH_ARM:
             return "arm-linux-gnueabi";
-        case OVEN_RESOLVE_ARCH_ARM64:
+        case KITCHEN_RESOLVE_ARCH_ARM64:
             return "aarch64-linux-gnu";
-        case OVEN_RESOLVE_ARCH_MIPS:
+        case KITCHEN_RESOLVE_ARCH_MIPS:
             return "mips-linux-gnu";
-        case OVEN_RESOLVE_ARCH_MIPS64:
+        case KITCHEN_RESOLVE_ARCH_MIPS64:
             return "mips64-linux-gnu";
-        case OVEN_RESOLVE_ARCH_PPC:
+        case KITCHEN_RESOLVE_ARCH_PPC:
             return "powerpc-linux-gnu";
-        case OVEN_RESOLVE_ARCH_PPC64:
+        case KITCHEN_RESOLVE_ARCH_PPC64:
             return "powerpc64-linux-gnu";
-        case OVEN_RESOLVE_ARCH_SPARC:
+        case KITCHEN_RESOLVE_ARCH_SPARC:
             return "sparc-linux-gnu";
-        case OVEN_RESOLVE_ARCH_SPARV9:
+        case KITCHEN_RESOLVE_ARCH_SPARV9:
             return "sparc64-linux-gnu";
-        case OVEN_RESOLVE_ARCH_S390:
+        case KITCHEN_RESOLVE_ARCH_S390:
             return "s390-linux-gnu";
         default:
             return "unknown";
     }
 }
 
-static int __load_ld_so_conf_for_platform(struct oven_resolve* resolve, struct list* libraryPaths)
+static int __load_ld_so_conf_for_platform(const char* sysroot, struct kitchen_resolve* resolve, struct list* libraryPaths)
 {
     char* path;
     int   status = 0;
@@ -130,19 +129,20 @@ static int __load_ld_so_conf_for_platform(struct oven_resolve* resolve, struct l
         return -1;
     }
 
-    snprintf(path, PATH_MAX, "/etc/ld.so.conf.d/%s.conf", __get_platform(resolve));
+    snprintf(path, PATH_MAX, "%s/etc/ld.so.conf.d/%s.conf", sysroot, __get_platform(resolve));
 
     // now try the formatted path first, otherwise we try the ld.so.conf file
     status = __get_ld_conf_paths(path, libraryPaths);
     if (status) {
         printf("oven: %s did not exist, trying /etc/ld.so.conf\n", path);
-        status = __get_ld_conf_paths("/etc/ld.so.conf", libraryPaths);
+        snprintf(path, PATH_MAX, "%s/etc/ld.so.conf", sysroot);
+        status = __get_ld_conf_paths(path, libraryPaths);
     }
     free(path);
     return status;
 }
 
-const char* resolve_platform_dependency(struct oven_resolve* resolve, const char* dependency)
+const char* resolve_platform_dependency(const char* sysroot, struct kitchen_resolve* resolve, const char* dependency)
 {
     struct list          libraryPaths = { 0 };
     struct list_item*    item;
@@ -159,7 +159,7 @@ const char* resolve_platform_dependency(struct oven_resolve* resolve, const char
     // Try to resolve the library using the traditional library paths on linux
     // we have to take into account whether paths like 'lib/x86_64-linux-gnu' exists
     // depending on the architecture we have built for.
-    status = __load_ld_so_conf_for_platform(resolve, &libraryPaths);
+    status = __load_ld_so_conf_for_platform(sysroot, resolve, &libraryPaths);
     if (status == 0) {
         // Iterate over the library paths and try to resolve the dependency
         list_foreach(&libraryPaths, item) {
@@ -173,7 +173,7 @@ const char* resolve_platform_dependency(struct oven_resolve* resolve, const char
 
     // Iterate over the default system library paths and try to resolve the dependency
     for (int i = 0; g_systemPaths[i] != NULL; i++) {
-        snprintf(path, PATH_MAX, "%s/%s", g_systemPaths[i], dependency);
+        snprintf(path, PATH_MAX, "%s/%s/%s", sysroot, g_systemPaths[i], dependency);
         if (platform_stat(path, &stats) == 0) {
             return path;
         }

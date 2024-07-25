@@ -18,17 +18,22 @@
 
 #include <errno.h>
 #include <chef/platform.h>
-#include <liboven.h>
+#include <chef/recipe.h>
 #include "resolvers/resolvers.h"
+#include "pack.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
-extern const char* __get_install_path(void);
-extern const char* __get_build_ingredients_path(void);
+struct __resolve_options {
+    const char* sysroot;
+    const char* install_root;
+    const char* ingredients_root;
+    int         allow_sysroot_libraries;
+};
 
-static int __verify_commands(struct list* commands)
+static int __verify_commands(struct list* commands, const char* root)
 {
     struct list_item* item;
     struct platform_stat stats;
@@ -38,8 +43,8 @@ static int __verify_commands(struct list* commands)
     }
 
     list_foreach(commands, item) {
-        struct oven_pack_command* command = (struct oven_pack_command*)item;
-        char*                     path;
+        struct recipe_pack_command* command = (struct recipe_pack_command*)item;
+        char*                       path;
         
         if (command->path == NULL || strlen(command->path) == 0) {
             VLOG_ERROR("commands", "command %s has no path\n", command->name);
@@ -47,7 +52,7 @@ static int __verify_commands(struct list* commands)
         }
 
         // verify the command points to something correct
-        path = strpathcombine(__get_install_path(), command->path);
+        path = strpathcombine(root, command->path);
         if (path == NULL) {
             VLOG_ERROR("commands", "failed to combine command path\n");
             return -1;
@@ -63,14 +68,14 @@ static int __verify_commands(struct list* commands)
     return 0;
 }
 
-static int __resolve_dependency_path(struct oven_resolve* resolve, struct oven_resolve_dependency* dependency, int allowSystemLibraries)
+static int __resolve_dependency_path(struct kitchen_resolve* resolve, struct kitchen_resolve_dependency* dependency, struct __resolve_options* options)
 {
     struct list       files = { 0 };
     struct list_item* item;
     int               status;
 
     // priority 1 - check in install path
-    status = platform_getfiles(__get_install_path(), 1, &files);
+    status = platform_getfiles(options->install_root, 1, &files);
     if (status) {
         VLOG_ERROR("commands", "resolve: failed to get install file list\n");
         return -1;
@@ -88,7 +93,7 @@ static int __resolve_dependency_path(struct oven_resolve* resolve, struct oven_r
     platform_getfiles_destroy(&files);
 
     // priority 2 - maybe it comes from build ingredients
-    status = platform_getfiles(__get_build_ingredients_path(), 1, &files);
+    status = platform_getfiles(options->ingredients_root, 1, &files);
     if (status) {
         VLOG_ERROR("commands", "resolve: failed to get install file list\n");
         return -1;
@@ -106,8 +111,8 @@ static int __resolve_dependency_path(struct oven_resolve* resolve, struct oven_r
     platform_getfiles_destroy(&files);
 
     // priority 3 - invoke platform resolver (if allowed)
-    if (allowSystemLibraries) {
-        const char* path = resolve_platform_dependency(resolve, dependency->name);
+    if (options->allow_sysroot_libraries) {
+        const char* path = resolve_platform_dependency(options->sysroot, resolve, dependency->name);
         if (path) {
             dependency->path = path;
             dependency->system_library = 1;
@@ -118,19 +123,19 @@ static int __resolve_dependency_path(struct oven_resolve* resolve, struct oven_r
     return -1;
 }
 
-static int __resolve_elf_dependencies(struct oven_resolve* resolve, int allowSystemLibraries)
+static int __resolve_elf_dependencies(struct kitchen_resolve* resolve, struct __resolve_options* options)
 {
     while (1) {
         struct list_item* item;
         int               resolved = 0;
 
         list_foreach(&resolve->dependencies, item) {
-            struct oven_resolve_dependency* dependency = (struct oven_resolve_dependency*)item;
+            struct kitchen_resolve_dependency* dependency = (struct kitchen_resolve_dependency*)item;
             if (!dependency->resolved) {
                 int status;
                 
                 // try to resolve the location of the dependency
-                status = __resolve_dependency_path(resolve, dependency, allowSystemLibraries);
+                status = __resolve_dependency_path(resolve, dependency, options);
                 if (status) {
                     VLOG_ERROR("commands", "resolve: failed to locate %s\n", dependency->name);
                     return -1;
@@ -155,19 +160,19 @@ static int __resolve_elf_dependencies(struct oven_resolve* resolve, int allowSys
     return 0;
 }
 
-static int __resolve_pe_dependencies(struct oven_resolve* resolve, int allowSystemLibraries)
+static int __resolve_pe_dependencies(struct kitchen_resolve* resolve, struct __resolve_options* options)
 {
     while (1) {
         struct list_item* item;
         int               resolved = 0;
 
         list_foreach(&resolve->dependencies, item) {
-            struct oven_resolve_dependency* dependency = (struct oven_resolve_dependency*)item;
+            struct kitchen_resolve_dependency* dependency = (struct kitchen_resolve_dependency*)item;
             if (!dependency->resolved) {
                 int status;
                 
                 // try to resolve the location of the dependency
-                status = __resolve_dependency_path(resolve, dependency, allowSystemLibraries);
+                status = __resolve_dependency_path(resolve, dependency, options);
                 if (status) {
                     VLOG_ERROR("commands", "failed to locate %s\n", dependency->name);
                     return -1;
@@ -192,31 +197,41 @@ static int __resolve_pe_dependencies(struct oven_resolve* resolve, int allowSyst
     return 0;
 }
 
-static int __resolve_command(struct oven_pack_command* command, struct list* resolves)
+static int __resolve_command(struct recipe_pack_command* command, struct list* resolves, struct pack_resolve_commands_options* options)
 {
-    struct oven_resolve* resolve;
-    const char*          path;
-    int                  status;
+    struct kitchen_resolve* resolve;
+    const char*             path;
+    int                     status;
 
     // verify the command points to something correct
-    path = strpathcombine(__get_install_path(), command->path);
+    path = strpathcombine(options->install_root, command->path);
     if (path == NULL) {
         VLOG_ERROR("commands", "failed to combine command path\n");
         return -1;
     }
 
-    resolve = (struct oven_resolve*)calloc(1, sizeof(struct oven_resolve));
+    resolve = (struct kitchen_resolve*)calloc(1, sizeof(struct kitchen_resolve));
     resolve->path = path;
 
     if (elf_is_valid(path, &resolve->arch) == 0) {
         status = elf_resolve_dependencies(path, &resolve->dependencies);
         if (!status) {
-            status = __resolve_elf_dependencies(resolve, command->allow_system_libraries);
+            status = __resolve_elf_dependencies(resolve, &(struct __resolve_options) {
+                .sysroot = options->sysroot,
+                .install_root = options->install_root,
+                .ingredients_root = options->ingredients_root,
+                .allow_sysroot_libraries = command->allow_system_libraries
+            });
         }
     } else if (pe_is_valid(path, &resolve->arch) == 0) {
         status = pe_resolve_dependencies(path, &resolve->dependencies);
         if (!status) {
-            status = __resolve_pe_dependencies(resolve, command->allow_system_libraries);
+            status = __resolve_pe_dependencies(resolve, &(struct __resolve_options) {
+                .sysroot = options->sysroot,
+                .install_root = options->install_root,
+                .ingredients_root = options->ingredients_root,
+                .allow_sysroot_libraries = command->allow_system_libraries
+            });
         }
     } else {
         status = -1;
@@ -232,7 +247,7 @@ static int __resolve_command(struct oven_pack_command* command, struct list* res
     return 0;
 }
 
-static int __resolve_commands(struct list* commands, struct list* resolves)
+static int __resolve_commands(struct list* commands, struct list* resolves, struct pack_resolve_commands_options* options)
 {
     struct list_item* item;
     int               status;
@@ -243,8 +258,8 @@ static int __resolve_commands(struct list* commands, struct list* resolves)
 
     // Iterate over all commands and resolve their dependencies
     list_foreach(commands, item) {
-        struct oven_pack_command* command = (struct oven_pack_command*)item;
-        status = __resolve_command(command, resolves);
+        struct recipe_pack_command* command = (struct recipe_pack_command*)item;
+        status = __resolve_command(command, resolves, options);
         if (status) {
             return status;
         }
@@ -252,16 +267,16 @@ static int __resolve_commands(struct list* commands, struct list* resolves)
     return 0;
 }
 
-int oven_resolve_commands(struct list* commands, struct list* resolves)
+int pack_resolve_commands(struct list* commands, struct list* resolves, struct pack_resolve_commands_options* options)
 {
     int status;
 
-    status = __verify_commands(commands);
+    status = __verify_commands(commands, options->install_root);
     if (status) {
         VLOG_ERROR("commands", "failed to verify commands\n");
         return -1;
     }
-    return __resolve_commands(commands, resolves);
+    return __resolve_commands(commands, resolves, options);
 }
 
 static void __cleanup_dependencies(struct list* dependencies)
@@ -269,7 +284,7 @@ static void __cleanup_dependencies(struct list* dependencies)
     struct list_item* item;
 
     for (item = dependencies->head; item != NULL;) {
-        struct oven_resolve_dependency* dependency = (struct oven_resolve_dependency*)item;
+        struct kitchen_resolve_dependency* dependency = (struct kitchen_resolve_dependency*)item;
         item = item->next;
 
         free((void*)dependency->name);
@@ -280,7 +295,7 @@ static void __cleanup_dependencies(struct list* dependencies)
     list_init(dependencies);
 }
 
-void oven_resolve_destroy(struct list* resolves)
+void pack_resolve_destroy(struct list* resolves)
 {
     struct list_item* item;
 
@@ -289,7 +304,7 @@ void oven_resolve_destroy(struct list* resolves)
     }
 
     for (item = resolves->head; item != NULL;) {
-        struct oven_resolve* resolve = (struct oven_resolve*)item;
+        struct kitchen_resolve* resolve = (struct kitchen_resolve*)item;
         item = item->next;
 
         free((void*)resolve->path);

@@ -689,7 +689,7 @@ int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** 
 
     // check packages added
     list_foreach(&g_cache.current->environment.host.packages, i) {
-        struct oven_value_item* toCheck = (struct oven_value_item*)i;
+        struct list_item_string* toCheck = (struct list_item_string*)i;
         int                     exists = 0;
         list_foreach(&cache->packages, j) {
             struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
@@ -708,7 +708,7 @@ int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** 
 
     // check packages removed
     list_foreach(&cache->packages, i) {
-        struct oven_value_item* toCheck = (struct oven_value_item*)i;
+        struct list_item_string* toCheck = (struct list_item_string*)i;
         int                     exists = 0;
         list_foreach(&g_cache.current->environment.host.packages, j) {
             struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;

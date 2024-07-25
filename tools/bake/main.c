@@ -78,7 +78,7 @@ static struct command_handler* __get_command(const char* command)
     return NULL;
 }
 
-static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
+static int __read_recipe(const char* path, void** bufferOut, size_t* lengthOut)
 {
     FILE*  file;
     void*  buffer;

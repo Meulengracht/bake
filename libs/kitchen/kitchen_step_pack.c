@@ -16,21 +16,37 @@
  * 
  */
 
+#include <errno.h>
 #include <chef/list.h>
+#include <chef/platform.h>
 #include <chef/kitchen.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
+#include "pack/pack.h"
+
+// include dirent.h for directory operations
+#if defined(_WIN32) || defined(_WIN64)
+#include <dirent_win32.h>
+#else
+#include <dirent.h>
+#endif
 
 static void __initialize_pack_options(
-    struct oven_pack_options* options, 
-    struct recipe*            recipe,
-    struct recipe_pack*       pack,
-    const char*               outputPath)
+    struct kitchen*              kitchen,
+    struct kitchen_pack_options* options,
+    struct recipe*               recipe,
+    struct recipe_pack*          pack)
 {
-    memset(options, 0, sizeof(struct oven_pack_options));
+    memset(options, 0, sizeof(struct kitchen_pack_options));
     options->name             = pack->name;
-    options->pack_dir         = outputPath;
+    options->sysroot_dir      = kitchen->host_chroot;
+    options->output_dir       = kitchen->host_cwd;
+    options->input_dir        = kitchen->host_install_root;
+    options->ingredients_root = kitchen->host_build_ingredients_path;
+    options->platform         = kitchen->target_platform;
+    options->architecture     = kitchen->target_architecture;
+
     options->type             = pack->type;
     options->summary          = recipe->project.summary;
     options->description      = recipe->project.description;
@@ -70,7 +86,7 @@ static char* __destination_pack_name(const char* root, const char* platform, con
 static int __move_pack(struct kitchen* kitchen, struct recipe_pack* pack)
 {
     char* src = __source_pack_name(kitchen->shared_output_path, pack->name);
-    char* dst = __destination_pack_name(kitchen->real_project_path, kitchen->target_platform, kitchen->target_architecture, pack->name);
+    char* dst = __destination_pack_name(kitchen->host_cwd, kitchen->target_platform, kitchen->target_architecture, pack->name);
     int   status;
 
     if (src == NULL || dst == NULL) {
@@ -89,6 +105,129 @@ exit:
     return status;
 }
 
+static int __matches_filters(const char* path, struct list* filters)
+{
+    struct list_item* item;
+
+    if (filters->count == 0) {
+        return 0; // YES! no filters means everything matches
+    }
+
+    list_foreach(filters, item) {
+        struct list_item_string* filter = (struct list_item_string*)item;
+        if (strfilter(filter->value, path, 0) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int __copy_files_with_filters(const char* sourceRoot, const char* path, struct list* filters, const char* destinationRoot)
+{
+    // recursively iterate through the directory and copy all files
+    // as long as they match the list of filters
+    int            status = -1;
+    struct dirent* entry;
+    DIR*           dir;
+    const char*    finalSource;
+    const char*    finalDestination = NULL;
+    
+    finalSource = strpathcombine(sourceRoot, path);
+    if (!finalSource) {
+        goto cleanup;
+    }
+
+    finalDestination = strpathcombine(destinationRoot, path);
+    if (!finalDestination) {
+        goto cleanup;
+    }
+
+    dir = opendir(finalSource);
+    if (!dir) {
+        goto cleanup;
+    }
+
+    // make sure target is created
+    if (platform_mkdir(finalDestination)) {
+        goto cleanup;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        const char* combinedSubPath;
+
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        combinedSubPath = strpathcombine(path, entry->d_name);
+        if (!combinedSubPath) {
+            goto cleanup;
+        }
+
+        // does this match filters?
+        if (__matches_filters(combinedSubPath, filters)) {
+            free((void*)combinedSubPath);
+            continue;
+        }
+
+        // oh ok, is it a directory?
+        if (entry->d_type == DT_DIR) {
+            status = __copy_files_with_filters(sourceRoot, combinedSubPath, filters, destinationRoot);
+            free((void*)combinedSubPath);
+            if (status) {
+                goto cleanup;
+            }
+        } else {
+            // ok, it's a file, copy it
+            char* sourceFile      = strpathcombine(finalSource, entry->d_name);
+            char* destinationFile = strpathcombine(finalDestination, entry->d_name);
+            free((void*)combinedSubPath);
+            if (!sourceFile || !destinationFile) {
+                free((void*)sourceFile);
+                goto cleanup;
+            }
+
+            status = platform_copyfile(sourceFile, destinationFile);
+            free((void*)sourceFile);
+            free((void*)destinationFile);
+            if (status) {
+                goto cleanup;
+            }
+        }
+    }
+
+    closedir(dir);
+    status = 0;
+
+cleanup:
+    free((void*)finalSource);
+    free((void*)finalDestination);
+    return status;
+}
+
+/**
+ * @brief List of filepath patterns that should be included in the install directory.
+ * This will be applied to the fridge prep area directory where ingredients are stored used
+ * for building. This is to support runtime dependencies for packs.
+ * 
+ * @param[In] filters List of struct list_item_string containg filepath patterns.
+ * @return int Returns 0 on success, -1 on failure with errno set accordingly.
+ */
+static int __filter_file_copy(const char* dest, struct list* filters)
+{
+    if (!filters) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return __copy_files_with_filters(
+        "",
+        NULL,
+        filters,
+        dest
+    );
+}
+
 int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
 {
     struct list_item* item;
@@ -99,7 +238,7 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
     list_foreach(&recipe->environment.runtime.ingredients, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         
-        status = oven_include_filters(&ingredient->filters);
+        status = __filter_file_copy(kitchen->host_install_root, &ingredient->filters);
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to include ingredient %s\n", ingredient->name);
             goto cleanup;
@@ -107,11 +246,11 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
     }
 
     list_foreach(&recipe->packs, item) {
-        struct recipe_pack*      pack = (struct recipe_pack*)item;
-        struct oven_pack_options packOptions;
+        struct recipe_pack*         pack = (struct recipe_pack*)item;
+        struct kitchen_pack_options packOptions;
 
-        __initialize_pack_options(&packOptions, recipe, pack, kitchen->install_root);
-        status = oven_pack(&packOptions);
+        __initialize_pack_options(kitchen, &packOptions, recipe, pack);
+        status = kitchen_pack(&packOptions);
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);
             goto cleanup;
