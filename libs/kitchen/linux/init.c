@@ -149,7 +149,7 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     memset(kitchen, 0, sizeof(struct kitchen));
     kitchen->target_platform = strdup(options->target_platform);
     kitchen->target_architecture = strdup(options->target_architecture);
-    kitchen->real_project_path = strdup(options->project_path);
+    kitchen->host_cwd = strdup(options->project_path);
     kitchen->magic = __KITCHEN_INIT_MAGIC;
     kitchen->recipe = options->recipe;
     kitchen->recipe_path = strdup(options->recipe_path);

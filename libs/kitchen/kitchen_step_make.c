@@ -18,7 +18,7 @@
 
 #include <chef/list.h>
 #include <chef/kitchen.h>
-#include <containerv.h>
+#include <chef/containerv.h>
 #include <libpkgmgr.h>
 #include <stdlib.h>
 #include <vlog.h>
@@ -37,7 +37,7 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
             continue;
         }
 
-        snprintf(&buffer[0], "--recipe %s --step %s/%s", kitchen->recipe_path, part, step->system);
+        snprintf(&buffer[0], sizeof(buffer), "--recipe %s --step %s/%s", kitchen->recipe_path, part, step->system);
 
         VLOG_TRACE("bake", "executing step '%s/%s'\n", part, step->system);
         status = containerv_spawn(

@@ -20,6 +20,7 @@
 #include <chef/list.h>
 #include <chef/kitchen.h>
 #include <chef/platform.h>
+#include <chef/containerv.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -33,7 +34,7 @@ static int __step_depends_on(struct list* dependencies, const char* step)
     VLOG_DEBUG("kitchen", "__step_depends_on(step=%s)\n", step);
 
     list_foreach(dependencies, item) {
-        struct oven_value_item* value = (struct oven_value_item*)item;
+        struct list_item_string* value = (struct list_item_string*)item;
         if (strcmp(value->value, step) == 0) {
             // OK this step depends on the step we are resetting
             // so reset this step too
@@ -75,7 +76,7 @@ static int __reset_steps(const char* part, struct list* steps, enum recipe_step_
     list_foreach(steps, item) {
         struct recipe_step* recipeStep = (struct recipe_step*)item;
         if ((stepType == RECIPE_STEP_TYPE_UNKNOWN) || (recipeStep->type == stepType) ||
-            (name && strcmp(recipeStep->name, name) == 0)) {
+            (name != NULL && strcmp(recipeStep->name, name) == 0)) {
             // this should be deleted
             status = recipe_cache_mark_step_incomplete(part, recipeStep->name);
             if (status) {
@@ -90,64 +91,102 @@ static int __reset_steps(const char* part, struct list* steps, enum recipe_step_
     return 0;
 }
 
-static int __recreate_dir_as_user(const char* path, struct kitchen_user* user)
+int kitchen_recipe_clean(struct kitchen* kitchen, struct kitchen_recipe_clean_options* options)
 {
-    int status;
-
-    status = platform_rmdir(path);
-    if (status) {
-        if (errno != ENOENT) {
-            VLOG_ERROR("kitchen", "__recreate_dir_as_user: failed to remove directory: %s\n", strerror(errno));
-            return -1;
-        }
-    }
-
-    status = platform_mkdir(path);
-    if (status) {
-        VLOG_ERROR("kitchen", "__recreate_dir_as_user: failed to create directory: %s\n", strerror(errno));
-        return -1;
-    }
-
-    // Since we need write permissions to the build folders
-    if (chown(path, user->caller_uid, user->caller_gid)) {
-        VLOG_ERROR("kitchen", "__recreate_dir_as_user: failed to set permissions for %s\n", path);
-        return -1;
-    }
-    return 0;
-}
-
-int kitchen_recipe_clean(struct kitchen* kitchen)
-{
-    struct oven_recipe_options options;
-    struct list_item*          item;
-    struct kitchen_user        user;
-    int                        status;
+    struct list_item* item;
+    int               status;
+    char              buffer[PATH_MAX];
+    char*             partName;
+    char*             stepName;
     VLOG_DEBUG("kitchen", "kitchen_recipe_clean()\n");
 
-    if (kitchen_user_new(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to get current user\n");
-        return -1;
+    status = recipe_parse_part_step(options->part_or_step, &partName, &stepName);
+    if (status) {
+        return status;
     }
 
-    status = __recreate_dir_as_user(kitchen->host_build_path, &user);
+    if (options->part_or_step != NULL) {
+        snprintf(&buffer[0], sizeof(buffer), "clean --recipe %s --step %s", kitchen->recipe_path, options->part_or_step);
+    } else {
+        snprintf(&buffer[0], sizeof(buffer), "clean --recipe %s", kitchen->recipe_path);
+    }
+
+    status = containerv_spawn(
+        kitchen->container,
+        "bakectl",
+        &(struct containerv_spawn_options) {
+            .arguments = &buffer[0],
+            .environment = (const char* const*)kitchen->base_environment,
+            .flags = CV_SPAWN_WAIT
+        },
+        NULL
+    );
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to clean current build directory\n");
-        goto cleanup;
+        VLOG_ERROR("bake", "failed to perform clean step of '%s'\n", kitchen->recipe->project.name);
+        return status;
     }
 
     recipe_cache_transaction_begin();
     list_foreach(&kitchen->recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
+
+        // Only if the part name is provided, check against it
+        if (partName != NULL && strcmp(part->name, partName)) {
+            continue;
+        }
         
-        status = __reset_steps(part->name, &part->steps, RECIPE_STEP_TYPE_UNKNOWN, NULL);
+        status = __reset_steps(part->name, &part->steps, RECIPE_STEP_TYPE_UNKNOWN, stepName);
         if (status) {
-            VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to build recipe %s\n", part->name);
+            VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to clean recipe %s\n", part->name);
             break;
         }
     }
     recipe_cache_transaction_commit();
+    return status;
+}
+
+int kitchen_purge(struct kitchen_purge_options* options)
+{
+    struct list         recipes;
+    struct list_item*   i;
+    int                 status;
+    char                root[PATH_MAX] = { 0 };
+    VLOG_DEBUG("kitchen", "kitchen_purge()\n");
+
+    status = __get_kitchen_root(&root[0], sizeof(root) - 1, NULL);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_purge: failed to resolve root directory\n");
+        return -1;
+    }
+
+    list_init(&recipes);
+    status = platform_getfiles(&root[0], 0, &recipes);
+    if (status) {
+        // ignore this error, just means there is no cleanup to be done
+        if (errno != ENOENT) {
+            VLOG_ERROR("kitchen", "kitchen_purge: failed to get current recipes\n");
+        }
+        goto cleanup;
+    }
+
+    list_foreach (&recipes, i) {
+        struct platform_file_entry* entry = (struct platform_file_entry*)i;
+        status = platform_rmdir(entry->path);
+        if (status) {
+            VLOG_ERROR("kitchen", "kitchen_purge: failed to remove data for %s\n", entry->name);
+            goto cleanup;
+        }
+
+        recipe_cache_transaction_begin();
+        status = recipe_cache_clear_for(entry->name);
+        if (status) {
+            VLOG_ERROR("kitchen", "kitchen_purge: failed to clean cache for %s\n", entry->name);
+            goto cleanup;
+        }
+        recipe_cache_transaction_commit();
+    }
 
 cleanup:
-    kitchen_user_delete(&user);
-    return status;
+    platform_getfiles_destroy(&recipes);
+    return 0;
 }

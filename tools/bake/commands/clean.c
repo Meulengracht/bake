@@ -66,21 +66,11 @@ static int __ask_yes_no_question(const char* question)
     return answer[0] == 'Y';
 }
 
-static int __is_clean_type(const char* type)
-{
-    if (strcmp(type, "all") == 0) {
-        return 1;
-    } else if (strcmp(type, "build") == 0) {
-        return 0;
-    }
-    return 0;
-}
-
 int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct kitchen kitchen;
     int            purge = 0;
-    char*          type = "all";
+    char*          partOrStep = NULL;
     int            status;
 
     // handle individual help command
@@ -91,8 +81,8 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
                 return 0;
             } else if (!strcmp(argv[i], "--purge")) {
                 purge = 1;
-            } else if (argv[i][0] != '-' && __is_clean_type(argv[i])) {
-                type = argv[i];
+            } else if (argv[i][0] != '-') {
+                partOrStep = argv[i];
             }
         }
     }
@@ -121,7 +111,6 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
         .recipe = options->recipe,
         .project_path = options->cwd,
         .pkg_environment = NULL,
-        .confined = options->recipe->environment.build.confinement,
         .target_platform = options->platform,
         .target_architecture = options->architecture
     }, &kitchen);
@@ -133,12 +122,7 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
     // ignore CTRL-C request once cleanup starts
     signal(SIGINT, SIG_IGN);
 
-    if (strcmp(type, "build") == 0) {
-        return kitchen_recipe_clean(&kitchen);
-    } else if (strcmp(type, "all") == 0) {
-        return kitchen_recipe_purge(&kitchen, NULL);
-    }
-    
-    fprintf(stderr, "bake: %s is not recognized as an action\n", type);
-    return -1;
+    return kitchen_recipe_clean(&kitchen, &(struct kitchen_recipe_clean_options) {
+        .part_or_step = partOrStep
+    });
 }

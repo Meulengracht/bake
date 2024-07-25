@@ -57,7 +57,7 @@ struct kitchen_setup_options {
     struct kitchen_setup_hook setup_hook;
 
     // linux specifics
-    struct list* packages; // list<oven_value_item>
+    struct list* packages; // list<list_item_string>
 };
 
 struct kitchen_purge_options {
@@ -65,9 +65,11 @@ struct kitchen_purge_options {
     int dummy;
 };
 
-struct kitchen_recipe_purge_options {
-    // TODO
-    int dummy;
+struct kitchen_recipe_clean_options {
+    // part_or_step can either reference a step in the format of '<part>/<step>'
+    // or reference just a part in the format of '<part>'. If this is NULL, then
+    // this will clean the entire recipe.
+    const char* part_or_step;
 };
 
 struct kitchen {
@@ -77,9 +79,9 @@ struct kitchen {
     struct recipe* recipe;
     const char*    recipe_path;
 
+    char* host_cwd;
     char* target_platform;
     char* target_architecture;
-    char* real_project_path;
     char* shared_output_path;
 
     struct pkgmngr* pkg_manager;
@@ -119,11 +121,11 @@ extern int kitchen_initialize(struct kitchen_init_options* options, struct kitch
 /**
  * @brief 
  * 
- * @param options 
  * @param kitchen 
+ * @param options 
  * @return int 
  */
-extern int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen);
+extern int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options);
 
 /**
  * @brief 
@@ -159,14 +161,6 @@ extern int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe);
  * @param stepType 
  * @return int 
  */
-extern int kitchen_recipe_clean(struct kitchen* kitchen);
-
-/**
- * @brief Cleans up the build and install areas, resetting the entire state
- * of the current project context.
- * 
- * @return int Returns 0 on success, -1 on failure with errno set accordingly.
- */
-extern int kitchen_recipe_purge(struct kitchen* kitchen, struct kitchen_recipe_purge_options* options);
+extern int kitchen_recipe_clean(struct kitchen* kitchen, struct kitchen_recipe_clean_options* options);
 
 #endif //!__CHEF_KITCHEN_H__

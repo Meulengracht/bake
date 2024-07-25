@@ -141,7 +141,7 @@ struct parser_state {
     struct recipe_part          part;
     struct recipe_step          step;
     struct recipe_pack          pack;
-    struct oven_pack_command    command;
+    struct recipe_pack_command  command;
     struct chef_keypair_item    env_keypair;
     struct meson_wrap_item      meson_wrap_item;
 };
@@ -398,7 +398,7 @@ static int __resolve_step_dependencies(struct parser_state* state, struct list* 
 
     // go through dependency list and make sure we can find the step
     list_foreach(dependencies, item) {
-        struct oven_value_item* value = (struct oven_value_item*)item;
+        struct list_item_string* value = (struct list_item_string*)item;
         if (__find_step(state, value->value)) {
             fprintf(stderr, "parse error: step %s which does not exist\n", value->value);
             return -1;
@@ -478,7 +478,7 @@ static void __finalize_step_env(struct parser_state* state)
 
 static void __finalize_command(struct parser_state* state)
 {
-    struct oven_pack_command* command;
+    struct recipe_pack_command* command;
 
     // we should verify required members of the command before creating a copy
     if (__is_valid_name(state->command.name)) {
@@ -497,17 +497,17 @@ static void __finalize_command(struct parser_state* state)
     }
     
     // now we copy and reset
-    command = malloc(sizeof(struct oven_pack_command));
+    command = malloc(sizeof(struct recipe_pack_command));
     if (command == NULL) {
         fprintf(stderr, "error: out of memory\n");
         exit(EXIT_FAILURE);
     }
 
-    memcpy(command, &state->command, sizeof(struct oven_pack_command));
+    memcpy(command, &state->command, sizeof(struct recipe_pack_command));
     list_add(&state->pack.commands, &command->list_header);
 
     // reset the structure in state
-    memset(&state->command, 0, sizeof(struct oven_pack_command));
+    memset(&state->command, 0, sizeof(struct recipe_pack_command));
     state->command.allow_system_libraries = 1;
 }
 
@@ -608,12 +608,12 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
 #define DEFINE_LIST_STRING_ADD(_fname, _stname, _field) \
     static void __add_##_fname ##_##_field(struct parser_state* state, const char* value) \
     { \
-        struct oven_value_item* argument; \
+        struct list_item_string* argument; \
         if (value == NULL || strlen(value) == 0) { \
             return; \
         } \
         \
-        argument = malloc(sizeof(struct oven_value_item)); \
+        argument = malloc(sizeof(struct list_item_string)); \
         if (!argument) { \
             fprintf(stderr, "error: out of memory\n"); \
             exit(EXIT_FAILURE); \
@@ -1435,7 +1435,7 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
         } \
     } while (0)
 
-static void __destroy_string(struct oven_value_item* value)
+static void __destroy_string(struct list_item_string* value)
 {
     free((void*)value->value);
     free(value);
@@ -1477,8 +1477,8 @@ static void __destroy_ingredient(struct recipe_ingredient* ingredient)
 
 static void __destroy_step(struct recipe_step* step)
 {
-    __destroy_list(string, step->depends.head, struct oven_value_item);
-    __destroy_list(string, step->arguments.head, struct oven_value_item);
+    __destroy_list(string, step->depends.head, struct list_item_string);
+    __destroy_list(string, step->arguments.head, struct list_item_string);
     __destroy_list(keypair, step->env_keypairs.head, struct chef_keypair_item);
     free((void*)step->system);
     free(step);
@@ -1492,9 +1492,9 @@ static void __destroy_part(struct recipe_part* part)
     free(part);
 }
 
-static void __destroy_command(struct oven_pack_command* command)
+static void __destroy_command(struct recipe_pack_command* command)
 {
-    __destroy_list(string, command->arguments.head, struct oven_value_item);
+    __destroy_list(string, command->arguments.head, struct list_item_string);
     free((void*)command->name);
     free((void*)command->description);
     free((void*)command->path);
@@ -1503,18 +1503,18 @@ static void __destroy_command(struct oven_pack_command* command)
 
 static void __destroy_pack_ingredient_options(struct recipe_pack_ingredient_options* options)
 {
-    __destroy_list(string, options->bin_dirs.head, struct oven_value_item);
-    __destroy_list(string, options->inc_dirs.head, struct oven_value_item);
-    __destroy_list(string, options->lib_dirs.head, struct oven_value_item);
-    __destroy_list(string, options->compiler_flags.head, struct oven_value_item);
-    __destroy_list(string, options->linker_flags.head, struct oven_value_item);
+    __destroy_list(string, options->bin_dirs.head, struct list_item_string);
+    __destroy_list(string, options->inc_dirs.head, struct list_item_string);
+    __destroy_list(string, options->lib_dirs.head, struct list_item_string);
+    __destroy_list(string, options->compiler_flags.head, struct list_item_string);
+    __destroy_list(string, options->linker_flags.head, struct list_item_string);
 }
 
 static void __destroy_pack(struct recipe_pack* pack)
 {
     __destroy_pack_ingredient_options(&pack->options);
-    __destroy_list(command, pack->commands.head, struct oven_pack_command);
-    __destroy_list(string, pack->filters.head, struct oven_value_item);
+    __destroy_list(command, pack->commands.head, struct recipe_pack_command);
+    __destroy_list(string, pack->filters.head, struct list_item_string);
     free((void*)pack->name);
     free(pack);
 }

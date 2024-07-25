@@ -473,6 +473,11 @@ int container_kill(struct containerv_container* container, pid_t pid)
 
 }
 
+int container_script(struct containerv_container* container, const char* script)
+{
+
+}
+
 int container_destroy(struct containerv_container* container)
 {
 

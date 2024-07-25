@@ -37,7 +37,7 @@ struct command_handler {
 
 static struct command_handler g_commands[] = {
     { "build", build_main },
-    { "clean", clean_main }
+    { "clean", clean_main },
 };
 
 static void __print_help(void)
@@ -164,22 +164,14 @@ int main(int argc, char** argv, char** envp)
                     recipePath = argv[i + 1];
                     i++;
                 } else if (!strcmp(argv[i], "--step")) {
-                
+                    status = recipe_parse_part_step(argv[i + 1], &options.part, &options.step);
+                    if (status) {
+                        fprintf(stderr, "bakectl: failed to parse %s\n", argv[i + 1]);
+                        return status;
+                    }
                 }
             }
         }
-    }
-
-    if (recipePath == NULL) {
-        fprintf(stderr, "bakectl: --recipe must be provided and point to a valid chef recipe\n");
-        __print_help();
-        return -1;
-    }
-
-    if (options.part == NULL || options.step == NULL) {
-        fprintf(stderr, "bakectl: --step must be provided and have a valid format of '<part>/<step>'\n");
-        __print_help();
-        return -1;
     }
 
     // get the current working directory

@@ -17,9 +17,9 @@
  */
 
 #include <errno.h>
-#include <chef/utils_vafs.h>
-#include <liboven.h>
 #include <chef/platform.h>
+#include <chef/utils_vafs.h>
+#include <chef/recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,7 +28,7 @@
 #include <vafs/directory.h>
 #include <vlog.h>
 #include <zstd.h>
-#include "private.h"
+#include "pack.h"
 #include "resolvers/resolvers.h"
 
 // include dirent.h for directory operations
@@ -52,9 +52,6 @@ struct VaFsFeatureFilter {
     struct VaFsFeatureHeader Header;
 };
 
-extern const char* __get_install_path(void);
-extern const char* __get_platform(void);
-extern const char* __get_architecture(void);
 extern const char* __build_argument_string(struct list* argumentList);
 
 static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
@@ -98,7 +95,7 @@ static int __matches_filters(const char* path, struct list* filters)
     }
 
     list_foreach(filters, item) {
-        struct oven_value_item* filter = (struct oven_value_item*)item;
+        struct list_item_string* filter = (struct list_item_string*)item;
         if (strfilter(filter->value, path, 0) == 0) {
             status = 0;
             break;
@@ -326,7 +323,7 @@ static int __write_directory(
 static int __write_syslib(
     struct progress_context*        progress,
     struct VaFsDirectoryHandle*     directoryHandle,
-    struct oven_resolve_dependency* dependency)
+    struct kitchen_resolve_dependency* dependency)
 {
     struct VaFsDirectoryHandle* subdirectoryHandle;
     int                         status;
@@ -354,7 +351,7 @@ static int __write_syslib(
 static int __write_filepath(
     struct progress_context*        progress,
     struct VaFsDirectoryHandle*     directoryHandle,
-    struct oven_resolve_dependency* dependency,
+    struct kitchen_resolve_dependency* dependency,
     const char*                     remainingPath)
 {
     struct VaFsDirectoryHandle* subdirectoryHandle;
@@ -409,7 +406,7 @@ static int __write_dependencies(
     int               status;
 
     list_foreach(files, item) {
-        struct oven_resolve_dependency* dependency = (struct oven_resolve_dependency*)item;
+        struct kitchen_resolve_dependency* dependency = (struct kitchen_resolve_dependency*)item;
         
         __write_progress(dependency->name, progress);
         if (dependency->system_library) {
@@ -552,17 +549,17 @@ static int __safe_strlen(const char* string)
     return strlen(string);
 }
 
-static int __write_header_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
+static int __write_header_metadata(struct VaFs* vafs, const char* name, struct kitchen_pack_options* options)
 {
-    struct chef_vafs_feature_package_header*  packageHeader;
-    size_t                                    featureSize;
-    char*                                     dataPointer;
-    int                                       status;
+    struct chef_vafs_feature_package_header* packageHeader;
+    size_t                                   featureSize;
+    char*                                    dataPointer;
+    int                                      status;
 
     // count up the data requirements for the package header
     featureSize = sizeof(struct chef_vafs_feature_package_header);
-    featureSize += strlen(__get_platform());
-    featureSize += strlen(__get_architecture());
+    featureSize += strlen(options->platform);
+    featureSize += strlen(options->architecture);
     featureSize += strlen(name);
     featureSize += strlen(options->summary);
     featureSize += __safe_strlen(options->description);
@@ -586,8 +583,8 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
     packageHeader->type    = options->type;
 
     // fill in lengths
-    packageHeader->platform_length         = strlen(__get_platform());
-    packageHeader->arch_length             = strlen(__get_architecture());
+    packageHeader->platform_length         = strlen(options->platform);
+    packageHeader->arch_length             = strlen(options->architecture);
     packageHeader->package_length          = strlen(name);
     packageHeader->summary_length          = strlen(options->summary);
     packageHeader->description_length      = options->description == NULL ? 0 : strlen(options->description);
@@ -601,11 +598,11 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct o
     dataPointer = (char*)packageHeader + sizeof(struct chef_vafs_feature_package_header);
 
     // required
-    memcpy(dataPointer, __get_platform(), packageHeader->platform_length);
+    memcpy(dataPointer, options->platform, packageHeader->platform_length);
     dataPointer += packageHeader->platform_length;
 
     // required
-    memcpy(dataPointer, __get_architecture(), packageHeader->arch_length);
+    memcpy(dataPointer, options->architecture, packageHeader->arch_length);
     dataPointer += packageHeader->arch_length;
 
     // required
@@ -753,7 +750,7 @@ static size_t __file_size(const char* path)
     return fileStat.size;
 }
 
-static size_t __command_size(struct oven_pack_command* command)
+static size_t __command_size(struct recipe_pack_command* command)
 {
     size_t      size = sizeof(struct chef_vafs_package_app);
     const char* args = __build_argument_string(&command->arguments);
@@ -767,7 +764,7 @@ static size_t __command_size(struct oven_pack_command* command)
     return size;
 }
 
-static size_t __serialize_command(struct oven_pack_command* command, char* buffer)
+static size_t __serialize_command(struct recipe_pack_command* command, char* buffer)
 {
     struct chef_vafs_package_app* app = (struct chef_vafs_package_app*)buffer;
     const char*                   args = __build_argument_string(&command->arguments);
@@ -834,7 +831,7 @@ static int __write_commands_metadata(struct VaFs* vafs, struct list* commands)
     // start out by counting up the total size the commands will take up when
     // serialized, so we can preallocate the memory
     list_foreach(commands, item) {
-        struct oven_pack_command* command = (struct oven_pack_command*)item;
+        struct recipe_pack_command* command = (struct recipe_pack_command*)item;
         totalSize += __command_size(command);
     }
 
@@ -851,7 +848,7 @@ static int __write_commands_metadata(struct VaFs* vafs, struct list* commands)
 
     buffer += sizeof(struct chef_vafs_feature_package_apps);
     list_foreach(commands, item) {
-        struct oven_pack_command* command = (struct oven_pack_command*)item;
+        struct recipe_pack_command* command = (struct recipe_pack_command*)item;
         buffer += __serialize_command(command, buffer);
     }
 
@@ -877,7 +874,7 @@ static char* __write_list_as_string(struct list* list)
     }
 
     list_foreach(list, i) {
-        struct oven_value_item* str = (struct oven_value_item*)i;
+        struct list_item_string* str = (struct list_item_string*)i;
         size_t                  len = strlen(str->value);
         if (index != 0) {
             memcpy(&buffer[index++], ",", 1);
@@ -888,7 +885,7 @@ static char* __write_list_as_string(struct list* list)
     return buffer;
 }
 
-static int __write_ingredient_options_metadata(struct VaFs* vafs, struct oven_pack_options* options)
+static int __write_ingredient_options_metadata(struct VaFs* vafs, struct kitchen_pack_options* options)
 {
     char  *bins,    *incs,    *libs,    *compiler_flags,    *linker_flags;
     size_t bins_len, incs_len, libs_len, compiler_flags_len, linker_flags_len;
@@ -944,7 +941,7 @@ static int __write_ingredient_options_metadata(struct VaFs* vafs, struct oven_pa
     return status;
 }
 
-static int __write_package_metadata(struct VaFs* vafs, const char* name, struct oven_pack_options* options)
+static int __write_package_metadata(struct VaFs* vafs, const char* name, struct kitchen_pack_options* options)
 {
     int status;
 
@@ -1019,7 +1016,7 @@ static int __build_pack_names(const char* name, const char* imageDir, char** bas
     return 0;
 }
 
-int oven_pack(struct oven_pack_options* options)
+int kitchen_pack(struct kitchen_pack_options* options)
 {
     struct VaFsDirectoryHandle* directoryHandle;
     struct VaFsConfiguration    configuration;
@@ -1033,21 +1030,21 @@ int oven_pack(struct oven_pack_options* options)
     char*                       name;
     char*                       path;
     int                         i;
-    VLOG_DEBUG("oven", "oven_pack(name=%s, path=%s)\n", options->name, options->pack_dir);
+    VLOG_DEBUG("oven", "oven_pack(name=%s, path=%s)\n", options->name, options->output_dir);
 
     if (options == NULL) {
         errno = EINVAL;
         return -1;
     }
 
-    VLOG_DEBUG("oven", "enumerating files in %s\n", __get_install_path());
-    status = platform_getfiles(__get_install_path(), 1, &files);
+    VLOG_DEBUG("oven", "enumerating files in %s\n", options->input_dir);
+    status = platform_getfiles(options->input_dir, 1, &files);
     if (status) {
         VLOG_ERROR("oven", "failed to get files marked for install\n");
         return -1;
     }
 
-    status = __build_pack_names(options->name, options->pack_dir, &name, &path);
+    status = __build_pack_names(options->name, options->output_dir, &name, &path);
     if (status) {
         platform_getfiles_destroy(&files);
         VLOG_ERROR("oven", "failed to get files marked for install\n");
@@ -1068,7 +1065,13 @@ int oven_pack(struct oven_pack_options* options)
         goto cleanup;
     }
 
-    status = oven_resolve_commands(options->commands, &resolves);
+    status = pack_resolve_commands(options->commands, &resolves, &(struct pack_resolve_commands_options) {
+        .sysroot = options->sysroot_dir,
+        .install_root = options->input_dir,
+        .ingredients_root = options->ingredients_root,
+        .platform = options->platform,
+        .architecture = options->architecture
+    });
     if (status) {
         VLOG_ERROR("oven", "failed to verify commands\n");
         goto cleanup;
@@ -1076,13 +1079,13 @@ int oven_pack(struct oven_pack_options* options)
 
     // include all the resolves in the total files count
     list_foreach(&resolves, item) {
-        struct oven_resolve* resolve = (struct oven_resolve*)item;
+        struct kitchen_resolve* resolve = (struct kitchen_resolve*)item;
         progressContext.files_total += resolve->dependencies.count;
     }
 
     // initialize settings
     vafs_config_initialize(&configuration);
-    vafs_config_set_architecture(&configuration, __parse_arch(__get_architecture()));
+    vafs_config_set_architecture(&configuration, __parse_arch(options->architecture));
 
     // use 1mb block sizes for container packs
     // TODO: optimally we should select this based on expected container filesize
@@ -1112,14 +1115,14 @@ int oven_pack(struct oven_pack_options* options)
 
 
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-    status = __write_directory(&progressContext, options->filters, directoryHandle, __get_install_path(), NULL);
+    status = __write_directory(&progressContext, options->filters, directoryHandle, options->input_dir, NULL);
     if (status != 0) {
         VLOG_ERROR("oven", "unable to write directory\n");
         goto cleanup;
     }
 
     list_foreach(&resolves, item) {
-        struct oven_resolve* resolve = (struct oven_resolve*)item;
+        struct kitchen_resolve* resolve = (struct kitchen_resolve*)item;
         status = __write_dependencies(&progressContext, &resolve->dependencies, directoryHandle);
         if (status != 0) {
             VLOG_ERROR("oven", "unable to write libraries\n");
@@ -1139,7 +1142,7 @@ cleanup:
     free(name);
     free(path);
     platform_getfiles_destroy(&files);
-    oven_resolve_destroy(&resolves);
+    pack_resolve_destroy(&resolves);
     if (g_compressContext != NULL) {
         ZSTD_freeCCtx(g_compressContext);
         g_compressContext = NULL;

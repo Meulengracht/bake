@@ -25,19 +25,7 @@ int kitchen_initialize(struct kitchen_init_options* options, struct kitchen* kit
     return -1;
 }
 
-int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen)
-{
-    errno = ENOTSUP;
-    return -1;
-}
-
-int kitchen_purge(struct kitchen_purge_options* options)
-{
-    errno = ENOTSUP;
-    return -1;
-}
-
-int kitchen_recipe_purge(struct kitchen* kitchen, struct kitchen_recipe_purge_options* options)
+int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
     errno = ENOTSUP;
     return -1;
