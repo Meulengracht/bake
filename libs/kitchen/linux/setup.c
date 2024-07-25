@@ -26,6 +26,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <vlog.h>
 
 #include "private.h"
@@ -148,7 +149,7 @@ static int __setup_container(struct kitchen* kitchen, struct kitchen_user* user)
     mounts[0].flags = CV_MOUNT_BIND | CV_MOUNT_RECURSIVE;
 
     // project path
-    mounts[1].source = kitchen->real_project_path;
+    mounts[1].source = kitchen->host_cwd;
     mounts[1].destination = kitchen->host_project_path;
     mounts[1].flags = CV_MOUNT_BIND | CV_MOUNT_READONLY;
     
@@ -422,7 +423,7 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
     return 0;
 }
 
-int kitchen_confined_setup(struct kitchen* kitchen, struct kitchen_setup_options* options)
+int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
     struct kitchen_user user;
     int                 status;
@@ -441,18 +442,24 @@ int kitchen_confined_setup(struct kitchen* kitchen, struct kitchen_setup_options
     status = __setup_rootfs(kitchen, &user);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to setup rootfs of kitchen\n");
-        return -1;
+        goto cleanup;
+    }
+
+    status = __update_ingredients(kitchen, options);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to setup/refresh kitchen ingredients\n");
+        goto cleanup;
     }
 
     status = __setup_container(kitchen, &user);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to start container\n");
-        return -1;
+        goto cleanup;
     }
 
-    status = __kitchen_refresh(kitchen, options);
+    status = __run_setup_hook(kitchen, options);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to refresh kitchen: %s\n", strerror(errno));
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to execute setup script: %s\n", strerror(errno));
         goto cleanup;
     }
 
@@ -461,7 +468,7 @@ cleanup:
     return status;
 }
 
-int kitchen_confined_destroy(struct kitchen* kitchen)
+int kitchen_destroy(struct kitchen* kitchen)
 {
     int status;
 
@@ -481,7 +488,7 @@ int kitchen_confined_destroy(struct kitchen* kitchen)
     // cleanup paths
     free(kitchen->target_platform);
     free(kitchen->target_architecture);
-    free(kitchen->real_project_path);
+    free(kitchen->host_cwd);
     free(kitchen->shared_output_path);
 
     free(kitchen->host_chroot);

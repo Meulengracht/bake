@@ -8,7 +8,8 @@ macro (add_sources)
 endmacro()
 macro (add_sources_glob)
     foreach (_src ${ARGN})
-        file (GLOB KITCHEN_SRCS "${_src}")
+        file (GLOB TMP_GLOBSRCS "${_src}")
+        list (APPEND KITCHEN_SRCS ${TMP_GLOBSRCS})
     endforeach()
 endmacro()
 
@@ -18,9 +19,10 @@ elseif (WIN32)
     add_sources_glob(windows/*.c)
 endif()
 
+add_sources_glob(pack/*.c)
+add_sources_glob(pack/resolvers/*.c)
 add_sources(
     kitchen_step_clean.c
-    kitchen_step_common.c
     kitchen_step_make.c
     kitchen_step_pack.c
     recipe_cache.c

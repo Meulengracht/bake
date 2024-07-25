@@ -24,19 +24,19 @@
 
 int __resolve_add_dependency(struct list* dependencies, const char* library)
 {
-    struct oven_resolve_dependency* dependency;
+    struct kitchen_resolve_dependency* dependency;
     struct list_item*               item;
 
     // make sure dependency is not already added
     list_foreach(dependencies, item) {
-        dependency = (struct oven_resolve_dependency*)item;
+        dependency = (struct kitchen_resolve_dependency*)item;
         if (strcmp(dependency->name, library) == 0) {
             return 0;
         }
     }
 
     // add dependency
-    dependency = calloc(1, sizeof(struct oven_resolve_dependency));
+    dependency = calloc(1, sizeof(struct kitchen_resolve_dependency));
     if (dependency == NULL) {
         return -1;
     }

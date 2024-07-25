@@ -158,32 +158,32 @@ static int __parse_dependencies(const char* buffer, size_t bufferSize, struct li
     return __parse_dependencies_32(buffer, bufferSize, dependencies);
 }
 
-static enum oven_resolve_arch __pe_machine_to_arch(uint16_t pe_arch)
+static enum kitchen_resolve_arch __pe_machine_to_arch(uint16_t pe_arch)
 {
     switch (pe_arch) {
         case IMAGE_FILE_MACHINE_AMD64:
-            return OVEN_RESOLVE_ARCH_X86_64;
+            return KITCHEN_RESOLVE_ARCH_X86_64;
         case IMAGE_FILE_MACHINE_ARMNT:
         case IMAGE_FILE_MACHINE_ARM:
-            return OVEN_RESOLVE_ARCH_ARM;
+            return KITCHEN_RESOLVE_ARCH_ARM;
         case IMAGE_FILE_MACHINE_ARM64:
-            return OVEN_RESOLVE_ARCH_ARM64;
+            return KITCHEN_RESOLVE_ARCH_ARM64;
         case IMAGE_FILE_MACHINE_I386:
-            return OVEN_RESOLVE_ARCH_X86;
+            return KITCHEN_RESOLVE_ARCH_X86;
         case IMAGE_FILE_MACHINE_POWERPC:
-            return OVEN_RESOLVE_ARCH_PPC;            
+            return KITCHEN_RESOLVE_ARCH_PPC;            
         case IMAGE_FILE_MACHINE_RISCV32:
-            return OVEN_RESOLVE_ARCH_RISCV32;
+            return KITCHEN_RESOLVE_ARCH_RISCV32;
         case IMAGE_FILE_MACHINE_RISCV64:
-            return OVEN_RESOLVE_ARCH_RISCV64;
+            return KITCHEN_RESOLVE_ARCH_RISCV64;
         case IMAGE_FILE_MACHINE_RISCV128:
-            return OVEN_RESOLVE_ARCH_RISCV128;
+            return KITCHEN_RESOLVE_ARCH_RISCV128;
         default:
-            return OVEN_RESOLVE_ARCH_UNKNOWN;
+            return KITCHEN_RESOLVE_ARCH_UNKNOWN;
     }
 }
 
-int pe_is_valid(const char* path, enum oven_resolve_arch* arch)
+int pe_is_valid(const char* path, enum kitchen_resolve_arch* arch)
 {
     MzHeader* mz;
     PeHeader* pe;
