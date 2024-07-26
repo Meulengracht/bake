@@ -47,7 +47,10 @@ struct containerv_container {
 };
 
 struct containerv_command_spawn {
-    char path[32];
+    // lengths include zero terminator
+    size_t path_length;
+    size_t argument_length;
+    size_t environment_length;
 };
 
 struct containerv_command_script {
@@ -67,12 +70,67 @@ enum containerv_command_type {
 
 struct containerv_command {
     enum containerv_command_type type;
-    union {
-        struct containerv_command_spawn  spawn;
-        struct containerv_command_kill   kill;
-        struct containerv_command_script script;
-    } command;
+    size_t                       length;
 };
+
+static char* __flatten_environment(const char* const* environment, size_t* lengthOut)
+{
+    char*  flatEnvironment;
+    size_t flatLength;
+
+
+}
+
+char** __unflatten_environment(const char* text)
+{
+	char** results;
+	int    count = 1; // add zero terminator
+	int    index = 0;
+
+	if (text == NULL) {
+		return NULL;
+	}
+
+	for (const char* p = text;; p++) {
+		if (*p == '\0') {
+			count++;
+			
+			if (*p == '\0' && *(p + 1) == '\0') {
+			    break;
+			}
+		}
+	}
+	
+	results = (char**)calloc(count, sizeof(char*));
+	if (results == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	for (const char* p = text;; p++) {
+		if (*p == '\0') {
+			results[index] = (char*)malloc(p - text + 1);
+			if (results[index] == NULL) {
+			    // cleanup
+				for (int i = 0; i < index; i++) {
+					free(results[i]);
+				}
+				free(results);
+				return NULL;
+			}
+
+			memcpy(results[index], text, p - text);
+			results[index][p - text] = '\0';
+			text = p + 1;
+			index++;
+			
+			if (*p == '\0' && *(p + 1) == '\0') {
+			    break;
+			}
+		}
+	}
+	return results;
+}
 
 static struct containerv_container* __container_new(void)
 {
@@ -102,10 +160,10 @@ static void __container_delete(struct containerv_container* container)
 
 }
 
-static void __spawn_process(struct containerv_container* container, struct containerv_command_spawn* spawn)
+static void __exec(struct containerv_container* container, const char* path, const char* const* argv, const char* const* envv)
 {
-    pid_t processId;
-    int   status;
+    pid_t  processId;
+    int    status;
 
     // fork a new child, all daemons/root programs are spawned from this code
     processId = fork();
@@ -114,13 +172,58 @@ static void __spawn_process(struct containerv_container* container, struct conta
         return;
     }
 
-    status = execve(spawn->path, NULL, NULL);
+    status = execve(path, (const char* const*)argv, (const char* const*)envv);
     if (status) {
-
+        return;
     }
 }
 
+static void __spawn_process(struct containerv_container* container, struct containerv_command_spawn* spawn)
+{
+    char*  data;
+    char*  path;
+    char** argv = NULL;
+    char** envv = NULL;
+    pid_t  processId;
+
+    // initialize the data pointer
+    data = (char*)spawn + sizeof(struct containerv_command_spawn);
+
+    // get the path
+    path = data;
+    data += spawn->path_length;
+
+    // get the arguments if any
+    if (spawn->argument_length) {
+        argv = strargv(data, path, NULL);
+        if (argv == NULL) {
+            return;
+        }
+        data += spawn->argument_length;
+    }
+
+    if (spawn->environment_length) {
+        envv = __unflatten_environment(data);
+        if (envv == NULL) {
+            return;
+        }
+        data += spawn->environment_length;
+    }
+
+    // perform the actual execution
+    __exec(container, path, (const char* const*)argv, (const char* const*)envv);
+
+    // cleanup resources temporarily allocated
+    strargv_free(argv);
+    strsplit_free(envv);
+}
+
 static void __kill_process(struct containerv_container* container, struct containerv_command_kill* kill)
+{
+    
+}
+
+static void __execute_script(struct containerv_container* container, const char* script)
 {
 
 }
@@ -130,21 +233,23 @@ static void __destroy_container(struct containerv_container* container)
 
 }
 
-static int __container_command_handler(struct containerv_container* container, struct containerv_command* command)
+static int __container_command_handler(struct containerv_container* container, enum containerv_command_type type, void* command)
 {
-    switch (command->type) {
+    switch (type) {
         case CV_COMMAND_SPAWN: {
-            __spawn_process(container, &command->command.spawn);
+            __spawn_process(container, (struct containerv_command_spawn*)command);
         } break;
         case CV_COMMAND_KILL: {
-            __kill_process(container, &command->command.kill);
+            __kill_process(container, (struct containerv_command_kill*)command);
+        } break;
+        case CV_COMMAND_SCRIPT: {
+            __execute_script(container, command);
         } break;
         case CV_COMMAND_DESTROY: {
             __destroy_container(container);
             return 1;
         }
     }
-
     return 0;
 }
 
@@ -153,13 +258,31 @@ static int __container_idle(struct containerv_container* container)
     struct containerv_command command;
     int                       result;
 
-    while (1) {
+    for (;;) {
+        void* payload = NULL;
+
         result = (int)read(container->event_fd, &command, sizeof(struct containerv_command));
         if (result <= 0) {
             continue;
         }
 
-        result = __container_command_handler(container, &command);
+        if (command.length > sizeof(struct containerv_command)) {
+            size_t payloadLength = command.length - sizeof(struct containerv_command);
+            payload = malloc(payloadLength);
+            if (payload == NULL) {
+                break;
+            }
+
+            result = (int)read(container->event_fd, payload, payloadLength);
+            if (result <= 0) {
+                continue;
+            }
+        }
+
+        result = __container_command_handler(container, &command, payload);
+        free(payload);
+
+        // result is non-zero once destroy command returns
         if (result != 0) {
             break;
         }
@@ -455,12 +578,80 @@ int containerv_create(
     exit(__container_entry(container, capabilities, mounts, mountsCount));
 }
 
+static int __execute_command(struct containerv_container* container, enum containerv_command_type type, size_t payloadSize, void* payload)
+{
+    struct containerv_command cmd = {
+        .type = type,
+        .length = payloadSize + sizeof(struct containerv_command)
+    };
+    ssize_t bytesWritten;
+
+    bytesWritten = write(container->event_fd, &cmd, sizeof(struct containerv_command));
+    if (bytesWritten != sizeof(struct containerv_command)) {
+        return -1;
+    }
+    
+    if (payloadSize) {
+        bytesWritten = write(container->event_fd, payload, payloadSize);
+        if (bytesWritten != payloadSize) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int containerv_spawn(
     struct containerv_container*     container,
     const char*                      path,
     struct containerv_spawn_options* options,
     process_handle_t*                pidOut)
 {
+    struct containerv_command_spawn* cmd;
+    size_t cmdLength = sizeof(struct containerv_command_spawn);
+    size_t flatEnvironmentLength;
+    char*  flatEnvironment = __flatten_environment(options->environment, &flatEnvironmentLength);
+    char*  data;
+    int    status;
+
+    // consider length of args and env
+    cmdLength += strlen(path) + 1;
+    cmdLength += (options->arguments != NULL) ? (strlen(options->arguments) + 1) : 0;
+    cmdLength += (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
+
+    data = calloc(cmdLength, 1);
+    if (data == NULL) {
+        return -1;
+    }
+
+    // initialize command
+    cmd = (struct containerv_command_spawn*)data;
+    cmd->path_length = strlen(path) + 1;
+    cmd->argument_length = (options->arguments != NULL) ? (strlen(options->arguments) + 1) : 0;
+    cmd->environment_length = (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
+
+    // setup data pointer to point beyond struct
+    data += sizeof(struct containerv_command_spawn);
+
+    // write path, and then skip over including zero terminator
+    memcpy(&data[0], path, strlen(path));
+    data += strlen(path) + 1;
+
+    // write arguments
+    if (options->arguments != NULL) {
+        memcpy(&data[0], options->arguments, strlen(options->arguments));
+        data += strlen(options->arguments) + 1;
+    }
+
+    // write environment
+    if (flatEnvironment != NULL) {
+        memcpy(&data[0], flatEnvironment, flatEnvironmentLength);
+        data += flatEnvironmentLength;
+    }
+
+    status = __execute_command(container, CV_COMMAND_SPAWN, cmdLength, cmd);
+    if (status) {
+        return status;
+    }
 
     if (options && (options->flags & CV_SPAWN_WAIT)) {
         return __wait_for_container_code(container);
@@ -470,15 +661,29 @@ int containerv_spawn(
 
 int container_kill(struct containerv_container* container, pid_t pid)
 {
-
+    struct containerv_command_kill cmd = {
+        .process_id = pid
+    };
+    return __execute_command(container, CV_COMMAND_KILL, sizeof(struct containerv_command_kill), (void*)&cmd);
 }
 
 int container_script(struct containerv_container* container, const char* script)
 {
-
+    return __execute_command(container, CV_COMMAND_SCRIPT, strlen(script) + 1, script);
 }
 
 int container_destroy(struct containerv_container* container)
 {
+    int status;
 
+    status = __execute_command(container, CV_COMMAND_DESTROY, 0, NULL);
+    if (status) {
+        return status;
+    }
+
+    // cleanup container
+    __container_delete(container);
+
+    // done
+    return 0;
 }

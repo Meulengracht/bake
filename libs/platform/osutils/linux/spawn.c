@@ -29,118 +29,6 @@
 #include <string.h>
 #include <unistd.h>
 
-static int __get_arg_count(const char* arguments)
-{
-    const char* arg   = arguments;
-    int         count = 0;
-
-    if (arg == NULL) {
-        return 0;
-    }
-    
-    // trim start of arguments
-    while (*arg && *arg == ' ') {
-        arg++;
-    }
-
-    // catch empty strings after trimming
-    if (strlen(arg) == 0) {
-        return 0;
-    }
-
-    // count the initial argument
-    if (*arg) {
-        count++;
-    }
-
-    while (*arg) {
-        // Whitespace denote the end of an argument
-        if (*arg == ' ') {
-            while (*arg && *arg == ' ') {
-                arg++;
-            }
-            count++;
-            continue;
-        }
-
-        // We must take quoted arguments into account, even whitespaces
-        // in quoted paramters don't mean the end of an argument
-        if (*arg == '"') {
-            arg++;
-            while (*arg && *arg != '"') {
-                arg++;
-            }
-        }
-        arg++;
-    }
-    return count;
-}
-
-static void __split_arguments(char* arguments, char** argv)
-{
-    char* arg = arguments;
-    int   i   = 1;
-
-    if (arguments == NULL) {
-        return;
-    }
-
-    // set the initial argument, skip whitespaces
-    while (*arg && *arg == ' ') {
-        arg++;
-    }
-
-    // catch empty strings after trimming
-    if (strlen(arg) == 0) {
-        return;
-    }
-
-    // set the initial argument
-    argv[i++] = (char*)arg;
-
-    // parse the rest of the arguments
-    while (*arg) {
-        // Whitespace denote the end of an argument
-        if (*arg == ' ') {
-            // end the argument
-            *arg = '\0';
-            arg++;
-            
-            // trim leading spaces
-            while (*arg && *arg == ' ') {
-                arg++;
-            }
-
-            // store the next argument
-            argv[i++] = (char*)arg;
-            continue;
-        }
-
-        // We must take quoted arguments into account, even whitespaces
-        // in quoted paramters don't mean the end of an argument
-        if (*arg == '"') {
-            arg++;
-
-            // because of how spawn works, we need to strip the quotes
-            // from the argument
-            argv[i - 1] = (char*)arg; // skip the first quote
-
-            // now skip through the argument
-            while (*arg && *arg != '"') {
-                arg++;
-            }
-
-            // at this point, we need to end the argument, so we replace
-            // the closing quote with a null terminator
-            if (!(*arg)) {
-                break;
-            }
-            *arg = '\0';
-        }
-        arg++;
-    }
-}
-
 void __report(char* line, enum platform_spawn_output_type type, struct platform_spawn_options* options)
 {
     const char* s = line;
@@ -200,41 +88,24 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
     posix_spawn_file_actions_t actions;
     pid_t                      pid;
     char**                     argv;
-    int                        argc;
     int                        status;
     char*                      argumentCopy = NULL;
     int                        outp[2] = { 0 };
     int                        errp[2] = { 0 };
 
-    // initialize the argv array
-    argc = __get_arg_count(arguments);
-    argv = calloc(argc + 2, sizeof(char*));
-    if (!argv) {
-        return -1;
-    }
-    
-    // first parameter is the executable
-    if (options && options->argv0) {
-        argv[0] = (char*)options->argv0;
-    } else {
-        // default to the path of the spawned exec
-        argv[0] = (char*)path;
-    }
-
-    // last parameter is NULL
-    argv[argc + 1] = NULL;
-
     // create a copy of the arguments to work on
     if (arguments) {
         argumentCopy = strdup(arguments);
         if (!argumentCopy) {
-            free(argv);
             return -1;
         }
     }
 
-    // split the arguments into the argv array
-    __split_arguments(argumentCopy, argv);
+    argv = strargv(argumentCopy, (options && options->argv0) ? options->argv0 : path, NULL);
+    if (argv == NULL) {
+        free(argumentCopy);
+        return -1;
+    }
 
     // initialize the file actions
     posix_spawn_file_actions_init(&actions);
@@ -252,7 +123,7 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
                 close(outp[1]);
             }
             fprintf(stderr, "platform_spawn: failed to create descriptors: %s\n", strerror(errno));
-            return -1;
+            goto cleanup;
         }
         posix_spawn_file_actions_adddup2(&actions, outp[1], STDOUT_FILENO);
         posix_spawn_file_actions_adddup2(&actions, errp[1], STDERR_FILENO);
@@ -290,6 +161,6 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
 cleanup:
     posix_spawn_file_actions_destroy(&actions);
     free(argumentCopy);
-    free(argv);
+    strargv_free(argv);
     return status;
 }

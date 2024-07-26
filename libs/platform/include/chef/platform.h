@@ -172,6 +172,8 @@ extern char*  strpathjoin(const char* base, ...);
 extern char*  strpathcombine(const char* path1, const char* path2);
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
+extern char** strargv(char* arguments, const char* arg0, int* argc);
+extern void   strargv_free(char** argv);
 extern char*  strreplace(char* text, const char* find, const char* replaceWith);
 extern int    strendswith(const char* text, const char* suffix);
 extern int    strbool(const char* string);
