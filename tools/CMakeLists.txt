@@ -4,6 +4,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 add_subdirectory(bake)
+add_subdirectory(bakectl)
 add_subdirectory(order)
 add_subdirectory(serve)
 add_subdirectory(serve-exec)
@@ -11,8 +12,12 @@ add_subdirectory(serve-exec)
 if (CHEF_BUILD_AS_SNAP)
     # only on linux anyway
     install(
-        TARGETS bake order serve serve-exec
+        TARGETS bake order serve
         RUNTIME DESTINATION bin
+    )
+    install(
+        TARGETS bakectl serve-exec
+        RUNTIME DESTINATION lib/chef
     )
 else()
     install(
@@ -21,9 +26,20 @@ else()
     )
 
     install(
-        TARGETS bake serve-exec
+        TARGETS bakectl
+        RUNTIME DESTINATION lib/chef
+    )
+
+    install(
+        TARGETS bake
         PERMISSIONS SETGID SETUID OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         RUNTIME DESTINATION bin
+    )
+    
+    install(
+        TARGETS serve-exec
+        PERMISSIONS SETGID SETUID OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        RUNTIME DESTINATION lib/chef
     )
     
     if (UNIX)

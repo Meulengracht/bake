@@ -23,7 +23,6 @@
 
 #include <chef/client.h>
 #include <errno.h>
-#include <liboven.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <chef/kitchen.h>
