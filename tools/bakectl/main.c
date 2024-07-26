@@ -164,7 +164,7 @@ int main(int argc, char** argv, char** envp)
                     recipePath = argv[i + 1];
                     i++;
                 } else if (!strcmp(argv[i], "--step")) {
-                    status = recipe_parse_part_step(argv[i + 1], &options.part, &options.step);
+                    status = recipe_parse_part_step(argv[i + 1], (char**)&options.part, (char**)&options.step);
                     if (status) {
                         fprintf(stderr, "bakectl: failed to parse %s\n", argv[i + 1]);
                         return status;

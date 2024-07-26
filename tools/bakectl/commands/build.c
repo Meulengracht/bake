@@ -45,7 +45,7 @@ static void __cleanup_systems(int sig)
     exit(0); // not safe, manually clean up systems and call _Exit()
 }
 
-char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, const char* platform)
+static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, const char* platform)
 {
     if (strcmp(toolchain, "platform") == 0) {
         const char* fullChain = recipe_find_platform_toolchain(recipe, platform);
@@ -242,9 +242,9 @@ static int __initialize_oven_options(struct oven_initialize_options* options, ch
 
 static void __destroy_oven_options(struct oven_initialize_options* options)
 {
-    free(options->paths.build_root);
-    free(options->paths.build_ingredients_root);
-    free(options->paths.install_root);
+    free((void*)options->paths.build_root);
+    free((void*)options->paths.build_ingredients_root);
+    free((void*)options->paths.install_root);
 }
 
 int build_main(int argc, char** argv, char** envp, struct bakectl_command_options* options)

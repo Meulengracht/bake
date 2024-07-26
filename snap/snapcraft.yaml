@@ -17,8 +17,6 @@ apps:
     command: usr/bin/order
   serve:
     command: usr/bin/serve
-  serve-exec:
-    command: usr/bin/serve-exec
   served:
     command: usr/bin/served
     daemon: simple
