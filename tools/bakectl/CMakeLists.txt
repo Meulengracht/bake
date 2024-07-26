@@ -4,4 +4,4 @@ set (BAKECTL_SRCS
 
 add_executable(bakectl ${BAKECTL_SRCS})
 add_subdirectory(commands)
-target_link_libraries(bakectl PRIVATE bakectl-commands vlog)
+target_link_libraries(bakectl PRIVATE kitchen bakectl-commands platform vlog)

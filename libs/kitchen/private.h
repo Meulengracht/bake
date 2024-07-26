@@ -21,6 +21,6 @@
 
 #include <stddef.h>
 
-#define __KITCHEN_INIT_MAGIC 0x37373737
+extern int __get_kitchen_root(char* buffer, size_t maxLength, const char* uuid);
 
 #endif //!__KITCHEN_PRIVATE_H__
