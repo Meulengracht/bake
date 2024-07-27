@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -46,7 +47,28 @@ struct containerv_container {
     int   process_count;
 };
 
+enum containerv_event_type {
+    CV_CONTAINER_UP,
+    CV_CONTAINER_DOWN,
+    CV_CONTAINER_SPAWN
+};
+
+struct containerv_event_spawn {
+    int   status;
+    pid_t process_id;
+};
+
+struct containerv_event {
+    enum containerv_event_type type;
+    union {
+        int                           status;
+        struct containerv_event_spawn spawn;
+    } data;
+};
+
 struct containerv_command_spawn {
+    enum container_spawn_flags flags;
+
     // lengths include zero terminator
     size_t path_length;
     size_t argument_length;
@@ -160,26 +182,31 @@ static void __container_delete(struct containerv_container* container)
 
 }
 
-static void __exec(struct containerv_container* container, const char* path, const char* const* argv, const char* const* envv)
+static pid_t __exec(const char* path, const char* const* argv, const char* const* envv)
 {
-    pid_t  processId;
-    int    status;
+    pid_t processId;
+    int   status;
 
     // fork a new child, all daemons/root programs are spawned from this code
     processId = fork();
-    if (processId) {
-        container->processes[container->process_count++] = processId;
-        return;
+    if (processId != 0) {
+        return processId;
     }
 
     status = execve(path, (const char* const*)argv, (const char* const*)envv);
     if (status) {
-        return;
+        // ehh log this probably
     }
+    return 0;
 }
 
 static void __spawn_process(struct containerv_container* container, struct containerv_command_spawn* spawn)
 {
+    struct containerv_event event = {
+        .type = CV_CONTAINER_SPAWN,
+        .data.spawn.process_id = (pid_t)-1,
+        .data.spawn.status = 0
+    };
     char*  data;
     char*  path;
     char** argv = NULL;
@@ -210,27 +237,58 @@ static void __spawn_process(struct containerv_container* container, struct conta
         data += spawn->environment_length;
     }
 
-    // perform the actual execution
-    __exec(container, path, (const char* const*)argv, (const char* const*)envv);
+    // perform the actual execution, only the primary process here actually returns
+    processId = __exec(path, (const char* const*)argv, (const char* const*)envv);
+    if (processId == (pid_t)-1) {
+        // probably log this
+    } else {
+        container->processes[container->process_count++] = processId;
+
+        if (spawn->flags & CV_SPAWN_WAIT) {
+            if (waitpid(processId, &event.data.spawn.status, 0) != processId) {
+                // probably log this
+            }
+        }
+    }
+    event.data.spawn.process_id = processId;
 
     // cleanup resources temporarily allocated
     strargv_free(argv);
     strsplit_free(envv);
+
+    // send event
+    if (write(container->status_fds[__FD_CONTAINER], &event, sizeof(struct containerv_event)) != sizeof(struct containerv_event)) {
+        // log this
+    }
 }
 
-static void __kill_process(struct containerv_container* container, struct containerv_command_kill* kill)
+static void __kill_process(struct containerv_container* container, struct containerv_command_kill* cmd)
 {
-    
+    kill(cmd->process_id, SIGTERM);
 }
 
 static void __execute_script(struct containerv_container* container, const char* script)
 {
+    system(script);
+}
 
+static void __send_container_event(struct containerv_container* container, enum containerv_event_type type, int status)
+{
+    struct containerv_event event = {
+        .type = type,
+        .data.status = status
+    };
+    if (write(container->status_fds[__FD_CONTAINER], &event, sizeof(struct containerv_event)) != sizeof(struct containerv_event)) {
+        // log this
+    }
 }
 
 static void __destroy_container(struct containerv_container* container)
 {
+    // kill processes
 
+    // send event
+    __send_container_event(container, CV_CONTAINER_DOWN, 0);
 }
 
 static int __container_command_handler(struct containerv_container* container, enum containerv_command_type type, void* command)
@@ -448,8 +506,9 @@ static int __container_run(
         struct containerv_mount*     mounts,
         int                          mountsCount)
 {
-    int status;
-    int flags = 0;
+    struct containerv_event event;
+    int                     status;
+    int                     flags = 0;
 
     if (capabilities & CV_CAP_FILESYSTEM) {
         flags |= CLONE_NEWNS;
@@ -474,18 +533,19 @@ static int __container_run(
     // change the working directory so we don't accidentally lock any paths
     status = chdir("/");
     if (status) {
-        return -1;
+        return status;
     }
 
     status = unshare(flags | SIGCHLD);
     if (status) {
-        return -1;
+        return status;
     }
 
     // MS_PRIVATE makes the bind mount invisible outside of the namespace
     // MS_REC makes the mount recursive
-    if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL)) {
-        return -1;
+    status = mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
+    if (status) {
+        return status;
     }
   
     // After the unshare we are now running in separate namespaces, this means
@@ -495,22 +555,22 @@ static int __container_run(
         // bind mount all additional mounts requested by the caller
         status = __container_map_mounts(container, mounts, mountsCount);
         if (status) {
-            return -1;
+            return status;
         }
     }
 
     // change root to the containers base path
     status = chroot(container->mountfs);
     if (status) {
-        return -1;
+        return status;
     }
 
     // after the chroot we can start setting up the unique bind-mounts
     status = __container_map_capabilities(container, capabilities);
     if (status) {
-        return -1;
+        return status;
     }
-    write(container->status_fds[__FD_CONTAINER], &status, sizeof (status));
+    __send_container_event(container, CV_CONTAINER_UP, 0);
     return __container_idle(container);
 }
 
@@ -523,26 +583,28 @@ static int __container_entry(
     int status;
 
     // lets not leak the host fd
-    __close_safe(&container->status_fds[__FD_HOST]);
+    status = __close_safe(&container->status_fds[__FD_HOST]);
+    if (status) {
+        // log this
+    }
 
     // This is the primary run function, it initializes the container
     status = __container_run(container, capabilities, mounts, mountsCount);
     if (status) {
-        write(container->status_fds[__FD_CONTAINER], &status, sizeof (status));
+        __send_container_event(container, CV_CONTAINER_DOWN, status);
     }
     exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
 }
 
-static int __wait_for_container_code(struct containerv_container* container)
+static int __wait_for_container_event(struct containerv_container* container, struct containerv_event* event)
 {
-    int status;
-    int exitCode;
+    int bytesRead;
 
-    status = __INTSAFE_CALL(read(container->status_fds[__FD_HOST], &exitCode, sizeof (exitCode)));
-    if (status <= 0) {
+    bytesRead = __INTSAFE_CALL(read(container->status_fds[__FD_HOST], event, sizeof(struct containerv_event)));
+    if (bytesRead != sizeof(struct containerv_event)) {
         return -1;
     }
-    return exitCode;
+    return 0;
 }
 
 int containerv_create(
@@ -553,6 +615,7 @@ int containerv_create(
         struct containerv_container** containerOut)
 {
     struct containerv_container* container;
+    struct containerv_event      event;
     pid_t                        pid;
     int                          status;
 
@@ -567,8 +630,8 @@ int containerv_create(
         return -1;
     } else if (pid) {
         __close_safe(&container->status_fds[__FD_CONTAINER]);
-        status = __wait_for_container_code(container);
-        if (status) {
+        status = __wait_for_container_event(container, &event);
+        if (status || event.data.status) {
             __container_delete(container);
             return status;
         }
@@ -607,6 +670,7 @@ int containerv_spawn(
     process_handle_t*                pidOut)
 {
     struct containerv_command_spawn* cmd;
+    struct containerv_event          event;
     size_t cmdLength = sizeof(struct containerv_command_spawn);
     size_t flatEnvironmentLength;
     char*  flatEnvironment = __flatten_environment(options->environment, &flatEnvironmentLength);
@@ -625,6 +689,7 @@ int containerv_spawn(
 
     // initialize command
     cmd = (struct containerv_command_spawn*)data;
+    cmd->flags = options->flags;
     cmd->path_length = strlen(path) + 1;
     cmd->argument_length = (options->arguments != NULL) ? (strlen(options->arguments) + 1) : 0;
     cmd->environment_length = (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
@@ -652,11 +717,13 @@ int containerv_spawn(
     if (status) {
         return status;
     }
-
-    if (options && (options->flags & CV_SPAWN_WAIT)) {
-        return __wait_for_container_code(container);
+    
+    status = __wait_for_container_event(container, &event);
+    if (status) {
+        return status;
     }
-    return 0;
+    *pidOut = event.data.spawn.process_id;
+    return event.data.spawn.status;
 }
 
 int container_kill(struct containerv_container* container, pid_t pid)
