@@ -44,18 +44,20 @@ static void __print_help(void)
 {
     printf("Usage: bakectl <command> [options]\n");
     printf("\n");
-    printf("If no recipe is specified, it will search for default recipe names as follows:\n");
-    printf("  chef/recipe.yaml\n");
+    printf("The control tool to help facilitate certain aspects of the build/clean process\n");
+    printf("of chef projects. This utility must only be invoked by the main binary (bake).\n");
     printf("\n");
     printf("Commands:\n");
     printf("  build       runs the build backend of the specified part and step\n");
     printf("  clean       runs the clean backend of the specified part and step\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -h, --help\n");
-    printf("      Print this help message\n");
+    printf("  -r, --recipe\n");
+    printf("      Containerized path to the recipe of the current project\n");
     printf("  -v, --version\n");
     printf("      Print the version of bake\n");
+    printf("  -h, --help\n");
+    printf("      Print this help message\n");
 }
 
 static struct command_handler* __get_command(const char* command)

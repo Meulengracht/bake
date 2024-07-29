@@ -16,27 +16,44 @@
  *
  */
 
+#include <linux/capability.h>
+#include <linux/prctl.h>
+#include <sys/capability.h>
+#include <sys/prctl.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include "utils.h"
+#include <vlog.h>
 
-int utils_detach_process(void)
+int containerv_drop_capabilities(void)
 {
-    pid_t pid;
+    int capsToDrop[] = {
+        CAP_AUDIT_CONTROL,   CAP_AUDIT_READ,   CAP_AUDIT_WRITE, CAP_BLOCK_SUSPEND,
+        CAP_DAC_READ_SEARCH, CAP_FSETID,       CAP_IPC_LOCK,    CAP_MAC_ADMIN,
+        CAP_MAC_OVERRIDE,    CAP_MKNOD,        CAP_SETFCAP,     CAP_SYSLOG,
+        CAP_SYS_ADMIN,       CAP_SYS_BOOT,     CAP_SYS_MODULE,  CAP_SYS_NICE,
+        CAP_SYS_RAWIO,       CAP_SYS_RESOURCE, CAP_SYS_TIME,    CAP_WAKE_ALARM
+    };
+    int   capsCount;
+    cap_t caps = NULL;
 
-    pid = setsid();
-    if (pid < 0) {
+    capsCount = sizeof(capsToDrop) / sizeof(*capsToDrop);
+    for (int i = 0; i < capsCount; i++) {
+        if (prctl(PR_CAPBSET_DROP, capsToDrop[i], 0, 0, 0)) {
+            VLOG_ERROR("containerv", "failed to prctl cap %d: %m", capsToDrop[i]);
+            return -1;
+        }
+    }
+
+    if (!(caps = cap_get_proc()) ||
+        cap_set_flag(caps, CAP_INHERITABLE, capsCount, capsToDrop, CAP_CLEAR) ||
+        cap_set_proc(caps)) {
+        if (caps) {
+            cap_free(caps);
+        }
         return -1;
     }
 
-    pid = fork ();
-    if (pid < 0) {
-        return -1;
-    }
-
-    if (pid != 0) {
-        // skip any CRT cleanup here
-        _exit (EXIT_SUCCESS);
-    }
+    cap_free(caps);
     return 0;
 }

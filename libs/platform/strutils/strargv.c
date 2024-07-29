@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <chef/platform.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int __get_arg_count(const char* arguments)
@@ -74,7 +75,7 @@ char** strargv(char* arguments, const char* arg0, int* argc)
 
     // catch empty strings after trimming
     if (strlen(arguments) == 0) {
-        return;
+        return NULL;
     }
 
     // count the arguments
@@ -85,7 +86,7 @@ char** strargv(char* arguments, const char* arg0, int* argc)
 
     argv = calloc(count + 1, sizeof(char*));
     if (argv == NULL) {
-        return -1;
+        return NULL;
     }
 
     // set the initial arguments
