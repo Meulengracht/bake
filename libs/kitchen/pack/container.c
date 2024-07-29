@@ -1026,10 +1026,8 @@ int kitchen_pack(struct kitchen_pack_options* options)
     struct list_item*           item;
     struct progress_context     progressContext = { 0 };
     int                         status;
-    char*                       start;
     char*                       name;
     char*                       path;
-    int                         i;
     VLOG_DEBUG("oven", "oven_pack(name=%s, path=%s)\n", options->name, options->output_dir);
 
     if (options == NULL) {
