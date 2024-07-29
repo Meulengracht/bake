@@ -34,10 +34,10 @@ static void __print_help(void)
     printf("Usage: bakectl clean [options]\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -p,  --purge\n");
-    printf("      Purges all build configurations for the recipe\n");
     printf("  -s,  --step\n");
     printf("      If provided, cleans only the provided part/step configuration\n");
+    printf("  -p,  --purge\n");
+    printf("      Purges all build configurations for the recipe\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
 }

@@ -34,6 +34,8 @@ static void __print_help(void)
     printf("Usage: bakectl build [options]\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -s,  --step\n");
+    printf("      If provided, builds only the provided part/step configuration\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
 }
