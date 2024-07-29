@@ -23,7 +23,6 @@
 #include <chef/containerv.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <vlog.h>
 #include "private.h"
 
