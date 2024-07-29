@@ -58,14 +58,14 @@ static void __print_help(void)
     printf("  clean       cleanup all build and intermediate directories\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -h, --help\n");
-    printf("      Print this help message\n");
-    printf("  -v, --version\n");
-    printf("      Print the version of bake\n");
     printf("  -cc, --cross-compile\n");
     printf("      Cross-compile for another platform or/and architecture. This switch\n");
     printf("      can be used with two different formats, either just like\n");
     printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
+    printf("  -v, --version\n");
+    printf("      Print the version of bake\n");
+    printf("  -h, --help\n");
+    printf("      Print this help message\n");
 }
 
 static struct command_handler* __get_command(const char* command)

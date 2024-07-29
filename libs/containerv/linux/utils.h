@@ -46,6 +46,6 @@ static inline int __close_safe(int *fd)
  *
  * @return
  */
-extern int utils_detach_process(void);
+extern int containerv_drop_capabilities(void);
 
 #endif //!__UTILS_H__

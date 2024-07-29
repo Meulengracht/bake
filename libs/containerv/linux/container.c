@@ -36,16 +36,75 @@
 #define __FD_CONTAINER 0
 #define __FD_HOST      1
 
-struct containerv_container {
-    pid_t pid;
-    char* rootfs;
-    char* mountfs;
-    int   status_fds[2];
-    int   event_fd;
-
-    pid_t processes[64];
-    int   process_count;
+struct containerv_container_process {
+    struct list_item list_header;
+    pid_t            pid;
 };
+
+static struct containerv_container_process* containerv_container_process_new(pid_t processId)
+{
+    struct containerv_container_process* ptr = calloc(1, sizeof(struct containerv_container_process));
+    if (ptr == NULL) { 
+        return NULL;
+    }
+    ptr->pid = processId;
+    return ptr;
+}
+
+static void containerv_container_process_delete(struct containerv_container_process* ptr)
+{
+    free(ptr);
+}
+
+struct containerv_container {
+    pid_t       pid;
+    char*       rootfs;
+    char*       mountfs;
+    int         status_fds[2];
+    int         event_fd;
+    struct list processes;
+};
+
+static struct containerv_container* __container_new(void)
+{
+    struct containerv_container* container;
+    int                          status;
+
+    container = calloc(1, sizeof(struct containerv_container));
+    if (container == NULL) {
+        return NULL;
+    }
+
+    // create the resources that we need immediately
+    status = pipe(container->status_fds);
+    if (status) {
+        free(container);
+        return NULL;
+    }
+
+    container->event_fd = -1;
+    container->pid = -1;
+
+    return container;
+}
+
+static void __container_delete(struct containerv_container* container)
+{
+    struct list_item* i;
+    for (i = container->processes.head; i != NULL;) {
+        struct containerv_container_process* proc = (struct containerv_container_process*)i;
+        i = i->next;
+
+        containerv_container_process_delete(proc);
+    }
+
+    __close_safe(&container->event_fd);
+    __close_safe(&container->status_fds[0]);
+    __close_safe(&container->status_fds[1]);
+    free(container->mountfs);
+    free(container->rootfs);
+    free(container);
+}
 
 enum containerv_event_type {
     CV_CONTAINER_UP,
@@ -98,9 +157,27 @@ struct containerv_command {
 static char* __flatten_environment(const char* const* environment, size_t* lengthOut)
 {
     char*  flatEnvironment;
-    size_t flatLength;
+    size_t flatLength = 1; // second nil
+    int    i = 0, j = 0;
 
+    while (environment[i]) {
+        flatLength += strlen(environment[i]) + 1;
+        i++;
+    }
 
+    flatEnvironment = calloc(flatLength, 1);
+    if (flatEnvironment == NULL) {
+        return NULL;
+    }
+
+    i = 0;
+    while (environment[i]) {
+        size_t len = strlen(environment[i]) + 1;
+        memcpy(&flatEnvironment[j], environment[i], len);
+        j += len;
+        i++;
+    }
+    return flatEnvironment;
 }
 
 char** __unflatten_environment(const char* text)
@@ -154,34 +231,6 @@ char** __unflatten_environment(const char* text)
 	return results;
 }
 
-static struct containerv_container* __container_new(void)
-{
-    struct containerv_container* container;
-    int                          status;
-
-    container = malloc(sizeof(struct containerv_container));
-    if (container == NULL) {
-        return NULL;
-    }
-
-    // create the resources that we need immediately
-    status = pipe(container->status_fds);
-    if (status) {
-        free(container);
-        return NULL;
-    }
-
-    container->event_fd = -1;
-    container->pid = -1;
-
-    return container;
-}
-
-static void __container_delete(struct containerv_container* container)
-{
-
-}
-
 static pid_t __exec(const char* path, const char* const* argv, const char* const* envv)
 {
     pid_t processId;
@@ -193,7 +242,9 @@ static pid_t __exec(const char* path, const char* const* argv, const char* const
         return processId;
     }
 
-    status = execve(path, (const char* const*)argv, (const char* const*)envv);
+    // switch user before exec
+
+    status = execve(path, (char* const*)argv, (char* const*)envv);
     if (status) {
         // ehh log this probably
     }
@@ -242,7 +293,10 @@ static void __spawn_process(struct containerv_container* container, struct conta
     if (processId == (pid_t)-1) {
         // probably log this
     } else {
-        container->processes[container->process_count++] = processId;
+        struct containerv_container_process* proc = containerv_container_process_new(processId);
+        if (proc) {
+            list_add(&container->processes, &proc->list_header);
+        }
 
         if (spawn->flags & CV_SPAWN_WAIT) {
             if (waitpid(processId, &event.data.spawn.status, 0) != processId) {
@@ -264,7 +318,17 @@ static void __spawn_process(struct containerv_container* container, struct conta
 
 static void __kill_process(struct containerv_container* container, struct containerv_command_kill* cmd)
 {
-    kill(cmd->process_id, SIGTERM);
+    struct list_item* i;
+
+    list_foreach (&container->processes, i) {
+        struct containerv_container_process* proc = (struct containerv_container_process*)i;
+        if (proc->pid == cmd->process_id) {
+            kill(cmd->process_id, SIGTERM);
+            list_remove(&container->processes, i);
+            containerv_container_process_delete(proc);
+            break;
+        }
+    }
 }
 
 static void __execute_script(struct containerv_container* container, const char* script)
@@ -285,10 +349,19 @@ static void __send_container_event(struct containerv_container* container, enum 
 
 static void __destroy_container(struct containerv_container* container)
 {
+    struct list_item* i;
+
     // kill processes
+    list_foreach (&container->processes, i) {
+        struct containerv_container_process* proc = (struct containerv_container_process*)i;
+        kill(proc->pid, SIGTERM);
+    }
 
     // send event
     __send_container_event(container, CV_CONTAINER_DOWN, 0);
+
+    // cleanup container
+    __container_delete(container);
 }
 
 static int __container_command_handler(struct containerv_container* container, enum containerv_command_type type, void* command)
@@ -316,6 +389,12 @@ static int __container_idle(struct containerv_container* container)
     struct containerv_command command;
     int                       result;
 
+    // Drop capabilities that we no longer need
+    result = containerv_drop_capabilities();
+    if (result) {
+        return result;
+    }
+
     for (;;) {
         void* payload = NULL;
 
@@ -337,7 +416,7 @@ static int __container_idle(struct containerv_container* container)
             }
         }
 
-        result = __container_command_handler(container, &command, payload);
+        result = __container_command_handler(container, command.type, payload);
         free(payload);
 
         // result is non-zero once destroy command returns
@@ -641,7 +720,7 @@ int containerv_create(
     exit(__container_entry(container, capabilities, mounts, mountsCount));
 }
 
-static int __execute_command(struct containerv_container* container, enum containerv_command_type type, size_t payloadSize, void* payload)
+static int __execute_command(struct containerv_container* container, enum containerv_command_type type, size_t payloadSize, const void* payload)
 {
     struct containerv_command cmd = {
         .type = type,
