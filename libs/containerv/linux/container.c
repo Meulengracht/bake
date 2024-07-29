@@ -32,6 +32,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "utils.h"
+#include <vlog.h>
 
 #define __FD_CONTAINER 0
 #define __FD_HOST      1
@@ -333,7 +334,10 @@ static void __kill_process(struct containerv_container* container, struct contai
 
 static void __execute_script(struct containerv_container* container, const char* script)
 {
-    system(script);
+    int status = system(script);
+    if (status) {
+        VLOG_ERROR("containerv", "container script failed | %s\n", script);
+    }
 }
 
 static void __send_container_event(struct containerv_container* container, enum containerv_event_type type, int status)
