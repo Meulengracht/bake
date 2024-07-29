@@ -67,9 +67,8 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
 
 int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
 {
-    struct oven_recipe_options options;
-    struct list_item*          item;
-    int                        status;
+    struct list_item* item;
+    int               status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_make()\n");
 
     recipe_cache_transaction_begin();
@@ -83,7 +82,6 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
         }
     }
 
-cleanup:
     recipe_cache_transaction_commit();
     return status;
 }
