@@ -20,6 +20,7 @@
 #include <chef/platform.h>
 #include <chef/rootfs/debootstrap.h>
 #include <chef/containerv.h>
+#include <chef/user.h>
 #include <libingredient.h>
 #include <libpkgmgr.h>
 #include <errno.h>
@@ -30,7 +31,6 @@
 #include <vlog.h>
 
 #include "private.h"
-#include "user.h"
 
 static int __clean_environment(const char* path)
 {
@@ -46,7 +46,7 @@ static int __clean_environment(const char* path)
     return 0;
 }
 
-static int __ensure_hostdirs(struct kitchen* kitchen, struct kitchen_user* user)
+static int __ensure_hostdirs(struct kitchen* kitchen, struct containerv_user* user)
 {
     VLOG_DEBUG("kitchen", "__ensure_hostdirs()\n");
 
@@ -98,7 +98,7 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct kitchen_user* user)
     return 0;
 }
 
-static int __setup_rootfs(struct kitchen* kitchen, struct kitchen_user* user)
+static int __setup_rootfs(struct kitchen* kitchen, struct containerv_user* user)
 {
     int status;
     VLOG_TRACE("kitchen", "initializing container rootfs\n");
@@ -136,7 +136,7 @@ static int __setup_rootfs(struct kitchen* kitchen, struct kitchen_user* user)
     return 0;
 }
 
-static int __setup_container(struct kitchen* kitchen, struct kitchen_user* user)
+static int __setup_container(struct kitchen* kitchen, struct containerv_user* user)
 {
     struct containerv_mount mounts[2] = { 0 };
     int                     status;
@@ -425,8 +425,8 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
 
 int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
-    struct kitchen_user user;
-    int                 status;
+    struct containerv_user user;
+    int                    status;
     VLOG_DEBUG("kitchen", "kitchen_setup(name=%s)\n", kitchen->recipe->project.name);
     
     if (kitchen->magic != __KITCHEN_INIT_MAGIC) {
@@ -434,7 +434,7 @@ int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options
         return -1;
     }
 
-    if (kitchen_user_new(&user)) {
+    if (containerv_user_new(&user)) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to get current user\n");
         return -1;
     }
@@ -464,7 +464,7 @@ int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options
     }
 
 cleanup:
-    kitchen_user_delete(&user);
+    containerv_user_delete(&user);
     return status;
 }
 

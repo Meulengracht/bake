@@ -1,6 +1,7 @@
 add_library(containerv-linux STATIC
     rootfs/debootstrap.c
     container.c
+    user.c
     utils.c
 )
 target_include_directories(containerv-linux PRIVATE ../include)

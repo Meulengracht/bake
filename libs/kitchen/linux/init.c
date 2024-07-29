@@ -18,6 +18,7 @@
 
 #include <chef/kitchen.h>
 #include <chef/platform.h>
+#include <chef/user.h>
 #include <libingredient.h>
 #include <libpkgmgr.h>
 #include <vlog.h>
@@ -29,7 +30,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "private.h"
-#include "user.h"
 
 static struct pkgmngr* __setup_pkg_environment(struct kitchen_init_options* options, const char* chroot)
 {
@@ -93,14 +93,14 @@ static char* __fmt_env_option(const char* name, const char* value)
 
 static char** __initialize_env(struct kitchen* kitchen, const char* const* parentEnv)
 {
-    struct kitchen_user user;
+    struct containerv_user user;
     char** env = calloc(12, sizeof(char*));
     if (env == NULL) {
         VLOG_FATAL("kitchen", "failed to allocate memory for environment\n");
         return NULL;
     }
 
-    if (kitchen_user_new(&user)) {
+    if (containerv_user_new(&user)) {
         VLOG_FATAL("kitchen", "kitchen_setup: failed to get current user\n");
         return NULL;
     }
@@ -119,7 +119,7 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
     if (kitchen->pkg_manager) {
         kitchen->pkg_manager->add_overrides(kitchen->pkg_manager, env);
     }
-    kitchen_user_delete(&user);
+    containerv_user_delete(&user);
     return env;
 }
 

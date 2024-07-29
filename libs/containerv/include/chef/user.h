@@ -16,10 +16,10 @@
  * 
  */
 
-#ifndef __KITCHEN_USER_H__
-#define __KITCHEN_USER_H__
+#ifndef __CONTAINERV_USER_H__
+#define __CONTAINERV_USER_H__
 
-struct kitchen_user {
+struct containerv_user {
     char*        caller_name;
     unsigned int caller_uid;
     unsigned int caller_gid;
@@ -29,9 +29,9 @@ struct kitchen_user {
     unsigned int effective_gid;
 };
 
-extern int  kitchen_user_new(struct kitchen_user* user);
-extern int  kitchen_user_regain_privs(struct kitchen_user* user);
-extern int  kitchen_user_drop_privs(struct kitchen_user* user);
-extern void kitchen_user_delete(struct kitchen_user* user);
+extern int  containerv_user_new(struct containerv_user* user);
+extern int  containerv_user_regain_privs(struct containerv_user* user);
+extern int  containerv_user_drop_privs(struct containerv_user* user);
+extern void containerv_user_delete(struct containerv_user* user);
 
-#endif //!__KITCHEN_USER_H__
+#endif //!__CONTAINERV_USER_H__
