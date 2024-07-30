@@ -61,14 +61,32 @@ static void containerv_container_process_delete(struct containerv_container_proc
     free(ptr);
 }
 
+enum containerv_namespace_type {
+    CV_NS_CGROUP = 0,
+    CV_NS_IPC,
+    CV_NS_MNT,
+    CV_NS_NET,
+    CV_NS_PID,
+    CV_NS_TIME,
+    CV_NS_USER,
+    CV_NS_UTS,
+
+    CV_NS_COUNT
+};
+
 struct containerv_container {
+    // host
     pid_t       pid;
     char*       rootfs;
-    char*       mountfs;
+
+    // child
+    int         socket_fd;
+    int         ns_fds[8];
+    struct list processes;
+
+    // shared
     int         status_fds[2];
     int         event_fd;
-    int         socket_fd;
-    struct list processes;
 };
 
 static struct containerv_container* __container_new(void)
@@ -88,9 +106,12 @@ static struct containerv_container* __container_new(void)
         return NULL;
     }
 
+    container->pid = -1;
     container->event_fd = -1;
     container->socket_fd = -1;
-    container->pid = -1;
+    for (int i = 0; i < CV_NS_COUNT; i++) {
+        container->ns_fds[i] = -1;
+    }
 
     return container;
 }
@@ -105,11 +126,13 @@ static void __container_delete(struct containerv_container* container)
         containerv_container_process_delete(proc);
     }
 
+    for (int i = 0; i < CV_NS_COUNT; i++) {
+        __close_safe(&container->ns_fds[i]);
+    }
     __close_safe(&container->event_fd);
     __close_safe(&container->status_fds[0]);
     __close_safe(&container->status_fds[1]);
     __close_safe(&container->socket_fd);
-    free(container->mountfs);
     free(container->rootfs);
     free(container);
 }
@@ -458,50 +481,6 @@ static int __container_idle_loop(struct containerv_container* container)
     return 0;
 }
 
-static int __container_map_rootfs(struct containerv_container* container)
-{
-    DIR*           rootfs;
-    struct dirent* entry;
-    int            status = 0;
-    char*          source;
-    char*          destination;
-
-    source      = malloc(PATH_MAX);
-    destination = malloc(PATH_MAX);
-    if (source == NULL || destination == NULL) {
-        free(source);
-        free(destination);
-        return -1;
-    }
-
-    rootfs = opendir(container->rootfs);
-    if (rootfs == NULL) {
-        free(source);
-        free(destination);
-        return -1;
-    }
-
-    while ((entry = readdir(rootfs)) != NULL) {
-        snprintf(source, PATH_MAX, "%s/%s", container->rootfs, entry->d_name);
-        snprintf(destination, PATH_MAX, "%s/%s", container->mountfs, entry->d_name);
-
-        status = mkdir(destination, 0755);
-        if (status) {
-            break;
-        }
-
-        status = mount(source, destination, NULL, MS_BIND | MS_RDONLY | MS_REC, NULL);
-        if (status) {
-            break;
-        }
-    }
-
-    closedir(rootfs);
-    free(source);
-    free(destination);
-    return status;
-}
-
 static int __container_map_specialfs(
         const char* fsType,
         const char* path)
@@ -594,35 +573,24 @@ static int __container_map_capabilities(
     return 0;
 }
 
-static int __container_remove_mountfs(const char* path)
+static int __container_open_ns_fds(
+        struct containerv_container* container)
 {
-    DIR*           rootfs;
-    struct dirent* entry;
-    int            status;
-    char*          source;
+    struct {
+        const char*                    path;
+        enum containerv_namespace_type type;
+    } nsPaths[] = {
+        { "/proc/self/ns/cgroup", CV_NS_CGROUP },
+        { "/proc/self/ns/ipc",    CV_NS_IPC },
+        { "/proc/self/ns/mnt",    CV_NS_MNT },
+        { "/proc/self/ns/net",    CV_NS_NET },
+        { "/proc/self/ns/pid",    CV_NS_PID },
+        { "/proc/self/ns/time",   CV_NS_TIME },
+        { "/proc/self/ns/user",   CV_NS_USER },
+        { "/proc/self/ns/uts",    CV_NS_UTS }
+    };
 
-    source = malloc(PATH_MAX);
-    if (source == NULL) {
-        return -1;
-    }
-
-    rootfs = opendir(path);
-    if (rootfs == NULL) {
-        free(source);
-        return -1;
-    }
-
-    while ((entry = readdir(rootfs)) != NULL) {
-        snprintf(source, PATH_MAX, "%s/%s", path, entry->d_name);
-        status = umount(source);
-        if (status) {
-            break;
-        }
-    }
-
-    closedir(rootfs);
-    free(source);
-    return platform_rmdir(path);
+    
 }
 
 static int __container_run(
@@ -942,5 +910,5 @@ int containerv_destroy(struct containerv_container* container)
 
 int containerv_join(const char* commSocket)
 {
-    
+    setns();
 }

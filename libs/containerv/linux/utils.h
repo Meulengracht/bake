@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #define __UTILS_H__
 
 #include <errno.h>
+#include <chef/containerv.h>
 
 #define __INTSAFE_CALL(__expr) \
 ({                                            \
@@ -63,5 +64,12 @@ extern int containerv_open_socket(struct containerv_container* container);
  * 
  */
 extern void containerv_socket_event(int fd);
+
+struct containerv_ns_fd {
+    char id[8];
+    int  fd;
+};
+
+extern int containerv_get_ns_sockets(const char* commSocket, int** fds);
 
 #endif //!__UTILS_H__
