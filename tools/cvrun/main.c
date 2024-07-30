@@ -23,40 +23,53 @@
 #include <stdlib.h>
 #include <string.h>
 #include "chef-config.h"
+#include "commands/commands.h"
 #include <vlog.h>
 
 static struct containerv_container* g_container = NULL;
 
+extern int start_main(int argc, char** argv, char** envp, struct cvrun_command_options* options);
+extern int exec_main(int argc, char** argv, char** envp, struct cvrun_command_options* options);
+
+struct command_handler {
+    char* name;
+    int (*handler)(int argc, char** argv, char** envp, struct cvrun_command_options* options);
+};
+
+static struct command_handler g_commands[] = {
+    { "start", start_main },
+    { "exec",  exec_main }
+};
+
 static void __print_help(void)
 {
-    printf("Usage: cvrun <root> [options]\n");
+    printf("Usage: cvrun <command> [options]\n");
+    printf("\n");
+    printf("Commands:\n");
+    printf("  start      starts a new container\n");
+    printf("  exec       executes a command inside an existing container\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
     printf("  -v, --version\n");
-    printf("      Print the version of order\n");
+    printf("      Print the version of cvrun\n");
 }
 
-static void __cleanup_systems(int sig)
+static struct command_handler* __get_command(const char* command)
 {
-    (void)sig;
-    printf("termination requested, cleaning up\n"); // not safe
-    if (g_container != NULL) {
-        container_destroy(g_container);
+    for (int i = 0; i < sizeof(g_commands) / sizeof(struct command_handler); i++) {
+        if (!strcmp(command, g_commands[i].name)) {
+            return &g_commands[i];
+        }
     }
-    vlog_cleanup();
-    _Exit(0);
+    return NULL;
 }
 
 int main(int argc, char** argv, char** envp)
 {
-    const char* rootfs = NULL;
-    char*       abspath;
-    int         result;
-
-    // catch CTRL-C
-    signal(SIGINT, __cleanup_systems);
+    struct command_handler*      command = NULL;
+    struct cvrun_command_options options = { 0 };
 
     // first argument must be the command if not --help or --version
     if (argc > 1) {
@@ -70,42 +83,12 @@ int main(int argc, char** argv, char** envp)
             return 0;
         }
 
-        rootfs = argv[1];
+        command = __get_command(argv[1]);
     }
 
-    if (rootfs == NULL) {
-        fprintf(stderr, "cvrun: no chroot was specified\n");
-        __print_help();
+    if (command == NULL) {
+        fprintf(stderr, "cvrun: invalid command %s\n", argv[1]);
         return -1;
     }
-
-    abspath = platform_abspath(rootfs);
-    if (abspath == NULL) {
-        fprintf(stderr, "cvrun: path %s is invalid\n", rootfs);
-        return -1;
-    }
-
-    // initialize the logging system
-    vlog_initialize();
-    vlog_set_level(VLOG_LEVEL_DEBUG);
-    vlog_add_output(stdout);
-
-    result = containerv_create(
-        abspath,
-        CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL,
-        NULL, 0,
-        &g_container
-    );
-    if (result) {
-        fprintf(stderr, "cvrun: failed to create container\n");
-        vlog_cleanup();
-        free(abspath);
-        return -1;
-    }
-
-    for (;;);
-
-    vlog_cleanup();
-    free(abspath);
-    return 0;
+    return command->handler(argc, argv, envp, &options);
 }

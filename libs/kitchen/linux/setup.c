@@ -247,7 +247,7 @@ static int __update_packages(struct kitchen* kitchen)
     // done with script generation
     fclose(stream);
 
-    status = container_script(kitchen->container, script);
+    status = containerv_script(kitchen->container, script);
     if (status) {
         VLOG_ERROR("kitchen", "__update_packages: failed to update packages\n");
         return status;
@@ -408,7 +408,7 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
     }
 
     VLOG_TRACE("kitchen", "executing setup hook\n");
-    status = container_script(kitchen->container, options->setup_hook.bash);
+    status = containerv_script(kitchen->container, options->setup_hook.bash);
     if (status) {
         return status;
     }
@@ -473,7 +473,7 @@ int kitchen_destroy(struct kitchen* kitchen)
     int status;
 
     if (kitchen->container) {
-        status = container_destroy(kitchen->container);
+        status = containerv_destroy(kitchen->container);
         if (status) {
             VLOG_FATAL("kitchen", "kitchen_confined_destroy: failed to destroy container\n");
             return status;
