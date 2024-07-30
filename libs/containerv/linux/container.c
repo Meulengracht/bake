@@ -26,10 +26,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <poll.h>
+
+// mount and pid stuff
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+
 #include <unistd.h>
 #include "utils.h"
 #include <vlog.h>
@@ -63,6 +67,7 @@ struct containerv_container {
     char*       mountfs;
     int         status_fds[2];
     int         event_fd;
+    int         socket_fd;
     struct list processes;
 };
 
@@ -84,6 +89,7 @@ static struct containerv_container* __container_new(void)
     }
 
     container->event_fd = -1;
+    container->socket_fd = -1;
     container->pid = -1;
 
     return container;
@@ -102,6 +108,7 @@ static void __container_delete(struct containerv_container* container)
     __close_safe(&container->event_fd);
     __close_safe(&container->status_fds[0]);
     __close_safe(&container->status_fds[1]);
+    __close_safe(&container->socket_fd);
     free(container->mountfs);
     free(container->rootfs);
     free(container);
@@ -389,39 +396,63 @@ static int __container_command_handler(struct containerv_container* container, e
     return 0;
 }
 
-static int __container_idle(struct containerv_container* container)
+static int __container_command_event(struct containerv_container* container)
 {
     struct containerv_command command;
-    int                       result;
-    VLOG_TRACE("containerv[child]", "__container_idle()\n");
+    int                       status;
+    void*                     payload = NULL;
+
+    status = (int)read(container->event_fd, &command, sizeof(struct containerv_command));
+    if (status <= 0) {
+        return -1;
+    }
+
+    if (command.length > sizeof(struct containerv_command)) {
+        size_t payloadLength = command.length - sizeof(struct containerv_command);
+        payload = malloc(payloadLength);
+        if (payload == NULL) {
+            return -1;
+        }
+
+        status = (int)read(container->event_fd, payload, payloadLength);
+        if (status <= 0) {
+            return -1;
+        }
+    }
+
+    status = __container_command_handler(container, command.type, payload);
+    free(payload);
+    return status;
+}
+
+static int __container_idle_loop(struct containerv_container* container)
+{
+    int           status;
+    struct pollfd fds[2] = {
+        {
+            .fd = container->event_fd,
+            .events = POLLIN
+        },
+        {
+            .fd = container->socket_fd,
+            .events = POLLIN
+        }
+    };
+    VLOG_TRACE("containerv[child]", "__container_idle_loop()\n");
 
     for (;;) {
-        void* payload = NULL;
-
-        result = (int)read(container->event_fd, &command, sizeof(struct containerv_command));
-        if (result <= 0) {
-            continue;
+        status = poll(fds, 2, -1);
+        if (status <= 0) {
+            return;
         }
-
-        if (command.length > sizeof(struct containerv_command)) {
-            size_t payloadLength = command.length - sizeof(struct containerv_command);
-            payload = malloc(payloadLength);
-            if (payload == NULL) {
+        
+        if (fds[0].revents & POLLIN) {
+            status = __container_command_event(container);
+            if (status != 0) {
                 break;
             }
-
-            result = (int)read(container->event_fd, payload, payloadLength);
-            if (result <= 0) {
-                continue;
-            }
-        }
-
-        result = __container_command_handler(container, command.type, payload);
-        free(payload);
-
-        // result is non-zero once destroy command returns
-        if (result != 0) {
-            break;
+        } else if (fds[1].revents & POLLIN) {
+            containerv_socket_event(container->socket_fd);
         }
     }
     return 0;
@@ -605,6 +636,12 @@ static int __container_run(
     int                     flags = CLONE_NEWUTS;
     VLOG_TRACE("containerv[child]", "__container_run()\n");
 
+    // Open the public communication channel
+    container->socket_fd = containerv_open_socket(container);
+    if (container->socket_fd) {
+        return -1;
+    }
+
     if (capabilities & CV_CAP_FILESYSTEM) {
         flags |= CLONE_NEWNS;
     }
@@ -694,7 +731,7 @@ static int __container_run(
     }
     
     __send_container_event(container, CV_CONTAINER_UP, 0);
-    return __container_idle(container);
+    return __container_idle_loop(container);
 }
 
 static int __container_entry(
@@ -744,6 +781,12 @@ int containerv_create(
     struct containerv_event      event = { 0 };
     int                          status;
     VLOG_TRACE("containerv[host]", "containerv_create(root=%s, caps=0x%x)\n", rootFs, capabilities);
+
+    status = platform_mkdir("/run/containerv");
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_create: failed to create /run/containerv\n");
+        return -1;
+    }
 
     container = __container_new();
     if (container == NULL) {
@@ -861,7 +904,7 @@ int containerv_spawn(
     return event.data.spawn.status;
 }
 
-int container_kill(struct containerv_container* container, pid_t pid)
+int containerv_kill(struct containerv_container* container, pid_t pid)
 {
     struct containerv_command_kill cmd = {
         .process_id = pid
@@ -869,16 +912,16 @@ int container_kill(struct containerv_container* container, pid_t pid)
     return __execute_command(container, CV_COMMAND_KILL, sizeof(struct containerv_command_kill), (void*)&cmd);
 }
 
-int container_script(struct containerv_container* container, const char* script)
+int containerv_script(struct containerv_container* container, const char* script)
 {
     return __execute_command(container, CV_COMMAND_SCRIPT, strlen(script) + 1, script);
 }
 
-int container_destroy(struct containerv_container* container)
+int containerv_destroy(struct containerv_container* container)
 {
     struct containerv_event event;
     int                     status;
-    VLOG_TRACE("containerv[host]", "container_destroy()\n");
+    VLOG_TRACE("containerv[host]", "containerv_destroy()\n");
 
     VLOG_TRACE("containerv[host]", "sending destroy command\n");
     status = __execute_command(container, CV_COMMAND_DESTROY, 0, NULL);
@@ -895,4 +938,9 @@ int container_destroy(struct containerv_container* container)
     VLOG_TRACE("containerv[host]", "cleaning up\n");
     __container_delete(container);
     return 0;
+}
+
+int containerv_join(const char* commSocket)
+{
+    
 }

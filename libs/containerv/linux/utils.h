@@ -54,4 +54,14 @@ extern int containerv_drop_capabilities(void);
  */
 extern int containerv_set_init_process(void);
 
+/**
+ * 
+ */
+extern int containerv_open_socket(struct containerv_container* container);
+
+/**
+ * 
+ */
+extern void containerv_socket_event(int fd);
+
 #endif //!__UTILS_H__

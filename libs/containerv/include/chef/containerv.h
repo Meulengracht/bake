@@ -80,10 +80,12 @@ extern int containerv_spawn(
     process_handle_t*                pidOut
 );
 
-extern int container_script(struct containerv_container* container, const char* script);
+extern int containerv_script(struct containerv_container* container, const char* script);
 
-extern int container_kill(struct containerv_container* container, process_handle_t pid);
+extern int containerv_kill(struct containerv_container* container, process_handle_t pid);
 
-extern int container_destroy(struct containerv_container* container);
+extern int containerv_destroy(struct containerv_container* container);
+
+extern int containerv_join(const char* commSocket);
 
 #endif //!__CONTAINERV_H__
