@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <fcntl.h>
 #include <poll.h>
 
 // mount and pid stuff
@@ -587,10 +588,20 @@ static int __container_open_ns_fds(
         { "/proc/self/ns/pid",    CV_NS_PID },
         { "/proc/self/ns/time",   CV_NS_TIME },
         { "/proc/self/ns/user",   CV_NS_USER },
-        { "/proc/self/ns/uts",    CV_NS_UTS }
+        { "/proc/self/ns/uts",    CV_NS_UTS },
+        { NULL,                   CV_NS_COUNT }
     };
 
-    
+    for (int i = 0; nsPaths[i].path != NULL; i++) {
+        if (access(nsPaths[i].path, 0) == 0) {
+            container->ns_fds[nsPaths[i].type] = open(nsPaths[i].path, O_RDONLY | O_CLOEXEC);
+            if (container->ns_fds[nsPaths[i].type] == -1) {
+                VLOG_ERROR("containerv[child]", "__container_open_ns_fds: could not open %s\n", nsPaths[i].path);
+                return container->ns_fds[nsPaths[i].type];
+            }
+        }
+    }
+    return 0;
 }
 
 static int __container_run(
@@ -688,6 +699,13 @@ static int __container_run(
     status = __container_map_capabilities(container, capabilities);
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_run: failed to map capability specific mounts\n");
+        return status;
+    }
+
+    // get a handle on all the ns fd's
+    status = __container_open_ns_fds(container);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__container_run: failed to get a handle on NS file descriptors\n");
         return status;
     }
     
@@ -910,5 +928,5 @@ int containerv_destroy(struct containerv_container* container)
 
 int containerv_join(const char* commSocket)
 {
-    setns();
+    //setns(fd, 0);
 }
