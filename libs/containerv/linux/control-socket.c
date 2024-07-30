@@ -114,3 +114,8 @@ void containerv_socket_event(int fd)
 {
 
 }
+
+int containerv_get_ns_sockets(const char* commSocket, int** fds)
+{
+    
+}
