@@ -16,15 +16,20 @@
  * 
  */
 
-#include <containerv.h>
+#include <chef/containerv.h>
+#include <chef/platform.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "chef-config.h"
+#include <vlog.h>
+
+static struct containerv_container* g_container = NULL;
 
 static void __print_help(void)
 {
-    printf("Usage: order <command> [options]\n");
+    printf("Usage: cvrun <root> [options]\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
@@ -33,9 +38,25 @@ static void __print_help(void)
     printf("      Print the version of order\n");
 }
 
+static void __cleanup_systems(int sig)
+{
+    (void)sig;
+    printf("termination requested, cleaning up\n"); // not safe
+    if (g_container != NULL) {
+        container_destroy(g_container);
+    }
+    vlog_cleanup();
+    _Exit(0);
+}
+
 int main(int argc, char** argv, char** envp)
 {
-    int result;
+    const char* rootfs = NULL;
+    char*       abspath;
+    int         result;
+
+    // catch CTRL-C
+    signal(SIGINT, __cleanup_systems);
 
     // first argument must be the command if not --help or --version
     if (argc > 1) {
@@ -45,12 +66,46 @@ int main(int argc, char** argv, char** envp)
         }
 
         if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
-            printf("order: version " PROJECT_VER "\n");
+            printf("cvrun: version " PROJECT_VER "\n");
             return 0;
         }
+
+        rootfs = argv[1];
     }
 
+    if (rootfs == NULL) {
+        fprintf(stderr, "cvrun: no chroot was specified\n");
+        __print_help();
+        return -1;
+    }
 
+    abspath = platform_abspath(rootfs);
+    if (abspath == NULL) {
+        fprintf(stderr, "cvrun: path %s is invalid\n", rootfs);
+        return -1;
+    }
 
+    // initialize the logging system
+    vlog_initialize();
+    vlog_set_level(VLOG_LEVEL_DEBUG);
+    vlog_add_output(stdout);
+
+    result = containerv_create(
+        abspath,
+        CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL,
+        NULL, 0,
+        &g_container
+    );
+    if (result) {
+        fprintf(stderr, "cvrun: failed to create container\n");
+        vlog_cleanup();
+        free(abspath);
+        return -1;
+    }
+
+    for (;;);
+
+    vlog_cleanup();
+    free(abspath);
     return 0;
 }

@@ -50,6 +50,11 @@ enum containerv_capabilities {
     CV_CAP_CGROUPS = 0x10
 };
 
+/**
+ * @brief Creates a new container.
+ * @param rootFs The absolute path of where the chroot root is.
+ * @param capabilities
+ */
 extern int containerv_create(
     const char*                   rootFs,
     enum containerv_capabilities  capabilities,

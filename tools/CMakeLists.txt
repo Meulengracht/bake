@@ -9,6 +9,9 @@ add_subdirectory(order)
 add_subdirectory(serve)
 add_subdirectory(serve-exec)
 
+# testing tools
+add_subdirectory(cvrun)
+
 if (CHEF_BUILD_AS_SNAP)
     # only on linux anyway
     install(

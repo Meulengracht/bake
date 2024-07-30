@@ -57,3 +57,24 @@ int containerv_drop_capabilities(void)
     cap_free(caps);
     return 0;
 }
+
+int containerv_set_init_process(void)
+{
+    pid_t pid;
+
+    pid = setsid();
+    if (pid < 0) {
+        return -1;
+    }
+
+    pid = fork();
+    if (pid < 0) {
+        return -1;
+    }
+
+    if (pid != 0) {
+        // skip any CRT cleanup here
+        _exit(EXIT_SUCCESS);
+    }
+    return 0;
+}
