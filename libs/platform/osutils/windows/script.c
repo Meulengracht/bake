@@ -76,15 +76,12 @@ int platform_script(const char *script)
     fclose(sfile);
 
     char cmdBuffer[MAX_PATH + 50];
-    snprintf(cmdBuffer, sizeof(cmdBuffer), "cmd.exe /c \"%s\"", tmpFileName);
-
-    status = system(cmdBuffer);
-
-    DeleteFileA(tmpFileName);
-
+    // execute and unlink
+    snprintf(&cmdBuffer[0], sizeof(cmdBuffer), "powershell -ExecutionPolicy Bypass -File %s", tmpPath);
+    status = system(&cmdBuffer[0]);
+    _unlink(&tmpPath[0]);
     if (status) {
-        fprintf(stderr, "platform_script: exec %s failed: %d\n", tmpFileName, status);
+        fprintf(stderr, "platform_script: exec %s failed: %s\n", &tmpPath[0], strerror(errno));
     }
-
     return status;
 }
