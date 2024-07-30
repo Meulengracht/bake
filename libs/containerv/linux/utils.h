@@ -48,4 +48,10 @@ static inline int __close_safe(int *fd)
  */
 extern int containerv_drop_capabilities(void);
 
+/**
+ * 
+ * @return
+ */
+extern int containerv_set_init_process(void);
+
 #endif //!__UTILS_H__
