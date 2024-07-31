@@ -62,6 +62,19 @@ static void containerv_container_process_delete(struct containerv_container_proc
     free(ptr);
 }
 
+static char* __container_create_runtime_dir(void)
+{
+    char template[] = "/run/containerv/c-XXXXXX";
+    char* directory;
+    
+    directory = mkdtemp(&template[0]);
+    if (directory == NULL) {
+        VLOG_ERROR("containerv", "__container_create_runtime_dir: failed to create: %s\n", &template[0]);
+        return NULL;
+    }
+    return strdup(directory);
+}
+
 static struct containerv_container* __container_new(void)
 {
     struct containerv_container* container;
@@ -69,6 +82,12 @@ static struct containerv_container* __container_new(void)
 
     container = calloc(1, sizeof(struct containerv_container));
     if (container == NULL) {
+        return NULL;
+    }
+
+    container->runtime_dir = __container_create_runtime_dir();
+    if (container->runtime_dir == NULL) {
+        free(container);
         return NULL;
     }
 
@@ -106,6 +125,7 @@ static void __container_delete(struct containerv_container* container)
     __close_safe(&container->status_fds[0]);
     __close_safe(&container->status_fds[1]);
     __close_safe(&container->socket_fd);
+    free(container->runtime_dir);
     free(container->rootfs);
     free(container);
 }
@@ -505,11 +525,19 @@ static int __container_map_mounts(
     for (int i = 0; i < mountsCount; i++) {
         //snprintf(destination, PATH_MAX, "%s/%s", container->mountfs, mounts[i].destination);
         VLOG_TRACE("containerv[child]", "__container_map_mounts: mapping %s => %s (%s)\n",
-            mounts[i].source, mounts[i].destination, mounts[i].fstype);
+            mounts[i].what, mounts[i].where, mounts[i].fstype);
+        if (mounts[i].flags & CV_MOUNT_CREATE) {
+            status = platform_mkdir(mounts[i].where);
+            if (status) {
+                VLOG_ERROR("containerv[child]", "__container_map_mounts: could not create %s\n", mounts[i].where);
+                return -1;
+            }
+        }
+
         status = mount(
-            mounts[i].source,
+            mounts[i].what,
             //destination,
-            mounts[i].destination,
+            mounts[i].where,
             mounts[i].fstype,
             __convert_cv_mount_flags(mounts[i].flags),
             NULL
@@ -576,6 +604,11 @@ static int __container_open_ns_fds(
     return 0;
 }
 
+static char* __host_container_dir(struct containerv_container* container, const char* path)
+{
+    return strpathcombine(container->rootfs, path);
+}
+
 static int __container_run(
         struct containerv_container* container,
         enum containerv_capabilities capabilities,
@@ -586,12 +619,6 @@ static int __container_run(
     int                     status;
     int                     flags = CLONE_NEWUTS;
     VLOG_TRACE("containerv[child]", "__container_run()\n");
-
-    // Open the public communication channel
-    container->socket_fd = containerv_open_socket(container);
-    if (container->socket_fd < 0) {
-        return -1;
-    }
 
     if (capabilities & CV_CAP_FILESYSTEM) {
         flags |= CLONE_NEWNS;
@@ -652,6 +679,24 @@ static int __container_run(
     // we can start doing mount operations that still require the host file system
     // before we chroot
     if (capabilities & CV_CAP_FILESYSTEM) {
+        struct containerv_mount mnts[] = {
+            {
+                .what = container->runtime_dir,
+                .where = __host_container_dir(container, container->runtime_dir),
+                .fstype = NULL,
+                .flags = CV_MOUNT_BIND | CV_MOUNT_RECURSIVE | CV_MOUNT_CREATE
+            }
+        };
+
+        status = __container_map_mounts(container, &mnts[0], 1);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to map system mounts\n");
+            return status;
+        }
+
+        // cleanup
+        free(mnts[0].where);
+
         // bind mount all additional mounts requested by the caller
         status = __container_map_mounts(container, mounts, mountsCount);
         if (status) {
@@ -665,6 +710,12 @@ static int __container_run(
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_run: failed to chroot into new root (%s)\n", container->rootfs);
         return status;
+    }
+
+    // Open the public communication channel after chroot
+    container->socket_fd = containerv_open_socket(container);
+    if (container->socket_fd < 0) {
+        return -1;
     }
 
     // after the chroot we can start setting up the unique bind-mounts
@@ -884,12 +935,21 @@ int containerv_destroy(struct containerv_container* container)
     VLOG_TRACE("containerv[host]", "sending destroy command\n");
     status = __execute_command(container, CV_COMMAND_DESTROY, 0, NULL);
     if (status) {
+        VLOG_ERROR("containerv[host]", "failed to send destroy command to container daemon: %i\n", status);
         return status;
     }
 
     VLOG_TRACE("containerv[host]", "waiting for container to shutdown...\n");
     status = __wait_for_container_event(container, &event);
     if (status) {
+        VLOG_ERROR("containerv[host]", "waiting for container event returned: %i\n", status);
+        return status;
+    }
+
+    status = platform_rmdir(container->runtime_dir);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "could not remove runtime data %s: %i\n",
+            container->runtime_dir, status);
         return status;
     }
 
@@ -922,9 +982,8 @@ int containerv_join(const char* commSocket)
     VLOG_TRACE("containerv[host]", "joining container\n");
     for (int i = 0; i < count; i++) {
         if (setns(fds[i].fd, 0))  {
-            VLOG_ERROR("containerv[host]", "containerv_join: failed to join container namespace %i of type %i\n",
+            VLOG_WARNING("containerv[host]", "containerv_join: failed to join container namespace %i of type %i\n",
                 fds[i].fd, fds[i].type);
-            return status;
         }
     }
     VLOG_TRACE("containerv[child]", "successfully joined container\n");

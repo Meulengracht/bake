@@ -144,13 +144,13 @@ static int __setup_container(struct kitchen* kitchen, struct containerv_user* us
 
     // two mounts
     // Installation path
-    mounts[0].source = kitchen->shared_output_path;
-    mounts[0].destination = kitchen->host_install_root;
+    mounts[0].what = kitchen->shared_output_path;
+    mounts[0].where = kitchen->host_install_root;
     mounts[0].flags = CV_MOUNT_BIND | CV_MOUNT_RECURSIVE;
 
     // project path
-    mounts[1].source = kitchen->host_cwd;
-    mounts[1].destination = kitchen->host_project_path;
+    mounts[1].what = kitchen->host_cwd;
+    mounts[1].where = kitchen->host_project_path;
     mounts[1].flags = CV_MOUNT_BIND | CV_MOUNT_READONLY;
     
     // start container

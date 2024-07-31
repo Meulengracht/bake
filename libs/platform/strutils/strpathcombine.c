@@ -87,6 +87,17 @@ char* strpathjoin(const char* base, ...)
     return joined;
 }
 
+static char* __istrdup(const char* str)
+{
+    size_t len  = strlen(str);
+    char*  copy = malloc(len);
+    if (copy == NULL) {
+        return NULL;
+    }
+    memcpy(copy, str, len + 1);
+    return copy;
+}
+
 char* strpathcombine(const char* path1, const char* path2)
 {
     char*  combined;
@@ -99,18 +110,18 @@ char* strpathcombine(const char* path1, const char* path2)
     }
 
     if (path1 == NULL) {
-        return platform_strdup(path2);
+        return __istrdup(path2);
     } else if (path2 == NULL) {
-        return platform_strdup(path1);
+        return __istrdup(path1);
     }
 
     path1Length = strlen(path1);
     path2Length = strlen(path2);
 
     if (path1Length == 0) {
-        return platform_strdup(path2);
+        return __istrdup(path2);
     } else if (path2Length == 0) {
-        return platform_strdup(path1);
+        return __istrdup(path1);
     }
 
     if (path2[0] == CHEF_PATH_SEPARATOR) {

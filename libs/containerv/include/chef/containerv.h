@@ -32,12 +32,13 @@ struct containerv_container;
 enum containerv_mount_flags {
     CV_MOUNT_BIND = 0x1,
     CV_MOUNT_RECURSIVE = 0x2,
-    CV_MOUNT_READONLY = 0x4
+    CV_MOUNT_READONLY = 0x4,
+    CV_MOUNT_CREATE = 0x100
 };
 
 struct containerv_mount {
-    char*                       source;
-    char*                       destination;
+    char*                       what;
+    char*                       where;
     char*                       fstype;
     enum containerv_mount_flags flags;
 };

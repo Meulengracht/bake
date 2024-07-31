@@ -51,6 +51,7 @@ struct containerv_container {
     // shared
     int         status_fds[2];
     int         event_fd;
+    char*       runtime_dir;
 };
 
 #define __INTSAFE_CALL(__expr) \
