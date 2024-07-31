@@ -16,11 +16,42 @@
  *
  */
 
-#ifndef __UTILS_H__
-#define __UTILS_H__
+#ifndef __PRIVATE_H__
+#define __PRIVATE_H__
 
 #include <errno.h>
 #include <chef/containerv.h>
+#include <chef/list.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+enum containerv_namespace_type {
+    CV_NS_CGROUP = 0,
+    CV_NS_IPC,
+    CV_NS_MNT,
+    CV_NS_NET,
+    CV_NS_PID,
+    CV_NS_TIME,
+    CV_NS_USER,
+    CV_NS_UTS,
+
+    CV_NS_COUNT
+};
+
+struct containerv_container {
+    // host
+    pid_t       pid;
+    char*       rootfs;
+
+    // child
+    int         socket_fd;
+    int         ns_fds[CV_NS_COUNT];
+    struct list processes;
+
+    // shared
+    int         status_fds[2];
+    int         event_fd;
+};
 
 #define __INTSAFE_CALL(__expr) \
 ({                                            \
@@ -63,13 +94,13 @@ extern int containerv_open_socket(struct containerv_container* container);
 /**
  * 
  */
-extern void containerv_socket_event(int fd);
+extern void containerv_socket_event(struct containerv_container* container);
 
 struct containerv_ns_fd {
-    char id[8];
-    int  fd;
+    enum containerv_namespace_type type;
+    int                            fd;
 };
 
-extern int containerv_get_ns_sockets(const char* commSocket, int** fds);
+extern int containerv_get_ns_sockets(const char* commSocket, struct containerv_ns_fd fds[CV_NS_COUNT], int* count);
 
-#endif //!__UTILS_H__
+#endif //!__PRIVATE_H__

@@ -86,12 +86,11 @@ int exec_main(int argc, char** argv, char** envp, struct cvrun_command_options* 
     vlog_add_output(stdout);
 
     result = containerv_join(commSocket);
+    vlog_cleanup();
     if (result) {
         fprintf(stderr, "cvrun: failed to join container at path %s\n", commSocket);
-        vlog_cleanup();
         return -1;
     }
 
-    vlog_cleanup();
     return 0;
 }
