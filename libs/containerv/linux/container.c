@@ -36,7 +36,7 @@
 #include <sys/stat.h>
 
 #include <unistd.h>
-#include "utils.h"
+#include "private.h"
 #include <vlog.h>
 
 #define __FD_READ  0
@@ -61,34 +61,6 @@ static void containerv_container_process_delete(struct containerv_container_proc
 {
     free(ptr);
 }
-
-enum containerv_namespace_type {
-    CV_NS_CGROUP = 0,
-    CV_NS_IPC,
-    CV_NS_MNT,
-    CV_NS_NET,
-    CV_NS_PID,
-    CV_NS_TIME,
-    CV_NS_USER,
-    CV_NS_UTS,
-
-    CV_NS_COUNT
-};
-
-struct containerv_container {
-    // host
-    pid_t       pid;
-    char*       rootfs;
-
-    // child
-    int         socket_fd;
-    int         ns_fds[8];
-    struct list processes;
-
-    // shared
-    int         status_fds[2];
-    int         event_fd;
-};
 
 static struct containerv_container* __container_new(void)
 {
@@ -467,7 +439,7 @@ static int __container_idle_loop(struct containerv_container* container)
     for (;;) {
         status = poll(fds, 2, -1);
         if (status <= 0) {
-            return;
+            return -1;
         }
         
         if (fds[0].revents & POLLIN) {
@@ -476,7 +448,7 @@ static int __container_idle_loop(struct containerv_container* container)
                 break;
             }
         } else if (fds[1].revents & POLLIN) {
-            containerv_socket_event(container->socket_fd);
+            containerv_socket_event(container);
         }
     }
     return 0;
@@ -928,5 +900,39 @@ int containerv_destroy(struct containerv_container* container)
 
 int containerv_join(const char* commSocket)
 {
-    //setns(fd, 0);
+    struct containerv_ns_fd fds[CV_NS_COUNT] = { 0 };
+    int                     status;
+    int                     count;
+
+    VLOG_TRACE("containerv[host]", "reading container configuration\n");
+    status = containerv_get_ns_sockets(commSocket, fds, &count);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_join: failed to read namespace sockets from container\n");
+        return status;
+    }
+
+    // change the working directory so we don't accidentally lock any paths
+    VLOG_TRACE("containerv[host]", "preparing environment\n");
+    status = chdir("/");
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_join: failed to change directory to root\n");
+        return status;
+    }
+
+    VLOG_TRACE("containerv[host]", "joining container\n");
+    for (int i = 0; i < count; i++) {
+        if (setns(fds[i].fd, 0))  {
+            VLOG_ERROR("containerv[host]", "containerv_join: failed to join container namespace %i of type %i\n",
+                fds[i].fd, fds[i].type);
+            return status;
+        }
+    }
+    VLOG_TRACE("containerv[child]", "successfully joined container\n");
+
+    status = containerv_drop_capabilities();
+    if (status) {
+        VLOG_ERROR("containerv[child]", "containerv_join: failed to drop capabilities\n");
+        return status;
+    }
+    return 0;
 }

@@ -16,6 +16,7 @@
  *
  */
 
+#include "private.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,26 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vlog.h>
+
+enum __socket_command_type {
+    __SOCKET_COMMAND_GETFDS,
+};
+
+struct __socket_response_getfds {
+    enum containerv_namespace_type types[CV_NS_COUNT];
+    int                            count;
+};
+
+struct __socket_command {
+    enum __socket_command_type type;
+};
+
+struct __socket_response {
+    enum __socket_command_type type;
+    union {
+        struct __socket_response_getfds getfds;
+    } data;
+};
 
 int containerv_open_socket(struct containerv_container* container)
 {
@@ -58,64 +79,175 @@ int containerv_open_socket(struct containerv_container* container)
     return fd;
 }
 
-static void __send_fd(int socket, int fd)
+static int __send_command_maybe_fds(int socket, int* fdset, int count, void* payload, size_t payloadLength)
 {
+    char          fdsBuffer[CMSG_SPACE(sizeof(int) * 16)];
     struct msghdr msg = { 0 };
-    char buf[CMSG_SPACE(sizeof(fd))];
-    memset(buf, '\0', sizeof(buf));
-    struct iovec io = { .iov_base = "ABC", .iov_len = 3 };
+    struct iovec  io = { 
+        .iov_base = payload,
+        .iov_len = payloadLength
+    };
 
     msg.msg_iov = &io;
     msg.msg_iovlen = 1;
-    msg.msg_control = buf;
-    msg.msg_controllen = sizeof(buf);
+    
+    if (count > 0) {
+        struct cmsghdr* cmsg;
+        int  i;
+        memset(fdsBuffer, '\0', sizeof(fdsBuffer));
 
-    struct cmsghdr * cmsg = CMSG_FIRSTHDR(&msg);
-    cmsg->cmsg_level = SOL_SOCKET;
-    cmsg->cmsg_type = SCM_RIGHTS;
-    cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
+        msg.msg_control = fdsBuffer;
+        msg.msg_controllen = sizeof(fdsBuffer);
 
-    *((int *) CMSG_DATA(cmsg)) = fd;
+        for (i = 0, cmsg = CMSG_FIRSTHDR(&msg); i < count; i++) {
+            cmsg->cmsg_level = SOL_SOCKET;
+            cmsg->cmsg_type = SCM_RIGHTS;
+            cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+            *((int *) CMSG_DATA(cmsg)) = fdset[i];
 
-    msg.msg_controllen = CMSG_SPACE(sizeof(fd));
+            cmsg = CMSG_NXTHDR(&msg, cmsg);
+        }
+        msg.msg_controllen = CMSG_SPACE(sizeof(int) * i);
+    }
 
-    if (sendmsg(socket, &msg, 0) < 0)
-        err_syserr("Failed to send message\n");
+    if (sendmsg(socket, &msg, 0) < 0) {
+        VLOG_ERROR("containerv[child]", "__send_fds: failed to send file-descriptors\n");
+        return -1;
+    }
+    return 0;
 }
 
-static int __receive_fd(int socket)
+static int __receive_command_maybe_fds(int socket, int* fdset, void* payload, size_t payloadLength)
 {
-    struct msghdr msg = {0};
-
-    char m_buffer[256];
-    struct iovec io = { .iov_base = m_buffer, .iov_len = sizeof(m_buffer) };
+    struct cmsghdr* cmsg;
+    char            fdsBuffer[256];
+    struct msghdr   msg = { 0 };
+    int             i;
+    struct iovec    io = { 
+        .iov_base = payload,
+        .iov_len = sizeof(payloadLength) 
+    };
+    
     msg.msg_iov = &io;
     msg.msg_iovlen = 1;
+    msg.msg_control = fdsBuffer;
+    msg.msg_controllen = sizeof(fdsBuffer);
+    if (recvmsg(socket, &msg, 0) < 0) {
+        VLOG_ERROR("containerv[child]", "__receive_fds: failed to retrieve file-descriptors\n");
+        return -1;
+    }
+    
+    if (fdset != NULL) {
+        for (i = 0, cmsg = CMSG_FIRSTHDR(&msg); cmsg && i < 16; i++) {
+            unsigned char* data = CMSG_DATA(cmsg);
+            fdset[i] = *((int*)data);
+            cmsg = CMSG_NXTHDR(&msg, cmsg);
+        }
+        return i;
+    }
+    return 0;
+}
 
-    char c_buffer[256];
-    msg.msg_control = c_buffer;
-    msg.msg_controllen = sizeof(c_buffer);
+static void __handle_getfds_command(struct containerv_container* container)
+{
+    int                      fds[CV_NS_COUNT];
+    struct __socket_response response = {
+        .type = __SOCKET_COMMAND_GETFDS,
+        .data.getfds = {
+            .count = 0,
+            .types = { 0 }
+        }
+    };
 
-    if (recvmsg(socket, &msg, 0) < 0)
-        err_syserr("Failed to receive message\n");
+    for (int i = 0, j = 0; i < CV_NS_COUNT; i++) {
+        if (container->ns_fds[i] < 0) {
+            continue;
+        }
 
-    struct cmsghdr * cmsg = CMSG_FIRSTHDR(&msg);
+        response.data.getfds.types[j] = i;
+        response.data.getfds.count++;
+        fds[j++] = container->ns_fds[i];
+    }
 
-    unsigned char * data = CMSG_DATA(cmsg);
+    if (__send_command_maybe_fds(container->socket_fd, &fds[0], response.data.getfds.count, &response, sizeof(struct __socket_response))) {
+        VLOG_ERROR("containerv[child]", "__handle_getfds_command: failed to read send response\n");
+    }
+}
 
-    err_remark("About to extract fd\n");
-    int fd = *((int*) data);
-    err_remark("Extracted fd %d\n", fd);
+void containerv_socket_event(struct containerv_container* container)
+{
+    struct __socket_command command;
+    int                     status;
 
+    status = __receive_command_maybe_fds(container->socket_fd, NULL, &command, sizeof(struct __socket_command));
+    if (status < 0) {
+        VLOG_ERROR("containerv[child]", "containerv_socket_event: failed to read socket command\n");
+        return;
+    }
+
+    switch (command.type) {
+        case __SOCKET_COMMAND_GETFDS: {
+            __handle_getfds_command(container);
+        };
+    }
+}
+
+int __open_unix_socket(const char* commSocket)
+{
+    struct sockaddr_un namesock = {
+        .sun_family = AF_UNIX,
+        .sun_path = { 0 }
+    };
+    int fd;
+    int status;
+
+    memcpy(&namesock.sun_path[0], commSocket, strlen(commSocket));
+
+    fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        VLOG_ERROR("containerv", "__open_unix_socket: failed to create socket\n");
+        return -1;
+    }
+
+    status = connect(fd, (struct sockaddr*)&namesock, sizeof(struct sockaddr_un));
+    if (status) {
+        VLOG_ERROR("containerv", "__open_unix_socket: failed to connect to %s\n", commSocket);
+        return status;
+    }
     return fd;
 }
 
-void containerv_socket_event(int fd)
+int containerv_get_ns_sockets(const char* commSocket, struct containerv_ns_fd fds[CV_NS_COUNT], int* count)
 {
+    int                     status;
+    int                     socket;
+    int                     fdset[16];
+    struct __socket_command command = {
+        .type = __SOCKET_COMMAND_GETFDS
+    };
+    struct __socket_response response;
 
-}
+    socket = __open_unix_socket(commSocket);
+    if (socket < 0) {
+        return -1;
+    }
 
-int containerv_get_ns_sockets(const char* commSocket, int** fds)
-{
-    
+    status = __send_command_maybe_fds(socket, NULL, 0, &command, sizeof(struct __socket_command));
+    if (status < 0) {
+        close(socket);
+        return status;
+    }
+
+    status = __receive_command_maybe_fds(socket, &fdset[0], &response, sizeof(struct __socket_response));
+    close(socket);
+    if (status < 0) {
+        return status;
+    }
+
+    for (int i = 0; i < status; i++) {
+        fds[i].type = response.data.getfds.types[i];
+        fds[i].fd = fdset[i];
+    }
+    *count = status;
+    return 0;
 }

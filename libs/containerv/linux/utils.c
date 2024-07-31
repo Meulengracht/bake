@@ -22,7 +22,7 @@
 #include <sys/prctl.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include "utils.h"
+#include "private.h"
 #include <vlog.h>
 
 int containerv_drop_capabilities(void)
