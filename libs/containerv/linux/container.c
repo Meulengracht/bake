@@ -589,7 +589,7 @@ static int __container_run(
 
     // Open the public communication channel
     container->socket_fd = containerv_open_socket(container);
-    if (container->socket_fd) {
+    if (container->socket_fd < 0) {
         return -1;
     }
 
