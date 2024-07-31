@@ -24,6 +24,10 @@
 #include <string.h>
 #include <vlog.h>
 
+#if __linux__
+#include <unistd.h>
+#endif
+
 #include "commands.h"
 
 static void __print_help(void)
@@ -92,5 +96,11 @@ int exec_main(int argc, char** argv, char** envp, struct cvrun_command_options* 
         return -1;
     }
 
+#if __linux__
+    result = execve(command, (char* const*)argv, (char* const*)envp);
+    if (result) {
+        fprintf(stderr, "cvrun: failed to execute %s\n", command);
+    }
+#endif
     return 0;
 }

@@ -16,7 +16,9 @@
  *
  */
 
+#include <chef/platform.h>
 #include "private.h"
+#include <libgen.h> // dirname
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,19 +56,10 @@ int containerv_open_socket(struct containerv_container* container)
         .sun_family = AF_UNIX,
         .sun_path = { 0 }
     };
-    char* directory;
-    int   fd;
+    int fd;
     VLOG_TRACE("containerv[child]", "containerv_open_socket()\n");
 
-    memcpy(&namesock.sun_path[0], "/run/containerv/c-XXXXXX", 25);
-    
-    directory = mkdtemp(&namesock.sun_path[0]);
-    if (directory == NULL) {
-        VLOG_ERROR("containerv[child]", "containerv_open_socket: failed to create: %s\n", &namesock.sun_path[0]);
-        return -1;
-    }
-
-    // append the socket name
+    strcpy(&namesock.sun_path[0], container->runtime_dir);
     strcat(&namesock.sun_path[0], "/control");
 
     fd = socket(AF_UNIX, SOCK_DGRAM, 0);
@@ -91,7 +84,8 @@ static int __send_command_maybe_fds(int socket, struct sockaddr_un* to, int* fds
         .iov_base = payload,
         .iov_len = payloadLength
     };
-    VLOG_TRACE("containerv[child]", "__send_command_maybe_fds(len=%zu)\n", payloadLength);
+    int           status;
+    VLOG_TRACE("containerv", "__send_command_maybe_fds(len=%zu)\n", payloadLength);
 
     msg.msg_iov = &io;
     msg.msg_iovlen = 1;
@@ -102,10 +96,9 @@ static int __send_command_maybe_fds(int socket, struct sockaddr_un* to, int* fds
     
     if (fdset != NULL && count > 0) {
         struct cmsghdr* cmsg;
-        int             i;
 
         if (count > 16) {
-            VLOG_ERROR("containerv[child]", "__send_command_maybe_fds: trying to send more than 16 descriptors is not allowed\n");
+            VLOG_ERROR("containerv", "__send_command_maybe_fds: trying to send more than 16 descriptors is not allowed\n");
             return -1;
         }
 
@@ -118,15 +111,14 @@ static int __send_command_maybe_fds(int socket, struct sockaddr_un* to, int* fds
         cmsg->cmsg_level = SOL_SOCKET;
         cmsg->cmsg_type = SCM_RIGHTS;
         cmsg->cmsg_len = CMSG_LEN(sizeof(int) * count);
-
-        *((int *)CMSG_DATA(cmsg)) = fdset[i];
         memcpy(CMSG_DATA(cmsg), fdset, sizeof(int) * count);
 
         msg.msg_controllen = CMSG_SPACE(sizeof(int) * count);
     }
 
-    if (sendmsg(socket, &msg, 0) < 0) {
-        VLOG_ERROR("containerv[child]", "__send_command_maybe_fds: failed to send file-descriptors\n");
+    status = (int)sendmsg(socket, &msg, MSG_DONTWAIT);
+    if (status < 0) {
+        VLOG_ERROR("containerv", "__send_command_maybe_fds: failed to send command: %i\n", status);
         return -1;
     }
     return 0;
@@ -137,12 +129,12 @@ static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int
     struct cmsghdr* cmsg;
     char            fdsBuffer[CMSG_SPACE(sizeof(int) * 16)];
     struct msghdr   msg = { 0 };
-    int             i;
+    int             status;
     struct iovec    io = { 
         .iov_base = payload,
         .iov_len = sizeof(payloadLength) 
     };
-    VLOG_TRACE("containerv[child]", "__receive_command_maybe_fds(len=%zu)\n", payloadLength);
+    VLOG_TRACE("containerv", "__receive_command_maybe_fds(len=%zu)\n", payloadLength);
     
     memset(fdsBuffer, '\0', sizeof(fdsBuffer));
     
@@ -155,22 +147,23 @@ static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int
         msg.msg_namelen = sizeof(struct sockaddr_un);
     }
 
-    if (recvmsg(socket, &msg, 0) < 0) {
-        VLOG_ERROR("containerv[child]", "__receive_command_maybe_fds: failed to retrieve file-descriptors\n");
+    status = (int)recvmsg(socket, &msg, MSG_WAITALL);
+    if (status < 0) {
+        VLOG_ERROR("containerv", "__receive_command_maybe_fds: failed to retrieve file-descriptors\n");
         return -1;
     }
+    VLOG_TRACE("containerv", "__receive_command_maybe_fds: recvmsg: %i\n", status);
     
-    VLOG_TRACE("containerv[child]", "__receive_command_maybe_fds: parsing file-descriptors if any (%zu)\n", msg.msg_controllen);
     if (fdset != NULL && CMSG_FIRSTHDR(&msg) != NULL) {
         cmsg = CMSG_FIRSTHDR(&msg);
         if (cmsg->cmsg_level != SOL_SOCKET) {
-            VLOG_ERROR("containerv[child]", "__receive_command_maybe_fds: invalid cmsg level\n");
+            VLOG_ERROR("containerv", "__receive_command_maybe_fds: invalid cmsg level\n");
         }
         if (cmsg->cmsg_type != SCM_RIGHTS) {
-            VLOG_ERROR("containerv[child]", "__receive_command_maybe_fds: invalid cmsg type\n");
+            VLOG_ERROR("containerv", "__receive_command_maybe_fds: invalid cmsg type\n");
         }
-        memcpy(fdset, CMSG_DATA(cmsg), cmsg->cmsg_len);
-        return cmsg->cmsg_len / sizeof(int);
+        memcpy(fdset, CMSG_DATA(cmsg), (cmsg->cmsg_len - sizeof(struct cmsghdr)));
+        return (cmsg->cmsg_len - sizeof(struct cmsghdr)) / sizeof(int);
     }
     return 0;
 }
@@ -191,7 +184,6 @@ static void __handle_getfds_command(struct containerv_container* container, stru
         if (container->ns_fds[i] < 0) {
             continue;
         }
-
         response.data.getfds.types[j] = i;
         response.data.getfds.count++;
         fds[j++] = container->ns_fds[i];
@@ -215,11 +207,20 @@ void containerv_socket_event(struct containerv_container* container)
         return;
     }
 
+    VLOG_TRACE("containerv[child]", "containerv_socket_event: event from %s\n", &from.sun_path[0]);
+
     switch (command.type) {
         case __SOCKET_COMMAND_GETFDS: {
             __handle_getfds_command(container, &from);
         };
     }
+}
+
+char* __get_client_socket_name(const char* commSocket)
+{
+    char buffer[PATH_MAX] = { 0 };
+    strcpy(&buffer[0], commSocket);
+    return strpathcombine(dirname(&buffer[0]), "client"); // randomized?
 }
 
 int __open_unix_socket(const char* commSocket)
@@ -228,11 +229,16 @@ int __open_unix_socket(const char* commSocket)
         .sun_family = AF_UNIX,
         .sun_path = { 0 }
     };
-    int fd;
-    int status;
-    VLOG_TRACE("containerv[host]", "__open_unix_socket(path=%s)\n", commSocket);
+    char* clientSocket = __get_client_socket_name(commSocket);
+    int   fd;
+    int   status;
+    VLOG_TRACE("containerv[host]", "__open_unix_socket(path=%s, client=%s)\n",
+        commSocket, clientSocket);
 
-    memcpy(&namesock.sun_path[0], commSocket, strlen(commSocket));
+    if (clientSocket == NULL) {
+        VLOG_ERROR("containerv", "__open_unix_socket: failed to create client socket address\n");
+        return -1;
+    }
 
     fd = socket(AF_UNIX, SOCK_DGRAM, 0);
     if (fd < 0) {
@@ -240,12 +246,51 @@ int __open_unix_socket(const char* commSocket)
         return -1;
     }
 
+    memcpy(&namesock.sun_path[0], clientSocket, strlen(clientSocket));
+    free(clientSocket);
+
+    status = bind(fd, (struct sockaddr*)&namesock, sizeof(struct sockaddr_un));
+    if (status) {
+        VLOG_ERROR("containerv", "__open_unix_socket: failed to bind to %s\n", clientSocket);
+        return status;
+    }
+
+    memset(&namesock.sun_path[0], 0, sizeof(namesock.sun_path));
+    memcpy(&namesock.sun_path[0], commSocket, strlen(commSocket));
     status = connect(fd, (struct sockaddr*)&namesock, sizeof(struct sockaddr_un));
     if (status) {
         VLOG_ERROR("containerv", "__open_unix_socket: failed to connect to %s\n", commSocket);
         return status;
     }
     return fd;
+}
+
+int __close_unix_socket(const char* commSocket, int fd)
+{
+    char* clientSocket = __get_client_socket_name(commSocket);
+    int   status;
+    VLOG_TRACE("containerv[host]", "__close_unix_socket(path=%s, client=%s)\n",
+        commSocket, clientSocket);
+
+    if (clientSocket == NULL) {
+        VLOG_ERROR("containerv", "__close_unix_socket: failed to create client socket address\n");
+        return -1;
+    }
+
+    status = close(fd);
+    if (status) {
+        VLOG_ERROR("containerv", "__close_unix_socket: failed to close client socket\n");
+        free(clientSocket);
+        return -1;
+    }
+    
+    status = unlink(clientSocket);
+    if (status) {
+        VLOG_ERROR("containerv", "__close_unix_socket: failed to remove client socket\n");
+    }
+
+    free(clientSocket);
+    return status;
 }
 
 int containerv_get_ns_sockets(const char* commSocket, struct containerv_ns_fd fds[CV_NS_COUNT], int* count)
@@ -266,17 +311,20 @@ int containerv_get_ns_sockets(const char* commSocket, struct containerv_ns_fd fd
 
     status = __send_command_maybe_fds(socket, NULL, NULL, 0, &command, sizeof(struct __socket_command));
     if (status < 0) {
-        close(socket);
+        __close_unix_socket(commSocket, socket);
         return status;
     }
 
     status = __receive_command_maybe_fds(socket, NULL, &fdset[0], &response, sizeof(struct __socket_response));
-    close(socket);
+    __close_unix_socket(commSocket, socket);
     if (status < 0) {
         return status;
     }
 
+    VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets: received %i descriptors\n", status);
     for (int i = 0; i < status; i++) {
+        VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets: received fd[%i] of type[%i]\n",
+            fdset[i], response.data.getfds.types[i]);
         fds[i].type = response.data.getfds.types[i];
         fds[i].fd = fdset[i];
     }
