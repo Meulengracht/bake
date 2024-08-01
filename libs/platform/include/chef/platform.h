@@ -230,8 +230,8 @@ extern int platform_rmdir(const char* path);
 /**
  * @brief Check whether the path exists and is a directory
  * 
- * @param[In] path The path to check
- * @#define CHEF_ARCHITECTURE_STR int 0 if the path exists and is a directory, -1 otherwise
+ * @param path The path to check
+ * @return     0 if the path exists and is a directory, -1 otherwise
  */
 extern int platform_isdir(const char* path);
 extern int platform_stat(const char* path, struct platform_stat* stats);

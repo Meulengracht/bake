@@ -17,15 +17,12 @@
  */
 
 #include <chef/platform.h>
-#include <Windows.h>
 
 int platform_isdir(const char* path)
 {
     DWORD attributes = GetFileAttributes(path);
-
     if (attributes == INVALID_FILE_ATTRIBUTES) {
-        return 0;
+        return -1;
     }
-
     return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
