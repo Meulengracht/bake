@@ -172,11 +172,29 @@ extern char*  strpathjoin(const char* base, ...);
 extern char*  strpathcombine(const char* path1, const char* path2);
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
-extern char** strargv(char* arguments, const char* arg0, int* argc);
-extern void   strargv_free(char** argv);
 extern char*  strreplace(char* text, const char* find, const char* replaceWith);
 extern int    strendswith(const char* text, const char* suffix);
 extern int    strbool(const char* string);
+
+/**
+ * @brief Converts a flat string of arguments in the form of "arg0 arg1 arg2 \"arg3 but with spaces\""
+ * into an array of arguments like:
+ * argv[0] = arg0
+ * argv[1] = arg1
+ * argv[2] = arg2
+ * argv[3] = arg3 but with spaces
+ * It's important to note here that the provided string <arguments> will be modified by this function.
+ * Use strargv_free to free the array correctly again. Only the array is allocated for this, the members
+ * will be pointing into the original argument, and this will not be freed.
+ * 
+ * @param arguments The string of flat arguments to split
+ * @param arg0      Optionally, a custom arg0 can be inserted before any of the other
+ * @param argc      A pointer to an int value where the number of resulting arguments will be stored
+ * @return          A char array of char strings that represent the arguments.
+ *                  The array will be NULL terminated.
+ */
+extern char** strargv(char* arguments, const char* arg0, int* argc);
+extern void   strargv_free(char** argv);
 
 #define FILTER_FOLDCASE 0x1
 
