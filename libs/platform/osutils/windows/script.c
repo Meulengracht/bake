@@ -71,7 +71,6 @@ int platform_script(const char *script)
         return -1;
     }
 
-    fprintf(sfile, "@echo off\r\n");
     fputs(script, sfile);
     fclose(sfile);
 
