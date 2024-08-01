@@ -29,9 +29,7 @@ struct containerv_user {
     unsigned int effective_gid;
 };
 
-extern int  containerv_user_new(struct containerv_user* user);
-extern int  containerv_user_regain_privs(struct containerv_user* user);
-extern int  containerv_user_drop_privs(struct containerv_user* user);
-extern void containerv_user_delete(struct containerv_user* user);
+extern struct containerv_user* containerv_user_new(void);
+extern void                    containerv_user_delete(struct containerv_user* user);
 
 #endif //!__CONTAINERV_USER_H__

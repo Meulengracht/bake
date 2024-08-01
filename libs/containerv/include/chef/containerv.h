@@ -28,6 +28,7 @@ typedef pid_t process_handle_t;
 #endif
 
 struct containerv_container;
+struct containerv_user;
 
 enum containerv_mount_flags {
     CV_MOUNT_BIND = 0x1,
@@ -71,6 +72,7 @@ enum container_spawn_flags {
 struct containerv_spawn_options {
     const char*                arguments;
     const char* const*         environment;
+    struct containerv_user*    as_user;
     enum container_spawn_flags flags;
 };
 
