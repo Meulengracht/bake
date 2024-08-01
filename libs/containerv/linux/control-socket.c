@@ -373,14 +373,10 @@ int containerv_socket_client_get_nss(struct containerv_socket_client* client, st
         return status;
     }
 
-    VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets: received %i (%i) descriptors\n",
-        status, response.data.getfds.count);
-    for (int i = 0; i < status; i++) {
-        VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets: received fd[%i] of type[%i]\n",
-            fdset[i], response.data.getfds.types[i]);
+    for (int i = 0; i < response.data.getfds.count; i++) {
         fds[i].type = response.data.getfds.types[i];
         fds[i].fd = fdset[i];
     }
-    *count = status;
+    *count = response.data.getfds.count;
     return 0;
 }
