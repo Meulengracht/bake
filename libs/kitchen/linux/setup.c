@@ -98,7 +98,7 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct containerv_user* us
     return 0;
 }
 
-static int __setup_rootfs(struct kitchen* kitchen, struct containerv_user* user)
+static int __setup_rootfs(struct kitchen* kitchen)
 {
     int status;
     VLOG_TRACE("kitchen", "initializing container rootfs\n");
@@ -119,7 +119,7 @@ static int __setup_rootfs(struct kitchen* kitchen, struct containerv_user* user)
         return status;
     }
 
-    status = __ensure_hostdirs(kitchen, user);
+    status = __ensure_hostdirs(kitchen, kitchen->user);
     if (status) {
         VLOG_ERROR("kitchen", "__kitchen_install: failed to create host directories\n");
         return status;
@@ -136,7 +136,7 @@ static int __setup_rootfs(struct kitchen* kitchen, struct containerv_user* user)
     return 0;
 }
 
-static int __setup_container(struct kitchen* kitchen, struct containerv_user* user)
+static int __setup_container(struct kitchen* kitchen)
 {
     struct containerv_mount mounts[2] = { 0 };
     int                     status;
@@ -425,8 +425,7 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
 
 int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
-    struct containerv_user user;
-    int                    status;
+    int status;
     VLOG_DEBUG("kitchen", "kitchen_setup(name=%s)\n", kitchen->recipe->project.name);
     
     if (kitchen->magic != __KITCHEN_INIT_MAGIC) {
@@ -434,37 +433,29 @@ int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options
         return -1;
     }
 
-    if (containerv_user_new(&user)) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to get current user\n");
-        return -1;
-    }
-
-    status = __setup_rootfs(kitchen, &user);
+    status = __setup_rootfs(kitchen);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to setup rootfs of kitchen\n");
-        goto cleanup;
+        return status;
     }
 
     status = __update_ingredients(kitchen, options);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to setup/refresh kitchen ingredients\n");
-        goto cleanup;
+        return status;
     }
 
-    status = __setup_container(kitchen, &user);
+    status = __setup_container(kitchen);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to start container\n");
-        goto cleanup;
+        return status;
     }
 
     status = __run_setup_hook(kitchen, options);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to execute setup script: %s\n", strerror(errno));
-        goto cleanup;
+        return status;
     }
-
-cleanup:
-    containerv_user_delete(&user);
     return status;
 }
 

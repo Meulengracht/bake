@@ -990,6 +990,14 @@ int containerv_join(const char* commSocket)
 
     containerv_socket_client_close(client);
 
+    // change the directory to the chroot - so we don't lock down
+    // any paths before
+    status = chdir(&chrPath[0]);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_join: failed to change directory to the chroot\n");
+        return status;
+    }
+
     VLOG_TRACE("containerv[host]", "preparing environment\n");
     for (int i = 0; i < count; i++) {
         if (setns(fds[i].fd, 0))  {
@@ -1005,6 +1013,7 @@ int containerv_join(const char* commSocket)
         return status;
     }
 
+    // after chroot, we want to change to the root
     status = chdir("/");
     if (status) {
         VLOG_ERROR("containerv[host]", "containerv_join: failed to change directory to root\n");
