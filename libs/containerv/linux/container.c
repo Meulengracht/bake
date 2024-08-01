@@ -960,38 +960,64 @@ int containerv_destroy(struct containerv_container* container)
 
 int containerv_join(const char* commSocket)
 {
-    struct containerv_ns_fd fds[CV_NS_COUNT] = { 0 };
-    int                     status;
-    int                     count;
+    struct containerv_ns_fd          fds[CV_NS_COUNT] = { 0 };
+    struct containerv_socket_client* client;
+    char                             chrPath[PATH_MAX] = { 0 };
+    int                              status;
+    int                              count;
 
-    VLOG_TRACE("containerv[host]", "reading container configuration\n");
-    status = containerv_get_ns_sockets(commSocket, fds, &count);
-    if (status) {
-        VLOG_ERROR("containerv[host]", "containerv_join: failed to read namespace sockets from container\n");
+    VLOG_TRACE("containerv[host]", "connecting to %s\n", commSocket);
+    client = containerv_socket_client_open(commSocket);
+    if (client == NULL) {
+        VLOG_ERROR("containerv[host]", "containerv_join: failed to connect to server\n");
         return status;
     }
 
+    VLOG_TRACE("containerv[host]", "reading container configuration\n");
+    status = containerv_socket_client_get_root(client, &chrPath[0], PATH_MAX);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_join: failed to read container configuration\n");
+        containerv_socket_client_close(client);
+        return status;
+    }
+
+    status = containerv_socket_client_get_nss(client, fds, &count);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_join: failed to read namespace sockets from container\n");
+        containerv_socket_client_close(client);
+        return status;
+    }
+
+    containerv_socket_client_close(client);
+
     // change the working directory so we don't accidentally lock any paths
-    VLOG_TRACE("containerv[host]", "preparing environment\n");
     status = chdir("/");
     if (status) {
         VLOG_ERROR("containerv[host]", "containerv_join: failed to change directory to root\n");
         return status;
     }
 
-    VLOG_TRACE("containerv[host]", "joining container\n");
+    VLOG_TRACE("containerv[host]", "preparing environment\n");
     for (int i = 0; i < count; i++) {
         if (setns(fds[i].fd, 0))  {
             VLOG_WARNING("containerv[host]", "containerv_join: failed to join container namespace %i of type %i\n",
                 fds[i].fd, fds[i].type);
         }
     }
-    VLOG_TRACE("containerv[child]", "successfully joined container\n");
 
+    VLOG_TRACE("containerv[host]", "joining container\n");
+    status = chroot(&chrPath[0]);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_join: failed to chroot into container root %s\n", &chrPath[0]);
+        return status;
+    }
+
+    VLOG_TRACE("containerv[host]", "dropping capabilities\n");
     status = containerv_drop_capabilities();
     if (status) {
         VLOG_ERROR("containerv[child]", "containerv_join: failed to drop capabilities\n");
         return status;
     }
+    VLOG_TRACE("containerv[child]", "successfully joined container\n");
     return 0;
 }

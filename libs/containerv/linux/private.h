@@ -97,11 +97,17 @@ extern int containerv_open_socket(struct containerv_container* container);
  */
 extern void containerv_socket_event(struct containerv_container* container);
 
+struct containerv_socket_client;
+
 struct containerv_ns_fd {
     enum containerv_namespace_type type;
     int                            fd;
 };
 
-extern int containerv_get_ns_sockets(const char* commSocket, struct containerv_ns_fd fds[CV_NS_COUNT], int* count);
+extern struct containerv_socket_client* containerv_socket_client_open(const char* commSocket);
+extern void containerv_socket_client_close(struct containerv_socket_client* client);
+
+extern int containerv_socket_client_get_root(struct containerv_socket_client* client, char* buffer, size_t length);
+extern int containerv_socket_client_get_nss(struct containerv_socket_client* client, struct containerv_ns_fd fds[CV_NS_COUNT], int* count);
 
 #endif //!__PRIVATE_H__

@@ -31,6 +31,7 @@
 #include <vlog.h>
 
 enum __socket_command_type {
+    __SOCKET_COMMAND_GETROOT,
     __SOCKET_COMMAND_GETFDS,
 };
 
@@ -132,7 +133,7 @@ static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int
     int             status;
     struct iovec    io = { 
         .iov_base = payload,
-        .iov_len = sizeof(payloadLength) 
+        .iov_len = payloadLength 
     };
     VLOG_TRACE("containerv", "__receive_command_maybe_fds(len=%zu)\n", payloadLength);
     
@@ -166,6 +167,15 @@ static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int
         return (cmsg->cmsg_len - sizeof(struct cmsghdr)) / sizeof(int);
     }
     return 0;
+}
+
+static void __handle_getroot_command(struct containerv_container* container, struct sockaddr_un* from)
+{
+    VLOG_TRACE("containerv[child]", "__handle_getroot_command()\n");
+
+    if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, container->rootfs, strlen(container->rootfs) + 1)) {
+        VLOG_ERROR("containerv[child]", "__handle_getroot_command: failed to send response\n");
+    }
 }
 
 static void __handle_getfds_command(struct containerv_container* container, struct sockaddr_un* from)
@@ -210,11 +220,19 @@ void containerv_socket_event(struct containerv_container* container)
     VLOG_TRACE("containerv[child]", "containerv_socket_event: event from %s\n", &from.sun_path[0]);
 
     switch (command.type) {
+        case __SOCKET_COMMAND_GETROOT: {
+            __handle_getroot_command(container, &from);
+        } break;
         case __SOCKET_COMMAND_GETFDS: {
             __handle_getfds_command(container, &from);
-        };
+        } break;
     }
 }
+
+struct containerv_socket_client {
+    char* socket_path;
+    int   socket_fd;
+};
 
 char* __get_client_socket_name(const char* commSocket)
 {
@@ -223,105 +241,140 @@ char* __get_client_socket_name(const char* commSocket)
     return strpathcombine(dirname(&buffer[0]), "client"); // randomized?
 }
 
-int __open_unix_socket(const char* commSocket)
+static struct containerv_socket_client* __containerv_socket_client_new(const char* commSocket)
 {
+    struct containerv_socket_client* client;
+    
+    char* socketPath = __get_client_socket_name(commSocket);
+    if (socketPath == NULL) {
+        VLOG_ERROR("containerv", "__containerv_socket_client_new: failed to create client socket address\n");
+        return NULL;
+    }
+
+    client = malloc(sizeof(struct containerv_socket_client));
+    if (client == NULL) {
+        free(socketPath);
+        return NULL;
+    }
+    client->socket_path = socketPath;
+    client->socket_fd = -1;
+
+    return client;
+}
+
+static void __containerv_socket_client_delete(struct containerv_socket_client* client)
+{
+    if (client == NULL) {
+        return;
+    }
+    free(client->socket_path);
+    free(client);
+}
+
+struct containerv_socket_client* containerv_socket_client_open(const char* commSocket)
+{
+    struct containerv_socket_client* client;
     struct sockaddr_un namesock = {
         .sun_family = AF_UNIX,
         .sun_path = { 0 }
     };
-    char* clientSocket = __get_client_socket_name(commSocket);
-    int   fd;
-    int   status;
-    VLOG_TRACE("containerv[host]", "__open_unix_socket(path=%s, client=%s)\n",
-        commSocket, clientSocket);
+    int status;
+    VLOG_TRACE("containerv[host]", "__open_unix_socket(path=%s)\n", commSocket);
 
-    if (clientSocket == NULL) {
-        VLOG_ERROR("containerv", "__open_unix_socket: failed to create client socket address\n");
-        return -1;
+    client = __containerv_socket_client_new(commSocket);
+    if (client == NULL) {
+        VLOG_ERROR("containerv", "__open_unix_socket: failed to create socket client\n");
+        return NULL;
     }
 
-    fd = socket(AF_UNIX, SOCK_DGRAM, 0);
-    if (fd < 0) {
+    client->socket_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (client->socket_fd < 0) {
         VLOG_ERROR("containerv", "__open_unix_socket: failed to create socket\n");
-        return -1;
+        __containerv_socket_client_delete(client);
+        return NULL;
     }
 
-    memcpy(&namesock.sun_path[0], clientSocket, strlen(clientSocket));
-    free(clientSocket);
-
-    status = bind(fd, (struct sockaddr*)&namesock, sizeof(struct sockaddr_un));
+    memcpy(&namesock.sun_path[0], client->socket_path, strlen(client->socket_path));
+    status = bind(client->socket_fd, (struct sockaddr*)&namesock, sizeof(struct sockaddr_un));
     if (status) {
-        VLOG_ERROR("containerv", "__open_unix_socket: failed to bind to %s\n", clientSocket);
-        return status;
+        VLOG_ERROR("containerv", "__open_unix_socket: failed to bind to %s\n", client->socket_path);
+        close(client->socket_fd);
+        __containerv_socket_client_delete(client);
+        return NULL;
     }
 
     memset(&namesock.sun_path[0], 0, sizeof(namesock.sun_path));
     memcpy(&namesock.sun_path[0], commSocket, strlen(commSocket));
-    status = connect(fd, (struct sockaddr*)&namesock, sizeof(struct sockaddr_un));
+    status = connect(client->socket_fd, (struct sockaddr*)&namesock, sizeof(struct sockaddr_un));
     if (status) {
         VLOG_ERROR("containerv", "__open_unix_socket: failed to connect to %s\n", commSocket);
-        return status;
+        containerv_socket_client_close(client);
+        return NULL;
     }
-    return fd;
+    return client;
 }
 
-int __close_unix_socket(const char* commSocket, int fd)
+void containerv_socket_client_close(struct containerv_socket_client* client)
 {
-    char* clientSocket = __get_client_socket_name(commSocket);
-    int   status;
-    VLOG_TRACE("containerv[host]", "__close_unix_socket(path=%s, client=%s)\n",
-        commSocket, clientSocket);
+    int status;
+    VLOG_TRACE("containerv[host]", "containerv_socket_client_close(client=%s)\n", client->socket_path);
 
-    if (clientSocket == NULL) {
-        VLOG_ERROR("containerv", "__close_unix_socket: failed to create client socket address\n");
-        return -1;
-    }
-
-    status = close(fd);
+    status = close(client->socket_fd);
     if (status) {
         VLOG_ERROR("containerv", "__close_unix_socket: failed to close client socket\n");
-        free(clientSocket);
-        return -1;
+        __containerv_socket_client_delete(client);
+        return;
     }
     
-    status = unlink(clientSocket);
+    status = unlink(client->socket_path);
     if (status) {
         VLOG_ERROR("containerv", "__close_unix_socket: failed to remove client socket\n");
     }
-
-    free(clientSocket);
-    return status;
+    __containerv_socket_client_delete(client);
 }
 
-int containerv_get_ns_sockets(const char* commSocket, struct containerv_ns_fd fds[CV_NS_COUNT], int* count)
+int containerv_socket_client_get_root(struct containerv_socket_client* client, char* buffer, size_t length)
 {
     int                     status;
-    int                     socket;
+    struct __socket_command command = {
+        .type = __SOCKET_COMMAND_GETROOT
+    };
+    VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets()\n");
+
+    status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, &command, sizeof(struct __socket_command));
+    if (status < 0) {
+        return status;
+    }
+
+    status = __receive_command_maybe_fds(client->socket_fd, NULL, NULL, buffer, length);
+    if (status < 0) {
+        return status;
+    }
+    return 0;
+}
+
+int containerv_socket_client_get_nss(struct containerv_socket_client* client, struct containerv_ns_fd fds[CV_NS_COUNT], int* count)
+{
+    int                     status;
     int                     fdset[16];
     struct __socket_command command = {
         .type = __SOCKET_COMMAND_GETFDS
     };
     struct __socket_response response;
-    VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets(path=%s)\n", commSocket);
+    VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets()\n");
 
-    socket = __open_unix_socket(commSocket);
-    if (socket < 0) {
-        return -1;
-    }
-
-    status = __send_command_maybe_fds(socket, NULL, NULL, 0, &command, sizeof(struct __socket_command));
-    if (status < 0) {
-        __close_unix_socket(commSocket, socket);
-        return status;
-    }
-
-    status = __receive_command_maybe_fds(socket, NULL, &fdset[0], &response, sizeof(struct __socket_response));
-    __close_unix_socket(commSocket, socket);
+    status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, &command, sizeof(struct __socket_command));
     if (status < 0) {
         return status;
     }
 
-    VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets: received %i descriptors\n", status);
+    status = __receive_command_maybe_fds(client->socket_fd, NULL, &fdset[0], &response, sizeof(struct __socket_response));
+    if (status < 0) {
+        return status;
+    }
+
+    VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets: received %i (%i) descriptors\n",
+        status, response.data.getfds.count);
     for (int i = 0; i < status; i++) {
         VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets: received fd[%i] of type[%i]\n",
             fdset[i], response.data.getfds.types[i]);
