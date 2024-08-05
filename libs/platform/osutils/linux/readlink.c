@@ -21,7 +21,6 @@
 #include <linux/limits.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 int platform_readlink(const char* path, char** bufferOut)
 {

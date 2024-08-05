@@ -245,12 +245,28 @@ static int __get_cwd(char** bufferOut)
 
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler* command     = &g_commands[2]; // run step is default
+    struct command_handler*     command     = &g_commands[2]; // run step is default
     struct bake_command_options options = { 0 };
-    void*                   buffer;
-    size_t                  length;
-    int                     status;
+    void*                       buffer;
+    size_t                      length;
+    int                         status;
     
+#if __linux__
+    // make sure we're running with root privileges
+    if (geteuid() != 0 || getegid() != 0) {
+        VLOG_ERROR("kitchen", "should be executed with root privileges, aborting.\n");
+        errno = EPERM;
+        return -1;
+    }
+
+    // make sure we're not actually running as root
+    if (getuid() == 0 || getgid() == 0) {
+        VLOG_ERROR("kitchen", "should not be run as root, aborting.\n");
+        errno = EPERM;
+        return -1;
+    }
+#endif
+
     // first argument must be the command if not --help or --version
     if (argc > 1) {
         if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {

@@ -24,10 +24,6 @@
 #include <string.h>
 #include <vlog.h>
 
-#if __linux__
-#include <unistd.h>
-#endif
-
 #include "commands.h"
 
 static void __print_help(void)

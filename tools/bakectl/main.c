@@ -117,12 +117,12 @@ static int __get_cwd(char** bufferOut)
     char*  cwd;
     int    status;
 
-    cwd = malloc(4096);
+    cwd = malloc(PATH_MAX);
     if (cwd == NULL) {
         return -1;
     }
 
-    status = platform_getcwd(cwd, 4096);
+    status = platform_getcwd(cwd, PATH_MAX);
     if (status) {
         // buffer was too small
         fprintf(stderr, "bake: could not get current working directory, buffer too small?\n");
@@ -141,6 +141,7 @@ int main(int argc, char** argv, char** envp)
     void*                          buffer;
     size_t                         length;
     int                            status;
+    int                            logLevel = VLOG_LEVEL_TRACE;
     
     // first argument must be the command if not --help or --version
     if (argc > 1) {
@@ -149,7 +150,7 @@ int main(int argc, char** argv, char** envp)
             return 0;
         }
 
-        if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
+        if (!strcmp(argv[1], "--version")) {
             printf("bakectl: version " PROJECT_VER "\n");
             return 0;
         }
@@ -170,6 +171,11 @@ int main(int argc, char** argv, char** envp)
                     if (status) {
                         fprintf(stderr, "bakectl: failed to parse %s\n", argv[i + 1]);
                         return status;
+                    }
+                } else if (!strncmp(argv[i], "-v", 2)) {
+                    int li = 1;
+                    while (argv[1][li++] == 'v') {
+                        logLevel++;
                     }
                 }
             }
@@ -196,8 +202,7 @@ int main(int argc, char** argv, char** envp)
 
     // initialize the logging system
     vlog_initialize();
-    // TODO switch to trace by default, allow -v for debug
-    vlog_set_level(VLOG_LEVEL_DEBUG);
+    vlog_set_level((enum vlog_level)logLevel);
     vlog_add_output(stdout);
 
     status = command->handler(argc, argv, envp, &options);

@@ -26,10 +26,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-#if __linux__
-#include <unistd.h>
-#endif
-
 #include "chef_served_service_client.h"
 
 extern int __chef_client_initialize(gracht_client_t** clientOut);

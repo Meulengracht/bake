@@ -16,7 +16,6 @@
  * 
  */
 
-#include <chef/user.h>
 #include <chef/kitchen.h>
 #include <chef/platform.h>
 #include <chef/user.h>
@@ -29,7 +28,6 @@
 #include <string.h>
 
 #include <sys/types.h>
-#include <unistd.h>
 #include "private.h"
 
 static struct pkgmngr* __setup_pkg_environment(struct kitchen_init_options* options, const char* chroot)
@@ -94,17 +92,27 @@ static char* __fmt_env_option(const char* name, const char* value)
 
 static char** __initialize_env(struct kitchen* kitchen, const char* const* parentEnv)
 {
-    char** env = calloc(12, sizeof(char*));
+    struct containerv_user* user;
+    char**                  env;
+    
+    env = calloc(12, sizeof(char*));
     if (env == NULL) {
         VLOG_FATAL("kitchen", "failed to allocate memory for environment\n");
+        return NULL;
+    }
+
+    user = containerv_user_new();
+    if (user == NULL) {
+        VLOG_FATAL("kitchen", "failed to allocate memory for user information\n");
+        free(env);
         return NULL;
     }
 
     // we are not using the parent environment yet
     (void)parentEnv;
 
-    env[0] = __fmt_env_option("USER", kitchen->user->caller_name);
-    env[1] = __fmt_env_option("USERNAME", kitchen->user->caller_name);
+    env[0] = __fmt_env_option("USER", user->caller_name);
+    env[1] = __fmt_env_option("USERNAME", user->caller_name);
     env[2] = __fmt_env_option("HOME", "/chef");
     env[3] = __fmt_env_option("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:");
     env[4] = __fmt_env_option("LD_LIBRARY_PATH", "/usr/local/lib");
@@ -114,6 +122,7 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
     if (kitchen->pkg_manager) {
         kitchen->pkg_manager->add_overrides(kitchen->pkg_manager, env);
     }
+    containerv_user_delete(user);
     return env;
 }
 
@@ -150,14 +159,10 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
 
     kitchen->host_kitchen_project_root = strdup(&root[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/output", &root[0]);
-    kitchen->shared_output_path = strdup(&buff[0]);
-
     // Format external chroot paths that are arch/platform agnostic
     snprintf(&buff[0], sizeof(buff), "%s/ns", &root[0]);
     kitchen->host_chroot = strdup(&buff[0]);
     kitchen->pkg_manager = __setup_pkg_environment(options, &buff[0]);
-    kitchen->user = containerv_user_new();
 
     // Before paths, but after all the other setup, setup base environment
     kitchen->base_environment = __initialize_env(kitchen, options->envp);
@@ -222,30 +227,5 @@ int kitchen_initialize(struct kitchen_init_options* options, struct kitchen* kit
         VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
         return -1;
     }
-
-    if (__kitchen_construct(options, kitchen)) {
-        return -1;
-    }
-
-    // make sure we're running with root privileges
-    if (kitchen->user->effective_uid != 0) {
-        VLOG_ERROR("kitchen", "should be executed with root privileges, aborting.\n");
-        errno = EPERM;
-        return -1;
-    }
-
-    // make sure we're not setgid
-    if (kitchen->user->caller_gid == 0 || kitchen->user->effective_gid == 0) {
-        VLOG_ERROR("kitchen", "should not be setgid root, aborting.\n");
-        errno = EPERM;
-        return -1;
-    }
-    
-    // make sure we're not actually running as root
-    if (kitchen->user->caller_uid == 0) {
-        VLOG_ERROR("kitchen", "should not be run as root, aborting.\n");
-        errno = EPERM;
-        return -1;
-    }
-    return 0;
+    return __kitchen_construct(options, kitchen);
 }
