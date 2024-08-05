@@ -132,6 +132,7 @@ typedef SSIZE_T ssize_t;
 #define PATH_MAX MAX_PATH
 #elif __linux__
 #include <linux/limits.h>
+#include <unistd.h>
 #else
 #include <limits.h>
 #endif

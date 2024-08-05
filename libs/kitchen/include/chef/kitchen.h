@@ -26,7 +26,6 @@
 // imports that don't really need to be exposed
 struct pkgmngr;
 struct containerv_container;
-struct containerv_user;
 
 struct kitchen_ingredient {
     struct list_item list_header;
@@ -83,10 +82,8 @@ struct kitchen {
     char* host_cwd;
     char* target_platform;
     char* target_architecture;
-    char* shared_output_path;
 
     struct pkgmngr*              pkg_manager;
-    struct containerv_user*      user;
     struct containerv_container* container;
     char**                       base_environment;
 

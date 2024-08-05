@@ -26,22 +26,29 @@
 #include <unistd.h>
 #include <vlog.h>
 
-int containerv_user_new(struct containerv_user* user)
+struct containerv_user* containerv_user_new(void)
 {
+    struct containerv_user* user;
     uid_t ruid, euid, suid;
     struct passwd *effective;
     struct passwd *real;
-    
+
     if (getresuid(&ruid, &euid, &suid)) {
         VLOG_ERROR("containerv", "failed to retrieve user details: %s\n", strerror(errno));
-        return -1;
+        return NULL;
     }
     VLOG_DEBUG("containerv", "real: %u, effective: %u, saved: %u\n", ruid, euid, suid);
 
+    user = calloc(1, sizeof(struct containerv_user));
+    if (user == NULL) {
+        return NULL;
+    }
+    
     real = getpwuid(ruid);
     if (real == NULL) {
         VLOG_ERROR("containerv", "failed to retrieve current user details: %s\n", strerror(errno));
-        return -1;
+        containerv_user_delete(user);
+        return NULL;
     }
 
     // caller is the current actual user.
@@ -52,17 +59,19 @@ int containerv_user_new(struct containerv_user* user)
     effective = getpwuid(euid);
     if (effective == NULL) {
         VLOG_ERROR("containerv", "failed to retrieve executing user details: %s\n", strerror(errno));
-        return -1;
+        containerv_user_delete(user);
+        return NULL;
     }
 
     user->effective_name = strdup(effective->pw_name);
     user->effective_uid = effective->pw_uid;
     user->effective_gid = effective->pw_gid;
-    return 0;
+    return user;
 }
 
 void containerv_user_delete(struct containerv_user* user)
 {
     free(user->caller_name);
     free(user->effective_name);
+    free(user);
 }

@@ -42,7 +42,7 @@ static void __initialize_pack_options(
     options->name             = pack->name;
     options->sysroot_dir      = kitchen->host_chroot;
     options->output_dir       = kitchen->host_cwd;
-    options->input_dir        = kitchen->host_install_root;
+    options->input_dir        = kitchen->host_install_path;
     options->ingredients_root = kitchen->host_build_ingredients_path;
     options->platform         = kitchen->target_platform;
     options->architecture     = kitchen->target_architecture;
@@ -85,7 +85,7 @@ static char* __destination_pack_name(const char* root, const char* platform, con
 
 static int __move_pack(struct kitchen* kitchen, struct recipe_pack* pack)
 {
-    char* src = __source_pack_name(kitchen->shared_output_path, pack->name);
+    char* src = __source_pack_name(kitchen->host_install_root, pack->name);
     char* dst = __destination_pack_name(kitchen->host_cwd, kitchen->target_platform, kitchen->target_architecture, pack->name);
     int   status;
 
@@ -205,29 +205,6 @@ cleanup:
     return status;
 }
 
-/**
- * @brief List of filepath patterns that should be included in the install directory.
- * This will be applied to the fridge prep area directory where ingredients are stored used
- * for building. This is to support runtime dependencies for packs.
- * 
- * @param[In] filters List of struct list_item_string containg filepath patterns.
- * @return int Returns 0 on success, -1 on failure with errno set accordingly.
- */
-static int __filter_file_copy(const char* dest, struct list* filters)
-{
-    if (!filters) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    return __copy_files_with_filters(
-        "",
-        NULL,
-        filters,
-        dest
-    );
-}
-
 int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
 {
     struct list_item* item;
@@ -238,7 +215,12 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
     list_foreach(&recipe->environment.runtime.ingredients, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         
-        status = __filter_file_copy(kitchen->host_install_root, &ingredient->filters);
+        status = __copy_files_with_filters(
+            kitchen->host_build_ingredients_path,
+            NULL,
+            &ingredient->filters,
+            kitchen->host_install_path
+        );
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to include ingredient %s\n", ingredient->name);
             goto cleanup;

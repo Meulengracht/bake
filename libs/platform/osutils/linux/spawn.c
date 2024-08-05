@@ -27,7 +27,6 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <string.h>
-#include <unistd.h>
 
 void __report(char* line, enum platform_spawn_output_type type, struct platform_spawn_options* options)
 {

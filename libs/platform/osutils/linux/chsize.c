@@ -17,7 +17,6 @@
  */
 
 #include <chef/platform.h>
-#include <unistd.h>
 #include <sys/types.h>
 
 int platform_chsize(int fd, long size)

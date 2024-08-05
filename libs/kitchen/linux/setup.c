@@ -20,14 +20,13 @@
 #include <chef/platform.h>
 #include <chef/rootfs/debootstrap.h>
 #include <chef/containerv.h>
-#include <chef/user.h>
 #include <libingredient.h>
 #include <libpkgmgr.h>
+#include <libgen.h>
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <vlog.h>
 
 #include "private.h"
@@ -46,7 +45,7 @@ static int __clean_environment(const char* path)
     return 0;
 }
 
-static int __ensure_hostdirs(struct kitchen* kitchen, struct containerv_user* user)
+static int __ensure_hostdirs(struct kitchen* kitchen)
 {
     VLOG_DEBUG("kitchen", "__ensure_hostdirs()\n");
 
@@ -74,28 +73,51 @@ static int __ensure_hostdirs(struct kitchen* kitchen, struct containerv_user* us
         VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_project_path);
         return -1;
     }
-
-    if (platform_mkdir(kitchen->shared_output_path)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->shared_output_path);
-        return -1;
-    }
-
-    // Since we need write permissions to the build folders
-    if (chown(kitchen->host_build_path, user->caller_uid, user->caller_gid)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", kitchen->host_build_path);
-        return -1;
-    }
-
-    // Also a good idea for the output folders
-    if (chown(kitchen->host_install_root, user->caller_uid, user->caller_gid)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", kitchen->host_install_root);
-        return -1;
-    }
-    if (chown(kitchen->shared_output_path, user->caller_uid, user->caller_gid)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to set permissions for %s\n", kitchen->shared_output_path);
-        return -1;
-    }
     return 0;
+}
+
+static int __install_bakectl(struct kitchen* kitchen)
+{
+    char  buffer[PATH_MAX] = { 0 };
+    char* path;
+    char* resolved;
+    char* target;
+    int   status;
+
+    status = readlink("/proc/self/exe", &buffer[0], PATH_MAX); 
+    if (status) {
+        VLOG_ERROR("kitchen", "__install_bakectl: failed to read /proc/self/exe\n");
+        return status;
+    }
+
+    // get the directory part, and remember that this modifies
+    // our buffer.
+    path = dirname(&buffer[0]);
+
+    // overwrite the binary part
+    strcat(&buffer[0], "../lib/chef/bakectl");
+
+    resolved = realpath(&buffer[0], NULL);
+    if (resolved == NULL) {
+        VLOG_ERROR("kitchen", "__install_bakectl: failed to resolve path %s\n", &buffer[0]);
+        return -1;
+    }
+
+    target = strpathjoin(kitchen->host_chroot, "usr", "bin", "bakectl", NULL);
+    if (target == NULL) {
+        free(resolved);
+        VLOG_ERROR("kitchen", "__install_bakectl: failed to allocate memory for target\n");
+        return -1;
+    }
+
+    status = platform_copyfile(resolved, target);
+    if (status) {
+        VLOG_ERROR("kitchen", "__install_bakectl: failed to install %s\n", target);
+    }
+
+    free(resolved);
+    free(target);
+    return status;
 }
 
 static int __setup_rootfs(struct kitchen* kitchen)
@@ -119,9 +141,15 @@ static int __setup_rootfs(struct kitchen* kitchen)
         return status;
     }
 
-    status = __ensure_hostdirs(kitchen, kitchen->user);
+    status = __ensure_hostdirs(kitchen);
     if (status) {
         VLOG_ERROR("kitchen", "__kitchen_install: failed to create host directories\n");
+        return status;
+    }
+
+    status = __install_bakectl(kitchen);
+    if (status) {
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to install controller\n");
         return status;
     }
 
@@ -138,23 +166,22 @@ static int __setup_rootfs(struct kitchen* kitchen)
 
 static int __setup_container(struct kitchen* kitchen)
 {
-    struct containerv_mount mounts[2] = { 0 };
+    struct containerv_mount mounts[1] = { 0 };
     int                     status;
     VLOG_TRACE("kitchen", "creating build container\n");
 
-    // two mounts
-    // Installation path
-    mounts[0].what = kitchen->shared_output_path;
-    mounts[0].where = kitchen->host_install_root;
-    mounts[0].flags = CV_MOUNT_BIND | CV_MOUNT_RECURSIVE;
-
     // project path
-    mounts[1].what = kitchen->host_cwd;
-    mounts[1].where = kitchen->host_project_path;
-    mounts[1].flags = CV_MOUNT_BIND | CV_MOUNT_READONLY;
+    mounts[0].what = kitchen->host_cwd;
+    mounts[0].where = kitchen->host_project_path;
+    mounts[0].flags = CV_MOUNT_BIND | CV_MOUNT_READONLY;
     
     // start container
-    status = containerv_create(kitchen->host_chroot, CV_CAP_FILESYSTEM, mounts, 2, &kitchen->container);
+    status = containerv_create(
+        kitchen->host_chroot,
+        CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL,
+        mounts, 1,
+        &kitchen->container
+    );
     if (status) {
         VLOG_ERROR("kitchen", "__setup_container: failed to create build container\n");
         return status;
@@ -480,7 +507,6 @@ int kitchen_destroy(struct kitchen* kitchen)
     free(kitchen->target_platform);
     free(kitchen->target_architecture);
     free(kitchen->host_cwd);
-    free(kitchen->shared_output_path);
 
     free(kitchen->host_chroot);
     free(kitchen->host_kitchen_project_root);
