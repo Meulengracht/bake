@@ -25,6 +25,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#define __CONTAINER_SOCKET_RUNTIME_BASE "/run/containerv"
+#define __CONTAINER_ID_LENGTH 8
+
 enum containerv_namespace_type {
     CV_NS_CGROUP = 0,
     CV_NS_IPC,
@@ -49,8 +52,8 @@ struct containerv_container {
     struct list processes;
 
     // shared
+    char        id[__CONTAINER_ID_LENGTH + 1];
     int         status_fds[2];
-    int         event_fd;
     char*       runtime_dir;
 };
 
@@ -95,7 +98,7 @@ extern int containerv_open_socket(struct containerv_container* container);
 /**
  * 
  */
-extern void containerv_socket_event(struct containerv_container* container);
+extern int containerv_socket_event(struct containerv_container* container);
 
 struct containerv_socket_client;
 
@@ -104,10 +107,18 @@ struct containerv_ns_fd {
     int                            fd;
 };
 
-extern struct containerv_socket_client* containerv_socket_client_open(const char* commSocket);
+extern struct containerv_socket_client* containerv_socket_client_open(const char* containerId);
 extern void containerv_socket_client_close(struct containerv_socket_client* client);
 
+extern int containerv_socket_client_spawn(struct containerv_socket_client* client, const char* path, struct containerv_spawn_options* options, process_handle_t* pidOut);
+extern int containerv_socket_client_script(struct containerv_socket_client* client, const char* script);
+extern int containerv_socket_client_kill(struct containerv_socket_client* client, pid_t processId);
 extern int containerv_socket_client_get_root(struct containerv_socket_client* client, char* buffer, size_t length);
 extern int containerv_socket_client_get_nss(struct containerv_socket_client* client, struct containerv_ns_fd fds[CV_NS_COUNT], int* count);
+extern int containerv_socket_client_destroy(struct containerv_socket_client* client);
+
+extern int __containerv_spawn(struct containerv_container* container, const char* path, const char* const* argv, const char* const* envv, pid_t* pidOut);
+extern int __containerv_script(struct containerv_container* container, const char* script);
+extern int __containerv_kill(struct containerv_container* container, pid_t processId);
 
 #endif //!__PRIVATE_H__

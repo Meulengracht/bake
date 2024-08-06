@@ -50,6 +50,7 @@ static void __print_help(void)
     printf("\n");
     printf("If no recipe is specified, it will search for default recipe names as follows:\n");
     printf("  chef/recipe.yaml\n");
+    printf("  recipe.yaml\n");
     printf("\n");
     printf("Commands:\n");
     printf("  init        initializes a new recipe in the current directory\n");
@@ -183,6 +184,9 @@ static const char* __find_default_recipe(void)
     struct platform_stat stats;
     if (platform_stat("chef/recipe.yaml", &stats) == 0) {
         return "chef/recipe.yaml";
+    }
+    if (platform_stat("recipe.yaml", &stats) == 0) {
+        return "recipe.yaml";
     }
     return NULL;
 }

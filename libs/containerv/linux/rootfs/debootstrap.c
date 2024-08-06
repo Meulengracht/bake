@@ -38,25 +38,25 @@ int container_rootfs_setup_debootstrap(const char* path)
     char  scratchPad[PATH_MAX];
     int   status;
     pid_t child, wt;
-    VLOG_DEBUG("vctn", "container_rootfs_setup_debootstrap(path=%s)\n", path);
+    VLOG_DEBUG("containerv", "container_rootfs_setup_debootstrap(path=%s)\n", path);
 
     status = platform_spawn("debootstrap", "--version", NULL, &(struct platform_spawn_options) {
         .output_handler = __debootstrap_output_handler
     });
     if (status) {
-        VLOG_ERROR("vctn", "container_rootfs_setup_debootstrap: \"debootstrap\" package must be installed\n");
+        VLOG_ERROR("containerv", "container_rootfs_setup_debootstrap: \"debootstrap\" package must be installed\n");
         return status;
     }
     
     snprintf(&scratchPad[0], sizeof(scratchPad), "--variant=minbase stable %s http://deb.debian.org/debian/", path);
-    VLOG_DEBUG("vctn", "executing 'debootstrap %s'\n", &scratchPad[0]);
+    VLOG_DEBUG("containerv", "executing 'debootstrap %s'\n", &scratchPad[0]);
 
     child = fork();
     if (child == 0) {
         // debootstrap must run under the root user, so lets make sure we've switched
         // to root as the real user.
         if (setuid(geteuid())) {
-            VLOG_ERROR("vctn", "container_rootfs_setup_debootstrap: failed to switch to root\n");
+            VLOG_ERROR("containerv", "container_rootfs_setup_debootstrap: failed to switch to root\n");
             _Exit(-1);
         }
 
@@ -66,8 +66,8 @@ int container_rootfs_setup_debootstrap(const char* path)
         });
         vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
         if (status) {
-            VLOG_ERROR("vctn", "container_rootfs_setup_debootstrap: \"debootstrap\" failed: %i\n", status);
-            VLOG_ERROR("vctn", "see %s/debootstrap/debootstrap.log for details\n", path);
+            VLOG_ERROR("containerv", "container_rootfs_setup_debootstrap: \"debootstrap\" failed: %i\n", status);
+            VLOG_ERROR("containerv", "see %s/debootstrap/debootstrap.log for details\n", path);
             _Exit(-1);
         }
         _Exit(0);

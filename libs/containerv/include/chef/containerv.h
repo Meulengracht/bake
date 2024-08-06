@@ -89,6 +89,6 @@ extern int containerv_kill(struct containerv_container* container, process_handl
 
 extern int containerv_destroy(struct containerv_container* container);
 
-extern int containerv_join(const char* commSocket);
+extern int containerv_join(const char* containerId);
 
 #endif //!__CONTAINERV_H__

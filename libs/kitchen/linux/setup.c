@@ -85,7 +85,7 @@ static int __install_bakectl(struct kitchen* kitchen)
     int   status;
 
     status = readlink("/proc/self/exe", &buffer[0], PATH_MAX); 
-    if (status) {
+    if (status < 0) {
         VLOG_ERROR("kitchen", "__install_bakectl: failed to read /proc/self/exe\n");
         return status;
     }
@@ -95,7 +95,7 @@ static int __install_bakectl(struct kitchen* kitchen)
     path = dirname(&buffer[0]);
 
     // overwrite the binary part
-    strcat(&buffer[0], "../lib/chef/bakectl");
+    strcat(&buffer[0], "/../lib/chef/bakectl");
 
     resolved = realpath(&buffer[0], NULL);
     if (resolved == NULL) {
