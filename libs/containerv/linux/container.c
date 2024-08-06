@@ -64,7 +64,7 @@ static void containerv_container_process_delete(struct containerv_container_proc
 
 static char* __container_create_runtime_dir(void)
 {
-    char template[] = "/run/containerv/c-XXXXXX";
+    char template[] = __CONTAINER_SOCKET_RUNTIME_BASE "/c-XXXXXX";
     char* directory;
     
     directory = mkdtemp(&template[0]);
@@ -90,6 +90,11 @@ static struct containerv_container* __container_new(void)
         free(container);
         return NULL;
     }
+    memcpy(
+        container->id[0],
+        &container->runtime_dir[strlen(container->runtime_dir) - __CONTAINER_ID_LENGTH],
+        __CONTAINER_ID_LENGTH
+    );
 
     // create the resources that we need immediately
     status = pipe(container->status_fds);
@@ -99,7 +104,6 @@ static struct containerv_container* __container_new(void)
     }
 
     container->pid = -1;
-    container->event_fd = -1;
     container->socket_fd = -1;
     for (int i = 0; i < CV_NS_COUNT; i++) {
         container->ns_fds[i] = -1;
@@ -121,138 +125,12 @@ static void __container_delete(struct containerv_container* container)
     for (int i = 0; i < CV_NS_COUNT; i++) {
         __close_safe(&container->ns_fds[i]);
     }
-    __close_safe(&container->event_fd);
     __close_safe(&container->status_fds[0]);
     __close_safe(&container->status_fds[1]);
     __close_safe(&container->socket_fd);
     free(container->runtime_dir);
     free(container->rootfs);
     free(container);
-}
-
-enum containerv_event_type {
-    CV_CONTAINER_UP,
-    CV_CONTAINER_DOWN,
-    CV_CONTAINER_SPAWN
-};
-
-struct containerv_event_spawn {
-    int   status;
-    pid_t process_id;
-};
-
-struct containerv_event {
-    enum containerv_event_type type;
-    union {
-        int                           status;
-        struct containerv_event_spawn spawn;
-    } data;
-};
-
-struct containerv_command_spawn {
-    enum container_spawn_flags flags;
-
-    // lengths include zero terminator
-    size_t path_length;
-    size_t argument_length;
-    size_t environment_length;
-};
-
-struct containerv_command_script {
-    uint32_t length;
-};
-
-struct containerv_command_kill {
-    pid_t process_id;
-};
-
-enum containerv_command_type {
-    CV_COMMAND_SPAWN,
-    CV_COMMAND_KILL,
-    CV_COMMAND_SCRIPT,
-    CV_COMMAND_DESTROY
-};
-
-struct containerv_command {
-    enum containerv_command_type type;
-    size_t                       length;
-};
-
-static char* __flatten_environment(const char* const* environment, size_t* lengthOut)
-{
-    char*  flatEnvironment;
-    size_t flatLength = 1; // second nil
-    int    i = 0, j = 0;
-
-    while (environment[i]) {
-        flatLength += strlen(environment[i]) + 1;
-        i++;
-    }
-
-    flatEnvironment = calloc(flatLength, 1);
-    if (flatEnvironment == NULL) {
-        return NULL;
-    }
-
-    i = 0;
-    while (environment[i]) {
-        size_t len = strlen(environment[i]) + 1;
-        memcpy(&flatEnvironment[j], environment[i], len);
-        j += len;
-        i++;
-    }
-    return flatEnvironment;
-}
-
-char** __unflatten_environment(const char* text)
-{
-	char** results;
-	int    count = 1; // add zero terminator
-	int    index = 0;
-
-	if (text == NULL) {
-		return NULL;
-	}
-
-	for (const char* p = text;; p++) {
-		if (*p == '\0') {
-			count++;
-			
-			if (*p == '\0' && *(p + 1) == '\0') {
-			    break;
-			}
-		}
-	}
-	
-	results = (char**)calloc(count, sizeof(char*));
-	if (results == NULL) {
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	for (const char* p = text;; p++) {
-		if (*p == '\0') {
-			results[index] = (char*)malloc(p - text + 1);
-			if (results[index] == NULL) {
-			    // cleanup
-				for (int i = 0; i < index; i++) {
-					free(results[i]);
-				}
-				free(results);
-				return NULL;
-			}
-
-			memcpy(results[index], text, p - text);
-			results[index][p - text] = '\0';
-			text = p + 1;
-			index++;
-			
-			if (*p == '\0' && *(p + 1) == '\0') {
-			    break;
-			}
-		}
-	}
-	return results;
 }
 
 static pid_t __exec(const char* path, const char* const* argv, const char* const* envv)
@@ -266,8 +144,6 @@ static pid_t __exec(const char* path, const char* const* argv, const char* const
         return processId;
     }
 
-    // switch user before exec
-
     status = execve(path, (char* const*)argv, (char* const*)envv);
     if (status) {
         // ehh log this probably
@@ -275,103 +151,79 @@ static pid_t __exec(const char* path, const char* const* argv, const char* const
     return 0;
 }
 
-static void __spawn_process(struct containerv_container* container, struct containerv_command_spawn* spawn)
+int __containerv_spawn(struct containerv_container* container, const char* path, const char* const* argv, const char* const* envv, pid_t* pidOut)
 {
-    struct containerv_event event = {
-        .type = CV_CONTAINER_SPAWN,
-        .data.spawn.process_id = (pid_t)-1,
-        .data.spawn.status = 0
-    };
-    char*  data;
-    char*  path;
-    char** argv = NULL;
-    char** envv = NULL;
-    pid_t  processId;
+    struct containerv_container_process* proc;
+    pid_t                                processId;
 
-    // initialize the data pointer
-    data = (char*)spawn + sizeof(struct containerv_command_spawn);
-
-    // get the path
-    path = data;
-    data += spawn->path_length;
-
-    // get the arguments if any
-    if (spawn->argument_length) {
-        argv = strargv(data, path, NULL);
-        if (argv == NULL) {
-            return;
-        }
-        data += spawn->argument_length;
-    }
-
-    if (spawn->environment_length) {
-        envv = __unflatten_environment(data);
-        if (envv == NULL) {
-            return;
-        }
-        data += spawn->environment_length;
-    }
-
-    // perform the actual execution, only the primary process here actually returns
     processId = __exec(path, (const char* const*)argv, (const char* const*)envv);
     if (processId == (pid_t)-1) {
-        // probably log this
-    } else {
-        struct containerv_container_process* proc = containerv_container_process_new(processId);
-        if (proc) {
-            list_add(&container->processes, &proc->list_header);
-        }
-
-        if (spawn->flags & CV_SPAWN_WAIT) {
-            if (waitpid(processId, &event.data.spawn.status, 0) != processId) {
-                // probably log this
-            }
-        }
+        VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to exec %s\n", path);
+        return -1;
     }
-    event.data.spawn.process_id = processId;
 
-    // cleanup resources temporarily allocated
-    strargv_free(argv);
-    strsplit_free(envv);
-
-    // send event
-    if (write(container->status_fds[__FD_WRITE], &event, sizeof(struct containerv_event)) != sizeof(struct containerv_event)) {
-        // log this
+    proc = containerv_container_process_new(processId);
+    if (proc) {
+        list_add(&container->processes, &proc->list_header);
     }
+    return 0;
 }
 
-static void __kill_process(struct containerv_container* container, struct containerv_command_kill* cmd)
+int __containerv_kill(struct containerv_container* container, pid_t processId)
 {
     struct list_item* i;
 
     list_foreach (&container->processes, i) {
         struct containerv_container_process* proc = (struct containerv_container_process*)i;
-        if (proc->pid == cmd->process_id) {
-            kill(cmd->process_id, SIGTERM);
+        if (proc->pid == processId) {
+            kill(processId, SIGTERM);
             list_remove(&container->processes, i);
             containerv_container_process_delete(proc);
-            break;
+            return 0;
         }
     }
+    return -1;
 }
 
-static void __execute_script(struct containerv_container* container, const char* script)
+int __containerv_script(struct containerv_container* container, const char* script)
 {
     int status = system(script);
     if (status) {
         VLOG_ERROR("containerv", "container script failed | %s\n", script);
     }
+    return status;
 }
+
+enum containerv_event_type {
+    CV_CONTAINER_UP,
+    CV_CONTAINER_DOWN
+};
+
+struct containerv_event {
+    enum containerv_event_type type;
+    int                        status;
+};
 
 static void __send_container_event(struct containerv_container* container, enum containerv_event_type type, int status)
 {
     struct containerv_event event = {
         .type = type,
-        .data.status = status
+        .status = status
     };
     if (write(container->status_fds[__FD_WRITE], &event, sizeof(struct containerv_event)) != sizeof(struct containerv_event)) {
         // log this
     }
+}
+
+static int __wait_for_container_event(struct containerv_container* container, struct containerv_event* event)
+{
+    int bytesRead;
+
+    bytesRead = __INTSAFE_CALL(read(container->status_fds[__FD_READ], event, sizeof(struct containerv_event)));
+    if (bytesRead != sizeof(struct containerv_event)) {
+        return -1;
+    }
+    return 0;
 }
 
 static void __destroy_container(struct containerv_container* container)
@@ -392,63 +244,10 @@ static void __destroy_container(struct containerv_container* container)
     __container_delete(container);
 }
 
-static int __container_command_handler(struct containerv_container* container, enum containerv_command_type type, void* command)
-{
-    switch (type) {
-        case CV_COMMAND_SPAWN: {
-            __spawn_process(container, (struct containerv_command_spawn*)command);
-        } break;
-        case CV_COMMAND_KILL: {
-            __kill_process(container, (struct containerv_command_kill*)command);
-        } break;
-        case CV_COMMAND_SCRIPT: {
-            __execute_script(container, command);
-        } break;
-        case CV_COMMAND_DESTROY: {
-            __destroy_container(container);
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int __container_command_event(struct containerv_container* container)
-{
-    struct containerv_command command;
-    int                       status;
-    void*                     payload = NULL;
-
-    status = (int)read(container->event_fd, &command, sizeof(struct containerv_command));
-    if (status <= 0) {
-        return -1;
-    }
-
-    if (command.length > sizeof(struct containerv_command)) {
-        size_t payloadLength = command.length - sizeof(struct containerv_command);
-        payload = malloc(payloadLength);
-        if (payload == NULL) {
-            return -1;
-        }
-
-        status = (int)read(container->event_fd, payload, payloadLength);
-        if (status <= 0) {
-            return -1;
-        }
-    }
-
-    status = __container_command_handler(container, command.type, payload);
-    free(payload);
-    return status;
-}
-
 static int __container_idle_loop(struct containerv_container* container)
 {
     int           status;
-    struct pollfd fds[2] = {
-        {
-            .fd = container->event_fd,
-            .events = POLLIN
-        },
+    struct pollfd fds[1] = {
         {
             .fd = container->socket_fd,
             .events = POLLIN
@@ -457,18 +256,16 @@ static int __container_idle_loop(struct containerv_container* container)
     VLOG_TRACE("containerv[child]", "__container_idle_loop()\n");
 
     for (;;) {
-        status = poll(fds, 2, -1);
+        status = poll(fds, 1, -1);
         if (status <= 0) {
             return -1;
         }
         
         if (fds[0].revents & POLLIN) {
-            status = __container_command_event(container);
+            status = containerv_socket_event(container);
             if (status != 0) {
                 break;
             }
-        } else if (fds[1].revents & POLLIN) {
-            containerv_socket_event(container);
         }
     }
     return 0;
@@ -768,17 +565,6 @@ static int __container_entry(
     _Exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
 }
 
-static int __wait_for_container_event(struct containerv_container* container, struct containerv_event* event)
-{
-    int bytesRead;
-
-    bytesRead = __INTSAFE_CALL(read(container->status_fds[__FD_READ], event, sizeof(struct containerv_event)));
-    if (bytesRead != sizeof(struct containerv_event)) {
-        return -1;
-    }
-    return 0;
-}
-
 int containerv_create(
         const char*                   rootFs,
         enum containerv_capabilities  capabilities,
@@ -817,37 +603,15 @@ int containerv_create(
             __container_delete(container);
             return status;
         }
-        if (event.data.status) {
-            VLOG_ERROR("containerv[host]", "containerv_create: child reported error: %i\n", event.data.status);
+        if (event.status) {
+            VLOG_ERROR("containerv[host]", "containerv_create: child reported error: %i\n", event.status);
             __container_delete(container);
-            return event.data.status;
+            return event.status;
         }
         *containerOut = container;
         return 0;
     }
     exit(__container_entry(container, capabilities, mounts, mountsCount));
-}
-
-static int __execute_command(struct containerv_container* container, enum containerv_command_type type, size_t payloadSize, const void* payload)
-{
-    struct containerv_command cmd = {
-        .type = type,
-        .length = payloadSize + sizeof(struct containerv_command)
-    };
-    ssize_t bytesWritten;
-
-    bytesWritten = write(container->event_fd, &cmd, sizeof(struct containerv_command));
-    if (bytesWritten != sizeof(struct containerv_command)) {
-        return -1;
-    }
-    
-    if (payloadSize) {
-        bytesWritten = write(container->event_fd, payload, payloadSize);
-        if (bytesWritten != payloadSize) {
-            return -1;
-        }
-    }
-    return 0;
 }
 
 int containerv_spawn(
@@ -856,87 +620,88 @@ int containerv_spawn(
     struct containerv_spawn_options* options,
     process_handle_t*                pidOut)
 {
-    struct containerv_command_spawn* cmd;
-    struct containerv_event          event;
-    size_t cmdLength = sizeof(struct containerv_command_spawn);
-    size_t flatEnvironmentLength;
-    char*  flatEnvironment = __flatten_environment(options->environment, &flatEnvironmentLength);
-    char*  data;
-    int    status;
+    struct containerv_socket_client* client;
+    int                              status;
+    VLOG_TRACE("containerv[host]", "containerv_spawn()\n");
 
-    // consider length of args and env
-    cmdLength += strlen(path) + 1;
-    cmdLength += (options->arguments != NULL) ? (strlen(options->arguments) + 1) : 0;
-    cmdLength += (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
-
-    data = calloc(cmdLength, 1);
-    if (data == NULL) {
-        return -1;
-    }
-
-    // initialize command
-    cmd = (struct containerv_command_spawn*)data;
-    cmd->flags = options->flags;
-    cmd->path_length = strlen(path) + 1;
-    cmd->argument_length = (options->arguments != NULL) ? (strlen(options->arguments) + 1) : 0;
-    cmd->environment_length = (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
-
-    // setup data pointer to point beyond struct
-    data += sizeof(struct containerv_command_spawn);
-
-    // write path, and then skip over including zero terminator
-    memcpy(&data[0], path, strlen(path));
-    data += strlen(path) + 1;
-
-    // write arguments
-    if (options->arguments != NULL) {
-        memcpy(&data[0], options->arguments, strlen(options->arguments));
-        data += strlen(options->arguments) + 1;
-    }
-
-    // write environment
-    if (flatEnvironment != NULL) {
-        memcpy(&data[0], flatEnvironment, flatEnvironmentLength);
-        data += flatEnvironmentLength;
-    }
-
-    status = __execute_command(container, CV_COMMAND_SPAWN, cmdLength, cmd);
-    if (status) {
+    VLOG_TRACE("containerv[host]", "connecting to %s\n", &container->id[0]);
+    client = containerv_socket_client_open(&container->id[0]);
+    if (client == NULL) {
+        VLOG_ERROR("containerv[host]", "containerv_spawn: failed to connect to server\n");
         return status;
     }
-    
-    status = __wait_for_container_event(container, &event);
+
+    status = containerv_socket_client_spawn(client, path, options, pidOut);
     if (status) {
-        return status;
+        VLOG_ERROR("containerv[host]", "containerv_spawn: failed to spawn %s\n", path);
     }
-    *pidOut = event.data.spawn.process_id;
-    return event.data.spawn.status;
+
+    containerv_socket_client_close(client);
+    return status;
 }
 
 int containerv_kill(struct containerv_container* container, pid_t pid)
 {
-    struct containerv_command_kill cmd = {
-        .process_id = pid
-    };
-    return __execute_command(container, CV_COMMAND_KILL, sizeof(struct containerv_command_kill), (void*)&cmd);
+    struct containerv_socket_client* client;
+    int                              status;
+    VLOG_TRACE("containerv[host]", "containerv_kill()\n");
+
+    VLOG_TRACE("containerv[host]", "connecting to %s\n", &container->id[0]);
+    client = containerv_socket_client_open(&container->id[0]);
+    if (client == NULL) {
+        VLOG_ERROR("containerv[host]", "containerv_kill: failed to connect to server\n");
+        return status;
+    }
+
+    status = containerv_socket_client_kill(client, pid);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_kill: failed to execute kill\n");
+    }
+
+    containerv_socket_client_close(client);
+    return status;
 }
 
 int containerv_script(struct containerv_container* container, const char* script)
 {
-    return __execute_command(container, CV_COMMAND_SCRIPT, strlen(script) + 1, script);
+    struct containerv_socket_client* client;
+    int                              status;
+    VLOG_TRACE("containerv[host]", "containerv_script()\n");
+
+    VLOG_TRACE("containerv[host]", "connecting to %s\n", &container->id[0]);
+    client = containerv_socket_client_open(&container->id[0]);
+    if (client == NULL) {
+        VLOG_ERROR("containerv[host]", "containerv_spawn: failed to connect to server\n");
+        return status;
+    }
+
+    status = containerv_socket_client_script(client, script);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_kill: failed to execute script\n");
+    }
+
+    containerv_socket_client_close(client);
+    return status;
 }
 
 int containerv_destroy(struct containerv_container* container)
 {
-    struct containerv_event event;
-    int                     status;
+    struct containerv_socket_client* client;
+    struct containerv_event          event = { 0 };
+    int                              status;
     VLOG_TRACE("containerv[host]", "containerv_destroy()\n");
 
-    VLOG_TRACE("containerv[host]", "sending destroy command\n");
-    status = __execute_command(container, CV_COMMAND_DESTROY, 0, NULL);
-    if (status) {
-        VLOG_ERROR("containerv[host]", "failed to send destroy command to container daemon: %i\n", status);
+    VLOG_TRACE("containerv[host]", "connecting to %s\n", &container->id[0]);
+    client = containerv_socket_client_open(&container->id[0]);
+    if (client == NULL) {
+        VLOG_ERROR("containerv[host]", "containerv_destroy: failed to connect to server\n");
         return status;
+    }
+
+    VLOG_TRACE("containerv[host]", "sending destroy command\n");
+    status = containerv_socket_client_destroy(client);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_destroy: failed to execute command\n");
     }
 
     VLOG_TRACE("containerv[host]", "waiting for container to shutdown...\n");
@@ -958,7 +723,7 @@ int containerv_destroy(struct containerv_container* container)
     return 0;
 }
 
-int containerv_join(const char* commSocket)
+int containerv_join(const char* containerId)
 {
     struct containerv_ns_fd          fds[CV_NS_COUNT] = { 0 };
     struct containerv_socket_client* client;
@@ -966,8 +731,8 @@ int containerv_join(const char* commSocket)
     int                              status;
     int                              count;
 
-    VLOG_TRACE("containerv[host]", "connecting to %s\n", commSocket);
-    client = containerv_socket_client_open(commSocket);
+    VLOG_TRACE("containerv[host]", "connecting to %s\n", containerId);
+    client = containerv_socket_client_open(containerId);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_join: failed to connect to server\n");
         return status;

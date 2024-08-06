@@ -37,7 +37,7 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
             continue;
         }
 
-        snprintf(&buffer[0], sizeof(buffer), "--recipe %s --step %s/%s", kitchen->recipe_path, part, step->system);
+        snprintf(&buffer[0], sizeof(buffer), "build -v --recipe %s --step %s/%s", kitchen->recipe_path, part, step->system);
 
         VLOG_TRACE("bake", "executing step '%s/%s'\n", part, step->system);
         status = containerv_spawn(

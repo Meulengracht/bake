@@ -1,0 +1,24 @@
+/**
+ * Cook Daemon Protocol
+ * The protocol specifies which commands are available from cookd. Cookd is the
+ * build server for chef.
+ */
+
+namespace chef
+
+struct cook_build_request {
+    string repository;
+    string recipe;
+    string part_or_step;
+}
+
+struct cook_build_status {
+    string message;
+}
+
+service cookd (43) {
+    func build(cook_build_request request) : (string id) = 1;
+    
+    event log : (install_status status, served_package info) = 3;
+    event build : (struct build_status status) = 4;
+}

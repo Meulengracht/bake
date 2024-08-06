@@ -1,21 +1,23 @@
 <h1 align="center" style="margin-top: 0px;">Serve Daemon</h1>
 
-The serve daemon is the application backend. This needs to be implemented on an OS basis. This means if you seek to support chef applications, you need to implement serve for your OS. The serve daemon must adhere to the serve specification.
+The serve daemon is the build server backend. This needs to be implemented on an OS basis. This daemon does not neccessarily need to be implemented for each OS that supports chef applications, as it's an extra service. Running this daemon on a server, allows the use of the `--remote` switch for `bake`.
+
+The daemon uses gracht protocols to communicate.
 
 ## Linux Features
 
-Implementation is in progress, and requires libfuse3 to work as we provide our own FS implementation layer over VaFS.
+N/A
 
 ## Windows Features
 
-Still needs to be implemented
+N/A
 
-<h1 align="center" style="margin-top: 0px;">Serve Protocol Specification</h1>
+<h1 align="center" style="margin-top: 0px;">Cookd Protocol Specification</h1>
 
-See protocols/served.gr file for the protocol definition.
+See protocols/cookd.gr file for the protocol definition.
 
 ```
-service served (42) {
+service cookd (43) {
     func install(string packageName) : () = 1;
     func remove(string packageName) : (int result) = 2;
     func info(string packageName) : (package info) = 3;
@@ -29,3 +31,4 @@ service served (42) {
     event package_updated : (update_status status, package info) = 10;
 }
 ```
+
