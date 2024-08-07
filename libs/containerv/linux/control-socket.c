@@ -91,7 +91,7 @@ int containerv_open_socket(struct containerv_container* container)
         .sun_path = { 0 }
     };
     int fd;
-    VLOG_TRACE("containerv[child]", "containerv_open_socket()\n");
+    VLOG_DEBUG("containerv[child]", "containerv_open_socket()\n");
 
     strcpy(&namesock.sun_path[0], container->runtime_dir);
     strcat(&namesock.sun_path[0], "/control");
@@ -102,7 +102,7 @@ int containerv_open_socket(struct containerv_container* container)
         return -1;
     }
 
-    VLOG_TRACE("containerv[child]", "listening on %s\n", &namesock.sun_path[0]);
+    VLOG_DEBUG("containerv[child]", "listening on %s\n", &namesock.sun_path[0]);
     if (bind(fd, (struct sockaddr*)&namesock, sizeof(struct sockaddr_un))) {
         VLOG_ERROR("containerv[child]", "containerv_open_socket: failed to bind socket to address %s\n", &namesock.sun_path[0]);
         return -1;
@@ -119,7 +119,7 @@ static int __send_command_maybe_fds(int socket, struct sockaddr_un* to, int* fds
         .iov_len = payloadLength
     };
     int           status;
-    VLOG_TRACE("containerv", "__send_command_maybe_fds(len=%zu)\n", payloadLength);
+    VLOG_DEBUG("containerv", "__send_command_maybe_fds(len=%zu)\n", payloadLength);
 
     msg.msg_iov = &io;
     msg.msg_iovlen = 1;
@@ -168,7 +168,7 @@ static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int
         .iov_base = payload,
         .iov_len = payloadLength 
     };
-    VLOG_TRACE("containerv", "__receive_command_maybe_fds(len=%zu)\n", payloadLength);
+    VLOG_DEBUG("containerv", "__receive_command_maybe_fds(len=%zu)\n", payloadLength);
     
     memset(fdsBuffer, '\0', sizeof(fdsBuffer));
     
@@ -186,7 +186,7 @@ static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int
         VLOG_ERROR("containerv", "__receive_command_maybe_fds: failed to retrieve file-descriptors\n");
         return -1;
     }
-    VLOG_TRACE("containerv", "__receive_command_maybe_fds: recvmsg: %i\n", status);
+    VLOG_DEBUG("containerv", "__receive_command_maybe_fds: recvmsg: %i\n", status);
     
     if (fdset != NULL && CMSG_FIRSTHDR(&msg) != NULL) {
         cmsg = CMSG_FIRSTHDR(&msg);
@@ -282,24 +282,21 @@ char** __unflatten_environment(const char* text)
 
 static int __spawn(struct containerv_container* container, struct __socket_command* command, void* payload, pid_t* pidOut)
 {
-    char*  data;
+    char*  data = payload;
     char*  path;
     char** argv = NULL;
     char** envv = NULL;
     int    status; 
 
-    // initialize the data pointer
-    data = payload;
-
     // get the path
     path = data;
     data += command->data.spawn.path_length;
-
+    
     // get the arguments if any
     if (command->data.spawn.argument_length) {
         argv = strargv(data, path, NULL);
         if (argv == NULL) {
-            return;
+            return -1;
         }
         data += command->data.spawn.argument_length;
     }
@@ -307,7 +304,7 @@ static int __spawn(struct containerv_container* container, struct __socket_comma
     if (command->data.spawn.environment_length) {
         envv = __unflatten_environment(data);
         if (envv == NULL) {
-            return;
+            return -1;
         }
         data += command->data.spawn.environment_length;
     }
@@ -316,7 +313,7 @@ static int __spawn(struct containerv_container* container, struct __socket_comma
     status = __containerv_spawn(container, path, (const char* const*)argv, (const char* const*)envv, pidOut);
     if (!status && (command->data.spawn.flags & CV_SPAWN_WAIT)) {
         if (waitpid(*pidOut, &status, 0) != *pidOut) {
-            // probably log this
+            VLOG_ERROR("containerv[child]", "__spawn: failed to wait for pid %u\n", *pidOut);
             status = -1;
         }
     }
@@ -337,53 +334,98 @@ static void __handle_spawn_command(struct containerv_container* container, struc
     char*  payload;
     size_t payloadLength;
     int    status;
-    VLOG_TRACE("containerv[child]", "__handle_spawn_command()\n");
+    VLOG_DEBUG("containerv[child]", "__handle_spawn_command()\n");
 
     payloadLength = command->data.spawn.path_length + command->data.spawn.argument_length + command->data.spawn.environment_length;
     if (payloadLength >= (65 * 1024)) {
         VLOG_ERROR("containerv[child]", "__handle_spawn_command: unsupported payload size %zu > %zu", payloadLength, (65 * 1024));
-        return;
+        response.data.spawn.status = -1;
+        goto respond;
     }
 
     payload = calloc(1, payloadLength);
     if (payload == NULL) {
         VLOG_ERROR("containerv[child]", "__handle_spawn_command: failed to allocate memory for payload");
-        return;
+        response.data.spawn.status = -1;
+        goto respond;
     }
 
     status = __receive_command_maybe_fds(container->socket_fd, from, NULL, payload, payloadLength);
     if (status < 0) {
         VLOG_ERROR("containerv[child]", "__handle_spawn_command: failed to read spawn payload\n");
-        return;
+        response.data.spawn.status = -1;
+        goto respond;
     }
 
     response.data.spawn.status = __spawn(container, command, payload, &response.data.spawn.process_id);
+respond:
     if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, &response, sizeof(struct __socket_response))) {
         VLOG_ERROR("containerv[child]", "__handle_spawn_command: failed to send response\n");
     }
+    free(payload);
 }
 
 static void __handle_script_command(struct containerv_container* container, struct __socket_command* command, struct sockaddr_un* from)
 {
-    VLOG_TRACE("containerv[child]", "__handle_getroot_command()\n");
+    struct __socket_response response = {
+        .type = __SOCKET_COMMAND_SCRIPT,
+    };
 
-    if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, container->rootfs, strlen(container->rootfs) + 1)) {
-        VLOG_ERROR("containerv[child]", "__handle_getroot_command: failed to send response\n");
+    char* payload;
+    int   status;
+    VLOG_DEBUG("containerv[child]", "__handle_script_command()\n");
+    
+    if (command->data.script.length >= (65 * 1024)) {
+        VLOG_ERROR("containerv[child]", "__handle_script_command: unsupported payload size %zu > %zu",
+            command->data.script.length, (65 * 1024));
+        response.data.status = -1;
+        goto respond;
     }
+
+    payload = calloc(1, command->data.script.length);
+    if (payload == NULL) {
+        VLOG_ERROR("containerv[child]", "__handle_spawn_command: failed to allocate memory for payload");
+        response.data.status = -1;
+        goto respond;
+    }
+
+    status = __receive_command_maybe_fds(container->socket_fd, from, NULL, payload, command->data.script.length);
+    if (status < 0) {
+        VLOG_ERROR("containerv[child]", "__handle_spawn_command: failed to read spawn payload\n");
+        response.data.status = -1;
+        goto respond;
+    }
+
+    response.data.status = __containerv_script(container, NULL);
+respond:
+    if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, &response, sizeof(struct __socket_response))) {
+        VLOG_ERROR("containerv[child]", "__handle_script_command: failed to send response\n");
+    }
+    free(payload);
 }
 
 static void __handle_kill_command(struct containerv_container* container, pid_t processId, struct sockaddr_un* from)
 {
-    VLOG_TRACE("containerv[child]", "__handle_getroot_command()\n");
+    struct __socket_response response = {
+        .type = __SOCKET_COMMAND_KILL,
+    };
+    VLOG_DEBUG("containerv[child]", "__handle_kill_command()\n");
 
-    if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, container->rootfs, strlen(container->rootfs) + 1)) {
-        VLOG_ERROR("containerv[child]", "__handle_getroot_command: failed to send response\n");
+    response.data.status = __containerv_kill(container, processId);
+    if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, &response, sizeof(struct __socket_response))) {
+        VLOG_ERROR("containerv[child]", "__handle_kill_command: failed to send response\n");
     }
 }
 
 static void __handle_destroy_command(struct containerv_container* container, struct sockaddr_un* from)
 {
-    VLOG_TRACE("containerv[child]", "__handle_getroot_command()\n");
+    VLOG_DEBUG("containerv[child]", "__handle_destroy_command()\n");
+    __containerv_destroy(container);
+}
+
+static void __handle_getroot_command(struct containerv_container* container, struct sockaddr_un* from)
+{
+    VLOG_DEBUG("containerv[child]", "__handle_getroot_command()\n");
 
     if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, container->rootfs, strlen(container->rootfs) + 1)) {
         VLOG_ERROR("containerv[child]", "__handle_getroot_command: failed to send response\n");
@@ -400,7 +442,7 @@ static void __handle_getfds_command(struct containerv_container* container, stru
             .types = { 0 }
         }
     };
-    VLOG_TRACE("containerv[child]", "__handle_getfds_command()\n");
+    VLOG_DEBUG("containerv[child]", "__handle_getfds_command()\n");
 
     for (int i = 0, j = 0; i < CV_NS_COUNT; i++) {
         if (container->ns_fds[i] < 0) {
@@ -421,7 +463,7 @@ int containerv_socket_event(struct containerv_container* container)
     struct __socket_command command;
     int                     status;
     struct sockaddr_un      from;
-    VLOG_TRACE("containerv[child]", "containerv_socket_event()\n");
+    VLOG_DEBUG("containerv[child]", "containerv_socket_event()\n");
 
     status = __receive_command_maybe_fds(container->socket_fd, &from, NULL, &command, sizeof(struct __socket_command));
     if (status < 0) {
@@ -429,7 +471,7 @@ int containerv_socket_event(struct containerv_container* container)
         return -1;
     }
 
-    VLOG_TRACE("containerv[child]", "containerv_socket_event: event from %s\n", &from.sun_path[0]);
+    VLOG_DEBUG("containerv[child]", "containerv_socket_event: event from %s\n", &from.sun_path[0]);
     switch (command.type) {
         case __SOCKET_COMMAND_SPAWN: {
             __handle_spawn_command(container, &command, &from);
@@ -448,6 +490,7 @@ int containerv_socket_event(struct containerv_container* container)
         } break;
         case __SOCKET_COMMAND_DESTROY: {
             __handle_destroy_command(container, &from);
+            return 1;
         } break;
     }
     return 0;
@@ -503,7 +546,7 @@ struct containerv_socket_client* containerv_socket_client_open(const char* conta
         .sun_path = { 0 }
     };
     int status;
-    VLOG_TRACE("containerv[host]", "__open_unix_socket(path=%s)\n", containerId);
+    VLOG_DEBUG("containerv[host]", "__open_unix_socket(path=%s)\n", containerId);
 
     client = __containerv_socket_client_new(containerId);
     if (client == NULL) {
@@ -541,7 +584,7 @@ struct containerv_socket_client* containerv_socket_client_open(const char* conta
 void containerv_socket_client_close(struct containerv_socket_client* client)
 {
     int status;
-    VLOG_TRACE("containerv[host]", "containerv_socket_client_close(client=%s)\n", client->socket_path);
+    VLOG_DEBUG("containerv[host]", "containerv_socket_client_close(client=%s)\n", client->socket_path);
 
     status = close(client->socket_fd);
     if (status) {
@@ -570,6 +613,7 @@ int containerv_socket_client_spawn(
     size_t flatEnvironmentLength;
     char*  flatEnvironment = __flatten_environment(options->environment, &flatEnvironmentLength);
     char*  data;
+    int    dataIndex = 0;
     int    status;
     VLOG_DEBUG("containerv", "containerv_socket_client_spawn(path=%s, args=%s)\n", path, options->arguments);
 
@@ -591,36 +635,46 @@ int containerv_socket_client_spawn(
     cmd.data.spawn.environment_length = (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
 
     // write path, and then skip over including zero terminator
-    memcpy(data, path, strlen(path));
-    data += strlen(path) + 1;
+    memcpy(&data[dataIndex], path, strlen(path));
+    dataIndex += strlen(path) + 1;
 
     // write arguments
     if (options->arguments != NULL) {
-        memcpy(data, options->arguments, strlen(options->arguments));
-        data += strlen(options->arguments) + 1;
+        memcpy(&data[dataIndex], options->arguments, strlen(options->arguments));
+        dataIndex += strlen(options->arguments) + 1;
     }
 
     // write environment
     if (flatEnvironment != NULL) {
-        memcpy(data, flatEnvironment, flatEnvironmentLength);
-        data += flatEnvironmentLength;
+        memcpy(&data[dataIndex], flatEnvironment, flatEnvironmentLength);
+        dataIndex += flatEnvironmentLength;
+        free(flatEnvironment);
     }
 
     status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, &cmd, sizeof(struct __socket_command));
     if (status < 0) {
+        VLOG_ERROR("containerv", "containerv_spawn: failed to send spawn command\n");
+        free(data);
         return status;
     }
 
     status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, data, dataLength);
     if (status < 0) {
+        VLOG_ERROR("containerv", "containerv_spawn: failed to send spawn data\n");
+        free(data);
         return status;
     }
+    free(data);
 
     status = __receive_command_maybe_fds(client->socket_fd, NULL, NULL, &rsp, sizeof(struct __socket_response));
     if (status < 0) {
+        VLOG_ERROR("containerv", "containerv_spawn: failed to receive spawn response\n");
         return status;
     }
-    *pidOut = rsp.data.spawn.process_id;
+
+    if (pidOut != NULL) {
+        *pidOut = rsp.data.spawn.process_id;
+    }
     return rsp.data.spawn.status;
 }
 
@@ -641,7 +695,7 @@ int containerv_socket_client_script(
         return status;
     }
 
-    status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, script, cmd.data.script.length);
+    status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, (void*)script, cmd.data.script.length);
     if (status < 0) {
         return status;
     }
@@ -675,7 +729,7 @@ int containerv_socket_client_kill(struct containerv_socket_client* client, pid_t
     return rsp.data.status;
 }
 
-int containerv_socket_client_destroy(struct containerv_socket_client* client, pid_t processId)
+int containerv_socket_client_destroy(struct containerv_socket_client* client)
 {
     struct __socket_command  cmd;
     struct __socket_response rsp;
@@ -692,7 +746,7 @@ int containerv_socket_client_get_root(struct containerv_socket_client* client, c
     struct __socket_command command = {
         .type = __SOCKET_COMMAND_GETROOT
     };
-    VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets()\n");
+    VLOG_DEBUG("containerv[host]", "containerv_get_ns_sockets()\n");
 
     status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, &command, sizeof(struct __socket_command));
     if (status < 0) {
@@ -714,7 +768,7 @@ int containerv_socket_client_get_nss(struct containerv_socket_client* client, st
         .type = __SOCKET_COMMAND_GETFDS
     };
     struct __socket_response response;
-    VLOG_TRACE("containerv[host]", "containerv_get_ns_sockets()\n");
+    VLOG_DEBUG("containerv[host]", "containerv_get_ns_sockets()\n");
 
     status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, &command, sizeof(struct __socket_command));
     if (status < 0) {

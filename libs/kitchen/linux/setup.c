@@ -27,6 +27,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <vlog.h>
 
 #include "private.h"
@@ -103,18 +104,28 @@ static int __install_bakectl(struct kitchen* kitchen)
         return -1;
     }
 
-    target = strpathjoin(kitchen->host_chroot, "usr", "bin", "bakectl", NULL);
+    target = strpathjoin(kitchen->host_chroot, kitchen->bakectl_path, NULL);
     if (target == NULL) {
         free(resolved);
         VLOG_ERROR("kitchen", "__install_bakectl: failed to allocate memory for target\n");
         return -1;
     }
 
+    // Copyfile does a dummy copy by creating a new file and copying contents. This
+    // unfortunately does not transfer permissions.
     status = platform_copyfile(resolved, target);
     if (status) {
         VLOG_ERROR("kitchen", "__install_bakectl: failed to install %s\n", target);
+        goto cleanup;
     }
 
+    // Restore executable permissions
+    status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    if (status) {
+        VLOG_ERROR("kitchen", "__install_bakectl: failed to fixup permissions for %s\n", target);
+    }
+
+cleanup:
     free(resolved);
     free(target);
     return status;

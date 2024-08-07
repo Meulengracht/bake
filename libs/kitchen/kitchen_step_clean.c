@@ -106,14 +106,20 @@ int kitchen_recipe_clean(struct kitchen* kitchen, struct kitchen_recipe_clean_op
     }
 
     if (options->part_or_step != NULL) {
-        snprintf(&buffer[0], sizeof(buffer), "clean -v --recipe %s --step %s", kitchen->recipe_path, options->part_or_step);
+        snprintf(&buffer[0], sizeof(buffer),
+            "clean -v --project %s --recipe %s --step %s",
+            kitchen->project_root, kitchen->recipe_path, options->part_or_step
+        );
     } else {
-        snprintf(&buffer[0], sizeof(buffer), "clean -v --recipe %s", kitchen->recipe_path);
+        snprintf(&buffer[0], sizeof(buffer),
+            "clean -v --project %s --recipe %s",
+            kitchen->project_root, kitchen->recipe_path
+        );
     }
 
     status = containerv_spawn(
         kitchen->container,
-        "bakectl",
+        kitchen->bakectl_path,
         &(struct containerv_spawn_options) {
             .arguments = &buffer[0],
             .environment = (const char* const*)kitchen->base_environment,
