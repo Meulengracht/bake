@@ -119,7 +119,6 @@ static int __send_command_maybe_fds(int socket, struct sockaddr_un* to, int* fds
         .iov_len = payloadLength
     };
     int           status;
-    VLOG_DEBUG("containerv", "__send_command_maybe_fds(len=%zu)\n", payloadLength);
 
     msg.msg_iov = &io;
     msg.msg_iovlen = 1;
@@ -168,7 +167,6 @@ static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int
         .iov_base = payload,
         .iov_len = payloadLength 
     };
-    VLOG_DEBUG("containerv", "__receive_command_maybe_fds(len=%zu)\n", payloadLength);
     
     memset(fdsBuffer, '\0', sizeof(fdsBuffer));
     
@@ -186,7 +184,6 @@ static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int
         VLOG_ERROR("containerv", "__receive_command_maybe_fds: failed to retrieve file-descriptors\n");
         return -1;
     }
-    VLOG_DEBUG("containerv", "__receive_command_maybe_fds: recvmsg: %i\n", status);
     
     if (fdset != NULL && CMSG_FIRSTHDR(&msg) != NULL) {
         cmsg = CMSG_FIRSTHDR(&msg);

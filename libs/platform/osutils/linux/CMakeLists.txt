@@ -1,5 +1,6 @@
 add_library(platform-osutils STATIC
     abspath.c
+    chdir.c
     chmod.c
     chsize.c
     cpucount.c

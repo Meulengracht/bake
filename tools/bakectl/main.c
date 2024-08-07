@@ -160,7 +160,7 @@ int main(int argc, char** argv, char** envp)
                     }
                 } else if (!strncmp(argv[i], "-v", 2)) {
                     int li = 1;
-                    while (argv[1][li++] == 'v') {
+                    while (argv[i][li++] == 'v') {
                         logLevel++;
                     }
                 }
@@ -174,7 +174,11 @@ int main(int argc, char** argv, char** envp)
     }
 
     // Switch to the project root as working directory
-
+    status = platform_chdir(options.cwd);
+    if (status) {
+        fprintf(stderr, "bakectl: failed to switch directory to %s\n", options.cwd);
+        return -1;
+    }
 
     if (recipePath != NULL) {
         status = __read_recipe(recipePath, &buffer, &length);

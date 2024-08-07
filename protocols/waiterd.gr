@@ -1,7 +1,7 @@
 /**
- * Manager Daemon Protocol
- * The protocol specifies which commands are available from the cook manager. 
- * managerd is the build server organizer for chef.
+ * Waiter Daemon Protocol
+ * The protocol specifies which commands are available from the waiter daemon.
+ * waiterd is the build server organizer for chef.
  */
 
 namespace chef
@@ -14,15 +14,15 @@ enum architecture {
     RISCV64
 }
 
-struct manager_build_request {
+struct waiter_build_request {
     string repository;
     string recipe;
     string part_or_step;
     architecture archs;
 }
 
-service managerd (44) {
-    func build(manager_build_request request) : (string id) = 1;
+service waiterd (44) {
+    func build(waiter_build_request request) : (string id) = 1;
     func wait(string id) : () = 2
 }
 
@@ -30,7 +30,7 @@ struct cook_register_request {
     architecture arch;
 }
 
-service managerd_cook (44) {
+service waiterd_cook (44) {
     func register(cook_register_request request) : (string id) = 1;
     func unregister(string id) : () = 2
 }
