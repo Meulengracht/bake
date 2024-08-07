@@ -32,7 +32,6 @@
 
 enum __socket_command_type {
     __SOCKET_COMMAND_SPAWN,
-    __SOCKET_COMMAND_SCRIPT,
     __SOCKET_COMMAND_KILL,
     __SOCKET_COMMAND_GETROOT,
     __SOCKET_COMMAND_GETFDS,
@@ -58,10 +57,6 @@ struct __socket_command_spawn {
     size_t environment_length;
 };
 
-struct __socket_command_script {
-    size_t length;
-};
-
 struct __socket_command_kill {
     pid_t process_id;
 };
@@ -70,7 +65,6 @@ struct __socket_command {
     enum __socket_command_type type;
     union {
         struct __socket_command_spawn  spawn;
-        struct __socket_command_script script;
         struct __socket_command_kill   kill;
     } data;
 };
@@ -362,45 +356,6 @@ respond:
     free(payload);
 }
 
-static void __handle_script_command(struct containerv_container* container, struct __socket_command* command, struct sockaddr_un* from)
-{
-    struct __socket_response response = {
-        .type = __SOCKET_COMMAND_SCRIPT,
-    };
-
-    char* payload;
-    int   status;
-    VLOG_DEBUG("containerv[child]", "__handle_script_command()\n");
-    
-    if (command->data.script.length >= (65 * 1024)) {
-        VLOG_ERROR("containerv[child]", "__handle_script_command: unsupported payload size %zu > %zu",
-            command->data.script.length, (65 * 1024));
-        response.data.status = -1;
-        goto respond;
-    }
-
-    payload = calloc(1, command->data.script.length);
-    if (payload == NULL) {
-        VLOG_ERROR("containerv[child]", "__handle_spawn_command: failed to allocate memory for payload");
-        response.data.status = -1;
-        goto respond;
-    }
-
-    status = __receive_command_maybe_fds(container->socket_fd, from, NULL, payload, command->data.script.length);
-    if (status < 0) {
-        VLOG_ERROR("containerv[child]", "__handle_spawn_command: failed to read spawn payload\n");
-        response.data.status = -1;
-        goto respond;
-    }
-
-    response.data.status = __containerv_script(container, NULL);
-respond:
-    if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, &response, sizeof(struct __socket_response))) {
-        VLOG_ERROR("containerv[child]", "__handle_script_command: failed to send response\n");
-    }
-    free(payload);
-}
-
 static void __handle_kill_command(struct containerv_container* container, pid_t processId, struct sockaddr_un* from)
 {
     struct __socket_response response = {
@@ -472,9 +427,6 @@ int containerv_socket_event(struct containerv_container* container)
     switch (command.type) {
         case __SOCKET_COMMAND_SPAWN: {
             __handle_spawn_command(container, &command, &from);
-        } break;
-        case __SOCKET_COMMAND_SCRIPT: {
-            __handle_script_command(container, &command, &from);
         } break;
         case __SOCKET_COMMAND_KILL: {
             __handle_kill_command(container, command.data.kill.process_id, &from);
@@ -673,35 +625,6 @@ int containerv_socket_client_spawn(
         *pidOut = rsp.data.spawn.process_id;
     }
     return rsp.data.spawn.status;
-}
-
-int containerv_socket_client_script(
-    struct containerv_socket_client* client,
-    const char*                      script)
-{
-    struct __socket_command  cmd;
-    struct __socket_response rsp;
-    int                      status;
-    VLOG_DEBUG("containerv", "containerv_socket_client_script()\n");
-
-    cmd.type = __SOCKET_COMMAND_SCRIPT;
-    cmd.data.script.length = strlen(script) + 1;
-
-    status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, &cmd, sizeof(struct __socket_command));
-    if (status < 0) {
-        return status;
-    }
-
-    status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, (void*)script, cmd.data.script.length);
-    if (status < 0) {
-        return status;
-    }
-
-    status = __receive_command_maybe_fds(client->socket_fd, NULL, NULL, &rsp, sizeof(struct __socket_response));
-    if (status < 0) {
-        return status;
-    }
-    return rsp.data.status;
 }
 
 int containerv_socket_client_kill(struct containerv_socket_client* client, pid_t processId)
