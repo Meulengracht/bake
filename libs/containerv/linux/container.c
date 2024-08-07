@@ -220,15 +220,6 @@ int __containerv_kill(struct containerv_container* container, pid_t processId)
     return -1;
 }
 
-int __containerv_script(struct containerv_container* container, const char* script)
-{
-    int status = system(script);
-    if (status) {
-        VLOG_ERROR("containerv", "container script failed | %s\n", script);
-    }
-    return status;
-}
-
 void __containerv_destroy(struct containerv_container* container)
 {
     struct list_item* i;
@@ -666,28 +657,6 @@ int containerv_kill(struct containerv_container* container, pid_t pid)
     status = containerv_socket_client_kill(client, pid);
     if (status) {
         VLOG_ERROR("containerv[host]", "containerv_kill: failed to execute kill\n");
-    }
-
-    containerv_socket_client_close(client);
-    return status;
-}
-
-int containerv_script(struct containerv_container* container, const char* script)
-{
-    struct containerv_socket_client* client;
-    int                              status;
-    VLOG_DEBUG("containerv[host]", "containerv_script()\n");
-
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
-    if (client == NULL) {
-        VLOG_ERROR("containerv[host]", "containerv_spawn: failed to connect to server\n");
-        return status;
-    }
-
-    status = containerv_socket_client_script(client, script);
-    if (status) {
-        VLOG_ERROR("containerv[host]", "containerv_kill: failed to execute script\n");
     }
 
     containerv_socket_client_close(client);

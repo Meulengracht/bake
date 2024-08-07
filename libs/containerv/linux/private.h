@@ -118,7 +118,6 @@ extern int containerv_socket_client_get_nss(struct containerv_socket_client* cli
 extern int containerv_socket_client_destroy(struct containerv_socket_client* client);
 
 extern int __containerv_spawn(struct containerv_container* container, const char* path, const char* const* argv, const char* const* envv, pid_t* pidOut);
-extern int __containerv_script(struct containerv_container* container, const char* script);
 extern int __containerv_kill(struct containerv_container* container, pid_t processId);
 extern void __containerv_destroy(struct containerv_container* container);
 

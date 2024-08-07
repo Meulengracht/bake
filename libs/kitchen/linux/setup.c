@@ -242,6 +242,53 @@ static char* __join_packages(struct recipe_cache_package_change* changes, int co
     return buffer;
 }
 
+static int __execute_script_in_container(struct kitchen* kitchen, const char* script)
+{
+    const char* target;
+    FILE*       sf;
+    int         status;
+    VLOG_DEBUG("kitchen", "__execute_script_in_container()\n");
+
+    // TODO: use container id for script name
+    target = strpathjoin(kitchen->host_chroot, "tmp", "bake-setup.sh", NULL);
+    if (target == NULL) {
+        VLOG_ERROR("kitchen", "__execute_script_in_container: failed to allocate memory for script path\n", target);
+        return -1;
+    }
+
+    // write to file inside container
+    sf = fopen(target, "w+");
+    if (sf == NULL) {
+        VLOG_ERROR("kitchen", "__execute_script_in_container: failed to open path %s\n", target);
+        return -1;
+    }
+    fputs(script, sf);
+    fputs("\n", sf);
+    fclose(sf);
+
+    // chmod to executable
+    status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    if (status) {
+        VLOG_ERROR("kitchen", "__install_bakectl: failed to fixup permissions for %s\n", target);
+    }
+
+    status = containerv_spawn(
+        kitchen->container,
+        "/tmp/bake-setup.sh",
+        &(struct containerv_spawn_options) {
+            .arguments = NULL,
+            .environment = (const char* const*)kitchen->base_environment,
+            .flags = CV_SPAWN_WAIT
+        },
+        NULL
+    );
+    if (status) {
+        VLOG_ERROR("kitchen", "__install_bakectl: failed to execute script\n");
+        return status;
+    }
+    return 0;
+}
+
 static int __update_packages(struct kitchen* kitchen)
 {
     struct recipe_cache_package_change* changes;
@@ -285,7 +332,7 @@ static int __update_packages(struct kitchen* kitchen)
     // done with script generation
     fclose(stream);
 
-    status = containerv_script(kitchen->container, script);
+    status = __execute_script_in_container(kitchen, script);
     if (status) {
         VLOG_ERROR("kitchen", "__update_packages: failed to update packages\n");
         return status;
@@ -446,7 +493,7 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
     }
 
     VLOG_TRACE("kitchen", "executing setup hook\n");
-    status = containerv_script(kitchen->container, options->setup_hook.bash);
+    status = __execute_script_in_container(kitchen, options->setup_hook.bash);
     if (status) {
         return status;
     }
