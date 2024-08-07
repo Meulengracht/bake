@@ -4,26 +4,21 @@
  * waiterd is the build server organizer for chef.
  */
 
-namespace chef
+import "types"
 
-enum architecture {
-    X86,
-    X64,
-    ARMHF,
-    ARM64,
-    RISCV64
-}
+namespace chef
 
 struct waiter_build_request {
     string repository;
+    string patch;
     string recipe;
     string part_or_step;
     architecture archs;
 }
 
 service waiterd (44) {
-    func build(waiter_build_request request) : (string id) = 1;
-    func wait(string id) : () = 2
+    func build(waiter_build_request request) : (queue_status status, string id) = 1;
+    func status(string id) : (build_status status) = 2;
 }
 
 struct cook_register_request {
@@ -31,6 +26,7 @@ struct cook_register_request {
 }
 
 service waiterd_cook (44) {
-    func register(cook_register_request request) : (string id) = 1;
-    func unregister(string id) : () = 2
+    func ready() : (string id) = 1;
+
+    event status()
 }

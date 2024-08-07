@@ -1,0 +1,26 @@
+/**
+ * Shared types that are reused through-out the services.
+ * Contains some default structures also
+ */
+
+namespace chef
+
+enum architecture {
+    X86,
+    X64,
+    ARMHF,
+    ARM64,
+    RISCV64
+}
+
+enum build_status {
+    QUEUED,
+    BUILDING,
+    DONE,
+    FAILED
+}
+
+enum queue_status {
+    SUCCESS,
+    NO_COOK_FOR_ARCHITECTURE
+}
