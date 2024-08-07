@@ -116,7 +116,7 @@ void register_server_links(gracht_server_t* server)
     }
 }
 
-int managerd_initialize_server(struct gracht_server_configuration* config, gracht_server_t** serverOut)
+int waiterd_initialize_server(struct gracht_server_configuration* config, gracht_server_t** serverOut)
 {
     int status;
 
@@ -128,14 +128,14 @@ int managerd_initialize_server(struct gracht_server_configuration* config, grach
 #if defined(__linux__)
     status = platform_mkdir("/run/chef/managerd");
     if (status) {
-        fprintf(stderr, "managerd_initialize_server: error initializing server library %i\n", errno);
+        fprintf(stderr, "waiterd_initialize_server: error initializing server library %i\n", errno);
         return status;
     }
 #endif
 
     status = gracht_server_create(config, serverOut);
     if (status) {
-        fprintf(stderr, "managerd_initialize_server: error initializing server library %i\n", errno);
+        fprintf(stderr, "waiterd_initialize_server: error initializing server library %i\n", errno);
         return status;
     }
 
