@@ -16,11 +16,32 @@
  * 
  */
 
-#include <gracht/server.h>
+#include "private.h"
+#include "chef_waiterd_service_server.h"
+#include "chef_waiterd_cook_service_server.h"
 
-extern int managerd_initialize_server(struct gracht_server_configuration* config, gracht_server_t** serverOut);
+// the server object
+static gracht_server_t* g_server = NULL;
 
 int main(int argc, char** argv)
 {
-    return -1;
+    struct gracht_server_configuration config;
+    int                                status;
+
+    // initialize the server configuration
+    gracht_server_configuration_init(&config);
+    
+    // up the max size for protocols, due to the nature of transferring
+    // git patches, we might need this for now
+    gracht_server_configuration_set_max_msg_size(&config, 65*1024);
+
+    // start up the server
+    status = waiterd_initialize_server(&config, &g_server);
+
+    // we register protocols
+    gracht_server_register_protocol(g_server, &chef_waiterd_server_protocol);
+    gracht_server_register_protocol(g_server, &chef_waiterd_cook_server_protocol);
+
+    // use the default server loop
+    return gracht_server_main_loop(g_server);
 }
