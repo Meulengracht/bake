@@ -93,9 +93,6 @@ int oven_initialize(struct oven_initialize_options* parameters)
 
 void oven_cleanup(void)
 {
-    // cleanup resources by recipe context
-    oven_recipe_end();
-
     // cleanup paths
     free((void*)g_oven.paths.project_root);
     free((void*)g_oven.paths.build_root);
@@ -121,7 +118,7 @@ static int __ensure_recipe_dirs(struct oven_recipe_options* options)
 
 int oven_recipe_start(struct oven_recipe_options* options)
 {
-    VLOG_DEBUG("oven", "oven_recipe_start()\n");
+    VLOG_DEBUG("oven", "oven_recipe_start(name=%s)\n", options->name);
 
     if (g_oven.recipe.name) {
         VLOG_ERROR("oven", "oven_recipe_start: recipe already started\n");
@@ -621,6 +618,7 @@ int oven_configure(struct oven_generate_options* options)
     struct oven_backend*     backend;
     struct oven_backend_data data;
     int                      status;
+    VLOG_DEBUG("oven", "oven_configure(name=%s, system=%s)\n", options->name, options->system);
 
     if (!options) {
         errno = EINVAL;
@@ -649,6 +647,7 @@ int oven_build(struct oven_build_options* options)
     struct oven_backend*     backend;
     struct oven_backend_data data;
     int                      status;
+    VLOG_DEBUG("oven", "oven_build(name=%s, system=%s)\n", options->name, options->system);
 
     if (!options) {
         errno = EINVAL;
@@ -703,6 +702,7 @@ int oven_clean(struct oven_clean_options* options)
     struct oven_backend*     backend;
     struct oven_backend_data data;
     int                      status;
+    VLOG_DEBUG("oven", "oven_clean(name=%s, system=%s)\n", options->name, options->system);
 
     if (!options) {
         errno = EINVAL;

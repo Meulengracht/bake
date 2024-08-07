@@ -477,6 +477,12 @@ int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options
         return status;
     }
 
+    status = __update_packages(kitchen);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to install/update rootfs packages\n");
+        return status;
+    }
+
     status = __update_ingredients(kitchen, options);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to setup/refresh kitchen ingredients\n");

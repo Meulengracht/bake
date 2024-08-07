@@ -139,6 +139,9 @@ static int __build_step(const char* partName, struct list* steps, const char* st
                 VLOG_ERROR("bakectl", "failed to execute script\n");
                 return status;
             }
+        } else {
+            VLOG_ERROR("bakectl", "unknown step type: %i\n", step->type);
+            return -1;
         }
 
         // done
@@ -152,7 +155,7 @@ static int __build_part(struct recipe* recipe, const char* partName, const char*
     struct oven_recipe_options options;
     struct list_item*          item;
     int                        status;
-    VLOG_DEBUG("bakectl", "__build_part()\n");
+    VLOG_DEBUG("bakectl", "__build_part(part=%s, step=%s, platform=%s)\n", partName, stepName, platform);
 
     recipe_cache_transaction_begin();
     list_foreach(&recipe->parts, item) {

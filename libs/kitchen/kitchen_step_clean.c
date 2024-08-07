@@ -128,7 +128,7 @@ int kitchen_recipe_clean(struct kitchen* kitchen, struct kitchen_recipe_clean_op
         NULL
     );
     if (status) {
-        VLOG_ERROR("bake", "failed to perform clean step of '%s'\n", kitchen->recipe->project.name);
+        VLOG_ERROR("kitchen", "failed to perform clean step of '%s'\n", kitchen->recipe->project.name);
         return status;
     }
 

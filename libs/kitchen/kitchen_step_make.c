@@ -33,16 +33,16 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
     list_foreach(steps, item) {
         struct recipe_step* step = (struct recipe_step*)item;
         if (recipe_cache_is_step_complete(part, step->name)) {
-            VLOG_TRACE("bake", "nothing to be done for step '%s/%s'\n", part, step->name);
+            VLOG_TRACE("kitchen", "nothing to be done for step '%s/%s'\n", part, step->name);
             continue;
         }
 
         snprintf(&buffer[0], sizeof(buffer),
             "build -v --project %s --recipe %s --step %s/%s", 
-            kitchen->project_root, kitchen->recipe_path, part, step->system
+            kitchen->project_root, kitchen->recipe_path, part, step->name
         );
 
-        VLOG_TRACE("bake", "executing step '%s/%s'\n", part, step->system);
+        VLOG_TRACE("kitchen", "executing step '%s/%s'\n", part, step->name);
         status = containerv_spawn(
             kitchen->container,
             kitchen->bakectl_path,
@@ -53,15 +53,14 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
             },
             NULL
         );
-        VLOG_TRACE("kitchen", "__make_recipe_steps: spawn returned\n");
         if (status) {
-            VLOG_ERROR("bake", "failed to execute step '%s/%s'\n", part, step->system);
+            VLOG_ERROR("kitchen", "failed to execute step '%s/%s'\n", part, step->name);
             return status;
         }
 
         status = recipe_cache_mark_step_complete(part, step->name);
         if (status) {
-            VLOG_ERROR("bake", "failed to mark step %s/%s complete\n", part, step->name);
+            VLOG_ERROR("kitchen", "failed to mark step '%s/%s' complete\n", part, step->name);
             return status;
         }
     }
@@ -81,7 +80,7 @@ int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
 
         status = __make_recipe_steps(kitchen, part->name, &part->steps);
         if (status) {
-            VLOG_ERROR("bake", "kitchen_recipe_make: failed to build recipe %s\n", part->name);
+            VLOG_ERROR("kitchen", "kitchen_recipe_make: failed to build recipe %s\n", part->name);
             break;
         }
     }
