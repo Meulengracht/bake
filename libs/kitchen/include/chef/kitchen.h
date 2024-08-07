@@ -75,7 +75,6 @@ struct kitchen_recipe_clean_options {
 struct kitchen {
     // internal state
     uint32_t       magic;
-    int            original_root_fd;
     struct recipe* recipe;
     const char*    recipe_path;
 
@@ -126,6 +125,13 @@ extern int kitchen_initialize(struct kitchen_init_options* options, struct kitch
  * @return int 
  */
 extern int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options);
+
+/**
+ * @brief 
+ * 
+ * @param kitchen 
+ */
+extern void kitchen_destroy(struct kitchen* kitchen);
 
 /**
  * @brief 

@@ -207,12 +207,12 @@ static char* __join_packages(struct recipe_cache_package_change* changes, int co
     size_t            bufferLength = 64 * 1024; // 64KB buffer for packages
     size_t            length = 0;
 
-    buffer = calloc(bufferLength, 1); 
-    if (buffer == NULL) {
+    if (changes == NULL || count == 0) {
         return NULL;
     }
 
-    if (changes == NULL || count == 0) {
+    buffer = calloc(bufferLength, 1); 
+    if (buffer == NULL) {
         return NULL;
     }
 
@@ -239,54 +239,11 @@ static char* __join_packages(struct recipe_cache_package_change* changes, int co
             length += pkgLength + 1;
         }
     }
+    if (length == 0) {
+        free(buffer);
+        return NULL;
+    }
     return buffer;
-}
-
-static int __execute_script_in_container(struct kitchen* kitchen, const char* script)
-{
-    const char* target;
-    FILE*       sf;
-    int         status;
-    VLOG_DEBUG("kitchen", "__execute_script_in_container()\n");
-
-    // TODO: use container id for script name
-    target = strpathjoin(kitchen->host_chroot, "tmp", "bake-setup.sh", NULL);
-    if (target == NULL) {
-        VLOG_ERROR("kitchen", "__execute_script_in_container: failed to allocate memory for script path\n", target);
-        return -1;
-    }
-
-    // write to file inside container
-    sf = fopen(target, "w+");
-    if (sf == NULL) {
-        VLOG_ERROR("kitchen", "__execute_script_in_container: failed to open path %s\n", target);
-        return -1;
-    }
-    fputs(script, sf);
-    fputs("\n", sf);
-    fclose(sf);
-
-    // chmod to executable
-    status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
-    if (status) {
-        VLOG_ERROR("kitchen", "__install_bakectl: failed to fixup permissions for %s\n", target);
-    }
-
-    status = containerv_spawn(
-        kitchen->container,
-        "/tmp/bake-setup.sh",
-        &(struct containerv_spawn_options) {
-            .arguments = NULL,
-            .environment = (const char* const*)kitchen->base_environment,
-            .flags = CV_SPAWN_WAIT
-        },
-        NULL
-    );
-    if (status) {
-        VLOG_ERROR("kitchen", "__install_bakectl: failed to execute script\n");
-        return status;
-    }
-    return 0;
 }
 
 static int __update_packages(struct kitchen* kitchen)
@@ -294,10 +251,7 @@ static int __update_packages(struct kitchen* kitchen)
     struct recipe_cache_package_change* changes;
     int                                 count;
     int                                 status;
-    char*                               script;
-    size_t                              streamLength;
-    FILE*                               stream;
-    char*                               aptpkgs;
+    char                                buffer[512] = { 0 };
 
     status = recipe_cache_calculate_package_changes(&changes, &count);
     if (status) {
@@ -309,32 +263,19 @@ static int __update_packages(struct kitchen* kitchen)
         return 0;
     }
 
-    stream = open_memstream(&script, &streamLength);
-    if (stream == NULL) {
-        VLOG_ERROR("kitchen", "__update_packages: failed to allocate a script stream\n");
-        return -1;
-    }
-
-    fprintf(stream, "#!/bin/bash\n\n");
-
-    aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_REMOVED);
-    if (aptpkgs != NULL) {
-        fprintf(stream, "apt-get -y -qq remove %s\n", aptpkgs);
-        free(aptpkgs);
-    }
-
-    aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_ADDED);
-    if (aptpkgs != NULL) {
-        fprintf(stream, "apt-get -y -qq install --no-install-recommends %s\n", aptpkgs);
-        free(aptpkgs);
-    }
-
-    // done with script generation
-    fclose(stream);
-
-    status = __execute_script_in_container(kitchen, script);
+    snprintf(&buffer[0], sizeof(buffer), "/chef/update.sh");
+    status = containerv_spawn(
+        kitchen->container,
+        &buffer[0],
+        &(struct containerv_spawn_options) {
+            .arguments = NULL,
+            .environment = (const char* const*)kitchen->base_environment,
+            .flags = CV_SPAWN_WAIT
+        },
+        NULL
+    );
     if (status) {
-        VLOG_ERROR("kitchen", "__update_packages: failed to update packages\n");
+        VLOG_ERROR("kitchen", "__execute_script_in_container: failed to execute script\n");
         return status;
     }
 
@@ -483,7 +424,8 @@ static int __update_ingredients(struct kitchen* kitchen, struct kitchen_setup_op
 
 static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
-    int status;
+    int  status;
+    char buffer[512] = { 0 };
 
     if (options->setup_hook.bash == NULL) {
         return 0;
@@ -493,8 +435,19 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
     }
 
     VLOG_TRACE("kitchen", "executing setup hook\n");
-    status = __execute_script_in_container(kitchen, options->setup_hook.bash);
+    snprintf(&buffer[0], sizeof(buffer), "/chef/hook-setup.sh");
+    status = containerv_spawn(
+        kitchen->container,
+        &buffer[0],
+        &(struct containerv_spawn_options) {
+            .arguments = NULL,
+            .environment = (const char* const*)kitchen->base_environment,
+            .flags = CV_SPAWN_WAIT
+        },
+        NULL
+    );
     if (status) {
+        VLOG_ERROR("kitchen", "__run_setup_hook: failed to execute setup hook\n");
         return status;
     }
 
@@ -506,6 +459,123 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
     }
     recipe_cache_transaction_commit();
     return 0;
+}
+
+static int __write_update_script(struct kitchen* kitchen)
+{
+    struct recipe_cache_package_change* changes;
+    int                                 count;
+    int                                 status;
+    FILE*                               stream;
+    char*                               aptpkgs;
+    char*                               target;
+
+    status = recipe_cache_calculate_package_changes(&changes, &count);
+    if (status) {
+        VLOG_ERROR("kitchen", "__write_update_script: failed to calculate package differences\n");
+        return status;
+    }
+
+    if (count == 0) {
+        return 0;
+    }
+
+    target = strpathjoin(kitchen->host_chroot, "chef", "update.sh", NULL);
+    if (target == NULL) {
+        VLOG_ERROR("kitchen", "__write_update_script: failed to allocate memory for script path\n", target);
+        return -1;
+    }
+
+    stream = fopen(target, "w+");
+    if (stream == NULL) {
+        VLOG_ERROR("kitchen", "__write_update_script: failed to allocate a script stream\n");
+        free(target);
+        return -1;
+    }
+
+    fprintf(stream, "#!/bin/bash\n\n");
+    fprintf(stream, "echo \"updating container packages...\"\n");
+    fprintf(stream, "apt-get update\n");
+
+    aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_REMOVED);
+    if (aptpkgs != NULL) {
+        fprintf(stream, "apt-get -y -qq remove %s\n", aptpkgs);
+        free(aptpkgs);
+    }
+
+    aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_ADDED);
+    if (aptpkgs != NULL) {
+        fprintf(stream, "apt-get -y -qq install --no-install-recommends %s\n", aptpkgs);
+        free(aptpkgs);
+    }
+
+    // done with script generation
+    fclose(stream);
+
+    // chmod to executable
+    status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    if (status) {
+        VLOG_ERROR("kitchen", "__write_update_script: failed to fixup permissions for %s\n", target);
+        free(target);
+        return -1;
+    }
+    free(target);
+    return 0;
+}
+
+static int __write_setup_hook_script(struct kitchen* kitchen, struct kitchen_setup_options* options)
+{
+    int   status;
+    FILE* stream;
+    char* target;
+
+    if (options->setup_hook.bash == NULL) {
+        return 0;
+    }
+
+    target = strpathjoin(kitchen->host_chroot, "chef", "hook-setup.sh", NULL);
+    if (target == NULL) {
+        VLOG_ERROR("kitchen", "__write_setup_hook_script: failed to allocate memory for script path\n", target);
+        return -1;
+    }
+
+    stream = fopen(target, "w+");
+    if (stream == NULL) {
+        VLOG_ERROR("kitchen", "__write_setup_hook_script: failed to allocate a script stream\n");
+        free(target);
+        return -1;
+    }
+
+    fprintf(stream, "#!/bin/bash\n\n");
+    fputs(options->setup_hook.bash, stream);
+    fclose(stream);
+
+    // chmod to executable
+    status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    if (status) {
+        VLOG_ERROR("kitchen", "__write_setup_hook_script: failed to fixup permissions for %s\n", target);
+    }
+    free(target);
+    return status;
+}
+
+static int __write_resources(struct kitchen* kitchen, struct kitchen_setup_options* options)
+{
+    int status;
+
+    status = __write_update_script(kitchen);
+    if (status) {
+        VLOG_ERROR("kitchen", "__write_resources: failed to write update resource\n");
+        return status;
+    }
+
+    status = __write_setup_hook_script(kitchen, options);
+    if (status) {
+        VLOG_ERROR("kitchen", "__write_resources: failed to write hook resources\n");
+        return status;
+    }
+
+    return status;
 }
 
 int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options)
@@ -524,9 +594,9 @@ int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options
         return status;
     }
 
-    status = __update_packages(kitchen);
+    status = __write_resources(kitchen, options);
     if (status) {
-        VLOG_ERROR("kitchen", "kitchen_setup: failed to install/update rootfs packages\n");
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to generate resources\n");
         return status;
     }
 
@@ -542,50 +612,16 @@ int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options
         return status;
     }
 
+    status = __update_packages(kitchen);
+    if (status) {
+        VLOG_ERROR("kitchen", "kitchen_setup: failed to install/update rootfs packages\n");
+        return status;
+    }
+
     status = __run_setup_hook(kitchen, options);
     if (status) {
         VLOG_ERROR("kitchen", "kitchen_setup: failed to execute setup script: %s\n", strerror(errno));
         return status;
     }
     return status;
-}
-
-int kitchen_destroy(struct kitchen* kitchen)
-{
-    int status;
-
-    if (kitchen->container) {
-        status = containerv_destroy(kitchen->container);
-        if (status) {
-            VLOG_FATAL("kitchen", "kitchen_confined_destroy: failed to destroy container\n");
-            return status;
-        }
-    }
-
-    // cleanup pkg manager
-    if (kitchen->pkg_manager) {
-        kitchen->pkg_manager->destroy(kitchen->pkg_manager);
-    }
-
-    // cleanup paths
-    free(kitchen->target_platform);
-    free(kitchen->target_architecture);
-    free(kitchen->host_cwd);
-
-    free(kitchen->host_chroot);
-    free(kitchen->host_kitchen_project_root);
-    free(kitchen->host_build_path);
-    free(kitchen->host_build_ingredients_path);
-    free(kitchen->host_build_toolchains_path);
-    free(kitchen->host_project_path);
-    free(kitchen->host_install_root);
-    free(kitchen->host_install_path);
-
-    free(kitchen->project_root);
-    free(kitchen->build_root);
-    free(kitchen->build_ingredients_path);
-    free(kitchen->build_toolchains_path);
-    free(kitchen->install_root);
-    free(kitchen->install_path);
-    return 0;
 }
