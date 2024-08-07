@@ -106,6 +106,7 @@ struct kitchen {
     char* build_toolchains_path;
     char* install_root;
     char* install_path;
+    char* bakectl_path;
 };
 
 /**

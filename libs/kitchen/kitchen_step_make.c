@@ -37,12 +37,15 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
             continue;
         }
 
-        snprintf(&buffer[0], sizeof(buffer), "build -v --recipe %s --step %s/%s", kitchen->recipe_path, part, step->system);
+        snprintf(&buffer[0], sizeof(buffer),
+            "build -v --project %s --recipe %s --step %s/%s", 
+            kitchen->project_root, kitchen->recipe_path, part, step->system
+        );
 
         VLOG_TRACE("bake", "executing step '%s/%s'\n", part, step->system);
         status = containerv_spawn(
             kitchen->container,
-            "bakectl",
+            kitchen->bakectl_path,
             &(struct containerv_spawn_options) {
                 .arguments = &buffer[0],
                 .environment = (const char* const*)kitchen->base_environment,
@@ -50,6 +53,7 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
             },
             NULL
         );
+        VLOG_TRACE("kitchen", "__make_recipe_steps: spawn returned\n");
         if (status) {
             VLOG_ERROR("bake", "failed to execute step '%s/%s'\n", part, step->system);
             return status;

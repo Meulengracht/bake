@@ -52,10 +52,14 @@ static void __print_help(void)
     printf("  clean       runs the clean backend of the specified part and step\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -p, --project\n");
+    printf("      Root path of the project\n");
     printf("  -r, --recipe\n");
-    printf("      Containerized path to the recipe of the current project\n");
-    printf("  -v, --version\n");
-    printf("      Print the version of bake\n");
+    printf("      Relative path (of --project) or absolute path to the recipe for the project\n");
+    printf("  -v..\n");
+    printf("      Controls the verbosity of bakectl\n");
+    printf("      --version\n");
+    printf("      Print the version of bakectl\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
 }
@@ -83,7 +87,7 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
 
     file = fopen(path, "r");
     if (!file) {
-        fprintf(stderr, "bake: failed to read recipe path: %s\n", path);
+        fprintf(stderr, "bakectl: failed to read recipe path: %s\n", path);
         return -1;
     }
 
@@ -93,14 +97,14 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
     
     buffer = malloc(size);
     if (!buffer) {
-        fprintf(stderr, "bake: failed to allocate memory for recipe: %s\n", strerror(errno));
+        fprintf(stderr, "bakectl: failed to allocate memory for recipe: %s\n", strerror(errno));
         fclose(file);
         return -1;
     }
 
     read = fread(buffer, 1, size, file);
     if (read < size) {
-        fprintf(stderr, "bake: failed to read recipe: %s\n", strerror(errno));
+        fprintf(stderr, "bakectl: failed to read recipe: %s\n", strerror(errno));
         fclose(file);
         return -1;
     }
@@ -109,27 +113,6 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
 
     *bufferOut = buffer;
     *lengthOut = size;
-    return 0;
-}
-
-static int __get_cwd(char** bufferOut)
-{
-    char*  cwd;
-    int    status;
-
-    cwd = malloc(PATH_MAX);
-    if (cwd == NULL) {
-        return -1;
-    }
-
-    status = platform_getcwd(cwd, PATH_MAX);
-    if (status) {
-        // buffer was too small
-        fprintf(stderr, "bake: could not get current working directory, buffer too small?\n");
-        free(cwd);
-        return -1;
-    }
-    *bufferOut = cwd;
     return 0;
 }
 
@@ -163,10 +146,13 @@ int main(int argc, char** argv, char** envp)
 
         if (argc > 2) {
             for (int i = 2; i < argc; i++) {
-                if (!strcmp(argv[i], "--recipe")) {
+                if (!strcmp(argv[i], "-p") || !strcmp(argv[i], "--project")) {
+                    options.cwd = argv[i + 1];
+                    i++;
+                } else if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--recipe")) {
                     recipePath = argv[i + 1];
                     i++;
-                } else if (!strcmp(argv[i], "--step")) {
+                } else if (!strcmp(argv[i], "-s") || !strcmp(argv[i], "--step")) {
                     status = recipe_parse_part_step(argv[i + 1], (char**)&options.part, (char**)&options.step);
                     if (status) {
                         fprintf(stderr, "bakectl: failed to parse %s\n", argv[i + 1]);
@@ -182,11 +168,13 @@ int main(int argc, char** argv, char** envp)
         }
     }
 
-    // get the current working directory
-    status = __get_cwd((char**)&options.cwd);
-    if (status) {
+    if (options.cwd == NULL) {
+        fprintf(stderr, "bakectl: no project path specified\n");
         return -1;
     }
+
+    // Switch to the project root as working directory
+
 
     if (recipePath != NULL) {
         status = __read_recipe(recipePath, &buffer, &length);

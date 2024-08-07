@@ -197,6 +197,7 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     kitchen->project_root = strdup("/chef/project");
     kitchen->build_toolchains_path = strdup("/chef/toolchains");
     kitchen->install_root = strdup("/chef/install");
+    kitchen->bakectl_path = strdup("/usr/bin/bakectl");
 
     // And those that are not
     snprintf(&buff[0], sizeof(buff), "/chef/build/%s/%s",

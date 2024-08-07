@@ -91,7 +91,7 @@ static struct containerv_container* __container_new(void)
         return NULL;
     }
     memcpy(
-        container->id[0],
+        &container->id[0],
         &container->runtime_dir[strlen(container->runtime_dir) - __CONTAINER_ID_LENGTH],
         __CONTAINER_ID_LENGTH
     );
@@ -133,67 +133,6 @@ static void __container_delete(struct containerv_container* container)
     free(container);
 }
 
-static pid_t __exec(const char* path, const char* const* argv, const char* const* envv)
-{
-    pid_t processId;
-    int   status;
-
-    // fork a new child, all daemons/root programs are spawned from this code
-    processId = fork();
-    if (processId != 0) {
-        return processId;
-    }
-
-    status = execve(path, (char* const*)argv, (char* const*)envv);
-    if (status) {
-        // ehh log this probably
-    }
-    return 0;
-}
-
-int __containerv_spawn(struct containerv_container* container, const char* path, const char* const* argv, const char* const* envv, pid_t* pidOut)
-{
-    struct containerv_container_process* proc;
-    pid_t                                processId;
-
-    processId = __exec(path, (const char* const*)argv, (const char* const*)envv);
-    if (processId == (pid_t)-1) {
-        VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to exec %s\n", path);
-        return -1;
-    }
-
-    proc = containerv_container_process_new(processId);
-    if (proc) {
-        list_add(&container->processes, &proc->list_header);
-    }
-    return 0;
-}
-
-int __containerv_kill(struct containerv_container* container, pid_t processId)
-{
-    struct list_item* i;
-
-    list_foreach (&container->processes, i) {
-        struct containerv_container_process* proc = (struct containerv_container_process*)i;
-        if (proc->pid == processId) {
-            kill(processId, SIGTERM);
-            list_remove(&container->processes, i);
-            containerv_container_process_delete(proc);
-            return 0;
-        }
-    }
-    return -1;
-}
-
-int __containerv_script(struct containerv_container* container, const char* script)
-{
-    int status = system(script);
-    if (status) {
-        VLOG_ERROR("containerv", "container script failed | %s\n", script);
-    }
-    return status;
-}
-
 enum containerv_event_type {
     CV_CONTAINER_UP,
     CV_CONTAINER_DOWN
@@ -226,10 +165,74 @@ static int __wait_for_container_event(struct containerv_container* container, st
     return 0;
 }
 
-static void __destroy_container(struct containerv_container* container)
+static pid_t __exec(const char* path, const char* const* argv, const char* const* envv)
+{
+    pid_t processId;
+    int   status;
+
+    // fork a new child, all daemons/root programs are spawned from this code
+    processId = fork();
+    if (processId != (pid_t)0) {
+        return processId;
+    }
+
+    status = execve(path, (char* const*)argv, (char* const*)envv);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "[%s]: failed to execute: %i\n", path, status);
+    }
+    _Exit(status);
+    return 0; // never reached
+}
+
+int __containerv_spawn(struct containerv_container* container, const char* path, const char* const* argv, const char* const* envv, pid_t* pidOut)
+{
+    struct containerv_container_process* proc;
+    pid_t                                processId;
+    VLOG_DEBUG("containerv[child]", "__containerv_spawn(path=%s)\n", path);
+
+    processId = __exec(path, (const char* const*)argv, (const char* const*)envv);
+    if (processId == (pid_t)-1) {
+        VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to exec %s\n", path);
+        return -1;
+    }
+
+    proc = containerv_container_process_new(processId);
+    if (proc) {
+        list_add(&container->processes, &proc->list_header);
+    }
+    *pidOut = processId;
+    return 0;
+}
+
+int __containerv_kill(struct containerv_container* container, pid_t processId)
 {
     struct list_item* i;
-    VLOG_TRACE("containerv[child]", "__destroy_container()\n");
+
+    list_foreach (&container->processes, i) {
+        struct containerv_container_process* proc = (struct containerv_container_process*)i;
+        if (proc->pid == processId) {
+            kill(processId, SIGTERM);
+            list_remove(&container->processes, i);
+            containerv_container_process_delete(proc);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int __containerv_script(struct containerv_container* container, const char* script)
+{
+    int status = system(script);
+    if (status) {
+        VLOG_ERROR("containerv", "container script failed | %s\n", script);
+    }
+    return status;
+}
+
+void __containerv_destroy(struct containerv_container* container)
+{
+    struct list_item* i;
+    VLOG_DEBUG("containerv[child]", "__destroy_container()\n");
 
     // kill processes
     list_foreach (&container->processes, i) {
@@ -253,7 +256,7 @@ static int __container_idle_loop(struct containerv_container* container)
             .events = POLLIN
         }
     };
-    VLOG_TRACE("containerv[child]", "__container_idle_loop()\n");
+    VLOG_DEBUG("containerv[child]", "__container_idle_loop()\n");
 
     for (;;) {
         status = poll(fds, 1, -1);
@@ -308,7 +311,7 @@ static int __container_map_mounts(
 {
     char* destination;
     int   status = 0;
-    VLOG_TRACE("containerv[child]", "__container_map_mounts()\n");
+    VLOG_DEBUG("containerv[child]", "__container_map_mounts()\n");
 
     if (!mountsCount) {
         return 0;
@@ -321,7 +324,7 @@ static int __container_map_mounts(
 
     for (int i = 0; i < mountsCount; i++) {
         //snprintf(destination, PATH_MAX, "%s/%s", container->mountfs, mounts[i].destination);
-        VLOG_TRACE("containerv[child]", "__container_map_mounts: mapping %s => %s (%s)\n",
+        VLOG_DEBUG("containerv[child]", "__container_map_mounts: mapping %s => %s (%s)\n",
             mounts[i].what, mounts[i].where, mounts[i].fstype);
         if (mounts[i].flags & CV_MOUNT_CREATE) {
             status = platform_mkdir(mounts[i].where);
@@ -352,7 +355,7 @@ static int __container_map_capabilities(
         enum containerv_capabilities capabilities)
 {
     int status;
-    VLOG_TRACE("containerv[child]", "__container_map_capabilities()\n");
+    VLOG_DEBUG("containerv[child]", "__container_map_capabilities()\n");
 
     status = __container_map_specialfs("sysfs", "/sys");
     if (status) {
@@ -415,7 +418,7 @@ static int __container_run(
     struct containerv_event event;
     int                     status;
     int                     flags = CLONE_NEWUTS;
-    VLOG_TRACE("containerv[child]", "__container_run()\n");
+    VLOG_DEBUG("containerv[child]", "__container_run()\n");
 
     if (capabilities & CV_CAP_FILESYSTEM) {
         flags |= CLONE_NEWNS;
@@ -435,13 +438,6 @@ static int __container_run(
 
     if (capabilities & CV_CAP_CGROUPS) {
         flags |= CLONE_NEWCGROUP;
-    }
-
-    // change the working directory so we don't accidentally lock any paths
-    status = chdir("/");
-    if (status) {
-        VLOG_ERROR("containerv[child]", "__container_run: failed to change directory to root\n");
-        return status;
     }
 
     status = unshare(flags);
@@ -471,7 +467,7 @@ static int __container_run(
         VLOG_ERROR("containerv[child]", "__container_run: failed to remount root\n");
         return status;
     }
-  
+
     // After the unshare we are now running in separate namespaces, this means
     // we can start doing mount operations that still require the host file system
     // before we chroot
@@ -502,10 +498,24 @@ static int __container_run(
         }
     }
 
+    // change the working directory so we don't accidentally lock any paths
+    status = chdir(container->rootfs);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__container_run: failed to change directory to the new root\n");
+        return status;
+    }
+
     // change root to the containers base path
     status = chroot(container->rootfs);
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_run: failed to chroot into new root (%s)\n", container->rootfs);
+        return status;
+    }
+
+    // after chroot, we want to change to the root
+    status = chdir("/");
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__container_run: failed to change directory to root\n");
         return status;
     }
 
@@ -547,7 +557,7 @@ static int __container_entry(
         int                          mountsCount)
 {
     int status;
-    VLOG_TRACE("containerv[child]", "__container_entry()\n");
+    VLOG_DEBUG("containerv[child]", "__container_entry(id=%s)\n", &container->id[0]);
 
     // lets not leak the host fd
     status = __close_safe(&container->status_fds[__FD_READ]);
@@ -575,11 +585,11 @@ int containerv_create(
     struct containerv_container* container;
     struct containerv_event      event = { 0 };
     int                          status;
-    VLOG_TRACE("containerv[host]", "containerv_create(root=%s, caps=0x%x)\n", rootFs, capabilities);
+    VLOG_DEBUG("containerv[host]", "containerv_create(root=%s, caps=0x%x)\n", rootFs, capabilities);
 
-    status = platform_mkdir("/run/containerv");
+    status = platform_mkdir(__CONTAINER_SOCKET_RUNTIME_BASE);
     if (status) {
-        VLOG_ERROR("containerv[host]", "containerv_create: failed to create /run/containerv\n");
+        VLOG_ERROR("containerv[host]", "containerv_create: failed to create %s\n", __CONTAINER_SOCKET_RUNTIME_BASE);
         return -1;
     }
 
@@ -595,7 +605,7 @@ int containerv_create(
         VLOG_ERROR("containerv[host]", "containerv_create: failed to fork container process\n");
         return -1;
     } else if (container->pid) {
-        VLOG_TRACE("containerv[host]", "cleaning up and waiting for container to get up and running\n");
+        VLOG_DEBUG("containerv[host]", "cleaning up and waiting for container to get up and running\n");
         __close_safe(&container->status_fds[__FD_WRITE]);
         status = __wait_for_container_event(container, &event);
         if (status) {
@@ -622,9 +632,9 @@ int containerv_spawn(
 {
     struct containerv_socket_client* client;
     int                              status;
-    VLOG_TRACE("containerv[host]", "containerv_spawn()\n");
+    VLOG_DEBUG("containerv[host]", "containerv_spawn()\n");
 
-    VLOG_TRACE("containerv[host]", "connecting to %s\n", &container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
     client = containerv_socket_client_open(&container->id[0]);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_spawn: failed to connect to server\n");
@@ -644,9 +654,9 @@ int containerv_kill(struct containerv_container* container, pid_t pid)
 {
     struct containerv_socket_client* client;
     int                              status;
-    VLOG_TRACE("containerv[host]", "containerv_kill()\n");
+    VLOG_DEBUG("containerv[host]", "containerv_kill()\n");
 
-    VLOG_TRACE("containerv[host]", "connecting to %s\n", &container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
     client = containerv_socket_client_open(&container->id[0]);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_kill: failed to connect to server\n");
@@ -666,9 +676,9 @@ int containerv_script(struct containerv_container* container, const char* script
 {
     struct containerv_socket_client* client;
     int                              status;
-    VLOG_TRACE("containerv[host]", "containerv_script()\n");
+    VLOG_DEBUG("containerv[host]", "containerv_script()\n");
 
-    VLOG_TRACE("containerv[host]", "connecting to %s\n", &container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
     client = containerv_socket_client_open(&container->id[0]);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_spawn: failed to connect to server\n");
@@ -689,22 +699,22 @@ int containerv_destroy(struct containerv_container* container)
     struct containerv_socket_client* client;
     struct containerv_event          event = { 0 };
     int                              status;
-    VLOG_TRACE("containerv[host]", "containerv_destroy()\n");
+    VLOG_DEBUG("containerv[host]", "containerv_destroy()\n");
 
-    VLOG_TRACE("containerv[host]", "connecting to %s\n", &container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
     client = containerv_socket_client_open(&container->id[0]);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_destroy: failed to connect to server\n");
         return status;
     }
 
-    VLOG_TRACE("containerv[host]", "sending destroy command\n");
+    VLOG_DEBUG("containerv[host]", "sending destroy command\n");
     status = containerv_socket_client_destroy(client);
     if (status) {
         VLOG_ERROR("containerv[host]", "containerv_destroy: failed to execute command\n");
     }
 
-    VLOG_TRACE("containerv[host]", "waiting for container to shutdown...\n");
+    VLOG_DEBUG("containerv[host]", "waiting for container to shutdown...\n");
     status = __wait_for_container_event(container, &event);
     if (status) {
         VLOG_ERROR("containerv[host]", "waiting for container event returned: %i\n", status);
@@ -718,7 +728,7 @@ int containerv_destroy(struct containerv_container* container)
         return status;
     }
 
-    VLOG_TRACE("containerv[host]", "cleaning up\n");
+    VLOG_DEBUG("containerv[host]", "cleaning up\n");
     __container_delete(container);
     return 0;
 }
@@ -731,14 +741,14 @@ int containerv_join(const char* containerId)
     int                              status;
     int                              count;
 
-    VLOG_TRACE("containerv[host]", "connecting to %s\n", containerId);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", containerId);
     client = containerv_socket_client_open(containerId);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_join: failed to connect to server\n");
         return status;
     }
 
-    VLOG_TRACE("containerv[host]", "reading container configuration\n");
+    VLOG_DEBUG("containerv[host]", "reading container configuration\n");
     status = containerv_socket_client_get_root(client, &chrPath[0], PATH_MAX);
     if (status) {
         VLOG_ERROR("containerv[host]", "containerv_join: failed to read container configuration\n");
@@ -763,7 +773,7 @@ int containerv_join(const char* containerId)
         return status;
     }
 
-    VLOG_TRACE("containerv[host]", "preparing environment\n");
+    VLOG_DEBUG("containerv[host]", "preparing environment\n");
     for (int i = 0; i < count; i++) {
         if (setns(fds[i].fd, 0))  {
             VLOG_WARNING("containerv[host]", "containerv_join: failed to join container namespace %i of type %i\n",
@@ -771,7 +781,7 @@ int containerv_join(const char* containerId)
         }
     }
 
-    VLOG_TRACE("containerv[host]", "joining container\n");
+    VLOG_DEBUG("containerv[host]", "joining container\n");
     status = chroot(&chrPath[0]);
     if (status) {
         VLOG_ERROR("containerv[host]", "containerv_join: failed to chroot into container root %s\n", &chrPath[0]);
@@ -785,12 +795,12 @@ int containerv_join(const char* containerId)
         return status;
     }
 
-    VLOG_TRACE("containerv[host]", "dropping capabilities\n");
+    VLOG_DEBUG("containerv[host]", "dropping capabilities\n");
     status = containerv_drop_capabilities();
     if (status) {
         VLOG_ERROR("containerv[child]", "containerv_join: failed to drop capabilities\n");
         return status;
     }
-    VLOG_TRACE("containerv[child]", "successfully joined container\n");
+    VLOG_DEBUG("containerv[child]", "successfully joined container\n");
     return 0;
 }

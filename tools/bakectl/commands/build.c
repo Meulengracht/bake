@@ -167,7 +167,7 @@ static int __build_part(struct recipe* recipe, const char* partName, const char*
         if (part->toolchain != NULL) {
             toolchain = __resolve_toolchain(recipe, part->toolchain, platform);
             if (toolchain == NULL) {
-                VLOG_ERROR("kitchen", "part %s was marked for platform toolchain, but no matching toolchain specified for platform %s\n", part->name, platform);
+                VLOG_ERROR("bakectl", "part %s was marked for platform toolchain, but no matching toolchain specified for platform %s\n", part->name, platform);
                 return -1;
             }
         }
