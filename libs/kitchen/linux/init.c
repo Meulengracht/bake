@@ -18,7 +18,7 @@
 
 #include <chef/kitchen.h>
 #include <chef/platform.h>
-#include <chef/user.h>
+#include <chef/containerv-user-linux.h>
 #include <libingredient.h>
 #include <libpkgmgr.h>
 #include <vlog.h>
@@ -101,7 +101,7 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
         return NULL;
     }
 
-    user = containerv_user_new();
+    user = containerv_user_real();
     if (user == NULL) {
         VLOG_FATAL("kitchen", "failed to allocate memory for user information\n");
         free(env);
@@ -111,8 +111,8 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
     // we are not using the parent environment yet
     (void)parentEnv;
 
-    env[0] = __fmt_env_option("USER", user->caller_name);
-    env[1] = __fmt_env_option("USERNAME", user->caller_name);
+    env[0] = __fmt_env_option("USER", user->name);
+    env[1] = __fmt_env_option("USERNAME", user->name);
     env[2] = __fmt_env_option("HOME", "/chef");
     env[3] = __fmt_env_option("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:");
     env[4] = __fmt_env_option("LD_LIBRARY_PATH", "/usr/local/lib");

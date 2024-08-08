@@ -20,6 +20,7 @@
 #include <chef/platform.h>
 #include <chef/rootfs/debootstrap.h>
 #include <chef/containerv.h>
+#include <chef/containerv-user-linux.h>
 #include <libingredient.h>
 #include <libpkgmgr.h>
 #include <libgen.h>
@@ -248,6 +249,7 @@ static char* __join_packages(struct recipe_cache_package_change* changes, int co
 
 static int __update_packages(struct kitchen* kitchen)
 {
+    struct containerv_user*             root;
     struct recipe_cache_package_change* changes;
     int                                 count;
     int                                 status;
@@ -264,16 +266,19 @@ static int __update_packages(struct kitchen* kitchen)
     }
 
     snprintf(&buffer[0], sizeof(buffer), "/chef/update.sh");
+    root = containerv_user_from("root", 0, 0);
     status = containerv_spawn(
         kitchen->container,
         &buffer[0],
         &(struct containerv_spawn_options) {
             .arguments = NULL,
             .environment = (const char* const*)kitchen->base_environment,
+            .as_user = root,
             .flags = CV_SPAWN_WAIT
         },
         NULL
     );
+    containerv_user_delete(root);
     if (status) {
         VLOG_ERROR("kitchen", "__execute_script_in_container: failed to execute script\n");
         return status;

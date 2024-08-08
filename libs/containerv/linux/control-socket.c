@@ -17,6 +17,7 @@
  */
 
 #include <chef/platform.h>
+#include <chef/containerv-user-linux.h>
 #include "private.h"
 #include <libgen.h> // dirname
 #include <stdio.h>
@@ -50,6 +51,8 @@ struct __socket_response_getfds {
 
 struct __socket_command_spawn {
     enum container_spawn_flags flags;
+    uid_t                      asUid;
+    gid_t                      asGid;
 
     // lengths include zero terminator
     size_t path_length;
@@ -301,7 +304,15 @@ static int __spawn(struct containerv_container* container, struct __socket_comma
     }
 
     // perform the actual execution, only the primary process here actually returns
-    status = __containerv_spawn(container, path, (const char* const*)argv, (const char* const*)envv, pidOut);
+    status = __containerv_spawn(
+        container,
+        &(struct __containerv_spawn_options) {
+            .path = path,
+            .argv = (const char* const*)argv,
+            .envv = (const char* const*)envv,
+            .uid = command->data.spawn.asUid,
+            .gid = command->data.spawn.asGid
+        }, pidOut);
     if (!status && (command->data.spawn.flags & CV_SPAWN_WAIT)) {
         if (waitpid(*pidOut, &status, 0) != *pidOut) {
             VLOG_ERROR("containerv[child]", "__spawn: failed to wait for pid %u\n", *pidOut);
@@ -579,6 +590,8 @@ int containerv_socket_client_spawn(
 
     cmd.type = __SOCKET_COMMAND_SPAWN;
     cmd.data.spawn.flags = options->flags;
+    cmd.data.spawn.asUid = (options->as_user != NULL) ? options->as_user->uid : (uid_t)-1;
+    cmd.data.spawn.asGid = (options->as_user != NULL) ? options->as_user->gid : (gid_t)-1;
     cmd.data.spawn.path_length = strlen(path) + 1;
     cmd.data.spawn.argument_length = (options->arguments != NULL) ? (strlen(options->arguments) + 1) : 0;
     cmd.data.spawn.environment_length = (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
