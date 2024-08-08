@@ -165,7 +165,7 @@ static int __wait_for_container_event(struct containerv_container* container, st
     return 0;
 }
 
-static pid_t __exec(const char* path, const char* const* argv, const char* const* envv)
+static pid_t __exec(struct __containerv_spawn_options* options)
 {
     pid_t processId;
     int   status;
@@ -176,23 +176,41 @@ static pid_t __exec(const char* path, const char* const* argv, const char* const
         return processId;
     }
 
-    status = execve(path, (char* const*)argv, (char* const*)envv);
+    if (options->gid != (gid_t)-1) {
+        VLOG_DEBUG("containerv[child]", "switching group (%i)\n", options->gid);
+        status = setgid(options->gid);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "[%s]: failed to switch group: %i (gid=%i)\n", status, options->gid);
+            _Exit(-EPERM);
+        }
+    }
+
+    if (options->uid != (gid_t)-1) {
+        VLOG_DEBUG("containerv[child]", "switching user (%i)\n", options->uid);
+        status = setuid(options->uid);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "[%s]: failed to switch user: %i (uid=%i)\n", status, options->uid);
+            _Exit(-EPERM);
+        }
+    }
+
+    status = execve(options->path, (char* const*)options->argv, (char* const*)options->envv);
     if (status) {
-        VLOG_ERROR("containerv[child]", "[%s]: failed to execute: %i\n", path, status);
+        VLOG_ERROR("containerv[child]", "[%s]: failed to execute: %i\n", options->path, status);
     }
     _Exit(status);
     return 0; // never reached
 }
 
-int __containerv_spawn(struct containerv_container* container, const char* path, const char* const* argv, const char* const* envv, pid_t* pidOut)
+int __containerv_spawn(struct containerv_container* container, struct __containerv_spawn_options* options, pid_t* pidOut)
 {
     struct containerv_container_process* proc;
     pid_t                                processId;
-    VLOG_DEBUG("containerv[child]", "__containerv_spawn(path=%s)\n", path);
+    VLOG_DEBUG("containerv[child]", "__containerv_spawn(path=%s)\n", options->path);
 
-    processId = __exec(path, (const char* const*)argv, (const char* const*)envv);
+    processId = __exec(options);
     if (processId == (pid_t)-1) {
-        VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to exec %s\n", path);
+        VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to exec %s\n", options->path);
         return -1;
     }
 

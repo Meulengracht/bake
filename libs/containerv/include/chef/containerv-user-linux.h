@@ -19,17 +19,17 @@
 #ifndef __CONTAINERV_USER_H__
 #define __CONTAINERV_USER_H__
 
-struct containerv_user {
-    char*        caller_name;
-    unsigned int caller_uid;
-    unsigned int caller_gid;
+#include <sys/types.h>
 
-    char*        effective_name;
-    unsigned int effective_uid;
-    unsigned int effective_gid;
+struct containerv_user {
+    char* name;
+    uid_t uid;
+    gid_t gid;
 };
 
-extern struct containerv_user* containerv_user_new(void);
+extern struct containerv_user* containerv_user_real(void);
+extern struct containerv_user* containerv_user_effective(void);
+extern struct containerv_user* containerv_user_from(char* name, uid_t uid, gid_t gid);
 extern void                    containerv_user_delete(struct containerv_user* user);
 
 #endif //!__CONTAINERV_USER_H__

@@ -117,7 +117,15 @@ extern int containerv_socket_client_get_root(struct containerv_socket_client* cl
 extern int containerv_socket_client_get_nss(struct containerv_socket_client* client, struct containerv_ns_fd fds[CV_NS_COUNT], int* count);
 extern int containerv_socket_client_destroy(struct containerv_socket_client* client);
 
-extern int __containerv_spawn(struct containerv_container* container, const char* path, const char* const* argv, const char* const* envv, pid_t* pidOut);
+struct __containerv_spawn_options {
+    const char*        path;
+    const char* const* argv;
+    const char* const* envv;
+    uid_t              uid;
+    gid_t              gid;
+};
+
+extern int __containerv_spawn(struct containerv_container* container, struct __containerv_spawn_options* options, pid_t* pidOut);
 extern int __containerv_kill(struct containerv_container* container, pid_t processId);
 extern void __containerv_destroy(struct containerv_container* container);
 
