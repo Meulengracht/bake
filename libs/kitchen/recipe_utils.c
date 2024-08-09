@@ -19,6 +19,7 @@
 #include <ctype.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
+#include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
@@ -110,7 +111,7 @@ static int __determine_recipe_target(struct recipe* recipe, const char** platfor
     }
 
     list_foreach(&platform->archs, i) {
-        if (strcmp(((struct oven_value_item*)i)->value, *archOverride) == 0) {
+        if (strcmp(((struct list_item_string*)i)->value, *archOverride) == 0) {
             return 0;
         }
     }
@@ -135,6 +136,33 @@ int recipe_validate_target(struct recipe* recipe, const char** expectedPlatform,
     if (*expectedArch == NULL) {
         // no arch override, we default to host
         *expectedArch = CHEF_ARCHITECTURE_STR;
+    }
+    return 0;
+}
+
+int recipe_parse_part_step(const char* str, char** part, char** step)
+{
+    char* split;
+
+    if (str == NULL) {
+        *part = NULL;
+        *step = NULL;
+        return 0;
+    }
+
+    split = strchr(str, '/');
+    if (split == NULL) {
+        *part = platform_strdup(str);
+        if (*part == NULL) {
+            return -1;
+        }
+        return 0;
+    }
+    *part = platform_strndup(str, (size_t)(split - str));
+    *step = platform_strdup(split + 1);
+    if (*part == NULL || *step == NULL) {
+        free(*part);
+        return -1;
     }
     return 0;
 }

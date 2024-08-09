@@ -30,6 +30,7 @@ struct served_command {
     string path;
     string arguments;
     string data_path;
+    string container_control_path;
 }
 
 // served_package describes a package with small details used

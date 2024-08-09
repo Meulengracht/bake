@@ -22,7 +22,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 int platform_script(const char* script)
 {

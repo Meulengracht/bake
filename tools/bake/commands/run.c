@@ -23,7 +23,6 @@
 
 #include <chef/client.h>
 #include <errno.h>
-#include <liboven.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <chef/kitchen.h>
@@ -35,6 +34,8 @@
 #include <vlog.h>
 
 #include "commands.h"
+
+static struct kitchen g_kitchen = { 0 };
 
 static void __print_help(void)
 {
@@ -208,25 +209,23 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
 
 static void __cleanup_systems(int sig)
 {
-    (void)sig;
-    printf("termination requested, cleaning up\n"); // not safe
-    exit(0); // not safe, manually clean up systems and call _Exit()
-}
+    // printing as a part of a signal handler is not safe
+    // but we live dangerously
+    printf("termination requested, cleaning up\n");
 
-static void __debug(void)
-{
-    // wait for any key and then return
-    printf("press any key to continue\n");
-    getchar();
+    // cleanup the kitchen, this will take out most of the systems
+    // setup as a part of all this.
+    kitchen_destroy(&g_kitchen);
+
+    // Do a quick exit, which is recommended to do in signal handlers
+    // and use the signal as the exit code
+    _Exit(-sig);
 }
 
 int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    struct kitchen_init_options  initOptions = { 0 };
     struct kitchen_setup_options setupOptions = { 0 };
-    struct kitchen         kitchen;
-    int                    debug = 0;
-    int                    status;
+    int                          status;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -237,8 +236,6 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
-            } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--debug")) {
-                debug = 1;
             }
         }
     }
@@ -266,12 +263,13 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
 
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
+        .recipe_path = options->recipe_path,
+        .envp = (const char* const*)envp,
         .project_path = options->cwd,
         .pkg_environment = NULL,
-        .confined = options->recipe->environment.build.confinement,
         .target_platform = options->platform,
         .target_architecture = options->architecture,
-    }, &kitchen);
+    }, &g_kitchen);
     if (status) {
         VLOG_ERROR("bake", "failed to initialize kitchen: %s\n", strerror(errno));
         return -1;
@@ -280,38 +278,33 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     status = __prep_ingredients(options->recipe, options->platform, options->architecture, &setupOptions);
     if (status) {
         VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
-        return -1;
+        goto cleanup;
     }
 
     // setup linux options
-    setupOptions.envp = (const char* const*)envp;
     setupOptions.packages = &options->recipe->environment.host.packages;
 
     // setup kitchen hooks
     setupOptions.setup_hook.bash = options->recipe->environment.hooks.bash;
     setupOptions.setup_hook.powershell = options->recipe->environment.hooks.powershell;
-    status = kitchen_setup(&setupOptions, &kitchen);
+    status = kitchen_setup(&g_kitchen, &setupOptions);
     if (status) {
         VLOG_ERROR("bake", "failed to setup kitchen: %s\n", strerror(errno));
-        return -1;
+        goto cleanup;
     }
 
-    status = kitchen_recipe_make(&kitchen, options->recipe);
+    status = kitchen_recipe_make(&g_kitchen, options->recipe);
     if (status) {
         VLOG_ERROR("bake", "failed to make recipes\n");
-        if (debug) {
-            __debug();
-        }
-        return -1;
+        goto cleanup;
     }
 
-    status = kitchen_recipe_pack(&kitchen, options->recipe);
+    status = kitchen_recipe_pack(&g_kitchen, options->recipe);
     if (status) {
         VLOG_ERROR("bake", "failed to construct packs\n");
-        if (debug) {
-            __debug();
-        }
-        return -1;
     }
+
+cleanup:
+    kitchen_destroy(&g_kitchen);
     return status;
 }

@@ -25,6 +25,7 @@
 
 // imports that don't really need to be exposed
 struct pkgmngr;
+struct containerv_container;
 
 struct kitchen_ingredient {
     struct list_item list_header;
@@ -38,16 +39,16 @@ struct kitchen_setup_hook {
 };
 
 struct kitchen_init_options {
-    struct recipe* recipe;
-    const char*    project_path;
-    const char*    pkg_environment;
-    int            confined;
-    const char*    target_platform;
-    const char*    target_architecture;
+    struct recipe*     recipe;
+    const char*        recipe_path;
+    const char* const* envp;
+    const char*        project_path;
+    const char*        pkg_environment;
+    const char*        target_platform;
+    const char*        target_architecture;
 };
 
 struct kitchen_setup_options {
-    const char* const* envp;
     struct list        host_ingredients; // list<kitchen_ingredient>
     struct list        build_ingredients; // list<kitchen_ingredient>
     struct list        runtime_ingredients; // list<kitchen_ingredient>
@@ -56,30 +57,34 @@ struct kitchen_setup_options {
     struct kitchen_setup_hook setup_hook;
 
     // linux specifics
-    struct list* packages; // list<oven_value_item>
+    struct list* packages; // list<list_item_string>
 };
 
 struct kitchen_purge_options {
     // TODO
+    int dummy;
 };
 
-struct kitchen_recipe_purge_options {
-    // TODO
+struct kitchen_recipe_clean_options {
+    // part_or_step can either reference a step in the format of '<part>/<step>'
+    // or reference just a part in the format of '<part>'. If this is NULL, then
+    // this will clean the entire recipe.
+    const char* part_or_step;
 };
 
 struct kitchen {
     // internal state
     uint32_t       magic;
-    int            original_root_fd;
-    int            confined;
     struct recipe* recipe;
+    const char*    recipe_path;
 
+    char* host_cwd;
     char* target_platform;
     char* target_architecture;
-    char* real_project_path;
-    char* shared_output_path;
 
-    struct pkgmngr* pkg_manager;
+    struct pkgmngr*              pkg_manager;
+    struct containerv_container* container;
+    char**                       base_environment;
 
     // external paths that point inside chroot
     // i.e paths valid outside chroot
@@ -100,6 +105,7 @@ struct kitchen {
     char* build_toolchains_path;
     char* install_root;
     char* install_path;
+    char* bakectl_path;
 };
 
 /**
@@ -114,11 +120,18 @@ extern int kitchen_initialize(struct kitchen_init_options* options, struct kitch
 /**
  * @brief 
  * 
- * @param options 
  * @param kitchen 
+ * @param options 
  * @return int 
  */
-extern int kitchen_setup(struct kitchen_setup_options* options, struct kitchen* kitchen);
+extern int kitchen_setup(struct kitchen* kitchen, struct kitchen_setup_options* options);
+
+/**
+ * @brief 
+ * 
+ * @param kitchen 
+ */
+extern void kitchen_destroy(struct kitchen* kitchen);
 
 /**
  * @brief 
@@ -154,14 +167,6 @@ extern int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe);
  * @param stepType 
  * @return int 
  */
-extern int kitchen_recipe_clean(struct kitchen* kitchen);
-
-/**
- * @brief Cleans up the build and install areas, resetting the entire state
- * of the current project context.
- * 
- * @return int Returns 0 on success, -1 on failure with errno set accordingly.
- */
-extern int kitchen_recipe_purge(struct kitchen* kitchen, struct kitchen_recipe_purge_options* options);
+extern int kitchen_recipe_clean(struct kitchen* kitchen, struct kitchen_recipe_clean_options* options);
 
 #endif //!__CHEF_KITCHEN_H__

@@ -32,7 +32,7 @@ struct pkgmngr_options {
 
 struct pkgmngr {
     int  (*make_available)(struct pkgmngr*, struct ingredient* ingredient);
-    int  (*add_overrides)(struct pkgmngr*, struct list* environment);
+    int  (*add_overrides)(struct pkgmngr*, char** environment);
     void (*destroy)(struct pkgmngr*);
 };
 

@@ -19,7 +19,6 @@
 #include <chef/platform.h>
 #include <pwd.h>
 #include <string.h>
-#include <unistd.h>
 
 int platform_getuserdir(char* buffer, size_t length)
 {

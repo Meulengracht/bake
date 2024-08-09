@@ -189,12 +189,12 @@ static void __add_default_prefix_paths(char* output, const char* platform, const
         // TODO
     } else if (strcmp(platform, "linux") == 0) {
         // Add defaults like the root and /usr prefix
-        strcat(&output[0], buildIngredientsRoot);
-        strcat(&output[0], ";");
-        strcat(&output[0], buildIngredientsRoot);
-        strcat(&output[0], "/usr");
+        strcat(output, buildIngredientsRoot);
+        strcat(output, ";");
+        strcat(output, buildIngredientsRoot);
+        strcat(output, "/usr");
     } else if (strcmp(platform, "vali") == 0) {
-        strcat(&output[0], buildIngredientsRoot);
+        strcat(output, buildIngredientsRoot);
     }
 }
 
@@ -203,17 +203,40 @@ static char* __replace_path_prefix(const char* previousValue, const char* platfo
     char   tmp[4096] = { 0 };
     size_t length;
 
+    // Ensure that our result is wrapped in quotes
+    tmp[0] = '\\';
+    tmp[1] = '\"';
+
     // Expect generally that people don't modify this
+    // However if they do, let us produce a modified version
     if (previousValue == NULL) {
         __add_default_prefix_paths(&tmp[0], platform, paths->build_ingredients);
+        strcat(&tmp[0], "\\\"");
         return platform_strdup(&tmp[0]);
     }
 
-    // However if they do, let us produce a modified version
-    strcpy(tmp, previousValue);
+    // skip over the quotation if its there - we put them
+    // ourselves
+    if (previousValue[0] == '\\') {
+        previousValue++;
+    }
+    if (previousValue[0] == '\"') {
+        previousValue++;
+    }
+
+    strcat(tmp, previousValue);
     length = strlen(tmp);
+
+    // overwrite the the quotation if it exists
+    if (tmp[length - 1] == '\"') {
+        length--;
+        if (tmp[length - 1] == '\\') {
+            length--;
+        }
+    }
     tmp[length++] = ';';
     __add_default_prefix_paths(&tmp[length], platform, paths->build_ingredients);
+    strcat(&tmp[0], "\\\"");
     return platform_strdup(&tmp[0]);
 }
 
@@ -349,7 +372,7 @@ static char* __replace_or_add_cmake_prefixes(const char* platform, const char* a
     return newArguments;
 }
 
-static void __meson_output_handler(const char* line, enum platform_spawn_output_type type) 
+static void __cmake_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
         VLOG_TRACE("cmake", line);
@@ -447,7 +470,7 @@ int cmake_main(struct oven_backend_data* data, union oven_backend_options* optio
         (const char* const*)environment,
         &(struct platform_spawn_options) {
             .cwd = data->paths.build,
-            .output_handler = __meson_output_handler
+            .output_handler = __cmake_output_handler
         }
     );
     vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);

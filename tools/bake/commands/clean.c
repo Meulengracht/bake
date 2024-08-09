@@ -34,6 +34,8 @@
 
 #include "commands.h"
 
+static struct kitchen g_kitchen = { 0 };
+
 static void __print_help(void)
 {
     printf("Usage: bake clean [options|type]\n");
@@ -51,9 +53,17 @@ static void __print_help(void)
 
 static void __cleanup_systems(int sig)
 {
-    (void)sig;
-    printf("bake: termination requested, cleaning up\n");
-    exit(0);
+    // printing as a part of a signal handler is not safe
+    // but we live dangerously
+    printf("termination requested, cleaning up\n");
+
+    // cleanup the kitchen, this will take out most of the systems
+    // setup as a part of all this.
+    kitchen_destroy(&g_kitchen);
+
+    // Do a quick exit, which is recommended to do in signal handlers
+    // and use the signal as the exit code
+    _Exit(-sig);
 }
 
 static int __ask_yes_no_question(const char* question)
@@ -66,22 +76,11 @@ static int __ask_yes_no_question(const char* question)
     return answer[0] == 'Y';
 }
 
-static int __is_clean_type(const char* type)
-{
-    if (strcmp(type, "all") == 0) {
-        return 1;
-    } else if (strcmp(type, "build") == 0) {
-        return 0;
-    }
-    return 0;
-}
-
 int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    struct kitchen kitchen;
-    int            purge = 0;
-    char*          type = "all";
-    int            status;
+    int   purge = 0;
+    char* partOrStep = NULL;
+    int   status;
 
     // handle individual help command
     if (argc > 2) {
@@ -91,8 +90,8 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
                 return 0;
             } else if (!strcmp(argv[i], "--purge")) {
                 purge = 1;
-            } else if (argv[i][0] != '-' && __is_clean_type(argv[i])) {
-                type = argv[i];
+            } else if (argv[i][0] != '-') {
+                partOrStep = argv[i];
             }
         }
     }
@@ -121,10 +120,9 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
         .recipe = options->recipe,
         .project_path = options->cwd,
         .pkg_environment = NULL,
-        .confined = options->recipe->environment.build.confinement,
         .target_platform = options->platform,
         .target_architecture = options->architecture
-    }, &kitchen);
+    }, &g_kitchen);
     if (status) {
         VLOG_ERROR("bake", "failed to initialize kitchen: %s\n", strerror(errno));
         return -1;
@@ -133,12 +131,12 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
     // ignore CTRL-C request once cleanup starts
     signal(SIGINT, SIG_IGN);
 
-    if (strcmp(type, "build") == 0) {
-        return kitchen_recipe_clean(&kitchen);
-    } else if (strcmp(type, "all") == 0) {
-        return kitchen_recipe_purge(&kitchen, NULL);
-    }
-    
-    fprintf(stderr, "bake: %s is not recognized as an action\n", type);
-    return -1;
+    status = kitchen_recipe_clean(&g_kitchen,
+        &(struct kitchen_recipe_clean_options) {
+            .part_or_step = partOrStep
+        }
+    );
+
+    kitchen_destroy(&g_kitchen);
+    return status;
 }

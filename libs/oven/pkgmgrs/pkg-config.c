@@ -183,65 +183,35 @@ cleanup:
     return status;
 }
 
-static struct chef_keypair_item* __compose_keypair(const char* key, const char* value)
+static char* __compose_keypair(const char* key, const char* value)
 {
-    struct chef_keypair_item* item = calloc(sizeof(struct chef_keypair_item), 1);
-    if (item == NULL) {
+    size_t size = strlen(key) + strlen(value) + 2;
+    char*  envItem = calloc(size, 1);
+    if (envItem == NULL) {
         return NULL;
     }
-    item->key = platform_strdup(key);
-    if (item->key == NULL) {
-        free(item);
-    }
-    item->value = platform_strdup(value);
-    if (item->value == NULL) {
-        free((void*)item->key);
-        free(item);
-    }
-    return item;
+    snprintf(&envItem[0], size, "%s=%s", key, value);
+    return envItem;
 }
 
-static int __add_or_replace_pkgconfig_paths(struct pkgmngr* pkgmngr, struct list* environment)
+static int __add_pkgconfig_paths(struct pkgmngr* pkgmngr, char** environment)
 {
-    // Look and update/add the following language flags to account for
-    // ingredient include paths
     struct pkgconfig* pkgconfig = (struct pkgconfig*)pkgmngr;
-    struct list_item* item;
+    int               index = 0;
     struct {
         const char* ident;
-        int         fixed;
     } idents[] = {
-        { "PKG_CONFIG_PATH", 0 },
-        { "PKG_CONFIG_LIBDIR", 0 },
-        { NULL, 0 }
+        { "PKG_CONFIG_PATH" },
+        { "PKG_CONFIG_LIBDIR" },
+        { NULL }
     };
 
-    // Replace any environmental variable already provided by recipe
-    list_foreach(environment, item) {
-        struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
-        for (int i = 0; idents[i].ident != NULL; i++) {
-            if (!strcmp(keypair->key, idents[i].ident)) {
-                const char* tmp = keypair->value;
-                keypair->value = platform_strdup(__get_pcroot2(pkgconfig));
-                if (keypair->value == NULL) {
-                    keypair->value = tmp;
-                    return -1;
-                }
-                free((void*)tmp);
-                idents[i].fixed = 1;
-            }
-        }
-    }
+    // scroll to end
+    while (environment[index]) index++;
 
-    // Add any that was not provided
+    // add variables
     for (int i = 0; idents[i].ident != NULL; i++) {
-        if (!idents[i].fixed) {
-            item = (struct list_item*)__compose_keypair(idents[i].ident, __get_pcroot2(pkgconfig));
-            if (item == NULL) {
-                return -1;
-            }
-            list_add(environment, item);
-        }
+        environment[index++] = __compose_keypair(idents[i].ident, __get_pcroot2(pkgconfig));
     }
     return 0;
 }
@@ -273,7 +243,7 @@ struct pkgmngr* pkgmngr_pkgconfig_new(struct pkgmngr_options* options)
     }
 
     pkgconfig->base.make_available = __make_available;
-    pkgconfig->base.add_overrides  = __add_or_replace_pkgconfig_paths;
+    pkgconfig->base.add_overrides  = __add_pkgconfig_paths;
     pkgconfig->base.destroy        = __destroy;
 
     // build roots

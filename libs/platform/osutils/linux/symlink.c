@@ -22,7 +22,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 char* __prefix_path(const char* base, const char* path)
 {

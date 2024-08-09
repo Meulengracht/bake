@@ -29,8 +29,13 @@ static struct containerv_container* __create_container(struct served_application
     char*                        rootFs;
 
     rootFs = served_application_get_mount_path(application);
-    status = containerv_create(rootFs, "mountfs", 0,
-                               NULL, 0, &container);
+    status = containerv_create(
+        rootFs,
+        0,
+        NULL,
+        0,
+        &container
+    );
     free(rootFs);
     if (status) {
         return NULL;

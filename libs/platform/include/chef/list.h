@@ -32,6 +32,11 @@ struct list {
     int count;
 };
 
+struct list_item_string {
+    struct list_item list_header;
+    const char*      value;
+};
+
 #define list_foreach(list, item) \
     for ((item) = (list)->head; (item) != NULL; (item) = (item)->next)
 

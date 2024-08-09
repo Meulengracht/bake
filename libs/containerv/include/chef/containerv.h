@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,36 +28,65 @@ typedef pid_t process_handle_t;
 #endif
 
 struct containerv_container;
+struct containerv_user;
 
 enum containerv_mount_flags {
     CV_MOUNT_BIND = 0x1,
     CV_MOUNT_RECURSIVE = 0x2,
-    CV_MOUNT_READONLY = 0x4
+    CV_MOUNT_READONLY = 0x4,
+    CV_MOUNT_CREATE = 0x100
 };
 
 struct containerv_mount {
-    char*                       source;
-    char*                       destination;
+    char*                       what;
+    char*                       where;
+    char*                       fstype;
     enum containerv_mount_flags flags;
 };
 
 enum containerv_capabilities {
     CV_CAP_NETWORK = 0x1,
     CV_CAP_PROCESS_CONTROL = 0x2,
+    CV_CAP_IPC = 0x4,
+    CV_CAP_FILESYSTEM = 0x8,
+    CV_CAP_CGROUPS = 0x10
 };
 
+/**
+ * @brief Creates a new container.
+ * @param rootFs The absolute path of where the chroot root is.
+ * @param capabilities
+ */
 extern int containerv_create(
-        const char*                   rootFs,
-        const char*                   mountFs,
-        enum containerv_capabilities  capabilities,
-        struct containerv_mount*      mounts,
-        int                           mountsCount,
-        struct containerv_container** containerOut);
+    const char*                   rootFs,
+    enum containerv_capabilities  capabilities,
+    struct containerv_mount*      mounts,
+    int                           mountsCount,
+    struct containerv_container** containerOut
+);
 
-extern int container_exec(struct containerv_container* container, const char* path, process_handle_t * pidOut);
+enum container_spawn_flags {
+    CV_SPAWN_WAIT = 0x1
+};
 
-extern int container_kill(struct containerv_container* container, process_handle_t pid);
+struct containerv_spawn_options {
+    const char*                arguments;
+    const char* const*         environment;
+    struct containerv_user*    as_user;
+    enum container_spawn_flags flags;
+};
 
-extern int container_destroy(struct containerv_container* container);
+extern int containerv_spawn(
+    struct containerv_container*     container,
+    const char*                      path,
+    struct containerv_spawn_options* options,
+    process_handle_t*                pidOut
+);
+
+extern int containerv_kill(struct containerv_container* container, process_handle_t pid);
+
+extern int containerv_destroy(struct containerv_container* container);
+
+extern int containerv_join(const char* containerId);
 
 #endif //!__CONTAINERV_H__

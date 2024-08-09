@@ -132,6 +132,7 @@ typedef SSIZE_T ssize_t;
 #define PATH_MAX MAX_PATH
 #elif __linux__
 #include <linux/limits.h>
+#include <unistd.h>
 #else
 #include <limits.h>
 #endif
@@ -176,6 +177,26 @@ extern char*  strreplace(char* text, const char* find, const char* replaceWith);
 extern int    strendswith(const char* text, const char* suffix);
 extern int    strbool(const char* string);
 
+/**
+ * @brief Converts a flat string of arguments in the form of "arg0 arg1 arg2 \"arg3 but with spaces\""
+ * into an array of arguments like:
+ * argv[0] = arg0
+ * argv[1] = arg1
+ * argv[2] = arg2
+ * argv[3] = arg3 but with spaces
+ * It's important to note here that the provided string <arguments> will be modified by this function.
+ * Use strargv_free to free the array correctly again. Only the array is allocated for this, the members
+ * will be pointing into the original argument, and this will not be freed.
+ * 
+ * @param arguments The string of flat arguments to split
+ * @param arg0      Optionally, a custom arg0 can be inserted before any of the other
+ * @param argc      A pointer to an int value where the number of resulting arguments will be stored
+ * @return          A char array of char strings that represent the arguments.
+ *                  The array will be NULL terminated.
+ */
+extern char** strargv(char* arguments, const char* arg0, int* argc);
+extern void   strargv_free(char** argv);
+
 #define FILTER_FOLDCASE 0x1
 
 /**
@@ -210,8 +231,8 @@ extern int platform_rmdir(const char* path);
 /**
  * @brief Check whether the path exists and is a directory
  * 
- * @param[In] path The path to check
- * @#define CHEF_ARCHITECTURE_STR int 0 if the path exists and is a directory, -1 otherwise
+ * @param path The path to check
+ * @return     0 if the path exists and is a directory, -1 otherwise
  */
 extern int platform_isdir(const char* path);
 extern int platform_stat(const char* path, struct platform_stat* stats);
@@ -222,6 +243,7 @@ extern int platform_unlink(const char* path);
 extern char* platform_abspath(const char* path);
 extern int platform_getcwd(char* buffer, size_t length);
 extern int platform_getuserdir(char* buffer, size_t length);
+extern int platform_chdir(const char* path);
 extern int platform_chmod(const char* path, uint32_t permissions);
 extern int platform_getfiles(const char* path, int recursive, struct list* files);
 extern int platform_getfiles_destroy(struct list* files);

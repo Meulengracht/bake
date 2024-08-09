@@ -17,7 +17,6 @@
  */
 
 #include <chef/platform.h>
-#include <unistd.h>
 
 int platform_cpucount(void)
 {

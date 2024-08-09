@@ -69,7 +69,7 @@ struct recipe_platform {
     struct list_item list_header;
     const char*      name;
     const char*      toolchain;
-    struct list      archs;  // list<oven_value_item>
+    struct list      archs;  // list<list_item_string>
 };
 
 enum recipe_ingredient_type {
@@ -85,7 +85,7 @@ struct recipe_ingredient {
     const char*                 channel;
     const char*                 version;
     struct ingredient_source    source;
-    struct list                 filters;  // list<oven_value_item>
+    struct list                 filters;  // list<list_item_string>
 };
 
 struct recipe_pack_ingredient_options {
@@ -96,13 +96,24 @@ struct recipe_pack_ingredient_options {
     struct list linker_flags;
 };
 
+struct recipe_pack_command {
+    struct list_item       list_header;
+    const char*            name;
+    const char*            description;
+    const char*            icon;
+    enum chef_command_type type;
+    int                    allow_system_libraries;
+    const char*            path;
+    struct list            arguments; // list<list_item_string>
+};
+
 struct recipe_pack {
     struct list_item                      list_header;
     const char*                           name;
     enum chef_package_type                type;
     struct recipe_pack_ingredient_options options;
-    struct list                           filters;  // list<oven_value_item>
-    struct list                           commands; // list<oven_pack_command>
+    struct list                           filters;  // list<list_item_string>
+    struct list                           commands; // list<recipe_pack_command>
 };
 
 struct recipe_host_environment {
@@ -110,7 +121,7 @@ struct recipe_host_environment {
     struct list ingredients; // list<recipe_ingredient>
 
     // linux specific host options
-    struct list packages; // list<oven_value_item>
+    struct list packages; // list<list_item_string>
 };
 
 struct recipe_build_environment {
@@ -164,6 +175,7 @@ extern void recipe_destroy(struct recipe* recipe);
 extern int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, char** channel, char** version);
 extern const char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform);
 extern int recipe_validate_target(struct recipe* recipe, const char** expectedPlatform, const char** expectedArch);
+extern int recipe_parse_part_step(const char* str, char** part, char** step);
 
 // recipe cache
 enum recipe_cache_change_type {

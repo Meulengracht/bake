@@ -50,6 +50,7 @@ static void __print_help(void)
     printf("\n");
     printf("If no recipe is specified, it will search for default recipe names as follows:\n");
     printf("  chef/recipe.yaml\n");
+    printf("  recipe.yaml\n");
     printf("\n");
     printf("Commands:\n");
     printf("  init        initializes a new recipe in the current directory\n");
@@ -58,14 +59,14 @@ static void __print_help(void)
     printf("  clean       cleanup all build and intermediate directories\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -h, --help\n");
-    printf("      Print this help message\n");
-    printf("  -v, --version\n");
-    printf("      Print the version of bake\n");
     printf("  -cc, --cross-compile\n");
     printf("      Cross-compile for another platform or/and architecture. This switch\n");
     printf("      can be used with two different formats, either just like\n");
     printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
+    printf("  -v, --version\n");
+    printf("      Print the version of bake\n");
+    printf("  -h, --help\n");
+    printf("      Print this help message\n");
 }
 
 static struct command_handler* __get_command(const char* command)
@@ -78,7 +79,7 @@ static struct command_handler* __get_command(const char* command)
     return NULL;
 }
 
-static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
+static int __read_recipe(const char* path, void** bufferOut, size_t* lengthOut)
 {
     FILE*  file;
     void*  buffer;
@@ -184,6 +185,9 @@ static const char* __find_default_recipe(void)
     if (platform_stat("chef/recipe.yaml", &stats) == 0) {
         return "chef/recipe.yaml";
     }
+    if (platform_stat("recipe.yaml", &stats) == 0) {
+        return "recipe.yaml";
+    }
     return NULL;
 }
 
@@ -245,13 +249,28 @@ static int __get_cwd(char** bufferOut)
 
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler* command     = &g_commands[2]; // run step is default
+    struct command_handler*     command     = &g_commands[2]; // run step is default
     struct bake_command_options options = { 0 };
-    char*                   recipePath  = NULL;
-    void*                   buffer;
-    size_t                  length;
-    int                     status;
+    void*                       buffer;
+    size_t                      length;
+    int                         status;
     
+#if __linux__
+    // make sure we're running with root privileges
+    if (geteuid() != 0 || getegid() != 0) {
+        VLOG_ERROR("kitchen", "should be executed with root privileges, aborting.\n");
+        errno = EPERM;
+        return -1;
+    }
+
+    // make sure we're not actually running as root
+    if (getuid() == 0 || getgid() == 0) {
+        VLOG_ERROR("kitchen", "should not be run as root, aborting.\n");
+        errno = EPERM;
+        return -1;
+    }
+#endif
+
     // first argument must be the command if not --help or --version
     if (argc > 1) {
         if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
@@ -271,7 +290,7 @@ int main(int argc, char** argv, char** envp)
             // that the run command should be run.
             if (platform_stat(argv[1], &stats) == 0) {
                 command = &g_commands[2];
-                recipePath = argv[1];
+                options.recipe_path = argv[1];
             } else {
                 fprintf(stderr, "bake: invalid command %s\n", argv[1]);
                 return -1;
@@ -288,7 +307,7 @@ int main(int argc, char** argv, char** envp)
                         return status;
                     }
                 } else if (argv[i][0] != '-') {
-                    recipePath = argv[i];
+                    options.recipe_path = argv[i];
                 }
             }
         }
@@ -300,12 +319,12 @@ int main(int argc, char** argv, char** envp)
         return -1;
     }
 
-    if (recipePath == NULL) {
-        recipePath = (char*)__find_default_recipe();
+    if (options.recipe_path == NULL) {
+        options.recipe_path = (char*)__find_default_recipe();
     }
 
-    if (recipePath != NULL) {
-        status = __read_recipe(recipePath, &buffer, &length);
+    if (options.recipe_path != NULL) {
+        status = __read_recipe(options.recipe_path, &buffer, &length);
         if (!status) {
             status = recipe_parse(buffer, length, &options.recipe);
             free(buffer);

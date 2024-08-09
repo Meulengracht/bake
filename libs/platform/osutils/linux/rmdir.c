@@ -22,7 +22,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 int platform_rmdir(const char *path) {
    DIR*   d        = opendir(path);
