@@ -132,7 +132,7 @@ static char* __compute_arguments(struct oven_backend_data* data, union oven_back
     return args;
 }
 
-static void __meson_output_handler(const char* line, enum platform_spawn_output_type type) 
+static void __cmake_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
         VLOG_TRACE("meson", line);
@@ -188,7 +188,7 @@ int meson_config_main(struct oven_backend_data* data, union oven_backend_options
         (const char* const*)environment,
         &(struct platform_spawn_options) {
             .cwd = data->paths.build,
-            .output_handler = __meson_output_handler
+            .output_handler = __cmake_output_handler
         }
     );
     vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
