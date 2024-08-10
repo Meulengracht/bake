@@ -19,11 +19,11 @@
 #include <backend.h>
 #include <errno.h>
 #include <liboven.h>
+#include <chef/environment.h>
 #include <chef/platform.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <utils.h>
 #include <vlog.h>
 
 static const char* g_siteTemplate = 
@@ -185,7 +185,7 @@ int configure_main(struct oven_backend_data* data, union oven_backend_options* o
         goto cleanup;
     }
 
-    environment = oven_environment_create(data->process_environment, data->environment);
+    environment = environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
         goto cleanup;
     }
@@ -207,7 +207,7 @@ int configure_main(struct oven_backend_data* data, union oven_backend_options* o
     );
     
 cleanup:
-    oven_environment_destroy(environment);
+    environment_destroy(environment);
     free(arguments);
     free(sharePath);
     free(configSitePath);

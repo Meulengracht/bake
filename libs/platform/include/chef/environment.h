@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,8 +16,10 @@
  * 
  */
 
-#ifndef __LIBOVEN_UTILS_H__
-#define __LIBOVEN_UTILS_H__
+#ifndef __PLATFORM_ENVIRONMENT_H__
+#define __PLATFORM_ENVIRONMENT_H__
+
+#include <chef/list.h>
 
 /**
  * @brief 
@@ -26,40 +28,13 @@
  * @param additonal 
  * @return char** 
  */
-extern char** oven_environment_create(const char* const* parent, struct list* additonal);
+extern char** environment_create(const char* const* parent, struct list* additonal);
 
 /**
  * @brief 
  * 
  * @param environment 
  */
-extern void oven_environment_destroy(char** environment);
+extern void environment_destroy(char** environment);
 
-/**
- * @brief 
- * 
- * @param path 
- * @param checkpoint 
- * @return int 
- */
-extern int oven_checkpoint_create(const char* path, const char* checkpoint);
-
-/**
- * @brief 
- * 
- * @param path 
- * @param checkpoint 
- * @return int 
- */
-extern int oven_checkpoint_remove(const char* path, const char* checkpoint);
-
-/**
- * @brief 
- * 
- * @param path 
- * @param checkpoint 
- * @return int 
- */
-extern int oven_checkpoint_contains(const char* path, const char* checkpoint);
-
-#endif //!__LIBOVEN_UTILS_H__
+#endif //!__PLATFORM_ENVIRONMENT_H__

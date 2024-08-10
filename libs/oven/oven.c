@@ -24,7 +24,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <utils.h>
 #include <vlog.h>
 
 struct oven_recipe_context {

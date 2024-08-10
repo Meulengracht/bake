@@ -155,7 +155,7 @@ static void __write_progress(const char* prefix, struct progress_context* contex
         percent = 100;
     }
 
-    VLOG_TRACE("oven", "%3d%% | %s\n", percent, prefix);
+    VLOG_TRACE("kitchen", "%3d%% | %s\n", percent, prefix);
 }
 
 static int __write_file(
@@ -178,7 +178,7 @@ static int __write_file(
     }
 
     if ((file = fopen(path, "rb")) == NULL) {
-        VLOG_ERROR("oven", "unable to open file %s\n", path);
+        VLOG_ERROR("kitchen", "unable to open file %s\n", path);
         return -1;
     }
 
@@ -189,7 +189,7 @@ static int __write_file(
         rewind(file);
         bytesRead = fread(fileBuffer, 1, fileSize, file);
         if (bytesRead != fileSize) {
-            VLOG_ERROR("oven", "only partial read %s\n", path);
+            VLOG_ERROR("kitchen", "only partial read %s\n", path);
         }
         
         // write the file to the VaFS file
@@ -199,13 +199,13 @@ static int __write_file(
     fclose(file);
 
     if (status) {
-        VLOG_ERROR("oven", "failed to write file '%s': %s\n", filename, strerror(errno));
+        VLOG_ERROR("kitchen", "failed to write file '%s': %s\n", filename, strerror(errno));
         return -1;
     }
 
     status = vafs_file_close(fileHandle);
     if (status) {
-        VLOG_ERROR("oven", "failed to close file '%s'\n", filename);
+        VLOG_ERROR("kitchen", "failed to close file '%s'\n", filename);
         return -1;
     }
     return 0;
@@ -223,7 +223,7 @@ static int __write_directory(
     int            status = 0;
 
     if ((dfd = opendir(path)) == NULL) {
-        VLOG_ERROR("oven", "can't open initrd folder\n");
+        VLOG_ERROR("kitchen", "can't open initrd folder\n");
         return -1;
     }
 
@@ -252,7 +252,7 @@ static int __write_directory(
 
         status = platform_stat(combinedPath, &stats);
         if (status) {
-            VLOG_ERROR("oven", "failed to get filetype for '%s'\n", combinedPath);
+            VLOG_ERROR("kitchen", "failed to get filetype for '%s'\n", combinedPath);
             free((void*)combinedPath);
             free((void*)combinedSubPath);
             continue;
@@ -268,40 +268,40 @@ static int __write_directory(
             struct VaFsDirectoryHandle* subdirectoryHandle;
             status = vafs_directory_create_directory(directoryHandle, dp->d_name, stats.permissions, &subdirectoryHandle);
             if (status) {
-                VLOG_ERROR("oven", "failed to create directory '%s'\n", dp->d_name);
+                VLOG_ERROR("kitchen", "failed to create directory '%s'\n", dp->d_name);
             } else {
                 status = __write_directory(progress, filters, subdirectoryHandle, combinedPath, combinedSubPath);
                 if (status) {
-                    VLOG_ERROR("oven", "unable to write directory %s\n", combinedPath);
+                    VLOG_ERROR("kitchen", "unable to write directory %s\n", combinedPath);
                 } else {
                     status = vafs_directory_close(subdirectoryHandle);
                     if (status) {
-                        VLOG_ERROR("oven", "failed to close directory '%s'\n", combinedPath);
+                        VLOG_ERROR("kitchen", "failed to close directory '%s'\n", combinedPath);
                     }
                 }
             }
         } else if (stats.type == PLATFORM_FILETYPE_FILE) {
             status = __write_file(directoryHandle, combinedPath, dp->d_name, stats.permissions);
             if (status) {
-                VLOG_ERROR("oven", "unable to write file %s\n", dp->d_name);
+                VLOG_ERROR("kitchen", "unable to write file %s\n", dp->d_name);
             }
             progress->files++;
         } else if (stats.type == PLATFORM_FILETYPE_SYMLINK) {
             char* linkpath;
             status = platform_readlink(combinedPath, &linkpath);
             if (status) {
-                VLOG_ERROR("oven", "failed to read link %s\n", combinedPath);
+                VLOG_ERROR("kitchen", "failed to read link %s\n", combinedPath);
             } else {
                 status = vafs_directory_create_symlink(directoryHandle, dp->d_name, linkpath);
                 free(linkpath);
                 if (status) {
-                    VLOG_ERROR("oven", "failed to create symlink %s\n", combinedPath);
+                    VLOG_ERROR("kitchen", "failed to create symlink %s\n", combinedPath);
                 }
             }
             progress->symlinks++;
         } else {
             // ignore unsupported file types
-            VLOG_ERROR("oven", "unknown filetype for '%s'\n", combinedPath);
+            VLOG_ERROR("kitchen", "unknown filetype for '%s'\n", combinedPath);
             status = 0;
         }
 
@@ -332,7 +332,7 @@ static int __write_syslib(
     // TODO other platforms
     status = vafs_directory_create_directory(directoryHandle, "lib", 0755, &subdirectoryHandle);
     if (status) {
-        VLOG_ERROR("oven", "failed to create directory 'lib'\n");
+        VLOG_ERROR("kitchen", "failed to create directory 'lib'\n");
         return status;
     }
 
@@ -340,7 +340,7 @@ static int __write_syslib(
     // TODO other platforms
     status = __write_file(subdirectoryHandle, dependency->path, dependency->name, 0644);
     if (status && errno != EEXIST) {
-        VLOG_ERROR("oven", "failed to write dependency %s\n", dependency->path);
+        VLOG_ERROR("kitchen", "failed to write dependency %s\n", dependency->path);
         return -1;
     }
     progress->files++;
@@ -383,14 +383,14 @@ static int __write_filepath(
     free(token);
 
     if (status) {
-        VLOG_ERROR("oven", "failed to create directory '%s'\n", token);
+        VLOG_ERROR("kitchen", "failed to create directory '%s'\n", token);
         return -1;
     }
 
     // recurse into the next directory
     status = __write_filepath(progress, subdirectoryHandle, dependency, remaining + 1);
     if (status) {
-        VLOG_ERROR("oven", "failed to write filepath %s\n", dependency->path);
+        VLOG_ERROR("kitchen", "failed to write filepath %s\n", dependency->path);
         return -1;
     }
 
@@ -416,7 +416,7 @@ static int __write_dependencies(
         }
 
         if (status) {
-            VLOG_ERROR("oven", "failed to write dependency %s\n", dependency->path);
+            VLOG_ERROR("kitchen", "failed to write dependency %s\n", dependency->path);
             return -1;
         }
         __write_progress(dependency->name, progress);
@@ -571,7 +571,7 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct k
     
     packageHeader = malloc(featureSize);
     if (!packageHeader) {
-        VLOG_ERROR("oven", "failed to allocate package header\n");
+        VLOG_ERROR("kitchen", "failed to allocate package header\n");
         return -1;
     }
 
@@ -628,7 +628,7 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct k
     status = vafs_feature_add(vafs, &packageHeader->header);
     free(packageHeader);
     if (status) {
-        VLOG_ERROR("oven", "failed to write package header\n");
+        VLOG_ERROR("kitchen", "failed to write package header\n");
         return -1;
     }
     return status;
@@ -650,7 +650,7 @@ static int __write_version_metadata(struct VaFs* vafs, const char* version)
 
     packageVersion = malloc(featureSize);
     if (!packageVersion) {
-        VLOG_ERROR("oven", "failed to allocate package version\n");
+        VLOG_ERROR("kitchen", "failed to allocate package version\n");
         return -1;
     }
 
@@ -659,7 +659,7 @@ static int __write_version_metadata(struct VaFs* vafs, const char* version)
 
     status = __parse_version_string(version, packageVersion);
     if (status) {
-        VLOG_ERROR("oven", "failed to parse version string %s\n", version);
+        VLOG_ERROR("kitchen", "failed to parse version string %s\n", version);
         return -1;
     }
 
@@ -694,7 +694,7 @@ static int __write_icon_metadata(struct VaFs* vafs, const char* path)
 
     file = fopen(path, "rb");
     if (!file) {
-        VLOG_ERROR("oven", "failed to open icon file %s\n", path);
+        VLOG_ERROR("kitchen", "failed to open icon file %s\n", path);
         return -1;
     }
 
@@ -703,13 +703,13 @@ static int __write_icon_metadata(struct VaFs* vafs, const char* path)
     fseek(file, 0, SEEK_SET);
     iconBuffer = malloc(iconSize);
     if (!iconBuffer) {
-        VLOG_ERROR("oven", "failed to allocate icon buffer\n");
+        VLOG_ERROR("kitchen", "failed to allocate icon buffer\n");
         fclose(file);
         return -1;
     }
 
     if (fread(iconBuffer, 1, iconSize, file) != iconSize) {
-        VLOG_ERROR("oven", "failed to read icon file %s\n", path);
+        VLOG_ERROR("kitchen", "failed to read icon file %s\n", path);
         fclose(file);
         free(iconBuffer);
         return -1;
@@ -718,7 +718,7 @@ static int __write_icon_metadata(struct VaFs* vafs, const char* path)
 
     packageIcon = malloc(sizeof(struct chef_vafs_feature_package_icon) + iconSize);
     if (!packageIcon) {
-        VLOG_ERROR("oven", "failed to allocate package version\n");
+        VLOG_ERROR("kitchen", "failed to allocate package version\n");
         return -1;
     }
 
@@ -744,7 +744,7 @@ static size_t __file_size(const char* path)
     }
 
     if (platform_stat(path, &fileStat) != 0) {
-        VLOG_ERROR("oven", "failed to stat file %s\n", path);
+        VLOG_ERROR("kitchen", "failed to stat file %s\n", path);
         return 0;
     }
     return fileStat.size;
@@ -914,7 +914,7 @@ static int __write_ingredient_options_metadata(struct VaFs* vafs, struct kitchen
         bins_len + incs_len + libs_len + compiler_flags_len + linker_flags_len;
     ingOptions = malloc(totalSize);
     if (ingOptions == NULL) {
-        VLOG_ERROR("oven", "failed to allocate %u bytes for options metadata\n", totalSize);
+        VLOG_ERROR("kitchen", "failed to allocate %u bytes for options metadata\n", totalSize);
         return -1;
     }
 
@@ -947,25 +947,25 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
 
     status = __write_header_metadata(vafs, name, options);
     if (status) {
-        VLOG_ERROR("oven", "failed to write package header\n");
+        VLOG_ERROR("kitchen", "failed to write package header\n");
         return -1;
     }
 
     status = __write_version_metadata(vafs, options->version);
     if (status) {
-        VLOG_ERROR("oven", "failed to write package version\n");
+        VLOG_ERROR("kitchen", "failed to write package version\n");
         return -1;
     }
 
     status = __write_icon_metadata(vafs, options->icon);
     if (status) {
-        VLOG_ERROR("oven", "failed to write package icon\n");
+        VLOG_ERROR("kitchen", "failed to write package icon\n");
         return -1;
     }
 
     status = __write_ingredient_options_metadata(vafs, options);
     if (status) {
-        VLOG_ERROR("oven", "failed to write package ingredient options\n");
+        VLOG_ERROR("kitchen", "failed to write package ingredient options\n");
         return -1;
     }
 
@@ -1028,24 +1028,24 @@ int kitchen_pack(struct kitchen_pack_options* options)
     int                         status;
     char*                       name;
     char*                       path;
-    VLOG_DEBUG("oven", "oven_pack(name=%s, path=%s)\n", options->name, options->output_dir);
+    VLOG_DEBUG("kitchen", "kitchen_pack(name=%s, path=%s)\n", options->name, options->output_dir);
 
     if (options == NULL) {
         errno = EINVAL;
         return -1;
     }
 
-    VLOG_DEBUG("oven", "enumerating files in %s\n", options->input_dir);
+    VLOG_DEBUG("kitchen", "enumerating files in %s\n", options->input_dir);
     status = platform_getfiles(options->input_dir, 1, &files);
     if (status) {
-        VLOG_ERROR("oven", "failed to get files marked for install\n");
+        VLOG_ERROR("kitchen", "failed to get files marked for install\n");
         return -1;
     }
 
     status = __build_pack_names(options->name, options->output_dir, &name, &path);
     if (status) {
         platform_getfiles_destroy(&files);
-        VLOG_ERROR("oven", "failed to get files marked for install\n");
+        VLOG_ERROR("kitchen", "failed to get files marked for install\n");
         return -1;
     }
 
@@ -1058,7 +1058,7 @@ int kitchen_pack(struct kitchen_pack_options* options)
 
     // we do not want any empty packs
     if (progressContext.files_total == 0) {
-        VLOG_TRACE("oven", "skipping pack %s, no files to pack\n", options->name);
+        VLOG_TRACE("kitchen", "skipping pack %s, no files to pack\n", options->name);
         status = 0;
         goto cleanup;
     }
@@ -1071,7 +1071,7 @@ int kitchen_pack(struct kitchen_pack_options* options)
         .architecture = options->architecture
     });
     if (status) {
-        VLOG_ERROR("oven", "failed to verify commands\n");
+        VLOG_ERROR("kitchen", "failed to verify commands\n");
         goto cleanup;
     }
 
@@ -1090,6 +1090,7 @@ int kitchen_pack(struct kitchen_pack_options* options)
     // but we tend to produce larger packs atm
     vafs_config_set_block_size(&configuration, 1024 * 1024);
 
+    VLOG_DEBUG("kitchen", "creating %s\n", path);
     status = vafs_create(path, &configuration, &vafs);
     if (status) {
         goto cleanup;
@@ -1101,13 +1102,13 @@ int kitchen_pack(struct kitchen_pack_options* options)
     // install the compression for the pack
     status = __install_filter(vafs);
     if (status) {
-        VLOG_ERROR("oven", "cannot initialize compression\n");
+        VLOG_ERROR("kitchen", "cannot initialize compression\n");
         goto cleanup;
     }
 
     status = vafs_directory_open(vafs, "/", &directoryHandle);
     if (status) {
-        VLOG_ERROR("oven", "cannot open root directory\n");
+        VLOG_ERROR("kitchen", "cannot open root directory\n");
         goto cleanup;
     }
 
@@ -1115,7 +1116,7 @@ int kitchen_pack(struct kitchen_pack_options* options)
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = __write_directory(&progressContext, options->filters, directoryHandle, options->input_dir, NULL);
     if (status != 0) {
-        VLOG_ERROR("oven", "unable to write directory\n");
+        VLOG_ERROR("kitchen", "unable to write directory\n");
         goto cleanup;
     }
 
@@ -1123,7 +1124,7 @@ int kitchen_pack(struct kitchen_pack_options* options)
         struct kitchen_resolve* resolve = (struct kitchen_resolve*)item;
         status = __write_dependencies(&progressContext, &resolve->dependencies, directoryHandle);
         if (status != 0) {
-            VLOG_ERROR("oven", "unable to write libraries\n");
+            VLOG_ERROR("kitchen", "unable to write libraries\n");
             goto cleanup;
         }
     }
@@ -1131,7 +1132,7 @@ int kitchen_pack(struct kitchen_pack_options* options)
 
     status = __write_package_metadata(vafs, name, options);
     if (status != 0) {
-        VLOG_ERROR("oven", "unable to write package metadata\n");
+        VLOG_ERROR("kitchen", "unable to write package metadata\n");
     }
 
 cleanup:

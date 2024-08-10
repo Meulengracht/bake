@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,11 +16,11 @@
  * 
  */
 
+#include <chef/environment.h>
 #include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <utils.h>
 
 static int __contains_envkey(struct list* list, const char* key)
 {
@@ -38,7 +38,7 @@ static int __contains_envkey(struct list* list, const char* key)
     return 0;
 }
 
-char** oven_environment_create(const char* const* parent, struct list* additional)
+char** environment_create(const char* const* parent, struct list* additional)
 {
     struct list_item* item;
     char**            environment;
@@ -70,18 +70,18 @@ char** oven_environment_create(const char* const* parent, struct list* additiona
         struct chef_keypair_item* keypair    = (struct chef_keypair_item*)item;
         size_t                    lineLength = strlen(keypair->key) + strlen(keypair->value) + 2;
         char*                     line       = (char*)calloc(lineLength, sizeof(char));
-        if (!line) {
+        if (line == NULL) {
             return NULL;
         }
 
-        sprintf(line, "%s=%s", keypair->key, keypair->value);
+        snprintf(line, lineLength, "%s=%s", keypair->key, keypair->value);
         environment[j++] = line;
     }
     
     return environment;
 }
 
-void oven_environment_destroy(char** environment)
+void environment_destroy(char** environment)
 {
     int i = 0;
     
@@ -95,3 +95,4 @@ void oven_environment_destroy(char** environment)
     }
     free((void*)environment);
 }
+

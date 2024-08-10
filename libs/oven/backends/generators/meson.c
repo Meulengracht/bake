@@ -19,11 +19,11 @@
 #include <backend.h>
 #include <errno.h>
 #include <liboven.h>
+#include <chef/environment.h>
 #include <chef/platform.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <utils.h>
 #include <vlog.h>
 
 // import this while we find a suitiable place
@@ -155,7 +155,7 @@ int meson_config_main(struct oven_backend_data* data, union oven_backend_options
     int    status = -1;
     size_t length;
 
-    environment = oven_environment_create(data->process_environment, data->environment);
+    environment = environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
         errno = ENOMEM;
         return -1;
@@ -196,6 +196,6 @@ int meson_config_main(struct oven_backend_data* data, union oven_backend_options
 cleanup:
     free(args);
     free(finalArguments);
-    oven_environment_destroy(environment);
+    environment_destroy(environment);
     return status;
 }

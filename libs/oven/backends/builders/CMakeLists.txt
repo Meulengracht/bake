@@ -7,4 +7,4 @@ add_library(oven-builders STATIC
 
 target_include_directories(oven-builders PRIVATE ../../include)
 target_link_libraries(oven-builders PRIVATE chef-client)
-target_link_libraries(oven-builders PUBLIC oven-backend oven-utils platform)
+target_link_libraries(oven-builders PUBLIC oven-backend platform)
