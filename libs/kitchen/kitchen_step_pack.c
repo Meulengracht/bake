@@ -94,9 +94,20 @@ static int __move_pack(struct kitchen* kitchen, struct recipe_pack* pack)
         goto exit;
     }
 
+    status = access(src, 0);
+    if (status) {
+        // If there was any previous errors then the package is not generated
+        if (errno == ENOENT) {
+            VLOG_DEBUG("kitchen", "__move_pack: no package was generated\n");
+            status = 0;
+            goto exit;
+        }
+        goto exit;
+    }
+
     status = rename(src, dst);
     if (status) {
-        VLOG_DEBUG("kitchen", "__move_pack: %s => %s\n", src, dst);
+        VLOG_ERROR("kitchen", "__move_pack: failed to move package from %s => %s\n", src, dst);
     }
 
 exit:
@@ -222,7 +233,7 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
             kitchen->host_install_path
         );
         if (status) {
-            VLOG_ERROR("bake", "kitchen_recipe_pack: failed to include ingredient %s\n", ingredient->name);
+            VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to include ingredient %s\n", ingredient->name);
             goto cleanup;
         }
     }
@@ -234,7 +245,7 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
         __initialize_pack_options(kitchen, &packOptions, recipe, pack);
         status = kitchen_pack(&packOptions);
         if (status) {
-            VLOG_ERROR("bake", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);
+            VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);
             goto cleanup;
         }
     }

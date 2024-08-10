@@ -6,6 +6,7 @@ add_subdirectory(strutils)
 add_subdirectory(osutils)
 
 add_library(platform STATIC
+    environment.c
     package.c
 )
 target_include_directories(platform PUBLIC include)

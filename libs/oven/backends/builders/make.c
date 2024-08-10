@@ -19,11 +19,11 @@
 #include <backend.h>
 #include <errno.h>
 #include <liboven.h>
+#include <chef/environment.h>
 #include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <utils.h>
 #include <vlog.h>
 
 #define __INTERNAL_MAX(a,b) (((a) > (b)) ? (a) : (b))
@@ -67,7 +67,7 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
         goto cleanup;
     }
 
-    environment = oven_environment_create(data->process_environment, data->environment);
+    environment = environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
         errno = ENOMEM;
         goto cleanup;
@@ -124,6 +124,6 @@ int make_main(struct oven_backend_data* data, union oven_backend_options* option
 
 cleanup:
     free(argument);
-    oven_environment_destroy(environment);
+    environment_destroy(environment);
     return status;
 }

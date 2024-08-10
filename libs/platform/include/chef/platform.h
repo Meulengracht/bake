@@ -26,6 +26,7 @@
 // detect platform
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
    //define something for Windows (32-bit and 64-bit, this part is common)
+   #define CHEF_ON_WINDOWS 1
    #define CHEF_PLATFORM_STR "windows"
    #ifdef _WIN64
       //define something for Windows (64-bit only)
