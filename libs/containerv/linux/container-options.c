@@ -40,6 +40,11 @@ void containerv_options_set_mounts(struct containerv_options* options, struct co
     options->mounts_count = mountsCount;
 }
 
+void containerv_options_set_privileged(struct containerv_options* options)
+{
+    options->privileged = 1;
+}
+
 void containerv_options_set_users(struct containerv_options* options, uid_t hostUidStart, uid_t childUidStart, int count)
 {
     options->uid_range.host_start = hostUidStart;

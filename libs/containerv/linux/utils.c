@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,6 +15,8 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  */
+
+#define _GNU_SOURCE
 
 #include <linux/capability.h>
 #include <linux/prctl.h>
@@ -56,6 +58,74 @@ int containerv_drop_capabilities(void)
 
     cap_free(caps);
     return 0;
+}
+
+#define __INHERITTED_CAP_COUNT 9
+static const cap_value_t g_inherittedCaps[__INHERITTED_CAP_COUNT] = {
+    CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_DAC_READ_SEARCH, CAP_FOWNER,
+    CAP_FSETID, CAP_SETGID, CAP_SETUID, CAP_SYS_ADMIN, CAP_SETFCAP
+};
+
+int containerv_switch_user_with_capabilities(uid_t uid, gid_t gid)
+{
+    int   status;
+    cap_t caps;
+    VLOG_DEBUG("containerv[child]", "containerv_switch_user_with_capabilities(%u, %u)\n", uid, gid);
+
+    // ensure we have root capabilities at this point
+    if (geteuid() != 0 && setresuid(0, 0, 0)) {
+        VLOG_ERROR("containerv[child]", "__drop_to_user: the container must have setuid privileges\n");
+        return -1;
+    }
+
+    /* Add need_caps to current capabilities. */
+    caps = cap_get_proc();
+    if (cap_set_flag(caps, CAP_PERMITTED,   __INHERITTED_CAP_COUNT, g_inherittedCaps, CAP_SET) ||
+        cap_set_flag(caps, CAP_EFFECTIVE,   __INHERITTED_CAP_COUNT, g_inherittedCaps, CAP_SET) ||
+        cap_set_flag(caps, CAP_INHERITABLE, __INHERITTED_CAP_COUNT, g_inherittedCaps, CAP_SET)) {
+        VLOG_ERROR("containerv[child]", "failed to update the list of capabilities to refresh/inherit\n");
+        status = -1;
+        goto cleanup;
+    }
+
+    // update the current capabilities
+    status = cap_set_proc(caps);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "failed to set current capabilities\n");
+        goto cleanup;
+    }
+
+    // make sure we keep our capabilities after the setresuid/setresgid
+    status = prctl(PR_SET_KEEPCAPS, 1L);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "failed to enable inherit of capabilities\n");
+        goto cleanup;
+    }
+    
+    // switch to the user we want to be
+    status = setresuid(uid, uid, uid);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "failed to switch user: %i (uid=%i)\n", status, uid);
+        goto cleanup;
+    }
+
+    status = setresgid(gid, gid, gid);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "failed to switch group: %i (gid=%i)\n", status, gid);
+        goto cleanup;
+    }
+
+    // once the identity changes, we must refresh the capabilities
+    // effective for the current user.
+    status = cap_set_proc(caps);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "failed to refresh current capabilities\n");
+        goto cleanup;
+    }
+
+cleanup:
+    cap_free(caps);
+    return status;
 }
 
 int containerv_set_init_process(void)
