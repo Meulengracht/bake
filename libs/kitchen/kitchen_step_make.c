@@ -19,7 +19,6 @@
 #include <chef/list.h>
 #include <chef/kitchen.h>
 #include <chef/containerv.h>
-#include <chef/containerv-user-linux.h>
 #include <libpkgmgr.h>
 #include <stdlib.h>
 #include <vlog.h>
@@ -44,7 +43,6 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
         );
 
         VLOG_TRACE("kitchen", "executing step '%s/%s'\n", part, step->name);
-        struct containerv_user* asUser = containerv_user_from("root", 0, 0);
         status = containerv_spawn(
             kitchen->container,
             kitchen->bakectl_path,
@@ -52,11 +50,9 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
                 .arguments = &buffer[0],
                 .environment = (const char* const*)kitchen->base_environment,
                 .flags = CV_SPAWN_WAIT,
-                .as_user = asUser
             },
             NULL
         );
-        containerv_user_delete(asUser);
         if (status) {
             VLOG_ERROR("kitchen", "failed to execute step '%s/%s'\n", part, step->name);
             return status;

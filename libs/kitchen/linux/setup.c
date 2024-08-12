@@ -179,6 +179,7 @@ static int __setup_rootfs(struct kitchen* kitchen)
 static int __setup_container(struct kitchen* kitchen)
 {
     struct containerv_mount    mounts[1] = { 0 };
+    struct containerv_user*    current;
     struct containerv_options* options;
     int                        status;
     VLOG_TRACE("kitchen", "creating build container\n");
@@ -189,14 +190,30 @@ static int __setup_container(struct kitchen* kitchen)
         return -1;
     }
 
+    current = containerv_user_real();
+    if (current == NULL) {
+        containerv_options_delete(options);
+        return -1;
+    }
+
     // project path
     mounts[0].what = kitchen->host_cwd;
     mounts[0].where = kitchen->host_project_path;
     mounts[0].flags = CV_MOUNT_BIND | CV_MOUNT_READONLY;
 
-    // setup config
-    containerv_options_set_caps(options, CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL | CV_CAP_IPC);
+    // we want as many caps as makes sense
+    containerv_options_set_caps(options, 
+        CV_CAP_FILESYSTEM |
+        CV_CAP_PROCESS_CONTROL |
+        CV_CAP_IPC |
+        CV_CAP_USERS
+    );
     containerv_options_set_mounts(options, mounts, 1);
+    containerv_options_set_users(options, current->uid, 0, 1);
+    containerv_options_set_groups(options, current->gid, 0, 1);
+    
+    // dont need this anymore
+    containerv_user_delete(current);
 
     // start container
     status = containerv_create(kitchen->host_chroot, options, &kitchen->container);
@@ -256,7 +273,6 @@ static char* __join_packages(struct recipe_cache_package_change* changes, int co
 
 static int __update_packages(struct kitchen* kitchen)
 {
-    struct containerv_user*             root;
     struct recipe_cache_package_change* changes;
     int                                 count;
     int                                 status;
@@ -273,19 +289,16 @@ static int __update_packages(struct kitchen* kitchen)
     }
 
     snprintf(&buffer[0], sizeof(buffer), "/chef/update.sh");
-    root = containerv_user_from("root", 0, 0);
     status = containerv_spawn(
         kitchen->container,
         &buffer[0],
         &(struct containerv_spawn_options) {
             .arguments = NULL,
             .environment = (const char* const*)kitchen->base_environment,
-            .as_user = root,
             .flags = CV_SPAWN_WAIT
         },
         NULL
     );
-    containerv_user_delete(root);
     if (status) {
         VLOG_ERROR("kitchen", "__execute_script_in_container: failed to execute script\n");
         return status;
