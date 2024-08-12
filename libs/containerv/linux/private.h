@@ -41,6 +41,21 @@ enum containerv_namespace_type {
     CV_NS_COUNT
 };
 
+struct containerv_options_user_range {
+    unsigned int host_start;
+    unsigned int child_start;
+    int          count;
+};
+
+struct containerv_options {
+    enum containerv_capabilities capabilities;
+    struct containerv_mount*     mounts;
+    int                          mounts_count;
+    
+    struct containerv_options_user_range uid_range;
+    struct containerv_options_user_range gid_range;
+};
+
 struct containerv_container {
     // host
     pid_t       pid;

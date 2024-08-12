@@ -178,22 +178,29 @@ static int __setup_rootfs(struct kitchen* kitchen)
 
 static int __setup_container(struct kitchen* kitchen)
 {
-    struct containerv_mount mounts[1] = { 0 };
-    int                     status;
+    struct containerv_mount    mounts[1] = { 0 };
+    struct containerv_options* options;
+    int                        status;
     VLOG_TRACE("kitchen", "creating build container\n");
+
+    options = containerv_options_new();
+    if (options == NULL) {
+        VLOG_ERROR("kitchen", "__setup_container: failed to allocate memory for container options\n");
+        return -1;
+    }
 
     // project path
     mounts[0].what = kitchen->host_cwd;
     mounts[0].where = kitchen->host_project_path;
     mounts[0].flags = CV_MOUNT_BIND | CV_MOUNT_READONLY;
-    
+
+    // setup config
+    containerv_options_set_caps(options, CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL | CV_CAP_IPC);
+    containerv_options_set_mounts(options, mounts, 1);
+
     // start container
-    status = containerv_create(
-        kitchen->host_chroot,
-        CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL,
-        mounts, 1,
-        &kitchen->container
-    );
+    status = containerv_create(kitchen->host_chroot, options, &kitchen->container);
+    containerv_options_delete(options);
     if (status) {
         VLOG_ERROR("kitchen", "__setup_container: failed to create build container\n");
         return status;

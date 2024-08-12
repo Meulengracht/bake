@@ -27,9 +27,26 @@ typedef HANDLE process_handle_t;
 typedef pid_t process_handle_t;
 #endif
 
+struct containerv_options;
 struct containerv_container;
 struct containerv_user;
 
+enum containerv_capabilities {
+    CV_CAP_NETWORK = 0x1,
+    CV_CAP_PROCESS_CONTROL = 0x2,
+    CV_CAP_IPC = 0x4,
+    CV_CAP_FILESYSTEM = 0x8,
+    CV_CAP_CGROUPS = 0x10,
+    CV_CAP_USERS = 0x20
+};
+
+extern struct containerv_options* containerv_options_new(void);
+extern void containerv_options_delete(struct containerv_options* options);
+extern void containerv_options_set_caps(struct containerv_options* options, enum containerv_capabilities caps);
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+// TODO
+#elif defined(__linux__) || defined(__unix__)
 enum containerv_mount_flags {
     CV_MOUNT_BIND = 0x1,
     CV_MOUNT_RECURSIVE = 0x2,
@@ -44,13 +61,10 @@ struct containerv_mount {
     enum containerv_mount_flags flags;
 };
 
-enum containerv_capabilities {
-    CV_CAP_NETWORK = 0x1,
-    CV_CAP_PROCESS_CONTROL = 0x2,
-    CV_CAP_IPC = 0x4,
-    CV_CAP_FILESYSTEM = 0x8,
-    CV_CAP_CGROUPS = 0x10
-};
+extern void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int count);
+extern void containerv_options_set_users(struct containerv_options* options, uid_t hostUidStart, uid_t childUidStart, int count);
+extern void containerv_options_set_groups(struct containerv_options* options, gid_t hostGidStart, gid_t childGidStart, int count);
+#endif
 
 /**
  * @brief Creates a new container.
@@ -59,9 +73,7 @@ enum containerv_capabilities {
  */
 extern int containerv_create(
     const char*                   rootFs,
-    enum containerv_capabilities  capabilities,
-    struct containerv_mount*      mounts,
-    int                           mountsCount,
+    struct containerv_options*    options,
     struct containerv_container** containerOut
 );
 

@@ -283,20 +283,6 @@ static int __container_idle_loop(struct containerv_container* container)
     return 0;
 }
 
-static int __container_map_specialfs(
-        const char* fsType,
-        const char* path)
-{
-    if (mkdir(path, 0755) && errno != EEXIST) {
-        return -1;
-    }
-
-    if (mount(fsType, path, fsType, 0, NULL)) {
-        return -1;
-    }
-    return 0;
-}
-
 static int __convert_cv_mount_flags(enum containerv_mount_flags cvFlags)
 {
     int flags = 0;
@@ -359,28 +345,75 @@ static int __container_map_mounts(
     return status;
 }
 
-static int __container_map_capabilities(
-        struct containerv_container* container,
-        enum containerv_capabilities capabilities)
+static int __map_user_namespace(
+    struct containerv_container* container,
+    struct containerv_options*   options)
 {
-    int status;
+    char buffer[PATH_MAX] = { 0 };
+    int  mapFd, status;
+    VLOG_DEBUG("containerv[child]", "__map_user_namespace()\n");
+
+    // write users first
+    snprintf(&buffer[0], sizeof(buffer), "/proc/self/uid_map");
+    mapFd = open(&buffer[0], O_WRONLY);
+    if (mapFd < 0) {
+        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open %s\n", &buffer[0]);
+        return status;
+    }
+
+    // the trick here is, we can only write ONCE, and at the maximum of
+    // up to 5 lines.
+    status = dprintf(mapFd, "%d %d %d\n",
+        options->uid_range.host_start,
+        options->uid_range.child_start,
+        options->uid_range.count
+    );
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to write user map\n");
+        close(mapFd);
+        return status;
+    }
+    close(mapFd);
+
+    // write groups
+    snprintf(&buffer[0], sizeof(buffer), "/proc/self/gid_map");
+    mapFd = open(&buffer[0], O_WRONLY);
+    if (mapFd < 0) {
+        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open %s\n", &buffer[0]);
+        return status;
+    }
+
+    // the trick here is, we can only write ONCE, and at the maximum of
+    // up to 5 lines.
+    status = dprintf(mapFd, "%d %d %d\n",
+        options->gid_range.host_start,
+        options->gid_range.child_start,
+        options->gid_range.count
+    );
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to write group map\n");
+        close(mapFd);
+        return status;
+    }
+    close(mapFd);
+    return status;
+}
+
+static int __container_map_capabilities(
+    struct containerv_container* container,
+    struct containerv_options*   options)
+{
+    int status = 0;
     VLOG_DEBUG("containerv[child]", "__container_map_capabilities()\n");
 
-    status = __container_map_specialfs("sysfs", "/sys");
-    if (status) {
-        return -1;
+    if (options->capabilities & CV_CAP_USERS) {
+        status = __map_user_namespace(container, options);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_map_capabilities: failed to map users\n");
+            return status;
+        }
     }
-
-    status =  __container_map_specialfs("proc", "/proc");
-    if (status) {
-        return -1;
-    }
-
-    status =  __container_map_specialfs("tmpfs", "/tmp");
-    if (status) {
-        return -1;
-    }
-    return 0;
+    return status;
 }
 
 static int __container_open_ns_fds(
@@ -419,34 +452,36 @@ static char* __host_container_dir(struct containerv_container* container, const 
 }
 
 static int __container_run(
-        struct containerv_container* container,
-        enum containerv_capabilities capabilities,
-        struct containerv_mount*     mounts,
-        int                          mountsCount)
+    struct containerv_container* container,
+    struct containerv_options*   options)
 {
     struct containerv_event event;
     int                     status;
     int                     flags = CLONE_NEWUTS;
     VLOG_DEBUG("containerv[child]", "__container_run()\n");
 
-    if (capabilities & CV_CAP_FILESYSTEM) {
+    if (options->capabilities & CV_CAP_FILESYSTEM) {
         flags |= CLONE_NEWNS;
     }
 
-    if (capabilities & CV_CAP_NETWORK) {
+    if (options->capabilities & CV_CAP_NETWORK) {
         flags |= CLONE_NEWNET;
     }
 
-    if (capabilities & CV_CAP_PROCESS_CONTROL) {
+    if (options->capabilities & CV_CAP_PROCESS_CONTROL) {
         flags |= CLONE_NEWPID;
     }
 
-    if (capabilities & CV_CAP_IPC) {
+    if (options->capabilities & CV_CAP_IPC) {
         flags |= CLONE_NEWIPC;
     }
 
-    if (capabilities & CV_CAP_CGROUPS) {
+    if (options->capabilities & CV_CAP_CGROUPS) {
         flags |= CLONE_NEWCGROUP;
+    }
+
+    if (options->capabilities & CV_CAP_USERS) {
+        flags |= CLONE_NEWUSER;
     }
 
     status = unshare(flags);
@@ -469,6 +504,13 @@ static int __container_run(
         return status;
     }
 
+    // after the unshare, before the decoupling, let us map some caps in
+    status = __container_map_capabilities(container, options);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__container_run: failed to map capability specific mounts\n");
+        return status;
+    }
+
     // MS_PRIVATE makes the bind mount invisible outside of the namespace
     // MS_REC makes the mount recursive
     status = mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
@@ -480,27 +522,48 @@ static int __container_run(
     // After the unshare we are now running in separate namespaces, this means
     // we can start doing mount operations that still require the host file system
     // before we chroot
-    if (capabilities & CV_CAP_FILESYSTEM) {
+    if (options->capabilities & CV_CAP_FILESYSTEM) {
+        static const int mntsCount = 4;
         struct containerv_mount mnts[] = {
             {
                 .what = container->runtime_dir,
                 .where = __host_container_dir(container, container->runtime_dir),
                 .fstype = NULL,
                 .flags = CV_MOUNT_BIND | CV_MOUNT_RECURSIVE | CV_MOUNT_CREATE
-            }
+            },
+            {
+                .what = "sysfs",
+                .where = __host_container_dir(container, "/sys"),
+                .fstype = "sysfs",
+                .flags = CV_MOUNT_CREATE
+            },
+            {
+                .what = "proc",
+                .where = __host_container_dir(container, "/proc"),
+                .fstype = "proc",
+                .flags = CV_MOUNT_CREATE
+            },
+            {
+                .what = "tmpfs",
+                .where = __host_container_dir(container, "/tmp"),
+                .fstype = "tmpfs",
+                .flags = CV_MOUNT_CREATE
+            },
         };
-
-        status = __container_map_mounts(container, &mnts[0], 1);
+        
+        status = __container_map_mounts(container, &mnts[0], mntsCount);
         if (status) {
             VLOG_ERROR("containerv[child]", "__container_run: failed to map system mounts\n");
             return status;
         }
 
         // cleanup
-        free(mnts[0].where);
+        for (int i = 0; i < mntsCount; i++) {
+            free(mnts[i].where);
+        }
 
         // bind mount all additional mounts requested by the caller
-        status = __container_map_mounts(container, mounts, mountsCount);
+        status = __container_map_mounts(container, options->mounts, options->mounts_count);
         if (status) {
             VLOG_ERROR("containerv[child]", "__container_run: failed to map requested mounts\n");
             return status;
@@ -534,13 +597,6 @@ static int __container_run(
         return -1;
     }
 
-    // after the chroot we can start setting up the unique bind-mounts
-    status = __container_map_capabilities(container, capabilities);
-    if (status) {
-        VLOG_ERROR("containerv[child]", "__container_run: failed to map capability specific mounts\n");
-        return status;
-    }
-
     // get a handle on all the ns fd's
     status = __container_open_ns_fds(container);
     if (status) {
@@ -560,10 +616,8 @@ static int __container_run(
 }
 
 static int __container_entry(
-        struct containerv_container* container,
-        enum containerv_capabilities capabilities,
-        struct containerv_mount*     mounts,
-        int                          mountsCount)
+    struct containerv_container* container,
+    struct containerv_options*   options)
 {
     int status;
     VLOG_DEBUG("containerv[child]", "__container_entry(id=%s)\n", &container->id[0]);
@@ -576,7 +630,7 @@ static int __container_entry(
     }
 
     // This is the primary run function, it initializes the container
-    status = __container_run(container, capabilities, mounts, mountsCount);
+    status = __container_run(container, options);
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_entry: failed to execute: %i\n", status);
         __send_container_event(container, CV_CONTAINER_DOWN, status);
@@ -585,16 +639,14 @@ static int __container_entry(
 }
 
 int containerv_create(
-        const char*                   rootFs,
-        enum containerv_capabilities  capabilities,
-        struct containerv_mount*      mounts,
-        int                           mountsCount,
-        struct containerv_container** containerOut)
+    const char*                   rootFs,
+    struct containerv_options*    options,
+    struct containerv_container** containerOut)
 {
     struct containerv_container* container;
     struct containerv_event      event = { 0 };
     int                          status;
-    VLOG_DEBUG("containerv[host]", "containerv_create(root=%s, caps=0x%x)\n", rootFs, capabilities);
+    VLOG_DEBUG("containerv[host]", "containerv_create(root=%s, caps=0x%x)\n", rootFs, options->capabilities);
 
     status = platform_mkdir(__CONTAINER_SOCKET_RUNTIME_BASE);
     if (status) {
@@ -630,7 +682,7 @@ int containerv_create(
         *containerOut = container;
         return 0;
     }
-    exit(__container_entry(container, capabilities, mounts, mountsCount));
+    exit(__container_entry(container, options));
 }
 
 int containerv_spawn(

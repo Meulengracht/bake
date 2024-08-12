@@ -16,11 +16,11 @@
  * 
  */
 
-#ifndef __CVRUN_COMMANDS_H__
-#define __CVRUN_COMMANDS_H__
+#ifndef __CVCTL_COMMANDS_H__
+#define __CVCTL_COMMANDS_H__
 
-struct cvrun_command_options {
+struct cvctl_command_options {
     int dummy;
 };
 
-#endif //!__CVRUN_COMMANDS_H__
+#endif //!__CVCTL_COMMANDS_H__

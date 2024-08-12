@@ -30,7 +30,7 @@ static struct containerv_container* g_container = NULL;
 
 static void __print_help(void)
 {
-    printf("Usage: cvrun start <root> [options]\n");
+    printf("Usage: cvctl start <root> [options]\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
@@ -48,11 +48,12 @@ static void __cleanup_systems(int sig)
     _Exit(0);
 }
 
-int start_main(int argc, char** argv, char** envp, struct cvrun_command_options* options)
+int start_main(int argc, char** argv, char** envp, struct cvctl_command_options* options)
 {
-    const char* rootfs = NULL;
-    char*       abspath;
-    int         result;
+    const char*                rootfs = NULL;
+    struct containerv_options* cvopts;
+    char*                      abspath;
+    int                        result;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -70,14 +71,14 @@ int start_main(int argc, char** argv, char** envp, struct cvrun_command_options*
     }
 
     if (rootfs == NULL) {
-        fprintf(stderr, "cvrun: no chroot was specified\n");
+        fprintf(stderr, "cvctl: no chroot was specified\n");
         __print_help();
         return -1;
     }
 
     abspath = platform_abspath(rootfs);
     if (abspath == NULL) {
-        fprintf(stderr, "cvrun: path %s is invalid\n", rootfs);
+        fprintf(stderr, "cvctl: path %s is invalid\n", rootfs);
         return -1;
     }
 
@@ -86,14 +87,22 @@ int start_main(int argc, char** argv, char** envp, struct cvrun_command_options*
     vlog_set_level(VLOG_LEVEL_DEBUG);
     vlog_add_output(stdout);
 
-    result = containerv_create(
-        abspath,
-        CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL,
-        NULL, 0,
-        &g_container
-    );
+    cvopts = containerv_options_new();
+    if (cvopts == NULL) {
+        fprintf(stderr, "cvctl: failed to allocate memory for container options\n");
+        return -1;
+    }
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+
+#elif defined(__linux__) || defined(__unix__)
+    containerv_options_set_caps(cvopts, CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL | CV_CAP_IPC);
+#endif
+
+    result = containerv_create(abspath, cvopts, &g_container);
     if (result) {
-        fprintf(stderr, "cvrun: failed to create container\n");
+        fprintf(stderr, "cvctl: failed to create container\n");
+        containerv_options_delete(cvopts);
         vlog_cleanup();
         free(abspath);
         return -1;
@@ -101,6 +110,7 @@ int start_main(int argc, char** argv, char** envp, struct cvrun_command_options*
 
     for (;;);
 
+    containerv_options_delete(cvopts);
     vlog_cleanup();
     free(abspath);
     return 0;
