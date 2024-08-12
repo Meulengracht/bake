@@ -28,7 +28,7 @@
 
 static void __print_help(void)
 {
-    printf("Usage: cvrun exec <socket> <command> [options]\n");
+    printf("Usage: cvctl exec <socket> <command> [options]\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
@@ -43,7 +43,7 @@ static void __cleanup_systems(int sig)
     _Exit(0);
 }
 
-int exec_main(int argc, char** argv, char** envp, struct cvrun_command_options* options)
+int exec_main(int argc, char** argv, char** envp, struct cvctl_command_options* options)
 {
     const char* commSocket = NULL;
     char**      commandArgv = NULL;
@@ -67,7 +67,7 @@ int exec_main(int argc, char** argv, char** envp, struct cvrun_command_options* 
                         // One for NULL termination, one for arg0
                         commandArgv = calloc(argc - i + 2, sizeof(char*));
                         if (commandArgv == NULL) {
-                            fprintf(stderr, "cvrun: failed to allocate memory for command\n");
+                            fprintf(stderr, "cvctl: failed to allocate memory for command\n");
                             return -1;
                         }
                         // Install path as arg0 by doing this twice
@@ -80,13 +80,13 @@ int exec_main(int argc, char** argv, char** envp, struct cvrun_command_options* 
     }
 
     if (commSocket == NULL) {
-        fprintf(stderr, "cvrun: no socket path was specified\n");
+        fprintf(stderr, "cvctl: no socket path was specified\n");
         __print_help();
         return -1;
     }
 
     if (commandArgv == NULL) {
-        fprintf(stderr, "cvrun: no command was specified\n");
+        fprintf(stderr, "cvctl: no command was specified\n");
         __print_help();
         return -1;
     }
@@ -99,14 +99,14 @@ int exec_main(int argc, char** argv, char** envp, struct cvrun_command_options* 
     result = containerv_join(commSocket);
     vlog_cleanup();
     if (result) {
-        fprintf(stderr, "cvrun: failed to join container at path %s\n", commSocket);
+        fprintf(stderr, "cvctl: failed to join container at path %s\n", commSocket);
         return -1;
     }
 
 #if __linux__
     result = execve(commandArgv[0], (char* const*)&commandArgv[1], (char* const*)envp);
     if (result) {
-        fprintf(stderr, "cvrun: failed to execute %s\n", commandArgv[0]);
+        fprintf(stderr, "cvctl: failed to execute %s\n", commandArgv[0]);
     }
 #endif
     return 0;

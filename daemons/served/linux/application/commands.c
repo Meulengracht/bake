@@ -25,17 +25,21 @@
 static struct containerv_container* __create_container(struct served_application* application)
 {
     struct containerv_container* container;
+    struct containerv_options*   options;
     int                          status;
     char*                        rootFs;
 
+    options = containerv_options_new();
+    if (options == NULL) {
+        return NULL;
+    }
+
+    // setup config
+    containerv_options_set_caps(options, CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL | CV_CAP_IPC);
+
     rootFs = served_application_get_mount_path(application);
-    status = containerv_create(
-        rootFs,
-        0,
-        NULL,
-        0,
-        &container
-    );
+    status = containerv_create(rootFs, options, &container);
+    containerv_options_delete(options);
     free(rootFs);
     if (status) {
         return NULL;

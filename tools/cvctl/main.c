@@ -28,12 +28,12 @@
 
 static struct containerv_container* g_container = NULL;
 
-extern int start_main(int argc, char** argv, char** envp, struct cvrun_command_options* options);
-extern int exec_main(int argc, char** argv, char** envp, struct cvrun_command_options* options);
+extern int start_main(int argc, char** argv, char** envp, struct cvctl_command_options* options);
+extern int exec_main(int argc, char** argv, char** envp, struct cvctl_command_options* options);
 
 struct command_handler {
     char* name;
-    int (*handler)(int argc, char** argv, char** envp, struct cvrun_command_options* options);
+    int (*handler)(int argc, char** argv, char** envp, struct cvctl_command_options* options);
 };
 
 static struct command_handler g_commands[] = {
@@ -43,7 +43,7 @@ static struct command_handler g_commands[] = {
 
 static void __print_help(void)
 {
-    printf("Usage: cvrun <command> [options]\n");
+    printf("Usage: cvctl <command> [options]\n");
     printf("\n");
     printf("Commands:\n");
     printf("  start      starts a new container\n");
@@ -53,7 +53,7 @@ static void __print_help(void)
     printf("  -h, --help\n");
     printf("      Print this help message\n");
     printf("  -v, --version\n");
-    printf("      Print the version of cvrun\n");
+    printf("      Print the version of cvctl\n");
 }
 
 static struct command_handler* __get_command(const char* command)
@@ -69,7 +69,7 @@ static struct command_handler* __get_command(const char* command)
 int main(int argc, char** argv, char** envp)
 {
     struct command_handler*      command = NULL;
-    struct cvrun_command_options options = { 0 };
+    struct cvctl_command_options options = { 0 };
 
     // first argument must be the command if not --help or --version
     if (argc > 1) {
@@ -79,7 +79,7 @@ int main(int argc, char** argv, char** envp)
         }
 
         if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
-            printf("cvrun: version " PROJECT_VER "\n");
+            printf("cvctl: version " PROJECT_VER "\n");
             return 0;
         }
 
@@ -87,7 +87,7 @@ int main(int argc, char** argv, char** envp)
     }
 
     if (command == NULL) {
-        fprintf(stderr, "cvrun: invalid command %s\n", argv[1]);
+        fprintf(stderr, "cvctl: invalid command %s\n", argv[1]);
         return -1;
     }
     return command->handler(argc, argv, envp, &options);
