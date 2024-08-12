@@ -49,6 +49,7 @@ struct containerv_options_user_range {
 
 struct containerv_options {
     enum containerv_capabilities capabilities;
+    int                          privileged;
     struct containerv_mount*     mounts;
     int                          mounts_count;
     
@@ -98,6 +99,15 @@ static inline int __close_safe(int *fd)
  * @return
  */
 extern int containerv_drop_capabilities(void);
+
+/**
+ * @brief 
+ * 
+ * @param uid 
+ * @param gid 
+ * @return int 
+ */
+extern int containerv_switch_user_with_capabilities(uid_t uid, gid_t gid);
 
 /**
  * 

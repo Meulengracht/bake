@@ -176,20 +176,20 @@ static pid_t __exec(struct __containerv_spawn_options* options)
         return processId;
     }
 
-    if (options->gid != (gid_t)-1) {
-        VLOG_DEBUG("containerv[child]", "switching group (%i)\n", options->gid);
-        status = setgid(options->gid);
-        if (status) {
-            VLOG_ERROR("containerv[child]", "[%s]: failed to switch group: %i (gid=%i)\n", status, options->gid);
-            _Exit(-EPERM);
-        }
-    }
-
     if (options->uid != (gid_t)-1) {
         VLOG_DEBUG("containerv[child]", "switching user (%i)\n", options->uid);
         status = setuid(options->uid);
         if (status) {
-            VLOG_ERROR("containerv[child]", "[%s]: failed to switch user: %i (uid=%i)\n", status, options->uid);
+            VLOG_ERROR("containerv[child]", "failed to switch user: %i (uid=%i)\n", status, options->uid);
+            _Exit(-EPERM);
+        }
+    }
+
+    if (options->gid != (gid_t)-1) {
+        VLOG_DEBUG("containerv[child]", "switching group (%i)\n", options->gid);
+        status = setgid(options->gid);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "failed to switch group: %i (gid=%i)\n", status, options->gid);
             _Exit(-EPERM);
         }
     }
@@ -304,21 +304,14 @@ static int __container_map_mounts(
         struct containerv_mount*     mounts,
         int                          mountsCount)
 {
-    char* destination;
-    int   status = 0;
+    int status = 0;
     VLOG_DEBUG("containerv[child]", "__container_map_mounts()\n");
 
     if (!mountsCount) {
         return 0;
     }
 
-    destination = malloc(PATH_MAX);
-    if (destination == NULL) {
-        return -1;
-    }
-
     for (int i = 0; i < mountsCount; i++) {
-        //snprintf(destination, PATH_MAX, "%s/%s", container->mountfs, mounts[i].destination);
         VLOG_DEBUG("containerv[child]", "__container_map_mounts: mapping %s => %s (%s)\n",
             mounts[i].what, mounts[i].where, mounts[i].fstype);
         if (mounts[i].flags & CV_MOUNT_CREATE) {
@@ -331,7 +324,6 @@ static int __container_map_mounts(
 
         status = mount(
             mounts[i].what,
-            //destination,
             mounts[i].where,
             mounts[i].fstype,
             __convert_cv_mount_flags(mounts[i].flags),
@@ -341,7 +333,6 @@ static int __container_map_mounts(
             break;
         }
     }
-    free(destination);
     return status;
 }
 
@@ -504,6 +495,15 @@ static int __container_run(
         return status;
     }
 
+    // Before the exec of the containerv_set_init_process, we must have the user stuff under
+    // control, otherwise the rest of the code loses all capabilities
+    // Switch to the "root" user
+    status = __container_map_capabilities(container, options);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__container_run: failed to map container capabilities\n");
+        return status;
+    }
+
     // Make this process take the role of init(1)
     status = containerv_set_init_process();
     if (status) {
@@ -515,13 +515,6 @@ static int __container_run(
     status = sethostname("containerv-host", 15);
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_run: failed to set a new hostname\n");
-        return status;
-    }
-
-    // after the unshare, before the decoupling, let us map some caps in
-    status = __container_map_capabilities(container, options);
-    if (status) {
-        VLOG_ERROR("containerv[child]", "__container_run: failed to map container capabilities\n");
         return status;
     }
 
@@ -641,6 +634,30 @@ static int __container_entry(
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_entry: failed to close host status file descriptor\n");
         _Exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
+    }
+
+    if (options->privileged == 0) {
+        status = containerv_switch_user_with_capabilities(options->uid_range.host_start, options->gid_range.host_start);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_entry: failed to drop privileges\n");
+            return status;
+        }
+    } else {
+        // run the container as root
+        if (geteuid() != 0) {
+            // try to escalate
+            if (setresuid(0, 0, 0)) {
+                VLOG_ERROR("containerv[child]", "__container_entry: the container must have setuid privileges\n");
+                return status;
+            }
+        }
+        if (getegid() != 0) {
+            // try to escalate
+            if (setresgid(0, 0, 0)) {
+                VLOG_ERROR("containerv[child]", "__container_entry: the container must have setgid privileges\n");
+                return status;
+            }
+        }
     }
 
     // This is the primary run function, it initializes the container

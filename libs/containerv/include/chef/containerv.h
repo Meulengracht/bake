@@ -62,6 +62,7 @@ struct containerv_mount {
 };
 
 extern void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int count);
+extern void containerv_options_set_privileged(struct containerv_options* options);
 extern void containerv_options_set_users(struct containerv_options* options, uid_t hostUidStart, uid_t childUidStart, int count);
 extern void containerv_options_set_groups(struct containerv_options* options, gid_t hostGidStart, gid_t childGidStart, int count);
 #endif
