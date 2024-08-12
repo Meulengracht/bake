@@ -349,15 +349,13 @@ static int __map_user_namespace(
     struct containerv_container* container,
     struct containerv_options*   options)
 {
-    char buffer[PATH_MAX] = { 0 };
-    int  mapFd, status;
+    int mapFd, status;
     VLOG_DEBUG("containerv[child]", "__map_user_namespace()\n");
 
     // write users first
-    snprintf(&buffer[0], sizeof(buffer), "/proc/self/uid_map");
-    mapFd = open(&buffer[0], O_WRONLY);
+    mapFd = open("/proc/self/uid_map", O_WRONLY);
     if (mapFd < 0) {
-        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open %s\n", &buffer[0]);
+        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open /proc/self/uid_map\n");
         return status;
     }
 
@@ -368,18 +366,34 @@ static int __map_user_namespace(
         options->uid_range.child_start,
         options->uid_range.count
     );
-    if (status) {
+    if (status < 0) {
         VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to write user map\n");
         close(mapFd);
         return status;
     }
     close(mapFd);
 
-    // write groups
-    snprintf(&buffer[0], sizeof(buffer), "/proc/self/gid_map");
-    mapFd = open(&buffer[0], O_WRONLY);
+    // before writing to gid_map we must deny further use of setgroups(2)
+    mapFd = open("/proc/self/setgroups", O_WRONLY);
     if (mapFd < 0) {
-        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open %s\n", &buffer[0]);
+        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open /proc/self/setgroups\n");
+        return status;
+    }
+
+    // the trick here is, we can only write ONCE, and at the maximum of
+    // up to 5 lines.
+    status = dprintf(mapFd, "deny\n");
+    if (status < 0) {
+        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to disable setgroups\n");
+        close(mapFd);
+        return status;
+    }
+    close(mapFd);
+
+    // write groups
+    mapFd = open("/proc/self/gid_map", O_WRONLY);
+    if (mapFd < 0) {
+        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open /proc/self/gid_map\n");
         return status;
     }
 
@@ -390,13 +404,13 @@ static int __map_user_namespace(
         options->gid_range.child_start,
         options->gid_range.count
     );
-    if (status) {
+    if (status < 0) {
         VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to write group map\n");
         close(mapFd);
         return status;
     }
     close(mapFd);
-    return status;
+    return 0;
 }
 
 static int __container_map_capabilities(
@@ -507,7 +521,7 @@ static int __container_run(
     // after the unshare, before the decoupling, let us map some caps in
     status = __container_map_capabilities(container, options);
     if (status) {
-        VLOG_ERROR("containerv[child]", "__container_run: failed to map capability specific mounts\n");
+        VLOG_ERROR("containerv[child]", "__container_run: failed to map container capabilities\n");
         return status;
     }
 
