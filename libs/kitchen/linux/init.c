@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/dirs.h>
 #include <chef/kitchen.h>
 #include <chef/platform.h>
 #include <chef/containerv-user-linux.h>
@@ -57,25 +58,6 @@ static struct pkgmngr* __setup_pkg_environment(struct kitchen_init_options* opti
         }
     }
     return NULL;
-}
-
-int __get_kitchen_root(char* buffer, size_t maxLength, const char* uuid)
-{
-    char root[PATH_MAX];
-    int  status;
-
-    status = platform_getuserdir(&root[0], sizeof(root));
-    if (status) {
-        VLOG_ERROR("kitchen", "__get_kitchen_root: failed to resolve user homedir\n");
-        return -1;
-    }
-
-    if (uuid != NULL) {
-        snprintf(buffer, maxLength, "%s/.chef/kitchen/%s", &root[0], uuid);
-    } else {
-        snprintf(buffer, maxLength, "%s/.chef/kitchen", &root[0]);
-    }
-    return 0;
 }
 
 static char* __fmt_env_option(const char* name, const char* value)
@@ -138,16 +120,10 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
 // <root>/.kitchen/<recipe>/chef/project => <root>
 static int __kitchen_construct(struct kitchen_init_options* options, struct kitchen* kitchen)
 {
-    char buff[PATH_MAX*2];
-    char root[PATH_MAX] = { 0 };
-    int  status;
+    char        buff[PATH_MAX*2];
+    const char* root = chef_dirs_kitchen(recipe_cache_uuid());
+    int         status;
     VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->recipe->project.name);
-
-    status = __get_kitchen_root(&root[0], sizeof(root) - 1, recipe_cache_uuid());
-    if (status) {
-        VLOG_ERROR("kitchen", "__kitchen_construct: failed to resolve root directory\n");
-        return -1;
-    }
 
     memset(kitchen, 0, sizeof(struct kitchen));
     kitchen->target_platform = strdup(options->target_platform);
@@ -156,39 +132,38 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     kitchen->magic = __KITCHEN_INIT_MAGIC;
     kitchen->recipe = options->recipe;
     kitchen->recipe_path = strdup(options->recipe_path);
-
-    kitchen->host_kitchen_project_root = strdup(&root[0]);
+    kitchen->host_kitchen_project_root = root;
 
     // Format external chroot paths that are arch/platform agnostic
-    snprintf(&buff[0], sizeof(buff), "%s/ns", &root[0]);
+    snprintf(&buff[0], sizeof(buff), "%s/ns", root);
     kitchen->host_chroot = strdup(&buff[0]);
     kitchen->pkg_manager = __setup_pkg_environment(options, &buff[0]);
 
     // Before paths, but after all the other setup, setup base environment
     kitchen->base_environment = __initialize_env(kitchen, options->envp);
 
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/project", &root[0]);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/project", root);
     kitchen->host_project_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install", &root[0]);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install", root);
     kitchen->host_install_root = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/toolchains", &root[0]);
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/toolchains", root);
     kitchen->host_build_toolchains_path = strdup(&buff[0]);
 
     // Build/ingredients/install/checkpoint paths are different for each target
     snprintf(&buff[0], sizeof(buff), "%s/ns/chef/build/%s/%s",
-        &root[0], options->target_platform, options->target_architecture
+        root, options->target_platform, options->target_architecture
     );
     kitchen->host_build_path = strdup(&buff[0]);
 
     snprintf(&buff[0], sizeof(buff), "%s/ns/chef/ingredients/%s/%s",
-        &root[0], options->target_platform, options->target_architecture
+        root, options->target_platform, options->target_architecture
     );
     kitchen->host_build_ingredients_path = strdup(&buff[0]);
 
     snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install/%s/%s",
-        &root[0], options->target_platform, options->target_architecture
+        root, options->target_platform, options->target_architecture
     );
     kitchen->host_install_path = strdup(&buff[0]);
 

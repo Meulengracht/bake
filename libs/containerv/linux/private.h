@@ -49,7 +49,6 @@ struct containerv_options_user_range {
 
 struct containerv_options {
     enum containerv_capabilities capabilities;
-    int                          privileged;
     struct containerv_mount*     mounts;
     int                          mounts_count;
     
@@ -114,6 +113,11 @@ extern int containerv_switch_user_with_capabilities(uid_t uid, gid_t gid);
  * @return
  */
 extern int containerv_set_init_process(void);
+
+/**
+ * @brief
+ */
+extern int containerv_mkdir_as(const char* path, unsigned int mode, uid_t uid, gid_t gid);
 
 /**
  * 

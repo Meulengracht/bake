@@ -55,7 +55,7 @@ int container_rootfs_setup_debootstrap(const char* path)
     if (child == 0) {
         // debootstrap must run under the root user, so lets make sure we've switched
         // to root as the real user.
-        if (setuid(geteuid())) {
+        if (setuid(geteuid()) || setgid(getegid())) {
             VLOG_ERROR("containerv", "container_rootfs_setup_debootstrap: failed to switch to root\n");
             _Exit(-1);
         }

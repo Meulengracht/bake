@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <chef/client.h>
+#include <chef/dirs.h>
 #include "inventory.h"
 #include <libingredient.h>
 #include <libfridge.h>
@@ -42,51 +43,17 @@ struct progress_context {
 };
 
 struct fridge_context {
-    char*                root;
     struct fridge_store* store;
 };
 
 static struct fridge_context g_fridge = { 0 };
 
-static int __make_folders(const char* root)
+int fridge_initialize(const char* platform, const char* architecture)
 {
     int status;
 
-    status = platform_mkdir(root);
-    if (status) {
-        VLOG_ERROR("fridge", "__make_folders: failed to create root directory\n");
-        return -1;
-    }
-    
-    return 0;
-}
-
-int fridge_initialize(const char* platform, const char* architecture)
-{
-    int   status;
-    char  temp[2048] = { 0 };
-
     if (platform == NULL || architecture == NULL) {
         VLOG_ERROR("fridge", "fridge_initialize: platform and architecture must be specified\n");
-        return -1;
-    }
-
-    status = platform_getuserdir(&temp[0], sizeof(temp) - 1);
-    if (status) {
-        VLOG_ERROR("fridge", "fridge_initialize: failed to resolve user homedir\n");
-        return -1;
-    }
-
-    g_fridge.root = strpathjoin(&temp[0], ".chef", "fridge", NULL);
-    if (g_fridge.root == NULL) {
-        VLOG_ERROR("fridge", "fridge_initialize: failed to allocate memory for root directory\n");
-        return -1;
-    }
-
-    status = __make_folders(g_fridge.root);
-    if (status) {
-        VLOG_ERROR("fridge", "fridge_initialize: failed to create folders\n");
-        fridge_cleanup();
         return -1;
     }
 
@@ -102,9 +69,6 @@ int fridge_initialize(const char* platform, const char* architecture)
 
 void fridge_cleanup(void)
 {
-    // free memory
-    free(g_fridge.root);
-
     // reset context
     memset(&g_fridge, 0, sizeof(struct fridge_context));
 }

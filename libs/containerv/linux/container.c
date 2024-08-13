@@ -315,7 +315,7 @@ static int __container_map_mounts(
         VLOG_DEBUG("containerv[child]", "__container_map_mounts: mapping %s => %s (%s)\n",
             mounts[i].what, mounts[i].where, mounts[i].fstype);
         if (mounts[i].flags & CV_MOUNT_CREATE) {
-            status = platform_mkdir(mounts[i].where);
+            status = containerv_mkdir_as(mounts[i].where, 0755, 0, 0);
             if (status) {
                 VLOG_ERROR("containerv[child]", "__container_map_mounts: could not create %s\n", mounts[i].where);
                 return -1;
@@ -346,8 +346,8 @@ static int __map_user_namespace(
     // write users first
     mapFd = open("/proc/self/uid_map", O_WRONLY);
     if (mapFd < 0) {
-        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open /proc/self/uid_map\n");
-        return status;
+        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open /proc/self/uid_map:\n");
+        return -1;
     }
 
     // the trick here is, we can only write ONCE, and at the maximum of
@@ -368,7 +368,7 @@ static int __map_user_namespace(
     mapFd = open("/proc/self/setgroups", O_WRONLY);
     if (mapFd < 0) {
         VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open /proc/self/setgroups\n");
-        return status;
+        return -1;
     }
 
     // the trick here is, we can only write ONCE, and at the maximum of
@@ -458,7 +458,8 @@ static char* __host_container_dir(struct containerv_container* container, const 
 
 static int __container_run(
     struct containerv_container* container,
-    struct containerv_options*   options)
+    struct containerv_options*   options,
+    uid_t                        realUid)
 {
     struct containerv_event event;
     int                     status;
@@ -504,11 +505,12 @@ static int __container_run(
         return status;
     }
 
-    // Make this process take the role of init(1)
-    status = containerv_set_init_process();
-    if (status) {
-        VLOG_ERROR("containerv[child]", "__container_run: failed to assume the PID of 1\n");
-        return status;
+    if (realUid != 0) {
+        status = containerv_switch_user_with_capabilities(realUid, realUid);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_entry: failed to drop privileges\n");
+            _Exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
+        }
     }
 
     // Set the hostname of the new UTS
@@ -617,12 +619,28 @@ static int __container_run(
         VLOG_ERROR("containerv[child]", "__container_run: failed to drop capabilities\n");
         return status;
     }
-    
+
+    // Make this process take the role of init(1) before we go into
+    // the main loop
+    status = containerv_set_init_process();
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__container_run: failed to assume the PID of 1\n");
+        return status;
+    }
+
+    // Container is now up and running
     __send_container_event(container, CV_CONTAINER_UP, 0);
     return __container_idle_loop(container);
 }
 
-static int __container_entry(
+static uid_t __real_user(void)
+{
+    uid_t euid, suid, ruid;
+    getresuid(&ruid, &euid, &suid);
+    return ruid;
+}
+
+static void __container_entry(
     struct containerv_container* container,
     struct containerv_options*   options)
 {
@@ -636,32 +654,8 @@ static int __container_entry(
         _Exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
     }
 
-    if (options->privileged == 0) {
-        status = containerv_switch_user_with_capabilities(options->uid_range.host_start, options->gid_range.host_start);
-        if (status) {
-            VLOG_ERROR("containerv[child]", "__container_entry: failed to drop privileges\n");
-            return status;
-        }
-    } else {
-        // run the container as root
-        if (geteuid() != 0) {
-            // try to escalate
-            if (setresuid(0, 0, 0)) {
-                VLOG_ERROR("containerv[child]", "__container_entry: the container must have setuid privileges\n");
-                return status;
-            }
-        }
-        if (getegid() != 0) {
-            // try to escalate
-            if (setresgid(0, 0, 0)) {
-                VLOG_ERROR("containerv[child]", "__container_entry: the container must have setgid privileges\n");
-                return status;
-            }
-        }
-    }
-
     // This is the primary run function, it initializes the container
-    status = __container_run(container, options);
+    status = __container_run(container, options, __real_user());
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_entry: failed to execute: %i\n", status);
         __send_container_event(container, CV_CONTAINER_DOWN, status);
@@ -713,7 +707,12 @@ int containerv_create(
         *containerOut = container;
         return 0;
     }
-    exit(__container_entry(container, options));
+
+    // The entry function does not return
+    __container_entry(container, options);
+
+    // But still, keep a catch all
+    _Exit(-EINVAL);
 }
 
 int containerv_spawn(

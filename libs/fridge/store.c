@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <chef/api/package.h>
 #include <chef/client.h>
+#include <chef/dirs.h>
 #include <chef/platform.h>
 #include "inventory.h"
 #include <stdio.h>
@@ -30,33 +31,10 @@
 #define PACKAGE_TEMP_PATH "pack.inprogress"
 
 struct fridge_store {
-    char*                    path;
     char*                    platform;
     char*                    arch;
     struct fridge_inventory* inventory;
 };
-
-static int __get_store_path(char** pathOut)
-{
-    char* path;
-    int   status;
-    VLOG_DEBUG("store", "__get_store_path()\n");
-
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        return -1;
-    }
-
-    status = platform_getuserdir(path, PATH_MAX);
-    if (status != 0) {
-        free(path);
-        return -1;
-    }
-
-    strcat(path, CHEF_PATH_SEPARATOR_S ".chef" CHEF_PATH_SEPARATOR_S "store");
-    *pathOut = path;
-    return 0;
-}
 
 static struct fridge_store* __store_new(const char* platform, const char* arch)
 {
@@ -80,7 +58,6 @@ static void __store_delete(struct fridge_store* store)
         return;
     }
 
-    free(store->path);
     free(store->platform);
     free(store->arch);
     free(store);
@@ -98,20 +75,6 @@ int fridge_store_load(const char* platform, const char* arch, struct fridge_stor
         return -1;
     }
 
-    status = __get_store_path(&store->path);
-    if (status) {
-        VLOG_ERROR("store", "fridge_store_load: failed to get global store directory\n");
-        __store_delete(store);
-        return status;
-    }
-
-    status = platform_mkdir(store->path);
-    if (status) {
-        VLOG_ERROR("store", "fridge_store_load: failed to create global store directory\n");
-        __store_delete(store);
-        return status;
-    }
-
     *storeOut = store;
     return 0;
 }
@@ -123,7 +86,7 @@ int fridge_store_open(struct fridge_store* store)
         errno = EINVAL;
         return -1;
     }
-    return inventory_load(store->path, &store->inventory);
+    return inventory_load(chef_dirs_store(), &store->inventory);
 }
 
 int fridge_store_close(struct fridge_store* store)
@@ -167,7 +130,7 @@ static int __package_path(
         pathBuffer,
         bufferSize - 1,
         "%s" CHEF_PATH_SEPARATOR_S "%s-%s-%s-%s-%s-%i.pack",
-        store->path,
+        chef_dirs_store(),
         publisher,
         package,
         platform,
