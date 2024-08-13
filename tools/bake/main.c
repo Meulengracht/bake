@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <chef/dirs.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <stdio.h>
@@ -353,6 +354,13 @@ int main(int argc, char** argv, char** envp)
     // TODO switch to trace by default, allow -v for debug
     vlog_set_level(VLOG_LEVEL_DEBUG);
     vlog_add_output(stdout);
+
+    // initialize directories
+    status = chef_dirs_initialize();
+    if (status) {
+        fprintf(stderr, "bake: failed to initialize directories\n");
+        return -1;
+    }
 
     status = command->handler(argc, argv, envp, &options);
     recipe_destroy(options.recipe);

@@ -82,13 +82,6 @@ int chefclient_initialize(void)
     if (status) {
         return status;
     }
-    
-    strcat(&buff[0], CHEF_PATH_SEPARATOR_S ".chef");
-    status = platform_mkdir(&buff[0]);
-    if (status) {
-        fprintf(stderr, "__save_settings: failed to create directory %s: %s\n", &buff[0], strerror(errno));
-        return -1;
-    }
 
     // required on windows
     curl_global_init(CURL_GLOBAL_ALL);

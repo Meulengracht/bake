@@ -47,6 +47,37 @@ static int __clean_environment(const char* path)
     return 0;
 }
 
+static int __ensure_kitchen_dirs(struct kitchen* kitchen)
+{
+    VLOG_DEBUG("kitchen", "__ensure_hostdirs()\n");
+
+    if (platform_mkdir(kitchen->host_build_path)) {
+        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_build_path);
+        return -1;
+    }
+
+    if (platform_mkdir(kitchen->host_build_ingredients_path)) {
+        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_build_ingredients_path);
+        return -1;
+    }
+
+    if (platform_mkdir(kitchen->host_build_toolchains_path)) {
+        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_build_toolchains_path);
+        return -1;
+    }
+
+    if (platform_mkdir(kitchen->host_install_path)) {
+        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_install_path);
+        return -1;
+    }
+
+    if (platform_mkdir(kitchen->host_project_path)) {
+        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_project_path);
+        return -1;
+    }
+    return 0;
+}
+
 static int __ensure_hostdirs(struct kitchen* kitchen)
 {
     VLOG_DEBUG("kitchen", "__ensure_hostdirs()\n");

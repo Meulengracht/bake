@@ -4,4 +4,4 @@ set (BAKE_SRCS
 
 add_executable(bake ${BAKE_SRCS})
 add_subdirectory(commands)
-target_link_libraries(bake PRIVATE bake-commands platform vlog)
+target_link_libraries(bake PRIVATE bake-commands libdirconf platform vlog)
