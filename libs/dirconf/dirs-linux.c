@@ -16,8 +16,11 @@
  * 
  */
 
+#define _GNU_SOURCE
+
 #include <chef/platform.h>
 #include <errno.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <vlog.h>
@@ -28,7 +31,7 @@ static struct {
     const char* fridge;
     const char* store;
     const char* kitchen;
-} g_dirs = { NULL };
+} g_dirs = { 0, NULL, NULL, NULL, NULL };
 
 static int __directory_exists(
     const char* path)
@@ -41,6 +44,29 @@ static int __directory_exists(
         return -1;
     }
     return S_ISDIR(st.st_mode) ? 1 : -1;
+}
+
+static int __mkdir_if_not_exists(const char* path, unsigned int mode, uid_t uid, gid_t gid)
+{
+    int status = __directory_exists(path);
+    if (status == 1) {
+        return 0;
+    } else if (status < 0) {
+        VLOG_ERROR("dirs", "failed to stat %s\n", path);
+        return status;
+    }
+    
+    status = mkdir(path, mode);
+    if (status) {
+        VLOG_ERROR("dirs", "failed to create path %s\n", path);
+        return status;
+    }
+
+    status = chown(path, uid, gid);
+    if (status) {
+        VLOG_ERROR("dirs", "failed to change ownership of %s\n", path);
+    }
+    return status;
 }
 
 static int __mkdir_as(const char* path, unsigned int mode, uid_t uid, gid_t gid)
@@ -65,29 +91,15 @@ static int __mkdir_as(const char* path, unsigned int mode, uid_t uid, gid_t gid)
         if (*p == '/') {
             *p = 0;
             
-            status = __directory_exists(ccpath);
-            if (status != 1) {
-                status = mkdir(ccpath, mode);
-                if (status) {
-                    VLOG_ERROR("dirs", "failed to create path %s\n", ccpath);
-                    return status;
-                } else if (!status) {
-                    // new directory, ensure correct permissions
-                    status = chown(ccpath, uid, gid);
-                    if (status) {
-                        VLOG_ERROR("dirs", "failed to change ownership of %s\n", ccpath);
-                        return status;
-                    }
-                }
-            } else if (status < 0) {
-                VLOG_ERROR("dirs", "failed to stat %s\n", ccpath);
+            status = __mkdir_if_not_exists(ccpath, mode, uid, gid);
+            if (status) {
                 return status;
             }
 
             *p = '/';
         }
     }
-    return mkdir(ccpath, mode);
+    return __mkdir_if_not_exists(ccpath, mode, uid, gid);
 }
 
 static uid_t __real_user(void)
@@ -151,28 +163,48 @@ int chef_dirs_initialize(void)
 
 const char* chef_dirs_root(void)
 {
+    if (g_dirs.root == NULL) {
+        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        return NULL;
+    }
     return g_dirs.root;
 }
 
 const char* chef_dirs_fridge(void)
 {
+    if (g_dirs.fridge == NULL) {
+        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        return NULL;
+    }
     return g_dirs.fridge;
 }
 
 const char* chef_dirs_store(void)
 {
+    if (g_dirs.store == NULL) {
+        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        return NULL;
+    }
     return g_dirs.store;
 }
 
 const char* chef_dirs_kitchen(const char* uuid)
 {
+    if (g_dirs.kitchen == NULL) {
+        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        return NULL;
+    }
     if (uuid != NULL) {
         return strpathcombine(g_dirs.kitchen, uuid);
     }
     return g_dirs.kitchen;
 }
 
-const char* chef_dirs_ensure(const char* path)
+int chef_dirs_ensure(const char* path)
 {
+    if (g_dirs.root == NULL) {
+        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        return -1;
+    }
     return __mkdir_as(path, 0755, g_dirs.real_user, g_dirs.real_user);
 }

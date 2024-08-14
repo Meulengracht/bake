@@ -132,7 +132,7 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     kitchen->magic = __KITCHEN_INIT_MAGIC;
     kitchen->recipe = options->recipe;
     kitchen->recipe_path = strdup(options->recipe_path);
-    kitchen->host_kitchen_project_root = root;
+    kitchen->host_kitchen_project_root = (char*)root;
 
     // Format external chroot paths that are arch/platform agnostic
     snprintf(&buff[0], sizeof(buff), "%s/ns", root);

@@ -229,7 +229,7 @@ static int __setup_container(struct kitchen* kitchen)
 
     // project path
     mounts[0].what = kitchen->host_cwd;
-    mounts[0].where = kitchen->host_project_path;
+    mounts[0].where = kitchen->project_root;
     mounts[0].flags = CV_MOUNT_BIND | CV_MOUNT_READONLY;
 
     // we want as many caps as makes sense
@@ -240,8 +240,11 @@ static int __setup_container(struct kitchen* kitchen)
         CV_CAP_USERS
     );
     containerv_options_set_mounts(options, mounts, 1);
-    containerv_options_set_users(options, current->uid, 0, 1);
-    containerv_options_set_groups(options, current->gid, 0, 1);
+
+    // map root to the current user inside the chroot, this way we get full
+    // control inside.
+    containerv_options_set_users(options, 0, current->uid, 1);
+    containerv_options_set_groups(options, 0, current->gid, 1);
     
     // dont need this anymore
     containerv_user_delete(current);

@@ -97,7 +97,13 @@ static struct containerv_container* __container_new(void)
     );
 
     // create the resources that we need immediately
-    status = pipe(container->status_fds);
+    status = pipe(container->host);
+    if (status) {
+        free(container);
+        return NULL;
+    }
+
+    status = pipe(container->child);
     if (status) {
         free(container);
         return NULL;
@@ -125,8 +131,10 @@ static void __container_delete(struct containerv_container* container)
     for (int i = 0; i < CV_NS_COUNT; i++) {
         __close_safe(&container->ns_fds[i]);
     }
-    __close_safe(&container->status_fds[0]);
-    __close_safe(&container->status_fds[1]);
+    __close_safe(&container->host[0]);
+    __close_safe(&container->host[1]);
+    __close_safe(&container->child[0]);
+    __close_safe(&container->child[1]);
     __close_safe(&container->socket_fd);
     free(container->runtime_dir);
     free(container->rootfs);
@@ -134,6 +142,7 @@ static void __container_delete(struct containerv_container* container)
 }
 
 enum containerv_event_type {
+    CV_CONTAINER_WAITING_FOR_NS_SETUP,
     CV_CONTAINER_UP,
     CV_CONTAINER_DOWN
 };
@@ -143,22 +152,22 @@ struct containerv_event {
     int                        status;
 };
 
-static void __send_container_event(struct containerv_container* container, enum containerv_event_type type, int status)
+static void __send_container_event(int fds[2], enum containerv_event_type type, int status)
 {
     struct containerv_event event = {
         .type = type,
         .status = status
     };
-    if (write(container->status_fds[__FD_WRITE], &event, sizeof(struct containerv_event)) != sizeof(struct containerv_event)) {
+    if (write(fds[__FD_WRITE], &event, sizeof(struct containerv_event)) != sizeof(struct containerv_event)) {
         // log this
     }
 }
 
-static int __wait_for_container_event(struct containerv_container* container, struct containerv_event* event)
+static int __wait_for_container_event(int fds[2], struct containerv_event* event)
 {
     int bytesRead;
 
-    bytesRead = __INTSAFE_CALL(read(container->status_fds[__FD_READ], event, sizeof(struct containerv_event)));
+    bytesRead = __INTSAFE_CALL(read(fds[__FD_READ], event, sizeof(struct containerv_event)));
     if (bytesRead != sizeof(struct containerv_event)) {
         return -1;
     }
@@ -250,7 +259,9 @@ void __containerv_destroy(struct containerv_container* container)
     }
 
     // send event
-    __send_container_event(container, CV_CONTAINER_DOWN, 0);
+    if (container->child[__FD_WRITE] != -1) {
+        __send_container_event(container->child, CV_CONTAINER_DOWN, 0);
+    }
 
     // cleanup container
     __container_delete(container);
@@ -300,9 +311,9 @@ static int __convert_cv_mount_flags(enum containerv_mount_flags cvFlags)
 
 // __container_map_mounts maps any outside paths into the container
 static int __container_map_mounts(
-        struct containerv_container* container,
-        struct containerv_mount*     mounts,
-        int                          mountsCount)
+        const char*              root,
+        struct containerv_mount* mounts,
+        int                      mountsCount)
 {
     int status = 0;
     VLOG_DEBUG("containerv[child]", "__container_map_mounts()\n");
@@ -312,23 +323,26 @@ static int __container_map_mounts(
     }
 
     for (int i = 0; i < mountsCount; i++) {
+        char* destination = strpathcombine(root, mounts[i].where);
         VLOG_DEBUG("containerv[child]", "__container_map_mounts: mapping %s => %s (%s)\n",
-            mounts[i].what, mounts[i].where, mounts[i].fstype);
+            mounts[i].what, destination, mounts[i].fstype);
         if (mounts[i].flags & CV_MOUNT_CREATE) {
-            status = containerv_mkdir_as(mounts[i].where, 0755, 0, 0);
+            status = containerv_mkdir(root, mounts[i].where, 0755);
             if (status) {
-                VLOG_ERROR("containerv[child]", "__container_map_mounts: could not create %s\n", mounts[i].where);
+                VLOG_ERROR("containerv[child]", "__container_map_mounts: could not create %s\n", destination);
+                free(destination);
                 return -1;
             }
         }
 
         status = mount(
             mounts[i].what,
-            mounts[i].where,
+            destination,
             mounts[i].fstype,
             __convert_cv_mount_flags(mounts[i].flags),
             NULL
         );
+        free(destination);
         if (status) {
             break;
         }
@@ -336,17 +350,19 @@ static int __container_map_mounts(
     return status;
 }
 
-static int __map_user_namespace(
+static int __write_user_namespace_maps(
     struct containerv_container* container,
     struct containerv_options*   options)
 {
-    int mapFd, status;
-    VLOG_DEBUG("containerv[child]", "__map_user_namespace()\n");
+    int  mapFd, status;
+    char tmp[128];
+    VLOG_DEBUG("containerv[host]", "__write_user_namespace_maps()\n");
 
     // write users first
-    mapFd = open("/proc/self/uid_map", O_WRONLY);
+    snprintf(&tmp[0], sizeof(tmp), "/proc/%u/uid_map", container->pid);
+    mapFd = open(&tmp[0], O_WRONLY);
     if (mapFd < 0) {
-        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open /proc/self/uid_map:\n");
+        VLOG_ERROR("containerv[host]", "__write_user_namespace_maps: failed to open %s\n", &tmp[0]);
         return -1;
     }
 
@@ -358,33 +374,17 @@ static int __map_user_namespace(
         options->uid_range.count
     );
     if (status < 0) {
-        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to write user map\n");
-        close(mapFd);
-        return status;
-    }
-    close(mapFd);
-
-    // before writing to gid_map we must deny further use of setgroups(2)
-    mapFd = open("/proc/self/setgroups", O_WRONLY);
-    if (mapFd < 0) {
-        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open /proc/self/setgroups\n");
-        return -1;
-    }
-
-    // the trick here is, we can only write ONCE, and at the maximum of
-    // up to 5 lines.
-    status = dprintf(mapFd, "deny\n");
-    if (status < 0) {
-        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to disable setgroups\n");
+        VLOG_ERROR("containerv[host]", "__write_user_namespace_maps: failed to write user map\n");
         close(mapFd);
         return status;
     }
     close(mapFd);
 
     // write groups
-    mapFd = open("/proc/self/gid_map", O_WRONLY);
+    snprintf(&tmp[0], sizeof(tmp), "/proc/%u/gid_map", container->pid);
+    mapFd = open(&tmp[0], O_WRONLY);
     if (mapFd < 0) {
-        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to open /proc/self/gid_map\n");
+        VLOG_ERROR("containerv[host]", "__write_user_namespace_maps: failed to open %s\n", &tmp[0]);
         return status;
     }
 
@@ -396,29 +396,12 @@ static int __map_user_namespace(
         options->gid_range.count
     );
     if (status < 0) {
-        VLOG_ERROR("containerv[child]", "__map_user_namespace: failed to write group map\n");
+        VLOG_ERROR("containerv[host]", "__write_user_namespace_maps: failed to write group map\n");
         close(mapFd);
         return status;
     }
     close(mapFd);
     return 0;
-}
-
-static int __container_map_capabilities(
-    struct containerv_container* container,
-    struct containerv_options*   options)
-{
-    int status = 0;
-    VLOG_DEBUG("containerv[child]", "__container_map_capabilities()\n");
-
-    if (options->capabilities & CV_CAP_USERS) {
-        status = __map_user_namespace(container, options);
-        if (status) {
-            VLOG_ERROR("containerv[child]", "__container_map_capabilities: failed to map users\n");
-            return status;
-        }
-    }
-    return status;
 }
 
 static int __container_open_ns_fds(
@@ -451,20 +434,23 @@ static int __container_open_ns_fds(
     return 0;
 }
 
-static char* __host_container_dir(struct containerv_container* container, const char* path)
-{
-    return strpathcombine(container->rootfs, path);
-}
-
 static int __container_run(
     struct containerv_container* container,
     struct containerv_options*   options,
     uid_t                        realUid)
 {
-    struct containerv_event event;
-    int                     status;
-    int                     flags = CLONE_NEWUTS;
+    int status;
+    int flags = CLONE_NEWUTS;
     VLOG_DEBUG("containerv[child]", "__container_run()\n");
+
+    // let us immediately drop capabilities after getting the container running
+    if (realUid != 0) {
+        status = containerv_switch_user_with_capabilities(realUid, realUid);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_entry: failed to drop privileges\n");
+            _Exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
+        }
+    }
 
     if (options->capabilities & CV_CAP_FILESYSTEM) {
         flags |= CLONE_NEWNS;
@@ -496,22 +482,28 @@ static int __container_run(
         return status;
     }
 
-    // Before the exec of the containerv_set_init_process, we must have the user stuff under
-    // control, otherwise the rest of the code loses all capabilities
-    // Switch to the "root" user
-    status = __container_map_capabilities(container, options);
-    if (status) {
-        VLOG_ERROR("containerv[child]", "__container_run: failed to map container capabilities\n");
-        return status;
-    }
+    // perform sync with host
+    if (options->capabilities & CV_CAP_USERS) {
+        struct containerv_event event;
 
-    if (realUid != 0) {
-        status = containerv_switch_user_with_capabilities(realUid, realUid);
+        // notify the host that we need user setup
+        VLOG_DEBUG("containerv[child]", "notifying host that we need external assistance\n");
+        __send_container_event(container->child, CV_CONTAINER_WAITING_FOR_NS_SETUP, 0);
+
+        // wait for ack
+        status = __wait_for_container_event(container->host, &event);
         if (status) {
-            VLOG_ERROR("containerv[child]", "__container_entry: failed to drop privileges\n");
-            _Exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
+            VLOG_ERROR("containerv[child]", "__container_run: failed to receive ack from ns setup\n");
+            return status;
+        }
+
+        // check status
+        if (event.status) {
+            VLOG_ERROR("containerv[child]", "__container_run: host failed to setup ns, aborting\n");
+            return event.status;
         }
     }
+
 
     // Set the hostname of the new UTS
     status = sethostname("containerv-host", 15);
@@ -532,47 +524,24 @@ static int __container_run(
     // we can start doing mount operations that still require the host file system
     // before we chroot
     if (options->capabilities & CV_CAP_FILESYSTEM) {
-        static const int mntsCount = 4;
+        static const int premountsCount = 1;
         struct containerv_mount mnts[] = {
             {
                 .what = container->runtime_dir,
-                .where = __host_container_dir(container, container->runtime_dir),
+                .where = container->runtime_dir,
                 .fstype = NULL,
                 .flags = CV_MOUNT_BIND | CV_MOUNT_RECURSIVE | CV_MOUNT_CREATE
-            },
-            {
-                .what = "sysfs",
-                .where = __host_container_dir(container, "/sys"),
-                .fstype = "sysfs",
-                .flags = CV_MOUNT_CREATE
-            },
-            {
-                .what = "proc",
-                .where = __host_container_dir(container, "/proc"),
-                .fstype = "proc",
-                .flags = CV_MOUNT_CREATE
-            },
-            {
-                .what = "tmpfs",
-                .where = __host_container_dir(container, "/tmp"),
-                .fstype = "tmpfs",
-                .flags = CV_MOUNT_CREATE
-            },
+            }
         };
         
-        status = __container_map_mounts(container, &mnts[0], mntsCount);
+        status = __container_map_mounts(container->rootfs, &mnts[0], premountsCount);
         if (status) {
             VLOG_ERROR("containerv[child]", "__container_run: failed to map system mounts\n");
             return status;
         }
 
-        // cleanup
-        for (int i = 0; i < mntsCount; i++) {
-            free(mnts[i].where);
-        }
-
         // bind mount all additional mounts requested by the caller
-        status = __container_map_mounts(container, options->mounts, options->mounts_count);
+        status = __container_map_mounts(container->rootfs, options->mounts, options->mounts_count);
         if (status) {
             VLOG_ERROR("containerv[child]", "__container_run: failed to map requested mounts\n");
             return status;
@@ -598,6 +567,37 @@ static int __container_run(
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_run: failed to change directory to root\n");
         return status;
+    }
+
+    // After the chroot we can do now do special mounts
+    if (options->capabilities & CV_CAP_FILESYSTEM) {
+        static const int postmountsCount = 3;
+        struct containerv_mount mnts[] = {
+            {
+                .what = "sysfs",
+                .where = "/sys",
+                .fstype = "none",
+                .flags = CV_MOUNT_CREATE
+            },
+            {
+                .what = "proc",
+                .where = "/proc",
+                .fstype = "none",
+                .flags = CV_MOUNT_CREATE
+            },
+            {
+                .what = "tmpfs",
+                .where = "/tmp",
+                .fstype = "none",
+                .flags = CV_MOUNT_CREATE
+            },
+        };
+        
+        status = __container_map_mounts("", &mnts[0], postmountsCount);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to map system mounts\n");
+            return status;
+        }
     }
 
     // Open the public communication channel after chroot
@@ -629,7 +629,7 @@ static int __container_run(
     }
 
     // Container is now up and running
-    __send_container_event(container, CV_CONTAINER_UP, 0);
+    __send_container_event(container->child, CV_CONTAINER_UP, 0);
     return __container_idle_loop(container);
 }
 
@@ -647,18 +647,17 @@ static void __container_entry(
     int status;
     VLOG_DEBUG("containerv[child]", "__container_entry(id=%s)\n", &container->id[0]);
 
-    // lets not leak the host fd
-    status = __close_safe(&container->status_fds[__FD_READ]);
-    if (status) {
+    // lets not leak the host fds
+    if (__close_safe(&container->child[__FD_READ]) || __close_safe(&container->host[__FD_WRITE])) {
         VLOG_ERROR("containerv[child]", "__container_entry: failed to close host status file descriptor\n");
-        _Exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
+        _Exit(EXIT_FAILURE);
     }
 
     // This is the primary run function, it initializes the container
     status = __container_run(container, options, __real_user());
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_entry: failed to execute: %i\n", status);
-        __send_container_event(container, CV_CONTAINER_DOWN, status);
+        __send_container_event(container->child, CV_CONTAINER_DOWN, status);
     }
     _Exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
 }
@@ -669,10 +668,10 @@ int containerv_create(
     struct containerv_container** containerOut)
 {
     struct containerv_container* container;
-    struct containerv_event      event = { 0 };
     int                          status;
     VLOG_DEBUG("containerv[host]", "containerv_create(root=%s, caps=0x%x)\n", rootFs, options->capabilities);
 
+    // ensure the containerv runtime path exists
     status = platform_mkdir(__CONTAINER_SOCKET_RUNTIME_BASE);
     if (status) {
         VLOG_ERROR("containerv[host]", "containerv_create: failed to create %s\n", __CONTAINER_SOCKET_RUNTIME_BASE);
@@ -692,17 +691,42 @@ int containerv_create(
         return -1;
     } else if (container->pid) {
         VLOG_DEBUG("containerv[host]", "cleaning up and waiting for container to get up and running\n");
-        __close_safe(&container->status_fds[__FD_WRITE]);
-        status = __wait_for_container_event(container, &event);
-        if (status) {
-            VLOG_ERROR("containerv[host]", "containerv_create: failed to read container event: %i\n", status);
-            __container_delete(container);
-            return status;
-        }
-        if (event.status) {
-            VLOG_ERROR("containerv[host]", "containerv_create: child reported error: %i\n", event.status);
-            __container_delete(container);
-            return event.status;
+        
+        // cleanup the fds we don't use
+        __close_safe(&container->host[__FD_READ]);
+        __close_safe(&container->child[__FD_WRITE]);
+        
+        // wait for container to come up
+        for (int waiting = 1; waiting;) {
+            struct containerv_event event = { 0 };
+            status = __wait_for_container_event(container->child, &event);
+            if (status) {
+                VLOG_ERROR("containerv[host]", "containerv_create: failed to read container event: %i\n", status);
+                __container_delete(container);
+                return status;
+            }
+
+            VLOG_DEBUG("containerv[host]", "received child event\n");
+            switch (event.type) {
+                case CV_CONTAINER_WAITING_FOR_NS_SETUP: {
+                    VLOG_DEBUG("containerv[host]", "setting up namespace configuration\n");
+                    status = __write_user_namespace_maps(container, options);
+                    if (status) {
+                        VLOG_ERROR("containerv[host]", "containerv_create: failed to write user namespace maps: %i\n", status);
+                    }
+                    __send_container_event(container->host, CV_CONTAINER_WAITING_FOR_NS_SETUP, status);
+                } break;
+
+                case CV_CONTAINER_DOWN: {
+                    VLOG_ERROR("containerv[host]", "containerv_create: child reported error: %i\n", event.status);
+                    __container_delete(container);
+                    return event.status;
+                } break;
+
+                case CV_CONTAINER_UP: {
+                    waiting = 0;
+                } break;
+            }
         }
         *containerOut = container;
         return 0;
@@ -784,7 +808,7 @@ int containerv_destroy(struct containerv_container* container)
     }
 
     VLOG_DEBUG("containerv[host]", "waiting for container to shutdown...\n");
-    status = __wait_for_container_event(container, &event);
+    status = __wait_for_container_event(container->child, &event);
     if (status) {
         VLOG_ERROR("containerv[host]", "waiting for container event returned: %i\n", status);
         return status;
