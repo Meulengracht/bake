@@ -68,7 +68,8 @@ struct containerv_container {
 
     // shared
     char        id[__CONTAINER_ID_LENGTH + 1];
-    int         status_fds[2];
+    int         host[2];
+    int         child[2];
     char*       runtime_dir;
 };
 
@@ -117,7 +118,7 @@ extern int containerv_set_init_process(void);
 /**
  * @brief
  */
-extern int containerv_mkdir_as(const char* path, unsigned int mode, uid_t uid, gid_t gid);
+extern int containerv_mkdir(const char* root, const char* path, unsigned int mode);
 
 /**
  * 

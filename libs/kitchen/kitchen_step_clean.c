@@ -17,14 +17,14 @@
  */
 
 #include <errno.h>
+#include <chef/containerv.h>
+#include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/kitchen.h>
 #include <chef/platform.h>
-#include <chef/containerv.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
-#include "private.h"
 
 static int __reset_steps(const char* part, struct list* steps, enum recipe_step_type stepType, const char* name);
 
@@ -156,14 +156,8 @@ int kitchen_purge(struct kitchen_purge_options* options)
     struct list         recipes;
     struct list_item*   i;
     int                 status;
-    char                root[PATH_MAX] = { 0 };
+    const char*         root = chef_dirs_kitchen(NULL);
     VLOG_DEBUG("kitchen", "kitchen_purge()\n");
-
-    status = __get_kitchen_root(&root[0], sizeof(root) - 1, NULL);
-    if (status) {
-        VLOG_ERROR("kitchen", "kitchen_purge: failed to resolve root directory\n");
-        return -1;
-    }
 
     list_init(&recipes);
     status = platform_getfiles(&root[0], 0, &recipes);

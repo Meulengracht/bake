@@ -42,11 +42,11 @@ struct __capabilities {
 static const __cap_mask __container_caps =
     __CAP_TO_MASK(CAP_CHOWN) |
     __CAP_TO_MASK(CAP_DAC_OVERRIDE) |
-    __CAP_TO_MASK(CAP_DAC_READ_SEARCH) |
     __CAP_TO_MASK(CAP_FOWNER) |
     __CAP_TO_MASK(CAP_FSETID) |
+    __CAP_TO_MASK(CAP_SETPCAP) |
+    __CAP_TO_MASK(CAP_NET_ADMIN) |
     __CAP_TO_MASK(CAP_SYS_ADMIN) |
-    __CAP_TO_MASK(CAP_SETFCAP) |
     __CAP_TO_MASK(CAP_SYS_CHROOT);
 
 // caps we keep for the primary process
@@ -237,13 +237,41 @@ static int __directory_exists(
     return S_ISDIR(st.st_mode) ? 1 : -1;
 }
 
-int containerv_mkdir_as(const char* path, unsigned int mode, uid_t uid, gid_t gid)
+static int __mkdir_if_not_exists(const char* root, const char* path, unsigned int mode)
+{
+    char* destination;
+    int   status;
+    VLOG_DEBUG("containerv[child]", "__mkdir_if_not_exists(%s%s)\n", root, path);
+
+    destination = strpathcombine(root, path);
+    if (destination == NULL) {
+        return -1;
+    }
+
+    status = __directory_exists(destination);
+    if (status == 1) {
+        free(destination);
+        return 0;
+    } else if (status < 0) {
+        VLOG_ERROR("containerv[child]", "failed to stat %s\n", destination);
+        free(destination);
+        return status;
+    }
+    
+    status = mkdir(destination, mode);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "failed to create path %s\n", destination);
+    }
+    free(destination);
+    return status;
+}
+
+int containerv_mkdir(const char* root, const char* path, unsigned int mode)
 {
     char   ccpath[PATH_MAX];
-    char*  p = NULL;
     size_t length;
     int    status;
-    VLOG_DEBUG("containerv[child]", "containerv_mkdir_as(path=%s, uid=%u, gid=%u)\n", path, uid, gid);
+    VLOG_DEBUG("containerv[child]", "containerv_mkdir(root=%s, path=%s)\n", root, path);
 
     status = snprintf(ccpath, sizeof(ccpath), "%s", path);
     if (status >= sizeof(ccpath)) {
@@ -256,27 +284,22 @@ int containerv_mkdir_as(const char* path, unsigned int mode, uid_t uid, gid_t gi
         ccpath[length - 1] = 0;
     }
 
-    for (p = ccpath + 1; *p; p++) {
+    for (char* p = ccpath + 1; *p; p++) {
         if (*p == '/') {
+            
+            // temporarily cut off the path string for operations
             *p = 0;
             
-            if (__directory_exists(ccpath) != 1) {
-                status = mkdir(ccpath, mode);
-                if (status) {
-                    VLOG_ERROR("containerv[child]", "failed to create path %s\n", ccpath);
-                    return status;
-                } else if (!status) {
-                    // new directory, ensure correct permissions
-                    status = chown(ccpath, uid, gid);
-                    if (status) {
-                        VLOG_ERROR("containerv[child]", "failed to change ownership of %s\n", ccpath);
-                        return status;
-                    }
-                }
+            // only do stuff if the folder does not already exist
+            status = __mkdir_if_not_exists(root, &ccpath[0], mode);
+            if (status) {
+                VLOG_ERROR("containerv[child]", "failed to create path %s\n", &ccpath[0]);
+                return status;
             }
 
+            // restore the path string
             *p = '/';
         }
     }
-    return mkdir(ccpath, mode);
+    return __mkdir_if_not_exists(root, ccpath, mode);
 }

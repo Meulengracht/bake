@@ -20,6 +20,13 @@
 #define __CHEF_DIRS_H__
 
 /**
+ * @brief 
+ * 
+ * @return int 
+ */
+extern int chef_dirs_initialize(void);
+
+/**
  * @brief Returns the path to the root of the chef data directory.
  */
 extern const char* chef_dirs_root(void);
@@ -42,6 +49,6 @@ extern const char* chef_dirs_kitchen(const char* uuid);
 /**
  * @brief
  */
-extern const char* chef_dirs_ensure(const char* path);
+extern int chef_dirs_ensure(const char* path);
 
 #endif //!__CHEF_DIRS_H__

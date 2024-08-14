@@ -25,7 +25,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
-#include "private.h"
 
 static void __safe_free(void** ptr) {
     free(*ptr);
