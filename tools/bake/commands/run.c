@@ -27,6 +27,7 @@
 #include <chef/platform.h>
 #include <chef/kitchen.h>
 #include <ctype.h>
+#include <libfridge.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -94,7 +95,6 @@ static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredi
             .name = name,
             .channel = channel,
             .version = version,
-            .source = INGREDIENT_SOURCE_TYPE_REPO, // for now
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
         }, &path);
@@ -132,7 +132,6 @@ static int __prep_ingredient_list(struct list* list, const char* platform, const
             .name = ingredient->name,
             .channel = ingredient->channel,
             .version = ingredient->version,
-            .source = ingredient->source,
             .arch = arch,
             .platform = platform
         }, &path);

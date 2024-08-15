@@ -21,41 +21,12 @@
 
 #include <chef/list.h>
 
-enum ingredient_source_type {
-    INGREDIENT_SOURCE_TYPE_UNKNOWN,
-    INGREDIENT_SOURCE_TYPE_REPO,
-    INGREDIENT_SOURCE_TYPE_URL,
-    INGREDIENT_SOURCE_TYPE_FILE,
-};
-
-struct ingredient_source_repo {
-    const char* channel;
-};
-
-struct ingredient_source_url {
-    const char* url;
-};
-
-struct ingredient_source_file {
-    const char* path;
-};
-
-struct ingredient_source {
-    enum ingredient_source_type type;
-    union {
-        struct ingredient_source_repo repo;
-        struct ingredient_source_url  url;
-        struct ingredient_source_file file;
-    };
-};
-
 struct fridge_ingredient {
-    const char*              name;
-    const char*              channel;
-    const char*              version;
-    const char*              platform;
-    const char*              arch;
-    struct ingredient_source source;
+    const char* name;
+    const char* channel;
+    const char* version;
+    const char* platform;
+    const char* arch;
 };
 
 /**

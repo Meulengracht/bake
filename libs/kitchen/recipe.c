@@ -69,17 +69,19 @@ enum state {
     STATE_INGREDIENT_VERSION,
     STATE_INGREDIENT_INCLUDE_FILTERS_LIST,
     STATE_INGREDIENT_CHANNEL,
-    STATE_INGREDIENT_SOURCE,
-
-    STATE_INGREDIENT_SOURCE_TYPE,
-    STATE_INGREDIENT_SOURCE_URL,
-    STATE_INGREDIENT_SOURCE_CHANNEL,
 
     STATE_RECIPE_LIST,
     STATE_RECIPE,          // MAPPING_START
     STATE_RECIPE_NAME,
-    STATE_RECIPE_PATH,
+    STATE_RECIPE_SOURCE,
     STATE_RECIPE_TOOLCHAIN,
+
+    STATE_RECIPE_SOURCE_TYPE,
+    STATE_RECIPE_SOURCE_PATH,
+    STATE_RECIPE_SOURCE_URL,
+    STATE_RECIPE_SOURCE_GIT_REPO,
+    STATE_RECIPE_SOURCE_GIT_BRANCH,
+    STATE_RECIPE_SOURCE_GIT_COMMIT,
 
     STATE_RECIPE_STEP_LIST,
     STATE_RECIPE_STEP,     // MAPPING_START
@@ -183,20 +185,18 @@ static enum chef_package_type __parse_pack_type(const char* value)
     }
 }
 
-static enum ingredient_source_type __parse_ingredient_source_type(const char* value)
+static enum recipe_part_source_type __parse_recipe_part_source_type(const char* value)
 {
     if (value == NULL || strlen(value) == 0) {
-        return INGREDIENT_SOURCE_TYPE_REPO;
+        return RECIPE_PART_SOURCE_TYPE_PATH;
     }
 
-    if (strcmp(value, "repo") == 0) {
-        return INGREDIENT_SOURCE_TYPE_REPO;
+    if (strcmp(value, "git") == 0) {
+        return RECIPE_PART_SOURCE_TYPE_GIT;
     } else if (strcmp(value, "url") == 0) {
-        return INGREDIENT_SOURCE_TYPE_URL;
-    } else if (strcmp(value, "local") == 0) {
-        return INGREDIENT_SOURCE_TYPE_FILE;
+        return RECIPE_PART_SOURCE_TYPE_URL;
     } else {
-        return INGREDIENT_SOURCE_TYPE_UNKNOWN;
+        return RECIPE_PART_SOURCE_TYPE_PATH;
     }
 }
 
@@ -313,28 +313,6 @@ static void __finalize_ingredient(struct parser_state* state)
         exit(EXIT_FAILURE);
     }
 
-    switch (state->ingredient.source.type) {
-        case INGREDIENT_SOURCE_TYPE_URL:
-            if (state->ingredient.source.url.url == NULL) {
-                fprintf(stderr, "parse error: ingredient %s: url is required\n", state->ingredient.name);
-                exit(EXIT_FAILURE);
-            }
-            break;
-        case INGREDIENT_SOURCE_TYPE_FILE:
-            if (state->ingredient.source.file.path == NULL) {
-                fprintf(stderr, "parse error: ingredient %s: file path is required\n", state->ingredient.name);
-                exit(EXIT_FAILURE);
-            }
-            break;
-        case INGREDIENT_SOURCE_TYPE_UNKNOWN:
-            fprintf(stderr, "parse error: ingredient %s: type is not supported\n", state->ingredient.name);
-            exit(EXIT_FAILURE);
-            break;
-            
-        default:
-            break;
-    }
-    
     // update the type
     state->ingredient.type = state->ingredients_type;
 
@@ -351,7 +329,6 @@ static void __finalize_ingredient(struct parser_state* state)
 
     // reset the structure in state
     memset(&state->ingredient, 0, sizeof(struct recipe_ingredient));
-    state->ingredient.source.type = INGREDIENT_SOURCE_TYPE_REPO;
 }
 
 static void __finalize_part(struct parser_state* state)
@@ -362,6 +339,24 @@ static void __finalize_part(struct parser_state* state)
     if (__is_valid_name(state->part.name)) {
         fprintf(stderr, "parse error: part name must be provided and only contain [a-zA-Z_-]\n");
         exit(EXIT_FAILURE);
+    }
+    
+    switch (state->part.source.type) {
+        case RECIPE_PART_SOURCE_TYPE_URL:
+            if (state->part.source.url.url == NULL) {
+                fprintf(stderr, "parse error: recipe %s: url is required\n", state->part.name);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        case RECIPE_PART_SOURCE_TYPE_GIT:
+            if (state->part.source.git.url == NULL) {
+                fprintf(stderr, "parse error: recipe %s: git repository url is required\n", state->part.name);
+                exit(EXIT_FAILURE);
+            }
+            break;
+            
+        default:
+            break;
     }
     
     // now we copy and reset
@@ -1043,8 +1038,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_INGREDIENT_VERSION);
                     } else if (strcmp(value, "include-filters") == 0) {
                         __parser_push_state(s, STATE_INGREDIENT_INCLUDE_FILTERS_LIST);
-                    } else if (strcmp(value, "source") == 0) {
-                        __parser_push_state(s, STATE_INGREDIENT_SOURCE);
                     } else {
                         fprintf(stderr, "__consume_event: (STATE_INGREDIENT) unexpected scalar: %s.\n", value);
                         return -1;
@@ -1064,36 +1057,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_INGREDIENT_VERSION, ingredient.version, __parse_string)
         __consume_sequence_unmapped(STATE_INGREDIENT_INCLUDE_FILTERS_LIST, __add_ingredient_filters)
 
-        case STATE_INGREDIENT_SOURCE:
-            switch (event->type) {
-                case YAML_MAPPING_START_EVENT:
-                    break;
-                case YAML_MAPPING_END_EVENT:
-                    __parser_pop_state(s);
-                    break;
-                
-                case YAML_SCALAR_EVENT:
-                    value = (char *)event->data.scalar.value;
-                    if (strcmp(value, "type") == 0) {
-                        __parser_push_state(s, STATE_INGREDIENT_SOURCE_TYPE);
-                    } else if (strcmp(value, "url") == 0) {
-                        __parser_push_state(s, STATE_INGREDIENT_SOURCE_URL);
-                    } else if (strcmp(value, "channel") == 0) {
-                        __parser_push_state(s, STATE_INGREDIENT_SOURCE_CHANNEL);
-                    } else {
-                        fprintf(stderr, "__consume_event: (STATE_INGREDIENT_SOURCE) unexpected scalar: %s.\n", value);
-                        return -1;
-                    } break;
-                default:
-                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
-                    return -1;
-            }
-            break;
-
-        __consume_scalar_fn(STATE_INGREDIENT_SOURCE_TYPE, ingredient.source.type, __parse_ingredient_source_type)
-        __consume_scalar_fn(STATE_INGREDIENT_SOURCE_CHANNEL, ingredient.source.repo.channel, __parse_string)
-        __consume_scalar_fn(STATE_INGREDIENT_SOURCE_URL, ingredient.source.url.url, __parse_string)
-
         __consume_sequence_mapped(STATE_RECIPE_LIST, STATE_RECIPE)
 
         case STATE_RECIPE:
@@ -1109,8 +1072,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "name") == 0) {
                         __parser_push_state(s, STATE_RECIPE_NAME);
-                    } else if (strcmp(value, "path") == 0) {
-                        __parser_push_state(s, STATE_RECIPE_PATH);
+                    } else if (strcmp(value, "source") == 0) {
+                        __parser_push_state(s, STATE_RECIPE_SOURCE);
                     } else if (strcmp(value, "toolchain") == 0) {
                         __parser_push_state(s, STATE_RECIPE_TOOLCHAIN);
                     } else if (strcmp(value, "steps") == 0) {
@@ -1127,8 +1090,46 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             break;
 
         __consume_scalar_fn(STATE_RECIPE_NAME, part.name, __parse_string)
-        __consume_scalar_fn(STATE_RECIPE_PATH, part.path, __parse_string)
         __consume_scalar_fn(STATE_RECIPE_TOOLCHAIN, part.toolchain, __parse_string)
+
+        case STATE_RECIPE_SOURCE:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __parser_pop_state(s);
+                    break;
+                
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "type") == 0) {
+                        __parser_push_state(s, STATE_RECIPE_SOURCE_TYPE);
+                    } else if (strcmp(value, "url") == 0) {
+                        __parser_push_state(s, STATE_RECIPE_SOURCE_URL);
+                    } else if (strcmp(value, "path") == 0) {
+                        __parser_push_state(s, STATE_RECIPE_SOURCE_PATH);
+                    } else if (strcmp(value, "git-url") == 0) {
+                        __parser_push_state(s, STATE_RECIPE_SOURCE_GIT_REPO);
+                    } else if (strcmp(value, "git-branch") == 0) {
+                        __parser_push_state(s, STATE_RECIPE_SOURCE_GIT_BRANCH);
+                    } else if (strcmp(value, "git-commit") == 0) {
+                        __parser_push_state(s, STATE_RECIPE_SOURCE_GIT_COMMIT);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_RECIPE_SOURCE) unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_RECIPE_SOURCE_TYPE, part.source.type, __parse_recipe_part_source_type)
+        __consume_scalar_fn(STATE_RECIPE_SOURCE_PATH, part.source.path.path, __parse_string)
+        __consume_scalar_fn(STATE_RECIPE_SOURCE_URL, part.source.url.url, __parse_string)
+        __consume_scalar_fn(STATE_RECIPE_SOURCE_GIT_REPO, part.source.git.url, __parse_string)
+        __consume_scalar_fn(STATE_RECIPE_SOURCE_GIT_BRANCH, part.source.git.branch, __parse_string)
+        __consume_scalar_fn(STATE_RECIPE_SOURCE_GIT_COMMIT, part.source.git.commit, __parse_string)
 
         __consume_sequence_mapped(STATE_RECIPE_STEP_LIST, STATE_RECIPE_STEP)
 
@@ -1389,7 +1390,6 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
     state.state = STATE_START;
 
     // initialize some default options
-    state.ingredient.source.type = INGREDIENT_SOURCE_TYPE_REPO;
     state.recipe.environment.host.base = 1;
     state.recipe.environment.build.confinement = 1;
     state.command.allow_system_libraries = 1;
@@ -1465,13 +1465,6 @@ static void __destroy_ingredient(struct recipe_ingredient* ingredient)
     free((void*)ingredient->name);
     free((void*)ingredient->version);
     free((void*)ingredient->channel);
-
-    if (ingredient->source.type == INGREDIENT_SOURCE_TYPE_URL) {
-        free((void*)ingredient->source.url.url);
-    }
-    else if (ingredient->source.type == INGREDIENT_SOURCE_TYPE_FILE) {
-        free((void*)ingredient->source.file.path);
-    }
     free(ingredient);
 }
 
@@ -1487,8 +1480,18 @@ static void __destroy_step(struct recipe_step* step)
 static void __destroy_part(struct recipe_part* part)
 {
     __destroy_list(step, part->steps.head, struct recipe_step);
+
+    if (part->source.type == RECIPE_PART_SOURCE_TYPE_PATH) {
+        free((void*)part->source.path.path);
+    } else if (part->source.type == RECIPE_PART_SOURCE_TYPE_URL) {
+        free((void*)part->source.url.url);
+    } else if (part->source.type == RECIPE_PART_SOURCE_TYPE_GIT) {
+        free((void*)part->source.git.url);
+        free((void*)part->source.git.branch);
+        free((void*)part->source.git.commit);
+    }
+
     free((void*)part->name);
-    free((void*)part->path);
     free(part);
 }
 

@@ -78,7 +78,6 @@ int fetch_main(int argc, char** argv, char** envp, struct bake_command_options* 
             .name = ingredient->name,
             .channel = ingredient->channel,
             .version = ingredient->version,
-            .source = ingredient->source,
             .arch = options->architecture,
             .platform = options->platform
         }, NULL);

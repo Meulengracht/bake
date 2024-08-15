@@ -16,7 +16,9 @@ environment:
 
 recipes:
   - name: hello
-    path: hello-world
+    source:
+      type: path
+      path: hello-world
     steps:
     - name: config
       type: generate
