@@ -443,12 +443,19 @@ static int __container_run(
     int flags = CLONE_NEWUTS;
     VLOG_DEBUG("containerv[child]", "__container_run()\n");
 
-    // let us immediately drop capabilities after getting the container running
+    // immediately switch to real root for the rest of the cycle, but
+    // at the end of container setup we drop as many privs as possible
     if (realUid != 0) {
-        status = containerv_switch_user_with_capabilities(realUid, realUid);
+        status = setgid(0);
         if (status) {
-            VLOG_ERROR("containerv[child]", "__container_entry: failed to drop privileges\n");
-            _Exit(status == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
+            VLOG_ERROR("containerv[child]", "failed to switch group: %i (gid=0)\n", status);
+            return status;
+        }
+
+        status = setuid(0);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "failed to switch user: %i (uid=0)\n", status);
+            return status;
         }
     }
 
@@ -576,19 +583,19 @@ static int __container_run(
             {
                 .what = "sysfs",
                 .where = "/sys",
-                .fstype = "none",
+                .fstype = "sysfs",
                 .flags = CV_MOUNT_CREATE
             },
             {
                 .what = "proc",
                 .where = "/proc",
-                .fstype = "none",
+                .fstype = "proc",
                 .flags = CV_MOUNT_CREATE
             },
             {
                 .what = "tmpfs",
                 .where = "/tmp",
-                .fstype = "none",
+                .fstype = "tmpfs",
                 .flags = CV_MOUNT_CREATE
             },
         };
@@ -706,13 +713,14 @@ int containerv_create(
                 return status;
             }
 
-            VLOG_DEBUG("containerv[host]", "received child event\n");
             switch (event.type) {
                 case CV_CONTAINER_WAITING_FOR_NS_SETUP: {
                     VLOG_DEBUG("containerv[host]", "setting up namespace configuration\n");
-                    status = __write_user_namespace_maps(container, options);
-                    if (status) {
-                        VLOG_ERROR("containerv[host]", "containerv_create: failed to write user namespace maps: %i\n", status);
+                    if (options->capabilities & CV_CAP_USERS) {
+                        status = __write_user_namespace_maps(container, options);
+                        if (status) {
+                            VLOG_ERROR("containerv[host]", "containerv_create: failed to write user namespace maps: %i\n", status);
+                        }
                     }
                     __send_container_event(container->host, CV_CONTAINER_WAITING_FOR_NS_SETUP, status);
                 } break;
@@ -724,6 +732,7 @@ int containerv_create(
                 } break;
 
                 case CV_CONTAINER_UP: {
+                    VLOG_DEBUG("containerv[host]", "child container successfully running\n");
                     waiting = 0;
                 } break;
             }

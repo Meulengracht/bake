@@ -210,7 +210,6 @@ static int __setup_rootfs(struct kitchen* kitchen)
 static int __setup_container(struct kitchen* kitchen)
 {
     struct containerv_mount    mounts[1] = { 0 };
-    struct containerv_user*    current;
     struct containerv_options* options;
     int                        status;
     VLOG_TRACE("kitchen", "creating build container\n");
@@ -218,12 +217,6 @@ static int __setup_container(struct kitchen* kitchen)
     options = containerv_options_new();
     if (options == NULL) {
         VLOG_ERROR("kitchen", "__setup_container: failed to allocate memory for container options\n");
-        return -1;
-    }
-
-    current = containerv_user_real();
-    if (current == NULL) {
-        containerv_options_delete(options);
         return -1;
     }
 
@@ -236,18 +229,9 @@ static int __setup_container(struct kitchen* kitchen)
     containerv_options_set_caps(options, 
         CV_CAP_FILESYSTEM |
         CV_CAP_PROCESS_CONTROL |
-        CV_CAP_IPC |
-        CV_CAP_USERS
+        CV_CAP_IPC
     );
     containerv_options_set_mounts(options, mounts, 1);
-
-    // map root to the current user inside the chroot, this way we get full
-    // control inside.
-    containerv_options_set_users(options, 0, current->uid, 1);
-    containerv_options_set_groups(options, 0, current->gid, 1);
-    
-    // dont need this anymore
-    containerv_user_delete(current);
 
     // start container
     status = containerv_create(kitchen->host_chroot, options, &kitchen->container);
