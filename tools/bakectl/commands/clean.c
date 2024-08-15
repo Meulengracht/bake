@@ -72,7 +72,7 @@ static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, c
 static void __construct_oven_recipe_options(struct oven_recipe_options* options, struct recipe_part* part, const char* toolchain)
 {
     options->name          = part->name;
-    options->relative_path = part->path;
+    options->relative_path = part->source.path.path;
     options->toolchain     = toolchain;
 }
 

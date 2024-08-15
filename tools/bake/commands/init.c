@@ -34,7 +34,7 @@ static void __print_help(void)
 
 static int __write_recipe(char* output)
 {
-    FILE*       file;
+    FILE* file;
 
     file = fopen(output, "r");
     if (file) {

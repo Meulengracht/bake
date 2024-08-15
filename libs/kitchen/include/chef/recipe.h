@@ -19,11 +19,42 @@
 #ifndef __CHEF_RECIPE_H__
 #define __CHEF_RECIPE_H__
 
-#include <stddef.h>
 #include <chef/package.h>
 #include <chef/list.h>
-#include <libfridge.h>
 #include <liboven.h>
+#include <stddef.h>
+
+enum recipe_part_source_type {
+    RECIPE_PART_SOURCE_TYPE_PATH,
+    RECIPE_PART_SOURCE_TYPE_GIT,
+    RECIPE_PART_SOURCE_TYPE_URL,
+};
+
+struct recipe_part_source_path {
+    const char* path;
+};
+
+struct recipe_part_source_git {
+    const char* url;
+
+    // if either of these is not provided, build from
+    // the default branch
+    const char* branch;
+    const char* commit;
+};
+
+struct recipe_part_source_url {
+    const char* url;
+};
+
+struct recipe_part_source {
+    enum recipe_part_source_type type;
+    union {
+        struct recipe_part_source_path path;
+        struct recipe_part_source_url  url;
+        struct recipe_part_source_git  git;
+    };
+};
 
 enum recipe_step_type {
     RECIPE_STEP_TYPE_UNKNOWN,
@@ -45,11 +76,11 @@ struct recipe_step {
 };
 
 struct recipe_part {
-    struct list_item list_header;
-    const char*      name;
-    const char*      path;
-    const char*      toolchain;
-    struct list      steps;
+    struct list_item          list_header;
+    const char*               name;
+    struct recipe_part_source source;
+    const char*               toolchain;
+    struct list               steps;
 };
 
 struct recipe_project {
@@ -84,7 +115,6 @@ struct recipe_ingredient {
     const char*                 name;
     const char*                 channel;
     const char*                 version;
-    struct ingredient_source    source;
     struct list                 filters;  // list<list_item_string>
 };
 

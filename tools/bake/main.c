@@ -64,7 +64,7 @@ static void __print_help(void)
     printf("      Cross-compile for another platform or/and architecture. This switch\n");
     printf("      can be used with two different formats, either just like\n");
     printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
-    printf("  -v, --version\n");
+    printf("  --version\n");
     printf("      Print the version of bake\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
@@ -142,7 +142,6 @@ static int __add_ingredient(struct recipe* recipe, const char* name)
     memset(ingredient, 0, sizeof(struct recipe_ingredient));
     ingredient->name = platform_strdup(name);
     ingredient->type = RECIPE_INGREDIENT_TYPE_HOST;
-    ingredient->source.type = INGREDIENT_SOURCE_TYPE_REPO;
     if (ingredient->name == NULL) {
         free(ingredient);
         return -1;
@@ -255,6 +254,7 @@ int main(int argc, char** argv, char** envp)
     void*                       buffer;
     size_t                      length;
     int                         status;
+    int                         logLevel = VLOG_LEVEL_TRACE;
     
 #if __linux__
     // make sure we're running with root privileges
@@ -279,13 +279,13 @@ int main(int argc, char** argv, char** envp)
             return 0;
         }
 
-        if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
+        if (!strcmp(argv[1], "--version")) {
             printf("bake: version " PROJECT_VER "\n");
             return 0;
         }
 
         command = __get_command(argv[1]);
-        if (!command) {
+        if (command == NULL) {
             struct platform_stat stats;
             // was a file passed? Then it was the recipe, and we assume
             // that the run command should be run.
@@ -306,6 +306,11 @@ int main(int argc, char** argv, char** envp)
                     if (status) {
                         fprintf(stderr, "bake: invalid format: %s\n", argv[i]);
                         return status;
+                    }
+                } else if (!strncmp(argv[i], "-v", 2)) {
+                    int li = 1;
+                    while (argv[i][li++] == 'v') {
+                        logLevel++;
                     }
                 } else if (argv[i][0] != '-') {
                     options.recipe_path = argv[i];
@@ -351,9 +356,16 @@ int main(int argc, char** argv, char** envp)
 
     // initialize the logging system
     vlog_initialize();
-    // TODO switch to trace by default, allow -v for debug
-    vlog_set_level(VLOG_LEVEL_DEBUG);
+
+    // initialize default level
+    vlog_set_level(logLevel);
+
+    // add the stdout by default
     vlog_add_output(stdout);
+
+    // add a trace file by default that is always
+    // debug enabled
+    // TODO
 
     // initialize directories
     status = chef_dirs_initialize();
