@@ -34,8 +34,10 @@
       //define something for Windows (32-bit only)
    #endif
 #elif __MOLLENOS__
+    #define CHEF_ON_VALI 1
     #define CHEF_PLATFORM_STR "vali"
 #elif __APPLE__
+    #define CHEF_ON_MACOS 1
     #include <TargetConditionals.h>
     #if TARGET_IPHONE_SIMULATOR
          // iOS, tvOS, or watchOS Simulator
@@ -53,10 +55,13 @@
     #   error "Unknown Apple platform"
     #endif
 #elif __linux__
+    #define CHEF_ON_LINUX 1
     #define CHEF_PLATFORM_STR "linux"
 #elif __unix__ // all unices not caught above
+    #define CHEF_ON_LINUX 1
     #define CHEF_PLATFORM_STR "unix"
 #elif defined(_POSIX_VERSION)
+    #define CHEF_ON_LINUX 1
     #define CHEF_PLATFORM_STR "posix"
 #else
 #   error "Unknown compiler"

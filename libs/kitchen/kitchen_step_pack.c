@@ -26,7 +26,7 @@
 #include "pack/pack.h"
 
 // include dirent.h for directory operations
-#if defined(_WIN32) || defined(_WIN64)
+#if defined(CHEF_ON_WINDOWS)
 #include <dirent_win32.h>
 #else
 #include <dirent.h>
@@ -67,53 +67,6 @@ static void __initialize_pack_options(
         options->compiler_flags = &pack->options.compiler_flags;
         options->linker_flags = &pack->options.linker_flags;
     }
-}
-
-static char* __source_pack_name(const char* root, const char* name)
-{
-    char tmp[4096] = { 0 };
-    snprintf(&tmp[0], sizeof(tmp), "%s/%s.pack", root, name);
-    return platform_strdup(&tmp[0]);
-}
-
-static char* __destination_pack_name(const char* root, const char* platform, const char* arch, const char* name)
-{
-    char tmp[4096] = { 0 };
-    snprintf(&tmp[0], sizeof(tmp), "%s/%s_%s_%s.pack", root, name, platform, arch);
-    return platform_strdup(&tmp[0]);
-}
-
-static int __move_pack(struct kitchen* kitchen, struct recipe_pack* pack)
-{
-    char* src = __source_pack_name(kitchen->host_install_root, pack->name);
-    char* dst = __destination_pack_name(kitchen->host_cwd, kitchen->target_platform, kitchen->target_architecture, pack->name);
-    int   status;
-
-    if (src == NULL || dst == NULL) {
-        status = -1;
-        goto exit;
-    }
-
-    status = access(src, 0);
-    if (status) {
-        // If there was any previous errors then the package is not generated
-        if (errno == ENOENT) {
-            VLOG_DEBUG("kitchen", "__move_pack: no package was generated\n");
-            status = 0;
-            goto exit;
-        }
-        goto exit;
-    }
-
-    status = rename(src, dst);
-    if (status) {
-        VLOG_ERROR("kitchen", "__move_pack: failed to move package from %s => %s\n", src, dst);
-    }
-
-exit:
-    free(src);
-    free(dst);
-    return status;
 }
 
 static int __matches_filters(const char* path, struct list* filters)
@@ -247,14 +200,6 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
         if (status) {
             VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);
             goto cleanup;
-        }
-    }
-
-    // move packs out of the output directory and into root project folder
-    list_foreach(&recipe->packs, item) {
-        struct recipe_pack* pack = (struct recipe_pack*)item;
-        if (__move_pack(kitchen, pack)) {
-            VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to move pack %s to project directory\n", pack->name);
         }
     }
 
