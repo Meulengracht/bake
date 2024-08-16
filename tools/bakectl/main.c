@@ -27,6 +27,7 @@
 #include "chef-config.h"
 #include "commands/commands.h"
 
+extern int source_main(int argc, char** argv, char** envp, struct bakectl_command_options* options);
 extern int build_main(int argc, char** argv, char** envp, struct bakectl_command_options* options);
 extern int clean_main(int argc, char** argv, char** envp, struct bakectl_command_options* options);
 
@@ -36,8 +37,9 @@ struct command_handler {
 };
 
 static struct command_handler g_commands[] = {
-    { "build", build_main },
-    { "clean", clean_main },
+    { "source", source_main },
+    { "build",  build_main },
+    { "clean",  clean_main },
 };
 
 static void __print_help(void)
@@ -48,6 +50,7 @@ static void __print_help(void)
     printf("of chef projects. This utility must only be invoked by the main binary (bake).\n");
     printf("\n");
     printf("Commands:\n");
+    printf("  source      prepares the source of the specified part and step\n");
     printf("  build       runs the build backend of the specified part and step\n");
     printf("  clean       runs the clean backend of the specified part and step\n");
     printf("\n");

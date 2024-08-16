@@ -132,7 +132,7 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     kitchen->magic = __KITCHEN_INIT_MAGIC;
     kitchen->recipe = options->recipe;
     kitchen->recipe_path = strdup(options->recipe_path);
-    kitchen->host_kitchen_project_root = (char*)root;
+    kitchen->host_kitchen_project_data_root = (char*)root;
 
     // Format external chroot paths that are arch/platform agnostic
     snprintf(&buff[0], sizeof(buff), "%s/ns", root);
@@ -145,11 +145,11 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     snprintf(&buff[0], sizeof(buff), "%s/ns/chef/project", root);
     kitchen->host_project_path = strdup(&buff[0]);
 
-    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install", root);
-    kitchen->host_install_root = strdup(&buff[0]);
-
     snprintf(&buff[0], sizeof(buff), "%s/ns/chef/toolchains", root);
     kitchen->host_build_toolchains_path = strdup(&buff[0]);
+
+    snprintf(&buff[0], sizeof(buff), "%s/ns/chef/install", root);
+    kitchen->host_install_root = strdup(&buff[0]);
 
     // Build/ingredients/install/checkpoint paths are different for each target
     snprintf(&buff[0], sizeof(buff), "%s/ns/chef/build/%s/%s",

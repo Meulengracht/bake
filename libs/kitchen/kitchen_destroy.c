@@ -67,7 +67,7 @@ void kitchen_destroy(struct kitchen* kitchen)
     // external paths that point inside chroot
     // i.e paths valid outside chroot
     __safe_free((void**)&kitchen->host_chroot);
-    __safe_free((void**)&kitchen->host_kitchen_project_root);
+    __safe_free((void**)&kitchen->host_kitchen_project_data_root);
     __safe_free((void**)&kitchen->host_build_path);
     __safe_free((void**)&kitchen->host_build_ingredients_path);
     __safe_free((void**)&kitchen->host_build_toolchains_path);

@@ -127,7 +127,7 @@ int oven_recipe_start(struct oven_recipe_options* options)
     g_oven.recipe.name = platform_strdup(options->name);
 
     // construct the recipe paths
-    g_oven.recipe.source_root = strpathcombine(g_oven.paths.project_root, options->relative_path);
+    g_oven.recipe.source_root = strpathcombine(g_oven.paths.source_root, options->name);
     g_oven.recipe.build_root = strpathcombine(g_oven.paths.build_root, options->name);
 
     // build the toolchain path

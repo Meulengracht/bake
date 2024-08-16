@@ -44,7 +44,7 @@ static void __cleanup_systems(int sig)
 {
     (void)sig;
     printf("termination requested, cleaning up\n"); // not safe
-    exit(0); // not safe, manually clean up systems and call _Exit()
+    _Exit(0);
 }
 
 static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, const char* platform)
@@ -65,13 +65,6 @@ static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, c
         return name;
     }
     return platform_strdup(toolchain);
-}
-
-static void __construct_oven_recipe_options(struct oven_recipe_options* options, struct recipe_part* part, const char* toolchain)
-{
-    options->name          = part->name;
-    options->relative_path = part->source.path.path;
-    options->toolchain     = toolchain;
 }
 
 static void __initialize_generator_options(struct oven_generate_options* options, struct recipe_step* step)
@@ -144,17 +137,18 @@ static int __build_step(const char* partName, struct list* steps, const char* st
             return -1;
         }
 
-        // done
-        break;
+        // done if a specific step was provided
+        if (stepName != NULL) {
+            break;
+        }
     }
     return 0;
 }
 
 static int __build_part(struct recipe* recipe, const char* partName, const char* stepName, const char* platform)
 {
-    struct oven_recipe_options options;
-    struct list_item*          item;
-    int                        status;
+    struct list_item* item;
+    int               status;
     VLOG_DEBUG("bakectl", "__build_part(part=%s, step=%s, platform=%s)\n", partName, stepName, platform);
 
     recipe_cache_transaction_begin();
@@ -175,8 +169,10 @@ static int __build_part(struct recipe* recipe, const char* partName, const char*
             }
         }
 
-        __construct_oven_recipe_options(&options, part, toolchain);
-        status = oven_recipe_start(&options);
+        status = oven_recipe_start(&(struct oven_recipe_options) {
+            .name = part->name,
+            .toolchain = toolchain
+        });
         free(toolchain);
         if (status) {
             break;
@@ -190,66 +186,13 @@ static int __build_part(struct recipe* recipe, const char* partName, const char*
             break;
         }
 
-        // done
-        break;
+        // done if a specific part was provided
+        if (partName != NULL) {
+            break;
+        }
     }
 
     return status;
-}
-
-static int __initialize_oven_options(struct oven_initialize_options* options, char** envp)
-{
-    char buff[PATH_MAX];
-
-    options->envp = (const char* const*)envp,
-    
-    options->target_architecture = getenv("CHEF_TARGET_ARCH");
-    if (options->target_architecture == NULL) {
-        options->target_architecture = CHEF_ARCHITECTURE_STR;
-    }
-
-    options->target_platform = getenv("CHEF_TARGET_PLATFORM");
-    if (options->target_platform == NULL) {
-        options->target_platform = CHEF_PLATFORM_STR;
-    }
-
-    // some paths are easy
-    options->paths.project_root = "/chef/project";
-    options->paths.toolchains_root = "/chef/toolchains";
-
-    // others require a bit of concatanation
-    snprintf(&buff[0], sizeof(buff), "/chef/build/%s/%s",
-        options->target_platform, options->target_architecture
-    );
-    options->paths.build_root = strdup(&buff[0]);
-    if (options->paths.build_root == NULL) {
-        return -1;
-    }
-
-    snprintf(&buff[0], sizeof(buff), "/chef/ingredients/%s/%s",
-        options->target_platform, options->target_architecture
-    );
-    options->paths.build_ingredients_root = strdup(&buff[0]);
-    if (options->paths.build_ingredients_root == NULL) {
-        return -1;
-    }
-
-    snprintf(&buff[0], sizeof(buff), "/chef/install/%s/%s",
-        options->target_platform, options->target_architecture
-    );
-    options->paths.install_root = strdup(&buff[0]);
-    if (options->paths.install_root == NULL) {
-        return -1;
-    }
-
-    return 0;
-}
-
-static void __destroy_oven_options(struct oven_initialize_options* options)
-{
-    free((void*)options->paths.build_root);
-    free((void*)options->paths.build_ingredients_root);
-    free((void*)options->paths.install_root);
 }
 
 int build_main(int argc, char** argv, char** envp, struct bakectl_command_options* options)

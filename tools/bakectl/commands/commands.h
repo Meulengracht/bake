@@ -20,6 +20,7 @@
 #define __BAKECTL_COMMANDS_H__
 
 #include <chef/recipe.h>
+#include <liboven.h>
 
 struct bakectl_command_options {
     struct recipe* recipe;
@@ -27,5 +28,8 @@ struct bakectl_command_options {
     const char*    part;
     const char*    step;
 };
+
+extern int __initialize_oven_options(struct oven_initialize_options* options, char** envp);
+extern void __destroy_oven_options(struct oven_initialize_options* options);
 
 #endif //!__BAKECTL_COMMANDS_H__
