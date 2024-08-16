@@ -1,6 +1,8 @@
 add_library(bakectl-commands STATIC
     build.c
     clean.c
+    common.c
+    source.c
 )
 
 target_include_directories(bakectl-commands PRIVATE ../include)

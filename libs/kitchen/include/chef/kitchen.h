@@ -78,6 +78,11 @@ struct kitchen {
     struct recipe* recipe;
     const char*    recipe_path;
 
+    // The path into the kitchen data path on the
+    // host side (there is no child side) where the data
+    // of the container resides
+    char* host_kitchen_project_data_root;
+
     char* host_cwd;
     char* target_platform;
     char* target_architecture;
@@ -89,7 +94,6 @@ struct kitchen {
     // external paths that point inside chroot
     // i.e paths valid outside chroot
     char* host_chroot;
-    char* host_kitchen_project_root;
     char* host_build_path;
     char* host_build_ingredients_path;
     char* host_build_toolchains_path;

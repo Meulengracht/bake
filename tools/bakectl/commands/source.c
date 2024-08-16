@@ -31,13 +31,11 @@
 
 static void __print_help(void)
 {
-    printf("Usage: bakectl clean [options]\n");
+    printf("Usage: bakectl source [options]\n");
     printf("\n");
     printf("Options:\n");
     printf("  -s,  --step\n");
-    printf("      If provided, cleans only the provided part/step configuration\n");
-    printf("  -p,  --purge\n");
-    printf("      Purges all build configurations for the recipe\n");
+    printf("      If provided, sources only the provided part/step configuration\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
 }
@@ -49,102 +47,65 @@ static void __cleanup_systems(int sig)
     _Exit(0);
 }
 
-static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, const char* platform)
+static int __prepare_path(const char* root, const char* part, const char* relativePath)
 {
-    if (strcmp(toolchain, "platform") == 0) {
-        const char* fullChain = recipe_find_platform_toolchain(recipe, platform);
-        char*       name;
-        char*       channel;
-        char*       version;
-        if (fullChain == NULL) {
-            return NULL;
-        }
-        if (recipe_parse_platform_toolchain(fullChain, &name, &channel, &version)) {
-            return NULL;
-        }
-        free(channel);
-        free(version);
-        return name;
+
+}
+
+static int __prepare_url(const char* root, const char* part)
+{
+
+}
+
+static int __prepare_git(const char* root, const char* part)
+{
+
+}
+
+static int __prepare_source(const char* part, struct recipe_part_source* source)
+{
+    const char* sourceRoot;
+
+    switch (source->type) {
+        case RECIPE_PART_SOURCE_TYPE_PATH: {
+            return __prepare_path(sourceRoot, part, source->path.path);
+        } break;
+        case RECIPE_PART_SOURCE_TYPE_GIT: {
+            return __prepare_git(sourceRoot, part);
+        } break;
+        case RECIPE_PART_SOURCE_TYPE_URL: {
+            return __prepare_url(sourceRoot, part);
+        } break;
     }
-    return platform_strdup(toolchain);
+
+    errno = ENOSYS;
+    return -1;
 }
 
-static void __initialize_clean_options(struct oven_clean_options* options, struct recipe_step* step)
-{
-    options->name        = step->name;
-    options->profile     = NULL;
-    options->system      = step->system;
-    options->arguments   = &step->arguments;
-    options->environment = &step->env_keypairs;
-}
-
-static int __clean_step(const char* partName, struct list* steps, const char* stepName)
+static int __source_part(struct recipe* recipe, const char* partName, const char* stepName, const char* platform)
 {
     struct list_item* item;
     int               status;
-    char              buffer[512];
-    VLOG_DEBUG("bakectl", "__clean_step(part=%s, step=%s)\n", partName, stepName);
-    
-    list_foreach(steps, item) {
-        struct oven_clean_options cleanOptions;
-        struct recipe_step* step = (struct recipe_step*)item;
-
-        // find the correct recipe step part
-        if (stepName != NULL && strcmp(step->name, stepName)) {
-            continue;
-        }
-
-        __initialize_clean_options(&cleanOptions, step);
-        status = oven_clean(&cleanOptions);
-        if (status) {
-            VLOG_ERROR("bakectl", "failed to clean target: %s\n", step->system);
-            return status;
-        }
-
-        // done if a specific step was provided
-        if (stepName != NULL) {
-            break;
-        }
-    }
-    return 0;
-}
-
-static int __clean_part(struct recipe* recipe, const char* partName, const char* stepName, const char* platform)
-{
-    struct list_item* item;
-    int               status;
-    VLOG_DEBUG("bakectl", "__clean_part()\n");
+    VLOG_DEBUG("bakectl", "__source_part()\n");
 
     recipe_cache_transaction_begin();
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
-        char*               toolchain = NULL;
 
         // find the correct recipe part
         if (partName != NULL && strcmp(part->name, partName)) {
             continue;
         }
 
-        if (part->toolchain != NULL) {
-            toolchain = __resolve_toolchain(recipe, part->toolchain, platform);
-            if (toolchain == NULL) {
-                VLOG_ERROR("bakectl", "part %s was marked for platform toolchain, but no matching toolchain specified for platform %s\n", part->name, platform);
-                return -1;
-            }
-        }
-
         status = oven_recipe_start(&(struct oven_recipe_options) {
-            .name = part->name,
-            .toolchain = toolchain
+            .name = part->name
         });
-        free(toolchain);
         if (status) {
             break;
         }
-
-        status = __clean_step(part->name, &part->steps, stepName);
+        
+        status = __prepare_source(part->name, &part->source);
         oven_recipe_end();
-
         if (status) {
             VLOG_ERROR("bakectl", "__clean_part: failed to build recipe %s\n", part->name);
             break;
@@ -215,19 +176,10 @@ int clean_main(int argc, char** argv, char** envp, struct bakectl_command_option
         goto cleanup;
     }
 
-    if (purge) {
-        // eh clean entire build tree
-        status = __recreate_dir(ovenOpts.paths.build_root);
-        if (status) {
-            fprintf(stderr, "bakectl: failed to clean path '%s': %s\n", 
-                ovenOpts.paths.build_root, strerror(errno));
-        }
-    } else {
-        status = __clean_part(options->recipe, options->part, options->step, ovenOpts.target_platform);
-        if (status) {
-            fprintf(stderr, "bakectl: failed to clean step '%s/%s': %s\n", 
-                options->part, options->step, strerror(errno));
-        }
+    status = __source_part(options->recipe, options->part, options->step, ovenOpts.target_platform);
+    if (status) {
+        fprintf(stderr, "bakectl: failed to clean step '%s/%s': %s\n", 
+            options->part, options->step, strerror(errno));
     }
     
     oven_cleanup();

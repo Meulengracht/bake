@@ -55,7 +55,6 @@ struct oven_ingredient {
 
 struct oven_recipe_options {
     const char* name;
-    const char* relative_path;
     const char* toolchain;
 };
 
@@ -92,6 +91,7 @@ struct oven_clean_options {
 
 struct oven_paths {
     const char* project_root;
+    const char* source_root;
     const char* build_root;
     const char* install_root;
     const char* toolchains_root;

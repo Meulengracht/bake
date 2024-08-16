@@ -172,7 +172,7 @@ static int __setup_rootfs(struct kitchen* kitchen)
         return 0;
     }
 
-    status = __clean_environment(kitchen->host_kitchen_project_root);
+    status = __clean_environment(kitchen->host_kitchen_project_data_root);
     if (status) {
         VLOG_ERROR("kitchen", "__kitchen_install: failed to clean project environment\n");
         return status;
