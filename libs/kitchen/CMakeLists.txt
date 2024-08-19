@@ -19,8 +19,16 @@ elseif (WIN32)
     add_sources_glob(windows/*.c)
 endif()
 
+# TODO: maybe not glob this tbh
 add_sources_glob(pack/*.c)
 add_sources_glob(pack/resolvers/*.c)
+
+# host pkg-managers implementations
+add_sources(
+    pkgmgrs/pkg-config.c
+)
+
+# shared kitchen sources
 add_sources(
     kitchen_destroy.c
     kitchen_part_source.c

@@ -21,7 +21,6 @@
 #include <chef/platform.h>
 #include <chef/containerv-user-linux.h>
 #include <libingredient.h>
-#include <libpkgmgr.h>
 #include <vlog.h>
 
 #include <errno.h>
@@ -29,6 +28,7 @@
 #include <string.h>
 
 #include <sys/types.h>
+#include "../pkgmgrs/libpkgmgr.h"
 #include "private.h"
 
 static struct pkgmngr* __setup_pkg_environment(struct kitchen_init_options* options, const char* chroot)
@@ -77,7 +77,7 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
     struct containerv_user* user;
     char**                  env;
     
-    env = calloc(15, sizeof(char*));
+    env = calloc(18, sizeof(char*));
     if (env == NULL) {
         VLOG_FATAL("kitchen", "failed to allocate memory for environment\n");
         return NULL;
@@ -101,11 +101,19 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
     env[5] = __fmt_env_option("CHEF_TARGET_ARCH", kitchen->target_architecture);
     env[6] = __fmt_env_option("CHEF_TARGET_PLATFORM", kitchen->target_platform);
 
+    // placeholders, to be filled in setup.c when iterating
+    // build ingredients
+    env[7] = __fmt_env_option("CHEF_BUILD_PATH", "");
+    env[8] = __fmt_env_option("CHEF_BUILD_INCLUDE", "");
+    env[9] = __fmt_env_option("CHEF_BUILD_LIBS", "");
+    env[10] = __fmt_env_option("CHEF_BUILD_CCFLAGS", "");
+    env[11] = __fmt_env_option("CHEF_BUILD_LDFLAGS", "");
+
     // Not guaranteed that ca-certificates is in the rootfs when building,
     // so let us add this to avoid git checking for now.
-    env[7] = __fmt_env_option("GIT_SSL_NO_VERIFY", "1");
+    env[12] = __fmt_env_option("GIT_SSL_NO_VERIFY", "1");
 
-    // env[8-14] are pkgmgr overrides
+    // env[13-17] are pkgmgr overrides
     if (kitchen->pkg_manager) {
         kitchen->pkg_manager->add_overrides(kitchen->pkg_manager, env);
     }

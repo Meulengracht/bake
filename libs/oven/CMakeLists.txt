@@ -1,7 +1,3 @@
-# Project setup
-project (oven C)
-
-add_subdirectory(pkgmgrs)
 add_subdirectory(backends)
 
 # initialize common sources

@@ -58,6 +58,7 @@ struct pack_resolve_commands_options {
     const char* ingredients_root;
     const char* platform;
     const char* architecture;
+    int         cross_compiling;
 };
 
 /**

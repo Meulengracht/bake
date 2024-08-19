@@ -16,13 +16,13 @@
  * 
  */
 
+#include <chef/environment.h>
 #include <chef/kitchen.h>
 #include <chef/platform.h>
 #include <chef/rootfs/debootstrap.h>
 #include <chef/containerv.h>
 #include <chef/containerv-user-linux.h>
 #include <libingredient.h>
-#include <libpkgmgr.h>
 #include <libgen.h>
 #include <errno.h>
 #include <string.h>
@@ -31,6 +31,7 @@
 #include <sys/stat.h>
 #include <vlog.h>
 
+#include "../pkgmgrs/libpkgmgr.h"
 #include "private.h"
 
 static int __clean_environment(const char* path)
@@ -442,6 +443,43 @@ static int __setup_ingredients(struct kitchen* kitchen, struct kitchen_setup_opt
     return 0;
 }
 
+static int __update_build_envs(struct kitchen* kitchen, struct list* ingredients)
+{
+    struct list_item* i;
+    int               status;
+
+    if (ingredients == NULL) {
+        return 0;
+    }
+
+    list_foreach(ingredients, i) {
+        struct kitchen_ingredient* kitchenIngredient = (struct kitchen_ingredient*)i;
+        struct ingredient*         ingredient;
+
+        status = ingredient_open(kitchenIngredient->path, &ingredient);
+        if (status) {
+            VLOG_ERROR("kitchen", "__setup_ingredients: failed to open %s\n", kitchenIngredient->name);
+            return -1;
+        }
+
+        if (environment_append_keyv(kitchen->base_environment, "CHEF_BUILD_PATH", ingredient->options->bin_dirs, ";") |
+            environment_append_keyv(kitchen->base_environment, "CHEF_BUILD_INCLUDE", ingredient->options->inc_dirs, ";") |
+            environment_append_keyv(kitchen->base_environment, "CHEF_BUILD_LIBS", ingredient->options->lib_dirs, ";") |
+            environment_append_keyv(kitchen->base_environment, "CHEF_BUILD_CCFLAGS", ingredient->options->compiler_flags, ";") |
+            environment_append_keyv(kitchen->base_environment, "CHEF_BUILD_LDFLAGS", ingredient->options->linker_flags, ";")) {
+            VLOG_ERROR("kitchen", "__setup_ingredients: failed to build environment values\n");
+            return -1;
+        }
+
+        ingredient_close(ingredient);
+        if (status) {
+            VLOG_ERROR("kitchen", "__setup_ingredients: failed to make %s available\n", kitchenIngredient->name);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int __update_ingredients(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
     int status;
@@ -452,6 +490,13 @@ static int __update_ingredients(struct kitchen* kitchen, struct kitchen_setup_op
     VLOG_TRACE("kitchen", "installing project ingredients\n");
     status = __setup_ingredients(kitchen, options);
     if (status) {
+        VLOG_ERROR("kitchen", "__update_ingredients: failed to setup project ingredients\n");
+        return status;
+    }
+
+    status = __update_build_envs(kitchen, options);
+    if (status) {
+        VLOG_ERROR("kitchen", "__update_ingredients: failed to update build environments\n");
         return status;
     }
 

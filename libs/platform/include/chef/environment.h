@@ -32,6 +32,11 @@ extern char** environment_create(const char* const* parent, struct list* additon
 
 /**
  * @brief 
+ */
+extern int environment_append_keyv(char** envp, char* key, char** values, char* sep);
+
+/**
+ * @brief 
  * 
  * @param environment 
  */

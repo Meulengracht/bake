@@ -20,7 +20,7 @@
 #include <chef/platform.h>
 #include <errno.h>
 #include <libingredient.h>
-#include <libpkgmgr.h>
+#include "libpkgmgr.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
