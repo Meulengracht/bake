@@ -23,6 +23,7 @@ add_sources_glob(pack/*.c)
 add_sources_glob(pack/resolvers/*.c)
 add_sources(
     kitchen_destroy.c
+    kitchen_part_source.c
     kitchen_step_clean.c
     kitchen_step_make.c
     kitchen_step_pack.c

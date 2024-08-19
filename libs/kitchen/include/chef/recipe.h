@@ -228,6 +228,9 @@ extern void        recipe_cache_transaction_commit(void);
 extern int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** changes, int* changeCount);
 extern int recipe_cache_commit_package_changes(struct recipe_cache_package_change* changes, int count);
 
+extern int recipe_cache_mark_part_sourced(const char* part);
+extern int recipe_cache_is_part_sourced(const char* part);
+
 extern int recipe_cache_mark_step_complete(const char* part, const char* step);
 extern int recipe_cache_mark_step_incomplete(const char* part, const char* step);
 extern int recipe_cache_is_step_complete(const char* part, const char* step);

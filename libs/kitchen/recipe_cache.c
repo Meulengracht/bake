@@ -614,6 +614,24 @@ int recipe_cache_key_set_bool(const char* key, int value)
     return recipe_cache_key_set_string(key, value ? "true" : "false");
 }
 
+int recipe_cache_is_part_sourced(const char* part)
+{
+    struct recipe_cache_item* cache = __get_cache_item();
+    char                      buffer[256];
+
+    snprintf(&buffer[0], sizeof(buffer), "%s-sourced", part);
+    return recipe_cache_key_bool(&buffer[0]);
+}
+
+int recipe_cache_mark_part_sourced(const char* part)
+{
+    struct recipe_cache_item* cache = __get_cache_item();
+    char                      buffer[256];
+
+    snprintf(&buffer[0], sizeof(buffer), "%s-sourced", part);
+    return recipe_cache_key_set_bool(&buffer[0], 1);
+}
+
 int recipe_cache_mark_step_complete(const char* part, const char* step)
 {
     struct recipe_cache_item* cache = __get_cache_item();

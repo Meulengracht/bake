@@ -1,4 +1,3 @@
-# project information, packaging data
 project: 
   summary: Clang/llvm crosscompiler for Vali/MollenOS
   description: |
@@ -12,9 +11,7 @@ project:
 environment:
   host:
     packages:
-      - gcc
-      - g++
-      - build-essentials
+      - build-essential
 
 recipes:
   - name: llvm-projects
