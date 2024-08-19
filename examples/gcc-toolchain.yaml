@@ -7,19 +7,21 @@ project:
     individual source files for details.
   author: Free Software Foundation
   email: gcc-help@gcc.gnu.org
-  version: 11.3.0
+  version: 13.0.0
   license: MIT
 
 environment:
   host:
     packages:
-      - gcc
-      - g++
-      - build-essentials
+      - build-essential
+      - git
 
 recipes:
   - name: gcc
-    path: /
+    source:
+      type: git
+      git-url: https://github.com/gcc-mirror/gcc.git
+      git-branch: releases/gcc-13
     steps:
     - name: config
       type: generate
