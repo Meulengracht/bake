@@ -73,6 +73,7 @@ int oven_initialize(struct oven_initialize_options* parameters)
 
     // copy relevant paths
     g_oven.paths.project_root = platform_strdup(parameters->paths.project_root);
+    g_oven.paths.source_root = platform_strdup(parameters->paths.source_root);
     g_oven.paths.build_root = platform_strdup(parameters->paths.build_root);
     g_oven.paths.install_root = platform_strdup(parameters->paths.install_root);
     g_oven.paths.toolchains_root = platform_strdup(parameters->paths.toolchains_root);
@@ -94,6 +95,7 @@ void oven_cleanup(void)
 {
     // cleanup paths
     free((void*)g_oven.paths.project_root);
+    free((void*)g_oven.paths.source_root);
     free((void*)g_oven.paths.build_root);
     free((void*)g_oven.paths.install_root);
     free((void*)g_oven.paths.toolchains_root);

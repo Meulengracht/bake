@@ -57,7 +57,7 @@ static int __create_dummy_dir_if_not_exists(const char* path)
 	int         result;
 
 	result = stat(path, &st);
-	if (result) {
+	if (result && errno == ENOENT) {
 		// rwxrwxr-x
 		result = mkdir(path, 0775);
 	}
@@ -95,6 +95,7 @@ int platform_symlink(const char* path, const char* target, int directory)
 	// not just the relative
 	targetFullPath = __prefix_path(path, target);
 	if (targetFullPath == NULL) {
+		fprintf(stderr, "symlink: failed to prefix path\n");
 		return -1;
 	}
 
@@ -109,11 +110,13 @@ int platform_symlink(const char* path, const char* target, int directory)
 	// At this point we can clean it up
 	free(targetFullPath);
 	if (status) {
+		fprintf(stderr, "symlink: failed to create dummy target\n");
 		return status;
 	}
 
 	status = symlink(target, path);
 	if (status) {
+		fprintf(stderr, "symlink: failed to link\n");
         // ignore it if it exists, in theory we would like to 'update it' if 
         // exists, but for now just ignore
         if (errno == EEXIST) {

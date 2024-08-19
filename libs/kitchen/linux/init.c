@@ -77,7 +77,7 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
     struct containerv_user* user;
     char**                  env;
     
-    env = calloc(12, sizeof(char*));
+    env = calloc(15, sizeof(char*));
     if (env == NULL) {
         VLOG_FATAL("kitchen", "failed to allocate memory for environment\n");
         return NULL;
@@ -100,7 +100,12 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
     env[4] = __fmt_env_option("LD_LIBRARY_PATH", "/usr/local/lib");
     env[5] = __fmt_env_option("CHEF_TARGET_ARCH", kitchen->target_architecture);
     env[6] = __fmt_env_option("CHEF_TARGET_PLATFORM", kitchen->target_platform);
-    // env[7-10] are pkgmgr overrides
+
+    // Not guaranteed that ca-certificates is in the rootfs when building,
+    // so let us add this to avoid git checking for now.
+    env[7] = __fmt_env_option("GIT_SSL_NO_VERIFY", "1");
+
+    // env[8-14] are pkgmgr overrides
     if (kitchen->pkg_manager) {
         kitchen->pkg_manager->add_overrides(kitchen->pkg_manager, env);
     }
