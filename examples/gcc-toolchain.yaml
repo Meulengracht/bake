@@ -1,4 +1,5 @@
 project: 
+  name: gcc
   summary: The GNU Compiler Collection
   description: |
     The GNU Compiler Collection is free software.  See the files whose

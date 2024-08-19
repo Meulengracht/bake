@@ -292,6 +292,12 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         goto cleanup;
     }
 
+    status = kitchen_recipe_source(&g_kitchen, options->recipe);
+    if (status) {
+        VLOG_ERROR("bake", "failed to make recipes\n");
+        goto cleanup;
+    }
+
     status = kitchen_recipe_make(&g_kitchen, options->recipe);
     if (status) {
         VLOG_ERROR("bake", "failed to make recipes\n");

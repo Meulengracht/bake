@@ -90,6 +90,12 @@ static int __prepare_git(const char* root, struct recipe_part_source_git* git, s
     char buffer[512];
     VLOG_DEBUG("bakectl", "__prepare_git()\n");
 
+    status = platform_mkdir(root);
+    if (status) {
+        VLOG_ERROR("bakectl", "__prepare_git: failed to create directory: %s\n", strerror(errno));
+        return -1;
+    }
+
     snprintf(&buffer[0], sizeof(buffer),
         "clone %s .",
         git->url
@@ -150,7 +156,7 @@ static int __prepare_git(const char* root, struct recipe_part_source_git* git, s
     return status;
 }
 
-static int __recreate_dir(const char* path)
+static int __cleanup_existing(const char* path)
 {
     int status;
 
@@ -169,12 +175,6 @@ static int __recreate_dir(const char* path)
             }
         }
     }
-
-    status = platform_mkdir(path);
-    if (status) {
-        VLOG_ERROR("bakectl", "__recreate_dir: failed to create directory: %s\n", strerror(errno));
-        return -1;
-    }
     return 0;
 }
 
@@ -190,8 +190,16 @@ static int __prepare_source(const char* part, struct recipe_part_source* source,
         return -1;
     }
 
-    // ensure a clean version exists
-    status = __recreate_dir(sourceRoot);
+    // ensure that the source root exists
+    status = platform_mkdir(options->source_root);
+    if (status) {
+        VLOG_ERROR("bakectl", "__prepare_git: failed to create directory: %s\n", strerror(errno));
+        free(sourceRoot);
+        return -1;
+    }
+
+    // ensure a clean version exists of the part source
+    status = __cleanup_existing(sourceRoot);
     if (status) {
         VLOG_ERROR("bakectl", "__prepare_source: failed to create %s\n", sourceRoot);
         free(sourceRoot);
