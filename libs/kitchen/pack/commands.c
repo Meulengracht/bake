@@ -31,6 +31,7 @@ struct __resolve_options {
     const char* install_root;
     const char* ingredients_root;
     int         allow_sysroot_libraries;
+    int         cross_compiling;
 };
 
 static int __verify_commands(struct list* commands, const char* root)
@@ -111,7 +112,9 @@ static int __resolve_dependency_path(struct kitchen_resolve* resolve, struct kit
     platform_getfiles_destroy(&files);
 
     // priority 3 - invoke platform resolver (if allowed)
-    if (options->allow_sysroot_libraries) {
+    // we cannot do this if we are cross-compiling - we do not
+    // necessarily know the layout of that.
+    if (options->allow_sysroot_libraries && !options->cross_compiling) {
         const char* path = resolve_platform_dependency(options->sysroot, resolve, dependency->name);
         if (path) {
             dependency->path = path;
@@ -220,7 +223,8 @@ static int __resolve_command(struct recipe_pack_command* command, struct list* r
                 .sysroot = options->sysroot,
                 .install_root = options->install_root,
                 .ingredients_root = options->ingredients_root,
-                .allow_sysroot_libraries = command->allow_system_libraries
+                .allow_sysroot_libraries = command->allow_system_libraries,
+                .cross_compiling = options->cross_compiling
             });
         }
     } else if (pe_is_valid(path, &resolve->arch) == 0) {
@@ -230,7 +234,8 @@ static int __resolve_command(struct recipe_pack_command* command, struct list* r
                 .sysroot = options->sysroot,
                 .install_root = options->install_root,
                 .ingredients_root = options->ingredients_root,
-                .allow_sysroot_libraries = command->allow_system_libraries
+                .allow_sysroot_libraries = command->allow_system_libraries,
+                .cross_compiling = options->cross_compiling
             });
         }
     } else {

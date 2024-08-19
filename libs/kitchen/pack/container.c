@@ -1016,6 +1016,13 @@ static int __build_pack_names(const char* name, const char* imageDir, char** bas
     return 0;
 }
 
+static int __is_cross_compiling(const char* target)
+{
+    // okay so we only care about the target platform here,
+    // not the arch
+    return strcmp(CHEF_PLATFORM_STR, target) != 0 ? 1 : 0;
+}
+
 int kitchen_pack(struct kitchen_pack_options* options)
 {
     struct VaFsDirectoryHandle* directoryHandle;
@@ -1068,7 +1075,8 @@ int kitchen_pack(struct kitchen_pack_options* options)
         .install_root = options->input_dir,
         .ingredients_root = options->ingredients_root,
         .platform = options->platform,
-        .architecture = options->architecture
+        .architecture = options->architecture,
+        .cross_compiling = __is_cross_compiling(options->platform)
     });
     if (status) {
         VLOG_ERROR("kitchen", "failed to verify commands\n");

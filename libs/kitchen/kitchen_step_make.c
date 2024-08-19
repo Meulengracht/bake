@@ -19,7 +19,6 @@
 #include <chef/list.h>
 #include <chef/kitchen.h>
 #include <chef/containerv.h>
-#include <libpkgmgr.h>
 #include <stdlib.h>
 #include <vlog.h>
 

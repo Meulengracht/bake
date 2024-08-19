@@ -21,10 +21,11 @@
 #include <chef/kitchen.h>
 #include <chef/platform.h>
 #include <chef/containerv.h>
-#include <libpkgmgr.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
+
+#include "pkgmgrs/libpkgmgr.h"
 
 static void __safe_free(void** ptr) {
     free(*ptr);
