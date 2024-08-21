@@ -494,7 +494,7 @@ static int __update_ingredients(struct kitchen* kitchen, struct kitchen_setup_op
         return status;
     }
 
-    status = __update_build_envs(kitchen, options);
+    status = __update_build_envs(kitchen, &options->build_ingredients);
     if (status) {
         VLOG_ERROR("kitchen", "__update_ingredients: failed to update build environments\n");
         return status;

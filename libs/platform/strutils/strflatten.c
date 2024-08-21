@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <chef/platform.h>
+#include <stdlib.h>
 #include <string.h>
 
 char* strflatten(const char* const* values, char* sep, size_t* lengthOut)
