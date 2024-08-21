@@ -72,7 +72,7 @@ static int __set_ambient_capabilities(__cap_mask capabilities)
 {
 	// Ubuntu trusty has a 4.4 kernel, but these macros are not defined
 #ifndef PR_CAP_AMBIENT
-#  define PR_CAP_AMBIENT          47
+#  define PR_CAP_AMBIENT             47
 #  define PR_CAP_AMBIENT_IS_SET      1
 #  define PR_CAP_AMBIENT_RAISE       2
 #  define PR_CAP_AMBIENT_LOWER       3

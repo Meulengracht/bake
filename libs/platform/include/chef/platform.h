@@ -180,6 +180,7 @@ extern char*  strpathcombine(const char* path1, const char* path2);
 extern char** strsplit(const char* text, char sep);
 extern void   strsplit_free(char** strings);
 extern char*  strreplace(char* text, const char* find, const char* replaceWith);
+extern char*  strflatten(const char* const* values, char* sep, size_t* lengthOut);
 extern int    strendswith(const char* text, const char* suffix);
 extern int    strbool(const char* string);
 
