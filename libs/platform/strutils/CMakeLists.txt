@@ -4,6 +4,7 @@ add_library(platform-strutils STATIC
     strbool.c
     strendswith.c
     strfilter.c
+    strflatten.c
     strpathcombine.c
     strreplace.c
     strsplit.c

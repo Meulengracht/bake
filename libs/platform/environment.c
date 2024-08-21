@@ -25,27 +25,18 @@
 
 static char* __append_valuev(const char* value, char** values, char* sep)
 {
-    char*  updated;
     size_t length;
-
-    // ignore NULLs
     if (values == NULL) {
         return 0;
     }
-
-    length = strlen(value);
-    for (int i = 0; values[i] != NULL; i++) {
-        length += strlen(value);
-    }
-
-    updated = malloc(length)
+    return strflatten((const char* const*)values, sep, &length);
 }
 
 static char* __fmt_env_kv(const char* key, const char* value)
 {
     char  tmp[512];
     char* result;
-    snprintf(&tmp[0], sizeof(tmp), "%s=%s", key, value);
+    snprintf(&tmp[0], sizeof(tmp), "%s%s", key, value);
     result = strdup(&tmp[0]);
     if (result == NULL) {
         VLOG_FATAL("kitchen", "failed to allocate memory for environment option\n");
@@ -71,9 +62,13 @@ int environment_append_keyv(char** envp, char* key, char** values, char* sep)
             // now do the actual replacing
             value = __append_valuev(value, values, sep);
             if (value != NULL) {
+                char* updated = __fmt_env_kv(&skey[0], value);
+                if (updated == NULL) {
+                    free(value);
+                    return -1;
+                }
                 free(envp[i]);
-                envp[i] = __fmt_env_kv(&skey[0], value);
-                free(value);
+                envp[i] = updated;
             }
             return 0;
         }
