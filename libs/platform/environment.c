@@ -35,13 +35,8 @@ static char* __append_valuev(const char* value, char** values, char* sep)
 static char* __fmt_env_kv(const char* key, const char* value)
 {
     char  tmp[512];
-    char* result;
     snprintf(&tmp[0], sizeof(tmp), "%s%s", key, value);
-    result = strdup(&tmp[0]);
-    if (result == NULL) {
-        VLOG_FATAL("kitchen", "failed to allocate memory for environment option\n");
-    }
-    return result;
+    return strdup(&tmp[0]);
 }
 
 int environment_append_keyv(char** envp, char* key, char** values, char* sep)

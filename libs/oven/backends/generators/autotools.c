@@ -126,7 +126,7 @@ static char* __replace_or_add_prefix(const char* platform, const char* arguments
     return newArguments;
 }
 
-static int __generate_site_file(const char* path, struct oven_backend_data* data)
+static int __write_site_file(const char* path, struct oven_backend_data* data)
 {
     FILE* file;
 
@@ -147,16 +147,66 @@ static int __generate_site_file(const char* path, struct oven_backend_data* data
     return 0;
 }
 
+static int __ensure_share_path(const char* installPath)
+{
+    char* sitePath;
+    int   status;
+
+    sitePath = strpathcombine(installPath, "share");
+    if (sitePath == NULL) {
+        VLOG_ERROR("configure", "failed to allocate memory for site path\n");
+        return -1;
+    }
+
+    status = platform_mkdir(sitePath);
+    if (status) {
+        VLOG_ERROR("configure", "failed to create %s\n", sitePath);
+    }
+    free(sitePath);
+    return status;
+}
+
+static int __generate_site_file(const char* installPath, struct oven_backend_data* data)
+{
+    char* sitePath;
+    int   status;
+
+    // create the share directory
+    if (__ensure_share_path(installPath)) {
+        VLOG_ERROR("configure", "failed to create directory for site\n");
+        return -1;
+    }
+
+    sitePath = strpathjoin(installPath, "share", "config.site", NULL);
+    if (sitePath == NULL) {
+        VLOG_ERROR("configure", "failed to allocate memory for site path\n");
+        return -1;
+    }
+
+    status = __write_site_file(sitePath, data);
+    free(sitePath);
+    return status;
+}
+
+static int __is_cross_compiling(struct oven_backend_data* data)
+{
+    return strcmp(data->platform.target_platform, CHEF_PLATFORM_STR) != 0;
+}
+
 int configure_main(struct oven_backend_data* data, union oven_backend_options* options)
 {
-    char*  configSitePath;
-    char*  arguments     = NULL;
-    char*  installPath   = NULL;
-    char*  sharePath     = NULL;
-    char*  configurePath = NULL;
-    char** environment   = NULL;
+    char*  arguments = NULL;
+    char*  installPath = NULL;
+    char*  configurePath;
+    char** environment = NULL;
     int    status = -1;
     int    written;
+
+
+    configurePath = strpathcombine(data->paths.project, "configure");
+    if (configurePath == NULL) {
+        return -1;
+    }
 
     arguments = __replace_or_add_prefix(
         data->platform.target_platform,
@@ -165,23 +215,6 @@ int configure_main(struct oven_backend_data* data, union oven_backend_options* o
         &installPath
     );
     if (arguments == NULL) {
-        return -1;
-    }
-
-    sharePath      = strpathcombine(installPath, "share");
-    configSitePath = strpathcombine(sharePath, "config.site");
-    configurePath  = strpathcombine(data->paths.project, "configure");
-    if (sharePath == NULL || configSitePath == NULL || configurePath == NULL) {
-        free(arguments);
-        free(sharePath);
-        free(configSitePath);
-        free(configurePath);
-        return -1;
-    }
-
-    // create the share directory
-    if (platform_mkdir(sharePath)) {
-        VLOG_ERROR("configure", "failed to create %s: %s\n", sharePath, strerror(errno));
         goto cleanup;
     }
 
@@ -190,9 +223,11 @@ int configure_main(struct oven_backend_data* data, union oven_backend_options* o
         goto cleanup;
     }
 
-    status = __generate_site_file(configSitePath, data);
-    if (status != 0) {
-        goto cleanup;
+    if (__is_cross_compiling(data)) {
+        status = __generate_site_file(installPath, data);
+        if (status != 0) {
+            goto cleanup;
+        }
     }
 
     // perform the spawn operation
@@ -209,8 +244,7 @@ int configure_main(struct oven_backend_data* data, union oven_backend_options* o
 cleanup:
     environment_destroy(environment);
     free(arguments);
-    free(sharePath);
-    free(configSitePath);
+    free(installPath);
     free(configurePath);
     return status;
 }
