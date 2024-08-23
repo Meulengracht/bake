@@ -35,7 +35,6 @@
 static void __initialize_pack_options(
     struct kitchen*              kitchen,
     struct kitchen_pack_options* options,
-    struct recipe*               recipe,
     struct recipe_pack*          pack)
 {
     memset(options, 0, sizeof(struct kitchen_pack_options));
@@ -48,15 +47,15 @@ static void __initialize_pack_options(
     options->architecture     = kitchen->target_architecture;
 
     options->type             = pack->type;
-    options->summary          = recipe->project.summary;
-    options->description      = recipe->project.description;
-    options->icon             = recipe->project.icon;
-    options->version          = recipe->project.version;
-    options->license          = recipe->project.license;
-    options->eula             = recipe->project.eula;
-    options->maintainer       = recipe->project.author;
-    options->maintainer_email = recipe->project.email;
-    options->homepage         = recipe->project.url;
+    options->summary          = kitchen->recipe->project.summary;
+    options->description      = kitchen->recipe->project.description;
+    options->icon             = kitchen->recipe->project.icon;
+    options->version          = kitchen->recipe->project.version;
+    options->license          = kitchen->recipe->project.license;
+    options->eula             = kitchen->recipe->project.eula;
+    options->maintainer       = kitchen->recipe->project.author;
+    options->maintainer_email = kitchen->recipe->project.email;
+    options->homepage         = kitchen->recipe->project.url;
     options->filters          = &pack->filters;
     options->commands         = &pack->commands;
     
@@ -169,14 +168,14 @@ cleanup:
     return status;
 }
 
-int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
+int kitchen_recipe_pack(struct kitchen* kitchen)
 {
     struct list_item* item;
     int               status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_pack()\n");
 
     // include ingredients marked for packing
-    list_foreach(&recipe->environment.runtime.ingredients, item) {
+    list_foreach(&kitchen->recipe->environment.runtime.ingredients, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         
         status = __copy_files_with_filters(
@@ -191,11 +190,11 @@ int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe)
         }
     }
 
-    list_foreach(&recipe->packs, item) {
+    list_foreach(&kitchen->recipe->packs, item) {
         struct recipe_pack*         pack = (struct recipe_pack*)item;
         struct kitchen_pack_options packOptions;
 
-        __initialize_pack_options(kitchen, &packOptions, recipe, pack);
+        __initialize_pack_options(kitchen, &packOptions, pack);
         status = kitchen_pack(&packOptions);
         if (status) {
             VLOG_ERROR("kitchen", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);

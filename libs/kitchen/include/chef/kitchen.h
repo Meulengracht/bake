@@ -152,7 +152,7 @@ extern int kitchen_purge(struct kitchen_purge_options* options);
  * @param recipe 
  * @return int 
  */
-extern int kitchen_recipe_source(struct kitchen* kitchen, struct recipe* recipe);
+extern int kitchen_recipe_source(struct kitchen* kitchen);
 
 /**
  * @brief 
@@ -161,7 +161,7 @@ extern int kitchen_recipe_source(struct kitchen* kitchen, struct recipe* recipe)
  * @param recipe 
  * @return int 
  */
-extern int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe);
+extern int kitchen_recipe_make(struct kitchen* kitchen);
 
 /**
  * @brief 
@@ -170,7 +170,7 @@ extern int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe);
  * @param recipe 
  * @return int 
  */
-extern int kitchen_recipe_pack(struct kitchen* kitchen, struct recipe* recipe);
+extern int kitchen_recipe_pack(struct kitchen* kitchen);
 
 /**
  * @brief 

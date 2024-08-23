@@ -67,14 +67,14 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
     return 0;
 }
 
-int kitchen_recipe_make(struct kitchen* kitchen, struct recipe* recipe)
+int kitchen_recipe_make(struct kitchen* kitchen)
 {
     struct list_item* item;
     int               status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_make()\n");
 
     recipe_cache_transaction_begin();
-    list_foreach(&recipe->parts, item) {
+    list_foreach(&kitchen->recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
 
         status = __make_recipe_steps(kitchen, part->name, &part->steps);

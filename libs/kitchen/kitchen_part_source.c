@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <vlog.h>
 
-int kitchen_recipe_source(struct kitchen* kitchen, struct recipe* recipe)
+int kitchen_recipe_source(struct kitchen* kitchen)
 {
     struct list_item* item;
     int               status;
@@ -30,7 +30,7 @@ int kitchen_recipe_source(struct kitchen* kitchen, struct recipe* recipe)
     VLOG_DEBUG("kitchen", "kitchen_recipe_source()\n");
 
     recipe_cache_transaction_begin();
-    list_foreach(&recipe->parts, item) {
+    list_foreach(&kitchen->recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
         if (recipe_cache_is_part_sourced(part->name)) {
             VLOG_TRACE("kitchen", "part '%s' already sourced\n", part->name);

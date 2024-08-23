@@ -134,7 +134,7 @@ void oven_recipe_end(void)
     memset(&g_oven.recipe, 0, sizeof(struct oven_recipe_context));
 }
 
-static const char* __get_variable(const char* name)
+static const char* __get_variable(const char* name, void* context)
 {
     // fixed values
     static const char* hostArch = CHEF_ARCHITECTURE_STR;
@@ -164,229 +164,9 @@ static const char* __get_variable(const char* name)
     return NULL;
 }
 
-static int __expand_variable(char** at, char** buffer, int* index, size_t* maxLength)
-{
-    const char* start = *at;
-    char*       end   = strchr(start, ']');
-    if (end && end[1] == ']') {
-        char* variable;
-
-        // fixup at
-        *at = (end + 2);
-
-        start += 3; // skip $[[
-
-        // trim leading spaces
-        while (*start == ' ') {
-            start++;
-        }
-
-        // trim trailing spaces
-        end--;
-        while (*end == ' ') {
-            end--;
-        }
-        end++;
-        
-        variable = platform_strndup(start, end - start);
-        if (variable != NULL) {
-            const char* value = __get_variable(variable);
-            free(variable);
-            if (value != NULL) {
-                size_t valueLength = strlen(value);
-                if (valueLength > *maxLength) {
-                    *maxLength = valueLength;
-                    errno = ENOSPC;
-                    return -1;
-                }
-                
-                memcpy(&(*buffer)[*index], value, valueLength);
-                *index += valueLength;
-                return 0;
-            } else {
-                errno = ENOENT;
-                return -1;
-            }
-        } else {
-            errno = ENOMEM;
-            return -1;
-        }
-    }
-    errno = EINVAL;
-    return -1;
-}
-
-static int __expand_environment_variable(char** at, char** buffer, int* index, size_t* maxLength)
-{
-    const char* start = *at;
-    char*       end   = strchr(start, '}');
-    if (end) {
-        char* variable;
-        
-        // fixup at
-        *at = end + 1;
-
-        start += 2; // skip ${
-
-        // trim leading spaces
-        while (*start == ' ') {
-            start++;
-        }
-
-        // trim trailing spaces
-        end--;
-        while (*end == ' ') {
-            end--;
-        }
-        end++;
-
-        variable = platform_strndup(start, end - start);
-        if (variable != NULL) {
-            char* value = getenv(variable);
-            free(variable);
-            if (value != NULL) {
-                size_t valueLength = strlen(value);
-                if (valueLength > *maxLength) {
-                    *maxLength = valueLength;
-                    errno = ENOSPC;
-                    return -1;
-                }
-                
-                memcpy(&(*buffer)[*index], value, valueLength);
-                *index += valueLength;
-                return 0;
-            }
-        } else {
-            errno = ENOENT;
-            return -1;
-        }
-    } else {
-        errno = ENOMEM;
-        return -1;
-    }
-    errno = EINVAL;
-    return -1;
-}
-
-static void* __resize_buffer(void* buffer, size_t length)
-{
-    void* biggerBuffer = calloc(1, length);
-    if (!biggerBuffer) {
-        return NULL;
-    }
-    strcat(biggerBuffer, buffer);
-    free(buffer);
-    return biggerBuffer;
-}
-
 char* oven_preprocess_text(const char* original)
 {
-    const char* itr = original;
-    char*       result;
-    char*       buffer;
-    size_t      bufferSize = 4096;
-    int         index;
-
-    if (original == NULL) {
-        return NULL;
-    }
-    
-    buffer = calloc(1, bufferSize);
-    if (buffer == NULL) {
-        errno = ENOMEM;
-        return NULL;
-    }
-
-    // trim spaces
-    while (*itr == ' ') {
-        itr++;
-    }
-    
-    index = 0;
-    while (*itr) {
-        if (strncmp(itr, "$[[", 3) == 0) {
-            // handle variables
-            size_t spaceLeft = bufferSize - index;
-            int    status;
-            do {
-                status = __expand_variable((char**)&itr, &buffer, &index, &spaceLeft);
-                if (status) {
-                    if (errno == ENOSPC) {
-                        buffer = __resize_buffer(buffer, bufferSize + spaceLeft + 1024);
-                        if (!buffer) {
-                            free(buffer);
-                            return NULL;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-            } while (status != 0);
-        } else if (strncmp(itr, "$[", 2) == 0) {
-            // handle environment variables
-            size_t spaceLeft = bufferSize - index;
-            int    status;
-            do {
-                status = __expand_environment_variable((char**)&itr, &buffer, &index, &spaceLeft);
-                if (status) {
-                    if (errno == ENOSPC) {
-                        buffer = __resize_buffer(buffer, bufferSize + spaceLeft + 1024);
-                        if (!buffer) {
-                            free(buffer);
-                            return NULL;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                
-            } while (status != 0);
-        } else {
-            buffer[index++] = *itr;
-            itr++;
-        }
-    }
-    
-    result = platform_strdup(buffer);
-    free(buffer);
-    return result;
-}
-
-const char* __build_argument_string(struct list* argumentList)
-{
-    struct list_item* item;
-    char*             argumentString;
-    char*             argumentItr;
-    size_t            totalLength = 0;
-
-    // allocate memory for the string
-    argumentString = (char*)malloc(4096);
-    if (argumentString == NULL) {
-        errno = ENOMEM;
-        return NULL;
-    }
-    memset(argumentString, 0, 4096);
-
-    // copy arguments into buffer
-    argumentItr = argumentString;
-    list_foreach(argumentList, item) {
-        struct list_item_string* value = (struct list_item_string*)item;
-        char*                   valueString = oven_preprocess_text(value->value);
-        size_t                  valueLength = strlen(valueString);
-
-        if (valueLength > 0 && (totalLength + valueLength + 2) < 4096) {
-            strcpy(argumentItr, valueString);
-            
-            totalLength += valueLength;
-            argumentItr += valueLength;
-            if (item->next) {
-                *argumentItr = ' ';
-                argumentItr++;
-            }
-        }
-        free(valueString);
-    }
-    return argumentString;
+    return chef_preprocess_text(original, __get_variable, NULL);
 }
 
 static struct oven_backend* __get_backend(const char* name)
@@ -399,6 +179,33 @@ static struct oven_backend* __get_backend(const char* name)
     return NULL;
 }
 
+static void __cleanup_environment(struct list* keypairs)
+{
+    struct list_item* item;
+
+    if (keypairs == NULL) {
+        return;
+    }
+
+    for (item = keypairs->head; item != NULL;) {
+        struct list_item*         next    = item->next;
+        struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
+
+        free((void*)keypair->key);
+        free((void*)keypair->value);
+        free(keypair);
+
+        item = next;
+    }
+    free(keypairs);
+}
+
+static void __cleanup_backend_data(struct oven_backend_data* data)
+{
+    __cleanup_environment(data->environment);
+    free((void*)data->arguments);
+}
+
 static struct chef_keypair_item* __preprocess_keypair(struct chef_keypair_item* original)
 {
     struct chef_keypair_item* keypair;
@@ -409,7 +216,7 @@ static struct chef_keypair_item* __preprocess_keypair(struct chef_keypair_item* 
     }
 
     keypair->key   = platform_strdup(original->key);
-    keypair->value = oven_preprocess_text(original->value);
+    keypair->value = chef_preprocess_text(original->value, __get_variable, NULL);
     return keypair;
 }
 
@@ -522,33 +329,6 @@ static int __append_or_update_environ_flags(struct list* environment, const char
     return 0;
 }
 
-static void __cleanup_environment(struct list* keypairs)
-{
-    struct list_item* item;
-
-    if (keypairs == NULL) {
-        return;
-    }
-
-    for (item = keypairs->head; item != NULL;) {
-        struct list_item*         next    = item->next;
-        struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
-
-        free((void*)keypair->key);
-        free((void*)keypair->value);
-        free(keypair);
-
-        item = next;
-    }
-    free(keypairs);
-}
-
-static void __cleanup_backend_data(struct oven_backend_data* data)
-{
-    __cleanup_environment(data->environment);
-    free((void*)data->arguments);
-}
-
 static int __initialize_backend_data(struct oven_backend_data* data, const char* profile, struct list* arguments, struct list* environment)
 {
     // reset the datastructure
@@ -581,7 +361,7 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     //    return -1;
     //}
 
-    data->arguments = __build_argument_string(arguments);
+    data->arguments = chef_process_argument_list(arguments, __get_variable, NULL);
     if (!data->arguments) {
         __cleanup_backend_data(data);
         return -1;
