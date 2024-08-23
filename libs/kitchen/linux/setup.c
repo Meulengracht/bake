@@ -17,12 +17,12 @@
  */
 
 #include <chef/environment.h>
+#include <chef/ingredient.h>
 #include <chef/kitchen.h>
 #include <chef/platform.h>
 #include <chef/rootfs/debootstrap.h>
 #include <chef/containerv.h>
 #include <chef/containerv-user-linux.h>
-#include <libingredient.h>
 #include <libgen.h>
 #include <errno.h>
 #include <string.h>

@@ -256,6 +256,7 @@ extern int platform_getfiles(const char* path, int recursive, struct list* files
 extern int platform_getfiles_destroy(struct list* files);
 extern int platform_cpucount(void);
 extern int platform_copyfile(const char* source, const char* destination);
+extern int platform_readfile(const char* path, void** bufferOut, size_t* lengthOut);
 extern int platform_lockfile(int fd);
 extern int platform_unlockfile(int fd);
 extern char* platform_strdup(const char* string);
@@ -303,14 +304,6 @@ extern int platform_spawn(const char* path, const char* arguments, const char* c
  * @brief Spawns a child process and returns the stdout as a string.
  */
 extern char* platform_exec(const char* cmd);
-
-/**
- * @brief Execute the provided shell script.
- * 
- * @param[In] script The shell script to execute 
- * @return int 
- */
-extern int platform_script(const char* script);
 
 #ifdef __cplusplus
 }

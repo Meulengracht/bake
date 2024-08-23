@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,33 +19,13 @@
 #ifndef __LIBOVEN_H__
 #define __LIBOVEN_H__
 
+#include <chef/build-common.h>
 #include <chef/package.h>
 #include <chef/list.h>
 
 //****************************************************************************//
 // Oven backend options                                                       //
 //****************************************************************************//
-struct oven_backend_make_options {
-    int in_tree;
-    int parallel;
-};
-
-struct meson_wrap_item {
-    struct list_item list_header;
-    const char*      name;
-    const char*      ingredient;
-};
-
-struct oven_backend_meson_options {
-    const char* cross_file;
-    struct list wraps; // list<meson_wrap_item>
-};
-
-union oven_backend_options {
-    struct oven_backend_make_options  make;
-    struct oven_backend_meson_options meson;
-};
-
 struct oven_ingredient {
     struct list_item     list_header;
     const char*          file_path;
@@ -62,7 +42,7 @@ struct oven_generate_options {
     const char*                 name;
     const char*                 profile;
     const char*                 system;
-    union oven_backend_options* system_options;
+    union chef_backend_options* system_options;
     struct list*                arguments;
     struct list*                environment;
 };
@@ -71,14 +51,9 @@ struct oven_build_options {
     const char*                 name;
     const char*                 profile;
     const char*                 system;
-    union oven_backend_options* system_options;
+    union chef_backend_options* system_options;
     struct list*                arguments;
     struct list*                environment;
-};
-
-struct oven_script_options {
-    const char* name;
-    const char* script;
 };
 
 struct oven_clean_options {
@@ -150,7 +125,7 @@ extern int oven_build(struct oven_build_options* options);
  * @param options 
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int oven_script(struct oven_script_options* options);
+extern int oven_script(const char* script);
 
 /**
  * @brief Cleans the provided recipe part

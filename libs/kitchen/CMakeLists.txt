@@ -42,5 +42,5 @@ add_sources(
 
 add_library(kitchen STATIC ${KITCHEN_SRCS})
 target_link_libraries(kitchen PRIVATE jansson-api jansson yaml)
-target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} fridge oven ingredient containerv libdirconf platform)
+target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} containerv common libdirconf platform)
 target_include_directories(kitchen PUBLIC include)

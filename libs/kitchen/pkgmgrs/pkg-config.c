@@ -16,10 +16,10 @@
  * 
  */
 
+#include <chef/ingredient.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <errno.h>
-#include <libingredient.h>
 #include "libpkgmgr.h"
 #include <stdio.h>
 #include <stdlib.h>

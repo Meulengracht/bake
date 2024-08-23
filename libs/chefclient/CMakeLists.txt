@@ -19,4 +19,4 @@ add_library(chef-client STATIC
     trace.c
 )
 target_include_directories(chef-client PUBLIC include)
-target_link_libraries(chef-client PUBLIC libcurl wolfssl jansson-api jansson vafs platform)
+target_link_libraries(chef-client PUBLIC libcurl wolfssl jansson-api jansson vafs common platform)

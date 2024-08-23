@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,41 +16,15 @@
  * 
  */
 
-#include <backend.h>
-#include <errno.h>
-#include <libingredient.h>
-#include <liboven.h>
+#include <chef/ingredient.h>
 #include <chef/platform.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
-struct oven_recipe_context {
-    const char* name;
-    const char* toolchain;
-    const char* source_root;
-    const char* build_root;
-};
-
-struct oven_variables {
-    const char* target_platform;
-    const char* target_arch;
-};
-
-struct oven_context {
-    const char* const*         process_environment;
-    struct oven_paths          paths;
-    struct oven_variables      variables;
-    struct oven_recipe_context recipe;
-};
-
-struct oven_backend {
-    const char* name;
-    int       (*generate)(struct oven_backend_data* data, union oven_backend_options* options);
-    int       (*build)(struct oven_backend_data* data, union oven_backend_options* options);
-    int       (*clean)(struct oven_backend_data* data);
-};
+#include "private.h"
 
 static struct oven_backend g_backends[] = {
     { "configure", configure_main,    NULL,             NULL },
@@ -61,6 +35,7 @@ static struct oven_backend g_backends[] = {
 };
 
 static struct oven_context g_oven = { 0 };
+struct oven_context* __oven_instance() { return &g_oven; }
 
 int oven_initialize(struct oven_initialize_options* parameters)
 {
@@ -632,7 +607,6 @@ int oven_configure(struct oven_generate_options* options)
         return -1;
     }
 
-    VLOG_TRACE("oven", "running step %s\n", options->name);
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
@@ -661,7 +635,6 @@ int oven_build(struct oven_build_options* options)
         return -1;
     }
 
-    VLOG_TRACE("oven", "running step %s\n", options->name);
     status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
@@ -669,32 +642,6 @@ int oven_build(struct oven_build_options* options)
     
     status = backend->build(&data, options->system_options);
     __cleanup_backend_data(&data);
-    return status;
-}
-
-int oven_script(struct oven_script_options* options)
-{
-    char* preprocessedScript;
-    int   status;
-
-    // handle script substitution first, then we pass it on
-    // to the platform handler
-    if (options == NULL || options->script == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    VLOG_TRACE("oven", "running step %s\n", options->name);
-    preprocessedScript = oven_preprocess_text(options->script);
-    if (preprocessedScript == NULL) {
-        return -1;
-    }
-
-    status = platform_script(preprocessedScript);
-    if (status) {
-        VLOG_ERROR("oven", "oven_script: failed to execute script\n");
-    }
-    free((void*)preprocessedScript);
     return status;
 }
 

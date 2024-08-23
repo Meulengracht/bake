@@ -17,10 +17,10 @@
  */
 
 #include <chef/dirs.h>
+#include <chef/ingredient.h>
 #include <chef/kitchen.h>
 #include <chef/platform.h>
 #include <chef/containerv-user-linux.h>
-#include <libingredient.h>
 #include <vlog.h>
 
 #include <errno.h>

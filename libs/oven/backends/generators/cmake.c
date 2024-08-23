@@ -404,7 +404,7 @@ static void __use_workspace_file(struct oven_backend_data* data)
 }
 #endif
 
-int cmake_main(struct oven_backend_data* data, union oven_backend_options* options)
+int cmake_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
     char*  argument    = NULL;
     char*  newArguments;

@@ -77,6 +77,7 @@ enum state {
     STATE_RECIPE_TOOLCHAIN,
 
     STATE_RECIPE_SOURCE_TYPE,
+    STATE_RECIPE_SOURCE_SCRIPT,
     STATE_RECIPE_SOURCE_PATH,
     STATE_RECIPE_SOURCE_URL,
     STATE_RECIPE_SOURCE_GIT_REPO,
@@ -1114,6 +1115,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_RECIPE_SOURCE_GIT_BRANCH);
                     } else if (strcmp(value, "git-commit") == 0) {
                         __parser_push_state(s, STATE_RECIPE_SOURCE_GIT_COMMIT);
+                    } else if (strcmp(value, "script") == 0) {
+                        __parser_push_state(s, STATE_RECIPE_SOURCE_SCRIPT);
                     } else {
                         fprintf(stderr, "__consume_event: (STATE_RECIPE_SOURCE) unexpected scalar: %s.\n", value);
                         return -1;
@@ -1125,6 +1128,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             break;
 
         __consume_scalar_fn(STATE_RECIPE_SOURCE_TYPE, part.source.type, __parse_recipe_part_source_type)
+        __consume_scalar_fn(STATE_RECIPE_SOURCE_SCRIPT, part.source.script, __parse_string)
         __consume_scalar_fn(STATE_RECIPE_SOURCE_PATH, part.source.path.path, __parse_string)
         __consume_scalar_fn(STATE_RECIPE_SOURCE_URL, part.source.url.url, __parse_string)
         __consume_scalar_fn(STATE_RECIPE_SOURCE_GIT_REPO, part.source.git.url, __parse_string)

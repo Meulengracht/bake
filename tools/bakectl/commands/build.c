@@ -87,12 +87,6 @@ static void __initialize_build_options(struct oven_build_options* options, struc
     options->environment    = &step->env_keypairs;
 }
 
-static void __initialize_script_options(struct oven_script_options* options, struct recipe_step* step)
-{
-    options->name   = step->name;
-    options->script = step->script;
-}
-
 static int __build_step(const char* partName, struct list* steps, const char* stepName)
 {
     struct list_item* item;
@@ -108,6 +102,7 @@ static int __build_step(const char* partName, struct list* steps, const char* st
             continue;
         }
 
+        VLOG_TRACE("oven", "executing step '%s/%s'\n", partName, step->name);
         if (step->type == RECIPE_STEP_TYPE_GENERATE) {
             struct oven_generate_options genOptions;
             __initialize_generator_options(&genOptions, step);
@@ -125,9 +120,7 @@ static int __build_step(const char* partName, struct list* steps, const char* st
                 return status;
             }
         } else if (step->type == RECIPE_STEP_TYPE_SCRIPT) {
-            struct oven_script_options scriptOptions;
-            __initialize_script_options(&scriptOptions, step);
-            status = oven_script(&scriptOptions);
+            status = oven_script(step->script);
             if (status) {
                 VLOG_ERROR("bakectl", "failed to execute script\n");
                 return status;

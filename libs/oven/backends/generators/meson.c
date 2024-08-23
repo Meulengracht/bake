@@ -77,7 +77,7 @@ static int __write_file(const char* path, const char* buffer)
     return 0;
 }
 
-static char* __compute_arguments(struct oven_backend_data* data, union oven_backend_options* options)
+static char* __compute_arguments(struct oven_backend_data* data, union chef_backend_options* options)
 {
     size_t length;
     char*  args;
@@ -147,7 +147,7 @@ static void __cmake_output_handler(const char* line, enum platform_spawn_output_
     }
 }
 
-int meson_config_main(struct oven_backend_data* data, union oven_backend_options* options)
+int meson_config_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
     char*  finalArguments = NULL;
     char** environment  = NULL;

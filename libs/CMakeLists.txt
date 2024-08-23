@@ -3,6 +3,7 @@
 add_subdirectory(platform)
 add_subdirectory(vlog)
 add_subdirectory(dirconf)
+add_subdirectory(common)
 add_subdirectory(containerv)
 
 # Build utility libraries before the system libraries
@@ -40,7 +41,6 @@ add_subdirectory(curl)
 add_subdirectory(chefclient)
 
 # build support libraries for tools
-add_subdirectory(ingredient)
 add_subdirectory(oven)
 add_subdirectory(fridge)
 add_subdirectory(kitchen)

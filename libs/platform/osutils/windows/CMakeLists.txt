@@ -10,7 +10,6 @@ add_library(platform-osutils STATIC
     isdir.c
     mkdir.c
     rmdir.c
-    script.c
     sleep.c
     strdup.c
     strndup.c

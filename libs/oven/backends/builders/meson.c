@@ -25,7 +25,7 @@
 #include <string.h>
 #include <stdio.h>
 
-int meson_build_main(struct oven_backend_data* data, union oven_backend_options* options)
+int meson_build_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
     char*  mesonCommand = NULL;
     char** environment  = NULL;

@@ -80,48 +80,6 @@ static struct command_handler* __get_command(const char* command)
     return NULL;
 }
 
-static int __read_recipe(const char* path, void** bufferOut, size_t* lengthOut)
-{
-    FILE*  file;
-    void*  buffer;
-    size_t size, read;
-
-    if (path == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    file = fopen(path, "r");
-    if (!file) {
-        fprintf(stderr, "bake: failed to read recipe path: %s\n", path);
-        return -1;
-    }
-
-    fseek(file, 0, SEEK_END);
-    size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    buffer = malloc(size);
-    if (!buffer) {
-        fprintf(stderr, "bake: failed to allocate memory for recipe: %s\n", strerror(errno));
-        fclose(file);
-        return -1;
-    }
-
-    read = fread(buffer, 1, size, file);
-    if (read < size) {
-        fprintf(stderr, "bake: failed to read recipe: %s\n", strerror(errno));
-        fclose(file);
-        return -1;
-    }
-    
-    fclose(file);
-
-    *bufferOut = buffer;
-    *lengthOut = size;
-    return 0;
-}
-
 static int __is_osbase(const char* name)
 {
     if (strcmp(name, "vali/linux-1") == 0) {
@@ -330,7 +288,7 @@ int main(int argc, char** argv, char** envp)
     }
 
     if (options.recipe_path != NULL) {
-        status = __read_recipe(options.recipe_path, &buffer, &length);
+        status = platform_readfile(options.recipe_path, &buffer, &length);
         if (!status) {
             status = recipe_parse(buffer, length, &options.recipe);
             free(buffer);
@@ -351,6 +309,8 @@ int main(int argc, char** argv, char** envp)
             }
             printf("bake: target platform: %s\n", options.platform);
             printf("bake: target architecture: %s\n", options.architecture);
+        } else {
+            fprintf(stderr, "bake: failed to read recipe: %s\n", options.recipe_path);
         }
     }
 
