@@ -19,8 +19,8 @@
 #include <errno.h>
 #include <chef/client.h>
 #include <chef/dirs.h>
+#include <chef/ingredient.h>
 #include "inventory.h"
-#include <libingredient.h>
 #include <libfridge.h>
 #include <limits.h>
 #include <chef/platform.h>

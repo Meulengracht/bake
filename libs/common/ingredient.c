@@ -16,10 +16,10 @@
  * 
  */
 
+#include <chef/ingredient.h>
 #include <chef/platform.h>
 #include <chef/utils_vafs.h>
 #include <errno.h>
-#include <libingredient.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

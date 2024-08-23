@@ -11,7 +11,6 @@ add_library(platform-osutils STATIC
     mkdir.c
     readlink.c
     rmdir.c
-    script.c
     sleep.c
     spawn.c
     stat.c

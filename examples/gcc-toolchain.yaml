@@ -23,6 +23,10 @@ recipes:
       type: git
       git-url: https://github.com/gcc-mirror/gcc.git
       git-branch: releases/gcc-13
+      script: |
+        if build.subsystem.platform_host() == "linux" then
+          build.shell("contrib/download_prerequisites")
+        end
     steps:
     - name: config
       type: generate

@@ -19,9 +19,9 @@
 #ifndef __CHEF_RECIPE_H__
 #define __CHEF_RECIPE_H__
 
+#include <chef/build-common.h>
 #include <chef/package.h>
 #include <chef/list.h>
-#include <liboven.h>
 #include <stddef.h>
 
 enum recipe_part_source_type {
@@ -49,6 +49,7 @@ struct recipe_part_source_url {
 
 struct recipe_part_source {
     enum recipe_part_source_type type;
+    const char*                  script;
     union {
         struct recipe_part_source_path path;
         struct recipe_part_source_url  url;
@@ -72,7 +73,7 @@ struct recipe_step {
     struct list                depends;
     struct list                arguments;
     struct list                env_keypairs;
-    union oven_backend_options options;
+    union chef_backend_options options;
 };
 
 struct recipe_part {

@@ -43,7 +43,7 @@ static void __ninja_output_handler(const char* line, enum platform_spawn_output_
     }
 }
 
-static int __cpu_workers(union oven_backend_options* options)
+static int __cpu_workers(union chef_backend_options* options)
 {
     if (options->make.parallel > 0) {
         return options->make.parallel;
@@ -52,7 +52,7 @@ static int __cpu_workers(union oven_backend_options* options)
     return __INTERNAL_MAX(platform_cpucount() - 2, 1);
 }
 
-int make_main(struct oven_backend_data* data, union oven_backend_options* options)
+int make_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
     int         status      = -1;
     char**      environment = NULL;

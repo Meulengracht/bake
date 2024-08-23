@@ -22,7 +22,7 @@
 // prototype some types from liboven.h
 struct oven_generate_options;
 struct oven_build_options;
-union oven_backend_options;
+union chef_backend_options;
 
 struct oven_backend_data_paths {
     /**
@@ -107,15 +107,15 @@ struct oven_backend_data {
 //****************************************************************************//
 // Configure backend entries                                                  //
 //****************************************************************************//
-extern int configure_main(struct oven_backend_data* data, union oven_backend_options* options);
-extern int cmake_main(struct oven_backend_data* data, union oven_backend_options* options);
-extern int meson_config_main(struct oven_backend_data* data, union oven_backend_options* options);
+extern int configure_main(struct oven_backend_data* data, union chef_backend_options* options);
+extern int cmake_main(struct oven_backend_data* data, union chef_backend_options* options);
+extern int meson_config_main(struct oven_backend_data* data, union chef_backend_options* options);
 
 //****************************************************************************//
 // Build backend entries                                                      //
 //****************************************************************************//
-extern int make_main(struct oven_backend_data* data, union oven_backend_options* options);
-extern int meson_build_main(struct oven_backend_data* data, union oven_backend_options* options);
-extern int ninja_main(struct oven_backend_data* data, union oven_backend_options* options);
+extern int make_main(struct oven_backend_data* data, union chef_backend_options* options);
+extern int meson_build_main(struct oven_backend_data* data, union chef_backend_options* options);
+extern int ninja_main(struct oven_backend_data* data, union chef_backend_options* options);
 
 #endif //!__LIBOVEN_BACKEND_H__

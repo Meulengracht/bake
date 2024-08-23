@@ -193,7 +193,7 @@ static int __is_cross_compiling(struct oven_backend_data* data)
     return strcmp(data->platform.target_platform, CHEF_PLATFORM_STR) != 0;
 }
 
-int configure_main(struct oven_backend_data* data, union oven_backend_options* options)
+int configure_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
     char*  arguments = NULL;
     char*  installPath = NULL;

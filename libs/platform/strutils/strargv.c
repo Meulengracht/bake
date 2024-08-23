@@ -64,18 +64,10 @@ char** strargv(char* arguments, const char* arg0, int* argc)
     int    count = (arg0 != NULL) ? 1 : 0;
     int    i = 0;
 
-    if (arguments == NULL) {
-        return NULL;
-    }
-
-    // set the initial argument, skip whitespaces
-    while (*arguments && *arguments == ' ') {
-        arguments++;
-    }
-
-    // catch empty strings after trimming
-    if (strlen(arguments) == 0) {
-        return NULL;
+    if (arguments != NULL) {
+        while (*arguments && *arguments == ' ') {
+            arguments++;
+        }
     }
 
     // count the arguments
@@ -89,10 +81,18 @@ char** strargv(char* arguments, const char* arg0, int* argc)
         return NULL;
     }
 
-    // set the initial arguments
+    // set the provided initial arguments
     if (arg0 != NULL) {
         argv[i++] = (char*)arg0;
     }
+
+    // skip the rest of this if arguments were
+    // not supplied
+    if (arguments == NULL || count == 1) {
+        goto exit;
+    }
+
+    // set second initial argument
     argv[i++] = (char*)arguments;
 
     // parse the rest of the arguments
@@ -136,6 +136,8 @@ char** strargv(char* arguments, const char* arg0, int* argc)
         }
         arguments++;
     }
+
+exit:
     return argv;
 }
 

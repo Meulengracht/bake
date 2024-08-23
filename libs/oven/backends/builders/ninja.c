@@ -43,7 +43,7 @@ static void __ninja_output_handler(const char* line, enum platform_spawn_output_
     }
 }
 
-int ninja_main(struct oven_backend_data* data, union oven_backend_options* options)
+int ninja_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
     int    status      = -1;
     char** environment = NULL;

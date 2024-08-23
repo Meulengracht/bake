@@ -3,15 +3,17 @@ add_subdirectory(backends)
 # initialize common sources
 set(SRCS
     oven.c
+    script.c
 )
 
 # add platform libraries
-set(ADDITIONAL_LIBS)
+set(ADDITIONAL_LIBS ${LUA_LIBRARIES})
 if (UNIX)
     set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} -lpthread)
 endif (UNIX)
 
 add_library(oven STATIC ${SRCS})
+target_include_directories(oven PRIVATE ${LUA_INCLUDE_DIR})
 target_include_directories(oven PUBLIC include)
-target_link_libraries(oven PRIVATE chef-client oven-backend oven-builders oven-generators platform)
+target_link_libraries(oven PRIVATE chef-client oven-backend oven-builders oven-generators common platform)
 target_link_libraries(oven PUBLIC vafs ${ADDITIONAL_LIBS} zstd-api libzstd_static)
