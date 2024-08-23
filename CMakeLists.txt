@@ -15,8 +15,8 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/chef-config.h.in"
                @ONLY
 )
 
-# add required packages for chef
-find_package(Lua 5.2 REQUIRED)
+# fetch external libraries
+include(${CMAKE_SOURCE_DIR}/cmake/external/lua/lua54.cmake)
 
 if(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)

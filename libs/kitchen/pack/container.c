@@ -52,8 +52,6 @@ struct VaFsFeatureFilter {
     struct VaFsFeatureHeader Header;
 };
 
-extern const char* __build_argument_string(struct list* argumentList);
-
 static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
 static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
 static struct VaFsGuid g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
@@ -750,10 +748,17 @@ static size_t __file_size(const char* path)
     return fileStat.size;
 }
 
-static size_t __command_size(struct recipe_pack_command* command)
+static const char* __resolve_variable(const char* name, void* context)
+{
+    struct kitchen_pack_options* options = context;
+    VLOG_ERROR("kitchen", "__resolve_variable(name=%s)\n", name);
+    return NULL;
+}
+
+static size_t __command_size(struct recipe_pack_command* command, struct kitchen_pack_options* options)
 {
     size_t      size = sizeof(struct chef_vafs_package_app);
-    const char* args = __build_argument_string(&command->arguments);
+    const char* args = chef_process_argument_list(&command->arguments, __resolve_variable, options);
     
     size += strlen(command->name);
     size += __safe_strlen(command->description);
@@ -764,10 +769,10 @@ static size_t __command_size(struct recipe_pack_command* command)
     return size;
 }
 
-static size_t __serialize_command(struct recipe_pack_command* command, char* buffer)
+static size_t __serialize_command(struct recipe_pack_command* command, char* buffer, struct kitchen_pack_options* options)
 {
     struct chef_vafs_package_app* app = (struct chef_vafs_package_app*)buffer;
-    const char*                   args = __build_argument_string(&command->arguments);
+    const char*                   args = chef_process_argument_list(&command->arguments, __resolve_variable, options);
 
     app->name_length        = strlen(command->name);
     app->description_length = __safe_strlen(command->description);
@@ -816,7 +821,7 @@ static size_t __serialize_command(struct recipe_pack_command* command, char* buf
         + app->icon_length;
 }
 
-static int __write_commands_metadata(struct VaFs* vafs, struct list* commands)
+static int __write_commands_metadata(struct VaFs* vafs, struct list* commands, struct kitchen_pack_options* options)
 {
     struct chef_vafs_feature_package_apps* packageApps;
     struct list_item* item;
@@ -832,7 +837,7 @@ static int __write_commands_metadata(struct VaFs* vafs, struct list* commands)
     // serialized, so we can preallocate the memory
     list_foreach(commands, item) {
         struct recipe_pack_command* command = (struct recipe_pack_command*)item;
-        totalSize += __command_size(command);
+        totalSize += __command_size(command, options);
     }
 
     buffer = malloc(totalSize);
@@ -849,7 +854,7 @@ static int __write_commands_metadata(struct VaFs* vafs, struct list* commands)
     buffer += sizeof(struct chef_vafs_feature_package_apps);
     list_foreach(commands, item) {
         struct recipe_pack_command* command = (struct recipe_pack_command*)item;
-        buffer += __serialize_command(command, buffer);
+        buffer += __serialize_command(command, buffer, options);
     }
 
     status = vafs_feature_add(vafs, &packageApps->header);
@@ -969,7 +974,7 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
         return -1;
     }
 
-    return __write_commands_metadata(vafs, options->commands);
+    return __write_commands_metadata(vafs, options->commands, options);
 }
 
 static enum VaFsArchitecture __parse_arch(const char* arch)
