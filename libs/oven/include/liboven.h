@@ -57,11 +57,12 @@ struct oven_build_options {
 };
 
 struct oven_clean_options {
-    const char*  name;
-    const char*  profile;
-    const char*  system;
-    struct list* arguments;
-    struct list* environment;
+    const char*                 name;
+    const char*                 profile;
+    const char*                 system;
+    union chef_backend_options* system_options;
+    struct list*                arguments;
+    struct list*                environment;
 };
 
 struct oven_paths {

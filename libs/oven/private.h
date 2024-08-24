@@ -45,7 +45,7 @@ struct oven_backend {
     const char* name;
     int       (*generate)(struct oven_backend_data* data, union chef_backend_options* options);
     int       (*build)(struct oven_backend_data* data, union chef_backend_options* options);
-    int       (*clean)(struct oven_backend_data* data);
+    int       (*clean)(struct oven_backend_data* data, union chef_backend_options* options);
 };
 
 extern struct oven_context* __oven_instance();

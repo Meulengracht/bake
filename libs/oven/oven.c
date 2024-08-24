@@ -29,9 +29,9 @@
 static struct oven_backend g_backends[] = {
     { "configure", configure_main,    NULL,             NULL },
     { "cmake",     cmake_main,        NULL,             NULL },
-    { "meson",     meson_config_main, meson_build_main, NULL },
-    { "make",      NULL,              make_main,        NULL },
-    { "ninja",     NULL,              ninja_main,       NULL },
+    { "meson",     meson_config_main, meson_build_main, meson_clean_main },
+    { "make",      NULL,              make_build_main,  make_clean_main },
+    { "ninja",     NULL,              ninja_build_main, ninja_clean_main },
 };
 
 static struct oven_context g_oven = { 0 };
@@ -335,11 +335,12 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     memset(data, 0, sizeof(struct oven_backend_data));
 
     // setup expected paths
-    data->paths.root = g_oven.paths.project_root;
-    data->paths.install = g_oven.paths.install_root;
-    data->paths.build   = g_oven.recipe.build_root;
+    data->paths.root              = g_oven.paths.project_root;
+    data->paths.install           = g_oven.paths.install_root;
+    data->paths.source            = g_oven.recipe.source_root;
+    data->paths.build             = g_oven.recipe.build_root;
     data->paths.build_ingredients = g_oven.paths.build_ingredients_root;
-    data->paths.project = g_oven.recipe.source_root;
+    data->paths.project           = g_oven.recipe.source_root;
 
     data->project_name        = g_oven.recipe.name;
     data->profile_name        = profile != NULL ? profile : "Release";
@@ -449,7 +450,7 @@ int oven_clean(struct oven_clean_options* options)
         return status;
     }
     
-    status = backend->clean(&data);
+    status = backend->clean(&data, options->system_options);
     __cleanup_backend_data(&data);
     return status;
 }

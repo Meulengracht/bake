@@ -40,6 +40,11 @@ struct oven_backend_data_paths {
     const char* project;
 
     /**
+     * @brief The path to the project source directory.
+     */
+    const char* source;
+
+    /**
      * @brief The path to the project build directory, this is the path where
      * the oven backend is supposed to store the generated files.
      */
@@ -114,8 +119,15 @@ extern int meson_config_main(struct oven_backend_data* data, union chef_backend_
 //****************************************************************************//
 // Build backend entries                                                      //
 //****************************************************************************//
-extern int make_main(struct oven_backend_data* data, union chef_backend_options* options);
+extern int make_build_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int meson_build_main(struct oven_backend_data* data, union chef_backend_options* options);
-extern int ninja_main(struct oven_backend_data* data, union chef_backend_options* options);
+extern int ninja_build_main(struct oven_backend_data* data, union chef_backend_options* options);
+
+//****************************************************************************//
+// Clean backend entries                                                      //
+//****************************************************************************//
+extern int make_clean_main(struct oven_backend_data* data, union chef_backend_options* options);
+extern int meson_clean_main(struct oven_backend_data* data, union chef_backend_options* options);
+extern int ninja_clean_main(struct oven_backend_data* data, union chef_backend_options* options);
 
 #endif //!__LIBOVEN_BACKEND_H__

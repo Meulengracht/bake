@@ -71,11 +71,12 @@ static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, c
 
 static void __initialize_clean_options(struct oven_clean_options* options, struct recipe_step* step)
 {
-    options->name        = step->name;
-    options->profile     = NULL;
-    options->system      = step->system;
-    options->arguments   = &step->arguments;
-    options->environment = &step->env_keypairs;
+    options->name           = step->name;
+    options->profile        = NULL;
+    options->system         = step->system;
+    options->system_options = &step->options;
+    options->arguments      = &step->arguments;
+    options->environment    = &step->env_keypairs;
 }
 
 static int __clean_step(const char* partName, struct list* steps, const char* stepName)
