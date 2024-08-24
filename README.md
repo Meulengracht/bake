@@ -12,10 +12,29 @@ Chef is a cross-platform package management system, specifically built to suppor
 
 The best way to get started is to install the latest version of Chef using the [snap store](https://snapcraft.io/vchef). However not everyone likes or uses snaps, and in this case it's recommended to build chef from source, as chef is not distributed as a debian package yet!
 
-## TODO
+## Roamdmap
 
-Features that we want to include in upcoming releases:
-- Simpler UX experience.
+The most immediate actions that needs to be implemented for release 1.3.x
+
+- Improved logging output (hooks, git output)
+- Implicit recipe package discovery (linux)
+- Updated recipe examples
+
+Features that should be in the upcoming 1.4 release
+
+- Cookd
+- Waiterd
+- TBA
+
+Features that is expected in the upcoming 1.5 release
+
+- Served initial feature completion
+- TBA
+
+Features that is expected in the upcoming 1.6 release
+
+- Initial windows support
+- TBA
 
 ## Account Setup
 
