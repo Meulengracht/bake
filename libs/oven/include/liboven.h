@@ -56,6 +56,16 @@ struct oven_build_options {
     struct list*                environment;
 };
 
+enum oven_script_root_dir {
+    OVEN_SCRIPT_ROOT_DIR_PROJECT,
+    OVEN_SCRIPT_ROOT_DIR_SOURCE,
+    OVEN_SCRIPT_ROOT_DIR_BUILD
+};
+
+struct oven_script_options {
+    enum oven_script_root_dir root_dir;
+};
+
 struct oven_clean_options {
     const char*                 name;
     const char*                 profile;
@@ -126,7 +136,7 @@ extern int oven_build(struct oven_build_options* options);
  * @param options 
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int oven_script(const char* script);
+extern int oven_script(const char* script, struct oven_script_options* options);
 
 /**
  * @brief Cleans the provided recipe part

@@ -58,6 +58,7 @@ const struct luaL_Reg g_subsystem_namespace[] = {
 int __build_shell(lua_State* vm) {
     const char* path = luaL_checkstring(vm, 1);
     const char* args = luaL_checkstring(vm, 2);
+    const char* cwd;
     int         status;
 
     if (path == NULL || strlen(path) == 0) {
@@ -65,19 +66,30 @@ int __build_shell(lua_State* vm) {
         return lua_error(vm);
     }
 
+    lua_getglobal(vm, "SCRIPT_CWD");
+    if (lua_isnil(vm, -1)) {
+        VLOG_ERROR("build.shell", "SCRIPT_CWD has been corrupted, aborting\n");
+        return lua_error(vm);
+    }
+    cwd = lua_tostring(vm, -1);
+
     status = platform_spawn(
         path,
         args,
         __oven_instance()->process_environment, 
         &(struct platform_spawn_options) {
-            .cwd = __oven_instance()->paths.source_root,
+            .cwd = cwd,
         }
     );
+
+    // cleanup globals
+    lua_pop(vm, 1);
+
+    // handle status code
     if (status) {
         VLOG_ERROR("build.shell", "failed to execute %s: %i\n", path, status);
         return lua_error(vm);
     }
-
     return 0;
 }
 
@@ -88,7 +100,20 @@ const struct luaL_Reg g_build_namespace[] = {
     { NULL, NULL },
 };
 
-static lua_State* __create_vm(void)
+static const char* __cwd_from_enum(enum oven_script_root_dir root_dir)
+{
+    switch (root_dir) {
+        case OVEN_SCRIPT_ROOT_DIR_PROJECT:
+            return __oven_instance()->paths.project_root;
+        case OVEN_SCRIPT_ROOT_DIR_SOURCE:
+            return __oven_instance()->recipe.source_root;
+        case OVEN_SCRIPT_ROOT_DIR_BUILD:
+            return __oven_instance()->recipe.build_root;
+    }
+    return NULL;
+}
+
+static lua_State* __create_vm(struct oven_script_options* options)
 {
     lua_State* vm = luaL_newstate();
     if (vm == NULL) {
@@ -98,6 +123,10 @@ static lua_State* __create_vm(void)
     // for now we do full access to libraries, this may change
     // in the future
     luaL_openlibs(vm);
+
+    // push global script variables
+    lua_pushstring(vm, __cwd_from_enum(options->root_dir));
+    lua_setglobal(vm, "SCRIPT_CWD");
 
     // setup the build library
     luaL_newlib(vm, g_build_namespace);
@@ -116,9 +145,9 @@ static void __delete_vm(lua_State* vm)
     lua_close(vm);
 }
 
-int oven_script(const char* script)
+int oven_script(const char* script, struct oven_script_options* options)
 {
-    lua_State* vm = __create_vm();
+    lua_State* vm = __create_vm(options);
     int        status = 0;
 
     if (vm == NULL) {
