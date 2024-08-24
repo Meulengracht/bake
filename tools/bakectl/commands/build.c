@@ -120,7 +120,11 @@ static int __build_step(const char* partName, struct list* steps, const char* st
                 return status;
             }
         } else if (step->type == RECIPE_STEP_TYPE_SCRIPT) {
-            status = oven_script(step->script);
+            status = oven_script(step->script,
+                &(struct oven_script_options) {
+                    .root_dir = OVEN_SCRIPT_ROOT_DIR_BUILD
+                }
+            );
             if (status) {
                 VLOG_ERROR("bakectl", "failed to execute script\n");
                 return status;

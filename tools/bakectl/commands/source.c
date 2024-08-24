@@ -178,7 +178,7 @@ static int __cleanup_existing(const char* path)
     return 0;
 }
 
-static int __execute_source_script(struct recipe_part_source* source)
+static int __execute_source_script(const char* root, struct recipe_part_source* source)
 {
     VLOG_DEBUG("bakectl", "__execute_source_script()\n");
 
@@ -186,7 +186,12 @@ static int __execute_source_script(struct recipe_part_source* source)
     if (source->script == NULL) {
         return 0;
     }
-    return oven_script(source->script);
+    return oven_script(
+        source->script,
+        &(struct oven_script_options) {
+            .root_dir = OVEN_SCRIPT_ROOT_DIR_SOURCE
+        }
+    );
 }
 
 static int __prepare_source(const char* part, struct recipe_part_source* source, struct __source_options* options)
@@ -234,7 +239,7 @@ static int __prepare_source(const char* part, struct recipe_part_source* source,
     }
 
     if (status == 0) {
-        status = __execute_source_script(source);
+        status = __execute_source_script(sourceRoot, source);
         if (status) {
             VLOG_ERROR("bakectl", "__prepare_source: failed to execute source script\n");
         }
