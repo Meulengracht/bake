@@ -553,6 +553,7 @@ int recipe_cache_clear_for(const char* name)
             return 0;
         }
     }
+    errno = ENOENT;
     return -1;
 }
 

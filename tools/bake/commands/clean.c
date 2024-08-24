@@ -101,7 +101,6 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
         if (!__ask_yes_no_question("this will clean up ALL bake recipes in the kitchen area, proceed?")) {
             return 0;
         }
-        printf("proceeding with cleanup\n");
 
         // ignore CTRL-C request once cleanup starts
         signal(SIGINT, SIG_IGN);

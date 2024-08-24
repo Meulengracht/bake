@@ -1,6 +1,11 @@
-# create an interface library for a backend
-add_library(oven-backend INTERFACE)
-target_include_directories(oven-backend INTERFACE include)
+add_library(oven-backends STATIC
+    autotools.c
+    cmake.c
+    make.c
+    meson.c
+    ninja.c
+)
 
-add_subdirectory(builders)
-add_subdirectory(generators)
+target_include_directories(oven-backends PRIVATE ../include)
+target_include_directories(oven-backends PUBLIC include)
+target_link_libraries(oven-backends PUBLIC common platform)

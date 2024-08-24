@@ -767,7 +767,7 @@ int containerv_spawn(
 
     status = containerv_socket_client_spawn(client, path, options, pidOut);
     if (status) {
-        VLOG_ERROR("containerv[host]", "containerv_spawn: failed to spawn %s\n", path);
+        VLOG_ERROR("containerv[host]", "containerv_spawn: %s failed with %i\n", path, status);
     }
 
     containerv_socket_client_close(client);

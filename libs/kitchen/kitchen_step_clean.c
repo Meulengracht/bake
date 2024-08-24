@@ -171,6 +171,8 @@ int kitchen_purge(struct kitchen_purge_options* options)
 
     list_foreach (&recipes, i) {
         struct platform_file_entry* entry = (struct platform_file_entry*)i;
+
+        VLOG_TRACE("kitchen", "cleaning %s\n", entry->name);
         status = platform_rmdir(entry->path);
         if (status) {
             VLOG_ERROR("kitchen", "kitchen_purge: failed to remove data for %s\n", entry->name);
@@ -179,7 +181,7 @@ int kitchen_purge(struct kitchen_purge_options* options)
 
         recipe_cache_transaction_begin();
         status = recipe_cache_clear_for(entry->name);
-        if (status) {
+        if (status && errno != ENOENT) {
             VLOG_ERROR("kitchen", "kitchen_purge: failed to clean cache for %s\n", entry->name);
             goto cleanup;
         }

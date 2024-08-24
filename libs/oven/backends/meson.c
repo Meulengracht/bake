@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -132,7 +132,7 @@ static char* __compute_arguments(struct oven_backend_data* data, union chef_back
     return args;
 }
 
-static void __cmake_output_handler(const char* line, enum platform_spawn_output_type type) 
+static void __meson_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
         VLOG_TRACE("meson", line);
@@ -150,19 +150,18 @@ static void __cmake_output_handler(const char* line, enum platform_spawn_output_
 int meson_config_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
     char*  finalArguments = NULL;
-    char** environment  = NULL;
-    char*  args         = NULL;
-    int    status = -1;
+    char** environment    = NULL;
+    char*  args           = NULL;
+    int    status         = -1;
     size_t length;
 
     environment = environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
-        errno = ENOMEM;
         return -1;
     }
 
     // lets make it 128 to cover some extra grounds
-    length = 128 + strlen(data->arguments) + strlen(data->paths.project);
+    length = 128 + strlen(data->arguments) + strlen(data->paths.build);
     args = __compute_arguments(data, options);
     if (args) {
         length += strlen(args);
@@ -170,14 +169,13 @@ int meson_config_main(struct oven_backend_data* data, union chef_backend_options
     
     finalArguments = malloc(length);
     if (finalArguments == NULL) {
-        errno = ENOMEM;
         goto cleanup;
     }
 
     if (args) {
-        snprintf(finalArguments, length, "setup %s %s %s", data->arguments, args, data->paths.project);
+        snprintf(finalArguments, length, "configure %s %s %s", data->paths.build, data->arguments, args);
     } else {
-        snprintf(finalArguments, length, "setup %s %s", data->arguments, data->paths.project);
+        snprintf(finalArguments, length, "configure %s %s", data->paths.build, data->arguments);
     }
 
     VLOG_TRACE("meson", "executing 'meson %s'\n", finalArguments);
@@ -187,8 +185,8 @@ int meson_config_main(struct oven_backend_data* data, union chef_backend_options
         finalArguments,
         (const char* const*)environment,
         &(struct platform_spawn_options) {
-            .cwd = data->paths.build,
-            .output_handler = __cmake_output_handler
+            .cwd = data->paths.project,
+            .output_handler = __meson_output_handler
         }
     );
     vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
@@ -196,6 +194,83 @@ int meson_config_main(struct oven_backend_data* data, union chef_backend_options
 cleanup:
     free(args);
     free(finalArguments);
+    environment_destroy(environment);
+    return status;
+}
+
+int meson_build_main(struct oven_backend_data* data, union chef_backend_options* options)
+{
+    char*  mesonCommand = NULL;
+    char** environment  = NULL;
+    int    status = -1;
+    size_t length;
+
+    environment = environment_create(data->process_environment, data->environment);
+    if (environment == NULL) {
+        return -1;
+    }
+
+    // lets make it 64 to cover some extra grounds
+    length = 64 + strlen(data->paths.build);
+
+    mesonCommand = malloc(length);
+    if (mesonCommand == NULL) {
+        goto cleanup;
+    }
+
+    sprintf(mesonCommand, "compile -C %s", data->paths.build);
+    
+    // use the project directory (cwd) as the current build directory
+    status = platform_spawn(
+        "meson",
+        data->arguments,
+        (const char* const*)environment,
+        &(struct platform_spawn_options) {
+            .cwd = data->paths.project
+        }
+    );
+
+cleanup:
+    free(mesonCommand);
+    environment_destroy(environment);
+    return status;
+}
+
+int meson_clean_main(struct oven_backend_data* data, union chef_backend_options* options)
+{
+    char*  mesonCommand = NULL;
+    char** environment  = NULL;
+    int    status = -1;
+    size_t length;
+
+    environment = environment_create(data->process_environment, data->environment);
+    if (environment == NULL) {
+        return -1;
+    }
+
+    // lets make it 64 to cover some extra grounds
+    length = 64 + strlen(data->paths.build);
+
+    mesonCommand = malloc(length);
+    if (mesonCommand == NULL) {
+        goto cleanup;
+    }
+
+    sprintf(mesonCommand, "compile --clean -C %s", data->paths.build);
+    
+    // use the project directory (cwd) as the current build directory
+    status = platform_spawn(
+        "meson",
+        data->arguments,
+        (const char* const*)environment,
+        &(struct platform_spawn_options) {
+            .cwd = data->paths.project,
+            .output_handler = __meson_output_handler
+        }
+    );
+
+cleanup:
+    free(mesonCommand);
     environment_destroy(environment);
     return status;
 }
