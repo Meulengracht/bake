@@ -111,7 +111,6 @@ static int __prepare_git(const char* root, struct recipe_part_source_git* git, s
     );
 
     // start out by checking out main repo
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = platform_spawn(
         "git", &buffer[0],
         (const char* const*)options->envp, 
@@ -120,7 +119,6 @@ static int __prepare_git(const char* root, struct recipe_part_source_git* git, s
             .output_handler = __output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     if (status) {
         VLOG_ERROR("bakectl", "__prepare_git: failed to checkout %s\n", git->url);
         return -1;
