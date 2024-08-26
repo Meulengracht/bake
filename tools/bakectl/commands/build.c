@@ -102,7 +102,7 @@ static int __build_step(const char* partName, struct list* steps, const char* st
             continue;
         }
 
-        VLOG_TRACE("oven", "executing step '%s/%s'\n", partName, step->name);
+        VLOG_DEBUG("bakectl", "executing step '%s/%s'\n", partName, step->name);
         if (step->type == RECIPE_STEP_TYPE_GENERATE) {
             struct oven_generate_options genOptions;
             __initialize_generator_options(&genOptions, step);

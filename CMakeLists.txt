@@ -3,16 +3,18 @@ project(chef VERSION "1.3.1")
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
-option(CHEF_BUILD_BAKE "Build the bake executable" ON)
-option(CHEF_BUILD_ORDER "Build the order executable" ON)
-option(CHEF_BUILD_SERVE "Build the serve executable" ON)
+option(CHEF_BUILD_TOOLS "Build the bake toolset" ON)
+option(CHEF_BUILD_RUNTIME "Build the serve daemon" ON)
+option(CHEF_BUILD_SERVER "Build the cook build server" ON)
+option(CHEF_BUILD_MANAGER "Build the waiter build server manager" ON)
 option(CHEF_BUILD_AS_SNAP "Build binaries without setuid on unix" OFF)
 
 include_directories(${CMAKE_BINARY_DIR})
 
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/chef-config.h.in"
-               "${CMAKE_BINARY_DIR}/chef-config.h"
-               @ONLY
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/chef-config.h.in"
+    "${CMAKE_BINARY_DIR}/chef-config.h"
+    @ONLY
 )
 
 # fetch external libraries
@@ -22,9 +24,15 @@ if(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
 
+# always register all the protocols and libs
 add_subdirectory(protocols)
 add_subdirectory(libs)
-add_subdirectory(tools)
+
+# if requested, build the toolset
+if(CHEF_BUILD_TOOLS)
+    add_subdirectory(tools)
+endif(CHEF_BUILD_TOOLS)
+
 add_subdirectory(daemons)
 
 configure_file(

@@ -167,7 +167,7 @@ cleanup:
 static int __setup_rootfs(struct kitchen* kitchen)
 {
     int status;
-    VLOG_TRACE("kitchen", "initializing container rootfs\n");
+    VLOG_TRACE("kitchen", "installing rootfs\n");
 
     if (recipe_cache_key_bool("setup_rootfs")) {
         return 0;
@@ -307,6 +307,7 @@ static int __update_packages(struct kitchen* kitchen)
         return 0;
     }
 
+    VLOG_TRACE("kitchen", "updating build packages\n");
     snprintf(&buffer[0], sizeof(buffer), "/chef/update.sh");
     status = containerv_spawn(
         kitchen->container,
@@ -314,7 +315,7 @@ static int __update_packages(struct kitchen* kitchen)
         &(struct containerv_spawn_options) {
             .arguments = NULL,
             .environment = (const char* const*)kitchen->base_environment,
-            .flags = CV_SPAWN_WAIT
+            .flags = CV_SPAWN_WAIT | CV_SPAWN_RETRACE_OUTPUT
         },
         NULL
     );
@@ -530,7 +531,7 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
         &(struct containerv_spawn_options) {
             .arguments = NULL,
             .environment = (const char* const*)kitchen->base_environment,
-            .flags = CV_SPAWN_WAIT
+            .flags = CV_SPAWN_WAIT | CV_SPAWN_RETRACE_OUTPUT
         },
         NULL
     );

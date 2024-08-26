@@ -12,4 +12,4 @@ set (SRCS
 add_executable(serve-exec ${SRCS})
 add_dependencies(serve-exec service_client)
 target_include_directories(serve-exec PRIVATE ${CMAKE_BINARY_DIR}/protocols)
-target_link_libraries(serve-exec PRIVATE containerv chef-client gracht)
+target_link_libraries(serve-exec PRIVATE containerv gracht)

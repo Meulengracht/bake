@@ -314,11 +314,13 @@ static json_t* __serialize_cache_item(struct recipe_cache_item* cacheItem)
 }
 
 struct recipe_cache {
-    int                       xaction;
     struct recipe*            current;
     const char*               path;
+
     struct recipe_cache_item* items;
     int                       item_count;
+
+    int                       xaction;
 };
 
 static struct recipe_cache g_cache = { 0 };

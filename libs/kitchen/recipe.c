@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+extern int recipe_postprocess(struct recipe* recipe);
+
 enum state {
     STATE_START,    /* start state */
     STATE_STREAM,   /* start/end stream */
@@ -1418,6 +1420,13 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
     } while (state.state != STATE_STOP);
 
     yaml_parser_delete(&parser);
+
+    // post-process the recipe
+    status = recipe_postprocess(&state.recipe);
+    if (status) {
+        fprintf(stderr, "error: failed to post-process recipe\n");
+        return -1;
+    }
 
     // create the recipe and copy all data
     *recipeOut = malloc(sizeof(struct recipe));

@@ -47,6 +47,15 @@ static void __cleanup_systems(int sig)
     _Exit(0);
 }
 
+static void __output_handler(const char* line, enum platform_spawn_output_type type) 
+{
+    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
+        VLOG_TRACE("bakectl", line);
+    } else {
+        VLOG_ERROR("bakectl", line);
+    }
+}
+
 struct __source_options {
     const char* source_root;
     const char* project_root;
@@ -102,13 +111,16 @@ static int __prepare_git(const char* root, struct recipe_part_source_git* git, s
     );
 
     // start out by checking out main repo
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = platform_spawn(
         "git", &buffer[0],
         (const char* const*)options->envp, 
         &(struct platform_spawn_options) {
             .cwd = root,
+            .output_handler = __output_handler
         }
     );
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     if (status) {
         VLOG_ERROR("bakectl", "__prepare_git: failed to checkout %s\n", git->url);
         return -1;
@@ -133,6 +145,7 @@ static int __prepare_git(const char* root, struct recipe_part_source_git* git, s
             (const char* const*)options->envp, 
             &(struct platform_spawn_options) {
                 .cwd = root,
+                .output_handler = __output_handler
             }
         );
         if (status) {
@@ -147,6 +160,7 @@ static int __prepare_git(const char* root, struct recipe_part_source_git* git, s
         (const char* const*)options->envp, 
         &(struct platform_spawn_options) {
             .cwd = root,
+            .output_handler = __output_handler
         }
     );
     if (status) {

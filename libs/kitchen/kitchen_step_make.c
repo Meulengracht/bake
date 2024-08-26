@@ -37,7 +37,7 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
         }
 
         snprintf(&buffer[0], sizeof(buffer),
-            "build -v --project %s --recipe %s --step %s/%s", 
+            "build --project %s --recipe %s --step %s/%s", 
             kitchen->project_root, kitchen->recipe_path, part, step->name
         );
 

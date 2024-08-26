@@ -307,8 +307,7 @@ int main(int argc, char** argv, char** envp)
             if (status) {
                 return -1;
             }
-            printf("bake: target platform: %s\n", options.platform);
-            printf("bake: target architecture: %s\n", options.architecture);
+            printf("bake: platform=%s, architecture=%s\n", options.platform, options.architecture);
         } else {
             fprintf(stderr, "bake: failed to read recipe: %s\n", options.recipe_path);
         }

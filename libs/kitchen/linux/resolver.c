@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vlog.h>
  
 struct __path_entry {
     struct list_item list_header;
@@ -45,8 +46,7 @@ static int __get_ld_conf_paths(const char* path, struct list* paths)
     FILE* file;
     char  buffer[1024];
     int   result = 0;
-
-    printf("reading ld.conf from %s\n", path);
+    VLOG_DEBUG("resolve", "reading ld.conf from %s\n", path);
     
     file = fopen(path, "r");
     if (file == NULL) {

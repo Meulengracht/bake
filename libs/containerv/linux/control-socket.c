@@ -311,14 +311,11 @@ static int __spawn(struct containerv_container* container, struct __socket_comma
             .argv = (const char* const*)argv,
             .envv = (const char* const*)envv,
             .uid = command->data.spawn.asUid,
-            .gid = command->data.spawn.asGid
-        }, pidOut);
-    if (!status && (command->data.spawn.flags & CV_SPAWN_WAIT)) {
-        if (waitpid(*pidOut, &status, 0) != *pidOut) {
-            VLOG_ERROR("containerv[child]", "__spawn: failed to wait for pid %u\n", *pidOut);
-            status = -1;
-        }
-    }
+            .gid = command->data.spawn.asGid,
+            .flags = command->data.spawn.flags
+        },
+        pidOut
+    );
 
     // cleanup resources temporarily allocated
     strargv_free(argv);

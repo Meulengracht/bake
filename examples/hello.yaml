@@ -8,12 +8,6 @@ project:
   version: 1.0.0
   license: MIT
 
-environment:
-  host:
-    packages:
-      - build-essential
-      - cmake
-
 recipes:
   - name: hello
     source:

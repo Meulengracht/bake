@@ -27,7 +27,7 @@
 #include "private.h"
 
 static struct oven_backend g_backends[] = {
-    { "configure", configure_main,    NULL,             NULL },
+    { "autotools", configure_main,    NULL,             NULL },
     { "cmake",     cmake_main,        NULL,             NULL },
     { "meson",     meson_config_main, meson_build_main, meson_clean_main },
     { "make",      NULL,              make_build_main,  make_clean_main },

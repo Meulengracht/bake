@@ -47,7 +47,14 @@ struct vlog_context {
 };
 
 static struct vlog_context g_vlog = { { NULL, 0 } , 0, VLOG_LEVEL_DISABLED };
-static const char*         g_levelNames[] = {
+static const char*         g_levelNamesShort[] = {
+        "",
+        "E",
+        "W",
+        "T",
+        "D"
+};
+static const char*         g_levelNamesLong[] = {
         "",
         "error",
         "warning",
@@ -178,6 +185,16 @@ void vlog_set_output_width(FILE* output, int columns)
     }
 }
 
+void vlog_set_output_short_fmt(FILE* output)
+{
+
+}
+
+void vlog_set_output_long_fmt(FILE* output)
+{
+
+}
+
 void vlog_output(enum vlog_level level, const char* tag, const char* format, ...)
 {
     va_list    args;
@@ -210,27 +227,42 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
         }
 #endif
 
-        // output control-code if any, and provided row count is valid
-        if ((output->options & VLOG_OUTPUT_OPTION_RETRACE) && output->lastRowCount > 0) {
-            fprintf(output->handle,
-                __VLOG_MOVEUP_CURSOR_FMT __VLOG_CLEAR_TOCURSOR,
-                output->lastRowCount
-            );
+        // Retrace only on non-error/warn
+        if (level > VLOG_LEVEL_WARNING) {
+            // output control-code if any, and provided row count is valid
+            if ((output->options & VLOG_OUTPUT_OPTION_RETRACE) && output->lastRowCount > 0) {
+                fprintf(output->handle,
+                    __VLOG_MOVEUP_CURSOR_FMT __VLOG_CLEAR_TOCURSOR,
+                    output->lastRowCount
+                );
+            }
+        } else {
+            output->lastRowCount = 0;
         }
 
         va_start(args, format);
         if (!(output->options & VLOG_OUTPUT_OPTION_NODECO)) {
-            colsWritten += fprintf(output->handle, "[%s] %s | %s | ", &dateTime[0], g_levelNames[level], tag);
-            if (level == VLOG_LEVEL_ERROR) {
-                colsWritten += fprintf(output->handle, "[e%i, %s] | ", errno, strerror(errno));
+            if (output->options & VLOG_OUTPUT_OPTION_LONGDECO) {
+                colsWritten += fprintf(output->handle, "[%s] %s | %s | ", &dateTime[0], g_levelNamesLong[level], tag);
+                if (level == VLOG_LEVEL_ERROR) {
+                    colsWritten += fprintf(output->handle, "[e%i, %s] | ", errno, strerror(errno));
+                }
+            } else {
+                if (level == VLOG_LEVEL_ERROR) {
+                    colsWritten += fprintf(output->handle, "%s[%s%i, %s] ", tag, g_levelNamesShort[level], errno, strerror(errno));
+                } else {
+                    colsWritten += fprintf(output->handle, "%s[%s] ", tag, g_levelNamesShort[level]);
+                }
             }
         }
         colsWritten += vfprintf(output->handle, format, args) - 1;
         va_end(args);
 
         // calculate the last printed row-count if we have columns configured
-        if ((output->options & VLOG_OUTPUT_OPTION_RETRACE) && output->columns > 0) {
-            output->lastRowCount = (colsWritten + (output->columns - 1)) / output->columns;
+        if (level > VLOG_LEVEL_WARNING) {
+            if ((output->options & VLOG_OUTPUT_OPTION_RETRACE) && output->columns > 0) {
+                output->lastRowCount = (colsWritten + (output->columns - 1)) / output->columns;
+            }
         }
     }
 }
