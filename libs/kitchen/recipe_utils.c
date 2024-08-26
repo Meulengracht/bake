@@ -166,3 +166,102 @@ int recipe_parse_part_step(const char* str, char** part, char** step)
     }
     return 0;
 }
+
+static int __add_maybe_package(struct recipe* recipe, const char* package)
+{
+    struct list_item_string* pkg;
+    struct list_item* i;
+
+    list_foreach(&recipe->environment.host.packages, i) {
+        pkg = (struct list_item_string*)i;
+        if (!strcmp(pkg->value, package)) {
+            return 0;
+        }
+    }
+
+    // not found, add it
+    pkg = calloc(1, sizeof(struct list_item_string));
+    if (pkg == NULL) {
+        return -1;
+    }
+    
+    pkg->value = strdup(package);
+    if (pkg->value == NULL) {
+        free(pkg);
+        return -1;
+    }
+
+    list_add(&recipe->environment.host.packages, &pkg->list_header);
+    return 0;
+}
+
+static int __discover_implicit_packages(struct recipe* recipe)
+{
+    struct list_item* i, *j;
+    int               status;
+
+    // if we are using host ingredients then maybe not
+    // discover implicitly?
+    if (recipe->environment.host.ingredients.count > 0) {
+        return 0;
+    }
+
+    // always add build-essential
+    status = __add_maybe_package(recipe, "build-essential");
+    if (status) {
+        return -1;
+    }
+
+    // handle implicit packages for parts
+    list_foreach(&recipe->parts, i) {
+        struct recipe_part* part = (struct recipe_part*)i;
+
+        // check source
+        switch (part->source.type) {
+            case RECIPE_PART_SOURCE_TYPE_GIT: {
+                status = __add_maybe_package(recipe, "git");
+                if (status) {
+                    return -1;
+                }
+            } break;
+
+            default:
+                break;
+        }
+
+        // handle implicit packages for steps
+        list_foreach(&part->steps, j) {
+            struct recipe_step* step = (struct recipe_step*)j;
+
+            if (!strcmp(step->system, "cmake")) {
+                status = __add_maybe_package(recipe, "cmake");
+                if (status) {
+                    return -1;
+                }
+            } else if (!strcmp(step->system, "ninja")) {
+                status = __add_maybe_package(recipe, "ninja-build");
+                if (status) {
+                    return -1;
+                }
+            } else if (!strcmp(step->system, "meson")) {
+                status = __add_maybe_package(recipe, "meson");
+                if (status) {
+                    return -1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+int recipe_postprocess(struct recipe* recipe)
+{
+    int status;
+
+    status = __discover_implicit_packages(recipe);
+    if (status) {
+        return status;
+    }
+
+    return 0;
+}

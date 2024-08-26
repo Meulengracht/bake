@@ -201,7 +201,6 @@ extern int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut);
  */
 extern void recipe_destroy(struct recipe* recipe);
 
-
 // recipe parser utilities
 extern int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, char** channel, char** version);
 extern const char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform);

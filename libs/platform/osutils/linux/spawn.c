@@ -28,7 +28,7 @@
 #include <sys/wait.h>
 #include <string.h>
 
-void __report(char* line, enum platform_spawn_output_type type, struct platform_spawn_options* options)
+static void __report(char* line, enum platform_spawn_output_type type, struct platform_spawn_options* options)
 {
     const char* s = line;
     char*       p = line;
@@ -59,7 +59,7 @@ void __report(char* line, enum platform_spawn_output_type type, struct platform_
 
 // 0 => stdout
 // 1 => stderr
-void __wait_and_read_stds(struct pollfd* fds, struct platform_spawn_options* options)
+static void __wait_and_read_stds(struct pollfd* fds, struct platform_spawn_options* options)
 {
     char line[2048];
 

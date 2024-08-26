@@ -135,14 +135,8 @@ static char* __compute_arguments(struct oven_backend_data* data, union chef_back
 static void __meson_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_TRACE("meson", line);
-
-        // re-enable again if it continues to print
-        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        VLOG_DEBUG("meson", line);
     } else {
-        // clear retrace on error output
-        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-        
         VLOG_ERROR("meson", line);
     }
 }
@@ -178,7 +172,7 @@ int meson_config_main(struct oven_backend_data* data, union chef_backend_options
         snprintf(finalArguments, length, "configure %s %s", data->paths.build, data->arguments);
     }
 
-    VLOG_TRACE("meson", "executing 'meson %s'\n", finalArguments);
+    VLOG_DEBUG("meson", "executing 'meson %s'\n", finalArguments);
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = platform_spawn(
         "meson",

@@ -49,7 +49,7 @@ static struct pkgmngr* __setup_pkg_environment(struct kitchen_init_options* opti
 
     for (int i = 0; systems[i].environment != NULL; i++) {
         if (strcmp(env, systems[i].environment) == 0) {
-            VLOG_TRACE("kitchen", "initializing %s environment\n", env);
+            VLOG_TRACE("kitchen", "package manager: %s\n", env);
             return systems[i].create(&(struct pkgmngr_options) {
                 .root = chroot, 
                 .target_platform = options->target_platform,

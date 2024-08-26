@@ -78,7 +78,8 @@ extern int containerv_create(
 );
 
 enum container_spawn_flags {
-    CV_SPAWN_WAIT = 0x1
+    CV_SPAWN_WAIT = 0x1,
+    CV_SPAWN_RETRACE_OUTPUT = 0x2
 };
 
 struct containerv_spawn_options {

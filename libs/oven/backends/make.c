@@ -28,17 +28,11 @@
 
 #define __INTERNAL_MAX(a,b) (((a) > (b)) ? (a) : (b))
 
-static void __ninja_output_handler(const char* line, enum platform_spawn_output_type type) 
+static void __make_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_TRACE("make", line);
-
-        // re-enable again if it continues to print
-        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        VLOG_DEBUG("make", line);
     } else {
-        // clear retrace on error output
-        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-        
         VLOG_ERROR("make", line);
     }
 }
@@ -84,7 +78,7 @@ int make_build_main(struct oven_backend_data* data, union chef_backend_options* 
     }
 
     // perform the build operation
-    VLOG_TRACE("make", "executing 'make %s'\n", argument);
+    VLOG_DEBUG("make", "executing 'make %s'\n", argument);
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "make",
@@ -92,7 +86,7 @@ int make_build_main(struct oven_backend_data* data, union chef_backend_options* 
         (const char* const*)environment, 
         &(struct platform_spawn_options) {
             .cwd = cwd,
-            .output_handler = __ninja_output_handler
+            .output_handler = __make_output_handler
         }
     );
     vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
@@ -102,7 +96,7 @@ int make_build_main(struct oven_backend_data* data, union chef_backend_options* 
     }
 
     // perform the installation operation, ignore any other parameters
-    VLOG_TRACE("make", "executing 'make install'\n");
+    VLOG_DEBUG("make", "executing 'make install'\n");
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "make",
@@ -110,7 +104,7 @@ int make_build_main(struct oven_backend_data* data, union chef_backend_options* 
         (const char* const*)environment, 
         &(struct platform_spawn_options) {
             .cwd = cwd,
-            .output_handler = __ninja_output_handler
+            .output_handler = __make_output_handler
         }
     );
     vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
@@ -142,7 +136,7 @@ int make_clean_main(struct oven_backend_data* data, union chef_backend_options* 
     }
 
     // perform the installation operation, ignore any other parameters
-    VLOG_TRACE("make", "executing 'make clean'\n");
+    VLOG_DEBUG("make", "executing 'make clean'\n");
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "make",
@@ -150,7 +144,7 @@ int make_clean_main(struct oven_backend_data* data, union chef_backend_options* 
         (const char* const*)environment, 
         &(struct platform_spawn_options) {
             .cwd = cwd,
-            .output_handler = __ninja_output_handler
+            .output_handler = __make_output_handler
         }
     );
     vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);

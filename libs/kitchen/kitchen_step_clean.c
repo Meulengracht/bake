@@ -107,12 +107,12 @@ int kitchen_recipe_clean(struct kitchen* kitchen, struct kitchen_recipe_clean_op
 
     if (options->part_or_step != NULL) {
         snprintf(&buffer[0], sizeof(buffer),
-            "clean -v --project %s --recipe %s --step %s",
+            "clean --project %s --recipe %s --step %s",
             kitchen->project_root, kitchen->recipe_path, options->part_or_step
         );
     } else {
         snprintf(&buffer[0], sizeof(buffer),
-            "clean -v --project %s --recipe %s",
+            "clean --project %s --recipe %s",
             kitchen->project_root, kitchen->recipe_path
         );
     }

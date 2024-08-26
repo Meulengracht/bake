@@ -148,11 +148,12 @@ extern int containerv_socket_client_get_nss(struct containerv_socket_client* cli
 extern int containerv_socket_client_destroy(struct containerv_socket_client* client);
 
 struct __containerv_spawn_options {
-    const char*        path;
-    const char* const* argv;
-    const char* const* envv;
-    uid_t              uid;
-    gid_t              gid;
+    const char*                path;
+    const char* const*         argv;
+    const char* const*         envv;
+    uid_t                      uid;
+    gid_t                      gid;
+    enum container_spawn_flags flags;
 };
 
 extern int __containerv_spawn(struct containerv_container* container, struct __containerv_spawn_options* options, pid_t* pidOut);

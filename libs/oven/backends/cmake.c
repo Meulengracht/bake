@@ -358,14 +358,8 @@ static char* __replace_or_add_cmake_prefixes(const char* platform, const char* a
 static void __meson_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_TRACE("cmake", line);
-
-        // re-enable again if it continues to print
-        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        VLOG_DEBUG("cmake", line);
     } else {
-        // clear retrace on error output
-        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-        
         VLOG_ERROR("cmake", line);
     }
 }
@@ -446,7 +440,7 @@ int cmake_main(struct oven_backend_data* data, union chef_backend_options* optio
     argument[written] = '\0';
 
     // perform the spawn operation
-    VLOG_TRACE("cmake", "executing 'cmake %s'\n", argument);
+    VLOG_DEBUG("cmake", "executing 'cmake %s'\n", argument);
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = platform_spawn(
         "cmake",

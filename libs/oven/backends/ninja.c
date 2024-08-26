@@ -31,14 +31,8 @@
 static void __ninja_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_TRACE("ninja", line);
-
-        // re-enable again if it continues to print
-        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        VLOG_DEBUG("ninja", line);
     } else {
-        // clear retrace on error output
-        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
-        
         VLOG_ERROR("ninja", line);
     }
 }
@@ -54,7 +48,7 @@ int ninja_build_main(struct oven_backend_data* data, union chef_backend_options*
     }
 
     // perform the build operation
-    VLOG_TRACE("ninja", "executing 'ninja %s'\n", data->arguments);
+    VLOG_DEBUG("ninja", "executing 'ninja %s'\n", data->arguments);
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "ninja",
@@ -72,7 +66,7 @@ int ninja_build_main(struct oven_backend_data* data, union chef_backend_options*
     }
 
     // perform the installation operation, ignore any other parameters
-    VLOG_TRACE("ninja", "executing 'ninja install'\n");
+    VLOG_DEBUG("ninja", "executing 'ninja install'\n");
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "ninja",
@@ -104,7 +98,7 @@ int ninja_clean_main(struct oven_backend_data* data, union chef_backend_options*
     }
 
     // perform the build operation
-    VLOG_TRACE("ninja", "executing 'ninja clean'\n");
+    VLOG_DEBUG("ninja", "executing 'ninja clean'\n");
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "ninja",

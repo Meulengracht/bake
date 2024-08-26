@@ -132,7 +132,7 @@ static int __write_site_file(const char* path, struct oven_backend_data* data)
 
     file = fopen(path, "w");
     if(!file) {
-        VLOG_ERROR("configure", "failed to open %s for writing: %s\n", path, strerror(errno));
+        VLOG_ERROR("autotools", "failed to open %s for writing: %s\n", path, strerror(errno));
         return -1;
     }
 
@@ -154,13 +154,13 @@ static int __ensure_share_path(const char* installPath)
 
     sitePath = strpathcombine(installPath, "share");
     if (sitePath == NULL) {
-        VLOG_ERROR("configure", "failed to allocate memory for site path\n");
+        VLOG_ERROR("autotools", "failed to allocate memory for site path\n");
         return -1;
     }
 
     status = platform_mkdir(sitePath);
     if (status) {
-        VLOG_ERROR("configure", "failed to create %s\n", sitePath);
+        VLOG_ERROR("autotools", "failed to create %s\n", sitePath);
     }
     free(sitePath);
     return status;
@@ -173,13 +173,13 @@ static int __generate_site_file(const char* installPath, struct oven_backend_dat
 
     // create the share directory
     if (__ensure_share_path(installPath)) {
-        VLOG_ERROR("configure", "failed to create directory for site\n");
+        VLOG_ERROR("autotools", "failed to create directory for site\n");
         return -1;
     }
 
     sitePath = strpathjoin(installPath, "share", "config.site", NULL);
     if (sitePath == NULL) {
-        VLOG_ERROR("configure", "failed to allocate memory for site path\n");
+        VLOG_ERROR("autotools", "failed to allocate memory for site path\n");
         return -1;
     }
 
@@ -203,7 +203,7 @@ int configure_main(struct oven_backend_data* data, union chef_backend_options* o
     int    written;
 
 
-    configurePath = strpathcombine(data->paths.project, "configure");
+    configurePath = strpathcombine(data->paths.project, "autotools");
     if (configurePath == NULL) {
         return -1;
     }
@@ -231,7 +231,7 @@ int configure_main(struct oven_backend_data* data, union chef_backend_options* o
     }
 
     // perform the spawn operation
-    VLOG_TRACE("configure", "executing '%s %s'\n", configurePath, arguments);
+    VLOG_DEBUG("autotools", "executing '%s %s'\n", configurePath, arguments);
     status = platform_spawn(
         configurePath,
         arguments,

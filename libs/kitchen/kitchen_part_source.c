@@ -38,7 +38,7 @@ int kitchen_recipe_source(struct kitchen* kitchen)
         }
 
         snprintf(&buffer[0], sizeof(buffer),
-            "source -v --project %s --recipe %s --step %s", 
+            "source --project %s --recipe %s --step %s", 
             kitchen->project_root, kitchen->recipe_path, part->name
         );
 

@@ -174,7 +174,7 @@ static int __wait_for_container_event(int fds[2], struct containerv_event* event
     return 0;
 }
 
-static pid_t __exec(struct __containerv_spawn_options* options)
+static pid_t __exec(int outfd[2], int errfd[2], struct __containerv_spawn_options* options)
 {
     pid_t processId;
     int   status;
@@ -183,6 +183,12 @@ static pid_t __exec(struct __containerv_spawn_options* options)
     processId = fork();
     if (processId != (pid_t)0) {
         return processId;
+    }
+
+    // close all fds the child should not have
+    if (options->flags & CV_SPAWN_WAIT) {
+        __close_safe(&outfd[0]);
+        __close_safe(&errfd[0]);
     }
 
     if (options->uid != (gid_t)-1) {
@@ -203,21 +209,110 @@ static pid_t __exec(struct __containerv_spawn_options* options)
         }
     }
 
+    // switch output, from this point forward we do not use VLOG_*
+    if (options->flags & CV_SPAWN_WAIT) {
+        dup2(outfd[1], STDOUT_FILENO);
+        dup2(errfd[1], STDERR_FILENO);
+    }
+
     status = execve(options->path, (char* const*)options->argv, (char* const*)options->envv);
     if (status) {
-        VLOG_ERROR("containerv[child]", "[%s]: failed to execute: %i\n", options->path, status);
+        fprintf(stderr, "[%s]: failed to execute: %i\n", options->path, status);
+    }
+
+    // cleanup remaining fds we don't need to keep a handle on
+    // if execve failed.
+    if (options->flags & CV_SPAWN_WAIT) {
+        __close_safe(&outfd[1]);
+        __close_safe(&errfd[1]);
     }
     _Exit(status);
     return 0; // never reached
+}
+
+static void __print(const char* line, int error) {
+    if (error) {
+        VLOG_ERROR("containerv[child]", line);
+    } else {
+        VLOG_TRACE("containerv[child]", line);
+    }
+}
+
+static void __report(char* line, int error)
+{
+    const char* s = line;
+    char*       p = line;
+    char        tmp[2048];
+
+    while (*p) {
+        if (*p == '\n') {
+            // include the \n
+            size_t count = (size_t)(p - s) + 1;
+            strncpy(&tmp[0], s, count);
+
+            // zero terminate the string and report
+            tmp[count] = '\0';
+            __print(&tmp[0], error);
+
+            // update new start
+            s = ++p;
+        } else {
+            p++;
+        }
+    }
+    
+    // only do a final report if the line didn't end with a newline
+    if (s != p) {
+        __print(s, error);
+    }
+}
+
+// 0 => stdout
+// 1 => stderr
+static void __wait_and_read_stds(struct pollfd* fds)
+{
+    char line[2048];
+
+    for (;;) {
+        int status = poll(fds, 2, -1);
+        if (status <= 0) {
+            return;
+        }
+        if (fds[0].revents & POLLIN) {
+            status = read(fds[0].fd, &line[0], sizeof(line));
+            line[status] = 0;
+            __report(&line[0], 0);
+        } else if (fds[1].revents & POLLIN) {
+            status = read(fds[1].fd, &line[0], sizeof(line));
+            line[status] = 0;
+            __report(&line[0], 1);
+        } else {
+            break;
+        }
+    }
 }
 
 int __containerv_spawn(struct containerv_container* container, struct __containerv_spawn_options* options, pid_t* pidOut)
 {
     struct containerv_container_process* proc;
     pid_t                                processId;
+    int                                  outp[2] = { -1, -1 };
+    int                                  errp[2] = { -1, -1 };
     VLOG_DEBUG("containerv[child]", "__containerv_spawn(path=%s)\n", options->path);
 
-    processId = __exec(options);
+    if (options->flags & CV_SPAWN_WAIT) {
+        // let's redirect and poll for output
+        if (pipe(outp) || pipe(errp)) {
+            if (outp[0] > 0) {
+                close(outp[0]);
+                close(outp[1]);
+            }
+            VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to create descriptors: %s\n");
+            return -1;
+        }
+    }
+
+    processId = __exec(outp, errp, options);
     if (processId == (pid_t)-1) {
         VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to exec %s\n", options->path);
         return -1;
@@ -227,6 +322,46 @@ int __containerv_spawn(struct containerv_container* container, struct __containe
     if (proc) {
         list_add(&container->processes, &proc->list_header);
     }
+
+    if (options->flags & CV_SPAWN_WAIT) {
+        int           status;
+        struct pollfd fds[2] = { 
+            { 
+                .fd = outp[0],
+                .events = POLLIN
+            },
+            {
+                .fd = errp[0],
+                .events = POLLIN
+            }
+        };
+
+        // close child-side of pipes
+        close(outp[1]);
+        close(errp[1]);
+
+        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
+        if (options->flags & CV_SPAWN_RETRACE_OUTPUT) {
+            vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        }
+
+        __wait_and_read_stds(&fds[0]);
+
+        if (options->flags & CV_SPAWN_RETRACE_OUTPUT) {
+            vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
+        }
+        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
+
+        // close read side as well now
+        close(outp[0]);
+        close(errp[0]); 
+
+        if (waitpid(processId, &status, 0) != processId) {
+            VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to wait for pid %u\n", processId);
+            return -1;
+        }
+    }
+
     *pidOut = processId;
     return 0;
 }
@@ -265,6 +400,21 @@ void __containerv_destroy(struct containerv_container* container)
 
     // cleanup container
     __container_delete(container);
+}
+
+static int __container_spawn_log(int fd, int error)
+{
+    char line[2048];
+    int  status;
+
+    status = read(fd, &line[0], sizeof(line));
+    if (status < 0) {
+        return status;
+    }
+
+    line[status] = 0;
+    __report(&line[0], error);
+    return 0;
 }
 
 static int __container_idle_loop(struct containerv_container* container)

@@ -27,8 +27,6 @@ static void __debootstrap_output_handler(const char* line, enum platform_spawn_o
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
         VLOG_TRACE("containerv", line);
     } else {
-        // clear retrace on error output
-        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
         VLOG_ERROR("containerv", line);
     }
 }

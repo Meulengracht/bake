@@ -16,8 +16,6 @@
  * 
  */
 
-#include <chef/api/package.h>
-#include <chef/client.h>
 #include <chef/containerv.h>
 #include <errno.h>
 #include <gracht/client.h>

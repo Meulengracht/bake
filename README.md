@@ -14,12 +14,6 @@ The best way to get started is to install the latest version of Chef using the [
 
 ## Roamdmap
 
-The most immediate actions that needs to be implemented for release 1.3.x
-
-- Improved logging output (hooks, git output)
-- Implicit recipe package discovery (linux)
-- Updated recipe examples
-
 Features that should be in the upcoming 1.4 release
 
 - Cookd

@@ -40,6 +40,14 @@ enum vlog_level {
 #define VLOG_OUTPUT_OPTION_NODECO  0x4
 
 /**
+ * @brief Sets the current logging format. Short (default) is better suited for
+ * terminal output where the long form can be too verbose (i.e line length).
+ * Long is better for more permanent logging, or where something is not directly
+ * invoked by a user.
+ */
+#define VLOG_OUTPUT_OPTION_LONGDECO 0x8
+
+/**
  * @brief Initializes vlog system. This should be invoked before any calls done to
  * to the vlog_* namespace.
  *
@@ -74,6 +82,9 @@ extern int vlog_add_output(FILE* output);
  */
 extern void vlog_set_output_options(FILE* output, unsigned int flags);
 extern void vlog_clear_output_options(FILE* output, unsigned int flags);
+
+extern void vlog_set_output_short_fmt(FILE* output);
+extern void vlog_set_output_long_fmt(FILE* output);
 
 /**
  * @brief Sets the current logging level for the specified output.
