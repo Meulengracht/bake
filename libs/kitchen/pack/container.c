@@ -1125,8 +1125,6 @@ int kitchen_pack(struct kitchen_pack_options* options)
         goto cleanup;
     }
 
-
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = __write_directory(&progressContext, options->filters, directoryHandle, options->input_dir, NULL);
     if (status != 0) {
         VLOG_ERROR("kitchen", "unable to write directory\n");
@@ -1149,7 +1147,6 @@ int kitchen_pack(struct kitchen_pack_options* options)
     }
 
 cleanup:
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     vafs_close(vafs);
     free(name);
     free(path);

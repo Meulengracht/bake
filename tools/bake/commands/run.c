@@ -20,6 +20,7 @@
  * - api-keys
  * - pack deletion
  */
+#define _GNU_SOURCE
 
 #include <chef/client.h>
 #include <errno.h>
@@ -221,10 +222,61 @@ static void __cleanup_systems(int sig)
     _Exit(-sig);
 }
 
+static char* __add_build_log(void)
+{
+    FILE* stream;
+    char* path;
+
+#if CHEF_ON_LINUX
+    char template[] = "/tmp/bake-build-XXXXXX.log";
+    if (mkstemps(&template[0], 4) < 0) {
+        fprintf(stderr, "bake: failed to get a temporary filename for log: %i\n", errno);
+        return NULL;
+    }
+    path = platform_strdup(&template[0]);
+#elif CHEF_ON_WINDOWS
+    // GetTempPath
+    // GetTempFileName
+#else
+    path = NULL;
+#endif
+
+    if (path == NULL) {
+        return NULL;
+    }
+
+    stream = fopen(path, "w+");
+    if (stream == NULL) {
+        fprintf(stderr, "bake: failed to open path %s for writing\n", path);
+        return NULL;
+    }
+
+    vlog_add_output(stream, 1);
+    vlog_set_output_level(stream, VLOG_LEVEL_DEBUG);
+    return path;
+}
+
+static char* __format_header(const char* name, const char* platform, const char* arch)
+{
+    char tmp[512];
+    snprintf(&tmp[0], sizeof(tmp), "%s (%s, %s)", name, platform, arch);
+    return platform_strdup(&tmp[0]);
+}
+
+static char* __format_footer(const char* logPath)
+{
+    char tmp[PATH_MAX];
+    snprintf(&tmp[0], sizeof(tmp), "build log: %s", logPath);
+    return platform_strdup(&tmp[0]);
+}
+
 int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct kitchen_setup_options setupOptions = { 0 };
     int                          status;
+    char*                        logPath;
+    char*                        header;
+    char*                        footer;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -245,6 +297,20 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         return -1;
     }
 
+    logPath = __add_build_log();
+    if (logPath == NULL) {
+        fprintf(stderr, "bake: failed to open build log\n");
+        return -1;
+    }
+
+    header = __format_header(options->recipe->project.name, options->platform, options->architecture);
+    footer = __format_footer(logPath);
+    free(logPath);
+    if (footer == NULL) {
+        fprintf(stderr, "bake: failed to allocate memory for build footer\n");
+        return -1;
+    }
+
     // TODO: make chefclient instanced, move to fridge
     status = chefclient_initialize();
     if (status != 0) {
@@ -260,6 +326,37 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     }
     atexit(fridge_cleanup);
 
+    // setup the build log box
+    vlog_start(stdout, header, footer, 6);
+
+    // 0+1 are informational
+    vlog_content_set_index(0);
+    vlog_content_set_prefix("pkg-env");
+
+    vlog_content_set_index(1);
+    vlog_content_set_prefix("");
+
+    vlog_content_set_index(2);
+    vlog_content_set_prefix("prepare");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    vlog_content_set_index(3);
+    vlog_content_set_prefix("source");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    vlog_content_set_index(4);
+    vlog_content_set_prefix("build");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    vlog_content_set_index(5);
+    vlog_content_set_prefix("pack");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    // use 2 for initial information (prepare)
+    vlog_content_set_index(2);
+
+    // debug target information
+    VLOG_DEBUG("bake", "platform=%s, architecture=%s\n", options->platform, options->architecture);
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
         .recipe_path = options->recipe_path,
@@ -288,26 +385,48 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     setupOptions.setup_hook.powershell = options->recipe->environment.hooks.powershell;
     status = kitchen_setup(&g_kitchen, &setupOptions);
     if (status) {
-        VLOG_ERROR("bake", "failed to setup kitchen: %s\n", strerror(errno));
+        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
         goto cleanup;
     }
+
+    // update status of logging
+    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+
+    vlog_content_set_index(3);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
 
     status = kitchen_recipe_source(&g_kitchen);
     if (status) {
-        VLOG_ERROR("bake", "failed to make recipes\n");
+        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
         goto cleanup;
     }
+
+    // update status of logging
+    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+
+    vlog_content_set_index(4);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
 
     status = kitchen_recipe_make(&g_kitchen);
     if (status) {
-        VLOG_ERROR("bake", "failed to make recipes\n");
+        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
         goto cleanup;
     }
 
+    // update status of logging
+    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+
+    vlog_content_set_index(5);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+
     status = kitchen_recipe_pack(&g_kitchen);
     if (status) {
-        VLOG_ERROR("bake", "failed to construct packs\n");
+        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
     }
+
+    // update status of logging
+    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+    vlog_refresh(stdout);
 
 cleanup:
     kitchen_destroy(&g_kitchen);

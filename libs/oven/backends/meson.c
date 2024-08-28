@@ -173,7 +173,6 @@ int meson_config_main(struct oven_backend_data* data, union chef_backend_options
     }
 
     VLOG_DEBUG("meson", "executing 'meson %s'\n", finalArguments);
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = platform_spawn(
         "meson",
         finalArguments,
@@ -183,7 +182,6 @@ int meson_config_main(struct oven_backend_data* data, union chef_backend_options
             .output_handler = __meson_output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
 
 cleanup:
     free(args);

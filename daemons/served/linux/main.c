@@ -89,9 +89,8 @@ int main(int argc, char** argv)
     int code;
 
     // initialize logging as the first thing, we need output!
-    vlog_initialize();
-    vlog_set_level(VLOG_LEVEL_DEBUG); // debug for now, change this to trace later
-    vlog_add_output(stdout);
+    // debug for now, change this to trace later
+    vlog_initialize(VLOG_LEVEL_DEBUG);
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);

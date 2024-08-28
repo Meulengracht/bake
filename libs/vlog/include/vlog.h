@@ -36,7 +36,6 @@ enum vlog_level {
 #define VLOG_DEBUG(tag, ...)   vlog_output(VLOG_LEVEL_DEBUG, tag, __VA_ARGS__)
 
 #define VLOG_OUTPUT_OPTION_CLOSE   0x1
-#define VLOG_OUTPUT_OPTION_RETRACE 0x2
 #define VLOG_OUTPUT_OPTION_NODECO  0x4
 
 /**
@@ -52,7 +51,7 @@ enum vlog_level {
  * to the vlog_* namespace.
  *
  */
-extern void vlog_initialize(void);
+extern void vlog_initialize(enum vlog_level level);
 
 /**
  * @brief Frees up any resources allocated by vlog, and closes all FILE* handles that were
@@ -75,16 +74,13 @@ extern void vlog_set_level(enum vlog_level level);
  * @param output
  * @return
  */
-extern int vlog_add_output(FILE* output);
+extern int vlog_add_output(FILE* output, int close);
 
 /**
  * @brief 
  */
 extern void vlog_set_output_options(FILE* output, unsigned int flags);
 extern void vlog_clear_output_options(FILE* output, unsigned int flags);
-
-extern void vlog_set_output_short_fmt(FILE* output);
-extern void vlog_set_output_long_fmt(FILE* output);
 
 /**
  * @brief Sets the current logging level for the specified output.
@@ -115,5 +111,19 @@ extern void vlog_output(enum vlog_level level, const char* tag, const char* form
  */
 extern void vlog_flush(void);
 
+
+enum vlog_content_status_type {
+    VLOG_CONTENT_STATUS_NONE,
+    VLOG_CONTENT_STATUS_WAITING,
+    VLOG_CONTENT_STATUS_WORKING,
+    VLOG_CONTENT_STATUS_DONE,
+    VLOG_CONTENT_STATUS_FAILED
+};
+
+extern void vlog_start(FILE* handle, const char* header, const char* footer, int contentLineCount);
+extern void vlog_content_set_index(int index);
+extern void vlog_content_set_prefix(const char* header);
+extern void vlog_content_set_status(enum vlog_content_status_type status);
+extern void vlog_refresh(FILE* handle);
 
 #endif //!__VLOG_H__

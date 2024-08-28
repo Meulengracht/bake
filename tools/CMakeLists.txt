@@ -10,6 +10,7 @@ add_subdirectory(serve)
 add_subdirectory(serve-exec)
 
 # testing tools
+add_subdirectory(logv)
 add_subdirectory(cvctl)
 
 if (CHEF_BUILD_AS_SNAP)

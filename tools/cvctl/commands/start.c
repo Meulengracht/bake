@@ -83,9 +83,7 @@ int start_main(int argc, char** argv, char** envp, struct cvctl_command_options*
     }
 
     // initialize the logging system
-    vlog_initialize();
-    vlog_set_level(VLOG_LEVEL_DEBUG);
-    vlog_add_output(stdout);
+    vlog_initialize(VLOG_LEVEL_DEBUG);
 
     cvopts = containerv_options_new();
     if (cvopts == NULL) {

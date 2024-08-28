@@ -49,7 +49,7 @@ int ninja_build_main(struct oven_backend_data* data, union chef_backend_options*
 
     // perform the build operation
     VLOG_DEBUG("ninja", "executing 'ninja %s'\n", data->arguments);
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "ninja",
         data->arguments,
@@ -59,7 +59,7 @@ int ninja_build_main(struct oven_backend_data* data, union chef_backend_options*
             .output_handler = __ninja_output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         VLOG_ERROR("ninja", "failed to execute 'ninja %s'\n", data->arguments);
         goto cleanup;
@@ -67,7 +67,7 @@ int ninja_build_main(struct oven_backend_data* data, union chef_backend_options*
 
     // perform the installation operation, ignore any other parameters
     VLOG_DEBUG("ninja", "executing 'ninja install'\n");
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "ninja",
         "install",
@@ -77,7 +77,7 @@ int ninja_build_main(struct oven_backend_data* data, union chef_backend_options*
             .output_handler = __ninja_output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         VLOG_ERROR("ninja", "failed to execute 'ninja install'\n");
     }
@@ -99,7 +99,7 @@ int ninja_clean_main(struct oven_backend_data* data, union chef_backend_options*
 
     // perform the build operation
     VLOG_DEBUG("ninja", "executing 'ninja clean'\n");
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "ninja",
         "clean",
@@ -109,7 +109,7 @@ int ninja_clean_main(struct oven_backend_data* data, union chef_backend_options*
             .output_handler = __ninja_output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         VLOG_ERROR("ninja", "failed to execute 'ninja clean'\n");
         goto cleanup;
