@@ -178,14 +178,6 @@ int kitchen_purge(struct kitchen_purge_options* options)
             VLOG_ERROR("kitchen", "kitchen_purge: failed to remove data for %s\n", entry->name);
             goto cleanup;
         }
-
-        recipe_cache_transaction_begin();
-        status = recipe_cache_clear_for(entry->name);
-        if (status && errno != ENOENT) {
-            VLOG_ERROR("kitchen", "kitchen_purge: failed to clean cache for %s\n", entry->name);
-            goto cleanup;
-        }
-        recipe_cache_transaction_commit();
     }
 
 cleanup:
