@@ -59,9 +59,10 @@ struct containerv_options {
 
 struct containerv_container {
     // host
-    pid_t       pid;
-    thrd_t      log_tid;
-    char*       rootfs;
+    pid_t        pid;
+    thrd_t       log_tid;
+    volatile int log_running;
+    char*        rootfs;
 
     // child
     int         socket_fd;

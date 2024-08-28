@@ -24,6 +24,7 @@
 #include <string.h>
 #include <signal.h>
 #include <time.h>
+#include <threads.h>
 #include <vlog.h>
 
 #define __VLOG_RESET_CURSOR "\r"
@@ -53,8 +54,14 @@ struct vlog_context {
     struct vlog_output outputs[VLOG_MAX_OUTPUTS];
     int                outputs_count;
     enum vlog_level    default_level;
+    thrd_t             animator_tid;
+    volatile int       animator_running;
+    volatile int       animator_index;
+    volatile long long animator_time;
+    volatile int       animator_update;
 
     // view information
+    mtx_t       lock;
     const char* title;
     const char* footer;
     int         content_line_count;
@@ -62,7 +69,7 @@ struct vlog_context {
     struct vlog_content_line* lines;
 };
 
-static struct vlog_context g_vlog = { { NULL, 0 } , 0, VLOG_LEVEL_DISABLED };
+static struct vlog_context g_vlog = { { NULL, 0 } };
 static const char*         g_levelNamesShort[] = {
         "",
         "E",
@@ -87,10 +94,17 @@ static const char*         g_statusNames[] = {
 };
 static const char*         g_statusColor[] = {
         "\x1b[37m",
-        "\x1b[37m",
+        "\x1b[90m",
         "\x1b[37m",
         "\x1b[32m",
         "\x1b[31m"
+};
+static const char*         g_animatorCharacter[] = {
+        "|",
+        "/",
+        "-",
+        "\\",
+        "-"
 };
 
 static struct vlog_output* __get_output(FILE* handle);
@@ -127,9 +141,33 @@ void __winch_handler(int sig)
 }
 #endif
 
+static int __animator_loop(void* context)
+{
+    struct vlog_output* output = __get_output(stdout);
+    int updater = 0;
+    (void)context;
+
+    g_vlog.animator_running = 1;
+    while (g_vlog.animator_running == 1) {
+        thrd_sleep(&(struct timespec){.tv_nsec=100 * 1000000}, NULL);
+        g_vlog.animator_time += 100;
+        
+        updater++;
+        if ((updater % 5) == 0) {
+            g_vlog.animator_index++;
+        }
+        if (g_vlog.animator_update) {
+            __refresh_view(output, 1);
+        }
+    }
+    g_vlog.animator_running = 0;
+    return 0;
+}
+
 void vlog_initialize(enum vlog_level level)
 {
     memset(&g_vlog, 0, sizeof(struct vlog_context));
+    mtx_init(&g_vlog.lock, mtx_plain);
 
     // start by initializing locale
     setlocale(LC_ALL, "");
@@ -145,6 +183,11 @@ void vlog_initialize(enum vlog_level level)
     // once the user resizes the terminal
     signal(SIGWINCH, __winch_handler);
 #endif
+
+    // spawn the animator thread
+    if (thrd_create(&g_vlog.animator_tid, __animator_loop, NULL) != thrd_success) {
+        VLOG_ERROR("logv", "failed to spawn thread for animation\n");
+    }
 }
 
 static struct vlog_output* __get_output(FILE* handle)
@@ -159,6 +202,16 @@ static struct vlog_output* __get_output(FILE* handle)
 
 void vlog_cleanup(void)
 {
+    if (g_vlog.animator_running) {
+        // do not wait more than 2s, otherwise just shutdown
+        size_t maxWaiting = 2000;
+        g_vlog.animator_running = 2;
+        while (g_vlog.animator_running && maxWaiting > 0) {
+            thrd_sleep(&(struct timespec){.tv_nsec=100 * 1000000}, NULL);
+            maxWaiting -= 100;
+        }
+    }
+
     for (int i = 0; i < g_vlog.outputs_count; i++) {
         if (g_vlog.outputs[i].options & VLOG_OUTPUT_OPTION_CLOSE) {
             fclose(g_vlog.outputs[i].handle);
@@ -267,8 +320,26 @@ static void __render_line_with_text(struct vlog_output* output, const char* embe
     fprintf(output->handle, "%lc\n", rcorner);
 }
 
+static void __fmt_indicator(char* buffer, enum vlog_content_status_type status)
+{
+    if (status == VLOG_CONTENT_STATUS_WORKING) {
+        long long seconds = g_vlog.animator_time / 1000;
+        long long ms = (g_vlog.animator_time % 1000) / 100;
+        int index = g_vlog.animator_index % 5;
+        sprintf(buffer, "%s %lli.%llis", g_animatorCharacter[index], seconds, ms);
+    } else {
+        strcpy(buffer, g_statusNames[status]);
+    }
+}
+
 static void __refresh_view(struct vlog_output* output, int clear)
 {
+    char indicator[16] = { 0 };
+
+    if (mtx_trylock(&g_vlog.lock) != thrd_success) {
+        return;
+    }
+
     if (clear) {
         fprintf(output->handle, __VLOG_MOVEUP_CURSOR_FMT __VLOG_CLEAR_TOCURSOR, g_vlog.content_line_count + 2);
     }
@@ -278,14 +349,15 @@ static void __refresh_view(struct vlog_output* output, int clear)
 
     // print content lines
     for (int i = 0; i < g_vlog.content_line_count; i++) {
-        fprintf(output->handle, "%lc %-10s %-*.*s %s%-8s%s%lc\n",
+        __fmt_indicator(&indicator[0], g_vlog.lines[i].status);
+        fprintf(output->handle, "%lc %-10s %-*.*s %s%-10s%s%lc\n",
             0x2502,
             g_vlog.lines[i].prefix,
-            output->columns - 23,
-            output->columns - 23,
+            output->columns - 25,
+            output->columns - 25,
             &g_vlog.lines[i].buffer[0],
             g_statusColor[g_vlog.lines[i].status],
-            g_statusNames[g_vlog.lines[i].status],
+            &indicator[0],
             g_statusColor[0],
             0x2502
         );
@@ -295,6 +367,7 @@ static void __refresh_view(struct vlog_output* output, int clear)
     __render_line_with_text(output, g_vlog.footer, 0x2515, 0x2500, 0x2519);
 
     fflush(output->handle);
+    mtx_unlock(&g_vlog.lock);
 }
 
 void vlog_start(FILE* handle, const char* header, const char* footer, int contentLineCount)
@@ -332,6 +405,15 @@ void vlog_content_set_prefix(const char* prefix)
 void vlog_content_set_status(enum vlog_content_status_type status)
 {
     g_vlog.lines[g_vlog.content_line_index].status = status;
+    
+    g_vlog.animator_time = 0;
+    g_vlog.animator_index = 0;
+
+    if (status == VLOG_CONTENT_STATUS_WORKING) {
+        g_vlog.animator_update = 1;
+    } else {
+        g_vlog.animator_update = 0;
+    }
 }
 
 void vlog_refresh(FILE* handle)

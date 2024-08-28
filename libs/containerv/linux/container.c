@@ -126,6 +126,7 @@ static void __container_delete(struct containerv_container* container)
     for (int i = 0; i < CV_NS_COUNT; i++) {
         __close_safe(&container->ns_fds[i]);
     }
+
     __close_safe(&container->host[0]);
     __close_safe(&container->host[1]);
     __close_safe(&container->child[0]);
@@ -266,7 +267,8 @@ static int __wait_and_read_stds(void* context)
         }
     };
 
-    for (;;) {
+    container->log_running = 1;
+    while (container->log_running == 1) {
         int status = poll(fds, 2, -1);
         if (status <= 0) {
             return -1;
@@ -283,6 +285,7 @@ static int __wait_and_read_stds(void* context)
             break;
         }
     }
+    container->log_running = 0;
     return 0;
 }
 
@@ -937,6 +940,18 @@ int containerv_destroy(struct containerv_container* container)
     if (status) {
         VLOG_ERROR("containerv[host]", "waiting for container event returned: %i\n", status);
         return status;
+    }
+
+
+    VLOG_DEBUG("containerv[host]", "waiting for log monitor...\n");
+    if (container->log_running) {
+        // do not wait more than 2s, otherwise just shutdown
+        size_t maxWaiting = 2000;
+        container->log_running = 2;
+        while (container->log_running && maxWaiting > 0) {
+            platform_sleep(100);
+            maxWaiting -= 100;
+        }
     }
 
     status = platform_rmdir(container->runtime_dir);
