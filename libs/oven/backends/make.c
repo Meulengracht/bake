@@ -79,7 +79,7 @@ int make_build_main(struct oven_backend_data* data, union chef_backend_options* 
 
     // perform the build operation
     VLOG_DEBUG("make", "executing 'make %s'\n", argument);
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "make",
         argument,
@@ -89,7 +89,7 @@ int make_build_main(struct oven_backend_data* data, union chef_backend_options* 
             .output_handler = __make_output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         VLOG_ERROR("make", "failed to execute 'make %s'\n", argument);
         goto cleanup;
@@ -97,7 +97,7 @@ int make_build_main(struct oven_backend_data* data, union chef_backend_options* 
 
     // perform the installation operation, ignore any other parameters
     VLOG_DEBUG("make", "executing 'make install'\n");
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "make",
         "install",
@@ -107,7 +107,7 @@ int make_build_main(struct oven_backend_data* data, union chef_backend_options* 
             .output_handler = __make_output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         VLOG_ERROR("make", "failed to execute 'make install'\n");
     }
@@ -137,7 +137,7 @@ int make_clean_main(struct oven_backend_data* data, union chef_backend_options* 
 
     // perform the installation operation, ignore any other parameters
     VLOG_DEBUG("make", "executing 'make clean'\n");
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     status = platform_spawn(
         "make",
         "clean",
@@ -147,7 +147,7 @@ int make_clean_main(struct oven_backend_data* data, union chef_backend_options* 
             .output_handler = __make_output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE | VLOG_OUTPUT_OPTION_NODECO);
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
     if (status != 0) {
         VLOG_ERROR("make", "failed to execute 'make clean'\n");
     }

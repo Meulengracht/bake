@@ -58,11 +58,9 @@ int container_rootfs_setup_debootstrap(const char* path)
             _Exit(-1);
         }
 
-        vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
         status = platform_spawn("debootstrap", &scratchPad[0], NULL, &(struct platform_spawn_options) {
             .output_handler = __debootstrap_output_handler
         });
-        vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
         if (status) {
             VLOG_ERROR("containerv", "container_rootfs_setup_debootstrap: \"debootstrap\" failed: %i\n", status);
             VLOG_ERROR("containerv", "see %s/debootstrap/debootstrap.log for details\n", path);

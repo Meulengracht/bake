@@ -17,8 +17,10 @@
  */
 
 #include <errno.h>
+#include <locale.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <signal.h>
 #include <time.h>
@@ -29,6 +31,8 @@
 #define __VLOG_CLEAR_TOCURSOR "\x1b[0J"
 #define __VLOG_MOVEUP_CURSOR "\x1b[1A"
 #define __VLOG_MOVEUP_CURSOR_FMT "\x1b[%iF"
+#define __VLOG_MOVEDOWN_CURSOR "\x1b[1B"
+#define __VLOG_MOVEDOWN_CURSOR_FMT "\x1b[%iE"
 
 #define VLOG_MAX_OUTPUTS 4
 
@@ -37,13 +41,25 @@ struct vlog_output {
     enum vlog_level level;
     unsigned int    options;
     int             columns;
-    int             lastRowCount;
+};
+
+struct vlog_content_line {
+    const char*                   prefix;
+    enum vlog_content_status_type status;
+    char                          buffer[1024];
 };
 
 struct vlog_context {
     struct vlog_output outputs[VLOG_MAX_OUTPUTS];
     int                outputs_count;
     enum vlog_level    default_level;
+
+    // view information
+    const char* title;
+    const char* footer;
+    int         content_line_count;
+    int         content_line_index;
+    struct vlog_content_line* lines;
 };
 
 static struct vlog_context g_vlog = { { NULL, 0 } , 0, VLOG_LEVEL_DISABLED };
@@ -61,6 +77,24 @@ static const char*         g_levelNamesLong[] = {
         "trace",
         "debug"
 };
+
+static const char*         g_statusNames[] = {
+        "",
+        "WAITING",
+        "WORKING",
+        "DONE",
+        "FAILED"
+};
+static const char*         g_statusColor[] = {
+        "\x1b[37m",
+        "\x1b[37m",
+        "\x1b[37m",
+        "\x1b[32m",
+        "\x1b[31m"
+};
+
+static struct vlog_output* __get_output(FILE* handle);
+static void __refresh_view(struct vlog_output* output, int clear);
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #include <windows.h>
@@ -88,17 +122,39 @@ void __winch_handler(int sig)
 {
     signal(SIGWINCH, SIG_IGN);
     vlog_set_output_width(stdout, __get_column_count());
+    __refresh_view(__get_output(stdout), 1);
     signal(SIGWINCH, __winch_handler);
 }
 #endif
 
-void vlog_initialize(void)
+void vlog_initialize(enum vlog_level level)
 {
+    memset(&g_vlog, 0, sizeof(struct vlog_context));
+
+    // start by initializing locale
+    setlocale(LC_ALL, "");
+
+    // set default output level
+    vlog_set_level(level);
+
+    // add stdout by default
+    vlog_add_output(stdout, 0);
+
 #if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
     // register the handler that will update the terminal stats correctly
     // once the user resizes the terminal
     signal(SIGWINCH, __winch_handler);
 #endif
+}
+
+static struct vlog_output* __get_output(FILE* handle)
+{
+    for (int i = 0; i < g_vlog.outputs_count; i++) {
+        if (g_vlog.outputs[i].handle == handle) {
+            return &g_vlog.outputs[i];
+        }
+    }
+    return NULL;
 }
 
 void vlog_cleanup(void)
@@ -119,7 +175,7 @@ void vlog_set_level(enum vlog_level level)
     g_vlog.default_level = level;
 }
 
-int vlog_add_output(FILE* output)
+int vlog_add_output(FILE* output, int close)
 {
     if (g_vlog.outputs_count == 4) {
         errno = ENOSPC;
@@ -129,11 +185,14 @@ int vlog_add_output(FILE* output)
     g_vlog.outputs[g_vlog.outputs_count].handle       = output;
     g_vlog.outputs[g_vlog.outputs_count].level        = g_vlog.default_level;
     g_vlog.outputs[g_vlog.outputs_count].options      = 0;
-    g_vlog.outputs[g_vlog.outputs_count].lastRowCount = 0;
     if (output == stdout) {
         g_vlog.outputs[g_vlog.outputs_count].columns = __get_column_count();
     } else {
         g_vlog.outputs[g_vlog.outputs_count].columns = 0;
+    }
+
+    if (close) {
+        g_vlog.outputs[g_vlog.outputs_count].options |= VLOG_OUTPUT_OPTION_CLOSE;
     }
 
     g_vlog.outputs_count++;
@@ -155,11 +214,6 @@ void vlog_clear_output_options(FILE* output, unsigned int flags)
     for (int i = 0; i < g_vlog.outputs_count; i++) {
         if (g_vlog.outputs[i].handle == output) {
             g_vlog.outputs[i].options &= ~(flags);
-
-            // when clearing RETRACE we reset the row count
-            if (flags & VLOG_OUTPUT_OPTION_RETRACE) {
-                g_vlog.outputs[i].lastRowCount = 0;
-            }
             break;
         }
     }
@@ -177,6 +231,11 @@ void vlog_set_output_level(FILE* output, enum vlog_level level)
 
 void vlog_set_output_width(FILE* output, int columns)
 {
+    // must be a terminal
+    if (!isatty(fileno(output))) {
+        return;
+    }
+
     for (int i = 0; i < g_vlog.outputs_count; i++) {
         if (g_vlog.outputs[i].handle == output) {
             g_vlog.outputs[i].columns = columns;
@@ -185,14 +244,100 @@ void vlog_set_output_width(FILE* output, int columns)
     }
 }
 
-void vlog_set_output_short_fmt(FILE* output)
+void vlog_flush(void)
 {
-
+    for (int i = 0; i < g_vlog.outputs_count; i++) {
+        fflush(g_vlog.outputs[i].handle);
+    }
 }
 
-void vlog_set_output_long_fmt(FILE* output)
+static void __render_line_with_text(struct vlog_output* output, const char* embed, int lcorner, int middle, int rcorner)
 {
+    int columns = output->columns;
+    int titleCount = embed != NULL ? ((int)strlen(embed) + 2) : 0;
+    int lcount = 3;
+    int rcount = columns - (titleCount + 2 + lcount);
 
+    fprintf(output->handle, "%lc", lcorner);
+    for (int i = 0; i < lcount; i++) fprintf(output->handle, "%lc", middle);
+    if (embed != NULL) {
+        fprintf(output->handle, " %s ", embed);
+    }
+    for (int i = 0; i < rcount; i++) fprintf(output->handle, "%lc", middle);
+    fprintf(output->handle, "%lc\n", rcorner);
+}
+
+static void __refresh_view(struct vlog_output* output, int clear)
+{
+    if (clear) {
+        fprintf(output->handle, __VLOG_MOVEUP_CURSOR_FMT __VLOG_CLEAR_TOCURSOR, g_vlog.content_line_count + 2);
+    }
+
+    // print first line
+    __render_line_with_text(output, g_vlog.title, 0x250D, 0x2500, 0x2511);
+
+    // print content lines
+    for (int i = 0; i < g_vlog.content_line_count; i++) {
+        fprintf(output->handle, "%lc %-10s %-*.*s %s%-8s%s%lc\n",
+            0x2502,
+            g_vlog.lines[i].prefix,
+            output->columns - 23,
+            output->columns - 23,
+            &g_vlog.lines[i].buffer[0],
+            g_statusColor[g_vlog.lines[i].status],
+            g_statusNames[g_vlog.lines[i].status],
+            g_statusColor[0],
+            0x2502
+        );
+    }
+
+    // print final line
+    __render_line_with_text(output, g_vlog.footer, 0x2515, 0x2500, 0x2519);
+
+    fflush(output->handle);
+}
+
+void vlog_start(FILE* handle, const char* header, const char* footer, int contentLineCount)
+{
+    struct vlog_output* output = __get_output(handle);
+
+    // must be a terminal
+    if (output == NULL || !isatty(fileno(handle))) {
+        return;
+    }
+
+    // update stats
+    g_vlog.title = header;
+    g_vlog.footer = footer;
+    g_vlog.content_line_count = contentLineCount;
+    g_vlog.content_line_index = 0;
+    g_vlog.lines = calloc(contentLineCount, sizeof(struct vlog_content_line));
+    
+    __refresh_view(output, 0);
+}
+
+void vlog_content_set_index(int index)
+{
+    if (index < 0 || index >= g_vlog.content_line_count) {
+        return;
+    }
+    g_vlog.content_line_index = index;
+}
+
+void vlog_content_set_prefix(const char* prefix)
+{
+    g_vlog.lines[g_vlog.content_line_index].prefix = prefix;
+}
+
+void vlog_content_set_status(enum vlog_content_status_type status)
+{
+    g_vlog.lines[g_vlog.content_line_index].status = status;
+}
+
+void vlog_refresh(FILE* handle)
+{
+    struct vlog_output* output = __get_output(handle);
+    __refresh_view(output, 1);
 }
 
 void vlog_output(enum vlog_level level, const char* tag, const char* format, ...)
@@ -219,57 +364,51 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
             continue;
         }
 
+        // if the output is a tty we handle it differently, unless vlog_start
+        // was not configured
+        if (g_vlog.content_line_count > 0 && isatty(fileno(output->handle))) {
+            char* nl;
+
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-        // update column count on output to stdout if on windows, we can
-        // only poll
-        if (output->handle == stdout) {
+            // update column count on output to stdout if on windows, we can
+            // only poll
             output->columns = __get_column_count();
-        }
 #endif
-
-        // Retrace only on non-error/warn
-        if (level > VLOG_LEVEL_WARNING) {
-            // output control-code if any, and provided row count is valid
-            if ((output->options & VLOG_OUTPUT_OPTION_RETRACE) && output->lastRowCount > 0) {
-                fprintf(output->handle,
-                    __VLOG_MOVEUP_CURSOR_FMT __VLOG_CLEAR_TOCURSOR,
-                    output->lastRowCount
-                );
+            va_start(args, format);
+            vsprintf(
+                &g_vlog.lines[g_vlog.content_line_index].buffer[0],
+                format, args
+            );
+            va_end(args);
+            
+            // strip the newlines
+            for (int j = 0; g_vlog.lines[g_vlog.content_line_index].buffer[j]; j++) {
+                if (g_vlog.lines[g_vlog.content_line_index].buffer[j] == '\n') {
+                    g_vlog.lines[g_vlog.content_line_index].buffer[j] = ' ';
+                }
             }
-        } else {
-            output->lastRowCount = 0;
+            __refresh_view(output, 1);
+            continue;
         }
-
-        va_start(args, format);
+        
         if (!(output->options & VLOG_OUTPUT_OPTION_NODECO)) {
             if (output->options & VLOG_OUTPUT_OPTION_LONGDECO) {
-                colsWritten += fprintf(output->handle, "[%s] %s | %s | ", &dateTime[0], g_levelNamesLong[level], tag);
+                fprintf(output->handle, "[%s] %s | %s | ", &dateTime[0], g_levelNamesLong[level], tag);
                 if (level == VLOG_LEVEL_ERROR) {
-                    colsWritten += fprintf(output->handle, "[e%i, %s] | ", errno, strerror(errno));
+                    fprintf(output->handle, "[e%i, %s] | ", errno, strerror(errno));
                 }
             } else {
                 if (level == VLOG_LEVEL_ERROR) {
-                    colsWritten += fprintf(output->handle, "%s[%s%i, %s] ", tag, g_levelNamesShort[level], errno, strerror(errno));
+                    fprintf(output->handle, "%s[%s%i, %s] ", tag, g_levelNamesShort[level], errno, strerror(errno));
                 } else {
-                    colsWritten += fprintf(output->handle, "%s[%s] ", tag, g_levelNamesShort[level]);
+                    fprintf(output->handle, "%s[%s] ", tag, g_levelNamesShort[level]);
                 }
             }
         }
-        colsWritten += vfprintf(output->handle, format, args) - 1;
+
+        va_start(args, format);
+        vfprintf(output->handle, format, args) - 1;
         va_end(args);
-
-        // calculate the last printed row-count if we have columns configured
-        if (level > VLOG_LEVEL_WARNING) {
-            if ((output->options & VLOG_OUTPUT_OPTION_RETRACE) && output->columns > 0) {
-                output->lastRowCount = (colsWritten + (output->columns - 1)) / output->columns;
-            }
-        }
-    }
-}
-
-void vlog_flush(void)
-{
-    for (int i = 0; i < g_vlog.outputs_count; i++) {
-        fflush(g_vlog.outputs[i].handle);
+        fflush(output->handle);
     }
 }

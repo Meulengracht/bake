@@ -23,6 +23,7 @@
 #include <chef/containerv.h>
 #include <chef/list.h>
 #include <sys/types.h>
+#include <threads.h>
 #include <unistd.h>
 
 #define __CONTAINER_SOCKET_RUNTIME_BASE "/run/containerv"
@@ -59,6 +60,7 @@ struct containerv_options {
 struct containerv_container {
     // host
     pid_t       pid;
+    thrd_t      log_tid;
     char*       rootfs;
 
     // child
@@ -70,6 +72,8 @@ struct containerv_container {
     char        id[__CONTAINER_ID_LENGTH + 1];
     int         host[2];
     int         child[2];
+    int         stdout[2];
+    int         stderr[2];
     char*       runtime_dir;
 };
 

@@ -307,24 +307,13 @@ int main(int argc, char** argv, char** envp)
             if (status) {
                 return -1;
             }
-            printf("bake: platform=%s, architecture=%s\n", options.platform, options.architecture);
         } else {
             fprintf(stderr, "bake: failed to read recipe: %s\n", options.recipe_path);
         }
     }
 
     // initialize the logging system
-    vlog_initialize();
-
-    // initialize default level
-    vlog_set_level(logLevel);
-
-    // add the stdout by default
-    vlog_add_output(stdout);
-
-    // add a trace file by default that is always
-    // debug enabled
-    // TODO
+    vlog_initialize(logLevel);
 
     // initialize directories
     status = chef_dirs_initialize();

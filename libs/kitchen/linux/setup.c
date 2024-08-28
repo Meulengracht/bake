@@ -315,7 +315,7 @@ static int __update_packages(struct kitchen* kitchen)
         &(struct containerv_spawn_options) {
             .arguments = NULL,
             .environment = (const char* const*)kitchen->base_environment,
-            .flags = CV_SPAWN_WAIT | CV_SPAWN_RETRACE_OUTPUT
+            .flags = CV_SPAWN_WAIT
         },
         NULL
     );
@@ -531,7 +531,7 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
         &(struct containerv_spawn_options) {
             .arguments = NULL,
             .environment = (const char* const*)kitchen->base_environment,
-            .flags = CV_SPAWN_WAIT | CV_SPAWN_RETRACE_OUTPUT
+            .flags = CV_SPAWN_WAIT
         },
         NULL
     );
@@ -584,7 +584,7 @@ static int __write_update_script(struct kitchen* kitchen)
 
     fprintf(stream, "#!/bin/bash\n\n");
     fprintf(stream, "echo \"updating container packages...\"\n");
-    fprintf(stream, "apt-get update\n");
+    fprintf(stream, "apt-get -yqq update\n");
 
     aptpkgs = __join_packages(changes, count, RECIPE_CACHE_CHANGE_REMOVED);
     if (aptpkgs != NULL) {

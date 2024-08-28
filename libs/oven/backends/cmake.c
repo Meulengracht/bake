@@ -441,7 +441,6 @@ int cmake_main(struct oven_backend_data* data, union chef_backend_options* optio
 
     // perform the spawn operation
     VLOG_DEBUG("cmake", "executing 'cmake %s'\n", argument);
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     status = platform_spawn(
         "cmake",
         argument,
@@ -451,7 +450,6 @@ int cmake_main(struct oven_backend_data* data, union chef_backend_options* optio
             .output_handler = __meson_output_handler
         }
     );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_RETRACE);
     
 cleanup:
     environment_destroy(environment);

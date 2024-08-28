@@ -196,9 +196,8 @@ int main(int argc, char** argv, char** envp)
     }
 
     // initialize the logging system
-    vlog_initialize();
-    vlog_set_level((enum vlog_level)logLevel);
-    vlog_add_output(stdout);
+    vlog_initialize((enum vlog_level)logLevel);
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
 
     status = command->handler(argc, argv, envp, &options);
     recipe_destroy(options.recipe);

@@ -47,6 +47,11 @@ static struct pkgmngr* __setup_pkg_environment(struct kitchen_init_options* opti
         env = "pkg-config";
     }
 
+    // hardcode this, not pretty
+    vlog_content_set_index(0);
+    VLOG_TRACE("kitchen", "%s", env);
+    vlog_content_set_index(2);
+
     for (int i = 0; systems[i].environment != NULL; i++) {
         if (strcmp(env, systems[i].environment) == 0) {
             VLOG_TRACE("kitchen", "package manager: %s\n", env);
