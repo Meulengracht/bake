@@ -354,6 +354,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
 
     // use 2 for initial information (prepare)
     vlog_content_set_index(2);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
 
     // debug target information
     VLOG_DEBUG("bake", "platform=%s, architecture=%s\n", options->platform, options->architecture);

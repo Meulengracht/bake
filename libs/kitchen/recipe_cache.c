@@ -439,6 +439,10 @@ static int __ensure_recipe_cache(struct recipe_cache* cache, struct recipe* curr
 {
     void* expanded;
 
+    if (current == NULL) {
+        return 0;
+    }
+
     for (int i = 0; i < g_cache.item_count; i++) {
         if (strcmp(g_cache.items[i].name, current->project.name) == 0) {
             // exists
@@ -511,6 +515,11 @@ const char* recipe_cache_uuid(void)
 
 static struct recipe_cache_item* __get_cache_item(void)
 {
+    if (g_cache.current == NULL) {
+        VLOG_FATAL("cache", "__get_cache_item: invoked but no recipe set\n");
+        return NULL;
+    }
+
     for (int i = 0; i < g_cache.item_count; i++) {
         if (strcmp(g_cache.items[i].name, g_cache.current->project.name) == 0) {
             return &g_cache.items[i];

@@ -170,7 +170,21 @@ static int __setup_rootfs(struct kitchen* kitchen)
     VLOG_TRACE("kitchen", "installing rootfs\n");
 
     if (recipe_cache_key_bool("setup_rootfs")) {
-        return 0;
+        // ensure the path actually exists
+        struct platform_stat stats;
+        if (platform_stat(kitchen->host_kitchen_project_data_root, &stats)) {
+            VLOG_WARNING("kitchen", "__kitchen_install: root environment seems missing, recreating it\n");
+            
+            recipe_cache_transaction_begin();
+            status = recipe_cache_clear_for(kitchen->recipe->project.name);
+            if (status) {
+                VLOG_ERROR("kitchen", "__kitchen_install: failed to clear the recipe cache\n");
+                return -1;
+            }
+            recipe_cache_transaction_commit();
+        } else {
+            return 0;
+        }
     }
 
     status = __clean_environment(kitchen->host_kitchen_project_data_root);
