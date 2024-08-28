@@ -334,7 +334,7 @@ static void __fmt_indicator(char* buffer, enum vlog_content_status_type status)
 
 static void __refresh_view(struct vlog_output* output, int clear)
 {
-    char indicator[16] = { 0 };
+    char indicator[20] = { 0 };
 
     if (mtx_trylock(&g_vlog.lock) != thrd_success) {
         return;
