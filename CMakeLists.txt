@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14.3)
-project(chef VERSION "1.3.2")
+project(chef VERSION "1.4.0")
 
 # on ubuntu 24+ wolfssl craps out on some string operations which
 # we do not care about

@@ -28,6 +28,7 @@ struct waiterd_cook {
 
 struct waiterd_server {
     struct list cooks; // list<waiterd_cook>
+    struct list requests; // list<waiterd_request>
 };
 
 // for now keep this here, if this daemon gets bigger let us 

@@ -19,9 +19,17 @@
 #include "private.h"
 #include "chef_waiterd_service_server.h"
 
-void chef_waiterd_build_invocation(struct gracht_message* message, const struct chef_waiter_build_request* request)
+void chef_waiterd_build_invocation(
+    struct gracht_message*                  message,
+    const struct chef_waiter_build_request* request)
 {
+    // verify request
 
+    // find suitable cook
+
+    // proxy request
+
+    // return status and id of request
 }
 
 void chef_waiterd_status_invocation(struct gracht_message* message, const char* id)
