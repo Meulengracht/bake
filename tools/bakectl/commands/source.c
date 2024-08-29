@@ -47,15 +47,6 @@ static void __cleanup_systems(int sig)
     _Exit(0);
 }
 
-static void __output_handler(const char* line, enum platform_spawn_output_type type) 
-{
-    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_TRACE("bakectl", line);
-    } else {
-        VLOG_ERROR("bakectl", line);
-    }
-}
-
 struct __source_options {
     const char* source_root;
     const char* project_root;
@@ -106,17 +97,17 @@ static int __prepare_git(const char* root, struct recipe_part_source_git* git, s
     }
 
     snprintf(&buffer[0], sizeof(buffer),
-        "clone %s .",
+        "clone -q %s .",
         git->url
     );
 
     // start out by checking out main repo
+    VLOG_TRACE("bakectl", "Cloning repository for %s\n", options->part);
     status = platform_spawn(
         "git", &buffer[0],
         (const char* const*)options->envp, 
         &(struct platform_spawn_options) {
-            .cwd = root,
-            .output_handler = __output_handler
+            .cwd = root
         }
     );
     if (status) {
@@ -142,8 +133,7 @@ static int __prepare_git(const char* root, struct recipe_part_source_git* git, s
             "git", &buffer[0],
             (const char* const*)options->envp, 
             &(struct platform_spawn_options) {
-                .cwd = root,
-                .output_handler = __output_handler
+                .cwd = root
             }
         );
         if (status) {
@@ -153,12 +143,12 @@ static int __prepare_git(const char* root, struct recipe_part_source_git* git, s
     }
 
     // checkout submodules if any
+    VLOG_TRACE("bakectl", "Cloning submodules for %s\n", options->part);
     status = platform_spawn(
-        "git", "submodule update --init --recursive",
+        "git", "submodule update -q --init --recursive",
         (const char* const*)options->envp, 
         &(struct platform_spawn_options) {
-            .cwd = root,
-            .output_handler = __output_handler
+            .cwd = root
         }
     );
     if (status) {
@@ -190,7 +180,7 @@ static int __cleanup_existing(const char* path)
     return 0;
 }
 
-static int __execute_source_script(const char* root, struct recipe_part_source* source)
+static int __execute_source_script(const char* root, const char* part, struct recipe_part_source* source)
 {
     VLOG_DEBUG("bakectl", "__execute_source_script()\n");
 
@@ -198,6 +188,8 @@ static int __execute_source_script(const char* root, struct recipe_part_source* 
     if (source->script == NULL) {
         return 0;
     }
+    
+    VLOG_TRACE("bakectl", "Executing source script for %s\n", part);
     return oven_script(
         source->script,
         &(struct oven_script_options) {
@@ -251,7 +243,7 @@ static int __prepare_source(const char* part, struct recipe_part_source* source,
     }
 
     if (status == 0) {
-        status = __execute_source_script(sourceRoot, source);
+        status = __execute_source_script(sourceRoot, options->part, source);
         if (status) {
             VLOG_ERROR("bakectl", "__prepare_source: failed to execute source script\n");
         }

@@ -6,7 +6,7 @@ description: |
   built as a lightweight alternative to current package managers. Its not only for package management, 
   but also as an application format. 
 
-base: core24
+base: core22
 grade: stable
 confinement: strict
 
