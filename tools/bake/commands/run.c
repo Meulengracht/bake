@@ -211,11 +211,15 @@ static void __cleanup_systems(int sig)
 {
     // printing as a part of a signal handler is not safe
     // but we live dangerously
-    printf("termination requested, cleaning up\n");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+    vlog_end();
 
     // cleanup the kitchen, this will take out most of the systems
     // setup as a part of all this.
     kitchen_destroy(&g_kitchen);
+
+    // cleanup logging
+    vlog_cleanup();
 
     // Do a quick exit, which is recommended to do in signal handlers
     // and use the signal as the exit code
@@ -427,9 +431,10 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
 
     // update status of logging
     vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
-    vlog_refresh(stdout);
 
 cleanup:
+    vlog_refresh(stdout);
+    vlog_end();
     kitchen_destroy(&g_kitchen);
     return status;
 }

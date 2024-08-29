@@ -203,7 +203,7 @@ int configure_main(struct oven_backend_data* data, union chef_backend_options* o
     int    written;
 
 
-    configurePath = strpathcombine(data->paths.project, "autotools");
+    configurePath = strpathcombine(data->paths.project, "configure");
     if (configurePath == NULL) {
         return -1;
     }

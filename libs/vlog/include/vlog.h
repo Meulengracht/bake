@@ -121,6 +121,7 @@ enum vlog_content_status_type {
 };
 
 extern void vlog_start(FILE* handle, const char* header, const char* footer, int contentLineCount);
+extern void vlog_end(void);
 extern void vlog_content_set_index(int index);
 extern void vlog_content_set_prefix(const char* header);
 extern void vlog_content_set_status(enum vlog_content_status_type status);

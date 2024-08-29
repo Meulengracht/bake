@@ -64,6 +64,7 @@ struct vlog_context {
     mtx_t       lock;
     const char* title;
     const char* footer;
+    int         view_enabled;
     int         content_line_count;
     int         content_line_index;
     struct vlog_content_line* lines;
@@ -104,6 +105,7 @@ static const char*         g_animatorCharacter[] = {
         "/",
         "-",
         "\\",
+        "/",
         "-"
 };
 
@@ -325,7 +327,7 @@ static void __fmt_indicator(char* buffer, enum vlog_content_status_type status)
     if (status == VLOG_CONTENT_STATUS_WORKING) {
         long long seconds = g_vlog.animator_time / 1000;
         long long ms = (g_vlog.animator_time % 1000) / 100;
-        int index = g_vlog.animator_index % 5;
+        int index = g_vlog.animator_index % 6;
         sprintf(buffer, "%s %lli.%llis", g_animatorCharacter[index], seconds, ms);
     } else {
         strcpy(buffer, g_statusNames[status]);
@@ -336,6 +338,10 @@ static void __refresh_view(struct vlog_output* output, int clear)
 {
     char indicator[20] = { 0 };
 
+    if (!g_vlog.view_enabled) {
+        return;
+    }
+    
     if (mtx_trylock(&g_vlog.lock) != thrd_success) {
         return;
     }
@@ -385,8 +391,15 @@ void vlog_start(FILE* handle, const char* header, const char* footer, int conten
     g_vlog.content_line_count = contentLineCount;
     g_vlog.content_line_index = 0;
     g_vlog.lines = calloc(contentLineCount, sizeof(struct vlog_content_line));
-    
+    g_vlog.view_enabled = 1;
+
     __refresh_view(output, 0);
+}
+
+void vlog_end(void)
+{
+    // disable
+    g_vlog.view_enabled = 0;
 }
 
 void vlog_content_set_index(int index)
@@ -448,7 +461,7 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
 
         // if the output is a tty we handle it differently, unless vlog_start
         // was not configured
-        if (g_vlog.content_line_count > 0 && isatty(fileno(output->handle))) {
+        if (g_vlog.view_enabled && isatty(fileno(output->handle))) {
             char* nl;
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
