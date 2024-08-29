@@ -26,8 +26,8 @@
 #if defined(__linux__)
 #include <sys/un.h>
 
-static const char* dgramPath = "/run/chef/managerd/data";
-static const char* clientsPath = "/run/chef/managerd/listen";
+static const char* dgramPath = "/run/chef/waiterd/data";
+static const char* clientsPath = "/run/chef/waiterd/listen";
 
 static void init_packet_link_config(struct gracht_link_socket* link)
 {
@@ -126,7 +126,7 @@ int waiterd_initialize_server(struct gracht_server_configuration* config, gracht
 #endif
 
 #if defined(__linux__)
-    status = platform_mkdir("/run/chef/managerd");
+    status = platform_mkdir("/run/chef/waiterd");
     if (status) {
         fprintf(stderr, "waiterd_initialize_server: error initializing server library %i\n", errno);
         return status;

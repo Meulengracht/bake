@@ -13,7 +13,7 @@ struct waiter_build_request {
     string patch;
     string recipe;
     string part_or_step;
-    architecture archs;
+    architecture arch;
 }
 
 service waiterd (44) {
@@ -27,6 +27,4 @@ struct cook_register_request {
 
 service waiterd_cook (44) {
     func ready() : (string id) = 1;
-
-    event status()
 }
