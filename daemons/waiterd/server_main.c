@@ -17,27 +17,28 @@
  */
 
 #include "private.h"
-#include "chef_waiterd_service_server.h"
 
-void chef_waiterd_build_invocation(
-    struct gracht_message*                  message,
-    const struct chef_waiter_build_request* request)
+static struct waiterd_server g_server = { 0 };
+
+
+struct waiterd_server* waiterd_server_get(void)
 {
-    // verify request
-
-    // find suitable cook
-
-    // defer request
-
-    // return status and id of request
+    return &g_server;
 }
 
-void chef_waiterd_status_invocation(struct gracht_message* message, const char* id)
+void waiterd_server_cook_connect(gracht_conn_t client)
 {
-
+    // do nothing yet
 }
 
-void chef_waiterd_artifact_invocation(struct gracht_message* message, const char* id, const enum chef_artifact_type type)
+void waiterd_server_cook_disconnect(gracht_conn_t client)
 {
+    // abort any request in flight for waiters
 
+    // cleanup cook
+}
+
+void waiterd_server_cook_find()
+{
+    
 }

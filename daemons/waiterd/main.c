@@ -30,6 +30,11 @@ int main(int argc, char** argv)
 
     // initialize the server configuration
     gracht_server_configuration_init(&config);
+
+    // setup callbacks for the server to listen to cooks
+    // that connect over the tcp socket
+    config.callbacks.clientConnected = waiterd_server_cook_connect;
+    config.callbacks.clientDisconnected = waiterd_server_cook_disconnect;
     
     // up the max size for protocols, due to the nature of transferring
     // git patches, we might need this for now
