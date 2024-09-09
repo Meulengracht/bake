@@ -6,8 +6,14 @@ set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 
 set (SRCS
     ${GENERATED_SRCS}
+
+    api_cookd.c
+    api_waiterd.c
+
     main.c
-    server.c
+    
+    server_init.c
+    server_main.c
 )
 
 add_executable(waiterd ${SRCS})

@@ -22,14 +22,20 @@
 #include <gracht/server.h>
 #include <chef/platform.h>
 
-struct waiterd_cook {
 
+
+struct waiterd_cook {
+    gracht_conn_t client;
 };
 
 struct waiterd_server {
     struct list cooks; // list<waiterd_cook>
     struct list requests; // list<waiterd_request>
 };
+
+// callbacks for the server
+extern void waiterd_server_cook_connect(gracht_conn_t client);
+extern void waiterd_server_cook_disconnect(gracht_conn_t client);
 
 // for now keep this here, if this daemon gets bigger let us 
 // actually add some proper structure

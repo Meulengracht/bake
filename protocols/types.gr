@@ -15,7 +15,9 @@ enum architecture {
 
 enum build_status {
     QUEUED,
+    SOURCING,
     BUILDING,
+    PACKING,
     DONE,
     FAILED
 }
@@ -23,4 +25,9 @@ enum build_status {
 enum queue_status {
     SUCCESS,
     NO_COOK_FOR_ARCHITECTURE
+}
+
+enum artifact_type {
+    LOG,
+    PACKAGE
 }

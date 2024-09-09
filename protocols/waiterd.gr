@@ -19,12 +19,38 @@ struct waiter_build_request {
 service waiterd (44) {
     func build(waiter_build_request request) : (queue_status status, string id) = 1;
     func status(string id) : (build_status status) = 2;
+    func artifact(string id, artifact_type type) : (string link) = 3;
 }
 
-struct cook_register_request {
+struct cook_ready_event {
     architecture arch;
 }
 
-service waiterd_cook (44) {
-    func ready() : (string id) = 1;
+struct cook_update_event {
+    int queue_size;
+}
+
+struct cook_build_event {
+    string id;
+    build_status status;
+}
+
+struct cook_update_request {
+    int unused;
+}
+
+struct cook_artifact_request {
+    string id;
+    artifact_type type;
+}
+
+service waiterd_cook (45) {
+    func ready(cook_ready_event evt) : () = 1;
+    func update(cook_update_event evt) : () = 2;
+    func status(cook_build_event evt) : () = 3;
+    func artifact(string id, artifact_type type) : () = 4;
+
+    event update_request : (cook_update_request request) = 5;
+    event build_request : (waiter_build_request request) = 6;
+    event artifact_request : (cook_artifact_request request) = 7;
 }

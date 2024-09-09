@@ -19,12 +19,22 @@
 #include "private.h"
 #include "chef_waiterd_cook_service_server.h"
 
-void chef_waiterd_cook_register_invocation(struct gracht_message* message, const struct chef_cook_register_request* request)
+void chef_waiterd_cook_ready_invocation(struct gracht_message* message, const struct chef_cook_ready_event* evt)
 {
 
 }
 
-void chef_waiterd_cook_unregister_invocation(struct gracht_message* message, const char* id)
+void chef_waiterd_cook_update_invocation(struct gracht_message* message, const struct chef_cook_update_event* evt)
+{
+
+}
+
+void chef_waiterd_cook_status_invocation(struct gracht_message* message, const struct chef_cook_build_event* evt)
+{
+
+}
+
+void chef_waiterd_cook_artifact_invocation(struct gracht_message* message, const char* id, const enum chef_artifact_type type)
 {
 
 }
