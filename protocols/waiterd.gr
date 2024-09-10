@@ -35,22 +35,22 @@ struct cook_build_event {
     build_status status;
 }
 
-struct cook_update_request {
-    int unused;
-}
-
-struct cook_artifact_request {
+struct cook_artifact_event {
     string id;
     artifact_type type;
+    string uri;
+}
+
+struct cook_update_request {
+    int unused;
 }
 
 service waiterd_cook (45) {
     func ready(cook_ready_event evt) : () = 1;
     func update(cook_update_event evt) : () = 2;
     func status(cook_build_event evt) : () = 3;
-    func artifact(string id, artifact_type type) : () = 4;
+    func artifact(cook_artifact_event evt) : () = 4;
 
     event update_request : (cook_update_request request) = 5;
     event build_request : (waiter_build_request request) = 6;
-    event artifact_request : (cook_artifact_request request) = 7;
 }
