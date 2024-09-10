@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,10 +22,41 @@
 #include <gracht/server.h>
 #include <chef/platform.h>
 
+enum waiterd_architecture {
+    WAITERD_ARCHITECTURE_X86,
+    WAITERD_ARCHITECTURE_X64,
+    WAITERD_ARCHITECTURE_ARMHF,
+    WAITERD_ARCHITECTURE_ARM64,
+    WAITERD_ARCHITECTURE_RISCV64
+};
 
+enum waiterd_build_status {
+    WAITERD_BUILD_STATUS_UNKNOWN,
+    WAITERD_BUILD_STATUS_QUEUED,
+    WAITERD_BUILD_STATUS_SOURCING,
+    WAITERD_BUILD_STATUS_BUILDING,
+    WAITERD_BUILD_STATUS_PACKING,
+    WAITERD_BUILD_STATUS_DONE,
+    WAITERD_BUILD_STATUS_FAILED
+};
 
 struct waiterd_cook {
-    gracht_conn_t client;
+    struct list_item          list_header;
+    gracht_conn_t             client;
+    enum waiterd_architecture architecture;
+};
+
+struct waiterd_request {
+    struct list_item       list_header;
+    struct gracht_message* source;
+
+    char                      guid[40];
+    enum waiterd_build_status status;
+
+    struct {
+        char* package;
+        char* log;
+    } artifacts;
 };
 
 struct waiterd_server {
@@ -42,8 +73,21 @@ extern void waiterd_server_cook_disconnect(gracht_conn_t client);
 extern int waiterd_initialize_server(struct gracht_server_configuration* config, gracht_server_t** serverOut);
 
 /**
- * @brief retrieve a pointer to the global server instance
+ * @brief Finds a cook based on the architecture, internal load-balancing
+ * may occur
  */
-extern struct waiterd_server* waiterd_server_get(void);
+extern struct waiterd_cook* waiterd_server_cook_find(enum waiterd_architecture arch);
+
+/**
+ * @brief
+ */
+extern struct waiterd_request* waiterd_server_request_new(
+    struct waiterd_cook*   cook,
+    struct gracht_message* message);
+
+/**
+ * @brief
+ */
+extern struct waiterd_request* waiterd_server_request_find(const char* id);
 
 #endif //!__WAITERD_PRIVATE_H__

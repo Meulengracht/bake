@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,28 +16,73 @@
  * 
  */
 
-#include "private.h"
+#include "api_convert.h"
 #include "chef_waiterd_service_server.h"
+#include "chef_waiterd_cook_service_server.h"
+
+static int __verify_build_request(const struct chef_waiter_build_request* request)
+{
+    return 0;
+}
 
 void chef_waiterd_build_invocation(
     struct gracht_message*                  message,
     const struct chef_waiter_build_request* request)
 {
-    // verify request
+    struct waiterd_cook*    cook;
+    struct waiterd_request* wreq;
 
-    // find suitable cook
+    if (__verify_build_request(request)) {
+        chef_waiterd_build_response(message, CHEF_QUEUE_STATUS_INTERNAL_ERROR, "0");
+        return;
+    }
 
-    // defer request
+    cook = waiterd_server_cook_find(waiterd_architecture(request->arch));
+    if (cook == NULL) {
+        chef_waiterd_build_response(message, CHEF_QUEUE_STATUS_NO_COOK_FOR_ARCHITECTURE, "0");
+        return;
+    }
 
-    // return status and id of request
+    wreq = waiterd_server_request_new(cook, message);
+    if (wreq == NULL) {
+        // out of memory
+        chef_waiterd_build_response(message, CHEF_QUEUE_STATUS_INTERNAL_ERROR, "0");
+        return;
+    }
+
+    // redirect request
+    chef_waiterd_cook_event_build_request_single(message->server, cook->client, request);
 }
 
 void chef_waiterd_status_invocation(struct gracht_message* message, const char* id)
 {
+    struct waiterd_request* wreq;
 
+    wreq = waiterd_server_request_find(id);
+    if (wreq == NULL) {
+        chef_waiterd_status_response(message, CHEF_BUILD_STATUS_UNKNOWN);
+        return;
+    }
+
+    chef_waiterd_status_response(message, wreq->status);
 }
 
 void chef_waiterd_artifact_invocation(struct gracht_message* message, const char* id, const enum chef_artifact_type type)
 {
+    struct waiterd_request* wreq;
 
+    wreq = waiterd_server_request_find(id);
+    if (wreq == NULL) {
+        chef_waiterd_artifact_response(message, "");
+        return;
+    }
+
+    switch (type)  {
+        case CHEF_ARTIFACT_TYPE_LOG:
+            chef_waiterd_artifact_response(message, wreq->artifacts.log);
+            break;
+        case CHEF_ARTIFACT_TYPE_PACKAGE:
+            chef_waiterd_artifact_response(message, wreq->artifacts.package);
+            break;
+    }
 }

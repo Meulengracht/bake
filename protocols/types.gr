@@ -14,6 +14,7 @@ enum architecture {
 }
 
 enum build_status {
+    UNKNOWN,
     QUEUED,
     SOURCING,
     BUILDING,
@@ -24,6 +25,7 @@ enum build_status {
 
 enum queue_status {
     SUCCESS,
+    INTERNAL_ERROR,
     NO_COOK_FOR_ARCHITECTURE
 }
 
