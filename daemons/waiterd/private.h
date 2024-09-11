@@ -43,12 +43,14 @@ enum waiterd_build_status {
 struct waiterd_cook {
     struct list_item          list_header;
     gracht_conn_t             client;
+    int                       ready;
     enum waiterd_architecture architecture;
 };
 
 struct waiterd_request {
     struct list_item       list_header;
     struct gracht_message* source;
+    gracht_conn_t          cook;
 
     char                      guid[40];
     enum waiterd_build_status status;
@@ -71,6 +73,14 @@ extern void waiterd_server_cook_disconnect(gracht_conn_t client);
 // for now keep this here, if this daemon gets bigger let us 
 // actually add some proper structure
 extern int waiterd_initialize_server(struct gracht_server_configuration* config, gracht_server_t** serverOut);
+
+/**
+ * @brief Marks a cook as ready
+ * 
+ * @param client 
+ * @param arch 
+ */
+extern void waiterd_server_cook_ready(gracht_conn_t client, enum waiterd_architecture arch);
 
 /**
  * @brief Finds a cook based on the architecture, internal load-balancing

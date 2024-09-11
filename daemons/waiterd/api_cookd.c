@@ -21,12 +21,13 @@
 
 void chef_waiterd_cook_ready_invocation(struct gracht_message* message, const struct chef_cook_ready_event* evt)
 {
-    // register new cook
+    waiterd_server_cook_ready(message->client, evt->arch);
 }
 
 void chef_waiterd_cook_update_invocation(struct gracht_message* message, const struct chef_cook_update_event* evt)
 {
     // stats stuff
+    // TODO
 }
 
 void chef_waiterd_cook_status_invocation(struct gracht_message* message, const struct chef_cook_build_event* evt)
