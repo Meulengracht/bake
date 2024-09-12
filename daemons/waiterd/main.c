@@ -16,17 +16,72 @@
  * 
  */
 
-#include "private.h"
+#include "chef-config.h"
+#include <chef/dirs.h>
+#include <server.h>
 #include "chef_waiterd_service_server.h"
 #include "chef_waiterd_cook_service_server.h"
+#include <vlog.h>
 
 // the server object
 static gracht_server_t* g_server = NULL;
+
+static void __print_help(void)
+{
+    printf("Usage: waiterd [options]\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -v\n");
+    printf("      Provide this for improved logging output\n");
+    printf("  --version\n");
+    printf("      Print the version of waiterd\n");
+    printf("  -h, --help\n");
+    printf("      Print this help message\n");
+}
 
 int main(int argc, char** argv)
 {
     struct gracht_server_configuration config;
     int                                status;
+    int                                logLevel = VLOG_LEVEL_TRACE;
+
+    // parse options
+    if (argc > 1) {
+        for (int i = 1; i < argc; i++) {
+            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+                __print_help();
+                return 0;
+            } else if (!strcmp(argv[i], "--version")) {
+                printf("waiterd: version " PROJECT_VER "\n");
+                return 0;
+            } else if (!strncmp(argv[i], "-v", 2)) {
+                int li = 1;
+                while (argv[i][li++] == 'v') {
+                    logLevel++;
+                }
+            }
+        }
+    }
+
+    // initialize logging
+    vlog_initialize((enum vlog_level)logLevel);
+    atexit(vlog_cleanup);
+
+    // initialize directories
+    status = chef_dirs_initialize();
+    if (status) {
+        fprintf(stderr, "waiterd: failed to initialize directories\n");
+        return -1;
+    }
+
+    // load config
+    status = waiterd_config_load(chef_dirs_root());
+    if (status) {
+        fprintf(stderr, "waiterd: failed to load configuation\n");
+        return -1;
+    }
+
+    // add log file to vlog
 
     // initialize the server configuration
     gracht_server_configuration_init(&config);

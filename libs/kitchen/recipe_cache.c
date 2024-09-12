@@ -365,7 +365,7 @@ static int __initialize_cache(struct recipe_cache* cache, const char* path)
     return 0;
 }
 
-static int __load_cache(struct recipe_cache* cache, const char* path)
+static int __load_config(struct recipe_cache* cache, const char* path)
 {
     json_error_t error;
     json_t*      root;
@@ -473,7 +473,7 @@ int recipe_cache_initialize(struct recipe* current, const char* cwd)
     srand(clock());
 
     snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S ".vchcache", cwd);
-    status = __load_cache(&g_cache, &buff[0]);
+    status = __load_config(&g_cache, &buff[0]);
     if (status) {
         VLOG_ERROR("cache", "failed to load or initialize the recipe cache\n");
         return status;

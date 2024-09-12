@@ -21,7 +21,7 @@
 
 #include "chef_waiterd_service.h"
 #include "chef_waiterd_cook_service.h"
-#include "private.h"
+#include <server.h>
 
 static enum waiterd_architecture waiterd_architecture(enum chef_architecture arch)
 {

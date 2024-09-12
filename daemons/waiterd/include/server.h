@@ -66,6 +66,8 @@ struct waiterd_server {
     struct list requests; // list<waiterd_request>
 };
 
+extern int waiterd_config_load(const char* confdir);
+
 // callbacks for the server
 extern void waiterd_server_cook_connect(gracht_conn_t client);
 extern void waiterd_server_cook_disconnect(gracht_conn_t client);

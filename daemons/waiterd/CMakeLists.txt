@@ -7,16 +7,17 @@ set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 set (SRCS
     ${GENERATED_SRCS}
 
-    api_cookd.c
-    api_waiterd.c
+    api/cookd.c
+    api/waiterd.c
+
+    server/config.c
+    server/init.c
+    server/server.c
 
     main.c
-    
-    server_init.c
-    server_main.c
 )
 
 add_executable(waiterd ${SRCS})
 add_dependencies(waiterd service_server)
-target_include_directories(waiterd PRIVATE ${CMAKE_BINARY_DIR}/protocols)
-target_link_libraries(waiterd PRIVATE platform gracht)
+target_include_directories(waiterd PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
+target_link_libraries(waiterd PRIVATE jansson-api jansson vlog libdirconf platform gracht)
