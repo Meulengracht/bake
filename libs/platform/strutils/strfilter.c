@@ -54,6 +54,15 @@ int strfilter(const char* filter, const char* text, int flags)
                     i++;
                 }
                 break;
+            case '[':
+                // match either of the characters inside the bracket
+                while (*(++fi) != ']' && FOLD(*i) != FOLD(*fi));
+                if (*fi == ']') {
+                    // not found, not a match
+                    return -1;
+                }
+                // skip over rest of the case
+                while (*(++fi) != ']');
             
             // handle escapes, intentional fall-through
             case '\\':
