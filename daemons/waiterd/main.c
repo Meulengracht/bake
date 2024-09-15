@@ -44,6 +44,7 @@ int main(int argc, char** argv)
     struct gracht_server_configuration config;
     int                                status;
     int                                logLevel = VLOG_LEVEL_TRACE;
+    FILE*                              debuglog;
 
     // parse options
     if (argc > 1) {
@@ -82,6 +83,13 @@ int main(int argc, char** argv)
     }
 
     // add log file to vlog
+    debuglog = chef_dirs_contemporary_file(NULL);
+    if (debuglog == NULL) {
+        fprintf(stderr, "waiterd: failed to open log file\n");
+        return -1;
+    }
+    vlog_add_output(debuglog, 1);
+    vlog_set_output_level(debuglog, VLOG_LEVEL_DEBUG);
 
     // initialize the server configuration
     gracht_server_configuration_init(&config);

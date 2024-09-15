@@ -15,8 +15,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
  * Package System TODOs:
- * - autotools backend
- * - reuse zstd context for improved performance
  * - api-keys
  * - pack deletion
  */
@@ -24,6 +22,7 @@
 
 #include <chef/client.h>
 #include <errno.h>
+#include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <chef/kitchen.h>
@@ -228,30 +227,9 @@ static void __cleanup_systems(int sig)
 
 static char* __add_build_log(void)
 {
-    FILE* stream;
     char* path;
-
-#if CHEF_ON_LINUX
-    char template[] = "/tmp/bake-build-XXXXXX.log";
-    if (mkstemps(&template[0], 4) < 0) {
-        fprintf(stderr, "bake: failed to get a temporary filename for log: %i\n", errno);
-        return NULL;
-    }
-    path = platform_strdup(&template[0]);
-#elif CHEF_ON_WINDOWS
-    // GetTempPath
-    // GetTempFileName
-#else
-    path = NULL;
-#endif
-
-    if (path == NULL) {
-        return NULL;
-    }
-
-    stream = fopen(path, "w+");
+    FILE* stream = chef_dirs_contemporary_file(&path);
     if (stream == NULL) {
-        fprintf(stderr, "bake: failed to open path %s for writing\n", path);
         return NULL;
     }
 

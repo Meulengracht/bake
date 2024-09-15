@@ -96,24 +96,34 @@ static void init_client_link_config(struct gracht_link_socket* link)
 
 void register_server_links(gracht_server_t* server)
 {
-    struct gracht_link_socket* clientLink;
-    struct gracht_link_socket* packetLink;
-    int                        code;
+    struct waiterd_config_address apiAddress;
+    struct gracht_link_socket*    apiLink;
 
-    gracht_link_socket_create(&clientLink);
-    gracht_link_socket_create(&packetLink);
+    struct gracht_link_socket*    cookLink;
+    struct waiterd_config_address cookAddress;
 
-    init_client_link_config(clientLink);
-    init_packet_link_config(packetLink);
+    int status;
 
-    code = gracht_server_add_link(server, (struct gracht_link*)clientLink);
-    if (code) {
-        fprintf(stderr, "register_server_links failed to add link: %i (%i)\n", code, errno);
+    // create the links based on socket impl
+    gracht_link_socket_create(&apiLink);
+    gracht_link_socket_create(&cookLink);
+
+    // get the config stuff
+    waiterd_config_api_address(&apiAddress);
+    waiterd_config_cook_address(&cookAddress);
+
+    // configure links
+    init_client_link_config(cookLink);
+    init_packet_link_config(apiLink);
+
+    status = gracht_server_add_link(server, (struct gracht_link*)cookLink);
+    if (status) {
+        fprintf(stderr, "register_server_links failed to add link: %i (%i)\n", status, errno);
     }
 
-    code = gracht_server_add_link(server, (struct gracht_link*)packetLink);
-    if (code) {
-        fprintf(stderr, "register_server_links failed to add link: %i (%i)\n", code, errno);
+    status = gracht_server_add_link(server, (struct gracht_link*)apiLink);
+    if (status) {
+        fprintf(stderr, "register_server_links failed to add link: %i (%i)\n", status, errno);
     }
 }
 
