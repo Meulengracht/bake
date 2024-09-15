@@ -208,3 +208,34 @@ int chef_dirs_ensure(const char* path)
     }
     return __mkdir_as(path, 0755, g_dirs.real_user, g_dirs.real_user);
 }
+
+FILE* chef_dirs_contemporary_file(char** rpath)
+{
+    char  template[] = "/tmp/bake-build-XXXXXX.log";
+    FILE* stream;
+    char* path;
+
+    if (mkstemps(&template[0], 4) < 0) {
+        VLOG_ERROR("dirs", "failed to get a temporary filename for log: %i\n", errno);
+        return NULL;
+    }
+    
+    path = platform_strdup(&template[0]);
+    if (path == NULL) {
+        return NULL;
+    }
+
+    stream = fopen(path, "w+");
+    if (stream == NULL) {
+        VLOG_ERROR("dirs", "failed to open path %s for writing\n", path);
+        free(path);
+        return NULL;
+    }
+
+    if (rpath != NULL) {
+        *rpath = path;
+    } else {
+        free(path);
+    }
+    return stream;
+}

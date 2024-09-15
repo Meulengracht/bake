@@ -61,12 +61,20 @@ struct waiterd_request {
     } artifacts;
 };
 
+struct waiterd_config_address {
+    const char*    type;
+    const char*    address;
+    unsigned short port;
+};
+
 struct waiterd_server {
     struct list cooks; // list<waiterd_cook>
     struct list requests; // list<waiterd_request>
 };
 
 extern int waiterd_config_load(const char* confdir);
+extern void waiterd_config_api_address(struct waiterd_config_address* address);
+extern void waiterd_config_cook_address(struct waiterd_config_address* address);
 
 // callbacks for the server
 extern void waiterd_server_cook_connect(gracht_conn_t client);

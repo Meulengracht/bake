@@ -20,15 +20,16 @@
 #include <chef/platform.h>
 #include <errno.h>
 #include <jansson.h>
+#include <server.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <vlog.h>
 
 struct config_address {
-    const char*  type;
-    const char*  address;
-    unsigned int port;
+    const char*    type;
+    const char*    address;
+    unsigned short port;
 };
 
 static int __parse_config_address(struct config_address* address, json_t* root)
@@ -50,7 +51,7 @@ static int __parse_config_address(struct config_address* address, json_t* root)
 
     member = json_object_get(root, "port");
     if (member != NULL) {
-        address->port = (unsigned int)json_integer_value(member);
+        address->port = (unsigned short)(json_integer_value(member) & 0xFFFF);
     }
     return 0;
 }
@@ -170,7 +171,7 @@ static int __initialize_config(struct config* config)
     
     config->cook_address.type = platform_strdup("inet4");
     config->cook_address.address = platform_strdup("127.0.0.1");
-    config->cook_address.port = 51001;
+    config->cook_address.port = 51002;
 #endif
     return 0;
 }
@@ -207,4 +208,18 @@ int waiterd_config_load(const char* confdir)
         return status;
     }
     return 0;
+}
+
+extern void waiterd_config_api_address(struct waiterd_config_address* address)
+{
+    address->type = g_config.api_address.type;
+    address->address = g_config.api_address.address;
+    address->port = g_config.api_address.port;
+}
+
+extern void waiterd_config_cook_address(struct waiterd_config_address* address)
+{
+    address->type = g_config.cook_address.type;
+    address->address = g_config.cook_address.address;
+    address->port = g_config.cook_address.port;
 }

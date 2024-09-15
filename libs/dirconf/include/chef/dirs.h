@@ -19,6 +19,8 @@
 #ifndef __CHEF_DIRS_H__
 #define __CHEF_DIRS_H__
 
+#include <stdio.h>
+
 /**
  * @brief 
  * 
@@ -50,5 +52,11 @@ extern const char* chef_dirs_kitchen(const char* uuid);
  * @brief
  */
 extern int chef_dirs_ensure(const char* path);
+
+/**
+ * @brief 
+ * 
+ */
+extern FILE* chef_dirs_contemporary_file(char** rpath);
 
 #endif //!__CHEF_DIRS_H__
