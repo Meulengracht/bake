@@ -1,9 +1,14 @@
-# determine the system to know which implementation
-# of served to use
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set (GENERATED_SRCS
+        ${CMAKE_BINARY_DIR}/protocols/chef_waiterd_cook_service_client.c
+    )
+set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 
-if (UNIX)
-    add_subdirectory(linux)
-endif()
+set (SRCS
+    ${GENERATED_SRCS}
+    main.c
+)
+
+add_executable(cookd ${SRCS})
+add_dependencies(cookd service_client)
+target_include_directories(cookd PRIVATE ${CMAKE_BINARY_DIR}/protocols)
+target_link_libraries(cookd PRIVATE jansson-api jansson vlog libdirconf platform gracht)
