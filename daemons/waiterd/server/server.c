@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <vlog.h>
 
 static char g_templateGuid[] = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
 static const char* g_hexValues = "0123456789ABCDEF-";
@@ -45,6 +46,18 @@ static void __waiterd_cook_delete(struct waiterd_cook* cook)
     free(cook);
 }
 
+static void __waiterd_request_delete(struct waiterd_request* request)
+{
+    if (request == NULL) {
+        return;
+    }
+
+    free(request->artifacts.log);
+    free(request->artifacts.package);
+    free(request->source);
+    free(request);
+}
+
 struct waiterd_cook* __find_cook_by_client(gracht_conn_t client)
 {
     struct list_item* i;
@@ -59,16 +72,31 @@ struct waiterd_cook* __find_cook_by_client(gracht_conn_t client)
     return NULL;
 }
 
-
 void waiterd_server_cook_connect(gracht_conn_t client)
 {
     struct waiterd_cook* cook = __waiterd_cook_new(client);
     if (cook == NULL) {
-        // needs to be logged fatally
+        VLOG_ERROR("waiter", "cook::connect failed to allocate memory for cook\n");
         return;
     }
 
     list_add(&g_server.cooks, &cook->list_header);
+}
+
+static void __abort_request(struct waiterd_request* request)
+{
+    if (request->status == WAITERD_BUILD_STATUS_UNKNOWN) {
+        // we should really inform the client here
+    } else if (
+        request->status == WAITERD_BUILD_STATUS_DONE ||
+        request->status == WAITERD_BUILD_STATUS_FAILED) {
+        // If the request already was handled, ignore it
+        return;
+    }
+
+    // set the request to failed for now in the absence
+    // of 'aborted' or 'cancelled'
+    request->status = WAITERD_BUILD_STATUS_FAILED;
 }
 
 void waiterd_server_cook_disconnect(gracht_conn_t client)
@@ -78,10 +106,10 @@ void waiterd_server_cook_disconnect(gracht_conn_t client)
 
     // invalid cook?
     if (cook == NULL) {
-        // log this
+        VLOG_ERROR("waiter", "cook::disconnect failed to locate cook by its client id\n");
         return;
     }
-    
+
     // remove cook immediately
     list_remove(&g_server.cooks, &cook->list_header);
 
@@ -89,7 +117,7 @@ void waiterd_server_cook_disconnect(gracht_conn_t client)
     list_foreach(&g_server.requests, i) {
         struct waiterd_request* request = (struct waiterd_request*)i;
         if (request->cook == client) {
-            // abort
+            __abort_request(request);
         }
     }
 
@@ -103,6 +131,7 @@ void waiterd_server_cook_ready(gracht_conn_t client, enum waiterd_architecture a
 
     if (cook == NULL) {
         // invalid cook, log this 
+        VLOG_ERROR("waiter", "cook::ready failed to locate cook by its client id\n");
         return;
     }
 
@@ -163,6 +192,7 @@ struct waiterd_request* waiterd_server_request_new(
     }
     gracht_server_defer_message(message, request->source);
     __guid_new(request->guid);
+    list_add(&g_server.requests, &request->list_header);
     return request;
 }
 

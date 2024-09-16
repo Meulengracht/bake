@@ -16,17 +16,21 @@
  * 
  */
 
+#include <chef/platform.h>
 #include <convert.h>
 #include "chef_waiterd_service_server.h"
 #include "chef_waiterd_cook_service_server.h"
+#include <vlog.h>
 
 void chef_waiterd_cook_ready_invocation(struct gracht_message* message, const struct chef_cook_ready_event* evt)
 {
+    VLOG_DEBUG("api", "cook::ready(arch=%u)\n", evt->arch);
     waiterd_server_cook_ready(message->client, evt->arch);
 }
 
 void chef_waiterd_cook_update_invocation(struct gracht_message* message, const struct chef_cook_update_event* evt)
 {
+    VLOG_DEBUG("api", "cook::update()\n");
     // stats stuff
     // TODO
 }
@@ -35,10 +39,11 @@ void chef_waiterd_cook_status_invocation(struct gracht_message* message, const s
 {
     struct waiterd_request*   wreq;
     enum waiterd_build_status status;
+    VLOG_DEBUG("api", "cook::status(id=%s, status=%u)\n", evt->id, evt->status);
 
     wreq = waiterd_server_request_find(evt->id);
     if (wreq == NULL) {
-        // ehh shouldn't happen
+        VLOG_ERROR("api", "invalid request id %s\n", evt->id);
         return;
     }
 
@@ -56,19 +61,20 @@ void chef_waiterd_cook_status_invocation(struct gracht_message* message, const s
 void chef_waiterd_cook_artifact_invocation(struct gracht_message* message, const struct chef_cook_artifact_event* evt)
 {
     struct waiterd_request* wreq;
+    VLOG_DEBUG("api", "cook::status(id=%s, type=%u)\n", evt->id, evt->type);
 
     wreq = waiterd_server_request_find(evt->id);
     if (wreq == NULL) {
-        // ehh shouldn't happen
+        VLOG_ERROR("api", "invalid request id %s\n", evt->id);
         return;
     }
 
     switch (evt->type) {
         case CHEF_ARTIFACT_TYPE_LOG:
-            wreq->artifacts.log = evt->uri;
+            wreq->artifacts.log = platform_strdup(evt->uri);
             break;
         case CHEF_ARTIFACT_TYPE_PACKAGE:
-            wreq->artifacts.package = evt->uri;
+            wreq->artifacts.package = platform_strdup(evt->uri);
             break;
     }
 }

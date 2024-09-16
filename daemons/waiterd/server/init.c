@@ -43,6 +43,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 
     local->sun_family = AF_LOCAL;
     strncpy(local->sun_path, address, sizeof(local->sun_path));
+    return 0;
 }
 #elif defined(_WIN32)
 #include <windows.h>
@@ -65,6 +66,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 
     local->sun_family = AF_LOCAL;
     strncpy(local->sun_path, address, sizeof(local->sun_path));
+    return 0;
 }
 #endif
 
@@ -87,19 +89,25 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     if (!strcmp(config->type, "local")) {
         status = __configure_local(&addr_storage, config->address);
         if (status) {
+            fprintf(stderr, "init_link_config failed to configure local link\n");
             return status;
         }
         domain = AF_LOCAL;
         size = __local_size();
+
+        printf("listening at %s\n", config->address);
     } else if (!strcmp(config->type, "inet4")) {
         __configure_inet4(&addr_storage, config);
         domain = AF_INET;
         size = sizeof(struct sockaddr_in);
+        
+        printf("listening on %s:%u\n", config->address, config->port);
     } else if (!strcmp(config->type, "inet6")) {
         // TODO
         domain = AF_INET6;
         size = sizeof(struct sockaddr_in6);
     } else {
+        fprintf(stderr, "init_link_config invalid link type %s\n", config->type);
         return -1;
     }
 
@@ -127,22 +135,26 @@ int register_server_links(gracht_server_t* server)
     // initialize the api link
     status = gracht_link_socket_create(&apiLink);
     if (status) {
+        fprintf(stderr, "register_server_links failed to create api link: %i (%i)\n", status, errno);
         return status;
     }
 
     status = init_link_config(apiLink, gracht_link_packet_based, &apiAddress);
     if (status) {
+        fprintf(stderr, "register_server_links failed to initialize api link: %i (%i)\n", status, errno);
         return status;
     }
 
     // initialize the cook link
     status = gracht_link_socket_create(&cookLink);
     if (status) {
+        fprintf(stderr, "register_server_links failed to create cook link: %i (%i)\n", status, errno);
         return status;
     }
 
     status = init_link_config(cookLink, gracht_link_stream_based, &cookAddress);
     if (status) {
+        fprintf(stderr, "register_server_links failed to initialize cook link: %i (%i)\n", status, errno);
         return status;
     }
 
@@ -172,7 +184,7 @@ int waiterd_initialize_server(struct gracht_server_configuration* config, gracht
 #if defined(__linux__)
     status = platform_mkdir("/run/chef/waiterd");
     if (status) {
-        fprintf(stderr, "waiterd_initialize_server: error initializing server library %i\n", errno);
+        fprintf(stderr, "waiterd_initialize_server: failed to create /run/chef/waiterd\n");
         return status;
     }
 #endif
@@ -182,8 +194,5 @@ int waiterd_initialize_server(struct gracht_server_configuration* config, gracht
         fprintf(stderr, "waiterd_initialize_server: error initializing server library %i\n", errno);
         return status;
     }
-
-    // register links
-    register_server_links(*serverOut);
-    return 0;
+    return register_server_links(*serverOut);
 }

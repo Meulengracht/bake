@@ -1,0 +1,165 @@
+/**
+ * Copyright, Philip Meulengracht
+ *
+ * This program is free software : you can redistribute it and / or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation ? , either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * 
+ * Package System TODOs:
+ * - api-keys
+ * - pack deletion
+ */
+#define _GNU_SOURCE
+
+#include <errno.h>
+#include <chef/dirs.h>
+#include <chef/list.h>
+#include <chef/platform.h>
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <signal.h>
+#include <vlog.h>
+
+#include "commands.h"
+
+static void __print_help(void)
+{
+    printf("Usage: bake remote <command> [options]\n");
+    printf("  Remote can be used to execute recipes remotely for a configured\n");
+    printf("  build-server. It will connect to the configured waiterd instance in\n");
+    printf("  the configuration file (bake.json)\n");
+    printf("  If the connection is severed between the bake instance and the waiterd\n");
+    printf("  instance, the build can be resumed from the bake instance by invoking\n");
+    printf("  'bake remote resume <ID>'\n\n");
+    printf("  To see a full list of supported options for building, please execute\n");
+    printf("  'bake run --help'\n\n");
+    printf("Commands:\n");
+    printf("  init     go through the configuration wizard\n");
+    printf("  build    (default) executes a recipe remotely\n");
+    printf("  resume   resumes execution of a recipe running remotely\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -h,  --help\n");
+    printf("      Shows this help message\n");
+}
+
+static void __cleanup_systems(int sig)
+{
+    // printing as a part of a signal handler is not safe
+    // but we live dangerously
+    vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+    vlog_end();
+
+    // cleanup logging
+    vlog_cleanup();
+
+    // Do a quick exit, which is recommended to do in signal handlers
+    // and use the signal as the exit code
+    _Exit(-sig);
+}
+
+static char* __add_build_log(void)
+{
+    char* path;
+    FILE* stream = chef_dirs_contemporary_file(&path);
+    if (stream == NULL) {
+        return NULL;
+    }
+
+    vlog_add_output(stream, 1);
+    vlog_set_output_level(stream, VLOG_LEVEL_DEBUG);
+    return path;
+}
+
+static char* __format_header(const char* name, const char* platform, const char* arch)
+{
+    char tmp[512];
+    snprintf(&tmp[0], sizeof(tmp), "%s (%s, %s)", name, platform, arch);
+    return platform_strdup(&tmp[0]);
+}
+
+static char* __format_footer(const char* waiterdAddress)
+{
+    char tmp[PATH_MAX];
+    snprintf(&tmp[0], sizeof(tmp), "connected to: %s", waiterdAddress);
+    return platform_strdup(&tmp[0]);
+}
+
+int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
+{
+    int   status;
+    char* header;
+    char* footer;
+
+    // catch CTRL-C
+    signal(SIGINT, __cleanup_systems);
+
+    // handle individual help command
+    if (argc > 1) {
+        for (int i = 1; i < argc; i++) {
+            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+                __print_help();
+                return 0;
+            }
+        }
+    }
+
+    if (options->recipe == NULL) {
+        fprintf(stderr, "bake: no recipe provided\n");
+        __print_help();
+        return -1;
+    }
+
+    header = __format_header(options->recipe->project.name, options->platform, options->architecture);
+    footer = __format_footer("");
+    if (footer == NULL) {
+        fprintf(stderr, "bake: failed to allocate memory for build footer\n");
+        return -1;
+    }
+
+    // setup the build log box
+    vlog_start(stdout, header, footer, 6);
+
+    // 0+1 are informational
+    vlog_content_set_index(0);
+    vlog_content_set_prefix("pkg-env");
+
+    vlog_content_set_index(1);
+    vlog_content_set_prefix("");
+
+    vlog_content_set_index(2);
+    vlog_content_set_prefix("prepare");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    vlog_content_set_index(3);
+    vlog_content_set_prefix("source");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    vlog_content_set_index(4);
+    vlog_content_set_prefix("build");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    vlog_content_set_index(5);
+    vlog_content_set_prefix("pack");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    // use 2 for initial information (prepare)
+    vlog_content_set_index(2);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+
+cleanup:
+    vlog_refresh(stdout);
+    vlog_end();
+    return status;
+}
