@@ -33,7 +33,7 @@ extern int fetch_main(int argc, char** argv, char** envp, struct bake_command_op
 extern int run_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 
-struct command_handler {
+static struct command_handler {
     char* name;
     int (*handler)(int argc, char** argv, char** envp, struct bake_command_options* options);
 };
@@ -41,7 +41,7 @@ struct command_handler {
 static struct command_handler g_commands[] = {
     { "init",     init_main },
     { "fetch",    fetch_main },
-    { "run",      run_main },
+    { "build",    run_main },
     { "clean",    clean_main }
 };
 
@@ -56,7 +56,7 @@ static void __print_help(void)
     printf("Commands:\n");
     printf("  init        initializes a new recipe in the current directory\n");
     printf("  fetch       refreshes/fetches all ingredients\n");
-    printf("  run         runs all recipe steps that have not already been completed\n");
+    printf("  build       runs all recipe steps that have not already been completed\n");
     printf("  clean       cleanup all build and intermediate directories\n");
     printf("\n");
     printf("Options:\n");
@@ -207,7 +207,7 @@ static int __get_cwd(char** bufferOut)
 
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler*     command     = &g_commands[2]; // run step is default
+    struct command_handler*     command = &g_commands[2]; // build step is default
     struct bake_command_options options = { 0 };
     void*                       buffer;
     size_t                      length;

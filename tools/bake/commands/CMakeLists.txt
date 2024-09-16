@@ -1,9 +1,9 @@
 
 add_library(bake-commands STATIC
+    build.c
     clean.c
     fetch.c
     init.c
-    run.c
     recipe_specification.c
 )
 
