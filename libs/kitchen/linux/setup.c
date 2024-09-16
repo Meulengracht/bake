@@ -129,7 +129,7 @@ static int __install_bakectl(struct kitchen* kitchen)
     path = dirname(&buffer[0]);
 
     // overwrite the binary part
-    strcat(&buffer[0], "/../lib/chef/bakectl");
+    strcat(&buffer[0], "/../libexec/chef/bakectl");
 
     resolved = realpath(&buffer[0], NULL);
     if (resolved == NULL) {

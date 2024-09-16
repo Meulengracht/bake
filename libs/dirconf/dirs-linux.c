@@ -122,13 +122,32 @@ static int __ensure_chef_dirs(void)
         { NULL },
     };
     for (int i = 0; paths[i].path != NULL; i++) {
-        int status = __mkdir_as(*paths[i].path, 0755, g_dirs.real_user, g_dirs.real_user);
+        int         status;
+        const char* path = *paths[i].path;
+        
+        if (path == NULL) {
+            continue;
+        }
+
+        status = __mkdir_as(path, 0755, g_dirs.real_user, g_dirs.real_user);
         if (status) {
-            VLOG_ERROR("dirs", "failed to create %s\n", *paths[i].path);
+            VLOG_ERROR("dirs", "failed to create %s\n", path);
             return -1;
         }
     }
     return 0;
+}
+
+static int __setup_root(void)
+{
+    VLOG_DEBUG("dirs", "DETECTED running as root, only chef_dirs_root() will be valid and return /etc/chef\n");
+
+    g_dirs.root = "/etc/chef";
+    if (g_dirs.root == NULL) {
+        VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
+        return -1;
+    }
+    return __ensure_chef_dirs();
 }
 
 int chef_dirs_initialize(void)
@@ -137,10 +156,8 @@ int chef_dirs_initialize(void)
     char  buffer[PATH_MAX] = { 0 };
     uid_t realUser = __real_user();
 
-    // if running as root, then error as we do not want this
     if (realUser == 0) {
-        VLOG_ERROR("dirs", "DETECTED running as root, this is not recommended and directories will not be created for root\n");
-        return -1;
+        return __setup_root();
     }
 
     status = platform_getuserdir(&buffer[0], sizeof(buffer) - 1);
@@ -174,7 +191,7 @@ const char* chef_dirs_root(void)
 const char* chef_dirs_fridge(void)
 {
     if (g_dirs.fridge == NULL) {
-        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        VLOG_ERROR("dirs", "chef_dirs_fridge() is not available\n");
         return NULL;
     }
     return g_dirs.fridge;
@@ -183,7 +200,7 @@ const char* chef_dirs_fridge(void)
 const char* chef_dirs_store(void)
 {
     if (g_dirs.store == NULL) {
-        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        VLOG_ERROR("dirs", "chef_dirs_store() is not available\n");
         return NULL;
     }
     return g_dirs.store;
@@ -192,7 +209,7 @@ const char* chef_dirs_store(void)
 const char* chef_dirs_kitchen(const char* uuid)
 {
     if (g_dirs.kitchen == NULL) {
-        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        VLOG_ERROR("dirs", "chef_dirs_kitchen() is not available\n");
         return NULL;
     }
     if (uuid != NULL) {
@@ -229,6 +246,12 @@ FILE* chef_dirs_contemporary_file(char** rpath)
     stream = fopen(path, "w+");
     if (stream == NULL) {
         VLOG_ERROR("dirs", "failed to open path %s for writing\n", path);
+        free(path);
+        return NULL;
+    }
+
+    if (fchmod(fileno(stream), 0644)) {
+        VLOG_ERROR("dirs", "failed to open change mode of %s\n", path);
         free(path);
         return NULL;
     }

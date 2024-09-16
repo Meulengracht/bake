@@ -19,6 +19,7 @@
 #include <convert.h>
 #include "chef_waiterd_service_server.h"
 #include "chef_waiterd_cook_service_server.h"
+#include <vlog.h>
 
 static int __verify_build_request(const struct chef_waiter_build_request* request)
 {
@@ -31,21 +32,24 @@ void chef_waiterd_build_invocation(
 {
     struct waiterd_cook*    cook;
     struct waiterd_request* wreq;
+    VLOG_DEBUG("api", "waiter::build(arch=%u)\n", request->arch);
 
     if (__verify_build_request(request)) {
+        VLOG_ERROR("api", "build request could not be verified\n");
         chef_waiterd_build_response(message, CHEF_QUEUE_STATUS_INTERNAL_ERROR, "0");
         return;
     }
 
     cook = waiterd_server_cook_find(waiterd_architecture(request->arch));
     if (cook == NULL) {
+        VLOG_WARNING("api", "no cook for requested architecture\n");
         chef_waiterd_build_response(message, CHEF_QUEUE_STATUS_NO_COOK_FOR_ARCHITECTURE, "0");
         return;
     }
 
     wreq = waiterd_server_request_new(cook, message);
     if (wreq == NULL) {
-        // out of memory
+        VLOG_WARNING("api", "failed to allocate memory for build request!!\n");
         chef_waiterd_build_response(message, CHEF_QUEUE_STATUS_INTERNAL_ERROR, "0");
         return;
     }
@@ -57,9 +61,11 @@ void chef_waiterd_build_invocation(
 void chef_waiterd_status_invocation(struct gracht_message* message, const char* id)
 {
     struct waiterd_request* wreq;
+    VLOG_DEBUG("api", "waiter::status(id=%u)\n", id);
 
     wreq = waiterd_server_request_find(id);
     if (wreq == NULL) {
+        VLOG_WARNING("api", "invalid request id %s\n", id);
         chef_waiterd_status_response(message, CHEF_BUILD_STATUS_UNKNOWN);
         return;
     }
@@ -70,9 +76,11 @@ void chef_waiterd_status_invocation(struct gracht_message* message, const char* 
 void chef_waiterd_artifact_invocation(struct gracht_message* message, const char* id, const enum chef_artifact_type type)
 {
     struct waiterd_request* wreq;
+    VLOG_DEBUG("api", "waiter::artifact(id=%u, type=%u)\n", id, type);
 
     wreq = waiterd_server_request_find(id);
     if (wreq == NULL) {
+        VLOG_WARNING("api", "invalid request id %s\n", id);
         chef_waiterd_artifact_response(message, "");
         return;
     }

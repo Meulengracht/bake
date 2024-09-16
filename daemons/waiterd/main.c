@@ -45,6 +45,7 @@ int main(int argc, char** argv)
     int                                status;
     int                                logLevel = VLOG_LEVEL_TRACE;
     FILE*                              debuglog;
+    char*                              debuglogPath;
 
     // parse options
     if (argc > 1) {
@@ -83,13 +84,16 @@ int main(int argc, char** argv)
     }
 
     // add log file to vlog
-    debuglog = chef_dirs_contemporary_file(NULL);
+    debuglog = chef_dirs_contemporary_file(&debuglogPath);
     if (debuglog == NULL) {
         fprintf(stderr, "waiterd: failed to open log file\n");
         return -1;
     }
     vlog_add_output(debuglog, 1);
     vlog_set_output_level(debuglog, VLOG_LEVEL_DEBUG);
+
+    printf("log opened at %s\n", debuglogPath);
+    free(debuglogPath);
 
     // initialize the server configuration
     gracht_server_configuration_init(&config);

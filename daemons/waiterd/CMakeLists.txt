@@ -21,3 +21,8 @@ add_executable(waiterd ${SRCS})
 add_dependencies(waiterd service_server)
 target_include_directories(waiterd PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
 target_link_libraries(waiterd PRIVATE jansson-api jansson vlog libdirconf platform gracht)
+
+install(
+    TARGETS waiterd
+    RUNTIME DESTINATION libexec/chef
+)
