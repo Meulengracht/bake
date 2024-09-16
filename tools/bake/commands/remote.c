@@ -33,9 +33,24 @@
 
 #include "commands.h"
 
+extern int remote_init_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int remote_build_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+
+static struct command_handler {
+    char* name;
+    int (*handler)(int argc, char** argv, char** envp, struct bake_command_options* options);
+};
+
+static struct command_handler g_commands[] = {
+    { "init",   remote_init_main },
+    { "build",  remote_build_main },
+    { "resume", remote_resume_main }
+};
+
 static void __print_help(void)
 {
-    printf("Usage: bake remote <command> [options]\n");
+    printf("Usage: bake remote <command> RECIPE [options]\n");
     printf("  Remote can be used to execute recipes remotely for a configured\n");
     printf("  build-server. It will connect to the configured waiterd instance in\n");
     printf("  the configuration file (bake.json)\n");
@@ -43,7 +58,7 @@ static void __print_help(void)
     printf("  instance, the build can be resumed from the bake instance by invoking\n");
     printf("  'bake remote resume <ID>'\n\n");
     printf("  To see a full list of supported options for building, please execute\n");
-    printf("  'bake run --help'\n\n");
+    printf("  'bake build --help'\n\n");
     printf("Commands:\n");
     printf("  init     go through the configuration wizard\n");
     printf("  build    (default) executes a recipe remotely\n");
@@ -52,6 +67,16 @@ static void __print_help(void)
     printf("Options:\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
+}
+
+static struct command_handler* __get_command(const char* command)
+{
+    for (int i = 0; i < sizeof(g_commands) / sizeof(struct command_handler); i++) {
+        if (!strcmp(command, g_commands[i].name)) {
+            return &g_commands[i];
+        }
+    }
+    return NULL;
 }
 
 static void __cleanup_systems(int sig)
@@ -96,23 +121,28 @@ static char* __format_footer(const char* waiterdAddress)
     return platform_strdup(&tmp[0]);
 }
 
-int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
+int remote_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    int   status;
-    char* header;
-    char* footer;
+    struct command_handler* command = &g_commands[1]; // build step is default
+    char*                   header;
+    char*                   footer;
+    int                     status;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
 
-    // handle individual help command
-    if (argc > 1) {
-        for (int i = 1; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            }
+    // handle individual commands
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            __print_help();
+            return 0;
+        } else if (__get_command(argv[i])) {
+            command = argv[i];
         }
+    }
+
+    if (!strcmp(command, "init")) {
+        return __init_wizard();
     }
 
     if (options->recipe == NULL) {

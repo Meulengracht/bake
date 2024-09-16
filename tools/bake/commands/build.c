@@ -40,7 +40,7 @@ static struct kitchen g_kitchen = { 0 };
 
 static void __print_help(void)
 {
-    printf("Usage: bake run [options]\n");
+    printf("Usage: bake build [options]\n");
     printf("\n");
     printf("Options:\n");
     printf("  -cc, --cross-compile\n");

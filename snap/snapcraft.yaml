@@ -18,7 +18,11 @@ apps:
   serve:
     command: usr/bin/serve
   served:
-    command: usr/bin/served
+    command: usr/libexec/chef/served
+    daemon: simple
+    install-mode: disable
+  waiterd:
+    command: usr/libexec/chef/waiterd
     daemon: simple
     install-mode: disable
 
