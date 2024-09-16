@@ -25,76 +25,92 @@
 #include <errno.h>
 
 #if defined(__linux__)
+#include <arpa/inet.h>
 #include <sys/un.h>
 
-static const char* dgramPath = "/run/chef/waiterd/data";
-static const char* clientsPath = "/run/chef/waiterd/listen";
-
-static void init_packet_link_config(struct gracht_link_socket* link)
-{
-    struct sockaddr_un addr = { 0 };
-    
-    // Setup path for dgram
-    unlink(dgramPath);
-    addr.sun_family = AF_LOCAL;
-    strncpy(addr.sun_path, dgramPath, sizeof(addr.sun_path));
-    addr.sun_path[sizeof(addr.sun_path) - 1] = '\0';
-    
-    gracht_link_socket_set_type(link, gracht_link_packet_based);
-    gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr, sizeof(struct sockaddr_un));
-    gracht_link_socket_set_listen(link, 1);
-    gracht_link_socket_set_domain(link, AF_LOCAL);
+static int __local_size(void) {
+    return sizeof(struct sockaddr_un);
 }
 
-static void init_client_link_config(struct gracht_link_socket* link)
+static int __configure_local(struct sockaddr_storage* storage, const char* address)
 {
-    struct sockaddr_un addr = { 0 };
-    
-    // Setup path for serverAddr
-    unlink(clientsPath);
-    addr.sun_family = AF_LOCAL;
-    strncpy(addr.sun_path, clientsPath, sizeof(addr.sun_path));
-    addr.sun_path[sizeof(addr.sun_path) - 1] = '\0';
-    
-    gracht_link_socket_set_type(link, gracht_link_stream_based);
-    gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr, sizeof(struct sockaddr_un));
-    gracht_link_socket_set_listen(link, 1);
-    gracht_link_socket_set_domain(link, AF_LOCAL);
-}
+    struct sockaddr_un* local = (struct sockaddr_un*)storage;
 
+    // ensure it doesn't exist
+    if (unlink(address) && errno != ENOENT) {
+        return -1;
+    }
+
+    local->sun_family = AF_LOCAL;
+    strncpy(local->sun_path, address, sizeof(local->sun_path));
+}
 #elif defined(_WIN32)
 #include <windows.h>
 
-static void init_packet_link_config(struct gracht_link_socket* link)
-{
-    struct sockaddr_in addr = { 0 };
-    
-    // AF_INET is the Internet address family.
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    addr.sin_port = htons(55554);
+// Windows 10 Insider build 17063 ++ 
+#include <afunix.h>
 
-    gracht_link_socket_set_type(link, gracht_link_packet_based);
-    gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr, sizeof(struct sockaddr_in));
-    gracht_link_socket_set_listen(link, 1);
+static int __local_size(void) {
+    return sizeof(struct sockaddr_un);
 }
 
-static void init_client_link_config(struct gracht_link_socket* link)
+static int __configure_local(struct sockaddr_storage* storage, const char* address)
 {
-    struct sockaddr_in addr = { 0 };
-    
-    // AF_INET is the Internet address family.
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    addr.sin_port = htons(55555);
+    struct sockaddr_un* local = (struct sockaddr_un*)storage;
 
-    gracht_link_socket_set_type(link, gracht_link_stream_based);
-    gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr, sizeof(struct sockaddr_in));
-    gracht_link_socket_set_listen(link, 1);
+    // ensure it doesn't exist
+    if (unlink(address) && errno != ENOENT) {
+        return -1;
+    }
+
+    local->sun_family = AF_LOCAL;
+    strncpy(local->sun_path, address, sizeof(local->sun_path));
 }
 #endif
 
-void register_server_links(gracht_server_t* server)
+static void __configure_inet4(struct sockaddr_storage* storage, struct waiterd_config_address* config)
+{
+    struct sockaddr_in* inet4 = (struct sockaddr_in*)storage;
+
+    inet4->sin_family = AF_INET;
+    inet4->sin_addr.s_addr = inet_addr(config->address);
+    inet4->sin_port = htons(config->port);
+}
+
+static int init_link_config(struct gracht_link_socket* link, enum gracht_link_type type, struct waiterd_config_address* config)
+{
+    struct sockaddr_storage addr_storage = { 0 };
+    socklen_t               size;
+    int                     domain = 0;
+    int                     status;
+
+    if (!strcmp(config->type, "local")) {
+        status = __configure_local(&addr_storage, config->address);
+        if (status) {
+            return status;
+        }
+        domain = AF_LOCAL;
+        size = __local_size();
+    } else if (!strcmp(config->type, "inet4")) {
+        __configure_inet4(&addr_storage, config);
+        domain = AF_INET;
+        size = sizeof(struct sockaddr_in);
+    } else if (!strcmp(config->type, "inet6")) {
+        // TODO
+        domain = AF_INET6;
+        size = sizeof(struct sockaddr_in6);
+    } else {
+        return -1;
+    }
+
+    gracht_link_socket_set_type(link, type);
+    gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr_storage, size);
+    gracht_link_socket_set_listen(link, 1);
+    gracht_link_socket_set_domain(link, domain);
+    return 0;
+}
+
+int register_server_links(gracht_server_t* server)
 {
     struct waiterd_config_address apiAddress;
     struct gracht_link_socket*    apiLink;
@@ -104,27 +120,44 @@ void register_server_links(gracht_server_t* server)
 
     int status;
 
-    // create the links based on socket impl
-    gracht_link_socket_create(&apiLink);
-    gracht_link_socket_create(&cookLink);
-
-    // get the config stuff
+    // get configuration stuff for links
     waiterd_config_api_address(&apiAddress);
     waiterd_config_cook_address(&cookAddress);
 
-    // configure links
-    init_client_link_config(cookLink);
-    init_packet_link_config(apiLink);
+    // initialize the api link
+    status = gracht_link_socket_create(&apiLink);
+    if (status) {
+        return status;
+    }
+
+    status = init_link_config(apiLink, gracht_link_packet_based, &apiAddress);
+    if (status) {
+        return status;
+    }
+
+    // initialize the cook link
+    status = gracht_link_socket_create(&cookLink);
+    if (status) {
+        return status;
+    }
+
+    status = init_link_config(cookLink, gracht_link_stream_based, &cookAddress);
+    if (status) {
+        return status;
+    }
 
     status = gracht_server_add_link(server, (struct gracht_link*)cookLink);
     if (status) {
         fprintf(stderr, "register_server_links failed to add link: %i (%i)\n", status, errno);
+        return status;
     }
 
     status = gracht_server_add_link(server, (struct gracht_link*)apiLink);
     if (status) {
         fprintf(stderr, "register_server_links failed to add link: %i (%i)\n", status, errno);
+        return status;
     }
+    return 0;
 }
 
 int waiterd_initialize_server(struct gracht_server_configuration* config, gracht_server_t** serverOut)
