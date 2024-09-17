@@ -50,12 +50,19 @@ static void __print_help(void)
     printf("  resume   resumes execution of a recipe running remotely\n");
     printf("\n");
     printf("Options:\n");
+    printf("  --version\n");
+    printf("      Print the version of bake\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
 }
 
 static void __cleanup_systems(int sig)
 {
+    // printing as a part of a signal handler is not safe
+    // but we live dangerously
+    vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+    vlog_end();
+
     // cleanup logging
     vlog_cleanup();
 
@@ -64,24 +71,95 @@ static void __cleanup_systems(int sig)
     _Exit(-sig);
 }
 
-static int __init_wizard(void)
+static char* __add_build_log(void)
 {
+    char* path;
+    FILE* stream = chef_dirs_contemporary_file(&path);
+    if (stream == NULL) {
+        return NULL;
+    }
 
+    vlog_add_output(stream, 1);
+    vlog_set_output_level(stream, VLOG_LEVEL_DEBUG);
+    return path;
+}
+
+static char* __format_header(const char* name, const char* platform, const char* arch)
+{
+    char tmp[512];
+    snprintf(&tmp[0], sizeof(tmp), "%s (%s, %s)", name, platform, arch);
+    return platform_strdup(&tmp[0]);
+}
+
+static char* __format_footer(const char* waiterdAddress)
+{
+    char tmp[PATH_MAX];
+    snprintf(&tmp[0], sizeof(tmp), "connected to: %s", waiterdAddress);
+    return platform_strdup(&tmp[0]);
 }
 
 int remote_build_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    int status;
+    char*                   header;
+    char*                   footer;
+    int                     status;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
 
-    // handle individual commands
+    // handle build options that needs to be proxied
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
             return 0;
         }
     }
-    return __init_wizard();
+
+    if (options->recipe == NULL) {
+        fprintf(stderr, "bake: no recipe provided\n");
+        __print_help();
+        return -1;
+    }
+
+    header = __format_header(options->recipe->project.name, options->platform, options->architecture);
+    footer = __format_footer("");
+    if (footer == NULL) {
+        fprintf(stderr, "bake: failed to allocate memory for build footer\n");
+        return -1;
+    }
+
+    // setup the build log box
+    vlog_start(stdout, header, footer, 6);
+
+    // 0+1 are informational
+    vlog_content_set_index(0);
+    vlog_content_set_prefix("pkg-env");
+
+    vlog_content_set_index(1);
+    vlog_content_set_prefix("");
+
+    vlog_content_set_index(2);
+    vlog_content_set_prefix("prepare");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    vlog_content_set_index(3);
+    vlog_content_set_prefix("source");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    vlog_content_set_index(4);
+    vlog_content_set_prefix("build");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    vlog_content_set_index(5);
+    vlog_content_set_prefix("pack");
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+
+    // use 2 for initial information (prepare)
+    vlog_content_set_index(2);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+
+cleanup:
+    vlog_refresh(stdout);
+    vlog_end();
+    return 0;
 }

@@ -32,6 +32,7 @@ extern int init_main(int argc, char** argv, char** envp, struct bake_command_opt
 extern int fetch_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int run_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int remote_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 
 static struct command_handler {
     char* name;
@@ -39,10 +40,11 @@ static struct command_handler {
 };
 
 static struct command_handler g_commands[] = {
-    { "init",     init_main },
-    { "fetch",    fetch_main },
-    { "build",    run_main },
-    { "clean",    clean_main }
+    { "init",   init_main },
+    { "fetch",  fetch_main },
+    { "build",  run_main },
+    { "clean",  clean_main },
+    { "remote", remote_main }
 };
 
 static void __print_help(void)
@@ -54,10 +56,15 @@ static void __print_help(void)
     printf("  recipe.yaml\n");
     printf("\n");
     printf("Commands:\n");
-    printf("  init        initializes a new recipe in the current directory\n");
-    printf("  fetch       refreshes/fetches all ingredients\n");
-    printf("  build       runs all recipe steps that have not already been completed\n");
+    printf("  build\n");
+    printf("              builds the provided (or inferred) bake recipe\n");
+    printf("  remote {init, build, resume}\n");
+    printf("              used for building recipes remotely for any given configured\n");
+    printf("              build server, parallel builds can be initiated for multiple\n");
+    printf("              architectures by using the --archs switch\n");
     printf("  clean       cleanup all build and intermediate directories\n");
+    printf("  fetch       refreshes/fetches all ingredients\n");
+    printf("  init        initializes a new recipe in the current directory\n");
     printf("\n");
     printf("Options:\n");
     printf("  -cc, --cross-compile\n");

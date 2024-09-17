@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,12 +14,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
- * Package System TODOs:
- * - autotools backend
- * - reuse zstd context for improved performance
- * Application System TODOs:
- * - app commands
- * - served system
  */
 
 #include <errno.h>

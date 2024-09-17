@@ -22,66 +22,123 @@
 
 #include <errno.h>
 #include <chef/dirs.h>
-#include <chef/list.h>
 #include <chef/platform.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h>
-#include <vlog.h>
 
+#include "chef-config.h"
 #include "commands.h"
+
+#define __DEFAULT_LOCAL_CONNECTION_STRING "unix:/run/chef/waiterd/api"
 
 static void __print_help(void)
 {
-    printf("Usage: bake remote <command> RECIPE [options]\n");
+    printf("Usage: bake remote init [options]\n");
     printf("  Remote can be used to execute recipes remotely for a configured\n");
     printf("  build-server. It will connect to the configured waiterd instance in\n");
     printf("  the configuration file (bake.json)\n");
     printf("  If the connection is severed between the bake instance and the waiterd\n");
     printf("  instance, the build can be resumed from the bake instance by invoking\n");
     printf("  'bake remote resume <ID>'\n\n");
-    printf("  To see a full list of supported options for building, please execute\n");
-    printf("  'bake build --help'\n\n");
-    printf("Commands:\n");
-    printf("  init     go through the configuration wizard\n");
-    printf("  build    (default) executes a recipe remotely\n");
-    printf("  resume   resumes execution of a recipe running remotely\n");
-    printf("\n");
     printf("Options:\n");
+    printf("  -l,  --local\n");
+    printf("      Configures the default local connections for waiterd,\n");
+    printf("      this will only work if waiterd runs on the same machine\n");
+    printf("      with the same default setup\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
 }
 
-static void __cleanup_systems(int sig)
+static int __ask_yes_no_question(const char* question)
 {
-    // cleanup logging
-    vlog_cleanup();
+    char answer[3] = { 0 };
+    printf("%s (default=no) [Y/n] ", question);
+    if (fgets(answer, sizeof(answer), stdin) == NULL) {
+        return 0;
+    }
+    return answer[0] == 'Y';
+}
 
-    // Do a quick exit, which is recommended to do in signal handlers
-    // and use the signal as the exit code
-    _Exit(-sig);
+static char* __ask_question(const char* question, const char* default)
+{
+    char answer[512] = { 0 };
+    printf("%s (default=%s) [Y/n] ", question, default);
+    if (fgets(answer, sizeof(answer), stdin) == NULL) {
+        return 0;
+    }
+    return platform_strdup(&answer[0]);
+}
+
+static int __validate_connection_string(const char* connectionString)
+{
+
+}
+
+static int __write_configuration(const char* connectionString)
+{
+    printf("updating bake configuration\n");
 }
 
 static int __init_wizard(void)
 {
+    char* connectionString = NULL;
+    int   status;
+    
+    printf("Welcome to the remote build initialization wizard!\n");
+    printf("This will guide you through the neccessary setup to\n");
+    printf("enable remote builds on your local machine.\n");
+    printf("Before we get started, you must have a computer\n");
+    printf("setup with the waiterd/cookd software, and have their\n");
+    printf("connection strings ready.\n\n");
+    
+    connectionString = __ask_question(
+        "please enter the address of the waiterd daemon",
+        __DEFAULT_LOCAL_CONNECTION_STRING
+    );
+    if (__validate_connection_string(connectionString)) {
+        free(connectionString);
+        return -1;
+    }
 
+    status = __write_configuration(connectionString);
+    free(connectionString);
+    return status;
+}
+
+static int __write_local_configuration(void)
+{
+    return __write_configuration(__DEFAULT_LOCAL_CONNECTION_STRING);
 }
 
 int remote_init_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    int status;
+    int local = 0;
+    int i;
 
-    // catch CTRL-C
-    signal(SIGINT, __cleanup_systems);
+    // handle arguments specifically for init
+    for (i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "init")) {
+            i++;
+            break;
+        }
+    }
 
-    // handle individual commands
-    for (int i = 1; i < argc; i++) {
+    if (i < argc) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
             return 0;
         }
+
+        if (!strcmp(argv[i], "--version")) {
+            printf("bake: version " PROJECT_VER "\n");
+            return 0;
+        }
+    }
+
+    if (local) {
+        return __write_local_configuration();
     }
     return __init_wizard();
 }
