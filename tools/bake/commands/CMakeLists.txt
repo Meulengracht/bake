@@ -5,6 +5,10 @@ add_library(bake-commands STATIC
     fetch.c
     init.c
     recipe_specification.c
+    remote_build.c
+    remote_init.c
+    remote_resume.c
+    remote.c
 )
 
 target_include_directories(bake-commands PRIVATE ../include)

@@ -44,10 +44,6 @@ static void __print_help(void)
     printf("  'bake remote resume <ID>'\n\n");
     printf("  To see a full list of supported options for building, please execute\n");
     printf("  'bake build --help'\n\n");
-    printf("Commands:\n");
-    printf("  init     go through the configuration wizard\n");
-    printf("  build    (default) executes a recipe remotely\n");
-    printf("  resume   resumes execution of a recipe running remotely\n");
     printf("\n");
     printf("Options:\n");
     printf("  --version\n");
