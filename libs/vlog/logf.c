@@ -185,11 +185,6 @@ void vlog_initialize(enum vlog_level level)
     // once the user resizes the terminal
     signal(SIGWINCH, __winch_handler);
 #endif
-
-    // spawn the animator thread
-    if (thrd_create(&g_vlog.animator_tid, __animator_loop, NULL) != thrd_success) {
-        VLOG_ERROR("logv", "failed to spawn thread for animation\n");
-    }
 }
 
 static struct vlog_output* __get_output(FILE* handle)
@@ -393,6 +388,15 @@ void vlog_start(FILE* handle, const char* header, const char* footer, int conten
     g_vlog.lines = calloc(contentLineCount, sizeof(struct vlog_content_line));
     g_vlog.view_enabled = 1;
 
+    // must not already be started
+    if (!g_vlog.animator_running) {
+        // spawn the animator thread
+        if (thrd_create(&g_vlog.animator_tid, __animator_loop, NULL) != thrd_success) {
+            VLOG_ERROR("logv", "failed to spawn thread for animation\n");
+        }
+    }
+
+    // refresh view
     __refresh_view(output, 0);
 }
 

@@ -77,7 +77,7 @@ int main(int argc, char** argv)
     }
 
     // load config
-    status = waiterd_config_load(chef_dirs_root());
+    status = waiterd_config_load(chef_dirs_config());
     if (status) {
         fprintf(stderr, "waiterd: failed to load configuation\n");
         return -1;
