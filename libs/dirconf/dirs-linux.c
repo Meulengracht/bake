@@ -28,10 +28,15 @@
 
 static struct {
     uid_t       real_user;
+
+    // per-user
     const char* root;
     const char* fridge;
     const char* store;
     const char* kitchen;
+
+    // global
+    const char* config;
 } g_dirs = { 0, NULL, NULL, NULL, NULL };
 
 static int __directory_exists(
@@ -110,7 +115,7 @@ static uid_t __real_user(void)
     return ruid;
 }
 
-static int __ensure_chef_dirs(void)
+static int __ensure_chef_user_dirs(void)
 {
     struct {
         const char** path;
@@ -138,16 +143,41 @@ static int __ensure_chef_dirs(void)
     return 0;
 }
 
+static int __ensure_chef_global_dirs(void)
+{
+    struct {
+        const char** path;
+    } paths[] = {
+        { &g_dirs.config },
+        { NULL },
+    };
+    for (int i = 0; paths[i].path != NULL; i++) {
+        int         status;
+        const char* path = *paths[i].path;
+        
+        if (path == NULL) {
+            continue;
+        }
+
+        status = __mkdir_as(path, 0644, 0, 0);
+        if (status) {
+            VLOG_ERROR("dirs", "failed to create %s\n", path);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int __setup_root(void)
 {
-    VLOG_DEBUG("dirs", "DETECTED running as root, only chef_dirs_root() will be valid and return /etc/chef\n");
+    VLOG_DEBUG("dirs", "DETECTED running as root, only chef_dirs_config() will be valid\n");
 
-    g_dirs.root = "/etc/chef";
-    if (g_dirs.root == NULL) {
+    g_dirs.config = "/etc/chef";
+    if (g_dirs.config == NULL) {
         VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
         return -1;
     }
-    return __ensure_chef_dirs();
+    return __ensure_chef_global_dirs();
 }
 
 int chef_dirs_initialize(void)
@@ -176,7 +206,10 @@ int chef_dirs_initialize(void)
         VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
         return -1;
     }
-    return __ensure_chef_dirs();
+
+    g_dirs.config = "/etc/chef";
+
+    return __ensure_chef_user_dirs();
 }
 
 const char* chef_dirs_root(void)
@@ -216,6 +249,15 @@ const char* chef_dirs_kitchen(const char* uuid)
         return strpathcombine(g_dirs.kitchen, uuid);
     }
     return g_dirs.kitchen;
+}
+
+const char* chef_dirs_config(void)
+{
+    if (g_dirs.config == NULL) {
+        VLOG_ERROR("dirs", "chef_dirs_config() is not available\n");
+        return NULL;
+    }
+    return g_dirs.config;
 }
 
 int chef_dirs_ensure(const char* path)

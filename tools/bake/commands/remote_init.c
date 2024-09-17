@@ -61,10 +61,10 @@ static int __ask_yes_no_question(const char* question)
     return answer[0] == 'Y';
 }
 
-static char* __ask_question(const char* question, const char* default)
+static char* __ask_question(const char* question, const char* defaultAnswer)
 {
     char answer[512] = { 0 };
-    printf("%s (default=%s) [Y/n] ", question, default);
+    printf("%s (default=%s) [Y/n] ", question, defaultAnswer);
     if (fgets(answer, sizeof(answer), stdin) == NULL) {
         return 0;
     }
@@ -91,7 +91,11 @@ static int __init_wizard(void)
     printf("enable remote builds on your local machine.\n");
     printf("Before we get started, you must have a computer\n");
     printf("setup with the waiterd/cookd software, and have their\n");
-    printf("connection strings ready.\n\n");
+    printf("connection strings ready.\n");
+    printf("Examples:\n");
+    printf(" - unix:/my/path\n");
+    printf(" - inet4:192.6.4.1:9202\n");
+    printf("\n");
     
     connectionString = __ask_question(
         "please enter the address of the waiterd daemon",
