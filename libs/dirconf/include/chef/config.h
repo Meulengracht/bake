@@ -16,52 +16,39 @@
  * 
  */
 
-#ifndef __CHEF_DIRS_H__
-#define __CHEF_DIRS_H__
+#ifndef __CHEF_CONFIG_H__
+#define __CHEF_CONFIG_H__
 
-#include <stdio.h>
+struct chef_config_address {
+    const char*    type;
+    const char*    address;
+    unsigned short port;
+};
+
+// keep transparent to spare implementation details
+struct chef_config;
 
 /**
  * @brief 
  * 
  * @return int 
  */
-extern int chef_dirs_initialize(void);
-
-/**
- * @brief Returns the path to the root of the chef data directory.
- */
-extern const char* chef_dirs_root(void);
-
-/**
- * @brief
- */
-extern const char* chef_dirs_fridge(void);
-
-/**
- * @brief
- */
-extern const char* chef_dirs_store(void);
-
-/**
- * @brief
- */
-extern const char* chef_dirs_kitchen(const char* uuid);
-
-/**
- * @brief 
- */
-extern const char* chef_dirs_config(void);
-
-/**
- * @brief
- */
-extern int chef_dirs_ensure(const char* path);
+extern struct chef_config* chef_config_load(void);
 
 /**
  * @brief 
  * 
+ * @param config 
+ * @return int 
  */
-extern FILE* chef_dirs_contemporary_file(char** rpath);
+extern int chef_config_save(struct chef_config* config);
+
+/**
+ * @brief 
+ * 
+ * @param address 
+ */
+extern void chef_config_remote_address(struct chef_config* config, struct chef_config_address* address);
+extern void chef_config_set_remote_address(struct chef_config* config, struct chef_config_address* address);
 
 #endif //!__CHEF_DIRS_H__

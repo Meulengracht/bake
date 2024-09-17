@@ -33,7 +33,7 @@ extern int remote_init_main(int argc, char** argv, char** envp, struct bake_comm
 extern int remote_build_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 
-static struct command_handler {
+struct command_handler {
     char* name;
     int (*handler)(int argc, char** argv, char** envp, struct bake_command_options* options);
 };
