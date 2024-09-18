@@ -145,7 +145,7 @@ static int __write_configuration(char* connectionString)
     }
 
     printf("updating bake configuration\n");
-    config = chef_config_load();
+    config = chef_config_load(chef_dirs_config());
     if (config == NULL) {
         fprintf(stderr, "bake: failed to load configuration\n");
         return -1;

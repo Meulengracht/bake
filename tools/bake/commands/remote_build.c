@@ -25,6 +25,7 @@
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <ctype.h>
+#include <gracht/client.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,8 @@
 #include <vlog.h>
 
 #include "commands.h"
+
+extern int remote_client_create(gracht_client_t** clientOut);
 
 static void __print_help(void)
 {
@@ -96,9 +99,10 @@ static char* __format_footer(const char* waiterdAddress)
 
 int remote_build_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    char*                   header;
-    char*                   footer;
-    int                     status;
+    gracht_client_t* client = NULL;
+    char*            header;
+    char*            footer;
+    int              status;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -129,7 +133,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
 
     // 0+1 are informational
     vlog_content_set_index(0);
-    vlog_content_set_prefix("pkg-env");
+    vlog_content_set_prefix("connect");
 
     vlog_content_set_index(1);
     vlog_content_set_prefix("");
@@ -150,12 +154,25 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     vlog_content_set_prefix("pack");
     vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
 
-    // use 2 for initial information (prepare)
-    vlog_content_set_index(2);
+    // The first step is connection
+    vlog_content_set_index(0);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+    
+    VLOG_TRACE("bake", "connecting to waiterd\n");
+    status = remote_client_create(&client);
+    if (status) {
+        VLOG_ERROR("bake", "failed to connect to the configured waiterd instance\n");
+        goto cleanup;
+    }
+
+    // prepare the source for sending
+    // https://bashupload.com/
+
+    // initiate all the build calls
 
 cleanup:
+    gracht_client_shutdown(client);
     vlog_refresh(stdout);
     vlog_end();
-    return 0;
+    return status;
 }
