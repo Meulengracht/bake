@@ -33,7 +33,7 @@ struct chef_config;
  * 
  * @return int 
  */
-extern struct chef_config* chef_config_load(void);
+extern struct chef_config* chef_config_load(const char* confdir);
 
 /**
  * @brief 
