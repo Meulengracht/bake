@@ -268,7 +268,7 @@ static char* __get_unsafe_infoname(struct chef_package* package, struct chef_ver
     return name;
 }
 
-static char* __get_safe_infoname(char* publisher, struct chef_package* package, struct chef_version* version)
+static char* __get_safe_infoname(const char* publisher, struct chef_package* package, struct chef_version* version)
 {
     char* name;
 
