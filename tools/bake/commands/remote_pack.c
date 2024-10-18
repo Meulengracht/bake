@@ -16,10 +16,34 @@
  * 
  */
 
-int remote_pack(const char* path)
+#include <chef/platform.h>
+#include <stdio.h>
+#include <vlog.h>
+
+static void __output_handler(const char* line, enum platform_spawn_output_type type) 
 {
-    // load any ignore files
-    // .gitignore
+    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
+        VLOG_DEBUG("pack", line);
+    } else {
+        VLOG_ERROR("pack", line);
+    }
+}
+
+int remote_pack(const char* path, const char* const* envp)
+{
+    int  status;
+    char args[PATH_MAX];
+
+    // prepare arguments
+    snprintf(&args[0], sizeof(args), "--git-ignore %s", path);
 
     // create a .vafs archive over the path
+    status = platform_spawn(
+        "mkvafs",
+        &args[0],
+        envp,
+        &(struct platform_spawn_options) {
+            .output_handler = __output_handler
+        }
+    );
 }

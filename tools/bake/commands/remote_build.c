@@ -165,13 +165,22 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
         goto cleanup;
     }
 
+    // first step done
+    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+
     // prepare the source for sending
+    vlog_content_set_index(2);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+
     // https://bashupload.com/
 
     // initiate all the build calls
 
 cleanup:
     gracht_client_shutdown(client);
+    if (status) {
+        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+    }
     vlog_refresh(stdout);
     vlog_end();
     return status;
