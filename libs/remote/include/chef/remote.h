@@ -16,52 +16,29 @@
  * 
  */
 
-#ifndef __CHEF_DIRS_H__
-#define __CHEF_DIRS_H__
+#ifndef __CHEF_REMOTE_H__
+#define __CHEF_REMOTE_H__
 
-#include <stdio.h>
-
-/**
- * @brief 
- * 
- * @return int 
- */
-extern int chef_dirs_initialize(void);
-
-/**
- * @brief Returns the path to the root of the chef data directory.
- */
-extern const char* chef_dirs_root(void);
-
-/**
- * @brief
- */
-extern const char* chef_dirs_fridge(void);
-
-/**
- * @brief
- */
-extern const char* chef_dirs_store(void);
-
-/**
- * @brief
- */
-extern const char* chef_dirs_kitchen(const char* uuid);
+#include <gracht/client.h>
 
 /**
  * @brief 
  */
-extern const char* chef_dirs_config(void);
+extern int remote_wizard_init(void);
 
 /**
  * @brief
  */
-extern int chef_dirs_ensure(const char* path);
+extern int remote_local_init_default(void);
+
+/**
+ * @brief
+ */
+extern int remote_pack(const char* path, const char* const* envp, char** imagePath);
 
 /**
  * @brief 
- * 
  */
-extern FILE* chef_dirs_contemporary_file(const char* name, const char* ext, char** rpath);
+extern int remote_client_create(gracht_client_t** clientOut);
 
-#endif //!__CHEF_DIRS_H__
+#endif //!__CHEF_REMOTE_H__

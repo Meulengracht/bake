@@ -23,7 +23,7 @@
 
 static void __print_help(void)
 {
-    printf("Usage: waiterd [options]\n");
+    printf("Usage: cookd [options]\n");
     printf("\n");
     printf("Options:\n");
     printf("  -v\n");
@@ -77,7 +77,7 @@ int main(int argc, char** argv)
     }
 
     // add log file to vlog
-    debuglog = chef_dirs_contemporary_file(NULL);
+    debuglog = chef_dirs_contemporary_file("cookd", ".log", NULL);
     if (debuglog == NULL) {
         fprintf(stderr, "waiterd: failed to open log file\n");
         return -1;

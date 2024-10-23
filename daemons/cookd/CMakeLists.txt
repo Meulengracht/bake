@@ -5,6 +5,8 @@ set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 
 set (SRCS
     ${GENERATED_SRCS}
+    api.c
+    config.c
     main.c
 )
 

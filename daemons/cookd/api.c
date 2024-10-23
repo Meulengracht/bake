@@ -16,34 +16,15 @@
  * 
  */
 
-#include <chef/platform.h>
-#include <stdio.h>
+#include "chef_waiterd_cook_service_client.h"
 #include <vlog.h>
 
-static void __output_handler(const char* line, enum platform_spawn_output_type type) 
+void chef_waiterd_cook_event_update_request_invocation(gracht_client_t* client, const struct chef_cook_update_request* request)
 {
-    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_DEBUG("pack", line);
-    } else {
-        VLOG_ERROR("pack", line);
-    }
+
 }
 
-int remote_pack(const char* path, const char* const* envp)
+void chef_waiterd_cook_event_build_request_invocation(gracht_client_t* client, const struct chef_waiter_build_request* request)
 {
-    int  status;
-    char args[PATH_MAX];
 
-    // prepare arguments
-    snprintf(&args[0], sizeof(args), "--git-ignore %s", path);
-
-    // create a .vafs archive over the path
-    status = platform_spawn(
-        "mkvafs",
-        &args[0],
-        envp,
-        &(struct platform_spawn_options) {
-            .output_handler = __output_handler
-        }
-    );
 }

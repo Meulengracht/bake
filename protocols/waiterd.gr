@@ -9,11 +9,10 @@ import "types"
 namespace chef
 
 struct waiter_build_request {
-    string repository;
+    architecture arch;
+    string url;
     string patch;
     string recipe;
-    string part_or_step;
-    architecture arch;
 }
 
 service waiterd (44) {
