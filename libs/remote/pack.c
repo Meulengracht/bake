@@ -19,6 +19,7 @@
 #include <chef/platform.h>
 #include <chef/dirs.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <vlog.h>
 
 static void __output_handler(const char* line, enum platform_spawn_output_type type) 

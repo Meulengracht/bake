@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,11 +28,8 @@
 
 #define __BU_URL_BASE "https://bashupload.com/"
 
-struct pack_response {
-    const char* url;
-};
-
 struct upload_context {
+    const char* download_url;
     size_t bytes_downloaded;
     size_t bytes_total;
 };
@@ -92,7 +89,30 @@ static int __upload_progress_callback(void *clientp,
     return 0;
 }
 
-static int __upload_file(const char* filePath, struct pack_response* context, struct upload_context* uploadContext)
+static int __parse_response(const char* response, struct upload_context* uploadContext)
+{
+    // Example response:
+    // Uploaded 1 file, 7 bytes
+    //
+    // wget https://bashupload.com/4dcXO/file.txt
+    
+    char* needle = strstr(response, "wget");
+    if (needle == NULL) {
+        fprintf(stderr, "__parse_response: could not find 'wget' in %s\n", response);
+        return -1;
+    }
+
+    // skip 'wget '
+    needle += 5;
+    uploadContext->download_url = platform_strdup(needle);
+    if (uploadContext->download_url == NULL) {
+        fprintf(stderr, "__parse_response: failed to allocate memory for %s\n", needle);
+        return -1;
+    }
+    return 0;
+}
+
+static int __upload_file(const char* filePath, struct upload_context* uploadContext)
 {
     struct chef_request* request;
     FILE*                file;
@@ -156,7 +176,7 @@ static int __upload_file(const char* filePath, struct pack_response* context, st
         goto cleanup;
     }
 
-    code = curl_easy_setopt(request->curl, CURLOPT_URL, context->url);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, __BU_URL_BASE);
     if (code != CURLE_OK) {
         fprintf(stderr, "__upload_file: failed to set url [%s]\n", request->error);
         goto cleanup;
@@ -174,7 +194,7 @@ static int __upload_file(const char* filePath, struct pack_response* context, st
         status = -1;
     }
 
-    status = __parse_pack_response(request->response, context);
+    status = __parse_response(request->response, uploadContext);
 
 cleanup:
     if (file) {
@@ -186,18 +206,15 @@ cleanup:
 
 int chef_client_bu_upload(const char* path, char** downloadUrl)
 {
-    struct pack_response  packResponse = { 0 };
     struct upload_context uploadContext = { 0 };
     int                   status;
 
-    // print initial banner
     printf("initiating upload of %s", path);
     fflush(stdout);
 
-    // start download
-    status = __upload_file(path, &packResponse, &uploadContext);
+    status = __upload_file(path, &uploadContext);
     if (status != 0) {
-        fprintf(stderr, "chefclient_pack_download: failed to download package [%s]\n", strerror(errno));
+        fprintf(stderr, "chef_client_bu_upload: failed to upload file [%s]\n", strerror(errno));
         return status;
     }
     return 0;

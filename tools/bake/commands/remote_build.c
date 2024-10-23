@@ -166,7 +166,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     // prepare the source for sending
     vlog_content_set_index(1);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
-    status = remote_pack(options->cwd, envp, &imagePath);
+    status = remote_pack(options->cwd, (const char* const*)envp, &imagePath);
     if (status) {
         goto cleanup;
     }
@@ -180,7 +180,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     // TODO: do in loop for each arch
     status = chef_waiterd_build(client, &msg, 
         &(struct chef_waiter_build_request) {
-        
+            .url = imagePath
         }
     );
     gracht_client_await(client, &msg, GRACHT_MESSAGE_BLOCK);
