@@ -16,52 +16,12 @@
  * 
  */
 
-#ifndef __CHEF_DIRS_H__
-#define __CHEF_DIRS_H__
-
-#include <stdio.h>
-
-/**
- * @brief 
- * 
- * @return int 
- */
-extern int chef_dirs_initialize(void);
-
-/**
- * @brief Returns the path to the root of the chef data directory.
- */
-extern const char* chef_dirs_root(void);
+#ifndef __CHEF_CLIENT_STORAGE_H__
+#define __CHEF_CLIENT_STORAGE_H__
 
 /**
  * @brief
  */
-extern const char* chef_dirs_fridge(void);
+extern int chef_client_bu_upload(const char* path, char** downloadUrl);
 
-/**
- * @brief
- */
-extern const char* chef_dirs_store(void);
-
-/**
- * @brief
- */
-extern const char* chef_dirs_kitchen(const char* uuid);
-
-/**
- * @brief 
- */
-extern const char* chef_dirs_config(void);
-
-/**
- * @brief
- */
-extern int chef_dirs_ensure(const char* path);
-
-/**
- * @brief 
- * 
- */
-extern FILE* chef_dirs_contemporary_file(const char* name, const char* ext, char** rpath);
-
-#endif //!__CHEF_DIRS_H__
+#endif //!__CHEF_CLIENT_STORAGE_H__

@@ -9,10 +9,9 @@ import "types"
 namespace chef
 
 struct cook_build_request {
-    string repository;
+    string url;
     string patch;
     string recipe;
-    string part_or_step;
 }
 
 service cookd (43) {

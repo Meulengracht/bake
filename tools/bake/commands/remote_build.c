@@ -24,17 +24,17 @@
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
+#include <chef/remote.h>
 #include <ctype.h>
-#include <gracht/client.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
 #include <vlog.h>
 
-#include "commands.h"
+#include "chef_waiterd_service_client.h"
 
-extern int remote_client_create(gracht_client_t** clientOut);
+#include "commands.h"
 
 static void __print_help(void)
 {
@@ -73,7 +73,7 @@ static void __cleanup_systems(int sig)
 static char* __add_build_log(void)
 {
     char* path;
-    FILE* stream = chef_dirs_contemporary_file(&path);
+    FILE* stream = chef_dirs_contemporary_file("bake-build", ".log", &path);
     if (stream == NULL) {
         return NULL;
     }
@@ -99,7 +99,9 @@ static char* __format_footer(const char* waiterdAddress)
 
 int remote_build_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
+    struct gracht_message_context msg;
     gracht_client_t* client = NULL;
+    char*            imagePath = NULL;
     char*            header;
     char*            footer;
     int              status;
@@ -136,22 +138,15 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     vlog_content_set_prefix("connect");
 
     vlog_content_set_index(1);
-    vlog_content_set_prefix("");
-
-    vlog_content_set_index(2);
     vlog_content_set_prefix("prepare");
     vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
 
+    vlog_content_set_index(2);
+    vlog_content_set_prefix("");
+
+    // TODO: support multiple archs
     vlog_content_set_index(3);
-    vlog_content_set_prefix("source");
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-
-    vlog_content_set_index(4);
-    vlog_content_set_prefix("build");
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-
-    vlog_content_set_index(5);
-    vlog_content_set_prefix("pack");
+    vlog_content_set_prefix(options->architecture);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
 
     // The first step is connection
@@ -169,12 +164,27 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
 
     // prepare the source for sending
-    vlog_content_set_index(2);
+    vlog_content_set_index(1);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+    status = remote_pack(options->cwd, envp, &imagePath);
+    if (status) {
+        goto cleanup;
+    }
 
-    // https://bashupload.com/
+    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
 
     // initiate all the build calls
+    vlog_content_set_index(3);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+
+    // TODO: do in loop for each arch
+    status = chef_waiterd_build(client, &msg, 
+        &(struct chef_waiter_build_request) {
+        
+        }
+    );
+    gracht_client_await(client, &msg, GRACHT_MESSAGE_BLOCK);
+    chef_waiterd_build_result(client, &msg, NULL, NULL, 0);
 
 cleanup:
     gracht_client_shutdown(client);
@@ -183,5 +193,6 @@ cleanup:
     }
     vlog_refresh(stdout);
     vlog_end();
+    free(imagePath);
     return status;
 }

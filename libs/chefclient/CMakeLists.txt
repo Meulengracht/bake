@@ -7,6 +7,8 @@ add_library(chef-client STATIC
     oauth/devicecode.c
     oauth/oauth.c
 
+    storage/bashupload.c
+
     account.c
     client.c
     download.c
