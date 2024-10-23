@@ -9,7 +9,7 @@ import "types"
 namespace chef
 
 struct waiter_build_request {
-    architecture arch;
+    build_architecture arch;
     string url;
     string patch;
     string recipe;
@@ -22,7 +22,7 @@ service waiterd (44) {
 }
 
 struct cook_ready_event {
-    architecture arch;
+    build_architecture arch;
 }
 
 struct cook_update_event {

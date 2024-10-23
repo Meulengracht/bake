@@ -5,7 +5,7 @@
 
 namespace chef
 
-enum architecture {
+enum build_architecture {
     X86,
     X64,
     ARMHF,
