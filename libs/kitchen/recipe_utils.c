@@ -73,7 +73,18 @@ const char* recipe_find_platform_toolchain(struct recipe* recipe, const char* pl
     return p->toolchain;
 }
 
-static int __determine_recipe_target(struct recipe* recipe, const char** platformOverride, const char** archOverride)
+static int __add_string_to_list(const char* str, struct list* out)
+{
+    struct list_item_string* item = malloc(sizeof(struct list_item_string));
+    if (item == NULL) {
+        return -1;
+    }
+    item->value = str;
+    list_add(out, &item->list_header);
+    return 0;
+}
+
+static int __determine_recipe_target(struct recipe* recipe, const char** platformOverride, struct list* archOverrides)
 {
     struct recipe_platform* platform = NULL;
     struct list_item*       i;
@@ -100,42 +111,58 @@ static int __determine_recipe_target(struct recipe* recipe, const char** platfor
         *platformOverride = platform->name;
     }
 
-    // default to host architecture
-    if (*archOverride == NULL) {
-        *archOverride = CHEF_ARCHITECTURE_STR;
-    }
-
-    // if there are archs specified, then check against the override
+    // if no arch constraints are set, then we can safely skip the next check.
     if (platform->archs.count == 0) {
         return 0;
     }
 
-    list_foreach(&platform->archs, i) {
-        if (strcmp(((struct list_item_string*)i)->value, *archOverride) == 0) {
-            return 0;
+    // if there are archs specified, then check against the override
+    // verify each arch override, in a nice O(n^m) fashion.
+    list_foreach(archOverrides, i) {
+        const char*       arch = ((struct list_item_string*)i)->value;
+        struct list_item* j;
+        int               resolved = 0;
+        list_foreach(&platform->archs, j) {
+            if (strcmp(((struct list_item_string*)j)->value, arch) == 0) {
+                resolved = 1;
+                break;
+            }
+        }
+
+        if (!resolved) {
+            VLOG_ERROR("recipe", "architecture target %s was not supported for target platform\n", arch);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int recipe_ensure_target(struct recipe* recipe, const char** expectedPlatform, struct list* expectedArchs)
+{
+    // if no archs are provided, we can immediately default to the
+    // host arch, since we cannot guess a cross-compile target
+    if (expectedArchs->count == 0) {
+        int status = __add_string_to_list(CHEF_ARCHITECTURE_STR, expectedArchs);
+        if (status) {
+            VLOG_ERROR("recipe", "failed to allocate memory for architecture target\n");
+            return status;
         }
     }
 
-    VLOG_ERROR("recipe", "architecture target %s was not supported for target platform, use -cc switch to select another\n", *archOverride);
-    return -1;
-}
+    // if no platform is set, we take the first, so do not immediately
+    // override that here, even if not provided immediately.
 
-int recipe_validate_target(struct recipe* recipe, const char** expectedPlatform, const char** expectedArch)
-{
-    // First of all, let's check if there are any constraints provided by
+    // next, let's check if there are any constraints provided by
     // recipe in terms of platform/arch setup
     if (recipe->platforms.count > 0) {
-        return __determine_recipe_target(recipe, expectedPlatform, expectedArch);
+        return __determine_recipe_target(recipe, expectedPlatform, expectedArchs);
     }
 
-    // No constraints, we simply just check overrides
+    // if no platform is still not set, then we can default to host. this will
+    // happen if no cross-compilation setup is set in the recipe.
     if (*expectedPlatform == NULL) {
         // no platform override, we default to host
         *expectedPlatform = CHEF_PLATFORM_STR;
-    }
-    if (*expectedArch == NULL) {
-        // no arch override, we default to host
-        *expectedArch = CHEF_ARCHITECTURE_STR;
     }
     return 0;
 }

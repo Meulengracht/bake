@@ -38,7 +38,7 @@
 
 static void __print_help(void)
 {
-    printf("Usage: bake remote <command> RECIPE [options]\n");
+    printf("Usage: bake remote build RECIPE [options]\n");
     printf("  Remote can be used to execute recipes remotely for a configured\n");
     printf("  build-server. It will connect to the configured waiterd instance in\n");
     printf("  the configuration file (bake.json)\n");
@@ -97,14 +97,129 @@ static char* __format_footer(const char* waiterdAddress)
     return platform_strdup(&tmp[0]);
 }
 
+static enum chef_build_architecture __parse_protocol_arch(const char* arch)
+{
+    if (strcmp(arch, "i386") == 0) {
+        return CHEF_BUILD_ARCHITECTURE_X86;
+    } else if (strcmp(arch, "amd64") == 0) {
+        return CHEF_BUILD_ARCHITECTURE_X64;
+    } else if (strcmp(arch, "armhf") == 0) {
+        return CHEF_BUILD_ARCHITECTURE_ARMHF;
+    } else if (strcmp(arch, "arm64") == 0) {
+        return CHEF_BUILD_ARCHITECTURE_ARM64;
+    } else if (strcmp(arch, "riscv64") == 0) {
+        return CHEF_BUILD_ARCHITECTURE_RISCV64;
+    }
+    return CHEF_BUILD_ARCHITECTURE_X86;
+}
+
+struct __build {
+    struct list_item list_header;
+    int              log_index;
+    char             id[64];
+    char             arch[16];
+};
+
+static int __add_build(const char* arch, const char* id, int index, struct list* list)
+{
+    struct __build* item = calloc(1, sizeof(struct __build));
+    if (item == NULL) {
+        return -1;
+    }
+    item->log_index = index;
+    strncpy(&item->id[0], id, sizeof(item->id));
+    strncpy(&item->arch[0], arch, sizeof(item->arch));
+    list_add(list, &item->list_header);
+    return 0;
+}
+
+static int __queue_builds(int logIndexStart, gracht_client_t* client, const char* imageUrl, struct list* builds, struct bake_command_options* options)
+{
+    struct gracht_message_context  storage[6];
+    struct gracht_message_context* msgs[6] = { NULL };
+    struct list_item*              li;
+    int                            logIndex;
+    int                            status;
+    int                            storageIndex = 0;
+    int                            msgIndex = 0;
+
+    logIndex = logIndexStart;
+    list_foreach(&options->architectures, li) {
+        vlog_content_set_index(logIndex);
+        VLOG_TRACE("remote", "requesting build...\n");
+        status = chef_waiterd_build(client, &storage[storageIndex], 
+            &(struct chef_waiter_build_request) {
+                .arch = __parse_protocol_arch(((struct list_item_string*)li)->value),
+                .url = imageUrl,
+                .recipe = options->recipe_path
+            }
+        );
+        if (status) {
+            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+        } else {
+            msgs[msgIndex++] = &storage[storageIndex++];
+        }
+        logIndex++;
+    }
+    
+    status = gracht_client_await_multiple(client, &msgs[0], msgIndex, GRACHT_AWAIT_ALL);
+    if (status) {
+        VLOG_ERROR("", "");
+        return -1;
+    }
+
+    logIndex = logIndexStart;
+    list_foreach(&options->architectures, li) {
+        char                   id[64] = { 0 };
+        enum chef_queue_status qstatus;
+        
+        vlog_content_set_index(logIndex);
+        status = chef_waiterd_build_result(client, &msg, &qstatus, &id[0], sizeof(id));
+        if (status) {
+            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            return -1;
+        }
+        
+        switch (qstatus) {
+            case CHEF_QUEUE_STATUS_NO_COOK_FOR_ARCHITECTURE: {
+                VLOG_ERROR("remote", "architecture unsupported\n", &id[0]);
+                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            } break;
+            case CHEF_QUEUE_STATUS_INTERNAL_ERROR: {
+                VLOG_ERROR("remote", "internal build error\n");
+                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            } break;
+            case CHEF_QUEUE_STATUS_SUCCESS: {
+                status = __add_build(((struct list_item_string*)li)->value, &id[0], i, builds);
+                if (status) {
+                    VLOG_ERROR("remote", "failed to track build id: %s\n", &id[0]);
+                    break;
+                }
+                VLOG_TRACE("remote", "build id: %s\n", &id[0]);
+                vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+            }
+        }
+        i++;
+    }
+    return 0;
+}
+
+static int __wait_for_builds(gracht_client_t* client, struct list* builds)
+{
+
+}
+
 int remote_build_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    struct gracht_message_context msg;
-    gracht_client_t* client = NULL;
-    char*            imagePath = NULL;
-    char*            header;
-    char*            footer;
-    int              status;
+    gracht_client_t*  client = NULL;
+    struct list_item* li;
+    struct list       builds = { 0 };
+    char*             imagePath = NULL;
+    char*             dlUrl = NULL;
+    char*             header;
+    char*             footer;
+    int               status;
+    int               i;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -123,7 +238,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
         return -1;
     }
 
-    header = __format_header(options->recipe->project.name, options->platform, options->architecture);
+    header = __format_header(options->recipe->project.name, options->platform, "remote");
     footer = __format_footer("");
     if (footer == NULL) {
         fprintf(stderr, "bake: failed to allocate memory for build footer\n");
@@ -131,7 +246,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     }
 
     // setup the build log box
-    vlog_start(stdout, header, footer, 6);
+    vlog_start(stdout , header, footer, 3 + options->architectures.count);
 
     // 0+1 are informational
     vlog_content_set_index(0);
@@ -144,10 +259,12 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     vlog_content_set_index(2);
     vlog_content_set_prefix("");
 
-    // TODO: support multiple archs
-    vlog_content_set_index(3);
-    vlog_content_set_prefix(options->architecture);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+    i = 3;
+    list_foreach(&options->architectures, li) {
+        vlog_content_set_index(i++);
+        vlog_content_set_prefix(((struct list_item_string*)li)->value);
+        vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+    }
 
     // The first step is connection
     vlog_content_set_index(0);
@@ -171,20 +288,21 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
         goto cleanup;
     }
 
+    status = remote_upload(imagePath, &dlUrl);
+    if (status) {
+        goto cleanup;
+    }
+
     vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
 
     // initiate all the build calls
-    vlog_content_set_index(3);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+    status = __queue_builds(3, client, dlUrl, &builds, options);
+    if (status) {
+        goto cleanup;
+    }
 
-    // TODO: do in loop for each arch
-    status = chef_waiterd_build(client, &msg, 
-        &(struct chef_waiter_build_request) {
-            .url = imagePath
-        }
-    );
-    gracht_client_await(client, &msg, GRACHT_MESSAGE_BLOCK);
-    chef_waiterd_build_result(client, &msg, NULL, NULL, 0);
+    // poll queued builds
+    status = __wait_for_builds(client, &builds);
 
 cleanup:
     gracht_client_shutdown(client);
@@ -194,5 +312,6 @@ cleanup:
     vlog_refresh(stdout);
     vlog_end();
     free(imagePath);
+    free(dlUrl);
     return status;
 }

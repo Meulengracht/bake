@@ -265,13 +265,10 @@ int main(int argc, char** argv, char** envp)
 
         if (argc > 2) {
             for (int i = 2; i < argc; i++) {
-                if (!strncmp(argv[i], "-cc", 3) || !strncmp(argv[i], "--cross-compile", 15)) {
-                    // THIS ALLOCS MEMORY, WE NEED TO HANDLE THIS
-                    status = __parse_cc_switch(argv[i], &options.platform, &options.architecture);
-                    if (status) {
-                        fprintf(stderr, "bake: invalid format: %s\n", argv[i]);
-                        return status;
-                    }
+                if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--platform", 10, NULL, &options.platform)) {
+                    continue;
+                } else if (!__parse_stringv_switch(argv, argc, &i, "-a", 2, "--archs", 7, NULL, &options.architectures)) {
+                    continue;
                 } else if (!strncmp(argv[i], "-v", 2)) {
                     int li = 1;
                     while (argv[i][li++] == 'v') {
@@ -310,7 +307,7 @@ int main(int argc, char** argv, char** envp)
                 return status;
             }
 
-            status = recipe_validate_target(options.recipe, &options.platform, &options.architecture);
+            status = recipe_ensure_target(options.recipe, &options.platform, &options.architectures);
             if (status) {
                 return -1;
             }

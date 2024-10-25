@@ -6,11 +6,11 @@
 namespace chef
 
 enum build_architecture {
-    X86,
-    X64,
-    ARMHF,
-    ARM64,
-    RISCV64
+    X86 = 0x1,
+    X64 = 0x2,
+    ARMHF = 0x4,
+    ARM64 = 0x8,
+    RISCV64 = 0x10
 }
 
 enum build_status {

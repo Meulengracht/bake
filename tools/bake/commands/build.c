@@ -259,6 +259,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     char*                        logPath;
     char*                        header;
     char*                        footer;
+    const char*                  arch;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -279,13 +280,21 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         return -1;
     }
 
+    if (options->architectures.count > 1) {
+        fprintf(stderr, "bake: multiple architectures are not supported\n");
+        return -1;
+    }
+
     logPath = __add_build_log();
     if (logPath == NULL) {
         fprintf(stderr, "bake: failed to open build log\n");
         return -1;
     }
 
-    header = __format_header(options->recipe->project.name, options->platform, options->architecture);
+    // get the architecture from the list
+    arch = ((struct list_item_string*)options->architectures.head)->value;
+
+    header = __format_header(options->recipe->project.name, options->platform, arch);
     footer = __format_footer(logPath);
     free(logPath);
     if (footer == NULL) {
@@ -301,7 +310,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     }
     atexit(chefclient_cleanup);
 
-    status = fridge_initialize(options->platform, options->architecture);
+    status = fridge_initialize(options->platform, arch);
     if (status != 0) {
         VLOG_ERROR("bake", "failed to initialize fridge\n");
         return -1;
@@ -339,7 +348,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
 
     // debug target information
-    VLOG_DEBUG("bake", "platform=%s, architecture=%s\n", options->platform, options->architecture);
+    VLOG_DEBUG("bake", "platform=%s, architecture=%s\n", options->platform, arch);
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
         .recipe_path = options->recipe_path,
@@ -347,14 +356,14 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         .project_path = options->cwd,
         .pkg_environment = NULL,
         .target_platform = options->platform,
-        .target_architecture = options->architecture,
+        .target_architecture = arch,
     }, &g_kitchen);
     if (status) {
         VLOG_ERROR("bake", "failed to initialize kitchen: %s\n", strerror(errno));
         return -1;
     }
 
-    status = __prep_ingredients(options->recipe, options->platform, options->architecture, &setupOptions);
+    status = __prep_ingredients(options->recipe, options->platform, arch, &setupOptions);
     if (status) {
         VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
         goto cleanup;

@@ -16,34 +16,29 @@
  * 
  */
 
-#ifndef __CHEF_REMOTE_H__
-#define __CHEF_REMOTE_H__
+#include <chef/storage/bashupload.h>
+#include <chef/client.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <vlog.h>
 
-#include <gracht/client.h>
+int remote_upload(const char* path, char** downloadUrl)
+{
+    int status;
 
-/**
- * @brief 
- */
-extern int remote_wizard_init(void);
+    status = chefclient_initialize();
+    if (status != 0) {
+        fprintf(stderr, "remote_upload: failed to initialize chef client\n");
+        return -1;
+    }
 
-/**
- * @brief
- */
-extern int remote_local_init_default(void);
+    status = chef_client_bu_upload(path, downloadUrl);
+    if (status) {
+        fprintf(stderr, "remote_upload: failed to upload %s\n", path);
+        chefclient_cleanup();
+        return status;
+    }
 
-/**
- * @brief
- */
-extern int remote_pack(const char* path, const char* const* envp, char** imagePath);
-
-/**
- * @brief
- */
-extern int remote_upload(const char* path, char** downloadUrl);
-
-/**
- * @brief 
- */
-extern int remote_client_create(gracht_client_t** clientOut);
-
-#endif //!__CHEF_REMOTE_H__
+    chefclient_cleanup();
+    return 0;
+}

@@ -29,7 +29,10 @@
 #define __BU_URL_BASE "https://bashupload.com/"
 
 struct upload_context {
-    const char* download_url;
+    // result of upload
+    char*  download_url;
+
+    // upload status
     size_t bytes_downloaded;
     size_t bytes_total;
 };
@@ -120,14 +123,12 @@ static int __upload_file(const char* filePath, struct upload_context* uploadCont
     CURLcode             code;
     long                 httpCode;
 
-    // initialize a curl session
     request = chef_request_new(1, 0);
     if (!request) {
         fprintf(stderr, "__upload_file: failed to create request\n");
         return -1;
     }
 
-    // initialize the output file
     file = fopen(filePath, "rb");
     if (!file) {
         fprintf(stderr, "__upload_file: failed to open file [%s]\n", strerror(errno));
@@ -217,5 +218,8 @@ int chef_client_bu_upload(const char* path, char** downloadUrl)
         fprintf(stderr, "chef_client_bu_upload: failed to upload file [%s]\n", strerror(errno));
         return status;
     }
+
+    // okay success, let us set the out
+    *downloadUrl = uploadContext.download_url;
     return 0;
 }

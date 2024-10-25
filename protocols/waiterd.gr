@@ -10,6 +10,7 @@ namespace chef
 
 struct waiter_build_request {
     build_architecture arch;
+    string platform;
     string url;
     string patch;
     string recipe;
@@ -22,7 +23,7 @@ service waiterd (44) {
 }
 
 struct cook_ready_event {
-    build_architecture arch;
+    build_architecture archs;
 }
 
 struct cook_update_event {
