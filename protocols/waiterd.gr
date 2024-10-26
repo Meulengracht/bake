@@ -16,9 +16,14 @@ struct waiter_build_request {
     string recipe;
 }
 
+struct waiter_status_response {
+    build_architecture arch;
+    build_status status;
+}
+
 service waiterd (44) {
     func build(waiter_build_request request) : (queue_status status, string id) = 1;
-    func status(string id) : (build_status status) = 2;
+    func status(string id) : (waiter_status_response response) = 2;
     func artifact(string id, artifact_type type) : (string link) = 3;
 }
 

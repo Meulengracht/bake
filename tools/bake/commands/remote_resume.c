@@ -24,6 +24,7 @@
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
+#include <chef/remote.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,11 +32,13 @@
 #include <signal.h>
 #include <vlog.h>
 
+#include "chef_waiterd_service_client.h"
+
 #include "commands.h"
 
 static void __print_help(void)
 {
-    printf("Usage: bake remote <command> RECIPE [options]\n");
+    printf("Usage: bake remote resume --ids=<list-of-ids> [options]\n");
     printf("  Remote can be used to execute recipes remotely for a configured\n");
     printf("  build-server. It will connect to the configured waiterd instance in\n");
     printf("  the configuration file (bake.json)\n");
@@ -44,11 +47,6 @@ static void __print_help(void)
     printf("  'bake remote resume <ID>'\n\n");
     printf("  To see a full list of supported options for building, please execute\n");
     printf("  'bake build --help'\n\n");
-    printf("Commands:\n");
-    printf("  init     go through the configuration wizard\n");
-    printf("  build    (default) executes a recipe remotely\n");
-    printf("  resume   resumes execution of a recipe running remotely\n");
-    printf("\n");
     printf("Options:\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
@@ -64,9 +62,89 @@ static void __cleanup_systems(int sig)
     _Exit(-sig);
 }
 
-static int __init_wizard(void)
-{
+struct __build {
+    struct list_item              list_header;
+    struct gracht_message_context msg_storage;
+    int                           log_index;
+    char                          id[64];
+    char                          arch[16];
+};
 
+static int __resume_builds(gracht_client_t* client, struct list* builds)
+{
+    int buildsCompleted = 0;
+    while (buildsCompleted < builds->count) {
+        struct gracht_message_context* msgs[6] = { NULL };
+        struct list_item*              li;
+        int                            status;
+        int                            i;
+
+        // wait a little before we update status
+        platform_sleep(5 * 1000);
+        
+        // iterate through each of the builds and setup
+        i = 0;
+        list_foreach(builds, li) {
+            struct __build* build = (struct __build*)li;
+
+            vlog_content_set_index(build->log_index);
+            status = chef_waiterd_status(client, &build->msg_storage, &build->id[0]);
+            if (status) {
+                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+                return -1;
+            }
+            msgs[i++] = &build->msg_storage;
+        }
+
+        status = gracht_client_await_multiple(client, &msgs[0], builds->count, GRACHT_AWAIT_ALL);
+        if (status) {
+            VLOG_ERROR("remote", "connection lost waiting for build status\n");
+            return -1;
+        }
+
+        list_foreach(builds, li) {
+            struct __build* build = (struct __build*)li;
+            struct chef_waiter_status_response resp;
+
+            vlog_content_set_index(build->log_index);
+            status = chef_waiterd_status_result(client, &build->msg_storage, &resp);
+            if (status) {
+                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+                return -1;
+            }
+
+            switch (resp.status) {
+                case CHEF_BUILD_STATUS_UNKNOWN: {
+                    // unknown means it hasn't started yet, so for now we do
+                    // nothing, and do not change the current status
+                } break;
+                case CHEF_BUILD_STATUS_QUEUED: {
+                    VLOG_TRACE("remote", "build is currently waiting to be serviced\n");
+                } break;
+                case CHEF_BUILD_STATUS_SOURCING: {
+                    VLOG_TRACE("remote", "build is now sourcing\n");
+                    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+                } break;
+                case CHEF_BUILD_STATUS_BUILDING: {
+                    VLOG_TRACE("remote", "build is in progress\n");
+                } break;
+                case CHEF_BUILD_STATUS_PACKING: {
+                    VLOG_TRACE("remote", "build has completed, and is being packed\n");
+                } break;
+                case CHEF_BUILD_STATUS_DONE: {
+                    VLOG_TRACE("remote", "build has completed\n");
+                    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+                    buildsCompleted++;
+                } break;
+                case CHEF_BUILD_STATUS_FAILED: {
+                    VLOG_TRACE("remote", "build failed\n");
+                    vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+                    buildsCompleted++;
+                } break;
+            }
+        }
+    }
+    return 0;
 }
 
 int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_options* options)
@@ -83,5 +161,5 @@ int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_o
             return 0;
         }
     }
-    return __init_wizard();
+    return __resume_builds();
 }

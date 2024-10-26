@@ -20,6 +20,7 @@
 #define __BAKE_COMMANDS_H__
 
 #include <chef/recipe.h>
+#include <stdlib.h>
 
 struct bake_command_options {
     struct recipe* recipe;
@@ -35,7 +36,7 @@ static char* __split_switch(char** argv, int argc, int* i)
     if (split != NULL) {
         return split + 1;
     }
-    if ((i + 1) < argc) {
+    if ((*i + 1) < argc) {
         return argv[++(*i)];
     }
     return NULL;
@@ -45,7 +46,7 @@ static int __parse_string_switch(char** argv, int argc, int* i, const char* s, s
 {
     if (strncmp(argv[*i], s, sl) == 0 || strncmp(argv[*i], l, ll) == 0) {
         char* value = __split_switch(argv, argc, i);
-        *out = value != NULL ? value : defaultValue;
+        *out = value != NULL ? value : (char*)defaultValue;
         return 0;
     }
     return -1;
@@ -62,7 +63,7 @@ static int __add_string_to_list(const char* str, struct list* out)
     return 0;
 }
 
-static int __split_stringv_into_list(const char* str, struct list* out)
+static int __split_stringv_into_list(char* str, struct list* out)
 {
     char* p = str;
     int   status;
@@ -98,7 +99,7 @@ static int __parse_stringv_switch(char** argv, int argc, int* i, const char* s, 
 {
     if (strncmp(argv[*i], s, sl) == 0 || strncmp(argv[*i], l, ll) == 0) {
         char* value = __split_switch(argv, argc, i);
-        return __split_stringv_into_list(value != NULL ? value : defaultValue, out);
+        return __split_stringv_into_list(value != NULL ? value : (char*)defaultValue, out);
     }
     return -1;
 }

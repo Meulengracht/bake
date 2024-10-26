@@ -265,7 +265,7 @@ int main(int argc, char** argv, char** envp)
 
         if (argc > 2) {
             for (int i = 2; i < argc; i++) {
-                if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--platform", 10, NULL, &options.platform)) {
+                if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--platform", 10, NULL, (char**)&options.platform)) {
                     continue;
                 } else if (!__parse_stringv_switch(argv, argc, &i, "-a", 2, "--archs", 7, NULL, &options.architectures)) {
                     continue;
