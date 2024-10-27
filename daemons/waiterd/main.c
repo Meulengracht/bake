@@ -28,7 +28,11 @@ static gracht_server_t* g_server = NULL;
 
 static void __print_help(void)
 {
-    printf("Usage: waiterd [options]\n");
+    printf("Usage: waiterd [options]\n\n");
+    printf("Broker daemon for remote building. This manages any cookd clients\n");
+    printf("that connects to the broker daemon (waiterd). A cookd client must\n");
+    printf("report what architectures it supports building for, which in turn\n");
+    printf("are used by bake clients to determine a server for building.\n");
     printf("\n");
     printf("Options:\n");
     printf("  -v\n");
@@ -84,7 +88,7 @@ int main(int argc, char** argv)
     }
 
     // add log file to vlog
-    debuglog = chef_dirs_contemporary_file("waiterd", ".log", &debuglogPath);
+    debuglog = chef_dirs_contemporary_file("waiterd", "log", &debuglogPath);
     if (debuglog == NULL) {
         fprintf(stderr, "waiterd: failed to open log file\n");
         return -1;

@@ -180,6 +180,12 @@ static int __get_cwd(char** bufferOut)
     return 0;
 }
 
+static int __file_exists(const char* path)
+{
+    struct platform_stat stats;
+    return platform_stat(path, &stats) == 0 ? 1 : 0;
+}
+
 int main(int argc, char** argv, char** envp)
 {
     struct command_handler*     command = &g_commands[2]; // build step is default
@@ -219,10 +225,9 @@ int main(int argc, char** argv, char** envp)
 
         command = __get_command(argv[1]);
         if (command == NULL) {
-            struct platform_stat stats;
             // was a file passed? Then it was the recipe, and we assume
             // that the run command should be run.
-            if (platform_stat(argv[1], &stats) == 0) {
+            if (__file_exists(argv[1]) == 0) {
                 command = &g_commands[2];
                 options.recipe_path = argv[1];
             } else {
@@ -243,7 +248,9 @@ int main(int argc, char** argv, char** envp)
                         logLevel++;
                     }
                 } else if (argv[i][0] != '-') {
-                    options.recipe_path = argv[i];
+                    if (__file_exists(argv[i])) {
+                        options.recipe_path = argv[i];
+                    }
                 }
             }
         }

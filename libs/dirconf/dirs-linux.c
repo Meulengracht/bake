@@ -276,7 +276,7 @@ FILE* chef_dirs_contemporary_file(const char* name, const char* ext, char** rpat
     char* path;
 
     snprintf(&buffer[0], sizeof(buffer), "/tmp/%s-XXXXXX.%s", name, ext);
-    if (mkstemps(&buffer[0], strlen(ext)) < 0) {
+    if (mkstemps(&buffer[0], strlen(ext) + 1) < 0) {
         VLOG_ERROR("dirs", "failed to get a temporary filename for log: %i\n", errno);
         return NULL;
     }

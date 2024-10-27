@@ -180,6 +180,7 @@ static int __load_config(struct config* config, const char* path)
 {
     json_error_t error;
     json_t*      root;
+    VLOG_DEBUG("config", "__load_config(path=%s)\n", path);
 
     root = json_load_file(path, 0, &error);
     if (root == NULL) {
@@ -200,6 +201,7 @@ int waiterd_config_load(const char* confdir)
 {
     char buff[PATH_MAX] = { 0 };
     int  status;
+    VLOG_DEBUG("config", "waiterd_config_load(confdir=%s)\n", confdir);
 
     snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S "waiterd.json", confdir);
     status = __load_config(&g_config, &buff[0]);

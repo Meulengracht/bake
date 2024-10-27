@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vlog.h>
 
 #define __DEFAULT_LOCAL_CONNECTION_STRING "unix:/run/chef/waiterd/api"
 
@@ -44,7 +45,7 @@ static int __ask_yes_no_question(const char* question)
 static char* __ask_question(const char* question, const char* defaultAnswer)
 {
     char answer[512] = { 0 };
-    printf("%s (default=%s) [Y/n] ", question, defaultAnswer);
+    printf("%s (default=%s) ", question, defaultAnswer);
     if (fgets(answer, sizeof(answer), stdin) == NULL) {
         return 0;
     }
@@ -67,15 +68,20 @@ static int __validate_connection_string(const char* connectionString)
 
 static int __parse_unix_string(struct chef_config_address* address, const char* path)
 {
+    VLOG_DEBUG("remote", "__parse_unix_string(path=%s)\n", path);
+    
     address->type = "local";
     address->address = path;
     address->port = 0;
+    
+    return 0;
 }
 
 // modifies the ip string
 static int __parse_inet4_string(struct chef_config_address* address, char* ip)
 {
     char* split;
+    VLOG_DEBUG("remote", "__parse_inet4_string(ip=%s)\n", ip);
 
     split = strchr(ip, ':');
     if (split == NULL) {
@@ -96,6 +102,7 @@ static int __parse_inet4_string(struct chef_config_address* address, char* ip)
 static int __parse_connection_string(struct chef_config_address* address, char* connectionString)
 {
     char* split;
+    VLOG_DEBUG("remote", "__parse_connection_string(conn=%s)\n", connectionString);
 
     // split at the ':'
     split = strchr(connectionString, ':');
@@ -115,15 +122,14 @@ static int __write_configuration(char* connectionString)
     struct chef_config*        config;
     struct chef_config_address address;
     int                        status;
+    VLOG_DEBUG("remote", "__write_configuration(conn=%s)\n", connectionString);
 
-    printf("parsing connection string\n");
     status = __parse_connection_string(&address, connectionString);
     if (status) {
         fprintf(stderr, "bake: failed to parse connection string %s\n", connectionString);
         return status;
     }
 
-    printf("updating bake configuration\n");
     config = chef_config_load(chef_dirs_config());
     if (config == NULL) {
         fprintf(stderr, "bake: failed to load configuration\n");
