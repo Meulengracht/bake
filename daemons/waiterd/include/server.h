@@ -23,11 +23,11 @@
 #include <chef/platform.h>
 
 enum waiterd_architecture {
-    WAITERD_ARCHITECTURE_X86,
-    WAITERD_ARCHITECTURE_X64,
-    WAITERD_ARCHITECTURE_ARMHF,
-    WAITERD_ARCHITECTURE_ARM64,
-    WAITERD_ARCHITECTURE_RISCV64
+    WAITERD_ARCHITECTURE_X86 = 0x1,
+    WAITERD_ARCHITECTURE_X64 = 0x2,
+    WAITERD_ARCHITECTURE_ARMHF = 0x4,
+    WAITERD_ARCHITECTURE_ARM64 = 0x10,
+    WAITERD_ARCHITECTURE_RISCV64 = 0x20
 };
 
 enum waiterd_build_status {
@@ -44,7 +44,7 @@ struct waiterd_cook {
     struct list_item          list_header;
     gracht_conn_t             client;
     int                       ready;
-    enum waiterd_architecture architecture;
+    enum waiterd_architecture architectures;
 };
 
 struct waiterd_request {
@@ -53,6 +53,7 @@ struct waiterd_request {
     gracht_conn_t          cook;
 
     char                      guid[40];
+    enum waiterd_architecture architecture;
     enum waiterd_build_status status;
 
     struct {

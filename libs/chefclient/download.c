@@ -83,9 +83,9 @@ static void __update_progress(struct download_context* downloadContext)
     fflush(stdout);
 }
 
-static int __download_progress_callback(void *clientp,
-    double dltotal, double dlnow,
-    double ultotal, double ulnow)
+static size_t __download_progress_callback(void *clientp,
+    curl_off_t dltotal, curl_off_t dlnow,
+    curl_off_t ultotal, curl_off_t ulnow)
 {
     struct download_context* context = (struct download_context*)clientp;
     context->bytes_downloaded = (size_t)dlnow;
@@ -230,13 +230,13 @@ static int __download_file(const char* filePath, struct pack_response* context, 
         goto cleanup;
     }
 
-    code = curl_easy_setopt(request->curl, CURLOPT_PROGRESSFUNCTION, __download_progress_callback);
+    code = curl_easy_setopt(request->curl, CURLOPT_XFERINFOFUNCTION, __download_progress_callback);
     if (code != CURLE_OK) {
         fprintf(stderr, "__download_file: failed to set download progress callback [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(request->curl, CURLOPT_PROGRESSDATA, downloadContext);
+    code = curl_easy_setopt(request->curl, CURLOPT_XFERINFODATA, downloadContext);
     if (code != CURLE_OK) {
         fprintf(stderr, "__download_file: failed to set download progress callback data [%s]\n", request->error);
         goto cleanup;

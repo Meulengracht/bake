@@ -72,9 +72,10 @@ static int __ask_yes_no_question(const char* question)
 
 int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    int   purge = 0;
-    char* partOrStep = NULL;
-    int   status;
+    int         purge = 0;
+    char*       partOrStep = NULL;
+    int         status;
+    const char* arch;
 
     // handle individual help command
     if (argc > 2) {
@@ -109,12 +110,15 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
         return -1;
     }
 
+    // get the architecture from the list
+    arch = ((struct list_item_string*)options->architectures.head)->value;
+
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
         .project_path = options->cwd,
         .pkg_environment = NULL,
         .target_platform = options->platform,
-        .target_architecture = options->architecture
+        .target_architecture = arch
     }, &g_kitchen);
     if (status) {
         VLOG_ERROR("bake", "failed to initialize kitchen: %s\n", strerror(errno));

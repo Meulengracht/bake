@@ -38,6 +38,7 @@ int fetch_main(int argc, char** argv, char** envp, struct bake_command_options* 
 {
     struct list_item* item;
     int               status;
+    const char*       arch;
 
     // handle individual help command
     if (argc > 2) {
@@ -54,7 +55,10 @@ int fetch_main(int argc, char** argv, char** envp, struct bake_command_options* 
         return -1;
     }
     
-    status = fridge_initialize(options->platform, options->architecture);
+    // get the architecture from the list
+    arch = ((struct list_item_string*)options->architectures.head)->value;
+
+    status = fridge_initialize(options->platform, arch);
     if (status != 0) {
         fprintf(stderr, "bake: failed to initialize fridge\n");
         return -1;
@@ -78,7 +82,7 @@ int fetch_main(int argc, char** argv, char** envp, struct bake_command_options* 
             .name = ingredient->name,
             .channel = ingredient->channel,
             .version = ingredient->version,
-            .arch = options->architecture,
+            .arch = arch,
             .platform = options->platform
         }, NULL);
         if (status != 0) {

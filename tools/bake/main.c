@@ -67,10 +67,13 @@ static void __print_help(void)
     printf("  init        initializes a new recipe in the current directory\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -cc, --cross-compile\n");
-    printf("      Cross-compile for another platform or/and architecture. This switch\n");
-    printf("      can be used with two different formats, either just like\n");
-    printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
+    printf("  -p, --platform\n");
+    printf("      Cross-compile for a specific platform.\n");
+    printf("  -a, --archs\n");
+    printf("      Cross-compile for specific architectures, when doing local builds only\n");
+    printf("      a single architecture can be set at one time. When doing remote builds\n");
+    printf("      multiple architectures can be specified like --archs=amd64,arm64 to build\n");
+    printf("      multiple times in parallel. If not set, the host architecture is used.\n");
     printf("  --version\n");
     printf("      Print the version of bake\n");
     printf("  -h, --help\n");
@@ -154,41 +157,6 @@ static const char* __find_default_recipe(void)
         return "recipe.yaml";
     }
     return NULL;
-}
-
-
-static int __parse_cc_switch(const char* value, const char** platformOut, const char** archOut)
-{
-    // value is either of two forms
-    // platform/arch
-    // arch
-    char* separator;
-    char* equal;
-
-    if (value == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    equal = strchr(value, '=');
-    if (equal == NULL) {
-        fprintf(stderr, "bake: invalid format of %s (must be -cc=... or --cross-compile=...)\n", value);
-        errno = EINVAL;
-        return -1;
-    }
-
-    // skip the '='
-    equal++;
-
-    separator = strchr(equal, '/');
-    if (separator) {
-        *platformOut = platform_strndup(equal, separator - equal);
-        *archOut     = platform_strdup(separator + 1);
-    } else {
-        *platformOut = platform_strdup(CHEF_PLATFORM_STR);
-        *archOut     = platform_strdup(equal);
-    }
-    return 0;
 }
 
 static int __get_cwd(char** bufferOut)

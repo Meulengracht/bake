@@ -140,9 +140,9 @@ static void __destroy_file_contexts(struct file_upload_context* contexts, int co
     free(contexts);
 }
 
-static int __upload_progress_callback(void *clientp,
-    double dltotal, double dlnow,
-    double ultotal, double ulnow)
+static size_t __upload_progress_callback(void *clientp,
+    curl_off_t dltotal, curl_off_t dlnow,
+    curl_off_t ultotal, curl_off_t ulnow)
 {
     struct file_upload_context* context = (struct file_upload_context*)clientp;
     context->bytes_uploaded = (size_t)ulnow;
@@ -429,13 +429,13 @@ static int __prepare_block_request(
         goto cleanup;
     }
 
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_PROGRESSFUNCTION, __upload_progress_callback);
+    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_XFERINFOFUNCTION, __upload_progress_callback);
     if (code != CURLE_OK) {
         fprintf(stderr, "__prepare_block_request: failed to set upload progress callback [%s]\n", fileContext->request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_PROGRESSDATA, fileContext);
+    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_XFERINFODATA, fileContext);
     if (code != CURLE_OK) {
         fprintf(stderr, "__prepare_block_request: failed to set upload progress callback data [%s]\n", fileContext->request->error);
         goto cleanup;

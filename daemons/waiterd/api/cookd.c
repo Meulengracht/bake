@@ -24,8 +24,8 @@
 
 void chef_waiterd_cook_ready_invocation(struct gracht_message* message, const struct chef_cook_ready_event* evt)
 {
-    VLOG_DEBUG("api", "cook::ready(arch=%u)\n", evt->arch);
-    waiterd_server_cook_ready(message->client, evt->arch);
+    VLOG_DEBUG("api", "cook::ready(arch=%u)\n", evt->archs);
+    waiterd_server_cook_ready(message->client, waiterd_architecture(evt->archs));
 }
 
 void chef_waiterd_cook_update_invocation(struct gracht_message* message, const struct chef_cook_update_event* evt)

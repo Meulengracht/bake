@@ -70,6 +70,28 @@ struct __build {
     char                          arch[16];
 };
 
+static const char* __parse_protocol_arch(enum chef_build_architecture arch)
+{
+    switch (arch) {
+        case CHEF_BUILD_ARCHITECTURE_X86: {
+            return "i386";
+        }
+        case CHEF_BUILD_ARCHITECTURE_X64: {
+            return "amd64";
+        }
+        case CHEF_BUILD_ARCHITECTURE_ARMHF: {
+            return "armhf";
+        }
+        case CHEF_BUILD_ARCHITECTURE_ARM64: {
+            return "arm64";
+        }
+        case CHEF_BUILD_ARCHITECTURE_RISCV64: {
+            return "riscv64";
+        }
+    }
+    return "unknown";
+}
+
 static int __resume_builds(gracht_client_t* client, struct list* builds)
 {
     int buildsCompleted = 0;
@@ -79,9 +101,6 @@ static int __resume_builds(gracht_client_t* client, struct list* builds)
         int                            status;
         int                            i;
 
-        // wait a little before we update status
-        platform_sleep(5 * 1000);
-        
         // iterate through each of the builds and setup
         i = 0;
         list_foreach(builds, li) {
@@ -113,6 +132,12 @@ static int __resume_builds(gracht_client_t* client, struct list* builds)
                 return -1;
             }
 
+            // update arch
+            if (build->arch[0] == '\0') {
+                strcpy(&build->arch[0], __parse_protocol_arch(resp.arch));
+                vlog_content_set_prefix(&build->arch[0]);
+            }
+
             switch (resp.status) {
                 case CHEF_BUILD_STATUS_UNKNOWN: {
                     // unknown means it hasn't started yet, so for now we do
@@ -127,9 +152,11 @@ static int __resume_builds(gracht_client_t* client, struct list* builds)
                 } break;
                 case CHEF_BUILD_STATUS_BUILDING: {
                     VLOG_TRACE("remote", "build is in progress\n");
+                    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
                 } break;
                 case CHEF_BUILD_STATUS_PACKING: {
                     VLOG_TRACE("remote", "build has completed, and is being packed\n");
+                    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
                 } break;
                 case CHEF_BUILD_STATUS_DONE: {
                     VLOG_TRACE("remote", "build has completed\n");
@@ -143,23 +170,115 @@ static int __resume_builds(gracht_client_t* client, struct list* builds)
                 } break;
             }
         }
+
+        // wait a little before we update status
+        platform_sleep(5 * 1000);
     }
     return 0;
 }
 
+static int __add_build(const char* id, struct list* builds)
+{
+    struct __build* item = calloc(1, sizeof(struct __build));
+    if (item == NULL) {
+        return -1;
+    }
+    strncpy(&item->id[0], id, sizeof(item->id));
+    list_add(builds, &item->list_header);
+    return 0;
+}
+
+static int __parse_build_ids(char** argv, int argc, int* i, struct list* builds)
+{
+    char* ids = __split_switch(argv, argc, i);
+    if (ids == NULL || strlen(ids) == 0) {
+        return -1;
+    }
+
+    // create a build for each
+    char* startOfId = ids;
+    char* pOfId = startOfId;
+    while (!*pOfId) {
+        if (*pOfId == ',') {
+            *pOfId = '\0';
+            if (__add_build(startOfId, builds)) {
+                fprintf(stderr, "bake: failed to track build id: %s\n", startOfId);
+                return -1;
+            }
+            startOfId = pOfId + 1;
+        }
+        pOfId++;
+    }
+    return __add_build(startOfId, builds);
+}
+
 int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    int status;
+    struct list       builds = { 0 };
+    gracht_client_t*  client = NULL;
+    struct list_item* li;
+    int               status, i;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
 
     // handle individual commands
     for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+        if (strncmp(argv[i], "--ids", 5) == 0) {
+            status = __parse_build_ids(argv, argc, &i, &builds);
+            if (status) {
+                fprintf(stderr, "bake: cannot parse --ids, invalid options supplied\n");
+                __print_help();
+                return -1;
+            }
+        } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
             return 0;
         }
     }
-    return __resume_builds();
+
+    // setup the build log box
+    vlog_start(stdout , "remote build", "connected to: ", 2 + builds.count);
+
+    // 0+1 are informational
+    vlog_content_set_index(0);
+    vlog_content_set_prefix("connect");
+
+    vlog_content_set_index(1);
+    vlog_content_set_prefix("");
+
+    i = 2;
+    list_foreach(&builds, li) {
+        struct __build* build = (struct __build*)li;
+
+        // attach a log index
+        build->log_index = i;
+
+        vlog_content_set_index(i++);
+        vlog_content_set_prefix("");
+        vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+        VLOG_TRACE("remote", "resuming: %s...", &build->id[0]);
+    }
+
+    // start by connecting
+    vlog_content_set_index(0);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+
+    VLOG_TRACE("bake", "connecting to waiterd\n");
+    status = remote_client_create(&client);
+    if (status) {
+        VLOG_ERROR("bake", "failed to connect to the configured waiterd instance\n");
+        goto cleanup;
+    }
+
+    status = __resume_builds(client, &builds);
+
+cleanup:
+    gracht_client_shutdown(client);
+    if (status) {
+        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+    }
+    vlog_refresh(stdout);
+    vlog_end();
+    return status;
 }

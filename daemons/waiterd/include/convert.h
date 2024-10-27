@@ -23,14 +23,36 @@
 #include "chef_waiterd_cook_service.h"
 #include <server.h>
 
-static enum waiterd_architecture waiterd_architecture(enum chef_architecture arch)
+static enum waiterd_architecture waiterd_architecture(enum chef_build_architecture archs)
+{
+    enum waiterd_architecture flags = 0;
+
+    if (archs & CHEF_BUILD_ARCHITECTURE_X86) {
+        flags |= WAITERD_ARCHITECTURE_X86;
+    }
+    if (archs & CHEF_BUILD_ARCHITECTURE_X64) {
+        flags |= WAITERD_ARCHITECTURE_X64;
+    }
+    if (archs & CHEF_BUILD_ARCHITECTURE_ARMHF) {
+        flags |= WAITERD_ARCHITECTURE_ARMHF;
+    }
+    if (archs & CHEF_BUILD_ARCHITECTURE_ARM64) {
+        flags |= WAITERD_ARCHITECTURE_ARM64;
+    }
+    if (archs & CHEF_BUILD_ARCHITECTURE_RISCV64) {
+        flags |= WAITERD_ARCHITECTURE_RISCV64;
+    }
+    return flags;
+}
+
+static enum chef_build_architecture chef_build_architecture(enum waiterd_architecture arch)
 {
     switch (arch) {
-        case CHEF_ARCHITECTURE_X86: return WAITERD_ARCHITECTURE_X86;
-        case CHEF_ARCHITECTURE_X64: return WAITERD_ARCHITECTURE_X64;
-        case CHEF_ARCHITECTURE_ARMHF: return WAITERD_ARCHITECTURE_ARMHF;
-        case CHEF_ARCHITECTURE_ARM64: return WAITERD_ARCHITECTURE_ARM64;
-        case CHEF_ARCHITECTURE_RISCV64: return WAITERD_ARCHITECTURE_RISCV64;
+        case WAITERD_ARCHITECTURE_X86: return CHEF_BUILD_ARCHITECTURE_X86;
+        case WAITERD_ARCHITECTURE_X64: return CHEF_BUILD_ARCHITECTURE_X64;
+        case WAITERD_ARCHITECTURE_ARMHF: return CHEF_BUILD_ARCHITECTURE_ARMHF;
+        case WAITERD_ARCHITECTURE_ARM64: return CHEF_BUILD_ARCHITECTURE_ARM64;
+        case WAITERD_ARCHITECTURE_RISCV64: return CHEF_BUILD_ARCHITECTURE_RISCV64;
     }
 }
 

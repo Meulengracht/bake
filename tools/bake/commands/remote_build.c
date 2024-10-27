@@ -33,6 +33,42 @@
 
 #include "commands.h"
 
+struct __build {
+    struct list_item              list_header;
+    struct gracht_message_context msg_storage;
+    int                           log_index;
+    char                          id[64];
+    char                          arch[16];
+};
+
+// We keep this global to allow for printing the way to resume the
+// current build if we terminated abnormally.
+static struct list g_builds = { 0 };
+
+static void __print_resume_help(void)
+{
+    struct list_item* li;
+    int               i = 0;
+
+    if (g_builds.count == 0) {
+        return;
+    }
+    
+    printf("Remote build was abnormally terminted, however this can be resumed\n");
+    printf("To resume the build operation, use the following command-line:\n\n");
+    printf("bake remote resume --ids=");
+    list_foreach(&g_builds, li) {
+        struct __build* build = (struct __build*)li;
+        if (i > 0) {
+            printf(",%s", &build->id[0]);
+        } else {
+            printf("%s", &build->id[0]);
+        }
+        i++;
+    }
+    printf("\n");
+}
+
 static void __print_help(void)
 {
     printf("Usage: bake remote build RECIPE [options]\n");
@@ -41,7 +77,7 @@ static void __print_help(void)
     printf("  the configuration file (bake.json)\n");
     printf("  If the connection is severed between the bake instance and the waiterd\n");
     printf("  instance, the build can be resumed from the bake instance by invoking\n");
-    printf("  'bake remote resume <ID>'\n\n");
+    printf("  'bake remote resume --ids={list,of,ids}'\n\n");
     printf("  To see a full list of supported options for building, please execute\n");
     printf("  'bake build --help'\n\n");
     printf("\n");
@@ -62,22 +98,11 @@ static void __cleanup_systems(int sig)
     // cleanup logging
     vlog_cleanup();
 
-    // Do a quick exit, which is recommended to do in signal handlers
-    // and use the signal as the exit code
+    // inform user on how to proceed
+    __print_resume_help();
+
+    // Use _Exit to not run atexit/atquickexit
     _Exit(-sig);
-}
-
-static char* __add_build_log(void)
-{
-    char* path;
-    FILE* stream = chef_dirs_contemporary_file("bake-build", ".log", &path);
-    if (stream == NULL) {
-        return NULL;
-    }
-
-    vlog_add_output(stream, 1);
-    vlog_set_output_level(stream, VLOG_LEVEL_DEBUG);
-    return path;
 }
 
 static char* __format_header(const char* name, const char* platform, const char* arch)
@@ -109,14 +134,6 @@ static enum chef_build_architecture __parse_protocol_arch(const char* arch)
     }
     return CHEF_BUILD_ARCHITECTURE_X86;
 }
-
-struct __build {
-    struct list_item              list_header;
-    struct gracht_message_context msg_storage;
-    int                           log_index;
-    char                          id[64];
-    char                          arch[16];
-};
 
 static int __add_build(const char* arch, const char* id, int index, struct list* list)
 {
@@ -153,8 +170,9 @@ static int __queue_builds(int logIndexStart, gracht_client_t* client, const char
         status = chef_waiterd_build(client, &storage[msgIndex].msg, 
             &(struct chef_waiter_build_request) {
                 .arch = __parse_protocol_arch(arch),
-                .url = imageUrl,
-                .recipe = options->recipe_path
+                .platform = (char*)options->platform,
+                .url = (char*)imageUrl,
+                .recipe = (char*)options->recipe_path
             }
         );
         if (status) {
@@ -288,7 +306,6 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
 {
     gracht_client_t*  client = NULL;
     struct list_item* li;
-    struct list       builds = { 0 };
     char*             imagePath = NULL;
     char*             dlUrl = NULL;
     char*             header;
@@ -313,7 +330,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
         return -1;
     }
 
-    header = __format_header(options->recipe->project.name, options->platform, "remote");
+    header = __format_header(options->recipe->project.name, options->platform, "*");
     footer = __format_footer("");
     if (footer == NULL) {
         fprintf(stderr, "bake: failed to allocate memory for build footer\n");
@@ -370,14 +387,17 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
 
     vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
 
+    // register resume helper
+    atexit(__print_resume_help);
+
     // initiate all the build calls
-    status = __queue_builds(3, client, dlUrl, &builds, options);
+    status = __queue_builds(3, client, dlUrl, &g_builds, options);
     if (status) {
         goto cleanup;
     }
 
     // poll queued builds
-    status = __wait_for_builds(client, &builds);
+    status = __wait_for_builds(client, &g_builds);
 
 cleanup:
     gracht_client_shutdown(client);

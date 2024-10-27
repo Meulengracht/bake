@@ -17,6 +17,7 @@
  */
 
 #include <chef/config.h>
+#include <chef/dirs.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
 #include <stdio.h>
@@ -122,13 +123,26 @@ int remote_client_create(gracht_client_t** clientOut)
     struct gracht_link_socket*         link;
     struct gracht_client_configuration clientConfiguration;
     gracht_client_t*                   client = NULL;
+    struct chef_config*                config;
+    struct chef_config_address         apiAddress;
     int                                code;
 
-    gracht_client_configuration_init(&clientConfiguration);
-    
-    gracht_link_socket_create(&link);
-    init_link_config(link, gracht_link_packet_based, );
+    config = chef_config_load(chef_dirs_config());
+    if (config == NULL) {
+        fprintf(stderr, "remote_client_create: failed to load configuration\n");
+        return -1;
+    }
+    chef_config_remote_address(config, &apiAddress);
 
+    code = gracht_link_socket_create(&link);
+    if (code) {
+        fprintf(stderr, "remote_client_create: failed to initialize socket\n");
+        return code;
+    }
+
+    init_link_config(link, gracht_link_packet_based, &apiAddress);
+
+    gracht_client_configuration_init(&clientConfiguration);
     gracht_client_configuration_set_link(&clientConfiguration, (struct gracht_link*)link);
 
     code = gracht_client_create(&clientConfiguration, &client);

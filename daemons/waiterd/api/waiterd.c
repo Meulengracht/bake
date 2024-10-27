@@ -70,7 +70,10 @@ void chef_waiterd_status_invocation(struct gracht_message* message, const char* 
         return;
     }
 
-    chef_waiterd_status_response(message, wreq->status);
+    chef_waiterd_status_response(message, &(struct chef_waiter_status_response) {
+        .arch = chef_build_architecture(wreq->architecture),
+        .status = wreq->status
+    });
 }
 
 void chef_waiterd_artifact_invocation(struct gracht_message* message, const char* id, const enum chef_artifact_type type)

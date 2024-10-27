@@ -135,7 +135,7 @@ void waiterd_server_cook_ready(gracht_conn_t client, enum waiterd_architecture a
         return;
     }
 
-    cook->architecture = arch;
+    cook->architectures = arch;
     cook->ready = 1;
 }
 
@@ -145,7 +145,7 @@ struct waiterd_cook* waiterd_server_cook_find(enum waiterd_architecture arch)
 
     list_foreach(&g_server.cooks, i) {
         struct waiterd_cook* cook = (struct waiterd_cook*)i;
-        if (cook->architecture == arch) {
+        if (cook->architectures & arch) {
             return cook;
         }
     }
