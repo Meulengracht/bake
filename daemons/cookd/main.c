@@ -85,5 +85,10 @@ int main(int argc, char** argv)
     vlog_add_output(debuglog, 1);
     vlog_set_output_level(debuglog, VLOG_LEVEL_DEBUG);
 
+    // initialize the client
+
+    // initialize the server
+
+
     return 0;
 }

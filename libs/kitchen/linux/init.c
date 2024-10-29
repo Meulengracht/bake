@@ -139,9 +139,16 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
 static int __kitchen_construct(struct kitchen_init_options* options, struct kitchen* kitchen)
 {
     char        buff[PATH_MAX*2];
-    const char* root = chef_dirs_kitchen(recipe_cache_uuid());
+    const char* root;
     int         status;
     VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->recipe->project.name);
+
+    // calculate root
+    if (options->recipe_cache != NULL) {
+        root = chef_dirs_kitchen(recipe_cache_uuid(options->recipe_cache));
+    } else {
+        root = chef_dirs_kitchen(NULL);
+    }
 
     memset(kitchen, 0, sizeof(struct kitchen));
     kitchen->target_platform = strdup(options->target_platform);
@@ -150,6 +157,7 @@ static int __kitchen_construct(struct kitchen_init_options* options, struct kitc
     kitchen->magic = __KITCHEN_INIT_MAGIC;
     kitchen->recipe = options->recipe;
     kitchen->recipe_path = strdup(options->recipe_path);
+    kitchen->recipe_cache = kitchen->recipe_cache;
     kitchen->host_kitchen_project_data_root = (char*)root;
 
     // Format external chroot paths that are arch/platform agnostic
@@ -214,11 +222,6 @@ int kitchen_initialize(struct kitchen_init_options* options, struct kitchen* kit
 {
     if (options == NULL || kitchen == NULL) {
         errno = EINVAL;
-        return -1;
-    }
-
-    if (recipe_cache_initialize(options->recipe, options->project_path)) {
-        VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
         return -1;
     }
     return __kitchen_construct(options, kitchen);

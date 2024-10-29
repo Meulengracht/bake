@@ -261,7 +261,6 @@ static int __source_part(struct recipe* recipe, struct __source_options* options
     int               status;
     VLOG_DEBUG("bakectl", "__source_part(part=%s)\n", options->part);
 
-    recipe_cache_transaction_begin();
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
 

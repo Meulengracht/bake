@@ -29,10 +29,12 @@ int kitchen_recipe_source(struct kitchen* kitchen)
     char              buffer[512];
     VLOG_DEBUG("kitchen", "kitchen_recipe_source()\n");
 
-    recipe_cache_transaction_begin();
+    __KITCHEN_IF_CACHE(kitchen, recipe_cache_transaction_begin(kitchen->recipe_cache));
     list_foreach(&kitchen->recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
-        if (recipe_cache_is_part_sourced(part->name)) {
+        
+        if (kitchen->recipe_cache != NULL && 
+                recipe_cache_is_part_sourced(kitchen->recipe_cache, part->name)) {
             VLOG_TRACE("kitchen", "part '%s' already sourced\n", part->name);
             continue;
         }
@@ -58,14 +60,15 @@ int kitchen_recipe_source(struct kitchen* kitchen)
             return status;
         }
 
-        status = recipe_cache_mark_part_sourced(part->name);
-        if (status) {
-            VLOG_ERROR("kitchen", "failed to mark part '%s' sourced\n", part->name);
-            return status;
+        if (kitchen->recipe_cache != NULL) {
+            status = recipe_cache_mark_part_sourced(kitchen->recipe_cache, part->name);
+            if (status) {
+                VLOG_ERROR("kitchen", "failed to mark part '%s' sourced\n", part->name);
+                return status;
+            }
         }
     }
-
-    recipe_cache_transaction_commit();
+    __KITCHEN_IF_CACHE(kitchen, recipe_cache_transaction_commit(kitchen->recipe_cache));
     return status;
 }
 

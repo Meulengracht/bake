@@ -255,6 +255,7 @@ static char* __format_footer(const char* logPath)
 int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct kitchen_setup_options setupOptions = { 0 };
+    struct recipe_cache*         cache = NULL;
     int                          status;
     char*                        logPath;
     char*                        header;
@@ -347,11 +348,19 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     vlog_content_set_index(2);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
 
+    // we want the recipe cache in this case for regular builds
+    status = recipe_cache_create(options->recipe, options->cwd, &cache);
+    if (status) {
+        VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
+        return -1;
+    }
+
     // debug target information
     VLOG_DEBUG("bake", "platform=%s, architecture=%s\n", options->platform, arch);
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
         .recipe_path = options->recipe_path,
+        .recipe_cache = cache,
         .envp = (const char* const*)envp,
         .project_path = options->cwd,
         .pkg_environment = NULL,

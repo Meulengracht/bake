@@ -116,7 +116,6 @@ static int __clean_part(struct recipe* recipe, const char* partName, const char*
     int               status;
     VLOG_DEBUG("bakectl", "__clean_part()\n");
 
-    recipe_cache_transaction_begin();
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
         char*               toolchain = NULL;

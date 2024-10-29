@@ -72,10 +72,11 @@ static int __ask_yes_no_question(const char* question)
 
 int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    int         purge = 0;
-    char*       partOrStep = NULL;
-    int         status;
-    const char* arch;
+    struct recipe_cache* cache = NULL;
+    int                  purge = 0;
+    char*                partOrStep = NULL;
+    int                  status;
+    const char*          arch;
 
     // handle individual help command
     if (argc > 2) {
@@ -113,8 +114,16 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
     // get the architecture from the list
     arch = ((struct list_item_string*)options->architectures.head)->value;
 
+    // we want the recipe cache in this case for regular cleans
+    status = recipe_cache_create(options->recipe, options->cwd, &cache);
+    if (status) {
+        VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
+        return -1;
+    }
+
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
+        .recipe_cache = cache,
         .project_path = options->cwd,
         .pkg_environment = NULL,
         .target_platform = options->platform,

@@ -148,7 +148,6 @@ static int __build_part(struct recipe* recipe, const char* partName, const char*
     int               status;
     VLOG_DEBUG("bakectl", "__build_part(part=%s, step=%s, platform=%s)\n", partName, stepName, platform);
 
-    recipe_cache_transaction_begin();
     list_foreach(&recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
         char*               toolchain = NULL;

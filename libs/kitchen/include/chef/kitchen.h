@@ -39,13 +39,14 @@ struct kitchen_setup_hook {
 };
 
 struct kitchen_init_options {
-    struct recipe*     recipe;
-    const char*        recipe_path;
-    const char* const* envp;
-    const char*        project_path;
-    const char*        pkg_environment;
-    const char*        target_platform;
-    const char*        target_architecture;
+    struct recipe*       recipe;
+    struct recipe_cache* recipe_cache;
+    const char*          recipe_path;
+    const char* const*   envp;
+    const char*          project_path;
+    const char*          pkg_environment;
+    const char*          target_platform;
+    const char*          target_architecture;
 };
 
 struct kitchen_setup_options {
@@ -73,10 +74,10 @@ struct kitchen_recipe_clean_options {
 };
 
 struct kitchen {
-    // internal state
-    uint32_t       magic;
-    struct recipe* recipe;
-    const char*    recipe_path;
+    uint32_t             magic;
+    struct recipe*       recipe;
+    struct recipe_cache* recipe_cache;
+    const char*          recipe_path;
 
     // The path into the kitchen data path on the
     // host side (there is no child side) where the data
@@ -111,6 +112,8 @@ struct kitchen {
     char* install_path;
     char* bakectl_path;
 };
+
+#define __KITCHEN_IF_CACHE(_k, _f) if (_k->recipe_cache != NULL) { _f; }
 
 /**
  * @brief 

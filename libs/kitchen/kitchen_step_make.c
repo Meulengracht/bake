@@ -31,7 +31,9 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
     
     list_foreach(steps, item) {
         struct recipe_step* step = (struct recipe_step*)item;
-        if (recipe_cache_is_step_complete(part, step->name)) {
+        
+        if (kitchen->recipe_cache != NULL &&
+                recipe_cache_is_step_complete(kitchen->recipe_cache, part, step->name)) {
             VLOG_TRACE("kitchen", "nothing to be done for step '%s/%s'\n", part, step->name);
             continue;
         }
@@ -57,10 +59,12 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
             return status;
         }
 
-        status = recipe_cache_mark_step_complete(part, step->name);
-        if (status) {
-            VLOG_ERROR("kitchen", "failed to mark step '%s/%s' complete\n", part, step->name);
-            return status;
+        if (kitchen->recipe_cache != NULL) {
+            status = recipe_cache_mark_step_complete(kitchen->recipe_cache, part, step->name);
+            if (status) {
+                VLOG_ERROR("kitchen", "failed to mark step '%s/%s' complete\n", part, step->name);
+                return status;
+            }
         }
     }
     
@@ -73,7 +77,7 @@ int kitchen_recipe_make(struct kitchen* kitchen)
     int               status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_make()\n");
 
-    recipe_cache_transaction_begin();
+    __KITCHEN_IF_CACHE(kitchen, recipe_cache_transaction_begin(kitchen->recipe_cache));
     list_foreach(&kitchen->recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
 
@@ -83,8 +87,7 @@ int kitchen_recipe_make(struct kitchen* kitchen)
             break;
         }
     }
-
-    recipe_cache_transaction_commit();
+    __KITCHEN_IF_CACHE(kitchen, recipe_cache_transaction_commit(kitchen->recipe_cache));
     return status;
 }
 
