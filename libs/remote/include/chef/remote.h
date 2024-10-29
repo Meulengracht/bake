@@ -39,7 +39,17 @@ extern int remote_pack(const char* path, const char* const* envp, char** imagePa
 /**
  * @brief
  */
+extern int remote_unpack(const char* imagePath, const char* destination);
+
+/**
+ * @brief
+ */
 extern int remote_upload(const char* path, char** downloadUrl);
+
+/**
+ * @brief
+ */
+extern int remote_download(const char* url, const char* path);
 
 /**
  * @brief 

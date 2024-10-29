@@ -6,7 +6,7 @@ set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 set (SRCS
     ${GENERATED_SRCS}
     
-    server/init.c
+    server/server.c
 
     api.c
     config.c
@@ -16,4 +16,4 @@ set (SRCS
 add_executable(cookd ${SRCS})
 add_dependencies(cookd service_client)
 target_include_directories(cookd PRIVATE ${CMAKE_BINARY_DIR}/protocols)
-target_link_libraries(cookd PRIVATE kitchen fridge jansson-api jansson vlog libdirconf platform gracht)
+target_link_libraries(cookd PRIVATE kitchen fridge remote jansson-api jansson vlog libdirconf platform gracht)

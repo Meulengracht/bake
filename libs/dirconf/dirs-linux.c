@@ -172,11 +172,12 @@ static int __setup_root(void)
 {
     VLOG_DEBUG("dirs", "DETECTED running as root, only chef_dirs_config() will be valid\n");
 
+    // root directories are more or less hardwired
+    // to shared system locations. This is almost solely used for the
+    // daemon services. All other tools should run in some sort of user
+    // context, and must protect themself against root invocations.
     g_dirs.config = "/etc/chef";
-    if (g_dirs.config == NULL) {
-        VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
-        return -1;
-    }
+
     return __ensure_chef_global_dirs();
 }
 
