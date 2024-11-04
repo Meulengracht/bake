@@ -16,10 +16,12 @@
  * 
  */
 
-#include "chef-config.h"
 #include <chef/dirs.h>
-#include "chef_waiterd_cook_service_client.h"
+#include <server.h>
 #include <vlog.h>
+
+#include "chef-config.h"
+#include "chef_waiterd_cook_service_client.h"
 
 static void __print_help(void)
 {
@@ -88,7 +90,18 @@ int main(int argc, char** argv)
     // initialize the client
 
     // initialize the server
+    status = cookd_server_init();
+    if (status) {
+        fprintf(stderr, "waiterd: failed to open log file\n");
+        goto cleanup;
+    }
 
+    // event loop
+    for (;;) {
 
-    return 0;
+    }
+
+cleanup:
+    cookd_server_cleanup();
+    return status;
 }

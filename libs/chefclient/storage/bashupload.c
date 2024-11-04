@@ -33,7 +33,7 @@ struct upload_context {
     char*  download_url;
 
     // upload status
-    size_t bytes_downloaded;
+    size_t bytes_uploaded;
     size_t bytes_total;
 };
 
@@ -58,7 +58,7 @@ static void __update_progress(struct upload_context* downloadContext)
     char totalSizeBuffer[32];
     int  percent;
 
-    percent = (downloadContext->bytes_downloaded * 100) / downloadContext->bytes_total;
+    percent = (downloadContext->bytes_uploaded * 100) / downloadContext->bytes_total;
     
     // print a fancy progress bar with percentage, upload progress and a moving
     // bar being filled
@@ -71,7 +71,7 @@ static void __update_progress(struct upload_context* downloadContext)
             printf(" ");
         }
     }
-    __format_quantity(downloadContext->bytes_downloaded, &progressBuffer[0], sizeof(progressBuffer));
+    __format_quantity(downloadContext->bytes_uploaded, &progressBuffer[0], sizeof(progressBuffer));
     __format_quantity(downloadContext->bytes_total, &totalSizeBuffer[0], sizeof(totalSizeBuffer));
     printf("| %3d%%] %s / %s", percent, 
         &progressBuffer[0], &totalSizeBuffer[0]
@@ -84,8 +84,8 @@ static size_t __upload_progress_callback(void *clientp,
     curl_off_t ultotal, curl_off_t ulnow)
 {
     struct upload_context* context = (struct upload_context*)clientp;
-    context->bytes_downloaded = (size_t)dlnow;
-    context->bytes_total = (size_t)dltotal;
+    context->bytes_uploaded = (size_t)ulnow;
+    context->bytes_total = (size_t)ultotal;
     if (context->bytes_total > 0) {
         __update_progress(context);
     }

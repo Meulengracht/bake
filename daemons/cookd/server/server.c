@@ -23,6 +23,7 @@
 #include <chef/remote.h>
 #include <errno.h>
 #include <libfridge.h>
+#include <server.h>
 #include <vlog.h>
 
 int cookd_server_init(void)
@@ -47,6 +48,11 @@ void cookd_server_cleanup(void)
 {
     fridge_cleanup();
     chefclient_cleanup();
+}
+
+void cookd_server_status(struct cookd_status* status)
+{
+    status->queue_size = 0;
 }
 
 static int __add_kitchen_ingredient(const char* name, const char* path, struct list* kitchenIngredients)
@@ -297,7 +303,7 @@ cleanup:
     return status;
 }
 
-int cookd_server_build(const char* id, const char* platform, const char* architecture, const char* url, const char* recipePath)
+int cookd_server_build(const char* id, struct cookd_build_options* options)
 {
     struct kitchen_setup_options setupOptions = { 0 };
     struct kitchen               kitchen;
@@ -305,32 +311,32 @@ int cookd_server_build(const char* id, const char* platform, const char* archite
     char*                        projectPath;
     struct recipe*               recipe;
 
-    status = __prepare_sources(id, url, &projectPath);
+    status = __prepare_sources(id, options->url, &projectPath);
     if (status) {
-        VLOG_ERROR("cookd", "failed to prepare sources for build id %s (%s)\n", id, url);
+        VLOG_ERROR("cookd", "failed to prepare sources for build id %s (%s)\n", id, options->url);
         return status;
     }
 
-    status = __load_recipe(projectPath, recipePath, &recipe);
+    status = __load_recipe(projectPath, options->recipe_path, &recipe);
     if (status) {
-        VLOG_ERROR("cookd", "failed to load the recipe for build id %s (%s)\n", id, recipePath);
+        VLOG_ERROR("cookd", "failed to load the recipe for build id %s (%s)\n", id, options->recipe_path);
         return status;
     }
 
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .envp = NULL, /* not used currently */
         .recipe = recipe,
-        .recipe_path = recipePath,
+        .recipe_path = options->recipe_path,
         .project_path = projectPath,
-        .target_architecture = architecture,
-        .target_platform = platform
+        .target_architecture = options->architecture,
+        .target_platform = options->platform
     }, &kitchen);
     if (status) {
         VLOG_ERROR("cookd", "failed to initialize kitchen area for build id %s\n", id);
         return status;
     }
 
-    status = __prep_ingredients(recipe, platform, architecture, &setupOptions);
+    status = __prep_ingredients(recipe, options->platform, options->architecture, &setupOptions);
     if (status) {
         VLOG_ERROR("cookd", "failed to fetch ingredients for build id %s: %s\n", id, strerror(errno));
         goto cleanup;

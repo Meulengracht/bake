@@ -16,12 +16,29 @@
  * 
  */
 
-#ifndef __CHEF_CLIENT_STORAGE_BU_H__
-#define __CHEF_CLIENT_STORAGE_BU_H__
+#include <chef/storage/download.h>
+#include <chef/client.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <vlog.h>
 
-/**
- * @brief
- */
-extern int chef_client_bu_upload(const char* path, char** downloadUrl);
+int remote_download(const char* url, const char* path)
+{
+    int status;
 
-#endif //!__CHEF_CLIENT_STORAGE_BU_H__
+    status = chefclient_initialize();
+    if (status != 0) {
+        fprintf(stderr, "remote_download: failed to initialize chef client\n");
+        return -1;
+    }
+
+    status = chef_client_gen_download(url, path);
+    if (status) {
+        fprintf(stderr, "remote_download: failed to download %s\n", url);
+        chefclient_cleanup();
+        return status;
+    }
+
+    chefclient_cleanup();
+    return 0;
+}

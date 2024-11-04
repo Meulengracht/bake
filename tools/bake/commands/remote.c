@@ -32,6 +32,7 @@
 extern int remote_init_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int remote_build_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int remote_download_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 
 struct command_handler {
     char* name;
@@ -41,7 +42,8 @@ struct command_handler {
 static struct command_handler g_commands[] = {
     { "init",   remote_init_main },
     { "build",  remote_build_main },
-    { "resume", remote_resume_main }
+    { "resume", remote_resume_main },
+    { "download", remote_download_main }
 };
 
 static void __print_help(void)
@@ -53,12 +55,17 @@ static void __print_help(void)
     printf("  If the connection is severed between the bake instance and the waiterd\n");
     printf("  instance, the build can be resumed from the bake instance by invoking\n");
     printf("  'bake remote resume <ID>'\n\n");
+    printf("  From any build id, two artifacts can be available. For both failed and\n");
+    printf("  successful build, logs can be retrieved. From successful builds, build\n");
+    printf("  artifacts can additionally be retrieved (packs)\n");
+    printf("  'bake remote download {log, artifact} --ids=<ID>'\n\n");
     printf("  To see a full list of supported options for building, please execute\n");
     printf("  'bake build --help'\n\n");
     printf("Commands:\n");
     printf("  init     go through the configuration wizard\n");
     printf("  build    executes a recipe remotely\n");
     printf("  resume   resumes execution of a recipe running remotely\n");
+    printf("  download retrieve any artifacts from a finished remote build\n");
     printf("\n");
     printf("Options:\n");
     printf("  --version\n");

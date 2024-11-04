@@ -7,7 +7,7 @@ endif (CHEF_BUILD_RUNTIME)
 
 # build the build server if requested
 if (CHEF_BUILD_SERVER)
-#    add_subdirectory(cookd)
+    add_subdirectory(cookd)
 endif (CHEF_BUILD_SERVER)
 
 # build the manager if requested

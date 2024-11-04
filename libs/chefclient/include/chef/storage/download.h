@@ -16,15 +16,12 @@
  * 
  */
 
-#include "chef_waiterd_cook_service_client.h"
-#include <vlog.h>
+#ifndef __CHEF_CLIENT_STORAGE_H__
+#define __CHEF_CLIENT_STORAGE_H__
 
-void chef_waiterd_cook_event_update_request_invocation(gracht_client_t* client, const struct chef_cook_update_request* request)
-{
+/**
+ * @brief
+ */
+extern int chef_client_gen_download(const char* url, const char* path);
 
-}
-
-void chef_waiterd_cook_event_build_request_invocation(gracht_client_t* client, const struct chef_waiter_build_request* request)
-{
-
-}
+#endif //!__CHEF_CLIENT_STORAGE_H__

@@ -38,10 +38,11 @@
 
 static void __print_help(void)
 {
-    printf("Usage: bake remote resume --ids=<list-of-ids> [options]\n");
-    printf("  If the connection is severed between the bake instance and the waiterd\n");
-    printf("  instance, the build can be resumed from the bake instance by invoking\n");
-    printf("  'bake remote resume <ID>'\n\n");
+    printf("Usage: bake remote download {log,artifact} --ids=<list-of-ids> [options]\n");
+    printf("  From any build id, two artifacts can be available. For both failed and\n");
+    printf("  successful build, logs can be retrieved. From successful builds, build\n");
+    printf("  artifacts can additionally be retrieved (packs)\n");
+    printf("  'bake remote download {log, artifact} --ids=<ID>'\n\n");
     printf("  To see a full list of supported options for building, please execute\n");
     printf("  'bake remote --help'\n\n");
     printf("Options:\n");
@@ -209,7 +210,7 @@ static int __parse_build_ids(char** argv, int argc, int* i, struct list* builds)
     return __add_build(startOfId, builds);
 }
 
-int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_options* options)
+int remote_download_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct list       builds = { 0 };
     gracht_client_t*  client = NULL;

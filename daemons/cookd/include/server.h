@@ -16,12 +16,46 @@
  * 
  */
 
-#ifndef __CHEF_CLIENT_STORAGE_BU_H__
-#define __CHEF_CLIENT_STORAGE_BU_H__
+#ifndef __COOKD_SERVER_H__
+#define __COOKD_SERVER_H__
+
+struct cookd_config_address {
+    const char*    type;
+    const char*    address;
+    unsigned short port;
+};
 
 /**
  * @brief
  */
-extern int chef_client_bu_upload(const char* path, char** downloadUrl);
+extern int cookd_config_load(const char* confdir);
 
-#endif //!__CHEF_CLIENT_STORAGE_BU_H__
+/**
+ * @brief 
+ */
+extern int cookd_server_init(void);
+
+/**
+ * @brief
+ */
+extern void cookd_server_cleanup(void);
+
+struct cookd_status {
+    int queue_size;
+};
+
+/**
+ * @brief
+ */
+extern void cookd_server_status(struct cookd_status* status);
+
+struct cookd_build_options {
+    const char* platform;
+    const char* architecture;
+    const char* url;
+    const char* recipe_path;
+};
+
+extern int cookd_server_build(const char* id, struct cookd_build_options* options);
+
+#endif //!__COOKD_SERVER_H__

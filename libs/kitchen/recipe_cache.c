@@ -631,8 +631,7 @@ int recipe_cache_key_set_string(struct recipe_cache* cache, const char* key, con
 
 int recipe_cache_key_bool(struct recipe_cache* cache, const char* key)
 {
-    struct recipe_cache_item* cache = __get_cache_item(cache);
-    const char*               value = recipe_cache_key_string(cache, key);
+    const char* value = recipe_cache_key_string(cache, key);
     if (value == NULL) {
         return 0;
     }
@@ -641,51 +640,40 @@ int recipe_cache_key_bool(struct recipe_cache* cache, const char* key)
 
 int recipe_cache_key_set_bool(struct recipe_cache* cache, const char* key, int value)
 {
-    struct recipe_cache_item* cache = __get_cache_item(cache);
     return recipe_cache_key_set_string(cache, key, value ? "true" : "false");
 }
 
 int recipe_cache_is_part_sourced(struct recipe_cache* cache, const char* part)
 {
-    struct recipe_cache_item* cache = __get_cache_item(cache);
-    char                      buffer[256];
-
+    char buffer[256];
     snprintf(&buffer[0], sizeof(buffer), "%s-sourced", part);
     return recipe_cache_key_bool(cache, &buffer[0]);
 }
 
 int recipe_cache_mark_part_sourced(struct recipe_cache* cache, const char* part)
 {
-    struct recipe_cache_item* cache = __get_cache_item(cache);
-    char                      buffer[256];
-
+    char buffer[256];
     snprintf(&buffer[0], sizeof(buffer), "%s-sourced", part);
     return recipe_cache_key_set_bool(cache, &buffer[0], 1);
 }
 
-int recipe_cache_mark_step_complete(const char* part, const char* step)
+int recipe_cache_mark_step_complete(struct recipe_cache* cache, const char* part, const char* step)
 {
-    struct recipe_cache_item* cache = __get_cache_item(cache);
-    char                      buffer[256];
-
+    char buffer[256];
     snprintf(&buffer[0], sizeof(buffer), "%s-%s", part, step);
     return recipe_cache_key_set_bool(cache, &buffer[0], 1);
 }
 
-int recipe_cache_mark_step_incomplete(const char* part, const char* step)
+int recipe_cache_mark_step_incomplete(struct recipe_cache* cache, const char* part, const char* step)
 {
-    struct recipe_cache_item* cache = __get_cache_item(cache);
-    char                      buffer[256];
-
+    char buffer[256];
     snprintf(&buffer[0], sizeof(buffer), "%s-%s", part, step);
     return recipe_cache_key_set_bool(cache, &buffer[0], 0);
 }
 
-int recipe_cache_is_step_complete(const char* part, const char* step)
+int recipe_cache_is_step_complete(struct recipe_cache* cache, const char* part, const char* step)
 {
-    struct recipe_cache_item* cache = __get_cache_item(cache);
-    char                      buffer[256];
-
+    char buffer[256];
     snprintf(&buffer[0], sizeof(buffer), "%s-%s", part, step);
     return recipe_cache_key_bool(cache, &buffer[0]);
 }
