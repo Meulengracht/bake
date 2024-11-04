@@ -18,3 +18,8 @@ add_executable(cookd ${SRCS})
 add_dependencies(cookd service_client)
 target_include_directories(cookd PRIVATE include ${CMAKE_BINARY_DIR}/protocols)
 target_link_libraries(cookd PRIVATE kitchen fridge remote jansson-api jansson vlog libdirconf platform gracht)
+
+install(
+    TARGETS cookd
+    RUNTIME DESTINATION libexec/chef
+)

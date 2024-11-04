@@ -212,14 +212,14 @@ int waiterd_config_load(const char* confdir)
     return 0;
 }
 
-extern void waiterd_config_api_address(struct waiterd_config_address* address)
+void waiterd_config_api_address(struct waiterd_config_address* address)
 {
     address->type = g_config.api_address.type;
     address->address = g_config.api_address.address;
     address->port = g_config.api_address.port;
 }
 
-extern void waiterd_config_cook_address(struct waiterd_config_address* address)
+void waiterd_config_cook_address(struct waiterd_config_address* address)
 {
     address->type = g_config.cook_address.type;
     address->address = g_config.cook_address.address;

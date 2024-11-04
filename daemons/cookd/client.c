@@ -16,13 +16,13 @@
  *
  */
 
-#include <chef/config.h>
-#include <chef/dirs.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+
+#include "private.h"
 
 #if defined(__linux__)
 #include <arpa/inet.h>
@@ -70,7 +70,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 }
 #endif
 
-static void __configure_inet4(struct sockaddr_storage* storage, struct chef_config_address* config)
+static void __configure_inet4(struct sockaddr_storage* storage, struct cookd_config_address* config)
 {
     struct sockaddr_in* inet4 = (struct sockaddr_in*)storage;
 
@@ -79,7 +79,7 @@ static void __configure_inet4(struct sockaddr_storage* storage, struct chef_conf
     inet4->sin_port = htons(config->port);
 }
 
-static int init_link_config(struct gracht_link_socket* link, enum gracht_link_type type, struct chef_config_address* config)
+static int init_link_config(struct gracht_link_socket* link, enum gracht_link_type type, struct cookd_config_address* config)
 {
     struct sockaddr_storage addr_storage = { 0 };
     socklen_t               size;
@@ -118,25 +118,19 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     return 0;
 }
 
-int remote_client_create(gracht_client_t** clientOut)
+int cookd_initialize_client(gracht_client_t** clientOut)
 {
     struct gracht_link_socket*         link;
     struct gracht_client_configuration clientConfiguration;
     gracht_client_t*                   client = NULL;
-    struct chef_config*                config;
-    struct chef_config_address         apiAddress;
+    struct cookd_config_address        apiAddress;
     int                                code;
 
-    config = chef_config_load(chef_dirs_config());
-    if (config == NULL) {
-        fprintf(stderr, "remote_client_create: failed to load configuration\n");
-        return -1;
-    }
-    chef_config_remote_address(config, &apiAddress);
+    cookd_config_api_address(&apiAddress);
 
     code = gracht_link_socket_create(&link);
     if (code) {
-        fprintf(stderr, "remote_client_create: failed to initialize socket\n");
+        fprintf(stderr, "cookd_initialize_client: failed to initialize socket\n");
         return code;
     }
 
@@ -147,13 +141,13 @@ int remote_client_create(gracht_client_t** clientOut)
 
     code = gracht_client_create(&clientConfiguration, &client);
     if (code) {
-        printf("remote_client_create: error initializing client library %i, %i\n", errno, code);
+        printf("cookd_initialize_client: error initializing client library %i, %i\n", errno, code);
         return code;
     }
 
     code = gracht_client_connect(client);
     if (code) {
-        printf("remote_client_create: failed to connect client %i, %i\n", errno, code);
+        printf("cookd_initialize_client: failed to connect client %i, %i\n", errno, code);
     }
 
     *clientOut = client;

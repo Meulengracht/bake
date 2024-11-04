@@ -22,6 +22,7 @@
 
 #include "chef-config.h"
 #include "chef_waiterd_cook_service_client.h"
+#include "private.h"
 
 static void __print_help(void)
 {
@@ -31,16 +32,17 @@ static void __print_help(void)
     printf("  -v\n");
     printf("      Provide this for improved logging output\n");
     printf("  --version\n");
-    printf("      Print the version of waiterd\n");
+    printf("      Print the version of cookd\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
 }
 
 int main(int argc, char** argv)
 {
-    int   status;
-    int   logLevel = VLOG_LEVEL_TRACE;
-    FILE* debuglog;
+    gracht_client_t* client = NULL;
+    int              status;
+    int              logLevel = VLOG_LEVEL_TRACE;
+    FILE*            debuglog;
 
     // parse options
     if (argc > 1) {
@@ -49,7 +51,7 @@ int main(int argc, char** argv)
                 __print_help();
                 return 0;
             } else if (!strcmp(argv[i], "--version")) {
-                printf("waiterd: version " PROJECT_VER "\n");
+                printf("cookd: version " PROJECT_VER "\n");
                 return 0;
             } else if (!strncmp(argv[i], "-v", 2)) {
                 int li = 1;
@@ -62,46 +64,53 @@ int main(int argc, char** argv)
 
     // initialize logging
     vlog_initialize((enum vlog_level)logLevel);
-    atexit(vlog_cleanup);
 
     // initialize directories
     status = chef_dirs_initialize();
     if (status) {
-        fprintf(stderr, "waiterd: failed to initialize directories\n");
+        fprintf(stderr, "cookd: failed to initialize directories\n");
         return -1;
     }
 
     // load config
-    status = waiterd_config_load(chef_dirs_root());
+    status = cookd_config_load(chef_dirs_root());
     if (status) {
-        fprintf(stderr, "waiterd: failed to load configuation\n");
+        fprintf(stderr, "cookd: failed to load configuration\n");
         return -1;
     }
 
     // add log file to vlog
     debuglog = chef_dirs_contemporary_file("cookd", ".log", NULL);
     if (debuglog == NULL) {
-        fprintf(stderr, "waiterd: failed to open log file\n");
+        fprintf(stderr, "cookd: failed to open log file\n");
         return -1;
     }
     vlog_add_output(debuglog, 1);
     vlog_set_output_level(debuglog, VLOG_LEVEL_DEBUG);
 
     // initialize the client
+    status = cookd_initialize_client(&client);
+    if (status) {
+        fprintf(stderr, "cookd: failed to initialize the client\n");
+        goto cleanup;
+    }
 
     // initialize the server
     status = cookd_server_init();
     if (status) {
-        fprintf(stderr, "waiterd: failed to open log file\n");
+        fprintf(stderr, "cookd: failed to initialize server subsystem\n");
         goto cleanup;
     }
 
     // event loop
+    printf("entering main message loop");
     for (;;) {
-
+        gracht_client_wait_message(client, NULL, GRACHT_MESSAGE_BLOCK);
     }
 
 cleanup:
+    gracht_client_shutdown(client);
     cookd_server_cleanup();
+    vlog_cleanup();
     return status;
 }

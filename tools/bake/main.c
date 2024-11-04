@@ -58,7 +58,7 @@ static void __print_help(void)
     printf("Commands:\n");
     printf("  build\n");
     printf("              builds the provided (or inferred) bake recipe\n");
-    printf("  remote {init, build, resume}\n");
+    printf("  remote {init, build, resume, download}\n");
     printf("              used for building recipes remotely for any given configured\n");
     printf("              build server, parallel builds can be initiated for multiple\n");
     printf("              architectures by using the --archs switch\n");

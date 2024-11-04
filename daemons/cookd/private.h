@@ -19,32 +19,27 @@
 #ifndef __COOKD_SERVER_H__
 #define __COOKD_SERVER_H__
 
+#include <gracht/client.h>
+
+struct cookd_config_address {
+    const char*    type;
+    const char*    address;
+    unsigned short port;
+};
+
+/**
+ * @brief
+ */
+extern int cookd_config_load(const char* confdir);
+
 /**
  * @brief 
  */
-extern int cookd_server_init(void);
+extern void cookd_config_api_address(struct cookd_config_address* address);
 
 /**
  * @brief
  */
-extern void cookd_server_cleanup(void);
-
-struct cookd_status {
-    int queue_size;
-};
-
-/**
- * @brief
- */
-extern void cookd_server_status(struct cookd_status* status);
-
-struct cookd_build_options {
-    const char* platform;
-    const char* architecture;
-    const char* url;
-    const char* recipe_path;
-};
-
-extern int cookd_server_build(const char* id, struct cookd_build_options* options);
+extern int cookd_initialize_client(gracht_client_t** clientOut);
 
 #endif //!__COOKD_SERVER_H__

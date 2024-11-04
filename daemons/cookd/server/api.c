@@ -20,6 +20,23 @@
 #include <server.h>
 #include <vlog.h>
 
+static const char* __architecture(enum chef_build_architecture arch)
+{
+    switch (arch) {
+        case CHEF_BUILD_ARCHITECTURE_X86:
+            return "i386";
+        case CHEF_BUILD_ARCHITECTURE_X64:
+            return "amd64";
+        case CHEF_BUILD_ARCHITECTURE_ARMHF:
+            return "armhf";
+        case CHEF_BUILD_ARCHITECTURE_ARM64:
+            return "arm64";
+        case CHEF_BUILD_ARCHITECTURE_RISCV64:
+            return "riscv64";
+    }
+    return "amd64";
+}
+
 void chef_waiterd_cook_event_update_request_invocation(gracht_client_t* client, const struct chef_cook_update_request* request)
 {
     struct gracht_message_context msg;
@@ -36,12 +53,12 @@ void chef_waiterd_cook_event_update_request_invocation(gracht_client_t* client, 
     }
 }
 
-void chef_waiterd_cook_event_build_request_invocation(gracht_client_t* client, const struct chef_waiter_build_request* request)
+void chef_waiterd_cook_event_build_request_invocation(gracht_client_t* client, const char* id, const struct chef_waiter_build_request* request)
 {
     int status;
 
-    status = cookd_server_build(NULL, &(struct cookd_build_options) {
-        .architecture = request->arch,
+    status = cookd_server_build(id, &(struct cookd_build_options) {
+        .architecture = __architecture(request->arch),
         .platform = request->platform,
         .url = request->url,
         .recipe_path = request->recipe

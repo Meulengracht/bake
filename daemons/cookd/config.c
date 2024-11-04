@@ -20,11 +20,12 @@
 #include <chef/platform.h>
 #include <errno.h>
 #include <jansson.h>
-#include <server.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <vlog.h>
+
+#include "private.h"
 
 struct config_address {
     const char*    type;
@@ -74,7 +75,6 @@ static json_t* __serialize_config_address(struct config_address* address)
 
 struct config {
     struct config_address api_address;
-    struct config_address cook_address;
 };
 
 static struct config g_config = { 0 };
@@ -98,16 +98,8 @@ static json_t* __serialize_config(struct config* config)
         json_decref(root);
         return NULL;
     }
-
-    cook_address = __serialize_config_address(&config->cook_address);
-    if (cook_address == NULL) {
-        json_decref(api_address);
-        json_decref(root);
-        return NULL;
-    }
     
     json_object_set_new(root, "api-address", api_address);
-    json_object_set_new(root, "cook-address", cook_address);
     return root;
 }
 
@@ -143,16 +135,6 @@ static int __parse_config(struct config* config, json_t* root)
     if (status) {
         return status;
     }
-
-    member = json_object_get(root, "cook-address");
-    if (member == NULL) {
-        return 0;
-    }
-
-    status = __parse_config_address(&config->cook_address, member);
-    if (status) {
-        return status;
-    }
     return 0;
 }
 
@@ -160,18 +142,11 @@ static int __initialize_config(struct config* config)
 {
 #ifdef CHEF_ON_LINUX
     config->api_address.type = platform_strdup("local");
-    config->api_address.address = platform_strdup("/run/chef/cookd/api");
-    
-    config->cook_address.type = platform_strdup("local");
-    config->cook_address.address = platform_strdup("/run/chef/cookd/cook");
+    config->api_address.address = platform_strdup("/run/chef/waiterd/cook");
 #elif CHEF_ON_WINDOWS
     config->api_address.type = platform_strdup("inet4");
     config->api_address.address = platform_strdup("127.0.0.1");
-    config->api_address.port = 51001;
-    
-    config->cook_address.type = platform_strdup("inet4");
-    config->cook_address.address = platform_strdup("127.0.0.1");
-    config->cook_address.port = 51002;
+    config->api_address.port = 51002;
 #endif
     return 0;
 }
@@ -210,16 +185,9 @@ int cookd_config_load(const char* confdir)
     return 0;
 }
 
-extern void cookd_config_api_address(struct cookd_config_address* address)
+void cookd_config_api_address(struct cookd_config_address* address)
 {
     address->type = g_config.api_address.type;
     address->address = g_config.api_address.address;
     address->port = g_config.api_address.port;
-}
-
-extern void cookd_config_cook_address(struct cookd_config_address* address)
-{
-    address->type = g_config.cook_address.type;
-    address->address = g_config.cook_address.address;
-    address->port = g_config.cook_address.port;
 }
