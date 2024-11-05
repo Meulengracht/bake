@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/platform.h>
 #include "chef_waiterd_cook_service_client.h"
 #include <server.h>
 #include <vlog.h>
@@ -34,7 +35,7 @@ static const char* __architecture(enum chef_build_architecture arch)
         case CHEF_BUILD_ARCHITECTURE_RISCV64:
             return "riscv64";
     }
-    return "amd64";
+    return CHEF_ARCHITECTURE_STR;
 }
 
 void chef_waiterd_cook_event_update_request_invocation(gracht_client_t* client, const struct chef_cook_update_request* request)

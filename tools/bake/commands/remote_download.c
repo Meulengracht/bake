@@ -21,10 +21,11 @@
 #define _GNU_SOURCE
 
 #include <errno.h>
+#include <chef/client.h>
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
-#include <chef/remote.h>
+#include <chef/storage/download.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,7 +39,7 @@
 
 static void __print_help(void)
 {
-    printf("Usage: bake remote download {log,artifact} --ids=<list-of-ids> [options]\n");
+    printf("Usage: bake remote download --ids=<list-of-ids> [options]\n");
     printf("  From any build id, two artifacts can be available. For both failed and\n");
     printf("  successful build, logs can be retrieved. From successful builds, build\n");
     printf("  artifacts can additionally be retrieved (packs)\n");
@@ -66,31 +67,29 @@ struct __build {
     int                           log_index;
     char                          id[64];
     char                          arch[16];
+    int                           success;
+    char                          package_link[4096];
+    char                          log_link[4096];
 };
 
 static const char* __parse_protocol_arch(enum chef_build_architecture arch)
 {
     switch (arch) {
-        case CHEF_BUILD_ARCHITECTURE_X86: {
+        case CHEF_BUILD_ARCHITECTURE_X86:
             return "i386";
-        }
-        case CHEF_BUILD_ARCHITECTURE_X64: {
+        case CHEF_BUILD_ARCHITECTURE_X64:
             return "amd64";
-        }
-        case CHEF_BUILD_ARCHITECTURE_ARMHF: {
+        case CHEF_BUILD_ARCHITECTURE_ARMHF:
             return "armhf";
-        }
-        case CHEF_BUILD_ARCHITECTURE_ARM64: {
+        case CHEF_BUILD_ARCHITECTURE_ARM64:
             return "arm64";
-        }
-        case CHEF_BUILD_ARCHITECTURE_RISCV64: {
+        case CHEF_BUILD_ARCHITECTURE_RISCV64:
             return "riscv64";
-        }
     }
     return "unknown";
 }
 
-static int __resume_builds(gracht_client_t* client, struct list* builds)
+static int __wait_for_builds(gracht_client_t* client, struct list* builds)
 {
     int buildsCompleted = 0;
     while (buildsCompleted < builds->count) {
@@ -113,7 +112,7 @@ static int __resume_builds(gracht_client_t* client, struct list* builds)
             msgs[i++] = &build->msg_storage;
         }
 
-        status = gracht_client_await_multiple(client, &msgs[0], builds->count, GRACHT_AWAIT_ALL);
+        status = gracht_client_await_multiple(client, &msgs[0], i, GRACHT_AWAIT_ALL);
         if (status) {
             VLOG_ERROR("remote", "connection lost waiting for build status\n");
             return -1;
@@ -159,6 +158,7 @@ static int __resume_builds(gracht_client_t* client, struct list* builds)
                 case CHEF_BUILD_STATUS_DONE: {
                     VLOG_TRACE("remote", "build has completed\n");
                     vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+                    build->success = 1;
                     buildsCompleted++;
                 } break;
                 case CHEF_BUILD_STATUS_FAILED: {
@@ -170,8 +170,106 @@ static int __resume_builds(gracht_client_t* client, struct list* builds)
         }
 
         // wait a little before we update status
-        platform_sleep(5 * 1000);
+        if (buildsCompleted != builds->count) {
+            platform_sleep(5 * 1000);
+        }
     }
+    return 0;
+}
+
+static int __discover_artifacts(gracht_client_t* client, struct list* builds, enum chef_artifact_type atype)
+{
+    struct gracht_message_context* msgs[6] = { NULL };
+    struct list_item*              li;
+    int                            status;
+    int                            i;
+
+    // iterate through each of the builds and setup
+    i = 0;
+    list_foreach(builds, li) {
+        struct __build* build = (struct __build*)li;
+
+        // if the build was not successful, then we don't query for the
+        // package link
+        if (build->success == 0 && atype == CHEF_ARTIFACT_TYPE_PACKAGE) {
+            continue;
+        }
+
+        vlog_content_set_index(build->log_index);
+        status = chef_waiterd_artifact(client, &build->msg_storage, &build->id[0], atype);
+        if (status) {
+            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            return -1;
+        }
+        msgs[i++] = &build->msg_storage;
+    }
+
+    status = gracht_client_await_multiple(client, &msgs[0], i, GRACHT_AWAIT_ALL);
+    if (status) {
+        VLOG_ERROR("remote", "connection lost waiting for build status\n");
+        return -1;
+    }
+
+    list_foreach(builds, li) {
+        struct __build* build = (struct __build*)li;
+        const char*     link;
+
+        // if the build was not successful, then we don't query for the
+        // package link
+        if (build->success == 0 && atype == CHEF_ARTIFACT_TYPE_PACKAGE) {
+            continue;
+        }
+
+        switch (atype) {
+            case CHEF_ARTIFACT_TYPE_LOG:
+                link = &build->log_link[0];
+                break;
+            case CHEF_ARTIFACT_TYPE_PACKAGE:
+                link = &build->package_link[0];
+                break;
+        }
+
+        vlog_content_set_index(build->log_index);
+        status = chef_waiterd_artifact_result(client, &build->msg_storage, link, 4096);
+        if (status) {
+            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int __download_artifacts(struct list* builds)
+{
+    struct list_item* li;
+    int               status;
+
+    status = chefclient_initialize();
+    if (status != 0) {
+        fprintf(stderr, "__download_artifacts: failed to initialize chef client\n");
+        return -1;
+    }
+
+    list_foreach(builds, li) {
+        struct __build* build = (struct __build*)li;
+        vlog_content_set_index(build->log_index);
+
+        if (build->success) {
+            status = chef_client_gen_download(&build->package_link[0], NULL);
+            if (status) {
+                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+                continue;
+            }
+        }
+
+        status = chef_client_gen_download(&build->log_link[0], NULL);
+        if (status) {
+            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            continue;
+        }
+    }
+
+    chefclient_cleanup();
     return 0;
 }
 
@@ -255,7 +353,7 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
         vlog_content_set_index(i++);
         vlog_content_set_prefix("");
         vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-        VLOG_TRACE("remote", "resuming: %s...", &build->id[0]);
+        VLOG_TRACE("remote", "downloading: %s...", &build->id[0]);
     }
 
     // start by connecting
@@ -269,7 +367,25 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
         goto cleanup;
     }
 
-    status = __resume_builds(client, &builds);
+    status = __wait_for_builds(client, &builds);
+    if (status) {
+        VLOG_ERROR("bake", "failed to get information about builds\n");
+        goto cleanup;
+    }
+
+    status = __discover_artifacts(client, &builds, CHEF_ARTIFACT_TYPE_PACKAGE);
+    if (status) {
+        VLOG_ERROR("bake", "failed to get information about builds\n");
+        goto cleanup;
+    }
+
+    status = __discover_artifacts(client, &builds, CHEF_ARTIFACT_TYPE_LOG);
+    if (status) {
+        VLOG_ERROR("bake", "failed to get information about builds\n");
+        goto cleanup;
+    }
+
+    status = __download_artifacts(&builds);
 
 cleanup:
     gracht_client_shutdown(client);
