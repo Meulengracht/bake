@@ -96,7 +96,7 @@ int main(int argc, char** argv)
     }
 
     // initialize the server
-    status = cookd_server_init();
+    status = cookd_server_init(1 /* needs to be configurable */);
     if (status) {
         fprintf(stderr, "cookd: failed to initialize server subsystem\n");
         goto cleanup;
@@ -109,8 +109,8 @@ int main(int argc, char** argv)
     }
 
 cleanup:
-    gracht_client_shutdown(client);
     cookd_server_cleanup();
+    gracht_client_shutdown(client);
     vlog_cleanup();
     return status;
 }

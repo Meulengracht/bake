@@ -46,6 +46,23 @@ struct __cookd_builder_request {
     struct cookd_build_options options;
 };
 
+static struct __cookd_builder_request* __cookd_builder_request_new(const char* id, struct cookd_build_options* options)
+{
+    struct __cookd_builder_request* request;
+
+    request = calloc(1, sizeof(struct __cookd_builder_request));
+    if (request == NULL) {
+        return NULL;
+    }
+
+    request->id = platform_strdup(id);
+    request->options.architecture = platform_strdup(options->architecture);
+    request->options.platform = platform_strdup(options->platform);
+    request->options.url = platform_strdup(options->url);
+    request->options.recipe_path = platform_strdup(options->recipe_path);
+    return request;
+}
+
 static void __cookd_builder_request_delete(struct __cookd_builder_request* request)
 {
     if (request == NULL) {
@@ -59,10 +76,17 @@ static void __cookd_builder_request_delete(struct __cookd_builder_request* reque
     free(request);
 }
 
+enum __cookd_builder_state {
+    __COOKD_BUILDER_STATE_CREATED,
+    __COOKD_BUILDER_STATE_RUNNING,
+    __COOKD_BUILDER_STATE_DONE
+};
+
 struct __cookd_builder {
-    struct list_item      list_header;
-    thrd_t                builder_id;
-    struct __cookd_queue* queue;
+    struct list_item           list_header;
+    thrd_t                     builder_id;
+    enum __cookd_builder_state state;
+    struct __cookd_queue*      queue;
 };
 
 static struct __cookd_builder* __cookd_builder_new(struct __cookd_queue* queue)
@@ -73,6 +97,7 @@ static struct __cookd_builder* __cookd_builder_new(struct __cookd_queue* queue)
     if (builder == NULL) {
         return NULL;
     }
+    builder->state = __COOKD_BUILDER_STATE_CREATED;
     builder->queue = queue;
     return builder;
 }
@@ -91,6 +116,10 @@ static int __cookd_builder_main(void* arg)
 {
     struct __cookd_builder*         this = arg;
     struct __cookd_builder_request* request;
+    VLOG_DEBUG("server", "__cookd_builder_main()\n");
+
+    // update state
+    this->state = __COOKD_BUILDER_STATE_RUNNING;
 
     for (;;) {
         mtx_lock(&this->queue->lock);
@@ -118,12 +147,16 @@ static int __cookd_builder_main(void* arg)
         cookd_server_build(request->id, &request->options);
         __cookd_builder_request_delete(request);
     }
+
+    // update state again
+    this->state = __COOKD_BUILDER_STATE_DONE;
     return 0;
 }
 
 static int __cookd_builder_start(struct __cookd_builder* builder)
 {
     int status;
+    VLOG_DEBUG("server", "__cookd_builder_start()\n");
 
     status = thrd_create(&builder->builder_id, __cookd_builder_main, builder);
     if (status != thrd_success) {
@@ -197,12 +230,36 @@ static void __cookd_server_stop(struct __cookd_server* server)
     // mark queue inactive
     server->queue.active = 0;
 
-    cnd_broadcast(&server->queue.signal);
-    mtx_unlock(&server->queue.lock);
-
     // wait for builders to stop, active builds can
     // taken a while, so we may have to sleep here for 
     // now
+    // FIXME: timeout
+    VLOG_DEBUG("server", "__cookd_server_stop: stopping builders\n");
+    for (;;) {
+        struct list_item* li;
+        int               waiting = 0;
+
+        cnd_broadcast(&server->queue.signal);
+        mtx_unlock(&server->queue.lock);
+
+        list_foreach(&server->builders, li) {
+            struct __cookd_builder* builder = (struct __cookd_builder*)li;
+            if (builder->state != __COOKD_BUILDER_STATE_DONE) {
+                VLOG_DEBUG("server", "waiting for builder %i to shut down...\n", (int)builder->builder_id);
+                waiting = 1;
+                break;
+            }
+        }
+
+        if (!waiting) {
+            // means we don't need to unlock out of loop
+            break;
+        }
+
+        // do an update every 10s
+        platform_sleep(10 * 1000);
+        mtx_lock(&server->queue.lock);
+    }
 }
 
 static struct __cookd_server* g_server = NULL;
@@ -210,6 +267,7 @@ static struct __cookd_server* g_server = NULL;
 int cookd_server_init(int builderCount)
 {
     int status;
+    VLOG_DEBUG("server", "cookd_server_init(builders=%i)\n", builderCount);
 
     status = chefclient_initialize();
     if (status != 0) {
@@ -245,6 +303,8 @@ int cookd_server_init(int builderCount)
 
 void cookd_server_cleanup(void)
 {
+    VLOG_DEBUG("server", "cookd_server_cleanup()\n");
+
     __cookd_server_stop(g_server);
     __cookd_server_delete(g_server);
     fridge_cleanup();
@@ -253,6 +313,8 @@ void cookd_server_cleanup(void)
 
 void cookd_server_status(struct cookd_status* status)
 {
+    VLOG_DEBUG("server", "cookd_server_status()\n");
+
     if (g_server == NULL) {
         status->queue_size = 0;
         return;
@@ -424,6 +486,7 @@ static int __prepare_sources(const char* id, const char* url, char** projectPath
     char* imagePath = NULL;
     char* projectPath = NULL;
     int   status;
+    VLOG_DEBUG("server", "__prepare_sources(id=%s, url=%s)\n", id, url);
 
     buildRoot = strpathcombine(chef_dirs_root(), id);
     if (buildRoot == NULL) {
@@ -482,6 +545,7 @@ static int __load_recipe(const char* projectPath, const char* recipePath, struct
     void*          buffer = NULL;
     size_t         length;
     int            status;
+    VLOG_DEBUG("server", "__load_recipe(proj=%s, path=%s)\n", projectPath, recipePath);
     
     // build the absolute path for the recipe
     combined = strpathcombine(projectPath, recipePath);
@@ -516,6 +580,7 @@ static int __cookd_server_build(const char* id, struct cookd_build_options* opti
     int                          status;
     char*                        projectPath;
     struct recipe*               recipe;
+    VLOG_DEBUG("server", "__cookd_server_build(id=%s, url=%s)\n", id, options->url);
 
     status = __prepare_sources(id, options->url, &projectPath);
     if (status) {
@@ -585,5 +650,17 @@ cleanup:
 
 int cookd_server_queue_build(const char* id, struct cookd_build_options* options)
 {
+    struct __cookd_builder_request* request;
+    VLOG_DEBUG("server", "cookd_server_queue_build(id=%s, url=%s)\n", id, options->url);
 
+    request = __cookd_builder_request_new(id, options);
+    if (request == NULL) {
+        return -1;
+    }
+
+    mtx_lock(&g_server->queue.lock);
+    list_add(&g_server->queue.queue, &request->list_header);
+    cnd_signal(&g_server->queue.signal);
+    mtx_unlock(&g_server->queue.lock);
+    return 0;
 }
