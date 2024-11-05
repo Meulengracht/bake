@@ -58,7 +58,7 @@ void chef_waiterd_cook_event_build_request_invocation(gracht_client_t* client, c
 {
     int status;
 
-    status = cookd_server_build(id, &(struct cookd_build_options) {
+    status = cookd_server_queue_build(id, &(struct cookd_build_options) {
         .architecture = __architecture(request->arch),
         .platform = request->platform,
         .url = request->url,

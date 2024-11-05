@@ -25,6 +25,10 @@ apps:
     command: usr/libexec/chef/waiterd
     daemon: simple
     install-mode: disable
+  cookd:
+    command: usr/libexec/chef/cookd
+    daemon: simple
+    install-mode: disable
 
 parts:
   chef-src:

@@ -23,18 +23,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include "commands.h"
 
 static void __print_help(void)
 {
-    printf("Usage: bake fetch [options]\n");
+    printf("Usage: bake fridge <command> [options]\n");
+    printf("  This sub-command allows some management of the fridge for the current\n");
+    printf("  user. Ingredients are automatically added, however unless the recipe requires\n");
+    printf("  specific versions ingredients may need to be manually refreshed.\n\n");
+    printf("  We also allow removal, cleaning and to see which ones are stored.\n\n");
+    printf("Commands:\n");
+    printf("  list      go through the configuration wizard\n");
+    printf("  update    executes a recipe remotely\n");
+    printf("  remove    executes a recipe remotely\n");
+    printf("  clean     resumes execution of a recipe running remotely\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -h, --help\n");
+    printf("  --version\n");
+    printf("      Print the version of bake\n");
+    printf("  -h,  --help\n");
     printf("      Shows this help message\n");
 }
 
-int fetch_main(int argc, char** argv, char** envp, struct bake_command_options* options)
+int fridge_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct list_item* item;
     int               status;
@@ -54,7 +66,7 @@ int fetch_main(int argc, char** argv, char** envp, struct bake_command_options* 
         fprintf(stderr, "bake: no recipe specified\n");
         return -1;
     }
-    
+
     // get the architecture from the list
     arch = ((struct list_item_string*)options->architectures.head)->value;
 

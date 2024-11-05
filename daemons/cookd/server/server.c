@@ -16,17 +16,198 @@
  * 
  */
 
+#include <chef/client.h>
 #include <chef/dirs.h>
 #include <chef/kitchen.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <chef/remote.h>
+#include <chef/storage/download.h>
 #include <errno.h>
 #include <libfridge.h>
 #include <server.h>
+#include <stdlib.h>
+#include <threading.h>
 #include <vlog.h>
 
-int cookd_server_init(void)
+struct __cookd_queue {
+    // remember volatility means nothing in terms of memory
+    // safety, but rather avoid the compiler optimizing the 
+    // checks.
+    volatile int active;
+    mtx_t        lock;
+    cnd_t        signal;
+    struct list  queue;
+};
+
+struct __cookd_builder_request {
+    struct list_item           list_header;
+    char*                      id;
+    struct cookd_build_options options;
+};
+
+static void __cookd_builder_request_delete(struct __cookd_builder_request* request)
+{
+    if (request == NULL) {
+        return;
+    }
+    free(request->options.architecture);
+    free(request->options.platform);
+    free(request->options.recipe_path);
+    free(request->options.url);
+    free(request->id);
+    free(request);
+}
+
+struct __cookd_builder {
+    struct list_item      list_header;
+    thrd_t                builder_id;
+    struct __cookd_queue* queue;
+};
+
+static struct __cookd_builder* __cookd_builder_new(struct __cookd_queue* queue)
+{
+    struct __cookd_builder* builder;
+
+    builder = calloc(1, sizeof(struct __cookd_builder));
+    if (builder == NULL) {
+        return NULL;
+    }
+    builder->queue = queue;
+    return builder;
+}
+
+static void __cookd_builder_delete(struct __cookd_builder* builder)
+{
+    if (builder == NULL) {
+        return;
+    }
+    free(builder);
+}
+
+static int __cookd_server_build(const char* id, struct cookd_build_options* options);
+
+static int __cookd_builder_main(void* arg)
+{
+    struct __cookd_builder*         this = arg;
+    struct __cookd_builder_request* request;
+
+    for (;;) {
+        mtx_lock(&this->queue->lock);
+
+        // cancellation point, so we can cleanup properly
+        if (!this->queue->active) {
+            mtx_unlock(&this->queue->lock);
+            break;
+        }
+
+        cnd_wait(&this->queue->signal, &this->queue->lock);
+
+        // cancellation point, so we can cleanup properly
+        if (!this->queue->active) {
+            mtx_unlock(&this->queue->lock);
+            break;
+        }
+
+        // pop request
+        request = (struct __cookd_builder_request*)this->queue->queue.head;
+        if (request != NULL) {
+            this->queue->queue.head = request->list_header.next;
+        }
+        mtx_unlock(&this->queue->lock);
+        cookd_server_build(request->id, &request->options);
+        __cookd_builder_request_delete(request);
+    }
+    return 0;
+}
+
+static int __cookd_builder_start(struct __cookd_builder* builder)
+{
+    int status;
+
+    status = thrd_create(&builder->builder_id, __cookd_builder_main, builder);
+    if (status != thrd_success) {
+        return -1;
+    }
+    return 0;
+}
+
+struct __cookd_server {
+    struct __cookd_queue queue;
+    struct list          builders;
+};
+
+static struct __cookd_server* __cookd_server_new(void)
+{
+    struct __cookd_server* server;
+
+    server = calloc(1, sizeof(struct __cookd_server));
+    if (server == NULL) {
+        return NULL;
+    }
+
+    mtx_init(&server->queue.lock, mtx_plain);
+    cnd_init(&server->queue.signal);
+    server->queue.active = 1;
+    return server;
+}
+
+static void __cookd_server_delete(struct __cookd_server* server)
+{
+    struct list_item* li;
+
+    if (server == NULL) {
+        return;
+    }
+
+    list_destroy(&server->builders, __cookd_builder_delete);
+    list_destroy(&server->queue, __cookd_builder_request_delete);
+    mtx_destroy(&server->queue.lock);
+    cnd_destroy(&server->queue.signal);
+}
+
+static int __cookd_server_start(struct __cookd_server* server, int builderCount)
+{
+    VLOG_DEBUG("server", "__cookd_server_start(builders=%i)\n", builderCount);
+
+    for (int i = 0; i < builderCount; i++) {
+        struct __cookd_builder* builder = __cookd_builder_new(&server->queue);
+        if (builder == NULL) {
+            VLOG_ERROR("server", "failed to allocate memory for builder\n");
+            return -1;
+        }
+        list_add(&server->builders, &builder->list_header);
+
+        if (__cookd_builder_start(builder)) {
+            VLOG_ERROR("server", "failed to start builder %i\n", i);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void __cookd_server_stop(struct __cookd_server* server)
+{
+    VLOG_DEBUG("server", "__cookd_server_stop()\n");
+
+    // grab the lock first, so we can serialize the access
+    // to the active member
+    mtx_lock(&server->queue.lock);
+
+    // mark queue inactive
+    server->queue.active = 0;
+
+    cnd_broadcast(&server->queue.signal);
+    mtx_unlock(&server->queue.lock);
+
+    // wait for builders to stop, active builds can
+    // taken a while, so we may have to sleep here for 
+    // now
+}
+
+static struct __cookd_server* g_server = NULL;
+
+int cookd_server_init(int builderCount)
 {
     int status;
 
@@ -39,6 +220,24 @@ int cookd_server_init(void)
     status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR);
     if (status) {
         VLOG_ERROR("cookd", "failed to initialize fridge\n");
+        chefclient_cleanup();
+        return status;
+    }
+
+    g_server = __cookd_server_new();
+    if (g_server == NULL) {
+        VLOG_ERROR("cookd", "failed to allocate memory for server\n");
+        fridge_cleanup();
+        chefclient_cleanup();
+        return -1;
+    }
+
+    status = __cookd_server_start(g_server, builderCount);
+    if (status) {
+        VLOG_ERROR("cookd", "failed to start cookd server\n");
+        __cookd_server_delete(g_server);
+        fridge_cleanup();
+        chefclient_cleanup();
         return status;
     }
     return 0;
@@ -46,13 +245,20 @@ int cookd_server_init(void)
 
 void cookd_server_cleanup(void)
 {
+    __cookd_server_stop(g_server);
+    __cookd_server_delete(g_server);
     fridge_cleanup();
     chefclient_cleanup();
 }
 
 void cookd_server_status(struct cookd_status* status)
 {
-    status->queue_size = 0;
+    if (g_server == NULL) {
+        status->queue_size = 0;
+        return;
+    }
+
+    status->queue_size = g_server->queue.queue.count;
 }
 
 static int __add_kitchen_ingredient(const char* name, const char* path, struct list* kitchenIngredients)
@@ -245,7 +451,7 @@ static int __prepare_sources(const char* id, const char* url, char** projectPath
     }
 
     // download source first to the image path
-    status = remote_download(url, imagePath);
+    status = chef_client_gen_download(url, imagePath);
     if (status) {
         VLOG_ERROR("cookd", "__prepare_sources: failed to download %s for build id %s\n", url, id);
         goto cleanup;
@@ -303,7 +509,7 @@ cleanup:
     return status;
 }
 
-int cookd_server_build(const char* id, struct cookd_build_options* options)
+static int __cookd_server_build(const char* id, struct cookd_build_options* options)
 {
     struct kitchen_setup_options setupOptions = { 0 };
     struct kitchen               kitchen;
@@ -375,4 +581,9 @@ cleanup:
     kitchen_destroy(&kitchen);
     fridge_cleanup();
     return status;
+}
+
+int cookd_server_queue_build(const char* id, struct cookd_build_options* options)
+{
+
 }

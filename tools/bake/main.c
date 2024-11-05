@@ -29,9 +29,9 @@
 #include "commands/commands.h"
 
 extern int init_main(int argc, char** argv, char** envp, struct bake_command_options* options);
-extern int fetch_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int run_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int fridge_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int remote_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 
 struct command_handler {
@@ -41,9 +41,9 @@ struct command_handler {
 
 static struct command_handler g_commands[] = {
     { "init",   init_main },
-    { "fetch",  fetch_main },
     { "build",  run_main },
     { "clean",  clean_main },
+    { "fridge", fridge_main },
     { "remote", remote_main }
 };
 
@@ -56,15 +56,18 @@ static void __print_help(void)
     printf("  recipe.yaml\n");
     printf("\n");
     printf("Commands:\n");
+    printf("  init\n");
+    printf("              initializes a new recipe in the current directory\n");
     printf("  build\n");
     printf("              builds the provided (or inferred) bake recipe\n");
+    printf("  clean\n");
+    printf("              cleanup all build and intermediate directories\n");
     printf("  remote {init, build, resume, download}\n");
     printf("              used for building recipes remotely for any given configured\n");
     printf("              build server, parallel builds can be initiated for multiple\n");
     printf("              architectures by using the --archs switch\n");
-    printf("  clean       cleanup all build and intermediate directories\n");
-    printf("  fetch       refreshes/fetches all ingredients\n");
-    printf("  init        initializes a new recipe in the current directory\n");
+    printf("  fridge {list, update, remove, clean}\n");
+    printf("              manage ingredients used for building\n");
     printf("\n");
     printf("Options:\n");
     printf("  -p, --platform\n");

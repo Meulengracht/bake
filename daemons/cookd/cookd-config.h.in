@@ -13,38 +13,13 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 
-#ifndef __COOKD_SERVER_H__
-#define __COOKD_SERVER_H__
+#ifndef __COOKD_CONFIG_H__
+#define __COOKD_CONFIG_H__
 
-/**
- * @brief 
- */
-extern int cookd_server_init(int builderCount);
+#cmakedefine HAVE_C11_THREADS
+#cmakedefine HAVE_PTHREAD
 
-/**
- * @brief
- */
-extern void cookd_server_cleanup(void);
-
-struct cookd_status {
-    int queue_size;
-};
-
-/**
- * @brief
- */
-extern void cookd_server_status(struct cookd_status* status);
-
-struct cookd_build_options {
-    const char* platform;
-    const char* architecture;
-    const char* url;
-    const char* recipe_path;
-};
-
-extern int cookd_server_queue_build(const char* id, struct cookd_build_options* options);
-
-#endif //!__COOKD_SERVER_H__
+#endif // !__COOKD_CONFIG_H__

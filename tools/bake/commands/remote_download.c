@@ -206,7 +206,7 @@ static int __discover_artifacts(gracht_client_t* client, struct list* builds, en
 
     status = gracht_client_await_multiple(client, &msgs[0], i, GRACHT_AWAIT_ALL);
     if (status) {
-        VLOG_ERROR("remote", "connection lost waiting for build status\n");
+        VLOG_ERROR("remote", "connection lost waiting for build artifact\n");
         return -1;
     }
 
@@ -246,7 +246,7 @@ static int __download_artifacts(struct list* builds)
 
     status = chefclient_initialize();
     if (status != 0) {
-        fprintf(stderr, "__download_artifacts: failed to initialize chef client\n");
+        VLOG_ERROR("remote", "__download_artifacts: failed to initialize chef client\n");
         return -1;
     }
 
@@ -255,18 +255,24 @@ static int __download_artifacts(struct list* builds)
         vlog_content_set_index(build->log_index);
 
         if (build->success) {
+            VLOG_TRACE("remote", "downloading package...\n");
             status = chef_client_gen_download(&build->package_link[0], NULL);
             if (status) {
+                VLOG_ERROR("remote", "failed to retrieve package\n");
                 vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
                 continue;
             }
         }
 
+        VLOG_TRACE("remote", "downloading logs...\n");
         status = chef_client_gen_download(&build->log_link[0], NULL);
         if (status) {
+            VLOG_ERROR("remote", "failed to retrieve log\n");
             vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
             continue;
         }
+        
+        VLOG_TRACE("remote", "artifacts has been retrieved!\n");
     }
 
     chefclient_cleanup();
@@ -334,7 +340,7 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
     }
 
     // setup the build log box
-    vlog_start(stdout , "remote build", "connected to: ", 2 + builds.count);
+    vlog_start(stdout , "downloading", "connected to: ", 2 + builds.count);
 
     // 0+1 are informational
     vlog_content_set_index(0);
@@ -353,7 +359,7 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
         vlog_content_set_index(i++);
         vlog_content_set_prefix("");
         vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-        VLOG_TRACE("remote", "downloading: %s...", &build->id[0]);
+        VLOG_TRACE("remote", "syncing: %s...", &build->id[0]);
     }
 
     // start by connecting

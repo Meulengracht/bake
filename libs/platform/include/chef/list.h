@@ -78,4 +78,15 @@ static inline void list_remove(struct list* list, struct list_item* item)
     list->count--;
 }
 
+static inline void list_destroy(struct list* list, void(*freecb)(void* item))
+{
+    struct list_item* li;
+
+    list_foreach(list, li) {
+        struct list_item* next = li->next;
+        freecb(li);
+        li = next;
+    }
+}
+
 #endif //!__LIBPLATFORM_LIST_H__

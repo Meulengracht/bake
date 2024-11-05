@@ -8,7 +8,7 @@ add_library(bake-commands STATIC
     
     build.c
     clean.c
-    fetch.c
+    fridge.c
     init.c
     recipe_specification.c
     remote_build.c

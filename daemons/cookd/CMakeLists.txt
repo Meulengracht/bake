@@ -1,3 +1,9 @@
+include (CheckIncludeFiles)
+check_include_files (threads.h HAVE_C11_THREADS)
+check_include_files (pthread.h HAVE_PTHREAD)
+
+configure_file(cookd-config.h.in cookd-config.h @ONLY)
+
 set (GENERATED_SRCS
         ${CMAKE_BINARY_DIR}/protocols/chef_waiterd_cook_service_client.c
     )
@@ -16,7 +22,7 @@ set (SRCS
 
 add_executable(cookd ${SRCS})
 add_dependencies(cookd service_client)
-target_include_directories(cookd PRIVATE include ${CMAKE_BINARY_DIR}/protocols)
+target_include_directories(cookd PRIVATE include ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_BINARY_DIR}/protocols)
 target_link_libraries(cookd PRIVATE kitchen fridge remote jansson-api jansson vlog libdirconf platform gracht)
 
 install(
