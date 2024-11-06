@@ -43,6 +43,7 @@ void chef_waiterd_cook_event_update_request_invocation(gracht_client_t* client, 
     struct gracht_message_context msg;
     struct cookd_status           info;
     int                           status;
+    VLOG_DEBUG("api", "chef_waiterd_cook_event_update_request_invocation()\n");
     
     cookd_server_status(&info);
 
@@ -50,13 +51,16 @@ void chef_waiterd_cook_event_update_request_invocation(gracht_client_t* client, 
         .queue_size = info.queue_size
     });
     if (status) {
-
+        VLOG_ERROR("api", "failed to update the waiterd daemon about current status\n");
     }
 }
 
 void chef_waiterd_cook_event_build_request_invocation(gracht_client_t* client, const char* id, const struct chef_waiter_build_request* request)
 {
-    int status;
+    struct gracht_message_context msg;
+    int                           status;
+    enum chef_build_status        buildStatus;
+    VLOG_DEBUG("api", "chef_waiterd_cook_event_build_request_invocation(id=%s)\n", id);
 
     status = cookd_server_queue_build(id, &(struct cookd_build_options) {
         .architecture = __architecture(request->arch),
@@ -65,6 +69,17 @@ void chef_waiterd_cook_event_build_request_invocation(gracht_client_t* client, c
         .recipe_path = request->recipe
     });
     if (status) {
-        
+        VLOG_ERROR("api", "failed to queue build id %s\n", id);
+        buildStatus = CHEF_BUILD_STATUS_FAILED;
+    } else {
+        buildStatus = CHEF_BUILD_STATUS_QUEUED;
+    }
+
+    status = chef_waiterd_cook_status(client, &msg, &(struct chef_cook_build_event) {
+        .id = id,
+        .status = buildStatus
+    });
+    if (status) {
+
     }
 }

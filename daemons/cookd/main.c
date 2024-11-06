@@ -73,7 +73,7 @@ int main(int argc, char** argv)
     }
 
     // load config
-    status = cookd_config_load(chef_dirs_root());
+    status = cookd_config_load(chef_dirs_config());
     if (status) {
         fprintf(stderr, "cookd: failed to load configuration\n");
         return -1;
