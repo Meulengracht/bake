@@ -27,6 +27,7 @@
 #include <libfridge.h>
 #include <server.h>
 #include <stdlib.h>
+#include <string.h>
 #include <threading.h>
 #include <vlog.h>
 
@@ -68,10 +69,10 @@ static void __cookd_builder_request_delete(struct __cookd_builder_request* reque
     if (request == NULL) {
         return;
     }
-    free(request->options.architecture);
-    free(request->options.platform);
-    free(request->options.recipe_path);
-    free(request->options.url);
+    free((char*)request->options.architecture);
+    free((char*)request->options.platform);
+    free((char*)request->options.recipe_path);
+    free((char*)request->options.url);
     free(request->id);
     free(request);
 }
@@ -144,7 +145,7 @@ static int __cookd_builder_main(void* arg)
             this->queue->queue.head = request->list_header.next;
         }
         mtx_unlock(&this->queue->lock);
-        cookd_server_build(request->id, &request->options);
+        __cookd_server_build(request->id, &request->options);
         __cookd_builder_request_delete(request);
     }
 
@@ -193,8 +194,8 @@ static void __cookd_server_delete(struct __cookd_server* server)
         return;
     }
 
-    list_destroy(&server->builders, __cookd_builder_delete);
-    list_destroy(&server->queue, __cookd_builder_request_delete);
+    list_destroy(&server->builders, (void(*)(void*))__cookd_builder_delete);
+    list_destroy(&server->queue.queue, (void(*)(void*))__cookd_builder_request_delete);
     mtx_destroy(&server->queue.lock);
     cnd_destroy(&server->queue.signal);
 }

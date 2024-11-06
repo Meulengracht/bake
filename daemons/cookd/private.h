@@ -16,8 +16,8 @@
  * 
  */
 
-#ifndef __COOKD_SERVER_H__
-#define __COOKD_SERVER_H__
+#ifndef __COOKD_PRIVATE_H__
+#define __COOKD_PRIVATE_H__
 
 #include <gracht/client.h>
 
@@ -42,4 +42,4 @@ extern void cookd_config_api_address(struct cookd_config_address* address);
  */
 extern int cookd_initialize_client(gracht_client_t** clientOut);
 
-#endif //!__COOKD_SERVER_H__
+#endif //!__COOKD_PRIVATE_H__

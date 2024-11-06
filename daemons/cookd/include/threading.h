@@ -19,7 +19,7 @@
 #ifndef __COOKD_THREADS_H__
 #define __COOKD_THREADS_H__
 
-#include "cookd-config.h"
+//#include "cookd-config.h"
 
 #if defined(__clang__)
 #define __TLS_VAR __thread
@@ -52,9 +52,10 @@ typedef pthread_t thrd_t;
 #define cnd_destroy   pthread_cond_destroy
 #define cnd_wait      pthread_cond_wait
 #define cnd_signal    pthread_cond_signal
+#define cnd_broadcast pthread_cond_broadcast
 
 #define thrd_join(thr, ret)          pthread_join(thr, (void**)ret)
-#define thrd_create(thrp, func, arg) pthread_create(thrp, NULL, func, arg)
+#define thrd_create(thrp, func, arg) pthread_create(thrp, NULL, (void * (*)(void *))func, arg)
 
 #elif defined(_WIN32)
 #include <windows.h>

@@ -25,6 +25,7 @@
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
+#include <chef/remote.h>
 #include <chef/storage/download.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -212,7 +213,7 @@ static int __discover_artifacts(gracht_client_t* client, struct list* builds, en
 
     list_foreach(builds, li) {
         struct __build* build = (struct __build*)li;
-        const char*     link;
+        char*           link;
 
         // if the build was not successful, then we don't query for the
         // package link

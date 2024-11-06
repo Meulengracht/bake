@@ -12,6 +12,7 @@ add_library(bake-commands STATIC
     init.c
     recipe_specification.c
     remote_build.c
+    remote_download.c
     remote_init.c
     remote_resume.c
     remote.c

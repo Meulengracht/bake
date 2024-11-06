@@ -24,7 +24,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "chef-config.h"
 #include "commands.h"
+
+int fridge_list_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
+int fridge_update_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
+int fridge_remove_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
+int fridge_clean_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
+
+struct command_handler {
+    char* name;
+    int (*handler)(int argc, char** argv, char** envp, struct bake_command_options* options);
+};
+
+static struct command_handler g_commands[] = {
+    { "list",   fridge_list_main },
+    { "update", fridge_update_main },
+    { "remove", fridge_remove_main },
+    { "clean",  fridge_clean_main }
+};
 
 static void __print_help(void)
 {
@@ -32,7 +50,7 @@ static void __print_help(void)
     printf("  This sub-command allows some management of the fridge for the current\n");
     printf("  user. Ingredients are automatically added, however unless the recipe requires\n");
     printf("  specific versions ingredients may need to be manually refreshed.\n\n");
-    printf("  We also allow removal, cleaning and to see which ones are stored.\n\n");
+    printf("  We also allow removal, cleaning and to list stored ingredients.\n\n");
     printf("Commands:\n");
     printf("  list      go through the configuration wizard\n");
     printf("  update    executes a recipe remotely\n");
@@ -46,31 +64,23 @@ static void __print_help(void)
     printf("      Shows this help message\n");
 }
 
-int fridge_main(int argc, char** argv, char** envp, struct bake_command_options* options)
+static struct command_handler* __get_command(const char* command)
 {
-    struct list_item* item;
-    int               status;
-    const char*       arch;
-
-    // handle individual help command
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            }
+    for (int i = 0; i < sizeof(g_commands) / sizeof(struct command_handler); i++) {
+        if (!strcmp(command, g_commands[i].name)) {
+            return &g_commands[i];
         }
     }
+    return NULL;
+}
 
-    if (options->recipe == NULL) {
-        fprintf(stderr, "bake: no recipe specified\n");
-        return -1;
-    }
+int fridge_main(int argc, char** argv, char** envp, struct bake_command_options* options)
+{
+    struct command_handler* command = NULL;
+    int                     i;
+    int                     status;
 
-    // get the architecture from the list
-    arch = ((struct list_item_string*)options->architectures.head)->value;
-
-    status = fridge_initialize(options->platform, arch);
+    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR);
     if (status != 0) {
         fprintf(stderr, "bake: failed to initialize fridge\n");
         return -1;
@@ -84,22 +94,33 @@ int fridge_main(int argc, char** argv, char** envp, struct bake_command_options*
     }
     atexit(chefclient_cleanup);
 
-    // iterate through all ingredients
-    printf("bake: fetching %i host ingredients\n", options->recipe->environment.host.ingredients.count);
-    for (item = options->recipe->environment.host.ingredients.head; item != NULL; item = item->next) {
-        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        
-        // fetch the ingredient
-        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
-            .name = ingredient->name,
-            .channel = ingredient->channel,
-            .version = ingredient->version,
-            .arch = arch,
-            .platform = options->platform
-        }, NULL);
-        if (status != 0) {
-            fprintf(stderr, "bake: failed to fetch ingredient %s\n", ingredient->name);
+    // handle individual commands as well as --help and --version
+    // locate the fridge command on the cmdline
+    for (i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "fridge")) {
+            i++;
+            break;
         }
     }
-    return 0;
+
+    if (i < argc) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            __print_help();
+            return 0;
+        }
+
+        if (!strcmp(argv[i], "--version")) {
+            printf("bake: version " PROJECT_VER "\n");
+            return 0;
+        }
+
+        command = __get_command(argv[i]);
+    }
+
+    if (command == NULL) {
+        fprintf(stderr, "bake: command must be supplied for 'bake fridge'\n");
+        __print_help();
+        return -1;
+    }
+    return command->handler(argc, argv, envp, options);
 }

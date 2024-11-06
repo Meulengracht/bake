@@ -76,10 +76,10 @@ void chef_waiterd_cook_event_build_request_invocation(gracht_client_t* client, c
     }
 
     status = chef_waiterd_cook_status(client, &msg, &(struct chef_cook_build_event) {
-        .id = id,
+        .id = (char*)id,
         .status = buildStatus
     });
     if (status) {
-
+        VLOG_ERROR("api", "failed to update the waiterd daemon for build id %s\n", id);
     }
 }

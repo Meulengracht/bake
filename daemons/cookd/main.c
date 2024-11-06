@@ -68,21 +68,21 @@ int main(int argc, char** argv)
     // initialize directories
     status = chef_dirs_initialize();
     if (status) {
-        fprintf(stderr, "cookd: failed to initialize directories\n");
+        VLOG_ERROR("cookd", "failed to initialize directories\n");
         return -1;
     }
 
     // load config
     status = cookd_config_load(chef_dirs_config());
     if (status) {
-        fprintf(stderr, "cookd: failed to load configuration\n");
+        VLOG_ERROR("cookd", "failed to load configuration\n");
         return -1;
     }
 
     // add log file to vlog
     debuglog = chef_dirs_contemporary_file("cookd", ".log", NULL);
     if (debuglog == NULL) {
-        fprintf(stderr, "cookd: failed to open log file\n");
+        VLOG_ERROR("cookd", "failed to open log file\n");
         return -1;
     }
     vlog_add_output(debuglog, 1);
@@ -91,19 +91,18 @@ int main(int argc, char** argv)
     // initialize the client
     status = cookd_initialize_client(&client);
     if (status) {
-        fprintf(stderr, "cookd: failed to initialize the client\n");
+        VLOG_ERROR("cookd", "failed to initialize the client\n");
         goto cleanup;
     }
 
     // initialize the server
     status = cookd_server_init(1 /* needs to be configurable */);
     if (status) {
-        fprintf(stderr, "cookd: failed to initialize server subsystem\n");
+        VLOG_ERROR("cookd", "failed to initialize server subsystem\n");
         goto cleanup;
     }
 
-    // event loop
-    printf("entering main message loop");
+    VLOG_TRACE("cookd", "entering main message loop");
     for (;;) {
         gracht_client_wait_message(client, NULL, GRACHT_MESSAGE_BLOCK);
     }

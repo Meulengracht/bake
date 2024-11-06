@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <vlog.h>
 
 #include "private.h"
 
@@ -85,29 +86,30 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     socklen_t               size;
     int                     domain = 0;
     int                     status;
+    VLOG_DEBUG("cookd", "init_link_config(link=%i, type=%s)\n", type, config->type);
 
     if (!strcmp(config->type, "local")) {
         status = __configure_local(&addr_storage, config->address);
         if (status) {
-            fprintf(stderr, "init_link_config failed to configure local link\n");
+            VLOG_ERROR("cookd", "init_link_config failed to configure local link\n");
             return status;
         }
         domain = AF_LOCAL;
         size = __local_size();
 
-        printf("listening at %s\n", config->address);
+        VLOG_TRACE("cookd", "listening at %s\n", config->address);
     } else if (!strcmp(config->type, "inet4")) {
         __configure_inet4(&addr_storage, config);
         domain = AF_INET;
         size = sizeof(struct sockaddr_in);
         
-        printf("listening on %s:%u\n", config->address, config->port);
+        VLOG_TRACE("cookd", "listening on %s:%u\n", config->address, config->port);
     } else if (!strcmp(config->type, "inet6")) {
         // TODO
         domain = AF_INET6;
         size = sizeof(struct sockaddr_in6);
     } else {
-        fprintf(stderr, "init_link_config invalid link type %s\n", config->type);
+        VLOG_ERROR("cookd", "init_link_config invalid link type %s\n", config->type);
         return -1;
     }
 
@@ -125,12 +127,13 @@ int cookd_initialize_client(gracht_client_t** clientOut)
     gracht_client_t*                   client = NULL;
     struct cookd_config_address        apiAddress;
     int                                code;
+    VLOG_DEBUG("cookd", "cookd_initialize_client()\n");
 
     cookd_config_api_address(&apiAddress);
 
     code = gracht_link_socket_create(&link);
     if (code) {
-        fprintf(stderr, "cookd_initialize_client: failed to initialize socket\n");
+        VLOG_ERROR("cookd", "cookd_initialize_client: failed to initialize socket\n");
         return code;
     }
 
@@ -141,13 +144,15 @@ int cookd_initialize_client(gracht_client_t** clientOut)
 
     code = gracht_client_create(&clientConfiguration, &client);
     if (code) {
-        printf("cookd_initialize_client: error initializing client library %i, %i\n", errno, code);
+        VLOG_ERROR("cookd", "cookd_initialize_client: error initializing client library %i, %i\n", errno, code);
         return code;
     }
 
     code = gracht_client_connect(client);
     if (code) {
-        printf("cookd_initialize_client: failed to connect client %i, %i\n", errno, code);
+        VLOG_ERROR("cookd", "cookd_initialize_client: failed to connect client %i, %i\n", errno, code);
+        gracht_client_shutdown(client);
+        return code;
     }
 
     *clientOut = client;

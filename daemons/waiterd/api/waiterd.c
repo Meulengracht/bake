@@ -55,7 +55,7 @@ void chef_waiterd_build_invocation(
     }
 
     // redirect request
-    chef_waiterd_cook_event_build_request_single(message->server, cook->client, request);
+    chef_waiterd_cook_event_build_request_single(message->server, cook->client, &wreq->guid[0], request);
 }
 
 void chef_waiterd_status_invocation(struct gracht_message* message, const char* id)
