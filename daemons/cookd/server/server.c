@@ -634,16 +634,36 @@ static int __upload_file(const char* path, char** downloadUrl)
     
 }
 
-static int __notify()
+static void __notify(const char* id, enum cookd_notify_artifact_type atype, const char* uri)
 {
-    
+    if (cookd_notify_artifact_ready(g_server->client, id, atype, uri)) {
+        VLOG_ERROR("cookd", "__cookd_server_build: %s failed to notify of status change queued => sourcing\n", id);
+    }
 }
 
 static void __cookd_upload_artifacts(const char* id, const char* log, const char* pack)
 {
+    char* downloadUrl;
+    int   status;
+
     if (pack != NULL) {
-        char* downloadUrl;
-        // upload pack
+        status = __upload_file(pack, &downloadUrl);
+        if (!status) {
+            __notify(id, COOKD_ARTIFACT_TYPE_PACKAGE, downloadUrl);
+        }
+        VLOG_TRACE("cookd", "__cookd_upload_artifacts: result of uploading pack for %s: %i", id, status);
+    }
+
+    status = __upload_file(log, &downloadUrl);
+    if (!status) {
+        __notify(id, COOKD_ARTIFACT_TYPE_LOG, downloadUrl);
+    }
+    VLOG_TRACE("cookd", "__cookd_upload_artifacts: result of uploading log for %s: %i", id, status);
+}
+
+static void __notify_status(const char* id, enum cookd_notify_build_status status) {
+    if (cookd_notify_status_update(g_server->client, id, status)) {
+        VLOG_ERROR("cookd", "__cookd_server_build: %s failed to notify of status change queued => sourcing\n", id);
     }
 }
 
@@ -661,6 +681,7 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
 
     VLOG_DEBUG("cookd", "__cookd_server_build(id=%s, url=%s)\n", id, options->url);
 
+    __notify_status(id, COOKD_BUILD_STATUS_SOURCING);
     log = __cookd_build_log_new(id, &log_path);
     if (log == NULL) {
         VLOG_ERROR("cookd", "__cookd_server_build: failed to create build log\n");
@@ -717,23 +738,26 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
         goto cleanup;
     }
     
+    __notify_status(id, COOKD_BUILD_STATUS_BUILDING);
     status = kitchen_recipe_make(&kitchen);
     if (status) {
         VLOG_ERROR("cookd", "failed to build project for build id %s\n", id);
         goto cleanup;
     }
 
+    __notify_status(id, COOKD_BUILD_STATUS_PACKING);
     status = kitchen_recipe_pack(&kitchen);
     if (status) {
         VLOG_ERROR("cookd", "failed to pack project artifacts for build id %s\n", id);
     }
 
 cleanup:
-    __cookd_build_log_cleanup(log);
     if (cleanupKitchen) {
         kitchen_destroy(&kitchen);
     }
     __cookd_upload_artifacts(id, log_path, pack_path);
+    __notify_status(id, status == 0 ? COOKD_BUILD_STATUS_DONE : COOKD_BUILD_STATUS_FAILED);
+    __cookd_build_log_cleanup(log);
 }
 
 int cookd_server_queue_build(const char* id, struct cookd_build_options* options)
