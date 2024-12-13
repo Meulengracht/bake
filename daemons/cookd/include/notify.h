@@ -16,37 +16,33 @@
  * 
  */
 
-#ifndef __COOKD_SERVER_H__
-#define __COOKD_SERVER_H__
+#ifndef __COOKD_NOTIFY_H__
+#define __COOKD_NOTIFY_H__
 
 #include <gracht/client.h>
 
-/**
- * @brief 
- */
-extern int cookd_server_init(gracht_client_t* client, int builderCount);
-
-/**
- * @brief
- */
-extern void cookd_server_cleanup(void);
-
-struct cookd_status {
-    int queue_size;
+enum cookd_notify_build_status {
+    COOKD_BUILD_STATUS_QUEUED,
+    COOKD_BUILD_STATUS_SOURCING,
+    COOKD_BUILD_STATUS_BUILDING,
+    COOKD_BUILD_STATUS_PACKING,
+    COOKD_BUILD_STATUS_DONE,
+    COOKD_BUILD_STATUS_FAILED,
 };
 
 /**
  * @brief
  */
-extern void cookd_server_status(struct cookd_status* status);
+extern int cookd_notify_status_update(gracht_client_t* client, const char* id, enum cookd_notify_build_status status);
 
-struct cookd_build_options {
-    const char* platform;
-    const char* architecture;
-    const char* url;
-    const char* recipe_path;
+enum cookd_notify_artifact_type {
+    COOKD_ARTIFACT_TYPE_LOG,
+    COOKD_ARTIFACT_TYPE_PACKAGE,
 };
 
-extern int cookd_server_queue_build(const char* id, struct cookd_build_options* options);
+/**
+ * @brief
+ */
+extern int cookd_notify_artifact_ready(gracht_client_t* client, const char* id, enum cookd_notify_artifact_type type, const char* uri);
 
-#endif //!__COOKD_SERVER_H__
+#endif //!__COOKD_NOTIFY_H__

@@ -249,6 +249,17 @@ int vlog_add_output(FILE* output, int close)
     return 0;
 }
 
+int vlog_remove_output(FILE* output)
+{
+    for (int i = 0; i < g_vlog.outputs_count; i++) {
+        if (g_vlog.outputs[i].handle == output) {
+            g_vlog.outputs[i].handle = NULL;
+            g_vlog.outputs_count--;
+            break;
+        }
+    }
+}
+
 void vlog_set_output_options(FILE* output, unsigned int flags)
 {
     for (int i = 0; i < g_vlog.outputs_count; i++) {
@@ -454,12 +465,12 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
     timeInfo = localtime(&now);
 
     strftime(&dateTime[0], sizeof(dateTime) - 1, "%F %T", timeInfo);
-    for (int i = 0; i < g_vlog.outputs_count; i++) {
+    for (int i = 0; i < VLOG_MAX_OUTPUTS; i++) {
         struct vlog_output* output      = &g_vlog.outputs[i];
         int                 colsWritten = 0;
 
         // ensure level is appropriate for output
-        if (level > output->level) {
+        if (output->handle != NULL && level > output->level) {
             continue;
         }
 

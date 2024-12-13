@@ -77,6 +77,11 @@ extern void vlog_set_level(enum vlog_level level);
 extern int vlog_add_output(FILE* output, int close);
 
 /**
+ * @brief
+ */
+extern int vlog_remove_output(FILE* output);
+
+/**
  * @brief 
  */
 extern void vlog_set_output_options(FILE* output, unsigned int flags);

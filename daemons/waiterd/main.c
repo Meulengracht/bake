@@ -107,10 +107,6 @@ int main(int argc, char** argv)
     config.callbacks.clientConnected = waiterd_server_cook_connect;
     config.callbacks.clientDisconnected = waiterd_server_cook_disconnect;
     
-    // up the max size for protocols, due to the nature of transferring
-    // git patches, we might need this for now
-    gracht_server_configuration_set_max_msg_size(&config, 65*1024);
-
     // start up the server
     status = waiterd_initialize_server(&config, &g_server);
 

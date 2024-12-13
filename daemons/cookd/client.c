@@ -137,7 +137,7 @@ int cookd_initialize_client(gracht_client_t** clientOut)
         return code;
     }
 
-    init_link_config(link, gracht_link_packet_based, &apiAddress);
+    init_link_config(link, gracht_link_stream_based, &apiAddress);
 
     gracht_client_configuration_init(&clientConfiguration);
     gracht_client_configuration_set_link(&clientConfiguration, (struct gracht_link*)link);

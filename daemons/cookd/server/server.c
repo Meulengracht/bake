@@ -25,6 +25,7 @@
 #include <chef/storage/download.h>
 #include <errno.h>
 #include <libfridge.h>
+#include <notify.h>
 #include <server.h>
 #include <stdlib.h>
 #include <string.h>
@@ -111,13 +112,13 @@ static void __cookd_builder_delete(struct __cookd_builder* builder)
     free(builder);
 }
 
-static int __cookd_server_build(const char* id, struct cookd_build_options* options);
+static void __cookd_server_build(const char* id, struct cookd_build_options* options);
 
 static int __cookd_builder_main(void* arg)
 {
     struct __cookd_builder*         this = arg;
     struct __cookd_builder_request* request;
-    VLOG_DEBUG("server", "__cookd_builder_main()\n");
+    VLOG_DEBUG("cookd", "__cookd_builder_main()\n");
 
     // update state
     this->state = __COOKD_BUILDER_STATE_RUNNING;
@@ -157,7 +158,7 @@ static int __cookd_builder_main(void* arg)
 static int __cookd_builder_start(struct __cookd_builder* builder)
 {
     int status;
-    VLOG_DEBUG("server", "__cookd_builder_start()\n");
+    VLOG_DEBUG("cookd", "__cookd_builder_start()\n");
 
     status = thrd_create(&builder->builder_id, __cookd_builder_main, builder);
     if (status != thrd_success) {
@@ -169,9 +170,10 @@ static int __cookd_builder_start(struct __cookd_builder* builder)
 struct __cookd_server {
     struct __cookd_queue queue;
     struct list          builders;
+    gracht_client_t*     client;
 };
 
-static struct __cookd_server* __cookd_server_new(void)
+static struct __cookd_server* __cookd_server_new(gracht_client_t* client)
 {
     struct __cookd_server* server;
 
@@ -183,6 +185,7 @@ static struct __cookd_server* __cookd_server_new(void)
     mtx_init(&server->queue.lock, mtx_plain);
     cnd_init(&server->queue.signal);
     server->queue.active = 1;
+    server->client = client;
     return server;
 }
 
@@ -202,18 +205,18 @@ static void __cookd_server_delete(struct __cookd_server* server)
 
 static int __cookd_server_start(struct __cookd_server* server, int builderCount)
 {
-    VLOG_DEBUG("server", "__cookd_server_start(builders=%i)\n", builderCount);
+    VLOG_DEBUG("cookd", "__cookd_server_start(builders=%i)\n", builderCount);
 
     for (int i = 0; i < builderCount; i++) {
         struct __cookd_builder* builder = __cookd_builder_new(&server->queue);
         if (builder == NULL) {
-            VLOG_ERROR("server", "failed to allocate memory for builder\n");
+            VLOG_ERROR("cookd", "failed to allocate memory for builder\n");
             return -1;
         }
         list_add(&server->builders, &builder->list_header);
 
         if (__cookd_builder_start(builder)) {
-            VLOG_ERROR("server", "failed to start builder %i\n", i);
+            VLOG_ERROR("cookd", "failed to start builder %i\n", i);
             return -1;
         }
     }
@@ -222,7 +225,7 @@ static int __cookd_server_start(struct __cookd_server* server, int builderCount)
 
 static void __cookd_server_stop(struct __cookd_server* server)
 {
-    VLOG_DEBUG("server", "__cookd_server_stop()\n");
+    VLOG_DEBUG("cookd", "__cookd_server_stop()\n");
 
     // grab the lock first, so we can serialize the access
     // to the active member
@@ -235,7 +238,7 @@ static void __cookd_server_stop(struct __cookd_server* server)
     // taken a while, so we may have to sleep here for 
     // now
     // FIXME: timeout
-    VLOG_DEBUG("server", "__cookd_server_stop: stopping builders\n");
+    VLOG_DEBUG("cookd", "__cookd_server_stop: stopping builders\n");
     for (;;) {
         struct list_item* li;
         int               waiting = 0;
@@ -246,7 +249,7 @@ static void __cookd_server_stop(struct __cookd_server* server)
         list_foreach(&server->builders, li) {
             struct __cookd_builder* builder = (struct __cookd_builder*)li;
             if (builder->state != __COOKD_BUILDER_STATE_DONE) {
-                VLOG_DEBUG("server", "waiting for builder %i to shut down...\n", (int)builder->builder_id);
+                VLOG_DEBUG("cookd", "waiting for builder %i to shut down...\n", (int)builder->builder_id);
                 waiting = 1;
                 break;
             }
@@ -265,10 +268,10 @@ static void __cookd_server_stop(struct __cookd_server* server)
 
 static struct __cookd_server* g_server = NULL;
 
-int cookd_server_init(int builderCount)
+int cookd_server_init(gracht_client_t* client, int builderCount)
 {
     int status;
-    VLOG_DEBUG("server", "cookd_server_init(builders=%i)\n", builderCount);
+    VLOG_DEBUG("cookd", "cookd_server_init(builders=%i)\n", builderCount);
 
     status = chefclient_initialize();
     if (status != 0) {
@@ -283,7 +286,7 @@ int cookd_server_init(int builderCount)
         return status;
     }
 
-    g_server = __cookd_server_new();
+    g_server = __cookd_server_new(client);
     if (g_server == NULL) {
         VLOG_ERROR("cookd", "failed to allocate memory for server\n");
         fridge_cleanup();
@@ -304,7 +307,7 @@ int cookd_server_init(int builderCount)
 
 void cookd_server_cleanup(void)
 {
-    VLOG_DEBUG("server", "cookd_server_cleanup()\n");
+    VLOG_DEBUG("cookd", "cookd_server_cleanup()\n");
 
     __cookd_server_stop(g_server);
     __cookd_server_delete(g_server);
@@ -314,7 +317,7 @@ void cookd_server_cleanup(void)
 
 void cookd_server_status(struct cookd_status* status)
 {
-    VLOG_DEBUG("server", "cookd_server_status()\n");
+    VLOG_DEBUG("cookd", "cookd_server_status()\n");
 
     if (g_server == NULL) {
         status->queue_size = 0;
@@ -481,13 +484,14 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
 
 // <root> / <id> / sources / 
 // <root> / <id> / src.image
+// <root> / <id> / build.log
 static int __prepare_sources(const char* id, const char* url, char** projectPathOut)
 {
     char* buildRoot;
     char* imagePath = NULL;
     char* projectPath = NULL;
     int   status;
-    VLOG_DEBUG("server", "__prepare_sources(id=%s, url=%s)\n", id, url);
+    VLOG_DEBUG("cookd", "__prepare_sources(id=%s, url=%s)\n", id, url);
 
     buildRoot = strpathcombine(chef_dirs_root(), id);
     if (buildRoot == NULL) {
@@ -546,7 +550,7 @@ static int __load_recipe(const char* projectPath, const char* recipePath, struct
     void*          buffer = NULL;
     size_t         length;
     int            status;
-    VLOG_DEBUG("server", "__load_recipe(proj=%s, path=%s)\n", projectPath, recipePath);
+    VLOG_DEBUG("cookd", "__load_recipe(proj=%s, path=%s)\n", projectPath, recipePath);
     
     // build the absolute path for the recipe
     combined = strpathcombine(projectPath, recipePath);
@@ -574,25 +578,105 @@ cleanup:
     return status;
 }
 
-static int __cookd_server_build(const char* id, struct cookd_build_options* options)
+// <root> / <id> / build.log
+static FILE* __cookd_build_log_new(const char* id, char** logPathOut)
+{
+    char* buildRoot;
+    char* logPath = NULL;
+    int   status;
+    FILE* log = NULL;
+    VLOG_DEBUG("cookd", "__cookd_build_log_new(id=%s)\n", id);
+
+    buildRoot = strpathcombine(chef_dirs_root(), id);
+    if (buildRoot == NULL) {
+        VLOG_ERROR("cookd", "__cookd_build_log_new: failed to allocate memory for build path\n");
+        return -1;
+    }
+
+    logPath = strpathcombine(buildRoot, "build.log");
+    if (logPath == NULL) {
+        VLOG_ERROR("cookd", "__cookd_build_log_new: failed to allocate memory for build log path\n");
+        goto cleanup;
+    }
+
+    // create folder for build id
+    status = platform_mkdir(&buildRoot[0]);
+    if (status) {
+        VLOG_ERROR("cookd", "__cookd_build_log_new: failed to create build project directory %s for build id %s\n", &buildRoot[0], id);
+        free(logPath);
+        goto cleanup;
+    }
+
+    log = fopen(logPath, "w");
+    if (log == NULL) {
+        free(logPath);
+        goto cleanup;
+    }
+
+    *logPathOut = logPath;
+    vlog_add_output(log, 0);
+    vlog_set_output_level(log, VLOG_LEVEL_DEBUG);
+
+cleanup:
+    free(buildRoot);
+    return log;
+}
+
+static void __cookd_build_log_cleanup(FILE* log)
+{
+    vlog_remove_output(log);
+    fflush(log);
+    fclose(log);
+}
+
+static int __upload_file(const char* path, char** downloadUrl)
+{
+    
+}
+
+static int __notify()
+{
+    
+}
+
+static void __cookd_upload_artifacts(const char* id, const char* log, const char* pack)
+{
+    if (pack != NULL) {
+        char* downloadUrl;
+        // upload pack
+    }
+}
+
+static void __cookd_server_build(const char* id, struct cookd_build_options* options)
 {
     struct kitchen_setup_options setupOptions = { 0 };
-    struct kitchen               kitchen;
-    int                          status;
+    struct kitchen               kitchen = { 0 };
     char*                        projectPath;
     struct recipe*               recipe;
-    VLOG_DEBUG("server", "__cookd_server_build(id=%s, url=%s)\n", id, options->url);
+    FILE*                        log;
+    char*                        log_path;
+    char*                        pack_path = NULL;
+    int                          status;
+    int                          cleanupKitchen = 0;
+
+    VLOG_DEBUG("cookd", "__cookd_server_build(id=%s, url=%s)\n", id, options->url);
+
+    log = __cookd_build_log_new(id, &log_path);
+    if (log == NULL) {
+        VLOG_ERROR("cookd", "__cookd_server_build: failed to create build log\n");
+        return;
+    }
 
     status = __prepare_sources(id, options->url, &projectPath);
     if (status) {
         VLOG_ERROR("cookd", "failed to prepare sources for build id %s (%s)\n", id, options->url);
-        return status;
+        goto cleanup;
     }
 
     status = __load_recipe(projectPath, options->recipe_path, &recipe);
     if (status) {
         VLOG_ERROR("cookd", "failed to load the recipe for build id %s (%s)\n", id, options->recipe_path);
-        return status;
+        goto cleanup;
     }
 
     status = kitchen_initialize(&(struct kitchen_init_options) {
@@ -605,8 +689,9 @@ static int __cookd_server_build(const char* id, struct cookd_build_options* opti
     }, &kitchen);
     if (status) {
         VLOG_ERROR("cookd", "failed to initialize kitchen area for build id %s\n", id);
-        return status;
+        goto cleanup;
     }
+    cleanupKitchen = 1;
 
     status = __prep_ingredients(recipe, options->platform, options->architecture, &setupOptions);
     if (status) {
@@ -644,15 +729,17 @@ static int __cookd_server_build(const char* id, struct cookd_build_options* opti
     }
 
 cleanup:
-    kitchen_destroy(&kitchen);
-    fridge_cleanup();
-    return status;
+    __cookd_build_log_cleanup(log);
+    if (cleanupKitchen) {
+        kitchen_destroy(&kitchen);
+    }
+    __cookd_upload_artifacts(id, log_path, pack_path);
 }
 
 int cookd_server_queue_build(const char* id, struct cookd_build_options* options)
 {
     struct __cookd_builder_request* request;
-    VLOG_DEBUG("server", "cookd_server_queue_build(id=%s, url=%s)\n", id, options->url);
+    VLOG_DEBUG("cookd", "cookd_server_queue_build(id=%s, url=%s)\n", id, options->url);
 
     request = __cookd_builder_request_new(id, options);
     if (request == NULL) {

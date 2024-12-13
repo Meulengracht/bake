@@ -95,14 +95,22 @@ int main(int argc, char** argv)
         goto cleanup;
     }
 
+    // register protocols
+    gracht_client_register_protocol(client, &chef_waiterd_cook_client_protocol);
+
     // initialize the server
-    status = cookd_server_init(1 /* needs to be configurable */);
+    status = cookd_server_init(client, 1 /* needs to be configurable */);
     if (status) {
         VLOG_ERROR("cookd", "failed to initialize server subsystem\n");
         goto cleanup;
     }
 
-    VLOG_TRACE("cookd", "entering main message loop");
+    VLOG_TRACE("cookd", "registering with server\n");
+    status = chef_waiterd_cook_ready(client, NULL, &(struct chef_cook_ready_event) { 
+        .archs = CHEF_BUILD_ARCHITECTURE_X64 
+    });
+
+    VLOG_TRACE("cookd", "entering main message loop\n");
     for (;;) {
         gracht_client_wait_message(client, NULL, GRACHT_MESSAGE_BLOCK);
     }

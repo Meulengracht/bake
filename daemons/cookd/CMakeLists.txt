@@ -13,6 +13,7 @@ set (SRCS
     ${GENERATED_SRCS}
     
     server/api.c
+    server/notify.c
     server/server.c
 
     client.c
