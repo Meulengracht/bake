@@ -16,19 +16,31 @@ The best way to get started is to install the latest version of Chef using the [
 
 Features that should be in the upcoming 1.4 release
 
-- Cookd
-- Waiterd
-- TBA
+- The cookd daemon. It's the build agent which will facilitate incoming builds.
+- The waiterd daemon. It's the facilitator that accepts build requests and proxies them to registered agents.
+- The remote backend, introducing 4 new remote commands for bake;
+  * `bake remote init`
+  * `bake remote build`
+  * `bake remote resume`
+  * `bake remote download`
+
+  These commands will help facilitate setting up and executing remote builds. A remote agent must be running and be configured. In 
+  the future, remote management commands will also be introduced to help inspect the remote setup and to verify current status.
 
 Features that is expected in the upcoming 1.5 release
 
 - Served initial feature completion
-- TBA
+- Remote management commands;
+  * `bake remote info [agent]`
 
 Features that is expected in the upcoming 1.6 release
 
 - Initial windows support
-- TBA
+  * Finish the platform layer
+  * Extend containerv to support the windows HCI layer
+  * Implement the build flow in kitchen for windows
+- [*] Multi-publisher per account
+- [*] Per publisher signing
 
 ## Account Setup
 

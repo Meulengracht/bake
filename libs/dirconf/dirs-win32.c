@@ -17,6 +17,7 @@
  */
 
 #include <chef/platform.h>
+#include <stdio.h>
 
 int chef_dirs_initialize(void)
 {
@@ -53,5 +54,12 @@ const char* chef_dirs_kitchen(const char* uuid)
 
 const char* chef_dirs_ensure(const char* path)
 {
+    return NULL;
+}
+
+FILE* chef_dirs_contemporary_file(char** rpath)
+{
+    // GetTempPath
+    // GetTempFileName
     return NULL;
 }

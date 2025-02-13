@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -49,8 +49,8 @@ static int __create_application_symlinks(struct served_application* application)
             continue;
         }
 
-        // create a link from /chef/bin/<command> => ${CHEF_INSTALL_DIR}/lib/chef/serve-exec
-        status = platform_symlink(symlinkPath, CHEF_INSTALL_DIR "/lib/chef/serve-exec", 0);
+        // create a link from /chef/bin/<command> => ${CHEF_INSTALL_DIR}/libexec/chef/serve-exec
+        status = platform_symlink(symlinkPath, CHEF_INSTALL_DIR "/libexec/chef/serve-exec", 0);
         if (status != 0) {
             free((void*)symlinkPath);
             free((void*)dataPath);

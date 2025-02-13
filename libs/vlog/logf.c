@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -185,11 +185,6 @@ void vlog_initialize(enum vlog_level level)
     // once the user resizes the terminal
     signal(SIGWINCH, __winch_handler);
 #endif
-
-    // spawn the animator thread
-    if (thrd_create(&g_vlog.animator_tid, __animator_loop, NULL) != thrd_success) {
-        VLOG_ERROR("logv", "failed to spawn thread for animation\n");
-    }
 }
 
 static struct vlog_output* __get_output(FILE* handle)
@@ -252,6 +247,17 @@ int vlog_add_output(FILE* output, int close)
 
     g_vlog.outputs_count++;
     return 0;
+}
+
+int vlog_remove_output(FILE* output)
+{
+    for (int i = 0; i < g_vlog.outputs_count; i++) {
+        if (g_vlog.outputs[i].handle == output) {
+            g_vlog.outputs[i].handle = NULL;
+            g_vlog.outputs_count--;
+            break;
+        }
+    }
 }
 
 void vlog_set_output_options(FILE* output, unsigned int flags)
@@ -393,6 +399,15 @@ void vlog_start(FILE* handle, const char* header, const char* footer, int conten
     g_vlog.lines = calloc(contentLineCount, sizeof(struct vlog_content_line));
     g_vlog.view_enabled = 1;
 
+    // must not already be started
+    if (!g_vlog.animator_running) {
+        // spawn the animator thread
+        if (thrd_create(&g_vlog.animator_tid, __animator_loop, NULL) != thrd_success) {
+            VLOG_ERROR("logv", "failed to spawn thread for animation\n");
+        }
+    }
+
+    // refresh view
     __refresh_view(output, 0);
 }
 
@@ -450,12 +465,12 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
     timeInfo = localtime(&now);
 
     strftime(&dateTime[0], sizeof(dateTime) - 1, "%F %T", timeInfo);
-    for (int i = 0; i < g_vlog.outputs_count; i++) {
+    for (int i = 0; i < VLOG_MAX_OUTPUTS; i++) {
         struct vlog_output* output      = &g_vlog.outputs[i];
         int                 colsWritten = 0;
 
         // ensure level is appropriate for output
-        if (level > output->level) {
+        if (output->handle != NULL && level > output->level) {
             continue;
         }
 

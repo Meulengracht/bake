@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,10 +41,29 @@ int strfilter(const char* filter, const char* text, int flags)
         // match against text
         switch (*fi) {
             case '*':
-                // wildcard match (string)
-                // * does not match '/'
-                while (*i != CHEF_PATH_SEPARATOR && FOLD(*i) != FOLD(*(fi + 1))) {
-                    i++;
+                if (*(fi + 1) == '*') {
+                    // recursive wildcard match
+                    const char* j = i;
+                    while (*j) {
+                        if (strfilter(fi + 2, j, flags) == 0) {
+                            break;
+                        }
+                        
+                        // level did not match, keep descending
+                        while (*j && *(++j) != CHEF_PATH_SEPARATOR);
+                    }
+                    if (!*j) {
+                        return -1;
+                    }
+                    i = j;
+                    fi++;
+                    
+                } else {
+                    // wildcard match
+                    // * does not match '/'
+                    while (*i != CHEF_PATH_SEPARATOR && FOLD(*i) != FOLD(*(fi + 1))) {
+                        i++;
+                    }
                 }
                 break;
             case '?':
@@ -53,6 +72,32 @@ int strfilter(const char* filter, const char* text, int flags)
                 if (*i != CHEF_PATH_SEPARATOR) {
                     i++;
                 }
+                break;
+            case '[':
+                // match either of the characters inside the bracket
+                int match = 0;
+                while (*(++fi) != ']') {
+                    // is it a range (i.e a-zA-Z) 
+                    if (*(fi + 1) == '-' && isalnum(*(fi + 2))) {
+                        char start = *fi;
+                        char end = *(fi + 2);
+                        if (FOLD(*i) >= FOLD(start) && FOLD(*i) <= FOLD(end)) {
+                            match = 1;
+                            break;
+                        }
+                        fi += 2;
+                    } else if (FOLD(*i) == FOLD(*fi)) {
+                        match = 1;
+                        break;
+                    }
+                }
+                if (!match) {
+                    // not found, not a match
+                    return -1;
+                }
+                // skip over rest of the case
+                while (*(++fi) != ']');
+                i++;
                 break;
             
             // handle escapes, intentional fall-through
@@ -74,3 +119,25 @@ int strfilter(const char* filter, const char* text, int flags)
     }
     return 0;
 }
+
+#if 0
+
+int main()
+{
+    printf("positive tests:\n");
+    printf("/my/test/path vs /my/test/path: %i\n", strfilter("/my/test/path", "/my/test/path", 0));
+    printf("\\!/my/test/path vs !/my/test/path: %i\n", strfilter("\\!/my/test/path", "!/my/test/path", 0));
+    printf("/my/*/path vs /my/test/path: %i\n", strfilter("/my/*/path", "/my/test/path", 0));
+    printf("/**/path vs /my/test/path: %i\n", strfilter("/**/path", "/my/test/path", 0));
+    printf("/my/** vs /my/test/path: %i\n", strfilter("/my/**", "/my/test/path", 0));
+    printf("/my/[Tt]est/path vs /my/test/path: %i\n", strfilter("/my/[tT]est/path", "/my/test/path", 0));
+    printf("/my/[a-Z]est/path vs /my/test/path: %i\n", strfilter("/my/[tT]est/path", "/my/test/path", 0));
+    
+    printf("\nnegation tests:\n");
+    printf("!/my/test/path vs /my/test/path: %i\n", strfilter("!/my/test/path", "/my/test/path", 0));
+    printf("/**/path/two vs /my/test/path/one: %i\n", strfilter("/**/path/two", "/my/test/path/one", 0));
+
+    return 0;
+}
+
+#endif

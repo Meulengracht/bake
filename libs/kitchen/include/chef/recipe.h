@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -204,7 +204,7 @@ extern void recipe_destroy(struct recipe* recipe);
 // recipe parser utilities
 extern int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, char** channel, char** version);
 extern const char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform);
-extern int recipe_validate_target(struct recipe* recipe, const char** expectedPlatform, const char** expectedArch);
+extern int recipe_ensure_target(struct recipe* recipe, const char** expectedPlatform, struct list* expectedArchs);
 extern int recipe_parse_part_step(const char* str, char** part, char** step);
 
 // recipe cache
@@ -219,53 +219,55 @@ struct recipe_cache_package_change {
     const char*                   name;
 };
 
-extern int         recipe_cache_initialize(struct recipe* current, const char* cwd);
-extern const char* recipe_cache_uuid(void);
-extern const char* recipe_cache_uuid_for(const char* name);
-extern void        recipe_cache_transaction_begin(void);
-extern void        recipe_cache_transaction_commit(void);
+struct recipe_cache;
 
-extern int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** changes, int* changeCount);
-extern int recipe_cache_commit_package_changes(struct recipe_cache_package_change* changes, int count);
+extern int         recipe_cache_create(struct recipe* current, const char* cwd, struct recipe_cache** cacheOut);
+extern const char* recipe_cache_uuid(struct recipe_cache* cache);
+extern const char* recipe_cache_uuid_for(struct recipe_cache* cache, const char* name);
+extern void        recipe_cache_transaction_begin(struct recipe_cache* cache);
+extern void        recipe_cache_transaction_commit(struct recipe_cache* cache);
 
-extern int recipe_cache_mark_part_sourced(const char* part);
-extern int recipe_cache_is_part_sourced(const char* part);
+extern int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change** changes, int* changeCount);
+extern int recipe_cache_commit_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change* changes, int count);
 
-extern int recipe_cache_mark_step_complete(const char* part, const char* step);
-extern int recipe_cache_mark_step_incomplete(const char* part, const char* step);
-extern int recipe_cache_is_step_complete(const char* part, const char* step);
+extern int recipe_cache_mark_part_sourced(struct recipe_cache* cache, const char* part);
+extern int recipe_cache_is_part_sourced(struct recipe_cache* cache, const char* part);
+
+extern int recipe_cache_mark_step_complete(struct recipe_cache* cache, const char* part, const char* step);
+extern int recipe_cache_mark_step_incomplete(struct recipe_cache* cache, const char* part, const char* step);
+extern int recipe_cache_is_step_complete(struct recipe_cache* cache, const char* part, const char* step);
 
 /**
  * @brief Clears all cache data for the given cache name.
  * @return 0 for success, non-zero for error.
  */
-extern int recipe_cache_clear_for(const char* name);
+extern int recipe_cache_clear_for(struct recipe_cache* cache, const char* name);
 
 /**
  * @brief Reads a string value from the recipe cache by the given key.
  * @return Non-null if the key was set, otherwise NULL.
  */
-extern const char* recipe_cache_key_string(const char* key);
+extern const char* recipe_cache_key_string(struct recipe_cache* cache, const char* key);
 
 /**
  * @brief Writes a string value to the recipe cache under the given key.
  * Any pre-existing value for this key is overwritten.
  * @return 0 for success, non-zero for error.
  */
-extern int recipe_cache_key_set_string(const char* key, const char* value);
+extern int recipe_cache_key_set_string(struct recipe_cache* cache, const char* key, const char* value);
 
 /**
  * @brief Wrapper around recipe_cache_key_string that reads a boolean value
  * from the cache under the given key. 
  * @return 1 if key exists and was set to true, 0 otherwise.
  */
-extern int recipe_cache_key_bool(const char* key);
+extern int recipe_cache_key_bool(struct recipe_cache* cache, const char* key);
 
 /**
  * @brief Wrapper around recipe_cache_key_set_string that writes a boolean value
  * to the cache for the given key.
  * @return 0 if the key was set, non-zero for error.
  */
-extern int recipe_cache_key_set_bool(const char* key, int value);
+extern int recipe_cache_key_set_bool(struct recipe_cache* cache, const char* key, int value);
 
 #endif //!__CHEF_RECIPE_H__

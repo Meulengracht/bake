@@ -323,7 +323,32 @@ struct recipe_cache {
     int                       xaction;
 };
 
-static struct recipe_cache g_cache = { 0 };
+static struct recipe_cache* __recipe_cache_new(const char* path, struct recipe* recipe)
+{
+    struct recipe_cache* cache = calloc(1, sizeof(struct recipe_cache));
+    if (cache == NULL) {
+        return NULL;
+    }
+
+    cache->path = platform_strdup(path);
+    if (cache->path == NULL) {
+        free(cache);
+        return NULL;
+    }
+
+    cache->current = recipe;
+    return cache;
+}
+
+static void __recipe_cache_delete(struct recipe_cache* cache)
+{
+    if (cache == NULL) {
+        return;
+    }
+
+    free((void*)cache->path);
+    free(cache);
+}
 
 static int __parse_cache(struct recipe_cache* cache, json_t* root)
 {
@@ -355,24 +380,10 @@ static int __parse_cache(struct recipe_cache* cache, json_t* root)
     return 0;
 }
 
-static int __initialize_cache(struct recipe_cache* cache, const char* path)
-{
-    memset(cache, 0, sizeof(struct recipe_cache));
-    cache->path = platform_strdup(path);
-    if (cache->path == NULL) {
-        return -1;
-    }
-    return 0;
-}
-
-static int __load_cache(struct recipe_cache* cache, const char* path)
+static int __load_config(struct recipe_cache* cache, const char* path)
 {
     json_error_t error;
     json_t*      root;
-
-    if (__initialize_cache(cache, path)) {
-        return -1;
-    }
 
     root = json_load_file(path, 0, &error);
     if (root == NULL) {
@@ -443,8 +454,8 @@ static int __ensure_recipe_cache(struct recipe_cache* cache, struct recipe* curr
         return 0;
     }
 
-    for (int i = 0; i < g_cache.item_count; i++) {
-        if (strcmp(g_cache.items[i].name, current->project.name) == 0) {
+    for (int i = 0; i < cache->item_count; i++) {
+        if (strcmp(cache->items[i].name, current->project.name) == 0) {
             // exists
             return 0;
         }
@@ -464,38 +475,46 @@ static int __ensure_recipe_cache(struct recipe_cache* cache, struct recipe* curr
 }
 
 // API
-int recipe_cache_initialize(struct recipe* current, const char* cwd)
+int recipe_cache_create(struct recipe* current, const char* cwd, struct recipe_cache** cacheOut)
 {
-    char buff[PATH_MAX] = { 0 };
-    int  status;
+    struct recipe_cache* cache;
+    char                 buff[PATH_MAX] = { 0 };
+    int                  status;
+
+    snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S ".vchcache", cwd);
 
     // initialize the random counter for guid's
     srand(clock());
 
-    snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S ".vchcache", cwd);
-    status = __load_cache(&g_cache, &buff[0]);
+    // create a new cache
+    cache = __recipe_cache_new(&buff[0], current);
+    if (cache == NULL) {
+        VLOG_ERROR("cache", "out of memory for cache allocation!\n");
+        return -1;
+    }
+
+    status = __load_config(cache, &buff[0]);
     if (status) {
         VLOG_ERROR("cache", "failed to load or initialize the recipe cache\n");
+        __recipe_cache_delete(cache);
         return status;
     }
 
-    // set the current recipe
-    g_cache.current = current;
-
-    status = __ensure_recipe_cache(&g_cache, current);
+    status = __ensure_recipe_cache(cache, current);
     if (status) {
         VLOG_ERROR("cache", "failed to ensure cache for current recipe\n");
+        __recipe_cache_delete(cache);
         return status;
     }
-
+    *cacheOut = cache;
     return 0;
 }
 
-const char* recipe_cache_uuid_for(const char* name)
+const char* recipe_cache_uuid_for(struct recipe_cache* cache, const char* name)
 {
-    for (int i = 0; i < g_cache.item_count; i++) {
-        if (strcmp(g_cache.items[i].name, name) == 0) {
-            return g_cache.items[i].uuid;
+    for (int i = 0; i < cache->item_count; i++) {
+        if (strcmp(cache->items[i].name, name) == 0) {
+            return cache->items[i].uuid;
         }
     }
 
@@ -503,30 +522,30 @@ const char* recipe_cache_uuid_for(const char* name)
     return NULL;
 }
 
-const char* recipe_cache_uuid(void)
+const char* recipe_cache_uuid(struct recipe_cache* cache)
 {
-    if (g_cache.current != NULL) {
-        return recipe_cache_uuid_for(g_cache.current->project.name);
+    if (cache->current != NULL) {
+        return recipe_cache_uuid_for(cache, cache->current->project.name);
     }
 
     VLOG_FATAL("cache", "no recipe specified\n");
     return NULL;
 }
 
-static struct recipe_cache_item* __get_cache_item(void)
+static struct recipe_cache_item* __get_cache_item(struct recipe_cache* cache)
 {
-    if (g_cache.current == NULL) {
+    if (cache->current == NULL) {
         VLOG_FATAL("cache", "__get_cache_item: invoked but no recipe set\n");
         return NULL;
     }
 
-    for (int i = 0; i < g_cache.item_count; i++) {
-        if (strcmp(g_cache.items[i].name, g_cache.current->project.name) == 0) {
-            return &g_cache.items[i];
+    for (int i = 0; i < cache->item_count; i++) {
+        if (strcmp(cache->items[i].name, cache->current->project.name) == 0) {
+            return &cache->items[i];
         }
     }
 
-    VLOG_FATAL("cache", "no cache entry for %s\n", g_cache.current->project.name);
+    VLOG_FATAL("cache", "no cache entry for %s\n", cache->current->project.name);
     return NULL;
 }
 
@@ -550,17 +569,17 @@ static void __clear_ingredients(struct list* ingredients)
     }
 }
 
-int recipe_cache_clear_for(const char* name)
+int recipe_cache_clear_for(struct recipe_cache* cache, const char* name)
 {
-    if (!g_cache.xaction) {
+    if (!cache->xaction) {
         VLOG_FATAL("cache", "recipe_cache_clear_for: no transaction\n");
     }
 
-    for (int i = 0; i < g_cache.item_count; i++) {
-        if (strcmp(g_cache.items[i].name, name) == 0) {
-            __clear_packages(&g_cache.items[i].packages);
-            __clear_ingredients(&g_cache.items[i].ingredients);
-            json_object_clear(g_cache.items[i].keystore);
+    for (int i = 0; i < cache->item_count; i++) {
+        if (strcmp(cache->items[i].name, name) == 0) {
+            __clear_packages(&cache->items[i].packages);
+            __clear_ingredients(&cache->items[i].ingredients);
+            json_object_clear(cache->items[i].keystore);
             return 0;
         }
     }
@@ -568,38 +587,38 @@ int recipe_cache_clear_for(const char* name)
     return -1;
 }
 
-void recipe_cache_transaction_begin(void)
+void recipe_cache_transaction_begin(struct recipe_cache* cache)
 {
-    if (g_cache.xaction != 0) {
+    if (cache->xaction != 0) {
         VLOG_FATAL("cache", "transaction already in progress\n");
     }
-    g_cache.xaction = 1;
+    cache->xaction = 1;
 }
 
-void recipe_cache_transaction_commit(void)
+void recipe_cache_transaction_commit(struct recipe_cache* cache)
 {
-    if (!g_cache.xaction) {
+    if (!cache->xaction) {
         VLOG_FATAL("cache", "no transaction in progress\n");
     }
 
-    if (__save_cache(&g_cache)) {
+    if (__save_cache(cache)) {
         VLOG_FATAL("cache", "failed to commit changes to cache\n");
     }
-    g_cache.xaction = 0;
+    cache->xaction = 0;
 }
 
-const char* recipe_cache_key_string(const char* key)
+const char* recipe_cache_key_string(struct recipe_cache* cache, const char* key)
 {
-    struct recipe_cache_item* cacheItem = __get_cache_item();
+    struct recipe_cache_item* cacheItem = __get_cache_item(cache);
     return json_string_value(json_object_get(cacheItem->keystore, key));
 }
 
-int recipe_cache_key_set_string(const char* key, const char* value)
+int recipe_cache_key_set_string(struct recipe_cache* cache, const char* key, const char* value)
 {
-    struct recipe_cache_item* cacheItem = __get_cache_item();
+    struct recipe_cache_item* cacheItem = __get_cache_item(cache);
     int                       status;
 
-    if (!g_cache.xaction) {
+    if (!cache->xaction) {
         VLOG_FATAL("cache", "recipe_cache_key_set_string: no transaction\n");
     }
 
@@ -610,65 +629,53 @@ int recipe_cache_key_set_string(const char* key, const char* value)
     return status;
 }
 
-int recipe_cache_key_bool(const char* key)
+int recipe_cache_key_bool(struct recipe_cache* cache, const char* key)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
-    const char*               value = recipe_cache_key_string(key);
+    const char* value = recipe_cache_key_string(cache, key);
     if (value == NULL) {
         return 0;
     }
     return strcmp(value, "true") == 0 ? 1 : 0;
 }
 
-int recipe_cache_key_set_bool(const char* key, int value)
+int recipe_cache_key_set_bool(struct recipe_cache* cache, const char* key, int value)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
-    return recipe_cache_key_set_string(key, value ? "true" : "false");
+    return recipe_cache_key_set_string(cache, key, value ? "true" : "false");
 }
 
-int recipe_cache_is_part_sourced(const char* part)
+int recipe_cache_is_part_sourced(struct recipe_cache* cache, const char* part)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
-    char                      buffer[256];
-
+    char buffer[256];
     snprintf(&buffer[0], sizeof(buffer), "%s-sourced", part);
-    return recipe_cache_key_bool(&buffer[0]);
+    return recipe_cache_key_bool(cache, &buffer[0]);
 }
 
-int recipe_cache_mark_part_sourced(const char* part)
+int recipe_cache_mark_part_sourced(struct recipe_cache* cache, const char* part)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
-    char                      buffer[256];
-
+    char buffer[256];
     snprintf(&buffer[0], sizeof(buffer), "%s-sourced", part);
-    return recipe_cache_key_set_bool(&buffer[0], 1);
+    return recipe_cache_key_set_bool(cache, &buffer[0], 1);
 }
 
-int recipe_cache_mark_step_complete(const char* part, const char* step)
+int recipe_cache_mark_step_complete(struct recipe_cache* cache, const char* part, const char* step)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
-    char                      buffer[256];
-
+    char buffer[256];
     snprintf(&buffer[0], sizeof(buffer), "%s-%s", part, step);
-    return recipe_cache_key_set_bool(&buffer[0], 1);
+    return recipe_cache_key_set_bool(cache, &buffer[0], 1);
 }
 
-int recipe_cache_mark_step_incomplete(const char* part, const char* step)
+int recipe_cache_mark_step_incomplete(struct recipe_cache* cache, const char* part, const char* step)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
-    char                      buffer[256];
-
+    char buffer[256];
     snprintf(&buffer[0], sizeof(buffer), "%s-%s", part, step);
-    return recipe_cache_key_set_bool(&buffer[0], 0);
+    return recipe_cache_key_set_bool(cache, &buffer[0], 0);
 }
 
-int recipe_cache_is_step_complete(const char* part, const char* step)
+int recipe_cache_is_step_complete(struct recipe_cache* cache, const char* part, const char* step)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
-    char                      buffer[256];
-
+    char buffer[256];
     snprintf(&buffer[0], sizeof(buffer), "%s-%s", part, step);
-    return recipe_cache_key_bool(&buffer[0]);
+    return recipe_cache_key_bool(cache, &buffer[0]);
 }
 
 static int __add_package_change(
@@ -703,9 +710,9 @@ static int __add_package_change(
     return 0;
 }
 
-int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** changes, int* changeCount)
+int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change** changes, int* changeCount)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
+    struct recipe_cache_item* cacheItem = NULL;
     struct list_item          *i, *j;
     int                       capacity = 0;
     VLOG_DEBUG("cache", "recipe_cache_calculate_package_changes()\n");
@@ -713,22 +720,30 @@ int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** 
     *changes = NULL;
     *changeCount = 0;
 
+    if (cache != NULL) {
+        cacheItem = __get_cache_item(cache);
+    }
+
     // We use an insanely inefficient algorithm here, but we don't care as
     // these lists should never be long, and we do not have access to an easy
     // hashtable here. 
 
     // check packages added
-    list_foreach(&g_cache.current->environment.host.packages, i) {
+    list_foreach(&cache->current->environment.host.packages, i) {
         struct list_item_string* toCheck = (struct list_item_string*)i;
-        int                     exists = 0;
-        list_foreach(&cache->packages, j) {
-            struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
-            if (strcmp(toCheck->value, pkg->name) == 0) {
-                // found, not a new package
-                exists = 1;
-                break;
+        int                      exists = 0;
+
+        if (cacheItem != NULL) {
+            list_foreach(&cacheItem->packages, j) {
+                struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
+                if (strcmp(toCheck->value, pkg->name) == 0) {
+                    // found, not a new package
+                    exists = 1;
+                    break;
+                }
             }
         }
+
         if (!exists) {
             if(__add_package_change(changes, changeCount, &capacity, toCheck->value, RECIPE_CACHE_CHANGE_ADDED)) {
                 return -1;
@@ -736,30 +751,32 @@ int recipe_cache_calculate_package_changes(struct recipe_cache_package_change** 
         }
     }
 
-    // check packages removed
-    list_foreach(&cache->packages, i) {
-        struct list_item_string* toCheck = (struct list_item_string*)i;
-        int                     exists = 0;
-        list_foreach(&g_cache.current->environment.host.packages, j) {
-            struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
-            if (strcmp(toCheck->value, pkg->name) == 0) {
-                // found, not a new package
-                exists = 1;
-                break;
+    // check packages removed if the cache is there
+    if (cacheItem != NULL) {
+        list_foreach(&cacheItem->packages, i) {
+            struct list_item_string* toCheck = (struct list_item_string*)i;
+            int                     exists = 0;
+            list_foreach(&cache->current->environment.host.packages, j) {
+                struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
+                if (strcmp(toCheck->value, pkg->name) == 0) {
+                    // found, not a new package
+                    exists = 1;
+                    break;
+                }
             }
-        }
-        if (!exists) {
-            if (__add_package_change(changes, changeCount, &capacity, toCheck->value, RECIPE_CACHE_CHANGE_REMOVED)) {
-                return -1;
+            if (!exists) {
+                if (__add_package_change(changes, changeCount, &capacity, toCheck->value, RECIPE_CACHE_CHANGE_REMOVED)) {
+                    return -1;
+                }
             }
         }
     }
     return 0;
 }
 
-int recipe_cache_commit_package_changes(struct recipe_cache_package_change* changes, int count)
+int recipe_cache_commit_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change* changes, int count)
 {
-    struct recipe_cache_item* cache = __get_cache_item();
+    struct recipe_cache_item* cacheItem = __get_cache_item(cache);
     VLOG_DEBUG("cache", "recipe_cache_commit_package_changes(count=%i)\n", count);
     
     if (changes == NULL || count == 0) {
@@ -774,17 +791,17 @@ int recipe_cache_commit_package_changes(struct recipe_cache_package_change* chan
                 if (pkg == NULL) {
                     return -1;
                 }
-                list_add(&cache->packages, &pkg->list_header);
+                list_add(&cacheItem->packages, &pkg->list_header);
             } break;
             case RECIPE_CACHE_CHANGE_UPDATED: {
                 // todo
             } break;
             case RECIPE_CACHE_CHANGE_REMOVED: {
                 struct list_item* j;
-                list_foreach(&cache->packages, j) {
+                list_foreach(&cacheItem->packages, j) {
                     struct recipe_cache_package* toCheck = (struct recipe_cache_package*)j;
                     if (strcmp(toCheck->name, changes[i].name) == 0) {
-                        list_remove(&cache->packages, &toCheck->list_header);
+                        list_remove(&cacheItem->packages, &toCheck->list_header);
                         __delete_recipe_cache_package(toCheck);
                         break;
                     }

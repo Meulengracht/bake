@@ -20,6 +20,7 @@
 
 #include <chef/platform.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -27,10 +28,15 @@
 
 static struct {
     uid_t       real_user;
+
+    // per-user
     const char* root;
     const char* fridge;
     const char* store;
     const char* kitchen;
+
+    // global
+    const char* config;
 } g_dirs = { 0, NULL, NULL, NULL, NULL };
 
 static int __directory_exists(
@@ -109,7 +115,7 @@ static uid_t __real_user(void)
     return ruid;
 }
 
-static int __ensure_chef_dirs(void)
+static int __ensure_chef_user_dirs(void)
 {
     struct {
         const char** path;
@@ -121,35 +127,101 @@ static int __ensure_chef_dirs(void)
         { NULL },
     };
     for (int i = 0; paths[i].path != NULL; i++) {
-        int status = __mkdir_as(*paths[i].path, 0755, g_dirs.real_user, g_dirs.real_user);
+        int         status;
+        const char* path = *paths[i].path;
+        
+        if (path == NULL) {
+            continue;
+        }
+
+        status = __mkdir_as(path, 0755, g_dirs.real_user, g_dirs.real_user);
         if (status) {
-            VLOG_ERROR("dirs", "failed to create %s\n", *paths[i].path);
+            VLOG_ERROR("dirs", "failed to create %s\n", path);
             return -1;
         }
     }
     return 0;
 }
 
-int chef_dirs_initialize(void)
+static int __ensure_chef_global_dirs(void)
+{
+    struct {
+        const char** path;
+    } paths[] = {
+        { &g_dirs.config },
+        { NULL },
+    };
+    for (int i = 0; paths[i].path != NULL; i++) {
+        int         status;
+        const char* path = *paths[i].path;
+        
+        if (path == NULL) {
+            continue;
+        }
+
+        status = __mkdir_as(path, 0644, 0, 0);
+        if (status) {
+            VLOG_ERROR("dirs", "failed to create %s\n", path);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static const char* __root_common_directory(void)
+{
+#ifdef CHEF_AS_SNAP
+    // /var/snap/<snap>/common
+    char* val = getenv("SNAP_COMMON");
+    if (val != NULL) {
+        return val;
+    }
+#endif
+    return "/etc/chef";
+}
+
+static char* __root_common_user_directory(void)
 {
     int   status;
     char  buffer[PATH_MAX] = { 0 };
-    uid_t realUser = __real_user();
-
-    // if running as root, then error as we do not want this
-    if (realUser == 0) {
-        VLOG_ERROR("dirs", "DETECTED running as root, this is not recommended and directories will not be created for root\n");
-        return -1;
+#ifdef CHEF_AS_SNAP
+    // /home/<user>/snap/<snap>/common
+    char* val = getenv("SNAP_USER_COMMON");
+    if (val != NULL) {
+        return platform_strdup(val);
     }
-
+#endif
     status = platform_getuserdir(&buffer[0], sizeof(buffer) - 1);
     if (status) {
         VLOG_ERROR("dirs", "failed to resolve user directory\n");
         return -1;
     }
+    return strpathcombine(&buffer[0], ".chef");
+}
+
+static int __setup_root(void)
+{
+    VLOG_DEBUG("dirs", "DETECTED running as root, only chef_dirs_config() will be valid\n");
+
+    // root directories are more or less hardwired
+    // to shared system locations. This is almost solely used for the
+    // daemon services. All other tools should run in some sort of user
+    // context, and must protect themself against root invocations.
+    g_dirs.config = __root_common_directory();
+
+    return __ensure_chef_global_dirs();
+}
+
+int chef_dirs_initialize(void)
+{
+    uid_t realUser = __real_user();
+
+    if (realUser == 0) {
+        return __setup_root();
+    }
 
     g_dirs.real_user = realUser;
-    g_dirs.root = strpathcombine(&buffer[0], ".chef");
+    g_dirs.root = __root_common_user_directory();
     g_dirs.fridge = strpathcombine(g_dirs.root, "fridge");
     g_dirs.store = strpathcombine(g_dirs.root, "store");
     g_dirs.kitchen = strpathcombine(g_dirs.root, "kitchen");
@@ -158,7 +230,10 @@ int chef_dirs_initialize(void)
         VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
         return -1;
     }
-    return __ensure_chef_dirs();
+
+    g_dirs.config = __root_common_directory();
+
+    return __ensure_chef_user_dirs();
 }
 
 const char* chef_dirs_root(void)
@@ -173,7 +248,7 @@ const char* chef_dirs_root(void)
 const char* chef_dirs_fridge(void)
 {
     if (g_dirs.fridge == NULL) {
-        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        VLOG_ERROR("dirs", "chef_dirs_fridge() is not available\n");
         return NULL;
     }
     return g_dirs.fridge;
@@ -182,7 +257,7 @@ const char* chef_dirs_fridge(void)
 const char* chef_dirs_store(void)
 {
     if (g_dirs.store == NULL) {
-        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        VLOG_ERROR("dirs", "chef_dirs_store() is not available\n");
         return NULL;
     }
     return g_dirs.store;
@@ -191,13 +266,22 @@ const char* chef_dirs_store(void)
 const char* chef_dirs_kitchen(const char* uuid)
 {
     if (g_dirs.kitchen == NULL) {
-        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
+        VLOG_ERROR("dirs", "chef_dirs_kitchen() is not available\n");
         return NULL;
     }
     if (uuid != NULL) {
         return strpathcombine(g_dirs.kitchen, uuid);
     }
     return g_dirs.kitchen;
+}
+
+const char* chef_dirs_config(void)
+{
+    if (g_dirs.config == NULL) {
+        VLOG_ERROR("dirs", "chef_dirs_config() is not available\n");
+        return NULL;
+    }
+    return g_dirs.config;
 }
 
 int chef_dirs_ensure(const char* path)
@@ -207,4 +291,42 @@ int chef_dirs_ensure(const char* path)
         return -1;
     }
     return __mkdir_as(path, 0755, g_dirs.real_user, g_dirs.real_user);
+}
+
+FILE* chef_dirs_contemporary_file(const char* name, const char* ext, char** rpath)
+{
+    char  buffer[128];
+    FILE* stream;
+    char* path;
+
+    snprintf(&buffer[0], sizeof(buffer), "/tmp/%s-XXXXXX.%s", name, ext);
+    if (mkstemps(&buffer[0], strlen(ext) + 1) < 0) {
+        VLOG_ERROR("dirs", "failed to get a temporary filename for log: %i\n", errno);
+        return NULL;
+    }
+    
+    path = platform_strdup(&buffer[0]);
+    if (path == NULL) {
+        return NULL;
+    }
+
+    stream = fopen(path, "w+");
+    if (stream == NULL) {
+        VLOG_ERROR("dirs", "failed to open path %s for writing\n", path);
+        free(path);
+        return NULL;
+    }
+
+    if (fchmod(fileno(stream), 0644)) {
+        VLOG_ERROR("dirs", "failed to open change mode of %s\n", path);
+        free(path);
+        return NULL;
+    }
+
+    if (rpath != NULL) {
+        *rpath = path;
+    } else {
+        free(path);
+    }
+    return stream;
 }

@@ -7,7 +7,6 @@ add_subdirectory(common)
 add_subdirectory(containerv)
 
 # Build utility libraries before the system libraries
-set(VAFS_BUILD_TOOLS OFF CACHE BOOL "Do not build vafs utilities")
 add_subdirectory(vafs)
 add_subdirectory(yaml)
 add_subdirectory(gracht)
@@ -43,3 +42,4 @@ add_subdirectory(chefclient)
 add_subdirectory(oven)
 add_subdirectory(fridge)
 add_subdirectory(kitchen)
+add_subdirectory(remote)

@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,8 +15,6 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
  * Package System TODOs:
- * - autotools backend
- * - reuse zstd context for improved performance
  * - api-keys
  * - pack deletion
  */
@@ -24,6 +22,7 @@
 
 #include <chef/client.h>
 #include <errno.h>
+#include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <chef/kitchen.h>
@@ -41,7 +40,7 @@ static struct kitchen g_kitchen = { 0 };
 
 static void __print_help(void)
 {
-    printf("Usage: bake run [options]\n");
+    printf("Usage: bake build [options]\n");
     printf("\n");
     printf("Options:\n");
     printf("  -cc, --cross-compile\n");
@@ -228,30 +227,9 @@ static void __cleanup_systems(int sig)
 
 static char* __add_build_log(void)
 {
-    FILE* stream;
     char* path;
-
-#if CHEF_ON_LINUX
-    char template[] = "/tmp/bake-build-XXXXXX.log";
-    if (mkstemps(&template[0], 4) < 0) {
-        fprintf(stderr, "bake: failed to get a temporary filename for log: %i\n", errno);
-        return NULL;
-    }
-    path = platform_strdup(&template[0]);
-#elif CHEF_ON_WINDOWS
-    // GetTempPath
-    // GetTempFileName
-#else
-    path = NULL;
-#endif
-
-    if (path == NULL) {
-        return NULL;
-    }
-
-    stream = fopen(path, "w+");
+    FILE* stream = chef_dirs_contemporary_file("bake-build", "log", &path);
     if (stream == NULL) {
-        fprintf(stderr, "bake: failed to open path %s for writing\n", path);
         return NULL;
     }
 
@@ -277,10 +255,12 @@ static char* __format_footer(const char* logPath)
 int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct kitchen_setup_options setupOptions = { 0 };
+    struct recipe_cache*         cache = NULL;
     int                          status;
     char*                        logPath;
     char*                        header;
     char*                        footer;
+    const char*                  arch;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -301,13 +281,21 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         return -1;
     }
 
+    if (options->architectures.count > 1) {
+        fprintf(stderr, "bake: multiple architectures are not supported\n");
+        return -1;
+    }
+
     logPath = __add_build_log();
     if (logPath == NULL) {
         fprintf(stderr, "bake: failed to open build log\n");
         return -1;
     }
 
-    header = __format_header(options->recipe->project.name, options->platform, options->architecture);
+    // get the architecture from the list
+    arch = ((struct list_item_string*)options->architectures.head)->value;
+
+    header = __format_header(options->recipe->project.name, options->platform, arch);
     footer = __format_footer(logPath);
     free(logPath);
     if (footer == NULL) {
@@ -323,7 +311,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     }
     atexit(chefclient_cleanup);
 
-    status = fridge_initialize(options->platform, options->architecture);
+    status = fridge_initialize(options->platform, arch);
     if (status != 0) {
         VLOG_ERROR("bake", "failed to initialize fridge\n");
         return -1;
@@ -360,23 +348,31 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     vlog_content_set_index(2);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
 
+    // we want the recipe cache in this case for regular builds
+    status = recipe_cache_create(options->recipe, options->cwd, &cache);
+    if (status) {
+        VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
+        return -1;
+    }
+
     // debug target information
-    VLOG_DEBUG("bake", "platform=%s, architecture=%s\n", options->platform, options->architecture);
+    VLOG_DEBUG("bake", "platform=%s, architecture=%s\n", options->platform, arch);
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
         .recipe_path = options->recipe_path,
+        .recipe_cache = cache,
         .envp = (const char* const*)envp,
         .project_path = options->cwd,
         .pkg_environment = NULL,
         .target_platform = options->platform,
-        .target_architecture = options->architecture,
+        .target_architecture = arch,
     }, &g_kitchen);
     if (status) {
         VLOG_ERROR("bake", "failed to initialize kitchen: %s\n", strerror(errno));
         return -1;
     }
 
-    status = __prep_ingredients(options->recipe, options->platform, options->architecture, &setupOptions);
+    status = __prep_ingredients(options->recipe, options->platform, arch, &setupOptions);
     if (status) {
         VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
         goto cleanup;

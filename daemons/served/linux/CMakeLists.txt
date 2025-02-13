@@ -32,5 +32,5 @@ target_link_libraries(served
 
 install(
         TARGETS served
-        RUNTIME DESTINATION bin
+        RUNTIME DESTINATION libexec/chef
 )

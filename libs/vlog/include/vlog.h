@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -75,6 +75,11 @@ extern void vlog_set_level(enum vlog_level level);
  * @return
  */
 extern int vlog_add_output(FILE* output, int close);
+
+/**
+ * @brief
+ */
+extern int vlog_remove_output(FILE* output);
 
 /**
  * @brief 

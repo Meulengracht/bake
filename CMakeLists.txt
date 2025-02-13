@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14.3)
-project(chef VERSION "1.3.2")
+project(chef VERSION "1.4.0")
 
 # on ubuntu 24+ wolfssl craps out on some string operations which
 # we do not care about
@@ -26,6 +26,10 @@ include(${CMAKE_SOURCE_DIR}/cmake/external/lua/lua54.cmake)
 
 if(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+endif()
+
+if(CHEF_BUILD_AS_SNAP)
+    add_definitions(-DCHEF_AS_SNAP)
 endif()
 
 # always register all the protocols and libs

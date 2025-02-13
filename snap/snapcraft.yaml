@@ -1,5 +1,5 @@
 name: vchef
-version: '1.3.2'
+version: '1.4.0'
 summary: The Vali Chef Package Mangement System
 description: |
   Originally developed for the Vali/MollenOS operating system, this is a generic package management system that is 
@@ -18,7 +18,15 @@ apps:
   serve:
     command: usr/bin/serve
   served:
-    command: usr/bin/served
+    command: usr/libexec/chef/served
+    daemon: simple
+    install-mode: disable
+  waiterd:
+    command: usr/libexec/chef/waiterd
+    daemon: simple
+    install-mode: disable
+  cookd:
+    command: usr/libexec/chef/cookd
     daemon: simple
     install-mode: disable
 

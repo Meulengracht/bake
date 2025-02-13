@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,12 +14,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
- * Package System TODOs:
- * - autotools backend
- * - reuse zstd context for improved performance
- * Application System TODOs:
- * - app commands
- * - served system
  */
 
 #include <errno.h>
@@ -78,9 +72,11 @@ static int __ask_yes_no_question(const char* question)
 
 int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    int   purge = 0;
-    char* partOrStep = NULL;
-    int   status;
+    struct recipe_cache* cache = NULL;
+    int                  purge = 0;
+    char*                partOrStep = NULL;
+    int                  status;
+    const char*          arch;
 
     // handle individual help command
     if (argc > 2) {
@@ -115,12 +111,23 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
         return -1;
     }
 
+    // get the architecture from the list
+    arch = ((struct list_item_string*)options->architectures.head)->value;
+
+    // we want the recipe cache in this case for regular cleans
+    status = recipe_cache_create(options->recipe, options->cwd, &cache);
+    if (status) {
+        VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
+        return -1;
+    }
+
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .recipe = options->recipe,
+        .recipe_cache = cache,
         .project_path = options->cwd,
         .pkg_environment = NULL,
         .target_platform = options->platform,
-        .target_architecture = options->architecture
+        .target_architecture = arch
     }, &g_kitchen);
     if (status) {
         VLOG_ERROR("bake", "failed to initialize kitchen: %s\n", strerror(errno));

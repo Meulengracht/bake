@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,8 @@
 
 #ifndef __CHEF_DIRS_H__
 #define __CHEF_DIRS_H__
+
+#include <stdio.h>
 
 /**
  * @brief 
@@ -47,8 +49,19 @@ extern const char* chef_dirs_store(void);
 extern const char* chef_dirs_kitchen(const char* uuid);
 
 /**
+ * @brief 
+ */
+extern const char* chef_dirs_config(void);
+
+/**
  * @brief
  */
 extern int chef_dirs_ensure(const char* path);
+
+/**
+ * @brief 
+ * 
+ */
+extern FILE* chef_dirs_contemporary_file(const char* name, const char* ext, char** rpath);
 
 #endif //!__CHEF_DIRS_H__

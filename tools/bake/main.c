@@ -29,9 +29,10 @@
 #include "commands/commands.h"
 
 extern int init_main(int argc, char** argv, char** envp, struct bake_command_options* options);
-extern int fetch_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int run_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int fridge_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int remote_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 
 struct command_handler {
     char* name;
@@ -39,10 +40,11 @@ struct command_handler {
 };
 
 static struct command_handler g_commands[] = {
-    { "init",     init_main },
-    { "fetch",    fetch_main },
-    { "run",      run_main },
-    { "clean",    clean_main }
+    { "init",   init_main },
+    { "build",  run_main },
+    { "clean",  clean_main },
+    { "fridge", fridge_main },
+    { "remote", remote_main }
 };
 
 static void __print_help(void)
@@ -54,16 +56,27 @@ static void __print_help(void)
     printf("  recipe.yaml\n");
     printf("\n");
     printf("Commands:\n");
-    printf("  init        initializes a new recipe in the current directory\n");
-    printf("  fetch       refreshes/fetches all ingredients\n");
-    printf("  run         runs all recipe steps that have not already been completed\n");
-    printf("  clean       cleanup all build and intermediate directories\n");
+    printf("  init\n");
+    printf("              initializes a new recipe in the current directory\n");
+    printf("  build\n");
+    printf("              builds the provided (or inferred) bake recipe\n");
+    printf("  clean\n");
+    printf("              cleanup all build and intermediate directories\n");
+    printf("  remote {init, build, resume, download}\n");
+    printf("              used for building recipes remotely for any given configured\n");
+    printf("              build server, parallel builds can be initiated for multiple\n");
+    printf("              architectures by using the --archs switch\n");
+    printf("  fridge {list, update, remove, clean}\n");
+    printf("              manage ingredients used for building\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -cc, --cross-compile\n");
-    printf("      Cross-compile for another platform or/and architecture. This switch\n");
-    printf("      can be used with two different formats, either just like\n");
-    printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
+    printf("  -p, --platform\n");
+    printf("      Cross-compile for a specific platform.\n");
+    printf("  -a, --archs\n");
+    printf("      Cross-compile for specific architectures, when doing local builds only\n");
+    printf("      a single architecture can be set at one time. When doing remote builds\n");
+    printf("      multiple architectures can be specified like --archs=amd64,arm64 to build\n");
+    printf("      multiple times in parallel. If not set, the host architecture is used.\n");
     printf("  --version\n");
     printf("      Print the version of bake\n");
     printf("  -h, --help\n");
@@ -149,41 +162,6 @@ static const char* __find_default_recipe(void)
     return NULL;
 }
 
-
-static int __parse_cc_switch(const char* value, const char** platformOut, const char** archOut)
-{
-    // value is either of two forms
-    // platform/arch
-    // arch
-    char* separator;
-    char* equal;
-
-    if (value == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    equal = strchr(value, '=');
-    if (equal == NULL) {
-        fprintf(stderr, "bake: invalid format of %s (must be -cc=... or --cross-compile=...)\n", value);
-        errno = EINVAL;
-        return -1;
-    }
-
-    // skip the '='
-    equal++;
-
-    separator = strchr(equal, '/');
-    if (separator) {
-        *platformOut = platform_strndup(equal, separator - equal);
-        *archOut     = platform_strdup(separator + 1);
-    } else {
-        *platformOut = platform_strdup(CHEF_PLATFORM_STR);
-        *archOut     = platform_strdup(equal);
-    }
-    return 0;
-}
-
 static int __get_cwd(char** bufferOut)
 {
     char*  cwd;
@@ -205,9 +183,15 @@ static int __get_cwd(char** bufferOut)
     return 0;
 }
 
+static int __file_exists(const char* path)
+{
+    struct platform_stat stats;
+    return platform_stat(path, &stats) == 0 ? 1 : 0;
+}
+
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler*     command     = &g_commands[2]; // run step is default
+    struct command_handler*     command = &g_commands[2]; // build step is default
     struct bake_command_options options = { 0 };
     void*                       buffer;
     size_t                      length;
@@ -244,10 +228,9 @@ int main(int argc, char** argv, char** envp)
 
         command = __get_command(argv[1]);
         if (command == NULL) {
-            struct platform_stat stats;
             // was a file passed? Then it was the recipe, and we assume
             // that the run command should be run.
-            if (platform_stat(argv[1], &stats) == 0) {
+            if (__file_exists(argv[1]) == 0) {
                 command = &g_commands[2];
                 options.recipe_path = argv[1];
             } else {
@@ -258,20 +241,19 @@ int main(int argc, char** argv, char** envp)
 
         if (argc > 2) {
             for (int i = 2; i < argc; i++) {
-                if (!strncmp(argv[i], "-cc", 3) || !strncmp(argv[i], "--cross-compile", 15)) {
-                    // THIS ALLOCS MEMORY, WE NEED TO HANDLE THIS
-                    status = __parse_cc_switch(argv[i], &options.platform, &options.architecture);
-                    if (status) {
-                        fprintf(stderr, "bake: invalid format: %s\n", argv[i]);
-                        return status;
-                    }
+                if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--platform", 10, NULL, (char**)&options.platform)) {
+                    continue;
+                } else if (!__parse_stringv_switch(argv, argc, &i, "-a", 2, "--archs", 7, NULL, &options.architectures)) {
+                    continue;
                 } else if (!strncmp(argv[i], "-v", 2)) {
                     int li = 1;
                     while (argv[i][li++] == 'v') {
                         logLevel++;
                     }
                 } else if (argv[i][0] != '-') {
-                    options.recipe_path = argv[i];
+                    if (__file_exists(argv[i])) {
+                        options.recipe_path = argv[i];
+                    }
                 }
             }
         }
@@ -303,7 +285,7 @@ int main(int argc, char** argv, char** envp)
                 return status;
             }
 
-            status = recipe_validate_target(options.recipe, &options.platform, &options.architecture);
+            status = recipe_ensure_target(options.recipe, &options.platform, &options.architectures);
             if (status) {
                 return -1;
             }

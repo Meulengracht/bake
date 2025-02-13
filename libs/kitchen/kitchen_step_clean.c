@@ -26,7 +26,7 @@
 #include <string.h>
 #include <vlog.h>
 
-static int __reset_steps(const char* part, struct list* steps, enum recipe_step_type stepType, const char* name);
+static int __reset_steps(struct kitchen* kitchen, const char* part, struct list* steps, enum recipe_step_type stepType, const char* name);
 
 static int __step_depends_on(struct list* dependencies, const char* step)
 {
@@ -44,7 +44,7 @@ static int __step_depends_on(struct list* dependencies, const char* step)
     return 0;
 }
 
-static int __reset_depending_steps(const char* part, struct list* steps, const char* name)
+static int __reset_depending_steps(struct kitchen* kitchen, const char* part, struct list* steps, const char* name)
 {
     struct list_item* item;
     int               status;
@@ -56,7 +56,7 @@ static int __reset_depending_steps(const char* part, struct list* steps, const c
         // skip ourselves
         if (strcmp(recipeStep->name, name) != 0) {
             if (__step_depends_on(&recipeStep->depends, name)) {
-                status = __reset_steps(part, steps, RECIPE_STEP_TYPE_UNKNOWN, recipeStep->name);
+                status = __reset_steps(kitchen, part, steps, RECIPE_STEP_TYPE_UNKNOWN, recipeStep->name);
                 if (status) {
                     VLOG_ERROR("bake", "failed to reset step %s\n", recipeStep->name);
                     return status;
@@ -67,7 +67,7 @@ static int __reset_depending_steps(const char* part, struct list* steps, const c
     return 0;
 }
 
-static int __reset_steps(const char* part, struct list* steps, enum recipe_step_type stepType, const char* name)
+static int __reset_steps(struct kitchen* kitchen, const char* part, struct list* steps, enum recipe_step_type stepType, const char* name)
 {
     struct list_item* item;
     int               status;
@@ -77,15 +77,16 @@ static int __reset_steps(const char* part, struct list* steps, enum recipe_step_
         struct recipe_step* recipeStep = (struct recipe_step*)item;
         if ((stepType == RECIPE_STEP_TYPE_UNKNOWN) || (recipeStep->type == stepType) ||
             (name != NULL && strcmp(recipeStep->name, name) == 0)) {
+            
             // this should be deleted
-            status = recipe_cache_mark_step_incomplete(part, recipeStep->name);
+            status = recipe_cache_mark_step_incomplete(kitchen->recipe_cache, part, recipeStep->name);
             if (status) {
                 VLOG_ERROR("bake", "failed to clear step %s\n", recipeStep->name);
                 return status;
             }
 
             // clear dependencies
-            status = __reset_depending_steps(part, steps, recipeStep->name);
+            status = __reset_depending_steps(kitchen, part, steps, recipeStep->name);
         }
     }
     return 0;
@@ -132,7 +133,7 @@ int kitchen_recipe_clean(struct kitchen* kitchen, struct kitchen_recipe_clean_op
         return status;
     }
 
-    recipe_cache_transaction_begin();
+    __KITCHEN_IF_CACHE(kitchen, recipe_cache_transaction_begin(kitchen->recipe_cache));
     list_foreach(&kitchen->recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
 
@@ -141,13 +142,13 @@ int kitchen_recipe_clean(struct kitchen* kitchen, struct kitchen_recipe_clean_op
             continue;
         }
         
-        status = __reset_steps(part->name, &part->steps, RECIPE_STEP_TYPE_UNKNOWN, stepName);
+        status = __reset_steps(kitchen, part->name, &part->steps, RECIPE_STEP_TYPE_UNKNOWN, stepName);
         if (status) {
             VLOG_ERROR("kitchen", "kitchen_recipe_clean: failed to clean recipe %s\n", part->name);
             break;
         }
     }
-    recipe_cache_transaction_commit();
+    __KITCHEN_IF_CACHE(kitchen, recipe_cache_transaction_commit(kitchen->recipe_cache));
     return status;
 }
 

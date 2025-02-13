@@ -1,5 +1,5 @@
 /**
- * Copyright 2022, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ static const char* g_profileScriptPath = "/etc/profile.d/chef.sh";
 static const char* g_profileScript = 
 "#!/bin/sh\n"
 "export CHEF_HOME=/chef\n"
-"export PATH=$PATH:$CHEF_HOME/bin\n";
+"export PATH=$CHEF_HOME/bin:$PATH\n";
 
 static int __write_profile_d_script(void)
 {
@@ -111,11 +111,13 @@ int served_startup(void)
     int                         status;
     VLOG_TRACE("startup", "served_startup()\n");
 
+#ifndef CHEF_AS_SNAP
     status = __write_profile_d_script();
     if (status != 0) {
         VLOG_ERROR("startup", "failed to write profile script to path %s\n", g_profileScriptPath);
         return status;
     }
+#endif
 
     status = __ensure_chef_paths();
     if (status != 0) {
