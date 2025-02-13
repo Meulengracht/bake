@@ -40,7 +40,12 @@ parts:
     build-packages:
       - libfuse3-dev
       - libcap-dev
+      - execstack
     stage-packages:
       - debootstrap
       - libfuse3-3
       - libcap2
+    override-build: |
+      craftctl default
+      execstack --clear-execstack $CRAFT_PART_INSTALL/usr/bin/mkvafs
+      execstack --clear-execstack $CRAFT_PART_INSTALL/usr/bin/unmkvafs
