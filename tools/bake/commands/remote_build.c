@@ -18,6 +18,7 @@
 #define _GNU_SOURCE
 
 #include <errno.h>
+#include <chef/client.h>
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
@@ -362,6 +363,13 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     vlog_content_set_index(0);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
     
+    VLOG_TRACE("bake", "initializing network client\n");
+    status = chefclient_initialize();
+    if (status != 0) {
+        fprintf(stderr, "remote_upload: failed to initialize chef client\n");
+        return -1;
+    }
+
     VLOG_TRACE("bake", "connecting to waiterd\n");
     status = remote_client_create(&client);
     if (status) {
@@ -400,6 +408,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     status = __wait_for_builds(client, &g_builds);
 
 cleanup:
+    chefclient_cleanup();
     gracht_client_shutdown(client);
     if (status) {
         vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);

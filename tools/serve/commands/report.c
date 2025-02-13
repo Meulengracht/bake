@@ -16,27 +16,7 @@
  * 
  */
 
-#include <errno.h>
-#include <chef/platform.h>
-#include <string.h>
-
-int strbool(const char* string)
-{
-    char*  t[] = {"y", "Y", "yes", "Yes", "YES", "true", "True", "TRUE", "on", "On", "ON", NULL};
-    char*  f[] = {"n", "N", "no", "No", "NO", "false", "False", "FALSE", "off", "Off", "OFF", NULL};
-    char** p;
-
-    for (p = t; *p; p++) {
-        if (strcmp(string, *p) == 0) {
-            return 1;
-        }
-    }
-    for (p = f; *p; p++) {
-        if (strcmp(string, *p) == 0) {
-            return 0;
-        }
-    }
-
-    errno = EINVAL;
-    return 0;
-}
+// serve report <package> --description=file.txt|message
+// description can either be a text file or a message
+// automatically gathers system info
+// automatically gathers logs for apps in package

@@ -38,7 +38,7 @@ enum chef_build_status __to_protocol_status(enum cookd_notify_build_status cstat
 int cookd_notify_status_update(gracht_client_t* client, const char* id, enum cookd_notify_build_status status)
 {
     return chef_waiterd_cook_status(client, NULL, &(struct chef_cook_build_event) {
-        .id = id,
+        .id = (char*)id,
         .status = __to_protocol_status(status)
     });
 }
@@ -54,8 +54,8 @@ enum chef_artifact_type __to_protocol_atype(enum cookd_notify_artifact_type ctyp
 int cookd_notify_artifact_ready(gracht_client_t* client, const char* id, enum cookd_notify_artifact_type type, const char* uri)
 {
     return chef_waiterd_cook_artifact(client, NULL, &(struct chef_cook_artifact_event) {
-        .id = id,
+        .id = (char*)id,
         .type = __to_protocol_atype(type),
-        .uri = uri
+        .uri = (char*)uri
     });
 }

@@ -26,19 +26,11 @@ int remote_upload(const char* path, char** downloadUrl)
 {
     int status;
 
-    status = chefclient_initialize();
-    if (status != 0) {
-        fprintf(stderr, "remote_upload: failed to initialize chef client\n");
-        return -1;
-    }
-
     status = chef_client_bu_upload(path, downloadUrl);
     if (status) {
         fprintf(stderr, "remote_upload: failed to upload %s\n", path);
         chefclient_cleanup();
         return status;
     }
-
-    chefclient_cleanup();
     return 0;
 }

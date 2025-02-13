@@ -582,15 +582,15 @@ cleanup:
 static FILE* __cookd_build_log_new(const char* id, char** logPathOut)
 {
     char* buildRoot;
-    char* logPath = NULL;
+    char* logPath;
     int   status;
-    FILE* log = NULL;
+    FILE* log;
     VLOG_DEBUG("cookd", "__cookd_build_log_new(id=%s)\n", id);
 
     buildRoot = strpathcombine(chef_dirs_root(), id);
     if (buildRoot == NULL) {
         VLOG_ERROR("cookd", "__cookd_build_log_new: failed to allocate memory for build path\n");
-        return -1;
+        return NULL;
     }
 
     logPath = strpathcombine(buildRoot, "build.log");
@@ -629,15 +629,10 @@ static void __cookd_build_log_cleanup(FILE* log)
     fclose(log);
 }
 
-static int __upload_file(const char* path, char** downloadUrl)
-{
-    
-}
-
 static void __notify(const char* id, enum cookd_notify_artifact_type atype, const char* uri)
 {
     if (cookd_notify_artifact_ready(g_server->client, id, atype, uri)) {
-        VLOG_ERROR("cookd", "__cookd_server_build: %s failed to notify of status change queued => sourcing\n", id);
+        VLOG_ERROR("cookd", "__cookd_server_build: %s failed to notify of status change => %u\n", id, atype);
     }
 }
 
@@ -647,14 +642,14 @@ static void __cookd_upload_artifacts(const char* id, const char* log, const char
     int   status;
 
     if (pack != NULL) {
-        status = __upload_file(pack, &downloadUrl);
+        status = remote_upload(pack, &downloadUrl);
         if (!status) {
             __notify(id, COOKD_ARTIFACT_TYPE_PACKAGE, downloadUrl);
         }
         VLOG_TRACE("cookd", "__cookd_upload_artifacts: result of uploading pack for %s: %i", id, status);
     }
 
-    status = __upload_file(log, &downloadUrl);
+    status = remote_upload(log, &downloadUrl);
     if (!status) {
         __notify(id, COOKD_ARTIFACT_TYPE_LOG, downloadUrl);
     }
