@@ -28,6 +28,10 @@ if(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
 
+if(CHEF_BUILD_AS_SNAP)
+    add_definitions(-DCHEF_AS_SNAP)
+endif()
+
 # always register all the protocols and libs
 add_subdirectory(protocols)
 add_subdirectory(libs)

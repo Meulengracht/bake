@@ -168,6 +168,37 @@ static int __ensure_chef_global_dirs(void)
     return 0;
 }
 
+static const char* __root_common_directory(void)
+{
+#ifdef CHEF_AS_SNAP
+    // /var/snap/<snap>/common
+    char* val = getenv("SNAP_COMMON");
+    if (val != NULL) {
+        return val;
+    }
+#endif
+    return "/etc/chef";
+}
+
+static char* __root_common_user_directory(void)
+{
+    int   status;
+    char  buffer[PATH_MAX] = { 0 };
+#ifdef CHEF_AS_SNAP
+    // /home/<user>/snap/<snap>/common
+    char* val = getenv("SNAP_USER_COMMON");
+    if (val != NULL) {
+        return platform_strdup(val);
+    }
+#endif
+    status = platform_getuserdir(&buffer[0], sizeof(buffer) - 1);
+    if (status) {
+        VLOG_ERROR("dirs", "failed to resolve user directory\n");
+        return -1;
+    }
+    return strpathcombine(&buffer[0], ".chef");
+}
+
 static int __setup_root(void)
 {
     VLOG_DEBUG("dirs", "DETECTED running as root, only chef_dirs_config() will be valid\n");
@@ -176,29 +207,21 @@ static int __setup_root(void)
     // to shared system locations. This is almost solely used for the
     // daemon services. All other tools should run in some sort of user
     // context, and must protect themself against root invocations.
-    g_dirs.config = "/etc/chef";
+    g_dirs.config = __root_common_directory();
 
     return __ensure_chef_global_dirs();
 }
 
 int chef_dirs_initialize(void)
 {
-    int   status;
-    char  buffer[PATH_MAX] = { 0 };
     uid_t realUser = __real_user();
 
     if (realUser == 0) {
         return __setup_root();
     }
 
-    status = platform_getuserdir(&buffer[0], sizeof(buffer) - 1);
-    if (status) {
-        VLOG_ERROR("dirs", "failed to resolve user directory\n");
-        return -1;
-    }
-
     g_dirs.real_user = realUser;
-    g_dirs.root = strpathcombine(&buffer[0], ".chef");
+    g_dirs.root = __root_common_user_directory();
     g_dirs.fridge = strpathcombine(g_dirs.root, "fridge");
     g_dirs.store = strpathcombine(g_dirs.root, "store");
     g_dirs.kitchen = strpathcombine(g_dirs.root, "kitchen");
@@ -208,7 +231,7 @@ int chef_dirs_initialize(void)
         return -1;
     }
 
-    g_dirs.config = "/etc/chef";
+    g_dirs.config = __root_common_directory();
 
     return __ensure_chef_user_dirs();
 }
