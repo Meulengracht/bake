@@ -20,11 +20,28 @@
 #include <pwd.h>
 #include <string.h>
 
+#ifdef CHEF_AS_SNAP
+#include <stdlib.h>
+unsigned int __get_snap_uid(void)
+{
+    char* uidstr = getenv("SNAP_UID");
+    if (uidstr == NULL) {
+        // fallback
+        return getuid();
+    }
+    return (unsigned int)atoi(uidstr); 
+}
+#endif
+
 int platform_getuserdir(char* buffer, size_t length)
 {
     struct passwd* pw;
-    
+
+#ifdef CHEF_AS_SNAP
+    pw = getpwuid(__get_snap_uid());
+#else
     pw = getpwuid(getuid());
+#endif
     if (pw == NULL) {
         return -1;
     }

@@ -189,6 +189,19 @@ static int __file_exists(const char* path)
     return platform_stat(path, &stats) == 0 ? 1 : 0;
 }
 
+#ifdef CHEF_AS_SNAP
+#include <stdlib.h>
+unsigned int __get_snap_uid(void)
+{
+    char* uidstr = getenv("SNAP_UID");
+    if (uidstr == NULL) {
+        // fallback
+        return getuid();
+    }
+    return (unsigned int)atoi(uidstr); 
+}
+#endif
+
 int main(int argc, char** argv, char** envp)
 {
     struct command_handler*     command = &g_commands[2]; // build step is default
@@ -201,17 +214,25 @@ int main(int argc, char** argv, char** envp)
 #if __linux__
     // make sure we're running with root privileges
     if (geteuid() != 0 || getegid() != 0) {
-        VLOG_ERROR("kitchen", "should be executed with root privileges, aborting.\n");
+        fprintf(stderr, "bake: should be executed with root privileges, aborting.\n");
         errno = EPERM;
         return -1;
     }
 
     // make sure we're not actually running as root
-    if (getuid() == 0 || getgid() == 0) {
-        VLOG_ERROR("kitchen", "should not be run as root, aborting.\n");
+#ifdef CHEF_AS_SNAP
+    if (__get_snap_uid() == 0) {
+        fprintf(stderr, "bake: should not be run as root, aborting.\n");
         errno = EPERM;
         return -1;
     }
+#else
+    if (getuid() == 0 || getgid() == 0) {
+        fprintf(stderr, "bake: should not be run as root, aborting.\n");
+        errno = EPERM;
+        return -1;
+    }
+#endif
 #endif
 
     // first argument must be the command if not --help or --version

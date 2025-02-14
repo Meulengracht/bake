@@ -9,6 +9,7 @@ description: |
 base: core22
 grade: stable
 confinement: strict
+assumes: [snap-uid-envvars]
 
 apps:
   bake:
