@@ -22,7 +22,7 @@
 
 #ifdef CHEF_AS_SNAP
 #include <stdlib.h>
-unsigned int __get_snap_uid(void)
+static unsigned int __get_snap_uid(void)
 {
     char* uidstr = getenv("SNAP_UID");
     if (uidstr == NULL) {
