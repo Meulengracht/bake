@@ -193,8 +193,7 @@ static char* __root_common_user_directory(void)
 #endif
     status = platform_getuserdir(&buffer[0], sizeof(buffer) - 1);
     if (status) {
-        VLOG_ERROR("dirs", "failed to resolve user directory\n");
-        return -1;
+        return NULL;
     }
     return strpathcombine(&buffer[0], ".chef");
 }
@@ -221,7 +220,13 @@ int chef_dirs_initialize(void)
     }
 
     g_dirs.real_user = realUser;
+    
     g_dirs.root = __root_common_user_directory();
+    if (g_dirs.root == NULL) {
+        VLOG_ERROR("dirs", "failed to resolve user directory\n");
+        return -1;
+    }
+
     g_dirs.fridge = strpathcombine(g_dirs.root, "fridge");
     g_dirs.store = strpathcombine(g_dirs.root, "store");
     g_dirs.kitchen = strpathcombine(g_dirs.root, "kitchen");
