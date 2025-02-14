@@ -470,7 +470,7 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
         int                 colsWritten = 0;
 
         // ensure level is appropriate for output
-        if (output->handle != NULL && level > output->level) {
+        if (output->handle == NULL || level > output->level) {
             continue;
         }
 

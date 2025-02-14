@@ -11,6 +11,8 @@ grade: stable
 confinement: strict
 assumes: [snap-uid-envvars]
 
+architectures: [amd64,arm64,riscv64,ppc64el,s390x]
+
 apps:
   bake:
     command: usr/bin/bake

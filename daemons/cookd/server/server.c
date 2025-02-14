@@ -308,6 +308,9 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
 void cookd_server_cleanup(void)
 {
     VLOG_DEBUG("cookd", "cookd_server_cleanup()\n");
+    if (g_server == NULL) {
+        return;
+    }
 
     __cookd_server_stop(g_server);
     __cookd_server_delete(g_server);
