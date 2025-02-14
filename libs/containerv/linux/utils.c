@@ -214,7 +214,7 @@ int containerv_switch_user_with_capabilities(uid_t uid, gid_t gid)
         return status;
     }
 
-    if (getgid() == 0 || getegid() == 0) {
+    if (gid != 0 && (getgid() == 0 || getegid() == 0)) {
         VLOG_ERROR("containerv[child]", "failed to drop the root capabilities, aborting\n");
         return status;
     }
