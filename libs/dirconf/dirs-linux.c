@@ -148,6 +148,7 @@ static int __ensure_chef_global_dirs(void)
     struct {
         const char** path;
     } paths[] = {
+        { &g_dirs.root },
         { &g_dirs.config },
         { NULL },
     };
@@ -180,7 +181,7 @@ static const char* __root_common_directory(void)
     return "/etc/chef";
 }
 
-static char* __root_common_user_directory(void)
+static char* __common_user_directory(void)
 {
     int   status;
     char  buffer[PATH_MAX] = { 0 };
@@ -198,45 +199,47 @@ static char* __root_common_user_directory(void)
     return strpathcombine(&buffer[0], ".chef");
 }
 
-static int __setup_root(void)
-{
-    VLOG_DEBUG("dirs", "DETECTED running as root, only chef_dirs_config() will be valid\n");
-
-    // root directories are more or less hardwired
-    // to shared system locations. This is almost solely used for the
-    // daemon services. All other tools should run in some sort of user
-    // context, and must protect themself against root invocations.
-    g_dirs.config = __root_common_directory();
-
-    return __ensure_chef_global_dirs();
-}
-
 int chef_dirs_initialize(void)
 {
     uid_t realUser = __real_user();
 
-    if (realUser == 0) {
-        return __setup_root();
-    }
-
     g_dirs.real_user = realUser;
-    
-    g_dirs.root = __root_common_user_directory();
-    if (g_dirs.root == NULL) {
-        VLOG_ERROR("dirs", "failed to resolve user directory\n");
-        return -1;
+ 
+    if (realUser == 0) {
+        VLOG_DEBUG("dirs", "DETECTED running as root (daemon-mode)\n");
+        g_dirs.root = platform_strdup("/tmp/chef");
+        if (g_dirs.root == NULL) {
+            VLOG_ERROR("dirs", "failed to allocate memory for root directory\n");
+            return -1;
+        }
+        g_dirs.config = __root_common_directory();
+        if (g_dirs.root == NULL) {
+            VLOG_ERROR("dirs", "failed to determine configuration directory\n");
+            return -1;
+        }
+
+        if (__ensure_chef_global_dirs()) {
+            VLOG_ERROR("dirs", "failed to create root directories\n");
+            return -1;
+        }
+    } else {
+        g_dirs.root = __common_user_directory();
+        if (g_dirs.root == NULL) {
+            VLOG_ERROR("dirs", "failed to resolve tmp directory\n");
+            return -1;
+        }
+        g_dirs.config = platform_strdup(g_dirs.root);
     }
 
     g_dirs.fridge = strpathcombine(g_dirs.root, "fridge");
     g_dirs.store = strpathcombine(g_dirs.root, "store");
     g_dirs.kitchen = strpathcombine(g_dirs.root, "kitchen");
     if (g_dirs.root == NULL || g_dirs.fridge == NULL ||
-        g_dirs.store == NULL || g_dirs.kitchen == NULL) {
+        g_dirs.store == NULL || g_dirs.kitchen == NULL ||
+        g_dirs.config == NULL) {
         VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
         return -1;
     }
-
-    g_dirs.config = __root_common_directory();
 
     return __ensure_chef_user_dirs();
 }

@@ -36,12 +36,7 @@ static int __local_size(void) {
 static int __configure_local(struct sockaddr_storage* storage, const char* address)
 {
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
-
-    // ensure it doesn't exist
-    if (unlink(address) && errno != ENOENT) {
-        return -1;
-    }
-
+    
     local->sun_family = AF_LOCAL;
     strncpy(local->sun_path, address, sizeof(local->sun_path));
     return 0;
@@ -59,11 +54,6 @@ static int __local_size(void) {
 static int __configure_local(struct sockaddr_storage* storage, const char* address)
 {
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
-
-    // ensure it doesn't exist
-    if (unlink(address) && errno != ENOENT) {
-        return -1;
-    }
 
     local->sun_family = AF_LOCAL;
     strncpy(local->sun_path, address, sizeof(local->sun_path));
@@ -97,13 +87,13 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
         domain = AF_LOCAL;
         size = __local_size();
 
-        VLOG_TRACE("cookd", "listening at %s\n", config->address);
+        VLOG_TRACE("cookd", "connecting to %s\n", config->address);
     } else if (!strcmp(config->type, "inet4")) {
         __configure_inet4(&addr_storage, config);
         domain = AF_INET;
         size = sizeof(struct sockaddr_in);
         
-        VLOG_TRACE("cookd", "listening on %s:%u\n", config->address, config->port);
+        VLOG_TRACE("cookd", "connecting to %s:%u\n", config->address, config->port);
     } else if (!strcmp(config->type, "inet6")) {
         // TODO
         domain = AF_INET6;
@@ -115,7 +105,6 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
 
     gracht_link_socket_set_type(link, type);
     gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr_storage, size);
-    gracht_link_socket_set_listen(link, 1);
     gracht_link_socket_set_domain(link, domain);
     return 0;
 }
