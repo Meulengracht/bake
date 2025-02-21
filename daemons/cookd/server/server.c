@@ -32,6 +32,8 @@
 #include <threading.h>
 #include <vlog.h>
 
+#include "storage.h"
+
 struct __cookd_queue {
     // remember volatility means nothing in terms of memory
     // safety, but rather avoid the compiler optimizing the 
@@ -488,36 +490,23 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
 // <root> / <id> / sources / 
 // <root> / <id> / src.image
 // <root> / <id> / build.log
-static int __prepare_sources(const char* id, const char* url, char** projectPathOut)
+static int __prepare_sources(const char* id, const char* root, const char* url, char** projectPathOut)
 {
-    char* buildRoot;
     char* imagePath = NULL;
     char* projectPath = NULL;
     int   status;
-    VLOG_DEBUG("cookd", "__prepare_sources(id=%s, url=%s)\n", id, url);
+    VLOG_DEBUG("cookd", "__prepare_sources(root=%s, url=%s)\n", root, url);
 
-    buildRoot = strpathcombine(chef_dirs_root(), id);
-    if (buildRoot == NULL) {
-        VLOG_ERROR("cookd", "__prepare_sources: failed to allocate memory for build path\n");
-        return -1;
-    }
-
-    imagePath = strpathcombine(buildRoot, "src.image");
+    // prepare build storage
+    imagePath = strpathcombine(root, "src.image");
     if (imagePath == NULL) {
         VLOG_ERROR("cookd", "__prepare_sources: failed to allocate memory for source image\n");
         goto cleanup;
     }
 
-    projectPath = strpathcombine(buildRoot, "sources");
+    projectPath = strpathcombine(root, "sources");
     if (projectPath == NULL) {
         VLOG_ERROR("cookd", "__prepare_sources: failed to allocate memory for source root\n");
-        goto cleanup;
-    }
-
-    // create folder for build id
-    status = platform_mkdir(&buildRoot[0]);
-    if (status) {
-        VLOG_ERROR("cookd", "__prepare_sources: failed to create build project directory %s for build id %s\n", &buildRoot[0], id);
         goto cleanup;
     }
 
@@ -535,6 +524,13 @@ static int __prepare_sources(const char* id, const char* url, char** projectPath
         goto cleanup;
     }
 
+    // remove the image to save storage space for now, this is nice for in-memory builds
+    // where we don't want to take up memory unnecessarily 
+    status = remove(imagePath);
+    if (status) {
+        VLOG_WARNING("cookd", "__prepare_sources: failed to cleanup %s for build id %s\n", imagePath, id);
+    }
+
     *projectPathOut = projectPath;
 
 cleanup:
@@ -542,7 +538,6 @@ cleanup:
         free(projectPath);
     }
     free(imagePath);
-    free(buildRoot);
     return status;
 }
 
@@ -582,31 +577,16 @@ cleanup:
 }
 
 // <root> / <id> / build.log
-static FILE* __cookd_build_log_new(const char* id, char** logPathOut)
+static FILE* __cookd_build_log_new(const char* id, const char* root, char** logPathOut)
 {
-    char* buildRoot;
     char* logPath;
     int   status;
     FILE* log;
     VLOG_DEBUG("cookd", "__cookd_build_log_new(id=%s)\n", id);
 
-    buildRoot = strpathcombine(chef_dirs_root(), id);
-    if (buildRoot == NULL) {
-        VLOG_ERROR("cookd", "__cookd_build_log_new: failed to allocate memory for build path\n");
-        return NULL;
-    }
-
-    logPath = strpathcombine(buildRoot, "build.log");
+    logPath = strpathcombine(root, "build.log");
     if (logPath == NULL) {
         VLOG_ERROR("cookd", "__cookd_build_log_new: failed to allocate memory for build log path\n");
-        goto cleanup;
-    }
-
-    // create folder for build id
-    status = platform_mkdir(&buildRoot[0]);
-    if (status) {
-        VLOG_ERROR("cookd", "__cookd_build_log_new: failed to create build project directory %s for build id %s\n", &buildRoot[0], id);
-        free(logPath);
         goto cleanup;
     }
 
@@ -621,7 +601,6 @@ static FILE* __cookd_build_log_new(const char* id, char** logPathOut)
     vlog_set_output_level(log, VLOG_LEVEL_DEBUG);
 
 cleanup:
-    free(buildRoot);
     return log;
 }
 
@@ -670,6 +649,7 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
     struct kitchen_setup_options setupOptions = { 0 };
     struct kitchen               kitchen = { 0 };
     char*                        projectPath;
+    char*                        buildPath;
     struct recipe*               recipe;
     FILE*                        log;
     char*                        log_path;
@@ -680,13 +660,27 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
     VLOG_DEBUG("cookd", "__cookd_server_build(id=%s, url=%s)\n", id, options->url);
 
     __notify_status(id, COOKD_BUILD_STATUS_SOURCING);
-    log = __cookd_build_log_new(id, &log_path);
-    if (log == NULL) {
-        VLOG_ERROR("cookd", "__cookd_server_build: failed to create build log\n");
+
+    // We need to figure out these limits here, and to be fair we can easily out-allocate
+    // memory for a build if we are not careful. The default should be configurable and loaded
+    // through config, however there may be recipes that need more, and in that case we should
+    // probably fall back to storage.
+    buildPath = storage_build_new(id, 1024);
+    if (buildPath == NULL) {
+        VLOG_ERROR("cookd", "__cookd_server_build: failed to setup build storage\n");
+        __notify_status(id, COOKD_BUILD_STATUS_FAILED);
         return;
     }
 
-    status = __prepare_sources(id, options->url, &projectPath);
+    log = __cookd_build_log_new(id, buildPath, &log_path);
+    if (log == NULL) {
+        VLOG_ERROR("cookd", "__cookd_server_build: failed to create build log\n");
+        __notify_status(id, COOKD_BUILD_STATUS_FAILED);
+        storage_build_delete(buildPath);
+        return;
+    }
+
+    status = __prepare_sources(id, buildPath, options->url, &projectPath);
     if (status) {
         VLOG_ERROR("cookd", "failed to prepare sources for build id %s (%s)\n", id, options->url);
         goto cleanup;
