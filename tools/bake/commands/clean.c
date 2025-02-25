@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <chef/dirs.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <chef/kitchen.h>
