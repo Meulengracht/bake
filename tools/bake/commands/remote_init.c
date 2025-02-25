@@ -65,12 +65,12 @@ int remote_init_main(int argc, char** argv, char** envp, struct bake_command_opt
     }
 
     if (i < argc) {
-        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+        if (!strcmp(argv[i], "-l") || !strcmp(argv[i], "--local")) {
+            local = 1;
+        } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
             return 0;
-        }
-
-        if (!strcmp(argv[i], "--version")) {
+        } else if (!strcmp(argv[i], "--version")) {
             printf("bake: version " PROJECT_VER "\n");
             return 0;
         }

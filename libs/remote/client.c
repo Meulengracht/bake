@@ -36,11 +36,6 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 {
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
 
-    // ensure it doesn't exist
-    if (unlink(address) && errno != ENOENT) {
-        return -1;
-    }
-
     local->sun_family = AF_LOCAL;
     strncpy(local->sun_path, address, sizeof(local->sun_path));
     return 0;
@@ -79,7 +74,7 @@ static void __configure_inet4(struct sockaddr_storage* storage, struct chef_conf
     inet4->sin_port = htons(config->port);
 }
 
-static int init_link_config(struct gracht_link_socket* link, enum gracht_link_type type, struct chef_config_address* config)
+static int __init_link_config(struct gracht_link_socket* link, enum gracht_link_type type, struct chef_config_address* config)
 {
     struct sockaddr_storage addr_storage = { 0 };
     socklen_t               size;
@@ -89,7 +84,7 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     if (!strcmp(config->type, "local")) {
         status = __configure_local(&addr_storage, config->address);
         if (status) {
-            fprintf(stderr, "init_link_config failed to configure local link\n");
+            fprintf(stderr, "__init_link_config failed to configure local link\n");
             return status;
         }
         domain = AF_LOCAL;
@@ -107,13 +102,12 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
         domain = AF_INET6;
         size = sizeof(struct sockaddr_in6);
     } else {
-        fprintf(stderr, "init_link_config invalid link type %s\n", config->type);
+        fprintf(stderr, "__init_link_config invalid link type %s\n", config->type);
         return -1;
     }
 
     gracht_link_socket_set_type(link, type);
     gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr_storage, size);
-    gracht_link_socket_set_listen(link, 1);
     gracht_link_socket_set_domain(link, domain);
     return 0;
 }
@@ -140,7 +134,7 @@ int remote_client_create(gracht_client_t** clientOut)
         return code;
     }
 
-    init_link_config(link, gracht_link_packet_based, &apiAddress);
+    __init_link_config(link, gracht_link_packet_based, &apiAddress);
 
     gracht_client_configuration_init(&clientConfiguration);
     gracht_client_configuration_set_link(&clientConfiguration, (struct gracht_link*)link);
