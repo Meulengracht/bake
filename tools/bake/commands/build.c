@@ -358,6 +358,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     // debug target information
     VLOG_DEBUG("bake", "platform=%s, architecture=%s\n", options->platform, arch);
     status = kitchen_initialize(&(struct kitchen_init_options) {
+        .kitchen_root = chef_dirs_kitchen(recipe_cache_uuid(cache)),
         .recipe = options->recipe,
         .recipe_path = options->recipe_path,
         .recipe_cache = cache,

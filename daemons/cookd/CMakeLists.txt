@@ -15,7 +15,6 @@ set (SRCS
     server/api.c
     server/notify.c
     server/server.c
-    server/storage.c
 
     client.c
     config.c

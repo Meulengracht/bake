@@ -139,16 +139,9 @@ static char** __initialize_env(struct kitchen* kitchen, const char* const* paren
 static int __kitchen_construct(struct kitchen_init_options* options, struct kitchen* kitchen)
 {
     char        buff[PATH_MAX*2];
-    const char* root;
+    const char* root = options->kitchen_root;
     int         status;
     VLOG_DEBUG("kitchen", "__kitchen_construct(name=%s)\n", options->recipe->project.name);
-
-    // calculate root
-    if (options->recipe_cache != NULL) {
-        root = chef_dirs_kitchen(recipe_cache_uuid(options->recipe_cache));
-    } else {
-        root = chef_dirs_kitchen(NULL);
-    }
 
     memset(kitchen, 0, sizeof(struct kitchen));
     kitchen->target_platform = strdup(options->target_platform);

@@ -15,8 +15,10 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
  */
+//#define __WHAT_THE_O
 
-#if defined(__linux__)
+
+#if defined(__linux__) && defined(__WHAT_THE_O)
 #define _GNU_SOURCE
 
 #include <linux/limits.h>
@@ -24,6 +26,10 @@
 #include <stdlib.h>
 #include <vlog.h>
 
+// We need to figure out these limits here, and to be fair we can easily out-allocate
+// memory for a build if we are not careful. The default should be configurable and loaded
+// through config, however there may be recipes that need more, and in that case we should
+// probably fall back to storage.
 char* storage_build_new(const char* id, unsigned int mb)
 {
     const char* basedir;
@@ -76,7 +82,7 @@ void storage_build_delete(char* path)
 // default to hdd
 char* build_storage(const char* id, unsigned int mb)
 {
-    return platform_strdup(chef_dirs_root());
+    return strpathcombine(chef_dirs_root(), id);
 }
 
 void storage_build_delete(char* path)

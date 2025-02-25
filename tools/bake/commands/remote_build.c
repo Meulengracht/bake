@@ -395,14 +395,14 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
 
     vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
 
-    // register resume helper
-    atexit(__print_resume_help);
-
     // initiate all the build calls
     status = __queue_builds(3, client, dlUrl, &g_builds, options);
     if (status) {
         goto cleanup;
     }
+
+    // register resume helper
+    atexit(__print_resume_help);
 
     // poll queued builds
     status = __wait_for_builds(client, &g_builds);

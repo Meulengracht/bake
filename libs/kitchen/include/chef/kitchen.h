@@ -39,6 +39,7 @@ struct kitchen_setup_hook {
 };
 
 struct kitchen_init_options {
+    const char*          kitchen_root;
     struct recipe*       recipe;
     struct recipe_cache* recipe_cache;
     const char*          recipe_path;

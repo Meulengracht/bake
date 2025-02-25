@@ -32,8 +32,6 @@
 #include <threading.h>
 #include <vlog.h>
 
-#include "storage.h"
-
 struct __cookd_queue {
     // remember volatility means nothing in terms of memory
     // safety, but rather avoid the compiler optimizing the 
@@ -661,11 +659,7 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
 
     __notify_status(id, COOKD_BUILD_STATUS_SOURCING);
 
-    // We need to figure out these limits here, and to be fair we can easily out-allocate
-    // memory for a build if we are not careful. The default should be configurable and loaded
-    // through config, however there may be recipes that need more, and in that case we should
-    // probably fall back to storage.
-    buildPath = storage_build_new(id, 1024);
+    buildPath = chef_dirs_kitchen(id);
     if (buildPath == NULL) {
         VLOG_ERROR("cookd", "__cookd_server_build: failed to setup build storage\n");
         __notify_status(id, COOKD_BUILD_STATUS_FAILED);
@@ -676,7 +670,7 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
     if (log == NULL) {
         VLOG_ERROR("cookd", "__cookd_server_build: failed to create build log\n");
         __notify_status(id, COOKD_BUILD_STATUS_FAILED);
-        storage_build_delete(buildPath);
+        free(buildPath);
         return;
     }
 
@@ -693,6 +687,7 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
     }
 
     status = kitchen_initialize(&(struct kitchen_init_options) {
+        .kitchen_root = buildPath,
         .envp = NULL, /* not used currently */
         .recipe = recipe,
         .recipe_path = options->recipe_path,
@@ -744,6 +739,7 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
     }
 
 cleanup:
+    free(buildPath);
     if (cleanupKitchen) {
         kitchen_destroy(&kitchen);
     }
