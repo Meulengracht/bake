@@ -659,7 +659,7 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
 
     __notify_status(id, COOKD_BUILD_STATUS_SOURCING);
 
-    buildPath = chef_dirs_kitchen(id);
+    buildPath = (char*)chef_dirs_kitchen(id);
     if (buildPath == NULL) {
         VLOG_ERROR("cookd", "__cookd_server_build: failed to setup build storage\n");
         __notify_status(id, COOKD_BUILD_STATUS_FAILED);
