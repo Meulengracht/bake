@@ -75,6 +75,8 @@ struct waiterd_cook* __find_cook_by_client(gracht_conn_t client)
 void waiterd_server_cook_connect(gracht_conn_t client)
 {
     struct waiterd_cook* cook = __waiterd_cook_new(client);
+    VLOG_TRACE("waiter", "cook::connect(client=0x%x)\n", client);
+
     if (cook == NULL) {
         VLOG_ERROR("waiter", "cook::connect failed to allocate memory for cook\n");
         return;
@@ -103,6 +105,7 @@ void waiterd_server_cook_disconnect(gracht_conn_t client)
 {
     struct waiterd_cook* cook = __find_cook_by_client(client);
     struct list_item*    i;
+    VLOG_TRACE("waiter", "cook::disconnect(client=0x%x)\n", client);
 
     // invalid cook?
     if (cook == NULL) {
@@ -128,6 +131,7 @@ void waiterd_server_cook_disconnect(gracht_conn_t client)
 void waiterd_server_cook_ready(gracht_conn_t client, enum waiterd_architecture arch)
 {
     struct waiterd_cook* cook = __find_cook_by_client(client);
+    VLOG_TRACE("waiter", "cook::ready(client=0x%x)\n", client);
 
     if (cook == NULL) {
         // invalid cook, log this 

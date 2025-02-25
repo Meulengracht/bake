@@ -419,6 +419,10 @@ void vlog_end(void)
 
 void vlog_content_set_index(int index)
 {
+    if (!g_vlog.view_enabled) {
+        return;
+    }
+
     if (index < 0 || index >= g_vlog.content_line_count) {
         return;
     }
@@ -427,11 +431,19 @@ void vlog_content_set_index(int index)
 
 void vlog_content_set_prefix(const char* prefix)
 {
+    if (!g_vlog.view_enabled) {
+        return;
+    }
+
     g_vlog.lines[g_vlog.content_line_index].prefix = prefix;
 }
 
 void vlog_content_set_status(enum vlog_content_status_type status)
 {
+    if (!g_vlog.view_enabled) {
+        return;
+    }
+    
     g_vlog.lines[g_vlog.content_line_index].status = status;
     
     g_vlog.animator_time = 0;

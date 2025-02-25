@@ -51,6 +51,13 @@ static char* __ask_question(const char* question, const char* defaultAnswer)
     }
     if (answer[0] == '\n') {
         strcpy(&answer[0], defaultAnswer);
+    } else {
+        for (int i = 0; answer[i] != 0; i++) {
+            if (answer[i] == '\n') {
+                answer[i] = 0;
+                break;
+            }
+        }
     }
     return platform_strdup(&answer[0]);
 }

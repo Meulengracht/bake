@@ -21,15 +21,15 @@ apps:
   serve:
     command: usr/bin/serve
   served:
-    command: usr/libexec/chef/served
+    command: usr/libexec/chef/served -vvv
     daemon: simple
     install-mode: disable
   waiterd:
-    command: usr/libexec/chef/waiterd
+    command: usr/libexec/chef/waiterd -vvv
     daemon: simple
     install-mode: disable
   cookd:
-    command: usr/libexec/chef/cookd
+    command: usr/libexec/chef/cookd -vvv
     daemon: simple
     install-mode: disable
 
