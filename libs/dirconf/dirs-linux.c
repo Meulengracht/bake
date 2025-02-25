@@ -213,10 +213,12 @@ int chef_dirs_initialize(void)
             return -1;
         }
         g_dirs.config = __root_common_directory();
-        if (g_dirs.root == NULL) {
+        if (g_dirs.config == NULL) {
             VLOG_ERROR("dirs", "failed to determine configuration directory\n");
             return -1;
         }
+        g_dirs.fridge = strpathcombine(g_dirs.config, "fridge");
+        g_dirs.store = strpathcombine(g_dirs.config, "store");
 
         if (__ensure_chef_global_dirs()) {
             VLOG_ERROR("dirs", "failed to create root directories\n");
@@ -229,10 +231,10 @@ int chef_dirs_initialize(void)
             return -1;
         }
         g_dirs.config = platform_strdup(g_dirs.root);
+        g_dirs.fridge = strpathcombine(g_dirs.root, "fridge");
+        g_dirs.store = strpathcombine(g_dirs.root, "store");
     }
 
-    g_dirs.fridge = strpathcombine(g_dirs.root, "fridge");
-    g_dirs.store = strpathcombine(g_dirs.root, "store");
     g_dirs.kitchen = strpathcombine(g_dirs.root, "kitchen");
     if (g_dirs.root == NULL || g_dirs.fridge == NULL ||
         g_dirs.store == NULL || g_dirs.kitchen == NULL ||

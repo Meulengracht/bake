@@ -122,8 +122,10 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
     }
 
     status = kitchen_initialize(&(struct kitchen_init_options) {
+        .kitchen_root = chef_dirs_kitchen(recipe_cache_uuid(cache)),
         .recipe = options->recipe,
         .recipe_cache = cache,
+        .envp = (const char* const*)envp,
         .project_path = options->cwd,
         .pkg_environment = NULL,
         .target_platform = options->platform,
