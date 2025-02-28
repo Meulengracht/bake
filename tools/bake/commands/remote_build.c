@@ -366,7 +366,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     VLOG_TRACE("bake", "initializing network client\n");
     status = chefclient_initialize();
     if (status != 0) {
-        fprintf(stderr, "remote_upload: failed to initialize chef client\n");
+        VLOG_ERROR("bake", "remote_upload: failed to initialize chef client\n");
         return -1;
     }
 
@@ -394,7 +394,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     }
 
     vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
-
+ 
     // initiate all the build calls
     status = __queue_builds(3, client, dlUrl, &g_builds, options);
     if (status) {

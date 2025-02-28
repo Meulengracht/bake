@@ -204,7 +204,7 @@ static unsigned int __get_snap_uid(void)
 
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler*     command = &g_commands[2]; // build step is default
+    struct command_handler*     command = &g_commands[1]; // build step is default
     struct bake_command_options options = { 0 };
     void*                       buffer;
     size_t                      length;

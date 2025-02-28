@@ -104,7 +104,7 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     }
 
     gracht_link_socket_set_type(link, type);
-    gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr_storage, size);
+    gracht_link_socket_set_connect_address(link, (const struct sockaddr_storage*)&addr_storage, size);
     gracht_link_socket_set_domain(link, domain);
     return 0;
 }
