@@ -210,9 +210,6 @@ int chef_client_bu_upload(const char* path, char** downloadUrl)
     struct upload_context uploadContext = { 0 };
     int                   status;
 
-    printf("initiating upload of %s\n", path);
-    fflush(stdout);
-
     status = __upload_file(path, &uploadContext);
     if (status != 0) {
         fprintf(stderr, "chef_client_bu_upload: failed to upload file [%s]\n", strerror(errno));

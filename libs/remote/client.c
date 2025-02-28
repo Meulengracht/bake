@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <vlog.h>
 
 #if defined(__linux__)
 #include <arpa/inet.h>
@@ -84,30 +85,26 @@ static int __init_link_config(struct gracht_link_socket* link, enum gracht_link_
     if (!strcmp(config->type, "local")) {
         status = __configure_local(&addr_storage, config->address);
         if (status) {
-            fprintf(stderr, "__init_link_config failed to configure local link\n");
+            VLOG_ERROR("remote", "__init_link_config failed to configure local link\n");
             return status;
         }
         domain = AF_LOCAL;
         size = __local_size();
-
-        printf("listening at %s\n", config->address);
     } else if (!strcmp(config->type, "inet4")) {
         __configure_inet4(&addr_storage, config);
         domain = AF_INET;
         size = sizeof(struct sockaddr_in);
-        
-        printf("listening on %s:%u\n", config->address, config->port);
     } else if (!strcmp(config->type, "inet6")) {
         // TODO
         domain = AF_INET6;
         size = sizeof(struct sockaddr_in6);
     } else {
-        fprintf(stderr, "__init_link_config invalid link type %s\n", config->type);
+        VLOG_ERROR("remote", "__init_link_config invalid link type %s\n", config->type);
         return -1;
     }
 
     gracht_link_socket_set_type(link, type);
-    gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr_storage, size);
+    gracht_link_socket_set_connect_address(link, (const struct sockaddr_storage*)&addr_storage, size);
     gracht_link_socket_set_domain(link, domain);
     return 0;
 }
@@ -123,14 +120,14 @@ int remote_client_create(gracht_client_t** clientOut)
 
     config = chef_config_load(chef_dirs_config());
     if (config == NULL) {
-        fprintf(stderr, "remote_client_create: failed to load configuration\n");
+        VLOG_ERROR("remote", "remote_client_create: failed to load configuration\n");
         return -1;
     }
     chef_config_remote_address(config, &apiAddress);
 
     code = gracht_link_socket_create(&link);
     if (code) {
-        fprintf(stderr, "remote_client_create: failed to initialize socket\n");
+        VLOG_ERROR("remote", "remote_client_create: failed to initialize socket\n");
         return code;
     }
 
@@ -141,13 +138,13 @@ int remote_client_create(gracht_client_t** clientOut)
 
     code = gracht_client_create(&clientConfiguration, &client);
     if (code) {
-        printf("remote_client_create: error initializing client library %i, %i\n", errno, code);
+        VLOG_ERROR("remote", "remote_client_create: error initializing client library %i, %i\n", errno, code);
         return code;
     }
 
     code = gracht_client_connect(client);
     if (code) {
-        printf("remote_client_create: failed to connect client %i, %i\n", errno, code);
+        VLOG_ERROR("remote", "remote_client_create: failed to connect client %i, %i\n", errno, code);
     }
 
     *clientOut = client;

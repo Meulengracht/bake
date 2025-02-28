@@ -74,9 +74,14 @@ struct waiterd_cook* __find_cook_by_client(gracht_conn_t client)
 
 void waiterd_server_cook_connect(gracht_conn_t client)
 {
-    struct waiterd_cook* cook = __waiterd_cook_new(client);
+    struct waiterd_cook* cook;
     VLOG_TRACE("waiter", "cook::connect(client=0x%x)\n", client);
+    if (client == 0) {
+        // user, not cook
+        return;
+    }
 
+    cook = __waiterd_cook_new(client);
     if (cook == NULL) {
         VLOG_ERROR("waiter", "cook::connect failed to allocate memory for cook\n");
         return;

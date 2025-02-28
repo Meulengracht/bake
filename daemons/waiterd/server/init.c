@@ -112,7 +112,7 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     }
 
     gracht_link_socket_set_type(link, type);
-    gracht_link_socket_set_address(link, (const struct sockaddr_storage*)&addr_storage, size);
+    gracht_link_socket_set_connect_address(link, (const struct sockaddr_storage*)&addr_storage, size);
     gracht_link_socket_set_listen(link, 1);
     gracht_link_socket_set_domain(link, domain);
     return 0;
@@ -185,6 +185,16 @@ int waiterd_initialize_server(struct gracht_server_configuration* config, gracht
     status = platform_mkdir("/run/chef/waiterd");
     if (status) {
         fprintf(stderr, "waiterd_initialize_server: failed to create /run/chef/waiterd\n");
+        return status;
+    }
+    status = platform_mkdir("/run/chef/waiterd/clients");
+    if (status) {
+        fprintf(stderr, "waiterd_initialize_server: failed to create /run/chef/waiterd/clients\n");
+        return status;
+    }
+    status = platform_chmod("/run/chef/waiterd/clients", 0666);
+    if (status) {
+        fprintf(stderr, "waiterd_initialize_server: failed to set mode for /run/chef/waiterd/clients\n");
         return status;
     }
 #endif

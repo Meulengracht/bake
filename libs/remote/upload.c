@@ -28,7 +28,7 @@ int remote_upload(const char* path, char** downloadUrl)
 
     status = chef_client_bu_upload(path, downloadUrl);
     if (status) {
-        fprintf(stderr, "remote_upload: failed to upload %s\n", path);
+        VLOG_ERROR("remote", "remote_upload: failed to upload %s\n", path);
         chefclient_cleanup();
         return status;
     }

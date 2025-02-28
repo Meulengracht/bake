@@ -61,7 +61,7 @@ void chef_waiterd_cook_status_invocation(struct gracht_message* message, const s
 void chef_waiterd_cook_artifact_invocation(struct gracht_message* message, const struct chef_cook_artifact_event* evt)
 {
     struct waiterd_request* wreq;
-    VLOG_DEBUG("api", "cook::status(id=%s, type=%u)\n", evt->id, evt->type);
+    VLOG_DEBUG("api", "cook::artifact(id=%s, type=%u)\n", evt->id, evt->type);
 
     wreq = waiterd_server_request_find(evt->id);
     if (wreq == NULL) {

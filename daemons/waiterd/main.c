@@ -111,8 +111,8 @@ int main(int argc, char** argv)
     status = waiterd_initialize_server(&config, &g_server);
 
     // we register protocols
-    gracht_server_register_protocol(g_server, &chef_waiterd_server_protocol);
     gracht_server_register_protocol(g_server, &chef_waiterd_cook_server_protocol);
+    gracht_server_register_protocol(g_server, &chef_waiterd_server_protocol);
 
     // use the default server loop
     return gracht_server_main_loop(g_server);
