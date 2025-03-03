@@ -112,7 +112,7 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     }
 
     gracht_link_socket_set_type(link, type);
-    gracht_link_socket_set_connect_address(link, (const struct sockaddr_storage*)&addr_storage, size);
+    gracht_link_socket_set_bind_address(link, (const struct sockaddr_storage*)&addr_storage, size);
     gracht_link_socket_set_listen(link, 1);
     gracht_link_socket_set_domain(link, domain);
     return 0;
@@ -160,13 +160,13 @@ int register_server_links(gracht_server_t* server)
 
     status = gracht_server_add_link(server, (struct gracht_link*)cookLink);
     if (status) {
-        fprintf(stderr, "register_server_links failed to add link: %i (%i)\n", status, errno);
+        fprintf(stderr, "register_server_links failed to add cookd link: %i (%i)\n", status, errno);
         return status;
     }
 
     status = gracht_server_add_link(server, (struct gracht_link*)apiLink);
     if (status) {
-        fprintf(stderr, "register_server_links failed to add link: %i (%i)\n", status, errno);
+        fprintf(stderr, "register_server_links failed to add api link: %i (%i)\n", status, errno);
         return status;
     }
     return 0;
@@ -192,7 +192,7 @@ int waiterd_initialize_server(struct gracht_server_configuration* config, gracht
         fprintf(stderr, "waiterd_initialize_server: failed to create /run/chef/waiterd/clients\n");
         return status;
     }
-    status = platform_chmod("/run/chef/waiterd/clients", 0666);
+    status = platform_chmod("/run/chef/waiterd/clients", 0777);
     if (status) {
         fprintf(stderr, "waiterd_initialize_server: failed to set mode for /run/chef/waiterd/clients\n");
         return status;
