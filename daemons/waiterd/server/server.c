@@ -76,10 +76,6 @@ void waiterd_server_cook_connect(gracht_conn_t client)
 {
     struct waiterd_cook* cook;
     VLOG_TRACE("waiter", "cook::connect(client=0x%x)\n", client);
-    if (client == 0) {
-        // user, not cook
-        return;
-    }
 
     cook = __waiterd_cook_new(client);
     if (cook == NULL) {

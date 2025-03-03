@@ -33,12 +33,31 @@ static int __local_size(void) {
     return sizeof(struct sockaddr_un);
 }
 
-static int __configure_local(struct sockaddr_storage* storage, const char* address)
+static void __configure_local(struct sockaddr_storage* storage, const char* address)
 {
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
 
     local->sun_family = AF_LOCAL;
     strncpy(local->sun_path, address, sizeof(local->sun_path));
+}
+
+static int __configure_local_bind(struct gracht_link_socket* link)
+{
+    struct sockaddr_storage storage = { 0 };
+    struct sockaddr_un*     address = (struct sockaddr_un*)&storage;
+
+    address->sun_family = AF_LOCAL;
+    snprintf(&address->sun_path[0],
+        sizeof(address->sun_path) - 1,
+        "/run/chef/waiterd/clients/%u",
+        getpid());
+
+    // ensure it doesn't exist
+    if (unlink(&address->sun_path[0]) && errno != ENOENT) {
+        return -1;
+    }
+
+    gracht_link_socket_set_bind_address(link, &storage, __local_size());
     return 0;
 }
 #elif defined(_WIN32)
@@ -51,17 +70,16 @@ static int __local_size(void) {
     return sizeof(struct sockaddr_un);
 }
 
-static int __configure_local(struct sockaddr_storage* storage, const char* address)
+static void __configure_local(struct sockaddr_storage* storage, const char* address)
 {
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
 
-    // ensure it doesn't exist
-    if (unlink(address) && errno != ENOENT) {
-        return -1;
-    }
-
     local->sun_family = AF_LOCAL;
     strncpy(local->sun_path, address, sizeof(local->sun_path));
+}
+
+static int __configure_local_bind(struct gracht_link_socket*)
+{
     return 0;
 }
 #endif
@@ -77,21 +95,25 @@ static void __configure_inet4(struct sockaddr_storage* storage, struct chef_conf
 
 static int __init_link_config(struct gracht_link_socket* link, enum gracht_link_type type, struct chef_config_address* config)
 {
-    struct sockaddr_storage addr_storage = { 0 };
+    struct sockaddr_storage addr = { 0 };
     socklen_t               size;
     int                     domain = 0;
     int                     status;
 
+    gracht_link_socket_set_type(link, type);
+
     if (!strcmp(config->type, "local")) {
-        status = __configure_local(&addr_storage, config->address);
+        status = __configure_local_bind(link);
         if (status) {
-            VLOG_ERROR("remote", "__init_link_config failed to configure local link\n");
+            VLOG_ERROR("remote", "__init_link_config failed to configure local bind address\n");
             return status;
         }
-        domain = AF_LOCAL;
+
+        __configure_local(&addr, config->address);
         size = __local_size();
+        domain = AF_LOCAL;
     } else if (!strcmp(config->type, "inet4")) {
-        __configure_inet4(&addr_storage, config);
+        __configure_inet4(&addr, config);
         domain = AF_INET;
         size = sizeof(struct sockaddr_in);
     } else if (!strcmp(config->type, "inet6")) {
@@ -102,9 +124,7 @@ static int __init_link_config(struct gracht_link_socket* link, enum gracht_link_
         VLOG_ERROR("remote", "__init_link_config invalid link type %s\n", config->type);
         return -1;
     }
-
-    gracht_link_socket_set_type(link, type);
-    gracht_link_socket_set_connect_address(link, (const struct sockaddr_storage*)&addr_storage, size);
+    gracht_link_socket_set_connect_address(link, (const struct sockaddr_storage*)&addr, size);
     gracht_link_socket_set_domain(link, domain);
     return 0;
 }
