@@ -24,6 +24,7 @@
 #include <jansson.h>
 #include "private.h"
 #include <string.h>
+#include <vlog.h>
 
 struct chef_account {
     const char* publisher_name;
@@ -109,25 +110,25 @@ int __get_account(struct chef_account** accountOut)
 
     request = chef_request_new(1, 1);
     if (!request) {
-        fprintf(stderr, "__get_account: failed to create request\n");
+        VLOG_ERROR("chef-client", "__get_account: failed to create request\n");
         return -1;
     }
 
     // set the url
     if (__get_account_url(buffer, sizeof(buffer)) != 0) {
-        fprintf(stderr, "__get_account: buffer too small for account link\n");
+        VLOG_ERROR("chef-client", "__get_account: buffer too small for account link\n");
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__get_account: failed to set url [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__get_account: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__get_account: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__get_account: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -139,7 +140,7 @@ int __get_account(struct chef_account** accountOut)
             status = -EACCES;
         }
         else {
-            fprintf(stderr, "__get_account: http error %ld\n", httpCode);
+            VLOG_ERROR("chef-client", "__get_account: http error %ld\n", httpCode);
             status = -EIO;
         }
         goto cleanup;
@@ -163,32 +164,32 @@ static int __update_account(json_t* json, struct chef_account** accountOut)
 
     request = chef_request_new(1, 1);
     if (!request) {
-        fprintf(stderr, "__update_account: failed to create request\n");
+        VLOG_ERROR("chef-client", "__update_account: failed to create request\n");
         return -1;
     }
 
     // set the url
     if (__get_account_url(buffer, sizeof(buffer)) != 0) {
-        fprintf(stderr, "__update_account: buffer too small for account link\n");
+        VLOG_ERROR("chef-client", "__update_account: buffer too small for account link\n");
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__update_account: failed to set url [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__update_account: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
     body = json_dumps(json, 0);
     code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, body);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__update_account: failed to set body [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__update_account: failed to set body [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__update_account: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__update_account: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -197,7 +198,7 @@ static int __update_account(json_t* json, struct chef_account** accountOut)
         if (httpCode == 302) {
             status = -EACCES;
         } else {
-            fprintf(stderr, "__update_account: http error %ld [%s]\n", httpCode, request->response);
+            VLOG_ERROR("chef-client", "__update_account: http error %ld [%s]\n", httpCode, request->response);
             status = -EIO;
         }
         goto cleanup;

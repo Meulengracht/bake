@@ -25,6 +25,7 @@
 #include "../private.h"
 #include <stdio.h>
 #include <string.h>
+#include <vlog.h>
 
 #define __BU_URL_BASE "https://bashupload.com/"
 
@@ -52,31 +53,35 @@ static void __format_quantity(long long size, char* buffer, size_t bufferSize)
 	snprintf(&buffer[0], bufferSize, "%.02lf%s", remainingBytes, suffix[i]);
 }
 
+static const char* g_upload0 = "uploading [";
+
 static void __update_progress(struct upload_context* downloadContext)
 {
     char progressBuffer[32];
     char totalSizeBuffer[32];
+    char buffer[64] = { 0 };
+    int  index = 0;
     int  percent;
 
     percent = (downloadContext->bytes_uploaded * 100) / downloadContext->bytes_total;
-    
+
     // print a fancy progress bar with percentage, upload progress and a moving
-    // bar being filled
-    printf("\33[2K\rdownloading [");
+    // bar being filled    
+    strcpy(&buffer[0], g_upload0);
+    index += strlen(g_upload0);
     for (int i = 0; i < 20; i++) {
         if (i < percent / 5) {
-            printf("#");
+            buffer[index] = '#';
+        } else {
+            buffer[index] = ' ';
         }
-        else {
-            printf(" ");
-        }
+        index++;
     }
-    __format_quantity(downloadContext->bytes_uploaded, &progressBuffer[0], sizeof(progressBuffer));
-    __format_quantity(downloadContext->bytes_total, &totalSizeBuffer[0], sizeof(totalSizeBuffer));
-    printf("| %3d%%] %s / %s", percent, 
-        &progressBuffer[0], &totalSizeBuffer[0]
+    __format_quantity(downloadContext->bytes_uploaded, &buffer[index], sizeof(progressBuffer));
+    __format_quantity(downloadContext->bytes_total, &buffer[index], sizeof(totalSizeBuffer));
+    VLOG_TRACE("chef-client", "%s | %3d%%] %s / %s",
+        &buffer, percent, &progressBuffer[0], &totalSizeBuffer[0]
     );
-    fflush(stdout);
 }
 
 static size_t __upload_progress_callback(void *clientp,
@@ -104,7 +109,7 @@ static int __parse_response(const char* response, struct upload_context* uploadC
     char* needle = strstr(response, "wget");
     char* end = NULL;
     if (needle == NULL) {
-        fprintf(stderr, "__parse_response: could not find 'wget' in %s\n", response);
+        VLOG_ERROR("chef-client", "__parse_response: could not find 'wget' in %s\n", response);
         return -1;
     }
 
@@ -114,7 +119,7 @@ static int __parse_response(const char* response, struct upload_context* uploadC
 
     uploadContext->download_url = platform_strndup(needle, end - needle);
     if (uploadContext->download_url == NULL) {
-        fprintf(stderr, "__parse_response: failed to allocate memory for %s\n", needle);
+        VLOG_ERROR("chef-client", "__parse_response: failed to allocate memory for %s\n", needle);
         return -1;
     }
     return 0;
@@ -130,73 +135,73 @@ static int __upload_file(const char* filePath, struct upload_context* uploadCont
 
     request = chef_request_new(1, 0);
     if (!request) {
-        fprintf(stderr, "__upload_file: failed to create request\n");
+        VLOG_ERROR("chef-client", "__upload_file: failed to create request\n");
         return -1;
     }
 
     file = fopen(filePath, "rb");
     if (!file) {
-        fprintf(stderr, "__upload_file: failed to open file [%s]\n", strerror(errno));
+        VLOG_ERROR("chef-client", "__upload_file: failed to open file [%s]\n", strerror(errno));
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_UPLOAD, 1L);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set upload type [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__upload_file: failed to set upload type [%s]\n", request->error);
         return -1;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_READFUNCTION, fread);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set read function [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__upload_file: failed to set read function [%s]\n", request->error);
         return -1;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_READDATA, file);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set read data [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__upload_file: failed to set read data [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_HTTPHEADER, request->headers);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set http headers [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__upload_file: failed to set http headers [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_NOPROGRESS, 0);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to enable upload progress [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__upload_file: failed to enable upload progress [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_XFERINFOFUNCTION, __upload_progress_callback);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set download progress callback [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__upload_file: failed to set download progress callback [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_XFERINFODATA, uploadContext);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set download progress callback data [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__upload_file: failed to set download progress callback data [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_URL, __BU_URL_BASE);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: failed to set url [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__upload_file: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__upload_file: curl_easy_perform() failed: %s\n", request->error);
+        VLOG_ERROR("chef-client", "__upload_file: curl_easy_perform() failed: %s\n", request->error);
         goto cleanup;
     }
     
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode < 200 || httpCode >= 300) {
-        fprintf(stderr, "__upload_file: http error %ld\n", httpCode);
+        VLOG_ERROR("chef-client", "__upload_file: http error %ld\n", httpCode);
         status = -1;
     }
 
@@ -215,9 +220,11 @@ int chef_client_bu_upload(const char* path, char** downloadUrl)
     struct upload_context uploadContext = { 0 };
     int                   status;
 
+    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_PROGRESS);
     status = __upload_file(path, &uploadContext);
+    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_PROGRESS);
     if (status != 0) {
-        fprintf(stderr, "chef_client_bu_upload: failed to upload file [%s]\n", strerror(errno));
+        VLOG_ERROR("chef-client", "chef_client_bu_upload: failed to upload file [%s]\n", strerror(errno));
         return status;
     }
 

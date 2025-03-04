@@ -39,7 +39,7 @@ int remote_unpack(const char* imagePath, const char* destination)
     snprintf(&args[0], sizeof(args), "--out %s %s", destination, imagePath);
 
     status = platform_spawn(
-        "ummkvafs",
+        "unmkvafs",
         &args[0],
         NULL,
         &(struct platform_spawn_options) {

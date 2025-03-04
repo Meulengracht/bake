@@ -131,7 +131,7 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
     // perform the spawn
     status = posix_spawnp(&pid, path, &actions, NULL, argv, (char* const*)envp);
     if (status) {
-        fprintf(stderr, "platform_spawn: failed to spawn process: %s\n", strerror(errno));
+        fprintf(stderr, "platform_spawn: failed to spawn process %s: %s\n", path, strerror(errno));
         goto cleanup;
     }
 

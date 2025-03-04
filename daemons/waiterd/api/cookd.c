@@ -54,7 +54,7 @@ void chef_waiterd_cook_status_invocation(struct gracht_message* message, const s
     // If it's the first update, then we heard back from the cook
     // whether it started the request. Notify the client of the new status.
     if (status == WAITERD_BUILD_STATUS_UNKNOWN) {
-        chef_waiterd_build_response(wreq->source, evt->status, &wreq->guid[0]);
+        chef_waiterd_build_response(wreq->source, CHEF_QUEUE_STATUS_SUCCESS, &wreq->guid[0]);
     }
 }
 

@@ -35,8 +35,9 @@ enum vlog_level {
 #define VLOG_TRACE(tag, ...)   vlog_output(VLOG_LEVEL_TRACE, tag, __VA_ARGS__)
 #define VLOG_DEBUG(tag, ...)   vlog_output(VLOG_LEVEL_DEBUG, tag, __VA_ARGS__)
 
-#define VLOG_OUTPUT_OPTION_CLOSE   0x1
-#define VLOG_OUTPUT_OPTION_NODECO  0x4
+#define VLOG_OUTPUT_OPTION_CLOSE    0x1
+#define VLOG_OUTPUT_OPTION_PROGRESS 0x2
+#define VLOG_OUTPUT_OPTION_NODECO   0x4
 
 /**
  * @brief Sets the current logging format. Short (default) is better suited for
