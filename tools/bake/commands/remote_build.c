@@ -45,13 +45,14 @@ struct __build {
 // We keep this global to allow for printing the way to resume the
 // current build if we terminated abnormally.
 static struct list g_builds = { 0 };
+static int         g_skipPrint = 0;
 
 static void __print_resume_help(void)
 {
     struct list_item* li;
     int               i = 0;
 
-    if (g_builds.count == 0) {
+    if (g_builds.count == 0 || g_skipPrint != 0) {
         return;
     }
     
@@ -116,7 +117,7 @@ static char* __format_header(const char* name, const char* platform, const char*
 static char* __format_footer(const char* waiterdAddress)
 {
     char tmp[PATH_MAX];
-    snprintf(&tmp[0], sizeof(tmp), "connected to: %s", waiterdAddress);
+    snprintf(&tmp[0], sizeof(tmp), "remote build%s", waiterdAddress);
     return platform_strdup(&tmp[0]);
 }
 
@@ -376,6 +377,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
         VLOG_ERROR("bake", "failed to connect to the configured waiterd instance\n");
         goto cleanup;
     }
+    VLOG_TRACE("bake", "connected\n");
 
     // first step done
     vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
@@ -383,16 +385,20 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     // prepare the source for sending
     vlog_content_set_index(1);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+
+    VLOG_TRACE("bake", "packing source code for delivery\n");
     status = remote_pack(options->cwd, (const char* const*)envp, &imagePath);
     if (status) {
         goto cleanup;
     }
 
+    VLOG_TRACE("bake", "uploading source code image\n");
     status = remote_upload(imagePath, &dlUrl);
     if (status) {
         goto cleanup;
     }
 
+    VLOG_TRACE("bake", "source has been uploaded\n");
     vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
  
     // initiate all the build calls
@@ -417,5 +423,6 @@ cleanup:
     vlog_end();
     free(imagePath);
     free(dlUrl);
+    g_skipPrint = 1;
     return status;
 }

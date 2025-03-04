@@ -24,6 +24,7 @@
 #include <jansson.h>
 #include "private.h"
 #include <string.h>
+#include <vlog.h>
 
 static const char* __get_json_string_safe(json_t* object, const char* key)
 {
@@ -195,25 +196,25 @@ int chefclient_pack_info(struct chef_info_params* params, struct chef_package** 
 
     request = chef_request_new(1, 0);
     if (!request) {
-        fprintf(stderr, "chefclient_pack_info: failed to create request\n");
+        VLOG_ERROR("chef-client", "chefclient_pack_info: failed to create request\n");
         return -1;
     }
 
     // set the url
     if (__get_info_url(params, buffer, sizeof(buffer)) != 0) {
-        fprintf(stderr, "chefclient_pack_info: buffer too small for package info link\n");
+        VLOG_ERROR("chef-client", "chefclient_pack_info: buffer too small for package info link\n");
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "chefclient_pack_info: failed to set url [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "chefclient_pack_info: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
     
     code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
-        fprintf(stderr, "chefclient_pack_info: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "chefclient_pack_info: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -221,11 +222,11 @@ int chefclient_pack_info(struct chef_info_params* params, struct chef_package** 
         status = -1;
         
         if (httpCode == 404) {
-            fprintf(stderr, "chefclient_pack_info: package not found\n");
+            VLOG_ERROR("chef-client", "chefclient_pack_info: package not found\n");
             errno = ENOENT;
         }
         else {
-            fprintf(stderr, "chefclient_pack_info: http error %ld [%s]\n", httpCode, request->response);
+            VLOG_ERROR("chef-client", "chefclient_pack_info: http error %ld [%s]\n", httpCode, request->response);
             errno = EIO;
         }
         goto cleanup;

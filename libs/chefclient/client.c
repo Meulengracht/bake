@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wolfssl/ssl.h>
+#include <vlog.h>
 
 struct chefclient {
     char*   settings_path;
@@ -57,7 +58,7 @@ static int __load_settings(struct chefclient* client, const char* path)
         if (json_error_code(&error) == json_error_cannot_open_file) {
             client->settings = json_object();
         } else {
-            fprintf(stderr, "__load_settings: failed to read %s: %i\n", &buff[0], json_error_code(&error));
+            VLOG_ERROR("chef-client", "__load_settings: failed to read %s: %i\n", &buff[0], json_error_code(&error));
             return -1;
         }
     }
@@ -88,7 +89,7 @@ int chefclient_initialize(void)
 
     status = __load_settings(&g_chefclient, &buff[0]);
     if (status != 0) {
-        fprintf(stderr, "chefclient_initialize: failed to load settings\n");
+        VLOG_ERROR("chef-client", "chefclient_initialize: failed to load settings\n");
         return -1;
     }
     return 0;
@@ -98,7 +99,7 @@ void chefclient_cleanup(void)
 {
     // save settings
     if (__save_settings(&g_chefclient) != 0) {
-        fprintf(stderr, "chefclient_cleanup: failed to save settings\n");
+        VLOG_ERROR("chef-client", "chefclient_cleanup: failed to save settings\n");
     }
 
     // required on windows
@@ -124,7 +125,7 @@ void chef_set_curl_common_headers(void** headerlist, int authorization)
 {
     if (authorization) {
         if (headerlist == NULL) {
-            fprintf(stderr, "chef_set_curl_common: auth requested but headerlist is NULL\n");
+            VLOG_ERROR("chef-client", "chef_set_curl_common: auth requested but headerlist is NULL\n");
             return;
         }
         oauth_set_authentication(headerlist);

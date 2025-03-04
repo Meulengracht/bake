@@ -24,6 +24,7 @@
 #include <jansson.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vlog.h>
 
 // offline_access is required for refresh_token
 #define OAUTH_SCOPE "email%20profile%20User.Read%20openid"
@@ -90,7 +91,7 @@ static int __parse_challenge_response(const char* responseBuffer, struct devicec
 
     root = json_loads(responseBuffer, 0, &error);
     if (!root) {
-        fprintf(stderr, "__parse_challenge_response: failed to parse json: %s\n", error.text);
+        VLOG_ERROR("chef-client", "__parse_challenge_response: failed to parse json: %s\n", error.text);
         return -1;
     }
 
@@ -115,41 +116,41 @@ static int __deviceflow_challenge(struct devicecode_context* context)
 
     request = chef_request_new(1, 0);
     if (!request) {
-        fprintf(stderr, "__deviceflow_challenge: failed to create request\n");
+        VLOG_ERROR("chef-client", "__deviceflow_challenge: failed to create request\n");
         return -1;
     }
 
     // set the url
     if (__get_devicecode_auth_link(buffer, sizeof(buffer)) != 0) {
-        fprintf(stderr, "__oauth2_device_flow_start: buffer too small for device code auth link\n");
+        VLOG_ERROR("chef-client", "__oauth2_device_flow_start: buffer too small for device code auth link\n");
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__oauth2_device_flow_start: failed to set url [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__oauth2_device_flow_start: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
     if (__get_device_auth_body(buffer, sizeof(buffer)) != 0) {
-        fprintf(stderr, "__oauth2_device_flow_start: buffer too small for device code auth body\n");
+        VLOG_ERROR("chef-client", "__oauth2_device_flow_start: buffer too small for device code auth body\n");
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__oauth2_device_flow_start: failed to set body [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__oauth2_device_flow_start: failed to set body [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__oauth2_device_flow_start: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__oauth2_device_flow_start: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
-        fprintf(stderr, "__oauth2_device_flow_start: http error %ld [%s]\n", httpCode, request->response);
+        VLOG_ERROR("chef-client", "__oauth2_device_flow_start: http error %ld [%s]\n", httpCode, request->response);
         status = -1;
         errno = EIO;
         goto cleanup;
@@ -171,7 +172,7 @@ static int __parse_token_response(const char* responseBuffer, struct token_conte
 
     root = json_loads(responseBuffer, 0, &error);
     if (!root) {
-        fprintf(stderr, "__parse_token_response: failed to parse json: %s\n", error.text);
+        VLOG_ERROR("chef-client", "__parse_token_response: failed to parse json: %s\n", error.text);
         return -1;
     }
 
@@ -198,7 +199,7 @@ static void __parse_token_error_response(const char* responseBuffer)
 
     root = json_loads(responseBuffer, 0, &error);
     if (!root) {
-        fprintf(stderr, "__parse_token_error_response: failed to parse json: %s\n", error.text);
+        VLOG_ERROR("chef-client", "__parse_token_error_response: failed to parse json: %s\n", error.text);
         return;
     }
 
@@ -208,7 +209,7 @@ static void __parse_token_error_response(const char* responseBuffer)
     } else if (strncmp(statusText, "slow_down", 9) == 0) {
         errno = EBUSY;
     } else {
-        fprintf(stderr, "__parse_token_error_response: error %s", statusText);
+        VLOG_ERROR("chef-client", "__parse_token_error_response: error %s", statusText);
         errno = EPIPE;
     }
     json_decref(root);
@@ -224,36 +225,36 @@ static int __deviceflow_get_token(struct devicecode_context* deviceContext, stru
 
     request = chef_request_new(1, 0);
     if (!request) {
-        fprintf(stderr, "__deviceflow_get_token: failed to create request\n");
+        VLOG_ERROR("chef-client", "__deviceflow_get_token: failed to create request\n");
         return -1;
     }
 
     // set the url
     if (__get_token_auth_link(buffer, sizeof(buffer)) != 0) {
-        fprintf(stderr, "__deviceflow_get_token: buffer too small for token auth link\n");
+        VLOG_ERROR("chef-client", "__deviceflow_get_token: buffer too small for token auth link\n");
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__deviceflow_get_token: failed to set url [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__deviceflow_get_token: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
     if (__get_token_auth_body(deviceContext, buffer, sizeof(buffer)) != 0) {
-        fprintf(stderr, "__deviceflow_get_token: buffer too small for token auth body\n");
+        VLOG_ERROR("chef-client", "__deviceflow_get_token: buffer too small for token auth body\n");
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, &buffer[0]);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__deviceflow_get_token: failed to set body [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__deviceflow_get_token: failed to set body [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__deviceflow_get_token: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__deviceflow_get_token: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -307,7 +308,7 @@ int oauth_deviceflow_start(struct token_context* tokenContext)
 
     deviceContext = calloc(1, sizeof(struct devicecode_context));
     if (!deviceContext) {
-        fprintf(stderr, "oauth_deviceflow_start: failed to allocate device context\n");
+        VLOG_ERROR("chef-client", "oauth_deviceflow_start: failed to allocate device context\n");
         return -1;
     }
 
@@ -321,7 +322,7 @@ int oauth_deviceflow_start(struct token_context* tokenContext)
     status = __deviceflow_challenge(deviceContext);
     if (status != 0) {
         free(deviceContext);
-        fprintf(stderr, "oauth_deviceflow_start: failed to get device code\n");
+        VLOG_ERROR("chef-client", "oauth_deviceflow_start: failed to get device code\n");
         return status;
     }
 
@@ -330,7 +331,7 @@ int oauth_deviceflow_start(struct token_context* tokenContext)
 
     status = __deviceflow_poll(deviceContext, tokenContext);
     if (status != 0) {
-        fprintf(stderr, "oauth_deviceflow_start: failed to retrieve access token\n");
+        VLOG_ERROR("chef-client", "oauth_deviceflow_start: failed to retrieve access token\n");
     }
 
     free(deviceContext);

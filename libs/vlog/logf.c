@@ -511,6 +511,10 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
             }
             __refresh_view(output, 1);
             continue;
+        } else {
+            if (output->options & VLOG_OUTPUT_OPTION_PROGRESS) {
+                fprintf(output->handle, __VLOG_CLEAR_LINE __VLOG_RESET_CURSOR);
+            }
         }
         
         if (!(output->options & VLOG_OUTPUT_OPTION_NODECO)) {

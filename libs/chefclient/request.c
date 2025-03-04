@@ -21,6 +21,7 @@
 #include "../private.h"
 #include <stdlib.h>
 #include <string.h>
+#include <vlog.h>
 
 #define DEFAULT_RESPONSE_SIZE 4096
 
@@ -51,7 +52,7 @@ int __init_curl(struct chef_request* request, int https, int authorization)
     
     code = curl_easy_setopt(request->curl, CURLOPT_ERRORBUFFER, request->error);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__init_curl: failed to set error buffer [%d]\n", code);
+        VLOG_ERROR("chef-client", "__init_curl: failed to set error buffer [%d]\n", code);
         return -1;
     }
 
@@ -70,13 +71,13 @@ int __init_curl(struct chef_request* request, int https, int authorization)
     // set the writer function to get the response
     code = curl_easy_setopt(request->curl, CURLOPT_WRITEFUNCTION, (curl_write_callback)__response_writer);
     if (code != CURLE_OK) {
-        fprintf(stderr, "__init_curl: failed to set response function [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__init_curl: failed to set response function [%s]\n", request->error);
         return -1;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_WRITEDATA, request);
     if(code != CURLE_OK) {
-        fprintf(stderr, "__init_curl: failed to set write data [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__init_curl: failed to set write data [%s]\n", request->error);
         return -1;
     }
 
@@ -84,7 +85,7 @@ int __init_curl(struct chef_request* request, int https, int authorization)
     if (request->headers != NULL) {
         code = curl_easy_setopt(request->curl, CURLOPT_HTTPHEADER, request->headers);
         if (code != CURLE_OK) {
-            fprintf(stderr, "__init_curl: failed to set http headers [%s]\n", request->error);
+            VLOG_ERROR("chef-client", "__init_curl: failed to set http headers [%s]\n", request->error);
             return -1;
         }
     }
