@@ -98,16 +98,21 @@ static int __parse_response(const char* response, struct upload_context* uploadC
     // Uploaded 1 file, 7 bytes
     //
     // wget https://bashupload.com/4dcXO/file.txt
-    
+    // 
+    // =========================
+    //
     char* needle = strstr(response, "wget");
+    char* end = NULL;
     if (needle == NULL) {
         fprintf(stderr, "__parse_response: could not find 'wget' in %s\n", response);
         return -1;
     }
 
-    // skip 'wget '
-    needle += 5;
-    uploadContext->download_url = platform_strdup(needle);
+    // strip the leading and trailing bits
+    needle += 5;                                             // skip 'wget '
+    for (end = needle; *end != '\0' && *end != '\n'; end++); // find the \n or \0
+
+    uploadContext->download_url = platform_strndup(needle, end - needle);
     if (uploadContext->download_url == NULL) {
         fprintf(stderr, "__parse_response: failed to allocate memory for %s\n", needle);
         return -1;
