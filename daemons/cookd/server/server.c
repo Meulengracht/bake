@@ -666,6 +666,14 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
         return;
     }
 
+    status = platform_mkdir(buildPath);
+    if (status) {
+        VLOG_ERROR("cookd", "__cookd_server_build: failed to create build directory: %s\n", buildPath);
+        __notify_status(id, COOKD_BUILD_STATUS_FAILED);
+        free(buildPath);
+        return;
+    }
+
     log = __cookd_build_log_new(id, buildPath, &log_path);
     if (log == NULL) {
         VLOG_ERROR("cookd", "__cookd_server_build: failed to create build log\n");

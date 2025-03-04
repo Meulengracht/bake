@@ -61,7 +61,7 @@ void chef_waiterd_build_invocation(
 void chef_waiterd_status_invocation(struct gracht_message* message, const char* id)
 {
     struct waiterd_request* wreq;
-    VLOG_DEBUG("api", "waiter::status(id=%u)\n", id);
+    VLOG_DEBUG("api", "waiter::status(id=%s)\n", id);
 
     wreq = waiterd_server_request_find(id);
     if (wreq == NULL) {
