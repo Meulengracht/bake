@@ -119,22 +119,31 @@ static int __ensure_chef_user_dirs(void)
 {
     struct {
         const char** path;
+        unsigned int umode;
+        // mode to use when the root is creating directories
+        // which happens when run in daemon mode
+        unsigned int rmode;
     } paths[] = {
-        { &g_dirs.root },
-        { &g_dirs.fridge },
-        { &g_dirs.store },
-        { &g_dirs.kitchen },
+        { &g_dirs.root, 0755, 0777 },
+        { &g_dirs.fridge, 0755, 0777 },
+        { &g_dirs.store, 0755, 0777 },
+        { &g_dirs.kitchen, 0755, 0777 },
         { NULL },
     };
     for (int i = 0; paths[i].path != NULL; i++) {
-        int         status;
-        const char* path = *paths[i].path;
+        int          status;
+        const char*  path = *paths[i].path;
+        unsigned int mode = paths[i].umode;
         
         if (path == NULL) {
             continue;
         }
 
-        status = __mkdir_as(path, 0755, g_dirs.real_user, g_dirs.real_user);
+        if (g_dirs.real_user == 0) {
+            mode = paths[i].rmode;
+        }
+        
+        status = __mkdir_as(path, paths[i].rmode, g_dirs.real_user, g_dirs.real_user);
         if (status) {
             VLOG_ERROR("dirs", "failed to create %s\n", path);
             return -1;
@@ -147,9 +156,15 @@ static int __ensure_chef_global_dirs(void)
 {
     struct {
         const char** path;
+        unsigned int mode;
     } paths[] = {
-        { &g_dirs.root },
-        { &g_dirs.config },
+        // Create the root directory (which is the workspace) with
+        // relaxed permissions to allow for non-root tools to work
+        // with the filesystem
+        { &g_dirs.root,   0777 },
+        // Config can be more restrictive, we do not want arbitrary access
+        // here
+        { &g_dirs.config, 0644 },
         { NULL },
     };
     for (int i = 0; paths[i].path != NULL; i++) {
@@ -160,7 +175,7 @@ static int __ensure_chef_global_dirs(void)
             continue;
         }
 
-        status = __mkdir_as(path, 0644, 0, 0);
+        status = __mkdir_as(path, paths[i].mode, 0, 0);
         if (status) {
             VLOG_ERROR("dirs", "failed to create %s\n", path);
             return -1;
@@ -285,6 +300,35 @@ const char* chef_dirs_kitchen(const char* uuid)
     return g_dirs.kitchen;
 }
 
+char* chef_dirs_kitchen_new(const char* uuid)
+{
+    char*        kitchen;
+    unsigned int mode = 0755;
+
+    if (g_dirs.kitchen == NULL) {
+        VLOG_ERROR("dirs", "chef_dirs_kitchen_new() is not available\n");
+        return NULL;
+    }
+    
+    kitchen = strpathcombine(g_dirs.kitchen, uuid);
+    if (kitchen == NULL) {
+        VLOG_ERROR("dirs", "chef_dirs_kitchen_new: failed to allocate memory for path\n");
+        return NULL;
+    }
+
+    // If we are in daemon (root) mode we use different permissions
+    if (g_dirs.real_user == 0) {
+        mode = 0777;
+    }
+
+    if (__mkdir_as(kitchen, mode, g_dirs.real_user, g_dirs.real_user)) {
+        VLOG_ERROR("dirs", "chef_dirs_kitchen_new: failed to create %s (mode: %o)\n", kitchen, mode);
+        free(kitchen);
+        return NULL;
+    }
+    return kitchen;
+}
+
 const char* chef_dirs_config(void)
 {
     if (g_dirs.config == NULL) {
@@ -292,15 +336,6 @@ const char* chef_dirs_config(void)
         return NULL;
     }
     return g_dirs.config;
-}
-
-int chef_dirs_ensure(const char* path)
-{
-    if (g_dirs.root == NULL) {
-        VLOG_ERROR("dirs", "directories are NOT initialized!\n");
-        return -1;
-    }
-    return __mkdir_as(path, 0755, g_dirs.real_user, g_dirs.real_user);
 }
 
 FILE* chef_dirs_contemporary_file(const char* name, const char* ext, char** rpath)

@@ -508,6 +508,16 @@ static int __prepare_sources(const char* id, const char* root, const char* url, 
         goto cleanup;
     }
 
+    status = platform_mkdir(projectPath);
+    if (status) {
+        VLOG_ERROR("cookd", "__prepare_sources: failed to create %s\n", projectPath);
+        goto cleanup;
+    }
+
+    VLOG_TRACE("cookd", "source url %s\n", url);
+    VLOG_TRACE("cookd", "image path %s\n", imagePath);
+    VLOG_TRACE("cookd", "unpack directory %s\n", projectPath);
+
     // download source first to the image path
     status = chef_client_gen_download(url, imagePath);
     if (status) {
@@ -522,8 +532,7 @@ static int __prepare_sources(const char* id, const char* root, const char* url, 
         goto cleanup;
     }
 
-    // remove the image to save storage space for now, this is nice for in-memory builds
-    // where we don't want to take up memory unnecessarily 
+    // remove the image to save storage space for now
     status = remove(imagePath);
     if (status) {
         VLOG_WARNING("cookd", "__prepare_sources: failed to cleanup %s for build id %s\n", imagePath, id);
@@ -659,18 +668,10 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
 
     __notify_status(id, COOKD_BUILD_STATUS_SOURCING);
 
-    buildPath = (char*)chef_dirs_kitchen(id);
+    buildPath = (char*)chef_dirs_kitchen_new(id);
     if (buildPath == NULL) {
         VLOG_ERROR("cookd", "__cookd_server_build: failed to setup build storage\n");
         __notify_status(id, COOKD_BUILD_STATUS_FAILED);
-        return;
-    }
-
-    status = platform_mkdir(buildPath);
-    if (status) {
-        VLOG_ERROR("cookd", "__cookd_server_build: failed to create build directory: %s\n", buildPath);
-        __notify_status(id, COOKD_BUILD_STATUS_FAILED);
-        free(buildPath);
         return;
     }
 

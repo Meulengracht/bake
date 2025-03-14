@@ -52,7 +52,7 @@ const char* chef_dirs_kitchen(const char* uuid)
     return NULL;
 }
 
-const char* chef_dirs_ensure(const char* path)
+char* chef_dirs_kitchen_new(const char* uuid)
 {
     return NULL;
 }

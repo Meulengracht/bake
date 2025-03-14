@@ -110,15 +110,29 @@ static int __ensure_hostdirs(struct kitchen* kitchen)
     return 0;
 }
 
+const char* g_possibleBakeCtlPaths[] = {
+    // relative path from the executable
+    "../libexec/chef/bakectl",
+    // when running from the daemon, bakectl is adjacent
+    "bakectl",
+    // from build folder
+    "../../bin/bakectl",
+    // fallbacks if wtf?
+    "/usr/libexec/chef/bakectl",
+    "/usr/local/libexec/chef/bakectl",
+    NULL
+};
+
 static int __install_bakectl(struct kitchen* kitchen)
 {
-    char  buffer[PATH_MAX] = { 0 };
-    char* path;
-    char* resolved;
-    char* target;
-    int   status;
+    char   buffer[PATH_MAX] = { 0 };
+    char*  resolved = NULL;
+    char*  path;
+    char*  target;
+    int    status;
+    size_t index;
 
-    status = readlink("/proc/self/exe", &buffer[0], PATH_MAX); 
+    status = readlink("/proc/self/exe", &buffer[0], PATH_MAX);
     if (status < 0) {
         VLOG_ERROR("kitchen", "__install_bakectl: failed to read /proc/self/exe\n");
         return status;
@@ -127,13 +141,32 @@ static int __install_bakectl(struct kitchen* kitchen)
     // get the directory part, and remember that this modifies
     // our buffer.
     path = dirname(&buffer[0]);
+    index = strlen(&buffer[0]);
+    if (buffer[index] != '/') {
+        buffer[index++] = '/';
+    }
 
-    // overwrite the binary part
-    strcat(&buffer[0], "/../libexec/chef/bakectl");
+    for (int i = 0; g_possibleBakeCtlPaths[i] != NULL; i++) {
+        const char* pathToUse = g_possibleBakeCtlPaths[i];
+        if (g_possibleBakeCtlPaths[i][0] != '/') {
+            strcpy(&buffer[index], g_possibleBakeCtlPaths[i]);
+            pathToUse = &buffer[0];
+        }
+        resolved = realpath(pathToUse, NULL);
+        if (resolved != NULL) {
+            VLOG_DEBUG("kitchen", "__install_bakectl: found bakectl here: %s\n", pathToUse);
+            break;
+        }
+        VLOG_WARNING("kitchen", "__install_bakectl: tried %s\n", pathToUse);
+    }
 
-    resolved = realpath(&buffer[0], NULL);
     if (resolved == NULL) {
-        VLOG_ERROR("kitchen", "__install_bakectl: failed to resolve path %s\n", &buffer[0]);
+        status = readlink("/proc/self/exe", &buffer[0], PATH_MAX);
+        if (status < 0) {
+            VLOG_ERROR("kitchen", "__install_bakectl: failed to read /proc/self/exe\n");
+            return status;
+        }
+        VLOG_WARNING("kitchen", "__install_bakectl: failed to resolve bakectl from %s\n", &buffer[0]);
         return -1;
     }
 
