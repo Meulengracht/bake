@@ -46,17 +46,17 @@ extern const char* chef_dirs_store(void);
 /**
  * @brief
  */
+extern  const char* chef_dirs_kitchen_new(const char* uuid);
+
+/**
+ * @brief
+ */
 extern const char* chef_dirs_kitchen(const char* uuid);
 
 /**
  * @brief 
  */
 extern const char* chef_dirs_config(void);
-
-/**
- * @brief
- */
-extern int chef_dirs_ensure(const char* path);
 
 /**
  * @brief 

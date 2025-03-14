@@ -36,7 +36,7 @@ int remote_unpack(const char* imagePath, const char* destination)
     int   status;
     char  args[PATH_MAX];
 
-    snprintf(&args[0], sizeof(args), "--out %s %s", destination, imagePath);
+    snprintf(&args[0], sizeof(args), "--no-progress --out %s %s", destination, imagePath);
 
     status = platform_spawn(
         "unmkvafs",
@@ -47,7 +47,7 @@ int remote_unpack(const char* imagePath, const char* destination)
         }
     );
     if (status) {
-        VLOG_ERROR("remote", "failed to unpack %s\n", imagePath);
+        VLOG_ERROR("remote", "failed to unpack %s: %i\n", imagePath, status);
     }
-    return 0;
+    return status;
 }
