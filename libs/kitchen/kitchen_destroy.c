@@ -34,7 +34,7 @@ static void __safe_free(void** ptr) {
 
 static void __safe_freev(void*** ptr) {
     void** ptrv = *ptr;
-    if (ptr == NULL) {
+    if (ptrv == NULL) {
         return;
     }
     
