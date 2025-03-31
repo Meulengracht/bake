@@ -202,7 +202,7 @@ static int __setup_rootfs(struct kitchen* kitchen)
     int status;
     VLOG_TRACE("kitchen", "installing rootfs\n");
 
-    if (kitchen->recipe_cache != NULL && recipe_cache_key_bool(kitchen->recipe_cache, "setup_rootfs")) {
+    if (recipe_cache_key_bool(kitchen->recipe_cache, "setup_rootfs")) {
         // ensure the path actually exists
         struct platform_stat stats;
         if (platform_stat(kitchen->host_kitchen_project_data_root, &stats)) {
@@ -244,15 +244,13 @@ static int __setup_rootfs(struct kitchen* kitchen)
         return status;
     }
 
-    if (kitchen->recipe_cache != NULL) {
-        recipe_cache_transaction_begin(kitchen->recipe_cache);
-        status = recipe_cache_key_set_bool(kitchen->recipe_cache, "setup_rootfs", 1);
-        if (status) {
-            VLOG_ERROR("kitchen", "__kitchen_install: failed to mark install as done\n");
-            return status;
-        }
-        recipe_cache_transaction_commit(kitchen->recipe_cache);
+    recipe_cache_transaction_begin(kitchen->recipe_cache);
+    status = recipe_cache_key_set_bool(kitchen->recipe_cache, "setup_rootfs", 1);
+    if (status) {
+        VLOG_ERROR("kitchen", "__kitchen_install: failed to mark install as done\n");
+        return status;
     }
+    recipe_cache_transaction_commit(kitchen->recipe_cache);
 
     return 0;
 }
@@ -375,14 +373,12 @@ static int __update_packages(struct kitchen* kitchen)
         return status;
     }
 
-    if (kitchen->recipe_cache != NULL) {
-        recipe_cache_transaction_begin(kitchen->recipe_cache);
-        status = recipe_cache_commit_package_changes(kitchen->recipe_cache, changes, count);
-        if (status) {
-            return status;
-        }
-        recipe_cache_transaction_commit(kitchen->recipe_cache);
+    recipe_cache_transaction_begin(kitchen->recipe_cache);
+    status = recipe_cache_commit_package_changes(kitchen->recipe_cache, changes, count);
+    if (status) {
+        return status;
     }
+    recipe_cache_transaction_commit(kitchen->recipe_cache);
 }
 
 static int __setup_ingredient(struct kitchen* kitchen, struct list* ingredients, const char* hostPath)
@@ -538,8 +534,7 @@ static int __update_ingredients(struct kitchen* kitchen, struct kitchen_setup_op
 {
     int status;
 
-    if (kitchen->recipe_cache != NULL && 
-            recipe_cache_key_bool(kitchen->recipe_cache, "setup_ingredients")) {
+    if (recipe_cache_key_bool(kitchen->recipe_cache, "setup_ingredients")) {
         return 0;
     }
 
@@ -556,15 +551,13 @@ static int __update_ingredients(struct kitchen* kitchen, struct kitchen_setup_op
         return status;
     }
 
-    if (kitchen->recipe_cache != NULL) {
-        recipe_cache_transaction_begin(kitchen->recipe_cache);
-        status = recipe_cache_key_set_bool(kitchen->recipe_cache, "setup_ingredients", 1);
-        if (status) {
-            VLOG_ERROR("kitchen", "__update_ingredients: failed to mark ingredients step as done\n");
-            return status;
-        }
-        recipe_cache_transaction_commit(kitchen->recipe_cache);
+    recipe_cache_transaction_begin(kitchen->recipe_cache);
+    status = recipe_cache_key_set_bool(kitchen->recipe_cache, "setup_ingredients", 1);
+    if (status) {
+        VLOG_ERROR("kitchen", "__update_ingredients: failed to mark ingredients step as done\n");
+        return status;
     }
+    recipe_cache_transaction_commit(kitchen->recipe_cache);
     return 0;
 }
 
@@ -577,8 +570,7 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
         return 0;
     }
     
-    if (kitchen->recipe_cache != NULL && 
-            recipe_cache_key_bool(kitchen->recipe_cache, "setup_hook")) {
+    if (recipe_cache_key_bool(kitchen->recipe_cache, "setup_hook")) {
         return 0;
     }
 
@@ -599,15 +591,13 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
         return status;
     }
 
-    if (kitchen->recipe_cache != NULL) {
-        recipe_cache_transaction_begin(kitchen->recipe_cache);
-        status = recipe_cache_key_set_bool(kitchen->recipe_cache, "setup_hook", 1);
-        if (status) {
-            VLOG_ERROR("kitchen", "__run_setup_hook: failed to mark setup hook as done\n");
-            return status;
-        }
-        recipe_cache_transaction_commit(kitchen->recipe_cache);
+    recipe_cache_transaction_begin(kitchen->recipe_cache);
+    status = recipe_cache_key_set_bool(kitchen->recipe_cache, "setup_hook", 1);
+    if (status) {
+        VLOG_ERROR("kitchen", "__run_setup_hook: failed to mark setup hook as done\n");
+        return status;
     }
+    recipe_cache_transaction_commit(kitchen->recipe_cache);
     return 0;
 }
 

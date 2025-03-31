@@ -222,6 +222,7 @@ struct recipe_cache_package_change {
 struct recipe_cache;
 
 extern int         recipe_cache_create(struct recipe* current, const char* cwd, struct recipe_cache** cacheOut);
+extern int         recipe_cache_create_null(struct recipe* current, struct recipe_cache** cacheOut);
 extern const char* recipe_cache_uuid(struct recipe_cache* cache);
 extern const char* recipe_cache_uuid_for(struct recipe_cache* cache, const char* name);
 extern void        recipe_cache_transaction_begin(struct recipe_cache* cache);

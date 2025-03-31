@@ -330,10 +330,12 @@ static struct recipe_cache* __recipe_cache_new(const char* path, struct recipe* 
         return NULL;
     }
 
-    cache->path = platform_strdup(path);
-    if (cache->path == NULL) {
-        free(cache);
-        return NULL;
+    if (path != NULL) {
+        cache->path = platform_strdup(path);
+        if (cache->path == NULL) {
+            free(cache);
+            return NULL;
+        }
     }
 
     cache->current = recipe;
@@ -433,6 +435,11 @@ static int __save_cache(struct recipe_cache* cache)
     json_t* root;
     VLOG_DEBUG("cache", "__save_cache(cache=%s)\n", cache->path);
 
+    // ignore NULL caches
+    if (cache->path == NULL) {
+        return 0;
+    }
+
     root = __serialize_cache(cache);
     if (root == NULL) {
         VLOG_ERROR("cache", "__save_cache: failed to serialize cache\n");
@@ -510,6 +517,20 @@ int recipe_cache_create(struct recipe* current, const char* cwd, struct recipe_c
     return 0;
 }
 
+int recipe_cache_create_null(struct recipe* current, struct recipe_cache** cacheOut)
+{
+    struct recipe_cache* cache;
+
+    cache = __recipe_cache_new(NULL, current);
+    if (cache == NULL) {
+        VLOG_ERROR("cache", "out of memory for cache allocation!\n");
+        return -1;
+    }
+
+    *cacheOut = cache;
+    return 0;
+}
+
 const char* recipe_cache_uuid_for(struct recipe_cache* cache, const char* name)
 {
     for (int i = 0; i < cache->item_count; i++) {
@@ -536,6 +557,11 @@ static struct recipe_cache_item* __get_cache_item(struct recipe_cache* cache)
 {
     if (cache->current == NULL) {
         VLOG_FATAL("cache", "__get_cache_item: invoked but no recipe set\n");
+        return NULL;
+    }
+
+    // ignore NULL caches
+    if (cache->path == NULL) {
         return NULL;
     }
 
@@ -610,6 +636,9 @@ void recipe_cache_transaction_commit(struct recipe_cache* cache)
 const char* recipe_cache_key_string(struct recipe_cache* cache, const char* key)
 {
     struct recipe_cache_item* cacheItem = __get_cache_item(cache);
+    if (cacheItem == NULL) {
+        return NULL;
+    }
     return json_string_value(json_object_get(cacheItem->keystore, key));
 }
 
@@ -622,6 +651,10 @@ int recipe_cache_key_set_string(struct recipe_cache* cache, const char* key, con
         VLOG_FATAL("cache", "recipe_cache_key_set_string: no transaction\n");
     }
 
+    if (cacheItem == NULL) {
+        return 0;
+    }
+    
     status = json_object_set_new(cacheItem->keystore, key, json_string(value));
     if (status) {
         VLOG_ERROR("cache", "failed to update value %s for %s: %i\n", key, value, status);
@@ -712,17 +745,13 @@ static int __add_package_change(
 
 int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change** changes, int* changeCount)
 {
-    struct recipe_cache_item* cacheItem = NULL;
+    struct recipe_cache_item* cacheItem = __get_cache_item(cache);
     struct list_item          *i, *j;
     int                       capacity = 0;
     VLOG_DEBUG("cache", "recipe_cache_calculate_package_changes()\n");
 
     *changes = NULL;
     *changeCount = 0;
-
-    if (cache != NULL) {
-        cacheItem = __get_cache_item(cache);
-    }
 
     // We use an insanely inefficient algorithm here, but we don't care as
     // these lists should never be long, and we do not have access to an easy
@@ -782,6 +811,10 @@ int recipe_cache_commit_package_changes(struct recipe_cache* cache, struct recip
     if (changes == NULL || count == 0) {
         errno = EINVAL;
         return -1;
+    }
+
+    if (cacheItem == NULL) {
+        return 0;
     }
 
     for (int i = 0; i < count; i++) {

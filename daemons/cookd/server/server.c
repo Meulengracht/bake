@@ -655,6 +655,7 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
 {
     struct kitchen_setup_options setupOptions = { 0 };
     struct kitchen               kitchen = { 0 };
+    struct recipe_cache*         cache = NULL;
     char*                        projectPath;
     char*                        buildPath;
     struct recipe*               recipe;
@@ -695,11 +696,19 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
         goto cleanup;
     }
 
+    // we want the recipe cache in this case for regular builds
+    status = recipe_cache_create_null(recipe, &cache);
+    if (status) {
+        VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
+        goto cleanup;
+    }
+
     status = kitchen_initialize(&(struct kitchen_init_options) {
         .kitchen_root = buildPath,
         .envp = NULL, /* not used currently */
         .recipe = recipe,
         .recipe_path = options->recipe_path,
+        .recipe_cache = cache,
         .project_path = projectPath,
         .target_architecture = options->architecture,
         .target_platform = options->platform
