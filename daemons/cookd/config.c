@@ -155,6 +155,7 @@ static int __load_config(struct config* config, const char* path)
 {
     json_error_t error;
     json_t*      root;
+    int          status;
 
     root = json_load_file(path, 0, &error);
     if (root == NULL) {
@@ -167,7 +168,10 @@ static int __load_config(struct config* config, const char* path)
         }
         return -1;
     }
-    return __parse_config(config, root);
+    
+    status = __parse_config(config, root);
+    json_decref(root);
+    return status;
 }
 
 // API
@@ -183,6 +187,12 @@ int cookd_config_load(const char* confdir)
         return status;
     }
     return 0;
+}
+
+void cookd_config_destroy(void)
+{
+    free((void*)g_config.api_address.address);
+    free((void*)g_config.api_address.type);
 }
 
 void cookd_config_api_address(struct cookd_config_address* address)

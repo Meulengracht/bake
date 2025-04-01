@@ -844,3 +844,9 @@ int recipe_cache_commit_package_changes(struct recipe_cache* cache, struct recip
     }
     return 0;
 }
+
+void recipe_cache_package_changes_destroy(struct recipe_cache_package_change* changes, int count)
+{
+    (void)count;
+    free(changes);
+}

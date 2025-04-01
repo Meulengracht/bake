@@ -63,6 +63,7 @@ struct __build {
     struct list_item              list_header;
     struct gracht_message_context msg_storage;
     int                           log_index;
+    enum chef_build_status        last_status;
     char                          id[64];
     char                          arch[16];
 };
@@ -135,6 +136,10 @@ static int __resume_builds(gracht_client_t* client, struct list* builds)
                 vlog_content_set_prefix(&build->arch[0]);
             }
 
+            if (build->last_status == resp.status) {
+                continue;
+            }
+
             switch (resp.status) {
                 case CHEF_BUILD_STATUS_UNKNOWN: {
                     // unknown means it hasn't started yet, so for now we do
@@ -165,6 +170,8 @@ static int __resume_builds(gracht_client_t* client, struct list* builds)
                     vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
                     buildsCompleted++;
                 } break;
+        
+                build->last_status = resp.status;
             }
         }
 

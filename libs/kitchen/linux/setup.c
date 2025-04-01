@@ -220,7 +220,7 @@ static int __setup_rootfs(struct kitchen* kitchen)
         }
     }
 
-    status = __clean_environment(kitchen->host_kitchen_project_data_root);
+    status = __clean_environment(kitchen->host_chroot);
     if (status) {
         VLOG_ERROR("kitchen", "__kitchen_install: failed to clean project environment\n");
         return status;
@@ -370,15 +370,19 @@ static int __update_packages(struct kitchen* kitchen)
     );
     if (status) {
         VLOG_ERROR("kitchen", "__execute_script_in_container: failed to execute script\n");
-        return status;
+        goto exit;
     }
 
     recipe_cache_transaction_begin(kitchen->recipe_cache);
     status = recipe_cache_commit_package_changes(kitchen->recipe_cache, changes, count);
     if (status) {
-        return status;
+        goto exit;
     }
     recipe_cache_transaction_commit(kitchen->recipe_cache);
+
+exit:
+    recipe_cache_package_changes_destroy(changes, count);
+    return status;
 }
 
 static int __setup_ingredient(struct kitchen* kitchen, struct list* ingredients, const char* hostPath)
@@ -623,12 +627,14 @@ static int __write_update_script(struct kitchen* kitchen)
     target = strpathjoin(kitchen->host_chroot, "chef", "update.sh", NULL);
     if (target == NULL) {
         VLOG_ERROR("kitchen", "__write_update_script: failed to allocate memory for script path\n", target);
+        recipe_cache_package_changes_destroy(changes, count);
         return -1;
     }
 
     stream = fopen(target, "w+");
     if (stream == NULL) {
         VLOG_ERROR("kitchen", "__write_update_script: failed to allocate a script stream\n");
+        recipe_cache_package_changes_destroy(changes, count);
         free(target);
         return -1;
     }
@@ -656,9 +662,8 @@ static int __write_update_script(struct kitchen* kitchen)
     status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
     if (status) {
         VLOG_ERROR("kitchen", "__write_update_script: failed to fixup permissions for %s\n", target);
-        free(target);
-        return -1;
     }
+    recipe_cache_package_changes_destroy(changes, count);
     free(target);
     return 0;
 }

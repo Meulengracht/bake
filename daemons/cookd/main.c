@@ -119,5 +119,6 @@ cleanup:
     cookd_server_cleanup();
     gracht_client_shutdown(client);
     vlog_cleanup();
+    cookd_config_destroy();
     return status;
 }
