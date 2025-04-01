@@ -757,12 +757,13 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
     }
 
 cleanup:
+    __cookd_upload_artifacts(id, log_path, pack_path);
+    __notify_status(id, status == 0 ? COOKD_BUILD_STATUS_DONE : COOKD_BUILD_STATUS_FAILED);
+    
     free(buildPath);
     if (cleanupKitchen) {
         kitchen_destroy(&kitchen);
     }
-    __cookd_upload_artifacts(id, log_path, pack_path);
-    __notify_status(id, status == 0 ? COOKD_BUILD_STATUS_DONE : COOKD_BUILD_STATUS_FAILED);
     __cookd_build_log_cleanup(log);
 }
 

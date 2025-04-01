@@ -418,7 +418,7 @@ static int __container_map_mounts(
         int                      mountsCount)
 {
     int status = 0;
-    VLOG_DEBUG("containerv[child]", "__container_map_mounts()\n");
+    VLOG_DEBUG("containerv[child]", "__container_map_mounts(root=%s)\n", root);
 
     if (!mountsCount) {
         return 0;

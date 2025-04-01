@@ -90,7 +90,7 @@ char* strpathjoin(const char* base, ...)
 static char* __istrdup(const char* str)
 {
     size_t len  = strlen(str);
-    char*  copy = malloc(len);
+    char*  copy = malloc(len + 1);
     if (copy == NULL) {
         return NULL;
     }

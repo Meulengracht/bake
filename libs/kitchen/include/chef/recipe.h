@@ -228,8 +228,9 @@ extern const char* recipe_cache_uuid_for(struct recipe_cache* cache, const char*
 extern void        recipe_cache_transaction_begin(struct recipe_cache* cache);
 extern void        recipe_cache_transaction_commit(struct recipe_cache* cache);
 
-extern int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change** changes, int* changeCount);
-extern int recipe_cache_commit_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change* changes, int count);
+extern int  recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change** changes, int* changeCount);
+extern int  recipe_cache_commit_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change* changes, int count);
+extern void recipe_cache_package_changes_destroy(struct recipe_cache_package_change* changes, int count);
 
 extern int recipe_cache_mark_part_sourced(struct recipe_cache* cache, const char* part);
 extern int recipe_cache_is_part_sourced(struct recipe_cache* cache, const char* part);

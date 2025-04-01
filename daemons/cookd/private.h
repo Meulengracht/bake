@@ -33,6 +33,11 @@ struct cookd_config_address {
 extern int cookd_config_load(const char* confdir);
 
 /**
+ * @brief
+ */
+extern void cookd_config_destroy(void);
+
+/**
  * @brief 
  */
 extern void cookd_config_api_address(struct cookd_config_address* address);
