@@ -14,9 +14,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
- * Package System TODOs:
- * - api-keys
- * - pack deletion
  */
 #define _GNU_SOURCE
 
@@ -40,7 +37,7 @@
 
 static void __print_help(void)
 {
-    printf("Usage: bake remote download --ids=<list-of-ids> [options]\n");
+    printf("Usage: bake remote download {log, artifact} --ids=<list-of-ids> [options]\n");
     printf("  From any build id, two artifacts can be available. For both failed and\n");
     printf("  successful build, logs can be retrieved. From successful builds, build\n");
     printf("  artifacts can additionally be retrieved (packs)\n");
@@ -73,7 +70,7 @@ struct __build {
     char                          log_link[4096];
 };
 
-static const char* __parse_protocol_arch(enum chef_build_architecture arch)
+static const char* build_arch_to_arch_string(enum chef_build_architecture arch)
 {
     switch (arch) {
         case CHEF_BUILD_ARCHITECTURE_X86:
@@ -132,7 +129,7 @@ static int __wait_for_builds(gracht_client_t* client, struct list* builds)
 
             // update arch
             if (build->arch[0] == '\0') {
-                strcpy(&build->arch[0], __parse_protocol_arch(resp.arch));
+                strcpy(&build->arch[0], build_arch_to_arch_string(resp.arch));
                 vlog_content_set_prefix(&build->arch[0]);
             }
 
