@@ -61,6 +61,30 @@ static void __print_resume_help(void)
     printf("\n");
 }
 
+static void __print_download_help(void)
+{
+    struct list_item* li;
+    int               i = 0;
+
+    if (g_builds.count == 0) {
+        return;
+    }
+    
+    printf("For both successful and failed builds, build logs are available\n");
+    printf("To download build artifacts, use the following command-line:\n\n");
+    printf("bake remote download {artifact,log} --ids=");
+    list_foreach(&g_builds, li) {
+        struct __build* build = (struct __build*)li;
+        if (i > 0) {
+            printf(",%s", &build->id[0]);
+        } else {
+            printf("%s", &build->id[0]);
+        }
+        i++;
+    }
+    printf("\n");
+}
+
 static void __print_help(void)
 {
     printf("Usage: bake remote build RECIPE [options]\n");
@@ -314,8 +338,16 @@ cleanup:
     if (status) {
         vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
     }
+    
+    // end the view now
     vlog_refresh(stdout);
     vlog_end();
+
+    // print the guide on how to download artifacts
+    __print_download_help();
+    
+    // now cleanup stuff
+    __build_list_delete(&g_builds);
     free(imagePath);
     free(dlUrl);
     g_skipPrint = 1;
