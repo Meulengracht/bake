@@ -30,18 +30,7 @@
 #include <signal.h>
 #include <vlog.h>
 
-#include "chef_waiterd_service_client.h"
-
-#include "commands.h"
-
-struct __build {
-    struct list_item              list_header;
-    struct gracht_message_context msg_storage;
-    int                           log_index;
-    enum chef_build_status        last_status;
-    char                          id[64];
-    char                          arch[16];
-};
+#include "remote_shared.c"
 
 // We keep this global to allow for printing the way to resume the
 // current build if we terminated abnormally.
@@ -60,6 +49,30 @@ static void __print_resume_help(void)
     printf("Remote build was abnormally terminted, however this can be resumed\n");
     printf("To resume the build operation, use the following command-line:\n\n");
     printf("bake remote resume --ids=");
+    list_foreach(&g_builds, li) {
+        struct __build* build = (struct __build*)li;
+        if (i > 0) {
+            printf(",%s", &build->id[0]);
+        } else {
+            printf("%s", &build->id[0]);
+        }
+        i++;
+    }
+    printf("\n");
+}
+
+static void __print_download_help(void)
+{
+    struct list_item* li;
+    int               i = 0;
+
+    if (g_builds.count == 0) {
+        return;
+    }
+    
+    printf("For both successful and failed builds, build logs are available\n");
+    printf("To download build artifacts, use the following command-line:\n\n");
+    printf("bake remote download {artifact,log} --ids=");
     list_foreach(&g_builds, li) {
         struct __build* build = (struct __build*)li;
         if (i > 0) {
@@ -122,35 +135,6 @@ static char* __format_footer(const char* waiterdAddress)
     return platform_strdup(&tmp[0]);
 }
 
-static enum chef_build_architecture __parse_protocol_arch(const char* arch)
-{
-    if (strcmp(arch, "i386") == 0) {
-        return CHEF_BUILD_ARCHITECTURE_X86;
-    } else if (strcmp(arch, "amd64") == 0) {
-        return CHEF_BUILD_ARCHITECTURE_X64;
-    } else if (strcmp(arch, "armhf") == 0) {
-        return CHEF_BUILD_ARCHITECTURE_ARMHF;
-    } else if (strcmp(arch, "arm64") == 0) {
-        return CHEF_BUILD_ARCHITECTURE_ARM64;
-    } else if (strcmp(arch, "riscv64") == 0) {
-        return CHEF_BUILD_ARCHITECTURE_RISCV64;
-    }
-    return CHEF_BUILD_ARCHITECTURE_X86;
-}
-
-static int __add_build(const char* arch, const char* id, int index, struct list* list)
-{
-    struct __build* item = calloc(1, sizeof(struct __build));
-    if (item == NULL) {
-        return -1;
-    }
-    item->log_index = index;
-    strncpy(&item->id[0], id, sizeof(item->id));
-    strncpy(&item->arch[0], arch, sizeof(item->arch));
-    list_add(list, &item->list_header);
-    return 0;
-}
-
 static int __queue_builds(int logIndexStart, gracht_client_t* client, const char* imageUrl, struct list* builds, struct bake_command_options* options)
 {
     struct {
@@ -172,7 +156,7 @@ static int __queue_builds(int logIndexStart, gracht_client_t* client, const char
         VLOG_TRACE("remote", "requesting build...\n");
         status = chef_waiterd_build(client, &storage[msgIndex].msg, 
             &(struct chef_waiter_build_request) {
-                .arch = __parse_protocol_arch(arch),
+                .arch = __arch_string_to_build_arch(arch),
                 .platform = (char*)options->platform,
                 .url = (char*)imageUrl,
                 .recipe = (char*)options->recipe_path
@@ -228,89 +212,6 @@ static int __queue_builds(int logIndexStart, gracht_client_t* client, const char
     return 0;
 }
 
-static int __wait_for_builds(gracht_client_t* client, struct list* builds)
-{
-    int buildsCompleted = 0;
-    while (buildsCompleted < builds->count) {
-        struct gracht_message_context* msgs[6] = { NULL };
-        struct list_item*              li;
-        int                            status;
-        int                            i;
-
-        // wait a little before we update status
-        platform_sleep(5 * 1000);
-        
-        // iterate through each of the builds and setup
-        i = 0;
-        list_foreach(builds, li) {
-            struct __build* build = (struct __build*)li;
-
-            vlog_content_set_index(build->log_index);
-            status = chef_waiterd_status(client, &build->msg_storage, &build->id[0]);
-            if (status) {
-                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-                return -1;
-            }
-            msgs[i++] = &build->msg_storage;
-        }
-
-        status = gracht_client_await_multiple(client, &msgs[0], builds->count, GRACHT_AWAIT_ALL);
-        if (status) {
-            VLOG_ERROR("remote", "connection lost waiting for build status\n");
-            return -1;
-        }
-
-        list_foreach(builds, li) {
-            struct __build* build = (struct __build*)li;
-            struct chef_waiter_status_response resp;
-
-            vlog_content_set_index(build->log_index);
-            status = chef_waiterd_status_result(client, &build->msg_storage, &resp);
-            if (status) {
-                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-                return -1;
-            }
-
-            if (build->last_status == resp.status) {
-                continue;
-            }
-
-            switch (resp.status) {
-                case CHEF_BUILD_STATUS_UNKNOWN: {
-                    // unknown means it hasn't started yet, so for now we do
-                    // nothing, and do not change the current status
-                } break;
-                case CHEF_BUILD_STATUS_QUEUED: {
-                    VLOG_TRACE("remote", "build is currently waiting to be serviced\n");
-                } break;
-                case CHEF_BUILD_STATUS_SOURCING: {
-                    VLOG_TRACE("remote", "build is now sourcing\n");
-                    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
-                } break;
-                case CHEF_BUILD_STATUS_BUILDING: {
-                    VLOG_TRACE("remote", "build is in progress\n");
-                } break;
-                case CHEF_BUILD_STATUS_PACKING: {
-                    VLOG_TRACE("remote", "build has completed, and is being packed\n");
-                } break;
-                case CHEF_BUILD_STATUS_DONE: {
-                    VLOG_TRACE("remote", "build has completed\n");
-                    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
-                    buildsCompleted++;
-                } break;
-                case CHEF_BUILD_STATUS_FAILED: {
-                    VLOG_TRACE("remote", "build failed\n");
-                    vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-                    buildsCompleted++;
-                } break;
-
-                build->last_status = resp.status;
-            }
-        }
-    }
-    return 0;
-}
-
 int remote_build_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     gracht_client_t*  client = NULL;
@@ -325,8 +226,16 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
 
+    // skip ahead of 'build'
+    for (i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "build")) {
+            i++;
+            break;
+        }
+    }
+
     // handle build options that needs to be proxied
-    for (int i = 1; i < argc; i++) {
+    for (; i < argc; i++) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
             return 0;
@@ -416,6 +325,9 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
 
     // register resume helper
     atexit(__print_resume_help);
+    
+    // wait a little before we update status
+    platform_sleep(1000);
 
     // poll queued builds
     status = __wait_for_builds(client, &g_builds);
@@ -426,8 +338,16 @@ cleanup:
     if (status) {
         vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
     }
+    
+    // end the view now
     vlog_refresh(stdout);
     vlog_end();
+
+    // print the guide on how to download artifacts
+    __print_download_help();
+    
+    // now cleanup stuff
+    __build_list_delete(&g_builds);
     free(imagePath);
     free(dlUrl);
     g_skipPrint = 1;
