@@ -57,39 +57,6 @@ static void __cleanup_systems(int sig)
     _Exit(-sig);
 }
 
-struct __build {
-    struct list_item              list_header;
-    struct gracht_message_context msg_storage;
-    int                           log_index;
-    enum chef_build_status        last_status;
-    char                          id[64];
-    char                          arch[16];
-};
-
-static int __parse_build_ids(char** argv, int argc, int* i, struct list* builds)
-{
-    char* ids = __split_switch(argv, argc, i);
-    if (ids == NULL || strlen(ids) == 0) {
-        return -1;
-    }
-
-    // create a build for each
-    char* startOfId = ids;
-    char* pOfId = startOfId;
-    while (!*pOfId) {
-        if (*pOfId == ',') {
-            *pOfId = '\0';
-            if (__add_build(NULL, startOfId, 0, builds)) {
-                fprintf(stderr, "bake: failed to track build id: %s\n", startOfId);
-                return -1;
-            }
-            startOfId = pOfId + 1;
-        }
-        pOfId++;
-    }
-    return __add_build(NULL, startOfId, 0, builds);
-}
-
 int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct list       builds = { 0 };
@@ -149,7 +116,7 @@ int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_o
         goto cleanup;
     }
 
-    status = __resume_builds(client, &builds);
+    status = __wait_for_builds(client, &builds);
 
 cleanup:
     gracht_client_shutdown(client);
@@ -158,5 +125,6 @@ cleanup:
     }
     vlog_refresh(stdout);
     vlog_end();
+    __build_list_delete(&builds);
     return status;
 }
