@@ -67,8 +67,16 @@ int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_o
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
 
+    // skip ahead of 'resume'
+    for (i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "resume")) {
+            i++;
+            break;
+        }
+    }
+
     // handle individual commands
-    for (int i = 1; i < argc; i++) {
+    for (; i < argc; i++) {
         if (strncmp(argv[i], "--ids", 5) == 0) {
             status = __parse_build_ids(argv, argc, &i, &builds);
             if (status) {

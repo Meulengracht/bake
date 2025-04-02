@@ -202,8 +202,16 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
 
+    // skip ahead of 'build'
+    for (i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "build")) {
+            i++;
+            break;
+        }
+    }
+
     // handle build options that needs to be proxied
-    for (int i = 1; i < argc; i++) {
+    for (; i < argc; i++) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
             return 0;
