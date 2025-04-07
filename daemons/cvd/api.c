@@ -21,7 +21,6 @@
 #include "chef_cvd_service_server.h"
 #include <vlog.h>
 
-
 void chef_cvd_create_invocation(struct gracht_message* message, const struct chef_create_parameters* params)
 {
     VLOG_DEBUG("api", "create(roots=%s)\n", params->rootfs);
@@ -49,5 +48,11 @@ void chef_cvd_upload_invocation(struct gracht_message* message, const struct che
 void chef_cvd_download_invocation(struct gracht_message* message, const struct chef_file_parameters* params)
 {
     VLOG_DEBUG("api", "download(id=%s, source=%s)\n", params->container_id, params->source_path);
+
+}
+
+void chef_cvd_destroy_invocation(struct gracht_message* message, const char* container_id)
+{
+    VLOG_DEBUG("api", "destroy(id=%s)\n", container_id);
 
 }

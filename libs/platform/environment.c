@@ -132,6 +132,84 @@ char** environment_create(const char* const* parent, struct list* additional)
     return environment;
 }
 
+char* environment_flatten(const char* const* environment, size_t* lengthOut)
+{
+    char*  flatEnvironment;
+    size_t flatLength = 1; // second nil
+    int    i = 0, j = 0;
+
+    while (environment[i]) {
+        flatLength += strlen(environment[i]) + 1;
+        i++;
+    }
+
+    flatEnvironment = calloc(flatLength, 1);
+    if (flatEnvironment == NULL) {
+        return NULL;
+    }
+
+    i = 0;
+    while (environment[i]) {
+        size_t len = strlen(environment[i]) + 1;
+        memcpy(&flatEnvironment[j], environment[i], len);
+        j += len;
+        i++;
+    }
+    *lengthOut = flatLength;
+    return flatEnvironment;
+}
+
+char** environment_unflatten(const char* text)
+{
+	char** results;
+	int    count = 1; // add zero terminator
+	int    index = 0;
+
+	if (text == NULL) {
+		return NULL;
+	}
+
+	for (const char* p = text;; p++) {
+		if (*p == '\0') {
+			count++;
+			
+			if (*p == '\0' && *(p + 1) == '\0') {
+			    break;
+			}
+		}
+	}
+	
+	results = (char**)calloc(count, sizeof(char*));
+	if (results == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	for (const char* p = text;; p++) {
+		if (*p == '\0') {
+			results[index] = (char*)malloc(p - text + 1);
+			if (results[index] == NULL) {
+			    // cleanup
+				for (int i = 0; i < index; i++) {
+					free(results[i]);
+				}
+				free(results);
+				return NULL;
+			}
+
+			memcpy(results[index], text, p - text);
+			results[index][p - text] = '\0';
+			text = p + 1;
+			index++;
+			
+			if (*p == '\0' && *(p + 1) == '\0') {
+			    break;
+			}
+		}
+	}
+	return results;
+}
+
 void environment_destroy(char** environment)
 {
     int i = 0;
@@ -146,4 +224,3 @@ void environment_destroy(char** environment)
     }
     free((void*)environment);
 }
-

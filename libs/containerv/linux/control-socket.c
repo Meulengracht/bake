@@ -17,6 +17,7 @@
  */
 
 #include <chef/platform.h>
+#include <chef/environment.h>
 #include <chef/containerv-user-linux.h>
 #include "private.h"
 #include <libgen.h> // dirname
@@ -196,84 +197,6 @@ static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int
     return 0;
 }
 
-static char* __flatten_environment(const char* const* environment, size_t* lengthOut)
-{
-    char*  flatEnvironment;
-    size_t flatLength = 1; // second nil
-    int    i = 0, j = 0;
-
-    while (environment[i]) {
-        flatLength += strlen(environment[i]) + 1;
-        i++;
-    }
-
-    flatEnvironment = calloc(flatLength, 1);
-    if (flatEnvironment == NULL) {
-        return NULL;
-    }
-
-    i = 0;
-    while (environment[i]) {
-        size_t len = strlen(environment[i]) + 1;
-        memcpy(&flatEnvironment[j], environment[i], len);
-        j += len;
-        i++;
-    }
-    *lengthOut = flatLength;
-    return flatEnvironment;
-}
-
-char** __unflatten_environment(const char* text)
-{
-	char** results;
-	int    count = 1; // add zero terminator
-	int    index = 0;
-
-	if (text == NULL) {
-		return NULL;
-	}
-
-	for (const char* p = text;; p++) {
-		if (*p == '\0') {
-			count++;
-			
-			if (*p == '\0' && *(p + 1) == '\0') {
-			    break;
-			}
-		}
-	}
-	
-	results = (char**)calloc(count, sizeof(char*));
-	if (results == NULL) {
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	for (const char* p = text;; p++) {
-		if (*p == '\0') {
-			results[index] = (char*)malloc(p - text + 1);
-			if (results[index] == NULL) {
-			    // cleanup
-				for (int i = 0; i < index; i++) {
-					free(results[i]);
-				}
-				free(results);
-				return NULL;
-			}
-
-			memcpy(results[index], text, p - text);
-			results[index][p - text] = '\0';
-			text = p + 1;
-			index++;
-			
-			if (*p == '\0' && *(p + 1) == '\0') {
-			    break;
-			}
-		}
-	}
-	return results;
-}
-
 static int __spawn(struct containerv_container* container, struct __socket_command* command, void* payload, pid_t* pidOut)
 {
     char*  data = payload;
@@ -296,7 +219,7 @@ static int __spawn(struct containerv_container* container, struct __socket_comma
     }
 
     if (command->data.spawn.environment_length) {
-        envv = __unflatten_environment(data);
+        envv = environment_unflatten(data);
         if (envv == NULL) {
             return -1;
         }
@@ -318,8 +241,8 @@ static int __spawn(struct containerv_container* container, struct __socket_comma
     );
 
     // cleanup resources temporarily allocated
+    environment_destroy(envv);
     strargv_free(argv);
-    strsplit_free(envv);
     return status;
 }
 
@@ -568,7 +491,7 @@ int containerv_socket_client_spawn(
 
     size_t dataLength = 0;
     size_t flatEnvironmentLength;
-    char*  flatEnvironment = __flatten_environment(options->environment, &flatEnvironmentLength);
+    char*  flatEnvironment = environment_flatten(options->environment, &flatEnvironmentLength);
     char*  data;
     int    dataIndex = 0;
     int    status;

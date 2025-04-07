@@ -64,7 +64,7 @@ struct spawn_parameters {
     string          command;
     // string arrays are not supported so we flatten
     // and unflatten environments
-    string          environment;
+    uint8[]         environment;
 }
 
 struct file_parameters {
@@ -79,4 +79,5 @@ service cvd (43) {
     func kill(string container_id, uint pid) : (status st) = 3;
     func upload(file_parameters params) : (status st) = 4;
     func download(file_parameters params) : (status st) = 5;
+    func destroy(string container_id) : (status st) = 6;
 }
