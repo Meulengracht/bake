@@ -16,13 +16,13 @@
  * 
  */
 
-#include <containerv.h>
+#include <chef/containerv.h>
+#include <chef/platform.h>
 #include <server.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <vlog.h>
-
 
 struct __container {
     char* id;
@@ -32,8 +32,40 @@ static struct {
     struct list containers;
 } g_server = { 0 };
 
-
-enum cvd_status cvd_create()
+static int __resolve_rootfs(const struct chef_create_parameters* params, char** path)
 {
-    containerv_create()
+    switch (params->type) {
+        case CHEF_ROOTFS_TYPE_DEBOOTSTRAP:
+        case CHEF_ROOTFS_TYPE_OSBASE:
+        case CHEF_ROOTFS_TYPE_IMAGE:
+    }
+}
+
+static int __resolve_mounts()
+{
+
+}
+
+enum chef_status cvd_create(const struct chef_create_parameters* params, char* const* id)
+{
+    char* rootfs;
+    int   status;
+
+    // resolve the type of roots
+    status = __resolve_rootfs(params, &rootfs);
+    if (status) {
+        return ;
+    }
+
+    // setup mounts
+    status = __resolve_mounts();
+    if (status) {
+        return ;
+    }
+
+    // setup other config
+
+    // create the container
+
+    return CHEF_STATUS_SUCCESS;
 }

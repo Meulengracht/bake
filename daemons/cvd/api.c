@@ -17,14 +17,17 @@
  */
 
 #include <chef/platform.h>
-#include <convert.h>
-#include "chef_cvd_service_server.h"
+#include <server.h>
 #include <vlog.h>
 
 void chef_cvd_create_invocation(struct gracht_message* message, const struct chef_create_parameters* params)
 {
+    enum chef_status status;
+    const char*      id = "";
     VLOG_DEBUG("api", "create(roots=%s)\n", params->rootfs);
 
+    status = cvd_create(params, &id);
+    chef_cvd_create_response(message, id, status);
 }
 
 void chef_cvd_spawn_invocation(struct gracht_message* message, const struct chef_spawn_parameters* params)

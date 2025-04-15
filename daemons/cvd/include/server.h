@@ -19,12 +19,11 @@
 #ifndef __CVD_PRIVATE_H__
 #define __CVD_PRIVATE_H__
 
+#include "chef_cvd_service_server.h"
 
-enum cvd_status {
-    CVD_SUCCESS,
-
-};
-
-
+/**
+ * @brief
+ */
+extern enum chef_status cvd_create(const struct chef_create_parameters* params, char* const* id);
 
 #endif //!__CVD_PRIVATE_H__
