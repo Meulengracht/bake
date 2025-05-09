@@ -29,6 +29,9 @@
 #define __CONTAINER_SOCKET_RUNTIME_BASE "/run/containerv"
 #define __CONTAINER_ID_LENGTH 8
 
+#define __CONTAINER_MAX_FD_COUNT 16
+
+
 enum containerv_namespace_type {
     CV_NS_CGROUP = 0,
     CV_NS_IPC,
@@ -150,6 +153,8 @@ extern int containerv_socket_client_script(struct containerv_socket_client* clie
 extern int containerv_socket_client_kill(struct containerv_socket_client* client, pid_t processId);
 extern int containerv_socket_client_get_root(struct containerv_socket_client* client, char* buffer, size_t length);
 extern int containerv_socket_client_get_nss(struct containerv_socket_client* client, struct containerv_ns_fd fds[CV_NS_COUNT], int* count);
+extern int containerv_socket_client_send_files(struct containerv_socket_client* client, int* fds, const char* const* filepaths, int* statuses, int count);
+extern int containerv_socket_client_recv_files(struct containerv_socket_client* client, const char* const* filepaths, int* fds, int* statuses, int count);
 extern int containerv_socket_client_destroy(struct containerv_socket_client* client);
 
 struct __containerv_spawn_options {

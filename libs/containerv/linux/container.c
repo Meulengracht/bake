@@ -915,6 +915,115 @@ int containerv_kill(struct containerv_container* container, pid_t pid)
     return status;
 }
 
+int containerv_upload(struct containerv_container* container, const char* const* hostPaths, const char* const* containerPaths, int count)
+{
+    int                              fds[__CONTAINER_MAX_FD_COUNT] = { -1 };
+    int                              results[__CONTAINER_MAX_FD_COUNT];
+    struct containerv_socket_client* client;
+    int                              status;
+
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
+    client = containerv_socket_client_open(&container->id[0]);
+    if (client == NULL) {
+        VLOG_ERROR("containerv[host]", "containerv_upload: failed to connect to server\n");
+        return status;
+    }
+
+    for (int i = 0; i < count; i++) {
+        fds[i] = open(hostPaths[i], O_RDONLY);
+        if (fds[i] < 0) {
+            VLOG_ERROR("containerv[host]", "containerv_upload: failed to open %s for upload\n", hostPaths[i]);
+            status = -1;
+            goto cleanup;
+        }
+    }
+
+    status = containerv_socket_client_send_files(client, &fds[0], containerPaths, &results[0], count);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_upload: failed to read namespace sockets from container\n");
+        containerv_socket_client_close(client);
+        goto cleanup;
+    }
+
+    for (int i = 0; i < count; i++) {
+        if (results[i]) {
+            VLOG_ERROR("containerv[host]", "containerv_upload: failed to upload %s: %i\n", hostPaths[i], results[i]);
+            status = -1;
+        }
+    }
+
+cleanup:
+    for (int i = 0; i < count; i++) {
+        if (fds[i] > 0) {
+            close(fds[i]);
+        }
+    }
+    containerv_socket_client_close(client);
+    return status;
+}
+
+int containerv_download(struct containerv_container* container, const char* const* containerPaths, const char* const* hostPaths, int count)
+{
+    int                              fds[__CONTAINER_MAX_FD_COUNT] = { -1 };
+    int                              results[__CONTAINER_MAX_FD_COUNT];
+    struct containerv_socket_client* client;
+    int                              status;
+    char                             xbuf[4096];
+
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
+    client = containerv_socket_client_open(&container->id[0]);
+    if (client == NULL) {
+        VLOG_ERROR("containerv[host]", "containerv_download: failed to connect to server\n");
+        return status;
+    }
+
+    status = containerv_socket_client_recv_files(client, containerPaths, &fds[0], &results[0], count);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_download: failed to read namespace sockets from container\n");
+        containerv_socket_client_close(client);
+        return status;
+    }
+    containerv_socket_client_close(client);
+
+    for (int i = 0, j = 0; i < count; i++) {
+        struct stat st;
+        int         infd;
+        int         outfd;
+        long        n;
+
+        if (results[i]) {
+            VLOG_ERROR("containerv[host]", "containerv_download: failed to open %s: %i (skipping)\n", containerPaths[i], results[i]);
+            continue;
+        }
+
+        infd = fds[j++];
+        if (fstat(infd, &st)) {
+            VLOG_ERROR("containerv[host]", "containerv_download: failed to stat container file: %s - skipping\n", containerPaths[i]);
+            close(infd);
+            continue;
+        }
+        
+        outfd = open(hostPaths[i], O_CREAT | O_WRONLY | O_TRUNC, st.st_mode);
+        if (outfd < 0) {
+            VLOG_ERROR("containerv[host]", "containerv_download: failed to create: %s - skipping\n", hostPaths[i]);
+            close(infd);
+            continue;
+        }
+
+        while ((n = read(infd, xbuf, sizeof(xbuf))) > 0) {
+            if (write(outfd, xbuf, n) != n) {
+                VLOG_ERROR("containerv[host]", "containerv_download: failed to write %s\n", hostPaths[i]);
+                close(outfd);
+                close(infd);
+                continue;
+            }
+        }
+        close(outfd);
+        close(infd);
+    }
+    return 0;
+}
+
 int containerv_destroy(struct containerv_container* container)
 {
     struct containerv_socket_client* client;

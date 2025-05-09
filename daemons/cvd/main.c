@@ -19,8 +19,10 @@
 #include "chef-config.h"
 #include <chef/dirs.h>
 #include <server.h>
-#include "chef_cvd_service_server.h"
 #include <vlog.h>
+
+#include "chef_cvd_service_server.h"
+#include "private.h"
 
 // the server object
 static gracht_server_t* g_server = NULL;

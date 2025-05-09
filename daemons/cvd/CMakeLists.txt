@@ -6,11 +6,13 @@ set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 set (SRCS
     ${GENERATED_SRCS}
 
-    server/config.c
-    server/init.c
+    server/rootfs/debootstrap.c
+
+    server/api.c
     server/server.c
 
-    api.c
+    config.c
+    init.c
     main.c
 )
 

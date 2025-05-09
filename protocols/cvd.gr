@@ -26,6 +26,10 @@ enum rootfs_type {
 
 enum status {
     SUCCESS,
+    INTERNAL_ERROR,
+    FAILED_ROOTFS_SETUP,
+    INVALID_MOUNTS,
+    INVALID_CONTAINER_ID,
 }
 
 enum mount_options {
@@ -38,10 +42,6 @@ struct container_mount {
     mount_options options;
 }
 
-// served_package describes a package with small details used
-// for displaying to the user. This usually only includes information
-// necessary to inform the user of events that have happened, and not
-// information used for decision making.
 struct create_parameters {
     string            rootfs;
     rootfs_type       type;
@@ -69,6 +69,7 @@ struct spawn_parameters {
 
 struct file_parameters {
     string container_id;
+    user_descriptor user;
     string source_path;
     string destination_path;
 }

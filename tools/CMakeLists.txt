@@ -35,7 +35,6 @@ else()
 
     install(
         TARGETS bake
-        PERMISSIONS SETGID SETUID OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         RUNTIME DESTINATION bin
     )
     
@@ -46,12 +45,8 @@ else()
     )
     
     if (UNIX)
-        install(CODE "execute_process(COMMAND sh -c \"chown root:root $<TARGET_FILE:bake>\" )")
         install(CODE "execute_process(COMMAND sh -c \"chown root:root $<TARGET_FILE:serve-exec>\" )")
     elseif (WIN32)
-        SET_TARGET_PROPERTIES(bake PROPERTIES LINK_FLAGS "/MANIFESTUAC:\"level='requireAdministrator' uiAccess='false'\" /SUBSYSTEM:CONSOLE")
         SET_TARGET_PROPERTIES(serve-exec PROPERTIES LINK_FLAGS "/MANIFESTUAC:\"level='requireAdministrator' uiAccess='false'\" /SUBSYSTEM:CONSOLE")
     endif()
 endif()
-
-

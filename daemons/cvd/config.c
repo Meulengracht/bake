@@ -26,6 +26,8 @@
 #include <time.h>
 #include <vlog.h>
 
+#include "private.h"
+
 struct config_address {
     const char*    type;
     const char*    address;

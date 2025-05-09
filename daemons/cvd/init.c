@@ -24,6 +24,8 @@
 #include <string.h>
 #include <errno.h>
 
+#include "private.h"
+
 #if defined(__linux__)
 #include <arpa/inet.h>
 #include <sys/un.h>
