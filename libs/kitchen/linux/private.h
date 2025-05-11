@@ -16,11 +16,11 @@
  * 
  */
 
-#ifndef __KITCHEN_PRIVATE_H__
-#define __KITCHEN_PRIVATE_H__
+#ifndef __KITCHEN_LINUX_PRIVATE_H__
+#define __KITCHEN_LINUX_PRIVATE_H__
 
 #include <stddef.h>
 
 #define __KITCHEN_INIT_MAGIC 0x37373737
 
-#endif //!__KITCHEN_PRIVATE_H__
+#endif //!__KITCHEN_LINUX_PRIVATE_H__

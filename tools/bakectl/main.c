@@ -50,6 +50,7 @@ static void __print_help(void)
     printf("of chef projects. This utility must only be invoked by the main binary (bake).\n");
     printf("\n");
     printf("Commands:\n");
+    printf("  init        initializes the chef environment\n");
     printf("  source      prepares the source of the specified part and step\n");
     printf("  build       runs the build backend of the specified part and step\n");
     printf("  clean       runs the clean backend of the specified part and step\n");

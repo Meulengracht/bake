@@ -111,7 +111,7 @@ static int __resolve_rootfs(const struct chef_create_parameters* params, char** 
 
 static enum containerv_mount_flags __to_cv_mount_flags(enum chef_mount_options opts)
 {
-    enum containerv_mount_flags flags = CV_MOUNT_BIND;
+    enum containerv_mount_flags flags = CV_MOUNT_BIND | CV_MOUNT_CREATE;
     if (opts & CHEF_MOUNT_OPTIONS_READONLY) {
         flags |= CV_MOUNT_READONLY;
     }

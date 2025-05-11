@@ -18,56 +18,55 @@
 
 #include <chef/list.h>
 #include <chef/kitchen.h>
-#include <chef/containerv.h>
+#include <chef/platform.h>
 #include <stdlib.h>
 #include <vlog.h>
+
+#include "private.h"
 
 int kitchen_recipe_source(struct kitchen* kitchen)
 {
     struct list_item* item;
     int               status;
-    char              buffer[512];
+    char              buffer[PATH_MAX];
+    unsigned int      pid;
     VLOG_DEBUG("kitchen", "kitchen_recipe_source()\n");
 
     __KITCHEN_IF_CACHE(kitchen, recipe_cache_transaction_begin(kitchen->recipe_cache));
     list_foreach(&kitchen->recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;
         
-        if (kitchen->recipe_cache != NULL && 
-                recipe_cache_is_part_sourced(kitchen->recipe_cache, part->name)) {
+        if (recipe_cache_is_part_sourced(kitchen->recipe_cache, part->name)) {
             VLOG_TRACE("kitchen", "part '%s' already sourced\n", part->name);
             continue;
         }
 
         snprintf(&buffer[0], sizeof(buffer),
-            "source --project %s --recipe %s --step %s", 
+            "%s source --project %s --recipe %s --step %s",
+            kitchen->bakectl_path,
             kitchen->project_root, kitchen->recipe_path, part->name
         );
 
         VLOG_TRACE("kitchen", "sourcing part '%s'\n", part->name);
-        status = containerv_spawn(
-            kitchen->container,
-            kitchen->bakectl_path,
-            &(struct containerv_spawn_options) {
-                .arguments = &buffer[0],
-                .environment = (const char* const*)kitchen->base_environment,
-                .flags = CV_SPAWN_WAIT,
-            },
-            NULL
+        status = kitchen_client_spawn(
+            kitchen,
+            &buffer[0],
+            CHEF_SPAWN_OPTIONS_WAIT,
+            &pid
         );
         if (status) {
             VLOG_ERROR("kitchen", "failed to source part '%s'\n", part->name);
-            return status;
+            goto exit;
         }
 
-        if (kitchen->recipe_cache != NULL) {
-            status = recipe_cache_mark_part_sourced(kitchen->recipe_cache, part->name);
-            if (status) {
-                VLOG_ERROR("kitchen", "failed to mark part '%s' sourced\n", part->name);
-                return status;
-            }
+        status = recipe_cache_mark_part_sourced(kitchen->recipe_cache, part->name);
+        if (status) {
+            VLOG_ERROR("kitchen", "failed to mark part '%s' sourced\n", part->name);
+            goto exit;
         }
     }
+
+exit:
     __KITCHEN_IF_CACHE(kitchen, recipe_cache_transaction_commit(kitchen->recipe_cache));
     return status;
 }

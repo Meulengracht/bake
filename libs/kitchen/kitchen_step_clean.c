@@ -17,7 +17,6 @@
  */
 
 #include <errno.h>
-#include <chef/containerv.h>
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/kitchen.h>
@@ -25,6 +24,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
+
+#include "private.h"
 
 static int __reset_steps(struct kitchen* kitchen, const char* part, struct list* steps, enum recipe_step_type stepType, const char* name);
 
@@ -97,6 +98,7 @@ int kitchen_recipe_clean(struct kitchen* kitchen, struct kitchen_recipe_clean_op
     struct list_item* item;
     int               status;
     char              buffer[PATH_MAX];
+    unsigned int      pid;
     char*             partName;
     char*             stepName;
     VLOG_DEBUG("kitchen", "kitchen_recipe_clean()\n");
@@ -108,25 +110,23 @@ int kitchen_recipe_clean(struct kitchen* kitchen, struct kitchen_recipe_clean_op
 
     if (options->part_or_step != NULL) {
         snprintf(&buffer[0], sizeof(buffer),
-            "clean --project %s --recipe %s --step %s",
+            "%s clean --project %s --recipe %s --step %s",
+            kitchen->bakectl_path,
             kitchen->project_root, kitchen->recipe_path, options->part_or_step
         );
     } else {
         snprintf(&buffer[0], sizeof(buffer),
-            "clean --project %s --recipe %s",
+            "%s clean --project %s --recipe %s",
+            kitchen->bakectl_path,
             kitchen->project_root, kitchen->recipe_path
         );
     }
 
-    status = containerv_spawn(
-        kitchen->container,
-        kitchen->bakectl_path,
-        &(struct containerv_spawn_options) {
-            .arguments = &buffer[0],
-            .environment = (const char* const*)kitchen->base_environment,
-            .flags = CV_SPAWN_WAIT
-        },
-        NULL
+    status = kitchen_client_spawn(
+        kitchen,
+        &buffer[0],
+        CHEF_SPAWN_OPTIONS_WAIT,
+        &pid
     );
     if (status) {
         VLOG_ERROR("kitchen", "failed to perform clean step of '%s'\n", kitchen->recipe->project.name);

@@ -24,8 +24,8 @@
 #include <stdint.h>
 
 // imports that don't really need to be exposed
+typedef struct gracht_client gracht_client_t;
 struct pkgmngr;
-struct containerv_container;
 
 struct kitchen_ingredient {
     struct list_item list_header;
@@ -50,7 +50,16 @@ struct kitchen_init_options {
     const char*          target_architecture;
 };
 
+struct kitchen_cvd_address {
+    const char*    type;
+    const char*    address;
+    unsigned short port;
+};
+
 struct kitchen_setup_options {
+    // where the build container interface can be found
+    struct kitchen_cvd_address cvd_address;
+
     struct list        host_ingredients; // list<kitchen_ingredient>
     struct list        build_ingredients; // list<kitchen_ingredient>
     struct list        runtime_ingredients; // list<kitchen_ingredient>
@@ -89,9 +98,10 @@ struct kitchen {
     char* target_platform;
     char* target_architecture;
 
-    struct pkgmngr*              pkg_manager;
-    struct containerv_container* container;
-    char**                       base_environment;
+    gracht_client_t* cvd_client;
+    char*            cvd_id;
+    struct pkgmngr*  pkg_manager;
+    char**           base_environment;
 
     // external paths that point inside chroot
     // i.e paths valid outside chroot

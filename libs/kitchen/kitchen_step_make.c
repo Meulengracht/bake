@@ -18,15 +18,18 @@
 
 #include <chef/list.h>
 #include <chef/kitchen.h>
-#include <chef/containerv.h>
+#include <chef/platform.h>
 #include <stdlib.h>
 #include <vlog.h>
+
+#include "private.h"
 
 static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct list* steps)
 {
     struct list_item* item;
     int               status;
-    char              buffer[512];
+    char              buffer[PATH_MAX];
+    unsigned int      pid;
     VLOG_DEBUG("kitchen", "__make_recipe_steps(part=%s)\n", part);
     
     list_foreach(steps, item) {
@@ -39,20 +42,17 @@ static int __make_recipe_steps(struct kitchen* kitchen, const char* part, struct
         }
 
         snprintf(&buffer[0], sizeof(buffer),
-            "build --project %s --recipe %s --step %s/%s", 
+            "%s build --project %s --recipe %s --step %s/%s",
+            kitchen->bakectl_path,
             kitchen->project_root, kitchen->recipe_path, part, step->name
         );
 
         VLOG_TRACE("kitchen", "executing step '%s/%s'\n", part, step->name);
-        status = containerv_spawn(
-            kitchen->container,
-            kitchen->bakectl_path,
-            &(struct containerv_spawn_options) {
-                .arguments = &buffer[0],
-                .environment = (const char* const*)kitchen->base_environment,
-                .flags = CV_SPAWN_WAIT,
-            },
-            NULL
+        status = kitchen_client_spawn(
+            kitchen,
+            &buffer[0],
+            CHEF_SPAWN_OPTIONS_WAIT,
+            &pid
         );
         if (status) {
             VLOG_ERROR("kitchen", "failed to execute step '%s/%s'\n", part, step->name);

@@ -13,6 +13,11 @@ macro (add_sources_glob)
     endforeach()
 endmacro()
 
+set (GENERATED_SRCS
+    ${CMAKE_BINARY_DIR}/protocols/chef_cvd_service_client.c
+)
+set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
+
 if (UNIX)
     add_sources_glob(linux/*.c)
 elseif (WIN32)
@@ -30,6 +35,9 @@ add_sources(
 
 # shared kitchen sources
 add_sources(
+    ${GENERATED_SRCS}    
+
+    kitchen_client.c
     kitchen_destroy.c
     kitchen_part_source.c
     kitchen_step_clean.c
@@ -41,6 +49,7 @@ add_sources(
 )
 
 add_library(kitchen STATIC ${KITCHEN_SRCS})
+add_dependencies(kitchen service_client)
 target_link_libraries(kitchen PRIVATE jansson-api jansson yaml)
-target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} containerv common libdirconf platform)
-target_include_directories(kitchen PUBLIC include)
+target_link_libraries(kitchen PUBLIC ${ADDITIONAL_LIBS} common gracht libdirconf platform)
+target_include_directories(kitchen PUBLIC include ${CMAKE_BINARY_DIR}/protocols)

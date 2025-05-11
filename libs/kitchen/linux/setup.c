@@ -20,9 +20,6 @@
 #include <chef/ingredient.h>
 #include <chef/kitchen.h>
 #include <chef/platform.h>
-#include <chef/rootfs/debootstrap.h>
-#include <chef/containerv.h>
-#include <chef/containerv-user-linux.h>
 #include <libgen.h>
 #include <errno.h>
 #include <string.h>
@@ -32,6 +29,7 @@
 #include <vlog.h>
 
 #include "../pkgmgrs/libpkgmgr.h"
+#include "../private.h"
 #include "private.h"
 
 static int __clean_environment(const char* path)
@@ -257,37 +255,27 @@ static int __setup_rootfs(struct kitchen* kitchen)
 
 static int __setup_container(struct kitchen* kitchen)
 {
-    struct containerv_mount    mounts[1] = { 0 };
-    struct containerv_options* options;
-    int                        status;
+    struct chef_container_mount mounts[1];
+    int                         status;
     VLOG_TRACE("kitchen", "creating build container\n");
 
-    options = containerv_options_new();
-    if (options == NULL) {
-        VLOG_ERROR("kitchen", "__setup_container: failed to allocate memory for container options\n");
-        return -1;
-    }
-
     // project path
-    mounts[0].what = kitchen->host_cwd;
-    mounts[0].where = kitchen->project_root;
-    mounts[0].flags = CV_MOUNT_BIND | CV_MOUNT_READONLY;
-
-    // we want as many caps as makes sense
-    containerv_options_set_caps(options, 
-        CV_CAP_FILESYSTEM |
-        CV_CAP_PROCESS_CONTROL |
-        CV_CAP_IPC
-    );
-    containerv_options_set_mounts(options, mounts, 1);
+    mounts[0].host_path = kitchen->host_cwd;
+    mounts[0].container_path = kitchen->project_root;
+    mounts[0].options = CHEF_MOUNT_OPTIONS_READONLY;
 
     // start container
-    status = containerv_create(kitchen->host_chroot, options, &kitchen->container);
-    containerv_options_delete(options);
+    status = kitchen_client_create_container(kitchen, &mounts[0], 1);
     if (status) {
         VLOG_ERROR("kitchen", "__setup_container: failed to create build container\n");
         return status;
     }
+
+    // copy bakectl
+    
+
+    // write /chef/update.sh
+    // write /chef/hook-setup.sh?
     return 0;
 }
 
@@ -343,6 +331,7 @@ static int __update_packages(struct kitchen* kitchen)
     int                                 count;
     int                                 status;
     char                                buffer[512] = { 0 };
+    unsigned int                        pid;
 
     // this function is kinda unique, to avoid dublicating stuff the API is complex in the
     // sense that calling this with a NULL cache will just mark everything as _ADDED
@@ -358,15 +347,11 @@ static int __update_packages(struct kitchen* kitchen)
 
     VLOG_TRACE("kitchen", "updating build packages\n");
     snprintf(&buffer[0], sizeof(buffer), "/chef/update.sh");
-    status = containerv_spawn(
-        kitchen->container,
+    status = kitchen_client_spawn(
+        kitchen,
         &buffer[0],
-        &(struct containerv_spawn_options) {
-            .arguments = NULL,
-            .environment = (const char* const*)kitchen->base_environment,
-            .flags = CV_SPAWN_WAIT
-        },
-        NULL
+        CHEF_SPAWN_OPTIONS_WAIT,
+        &pid
     );
     if (status) {
         VLOG_ERROR("kitchen", "__execute_script_in_container: failed to execute script\n");
@@ -418,7 +403,7 @@ static int __setup_ingredient(struct kitchen* kitchen, struct list* ingredients,
         }
         
         if (kitchen->pkg_manager != NULL) {
-            status = kitchen->pkg_manager->make_available(kitchen->pkg_manager, ingredient);
+            status = kitchen->pkg_manager->make_available(kprepares the chef build treeitchen->pkg_manager, ingredient);
         }
         ingredient_close(ingredient);
         if (status) {
@@ -567,8 +552,9 @@ static int __update_ingredients(struct kitchen* kitchen, struct kitchen_setup_op
 
 static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_options* options)
 {
-    int  status;
-    char buffer[512] = { 0 };
+    int          status;
+    char         buffer[512] = { 0 };
+    unsigned int pid;
 
     if (options->setup_hook.bash == NULL) {
         return 0;
@@ -580,15 +566,11 @@ static int __run_setup_hook(struct kitchen* kitchen, struct kitchen_setup_option
 
     VLOG_TRACE("kitchen", "executing setup hook\n");
     snprintf(&buffer[0], sizeof(buffer), "/chef/hook-setup.sh");
-    status = containerv_spawn(
-        kitchen->container,
+    status = kitchen_client_spawn(
+        kitchen,
         &buffer[0],
-        &(struct containerv_spawn_options) {
-            .arguments = NULL,
-            .environment = (const char* const*)kitchen->base_environment,
-            .flags = CV_SPAWN_WAIT
-        },
-        NULL
+        CHEF_SPAWN_OPTIONS_WAIT,
+        &pid
     );
     if (status) {
         VLOG_ERROR("kitchen", "__run_setup_hook: failed to execute setup hook\n");

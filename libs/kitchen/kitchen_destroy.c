@@ -20,12 +20,12 @@
 #include <chef/list.h>
 #include <chef/kitchen.h>
 #include <chef/platform.h>
-#include <chef/containerv.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
 #include "pkgmgrs/libpkgmgr.h"
+#include "private.h"
 
 static void __safe_free(void** ptr) {
     free(*ptr);
@@ -47,13 +47,10 @@ static void __safe_freev(void*** ptr) {
 
 void kitchen_destroy(struct kitchen* kitchen)
 {
-    if (kitchen->container != NULL) {
-        if (containerv_destroy(kitchen->container)) {
-            VLOG_ERROR("kitchen", "kitchen_destroy: failed to destroy container\n");
-        }
-        kitchen->container = NULL;
+    if (kitchen_client_destroy_container(kitchen) != CHEF_STATUS_SUCCESS) {
+        VLOG_ERROR("kitchen", "kitchen_destroy: failed to destroy container\n");
     }
-
+    
     if (kitchen->pkg_manager != NULL) {
         kitchen->pkg_manager->destroy(kitchen->pkg_manager);
         kitchen->pkg_manager = NULL;
