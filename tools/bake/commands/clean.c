@@ -20,7 +20,6 @@
 #include <chef/dirs.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
-#include <chef/kitchen.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,8 +27,7 @@
 #include <vlog.h>
 
 #include "commands.h"
-
-static struct kitchen g_kitchen = { 0 };
+#include "build-helpers/build.h"
 
 static void __print_help(void)
 {

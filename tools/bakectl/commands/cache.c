@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -130,118 +130,11 @@ static void __delete_recipe_cache_ingredient(struct recipe_cache_ingredient* ing
     free(ing);
 }
 
-struct recipe_cache_item {
-    const char* name;
-    const char* uuid;
-    struct list packages;    // list<recipe_cache_package>
-    struct list ingredients; // list<recipe_cache_ingredient>
-    json_t*     keystore;
-};
-
-static const char* g_uuidFmt = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
-static const char* g_hex = "0123456789ABCDEF-";
-
-static void __generate_cache_uuid(char uuid[40])
-{
-    int length = strlen(g_uuidFmt);
-    for (int i = 0; i < (length + 1); i++) {
-        int r = rand() % 16;
-        char c = ' ';   
-        
-        switch (g_uuidFmt[i]) {
-            case 'x' : { c = g_hex[r]; } break;
-            case 'y' : { c = g_hex[r & 0x03 | 0x08]; } break;
-            case '-' : { c = '-'; } break;
-            case '4' : { c = '4'; } break;
-        }
-        uuid[i] = (i < length) ? c : 0x00;
-    }
-}
-
-static int __construct_recipe_cache_item(struct recipe_cache_item* cacheItem, const char* name)
-{
-    char uuid[40];
-    VLOG_DEBUG("cache", "__construct_recipe_cache_item(name=%s)\n", name);
-
-    memset(cacheItem, 0, sizeof(struct recipe_cache_item));
-    __generate_cache_uuid(&uuid[0]);
-    cacheItem->name = platform_strdup(name);
-    cacheItem->uuid = platform_strdup(&uuid[0]);
-    cacheItem->keystore = json_object();
-    if (cacheItem->name == NULL || cacheItem->uuid == NULL || cacheItem->keystore == NULL) {
-        free((void*)cacheItem->name);
-        free((void*)cacheItem->uuid);
-        json_decref(cacheItem->keystore);
-        return -1;
-    }
-    return 0;
-}
-
-static int __parse_cache_item(struct recipe_cache_item* cacheItem, json_t* root)
-{
-    json_t* member;
-    size_t  length;
-    VLOG_DEBUG("cache", "__parse_cache_item()\n");
-
-    member = json_object_get(root, "name");
-    if (member == NULL) {
-        return -1;
-    }
-    cacheItem->name = platform_strdup(json_string_value(member));
-
-    member = json_object_get(root, "uuid");
-    if (member == NULL) {
-        return -1;
-    }
-    cacheItem->uuid = platform_strdup(json_string_value(member));
-
-    cacheItem->keystore = json_object_get(root, "cache");
-    if (cacheItem->keystore == NULL) {
-        return -1;
-    }
-
-    member = json_object_get(root, "packages");
-    if (member == NULL) {
-        return -1;
-    }
-
-    length = json_array_size(member);
-    if (length) {
-        for (size_t i = 0; i < length; i++) {
-            json_t* packageItem = json_array_get(member, i);
-            struct recipe_cache_package* pkg = __parse_recipe_cache_package(packageItem);
-            if (pkg == NULL) {
-                return -1;
-            }
-            list_add(&cacheItem->packages, &pkg->list_header);
-        }
-    }
-
-    member = json_object_get(root, "ingredients");
-    if (member == NULL) {
-        return -1;
-    }
-
-    length = json_array_size(member);
-    if (length) {
-        for (size_t i = 0; i < length; i++) {
-            json_t* ingredientItem = json_array_get(member, i);
-            struct recipe_cache_ingredient* ing = __parse_recipe_cache_ingredient(ingredientItem);
-            if (ing == NULL) {
-                return -1;
-            }
-            list_add(&cacheItem->ingredients, &ing->list_header);
-        }
-    }
-
-    return 0;
-}
-
-static json_t* __serialize_cache_item_packages(struct list* packages)
+static json_t* __serialize_cache_packages(struct list* packages)
 {
     struct list_item* i;
     json_t*           items;
-    VLOG_DEBUG("cache", "__serialize_cache_item_packages(count=%i)\n", packages->count);
+    VLOG_DEBUG("cache", "__serialize_cache_packages(count=%i)\n", packages->count);
 
     items = json_array();
     if (!items) {
@@ -259,7 +152,7 @@ static json_t* __serialize_cache_item_packages(struct list* packages)
     return items;
 }
 
-static json_t* __serialize_cache_item_ingredients(struct list* ingredients)
+static json_t* __serialize_cache_ingredients(struct list* ingredients)
 {
     struct list_item* i;
     json_t*           root;
@@ -280,47 +173,15 @@ static json_t* __serialize_cache_item_ingredients(struct list* ingredients)
     return root;
 }
 
-static json_t* __serialize_cache_item(struct recipe_cache_item* cacheItem)
-{
-    json_t* root;
-    json_t* packages;
-    json_t* ingredients;
-    VLOG_DEBUG("cache", "__serialize_cache_item(cache=%s)\n", cacheItem->name);
-    
-    root = json_object();
-    if (!root) {
-        return NULL;
-    }
-
-    packages = __serialize_cache_item_packages(&cacheItem->packages);
-    if (packages == NULL) {
-        json_decref(root);
-        return NULL;
-    }
-
-    ingredients = __serialize_cache_item_ingredients(&cacheItem->ingredients);
-    if (packages == NULL) {
-        json_decref(packages);
-        json_decref(root);
-        return NULL;
-    }
-    
-    json_object_set_new(root, "name", json_string(cacheItem->name));
-    json_object_set_new(root, "uuid", json_string(cacheItem->uuid));
-    json_object_set_new(root, "packages", packages);
-    json_object_set_new(root, "ingredients", ingredients);
-    json_object_set(root, "cache", cacheItem->keystore);
-    return root;
-}
-
 struct recipe_cache {
-    struct recipe*            current;
-    const char*               path;
+    struct recipe* current;
+    const char*    path;
+    
+    struct list    packages;    // list<recipe_cache_package>
+    struct list    ingredients; // list<recipe_cache_ingredient>
+    json_t*        keystore;
 
-    struct recipe_cache_item* items;
-    int                       item_count;
-
-    int                       xaction;
+    int            xaction;
 };
 
 static struct recipe_cache* __recipe_cache_new(const char* path, struct recipe* recipe)
@@ -330,15 +191,13 @@ static struct recipe_cache* __recipe_cache_new(const char* path, struct recipe* 
         return NULL;
     }
 
-    if (path != NULL) {
-        cache->path = platform_strdup(path);
-        if (cache->path == NULL) {
-            free(cache);
-            return NULL;
-        }
+    cache->path = platform_strdup(path);
+    if (cache->path == NULL) {
+        free(cache);
+        return NULL;
     }
-
-    cache->current = recipe;
+    cache->keystore = json_object();
+    cache->current  = recipe;
     return cache;
 }
 
@@ -354,31 +213,48 @@ static void __recipe_cache_delete(struct recipe_cache* cache)
 
 static int __parse_cache(struct recipe_cache* cache, json_t* root)
 {
-    json_t* cacheItems;
+    json_t* member;
     size_t  length;
 
-    cacheItems = json_object_get(root, "caches");
-    if (cacheItems == NULL) {
-        return 0;
-    }
-
-    length = json_array_size(cacheItems);
-    if (length == 0) {
-        return 0;
-    }
-
-    cache->item_count = (int)length;
-    cache->items = calloc(length, sizeof(struct recipe_cache_item));
-    if (cache->items == NULL) {
+    cache->keystore = json_object_get(root, "cache");
+    if (cache->keystore == NULL) {
         return -1;
     }
 
-    for (size_t i = 0; i < length; i++) {
-        json_t* cacheItem = json_array_get(cacheItems, i);
-        if (__parse_cache_item(&cache->items[i], cacheItem)) {
-            return -1;
+    member = json_object_get(root, "packages");
+    if (member == NULL) {
+        return -1;
+    }
+
+    length = json_array_size(member);
+    if (length) {
+        for (size_t i = 0; i < length; i++) {
+            json_t* packageItem = json_array_get(member, i);
+            struct recipe_cache_package* pkg = __parse_recipe_cache_package(packageItem);
+            if (pkg == NULL) {
+                return -1;
+            }
+            list_add(&cache->packages, &pkg->list_header);
         }
     }
+
+    member = json_object_get(root, "ingredients");
+    if (member == NULL) {
+        return -1;
+    }
+
+    length = json_array_size(member);
+    if (length) {
+        for (size_t i = 0; i < length; i++) {
+            json_t* ingredientItem = json_array_get(member, i);
+            struct recipe_cache_ingredient* ing = __parse_recipe_cache_ingredient(ingredientItem);
+            if (ing == NULL) {
+                return -1;
+            }
+            list_add(&cache->ingredients, &ing->list_header);
+        }
+    }
+
     return 0;
 }
 
@@ -401,7 +277,8 @@ static int __load_config(struct recipe_cache* cache, const char* path)
 static json_t* __serialize_cache(struct recipe_cache* cache)
 {
     json_t* root;
-    json_t* items;
+    json_t* packages;
+    json_t* ingredients;
     VLOG_DEBUG("cache", "__serialize_cache(cache=%s)\n", cache->path);
     
     root = json_object();
@@ -410,23 +287,22 @@ static json_t* __serialize_cache(struct recipe_cache* cache)
         return NULL;
     }
     
-    items = json_array();
-    if (root == NULL) {
-        VLOG_ERROR("cache", "__serialize_cache: failed to allocate memory for cache array\n");
+    packages = __serialize_cache_packages(&cache->packages);
+    if (packages == NULL) {
         json_decref(root);
         return NULL;
     }
 
-    for (int i = 0; i < cache->item_count; i++) {
-        json_t* item = __serialize_cache_item(&cache->items[i]);
-        if (item == NULL) {
-            VLOG_ERROR("cache", "__serialize_cache: failed to serialize cache for %s\n", cache->items[i].name);
-            return NULL;
-        }
-        json_array_append_new(items, item);
+    ingredients = __serialize_cache_ingredients(&cache->ingredients);
+    if (packages == NULL) {
+        json_decref(packages);
+        json_decref(root);
+        return NULL;
     }
 
-    json_object_set_new(root, "caches", items);
+    json_object_set_new(root, "packages", packages);
+    json_object_set_new(root, "ingredients", ingredients);
+    json_object_set(root, "cache", cache->keystore);
     return root;
 }
 
@@ -453,45 +329,14 @@ static int __save_cache(struct recipe_cache* cache)
     return 0;
 }
 
-static int __ensure_recipe_cache(struct recipe_cache* cache, struct recipe* current)
-{
-    void* expanded;
-
-    if (current == NULL) {
-        return 0;
-    }
-
-    for (int i = 0; i < cache->item_count; i++) {
-        if (strcmp(cache->items[i].name, current->project.name) == 0) {
-            // exists
-            return 0;
-        }
-    }
-
-    expanded = realloc(cache->items, sizeof(struct recipe_cache_item) * (cache->item_count + 1));
-    if (expanded == NULL) {
-        return -1;
-    }
-    if (__construct_recipe_cache_item(&(((struct recipe_cache_item*)expanded)[cache->item_count]), current->project.name)) {
-        return -1;
-    }
-
-    cache->items = expanded;
-    cache->item_count++;
-    return 0;
-}
-
 // API
-int recipe_cache_create(struct recipe* current, const char* cwd, struct recipe_cache** cacheOut)
+int recipe_cache_create(struct recipe* current, const char* root, struct recipe_cache** cacheOut)
 {
     struct recipe_cache* cache;
     char                 buff[PATH_MAX] = { 0 };
     int                  status;
 
-    snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S ".vchcache", cwd);
-
-    // initialize the random counter for guid's
-    srand(clock());
+    snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S ".vchcache", root);
 
     // create a new cache
     cache = __recipe_cache_new(&buff[0], current);
@@ -507,72 +352,8 @@ int recipe_cache_create(struct recipe* current, const char* cwd, struct recipe_c
         return status;
     }
 
-    status = __ensure_recipe_cache(cache, current);
-    if (status) {
-        VLOG_ERROR("cache", "failed to ensure cache for current recipe\n");
-        __recipe_cache_delete(cache);
-        return status;
-    }
     *cacheOut = cache;
     return 0;
-}
-
-int recipe_cache_create_null(struct recipe* current, struct recipe_cache** cacheOut)
-{
-    struct recipe_cache* cache;
-
-    cache = __recipe_cache_new(NULL, current);
-    if (cache == NULL) {
-        VLOG_ERROR("cache", "out of memory for cache allocation!\n");
-        return -1;
-    }
-
-    *cacheOut = cache;
-    return 0;
-}
-
-const char* recipe_cache_uuid_for(struct recipe_cache* cache, const char* name)
-{
-    for (int i = 0; i < cache->item_count; i++) {
-        if (strcmp(cache->items[i].name, name) == 0) {
-            return cache->items[i].uuid;
-        }
-    }
-
-    VLOG_FATAL("cache", "no cache entry for %s\n", name);
-    return NULL;
-}
-
-const char* recipe_cache_uuid(struct recipe_cache* cache)
-{
-    if (cache->current != NULL) {
-        return recipe_cache_uuid_for(cache, cache->current->project.name);
-    }
-
-    VLOG_FATAL("cache", "no recipe specified\n");
-    return NULL;
-}
-
-static struct recipe_cache_item* __get_cache_item(struct recipe_cache* cache)
-{
-    if (cache->current == NULL) {
-        VLOG_FATAL("cache", "__get_cache_item: invoked but no recipe set\n");
-        return NULL;
-    }
-
-    // ignore NULL caches
-    if (cache->path == NULL) {
-        return NULL;
-    }
-
-    for (int i = 0; i < cache->item_count; i++) {
-        if (strcmp(cache->items[i].name, cache->current->project.name) == 0) {
-            return &cache->items[i];
-        }
-    }
-
-    VLOG_FATAL("cache", "no cache entry for %s\n", cache->current->project.name);
-    return NULL;
 }
 
 static void __clear_packages(struct list* packages)
@@ -593,24 +374,6 @@ static void __clear_ingredients(struct list* ingredients)
         ingredients->head = i->next;
         __delete_recipe_cache_ingredient(ing);
     }
-}
-
-int recipe_cache_clear_for(struct recipe_cache* cache, const char* name)
-{
-    if (!cache->xaction) {
-        VLOG_FATAL("cache", "recipe_cache_clear_for: no transaction\n");
-    }
-
-    for (int i = 0; i < cache->item_count; i++) {
-        if (strcmp(cache->items[i].name, name) == 0) {
-            __clear_packages(&cache->items[i].packages);
-            __clear_ingredients(&cache->items[i].ingredients);
-            json_object_clear(cache->items[i].keystore);
-            return 0;
-        }
-    }
-    errno = ENOENT;
-    return -1;
 }
 
 void recipe_cache_transaction_begin(struct recipe_cache* cache)
@@ -635,27 +398,18 @@ void recipe_cache_transaction_commit(struct recipe_cache* cache)
 
 const char* recipe_cache_key_string(struct recipe_cache* cache, const char* key)
 {
-    struct recipe_cache_item* cacheItem = __get_cache_item(cache);
-    if (cacheItem == NULL) {
-        return NULL;
-    }
-    return json_string_value(json_object_get(cacheItem->keystore, key));
+    return json_string_value(json_object_get(cache->keystore, key));
 }
 
 int recipe_cache_key_set_string(struct recipe_cache* cache, const char* key, const char* value)
 {
-    struct recipe_cache_item* cacheItem = __get_cache_item(cache);
-    int                       status;
+    int status;
 
     if (!cache->xaction) {
         VLOG_FATAL("cache", "recipe_cache_key_set_string: no transaction\n");
     }
-
-    if (cacheItem == NULL) {
-        return 0;
-    }
     
-    status = json_object_set_new(cacheItem->keystore, key, json_string(value));
+    status = json_object_set_new(cache->keystore, key, json_string(value));
     if (status) {
         VLOG_ERROR("cache", "failed to update value %s for %s: %i\n", key, value, status);
     }
@@ -745,9 +499,8 @@ static int __add_package_change(
 
 int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change** changes, int* changeCount)
 {
-    struct recipe_cache_item* cacheItem = __get_cache_item(cache);
-    struct list_item          *i, *j;
-    int                       capacity = 0;
+    struct list_item *i, *j;
+    int              capacity = 0;
     VLOG_DEBUG("cache", "recipe_cache_calculate_package_changes()\n");
 
     *changes = NULL;
@@ -762,14 +515,12 @@ int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct re
         struct list_item_string* toCheck = (struct list_item_string*)i;
         int                      exists = 0;
 
-        if (cacheItem != NULL) {
-            list_foreach(&cacheItem->packages, j) {
-                struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
-                if (strcmp(toCheck->value, pkg->name) == 0) {
-                    // found, not a new package
-                    exists = 1;
-                    break;
-                }
+        list_foreach(&cache->packages, j) {
+            struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
+            if (strcmp(toCheck->value, pkg->name) == 0) {
+                // found, not a new package
+                exists = 1;
+                break;
             }
         }
 
@@ -780,23 +531,21 @@ int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct re
         }
     }
 
-    // check packages removed if the cache is there
-    if (cacheItem != NULL) {
-        list_foreach(&cacheItem->packages, i) {
-            struct list_item_string* toCheck = (struct list_item_string*)i;
-            int                     exists = 0;
-            list_foreach(&cache->current->environment.host.packages, j) {
-                struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
-                if (strcmp(toCheck->value, pkg->name) == 0) {
-                    // found, not a new package
-                    exists = 1;
-                    break;
-                }
+    // check packages removed
+    list_foreach(&cache->packages, i) {
+        struct list_item_string* toCheck = (struct list_item_string*)i;
+        int                     exists = 0;
+        list_foreach(&cache->current->environment.host.packages, j) {
+            struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
+            if (strcmp(toCheck->value, pkg->name) == 0) {
+                // found, not a new package
+                exists = 1;
+                break;
             }
-            if (!exists) {
-                if (__add_package_change(changes, changeCount, &capacity, toCheck->value, RECIPE_CACHE_CHANGE_REMOVED)) {
-                    return -1;
-                }
+        }
+        if (!exists) {
+            if (__add_package_change(changes, changeCount, &capacity, toCheck->value, RECIPE_CACHE_CHANGE_REMOVED)) {
+                return -1;
             }
         }
     }
@@ -805,16 +554,11 @@ int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct re
 
 int recipe_cache_commit_package_changes(struct recipe_cache* cache, struct recipe_cache_package_change* changes, int count)
 {
-    struct recipe_cache_item* cacheItem = __get_cache_item(cache);
     VLOG_DEBUG("cache", "recipe_cache_commit_package_changes(count=%i)\n", count);
     
     if (changes == NULL || count == 0) {
         errno = EINVAL;
         return -1;
-    }
-
-    if (cacheItem == NULL) {
-        return 0;
     }
 
     for (int i = 0; i < count; i++) {
@@ -824,17 +568,17 @@ int recipe_cache_commit_package_changes(struct recipe_cache* cache, struct recip
                 if (pkg == NULL) {
                     return -1;
                 }
-                list_add(&cacheItem->packages, &pkg->list_header);
+                list_add(&cache->packages, &pkg->list_header);
             } break;
             case RECIPE_CACHE_CHANGE_UPDATED: {
                 // todo
             } break;
             case RECIPE_CACHE_CHANGE_REMOVED: {
                 struct list_item* j;
-                list_foreach(&cacheItem->packages, j) {
+                list_foreach(&cache->packages, j) {
                     struct recipe_cache_package* toCheck = (struct recipe_cache_package*)j;
                     if (strcmp(toCheck->name, changes[i].name) == 0) {
-                        list_remove(&cacheItem->packages, &toCheck->list_header);
+                        list_remove(&cache->packages, &toCheck->list_header);
                         __delete_recipe_cache_package(toCheck);
                         break;
                     }

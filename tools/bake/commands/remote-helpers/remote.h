@@ -22,23 +22,18 @@
 #include <gracht/client.h>
 
 /**
- * @brief
+ * @brief 
  */
-extern int remote_pack(const char* path, const char* const* envp, char** imagePath);
+extern int remote_wizard_init(void);
 
 /**
  * @brief
  */
-extern int remote_unpack(const char* imagePath, const char* destination);
+extern int remote_local_init_default(void);
 
 /**
- * @brief
+ * @brief 
  */
-extern int remote_upload(const char* path, char** downloadUrl);
-
-/**
- * @brief
- */
-extern int remote_download(const char* url, const char* path);
+extern int remote_client_create(gracht_client_t** clientOut);
 
 #endif //!__CHEF_REMOTE_H__

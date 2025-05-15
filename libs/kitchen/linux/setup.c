@@ -46,37 +46,6 @@ static int __clean_environment(const char* path)
     return 0;
 }
 
-static int __ensure_kitchen_dirs(struct kitchen* kitchen)
-{
-    VLOG_DEBUG("kitchen", "__ensure_hostdirs()\n");
-
-    if (platform_mkdir(kitchen->host_build_path)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_build_path);
-        return -1;
-    }
-
-    if (platform_mkdir(kitchen->host_build_ingredients_path)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_build_ingredients_path);
-        return -1;
-    }
-
-    if (platform_mkdir(kitchen->host_build_toolchains_path)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_build_toolchains_path);
-        return -1;
-    }
-
-    if (platform_mkdir(kitchen->host_install_path)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_install_path);
-        return -1;
-    }
-
-    if (platform_mkdir(kitchen->host_project_path)) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", kitchen->host_project_path);
-        return -1;
-    }
-    return 0;
-}
-
 static int __ensure_hostdirs(struct kitchen* kitchen)
 {
     VLOG_DEBUG("kitchen", "__ensure_hostdirs()\n");
@@ -121,7 +90,7 @@ const char* g_possibleBakeCtlPaths[] = {
     NULL
 };
 
-static int __install_bakectl(struct kitchen* kitchen)
+static int __find_bakectl(char** resolvedOut)
 {
     char   buffer[PATH_MAX] = { 0 };
     char*  resolved = NULL;
@@ -167,32 +136,8 @@ static int __install_bakectl(struct kitchen* kitchen)
         VLOG_WARNING("kitchen", "__install_bakectl: failed to resolve bakectl from %s\n", &buffer[0]);
         return -1;
     }
-
-    target = strpathjoin(kitchen->host_chroot, kitchen->bakectl_path, NULL);
-    if (target == NULL) {
-        free(resolved);
-        VLOG_ERROR("kitchen", "__install_bakectl: failed to allocate memory for target\n");
-        return -1;
-    }
-
-    // Copyfile does a dummy copy by creating a new file and copying contents. This
-    // unfortunately does not transfer permissions.
-    status = platform_copyfile(resolved, target);
-    if (status) {
-        VLOG_ERROR("kitchen", "__install_bakectl: failed to install %s\n", target);
-        goto cleanup;
-    }
-
-    // Restore executable permissions
-    status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
-    if (status) {
-        VLOG_ERROR("kitchen", "__install_bakectl: failed to fixup permissions for %s\n", target);
-    }
-
-cleanup:
-    free(resolved);
-    free(target);
-    return status;
+    *resolvedOut = resolved;
+    return 0;
 }
 
 static int __setup_rootfs(struct kitchen* kitchen)
@@ -257,6 +202,7 @@ static int __setup_container(struct kitchen* kitchen)
 {
     struct chef_container_mount mounts[1];
     int                         status;
+    char*                       bakectlPath;
     VLOG_TRACE("kitchen", "creating build container\n");
 
     // project path
@@ -271,12 +217,21 @@ static int __setup_container(struct kitchen* kitchen)
         return status;
     }
 
-    // copy bakectl
+    // copy bakectl and scripts?
+    status = __find_bakectl(&bakectlPath);
+    if (status) {
+        VLOG_ERROR("kitchen", "__setup_container: failed to locate bakectl for container\n");
+        kitchen_client_destroy_container(kitchen);
+        return status;
+    }
     
-
-    // write /chef/update.sh
-    // write /chef/hook-setup.sh?
-    return 0;
+    status = kitchen_client_upload(kitchen, bakectlPath, kitchen->bakectl_path);
+    if (status) {
+        VLOG_ERROR("kitchen", "__setup_container: failed to write bakectl in container\n");
+        kitchen_client_destroy_container(kitchen);
+    }
+    free(bakectlPath);
+    return status;
 }
 
 static char* __join_packages(struct recipe_cache_package_change* changes, int count, enum recipe_cache_change_type changeType)
@@ -403,7 +358,7 @@ static int __setup_ingredient(struct kitchen* kitchen, struct list* ingredients,
         }
         
         if (kitchen->pkg_manager != NULL) {
-            status = kitchen->pkg_manager->make_available(kprepares the chef build treeitchen->pkg_manager, ingredient);
+            status = kitchen->pkg_manager->make_available(kitchen->pkg_manager, ingredient);
         }
         ingredient_close(ingredient);
         if (status) {

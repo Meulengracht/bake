@@ -73,6 +73,7 @@ static json_t* __serialize_config_address(struct chef_config_address* address)
 struct chef_config {
     char* path;
 
+    struct chef_config_address cvd;
     struct chef_config_address remote;
 };
 
@@ -112,6 +113,11 @@ static json_t* __serialize_config(struct chef_config* config)
     if (remoteAddress != NULL) {
         json_object_set_new(root, "remote-address", remoteAddress);
     }
+    
+    remoteAddress = __serialize_config_address(&config->cvd);
+    if (remoteAddress != NULL) {
+        json_object_set_new(root, "cvd-address", remoteAddress);
+    }
 
     return root;
 }
@@ -127,6 +133,15 @@ static int __parse_config(struct chef_config* config, json_t* root)
         status = __parse_config_address(&config->remote, member);
         if (status) {
             VLOG_ERROR("config", "chef_config_load: failed to parse 'remote-address'\n");
+            return status;
+        }
+    }
+
+    member = json_object_get(root, "cvd-address");
+    if (member != NULL) {
+        status = __parse_config_address(&config->cvd, member);
+        if (status) {
+            VLOG_ERROR("config", "chef_config_load: failed to parse 'cvd-address'\n");
             return status;
         }
     }
@@ -187,9 +202,17 @@ int chef_config_save(struct chef_config* config)
     return 0;
 }
 
+void chef_config_cvd_address(struct chef_config* config, struct chef_config_address* address)
+{
+    VLOG_DEBUG("config", "chef_config_cvd_address()\n");
+    address->type = config->cvd.type;
+    address->address = config->cvd.address;
+    address->port = config->cvd.port;
+}
+
 void chef_config_remote_address(struct chef_config* config, struct chef_config_address* address)
 {
-    VLOG_DEBUG("config", "chef_config_remote_address(address=%s)\n", address->address);
+    VLOG_DEBUG("config", "chef_config_remote_address()\n");
     address->type = config->remote.type;
     address->address = config->remote.address;
     address->port = config->remote.port;
@@ -208,6 +231,17 @@ static int __replace_string(char** original, const char* value)
 
     *original = NULL;
     return 0;
+}
+
+void chef_config_set_cvd_address(struct chef_config* config, struct chef_config_address* address)
+{
+    VLOG_DEBUG("config", "chef_config_set_cvd_address(address=%s)\n", address->address);
+    if (__replace_string((char**)&config->cvd.type, address->type) ||
+        __replace_string((char**)&config->cvd.address, address->address)) {
+        VLOG_ERROR("config", "chef_config_set_cvd_address: failed to update address\n");
+        return;
+    }
+    config->cvd.port = address->port;
 }
 
 void chef_config_set_remote_address(struct chef_config* config, struct chef_config_address* address)

@@ -23,9 +23,10 @@
 #include <chef/client.h>
 #include <errno.h>
 #include <chef/dirs.h>
+#include <chef/config.h>
 #include <chef/list.h>
 #include <chef/platform.h>
-#include <chef/kitchen.h>
+#include <chef/recipe.h>
 #include <ctype.h>
 #include <libfridge.h>
 #include <stdio.h>
@@ -35,8 +36,9 @@
 #include <vlog.h>
 
 #include "commands.h"
+#include "build-helpers/build.h"
 
-static struct kitchen g_kitchen = { 0 };
+static struct __bake_build_context* g_context = NULL;
 
 static void __print_help(void)
 {
@@ -51,25 +53,7 @@ static void __print_help(void)
     printf("      Shows this help message\n");
 }
 
-static int __add_kitchen_ingredient(const char* name, const char* path, struct list* kitchenIngredients)
-{
-    struct kitchen_ingredient* ingredient;
-    VLOG_DEBUG("bake", "__add_kitchen_ingredient(name=%s, path=%s)\n", name, path);
-
-    ingredient = malloc(sizeof(struct kitchen_ingredient));
-    if (ingredient == NULL) {
-        return -1;
-    }
-    memset(ingredient, 0, sizeof(struct kitchen_ingredient));
-
-    ingredient->name = name;
-    ingredient->path = path;
-
-    list_add(kitchenIngredients, &ingredient->list_header);
-    return 0;
-}
-
-static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredients)
+static int __ensure_toolchains(struct list* platforms)
 {
     struct list_item* item;
     VLOG_DEBUG("bake", "__prep_toolchains()\n");
@@ -77,7 +61,6 @@ static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredi
     list_foreach(platforms, item) {
         struct recipe_platform* platform = (struct recipe_platform*)item;
         int                     status;
-        const char*             path;
         char*                   name;
         char*                   channel;
         char*                   version;
@@ -97,7 +80,7 @@ static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredi
             .version = version,
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
-        }, &path);
+        }, NULL);
         if (status) {
             free(name);
             free(channel);
@@ -105,20 +88,11 @@ static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredi
             VLOG_ERROR("bake", "failed to fetch ingredient %s\n", name);
             return status;
         }
-        
-        status = __add_kitchen_ingredient(name, path, kitchenIngredients);
-        if (status) {
-            free(name);
-            free(channel);
-            free(version);
-            VLOG_ERROR("bake", "failed to mark ingredient %s\n", name);
-            return status;
-        }
     }
     return 0;
 }
 
-static int __prep_ingredient_list(struct list* list, const char* platform, const char* arch, struct list* kitchenIngredients)
+static int __ensure_ingredient_list(struct list* list, const char* platform, const char* arch)
 {
     struct list_item* item;
     int               status;
@@ -139,27 +113,18 @@ static int __prep_ingredient_list(struct list* list, const char* platform, const
             VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->name);
             return status;
         }
-        
-        status = __add_kitchen_ingredient(ingredient->name, path, kitchenIngredients);
-        if (status) {
-            VLOG_ERROR("bake", "failed to mark ingredient %s\n", ingredient->name);
-            return status;
-        }
     }
     return 0;
 }
 
-static int __prep_ingredients(struct recipe* recipe, const char* platform, const char* arch, struct kitchen_setup_options* kitchenOptions)
+static int __ensure_ingredients(struct recipe* recipe, const char* platform, const char* arch)
 {
     struct list_item* item;
     int               status;
 
     if (recipe->platforms.count > 0) {
         VLOG_TRACE("bake", "preparing %i platforms\n", recipe->platforms.count);
-        status = __prep_toolchains(
-            &recipe->platforms,
-            &kitchenOptions->host_ingredients
-        );
+        status = __ensure_toolchains(&recipe->platforms);
         if (status) {
             return status;
         }
@@ -167,11 +132,10 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
 
     if (recipe->environment.host.ingredients.count > 0) {
         VLOG_TRACE("bake", "preparing %i host ingredients\n", recipe->environment.host.ingredients.count);
-        status = __prep_ingredient_list(
+        status = __ensure_ingredient_list(
             &recipe->environment.host.ingredients,
             CHEF_PLATFORM_STR,
-            CHEF_ARCHITECTURE_STR,
-            &kitchenOptions->host_ingredients
+            CHEF_ARCHITECTURE_STR
         );
         if (status) {
             return status;
@@ -180,11 +144,10 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
 
     if (recipe->environment.build.ingredients.count > 0) {
         VLOG_TRACE("bake", "preparing %i build ingredients\n", recipe->environment.build.ingredients.count);
-        status = __prep_ingredient_list(
+        status = __ensure_ingredient_list(
             &recipe->environment.build.ingredients,
             platform,
-            arch,
-            &kitchenOptions->build_ingredients
+            arch
         );
         if (status) {
             return status;
@@ -193,11 +156,10 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
 
     if (recipe->environment.runtime.ingredients.count > 0) {
         VLOG_TRACE("bake", "preparing %i runtime ingredients\n", recipe->environment.runtime.ingredients.count);
-        status = __prep_ingredient_list(
+        status = __ensure_ingredient_list(
             &recipe->environment.runtime.ingredients,
             platform,
-            arch,
-            &kitchenOptions->runtime_ingredients
+            arch
         );
         if (status) {
             return status;
@@ -215,7 +177,7 @@ static void __cleanup_systems(int sig)
 
     // cleanup the kitchen, this will take out most of the systems
     // setup as a part of all this.
-    kitchen_destroy(&g_kitchen);
+    build_context_destroy(g_context);
 
     // cleanup logging
     vlog_cleanup();
@@ -254,13 +216,14 @@ static char* __format_footer(const char* logPath)
 
 int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    struct kitchen_setup_options setupOptions = { 0 };
-    struct recipe_cache*         cache = NULL;
-    int                          status;
-    char*                        logPath;
-    char*                        header;
-    char*                        footer;
-    const char*                  arch;
+    struct build_cache*        cache = NULL;
+    struct chef_config*        config;
+    struct chef_config_address cvdAddress;
+    int                        status;
+    char*                      logPath;
+    char*                      header;
+    char*                      footer;
+    const char*                arch;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -285,6 +248,13 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         fprintf(stderr, "bake: multiple architectures are not supported\n");
         return -1;
     }
+
+    config = chef_config_load(chef_dirs_config());
+    if (config == NULL) {
+        VLOG_ERROR("remote", "remote_client_create: failed to load configuration\n");
+        return -1;
+    }
+    chef_config_cvd_address(config, &cvdAddress);
 
     logPath = __add_build_log();
     if (logPath == NULL) {
@@ -349,45 +319,38 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
 
     // we want the recipe cache in this case for regular builds
-    status = recipe_cache_create(options->recipe, options->cwd, &cache);
+    status = build_cache_create(options->recipe, options->cwd, &cache);
     if (status) {
-        VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
+        VLOG_ERROR("kitchen", "failed to initialize build cache\n");
         return -1;
     }
 
     // debug target information
     VLOG_DEBUG("bake", "platform=%s, architecture=%s\n", options->platform, arch);
-    status = kitchen_initialize(&(struct kitchen_init_options) {
-        .kitchen_root = chef_dirs_kitchen(recipe_cache_uuid(cache)),
+    g_context = build_context_create(&(struct __bake_build_options) {
+        .cwd = options->cwd,
+        .envp = (const char* const*)envp,
         .recipe = options->recipe,
         .recipe_path = options->recipe_path,
-        .recipe_cache = cache,
-        .envp = (const char* const*)envp,
-        .project_path = options->cwd,
-        .pkg_environment = NULL,
+        .build_cache = cache,
         .target_platform = options->platform,
         .target_architecture = arch,
-    }, &g_kitchen);
-    if (status) {
-        VLOG_ERROR("bake", "failed to initialize kitchen: %s\n", strerror(errno));
+        .cvd_address = &cvdAddress
+    });
+    if (g_context == NULL) {
+        VLOG_ERROR("bake", "failed to initialize build context: %s\n", strerror(errno));
         return -1;
     }
 
-    status = __prep_ingredients(options->recipe, options->platform, arch, &setupOptions);
+    status = __ensure_ingredients(options->recipe, options->platform, arch);
     if (status) {
         VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
         goto cleanup;
     }
 
-    // setup linux options
-    setupOptions.packages = &options->recipe->environment.host.packages;
-
-    // setup kitchen hooks
-    setupOptions.setup_hook.bash = options->recipe->environment.hooks.bash;
-    setupOptions.setup_hook.powershell = options->recipe->environment.hooks.powershell;
-    status = kitchen_setup(&g_kitchen, &setupOptions);
+    status = bake_build_setup(g_context);
     if (status) {
-        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+        VLOG_ERROR("bake", "failed to setup build environment: %s\n", strerror(errno));
         goto cleanup;
     }
 
@@ -397,7 +360,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     vlog_content_set_index(3);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
 
-    status = kitchen_recipe_source(&g_kitchen);
+    status = build_step_source(g_context);
     if (status) {
         vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
         goto cleanup;
@@ -409,7 +372,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     vlog_content_set_index(4);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
 
-    status = kitchen_recipe_make(&g_kitchen);
+    status = build_step_make(g_context);
     if (status) {
         vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
         goto cleanup;
@@ -421,7 +384,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     vlog_content_set_index(5);
     vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
 
-    status = kitchen_recipe_pack(&g_kitchen);
+    status = build_step_pack(g_context);
     if (status) {
         vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
     }
@@ -432,6 +395,6 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
 cleanup:
     vlog_refresh(stdout);
     vlog_end();
-    kitchen_destroy(&g_kitchen);
+    build_context_destroy(g_context);
     return status;
 }

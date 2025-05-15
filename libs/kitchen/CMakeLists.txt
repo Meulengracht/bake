@@ -43,9 +43,6 @@ add_sources(
     kitchen_step_clean.c
     kitchen_step_make.c
     kitchen_step_pack.c
-    recipe_cache.c
-    recipe_utils.c
-    recipe.c
 )
 
 add_library(kitchen STATIC ${KITCHEN_SRCS})

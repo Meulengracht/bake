@@ -1,5 +1,5 @@
 /**
- * Copyright, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,29 +16,14 @@
  * 
  */
 
-#ifndef __CHEF_REMOTE_H__
-#define __CHEF_REMOTE_H__
+#include <chef/list.h>
+#include <chef/platform.h>
+#include <stdlib.h>
+#include <vlog.h>
 
-#include <gracht/client.h>
+#include "build.h"
 
-/**
- * @brief
- */
-extern int remote_pack(const char* path, const char* const* envp, char** imagePath);
-
-/**
- * @brief
- */
-extern int remote_unpack(const char* imagePath, const char* destination);
-
-/**
- * @brief
- */
-extern int remote_upload(const char* path, char** downloadUrl);
-
-/**
- * @brief
- */
-extern int remote_download(const char* url, const char* path);
-
-#endif //!__CHEF_REMOTE_H__
+void build_context_destroy(struct __bake_build_context* bctx)
+{
+    
+}

@@ -428,7 +428,7 @@ static int __prep_ingredient_list(struct list* list, const char* platform, const
     return 0;
 }
 
-static int __prep_ingredients(struct recipe* recipe, const char* platform, const char* arch, struct kitchen_setup_options* kitchenOptions)
+static int __ensure_ingredients(struct recipe* recipe, const char* platform, const char* arch, struct kitchen_setup_options* kitchenOptions)
 {
     struct list_item* item;
     int               status;
@@ -719,7 +719,7 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
     }
     cleanupKitchen = 1;
 
-    status = __prep_ingredients(recipe, options->platform, options->architecture, &setupOptions);
+    status = __ensure_ingredients(recipe, options->platform, options->architecture, &setupOptions);
     if (status) {
         VLOG_ERROR("cookd", "failed to fetch ingredients for build id %s: %s\n", id, strerror(errno));
         goto cleanup;
