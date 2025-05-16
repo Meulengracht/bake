@@ -40,10 +40,10 @@ static void __initialize_pack_options(
 {
     memset(options, 0, sizeof(struct __pack_options));
     options->name             = pack->name;
-    options->sysroot_dir      = bctx->host_chroot;
+    options->sysroot_dir      = bctx->rootfs_path;
     options->output_dir       = bctx->host_cwd;
-    options->input_dir        = bctx->host_install_path;
-    options->ingredients_root = bctx->host_build_ingredients_path;
+    options->input_dir        = bctx->install_path;
+    options->ingredients_root = bctx->build_ingredients_path;
     options->platform         = bctx->target_platform;
     options->architecture     = bctx->target_architecture;
 
@@ -180,10 +180,10 @@ int build_step_pack(struct __bake_build_context* bctx)
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         
         status = __copy_files_with_filters(
-            bctx->host_build_ingredients_path,
+            bctx->build_ingredients_path,
             NULL,
             &ingredient->filters,
-            bctx->host_install_path
+            bctx->install_path
         );
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to include ingredient %s\n", ingredient->name);

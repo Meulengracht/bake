@@ -200,8 +200,10 @@ cleanup:
 
 int pack_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    char* path = NULL;
-    int   status;
+    struct list_item*   item;
+    struct build_cache* cache = NULL;
+    char*               path = NULL;
+    int                 status;
 
     // handle individual help command
     if (argc > 2) {
@@ -227,6 +229,44 @@ int pack_main(int argc, char** argv, char** envp, struct bake_command_options* o
         return -1;
     }
 
+    // we need to load the recipe cache
+    status = build_cache_create(options->recipe, options->cwd, &cache);
+    if (status) {
+        VLOG_ERROR("kitchen", "failed to initialize build cache\n");
+        return -1;
+    }
 
+    // then construct the options
+
+
+    // include ingredients marked for packing
+    list_foreach(&bctx->recipe->environment.runtime.ingredients, item) {
+        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
+        
+        status = __copy_files_with_filters(
+            bctx->build_ingredients_path,
+            NULL,
+            &ingredient->filters,
+            bctx->install_path
+        );
+        if (status) {
+            VLOG_ERROR("bake", "kitchen_recipe_pack: failed to include ingredient %s\n", ingredient->name);
+            goto cleanup;
+        }
+    }
+
+    list_foreach(&bctx->recipe->packs, item) {
+        struct recipe_pack*   pack = (struct recipe_pack*)item;
+        struct __pack_options packOptions;
+
+        __initialize_pack_options(bctx, &packOptions, pack);
+        status = kitchen_pack(&packOptions);
+        if (status) {
+            VLOG_ERROR("bake", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);
+            goto cleanup;
+        }
+    }
+
+cleanup:
     return status;
 }

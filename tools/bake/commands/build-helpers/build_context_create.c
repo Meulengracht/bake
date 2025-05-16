@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <stdlib.h>
@@ -31,6 +32,16 @@ static char* __get_username(void) {
     return platform_strdup(&tmp[0]);
 }
 
+static int __construct_paths(struct __bake_build_context* bctx) {
+    const char* rootfs = chef_dirs_kitchen(build_cache_uuid(bctx->build_cache));
+
+    bctx->rootfs_path = rootfs;
+    bctx->install_path = strpathjoin(rootfs, "chef", "install");
+    bctx->build_ingredients_path = strpathjoin(
+        rootfs, "chef", "ingredients", bctx->target_platform, bctx->target_architecture);
+    return 0;
+}
+
 #else
 static char* __get_username(void) {
     return platform_strdup("none");
@@ -42,7 +53,7 @@ static char* __fmt_env_option(const char* name, const char* value)
     char  tmp[512];
     char* result;
     snprintf(&tmp[0], sizeof(tmp), "%s=%s", name, value);
-    result = strdup(&tmp[0]);
+    result = platform_strdup(&tmp[0]);
     if (result == NULL) {
         VLOG_FATAL("kitchen", "failed to allocate memory for environment option\n");
     }
@@ -100,15 +111,21 @@ struct __bake_build_context* build_context_create(struct __bake_build_options* o
         return NULL;
     }
 
-    bctx->bakectl_path = strdup("/usr/bin/bakectl");
-    bctx->host_cwd = strdup(options->cwd);
     bctx->recipe = options->recipe;
-    bctx->recipe_path = strdup(options->recipe_path);
     bctx->build_cache = options->build_cache;
+    bctx->bakectl_path = platform_strdup("/usr/bin/bakectl");
+    bctx->host_cwd = platform_strdup(options->cwd);
+    bctx->recipe_path = platform_strdup(options->recipe_path);
+    bctx->target_platform = platform_strdup(options->target_platform);
+    bctx->target_architecture = platform_strdup(options->target_architecture);
     memcpy(&bctx->cvd_address, options->cvd_address, sizeof(struct chef_config_address));
 
     // Before paths, but after all the other setup, setup base environment
     bctx->base_environment = __initialize_env(options);
+
+    if (__construct_paths(bctx)) {
+        VLOG_ERROR("bake", "build_context_create: failed to allocate memory for paths\n");
+    }
 
     // initialize cvd client
     if (bake_client_initialize(bctx)) {

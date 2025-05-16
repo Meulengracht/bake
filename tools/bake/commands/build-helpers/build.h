@@ -45,11 +45,18 @@ struct __bake_build_options {
 };
 
 struct __bake_build_context {
-    struct recipe*       recipe;
-    const char*          recipe_path;
+    struct recipe*      recipe;
+    const char*         recipe_path;
     struct build_cache* build_cache;
-    const char*          bakectl_path;
-    const char*          host_cwd;
+    
+    const char*         host_cwd;
+    const char*         bakectl_path;
+    const char*         rootfs_path;
+    const char*         install_path; // inside <rootfs>
+    const char*         build_ingredients_path; // inside <rootfs>
+
+    const char*         target_architecture;
+    const char*         target_platform;
 
     const char* const*         base_environment;
     struct chef_config_address cvd_address;
