@@ -200,7 +200,7 @@ static int __resolve_pe_dependencies(struct kitchen_resolve* resolve, struct __r
     return 0;
 }
 
-static int __resolve_command(struct recipe_pack_command* command, struct list* resolves, struct pack_resolve_commands_options* options)
+static int __resolve_command(struct recipe_pack_command* command, struct list* resolves, struct __pack_resolve_commands_options* options)
 {
     struct kitchen_resolve* resolve;
     const char*             path;
@@ -252,7 +252,7 @@ static int __resolve_command(struct recipe_pack_command* command, struct list* r
     return 0;
 }
 
-static int __resolve_commands(struct list* commands, struct list* resolves, struct pack_resolve_commands_options* options)
+static int __resolve_commands(struct list* commands, struct list* resolves, struct __pack_resolve_commands_options* options)
 {
     struct list_item* item;
     int               status;
@@ -272,7 +272,7 @@ static int __resolve_commands(struct list* commands, struct list* resolves, stru
     return 0;
 }
 
-int pack_resolve_commands(struct list* commands, struct list* resolves, struct pack_resolve_commands_options* options)
+int pack_resolve_commands(struct list* commands, struct list* resolves, struct __pack_resolve_commands_options* options)
 {
     int status;
 

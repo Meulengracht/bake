@@ -17,13 +17,15 @@
  */
 
 #include <errno.h>
-#include "../pack/resolvers/resolvers.h"
+#include "resolvers.h"
 #include <chef/platform.h>
 #include <chef/list.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
+
+#ifdef CHEF_ON_LINUX
  
 struct __path_entry {
     struct list_item list_header;
@@ -182,3 +184,5 @@ const char* resolve_platform_dependency(const char* sysroot, struct kitchen_reso
     free(path);
     return NULL;
 }
+
+#endif //CHEF_ON_LINUX

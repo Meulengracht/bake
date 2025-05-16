@@ -17,12 +17,12 @@
  * 
  */
 
-#ifndef __KITCHEN_PACK_H__
-#define __KITCHEN_PACK_H__
+#ifndef __BAKE_PACK_H__
+#define __BAKE_PACK_H__
 
 #include <chef/package.h>
 
-struct kitchen_pack_options {
+struct __pack_options {
     const char*            name;
     const char*            sysroot_dir;
     const char*            output_dir;
@@ -52,7 +52,7 @@ struct kitchen_pack_options {
     struct list*           commands; // list<recipe_pack_command>
 };
 
-struct pack_resolve_commands_options {
+struct ____pack_resolve_commands_options {
     const char* sysroot;
     const char* install_root;
     const char* ingredients_root;
@@ -67,7 +67,7 @@ struct pack_resolve_commands_options {
  * @param options 
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
-extern int kitchen_pack(struct kitchen_pack_options* options);
+extern int bake_pack(struct __pack_options* options);
 
 /**
  * @brief 
@@ -76,7 +76,7 @@ extern int kitchen_pack(struct kitchen_pack_options* options);
  * @param[In] resolves
  * @return int 
  */
-extern int pack_resolve_commands(struct list* commands, struct list* resolves, struct pack_resolve_commands_options* options);
+extern int pack_resolve_commands(struct list* commands, struct list* resolves, struct ____pack_resolve_commands_options* options);
 
 /**
  * @brief 
@@ -85,4 +85,4 @@ extern int pack_resolve_commands(struct list* commands, struct list* resolves, s
  */
 extern void pack_resolve_destroy(struct list* resolves);
 
-#endif //!__KITCHEN_PACK_H__
+#endif //!__BAKE_PACK_H__

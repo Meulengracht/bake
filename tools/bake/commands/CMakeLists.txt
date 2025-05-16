@@ -16,6 +16,15 @@ add_library(bake-commands STATIC
     build.c
     clean.c
 
+    # packing 
+    pack-helpers/resolvers/common.c
+    pack-helpers/resolvers/elf.c
+    pack-helpers/resolvers/pe.c
+    pack-helpers/resolvers/resolver_linux.c
+    pack-helpers/commands.c
+    pack-helpers/container.c
+    pack.c
+
     # stuff
     fridge.c
     init.c

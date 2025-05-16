@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,15 +16,18 @@
  * 
  */
 
-#include <chef/list.h>
+#include <errno.h>
+#include <chef/dirs.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <signal.h>
 #include <vlog.h>
 
-#include "build.h"
-
-#include "../pack-helpers/pack.h"
+#include "commands.h"
+#include "pack-helpers/pack.h"
 
 // include dirent.h for directory operations
 #if defined(CHEF_ON_WINDOWS)
@@ -32,6 +35,32 @@
 #else
 #include <dirent.h>
 #endif
+
+static void __print_help(void)
+{
+    printf("Usage: bake pack [options] <dir>\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  --purge\n");
+    printf("      cleans all active recipes in the kitchen area\n");
+    printf("  -cc, --cross-compile\n");
+    printf("      Cross-compile for another platform or/and architecture. This switch\n");
+    printf("      can be used with two different formats, either just like\n");
+    printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
+    printf("  -h, --help\n");
+    printf("      Shows this help message\n");
+}
+
+static void __cleanup_systems(int sig)
+{
+    // printing as a part of a signal handler is not safe
+    // but we live dangerously
+    printf("termination requested, cleaning up\n");
+
+    // Do a quick exit, which is recommended to do in signal handlers
+    // and use the signal as the exit code
+    _Exit(-sig);
+}
 
 static void __initialize_pack_options(
     struct __bake_build_context* bctx,
@@ -169,40 +198,35 @@ cleanup:
     return status;
 }
 
-int build_step_pack(struct __bake_build_context* bctx)
+int pack_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    struct list_item* item;
-    int               status;
-    VLOG_DEBUG("bake", "kitchen_recipe_pack()\n");
+    char* path = NULL;
+    int   status;
 
-    // include ingredients marked for packing
-    list_foreach(&bctx->recipe->environment.runtime.ingredients, item) {
-        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        
-        status = __copy_files_with_filters(
-            bctx->host_build_ingredients_path,
-            NULL,
-            &ingredient->filters,
-            bctx->host_install_path
-        );
-        if (status) {
-            VLOG_ERROR("bake", "kitchen_recipe_pack: failed to include ingredient %s\n", ingredient->name);
-            goto cleanup;
+    // handle individual help command
+    if (argc > 2) {
+        for (int i = 2; i < argc; i++) {
+            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+                __print_help();
+                return 0;
+            } else if (argv[i][0] != '-') {
+                path = argv[i];
+            }
         }
     }
 
-    list_foreach(&bctx->recipe->packs, item) {
-        struct recipe_pack*   pack = (struct recipe_pack*)item;
-        struct __pack_options packOptions;
-
-        __initialize_pack_options(bctx, &packOptions, pack);
-        status = kitchen_pack(&packOptions);
-        if (status) {
-            VLOG_ERROR("bake", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);
-            goto cleanup;
-        }
+    if (path == NULL) {
+        fprintf(stderr, "bake: no path provided\n");
+        __print_help();
+        return -1;
     }
 
-cleanup:
+    if (options->recipe == NULL) {
+        fprintf(stderr, "bake: no recipe provided\n");
+        __print_help();
+        return -1;
+    }
+
+
     return status;
 }

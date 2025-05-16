@@ -24,10 +24,6 @@ elseif (WIN32)
     add_sources_glob(windows/*.c)
 endif()
 
-# TODO: maybe not glob this tbh
-add_sources_glob(pack/*.c)
-add_sources_glob(pack/resolvers/*.c)
-
 # host pkg-managers implementations
 add_sources(
     pkgmgrs/pkg-config.c
@@ -37,7 +33,6 @@ add_sources(
 add_sources(
     ${GENERATED_SRCS}    
 
-    kitchen_client.c
     kitchen_destroy.c
     kitchen_part_source.c
     kitchen_step_clean.c
