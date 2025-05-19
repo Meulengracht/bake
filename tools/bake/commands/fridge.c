@@ -17,7 +17,7 @@
  */
 
 #include <chef/client.h>
-#include <libfridge.h>
+#include <chef/fridge.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <stdio.h>

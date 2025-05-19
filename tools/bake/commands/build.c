@@ -28,7 +28,7 @@
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <ctype.h>
-#include <libfridge.h>
+#include <chef/fridge.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,7 +80,7 @@ static int __ensure_toolchains(struct list* platforms)
             .version = version,
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
-        }, NULL);
+        });
         if (status) {
             free(name);
             free(channel);
@@ -107,7 +107,7 @@ static int __ensure_ingredient_list(struct list* list, const char* platform, con
             .version = ingredient->version,
             .arch = arch,
             .platform = platform
-        }, NULL);
+        });
         if (status) {
             VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->name);
             return status;

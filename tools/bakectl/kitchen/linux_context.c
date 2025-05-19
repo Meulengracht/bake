@@ -16,9 +16,10 @@
  * 
  */
 
-#include <chef/dirs.h>
-#include <chef/libbake.h>
-#include <chef/libpkgmgr.h>
+#include <chef/bake.h>
+#include <chef/fridge.h>
+#include <chef/ingredient.h>
+#include <chef/pkgmgr.h>
 #include <chef/platform.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -145,11 +146,11 @@ static int __update_build_envs(struct __bakelib_context* context)
         const char*               path = NULL;
         
         status = fridge_ingredient_path(&(struct fridge_ingredient) {
-            .name = ingredient->name,
-            .channel = ingredient->channel,
-            .version = ingredient->version,
-            .arch = arch,
-            .platform = platform
+            .name = recIngredient->name,
+            .channel = recIngredient->channel,
+            .version = recIngredient->version,
+            .arch = context->build_architecture,
+            .platform = context->build_platform
         }, &path);
 
         status = ingredient_open(path, &ingredient);
@@ -179,11 +180,11 @@ static int __update_build_envs(struct __bakelib_context* context)
 // ** /chef/project
 // * This is mapped in by the host, and contains a RO path of the
 // * source code for the project
-// ** /chef/fridge
+// ** /chef/fridge & /chef/store
 // * This is mapped by the host, and contains a RO path of the 
 // * hosts fridge storage. We use this to load packs and toolchains
 // * needed
-struct __bakelib_context* __bakelib_new(
+struct __bakelib_context* __bakelib_context_new(
     struct recipe*     recipe,
     const char*        recipe_path,
     const char* const* envp)

@@ -34,6 +34,7 @@ struct __bakelib_context {
     const char*          build_architecture;
     char**               build_environment;
 
+    const char* project_directory;
     const char* build_directory;
     const char* build_ingredients_directory;
     const char* build_toolchains_directory;
@@ -43,7 +44,7 @@ struct __bakelib_context {
 /**
  * @brief
  */
-extern struct __bakelib_context* __bakelib_new(
+extern struct __bakelib_context* __bakelib_context_new(
     struct recipe*     recipe,
     const char*        recipe_path,
     const char* const* envp);

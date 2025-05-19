@@ -7,4 +7,4 @@ set (BAKECTL_SRCS
 )
 
 add_executable(bakectl ${BAKECTL_SRCS})
-target_link_libraries(bakectl PRIVATE bakectl-commands platform vlog)
+target_link_libraries(bakectl PRIVATE bakectl-commands libbake platform vlog)

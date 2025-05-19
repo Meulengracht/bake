@@ -23,8 +23,6 @@
 #include <liboven.h>
 
 struct bakectl_command_options {
-    struct recipe* recipe;
-    const char*    cwd;
     const char*    part;
     const char*    step;
 };

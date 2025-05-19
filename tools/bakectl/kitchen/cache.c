@@ -17,6 +17,7 @@
  */
 
 #include <ctype.h>
+#include <chef/cache.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <errno.h>

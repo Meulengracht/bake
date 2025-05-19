@@ -20,7 +20,7 @@
 #define __FRIDGE_STORE_H__
 
 #include <chef/platform.h>
-#include <libfridge.h>
+#include <chef/fridge.h>
 
 struct fridge_store;
 

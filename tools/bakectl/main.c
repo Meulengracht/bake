@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <chef/bake.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <stdio.h>
@@ -27,14 +28,14 @@
 #include "chef-config.h"
 #include "commands/commands.h"
 
-extern int init_main(int argc, char** argv, char** envp, struct bakectl_command_options* options);
-extern int source_main(int argc, char** argv, char** envp, struct bakectl_command_options* options);
-extern int build_main(int argc, char** argv, char** envp, struct bakectl_command_options* options);
-extern int clean_main(int argc, char** argv, char** envp, struct bakectl_command_options* options);
+extern int init_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
+extern int source_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
+extern int build_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
+extern int clean_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
 
 struct command_handler {
     char* name;
-    int (*handler)(int argc, char** argv, char** envp, struct bakectl_command_options* options);
+    int (*handler)(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
 };
 
 static struct command_handler g_commands[] = {
@@ -58,8 +59,6 @@ static void __print_help(void)
     printf("  clean       runs the clean backend of the specified part and step\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -p, --project\n");
-    printf("      Root path of the project\n");
     printf("  -r, --recipe\n");
     printf("      Relative path (of --project) or absolute path to the recipe for the project\n");
     printf("  -v..\n");
@@ -127,10 +126,12 @@ int main(int argc, char** argv, char** envp)
     struct command_handler*        command    = &g_commands[0];
     struct bakectl_command_options options    = { 0 };
     char*                          recipePath = NULL;
-    void*                          buffer;
-    size_t                         length;
     int                            status;
     int                            logLevel = VLOG_LEVEL_TRACE;
+    struct recipe*                 recipe;
+    struct __bakelib_context*      context;
+    void*                          buffer;
+    size_t                         length;
     
     // first argument must be the command if not --help or --version
     if (argc > 1) {
@@ -152,10 +153,7 @@ int main(int argc, char** argv, char** envp)
 
         if (argc > 2) {
             for (int i = 2; i < argc; i++) {
-                if (!strcmp(argv[i], "-p") || !strcmp(argv[i], "--project")) {
-                    options.cwd = argv[i + 1];
-                    i++;
-                } else if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--recipe")) {
+                if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--recipe")) {
                     recipePath = argv[i + 1];
                     i++;
                 } else if (!strcmp(argv[i], "-s") || !strcmp(argv[i], "--step")) {
@@ -174,36 +172,48 @@ int main(int argc, char** argv, char** envp)
         }
     }
 
-    if (options.cwd == NULL) {
-        fprintf(stderr, "bakectl: no project path specified\n");
-        return -1;
+    // check against recipe
+    if (recipePath == NULL) {
+        fprintf(stderr, "bakectl: --recipe must be provided\n");
+        return status;
     }
 
-    // Switch to the project root as working directory
-    status = platform_chdir(options.cwd);
+    status = __read_recipe(recipePath, &buffer, &length);
     if (status) {
-        fprintf(stderr, "bakectl: failed to switch directory to %s\n", options.cwd);
-        return -1;
+        fprintf(stderr, "bakectl: failed to load recipe %s\n", recipePath);
+        return status;
     }
 
-    if (recipePath != NULL) {
-        status = __read_recipe(recipePath, &buffer, &length);
-        if (!status) {
-            status = recipe_parse(buffer, length, &options.recipe);
-            free(buffer);
-            if (status) {
-                fprintf(stderr, "bakectl: failed to parse recipe\n");
-                return status;
-            }
-        }
+    status = recipe_parse(buffer, length, &recipe);
+    free(buffer);
+    if (status) {
+        fprintf(stderr, "bakectl: failed to parse recipe\n");
+        return status;
     }
 
     // initialize the logging system
     vlog_initialize((enum vlog_level)logLevel);
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
 
-    status = command->handler(argc, argv, envp, &options);
-    recipe_destroy(options.recipe);
+    // create bake context
+    context = __bakelib_context_new(recipe, recipePath, envp);
+    if (context == NULL) {
+        VLOG_ERROR("bakectl", "failed to create bake context\n");
+        return -1;
+    }
+
+    // Switch to the project root as working directory
+    status = platform_chdir(context->project_directory);
+    if (status) {
+        VLOG_ERROR("bakectl", "failed to switch directory to %s\n", context->project_directory);
+        goto cleanup;
+    }
+
+    status = command->handler(argc, argv, context, &options);
+
+cleanup:
+    __bakelib_context_delete(context);
+    recipe_destroy(recipe);
     vlog_cleanup();
     return status;
 }

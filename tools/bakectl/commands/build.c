@@ -191,7 +191,7 @@ static int __build_part(struct recipe* recipe, const char* partName, const char*
     return status;
 }
 
-int build_main(int argc, char** argv, char** envp, struct bakectl_command_options* options)
+int build_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options)
 {
     struct oven_initialize_options ovenOpts = { 0 };
     int                            status;

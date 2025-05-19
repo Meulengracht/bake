@@ -21,7 +21,7 @@
 #include <chef/dirs.h>
 #include <chef/ingredient.h>
 #include "inventory.h"
-#include <libfridge.h>
+#include <chef/fridge.h>
 #include <limits.h>
 #include <chef/platform.h>
 #include <stdio.h>

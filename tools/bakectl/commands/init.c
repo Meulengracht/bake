@@ -18,6 +18,8 @@
 
 #include <errno.h>
 #include <chef/list.h>
+#include <chef/bake.h>
+#include <chef/cache.h>
 #include <chef/platform.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -50,35 +52,81 @@ static int __ensure_chef_directories(void)
     const char* architecture = __get_architecture();
     char        buffer[1024];
 
-    VLOG_DEBUG("kitchen", "__ensure_hostdirs()\n");
+    VLOG_DEBUG("bake", "__ensure_hostdirs()\n");
 
 
     snprintf(&buffer[0], sizeof(buffer), "/chef/build/%s/%s", platform, architecture);
     if (platform_mkdir(&buffer[0])) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
+        VLOG_ERROR("bake", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
         return -1;
     }
 
     snprintf(&buffer[0], sizeof(buffer), "/chef/ingredients/%s/%s", platform, architecture);
     if (platform_mkdir(&buffer[0])) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
+        VLOG_ERROR("bake", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
         return -1;
     }
 
     snprintf(&buffer[0], sizeof(buffer), "/chef/install/%s/%s", platform, architecture);
     if (platform_mkdir(&buffer[0])) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
+        VLOG_ERROR("bake", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
         return -1;
     }
 
     if (platform_mkdir("/chef/toolchains")) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create /chef/toolchains\n");
+        VLOG_ERROR("bake", "__ensure_hostdirs: failed to create /chef/toolchains\n");
         return -1;
     }
     return 0;
 }
 
-static int __write_update_script(struct recipe* recipe)
+static char* __join_packages(struct recipe_cache_package_change* changes, int count, enum recipe_cache_change_type changeType)
+{
+    struct list_item* i;
+    char*             buffer;
+    size_t            bufferLength = 64 * 1024; // 64KB buffer for packages
+    size_t            length = 0;
+
+    if (changes == NULL || count == 0) {
+        return NULL;
+    }
+
+    buffer = calloc(bufferLength, 1); 
+    if (buffer == NULL) {
+        return NULL;
+    }
+
+    for (int i = 0; i < count; i++) {
+        struct recipe_cache_package_change* pkg = &changes[i];
+        size_t                              pkgLength;
+        if (pkg->type != changeType) {
+            continue;
+        }
+
+        pkgLength = strlen(pkg->name);
+        if ((length + pkgLength) >= bufferLength) {
+            VLOG_ERROR("kitchen", "the length of package %s exceeded the total length of package names\n", pkg->name);
+            free(buffer);
+            return NULL;
+        }
+
+        if (buffer[0] == 0) {
+            strcat(buffer, pkg->name);
+            length += pkgLength;
+        } else {
+            strcat(buffer, " ");
+            strcat(buffer, pkg->name);
+            length += pkgLength + 1;
+        }
+    }
+    if (length == 0) {
+        free(buffer);
+        return NULL;
+    }
+    return buffer;
+}
+
+static int __write_update_script(struct recipe_cache* cache)
 {
     struct recipe_cache_package_change* changes;
     int                                 count;
@@ -87,9 +135,9 @@ static int __write_update_script(struct recipe* recipe)
     char*                               aptpkgs;
     char*                               target;
 
-    status = recipe_cache_calculate_package_changes(kitchen->recipe_cache, &changes, &count);
+    status = recipe_cache_calculate_package_changes(cache, &changes, &count);
     if (status) {
-        VLOG_ERROR("kitchen", "__write_update_script: failed to calculate package differences\n");
+        VLOG_ERROR("bake", "__write_update_script: failed to calculate package differences\n");
         return status;
     }
 
@@ -99,14 +147,14 @@ static int __write_update_script(struct recipe* recipe)
 
     target = strpathjoin("chef", "update.sh", NULL);
     if (target == NULL) {
-        VLOG_ERROR("kitchen", "__write_update_script: failed to allocate memory for script path\n", target);
+        VLOG_ERROR("bake", "__write_update_script: failed to allocate memory for script path\n", target);
         recipe_cache_package_changes_destroy(changes, count);
         return -1;
     }
 
     stream = fopen(target, "w+");
     if (stream == NULL) {
-        VLOG_ERROR("kitchen", "__write_update_script: failed to allocate a script stream\n");
+        VLOG_ERROR("bake", "__write_update_script: failed to allocate a script stream\n");
         recipe_cache_package_changes_destroy(changes, count);
         free(target);
         return -1;
@@ -134,7 +182,7 @@ static int __write_update_script(struct recipe* recipe)
     // chmod to executable
     status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
     if (status) {
-        VLOG_ERROR("kitchen", "__write_update_script: failed to fixup permissions for %s\n", target);
+        VLOG_ERROR("bake", "__write_update_script: failed to fixup permissions for %s\n", target);
     }
     recipe_cache_package_changes_destroy(changes, count);
     free(target);
@@ -153,13 +201,13 @@ static int __write_setup_hook_script(struct recipe* recipe)
 
     target = strpathjoin("chef", "hook-setup.sh", NULL);
     if (target == NULL) {
-        VLOG_ERROR("kitchen", "__write_setup_hook_script: failed to allocate memory for script path\n", target);
+        VLOG_ERROR("bake", "__write_setup_hook_script: failed to allocate memory for script path\n", target);
         return -1;
     }
 
     stream = fopen(target, "w+");
     if (stream == NULL) {
-        VLOG_ERROR("kitchen", "__write_setup_hook_script: failed to allocate a script stream\n");
+        VLOG_ERROR("bake", "__write_setup_hook_script: failed to allocate a script stream\n");
         free(target);
         return -1;
     }
@@ -171,194 +219,253 @@ static int __write_setup_hook_script(struct recipe* recipe)
     // chmod to executable
     status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
     if (status) {
-        VLOG_ERROR("kitchen", "__write_setup_hook_script: failed to fixup permissions for %s\n", target);
+        VLOG_ERROR("bake", "__write_setup_hook_script: failed to fixup permissions for %s\n", target);
     }
     free(target);
     return status;
 }
 
-static int __write_resources(struct kitchen* kitchen, struct kitchen_setup_options* options)
+static int __write_resources(struct __bakelib_context* context)
 {
     int status;
 
-    status = __write_update_script(kitchen);
+    status = __write_update_script(context->cache);
     if (status) {
-        VLOG_ERROR("kitchen", "__write_resources: failed to write update resource\n");
+        VLOG_ERROR("bake", "__write_resources: failed to write update resource\n");
         return status;
     }
 
-    status = __write_setup_hook_script(kitchen, options);
+    status = __write_setup_hook_script(context->recipe);
     if (status) {
-        VLOG_ERROR("kitchen", "__write_resources: failed to write hook resources\n");
+        VLOG_ERROR("bake", "__write_resources: failed to write hook resources\n");
         return status;
     }
 
     return status;
 }
 
-static int __add_kitchen_ingredient(const char* name, const char* path, struct list* kitchenIngredients)
+static int __setup_ingredient(struct __bakelib_context* context, struct list* ingredients, const char* hostPath)
 {
-    struct kitchen_ingredient* ingredient;
-    VLOG_DEBUG("bake", "__add_kitchen_ingredient(name=%s, path=%s)\n", name, path);
+    struct list_item* i;
+    int               status;
 
-    ingredient = malloc(sizeof(struct kitchen_ingredient));
-    if (ingredient == NULL) {
-        return -1;
+    if (ingredients == NULL) {
+        return 0;
     }
-    memset(ingredient, 0, sizeof(struct kitchen_ingredient));
 
-    ingredient->name = name;
-    ingredient->path = path;
+    list_foreach(ingredients, i) {
+        struct kitchen_ingredient* kitchenIngredient = (struct kitchen_ingredient*)i;
+        struct ingredient*         ingredient;
 
-    list_add(kitchenIngredients, &ingredient->list_header);
-    return 0;
-}
+        status = ingredient_open(kitchenIngredient->path, &ingredient);
+        if (status) {
+            VLOG_ERROR("bake", "__setup_ingredients: failed to open %s\n", kitchenIngredient->name);
+            return -1;
+        }
 
-static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredients)
-{
-    struct list_item* item;
-    VLOG_DEBUG("bake", "__prep_toolchains()\n");
-
-    list_foreach(platforms, item) {
-        struct recipe_platform* platform = (struct recipe_platform*)item;
-        int                     status;
-        const char*             path;
-        char*                   name;
-        char*                   channel;
-        char*                   version;
-        if (platform->toolchain == NULL) {
+        // Only unpack ingredients, we may encounter toolchains here.
+        if (ingredient->package->type != CHEF_PACKAGE_TYPE_INGREDIENT) {
+            ingredient_close(ingredient);
             continue;
         }
-        
-        status = recipe_parse_platform_toolchain(platform->toolchain, &name, &channel, &version);
-        if (status) {
-            VLOG_ERROR("bake", "failed to parse toolchain %s for platform %s", platform->toolchain, platform->name);
-            return status;
-        }
 
-        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
-            .name = name,
-            .channel = channel,
-            .version = version,
-            .arch = CHEF_ARCHITECTURE_STR,
-            .platform = CHEF_PLATFORM_STR
-        }, &path);
+        status = ingredient_unpack(ingredient, hostPath, NULL, NULL);
         if (status) {
-            free(name);
-            free(channel);
-            free(version);
-            VLOG_ERROR("bake", "failed to fetch ingredient %s\n", name);
-            return status;
+            ingredient_close(ingredient);
+            VLOG_ERROR("bake", "__setup_ingredients: failed to setup %s\n", kitchenIngredient->name);
+            return -1;
         }
         
-        status = __add_kitchen_ingredient(name, path, kitchenIngredients);
+        if (kitchen->pkg_manager != NULL) {
+            status = kitchen->pkg_manager->make_available(kitchen->pkg_manager, ingredient);
+        }
+        ingredient_close(ingredient);
         if (status) {
-            free(name);
-            free(channel);
-            free(version);
-            VLOG_ERROR("bake", "failed to mark ingredient %s\n", name);
-            return status;
+            VLOG_ERROR("bake", "__setup_ingredients: failed to make %s available\n", kitchenIngredient->name);
+            return -1;
         }
     }
     return 0;
 }
 
-static int __prep_ingredient_list(struct list* list, const char* platform, const char* arch, struct list* kitchenIngredients)
+static int __setup_toolchains(struct list* ingredients, const char* hostPath)
 {
-    struct list_item* item;
+    struct list_item* i;
     int               status;
-    VLOG_DEBUG("bake", "__prep_ingredient_list(platform=%s, arch=%s)\n", platform, arch);
+    char              buff[PATH_MAX];
 
-    list_foreach(list, item) {
-        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        const char*               path = NULL;
+    if (ingredients == NULL) {
+        return 0;
+    }
 
-        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
-            .name = ingredient->name,
-            .channel = ingredient->channel,
-            .version = ingredient->version,
-            .arch = arch,
-            .platform = platform
-        }, &path);
+    list_foreach(ingredients, i) {
+        struct kitchen_ingredient* kitchenIngredient = (struct kitchen_ingredient*)i;
+        struct ingredient*         ingredient;
+
+        status = ingredient_open(kitchenIngredient->path, &ingredient);
         if (status) {
-            VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->name);
-            return status;
+            VLOG_ERROR("bake", "__setup_toolchains: failed to open %s\n", kitchenIngredient->name);
+            return -1;
         }
-        
-        status = __add_kitchen_ingredient(ingredient->name, path, kitchenIngredients);
+
+        if (ingredient->package->type != CHEF_PACKAGE_TYPE_TOOLCHAIN) {
+            ingredient_close(ingredient);
+            continue;
+        }
+
+        snprintf(&buff[0], sizeof(buff), "%s/%s", hostPath, kitchenIngredient->name);
+        if (platform_mkdir(&buff[0])) {
+            VLOG_ERROR("bake", "__setup_toolchains: failed to create %s\n", &buff[0]);
+            return -1;
+        }
+
+        status = ingredient_unpack(ingredient, &buff[0], NULL, NULL);
         if (status) {
-            VLOG_ERROR("bake", "failed to mark ingredient %s\n", ingredient->name);
-            return status;
+            ingredient_close(ingredient);
+            VLOG_ERROR("bake", "__setup_toolchains: failed to setup %s\n", kitchenIngredient->name);
+            return -1;
         }
+        ingredient_close(ingredient);
     }
     return 0;
 }
 
-static int __ensure_ingredients(struct recipe* recipe, const char* platform, const char* arch, struct kitchen_setup_options* kitchenOptions)
+static int __setup_ingredients(struct __bakelib_context* context)
 {
-    struct list_item* item;
-    int               status;
+    int status;
 
-    if (recipe->platforms.count > 0) {
-        VLOG_TRACE("bake", "preparing %i platforms\n", recipe->platforms.count);
-        status = __prep_toolchains(
-            &recipe->platforms,
-            &kitchenOptions->host_ingredients
-        );
-        if (status) {
-            return status;
-        }
+    status = __setup_ingredient(kitchen, &options->host_ingredients, kitchen->host_chroot);
+    if (status) {
+        return status;
     }
 
-    if (recipe->environment.host.ingredients.count > 0) {
-        VLOG_TRACE("bake", "preparing %i host ingredients\n", recipe->environment.host.ingredients.count);
-        status = __prep_ingredient_list(
-            &recipe->environment.host.ingredients,
-            CHEF_PLATFORM_STR,
-            CHEF_ARCHITECTURE_STR,
-            &kitchenOptions->host_ingredients
-        );
-        if (status) {
-            return status;
-        }
+    status = __setup_toolchains(&options->host_ingredients, kitchen->host_build_toolchains_path);
+    if (status) {
+        return status;
     }
 
-    if (recipe->environment.build.ingredients.count > 0) {
-        VLOG_TRACE("bake", "preparing %i build ingredients\n", recipe->environment.build.ingredients.count);
-        status = __prep_ingredient_list(
-            &recipe->environment.build.ingredients,
-            platform,
-            arch,
-            &kitchenOptions->build_ingredients
-        );
-        if (status) {
-            return status;
-        }
+    status = __setup_ingredient(kitchen, &options->build_ingredients, kitchen->host_build_ingredients_path);
+    if (status) {
+        return status;
     }
 
-    if (recipe->environment.runtime.ingredients.count > 0) {
-        VLOG_TRACE("bake", "preparing %i runtime ingredients\n", recipe->environment.runtime.ingredients.count);
-        status = __prep_ingredient_list(
-            &recipe->environment.runtime.ingredients,
-            platform,
-            arch,
-            &kitchenOptions->runtime_ingredients
-        );
-        if (status) {
-            return status;
-        }
+    status = __setup_ingredient(kitchen, &options->runtime_ingredients, kitchen->host_install_path);
+    if (status) {
+        return status;
     }
     return 0;
 }
 
-int init_main(int argc, char** argv, char** envp, struct bakectl_command_options* options)
+static int __update_ingredients(struct __bakelib_context* context)
 {
-    const char* architecture;
-    const char* platform;
-    int         status;
+    int status;
 
-    // catch CTRL-C
-    signal(SIGINT, __cleanup_systems);
+    if (recipe_cache_key_bool(context->cache, "setup_ingredients")) {
+        return 0;
+    }
+
+    VLOG_TRACE("bake", "installing project ingredients\n");
+    status = __setup_ingredients(context);
+    if (status) {
+        VLOG_ERROR("bake", "__update_ingredients: failed to setup project ingredients\n");
+        return status;
+    }
+
+    recipe_cache_transaction_begin(context->cache);
+    status = recipe_cache_key_set_bool(context->cache, "setup_ingredients", 1);
+    if (status) {
+        VLOG_ERROR("bake", "__update_ingredients: failed to mark ingredients step as done\n");
+        return status;
+    }
+    recipe_cache_transaction_commit(context->cache);
+    return 0;
+}
+
+static int __run_setup_hook(struct __bakelib_context* context)
+{
+    int          status;
+    char         buffer[512] = { 0 };
+    unsigned int pid;
+
+    if (options->setup_hook.bash == NULL) {
+        return 0;
+    }
+    
+    if (recipe_cache_key_bool(kitchen->recipe_cache, "setup_hook")) {
+        return 0;
+    }
+
+    VLOG_TRACE("kitchen", "executing setup hook\n");
+    snprintf(&buffer[0], sizeof(buffer), "/chef/hook-setup.sh");
+    status = kitchen_client_spawn(
+        kitchen,
+        &buffer[0],
+        CHEF_SPAWN_OPTIONS_WAIT,
+        &pid
+    );
+    if (status) {
+        VLOG_ERROR("kitchen", "__run_setup_hook: failed to execute setup hook\n");
+        return status;
+    }
+
+    recipe_cache_transaction_begin(kitchen->recipe_cache);
+    status = recipe_cache_key_set_bool(kitchen->recipe_cache, "setup_hook", 1);
+    if (status) {
+        VLOG_ERROR("kitchen", "__run_setup_hook: failed to mark setup hook as done\n");
+        return status;
+    }
+    recipe_cache_transaction_commit(kitchen->recipe_cache);
+    return 0;
+}
+
+static int __update_packages(struct kitchen* kitchen)
+{
+    struct recipe_cache_package_change* changes;
+    int                                 count;
+    int                                 status;
+    char                                buffer[512] = { 0 };
+    unsigned int                        pid;
+
+    // this function is kinda unique, to avoid dublicating stuff the API is complex in the
+    // sense that calling this with a NULL cache will just mark everything as _ADDED
+    status = recipe_cache_calculate_package_changes(kitchen->recipe_cache, &changes, &count);
+    if (status) {
+        VLOG_ERROR("kitchen", "__update_packages: failed to calculate package differences\n");
+        return status;
+    }
+
+    if (count == 0) {
+        return 0;
+    }
+
+    VLOG_TRACE("kitchen", "updating build packages\n");
+    snprintf(&buffer[0], sizeof(buffer), "/chef/update.sh");
+    status = kitchen_client_spawn(
+        kitchen,
+        &buffer[0],
+        CHEF_SPAWN_OPTIONS_WAIT,
+        &pid
+    );
+    if (status) {
+        VLOG_ERROR("kitchen", "__execute_script_in_container: failed to execute script\n");
+        goto exit;
+    }
+
+    recipe_cache_transaction_begin(kitchen->recipe_cache);
+    status = recipe_cache_commit_package_changes(kitchen->recipe_cache, changes, count);
+    if (status) {
+        goto exit;
+    }
+    recipe_cache_transaction_commit(kitchen->recipe_cache);
+
+exit:
+    recipe_cache_package_changes_destroy(changes, count);
+    return status;
+}
+
+int init_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options)
+{
+    int status;
 
     // handle individual help command
     if (argc > 1) {
@@ -370,33 +477,28 @@ int init_main(int argc, char** argv, char** envp, struct bakectl_command_options
         }
     }
 
-    if (options->recipe == NULL) {
-        fprintf(stderr, "bakectl: --recipe must be provided\n");
-        return -1;
-    }
-
-    
-    architecture = getenv("CHEF_TARGET_ARCH");
-    if (architecture == NULL) {
-        architecture = CHEF_ARCHITECTURE_STR;
-    }
-
-    platform = getenv("CHEF_TARGET_PLATFORM");
-    if (platform == NULL) {
-        platform = CHEF_PLATFORM_STR;
-    }
-
-    
-    // setup linux options
-    setupOptions.packages = &options->recipe->environment.host.packages;
-
-    // setup kitchen hooks
-    setupOptions.setup_hook.bash = options->recipe->environment.hooks.bash;
-    setupOptions.setup_hook.powershell = options->recipe->environment.hooks.powershell;
-    status = kitchen_setup(&g_kitchen, &setupOptions);
+    status = __write_resources(context);
     if (status) {
-        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-        goto cleanup;
+        VLOG_ERROR("bake", "kitchen_setup: failed to generate resources\n");
+        return status;
+    }
+
+    status = __update_ingredients(context);
+    if (status) {
+        VLOG_ERROR("bake", "kitchen_setup: failed to setup/refresh kitchen ingredients\n");
+        return status;
+    }
+
+    status = __update_packages(context);
+    if (status) {
+        VLOG_ERROR("bake", "kitchen_setup: failed to install/update rootfs packages\n");
+        return status;
+    }
+
+    status = __run_setup_hook(context);
+    if (status) {
+        VLOG_ERROR("bake", "kitchen_setup: failed to execute setup script: %s\n", strerror(errno));
+        return status;
     }
 
     return status;

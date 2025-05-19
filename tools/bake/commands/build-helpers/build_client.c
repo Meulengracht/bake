@@ -63,7 +63,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 }
 #endif
 
-static void __configure_inet4(struct sockaddr_storage* storage, struct __build_cvd_address* config)
+static void __configure_inet4(struct sockaddr_storage* storage, struct chef_config_address* config)
 {
     struct sockaddr_in* inet4 = (struct sockaddr_in*)storage;
 
@@ -72,7 +72,7 @@ static void __configure_inet4(struct sockaddr_storage* storage, struct __build_c
     inet4->sin_port = htons(config->port);
 }
 
-static int init_link_config(struct gracht_link_socket* link, enum gracht_link_type type, struct __build_cvd_address* config)
+static int init_link_config(struct gracht_link_socket* link, enum gracht_link_type type, struct chef_config_address* config)
 {
     struct sockaddr_storage addr_storage = { 0 };
     socklen_t               size;

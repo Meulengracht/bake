@@ -18,7 +18,7 @@
 
 #include <errno.h>
 
-struct __bakelib_context* __bakelib_new(
+struct __bakelib_context* __bakelib_context_new(
     struct recipe*     recipe,
     const char*        recipe_path,
     const char* const* envp)

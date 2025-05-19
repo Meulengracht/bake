@@ -24,7 +24,7 @@
 #include <chef/remote.h>
 #include <chef/storage/download.h>
 #include <errno.h>
-#include <libfridge.h>
+#include <chef/fridge.h>
 #include <notify.h>
 #include <server.h>
 #include <stdlib.h>
