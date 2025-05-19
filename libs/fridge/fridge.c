@@ -73,7 +73,7 @@ void fridge_cleanup(void)
     memset(&g_fridge, 0, sizeof(struct fridge_context));
 }
 
-int fridge_ensure_ingredient(struct fridge_ingredient* ingredient, const char** pathOut)
+int fridge_ensure_ingredient(struct fridge_ingredient* ingredient)
 {
     struct fridge_inventory_pack* pack = NULL;
     int                           status;
@@ -88,8 +88,20 @@ int fridge_ensure_ingredient(struct fridge_ingredient* ingredient, const char** 
         (void)fridge_store_close(g_fridge.store);
         return status;
     }
-    if (pathOut != NULL) {
-        *pathOut = platform_strdup(inventory_pack_path(pack));
+    return fridge_store_close(g_fridge.store);
+}
+
+int fridge_ingredient_path(struct fridge_ingredient* ingredient, const char** pathOut)
+{
+    struct fridge_inventory_pack* pack = NULL;
+    int                           status;
+
+    status = fridge_store_open(g_fridge.store);
+    if (status) {
+        return status;
     }
+
+    status = fridge_store_find_ingredient(g_fridge.store, ingredient, &pack);
+    *pathOut = platform_strdup(inventory_pack_path(pack));
     return fridge_store_close(g_fridge.store);
 }

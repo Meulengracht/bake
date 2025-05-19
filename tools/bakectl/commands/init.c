@@ -37,17 +37,18 @@ static void __print_help(void)
     printf("      Shows this help message\n");
 }
 
-static void __cleanup_systems(int sig)
+// ** /chef/project
+// * This is mapped in by the host, and contains a RO path of the
+// * source code for the project
+// ** /chef/fridge
+// * This is mapped by the host, and contains a RO path of the 
+// * hosts fridge storage. We use this to load packs and toolchains
+// * needed
+static int __ensure_chef_directories(void)
 {
-    (void)sig;
-    printf("termination requested, cleaning up\n"); // not safe
-    _Exit(0);
-}
-
-// paths
-static int __ensure_chef_directories(const char* architecture, const char* platform)
-{
-    char buffer[1024];
+    const char* platform = __get_platform();
+    const char* architecture = __get_architecture();
+    char        buffer[1024];
 
     VLOG_DEBUG("kitchen", "__ensure_hostdirs()\n");
 
@@ -72,16 +73,6 @@ static int __ensure_chef_directories(const char* architecture, const char* platf
 
     if (platform_mkdir("/chef/toolchains")) {
         VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create /chef/toolchains\n");
-        return -1;
-    }
-
-    if (platform_mkdir("/chef/fridge")) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create /chef/fridge\n");
-        return -1;
-    }
-
-    if (platform_mkdir("/chef/project")) {
-        VLOG_ERROR("kitchen", "__ensure_hostdirs: failed to create /chef/project\n");
         return -1;
     }
     return 0;

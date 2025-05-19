@@ -16,11 +16,11 @@
  * 
  */
 
-#include <errno.h>
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
@@ -36,6 +36,11 @@ int bake_step_clean(struct __bake_build_context* bctx, struct __build_clean_opti
     char*             partName;
     char*             stepName;
     VLOG_DEBUG("bake", "bake_step_clean()\n");
+
+    if (bctx->cvd_client == NULL) {
+        errno = ENOTSUP;
+        return -1;
+    }
 
     status = recipe_parse_part_step(options->part_or_step, &partName, &stepName);
     if (status) {

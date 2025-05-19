@@ -71,7 +71,7 @@ static char** __initialize_env(struct __bake_build_options* options)
         return NULL;
     }
 
-    env = calloc(13, sizeof(char*));
+    env = calloc(7, sizeof(char*));
     if (env == NULL) {
         VLOG_FATAL("kitchen", "failed to allocate memory for environment\n");
         free(username);
@@ -85,18 +85,6 @@ static char** __initialize_env(struct __bake_build_options* options)
     env[4] = __fmt_env_option("LD_LIBRARY_PATH", "/usr/local/lib");
     env[5] = __fmt_env_option("CHEF_TARGET_ARCH", options->target_architecture);
     env[6] = __fmt_env_option("CHEF_TARGET_PLATFORM", options->target_platform);
-
-    // placeholders, to be filled in setup.c when iterating
-    // build ingredients
-    env[7] = __fmt_env_option("CHEF_BUILD_PATH", "");
-    env[8] = __fmt_env_option("CHEF_BUILD_INCLUDE", "");
-    env[9] = __fmt_env_option("CHEF_BUILD_LIBS", "");
-    env[10] = __fmt_env_option("CHEF_BUILD_CCFLAGS", "");
-    env[11] = __fmt_env_option("CHEF_BUILD_LDFLAGS", "");
-
-    // Not guaranteed that ca-certificates is in the rootfs when building,
-    // so let us add this to avoid git checking for now.
-    env[12] = __fmt_env_option("GIT_SSL_NO_VERIFY", "1");
 
     free(username);
     return env;
@@ -118,7 +106,10 @@ struct __bake_build_context* build_context_create(struct __bake_build_options* o
     bctx->recipe_path = platform_strdup(options->recipe_path);
     bctx->target_platform = platform_strdup(options->target_platform);
     bctx->target_architecture = platform_strdup(options->target_architecture);
-    memcpy(&bctx->cvd_address, options->cvd_address, sizeof(struct chef_config_address));
+
+    if (options->cvd_address != NULL) {
+        memcpy(&bctx->cvd_address, options->cvd_address, sizeof(struct chef_config_address));
+    }
 
     // Before paths, but after all the other setup, setup base environment
     bctx->base_environment = __initialize_env(options);
@@ -128,7 +119,7 @@ struct __bake_build_context* build_context_create(struct __bake_build_options* o
     }
 
     // initialize cvd client
-    if (bake_client_initialize(bctx)) {
+    if (options->cvd_address != NULL && bake_client_initialize(bctx)) {
         VLOG_ERROR("bake", "build_context_create: failed to initialize client\n");
     }
     return bctx;

@@ -231,6 +231,68 @@ static const char* __get_ingredient_arch(struct fridge_store* store, struct frid
     return ingredient->arch;
 }
 
+int fridge_store_find_ingredient(struct fridge_store* store, struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut)
+{
+    struct chef_version           version = { 0 };
+    struct chef_version*          versionPtr = NULL;
+    struct fridge_inventory_pack* pack;
+    char**                        names;
+    int                           namesCount;
+    int                           status;
+    VLOG_DEBUG("store", "fridge_store_ensure_ingredient(name=%s)\n", ingredient->name);
+
+    if (ingredient == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    // parse the version provided if any
+    if (ingredient->version != NULL) {
+        status = chef_version_from_string(ingredient->version, &version);
+        if (status) {
+            VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to parse version '%s'\n", ingredient->version);
+            return -1;
+        }
+        versionPtr = &version;
+    }
+
+    // split the publisher/package
+    names = strsplit(ingredient->name, '/');
+    if (names == NULL) {
+        VLOG_ERROR("store", "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        return -1;
+    }
+    
+    namesCount = 0;
+    while (names[namesCount] != NULL) {
+        namesCount++;
+    }
+
+    if (namesCount != 2) {
+        VLOG_ERROR("store", "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        status = -1;
+        goto cleanup;
+    }
+
+    // check if we have the requested ingredient in store already, otherwise
+    // download the ingredient
+    VLOG_DEBUG("store", "looking up path in inventory\n");
+    status = inventory_get_pack(
+        store->inventory,
+        names[0], names[1],
+        __get_ingredient_platform(store, ingredient),
+        __get_ingredient_arch(store, ingredient),
+        ingredient->channel,
+        versionPtr,
+        &pack
+    );
+
+cleanup:
+    strsplit_free(names);
+    return status;
+}
+
+
 int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut)
 {
     struct chef_version           version = { 0 };

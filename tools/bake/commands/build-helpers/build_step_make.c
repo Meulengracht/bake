@@ -19,6 +19,7 @@
 #include <chef/list.h>
 #include <chef/recipe.h>
 #include <chef/platform.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <vlog.h>
 
@@ -31,7 +32,7 @@ static int __make_recipe_steps(struct __bake_build_context* bctx, const char* pa
     char              buffer[PATH_MAX];
     unsigned int      pid;
     VLOG_DEBUG("kitchen", "__make_recipe_steps(part=%s)\n", part);
-    
+
     list_foreach(steps, item) {
         struct recipe_step* step = (struct recipe_step*)item;
 
@@ -61,6 +62,11 @@ int build_step_make(struct __bake_build_context* bctx)
     struct list_item* item;
     int               status;
     VLOG_DEBUG("kitchen", "kitchen_recipe_make()\n");
+
+    if (bctx->cvd_client == NULL) {
+        errno = ENOTSUP;
+        return -1;
+    }
 
     list_foreach(&bctx->recipe->parts, item) {
         struct recipe_part* part = (struct recipe_part*)item;

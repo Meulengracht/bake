@@ -16,11 +16,17 @@
  * 
  */
 
-#ifndef __KITCHEN_LINUX_PRIVATE_H__
-#define __KITCHEN_LINUX_PRIVATE_H__
+#include <errno.h>
 
-#include <stddef.h>
+struct __bakelib_context* __bakelib_new(
+    struct recipe*     recipe,
+    const char*        recipe_path,
+    const char* const* envp)
+{
 
-#define __KITCHEN_INIT_MAGIC 0x37373737
+}
 
-#endif //!__KITCHEN_LINUX_PRIVATE_H__
+void __bakelib_context_delete(struct __bakelib_context* context)
+{
+    
+}

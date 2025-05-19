@@ -47,4 +47,9 @@ extern int fridge_store_close(struct fridge_store* store);
  */
 extern int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut);
 
+/**
+ * @brief Looks up an ingredient already in store based on the options given.
+ */
+extern int fridge_store_find_ingredient(struct fridge_store* store, struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut);
+
 #endif //!__FRIDGE_STORE_H__

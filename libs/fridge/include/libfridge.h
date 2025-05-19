@@ -45,11 +45,20 @@ extern void fridge_cleanup(void);
  * @brief Stores the given ingredient, making sure we have a local copy of it in
  * our local store.
  * 
- * @param[In]  ingredient Options describing the ingredient that should be fetched from store.
+ * @param[In] ingredient Options describing the ingredient that should be fetched from store.
+ * @return int 
+ */
+extern int fridge_ensure_ingredient(struct fridge_ingredient* ingredient);
+
+/**
+ * @brief Retrieves the path of an ingredient based on it's parameters. It must be already
+ * present in the local store.
+ * 
+ * @param[In]  ingredient Options describing the ingredient from the store.
  * @param[Out] pathOut    Returns a zero-terminated string with the path of the ingredient. This
  *                        string should not be freed. It will be valid until fridge_cleanup is called.
  * @return int  
  */
-extern int fridge_ensure_ingredient(struct fridge_ingredient* ingredient, const char** pathOut);
+extern int fridge_ingredient_path(struct fridge_ingredient* ingredient, const char** pathOut);
 
 #endif //!__LIBFRIDGE_H__

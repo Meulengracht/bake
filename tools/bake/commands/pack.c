@@ -27,6 +27,7 @@
 #include <vlog.h>
 
 #include "commands.h"
+#include "build-helpers/build.h"
 #include "pack-helpers/pack.h"
 
 // include dirent.h for directory operations
@@ -200,10 +201,12 @@ cleanup:
 
 int pack_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    struct list_item*   item;
-    struct build_cache* cache = NULL;
-    char*               path = NULL;
-    int                 status;
+    struct __bake_build_context* bctx;
+    struct list_item*            item;
+    struct build_cache*          cache = NULL;
+    char*                        path = NULL;
+    const char*                  arch;
+    int                          status;
 
     // handle individual help command
     if (argc > 2) {
@@ -229,6 +232,9 @@ int pack_main(int argc, char** argv, char** envp, struct bake_command_options* o
         return -1;
     }
 
+    // get the architecture from the list
+    arch = ((struct list_item_string*)options->architectures.head)->value;
+
     // we need to load the recipe cache
     status = build_cache_create(options->recipe, options->cwd, &cache);
     if (status) {
@@ -237,10 +243,24 @@ int pack_main(int argc, char** argv, char** envp, struct bake_command_options* o
     }
 
     // then construct the options
-
+    VLOG_DEBUG("bake", "platform=%s, architecture=%s\n", options->platform, arch);
+    bctx = build_context_create(&(struct __bake_build_options) {
+        .cwd = options->cwd,
+        .envp = (const char* const*)envp,
+        .recipe = options->recipe,
+        .recipe_path = options->recipe_path,
+        .build_cache = cache,
+        .target_platform = options->platform,
+        .target_architecture = arch,
+        .cvd_address = NULL
+    });
+    if (bctx == NULL) {
+        VLOG_ERROR("bake", "failed to initialize build context: %s\n", strerror(errno));
+        return -1;
+    }
 
     // include ingredients marked for packing
-    list_foreach(&bctx->recipe->environment.runtime.ingredients, item) {
+    list_foreach(&options->recipe->environment.runtime.ingredients, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         
         status = __copy_files_with_filters(
@@ -255,7 +275,7 @@ int pack_main(int argc, char** argv, char** envp, struct bake_command_options* o
         }
     }
 
-    list_foreach(&bctx->recipe->packs, item) {
+    list_foreach(&options->recipe->packs, item) {
         struct recipe_pack*   pack = (struct recipe_pack*)item;
         struct __pack_options packOptions;
 

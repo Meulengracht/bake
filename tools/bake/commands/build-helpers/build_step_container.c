@@ -19,6 +19,7 @@
 #include <chef/list.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <vlog.h>
 
@@ -95,6 +96,11 @@ int bake_build_setup(struct __bake_build_context* bctx)
     unsigned int                pid;
     char                        buffer[1024];
     VLOG_TRACE("bake", "bake_build_setup()\n");
+
+    if (bctx->cvd_client == NULL) {
+        errno = ENOTSUP;
+        return -1;
+    }
 
     // project path
     mounts[0].host_path = bctx->host_cwd;

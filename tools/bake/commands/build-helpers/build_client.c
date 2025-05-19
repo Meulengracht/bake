@@ -24,8 +24,8 @@
 #include <errno.h>
 #include <vlog.h>
 
-#include "chef_cvd_service_client.h"
 #include "build.h"
+#include "chef_cvd_service_client.h"
 
 #if defined(__linux__)
 #include <arpa/inet.h>

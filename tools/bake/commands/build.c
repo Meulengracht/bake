@@ -100,7 +100,6 @@ static int __ensure_ingredient_list(struct list* list, const char* platform, con
 
     list_foreach(list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        const char*               path = NULL;
 
         status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
             .name = ingredient->name,
@@ -108,7 +107,7 @@ static int __ensure_ingredient_list(struct list* list, const char* platform, con
             .version = ingredient->version,
             .arch = arch,
             .platform = platform
-        }, &path);
+        }, NULL);
         if (status) {
             VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->name);
             return status;
