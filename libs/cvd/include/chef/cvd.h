@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __BAKE_BUILD_PRIVATE_H__
-#define __BAKE_BUILD_PRIVATE_H__
+#ifndef __LIBCVD_H__
+#define __LIBCVD_H__
 
 #include <chef/config.h>
 #include <chef/recipe.h>
@@ -138,5 +138,4 @@ extern int build_cache_key_bool(struct build_cache* cache, const char* key);
  */
 extern int build_cache_key_set_bool(struct build_cache* cache, const char* key, int value);
 
-
-#endif //!__BAKE_BUILD_PRIVATE_H__
+#endif //!__LIBCVD_H__

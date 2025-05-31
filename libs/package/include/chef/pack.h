@@ -1,6 +1,6 @@
 
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,8 +17,8 @@
  * 
  */
 
-#ifndef __BAKE_PACK_H__
-#define __BAKE_PACK_H__
+#ifndef __PACK_H__
+#define __PACK_H__
 
 #include <chef/package.h>
 
@@ -85,4 +85,4 @@ extern int pack_resolve_commands(struct list* commands, struct list* resolves, s
  */
 extern void pack_resolve_destroy(struct list* resolves);
 
-#endif //!__BAKE_PACK_H__
+#endif //!__PACK_H__

@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <chef/bake.h>
+#include <chef/dirs.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <stdio.h>
@@ -195,8 +196,15 @@ int main(int argc, char** argv, char** envp)
     vlog_initialize((enum vlog_level)logLevel);
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
 
+    // initialize the dir library
+    status = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKECTL);
+    if (status) {
+        VLOG_ERROR("bakectl", "failed to initialize directories\n");
+        return -1;
+    }
+
     // create bake context
-    context = __bakelib_context_new(recipe, recipePath, envp);
+    context = __bakelib_context_new(recipe, recipePath, (const char* const*)envp);
     if (context == NULL) {
         VLOG_ERROR("bakectl", "failed to create bake context\n");
         return -1;

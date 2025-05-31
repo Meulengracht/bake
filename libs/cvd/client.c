@@ -17,6 +17,7 @@
  */
 
 #include <chef/environment.h>
+#include <chef/cvd.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
 #include <stdio.h>
@@ -24,7 +25,6 @@
 #include <errno.h>
 #include <vlog.h>
 
-#include "build.h"
 #include "chef_cvd_service_client.h"
 
 #if defined(__linux__)

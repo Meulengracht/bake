@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <chef/pack.h>
 #include <chef/platform.h>
 #include <chef/utils_vafs.h>
 #include <chef/recipe.h>
@@ -29,7 +30,6 @@
 #include <vlog.h>
 #include <zstd.h>
 
-#include "pack.h"
 #include "resolvers/resolvers.h"
 
 // include dirent.h for directory operations

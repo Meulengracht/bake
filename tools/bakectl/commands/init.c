@@ -17,10 +17,12 @@
  */
 
 #include <errno.h>
-#include <chef/list.h>
 #include <chef/bake.h>
 #include <chef/cache.h>
+#include <chef/fridge.h>
+#include <chef/ingredient.h>
 #include <chef/platform.h>
+#include <chef/pkgmgr.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +41,22 @@ static void __print_help(void)
     printf("      Shows this help message\n");
 }
 
+static const char* __get_platform(void) {
+    const char* platform = getenv("CHEF_TARGET_PLATFORM");
+    if (platform == NULL) {
+        platform = CHEF_PLATFORM_STR;
+    }
+    return platform;
+}
+
+static const char* __get_architecture(void) {
+    const char* platform = getenv("CHEF_TARGET_ARCH");
+    if (platform == NULL) {
+        platform = CHEF_ARCHITECTURE_STR;
+    }
+    return platform;
+}
+
 // ** /chef/project
 // * This is mapped in by the host, and contains a RO path of the
 // * source code for the project
@@ -52,29 +70,29 @@ static int __ensure_chef_directories(void)
     const char* architecture = __get_architecture();
     char        buffer[1024];
 
-    VLOG_DEBUG("bake", "__ensure_hostdirs()\n");
+    VLOG_DEBUG("bakectl", "__ensure_hostdirs()\n");
 
 
     snprintf(&buffer[0], sizeof(buffer), "/chef/build/%s/%s", platform, architecture);
     if (platform_mkdir(&buffer[0])) {
-        VLOG_ERROR("bake", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
+        VLOG_ERROR("bakectl", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
         return -1;
     }
 
     snprintf(&buffer[0], sizeof(buffer), "/chef/ingredients/%s/%s", platform, architecture);
     if (platform_mkdir(&buffer[0])) {
-        VLOG_ERROR("bake", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
+        VLOG_ERROR("bakectl", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
         return -1;
     }
 
     snprintf(&buffer[0], sizeof(buffer), "/chef/install/%s/%s", platform, architecture);
     if (platform_mkdir(&buffer[0])) {
-        VLOG_ERROR("bake", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
+        VLOG_ERROR("bakectl", "__ensure_hostdirs: failed to create %s\n", &buffer[0]);
         return -1;
     }
 
     if (platform_mkdir("/chef/toolchains")) {
-        VLOG_ERROR("bake", "__ensure_hostdirs: failed to create /chef/toolchains\n");
+        VLOG_ERROR("bakectl", "__ensure_hostdirs: failed to create /chef/toolchains\n");
         return -1;
     }
     return 0;
@@ -137,7 +155,7 @@ static int __write_update_script(struct recipe_cache* cache)
 
     status = recipe_cache_calculate_package_changes(cache, &changes, &count);
     if (status) {
-        VLOG_ERROR("bake", "__write_update_script: failed to calculate package differences\n");
+        VLOG_ERROR("bakectl", "__write_update_script: failed to calculate package differences\n");
         return status;
     }
 
@@ -147,14 +165,14 @@ static int __write_update_script(struct recipe_cache* cache)
 
     target = strpathjoin("chef", "update.sh", NULL);
     if (target == NULL) {
-        VLOG_ERROR("bake", "__write_update_script: failed to allocate memory for script path\n", target);
+        VLOG_ERROR("bakectl", "__write_update_script: failed to allocate memory for script path\n", target);
         recipe_cache_package_changes_destroy(changes, count);
         return -1;
     }
 
     stream = fopen(target, "w+");
     if (stream == NULL) {
-        VLOG_ERROR("bake", "__write_update_script: failed to allocate a script stream\n");
+        VLOG_ERROR("bakectl", "__write_update_script: failed to allocate a script stream\n");
         recipe_cache_package_changes_destroy(changes, count);
         free(target);
         return -1;
@@ -182,7 +200,7 @@ static int __write_update_script(struct recipe_cache* cache)
     // chmod to executable
     status = platform_chmod(target, 0755);
     if (status) {
-        VLOG_ERROR("bake", "__write_update_script: failed to fixup permissions for %s\n", target);
+        VLOG_ERROR("bakectl", "__write_update_script: failed to fixup permissions for %s\n", target);
     }
     recipe_cache_package_changes_destroy(changes, count);
     free(target);
@@ -201,13 +219,13 @@ static int __write_setup_hook_script(struct recipe* recipe)
 
     target = strpathjoin("chef", "hook-setup.sh", NULL);
     if (target == NULL) {
-        VLOG_ERROR("bake", "__write_setup_hook_script: failed to allocate memory for script path\n", target);
+        VLOG_ERROR("bakectl", "__write_setup_hook_script: failed to allocate memory for script path\n", target);
         return -1;
     }
 
     stream = fopen(target, "w+");
     if (stream == NULL) {
-        VLOG_ERROR("bake", "__write_setup_hook_script: failed to allocate a script stream\n");
+        VLOG_ERROR("bakectl", "__write_setup_hook_script: failed to allocate a script stream\n");
         free(target);
         return -1;
     }
@@ -219,7 +237,7 @@ static int __write_setup_hook_script(struct recipe* recipe)
     // chmod to executable
     status = platform_chmod(target, 0755);
     if (status) {
-        VLOG_ERROR("bake", "__write_setup_hook_script: failed to fixup permissions for %s\n", target);
+        VLOG_ERROR("bakectl", "__write_setup_hook_script: failed to fixup permissions for %s\n", target);
     }
     free(target);
     return status;
@@ -231,13 +249,13 @@ static int __write_resources(struct __bakelib_context* context)
 
     status = __write_update_script(context->cache);
     if (status) {
-        VLOG_ERROR("bake", "__write_resources: failed to write update resource\n");
+        VLOG_ERROR("bakectl", "__write_resources: failed to write update resource\n");
         return status;
     }
 
     status = __write_setup_hook_script(context->recipe);
     if (status) {
-        VLOG_ERROR("bake", "__write_resources: failed to write hook resources\n");
+        VLOG_ERROR("bakectl", "__write_resources: failed to write hook resources\n");
         return status;
     }
 
@@ -254,34 +272,47 @@ static int __setup_ingredient(struct __bakelib_context* context, struct list* in
     }
 
     list_foreach(ingredients, i) {
-        struct kitchen_ingredient* kitchenIngredient = (struct kitchen_ingredient*)i;
-        struct ingredient*         ingredient;
+        struct recipe_ingredient* ri = (struct recipe_ingredient*)i;
+        struct ingredient*        ig;
+        const char*               path;
 
-        status = ingredient_open(kitchenIngredient->path, &ingredient);
+        status = fridge_ingredient_path(&(struct fridge_ingredient) {
+            .name = ri->name,
+            .channel = ri->channel,
+            .version = ri->version,
+            .arch = context->build_architecture,
+            .platform = context->build_platform
+        }, &path);
         if (status) {
-            VLOG_ERROR("bake", "__setup_ingredients: failed to open %s\n", kitchenIngredient->name);
+            VLOG_ERROR("bakectl", "__setup_ingredients: failed to find ingredient in store %s\n", ri->name);
+            return -1;
+        }
+
+        status = ingredient_open(path, &ig);
+        if (status) {
+            VLOG_ERROR("bakectl", "__setup_ingredients: failed to open %s\n", ri->name);
             return -1;
         }
 
         // Only unpack ingredients, we may encounter toolchains here.
-        if (ingredient->package->type != CHEF_PACKAGE_TYPE_INGREDIENT) {
-            ingredient_close(ingredient);
+        if (ig->package->type != CHEF_PACKAGE_TYPE_INGREDIENT) {
+            ingredient_close(ig);
             continue;
         }
 
-        status = ingredient_unpack(ingredient, hostPath, NULL, NULL);
+        status = ingredient_unpack(ig, hostPath, NULL, NULL);
         if (status) {
-            ingredient_close(ingredient);
-            VLOG_ERROR("bake", "__setup_ingredients: failed to setup %s\n", kitchenIngredient->name);
+            ingredient_close(ig);
+            VLOG_ERROR("bakectl", "__setup_ingredients: failed to setup %s\n", ri->name);
             return -1;
         }
         
-        if (kitchen->pkg_manager != NULL) {
-            status = kitchen->pkg_manager->make_available(kitchen->pkg_manager, ingredient);
+        if (context->pkg_manager != NULL) {
+            status = context->pkg_manager->make_available(context->pkg_manager, ig);
         }
-        ingredient_close(ingredient);
+        ingredient_close(ig);
         if (status) {
-            VLOG_ERROR("bake", "__setup_ingredients: failed to make %s available\n", kitchenIngredient->name);
+            VLOG_ERROR("bakectl", "__setup_ingredients: failed to make %s available\n", ri->name);
             return -1;
         }
     }
@@ -299,33 +330,46 @@ static int __setup_toolchains(struct list* ingredients, const char* hostPath)
     }
 
     list_foreach(ingredients, i) {
-        struct kitchen_ingredient* kitchenIngredient = (struct kitchen_ingredient*)i;
-        struct ingredient*         ingredient;
+        struct recipe_ingredient* ri = (struct recipe_ingredient*)i;
+        struct ingredient*        ig;
+        const char*               path;
 
-        status = ingredient_open(kitchenIngredient->path, &ingredient);
+        status = fridge_ingredient_path(&(struct fridge_ingredient) {
+            .name = ri->name,
+            .channel = ri->channel,
+            .version = ri->version,
+            .arch = CHEF_ARCHITECTURE_STR,
+            .platform = CHEF_PLATFORM_STR
+        }, &path);
         if (status) {
-            VLOG_ERROR("bake", "__setup_toolchains: failed to open %s\n", kitchenIngredient->name);
+            VLOG_ERROR("bakectl", "__setup_ingredients: failed to find ingredient in store %s\n", ri->name);
             return -1;
         }
 
-        if (ingredient->package->type != CHEF_PACKAGE_TYPE_TOOLCHAIN) {
-            ingredient_close(ingredient);
+        status = ingredient_open(path, &ig);
+        if (status) {
+            VLOG_ERROR("bakectl", "__setup_toolchains: failed to open %s\n", ri->name);
+            return -1;
+        }
+
+        if (ig->package->type != CHEF_PACKAGE_TYPE_TOOLCHAIN) {
+            ingredient_close(ig);
             continue;
         }
 
-        snprintf(&buff[0], sizeof(buff), "%s/%s", hostPath, kitchenIngredient->name);
+        snprintf(&buff[0], sizeof(buff), "%s/%s", hostPath, ri->name);
         if (platform_mkdir(&buff[0])) {
-            VLOG_ERROR("bake", "__setup_toolchains: failed to create %s\n", &buff[0]);
+            VLOG_ERROR("bakectl", "__setup_toolchains: failed to create %s\n", &buff[0]);
             return -1;
         }
 
-        status = ingredient_unpack(ingredient, &buff[0], NULL, NULL);
+        status = ingredient_unpack(ig, &buff[0], NULL, NULL);
         if (status) {
-            ingredient_close(ingredient);
-            VLOG_ERROR("bake", "__setup_toolchains: failed to setup %s\n", kitchenIngredient->name);
+            ingredient_close(ig);
+            VLOG_ERROR("bakectl", "__setup_toolchains: failed to setup %s\n", ri->name);
             return -1;
         }
-        ingredient_close(ingredient);
+        ingredient_close(ig);
     }
     return 0;
 }
@@ -334,22 +378,22 @@ static int __setup_ingredients(struct __bakelib_context* context)
 {
     int status;
 
-    status = __setup_ingredient(context, &options->host_ingredients, kitchen->host_chroot);
+    status = __setup_ingredient(context, &context->recipe->environment.host.ingredients, "/");
     if (status) {
         return status;
     }
 
-    status = __setup_toolchains(&options->host_ingredients, context->host_build_toolchains_path);
+    status = __setup_toolchains(&context->recipe->environment.host.ingredients, context->build_toolchains_directory);
     if (status) {
         return status;
     }
 
-    status = __setup_ingredient(context, &options->build_ingredients, context->host_build_ingredients_path);
+    status = __setup_ingredient(context, &context->recipe->environment.build.ingredients, context->build_ingredients_directory);
     if (status) {
         return status;
     }
 
-    status = __setup_ingredient(context, &options->runtime_ingredients, context->host_install_path);
+    status = __setup_ingredient(context, &context->recipe->environment.runtime.ingredients, context->install_directory);
     if (status) {
         return status;
     }
@@ -364,17 +408,17 @@ static int __update_ingredients(struct __bakelib_context* context)
         return 0;
     }
 
-    VLOG_TRACE("bake", "installing project ingredients\n");
+    VLOG_TRACE("bakectl", "installing project ingredients\n");
     status = __setup_ingredients(context);
     if (status) {
-        VLOG_ERROR("bake", "__update_ingredients: failed to setup project ingredients\n");
+        VLOG_ERROR("bakectl", "__update_ingredients: failed to setup project ingredients\n");
         return status;
     }
 
     recipe_cache_transaction_begin(context->cache);
     status = recipe_cache_key_set_bool(context->cache, "setup_ingredients", 1);
     if (status) {
-        VLOG_ERROR("bake", "__update_ingredients: failed to mark ingredients step as done\n");
+        VLOG_ERROR("bakectl", "__update_ingredients: failed to mark ingredients step as done\n");
         return status;
     }
     recipe_cache_transaction_commit(context->cache);
@@ -481,27 +525,39 @@ int init_main(int argc, char** argv, struct __bakelib_context* context, struct b
         }
     }
 
+    status = fridge_initialize(__get_platform(), __get_architecture());
+    if (status) {
+        VLOG_ERROR("bakectl", "kitchen_setup: failed to create initialize fridge\n");
+        return status;
+    }
+
+    status = __ensure_chef_directories();
+    if (status) {
+        VLOG_ERROR("bakectl", "kitchen_setup: failed to create chef directories\n");
+        return status;
+    }
+
     status = __write_resources(context);
     if (status) {
-        VLOG_ERROR("bake", "kitchen_setup: failed to generate resources\n");
+        VLOG_ERROR("bakectl", "kitchen_setup: failed to generate resources\n");
         return status;
     }
 
     status = __update_ingredients(context);
     if (status) {
-        VLOG_ERROR("bake", "kitchen_setup: failed to setup/refresh kitchen ingredients\n");
+        VLOG_ERROR("bakectl", "kitchen_setup: failed to setup/refresh kitchen ingredients\n");
         return status;
     }
 
     status = __update_packages(context);
     if (status) {
-        VLOG_ERROR("bake", "kitchen_setup: failed to install/update rootfs packages\n");
+        VLOG_ERROR("bakectl", "kitchen_setup: failed to install/update rootfs packages\n");
         return status;
     }
 
     status = __run_setup_hook(context);
     if (status) {
-        VLOG_ERROR("bake", "kitchen_setup: failed to execute setup script: %s\n", strerror(errno));
+        VLOG_ERROR("bakectl", "kitchen_setup: failed to execute setup script: %s\n", strerror(errno));
         return status;
     }
 

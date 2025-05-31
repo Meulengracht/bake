@@ -21,12 +21,18 @@
 
 #include <stdio.h>
 
+enum chef_dir_scope {
+    CHEF_DIR_SCOPE_BAKE,
+    CHEF_DIR_SCOPE_BAKECTL,
+    CHEF_DIR_SCOPE_DAEMON,
+};
+
 /**
  * @brief 
  * 
  * @return int 
  */
-extern int chef_dirs_initialize(void);
+extern int chef_dirs_initialize(enum chef_dir_scope scope);
 
 /**
  * @brief Returns the path to the root of the chef data directory.
@@ -46,12 +52,12 @@ extern const char* chef_dirs_store(void);
 /**
  * @brief
  */
-extern  const char* chef_dirs_kitchen_new(const char* uuid);
+extern char* chef_dirs_rootfs_new(const char* uuid);
 
 /**
  * @brief
  */
-extern const char* chef_dirs_kitchen(const char* uuid);
+extern const char* chef_dirs_rootfs(const char* uuid);
 
 /**
  * @brief 

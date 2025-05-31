@@ -16,10 +16,11 @@
  * 
  */
 
+#include <chef/dirs.h>
 #include <chef/platform.h>
 #include <stdio.h>
 
-int chef_dirs_initialize(void)
+int chef_dirs_initialize(enum chef_dir_scope scope)
 {
     int  status;
     char buffer[PATH_MAX] = { 0 };
@@ -47,12 +48,12 @@ const char* chef_dirs_store(void)
     return NULL;
 }
 
-const char* chef_dirs_kitchen(const char* uuid)
+const char* chef_dirs_rootfs(const char* uuid)
 {
     return NULL;
 }
 
-char* chef_dirs_kitchen_new(const char* uuid)
+char* chef_dirs_rootfs_new(const char* uuid)
 {
     return NULL;
 }

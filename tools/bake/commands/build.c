@@ -22,8 +22,9 @@
 
 #include <chef/client.h>
 #include <errno.h>
-#include <chef/dirs.h>
 #include <chef/config.h>
+#include <chef/cvd.h>
+#include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
@@ -36,7 +37,6 @@
 #include <vlog.h>
 
 #include "commands.h"
-#include "build-helpers/build.h"
 
 static struct __bake_build_context* g_context = NULL;
 

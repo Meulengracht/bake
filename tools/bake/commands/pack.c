@@ -17,7 +17,9 @@
  */
 
 #include <errno.h>
+#include <chef/cvd.h>
 #include <chef/dirs.h>
+#include <chef/pack.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <stdio.h>
@@ -27,8 +29,6 @@
 #include <vlog.h>
 
 #include "commands.h"
-#include "build-helpers/build.h"
-#include "pack-helpers/pack.h"
 
 // include dirent.h for directory operations
 #if defined(CHEF_ON_WINDOWS)

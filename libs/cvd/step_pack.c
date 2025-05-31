@@ -16,15 +16,13 @@
  * 
  */
 
+#include <chef/cvd.h>
 #include <chef/list.h>
+#include <chef/pack.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <stdlib.h>
 #include <vlog.h>
-
-#include "build.h"
-
-#include "../pack-helpers/pack.h"
 
 // include dirent.h for directory operations
 #if defined(CHEF_ON_WINDOWS)

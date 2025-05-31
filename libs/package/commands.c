@@ -17,10 +17,10 @@
  */
 
 #include <errno.h>
+#include <chef/pack.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include "resolvers/resolvers.h"
-#include "pack.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

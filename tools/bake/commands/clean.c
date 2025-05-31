@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <chef/cvd.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
@@ -27,7 +28,6 @@
 #include <vlog.h>
 
 #include "commands.h"
-#include "build-helpers/build.h"
 
 static void __print_help(void)
 {

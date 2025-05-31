@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/cvd.h>
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
@@ -24,8 +25,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
-
-#include "build.h"
 
 int bake_step_clean(struct __bake_build_context* bctx, struct __build_clean_options* options)
 {
@@ -78,7 +77,7 @@ int bake_purge_kitchens(void)
     struct list         recipes;
     struct list_item*   i;
     int                 status;
-    const char*         root = chef_dirs_kitchen(NULL);
+    const char*         root = chef_dirs_rootfs(NULL);
     VLOG_DEBUG("bake", "bake_purge_kitchens()\n");
 
     list_init(&recipes);

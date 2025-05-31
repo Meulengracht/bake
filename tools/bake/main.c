@@ -312,7 +312,7 @@ int main(int argc, char** argv, char** envp)
     vlog_initialize(logLevel);
 
     // initialize directories
-    status = chef_dirs_initialize();
+    status = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKE);
     if (status) {
         fprintf(stderr, "bake: failed to initialize directories\n");
         return -1;

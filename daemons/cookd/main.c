@@ -66,7 +66,7 @@ int main(int argc, char** argv)
     vlog_initialize((enum vlog_level)logLevel);
 
     // initialize directories
-    status = chef_dirs_initialize();
+    status = chef_dirs_initialize(CHEF_DIR_SCOPE_DAEMON);
     if (status) {
         VLOG_ERROR("cookd", "failed to initialize directories\n");
         return -1;

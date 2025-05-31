@@ -16,12 +16,11 @@
  * 
  */
 
+#include <chef/cvd.h>
 #include <chef/environment.h>
 #include <chef/platform.h>
 #include <stdlib.h>
 #include <vlog.h>
-
-#include "build.h"
 
 // build cache is not owned by the build context
 void build_context_destroy(struct __bake_build_context* bctx)

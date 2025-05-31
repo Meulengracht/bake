@@ -154,6 +154,10 @@ static int __update_build_envs(struct __bakelib_context* context)
             .arch = context->build_architecture,
             .platform = context->build_platform
         }, &path);
+        if (status) {
+            VLOG_ERROR("bakectl", "__update_build_envs: failed to find ingredient in store %s\n", recIngredient->name);
+            return -1;
+        }
 
         status = ingredient_open(path, &ingredient);
         if (status) {

@@ -16,13 +16,12 @@
  * 
  */
 
+#include <chef/cvd.h>
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <stdlib.h>
 #include <vlog.h>
-
-#include "build.h"
 
 #ifdef CHEF_ON_LINUX
 #include <unistd.h>
@@ -33,7 +32,7 @@ static char* __get_username(void) {
 }
 
 static int __construct_paths(struct __bake_build_context* bctx) {
-    const char* rootfs = chef_dirs_kitchen(build_cache_uuid(bctx->build_cache));
+    const char* rootfs = chef_dirs_rootfs(build_cache_uuid(bctx->build_cache));
 
     bctx->rootfs_path = rootfs;
     bctx->install_path = strpathjoin(rootfs, "chef", "install");

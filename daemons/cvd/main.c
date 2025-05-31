@@ -73,7 +73,7 @@ int main(int argc, char** argv)
     atexit(vlog_cleanup);
 
     // initialize directories
-    status = chef_dirs_initialize();
+    status = chef_dirs_initialize(CHEF_DIR_SCOPE_DAEMON);
     if (status) {
         fprintf(stderr, "cvd: failed to initialize directories\n");
         return -1;
