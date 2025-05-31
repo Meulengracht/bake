@@ -69,7 +69,7 @@ static int __verify_commands(struct list* commands, const char* root)
     return 0;
 }
 
-static int __resolve_dependency_path(struct kitchen_resolve* resolve, struct kitchen_resolve_dependency* dependency, struct __resolve_options* options)
+static int __resolve_dependency_path(struct bake_resolve* resolve, struct bake_resolve_dependency* dependency, struct __resolve_options* options)
 {
     struct list       files = { 0 };
     struct list_item* item;
@@ -126,14 +126,14 @@ static int __resolve_dependency_path(struct kitchen_resolve* resolve, struct kit
     return -1;
 }
 
-static int __resolve_elf_dependencies(struct kitchen_resolve* resolve, struct __resolve_options* options)
+static int __resolve_elf_dependencies(struct bake_resolve* resolve, struct __resolve_options* options)
 {
     while (1) {
         struct list_item* item;
         int               resolved = 0;
 
         list_foreach(&resolve->dependencies, item) {
-            struct kitchen_resolve_dependency* dependency = (struct kitchen_resolve_dependency*)item;
+            struct bake_resolve_dependency* dependency = (struct bake_resolve_dependency*)item;
             if (!dependency->resolved) {
                 int status;
                 
@@ -163,14 +163,14 @@ static int __resolve_elf_dependencies(struct kitchen_resolve* resolve, struct __
     return 0;
 }
 
-static int __resolve_pe_dependencies(struct kitchen_resolve* resolve, struct __resolve_options* options)
+static int __resolve_pe_dependencies(struct bake_resolve* resolve, struct __resolve_options* options)
 {
     while (1) {
         struct list_item* item;
         int               resolved = 0;
 
         list_foreach(&resolve->dependencies, item) {
-            struct kitchen_resolve_dependency* dependency = (struct kitchen_resolve_dependency*)item;
+            struct bake_resolve_dependency* dependency = (struct bake_resolve_dependency*)item;
             if (!dependency->resolved) {
                 int status;
                 
@@ -202,7 +202,7 @@ static int __resolve_pe_dependencies(struct kitchen_resolve* resolve, struct __r
 
 static int __resolve_command(struct recipe_pack_command* command, struct list* resolves, struct __pack_resolve_commands_options* options)
 {
-    struct kitchen_resolve* resolve;
+    struct bake_resolve* resolve;
     const char*             path;
     int                     status;
 
@@ -213,7 +213,7 @@ static int __resolve_command(struct recipe_pack_command* command, struct list* r
         return -1;
     }
 
-    resolve = (struct kitchen_resolve*)calloc(1, sizeof(struct kitchen_resolve));
+    resolve = (struct bake_resolve*)calloc(1, sizeof(struct bake_resolve));
     resolve->path = path;
 
     if (elf_is_valid(path, &resolve->arch) == 0) {
@@ -289,7 +289,7 @@ static void __cleanup_dependencies(struct list* dependencies)
     struct list_item* item;
 
     for (item = dependencies->head; item != NULL;) {
-        struct kitchen_resolve_dependency* dependency = (struct kitchen_resolve_dependency*)item;
+        struct bake_resolve_dependency* dependency = (struct bake_resolve_dependency*)item;
         item = item->next;
 
         free((void*)dependency->name);
@@ -309,7 +309,7 @@ void pack_resolve_destroy(struct list* resolves)
     }
 
     for (item = resolves->head; item != NULL;) {
-        struct kitchen_resolve* resolve = (struct kitchen_resolve*)item;
+        struct bake_resolve* resolve = (struct bake_resolve*)item;
         item = item->next;
 
         free((void*)resolve->path);

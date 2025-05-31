@@ -76,6 +76,10 @@ extern int build_step_make(struct __bake_build_context* bctx);
 
 extern int build_step_pack(struct __bake_build_context* bctx);
 
+extern int bake_step_clean(struct __bake_build_context* bctx, struct __build_clean_options* options);
+
+extern int bake_purge_kitchens(void);
+
 extern int bake_client_initialize(struct __bake_build_context* bctx);
 
 extern enum chef_status bake_client_create_container(struct __bake_build_context* bctx, struct chef_container_mount* mounts, unsigned int count);

@@ -180,7 +180,7 @@ static int __write_update_script(struct recipe_cache* cache)
     fclose(stream);
 
     // chmod to executable
-    status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    status = platform_chmod(target, 0755);
     if (status) {
         VLOG_ERROR("bake", "__write_update_script: failed to fixup permissions for %s\n", target);
     }
@@ -217,7 +217,7 @@ static int __write_setup_hook_script(struct recipe* recipe)
     fclose(stream);
 
     // chmod to executable
-    status = chmod(target, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    status = platform_chmod(target, 0755);
     if (status) {
         VLOG_ERROR("bake", "__write_setup_hook_script: failed to fixup permissions for %s\n", target);
     }
@@ -334,22 +334,22 @@ static int __setup_ingredients(struct __bakelib_context* context)
 {
     int status;
 
-    status = __setup_ingredient(kitchen, &options->host_ingredients, kitchen->host_chroot);
+    status = __setup_ingredient(context, &options->host_ingredients, kitchen->host_chroot);
     if (status) {
         return status;
     }
 
-    status = __setup_toolchains(&options->host_ingredients, kitchen->host_build_toolchains_path);
+    status = __setup_toolchains(&options->host_ingredients, context->host_build_toolchains_path);
     if (status) {
         return status;
     }
 
-    status = __setup_ingredient(kitchen, &options->build_ingredients, kitchen->host_build_ingredients_path);
+    status = __setup_ingredient(context, &options->build_ingredients, context->host_build_ingredients_path);
     if (status) {
         return status;
     }
 
-    status = __setup_ingredient(kitchen, &options->runtime_ingredients, kitchen->host_install_path);
+    status = __setup_ingredient(context, &options->runtime_ingredients, context->host_install_path);
     if (status) {
         return status;
     }
@@ -387,38 +387,40 @@ static int __run_setup_hook(struct __bakelib_context* context)
     char         buffer[512] = { 0 };
     unsigned int pid;
 
-    if (options->setup_hook.bash == NULL) {
+    if (context->recipe->environment.hooks.bash == NULL) {
         return 0;
     }
     
-    if (recipe_cache_key_bool(kitchen->recipe_cache, "setup_hook")) {
+    if (recipe_cache_key_bool(context->cache, "setup_hook")) {
         return 0;
     }
 
     VLOG_TRACE("kitchen", "executing setup hook\n");
     snprintf(&buffer[0], sizeof(buffer), "/chef/hook-setup.sh");
-    status = kitchen_client_spawn(
-        kitchen,
+    status = platform_spawn(
         &buffer[0],
-        CHEF_SPAWN_OPTIONS_WAIT,
-        &pid
+        NULL,
+        (const char* const*)context->build_environment,
+        &(struct platform_spawn_options) {
+            .cwd = "/chef",
+        }
     );
     if (status) {
         VLOG_ERROR("kitchen", "__run_setup_hook: failed to execute setup hook\n");
         return status;
     }
 
-    recipe_cache_transaction_begin(kitchen->recipe_cache);
-    status = recipe_cache_key_set_bool(kitchen->recipe_cache, "setup_hook", 1);
+    recipe_cache_transaction_begin(context->cache);
+    status = recipe_cache_key_set_bool(context->cache, "setup_hook", 1);
     if (status) {
         VLOG_ERROR("kitchen", "__run_setup_hook: failed to mark setup hook as done\n");
         return status;
     }
-    recipe_cache_transaction_commit(kitchen->recipe_cache);
+    recipe_cache_transaction_commit(context->cache);
     return 0;
 }
 
-static int __update_packages(struct kitchen* kitchen)
+static int __update_packages(struct __bakelib_context* context)
 {
     struct recipe_cache_package_change* changes;
     int                                 count;
@@ -428,7 +430,7 @@ static int __update_packages(struct kitchen* kitchen)
 
     // this function is kinda unique, to avoid dublicating stuff the API is complex in the
     // sense that calling this with a NULL cache will just mark everything as _ADDED
-    status = recipe_cache_calculate_package_changes(kitchen->recipe_cache, &changes, &count);
+    status = recipe_cache_calculate_package_changes(context->cache, &changes, &count);
     if (status) {
         VLOG_ERROR("kitchen", "__update_packages: failed to calculate package differences\n");
         return status;
@@ -440,23 +442,25 @@ static int __update_packages(struct kitchen* kitchen)
 
     VLOG_TRACE("kitchen", "updating build packages\n");
     snprintf(&buffer[0], sizeof(buffer), "/chef/update.sh");
-    status = kitchen_client_spawn(
-        kitchen,
+    status = platform_spawn(
         &buffer[0],
-        CHEF_SPAWN_OPTIONS_WAIT,
-        &pid
+        NULL,
+        (const char* const*)context->build_environment,
+        &(struct platform_spawn_options) {
+            .cwd = "/chef",
+        }
     );
     if (status) {
         VLOG_ERROR("kitchen", "__execute_script_in_container: failed to execute script\n");
         goto exit;
     }
 
-    recipe_cache_transaction_begin(kitchen->recipe_cache);
-    status = recipe_cache_commit_package_changes(kitchen->recipe_cache, changes, count);
+    recipe_cache_transaction_begin(context->cache);
+    status = recipe_cache_commit_package_changes(context->cache, changes, count);
     if (status) {
         goto exit;
     }
-    recipe_cache_transaction_commit(kitchen->recipe_cache);
+    recipe_cache_transaction_commit(context->cache);
 
 exit:
     recipe_cache_package_changes_destroy(changes, count);

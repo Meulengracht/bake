@@ -112,7 +112,7 @@ struct __bake_build_context* build_context_create(struct __bake_build_options* o
     }
 
     // Before paths, but after all the other setup, setup base environment
-    bctx->base_environment = __initialize_env(options);
+    bctx->base_environment = (const char* const*)__initialize_env(options);
 
     if (__construct_paths(bctx)) {
         VLOG_ERROR("bake", "build_context_create: failed to allocate memory for paths\n");

@@ -16,8 +16,8 @@
  * 
  */
 
-#ifndef __CHEF_REMOTE_H__
-#define __CHEF_REMOTE_H__
+#ifndef __BAKE_REMOTE_PRIVATE_H__
+#define __BAKE_REMOTE_PRIVATE_H__
 
 #include <gracht/client.h>
 
@@ -36,4 +36,4 @@ extern int remote_local_init_default(void);
  */
 extern int remote_client_create(gracht_client_t** clientOut);
 
-#endif //!__CHEF_REMOTE_H__
+#endif //!__BAKE_REMOTE_PRIVATE_H__

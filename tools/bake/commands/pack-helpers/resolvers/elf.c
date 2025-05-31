@@ -259,37 +259,37 @@ static int __parse_dependencies(const char* buffer, size_t bufferSize, struct li
     return __parse_dependencies_32(buffer, bufferSize, dependencies);
 }
 
-static enum kitchen_resolve_arch __elf_arch_to_arch(Elf64_Half elf_arch)
+static enum bake_resolve_arch __elf_arch_to_arch(Elf64_Half elf_arch)
 {
     switch (elf_arch) {
         case EM_386:
-            return KITCHEN_RESOLVE_ARCH_X86;
+            return BAKE_RESOLVE_ARCH_X86;
         case EM_X86_64:
-            return KITCHEN_RESOLVE_ARCH_X86_64;
+            return BAKE_RESOLVE_ARCH_X86_64;
         case EM_ARM:
-            return KITCHEN_RESOLVE_ARCH_ARM;
+            return BAKE_RESOLVE_ARCH_ARM;
         case EM_AARCH64:
-            return KITCHEN_RESOLVE_ARCH_ARM64;
+            return BAKE_RESOLVE_ARCH_ARM64;
         case EM_MIPS:
-            return KITCHEN_RESOLVE_ARCH_MIPS;
+            return BAKE_RESOLVE_ARCH_MIPS;
         case EM_MIPS_X:
-            return KITCHEN_RESOLVE_ARCH_MIPS64;
+            return BAKE_RESOLVE_ARCH_MIPS64;
         case EM_PPC:
-            return KITCHEN_RESOLVE_ARCH_PPC;
+            return BAKE_RESOLVE_ARCH_PPC;
         case EM_PPC64:
-            return KITCHEN_RESOLVE_ARCH_PPC64;
+            return BAKE_RESOLVE_ARCH_PPC64;
         case EM_SPARC:
-            return KITCHEN_RESOLVE_ARCH_SPARC;
+            return BAKE_RESOLVE_ARCH_SPARC;
         case EM_SPARCV9:
-            return KITCHEN_RESOLVE_ARCH_SPARV9;
+            return BAKE_RESOLVE_ARCH_SPARV9;
         case EM_S390:
-            return KITCHEN_RESOLVE_ARCH_S390;
+            return BAKE_RESOLVE_ARCH_S390;
         default:
-            return KITCHEN_RESOLVE_ARCH_UNKNOWN;
+            return BAKE_RESOLVE_ARCH_UNKNOWN;
     }
 }
 
-int elf_is_valid(const char* path, enum kitchen_resolve_arch* arch)
+int elf_is_valid(const char* path, enum bake_resolve_arch* arch)
 {
     union {
         Elf32_Ehdr header32;

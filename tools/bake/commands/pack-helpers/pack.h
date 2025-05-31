@@ -52,7 +52,7 @@ struct __pack_options {
     struct list*           commands; // list<recipe_pack_command>
 };
 
-struct ____pack_resolve_commands_options {
+struct __pack_resolve_commands_options {
     const char* sysroot;
     const char* install_root;
     const char* ingredients_root;
@@ -76,7 +76,7 @@ extern int bake_pack(struct __pack_options* options);
  * @param[In] resolves
  * @return int 
  */
-extern int pack_resolve_commands(struct list* commands, struct list* resolves, struct ____pack_resolve_commands_options* options);
+extern int pack_resolve_commands(struct list* commands, struct list* resolves, struct __pack_resolve_commands_options* options);
 
 /**
  * @brief 

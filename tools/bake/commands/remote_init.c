@@ -32,6 +32,7 @@
 
 #include "chef-config.h"
 #include "commands.h"
+#include "remote-helpers/remote.h"
 
 static void __print_help(void)
 {

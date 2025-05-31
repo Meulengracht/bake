@@ -42,7 +42,7 @@ static int __make_recipe_steps(struct __bake_build_context* bctx, const char* pa
         );
 
         VLOG_TRACE("kitchen", "executing step '%s/%s'\n", part, step->name);
-        status = kitchen_client_spawn(
+        status = bake_client_spawn(
             bctx,
             &buffer[0],
             CHEF_SPAWN_OPTIONS_WAIT,

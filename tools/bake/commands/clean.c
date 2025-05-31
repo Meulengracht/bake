@@ -50,10 +50,6 @@ static void __cleanup_systems(int sig)
     // but we live dangerously
     printf("termination requested, cleaning up\n");
 
-    // cleanup the kitchen, this will take out most of the systems
-    // setup as a part of all this.
-    kitchen_destroy(&g_kitchen);
-
     // Do a quick exit, which is recommended to do in signal handlers
     // and use the signal as the exit code
     _Exit(-sig);
@@ -71,7 +67,8 @@ static int __ask_yes_no_question(const char* question)
 
 int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    struct recipe_cache* cache = NULL;
+    struct __bake_build_context* context;
+    struct build_cache*  cache = NULL;
     int                  purge = 0;
     char*                partOrStep = NULL;
     int                  status;
@@ -101,7 +98,7 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
         signal(SIGINT, SIG_IGN);
 
         // purge all kitchen recipes
-        return kitchen_purge(NULL);
+        return bake_purge_kitchens();
     }
 
     if (options->recipe == NULL) {
@@ -114,22 +111,22 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
     arch = ((struct list_item_string*)options->architectures.head)->value;
 
     // we want the recipe cache in this case for regular cleans
-    status = recipe_cache_create(options->recipe, options->cwd, &cache);
+    status = build_cache_create(options->recipe, options->cwd, &cache);
     if (status) {
         VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
         return -1;
     }
 
-    status = build_context_create(&(struct kitchen_init_options) {
-        .kitchen_root = chef_dirs_kitchen(recipe_cache_uuid(cache)),
-        .recipe = options->recipe,
-        .recipe_cache = cache,
+    context = build_context_create(&(struct __bake_build_options) {
+        .cwd = options->cwd,
         .envp = (const char* const*)envp,
-        .project_path = options->cwd,
-        .pkg_environment = NULL,
+        .recipe = options->recipe,
+        .recipe_path = options->recipe_path,
+        .build_cache = cache,
         .target_platform = options->platform,
-        .target_architecture = arch
-    }, &g_kitchen);
+        .target_architecture = arch,
+        .cvd_address = NULL
+    });
     if (status) {
         VLOG_ERROR("bake", "failed to initialize kitchen: %s\n", strerror(errno));
         return -1;
@@ -138,12 +135,12 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
     // ignore CTRL-C request once cleanup starts
     signal(SIGINT, SIG_IGN);
 
-    status = kitchen_recipe_clean(&g_kitchen,
-        &(struct kitchen_recipe_clean_options) {
+    status = bake_step_clean(context,
+        &(struct __build_clean_options) {
             .part_or_step = partOrStep
         }
     );
 
-    kitchen_destroy(&g_kitchen);
+    build_context_destroy(context);
     return status;
 }

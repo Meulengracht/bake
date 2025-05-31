@@ -90,37 +90,37 @@ static int __get_ld_conf_paths(const char* path, struct list* paths)
     return result;
 }
 
-static const char* __get_platform(struct kitchen_resolve* resolve)
+static const char* __get_platform(struct bake_resolve* resolve)
 {
     switch (resolve->arch) {
-        case KITCHEN_RESOLVE_ARCH_X86_64:
+        case BAKE_RESOLVE_ARCH_X86_64:
             return "x86_64-linux-gnu";
-        case KITCHEN_RESOLVE_ARCH_X86:
+        case BAKE_RESOLVE_ARCH_X86:
             return "i386-linux-gnu";
-        case KITCHEN_RESOLVE_ARCH_ARM:
+        case BAKE_RESOLVE_ARCH_ARM:
             return "arm-linux-gnueabi";
-        case KITCHEN_RESOLVE_ARCH_ARM64:
+        case BAKE_RESOLVE_ARCH_ARM64:
             return "aarch64-linux-gnu";
-        case KITCHEN_RESOLVE_ARCH_MIPS:
+        case BAKE_RESOLVE_ARCH_MIPS:
             return "mips-linux-gnu";
-        case KITCHEN_RESOLVE_ARCH_MIPS64:
+        case BAKE_RESOLVE_ARCH_MIPS64:
             return "mips64-linux-gnu";
-        case KITCHEN_RESOLVE_ARCH_PPC:
+        case BAKE_RESOLVE_ARCH_PPC:
             return "powerpc-linux-gnu";
-        case KITCHEN_RESOLVE_ARCH_PPC64:
+        case BAKE_RESOLVE_ARCH_PPC64:
             return "powerpc64-linux-gnu";
-        case KITCHEN_RESOLVE_ARCH_SPARC:
+        case BAKE_RESOLVE_ARCH_SPARC:
             return "sparc-linux-gnu";
-        case KITCHEN_RESOLVE_ARCH_SPARV9:
+        case BAKE_RESOLVE_ARCH_SPARV9:
             return "sparc64-linux-gnu";
-        case KITCHEN_RESOLVE_ARCH_S390:
+        case BAKE_RESOLVE_ARCH_S390:
             return "s390-linux-gnu";
         default:
             return "unknown";
     }
 }
 
-static int __load_ld_so_conf_for_platform(const char* sysroot, struct kitchen_resolve* resolve, struct list* libraryPaths)
+static int __load_ld_so_conf_for_platform(const char* sysroot, struct bake_resolve* resolve, struct list* libraryPaths)
 {
     char* path;
     int   status = 0;
@@ -144,7 +144,7 @@ static int __load_ld_so_conf_for_platform(const char* sysroot, struct kitchen_re
     return status;
 }
 
-const char* resolve_platform_dependency(const char* sysroot, struct kitchen_resolve* resolve, const char* dependency)
+const char* resolve_platform_dependency(const char* sysroot, struct bake_resolve* resolve, const char* dependency)
 {
     struct list          libraryPaths = { 0 };
     struct list_item*    item;

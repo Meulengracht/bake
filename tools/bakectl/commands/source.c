@@ -18,7 +18,7 @@
 
 #include <errno.h>
 #include <liboven.h>
-#include <chef/list.h>
+#include <chef/bake.h>
 #include <chef/platform.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -292,7 +292,7 @@ static int __source_part(struct recipe* recipe, struct __source_options* options
     return status;
 }
 
-int source_main(int argc, char** argv, char** envp, struct bakectl_command_options* options)
+int source_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options)
 {
     struct oven_initialize_options ovenOpts = { 0 };
     int                            status;
@@ -311,12 +311,7 @@ int source_main(int argc, char** argv, char** envp, struct bakectl_command_optio
         }
     }
 
-    if (options->recipe == NULL) {
-        fprintf(stderr, "bakectl: --recipe must be provided\n");
-        return -1;
-    }
-
-    status = __initialize_oven_options(&ovenOpts, envp);
+    status = __initialize_oven_options(&ovenOpts, context);
     if (status) {
         fprintf(stderr, "bakectl: failed to allocate memory for options\n");
         goto cleanup;
@@ -328,11 +323,11 @@ int source_main(int argc, char** argv, char** envp, struct bakectl_command_optio
         goto cleanup;
     }
 
-    status = __source_part(options->recipe, &(struct __source_options) {
+    status = __source_part(context->recipe, &(struct __source_options) {
         .project_root = ovenOpts.paths.project_root,
         .source_root = ovenOpts.paths.source_root,
         .part = options->part,
-        .envp = envp
+        .envp = context->build_environment
     });
     if (status) {
         fprintf(stderr, "bakectl: failed to source part '%s': %s\n", 

@@ -41,9 +41,8 @@ const char* g_possibleBakeCtlPaths[] = {
 static int __find_bakectl(char** resolvedOut)
 {
     char   buffer[PATH_MAX] = { 0 };
+    char   dirnm[PATH_MAX] = { 0 };
     char*  resolved = NULL;
-    char*  path;
-    char*  target;
     int    status;
     size_t index;
 
@@ -55,17 +54,17 @@ static int __find_bakectl(char** resolvedOut)
 
     // get the directory part, and remember that this modifies
     // our buffer.
-    path = dirname(&buffer[0]);
-    index = strlen(&buffer[0]);
-    if (buffer[index] != '/') {
-        buffer[index++] = '/';
+    strbasename(&buffer[0], &dirnm[0], sizeof(dirnm) - 1);
+    index = strlen(&dirnm[0]);
+    if (dirnm[index] != '/') {
+        dirnm[index++] = '/';
     }
 
     for (int i = 0; g_possibleBakeCtlPaths[i] != NULL; i++) {
         const char* pathToUse = g_possibleBakeCtlPaths[i];
         if (g_possibleBakeCtlPaths[i][0] != '/') {
-            strcpy(&buffer[index], g_possibleBakeCtlPaths[i]);
-            pathToUse = &buffer[0];
+            strcpy(&dirnm[index], g_possibleBakeCtlPaths[i]);
+            pathToUse = &dirnm[0];
         }
         resolved = realpath(pathToUse, NULL);
         if (resolved != NULL) {
@@ -76,12 +75,12 @@ static int __find_bakectl(char** resolvedOut)
     }
 
     if (resolved == NULL) {
-        status = readlink("/proc/self/exe", &buffer[0], PATH_MAX);
+        status = readlink("/proc/self/exe", &dirnm[0], PATH_MAX);
         if (status < 0) {
             VLOG_ERROR("bake", "__install_bakectl: failed to read /proc/self/exe\n");
             return status;
         }
-        VLOG_WARNING("bake", "__install_bakectl: failed to resolve bakectl from %s\n", &buffer[0]);
+        VLOG_WARNING("bake", "__install_bakectl: failed to resolve bakectl from %s\n", &dirnm[0]);
         return -1;
     }
     *resolvedOut = resolved;
@@ -103,12 +102,12 @@ int bake_build_setup(struct __bake_build_context* bctx)
     }
 
     // project path
-    mounts[0].host_path = bctx->host_cwd;
+    mounts[0].host_path = (char*)bctx->host_cwd;
     mounts[0].container_path = "/chef/project";
     mounts[0].options = CHEF_MOUNT_OPTIONS_READONLY;
 
     // fridge path
-    mounts[1].host_path = chef_dirs_fridge();
+    mounts[1].host_path = (char*)chef_dirs_fridge();
     mounts[1].container_path = "/chef/fridge";
     mounts[1].options = CHEF_MOUNT_OPTIONS_READONLY;
 

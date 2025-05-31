@@ -194,7 +194,7 @@ enum chef_status bake_client_spawn(
         &context,
         &(struct chef_spawn_parameters) {
             .container_id = bctx->cvd_id,
-            .command = command,
+            .command = (char*)command,
             .options = options,
             .environment = flatenv
             /* .user = */
@@ -220,8 +220,8 @@ enum chef_status bake_client_upload(struct __bake_build_context* bctx, const cha
         &context,
         &(struct chef_file_parameters) {
             .container_id = bctx->cvd_id,
-            .source_path = hostPath,
-            .destination_path = containerPath,
+            .source_path = (char*)hostPath,
+            .destination_path = (char*)containerPath,
             .user.username = ""
         }
     );

@@ -70,10 +70,10 @@ static void __initialize_pack_options(
 {
     memset(options, 0, sizeof(struct __pack_options));
     options->name             = pack->name;
-    options->sysroot_dir      = bctx->host_chroot;
+    options->sysroot_dir      = bctx->rootfs_path;
     options->output_dir       = bctx->host_cwd;
-    options->input_dir        = bctx->host_install_path;
-    options->ingredients_root = bctx->host_build_ingredients_path;
+    options->input_dir        = bctx->install_path;
+    options->ingredients_root = bctx->build_ingredients_path;
     options->platform         = bctx->target_platform;
     options->architecture     = bctx->target_architecture;
 
@@ -280,7 +280,7 @@ int pack_main(int argc, char** argv, char** envp, struct bake_command_options* o
         struct __pack_options packOptions;
 
         __initialize_pack_options(bctx, &packOptions, pack);
-        status = kitchen_pack(&packOptions);
+        status = bake_pack(&packOptions);
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);
             goto cleanup;

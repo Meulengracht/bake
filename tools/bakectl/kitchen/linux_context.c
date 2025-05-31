@@ -17,6 +17,8 @@
  */
 
 #include <chef/bake.h>
+#include <chef/cache.h>
+#include <chef/environment.h>
 #include <chef/fridge.h>
 #include <chef/ingredient.h>
 #include <chef/pkgmgr.h>
@@ -112,7 +114,7 @@ static char** __initialize_env(struct pkgmngr* pkg, const char* const* parentEnv
     // copy parent entries
     count = 0;
     while (parentEnv[count]) {
-        env[count] = parentEnv[count];
+        env[count] = platform_strdup(parentEnv[count]);
         count++;
     }
 
@@ -237,7 +239,45 @@ struct __bakelib_context* __bakelib_context_new(
     );
 }
 
+static void __safe_free(void** ptr) {
+    free(*ptr);
+    *ptr = NULL;
+}
+
+static void __safe_freev(void*** ptr) {
+    void** ptrv = *ptr;
+    if (ptrv == NULL) {
+        return;
+    }
+    
+    for (int i = 0; ptrv[i] != NULL; i++) {
+        free(ptrv[i]);
+    }
+    free(ptrv);
+    *ptr = NULL;
+}
+
 void __bakelib_context_delete(struct __bakelib_context* context)
 {
+    if (context->pkg_manager != NULL) {
+        context->pkg_manager->destroy(context->pkg_manager);
+        context->pkg_manager = NULL;
+    }
 
+    __safe_free((void**)&context->recipe_path);
+    __safe_freev((void***)&context->build_environment);
+
+    // these are not allocated
+    // context->build_platform
+    // context->build_architecture
+
+    // external paths that point inside chroot
+    // i.e paths valid outside chroot
+    __safe_free((void**)&context->project_directory);
+    __safe_free((void**)&context->build_directory);
+    __safe_free((void**)&context->build_ingredients_directory);
+    __safe_free((void**)&context->build_toolchains_directory);
+    __safe_free((void**)&context->install_directory);
+
+    free(context);
 }

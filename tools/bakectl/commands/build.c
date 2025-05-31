@@ -209,17 +209,12 @@ int build_main(int argc, char** argv, struct __bakelib_context* context, struct 
         }
     }
 
-    if (options->recipe == NULL) {
-        fprintf(stderr, "bakectl: --recipe must be provided\n");
-        return -1;
-    }
-
     if (options->part == NULL || options->step == NULL) {
         fprintf(stderr, "bakectl: --step must be provided and have a valid format of '<part>/<step>'\n");
         return -1;
     }
 
-    status = __initialize_oven_options(&ovenOpts, envp);
+    status = __initialize_oven_options(&ovenOpts, context);
     if (status) {
         fprintf(stderr, "bakectl: failed to allocate memory for options\n");
         goto cleanup;
@@ -231,7 +226,7 @@ int build_main(int argc, char** argv, struct __bakelib_context* context, struct 
         goto cleanup;
     }
     
-    status = __build_part(options->recipe, options->part, options->step, ovenOpts.target_platform);
+    status = __build_part(context->recipe, options->part, options->step, ovenOpts.target_platform);
     if (status) {
         fprintf(stderr, "bakectl: failed to build: %s\n", strerror(errno));
     }
