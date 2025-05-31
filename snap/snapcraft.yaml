@@ -33,7 +33,6 @@ apps:
   cvd:
     command: usr/libexec/chef/cvd -vvv
     daemon: simple
-    install-mode: disable
 
 parts:
   chef-src:

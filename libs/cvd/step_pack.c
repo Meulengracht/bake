@@ -194,7 +194,7 @@ int build_step_pack(struct __bake_build_context* bctx)
         struct __pack_options packOptions;
 
         __initialize_pack_options(bctx, &packOptions, pack);
-        status = kitchen_pack(&packOptions);
+        status = bake_pack(&packOptions);
         if (status) {
             VLOG_ERROR("bake", "kitchen_recipe_pack: failed to construct pack %s\n", pack->name);
             goto cleanup;

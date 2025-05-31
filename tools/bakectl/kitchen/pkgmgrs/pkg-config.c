@@ -17,10 +17,9 @@
  */
 
 #include <chef/ingredient.h>
-#include <chef/list.h>
+#include <chef/pkgmgr.h>
 #include <chef/platform.h>
 #include <errno.h>
-#include "libpkgmgr.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

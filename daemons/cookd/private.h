@@ -45,6 +45,11 @@ extern void cookd_config_api_address(struct cookd_config_address* address);
 /**
  * @brief
  */
+extern void cookd_config_cvd_address(struct cookd_config_address* address);
+
+/**
+ * @brief
+ */
 extern int cookd_initialize_client(gracht_client_t** clientOut);
 
 #endif //!__COOKD_PRIVATE_H__

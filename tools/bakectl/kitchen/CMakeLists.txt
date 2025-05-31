@@ -13,7 +13,10 @@ macro (add_sources)
     endforeach()
 endmacro()
 
-add_sources(cache.c)
+add_sources(
+    pkgmgrs/pkg-config.c
+    cache.c
+)
 if (UNIX)
     add_sources(linux_context.c)
 elseif (WIN32)
