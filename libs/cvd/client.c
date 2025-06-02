@@ -154,7 +154,7 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx,
     char*                         rootfs;
     VLOG_TRACE("bake", "bake_client_create_container()\n");
     
-    rootfs = chef_dirs_rootfs(build_cache_uuid(bctx->build_cache));
+    rootfs = (char*)chef_dirs_rootfs(build_cache_uuid(bctx->build_cache));
     if (rootfs == NULL) {
         VLOG_ERROR("bake", "bake_client_create_container: failed to allocate memory for rootfs\n");
         return -1;
