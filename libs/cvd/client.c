@@ -18,6 +18,7 @@
 
 #include <chef/environment.h>
 #include <chef/cvd.h>
+#include <chef/dirs.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
 #include <stdio.h>
@@ -150,17 +151,27 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx,
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
+    char*                         rootfs;
+    VLOG_TRACE("bake", "bake_client_create_container()\n");
+    
+    rootfs = chef_dirs_rootfs(build_cache_uuid(bctx->build_cache));
+    if (rootfs == NULL) {
+        VLOG_ERROR("bake", "bake_client_create_container: failed to allocate memory for rootfs\n");
+        return -1;
+    }
 
     status = chef_cvd_create(
         bctx->cvd_client,
         &context,
         &(struct chef_create_parameters) {
             .type = CHEF_ROOTFS_TYPE_DEBOOTSTRAP,
-            .rootfs = "",
+            .rootfs = rootfs,
             .mounts = mounts,
             .mounts_count = (uint32_t)count
         }
     );
+    free(rootfs);
+    
     if (status != 0) {
         VLOG_ERROR("bake", "\n", strerror(status));
         return status;
@@ -172,15 +183,16 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx,
 
 enum chef_status bake_client_spawn(
     struct __bake_build_context* bctx,
-    const char*                 command,
-    enum chef_spawn_options     options,
-    unsigned int*               pidOut)
+    const char*                  command,
+    enum chef_spawn_options      options,
+    unsigned int*                pidOut)
 {
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
     uint8_t*                      flatenv = NULL;
     size_t                        flatenvLength = 0;
+    VLOG_TRACE("bake", "bake_client_spawn(cmd=%s)\n", command);
 
     if (bctx->base_environment != NULL) {
         flatenv = environment_flatten(bctx->base_environment, &flatenvLength);
@@ -214,6 +226,7 @@ enum chef_status bake_client_upload(struct __bake_build_context* bctx, const cha
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
+    VLOG_TRACE("bake", "bake_client_upload(host=%s, child=%s)\n", hostPath, containerPath);
 
     status = chef_cvd_upload(
         bctx->cvd_client,
@@ -239,6 +252,7 @@ enum chef_status bake_client_destroy_container(struct __bake_build_context* bctx
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
+    VLOG_TRACE("bake", "bake_client_destroy_container()\n");
 
     status = chef_cvd_destroy(bctx->cvd_client, &context, bctx->cvd_id);
     if (status != 0) {

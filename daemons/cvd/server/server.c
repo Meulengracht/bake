@@ -90,7 +90,7 @@ static int __resolve_rootfs(const struct chef_create_parameters* params, char** 
         // Create a new rootfs using debootstrap from the host
         case CHEF_ROOTFS_TYPE_DEBOOTSTRAP:
         {
-            status = cvd_rootfs_setup_debootstrap(path);
+            status = cvd_rootfs_setup_debootstrap(params->rootfs);
             if (status) {
                 VLOG_ERROR("cvd", "failed to setup debootstrap container\n");
                 platform_rmdir(path);

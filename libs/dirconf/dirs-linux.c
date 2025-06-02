@@ -203,7 +203,19 @@ static const char* __root_common_directory(void)
         return val;
     }
 #endif
-    return "/etc/chef";
+    return "/var/lib/chef";
+}
+
+static const char* __spaces_directory(void)
+{
+#ifdef CHEF_AS_SNAP
+    // /var/snap/<snap>/common
+    char* val = getenv("SNAP_COMMON");
+    if (val != NULL) {
+        return val;
+    }
+#endif
+    return "/var/chef/spaces";
 }
 
 static char* __common_user_directory(void)
@@ -231,12 +243,12 @@ static int __initialize_daemon(void)
         return -1;
     }
 
-    g_dirs.root    = __strdup_fail("/tmp/chef");
-    g_dirs.config  = __strdup_fail(__root_common_directory());
-    g_dirs.fridge  = strpathcombine(g_dirs.config, "fridge");
-    g_dirs.store   = strpathcombine(g_dirs.config, "store");
-    g_dirs.kitchen = strpathcombine(g_dirs.root, "spaces");
-    if (g_dirs.fridge == NULL || g_dirs.store == NULL || g_dirs.kitchen == NULL) {
+    g_dirs.root    = __strdup_fail(__root_common_directory());
+    g_dirs.config  = __strdup_fail("/etc/chef");
+    g_dirs.fridge  = strpathcombine(g_dirs.root, "fridge");
+    g_dirs.store   = strpathcombine(g_dirs.root, "store");
+    g_dirs.kitchen = __strdup_fail(__spaces_directory());
+    if (g_dirs.fridge == NULL || g_dirs.store == NULL) {
         VLOG_FATAL("dirs", "failed to allocate memory for paths\n");
     }
     return __ensure_chef_global_dirs();
