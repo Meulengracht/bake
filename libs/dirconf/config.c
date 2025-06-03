@@ -149,6 +149,21 @@ static int __parse_config(struct chef_config* config, json_t* root)
     return 0;
 }
 
+static int __initialize_config(struct chef_config* config)
+{
+    // No default values for remote address, it needs
+    // to go through the wizard.
+#ifdef CHEF_ON_LINUX
+    config->cvd.type = platform_strdup("local");
+    config->cvd.address = platform_strdup("/run/chef/cvd/api");
+#elif CHEF_ON_WINDOWS
+    config->api.type = platform_strdup("inet4");
+    config->api.address = platform_strdup("127.0.0.1");
+    config->api.port = 51003;
+#endif
+    return 0;
+}
+
 struct chef_config* chef_config_load(const char* confdir)
 {
     struct chef_config* config;
@@ -168,7 +183,11 @@ struct chef_config* chef_config_load(const char* confdir)
     root = json_load_file(path, 0, &error);
     if (root == NULL) {
         if (json_error_code(&error) == json_error_cannot_open_file) {
-            // no config yet, it's okay
+            // assume no config, write the default one
+            if (__initialize_config(config)) {
+                __chef_config_delete(config);
+                return NULL;
+            }
             return config;
         }
         VLOG_ERROR("config", "chef_config_load: failed to load %s\n", &path[0]);

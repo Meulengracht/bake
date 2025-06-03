@@ -146,7 +146,7 @@ static int __initialize_config(struct config* config)
 #elif CHEF_ON_WINDOWS
     config->api_address.type = platform_strdup("inet4");
     config->api_address.address = platform_strdup("127.0.0.1");
-    config->api_address.port = 51001;
+    config->api_address.port = 51003;
 #endif
     return 0;
 }
