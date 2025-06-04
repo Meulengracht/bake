@@ -140,6 +140,7 @@ int bake_client_initialize(struct __bake_build_context* bctx)
     if (code) {
         VLOG_ERROR("bake", "kitchen_client_initialize: failed to connect client %i, %i\n", errno, code);
         gracht_client_shutdown(bctx->cvd_client);
+        bctx->cvd_client = NULL;
         return code;
     }
 
@@ -172,8 +173,8 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx,
     );
     free(rootfs);
     
-    if (status != 0) {
-        VLOG_ERROR("bake", "\n", strerror(status));
+    if (status) {
+        VLOG_ERROR("bake", "bake_client_create_container failed to create client\n");
         return status;
     }
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
@@ -256,7 +257,7 @@ enum chef_status bake_client_destroy_container(struct __bake_build_context* bctx
 
     status = chef_cvd_destroy(bctx->cvd_client, &context, bctx->cvd_id);
     if (status != 0) {
-        VLOG_ERROR("bake", "\n", strerror(status));
+        VLOG_ERROR("bake", "bake_client_destroy_container: failed to invoke destroy\n");
         return status;
     }
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
