@@ -105,4 +105,11 @@ extern int containerv_destroy(struct containerv_container* container);
 
 extern int containerv_join(const char* containerId);
 
+/**
+ * @brief Returns the container ID of the given container.
+ * @param container The container to get the ID from.
+ * @return A read-only string containing the container ID.
+ */
+extern const char* containerv_id(struct containerv_container* container);
+
 #endif //!__CONTAINERV_H__

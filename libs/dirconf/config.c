@@ -155,7 +155,7 @@ static int __initialize_config(struct chef_config* config)
     // to go through the wizard.
 #ifdef CHEF_ON_LINUX
     config->cvd.type = platform_strdup("local");
-    config->cvd.address = platform_strdup("/run/chef/cvd/api");
+    config->cvd.address = platform_strdup("@/chef/cvd/api");
 #elif CHEF_ON_WINDOWS
     config->api.type = platform_strdup("inet4");
     config->api.address = platform_strdup("127.0.0.1");

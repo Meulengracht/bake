@@ -32,16 +32,54 @@
 #include <arpa/inet.h>
 #include <sys/un.h>
 
-static int __local_size(void) {
+static int __abstract_socket_size(const char* address) {
+    return offsetof(struct sockaddr_un, sun_path) + strlen(address);
+}
+
+static int __local_size(const char* address) {
+    // If the address starts with '@', it is an abstract socket path.
+    // Abstract socket paths are not null-terminated, so we need to account for that.
+    if (address[0] == '@') {
+        return __abstract_socket_size(address + 1);
+    }
     return sizeof(struct sockaddr_un);
 }
 
 static int __configure_local(struct sockaddr_storage* storage, const char* address)
 {
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
-    
+
     local->sun_family = AF_LOCAL;
-    strncpy(local->sun_path, address, sizeof(local->sun_path));
+
+    // sanitize the address length
+    if (strlen(address) >= sizeof(local->sun_path)) {
+        fprintf(stderr, "__configure_local: address too long for local socket: %s\n", address);
+        return -1;
+    }
+
+    // handle abstract socket paths
+    if (address[0] == '@') {
+        local->sun_path[0] = '\0';
+        strncpy(local->sun_path + 1, address + 1, sizeof(local->sun_path) - 1);
+    } else {
+        strncpy(local->sun_path, address, sizeof(local->sun_path));
+    }
+    return 0;
+}
+
+static int __configure_local_bind(struct gracht_link_socket* link)
+{
+    struct sockaddr_storage storage = { 0 };
+    struct sockaddr_un*     address = (struct sockaddr_un*)&storage;
+
+    address->sun_family = AF_LOCAL;
+    snprintf(&address->sun_path[1],
+        sizeof(address->sun_path) - 2,
+        "/chef/cvd/clients/%u",
+        getpid()
+    );
+
+    gracht_link_socket_set_bind_address(link, &storage, __abstract_socket_size(&address->sun_path[1]));
     return 0;
 }
 #elif defined(_WIN32)
@@ -50,7 +88,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 // Windows 10 Insider build 17063 ++ 
 #include <afunix.h>
 
-static int __local_size(void) {
+static int __local_size(const char* address) {
     return sizeof(struct sockaddr_un);
 }
 
@@ -82,13 +120,19 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     VLOG_DEBUG("bake", "init_link_config(link=%i, type=%s)\n", type, config->type);
 
     if (!strcmp(config->type, "local")) {
+        status = __configure_local_bind(link);
+        if (status) {
+            VLOG_ERROR("bake", "__init_link_config failed to configure local bind address\n");
+            return status;
+        }
+
         status = __configure_local(&addr_storage, config->address);
         if (status) {
             VLOG_ERROR("bake", "init_link_config failed to configure local link\n");
             return status;
         }
         domain = AF_LOCAL;
-        size = __local_size();
+        size = __local_size(config->address);
 
         VLOG_TRACE("bake", "connecting to %s\n", config->address);
     } else if (!strcmp(config->type, "inet4")) {

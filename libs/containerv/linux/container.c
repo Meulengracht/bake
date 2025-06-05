@@ -1146,3 +1146,11 @@ int containerv_join(const char* containerId)
     VLOG_DEBUG("containerv[child]", "successfully joined container\n");
     return 0;
 }
+
+const char* containerv_id(struct containerv_container* container)
+{
+    if (container == NULL) {
+        return NULL;
+    }
+    return &container->id[0];
+}

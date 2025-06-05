@@ -142,7 +142,7 @@ static int __initialize_config(struct config* config)
 {
 #ifdef CHEF_ON_LINUX
     config->api_address.type = platform_strdup("local");
-    config->api_address.address = platform_strdup("/run/chef/cvd/api");
+    config->api_address.address = platform_strdup("@/chef/cvd/api");
 #elif CHEF_ON_WINDOWS
     config->api_address.type = platform_strdup("inet4");
     config->api_address.address = platform_strdup("127.0.0.1");

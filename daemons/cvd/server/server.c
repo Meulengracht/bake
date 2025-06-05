@@ -33,13 +33,13 @@ struct __container {
 };
 
 
-static struct __container* __container_new(const char* rootfs, struct containerv_container* handle)
+static struct __container* __container_new(struct containerv_container* handle)
 {
     struct __container* container = calloc(1, sizeof(struct __container));
     if (container == NULL) {
         return NULL;
     }
-    container->id = platform_strdup(strrchr(rootfs, '/') + 1);
+    container->id = platform_strdup(containerv_id(handle));
     if (container->id == NULL) {
         free(container);
         return NULL;
@@ -60,31 +60,11 @@ static enum chef_status __chef_status_from_errno(void) {
     }
 }
 
-static int __generate_container_directory(char** pathOut)
-{
-    char* template = "/run/chef/cvd/XXXXXX";
-    if (mkdtemp(&template[0]) == NULL) {
-        VLOG_ERROR("cvd", "failed to get a temporary filename for log %s\n", template);
-        return -1;
-    }
-    *pathOut = platform_strdup(template);
-    return 0;
-}
-
-static int __resolve_rootfs(const struct chef_create_parameters* params, char** pathOut)
+static int __resolve_rootfs(const struct chef_create_parameters* params)
 {
     char* path = NULL;
     int   status;
     VLOG_TRACE("cvd", "__resolve_rootfs(rootfs=%s, type=%i)\n", params->rootfs, params->type);
-
-    // generate a directory for the container in any case, this is where
-    // stuff will be created / mounted for mount ns.
-    // this will also give us an id
-    status = __generate_container_directory(&path);
-    if (status) {
-        VLOG_ERROR("cvd", "failed to generate a container directory\n");
-        return status;
-    }
 
     switch (params->type) {
         // Create a new rootfs using debootstrap from the host
@@ -97,9 +77,6 @@ static int __resolve_rootfs(const struct chef_create_parameters* params, char** 
                 free(path);
                 return status;
             }
-
-            // Set the rootfs path
-            *pathOut = path;
             return 0;
         }
         case CHEF_ROOTFS_TYPE_OSBASE:
@@ -150,7 +127,6 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     struct containerv_options*   opts;
     struct containerv_container* cv_container;
     struct __container*          _container;
-    char*                        rootfs;
     int                          status;
     VLOG_TRACE("cvd", "cvd_create()\n");
 
@@ -161,14 +137,14 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     }
 
     // resolve the type of roots
-    status = __resolve_rootfs(params, &rootfs);
+    status = __resolve_rootfs(params);
     if (status) {
         VLOG_ERROR("cvd", "failed to resolve rootfs\n");
         return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
 
     // setup mounts
-    status = __resolve_mounts(opts, rootfs, params->mounts, params->mounts_count);
+    status = __resolve_mounts(opts, params->rootfs, params->mounts, params->mounts_count);
     if (status) {
         containerv_options_delete(opts);
         VLOG_ERROR("cvd", "failed to resolve rootfs mounts\n");
@@ -183,14 +159,14 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     );
 
     // create the container
-    status = containerv_create(rootfs, opts, &cv_container);
+    status = containerv_create(params->rootfs, opts, &cv_container);
     containerv_options_delete(opts);
     if (status) {
         VLOG_ERROR("cvd", "failed to start the container\n");
         return __chef_status_from_errno();
     }
 
-    _container =  __container_new(rootfs, cv_container);
+    _container =  __container_new(cv_container);
     if (_container == NULL) {
         VLOG_ERROR("cvd", "failed to allocate memory for the container structure\n");
         return __chef_status_from_errno();

@@ -30,7 +30,7 @@
 #include <string.h>
 #include <vlog.h>
 
-#define __DEFAULT_LOCAL_CONNECTION_STRING "unix:/run/chef/waiterd/api"
+#define __DEFAULT_LOCAL_CONNECTION_STRING "unix:@/chef/waiterd/api"
 
 static int __ask_yes_no_question(const char* question)
 {

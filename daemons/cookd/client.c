@@ -29,16 +29,34 @@
 #include <arpa/inet.h>
 #include <sys/un.h>
 
-static int __local_size(void) {
+static int __local_size(const char* address) {
+    // If the address starts with '@', it is an abstract socket path.
+    // Abstract socket paths are not null-terminated, so we need to account for that.
+    if (address[0] == '@') {
+        return offsetof(struct sockaddr_un, sun_path) + strlen(address);
+    }
     return sizeof(struct sockaddr_un);
 }
 
 static int __configure_local(struct sockaddr_storage* storage, const char* address)
 {
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
-    
+
     local->sun_family = AF_LOCAL;
-    strncpy(local->sun_path, address, sizeof(local->sun_path));
+
+    // sanitize the address length
+    if (strlen(address) >= sizeof(local->sun_path)) {
+        fprintf(stderr, "__configure_local: address too long for local socket: %s\n", address);
+        return -1;
+    }
+
+    // handle abstract socket paths
+    if (address[0] == '@') {
+        local->sun_path[0] = '\0';
+        strncpy(local->sun_path + 1, address + 1, sizeof(local->sun_path) - 1);
+    } else {
+        strncpy(local->sun_path, address, sizeof(local->sun_path));
+    }
     return 0;
 }
 #elif defined(_WIN32)
@@ -47,7 +65,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 // Windows 10 Insider build 17063 ++ 
 #include <afunix.h>
 
-static int __local_size(void) {
+static int __local_size(const char* address) {
     return sizeof(struct sockaddr_un);
 }
 
@@ -85,7 +103,7 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
             return status;
         }
         domain = AF_LOCAL;
-        size = __local_size();
+        size = __local_size(config->address);
 
         VLOG_TRACE("cookd", "connecting to %s\n", config->address);
     } else if (!strcmp(config->type, "inet4")) {
