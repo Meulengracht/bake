@@ -62,8 +62,7 @@ static enum chef_status __chef_status_from_errno(void) {
 
 static int __resolve_rootfs(const struct chef_create_parameters* params)
 {
-    char* path = NULL;
-    int   status;
+    int status;
     VLOG_TRACE("cvd", "__resolve_rootfs(rootfs=%s, type=%i)\n", params->rootfs, params->type);
 
     switch (params->type) {
@@ -73,8 +72,6 @@ static int __resolve_rootfs(const struct chef_create_parameters* params)
             status = cvd_rootfs_setup_debootstrap(params->rootfs);
             if (status) {
                 VLOG_ERROR("cvd", "failed to setup debootstrap container\n");
-                platform_rmdir(path);
-                free(path);
                 return status;
             }
             return 0;

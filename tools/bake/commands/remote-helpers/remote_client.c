@@ -37,7 +37,7 @@ static int __local_size(const char* address) {
     // If the address starts with '@', it is an abstract socket path.
     // Abstract socket paths are not null-terminated, so we need to account for that.
     if (address[0] == '@') {
-        return __abstract_socket_size(address + 1);
+        return __abstract_socket_size(address);
     }
     return sizeof(struct sockaddr_un);
 }

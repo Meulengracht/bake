@@ -19,6 +19,7 @@
 #include <chef/environment.h>
 #include <chef/cvd.h>
 #include <chef/dirs.h>
+#include <chef/platform.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
 #include <stdio.h>
@@ -40,7 +41,7 @@ static int __local_size(const char* address) {
     // If the address starts with '@', it is an abstract socket path.
     // Abstract socket paths are not null-terminated, so we need to account for that.
     if (address[0] == '@') {
-        return __abstract_socket_size(address + 1);
+        return __abstract_socket_size(address);
     }
     return sizeof(struct sockaddr_un);
 }
@@ -197,6 +198,7 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx,
     int                           status;
     enum chef_status              chstatus;
     char*                         rootfs;
+    char                          cvdid[64];
     VLOG_TRACE("bake", "bake_client_create_container()\n");
     
     rootfs = (char*)chef_dirs_rootfs(build_cache_uuid(bctx->build_cache));
@@ -222,7 +224,13 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx,
         return status;
     }
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
-    chef_cvd_destroy_result(bctx->cvd_client, &context, &chstatus);
+    chef_cvd_create_result(bctx->cvd_client, &context, &cvdid[0], sizeof(cvdid) - 1, &chstatus);
+    if (chstatus == CHEF_STATUS_SUCCESS) {
+        bctx->cvd_id = platform_strdup(&cvdid[0]);
+        if (bctx->cvd_id == NULL) {
+            VLOG_FATAL("bake", "failed to allocate memory for CVD id\n");
+        }
+    }
     return chstatus;
 }
 
@@ -258,7 +266,7 @@ enum chef_status bake_client_spawn(
         }
     );
     if (status != 0) {
-        VLOG_ERROR("bake", "\n", strerror(status));
+        VLOG_ERROR("bake", "bake_client_spawn: failed to execute %s\n", command);
         return status;
     }
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
@@ -284,7 +292,7 @@ enum chef_status bake_client_upload(struct __bake_build_context* bctx, const cha
         }
     );
     if (status != 0) {
-        VLOG_ERROR("bake", "\n", strerror(status));
+        VLOG_ERROR("bake", "bake_client_upload: failed to upload %s\n", hostPath);
         return status;
     }
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
@@ -299,6 +307,11 @@ enum chef_status bake_client_destroy_container(struct __bake_build_context* bctx
     enum chef_status              chstatus;
     VLOG_TRACE("bake", "bake_client_destroy_container()\n");
 
+    if (bctx->cvd_id == NULL) {
+        VLOG_DEBUG("bake", "bake_client_destroy_container: no container to destroy\n");
+        return CHEF_STATUS_SUCCESS;
+    }
+
     status = chef_cvd_destroy(bctx->cvd_client, &context, bctx->cvd_id);
     if (status != 0) {
         VLOG_ERROR("bake", "bake_client_destroy_container: failed to invoke destroy\n");
@@ -306,5 +319,11 @@ enum chef_status bake_client_destroy_container(struct __bake_build_context* bctx
     }
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
     chef_cvd_destroy_result(bctx->cvd_client, &context, &chstatus);
+
+    // make sure we do not retry destruction
+    if (chstatus == CHEF_STATUS_SUCCESS) {
+        free(bctx->cvd_id);
+        bctx->cvd_id = NULL;
+    }
     return chstatus;
 }

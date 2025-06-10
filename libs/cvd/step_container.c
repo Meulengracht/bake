@@ -42,6 +42,7 @@ static int __find_bakectl(char** resolvedOut)
     char   buffer[PATH_MAX] = { 0 };
     char   dirnm[PATH_MAX] = { 0 };
     char*  resolved = NULL;
+    char*  p;
     int    status;
     size_t index;
 
@@ -51,14 +52,16 @@ static int __find_bakectl(char** resolvedOut)
         return status;
     }
 
-    // get the directory part, and remember that this modifies
-    // our buffer.
-    strbasename(&buffer[0], &dirnm[0], sizeof(dirnm) - 1);
-    index = strlen(&dirnm[0]);
-    if (dirnm[index] != '/') {
-        dirnm[index++] = '/';
+    p = strrchr(&buffer[0], CHEF_PATH_SEPARATOR);
+    if (p == NULL) {
+        VLOG_ERROR("bake", "__install_bakectl: could not find separator in %s\n", &buffer[0]);
+        return -1;
     }
 
+    index = (p + 1) - (&buffer[0]);
+    strncpy(&dirnm[0], &buffer[0], index);
+
+    VLOG_DEBUG("bake", "testing paths from %s\n", &dirnm[0]);
     for (int i = 0; g_possibleBakeCtlPaths[i] != NULL; i++) {
         const char* pathToUse = g_possibleBakeCtlPaths[i];
         if (g_possibleBakeCtlPaths[i][0] != '/') {
@@ -132,6 +135,7 @@ int bake_build_setup(struct __bake_build_context* bctx)
     if (status) {
         VLOG_ERROR("bake", "bake_build_setup: failed to write bakectl in container\n");
         bake_client_destroy_container(bctx);
+        return status;
     }
     free(bakectlPath);
 
