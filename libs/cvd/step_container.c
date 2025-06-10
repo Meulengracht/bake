@@ -45,6 +45,7 @@ static int __find_bakectl(char** resolvedOut)
     char*  p;
     int    status;
     size_t index;
+    VLOG_DEBUG("bake", "__find_bakectl()\n");
 
     status = readlink("/proc/self/exe", &buffer[0], PATH_MAX);
     if (status < 0) {
@@ -96,7 +97,7 @@ int bake_build_setup(struct __bake_build_context* bctx)
     char*                       bakectlPath;
     unsigned int                pid;
     char                        buffer[1024];
-    VLOG_TRACE("bake", "bake_build_setup()\n");
+    VLOG_DEBUG("bake", "bake_build_setup()\n");
 
     if (bctx->cvd_client == NULL) {
         errno = ENOTSUP;

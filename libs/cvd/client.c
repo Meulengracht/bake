@@ -135,13 +135,13 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
         domain = AF_LOCAL;
         size = __local_size(config->address);
 
-        VLOG_TRACE("bake", "connecting to %s\n", config->address);
+        VLOG_DEBUG("bake", "connecting to %s\n", config->address);
     } else if (!strcmp(config->type, "inet4")) {
         __configure_inet4(&addr_storage, config);
         domain = AF_INET;
         size = sizeof(struct sockaddr_in);
         
-        VLOG_TRACE("bake", "connecting to %s:%u\n", config->address, config->port);
+        VLOG_DEBUG("bake", "connecting to %s:%u\n", config->address, config->port);
     } else if (!strcmp(config->type, "inet6")) {
         // TODO
         domain = AF_INET6;
@@ -199,7 +199,7 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx,
     enum chef_status              chstatus;
     char*                         rootfs;
     char                          cvdid[64];
-    VLOG_TRACE("bake", "bake_client_create_container()\n");
+    VLOG_DEBUG("bake", "bake_client_create_container()\n");
     
     rootfs = (char*)chef_dirs_rootfs(build_cache_uuid(bctx->build_cache));
     if (rootfs == NULL) {
@@ -245,7 +245,7 @@ enum chef_status bake_client_spawn(
     enum chef_status              chstatus;
     uint8_t*                      flatenv = NULL;
     size_t                        flatenvLength = 0;
-    VLOG_TRACE("bake", "bake_client_spawn(cmd=%s)\n", command);
+    VLOG_DEBUG("bake", "bake_client_spawn(cmd=%s)\n", command);
 
     if (bctx->base_environment != NULL) {
         flatenv = environment_flatten(bctx->base_environment, &flatenvLength);
@@ -279,7 +279,7 @@ enum chef_status bake_client_upload(struct __bake_build_context* bctx, const cha
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
-    VLOG_TRACE("bake", "bake_client_upload(host=%s, child=%s)\n", hostPath, containerPath);
+    VLOG_DEBUG("bake", "bake_client_upload(host=%s, child=%s)\n", hostPath, containerPath);
 
     status = chef_cvd_upload(
         bctx->cvd_client,
@@ -305,7 +305,7 @@ enum chef_status bake_client_destroy_container(struct __bake_build_context* bctx
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
-    VLOG_TRACE("bake", "bake_client_destroy_container()\n");
+    VLOG_DEBUG("bake", "bake_client_destroy_container()\n");
 
     if (bctx->cvd_id == NULL) {
         VLOG_DEBUG("bake", "bake_client_destroy_container: no container to destroy\n");

@@ -139,8 +139,7 @@ char* environment_flatten(const char* const* environment, size_t* lengthOut)
     int    i = 0, j = 0;
 
     while (environment[i]) {
-        flatLength += strlen(environment[i]) + 1;
-        i++;
+        flatLength += strlen(environment[i++]) + 1;
     }
 
     flatEnvironment = calloc(flatLength, 1);

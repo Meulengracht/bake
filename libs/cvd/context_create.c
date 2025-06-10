@@ -70,7 +70,7 @@ static char** __initialize_env(struct __bake_build_options* options)
         return NULL;
     }
 
-    env = calloc(7, sizeof(char*));
+    env = calloc(8, sizeof(char*));
     if (env == NULL) {
         VLOG_FATAL("kitchen", "failed to allocate memory for environment\n");
         free(username);
@@ -84,6 +84,7 @@ static char** __initialize_env(struct __bake_build_options* options)
     env[4] = __fmt_env_option("LD_LIBRARY_PATH", "/usr/local/lib");
     env[5] = __fmt_env_option("CHEF_TARGET_ARCH", options->target_architecture);
     env[6] = __fmt_env_option("CHEF_TARGET_PLATFORM", options->target_platform);
+    // env[7] = NULL
 
     free(username);
     return env;
