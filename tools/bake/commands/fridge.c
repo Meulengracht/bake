@@ -79,7 +79,6 @@ static int __resolve_ingredient(const char* publisher, const char* package, cons
 {
     struct chef_download_params downloadParams;
     int                         status;
-    VLOG_DEBUG("cookd", "__resolve_ingredient()\n");
 
     // initialize download params
     downloadParams.publisher = publisher;
