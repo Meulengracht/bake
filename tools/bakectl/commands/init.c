@@ -525,7 +525,11 @@ int init_main(int argc, char** argv, struct __bakelib_context* context, struct b
         }
     }
 
-    status = fridge_initialize(__get_platform(), __get_architecture());
+    status = fridge_initialize(&(struct fridge_parameters) {
+        .platform = __get_platform(),
+        .architecture = __get_architecture(),
+        // no backend support here
+    });
     if (status) {
         VLOG_ERROR("bakectl", "kitchen_setup: failed to create initialize fridge\n");
         return status;

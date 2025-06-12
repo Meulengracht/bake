@@ -29,7 +29,7 @@ struct fridge_store;
  * any inventory operations, must be done by first _open'ing the store inventory and closing
  * it again when done, as it accesses a shared file.
  */
-extern int fridge_store_load(const char* platform, const char* arch, struct fridge_store** storeOut);
+extern int fridge_store_load(const char* platform, const char* arch, struct fridge_store_backend* backend, struct fridge_store** storeOut);
 
 /**
  * @brief Opens the store inventory. Must be done before any calls to ensure_ingredient.

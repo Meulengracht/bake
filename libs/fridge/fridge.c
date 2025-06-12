@@ -16,21 +16,12 @@
  * 
  */
 
-#include <errno.h>
-#include <chef/client.h>
-#include <chef/dirs.h>
+#include <chef/platform.h>
 #include <chef/ingredient.h>
 #include "inventory.h"
 #include <chef/fridge.h>
-#include <limits.h>
-#include <chef/platform.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "store.h"
-#include <vafs/vafs.h>
-#include <vafs/file.h>
-#include <vafs/directory.h>
 #include <vlog.h>
 
 struct progress_context {
@@ -48,17 +39,17 @@ struct fridge_context {
 
 static struct fridge_context g_fridge = { 0 };
 
-int fridge_initialize(const char* platform, const char* architecture)
+int fridge_initialize(struct fridge_parameters* parameters)
 {
     int status;
 
-    if (platform == NULL || architecture == NULL) {
+    if (parameters->platform == NULL || parameters->architecture == NULL) {
         VLOG_ERROR("fridge", "fridge_initialize: platform and architecture must be specified\n");
         return -1;
     }
 
     // initialize the store inventory
-    status = fridge_store_load(platform, architecture, &g_fridge.store);
+    status = fridge_store_load(parameters->platform, parameters->architecture, &parameters->backend, &g_fridge.store);
     if (status) {
         VLOG_ERROR("fridge", "fridge_initialize: failed to load store inventory\n");
         fridge_cleanup();

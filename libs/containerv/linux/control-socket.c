@@ -630,7 +630,7 @@ int containerv_socket_client_spawn(
 
     size_t dataLength = 0;
     size_t flatEnvironmentLength;
-    char*  flatEnvironment = environment_flatten(options->environment, &flatEnvironmentLength);
+    char*  flatEnvironment = NULL;
     char*  data;
     int    dataIndex = 0;
     int    status;
@@ -639,7 +639,11 @@ int containerv_socket_client_spawn(
     // consider length of args and env
     dataLength += strlen(path) + 1;
     dataLength += (options->arguments != NULL) ? (strlen(options->arguments) + 1) : 0;
-    dataLength += (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
+    
+    if (options->environment != NULL) {
+        flatEnvironment = environment_flatten(options->environment, &flatEnvironmentLength);
+        dataLength += (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
+    }
 
     data = calloc(dataLength, 1);
     if (data == NULL) {

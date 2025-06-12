@@ -261,7 +261,8 @@ enum chef_status bake_client_spawn(
             .container_id = bctx->cvd_id,
             .command = (char*)command,
             .options = options,
-            .environment = flatenv
+            .environment = flatenv,
+            .environment_count = flatenvLength
             /* .user = */
         }
     );

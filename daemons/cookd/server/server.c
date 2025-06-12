@@ -271,6 +271,25 @@ static void __cookd_server_stop(struct __cookd_server* server)
 
 static struct __cookd_server* g_server = NULL;
 
+static int __resolve_ingredient(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded)
+{
+    struct chef_download_params downloadParams;
+    int                         status;
+    VLOG_DEBUG("store", "__store_download()\n");
+
+    // initialize download params
+    downloadParams.publisher = publisher;
+    downloadParams.package   = package;
+    downloadParams.platform  = platform;
+    downloadParams.arch      = arch;
+    downloadParams.channel   = channel;
+    downloadParams.version   = version; // may be null, will just get latest
+
+    status = chefclient_pack_download(&downloadParams, path);
+    *revisionDownloaded = downloadParams.revision;
+    return status;
+}
+
 int cookd_server_init(gracht_client_t* client, int builderCount)
 {
     int status;
@@ -282,7 +301,13 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
         return -1;
     }
 
-    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR);
+    status = fridge_initialize(&(struct fridge_parameters) {
+        .platform = CHEF_PLATFORM_STR,
+        .architecture = CHEF_ARCHITECTURE_STR,
+        .backend = {
+            .resolve_ingredient = __resolve_ingredient
+        }
+    });
     if (status) {
         VLOG_ERROR("cookd", "failed to initialize fridge\n");
         chefclient_cleanup();

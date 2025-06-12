@@ -63,7 +63,7 @@ static enum chef_status __chef_status_from_errno(void) {
 static int __resolve_rootfs(const struct chef_create_parameters* params)
 {
     int status;
-    VLOG_TRACE("cvd", "__resolve_rootfs(rootfs=%s, type=%i)\n", params->rootfs, params->type);
+    VLOG_DEBUG("cvd", "__resolve_rootfs(rootfs=%s, type=%i)\n", params->rootfs, params->type);
 
     switch (params->type) {
         // Create a new rootfs using debootstrap from the host
@@ -95,7 +95,7 @@ static enum containerv_mount_flags __to_cv_mount_flags(enum chef_mount_options o
 static int __resolve_mounts(struct containerv_options* opts, const char* rootfs, struct chef_container_mount* mounts, size_t count)
 {
     struct containerv_mount* cv_mounts;
-    VLOG_TRACE("cvd", "__resolve_mounts(rootfs=%s, count=%zu)\n", rootfs, count);
+    VLOG_DEBUG("cvd", "__resolve_mounts(rootfs=%s, count=%zu)\n", rootfs, count);
 
     // early exit
     if (count == 0) {
@@ -109,7 +109,7 @@ static int __resolve_mounts(struct containerv_options* opts, const char* rootfs,
     }
 
     for (size_t i = 0; i < count; i++) {
-        VLOG_TRACE("cvd", "__resolve_mounts: %zu - %s => %s\n", i, mounts[i].host_path, mounts[i].container_path);
+        VLOG_DEBUG("cvd", "__resolve_mounts: %zu - %s => %s\n", i, mounts[i].host_path, mounts[i].container_path);
         cv_mounts[i].what = mounts[i].host_path;
         cv_mounts[i].where = mounts[i].container_path;
         cv_mounts[i].flags = __to_cv_mount_flags(mounts[i].options);
@@ -125,7 +125,7 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     struct containerv_container* cv_container;
     struct __container*          _container;
     int                          status;
-    VLOG_TRACE("cvd", "cvd_create()\n");
+    VLOG_DEBUG("cvd", "cvd_create()\n");
 
     opts = containerv_options_new();
     if (opts == NULL) {
@@ -229,7 +229,7 @@ enum chef_status cvd_spawn(const struct chef_spawn_parameters* params, unsigned 
     char*                           arguments = NULL;
     char**                          environment = NULL;
     enum chef_status                ret = CHEF_STATUS_SUCCESS;
-    VLOG_TRACE("cvd", "cvd_spawn(id=%s, cmd=%s)\n", params->container_id, params->command);
+    VLOG_DEBUG("cvd", "cvd_spawn(id=%s, cmd=%s)\n", params->container_id, params->command);
 
     // find container
     container = __find_container(params->container_id);
@@ -245,8 +245,13 @@ enum chef_status cvd_spawn(const struct chef_spawn_parameters* params, unsigned 
         return __chef_status_from_errno();
     }
 
+
+    VLOG_DEBUG("cvd", "cvd_spawn: command %s\n", command);
+    VLOG_DEBUG("cvd", "cvd_spawn: args: %s\n", arguments);
+
     // flatten the environment
     if (params->environment_count != 0) {
+        VLOG_DEBUG("cvd", "cvd_spawn: parsing environment %u\n", params->environment_count);
         environment = environment_unflatten((const char*)params->environment);
         if (environment == NULL) {
             VLOG_ERROR("cvd", "cvd_spawn: failed to parse provided environment");
@@ -255,6 +260,7 @@ enum chef_status cvd_spawn(const struct chef_spawn_parameters* params, unsigned 
         }
     }
 
+    VLOG_DEBUG("cvd", "cvd_spawn: spawning command\n");
     status = containerv_spawn(
         container->handle,
         command,
@@ -281,7 +287,7 @@ enum chef_status cvd_kill(const char* containerID, const unsigned int pID)
 {
     struct __container* container;
     int                 status;
-    VLOG_TRACE("cvd", "cvd_kill(id=%s, pid=%u)\n", containerID, pID);
+    VLOG_DEBUG("cvd", "cvd_kill(id=%s, pid=%u)\n", containerID, pID);
 
     // find container
     container = __find_container(containerID);
@@ -304,7 +310,7 @@ enum chef_status cvd_transfer(const struct chef_file_parameters* params, enum cv
     const char* srcs[] = { params->source_path, NULL };
     const char* dsts[] = { params->destination_path, NULL };
 
-    VLOG_TRACE("cvd", "cvd_transfer(id=%s, direction=%i)\n", params->container_id, direction);
+    VLOG_DEBUG("cvd", "cvd_transfer(id=%s, direction=%i)\n", params->container_id, direction);
 
     // find container
     container = __find_container(params->container_id);
@@ -315,14 +321,14 @@ enum chef_status cvd_transfer(const struct chef_file_parameters* params, enum cv
 
     switch (direction) {
         case CVD_TRANSFER_UPLOAD: {
-            VLOG_TRACE("cvd", "cvd_transfer: uploading %s to %s\n", params->source_path, params->destination_path);
+            VLOG_DEBUG("cvd", "cvd_transfer: uploading %s to %s\n", params->source_path, params->destination_path);
             int status = containerv_upload(container->handle, srcs, dsts, 1);
             if (status) {
                 return __chef_status_from_errno();
             }
         } break;
         case CVD_TRANSFER_DOWNLOAD: {
-            VLOG_TRACE("cvd", "cvd_transfer: downloading %s to %s\n", params->source_path, params->destination_path);
+            VLOG_DEBUG("cvd", "cvd_transfer: downloading %s to %s\n", params->source_path, params->destination_path);
             int status = containerv_download(container->handle, srcs, dsts, 1);
             if (status) {
                 return __chef_status_from_errno();
@@ -340,7 +346,7 @@ enum chef_status cvd_destroy(const char* containerID)
 {
     struct __container* container;
     int                 status;
-    VLOG_TRACE("cvd", "cvd_destroy(id=%s)\n", containerID);
+    VLOG_DEBUG("cvd", "cvd_destroy(id=%s)\n", containerID);
 
     // find container
     container = __find_container(containerID);

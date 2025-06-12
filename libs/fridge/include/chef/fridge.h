@@ -29,12 +29,22 @@ struct fridge_ingredient {
     const char* arch;
 };
 
+struct fridge_store_backend {
+    int (*resolve_ingredient)(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded);
+};
+
+struct fridge_parameters {
+    const char*                 platform;
+    const char*                 architecture;
+    struct fridge_store_backend backend;
+};
+
 /**
  * @brief 
  * 
  * @return int 
  */
-extern int fridge_initialize(const char* platform, const char* architecture);
+extern int fridge_initialize(struct fridge_parameters* parameters);
 
 /**
  * @brief 
