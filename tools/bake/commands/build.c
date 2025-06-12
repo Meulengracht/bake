@@ -21,6 +21,7 @@
 #define _GNU_SOURCE
 
 #include <chef/client.h>
+#include <chef/api/package.h>
 #include <errno.h>
 #include <chef/config.h>
 #include <chef/cvd.h>
@@ -213,6 +214,27 @@ static char* __format_footer(const char* logPath)
     return platform_strdup(&tmp[0]);
 }
 
+static int __resolve_ingredient(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded)
+{
+    struct chef_download_params downloadParams;
+    int                         status;
+    VLOG_DEBUG("cookd", "__resolve_ingredient()\n");
+
+    // initialize download params
+    downloadParams.publisher = publisher;
+    downloadParams.package   = package;
+    downloadParams.platform  = platform;
+    downloadParams.arch      = arch;
+    downloadParams.channel   = channel;
+    downloadParams.version   = version; // may be null, will just get latest
+
+    status = chefclient_pack_download(&downloadParams, path);
+    if (status == 0) {
+        *revisionDownloaded = downloadParams.revision;
+    }
+    return status;
+}
+
 int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct build_cache*        cache = NULL;
@@ -280,7 +302,13 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     }
     atexit(chefclient_cleanup);
 
-    status = fridge_initialize(options->platform, arch);
+    status = fridge_initialize(&(struct fridge_parameters) {
+        .platform = options->platform,
+        .architecture = arch,
+        .backend = {
+            .resolve_ingredient = __resolve_ingredient
+        }
+    });
     if (status != 0) {
         VLOG_ERROR("bake", "failed to initialize fridge\n");
         return -1;

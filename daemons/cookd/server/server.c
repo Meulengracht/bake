@@ -17,6 +17,7 @@
  */
 
 #include <chef/client.h>
+#include <chef/api/package.h>
 #include <chef/cvd.h>
 #include <chef/pack.h>
 #include <chef/dirs.h>
@@ -275,7 +276,7 @@ static int __resolve_ingredient(const char* publisher, const char* package, cons
 {
     struct chef_download_params downloadParams;
     int                         status;
-    VLOG_DEBUG("store", "__store_download()\n");
+    VLOG_DEBUG("cookd", "__resolve_ingredient()\n");
 
     // initialize download params
     downloadParams.publisher = publisher;
@@ -286,7 +287,9 @@ static int __resolve_ingredient(const char* publisher, const char* package, cons
     downloadParams.version   = version; // may be null, will just get latest
 
     status = chefclient_pack_download(&downloadParams, path);
-    *revisionDownloaded = downloadParams.revision;
+    if (status == 0) {
+        *revisionDownloaded = downloadParams.revision;
+    }
     return status;
 }
 
