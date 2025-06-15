@@ -52,6 +52,11 @@ extern const char* chef_dirs_store(void);
 /**
  * @brief
  */
+extern const char* chef_dirs_cache(void);
+
+/**
+ * @brief
+ */
 extern char* chef_dirs_rootfs_new(const char* uuid);
 
 /**

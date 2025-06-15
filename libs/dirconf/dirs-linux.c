@@ -35,11 +35,12 @@ static struct {
     const char* root;
     const char* fridge;
     const char* store;
+    const char* cache;
     const char* kitchen;
 
     // global
     const char* config;
-} g_dirs = { 0, 0, NULL, NULL, NULL, NULL, NULL };
+} g_dirs = { 0, 0, NULL, NULL, NULL, NULL, NULL, NULL };
 
 static int __directory_exists(
     const char* path)
@@ -164,9 +165,10 @@ static int __ensure_chef_global_dirs(void)
         // relaxed permissions to allow for non-root tools to work
         // with the filesystem
         { &g_dirs.root,   0777 },
-        // Config can be more restrictive, we do not want arbitrary access
+        // Config/cache can be more restrictive, we do not want arbitrary access
         // here
         { &g_dirs.config, 0644 },
+        { &g_dirs.cache,  0644 },
         { NULL },
     };
     for (int i = 0; paths[i].path != NULL; i++) {
@@ -206,16 +208,28 @@ static const char* __root_common_directory(void)
     return "/var/lib/chef";
 }
 
+static const char* __cache_directory(void)
+{
+#ifdef CHEF_AS_SNAP
+    // /var/snap/<snap>/common
+    char* val = getenv("SNAP_COMMON");
+    if (val != NULL) {
+        return strpathcombine(val, "cache");
+    }
+#endif
+    return __strdup_fail("/var/chef/cache");
+}
+
 static const char* __spaces_directory(void)
 {
 #ifdef CHEF_AS_SNAP
     // /var/snap/<snap>/common
     char* val = getenv("SNAP_COMMON");
     if (val != NULL) {
-        return val;
+        return strpathcombine(val, "fridge");
     }
 #endif
-    return "/var/chef/spaces";
+    return __strdup_fail("/var/chef/spaces");
 }
 
 static char* __common_user_directory(void)
@@ -247,7 +261,8 @@ static int __initialize_daemon(void)
     g_dirs.config  = __strdup_fail("/etc/chef");
     g_dirs.fridge  = strpathcombine(g_dirs.root, "fridge");
     g_dirs.store   = strpathcombine(g_dirs.root, "store");
-    g_dirs.kitchen = __strdup_fail(__spaces_directory());
+    g_dirs.cache   = __cache_directory();
+    g_dirs.kitchen = __spaces_directory();
     if (g_dirs.fridge == NULL || g_dirs.store == NULL) {
         VLOG_FATAL("dirs", "failed to allocate memory for paths\n");
     }
@@ -339,6 +354,15 @@ const char* chef_dirs_store(void)
         return NULL;
     }
     return g_dirs.store;
+}
+
+const char* chef_dirs_cache(void)
+{
+    if (g_dirs.cache == NULL) {
+        VLOG_ERROR("dirs", "chef_dirs_cache() is not available\n");
+        return NULL;
+    }
+    return g_dirs.cache;
 }
 
 const char* chef_dirs_rootfs(const char* uuid)

@@ -17,6 +17,7 @@
  */
 
 #include <chef/containerv.h>
+#include <chef/dirs.h>
 #include <chef/platform.h>
 #include <chef/environment.h>
 #include <errno.h>
@@ -60,6 +61,78 @@ static enum chef_status __chef_status_from_errno(void) {
     }
 }
 
+static int __file_exists(const char* path)
+{
+    struct platform_stat stats;
+    return platform_stat(path, &stats) == 0 ? 1 : 0;
+}
+
+static int __ensure_base_rootfs(const char* rootfs)
+{
+    char* imageCache;
+    char  tmp[PATH_MAX];
+    int   status;
+    VLOG_DEBUG("cvd", "__ensure_base_rootfs()\n");
+    
+    
+    imageCache = strpathcombine(chef_dirs_cache(), "rootfs");
+    if (imageCache == NULL) {
+        VLOG_ERROR("cvd", "failed to allocate memory for rootfs path\n");
+        return -1;
+    }
+
+    status = platform_mkdir(imageCache);
+    if (status) {
+        VLOG_ERROR("cvd", "failed to create directory %s\n", imageCache);
+        return -1;
+    }
+
+    snprintf(
+        &tmp[0],
+        sizeof(tmp),
+        "%s/ubuntu-base-24.04.2-base-amd64.tar.gz", 
+        imageCache
+    );
+
+    if (!__file_exists(&tmp[0])) {
+        snprintf(
+            &tmp[0],
+            sizeof(tmp),
+            "-P %s https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.2-base-amd64.tar.gz", 
+            imageCache
+        );
+
+        VLOG_TRACE("cvd", "downloading https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.2-base-amd64.tar.gz");
+        status = platform_spawn(
+            "wget", &tmp[0], NULL, &(struct platform_spawn_options) {
+            }
+        );
+        if (status) {
+            VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
+            free(imageCache);
+            return status;
+        }
+    }
+
+    snprintf(
+        &tmp[0],
+        sizeof(tmp),
+        "-xf %s/ubuntu-base-24.04.2-base-amd64.tar.gz -C %s", 
+        imageCache, rootfs
+    );
+
+    VLOG_TRACE("cvd", "unpacking %s/ubuntu-base-24.04.2-base-amd64.tar.gz", imageCache);
+    status = platform_spawn(
+        "tar", &tmp[0], NULL, &(struct platform_spawn_options) {
+        }
+    );
+    if (status) {
+        VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
+        return status;
+    }
+    return 0;
+}
+
 static int __resolve_rootfs(const struct chef_create_parameters* params)
 {
     int status;
@@ -76,11 +149,21 @@ static int __resolve_rootfs(const struct chef_create_parameters* params)
             }
             return 0;
         }
-        case CHEF_ROOTFS_TYPE_OSBASE:
         case CHEF_ROOTFS_TYPE_IMAGE:
+        {
+           status = __ensure_base_rootfs(params->rootfs);
+            if (status) {
+                VLOG_ERROR("cvd", "failed to resolve the rootfs image\n");
+                return status;
+            }
+            return 0;
+        }
+
+        case CHEF_ROOTFS_TYPE_OSBASE:
             VLOG_WARNING("cvd", "__resolve_rootfs: ROOTFS TYPE NOT IMPLEMENTED\n");
             break;
     }
+    return -1;
 }
 
 static enum containerv_mount_flags __to_cv_mount_flags(enum chef_mount_options opts)
