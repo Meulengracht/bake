@@ -121,7 +121,7 @@ static int __ensure_base_rootfs(const char* rootfs)
         imageCache, rootfs
     );
 
-    VLOG_TRACE("cvd", "unpacking %s/ubuntu-base-24.04.2-base-amd64.tar.gz", imageCache);
+    VLOG_TRACE("cvd", "unpacking %s/ubuntu-base-24.04.2-base-amd64.tar.gz\n", imageCache);
     status = platform_spawn(
         "tar", &tmp[0], NULL, &(struct platform_spawn_options) {
         }
@@ -137,6 +137,12 @@ static int __resolve_rootfs(const struct chef_create_parameters* params)
 {
     int status;
     VLOG_DEBUG("cvd", "__resolve_rootfs(rootfs=%s, type=%i)\n", params->rootfs, params->type);
+
+    status = platform_mkdir(params->rootfs);
+    if (status) {
+        VLOG_ERROR("cvd", "failed to create directory %s\n", params->rootfs);
+        return -1;
+    }
 
     switch (params->type) {
         // Create a new rootfs using debootstrap from the host
@@ -327,7 +333,6 @@ enum chef_status cvd_spawn(const struct chef_spawn_parameters* params, unsigned 
         VLOG_ERROR("cvd", "cvd_spawn: failed to split command %s", params->command);
         return __chef_status_from_errno();
     }
-
 
     VLOG_DEBUG("cvd", "cvd_spawn: command %s\n", command);
     VLOG_DEBUG("cvd", "cvd_spawn: args: %s\n", arguments);

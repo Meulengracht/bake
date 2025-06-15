@@ -263,6 +263,10 @@ static void __safe_freev(void*** ptr) {
 
 void __bakelib_context_delete(struct __bakelib_context* context)
 {
+    if (context == NULL) {
+        return;
+    }
+
     if (context->pkg_manager != NULL) {
         context->pkg_manager->destroy(context->pkg_manager);
         context->pkg_manager = NULL;
@@ -277,7 +281,6 @@ void __bakelib_context_delete(struct __bakelib_context* context)
 
     // external paths that point inside chroot
     // i.e paths valid outside chroot
-    __safe_free((void**)&context->project_directory);
     __safe_free((void**)&context->build_directory);
     __safe_free((void**)&context->build_ingredients_directory);
     __safe_free((void**)&context->build_toolchains_directory);

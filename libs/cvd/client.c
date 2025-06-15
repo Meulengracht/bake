@@ -211,7 +211,7 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx,
         bctx->cvd_client,
         &context,
         &(struct chef_create_parameters) {
-            .type = CHEF_ROOTFS_TYPE_DEBOOTSTRAP,
+            .type = CHEF_ROOTFS_TYPE_IMAGE,
             .rootfs = rootfs,
             .mounts = mounts,
             .mounts_count = (uint32_t)count

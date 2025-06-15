@@ -34,7 +34,6 @@ struct __bakelib_context {
     const char*          build_architecture;
     char**               build_environment;
 
-    const char* project_directory;
     const char* build_directory;
     const char* build_ingredients_directory;
     const char* build_toolchains_directory;

@@ -129,8 +129,8 @@ int main(int argc, char** argv, char** envp)
     char*                          recipePath = NULL;
     int                            status;
     int                            logLevel = VLOG_LEVEL_TRACE;
-    struct recipe*                 recipe;
-    struct __bakelib_context*      context;
+    struct recipe*                 recipe = NULL;
+    struct __bakelib_context*      context = NULL;
     void*                          buffer;
     size_t                         length;
     
@@ -179,19 +179,6 @@ int main(int argc, char** argv, char** envp)
         return status;
     }
 
-    status = __read_recipe(recipePath, &buffer, &length);
-    if (status) {
-        fprintf(stderr, "bakectl: failed to load recipe %s\n", recipePath);
-        return status;
-    }
-
-    status = recipe_parse(buffer, length, &recipe);
-    free(buffer);
-    if (status) {
-        fprintf(stderr, "bakectl: failed to parse recipe\n");
-        return status;
-    }
-
     // initialize the logging system
     vlog_initialize((enum vlog_level)logLevel);
     vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
@@ -200,20 +187,33 @@ int main(int argc, char** argv, char** envp)
     status = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKECTL);
     if (status) {
         VLOG_ERROR("bakectl", "failed to initialize directories\n");
-        return -1;
+        goto cleanup;
+    }
+
+    // Switch to the project root as working directory
+    status = platform_chdir("/chef/project");
+    if (status) {
+        VLOG_ERROR("bakectl", "failed to switch directory to /chef/project\n");
+        goto cleanup;
+    }
+
+    status = __read_recipe(recipePath, &buffer, &length);
+    if (status) {
+        VLOG_ERROR("bakectl", "failed to load recipe %s\n", recipePath);
+        goto cleanup;
+    }
+
+    status = recipe_parse(buffer, length, &recipe);
+    free(buffer);
+    if (status) {
+        VLOG_ERROR("bakectl", "failed to parse recipe\n");
+        goto cleanup;
     }
 
     // create bake context
     context = __bakelib_context_new(recipe, recipePath, (const char* const*)envp);
     if (context == NULL) {
         VLOG_ERROR("bakectl", "failed to create bake context\n");
-        return -1;
-    }
-
-    // Switch to the project root as working directory
-    status = platform_chdir(context->project_directory);
-    if (status) {
-        VLOG_ERROR("bakectl", "failed to switch directory to %s\n", context->project_directory);
         goto cleanup;
     }
 
