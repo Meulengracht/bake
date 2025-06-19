@@ -25,4 +25,5 @@ endif()
 
 add_library(libbake STATIC ${KITCHEN_SRCS})
 target_include_directories(libbake PUBLIC include)
-target_link_libraries(libbake PUBLIC fridge libdirconf platform)
+target_link_libraries(libbake PRIVATE jansson-api)
+target_link_libraries(libbake PUBLIC jansson fridge libdirconf platform)
