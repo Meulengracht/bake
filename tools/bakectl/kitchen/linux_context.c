@@ -218,29 +218,30 @@ struct __bakelib_context* __bakelib_context_new(
     context->build_environment = __initialize_env(context->pkg_manager, envp);
 
     context->build_directory = strpathjoin(
-        "chef", "build", 
+        "/chef", "build", 
         context->build_platform, 
         context->build_architecture,
         NULL
     );
     
     context->build_ingredients_directory = strpathjoin(
-        "chef", "build", 
+        "/chef", "build", 
         context->build_platform, 
         context->build_architecture,
         NULL
     );
 
     context->build_toolchains_directory = strpathjoin(
-        "chef", "toolchains", NULL
+        "/chef", "toolchains", NULL
     );
 
     context->install_directory = strpathjoin(
-        "chef", "install", 
+        "/chef", "install", 
         context->build_platform, 
         context->build_architecture,
         NULL
     );
+    return context;
 }
 
 static void __safe_free(void** ptr) {

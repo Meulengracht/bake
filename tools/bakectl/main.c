@@ -122,13 +122,46 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
     return 0;
 }
 
+
+int __debug_log_new(const char* command)
+{
+    char        buffer[128];
+    FILE*       stream;
+    char*       path;
+    const char* ext = "log";
+
+    snprintf(&buffer[0], sizeof(buffer), "/chef/bakectl-%s-XXXXXX.%s", command, ext);
+    if (mkstemps(&buffer[0], strlen(ext) + 1) < 0) {
+        VLOG_ERROR("dirs", "failed to get a temporary filename for log: %i\n", errno);
+        return -1;
+    }
+    
+    path = platform_strdup(&buffer[0]);
+    if (path == NULL) {
+        return -1;
+    }
+
+    stream = fopen(path, "w+");
+    if (stream == NULL) {
+        VLOG_ERROR("dirs", "failed to open path %s for writing\n", path);
+        free(path);
+        return -1;
+    }
+
+    free(path);
+
+    vlog_add_output(stream, 1);
+    vlog_set_output_level(stream, VLOG_LEVEL_DEBUG);
+    return 0;
+}
+
 int main(int argc, char** argv, char** envp)
 {
     struct command_handler*        command    = &g_commands[0];
     struct bakectl_command_options options    = { 0 };
     char*                          recipePath = NULL;
     int                            status;
-    int                            logLevel = VLOG_LEVEL_TRACE;
+    int                            logLevel = VLOG_LEVEL_DEBUG;
     struct recipe*                 recipe = NULL;
     struct __bakelib_context*      context = NULL;
     void*                          buffer;
@@ -187,6 +220,13 @@ int main(int argc, char** argv, char** envp)
     status = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKECTL);
     if (status) {
         VLOG_ERROR("bakectl", "failed to initialize directories\n");
+        goto cleanup;
+    }
+
+    // add log file to vlog
+    status = __debug_log_new(command->name);
+    if (status) {
+        VLOG_ERROR("bakectl", "failed to open log file\n");
         goto cleanup;
     }
 

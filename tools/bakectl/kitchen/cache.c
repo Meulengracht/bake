@@ -336,6 +336,7 @@ int recipe_cache_create(struct recipe* current, const char* root, struct recipe_
     struct recipe_cache* cache;
     char                 buff[PATH_MAX] = { 0 };
     int                  status;
+    VLOG_DEBUG("cache", "recipe_cache_create(root=%s)\n", root);
 
     snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S ".vchcache", root);
 
@@ -504,14 +505,12 @@ int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct re
     int              capacity = 0;
     VLOG_DEBUG("cache", "recipe_cache_calculate_package_changes()\n");
 
-    *changes = NULL;
-    *changeCount = 0;
-
     // We use an insanely inefficient algorithm here, but we don't care as
     // these lists should never be long, and we do not have access to an easy
     // hashtable here. 
 
     // check packages added
+    VLOG_DEBUG("cache", "calculating package added\n");
     list_foreach(&cache->current->environment.host.packages, i) {
         struct list_item_string* toCheck = (struct list_item_string*)i;
         int                      exists = 0;
@@ -533,6 +532,7 @@ int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct re
     }
 
     // check packages removed
+    VLOG_DEBUG("cache", "calculating package removed\n");
     list_foreach(&cache->packages, i) {
         struct list_item_string* toCheck = (struct list_item_string*)i;
         int                     exists = 0;
