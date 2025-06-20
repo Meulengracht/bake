@@ -17,7 +17,8 @@
  */
 
 #include <chef/client.h>
-#include <libfridge.h>
+#include <chef/api/package.h>
+#include <chef/fridge.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <stdio.h>
@@ -74,13 +75,39 @@ static struct command_handler* __get_command(const char* command)
     return NULL;
 }
 
+static int __resolve_ingredient(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded)
+{
+    struct chef_download_params downloadParams;
+    int                         status;
+
+    // initialize download params
+    downloadParams.publisher = publisher;
+    downloadParams.package   = package;
+    downloadParams.platform  = platform;
+    downloadParams.arch      = arch;
+    downloadParams.channel   = channel;
+    downloadParams.version   = version; // may be null, will just get latest
+
+    status = chefclient_pack_download(&downloadParams, path);
+    if (status == 0) {
+        *revisionDownloaded = downloadParams.revision;
+    }
+    return status;
+}
+
 int fridge_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct command_handler* command = NULL;
     int                     i;
     int                     status;
 
-    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR);
+    status = fridge_initialize(&(struct fridge_parameters) {
+        .platform = CHEF_PLATFORM_STR,
+        .architecture = CHEF_ARCHITECTURE_STR,
+        .backend = {
+            .resolve_ingredient = __resolve_ingredient
+        }
+    });
     if (status != 0) {
         fprintf(stderr, "bake: failed to initialize fridge\n");
         return -1;

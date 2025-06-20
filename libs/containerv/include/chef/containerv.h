@@ -97,8 +97,19 @@ extern int containerv_spawn(
 
 extern int containerv_kill(struct containerv_container* container, process_handle_t pid);
 
+extern int containerv_upload(struct containerv_container* container, const char* const* hostPaths, const char* const* containerPaths, int count);
+
+extern int containerv_download(struct containerv_container* container, const char* const* containerPaths, const char* const* hostPaths, int count);
+
 extern int containerv_destroy(struct containerv_container* container);
 
 extern int containerv_join(const char* containerId);
+
+/**
+ * @brief Returns the container ID of the given container.
+ * @param container The container to get the ID from.
+ * @return A read-only string containing the container ID.
+ */
+extern const char* containerv_id(struct containerv_container* container);
 
 #endif //!__CONTAINERV_H__

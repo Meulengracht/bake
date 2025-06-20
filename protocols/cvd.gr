@@ -1,0 +1,84 @@
+/**
+ * CV Daemon Protocol
+ * The protocol specifies which commands are available from served. Served is the
+ * application server for chef, and the CLI utility 'serve' implements this protocol
+ */
+
+namespace chef
+
+enum capabilities {
+    NETWORK = 0x1,
+    PROCESS_CONTROL = 0x2,
+    IPC = 0x4,
+    FILESYSTEM = 0x8,
+    CGROUPS = 0x10,
+    USERS = 0x20,
+}
+
+enum rootfs_type {
+    // linux
+    DEBOOTSTRAP,
+    // chef os-base
+    OSBASE,
+    // rootfs image
+    IMAGE,
+}
+
+enum status {
+    SUCCESS,
+    INTERNAL_ERROR,
+    FAILED_ROOTFS_SETUP,
+    INVALID_MOUNTS,
+    INVALID_CONTAINER_ID,
+}
+
+enum mount_options {
+    READONLY = 0x1
+}
+
+struct container_mount {
+    string        host_path;
+    string        container_path;
+    mount_options options;
+}
+
+struct create_parameters {
+    string            rootfs;
+    rootfs_type       type;
+    container_mount[] mounts;
+}
+
+struct user_descriptor {
+    // empty means root/admin
+    string username;
+}
+
+enum spawn_options {
+    WAIT = 0x1,
+}
+
+struct spawn_parameters {
+    string          container_id;
+    user_descriptor user;
+    spawn_options   options;
+    string          command;
+    // string arrays are not supported so we flatten
+    // and unflatten environments
+    uint8[]         environment;
+}
+
+struct file_parameters {
+    string container_id;
+    user_descriptor user;
+    string source_path;
+    string destination_path;
+}
+
+service cvd (43) {
+    func create(create_parameters params) : (string id, status st) = 1;
+    func spawn(spawn_parameters params) : (uint pid, status st) = 2;
+    func kill(string container_id, uint pid) : (status st) = 3;
+    func upload(file_parameters params) : (status st) = 4;
+    func download(file_parameters params) : (status st) = 5;
+    func destroy(string container_id) : (status st) = 6;
+}

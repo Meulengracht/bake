@@ -16,27 +16,20 @@
  * 
  */
 
+#include <chef/bake.h>
 #include <chef/platform.h>
 #include <liboven.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-int __initialize_oven_options(struct oven_initialize_options* options, char** envp)
+int __initialize_oven_options(struct oven_initialize_options* options, struct __bakelib_context* context)
 {
     char buff[PATH_MAX];
 
-    options->envp = (const char* const*)envp,
-    
-    options->target_architecture = getenv("CHEF_TARGET_ARCH");
-    if (options->target_architecture == NULL) {
-        options->target_architecture = CHEF_ARCHITECTURE_STR;
-    }
-
-    options->target_platform = getenv("CHEF_TARGET_PLATFORM");
-    if (options->target_platform == NULL) {
-        options->target_platform = CHEF_PLATFORM_STR;
-    }
+    options->envp = (const char* const*)context->build_environment,
+    options->target_architecture = context->build_architecture;
+    options->target_platform = context->build_platform;
 
     // some paths are easy
     options->paths.project_root = "/chef/project";

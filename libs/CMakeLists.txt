@@ -39,7 +39,8 @@ add_subdirectory(curl)
 add_subdirectory(chefclient)
 
 # build support libraries for tools
+add_subdirectory(cvd)
+add_subdirectory(package)
 add_subdirectory(oven)
 add_subdirectory(fridge)
-add_subdirectory(kitchen)
 add_subdirectory(remote)

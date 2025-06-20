@@ -19,17 +19,15 @@
 #ifndef __BAKECTL_COMMANDS_H__
 #define __BAKECTL_COMMANDS_H__
 
-#include <chef/recipe.h>
+#include <chef/bake.h>
 #include <liboven.h>
 
 struct bakectl_command_options {
-    struct recipe* recipe;
-    const char*    cwd;
-    const char*    part;
-    const char*    step;
+    const char* part;
+    const char* step;
 };
 
-extern int __initialize_oven_options(struct oven_initialize_options* options, char** envp);
+extern int __initialize_oven_options(struct oven_initialize_options* options, struct __bakelib_context* context);
 extern void __destroy_oven_options(struct oven_initialize_options* options);
 
 #endif //!__BAKECTL_COMMANDS_H__

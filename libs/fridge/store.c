@@ -17,8 +17,6 @@
  */
 
 #include <errno.h>
-#include <chef/api/package.h>
-#include <chef/client.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
 #include "inventory.h"
@@ -31,12 +29,13 @@
 #define PACKAGE_TEMP_PATH "pack.inprogress"
 
 struct fridge_store {
-    char*                    platform;
-    char*                    arch;
-    struct fridge_inventory* inventory;
+    char*                       platform;
+    char*                       arch;
+    struct fridge_store_backend backend;
+    struct fridge_inventory*    inventory;
 };
 
-static struct fridge_store* __store_new(const char* platform, const char* arch)
+static struct fridge_store* __store_new(const char* platform, const char* arch, struct fridge_store_backend* backend)
 {
     struct fridge_store* store;
     VLOG_DEBUG("store", "__store_new(platform=%s, arch=%s)\n", platform, arch);
@@ -63,13 +62,13 @@ static void __store_delete(struct fridge_store* store)
     free(store);
 }
 
-int fridge_store_load(const char* platform, const char* arch, struct fridge_store** storeOut)
+int fridge_store_load(const char* platform, const char* arch, struct fridge_store_backend* backend, struct fridge_store** storeOut)
 {
     struct fridge_store* store;
     int                  status;
     VLOG_DEBUG("store", "fridge_store_load(platform=%s, arch=%s)\n", platform, arch);
 
-    store = __store_new(platform, arch);
+    store = __store_new(platform, arch, backend);
     if (store == NULL) {
         VLOG_ERROR("store", "fridge_store_load: failed to allocate a new store\n");
         return -1;
@@ -159,20 +158,27 @@ static int __store_download(
     int*                 revisionDownloaded,
     char**               pathOut)
 {
-    struct chef_download_params downloadParams;
-    int                         status;
-    char                        pathBuffer[2048];
+    int  status;
+    int  revision;
+    char pathBuffer[2048];
     VLOG_DEBUG("store", "__store_download()\n");
 
-    // initialize download params
-    downloadParams.publisher = publisher;
-    downloadParams.package   = package;
-    downloadParams.platform  = platform;
-    downloadParams.arch      = arch;
-    downloadParams.channel   = channel;
-    downloadParams.version   = version; // may be null, will just get latest
+    if (store->backend.resolve_ingredient == NULL) {
+        VLOG_ERROR("store", "__store_download: backend does not support resolving ingredients\n");
+        errno = ENOTSUP;
+        return -1;
+    }
 
-    status = chefclient_pack_download(&downloadParams, PACKAGE_TEMP_PATH);
+    status = store->backend.resolve_ingredient(
+        publisher,
+        package, 
+        platform,
+        arch,
+        channel,
+        version,
+        PACKAGE_TEMP_PATH,
+        &revision
+    );
     if (status) {
         VLOG_ERROR("store", "__store_download: failed to download %s/%s\n", publisher, package);
         return -1;
@@ -186,7 +192,7 @@ static int __store_download(
         platform,
         arch,
         channel,
-        downloadParams.revision,
+        revision,
         &pathBuffer[0],
         sizeof(pathBuffer)
     );
@@ -211,7 +217,7 @@ static int __store_download(
         *pathOut = platform_strdup(&pathBuffer[0]);
     }
     
-    *revisionDownloaded = downloadParams.revision;
+    *revisionDownloaded = revision;
     return status;
 }
 
@@ -230,6 +236,68 @@ static const char* __get_ingredient_arch(struct fridge_store* store, struct frid
     }
     return ingredient->arch;
 }
+
+int fridge_store_find_ingredient(struct fridge_store* store, struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut)
+{
+    struct chef_version           version = { 0 };
+    struct chef_version*          versionPtr = NULL;
+    struct fridge_inventory_pack* pack;
+    char**                        names;
+    int                           namesCount;
+    int                           status;
+    VLOG_DEBUG("store", "fridge_store_ensure_ingredient(name=%s)\n", ingredient->name);
+
+    if (ingredient == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    // parse the version provided if any
+    if (ingredient->version != NULL) {
+        status = chef_version_from_string(ingredient->version, &version);
+        if (status) {
+            VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to parse version '%s'\n", ingredient->version);
+            return -1;
+        }
+        versionPtr = &version;
+    }
+
+    // split the publisher/package
+    names = strsplit(ingredient->name, '/');
+    if (names == NULL) {
+        VLOG_ERROR("store", "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        return -1;
+    }
+    
+    namesCount = 0;
+    while (names[namesCount] != NULL) {
+        namesCount++;
+    }
+
+    if (namesCount != 2) {
+        VLOG_ERROR("store", "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        status = -1;
+        goto cleanup;
+    }
+
+    // check if we have the requested ingredient in store already, otherwise
+    // download the ingredient
+    VLOG_DEBUG("store", "looking up path in inventory\n");
+    status = inventory_get_pack(
+        store->inventory,
+        names[0], names[1],
+        __get_ingredient_platform(store, ingredient),
+        __get_ingredient_arch(store, ingredient),
+        ingredient->channel,
+        versionPtr,
+        &pack
+    );
+
+cleanup:
+    strsplit_free(names);
+    return status;
+}
+
 
 int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut)
 {

@@ -179,7 +179,7 @@ static int __recreate_dir(const char* path)
     return 0;
 }
 
-int clean_main(int argc, char** argv, char** envp, struct bakectl_command_options* options)
+int clean_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options)
 {
     struct oven_initialize_options ovenOpts = { 0 };
     int                            status;
@@ -198,12 +198,7 @@ int clean_main(int argc, char** argv, char** envp, struct bakectl_command_option
         }
     }
 
-    if (options->recipe == NULL) {
-        fprintf(stderr, "bakectl: --recipe must be provided\n");
-        return -1;
-    }
-
-    status = __initialize_oven_options(&ovenOpts, envp);
+    status = __initialize_oven_options(&ovenOpts, context);
     if (status) {
         fprintf(stderr, "bakectl: failed to allocate memory for options\n");
         goto cleanup;
@@ -223,7 +218,7 @@ int clean_main(int argc, char** argv, char** envp, struct bakectl_command_option
                 ovenOpts.paths.build_root, strerror(errno));
         }
     } else {
-        status = __clean_part(options->recipe, options->part, options->step, ovenOpts.target_platform);
+        status = __clean_part(context->recipe, options->part, options->step, ovenOpts.target_platform);
         if (status) {
             fprintf(stderr, "bakectl: failed to clean step '%s/%s': %s\n", 
                 options->part, options->step, strerror(errno));

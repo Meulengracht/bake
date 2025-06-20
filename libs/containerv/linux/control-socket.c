@@ -17,9 +17,11 @@
  */
 
 #include <chef/platform.h>
+#include <chef/environment.h>
 #include <chef/containerv-user-linux.h>
 #include "private.h"
 #include <libgen.h> // dirname
+#include <fcntl.h> // O_*
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +38,8 @@ enum __socket_command_type {
     __SOCKET_COMMAND_KILL,
     __SOCKET_COMMAND_GETROOT,
     __SOCKET_COMMAND_GETFDS,
+    __SOCKET_COMMAND_SENDFILES,
+    __SOCKET_COMMAND_RECVFILES,
     __SOCKET_COMMAND_DESTROY,
 };
 
@@ -64,11 +68,20 @@ struct __socket_command_kill {
     pid_t process_id;
 };
 
+struct __socket_command_xfiles {
+    size_t paths_length;
+};
+
+struct __socket_response_xfiles {
+    int statuses[__CONTAINER_MAX_FD_COUNT];
+};
+
 struct __socket_command {
     enum __socket_command_type type;
     union {
         struct __socket_command_spawn  spawn;
         struct __socket_command_kill   kill;
+        struct __socket_command_xfiles xfer;
     } data;
 };
 
@@ -77,6 +90,7 @@ struct __socket_response {
     union {
         struct __socket_response_spawn  spawn;
         struct __socket_response_getfds getfds;
+        struct __socket_response_xfiles xfer;
         int                             status;
     } data;
 };
@@ -109,7 +123,7 @@ int containerv_open_socket(struct containerv_container* container)
 
 static int __send_command_maybe_fds(int socket, struct sockaddr_un* to, int* fdset, int count, void* payload, size_t payloadLength)
 {
-    char          fdsBuffer[CMSG_SPACE(sizeof(int) * 16)];
+    char          fdsBuffer[CMSG_SPACE(sizeof(int) * __CONTAINER_MAX_FD_COUNT)];
     struct msghdr msg = { 0 };
     struct iovec  io = { 
         .iov_base = payload,
@@ -127,7 +141,7 @@ static int __send_command_maybe_fds(int socket, struct sockaddr_un* to, int* fds
     if (fdset != NULL && count > 0) {
         struct cmsghdr* cmsg;
 
-        if (count > 16) {
+        if (count > __CONTAINER_MAX_FD_COUNT) {
             VLOG_ERROR("containerv", "__send_command_maybe_fds: trying to send more than 16 descriptors is not allowed\n");
             return -1;
         }
@@ -157,7 +171,7 @@ static int __send_command_maybe_fds(int socket, struct sockaddr_un* to, int* fds
 static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int* fdset, void* payload, size_t payloadLength)
 {
     struct cmsghdr* cmsg;
-    char            fdsBuffer[CMSG_SPACE(sizeof(int) * 16)];
+    char            fdsBuffer[CMSG_SPACE(sizeof(int) * __CONTAINER_MAX_FD_COUNT)];
     struct msghdr   msg = { 0 };
     int             status;
     struct iovec    io = { 
@@ -184,94 +198,12 @@ static int __receive_command_maybe_fds(int socket, struct sockaddr_un* from, int
     
     if (fdset != NULL && CMSG_FIRSTHDR(&msg) != NULL) {
         cmsg = CMSG_FIRSTHDR(&msg);
-        if (cmsg->cmsg_level != SOL_SOCKET) {
-            VLOG_ERROR("containerv", "__receive_command_maybe_fds: invalid cmsg level\n");
+        if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
+            memcpy(fdset, CMSG_DATA(cmsg), (cmsg->cmsg_len - sizeof(struct cmsghdr)));
+            return (cmsg->cmsg_len - sizeof(struct cmsghdr)) / sizeof(int);
         }
-        if (cmsg->cmsg_type != SCM_RIGHTS) {
-            VLOG_ERROR("containerv", "__receive_command_maybe_fds: invalid cmsg type\n");
-        }
-        memcpy(fdset, CMSG_DATA(cmsg), (cmsg->cmsg_len - sizeof(struct cmsghdr)));
-        return (cmsg->cmsg_len - sizeof(struct cmsghdr)) / sizeof(int);
     }
     return 0;
-}
-
-static char* __flatten_environment(const char* const* environment, size_t* lengthOut)
-{
-    char*  flatEnvironment;
-    size_t flatLength = 1; // second nil
-    int    i = 0, j = 0;
-
-    while (environment[i]) {
-        flatLength += strlen(environment[i]) + 1;
-        i++;
-    }
-
-    flatEnvironment = calloc(flatLength, 1);
-    if (flatEnvironment == NULL) {
-        return NULL;
-    }
-
-    i = 0;
-    while (environment[i]) {
-        size_t len = strlen(environment[i]) + 1;
-        memcpy(&flatEnvironment[j], environment[i], len);
-        j += len;
-        i++;
-    }
-    *lengthOut = flatLength;
-    return flatEnvironment;
-}
-
-char** __unflatten_environment(const char* text)
-{
-	char** results;
-	int    count = 1; // add zero terminator
-	int    index = 0;
-
-	if (text == NULL) {
-		return NULL;
-	}
-
-	for (const char* p = text;; p++) {
-		if (*p == '\0') {
-			count++;
-			
-			if (*p == '\0' && *(p + 1) == '\0') {
-			    break;
-			}
-		}
-	}
-	
-	results = (char**)calloc(count, sizeof(char*));
-	if (results == NULL) {
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	for (const char* p = text;; p++) {
-		if (*p == '\0') {
-			results[index] = (char*)malloc(p - text + 1);
-			if (results[index] == NULL) {
-			    // cleanup
-				for (int i = 0; i < index; i++) {
-					free(results[i]);
-				}
-				free(results);
-				return NULL;
-			}
-
-			memcpy(results[index], text, p - text);
-			results[index][p - text] = '\0';
-			text = p + 1;
-			index++;
-			
-			if (*p == '\0' && *(p + 1) == '\0') {
-			    break;
-			}
-		}
-	}
-	return results;
 }
 
 static int __spawn(struct containerv_container* container, struct __socket_command* command, void* payload, pid_t* pidOut)
@@ -296,7 +228,7 @@ static int __spawn(struct containerv_container* container, struct __socket_comma
     }
 
     if (command->data.spawn.environment_length) {
-        envv = __unflatten_environment(data);
+        envv = environment_unflatten(data);
         if (envv == NULL) {
             return -1;
         }
@@ -318,8 +250,8 @@ static int __spawn(struct containerv_container* container, struct __socket_comma
     );
 
     // cleanup resources temporarily allocated
+    environment_destroy(envv);
     strargv_free(argv);
-    strsplit_free(envv);
     return status;
 }
 
@@ -418,14 +350,138 @@ static void __handle_getfds_command(struct containerv_container* container, stru
     }
 }
 
+static int __recv_xfer_data(struct containerv_container* container, struct sockaddr_un* from, size_t pathsLength, char*** pathsOut)
+{
+    char*  payload;
+    int    status;
+    VLOG_DEBUG("containerv[child]", "__recv_xfer_data()\n");
+
+    if (pathsLength >= (65 * 1024)) {
+        VLOG_ERROR("containerv[child]", "__recv_xfer_data: unsupported payload size %zu > %zu", pathsLength, (65 * 1024));
+        return -1;
+    }
+
+    payload = calloc(1, pathsLength);
+    if (payload == NULL) {
+        VLOG_ERROR("containerv[child]", "__recv_xfer_data: failed to allocate memory for payload");
+        return -1;
+    }
+
+    status = __receive_command_maybe_fds(container->socket_fd, from, NULL, payload, pathsLength);
+    if (status < 0) {
+        VLOG_ERROR("containerv[child]", "__recv_xfer_data: failed to read spawn payload\n");
+        return status;
+    }
+
+    *pathsOut = environment_unflatten(payload);
+    free(payload);
+    return 0;
+}
+
+static void __handle_sendfiles_command(struct containerv_container* container, int* fds, size_t pathsLength, struct sockaddr_un* from)
+{
+    struct __socket_response response = {
+        .type = __SOCKET_COMMAND_SENDFILES,
+        .data.xfer.statuses = { 0 }
+    };
+    char   xbuf[4096];
+    char** paths;
+    int    status;
+
+    status = __recv_xfer_data(container, from, pathsLength, &paths);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__handle_sendfiles_command: failed to receive payload\n");
+        goto respond;
+    }
+
+    for (int i = 0; paths[i] != NULL; i++) {
+        struct stat st;
+        int         outfd;
+        long        n;
+
+        status = fstat(fds[i], &st);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__handle_sendfiles_command: failed to stat host file descriptor (%i) - skipping\n", fds[i]);
+            response.data.xfer.statuses[i] = status;
+            close(fds[i]);
+            continue;
+        }
+
+        outfd = open(paths[i], O_CREAT | O_WRONLY | O_TRUNC, st.st_mode);
+        if (outfd < 0) {
+            VLOG_ERROR("containerv[child]", "__handle_sendfiles_command: failed to create: %s - skipping\n", paths[i]);
+            response.data.xfer.statuses[i] = status;
+            close(fds[i]);
+            continue;
+        }
+
+        while ((n = read(fds[i], xbuf, sizeof(xbuf))) > 0) {
+            if (write(outfd, xbuf, n) != n) {
+                VLOG_ERROR("containerv[child]", "__handle_sendfiles_command: failed to write %s\n", paths[i]);
+                response.data.xfer.statuses[i] = ENODATA;
+                close(outfd);
+                close(fds[i]);
+                continue;
+            }
+        }
+        close(outfd);
+        close(fds[i]);
+    }
+
+respond:
+    if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, &response, sizeof(struct __socket_response))) {
+        VLOG_ERROR("containerv[child]", "__handle_spawn_command: failed to send response\n");
+    }
+    environment_destroy(paths);
+}
+
+static void __handle_recvfiles_command(struct containerv_container* container, size_t pathsLength, struct sockaddr_un* from)
+{
+    int                      fds[__CONTAINER_MAX_FD_COUNT] = { -1 };
+    struct __socket_response response = {
+        .type = __SOCKET_COMMAND_RECVFILES,
+        .data.xfer.statuses = { 0 }
+    };
+
+    char** paths;
+    int    status;
+    int    count = 0;
+
+    status = __recv_xfer_data(container, from, pathsLength, &paths);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__handle_recvfiles_command: failed to receive payload\n");
+        goto respond;
+    }
+
+    for (int i = 0; paths[i] != NULL; i++) {
+        int infd = open(paths[i], O_RDONLY);
+        if (infd < 0) {
+            VLOG_ERROR("containerv[child]", "__handle_recvfiles_command: failed to open: %s - skipping\n", paths[i]);
+            response.data.xfer.statuses[i] = errno;
+            continue;
+        }
+        fds[count++] = infd;
+    }
+
+respond:
+    if (__send_command_maybe_fds(container->socket_fd, from, &fds[0], count, &response, sizeof(struct __socket_response))) {
+        VLOG_ERROR("containerv[child]", "__handle_spawn_command: failed to send response\n");
+    }
+    for (int i = 0; i < count; i++) {
+        close(fds[i]);
+    }
+    environment_destroy(paths);
+}
+
 int containerv_socket_event(struct containerv_container* container)
 {
+    int                     fds[__CONTAINER_MAX_FD_COUNT];
     struct __socket_command command;
     int                     status;
     struct sockaddr_un      from;
     VLOG_DEBUG("containerv[child]", "containerv_socket_event()\n");
 
-    status = __receive_command_maybe_fds(container->socket_fd, &from, NULL, &command, sizeof(struct __socket_command));
+    status = __receive_command_maybe_fds(container->socket_fd, &from, &fds[0], &command, sizeof(struct __socket_command));
     if (status < 0) {
         VLOG_ERROR("containerv[child]", "containerv_socket_event: failed to read socket command\n");
         return -1;
@@ -444,6 +500,12 @@ int containerv_socket_event(struct containerv_container* container)
         } break;
         case __SOCKET_COMMAND_GETFDS: {
             __handle_getfds_command(container, &from);
+        } break;
+        case __SOCKET_COMMAND_SENDFILES: {
+            __handle_sendfiles_command(container, &fds[0], command.data.xfer.paths_length, &from);
+        } break;
+        case __SOCKET_COMMAND_RECVFILES: {
+            __handle_recvfiles_command(container, command.data.xfer.paths_length, &from);
         } break;
         case __SOCKET_COMMAND_DESTROY: {
             __handle_destroy_command(container, &from);
@@ -568,7 +630,7 @@ int containerv_socket_client_spawn(
 
     size_t dataLength = 0;
     size_t flatEnvironmentLength;
-    char*  flatEnvironment = __flatten_environment(options->environment, &flatEnvironmentLength);
+    char*  flatEnvironment = NULL;
     char*  data;
     int    dataIndex = 0;
     int    status;
@@ -577,7 +639,11 @@ int containerv_socket_client_spawn(
     // consider length of args and env
     dataLength += strlen(path) + 1;
     dataLength += (options->arguments != NULL) ? (strlen(options->arguments) + 1) : 0;
-    dataLength += (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
+    
+    if (options->environment != NULL) {
+        flatEnvironment = environment_flatten(options->environment, &flatEnvironmentLength);
+        dataLength += (flatEnvironment != NULL) ? flatEnvironmentLength : 0;
+    }
 
     data = calloc(dataLength, 1);
     if (data == NULL) {
@@ -693,7 +759,7 @@ int containerv_socket_client_get_root(struct containerv_socket_client* client, c
 int containerv_socket_client_get_nss(struct containerv_socket_client* client, struct containerv_ns_fd fds[CV_NS_COUNT], int* count)
 {
     int                     status;
-    int                     fdset[16];
+    int                     fdset[__CONTAINER_MAX_FD_COUNT];
     struct __socket_command command = {
         .type = __SOCKET_COMMAND_GETFDS
     };
@@ -715,5 +781,98 @@ int containerv_socket_client_get_nss(struct containerv_socket_client* client, st
         fds[i].fd = fdset[i];
     }
     *count = response.data.getfds.count;
+    return 0;
+}
+
+int containerv_socket_client_send_files(struct containerv_socket_client* client, int* fds, const char* const* filepaths, int* statuses, int count)
+{
+    struct __socket_command  cmd;
+    struct __socket_response rsp;
+
+    int    status;
+    size_t flatPathsLength;
+    char*  flatPaths;
+    VLOG_DEBUG("containerv[host]", "containerv_socket_client_send_files()\n");
+
+    if (count > __CONTAINER_MAX_FD_COUNT) {
+        VLOG_ERROR("containerv", "containerv_socket_client_send_files: a maximum of 16 files is allowed\n");
+        return -1;
+    }
+
+    flatPaths = environment_flatten(filepaths, &flatPathsLength);
+
+    cmd.type = __SOCKET_COMMAND_SENDFILES;
+    cmd.data.xfer.paths_length = flatPathsLength;
+
+    status = __send_command_maybe_fds(client->socket_fd, NULL, fds, count, &cmd, sizeof(struct __socket_command));
+    if (status < 0) {
+        VLOG_ERROR("containerv", "containerv_socket_client_send_files: failed to send recv command\n");
+        free(flatPaths);
+        return status;
+    }
+
+    status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, flatPaths, flatPathsLength);
+    if (status < 0) {
+        VLOG_ERROR("containerv", "containerv_socket_client_send_files: failed to send recv data\n");
+        free(flatPaths);
+        return status;
+    }
+    free(flatPaths);
+
+    status = __receive_command_maybe_fds(client->socket_fd, NULL, NULL, &rsp, sizeof(struct __socket_response));
+    if (status < 0) {
+        VLOG_ERROR("containerv", "containerv_socket_client_send_files: failed to receive recv response\n");
+        return status;
+    }
+
+    for (int i = 0; i < count; i++) {
+        statuses[i] = rsp.data.xfer.statuses[i];
+    }
+    return 0;
+}
+
+int containerv_socket_client_recv_files(struct containerv_socket_client* client, const char* const* filepaths, int* fds, int* statuses, int count)
+{
+    struct __socket_command  cmd;
+    struct __socket_response rsp;
+
+    int    status;
+    size_t flatPathsLength;
+    char*  flatPaths;
+    VLOG_DEBUG("containerv[host]", "containerv_socket_client_recv_files()\n");
+
+    if (count > __CONTAINER_MAX_FD_COUNT) {
+        VLOG_ERROR("containerv", "containerv_socket_client_recv_files: a maximum of 16 files is allowed\n");
+        return -1;
+    }
+
+    flatPaths = environment_flatten(filepaths, &flatPathsLength);
+    cmd.type = __SOCKET_COMMAND_RECVFILES;
+    cmd.data.xfer.paths_length = flatPathsLength;
+
+    status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, &cmd, sizeof(struct __socket_command));
+    if (status < 0) {
+        VLOG_ERROR("containerv", "containerv_socket_client_recv_files: failed to send recv command\n");
+        free(flatPaths);
+        return status;
+    }
+
+    status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, flatPaths, flatPathsLength);
+    if (status < 0) {
+        VLOG_ERROR("containerv", "containerv_socket_client_recv_files: failed to send recv data\n");
+        free(flatPaths);
+        return status;
+    }
+    free(flatPaths);
+
+    status = __receive_command_maybe_fds(client->socket_fd, NULL, fds, &rsp, sizeof(struct __socket_response));
+    if (status < 0) {
+        VLOG_ERROR("containerv", "containerv_socket_client_recv_files: failed to receive recv response\n");
+        return status;
+    }
+
+    for (int i = 0; i < count; i++) {
+        statuses[i] = rsp.data.xfer.statuses[i];
+    }
     return 0;
 }

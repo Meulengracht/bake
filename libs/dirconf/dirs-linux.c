@@ -18,6 +18,7 @@
 
 #define _GNU_SOURCE
 
+#include <chef/dirs.h>
 #include <chef/platform.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -27,17 +28,19 @@
 #include <vlog.h>
 
 static struct {
-    uid_t       real_user;
+    enum chef_dir_scope scope;
+    uid_t               real_user;
 
     // per-user
     const char* root;
     const char* fridge;
     const char* store;
+    const char* cache;
     const char* kitchen;
 
     // global
     const char* config;
-} g_dirs = { 0, NULL, NULL, NULL, NULL };
+} g_dirs = { 0, 0, NULL, NULL, NULL, NULL, NULL, NULL };
 
 static int __directory_exists(
     const char* path)
@@ -162,9 +165,10 @@ static int __ensure_chef_global_dirs(void)
         // relaxed permissions to allow for non-root tools to work
         // with the filesystem
         { &g_dirs.root,   0777 },
-        // Config can be more restrictive, we do not want arbitrary access
+        // Config/cache can be more restrictive, we do not want arbitrary access
         // here
         { &g_dirs.config, 0644 },
+        { &g_dirs.cache,  0644 },
         { NULL },
     };
     for (int i = 0; paths[i].path != NULL; i++) {
@@ -184,6 +188,14 @@ static int __ensure_chef_global_dirs(void)
     return 0;
 }
 
+static char* __strdup_fail(const char* str) {
+    char* copy = strdup(str);
+    if (copy == NULL) {
+        VLOG_FATAL("dirs", "failed to allocate memory for %s\n", str);
+    }
+    return copy;
+}
+
 static const char* __root_common_directory(void)
 {
 #ifdef CHEF_AS_SNAP
@@ -193,7 +205,31 @@ static const char* __root_common_directory(void)
         return val;
     }
 #endif
-    return "/etc/chef";
+    return "/var/lib/chef";
+}
+
+static const char* __cache_directory(void)
+{
+#ifdef CHEF_AS_SNAP
+    // /var/snap/<snap>/common
+    char* val = getenv("SNAP_COMMON");
+    if (val != NULL) {
+        return strpathcombine(val, "cache");
+    }
+#endif
+    return __strdup_fail("/var/chef/cache");
+}
+
+static const char* __spaces_directory(void)
+{
+#ifdef CHEF_AS_SNAP
+    // /var/snap/<snap>/common
+    char* val = getenv("SNAP_COMMON");
+    if (val != NULL) {
+        return strpathcombine(val, "fridge");
+    }
+#endif
+    return __strdup_fail("/var/chef/spaces");
 }
 
 static char* __common_user_directory(void)
@@ -214,51 +250,83 @@ static char* __common_user_directory(void)
     return strpathcombine(&buffer[0], ".chef");
 }
 
-int chef_dirs_initialize(void)
+static int __initialize_daemon(void)
 {
-    uid_t realUser = __real_user();
-
-    g_dirs.real_user = realUser;
- 
-    if (realUser == 0) {
-        VLOG_DEBUG("dirs", "DETECTED running as root (daemon-mode)\n");
-        g_dirs.root = platform_strdup("/tmp/chef");
-        if (g_dirs.root == NULL) {
-            VLOG_ERROR("dirs", "failed to allocate memory for root directory\n");
-            return -1;
-        }
-        g_dirs.config = __root_common_directory();
-        if (g_dirs.config == NULL) {
-            VLOG_ERROR("dirs", "failed to determine configuration directory\n");
-            return -1;
-        }
-        g_dirs.fridge = strpathcombine(g_dirs.config, "fridge");
-        g_dirs.store = strpathcombine(g_dirs.config, "store");
-
-        if (__ensure_chef_global_dirs()) {
-            VLOG_ERROR("dirs", "failed to create root directories\n");
-            return -1;
-        }
-    } else {
-        g_dirs.root = __common_user_directory();
-        if (g_dirs.root == NULL) {
-            VLOG_ERROR("dirs", "failed to resolve tmp directory\n");
-            return -1;
-        }
-        g_dirs.config = platform_strdup(g_dirs.root);
-        g_dirs.fridge = strpathcombine(g_dirs.root, "fridge");
-        g_dirs.store = strpathcombine(g_dirs.root, "store");
-    }
-
-    g_dirs.kitchen = strpathcombine(g_dirs.root, "kitchen");
-    if (g_dirs.root == NULL || g_dirs.fridge == NULL ||
-        g_dirs.store == NULL || g_dirs.kitchen == NULL ||
-        g_dirs.config == NULL) {
-        VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
+    if (g_dirs.real_user != 0) {
+        VLOG_ERROR("dirs", "running daemons as non-root user is not currently supported\n");
         return -1;
     }
 
+    g_dirs.root    = __strdup_fail(__root_common_directory());
+    g_dirs.config  = __strdup_fail("/etc/chef");
+    g_dirs.fridge  = strpathcombine(g_dirs.root, "fridge");
+    g_dirs.store   = strpathcombine(g_dirs.root, "store");
+    g_dirs.cache   = __cache_directory();
+    g_dirs.kitchen = __spaces_directory();
+    if (g_dirs.fridge == NULL || g_dirs.store == NULL) {
+        VLOG_FATAL("dirs", "failed to allocate memory for paths\n");
+    }
+    return __ensure_chef_global_dirs();
+}
+
+// bakectl is running inside the container - meaning
+// we don't actually need to do that much
+static int __initialize_bakectl(void)
+{
+    if (g_dirs.real_user != 0) {
+        VLOG_ERROR("dirs", "running bakectl as non-root user is not currently supported\n");
+        return -1;
+    }
+
+    g_dirs.root   = __strdup_fail("/chef");
+    g_dirs.config = __strdup_fail("/chef/config");
+    g_dirs.fridge = __strdup_fail("/chef/fridge");
+    g_dirs.store  = __strdup_fail("/chef/store");
+    return __ensure_chef_global_dirs();
+}
+
+static int __initialize_bake(void)
+{
+    if (g_dirs.real_user == 0) {
+        VLOG_ERROR("dirs", "running bake as root is not currently supported\n");
+        return -1;
+    }
+
+    g_dirs.root = __common_user_directory();
+    if (g_dirs.root == NULL) {
+        VLOG_ERROR("dirs", "failed to resolve user root directory\n");
+        return -1;
+    }
+
+    g_dirs.config  = __strdup_fail(g_dirs.root);
+    g_dirs.fridge  = strpathcombine(g_dirs.root, "fridge");
+    g_dirs.store   = strpathcombine(g_dirs.root, "store");
+    g_dirs.kitchen = strpathcombine(g_dirs.root, "spaces");
+    if (g_dirs.fridge == NULL || g_dirs.store == NULL || g_dirs.kitchen == NULL) {
+        VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
+        return -1;
+    }
     return __ensure_chef_user_dirs();
+}
+
+int chef_dirs_initialize(enum chef_dir_scope scope)
+{
+    uid_t realUser = __real_user();
+
+    g_dirs.scope = scope;
+    g_dirs.real_user = realUser;
+
+    switch (scope) {
+        case CHEF_DIR_SCOPE_DAEMON:
+            return __initialize_daemon();
+        case CHEF_DIR_SCOPE_BAKECTL:
+            return __initialize_bakectl();
+        case CHEF_DIR_SCOPE_BAKE:
+            return __initialize_bake();
+        default:
+            VLOG_ERROR("dirs", "unrecognized scope\n");
+            return -1;
+    }
 }
 
 const char* chef_dirs_root(void)
@@ -288,10 +356,19 @@ const char* chef_dirs_store(void)
     return g_dirs.store;
 }
 
-const char* chef_dirs_kitchen(const char* uuid)
+const char* chef_dirs_cache(void)
+{
+    if (g_dirs.cache == NULL) {
+        VLOG_ERROR("dirs", "chef_dirs_cache() is not available\n");
+        return NULL;
+    }
+    return g_dirs.cache;
+}
+
+const char* chef_dirs_rootfs(const char* uuid)
 {
     if (g_dirs.kitchen == NULL) {
-        VLOG_ERROR("dirs", "chef_dirs_kitchen() is not available\n");
+        VLOG_ERROR("dirs", "chef_dirs_rootfs() is not available\n");
         return NULL;
     }
     if (uuid != NULL) {
@@ -300,19 +377,19 @@ const char* chef_dirs_kitchen(const char* uuid)
     return g_dirs.kitchen;
 }
 
-char* chef_dirs_kitchen_new(const char* uuid)
+char* chef_dirs_rootfs_new(const char* uuid)
 {
     char*        kitchen;
     unsigned int mode = 0755;
 
     if (g_dirs.kitchen == NULL) {
-        VLOG_ERROR("dirs", "chef_dirs_kitchen_new() is not available\n");
+        VLOG_ERROR("dirs", "chef_dirs_rootfs_new() is not available\n");
         return NULL;
     }
     
     kitchen = strpathcombine(g_dirs.kitchen, uuid);
     if (kitchen == NULL) {
-        VLOG_ERROR("dirs", "chef_dirs_kitchen_new: failed to allocate memory for path\n");
+        VLOG_ERROR("dirs", "chef_dirs_rootfs_new: failed to allocate memory for path\n");
         return NULL;
     }
 
@@ -322,7 +399,7 @@ char* chef_dirs_kitchen_new(const char* uuid)
     }
 
     if (__mkdir_as(kitchen, mode, g_dirs.real_user, g_dirs.real_user)) {
-        VLOG_ERROR("dirs", "chef_dirs_kitchen_new: failed to create %s (mode: %o)\n", kitchen, mode);
+        VLOG_ERROR("dirs", "chef_dirs_rootfs_new: failed to create %s (mode: %o)\n", kitchen, mode);
         free(kitchen);
         return NULL;
     }

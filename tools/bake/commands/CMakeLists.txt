@@ -6,11 +6,19 @@ set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 add_library(bake-commands STATIC
     ${GENERATED_SRCS}
     
+    # container backend
     build.c
     clean.c
+    pack.c
+
+    # stuff
     fridge.c
     init.c
     recipe_specification.c
+
+    # remote backend
+    remote-helpers/remote_client.c
+    remote-helpers/remote_wizard.c
     remote_build.c
     remote_download.c
     remote_init.c
@@ -20,4 +28,4 @@ add_library(bake-commands STATIC
 
 add_dependencies(bake-commands service_client)
 target_include_directories(bake-commands PRIVATE ../include ${CMAKE_BINARY_DIR}/protocols)
-target_link_libraries(bake-commands kitchen fridge remote platform gracht)
+target_link_libraries(bake-commands libcvd libpackage fridge remote platform gracht)

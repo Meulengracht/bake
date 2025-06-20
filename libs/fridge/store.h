@@ -20,7 +20,7 @@
 #define __FRIDGE_STORE_H__
 
 #include <chef/platform.h>
-#include <libfridge.h>
+#include <chef/fridge.h>
 
 struct fridge_store;
 
@@ -29,7 +29,7 @@ struct fridge_store;
  * any inventory operations, must be done by first _open'ing the store inventory and closing
  * it again when done, as it accesses a shared file.
  */
-extern int fridge_store_load(const char* platform, const char* arch, struct fridge_store** storeOut);
+extern int fridge_store_load(const char* platform, const char* arch, struct fridge_store_backend* backend, struct fridge_store** storeOut);
 
 /**
  * @brief Opens the store inventory. Must be done before any calls to ensure_ingredient.
@@ -46,5 +46,10 @@ extern int fridge_store_close(struct fridge_store* store);
  * its automatically downloaded and added.
  */
 extern int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut);
+
+/**
+ * @brief Looks up an ingredient already in store based on the options given.
+ */
+extern int fridge_store_find_ingredient(struct fridge_store* store, struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut);
 
 #endif //!__FRIDGE_STORE_H__

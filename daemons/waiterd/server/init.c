@@ -28,7 +28,12 @@
 #include <arpa/inet.h>
 #include <sys/un.h>
 
-static int __local_size(void) {
+static int __local_size(const char* address) {
+    // If the address starts with '@', it is an abstract socket path.
+    // Abstract socket paths are not null-terminated, so we need to account for that.
+    if (address[0] == '@') {
+        return offsetof(struct sockaddr_un, sun_path) + strlen(address);
+    }
     return sizeof(struct sockaddr_un);
 }
 
@@ -36,13 +41,25 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 {
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
 
-    // ensure it doesn't exist
-    if (unlink(address) && errno != ENOENT) {
+    local->sun_family = AF_LOCAL;
+
+    // sanitize the address length
+    if (strlen(address) >= sizeof(local->sun_path)) {
+        fprintf(stderr, "__configure_local: address too long for local socket: %s\n", address);
         return -1;
     }
 
-    local->sun_family = AF_LOCAL;
-    strncpy(local->sun_path, address, sizeof(local->sun_path));
+    // handle abstract socket paths
+    if (address[0] == '@') {
+        local->sun_path[0] = '\0';
+        strncpy(local->sun_path + 1, address + 1, sizeof(local->sun_path) - 1);
+    } else {
+        // ensure it doesn't exist
+        if (unlink(address) && errno != ENOENT) {
+            return -1;
+        }
+        strncpy(local->sun_path, address, sizeof(local->sun_path));
+    }
     return 0;
 }
 #elif defined(_WIN32)
@@ -51,7 +68,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 // Windows 10 Insider build 17063 ++ 
 #include <afunix.h>
 
-static int __local_size(void) {
+static int __local_size(const char* address) {
     return sizeof(struct sockaddr_un);
 }
 
@@ -93,7 +110,7 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
             return status;
         }
         domain = AF_LOCAL;
-        size = __local_size();
+        size = __local_size(config->address);
 
         printf("listening at %s\n", config->address);
     } else if (!strcmp(config->type, "inet4")) {
@@ -179,24 +196,6 @@ int waiterd_initialize_server(struct gracht_server_configuration* config, gracht
 #ifdef _WIN32
     // initialize the WSA library
     gracht_link_socket_setup();
-#endif
-
-#if defined(__linux__)
-    status = platform_mkdir("/run/chef/waiterd");
-    if (status) {
-        fprintf(stderr, "waiterd_initialize_server: failed to create /run/chef/waiterd\n");
-        return status;
-    }
-    status = platform_mkdir("/run/chef/waiterd/clients");
-    if (status) {
-        fprintf(stderr, "waiterd_initialize_server: failed to create /run/chef/waiterd/clients\n");
-        return status;
-    }
-    status = platform_chmod("/run/chef/waiterd/clients", 0777);
-    if (status) {
-        fprintf(stderr, "waiterd_initialize_server: failed to set mode for /run/chef/waiterd/clients\n");
-        return status;
-    }
 #endif
 
     status = gracht_server_create(config, serverOut);

@@ -160,10 +160,10 @@ static int __initialize_config(struct config* config)
 {
 #ifdef CHEF_ON_LINUX
     config->api_address.type = platform_strdup("local");
-    config->api_address.address = platform_strdup("/run/chef/waiterd/api");
+    config->api_address.address = platform_strdup("@/chef/waiterd/api");
     
     config->cook_address.type = platform_strdup("local");
-    config->cook_address.address = platform_strdup("/run/chef/waiterd/cook");
+    config->cook_address.address = platform_strdup("@/chef/waiterd/cook");
 #elif CHEF_ON_WINDOWS
     config->api_address.type = platform_strdup("inet4");
     config->api_address.address = platform_strdup("127.0.0.1");

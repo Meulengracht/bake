@@ -21,6 +21,7 @@
 #include "chef_waiterd_service_client.h"
 
 #include "commands.h"
+#include "remote-helpers/remote.h"
 
 struct __build {
     struct list_item              list_header;

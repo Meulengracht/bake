@@ -2,9 +2,7 @@
 project (remote C)
 
 add_library(remote STATIC
-    client.c
     download.c
-    init.c
     pack.c
     unpack.c
     upload.c

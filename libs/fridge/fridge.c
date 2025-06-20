@@ -16,21 +16,12 @@
  * 
  */
 
-#include <errno.h>
-#include <chef/client.h>
-#include <chef/dirs.h>
+#include <chef/platform.h>
 #include <chef/ingredient.h>
 #include "inventory.h"
-#include <libfridge.h>
-#include <limits.h>
-#include <chef/platform.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <chef/fridge.h>
 #include <string.h>
 #include "store.h"
-#include <vafs/vafs.h>
-#include <vafs/file.h>
-#include <vafs/directory.h>
 #include <vlog.h>
 
 struct progress_context {
@@ -48,17 +39,17 @@ struct fridge_context {
 
 static struct fridge_context g_fridge = { 0 };
 
-int fridge_initialize(const char* platform, const char* architecture)
+int fridge_initialize(struct fridge_parameters* parameters)
 {
     int status;
 
-    if (platform == NULL || architecture == NULL) {
+    if (parameters->platform == NULL || parameters->architecture == NULL) {
         VLOG_ERROR("fridge", "fridge_initialize: platform and architecture must be specified\n");
         return -1;
     }
 
     // initialize the store inventory
-    status = fridge_store_load(platform, architecture, &g_fridge.store);
+    status = fridge_store_load(parameters->platform, parameters->architecture, &parameters->backend, &g_fridge.store);
     if (status) {
         VLOG_ERROR("fridge", "fridge_initialize: failed to load store inventory\n");
         fridge_cleanup();
@@ -73,7 +64,7 @@ void fridge_cleanup(void)
     memset(&g_fridge, 0, sizeof(struct fridge_context));
 }
 
-int fridge_ensure_ingredient(struct fridge_ingredient* ingredient, const char** pathOut)
+int fridge_ensure_ingredient(struct fridge_ingredient* ingredient)
 {
     struct fridge_inventory_pack* pack = NULL;
     int                           status;
@@ -88,8 +79,20 @@ int fridge_ensure_ingredient(struct fridge_ingredient* ingredient, const char** 
         (void)fridge_store_close(g_fridge.store);
         return status;
     }
-    if (pathOut != NULL) {
-        *pathOut = platform_strdup(inventory_pack_path(pack));
+    return fridge_store_close(g_fridge.store);
+}
+
+int fridge_ingredient_path(struct fridge_ingredient* ingredient, const char** pathOut)
+{
+    struct fridge_inventory_pack* pack = NULL;
+    int                           status;
+
+    status = fridge_store_open(g_fridge.store);
+    if (status) {
+        return status;
     }
+
+    status = fridge_store_find_ingredient(g_fridge.store, ingredient, &pack);
+    *pathOut = platform_strdup(inventory_pack_path(pack));
     return fridge_store_close(g_fridge.store);
 }

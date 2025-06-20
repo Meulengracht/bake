@@ -75,6 +75,7 @@ static json_t* __serialize_config_address(struct config_address* address)
 
 struct config {
     struct config_address api_address;
+    struct config_address cvd_address;
 };
 
 static struct config g_config = { 0 };
@@ -84,7 +85,7 @@ static json_t* __serialize_config(struct config* config)
 {
     json_t* root;
     json_t* api_address;
-    json_t* cook_address;
+    json_t* cvd_address;
     VLOG_DEBUG("config", "__serialize_config()\n");
     
     root = json_object();
@@ -99,7 +100,15 @@ static json_t* __serialize_config(struct config* config)
         return NULL;
     }
     
+    cvd_address = __serialize_config_address(&config->cvd_address);
+    if (cvd_address == NULL) {
+        json_decref(api_address);
+        json_decref(root);
+        return NULL;
+    }
+    
     json_object_set_new(root, "api-address", api_address);
+    json_object_set_new(root, "cvd-address", cvd_address);
     return root;
 }
 
@@ -127,13 +136,19 @@ static int __parse_config(struct config* config, json_t* root)
     int     status;
 
     member = json_object_get(root, "api-address");
-    if (member == NULL) {
-        return 0;
+    if (member != NULL) {
+        status = __parse_config_address(&config->api_address, member);
+        if (status) {
+            return status;
+        }
     }
 
-    status = __parse_config_address(&config->api_address, member);
-    if (status) {
-        return status;
+    member = json_object_get(root, "cvd-address");
+    if (member != NULL) {
+        status = __parse_config_address(&config->cvd_address, member);
+        if (status) {
+            return status;
+        }
     }
     return 0;
 }
@@ -142,7 +157,10 @@ static int __initialize_config(struct config* config)
 {
 #ifdef CHEF_ON_LINUX
     config->api_address.type = platform_strdup("local");
-    config->api_address.address = platform_strdup("/run/chef/waiterd/cook");
+    config->api_address.address = platform_strdup("@/chef/waiterd/cook");
+
+    config->cvd_address.type = platform_strdup("local");
+    config->cvd_address.address = platform_strdup("@/chef/cvd/api");
 #elif CHEF_ON_WINDOWS
     config->api_address.type = platform_strdup("inet4");
     config->api_address.address = platform_strdup("127.0.0.1");
@@ -193,6 +211,9 @@ void cookd_config_destroy(void)
 {
     free((void*)g_config.api_address.address);
     free((void*)g_config.api_address.type);
+
+    free((void*)g_config.cvd_address.address);
+    free((void*)g_config.cvd_address.type);
 }
 
 void cookd_config_api_address(struct cookd_config_address* address)
@@ -200,4 +221,11 @@ void cookd_config_api_address(struct cookd_config_address* address)
     address->type = g_config.api_address.type;
     address->address = g_config.api_address.address;
     address->port = g_config.api_address.port;
+}
+
+void cookd_config_cvd_address(struct cookd_config_address* address)
+{
+    address->type = g_config.cvd_address.type;
+    address->address = g_config.cvd_address.address;
+    address->port = g_config.cvd_address.port;
 }

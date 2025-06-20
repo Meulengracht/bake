@@ -48,6 +48,14 @@ extern int chef_config_save(struct chef_config* config);
  * 
  * @param address 
  */
+extern void chef_config_cvd_address(struct chef_config* config, struct chef_config_address* address);
+extern void chef_config_set_cvd_address(struct chef_config* config, struct chef_config_address* address);
+
+/**
+ * @brief 
+ * 
+ * @param address 
+ */
 extern void chef_config_remote_address(struct chef_config* config, struct chef_config_address* address);
 extern void chef_config_set_remote_address(struct chef_config* config, struct chef_config_address* address);
 

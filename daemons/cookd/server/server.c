@@ -17,20 +17,24 @@
  */
 
 #include <chef/client.h>
+#include <chef/api/package.h>
+#include <chef/cvd.h>
+#include <chef/pack.h>
 #include <chef/dirs.h>
-#include <chef/kitchen.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <chef/remote.h>
 #include <chef/storage/download.h>
 #include <errno.h>
-#include <libfridge.h>
+#include <chef/fridge.h>
 #include <notify.h>
 #include <server.h>
 #include <stdlib.h>
 #include <string.h>
 #include <threading.h>
 #include <vlog.h>
+
+#include "../private.h"
 
 struct __cookd_queue {
     // remember volatility means nothing in terms of memory
@@ -268,6 +272,27 @@ static void __cookd_server_stop(struct __cookd_server* server)
 
 static struct __cookd_server* g_server = NULL;
 
+static int __resolve_ingredient(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded)
+{
+    struct chef_download_params downloadParams;
+    int                         status;
+    VLOG_DEBUG("cookd", "__resolve_ingredient()\n");
+
+    // initialize download params
+    downloadParams.publisher = publisher;
+    downloadParams.package   = package;
+    downloadParams.platform  = platform;
+    downloadParams.arch      = arch;
+    downloadParams.channel   = channel;
+    downloadParams.version   = version; // may be null, will just get latest
+
+    status = chefclient_pack_download(&downloadParams, path);
+    if (status == 0) {
+        *revisionDownloaded = downloadParams.revision;
+    }
+    return status;
+}
+
 int cookd_server_init(gracht_client_t* client, int builderCount)
 {
     int status;
@@ -279,7 +304,13 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
         return -1;
     }
 
-    status = fridge_initialize(CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR);
+    status = fridge_initialize(&(struct fridge_parameters) {
+        .platform = CHEF_PLATFORM_STR,
+        .architecture = CHEF_ARCHITECTURE_STR,
+        .backend = {
+            .resolve_ingredient = __resolve_ingredient
+        }
+    });
     if (status) {
         VLOG_ERROR("cookd", "failed to initialize fridge\n");
         chefclient_cleanup();
@@ -330,25 +361,7 @@ void cookd_server_status(struct cookd_status* status)
     status->queue_size = g_server->queue.queue.count;
 }
 
-static int __add_kitchen_ingredient(const char* name, const char* path, struct list* kitchenIngredients)
-{
-    struct kitchen_ingredient* ingredient;
-    VLOG_DEBUG("cookd", "__add_kitchen_ingredient(name=%s, path=%s)\n", name, path);
-
-    ingredient = malloc(sizeof(struct kitchen_ingredient));
-    if (ingredient == NULL) {
-        return -1;
-    }
-    memset(ingredient, 0, sizeof(struct kitchen_ingredient));
-
-    ingredient->name = name;
-    ingredient->path = path;
-
-    list_add(kitchenIngredients, &ingredient->list_header);
-    return 0;
-}
-
-static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredients)
+static int __prep_toolchains(struct list* platforms)
 {
     struct list_item* item;
     VLOG_DEBUG("cookd", "__prep_toolchains()\n");
@@ -356,7 +369,6 @@ static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredi
     list_foreach(platforms, item) {
         struct recipe_platform* platform = (struct recipe_platform*)item;
         int                     status;
-        const char*             path;
         char*                   name;
         char*                   channel;
         char*                   version;
@@ -376,7 +388,7 @@ static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredi
             .version = version,
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
-        }, &path);
+        });
         if (status) {
             free(name);
             free(channel);
@@ -384,20 +396,11 @@ static int __prep_toolchains(struct list* platforms, struct list* kitchenIngredi
             VLOG_ERROR("cookd", "failed to fetch ingredient %s\n", name);
             return status;
         }
-        
-        status = __add_kitchen_ingredient(name, path, kitchenIngredients);
-        if (status) {
-            free(name);
-            free(channel);
-            free(version);
-            VLOG_ERROR("cookd", "failed to mark ingredient %s\n", name);
-            return status;
-        }
     }
     return 0;
 }
 
-static int __prep_ingredient_list(struct list* list, const char* platform, const char* arch, struct list* kitchenIngredients)
+static int __prep_ingredient_list(struct list* list, const char* platform, const char* arch)
 {
     struct list_item* item;
     int               status;
@@ -405,7 +408,6 @@ static int __prep_ingredient_list(struct list* list, const char* platform, const
 
     list_foreach(list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        const char*               path = NULL;
 
         status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
             .name = ingredient->name,
@@ -413,22 +415,16 @@ static int __prep_ingredient_list(struct list* list, const char* platform, const
             .version = ingredient->version,
             .arch = arch,
             .platform = platform
-        }, &path);
+        });
         if (status) {
             VLOG_ERROR("cookd", "failed to fetch ingredient %s\n", ingredient->name);
-            return status;
-        }
-        
-        status = __add_kitchen_ingredient(ingredient->name, path, kitchenIngredients);
-        if (status) {
-            VLOG_ERROR("cookd", "failed to mark ingredient %s\n", ingredient->name);
             return status;
         }
     }
     return 0;
 }
 
-static int __prep_ingredients(struct recipe* recipe, const char* platform, const char* arch, struct kitchen_setup_options* kitchenOptions)
+static int __ensure_ingredients(struct recipe* recipe, const char* platform, const char* arch)
 {
     struct list_item* item;
     int               status;
@@ -436,8 +432,7 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
     if (recipe->platforms.count > 0) {
         VLOG_TRACE("cookd", "preparing %i platforms\n", recipe->platforms.count);
         status = __prep_toolchains(
-            &recipe->platforms,
-            &kitchenOptions->host_ingredients
+            &recipe->platforms
         );
         if (status) {
             return status;
@@ -449,8 +444,7 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
         status = __prep_ingredient_list(
             &recipe->environment.host.ingredients,
             CHEF_PLATFORM_STR,
-            CHEF_ARCHITECTURE_STR,
-            &kitchenOptions->host_ingredients
+            CHEF_ARCHITECTURE_STR
         );
         if (status) {
             return status;
@@ -462,8 +456,7 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
         status = __prep_ingredient_list(
             &recipe->environment.build.ingredients,
             platform,
-            arch,
-            &kitchenOptions->build_ingredients
+            arch
         );
         if (status) {
             return status;
@@ -475,8 +468,7 @@ static int __prep_ingredients(struct recipe* recipe, const char* platform, const
         status = __prep_ingredient_list(
             &recipe->environment.runtime.ingredients,
             platform,
-            arch,
-            &kitchenOptions->runtime_ingredients
+            arch
         );
         if (status) {
             return status;
@@ -653,9 +645,9 @@ static void __notify_status(const char* id, enum cookd_notify_build_status statu
 
 static void __cookd_server_build(const char* id, struct cookd_build_options* options)
 {
-    struct kitchen_setup_options setupOptions = { 0 };
-    struct kitchen               kitchen = { 0 };
-    struct recipe_cache*         cache = NULL;
+    struct __bake_build_context* context;
+    struct build_cache*          cache = NULL;
+    struct cookd_config_address  cvdAddress;
     char*                        projectPath;
     char*                        buildPath;
     struct recipe*               recipe;
@@ -669,7 +661,7 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
 
     __notify_status(id, COOKD_BUILD_STATUS_SOURCING);
 
-    buildPath = (char*)chef_dirs_kitchen_new(id);
+    buildPath = (char*)chef_dirs_rootfs_new(id);
     if (buildPath == NULL) {
         VLOG_ERROR("cookd", "__cookd_server_build: failed to setup build storage\n");
         __notify_status(id, COOKD_BUILD_STATUS_FAILED);
@@ -697,61 +689,60 @@ static void __cookd_server_build(const char* id, struct cookd_build_options* opt
     }
 
     // we want the recipe cache in this case for regular builds
-    status = recipe_cache_create_null(recipe, &cache);
+    status = build_cache_create_null(recipe, &cache);
     if (status) {
         VLOG_ERROR("kitchen", "failed to initialize recipe cache\n");
         goto cleanup;
     }
 
-    status = kitchen_initialize(&(struct kitchen_init_options) {
-        .kitchen_root = buildPath,
-        .envp = NULL, /* not used currently */
+    cookd_config_cvd_address(&cvdAddress);
+    context = build_context_create(&(struct __bake_build_options) {
+        .cwd = projectPath,
+        .envp = NULL,
         .recipe = recipe,
         .recipe_path = options->recipe_path,
-        .recipe_cache = cache,
-        .project_path = projectPath,
+        .build_cache = cache,
+        .target_platform = options->platform,
         .target_architecture = options->architecture,
-        .target_platform = options->platform
-    }, &kitchen);
+        .cvd_address = &(struct chef_config_address) {
+            .type = cvdAddress.type,
+            .address = cvdAddress.address,
+            .port = cvdAddress.port
+        }
+    });
     if (status) {
         VLOG_ERROR("cookd", "failed to initialize kitchen area for build id %s\n", id);
         goto cleanup;
     }
     cleanupKitchen = 1;
 
-    status = __prep_ingredients(recipe, options->platform, options->architecture, &setupOptions);
+    status = __ensure_ingredients(recipe, options->platform, options->architecture);
     if (status) {
         VLOG_ERROR("cookd", "failed to fetch ingredients for build id %s: %s\n", id, strerror(errno));
         goto cleanup;
     }
 
-    // setup linux options
-    setupOptions.packages = &recipe->environment.host.packages;
-
-    // setup kitchen hooks
-    setupOptions.setup_hook.bash = recipe->environment.hooks.bash;
-    setupOptions.setup_hook.powershell = recipe->environment.hooks.powershell;
-    status = kitchen_setup(&kitchen, &setupOptions);
+    status = bake_build_setup(context);
     if (status) {
-        VLOG_ERROR("cookd", "failed to setup kitchen area for build id %s\n", id);
+        VLOG_ERROR("cookd", "failed to setup build environment: %s\n", strerror(errno));
         goto cleanup;
     }
 
-    status = kitchen_recipe_source(&kitchen);
+    status = build_step_source(context);
     if (status) {
         VLOG_ERROR("cookd", "failed to resolve sources for build id %s\n", id);
         goto cleanup;
     }
     
     __notify_status(id, COOKD_BUILD_STATUS_BUILDING);
-    status = kitchen_recipe_make(&kitchen);
+    status = build_step_make(context);
     if (status) {
         VLOG_ERROR("cookd", "failed to build project for build id %s\n", id);
         goto cleanup;
     }
 
     __notify_status(id, COOKD_BUILD_STATUS_PACKING);
-    status = kitchen_recipe_pack(&kitchen);
+    status = build_step_pack(context);
     if (status) {
         VLOG_ERROR("cookd", "failed to pack project artifacts for build id %s\n", id);
     }
@@ -762,7 +753,7 @@ cleanup:
     
     free(buildPath);
     if (cleanupKitchen) {
-        kitchen_destroy(&kitchen);
+        build_context_destroy(context);
     }
     __cookd_build_log_cleanup(log);
 }

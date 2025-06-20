@@ -198,7 +198,7 @@ static unsigned int __get_snap_uid(void)
         // fallback
         return getuid();
     }
-    return (unsigned int)atoi(uidstr); 
+    return (unsigned int)atoi(uidstr);
 }
 #endif
 
@@ -212,13 +212,6 @@ int main(int argc, char** argv, char** envp)
     int                         logLevel = VLOG_LEVEL_TRACE;
     
 #if __linux__
-    // make sure we're running with root privileges
-    if (geteuid() != 0 || getegid() != 0) {
-        fprintf(stderr, "bake: should be executed with root privileges, aborting.\n");
-        errno = EPERM;
-        return -1;
-    }
-
     // make sure we're not actually running as root
 #ifdef CHEF_AS_SNAP
     if (__get_snap_uid() == 0) {
@@ -319,7 +312,7 @@ int main(int argc, char** argv, char** envp)
     vlog_initialize(logLevel);
 
     // initialize directories
-    status = chef_dirs_initialize();
+    status = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKE);
     if (status) {
         fprintf(stderr, "bake: failed to initialize directories\n");
         return -1;
