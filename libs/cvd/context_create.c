@@ -35,9 +35,18 @@ static int __construct_paths(struct __bake_build_context* bctx) {
     const char* rootfs = chef_dirs_rootfs(build_cache_uuid(bctx->build_cache));
 
     bctx->rootfs_path = rootfs;
-    bctx->install_path = strpathjoin(rootfs, "chef", "install", NULL);
+    bctx->install_path = strpathjoin(
+        rootfs, "chef", "install",
+        bctx->target_platform,
+        bctx->target_architecture,
+        NULL
+    );
     bctx->build_ingredients_path = strpathjoin(
-        rootfs, "chef", "ingredients", bctx->target_platform, bctx->target_architecture, NULL);
+        rootfs, "chef", "ingredients",
+        bctx->target_platform,
+        bctx->target_architecture,
+        NULL
+    );
     return 0;
 }
 
