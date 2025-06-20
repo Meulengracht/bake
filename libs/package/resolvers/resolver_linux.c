@@ -34,12 +34,12 @@ struct __path_entry {
 
 // list of library paths on the systen
 static const char* g_systemPaths[] = {
-    "/usr/lib",
     "/usr/local/lib",
+    "/usr/local/lib64",
+    "/usr/lib",
+    "/usr/lib64",
     "/lib",
     "/lib64",
-    "/usr/lib64",
-    "/usr/local/lib64",
     NULL
 };
 
@@ -166,7 +166,7 @@ const char* resolve_platform_dependency(const char* sysroot, struct bake_resolve
         // Iterate over the library paths and try to resolve the dependency
         list_foreach(&libraryPaths, item) {
             struct __path_entry* entry = (struct __path_entry*)item;
-            snprintf(path, PATH_MAX, "%s/%s", entry->path, dependency);
+            snprintf(path, PATH_MAX, "%s%s/%s", sysroot, entry->path, dependency);
             if (platform_stat(path, &stats) == 0) {
                 return path;
             }
@@ -175,7 +175,7 @@ const char* resolve_platform_dependency(const char* sysroot, struct bake_resolve
 
     // Iterate over the default system library paths and try to resolve the dependency
     for (int i = 0; g_systemPaths[i] != NULL; i++) {
-        snprintf(path, PATH_MAX, "%s/%s/%s", sysroot, g_systemPaths[i], dependency);
+        snprintf(path, PATH_MAX, "%s%s/%s", sysroot, g_systemPaths[i], dependency);
         if (platform_stat(path, &stats) == 0) {
             return path;
         }
