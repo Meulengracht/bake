@@ -48,6 +48,7 @@ struct bake_resolve_dependency {
     const char*      sub_path; // only set if system_library == 0
     int              resolved;
     int              system_library;
+    int              ignored;
 };
 
 struct bake_resolve {
@@ -87,5 +88,10 @@ extern int pe_resolve_dependencies(const char* path, struct list* dependencies);
  * @return const char*   The full path of the resolved dependency
  */
 extern const char* resolve_platform_dependency(const char* sysroot, struct bake_resolve* resolve, const char* dependency);
+
+/**
+ * @brief Determines whether the library is marked as a system library
+ */
+extern int resolve_is_system_library(const char* base, const char* dependency);
 
 #endif //!__RESOLVERS_H__

@@ -74,7 +74,7 @@ static int __find_bakectl(char** resolvedOut)
             VLOG_DEBUG("bake", "__install_bakectl: found bakectl here: %s\n", pathToUse);
             break;
         }
-        VLOG_WARNING("bake", "__install_bakectl: tried %s\n", pathToUse);
+        VLOG_DEBUG("bake", "__install_bakectl: tried %s\n", pathToUse);
     }
 
     if (resolved == NULL) {
@@ -83,7 +83,7 @@ static int __find_bakectl(char** resolvedOut)
             VLOG_ERROR("bake", "__install_bakectl: failed to read /proc/self/exe\n");
             return status;
         }
-        VLOG_WARNING("bake", "__install_bakectl: failed to resolve bakectl from %s\n", &dirnm[0]);
+        VLOG_ERROR("bake", "__install_bakectl: failed to resolve bakectl from %s\n", &dirnm[0]);
         return -1;
     }
     *resolvedOut = resolved;

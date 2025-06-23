@@ -406,7 +406,10 @@ static int __write_dependencies(
 
     list_foreach(files, item) {
         struct bake_resolve_dependency* dependency = (struct bake_resolve_dependency*)item;
-        
+        if (dependency->ignored) {
+            continue;
+        }
+
         __write_progress(dependency->name, progress);
         if (dependency->system_library) {
             status = __write_syslib(progress, directoryHandle, dependency);

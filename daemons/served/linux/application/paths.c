@@ -25,26 +25,32 @@
 #include <string.h>
 #include <vlog.h>
 
+char* served_paths_path(const char* path)
+{
+#ifdef CHEF_AS_SNAP
+    // /var/snap/<snap>/common
+    char* val = getenv("SNAP_COMMON");
+    if (val != NULL) {
+        return strpathcombine(val, path);
+    }
+#else
+    return platform_strdup(path);
+#endif
+}
+
 int served_application_ensure_paths(struct served_application* application)
 {
+    char  tmp[PATH_MAX];
     char* path;
 
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        return -1;
-    }
-
-    sprintf(path, "/usr/share/chef/%s-%s/%i", application->publisher,
-        application->package, application->revision);
-    if (platform_mkdir(path) != 0) {
-        VLOG_ERROR("paths", "failed to create path %s\n", path);
-        free(path);
-        return -1;
-    }
-
     // always make sure mount-point is created
-    sprintf(path, "/var/chef/mnt/%s-%s", application->publisher,
-        application->package);
+    snprintf(
+        &tmp[0], sizeof(tmp) - 1, 
+        "/var/chef/mnt/%s-%s",
+        application->publisher,
+        application->package
+    );
+    path = served_paths_path(&tmp[0]);
     if (platform_mkdir(path) != 0) {
         // so we might receive ENOTCONN here, which means 'Transport endpoint is not connected'
         // but we can safely ignore this error
