@@ -110,12 +110,20 @@ static int __resolve_dependency_path(struct bake_resolve* resolve, struct bake_r
         }
     }
     platform_getfiles_destroy(&files);
-
+    
     // priority 3 - invoke platform resolver (if allowed)
     // we cannot do this if we are cross-compiling - we do not
     // necessarily know the layout of that.
-    if (options->allow_sysroot_libraries && !options->cross_compiling) {
-        const char* path = resolve_platform_dependency(options->sysroot, resolve, dependency->name);
+    if (!options->cross_compiling) {
+        const char* path;
+
+        if (resolve_is_system_library("ubuntu-24", dependency->name)) {
+            // okay library is carried by the system, we can safely ignore it
+            dependency->ignored = 1;
+            return 0;
+        }
+
+        path = resolve_platform_dependency(options->sysroot, resolve, dependency->name);
         if (path) {
             dependency->path = path;
             dependency->system_library = 1;
@@ -145,12 +153,13 @@ static int __resolve_elf_dependencies(struct bake_resolve* resolve, struct __res
                 }
 
                 // now we resolve the dependencies of this binary
-                status = elf_resolve_dependencies(dependency->path, &resolve->dependencies);
-                if (status != 0) {
-                    VLOG_ERROR("commands", "failed to resolve dependencies for %s\n", dependency->name);
-                    return -1;
+                if (!dependency->ignored) {
+                    status = elf_resolve_dependencies(dependency->path, &resolve->dependencies);
+                    if (status != 0) {
+                        VLOG_ERROR("commands", "failed to resolve dependencies for %s\n", dependency->name);
+                        return -1;
+                    }
                 }
-
                 dependency->resolved = 1;
                 resolved = 1;
             }
@@ -182,12 +191,13 @@ static int __resolve_pe_dependencies(struct bake_resolve* resolve, struct __reso
                 }
 
                 // now we resolve the dependencies of this binary
-                status = pe_resolve_dependencies(dependency->path, &resolve->dependencies);
-                if (status != 0) {
-                    VLOG_ERROR("commands", "failed to resolve dependencies for %s\n", dependency->name);
-                    return -1;
+                if (dependency->ignored) {
+                    status = pe_resolve_dependencies(dependency->path, &resolve->dependencies);
+                    if (status != 0) {
+                        VLOG_ERROR("commands", "failed to resolve dependencies for %s\n", dependency->name);
+                        return -1;
+                    }
                 }
-
                 dependency->resolved = 1;
                 resolved = 1;
             }

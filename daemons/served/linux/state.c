@@ -25,6 +25,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <utils.h>
 #include <vlog.h>
 
 struct __state {
@@ -238,16 +239,7 @@ static int __ensure_file(const char* path, char** jsonOut)
 
 static const char* __get_state_path(void)
 {
-    char* path;
-    int   status;
-
-    path = malloc(128);
-    if (path == NULL) {
-        return NULL;
-    }
-
-    sprintf(&path[0], "/var/chef/state.json");
-    return path;
+    return served_paths_path("/var/chef/state.json");
 }
 
 int served_state_load(void)

@@ -21,9 +21,11 @@
 #include <chef/platform.h>
 #include <startup.h>
 #include <state.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <utils.h>
 #include <vlog.h>
 
 static const char* g_profileScriptPath = "/etc/profile.d/chef.sh";
@@ -68,39 +70,39 @@ static int __write_profile_d_script(void)
 
 static int __ensure_chef_paths(void)
 {
+    char* path;
+
     VLOG_TRACE("startup", "__ensure_chef_paths()\n");
+    
     // ensure following paths are created
     // /chef
     // /chef/bin
-    // /run/chef
-    // /usr/share/chef
     // /var/chef
     // /var/chef/packs
 
-    if (platform_mkdir("/chef/bin") != 0) {
-        VLOG_ERROR("startup", "failed to create path /chef/bin\n");
+    path = served_paths_path("/chef/bin");
+    if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("startup", "failed to create path %s\n", path);
+        free(path);
         return -1;
     }
+    free(path);
 
-    if (platform_mkdir("/run/chef") != 0) {
-        VLOG_ERROR("startup", "failed to create path /run/chef\n");
+    path = served_paths_path("/var/chef/packs");
+    if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("startup", "failed to create path %s\n", path);
+        free(path);
         return -1;
     }
+    free(path);
 
-    if (platform_mkdir("/usr/share/chef") != 0) {
-        VLOG_ERROR("startup", "failed to create path /usr/share/chef\n");
+    path = served_paths_path("/var/chef/mnt");
+    if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("startup", "failed to create path %s\n", path);
+        free(path);
         return -1;
     }
-
-    if (platform_mkdir("/var/chef/packs") != 0) {
-        VLOG_ERROR("startup", "failed to create path /var/chef/packs\n");
-        return -1;
-    }
-
-    if (platform_mkdir("/var/chef/mnt") != 0) {
-        VLOG_ERROR("startup", "failed to create path /var/chef/packs\n");
-        return -1;
-    }
+    free(path);
     return 0;
 }
 

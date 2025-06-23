@@ -185,4 +185,45 @@ const char* resolve_platform_dependency(const char* sysroot, struct bake_resolve
     return NULL;
 }
 
+struct __system_libraries {
+    const char* name;
+};
+
+static const struct __system_libraries g_ubuntu24_libraries[] = {
+    "ld-linux-x86-64.so.2",
+    "linux-vdso.so.1",
+    "libc.so.6",
+    "libm.so.6",
+    "libstdc++.so.6",
+    "libatomic.so.1",
+    "libicudata.so.74",
+    "libicui18n.so.74",
+    "libicuio.so.74",
+    "libicutest.so.74",
+    "libicutu.so.74",
+    "libicuuc.so.74",
+    "libffi.so.8",
+    NULL
+};
+
+int resolve_is_system_library(const char* base, const char* dependency)
+{
+    const struct __system_libraries* libraries = NULL;
+    VLOG_DEBUG("resolver", "resolve_is_system_library(base=%s, dep=%s)\n", base, dependency);
+
+    if (strcmp(base, "ubuntu-24") == 0) {
+        libraries = g_ubuntu24_libraries;
+    } else {
+        VLOG_WARNING("resolver", "no library resolver for: %s\n", base);
+        return 0;
+    }
+
+    for (int i = 0; libraries[i].name != NULL; i++) {
+        if (strcmp(libraries[i].name, dependency) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 #endif //CHEF_ON_LINUX

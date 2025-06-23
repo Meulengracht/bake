@@ -22,6 +22,12 @@
 typedef struct gracht_server gracht_server_t;
 struct served_mount;
 
+
+/**
+ * @brief 
+ */
+extern char* served_paths_path(const char* path);
+
 /**
  * @brief 
  * 
