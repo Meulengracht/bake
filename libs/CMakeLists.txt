@@ -24,17 +24,6 @@ add_subdirectory(jansson)
 add_library(jansson-api INTERFACE)
 target_include_directories(jansson-api INTERFACE ${CMAKE_BINARY_DIR}/libs/jansson/include)
 
-# build wolfssl
-set(WOLFSSL_CURL ON CACHE BOOL "Enable Curl support")
-set(WOLFSSL_EXAMPLES OFF CACHE BOOL "Do not build wolfssl examples")
-set(WOLFSSL_CRYPT_TESTS OFF CACHE BOOL "Do not build wolfssl crypt tests")
-add_subdirectory(wolfssl)
-
-# build curl
-set(BUILD_CURL_EXE OFF CACHE BOOL "Do not build curl executable")
-set(CURL_USE_WOLFSSL ON CACHE BOOL "Use wolfSSL")
-add_subdirectory(curl)
-
 # build libchefclient
 add_subdirectory(chefclient)
 

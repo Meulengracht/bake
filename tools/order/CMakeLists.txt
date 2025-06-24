@@ -7,4 +7,4 @@ set (ORDER_SRCS
 )
 
 add_executable(order ${ORDER_SRCS})
-target_link_libraries(order order-commands wolfssl)
+target_link_libraries(order order-commands OpenSSL::SSL)

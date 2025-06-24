@@ -4,12 +4,6 @@
 [submodule "libs/zstd"]
 	path = libs/compression/zstd
 	url = ../../umbrella-c/zstd.git
-[submodule "libs/curl"]
-	path = libs/curl
-	url = ../../umbrella-c/curl.git
-[submodule "libs/wolfssl"]
-	path = libs/wolfssl
-	url = ../../umbrella-c/wolfssl.git
 [submodule "libs/jansson"]
 	path = libs/jansson
 	url = ../../umbrella-c/jansson.git
