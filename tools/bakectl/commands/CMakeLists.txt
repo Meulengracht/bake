@@ -7,4 +7,4 @@ add_library(bakectl-commands STATIC
 )
 
 target_include_directories(bakectl-commands PRIVATE ../include)
-target_link_libraries(bakectl-commands libbake oven fridge jansson platform)
+target_link_libraries(bakectl-commands oven fridge jansson platform)
