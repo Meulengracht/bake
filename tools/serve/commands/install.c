@@ -26,13 +26,15 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include <wolfssl/wolfcrypt/sha512.h>
-#include <wolfssl/wolfcrypt/rsa.h>
-#include <wolfssl/wolfcrypt/signature.h>
+#include <openssl/sha.h>
+#include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/decoder.h>
 
 #include "chef_served_service_client.h"
 
 #define __TEMPORARY_FILENAME ".cheftmpdl"
+#define __SIGNATURE_LEN      256
 
 extern int __chef_client_initialize(gracht_client_t** clientOut);
 
@@ -104,42 +106,49 @@ static int __parse_package_identifier(const char* id, const char** publisherOut,
 
 #define _SEGMENT_SIZE (1024 * 1024)
 
-static char* __calculate_sha512(const char* path)
+static void __print_crypt_errors(const char* prefix)
 {
-    FILE*  file;
-    char*  buffer;
-    int    status;
-    byte*  checksum;
-    Sha512 sha;
+    int status;
+    char tmp[256];
+    while ((status = ERR_get_error()) != 0) {
+        ERR_error_string_n(status, tmp, sizeof(tmp));
+        fprintf(stderr, "%s: %s\n", prefix, &tmp[0]);
+    }
+}
+
+static int __calculate_sha512(const char* path, unsigned char** hash, unsigned int* hashLength)
+{
+    FILE*       file;
+    char*       buffer;
+    int         status;
+    EVP_MD_CTX* mdctx;
 
     file = fopen(path, "rb");
     if (!file) {
-        return NULL;
-    }
-
-    checksum = (byte*)malloc(SHA512_DIGEST_SIZE);
-    if (checksum == NULL) {
-        fclose(file);
-        return NULL;
+        return -1;
     }
 
     buffer = (char*)malloc(_SEGMENT_SIZE);
     if (buffer == NULL) {
-        free(checksum);
         fclose(file);
-        return NULL;
+        return -1;
     }
 
-    status = wc_InitSha512(&sha);
-    if (status != 0) {
-        free(checksum);
-        free(buffer);
-        fclose(file);
-        return NULL;
+    mdctx = EVP_MD_CTX_new();
+    if (mdctx == NULL) {
+        fprintf(stderr, "failed to allocate SHA512 context\n");
+        status = -1;
+        goto cleanup;
+    }
+    
+    status = EVP_DigestInit_ex(mdctx, EVP_sha512(), NULL);
+    if (status != 1) {
+        __print_crypt_errors("failed to calculate SHA512");
+        status = -1;
+        goto cleanup;
     }
 
-    status = 0;
-    while (1) {
+    for (;;) {
         size_t read;
 
         read = fread(buffer, 1, _SEGMENT_SIZE, file);
@@ -147,7 +156,12 @@ static char* __calculate_sha512(const char* path)
             break;
         }
 
-        wc_Sha512Update(&sha, buffer, _SEGMENT_SIZE);
+        status = EVP_DigestUpdate(mdctx, buffer, read);
+        if (status != 1) {
+            __print_crypt_errors("failed to process SHA512 data");
+            status = -1;
+            goto cleanup;
+        }
 
         // was it last segment?
         if (read < _SEGMENT_SIZE) {
@@ -155,31 +169,86 @@ static char* __calculate_sha512(const char* path)
         }
     }
 
-    wc_Sha512Final(&sha, checksum);
+    *hash = (unsigned char *)OPENSSL_malloc(EVP_MD_size(EVP_sha512()));
+    if(*hash == NULL) {
+        fprintf(stderr, "failed to allocate memory for SHA512 checksum\n");
+        status = -1;
+        goto cleanup;
+    }
+
+    status = EVP_DigestFinal_ex(mdctx, *hash, hashLength);
+    if (status != 1) {
+        __print_crypt_errors("failed to finalize SHA512 data");
+        status = -1;
+    }
+
+cleanup:
     free(buffer);
     fclose(file);
-    return (char*)checksum;
+    EVP_MD_CTX_free(mdctx);
+    return status;
 }
 
-static int __verify_signature(const char* signature, const char* checksum)
-{
-    RsaKey rsaPublicKey;
-    int    status;
-    word32 idx = 0;
-    
-    // Import the public key
-    wc_InitRsaKey(&rsaPublicKey, 0);
-    wc_RsaPublicKeyDecode(g_publicKey, &idx, &rsaPublicKey, strlen(g_publicKey));
-
-    // Perform signature verification using public key
-    status = wc_SignatureVerifyHash(
-        WC_HASH_TYPE_SHA512, WC_SIGNATURE_TYPE_RSA,
-        checksum, 64,
-        signature, 256,
-        &rsaPublicKey, sizeof(rsaPublicKey)
+static int __parse_public_key(const unsigned char* key, size_t keyLength, EVP_PKEY** keyOut) {
+    int               status;
+    OSSL_DECODER_CTX* dctx = OSSL_DECODER_CTX_new_for_pkey(
+        keyOut,
+        "DER",
+        NULL,
+        "RSA",
+        OSSL_KEYMGMT_SELECT_PUBLIC_KEY,
+        NULL,
+        NULL
     );
-    wc_FreeRsaKey(&rsaPublicKey);
-    return status;
+    if (dctx == NULL) {
+        fprintf(stderr, "failed to create key context\n");
+        return -1;
+    }
+
+    status = OSSL_DECODER_from_data(dctx, &key, &keyLength);
+    OSSL_DECODER_CTX_free(dctx);
+    if (!status) {
+        fprintf(stderr, "failed to decode key for verification\n");
+        return -1;
+    }
+    return 0;
+}
+
+static int __verify_signature(EVP_PKEY* key, const char* msg, unsigned char* sig, size_t siglen) {
+    EVP_MD_CTX* mdctx;
+    int         status, r;
+
+    mdctx = EVP_MD_CTX_create();
+    if (mdctx == NULL) {
+        fprintf(stderr, "failed to create decoder context\n");
+        return -1;
+    }
+
+    status = EVP_DigestVerifyInit(mdctx, NULL, EVP_sha512(), NULL, key);
+    if (status != 1) {
+        fprintf(stderr, "failed to initialize digest context\n");
+        EVP_MD_CTX_free(mdctx);
+        return -1;
+    }
+
+    status = EVP_DigestVerifyUpdate(mdctx, msg, strlen(msg));
+    if (status != 1) {
+        fprintf(stderr, "failed to process digest data\n");
+        EVP_MD_CTX_free(mdctx);
+        return -1;
+    }
+
+    r = EVP_DigestVerifyFinal(mdctx, sig, siglen);
+    if (r == 1) {
+        status = 0;
+    } else {
+        if (r != 0) {
+            __print_crypt_errors("failed to verify package signature");
+        }
+        status = -1;
+    }
+    EVP_MD_CTX_free(mdctx);
+    return 0;
 }
 
 static char* __load_signature(const char* path)
@@ -197,19 +266,19 @@ static char* __load_signature(const char* path)
 
     fseek(fd, 0, SEEK_END);
     size = ftell(fd);
-    fseek(fd, size - 256, SEEK_SET);
+    fseek(fd, size - __SIGNATURE_LEN, SEEK_SET);
 
-    signature = malloc(256);
+    signature = malloc(__SIGNATURE_LEN);
     if (signature == NULL) {
         fprintf(stderr, "failed to allocate signature buffer\n");
         fclose(fd);
         return NULL;
     }
 
-    read = fread(signature, 1, 256, fd);
+    read = fread(signature, 1, __SIGNATURE_LEN, fd);
     fclose(fd);
 
-    if (read != 256) {
+    if (read != __SIGNATURE_LEN) {
         fprintf(stderr, "failed to read signature from package: %s\n", path);
         free(signature);
         return NULL;
@@ -220,28 +289,38 @@ static char* __load_signature(const char* path)
 // load signature from package, it's the last 256 bytes
 static int __verify_package_signature(const char* path, char** publisherOut)
 {
-    char* calculatedChecksum;
-    char* signature;
-    int   status;
+    unsigned char* calcChecksum = NULL;
+    unsigned int   checksumLength;
+    EVP_PKEY*     publicKey;
+    char*         signature;
+    int           status;
 
     // calculate SHA512 of the package
-    calculatedChecksum = __calculate_sha512(path);
-    if (calculatedChecksum == NULL) {
-        return -1;
+    status = __calculate_sha512(path, &calcChecksum, &checksumLength);
+    if (status) {
+        return status;
     }
 
     // load signature
     signature = __load_signature(path);
     if (signature == NULL) {
-        free(calculatedChecksum);
+        free(calcChecksum);
+        return -1;
+    }
+
+    // load public key
+    status = __parse_public_key(g_publicKey, strlen(g_publicKey), &publicKey);
+    if (status) {
+        fprintf(stderr, "key load failed\n");
+        free(signature);
         return -1;
     }
 
     // decrypt signature
-    status = __verify_signature(signature, calculatedChecksum);
+    status = __verify_signature(publicKey, calcChecksum, signature, __SIGNATURE_LEN);
+    EVP_PKEY_free(publicKey);
     if (status) {
         fprintf(stderr, "signature verification failed\n");
-        free(calculatedChecksum);
         free(signature);
         return -1;
     }

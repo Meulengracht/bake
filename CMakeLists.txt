@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.14.3)
 project(chef VERSION "1.4.0")
 
-# on ubuntu 24+ wolfssl craps out on some string operations which
-# we do not care about
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-stringop-overflow")
-
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
 option(CHEF_BUILD_TOOLS "Build the bake toolset" ON)
@@ -13,6 +9,10 @@ option(CHEF_BUILD_CONTAINER "Build the container manager" ON)
 option(CHEF_BUILD_SERVER "Build the cook build server" ON)
 option(CHEF_BUILD_MANAGER "Build the waiter build server manager" ON)
 option(CHEF_BUILD_AS_SNAP "Build binaries without setuid on unix" OFF)
+
+# Required libraries
+find_package(CURL REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 include_directories(${CMAKE_BINARY_DIR})
 

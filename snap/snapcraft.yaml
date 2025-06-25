@@ -44,7 +44,11 @@ parts:
     build-packages:
       - libfuse3-dev
       - libcap-dev
+      - libcurl4-openssl-dev
+      - libssl-dev
     stage-packages:
       - debootstrap
       - libfuse3-3
       - libcap2
+      - libcurl4
+      - libssl3

@@ -25,7 +25,6 @@
 #include <jansson.h>
 #include <stdlib.h>
 #include <string.h>
-#include <wolfssl/ssl.h>
 #include <vlog.h>
 
 struct chefclient {

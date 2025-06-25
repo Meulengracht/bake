@@ -19,7 +19,7 @@
 #ifndef __COOKD_THREADS_H__
 #define __COOKD_THREADS_H__
 
-//#include "cookd-config.h"
+#include "cookd-config.h"
 
 #if defined(__clang__)
 #define __TLS_VAR __thread
