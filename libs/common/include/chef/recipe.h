@@ -133,7 +133,6 @@ struct recipe_pack_command {
     const char*            description;
     const char*            icon;
     enum chef_command_type type;
-    int                    allow_system_libraries;
     const char*            path;
     struct list            arguments; // list<list_item_string>
 };

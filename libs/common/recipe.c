@@ -506,7 +506,6 @@ static void __finalize_command(struct parser_state* state)
 
     // reset the structure in state
     memset(&state->command, 0, sizeof(struct recipe_pack_command));
-    state->command.allow_system_libraries = 1;
 }
 
 static void __finalize_pack_ingredient_options(struct parser_state* state)
@@ -1376,7 +1375,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_COMMAND_PATH, command.path, __parse_string)
         __consume_scalar_fn(STATE_COMMAND_TYPE, command.type, __parse_command_type)
         __consume_scalar_fn(STATE_COMMAND_ICON, command.icon, __parse_string)
-        __consume_scalar_fn(STATE_COMMAND_SYSTEMLIBS, command.allow_system_libraries, __parse_boolean)
         __consume_sequence_unmapped(STATE_COMMAND_ARGUMENT_LIST, __add_command_arguments)
         
         case STATE_STOP:
@@ -1398,7 +1396,6 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
     // initialize some default options
     state.recipe.environment.host.base = 1;
     state.recipe.environment.build.confinement = 1;
-    state.command.allow_system_libraries = 1;
 
     yaml_parser_initialize(&parser);
     yaml_parser_set_input_string(&parser, buffer, length);
