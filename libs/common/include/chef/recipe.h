@@ -164,8 +164,7 @@ struct recipe_rt_environment {
 };
 
 struct recipe_environment_hooks {
-    const char* bash;
-    const char* powershell;
+    const char* setup;
 };
 
 struct recipe_environment {

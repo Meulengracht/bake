@@ -54,7 +54,7 @@ enum state {
 
     STATE_ENVIRONMENT_BUILD_CONFINEMENT,
 
-    STATE_ENVIRONMENT_HOOKS_BASH,
+    STATE_ENVIRONMENT_HOOKS_SETUP,
     STATE_ENVIRONMENT_HOOKS_POWERSHELL,
 
     STATE_PLATFORM_LIST,
@@ -1008,10 +1008,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
-                    if (strcmp(value, "bash") == 0) {
-                        __parser_push_state(s, STATE_ENVIRONMENT_HOOKS_BASH);
-                    } else if (strcmp(value, "powershell") == 0) {
-                        __parser_push_state(s, STATE_ENVIRONMENT_HOOKS_POWERSHELL);
+                    if (strcmp(value, "setup") == 0) {
+                        __parser_push_state(s, STATE_ENVIRONMENT_HOOKS_SETUP);
                     } else {
                         fprintf(stderr, "__consume_event: (STATE_ENVIRONMENT_HOOKS) unexpected scalar: %s.\n", value);
                         return -1;
@@ -1023,8 +1021,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_scalar_fn(STATE_ENVIRONMENT_HOOKS_BASH, recipe.environment.hooks.bash, __parse_string)
-        __consume_scalar_fn(STATE_ENVIRONMENT_HOOKS_POWERSHELL, recipe.environment.hooks.powershell, __parse_string)
+        __consume_scalar_fn(STATE_ENVIRONMENT_HOOKS_SETUP, recipe.environment.hooks.setup, __parse_string)
 
         __consume_sequence_mapped(STATE_INGREDIENT_LIST, STATE_INGREDIENT)
 
