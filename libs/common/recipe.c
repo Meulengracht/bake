@@ -54,7 +54,7 @@ enum state {
 
     STATE_ENVIRONMENT_BUILD_CONFINEMENT,
 
-    STATE_ENVIRONMENT_HOOKS_BASH,
+    STATE_ENVIRONMENT_HOOKS_SETUP,
     STATE_ENVIRONMENT_HOOKS_POWERSHELL,
 
     STATE_PLATFORM_LIST,
@@ -506,7 +506,6 @@ static void __finalize_command(struct parser_state* state)
 
     // reset the structure in state
     memset(&state->command, 0, sizeof(struct recipe_pack_command));
-    state->command.allow_system_libraries = 1;
 }
 
 static void __finalize_pack_ingredient_options(struct parser_state* state)
@@ -1009,10 +1008,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
-                    if (strcmp(value, "bash") == 0) {
-                        __parser_push_state(s, STATE_ENVIRONMENT_HOOKS_BASH);
-                    } else if (strcmp(value, "powershell") == 0) {
-                        __parser_push_state(s, STATE_ENVIRONMENT_HOOKS_POWERSHELL);
+                    if (strcmp(value, "setup") == 0) {
+                        __parser_push_state(s, STATE_ENVIRONMENT_HOOKS_SETUP);
                     } else {
                         fprintf(stderr, "__consume_event: (STATE_ENVIRONMENT_HOOKS) unexpected scalar: %s.\n", value);
                         return -1;
@@ -1024,8 +1021,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_scalar_fn(STATE_ENVIRONMENT_HOOKS_BASH, recipe.environment.hooks.bash, __parse_string)
-        __consume_scalar_fn(STATE_ENVIRONMENT_HOOKS_POWERSHELL, recipe.environment.hooks.powershell, __parse_string)
+        __consume_scalar_fn(STATE_ENVIRONMENT_HOOKS_SETUP, recipe.environment.hooks.setup, __parse_string)
 
         __consume_sequence_mapped(STATE_INGREDIENT_LIST, STATE_INGREDIENT)
 
@@ -1376,7 +1372,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_COMMAND_PATH, command.path, __parse_string)
         __consume_scalar_fn(STATE_COMMAND_TYPE, command.type, __parse_command_type)
         __consume_scalar_fn(STATE_COMMAND_ICON, command.icon, __parse_string)
-        __consume_scalar_fn(STATE_COMMAND_SYSTEMLIBS, command.allow_system_libraries, __parse_boolean)
         __consume_sequence_unmapped(STATE_COMMAND_ARGUMENT_LIST, __add_command_arguments)
         
         case STATE_STOP:
@@ -1398,7 +1393,6 @@ int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut)
     // initialize some default options
     state.recipe.environment.host.base = 1;
     state.recipe.environment.build.confinement = 1;
-    state.command.allow_system_libraries = 1;
 
     yaml_parser_initialize(&parser);
     yaml_parser_set_input_string(&parser, buffer, length);

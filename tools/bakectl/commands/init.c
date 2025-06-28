@@ -209,43 +209,6 @@ static int __write_update_script(struct recipe_cache* cache)
     return 0;
 }
 
-static int __write_setup_hook_script(struct recipe* recipe)
-{
-    int   status;
-    FILE* stream;
-    char* target;
-    VLOG_DEBUG("bakectl", "__write_setup_hook_script()\n");
-
-    if (recipe->environment.hooks.bash == NULL) {
-        return 0;
-    }
-
-    target = strpathjoin("/", "chef", "hook-setup.sh", NULL);
-    if (target == NULL) {
-        VLOG_ERROR("bakectl", "__write_setup_hook_script: failed to allocate memory for script path\n", target);
-        return -1;
-    }
-
-    stream = fopen(target, "w+");
-    if (stream == NULL) {
-        VLOG_ERROR("bakectl", "__write_setup_hook_script: failed to allocate a script stream\n");
-        free(target);
-        return -1;
-    }
-
-    fprintf(stream, "#!/bin/bash\n\n");
-    fputs(recipe->environment.hooks.bash, stream);
-    fclose(stream);
-
-    // chmod to executable
-    status = platform_chmod(target, 0755);
-    if (status) {
-        VLOG_ERROR("bakectl", "__write_setup_hook_script: failed to fixup permissions for %s\n", target);
-    }
-    free(target);
-    return status;
-}
-
 static int __write_resources(struct __bakelib_context* context)
 {
     int status;
@@ -254,12 +217,6 @@ static int __write_resources(struct __bakelib_context* context)
     status = __write_update_script(context->cache);
     if (status) {
         VLOG_ERROR("bakectl", "__write_resources: failed to write update resource\n");
-        return status;
-    }
-
-    status = __write_setup_hook_script(context->recipe);
-    if (status) {
-        VLOG_ERROR("bakectl", "__write_resources: failed to write hook resources\n");
         return status;
     }
 
@@ -444,7 +401,7 @@ static int __run_setup_hook(struct __bakelib_context* context)
     char         buffer[512] = { 0 };
     unsigned int pid;
 
-    if (context->recipe->environment.hooks.bash == NULL) {
+    if (context->recipe->environment.hooks.setup == NULL) {
         return 0;
     }
     
@@ -453,13 +410,10 @@ static int __run_setup_hook(struct __bakelib_context* context)
     }
 
     VLOG_TRACE("kitchen", "executing setup hook\n");
-    snprintf(&buffer[0], sizeof(buffer), "/chef/hook-setup.sh");
-    status = platform_spawn(
-        &buffer[0],
-        NULL,
-        (const char* const*)context->build_environment,
-        &(struct platform_spawn_options) {
-            .cwd = "/chef",
+    status = oven_script(
+        context->recipe->environment.hooks.setup,
+        &(struct oven_script_options) {
+            .root_dir = OVEN_SCRIPT_ROOT_DIR_SOURCE
         }
     );
     if (status) {
@@ -527,7 +481,8 @@ exit:
 
 int init_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options)
 {
-    int status;
+    struct oven_initialize_options ovenOpts = { 0 };
+    int                            status;
 
     // handle individual help command
     if (argc > 1) {
@@ -549,35 +504,53 @@ int init_main(int argc, char** argv, struct __bakelib_context* context, struct b
         return status;
     }
 
+    status = __initialize_oven_options(&ovenOpts, context);
+    if (status) {
+        fprintf(stderr, "bakectl: failed to allocate memory for options\n");
+        fridge_cleanup();
+        return status;
+    }
+
+    status = oven_initialize(&ovenOpts);
+    if (status) {
+        fprintf(stderr, "bakectl: failed to initialize oven: %s\n", strerror(errno));
+        __destroy_oven_options(&ovenOpts);
+        fridge_cleanup();
+        return status;
+    }
+    
     status = __ensure_chef_directories();
     if (status) {
         VLOG_ERROR("bakectl", "failed to create chef directories\n");
-        return status;
+        goto cleanup;
     }
 
     status = __write_resources(context);
     if (status) {
         VLOG_ERROR("bakectl", "failed to generate resources\n");
-        return status;
+        goto cleanup;
     }
 
     status = __update_ingredients(context);
     if (status) {
         VLOG_ERROR("bakectl", "failed to setup/refresh kitchen ingredients\n");
-        return status;
+        goto cleanup;
     }
 
     status = __update_packages(context);
     if (status) {
         VLOG_ERROR("bakectl", "failed to install/update rootfs packages\n");
-        return status;
+        goto cleanup;
     }
 
     status = __run_setup_hook(context);
     if (status) {
         VLOG_ERROR("bakectl", "failed to execute setup script: %s\n", strerror(errno));
-        return status;
     }
 
+cleanup:
+    __destroy_oven_options(&ovenOpts);
+    oven_cleanup();
+    fridge_cleanup();
     return status;
 }

@@ -463,14 +463,4 @@ packs:
         # combination with the window manager. Every command registered can
         # also register a seperate icon.
         icon: /my/app/icon
-
-        ###########################
-        # system-libs - Optional
-        #    default: true
-        #
-        # Informs the library resolver whether it can also resolve libraries
-        # the command is linked against from system paths. This means that
-        # libraries not found in ingredients will be resolved in system
-        # library paths.
-        system-libs: true
 ```

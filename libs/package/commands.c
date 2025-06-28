@@ -30,7 +30,6 @@ struct __resolve_options {
     const char* sysroot;
     const char* install_root;
     const char* ingredients_root;
-    int         allow_sysroot_libraries;
     int         cross_compiling;
 };
 
@@ -233,7 +232,6 @@ static int __resolve_command(struct recipe_pack_command* command, struct list* r
                 .sysroot = options->sysroot,
                 .install_root = options->install_root,
                 .ingredients_root = options->ingredients_root,
-                .allow_sysroot_libraries = command->allow_system_libraries,
                 .cross_compiling = options->cross_compiling
             });
         }
@@ -244,7 +242,6 @@ static int __resolve_command(struct recipe_pack_command* command, struct list* r
                 .sysroot = options->sysroot,
                 .install_root = options->install_root,
                 .ingredients_root = options->ingredients_root,
-                .allow_sysroot_libraries = command->allow_system_libraries,
                 .cross_compiling = options->cross_compiling
             });
         }
