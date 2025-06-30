@@ -55,7 +55,6 @@ enum state {
     STATE_ENVIRONMENT_BUILD_CONFINEMENT,
 
     STATE_ENVIRONMENT_HOOKS_SETUP,
-    STATE_ENVIRONMENT_HOOKS_POWERSHELL,
 
     STATE_PLATFORM_LIST,
 
@@ -128,7 +127,6 @@ enum state {
     STATE_COMMAND_ARGUMENT_LIST,
     STATE_COMMAND_TYPE,
     STATE_COMMAND_ICON,
-    STATE_COMMAND_SYSTEMLIBS,
     STATE_COMMAND_DESCRIPTION,
 
     STATE_STOP
@@ -227,7 +225,7 @@ static enum chef_command_type __parse_command_type(const char* value)
     }
 }
 
-static void __finalize_recipe(struct parser_state* state)
+static void __finalize_image(struct parser_state* state)
 {
     // todo
 }
@@ -248,7 +246,7 @@ static int __is_valid_name(const char* name)
     return 0;
 }
 
-static void __finalize_project(struct parser_state* state)
+static void __finalize_partition(struct parser_state* state)
 {
     // verify required project members
     if (__is_valid_name(state->recipe.project.name)) {
@@ -301,7 +299,7 @@ static void __finalize_platform(struct parser_state* state)
     memset(&state->platform, 0, sizeof(struct recipe_platform));
 }
 
-static void __finalize_ingredient(struct parser_state* state)
+static void __finalize_source(struct parser_state* state)
 {
     struct recipe_ingredient* ingredient;
 
@@ -722,7 +720,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     break;
                 
                 case YAML_MAPPING_END_EVENT:
-                    __finalize_recipe(s);
+                    __finalize_image(s);
                     __parser_pop_state(s);
                     break;
                 default:
@@ -736,7 +734,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 case YAML_MAPPING_START_EVENT:
                     break;
                 case YAML_MAPPING_END_EVENT:
-                    __finalize_project(s);
+                    __finalize_partition(s);
                     __parser_pop_state(s);
                     break;
                 
@@ -1042,7 +1040,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         return -1;
                     } break;
                 case YAML_MAPPING_END_EVENT:
-                    __finalize_ingredient(s);
+                    __finalize_source(s);
                     __parser_pop_state(s);
                     break;
                 default:
@@ -1350,8 +1348,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_COMMAND_PATH);
                     } else if (strcmp(value, "icon") == 0) {
                         __parser_push_state(s, STATE_COMMAND_ICON);
-                    } else if (strcmp(value, "system-libs") == 0) {
-                        __parser_push_state(s, STATE_COMMAND_SYSTEMLIBS);
                     } else if (strcmp(value, "arguments") == 0) {
                         __parser_push_state(s, STATE_COMMAND_ARGUMENT_LIST);
                     } else if (strcmp(value, "type") == 0) {
