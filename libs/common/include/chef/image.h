@@ -29,7 +29,7 @@ enum chef_image_source_type {
     CHEF_IMAGE_SOURCE_PACKAGE
 };
 
-struct chef_image_parition_source {
+struct chef_image_partition_source {
     struct list_item            list_header;
     enum chef_image_source_type type;
     const char*                 source;
@@ -49,7 +49,7 @@ struct chef_image_partition {
     // or a list of sources. Content is unpacked based on it's
     // type (i.e. BOOTLOADER) or installed raw if under sources.
     const char* content;
-    struct list sources; // list<chef_image_parition_source>
+    struct list sources; // list<chef_image_partition_source>
 };
 
 enum chef_image_schema {

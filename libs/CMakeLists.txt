@@ -28,6 +28,7 @@ target_include_directories(jansson-api INTERFACE ${CMAKE_BINARY_DIR}/libs/jansso
 add_subdirectory(chefclient)
 
 # build support libraries for tools
+add_subdirectory(disk)
 add_subdirectory(cvd)
 add_subdirectory(package)
 add_subdirectory(oven)

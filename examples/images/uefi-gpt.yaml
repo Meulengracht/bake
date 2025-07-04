@@ -7,10 +7,10 @@ partitions:
     size: 128MB
     sources:
       - type: file
-        path: boot/bin/VBOOT.efi
+        source: boot/bin/VBOOT.efi
         target: /EFI/BOOT/BOOTX64.EFI
       - type: dir
-        path: deploy/hdd/boot
+        source: deploy/hdd/boot
         target: /EFI/vali/
 
   - label: vali-boot
@@ -23,7 +23,7 @@ partitions:
     size: 128MB
     sources:
       - type: dir
-        path: deploy/hdd/boot
+        source: deploy/hdd/boot
         target: /
 
   - label: vali-data
@@ -31,8 +31,8 @@ partitions:
     guid: 80C6C62A-B0D6-4FF4-A69D-558AB6FD8B53
     sources:
       - type: dir
-        path: deploy/hdd/system
+        source: deploy/hdd/system
         target: /system/
       - type: chef
-        package: vali/hello-world/devel
+        source: vali/hello-world/devel
         target: /setup/

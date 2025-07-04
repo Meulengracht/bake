@@ -53,12 +53,12 @@ enum state {
 };
 
 struct parser_state {
-    enum state                        states[32];
-    int                               state_index;
-    enum state                        state;
-    struct chef_image                 image;
-    struct chef_image_partition       partition;
-    struct chef_image_parition_source source;
+    enum state                         states[32];
+    int                                state_index;
+    enum state                         state;
+    struct chef_image                  image;
+    struct chef_image_partition        partition;
+    struct chef_image_partition_source source;
 };
 
 static void __parser_push_state(struct parser_state* state, enum state next) {
@@ -176,7 +176,7 @@ static void __finalize_partition(struct parser_state* state)
 
 static void __finalize_source(struct parser_state* state)
 {
-    struct chef_image_parition_source* source;
+    struct chef_image_partition_source* source;
 
     if (state->source.type == CHEF_IMAGE_SOURCE_INVALID) {
         fprintf(stderr, "parse error: source 'type' is required\n");
@@ -194,18 +194,18 @@ static void __finalize_source(struct parser_state* state)
     }
 
     // now we copy and reset
-    source = malloc(sizeof(struct chef_image_parition_source));
+    source = malloc(sizeof(struct chef_image_partition_source));
     if (source == NULL) {
         fprintf(stderr, "error: out of memory\n");
         exit(EXIT_FAILURE);
     }
 
     // copy the set values
-    memcpy(source, &state->source, sizeof(struct chef_image_parition_source));
+    memcpy(source, &state->source, sizeof(struct chef_image_partition_source));
     list_add(&state->partition.sources, &source->list_header);
 
     // reset the structure in state
-    memset(&state->source, 0, sizeof(struct chef_image_parition_source));
+    memset(&state->source, 0, sizeof(struct chef_image_partition_source));
 }
 
 // TODO error handling
@@ -528,7 +528,7 @@ static void __destroy_string(struct list_item_string* value)
     free(value);
 }
 
-static void __destroy_source(struct chef_image_parition_source* source)
+static void __destroy_source(struct chef_image_partition_source* source)
 {
     free((void*)source->source);
     free((void*)source->target);
@@ -538,7 +538,7 @@ static void __destroy_source(struct chef_image_parition_source* source)
 static void __destroy_partition(struct chef_image_partition* partition)
 {
     __destroy_list(string, partition->attributes.head, struct list_item_string);
-    __destroy_list(source, partition->sources.head, struct chef_image_parition_source);
+    __destroy_list(source, partition->sources.head, struct chef_image_partition_source);
     free((void*)partition->label);
     free((void*)partition->fstype);
     free((void*)partition->guid);

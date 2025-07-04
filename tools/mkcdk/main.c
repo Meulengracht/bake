@@ -17,70 +17,276 @@
  */
 
 #include <errno.h>
-#include <chef/bake.h>
+#include <chef/client.h>
+#include <chef/api/package.h>
 #include <chef/dirs.h>
+#include <chef/diskbuilder.h>
 #include <chef/platform.h>
-#include <chef/recipe.h>
+#include <chef/image.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
 #include <vlog.h>
 #include "chef-config.h"
-#include "commands/commands.h"
 
-extern int init_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
-extern int source_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
-extern int build_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
-extern int clean_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
-
-struct command_handler {
-    char* name;
-    int (*handler)(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
-};
-
-static struct command_handler g_commands[] = {
-    { "init", init_main },
-    { "source", source_main },
-    { "build",  build_main },
-    { "clean",  clean_main },
+struct __mkcdk_options {
+    char*              arch;
+    char*              platform;
+    unsigned long long size;
 };
 
 static void __print_help(void)
 {
-    printf("Usage: bakectl <command> [options]\n");
+    printf("Usage: mkcdk [options] image.yaml\n");
     printf("\n");
-    printf("The control tool to help facilitate certain aspects of the build/clean process\n");
-    printf("of chef projects. This utility must only be invoked by the main binary (bake).\n");
-    printf("\n");
-    printf("Commands:\n");
-    printf("  init        initializes/updates the chef environment\n");
-    printf("  source      prepares the source of the specified part and step\n");
-    printf("  build       runs the build backend of the specified part and step\n");
-    printf("  clean       runs the clean backend of the specified part and step\n");
+    printf("Tool to build disk images from either raw files or using chef packages.\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -r, --recipe\n");
-    printf("      Relative path (of --project) or absolute path to the recipe for the project\n");
     printf("  -v..\n");
-    printf("      Controls the verbosity of bakectl\n");
+    printf("      Controls the verbosity of mkcdk\n");
     printf("      --version\n");
-    printf("      Print the version of bakectl\n");
+    printf("      Print the version of mkcdk\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
 }
 
-static struct command_handler* __get_command(const char* command)
+struct __package_info {
+    char* publisher;
+    char* package;
+    char* channel;
+};
+
+static int __resolve_package_information(const char* str, struct __package_info* info)
 {
-    for (int i = 0; i < sizeof(g_commands) / sizeof(struct command_handler); i++) {
-        if (!strcmp(command, g_commands[i].name)) {
-            return &g_commands[i];
-        }
+    char* s = str;
+    char* p;
+
+    // seperate out publisher
+    p = strchr(s, '/');
+    if (p == NULL) {
+        return -1;
     }
-    return NULL;
+
+    info->publisher = platform_strndup(s, (size_t)(p-s));
+    
+    // set new anchor and skip the separator
+    s = p;
+    s++;
+
+    p = strchr(s, '/');
+    if (p == NULL) {
+        info->package = platform_strdup(s);
+        info->channel = platform_strdup("stable");
+    } else {
+        info->package = platform_strndup(s, (size_t)(p-s));
+        info->channel = platform_strdup(++p);
+    }
+    return 0;
 }
 
-static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
+static void __package_info_free(struct __package_info* info)
+{
+    free(info->publisher);
+    info->publisher = NULL;
+
+    free(info->package);
+    info->package = NULL;
+
+    free(info->channel);
+    info->channel = NULL;
+}
+
+static int __resolve_sources(const char* platform, const char* arch, struct chef_image* image)
+{
+    struct chef_download_params dlParams;
+    struct list_item*           i, *j;
+    int                         status;
+
+    VLOG_DEBUG("mkcdk", "__resolve_sources()\n");
+
+    status = chefclient_initialize();
+    if (status) {
+        VLOG_ERROR("mkcdk", "__resolve_sources: failed to initialize chef client\n");
+        return status;
+    }
+
+    dlParams.arch = arch;
+    dlParams.platform = platform;
+    dlParams.version = NULL;
+
+    // Download chef packages referred
+    list_foreach(&image->partitions, i) {
+        struct chef_image_partition* p = (struct chef_image_partition*)i;
+        struct __package_info        pi;
+        
+        // Is the partition special content
+        if (p->content != NULL) {
+            status = __resolve_package_information(p->content, &pi);
+            if (status) {
+                VLOG_ERROR("mkcdk", "__resolve_sources: invalid package id: %s\n", p->content);
+                VLOG_ERROR("mkcdk", "__resolve_sources: must in format 'publisher/name{/channel}'\n");
+                goto cleanup;
+            }
+
+            dlParams.publisher = pi.publisher;
+            dlParams.package = pi.package;
+            dlParams.channel = pi.channel;
+
+            status = chefclient_pack_download(&dlParams, "");
+            __package_info_free(&pi);
+            if (status) {
+                VLOG_ERROR("mkcdk", "__resolve_sources: failed to download %s/%s\n",
+                    dlParams.publisher, dlParams.package);
+                goto cleanup;
+            }
+            continue;
+        }
+        
+        // Is there any packages that must be installed
+        list_foreach(&p->sources, j) {
+            struct chef_image_partition_source* s = (struct chef_image_partition_source*)j;
+            
+            if (s->type == CHEF_IMAGE_SOURCE_PACKAGE) {
+                status = __resolve_package_information(s->source, &pi);
+                if (status) {
+                    VLOG_ERROR("mkcdk", "__resolve_sources: invalid package id: %s\n", s->source);
+                    VLOG_ERROR("mkcdk", "__resolve_sources: must in format 'publisher/name{/channel}'\n");
+                    goto cleanup;
+                }
+
+                dlParams.publisher = pi.publisher;
+                dlParams.package = pi.package;
+                dlParams.channel = pi.channel;
+
+                status = chefclient_pack_download(&dlParams, "");
+                __package_info_free(&pi);
+                if (status) {
+                    VLOG_ERROR("mkcdk", "__resolve_sources: failed to download %s/%s\n",
+                        dlParams.publisher, dlParams.package);
+                    goto cleanup;
+                }
+                continue;
+            }
+        }
+    }
+
+cleanup:
+    chefclient_cleanup();
+    return status;
+}
+
+static enum chef_diskbuilder_schema __to_diskbuilder_schema(struct chef_image* image)
+{
+    switch (image->schema) {
+        case CHEF_IMAGE_SCHEMA_MBR:
+            return CHEF_DISK_SCHEMA_MBR;
+        case CHEF_IMAGE_SCHEMA_GPT:
+            return CHEF_DISK_SCHEMA_GPT;
+        default:
+            break;
+    }
+    VLOG_FATAL("mkcdk", "__to_diskbuilder_schema: unknown schema %i\n", image->schema);
+    return 0;
+}
+
+static int __write_image_content(struct chef_disk_filesystem* fs, const char* content)
+{
+
+}
+
+static int __write_image_sources(struct chef_disk_filesystem* fs, struct list* sources)
+{
+
+}
+
+static int __build_image(struct chef_image* image, const char* path, struct __mkcdk_options* options)
+{
+    struct list_item*        i;
+    struct chef_diskbuilder* builder = NULL;
+    int                      status;
+
+    VLOG_DEBUG("mkcdk", "__build_image(path=%s)\n", path);
+
+    status = __resolve_sources(options->platform, options->arch, image);
+    if (status) {
+        VLOG_ERROR("mkcdk", "__build_image: failed to resolve image sources\n");
+        goto cleanup;
+    }
+
+    builder = chef_diskbuilder_new(&(struct chef_diskbuilder_params) {
+        .schema = __to_diskbuilder_schema(image),
+        .size = options->size,
+        .path = path
+    });
+    if (builder == NULL) {
+        VLOG_ERROR("mkcdk", "__build_image: failed to create diskbuilder\n");
+        goto cleanup;
+    }
+
+    list_foreach(&image->partitions, i) {
+        struct chef_image_partition* pi = (struct chef_image_partition*)i;
+        struct chef_disk_partition*  pd;
+        struct chef_disk_filesystem* fs;
+
+        pd = chef_diskbuilder_partition_new(builder, &(struct chef_disk_partition_params) {
+            .name = pi->label,
+            .uuid = pi->guid,
+            .size = pi->size
+        });
+        if (pd == NULL) {
+            VLOG_ERROR("mkcdk", "__build_image: failed to create partition %s\n", pi->label);
+            goto cleanup;
+        }
+
+        if (strcmp(pi->fstype, "fat32") == 0) {
+            fs = chef_filesystem_fat32_new(pd);
+        } else if (strcmp(pi->fstype, "mfs") == 0) {
+            fs = chef_filesystem_mfs_new(pd);
+        } else {
+            VLOG_ERROR("mkcdk", "__build_image: unsupported filesystem: %s\n", pi->fstype);
+            status = -1;
+            goto cleanup;
+        }
+
+        status = fs->format(fs);
+        if (status) {
+            VLOG_ERROR("mkcdk", "__build_image: failed to format partition %s with %s\n", pi->label, pi->fstype);
+            goto cleanup;
+        }
+
+        if (pi->content != NULL) {
+            status = __write_image_content(fs, pi->content);
+        } else {
+            status = __write_image_sources(fs, &pi->sources);
+        }
+        if (status) {
+
+        }
+
+        status = fs->finish(fs);
+        if (status) {
+
+        }
+
+        status = chef_diskbuilder_partition_finish(pd);
+        if (status) {
+
+        }
+    }
+
+    status = chef_diskbuilder_finish(builder);
+    if (status) {
+        VLOG_ERROR("mkcdk", "__build_image: failed to finalize iamge\n");
+    }
+
+    // cleanup resources
+cleanup:
+    chef_diskbuilder_delete(builder);
+    return status;
+}
+
+static int __read_image_file(char* path, void** bufferOut, size_t* lengthOut)
 {
     FILE*  file;
     void*  buffer;
@@ -93,7 +299,7 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
 
     file = fopen(path, "r");
     if (!file) {
-        fprintf(stderr, "bakectl: failed to read recipe path: %s\n", path);
+        fprintf(stderr, "mkcdk: failed to read recipe path: %s\n", path);
         return -1;
     }
 
@@ -103,14 +309,14 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
     
     buffer = malloc(size);
     if (!buffer) {
-        fprintf(stderr, "bakectl: failed to allocate memory for recipe: %s\n", strerror(errno));
+        fprintf(stderr, "mkcdk: failed to allocate memory for recipe: %s\n", strerror(errno));
         fclose(file);
         return -1;
     }
 
     read = fread(buffer, 1, size, file);
     if (read < size) {
-        fprintf(stderr, "bakectl: failed to read recipe: %s\n", strerror(errno));
+        fprintf(stderr, "mkcdk: failed to read recipe: %s\n", strerror(errno));
         fclose(file);
         return -1;
     }
@@ -122,48 +328,13 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
     return 0;
 }
 
-
-int __debug_log_new(const char* command)
-{
-    char        buffer[128];
-    FILE*       stream;
-    char*       path;
-    const char* ext = "log";
-
-    snprintf(&buffer[0], sizeof(buffer), "/chef/bakectl-%s-XXXXXX.%s", command, ext);
-    if (mkstemps(&buffer[0], strlen(ext) + 1) < 0) {
-        VLOG_ERROR("dirs", "failed to get a temporary filename for log: %i\n", errno);
-        return -1;
-    }
-    
-    path = platform_strdup(&buffer[0]);
-    if (path == NULL) {
-        return -1;
-    }
-
-    stream = fopen(path, "w+");
-    if (stream == NULL) {
-        VLOG_ERROR("dirs", "failed to open path %s for writing\n", path);
-        free(path);
-        return -1;
-    }
-
-    free(path);
-
-    vlog_add_output(stream, 1);
-    vlog_set_output_level(stream, VLOG_LEVEL_DEBUG);
-    return 0;
-}
-
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler*        command    = &g_commands[0];
-    struct bakectl_command_options options    = { 0 };
-    char*                          recipePath = NULL;
+    char*                          imagePath = NULL;
     int                            status;
     int                            logLevel = VLOG_LEVEL_DEBUG;
-    struct recipe*                 recipe = NULL;
-    struct __bakelib_context*      context = NULL;
+    struct chef_image*             image = NULL;
+    struct __mkcdk_options         options;
     void*                          buffer;
     size_t                         length;
     
@@ -175,93 +346,55 @@ int main(int argc, char** argv, char** envp)
         }
 
         if (!strcmp(argv[1], "--version")) {
-            printf("bakectl: version " PROJECT_VER "\n");
+            printf("mkcdk: version " PROJECT_VER "\n");
             return 0;
         }
 
-        command = __get_command(argv[1]);
-        if (command == NULL) {
-            fprintf(stderr, "bakectl: invalid command %s\n", argv[1]);
-            return -1;
-        }
-
-        if (argc > 2) {
-            for (int i = 2; i < argc; i++) {
-                if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--recipe")) {
-                    recipePath = argv[i + 1];
-                    i++;
-                } else if (!strcmp(argv[i], "-s") || !strcmp(argv[i], "--step")) {
-                    status = recipe_parse_part_step(argv[i + 1], (char**)&options.part, (char**)&options.step);
-                    if (status) {
-                        fprintf(stderr, "bakectl: failed to parse %s\n", argv[i + 1]);
-                        return status;
-                    }
-                } else if (!strncmp(argv[i], "-v", 2)) {
-                    int li = 1;
-                    while (argv[i][li++] == 'v') {
-                        logLevel++;
-                    }
+        for (int i = 2; i < argc; i++) {
+            if (!strncmp(argv[i], "-v", 2)) {
+                int li = 1;
+                while (argv[i][li++] == 'v') {
+                    logLevel++;
                 }
+            } else if (imagePath == NULL) {
+                imagePath = argv[i];
             }
         }
     }
 
     // check against recipe
-    if (recipePath == NULL) {
-        fprintf(stderr, "bakectl: --recipe must be provided\n");
+    if (imagePath == NULL) {
+        fprintf(stderr, "mkcdk: image yaml definition must be provided\n");
         return status;
     }
 
     // initialize the logging system
     vlog_initialize((enum vlog_level)logLevel);
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
 
     // initialize the dir library
-    status = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKECTL);
+    status = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKE);
     if (status) {
-        VLOG_ERROR("bakectl", "failed to initialize directories\n");
+        VLOG_ERROR("mkcdk", "failed to initialize directories\n");
         goto cleanup;
     }
 
-    // add log file to vlog
-    status = __debug_log_new(command->name);
+    status = __read_image_file(imagePath, &buffer, &length);
     if (status) {
-        VLOG_ERROR("bakectl", "failed to open log file\n");
+        VLOG_ERROR("mkcdk", "failed to load image definition %s\n", imagePath);
         goto cleanup;
     }
 
-    // Switch to the project root as working directory
-    status = platform_chdir("/chef/project");
-    if (status) {
-        VLOG_ERROR("bakectl", "failed to switch directory to /chef/project\n");
-        goto cleanup;
-    }
-
-    status = __read_recipe(recipePath, &buffer, &length);
-    if (status) {
-        VLOG_ERROR("bakectl", "failed to load recipe %s\n", recipePath);
-        goto cleanup;
-    }
-
-    status = recipe_parse(buffer, length, &recipe);
+    status = chef_image_parse(buffer, length, &image);
     free(buffer);
     if (status) {
-        VLOG_ERROR("bakectl", "failed to parse recipe\n");
+        VLOG_ERROR("mkcdk", "failed to parse image definition\n");
         goto cleanup;
     }
 
-    // create bake context
-    context = __bakelib_context_new(recipe, recipePath, (const char* const*)envp);
-    if (context == NULL) {
-        VLOG_ERROR("bakectl", "failed to create bake context\n");
-        goto cleanup;
-    }
-
-    status = command->handler(argc, argv, context, &options);
+    status = __build_image(image, "./pc.img", &options);
 
 cleanup:
-    __bakelib_context_delete(context);
-    recipe_destroy(recipe);
+    chef_image_destroy(image);
     vlog_cleanup();
     return status;
 }
