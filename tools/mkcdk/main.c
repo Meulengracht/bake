@@ -23,6 +23,7 @@
 #include <chef/diskbuilder.h>
 #include <chef/platform.h>
 #include <chef/image.h>
+#include <chef/ingredient.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -190,13 +191,48 @@ static enum chef_diskbuilder_schema __to_diskbuilder_schema(struct chef_image* i
     return 0;
 }
 
-static int __write_image_content(struct chef_disk_filesystem* fs, const char* content)
+static struct ingredient* __open_partition_content(const char* content)
 {
+    struct __package_info pi;
+    struct ingredient*    ig = NULL;
+    char*                 path = NULL;
+    int                   status;
+    VLOG_DEBUG("mkcdk", "__write_image_content(content=%s)\n", content);
 
+    status = __resolve_package_information(content, &pi);
+    if (status) {
+        // should really not happen, should have been verified earlier
+        VLOG_ERROR("mkcdk", "__write_image_content: invalid package id: %s\n", content);
+        return NULL;
+    }
+
+    // Content means we write the contents of the chef package onto the partition. Usually
+    // this will also mean that this contains a bootloader or boot assets.
+
+    // If the chef package is of type BOOTLOADER, then we expect certain structure based
+    // on the schema.
+    status = ingredient_open(path, &ig);
+    if (status) {
+        VLOG_ERROR("mkcdk", "__write_image_content: failed to open ingredient %s\n", path);
+        goto cleanup;
+    }
+
+cleanup:
+    __package_info_free(&pi);
+    free(path);
+    return ig;
+}
+
+static int __write_image_content(struct chef_disk_filesystem* fs, struct ingredient* ig)
+{
+    VLOG_DEBUG("mkcdk", "__write_image_content()\n");
+
+    return 0;
 }
 
 static int __write_image_sources(struct chef_disk_filesystem* fs, struct list* sources)
 {
+    VLOG_DEBUG("mkcdk", "__write_image_sources(sourceCount=%i)\n", sources->count);
 
 }
 
@@ -205,7 +241,6 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
     struct list_item*        i;
     struct chef_diskbuilder* builder = NULL;
     int                      status;
-
     VLOG_DEBUG("mkcdk", "__build_image(path=%s)\n", path);
 
     status = __resolve_sources(options->platform, options->arch, image);
@@ -227,7 +262,8 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
     list_foreach(&image->partitions, i) {
         struct chef_image_partition* pi = (struct chef_image_partition*)i;
         struct chef_disk_partition*  pd;
-        struct chef_disk_filesystem* fs;
+        struct chef_disk_filesystem* fs = NULL;
+        struct ingredient*           ig = NULL;
 
         pd = chef_diskbuilder_partition_new(builder, &(struct chef_disk_partition_params) {
             .name = pi->label,
@@ -249,29 +285,51 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
             goto cleanup;
         }
 
+        if (pi->content != NULL) {
+            ig = __open_partition_content(pi->content);
+            if (ig == NULL) {
+                VLOG_ERROR("mkcdk", "__build_image: failed to open partition content %s\n", pi->content);
+                status = -1;
+                goto cleanup;
+            }
+
+            status = fs->set_content(fs, ig);
+            if (status) {
+                VLOG_ERROR("mkcdk", "__build_image: failed to set content for %s\n", pi->label);
+                ingredient_close(ig);
+                goto cleanup;
+            }
+        }
+
         status = fs->format(fs);
         if (status) {
             VLOG_ERROR("mkcdk", "__build_image: failed to format partition %s with %s\n", pi->label, pi->fstype);
+            ingredient_close(ig);
             goto cleanup;
         }
 
         if (pi->content != NULL) {
-            status = __write_image_content(fs, pi->content);
+            status = __write_image_content(fs, ig);
         } else {
             status = __write_image_sources(fs, &pi->sources);
         }
         if (status) {
-
+            VLOG_ERROR("mkcdk", "__build_image: failed to write content for %s\n", pi->label);
+            ingredient_close(ig);
+            goto cleanup;
         }
 
         status = fs->finish(fs);
+        ingredient_close(ig);
         if (status) {
-
+            VLOG_ERROR("mkcdk", "__build_image: failed to finalize filesystem for %s\n", pi->label);
+            goto cleanup;
         }
 
         status = chef_diskbuilder_partition_finish(pd);
         if (status) {
-
+            VLOG_ERROR("mkcdk", "__build_image: failed to finalize partition for %s\n", pi->label);
+            goto cleanup;
         }
     }
 

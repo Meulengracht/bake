@@ -75,6 +75,7 @@ extern struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_di
 extern int chef_diskbuilder_partition_finish(struct chef_disk_partition* partition);
 
 struct chef_disk_filesystem {
+    int (*set_content)(struct chef_disk_filesystem* fs, struct ingredient* ig);
     int (*format)(struct chef_disk_filesystem* fs);
     int (*finish)(struct chef_disk_filesystem* fs);
 };
