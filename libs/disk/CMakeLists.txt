@@ -3,6 +3,9 @@
 add_subdirectory(filesystems/fat)
 
 set(SRCS
+    assets/mbr-gpt.c
+    assets/mbr.c
+
     diskbuilder.c
 )
 

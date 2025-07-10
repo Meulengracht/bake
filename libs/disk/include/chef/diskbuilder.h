@@ -33,6 +33,7 @@ enum chef_diskbuilder_schema {
 struct chef_diskbuilder_params {
     enum chef_diskbuilder_schema schema;
     unsigned long long           size;
+    unsigned int                 sector_size;
     const char*                  path;
 };
 
