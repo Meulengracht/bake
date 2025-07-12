@@ -21,7 +21,6 @@ apps:
   served:
     command: usr/libexec/chef/served -vvv
     daemon: simple
-    install-mode: disable
   waiterd:
     command: usr/libexec/chef/waiterd -vvv
     daemon: simple
@@ -33,6 +32,22 @@ apps:
   cvd:
     command: usr/libexec/chef/cvd -vvv
     daemon: simple
+
+plugs:
+  etc-systemd:
+    interface: system-files
+    write:
+    - /etc/systemd/system/snap.vchef.cvd.service.d
+    - /etc/systemd/system/snap.vchef.served.service.d
+    - /etc/systemd/system
+
+hooks:
+  install:
+    plugs:
+    - etc-systemd
+  remove:
+    plugs:
+    - etc-systemd
 
 parts:
   chef-src:
