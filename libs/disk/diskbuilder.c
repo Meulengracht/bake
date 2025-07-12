@@ -19,11 +19,14 @@
 #include <chef/diskbuilder.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #define __KB 1024
 #define __MB (__KB * 1024)
 
 #define __MIN(a, b) ((a) < (b) ? (a) : (b))
+
+#define __MBR_PARTITION(p) (446 + (p * 16))
 
 // import assets
 extern const unsigned char* g_mbrSector;
@@ -41,6 +44,7 @@ struct chef_diskbuilder {
     unsigned long long           size;
     FILE*                        image_stream;
     struct chef_disk_geometry    disk_geometry;
+    struct list                  partitions; // list<chef_disk_partition>
 };
 
 static void __calculate_geometry(struct chef_disk_geometry* geo, unsigned long long size, unsigned int sectorSize)
@@ -96,9 +100,83 @@ static int __write_gpt_table(struct chef_diskbuilder* builder)
 
 }
 
-static int __write_mbr(struct chef_diskbuilder* builder)
+static void* __memdup(const void* data, size_t size)
 {
+    void* copy = malloc(size);
+    if (copy == NULL) {
+        return NULL;
+    }
+    memcpy(copy, data, size);
+    return copy;
+}
 
+static int __write_mbr(struct chef_diskbuilder* builder, const unsigned char* template)
+{
+    struct list_item* i;
+    int               status;
+    unsigned char*    mbr;
+    int               pi;
+
+    mbr = __memdup(template, 512);
+    if (mbr == NULL) {
+        return -1;
+    }
+
+    pi = 0;
+    list_foreach(&builder->partitions, i) {
+        struct chef_disk_partition* p = (struct chef_disk_partition*)i;
+        int                         offset = __MBR_PARTITION(pi++);
+
+        // determine data to write
+        byte status = (byte)(fileSystem.IsBootable() ? 0x80 : 0x00);
+        var sectorsPerTrack = _disk.Geometry.SectorsPerTrack;
+
+        ulong headOfStart = (partitionStart / sectorsPerTrack) % 16;
+        ulong headOfEnd = (partitionEnd / sectorsPerTrack) % 16;
+
+        ushort cylinderOfStart = Math.Min((ushort)(partitionStart / (sectorsPerTrack * 16)), (ushort)1023);
+        ushort cylinderOfEnd = Math.Min((ushort)(partitionEnd / (sectorsPerTrack * 16)), (ushort)1023);
+
+        ulong sectorInCylinderStart = (fileSystem.GetSectorStart() % sectorsPerTrack) + 1;
+        ulong sectorInCylinderEnd = (fileSystem.GetSectorStart() % sectorsPerTrack) + 1;
+
+        uint sectorOfStart = fileSystem.GetSectorStart() > uint.MaxValue ? uint.MaxValue : (uint)fileSystem.GetSectorStart();
+        uint sectorCount = fileSystem.GetSectorCount() > uint.MaxValue ? uint.MaxValue : (uint)fileSystem.GetSectorCount();
+
+        // Set partition status
+        mbr[offset] = status;
+
+        // Set partiton start (CHS), high byte is low byte of cylinder
+        mbr[offset + 1] = (byte)headOfStart;
+        mbr[offset + 2] = (byte)((byte)((cylinderOfStart >> 2) & 0xC0) | (byte)(sectorInCylinderStart & 0x3F));
+        mbr[offset + 3] = (byte)(cylinderOfStart & 0xFF);
+
+        // Set partition type
+        mbr[offset + 4] = fileSystem.GetFileSystemType();
+
+        // Set partition end (CHS), high byte is low byte of cylinder
+        mbr[offset + 5] = (byte)headOfEnd;
+        mbr[offset + 6] = (byte)((byte)((cylinderOfEnd >> 2) & 0xC0) | (byte)(sectorInCylinderEnd & 0x3F));
+        mbr[offset + 7] = (byte)(cylinderOfEnd & 0xFF);
+
+        // Set partition start (LBA)
+        mbr[offset + 8] = (byte)(sectorOfStart & 0xFF);
+        mbr[offset + 9] = (byte)((sectorOfStart >> 8) & 0xFF);
+        mbr[offset + 10] = (byte)((sectorOfStart >> 16) & 0xFF);
+        mbr[offset + 11] = (byte)((sectorOfStart >> 24) & 0xFF);
+
+        // Set partition size (LBA)
+        mbr[offset + 12] = (byte)(sectorCount & 0xFF);
+        mbr[offset + 13] = (byte)((sectorCount >> 8) & 0xFF);
+        mbr[offset + 14] = (byte)((sectorCount >> 16) & 0xFF);
+        mbr[offset + 15] = (byte)((sectorCount >> 24) & 0xFF);
+    }
+
+    status = fwrite(mbr, 512, 1, builder->image_stream);
+    if (status != 512) {
+        return -1;
+    }
+    return 0;
 }
 
 static int __write_bootloader(struct chef_diskbuilder* builder)
