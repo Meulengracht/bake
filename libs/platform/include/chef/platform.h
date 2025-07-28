@@ -305,6 +305,14 @@ extern int platform_spawn(const char* path, const char* arguments, const char* c
  */
 extern char* platform_exec(const char* cmd);
 
+/**
+ * @brief Generate a new guid, uses rand() to generate, so must be
+ * initialized prior to this call
+ */
+extern void platform_guid_new_string(char strbuffer[40]);
+extern void platform_guid_new(unsigned char guid[16]);
+extern void platform_guid_parse(unsigned char guid[16], char* str);
+
 #ifdef __cplusplus
 }
 #endif

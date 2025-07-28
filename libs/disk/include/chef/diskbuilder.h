@@ -91,4 +91,4 @@ extern struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_p
  */
 extern struct chef_disk_filesystem* chef_filesystem_mfs_new(struct chef_disk_partition* partition);
 
-#endif //!__LIBFRIDGE_H__
+#endif //!__DISKBUILDER_H__
