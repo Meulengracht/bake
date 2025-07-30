@@ -76,71 +76,40 @@ typedef struct sFL_FILE
 //-----------------------------------------------------------------------------
 
 // External
-void                fl_init(void);
-void                fl_attach_locks(void (*lock)(void), void (*unlock)(void));
-int                 fl_attach_media(fn_diskio_read rd, fn_diskio_write wr);
-void                fl_shutdown(void);
+struct fatfs*       fl_new(void);
+void                fl_attach_locks(struct fatfs* fs, void (*lock)(void), void (*unlock)(void));
+int                 fl_attach_media(struct fatfs* fs, fn_diskio_read rd, fn_diskio_write wr, void* ctx);
+void                fl_delete(struct fatfs* fs);
 
 // Standard API
-void*               fl_fopen(const char *path, const char *modifiers);
-void                fl_fclose(void *file);
-int                 fl_fflush(void *file);
-int                 fl_fgetc(void *file);
-char *              fl_fgets(char *s, int n, void *f);
-int                 fl_fputc(int c, void *file);
-int                 fl_fputs(const char * str, void *file);
-int                 fl_fwrite(const void * data, int size, int count, void *file );
-int                 fl_fread(void * data, int size, int count, void *file );
-int                 fl_fseek(void *file , long offset , int origin );
-int                 fl_fgetpos(void *file , uint32 * position);
-long                fl_ftell(void *f);
-int                 fl_feof(void *f);
-int                 fl_remove(const char * filename);
+void*               fl_fopen(struct fatfs* fs, const char *path, const char *modifiers);
+void                fl_fclose(struct fatfs* fs, void *file);
+int                 fl_fflush(struct fatfs* fs, void *file);
+int                 fl_fgetc(struct fatfs* fs, void *file);
+char *              fl_fgets(struct fatfs* fs, char *s, int n, void *f);
+int                 fl_fputc(struct fatfs* fs, int c, void *file);
+int                 fl_fputs(struct fatfs* fs, const char * str, void *file);
+int                 fl_fwrite(struct fatfs* fs, const void * data, int size, int count, void *file );
+int                 fl_fread(struct fatfs* fs, void * data, int size, int count, void *file );
+int                 fl_fseek(struct fatfs* fs, void *file , long offset, int origin );
+int                 fl_fgetpos(struct fatfs* fs, void *file, uint32* position);
+long                fl_ftell(struct fatfs* fs, void *f);
+int                 fl_feof(struct fatfs* fs, void *f);
+int                 fl_remove(struct fatfs* fs, const char * filename);
 
 // Equivelant dirent.h
 typedef struct fs_dir_list_status    FL_DIR;
 typedef struct fs_dir_ent            fl_dirent;
 
-FL_DIR*             fl_opendir(const char* path, FL_DIR *dir);
-int                 fl_readdir(FL_DIR *dirls, fl_dirent *entry);
-int                 fl_closedir(FL_DIR* dir);
+FL_DIR*             fl_opendir(struct fatfs* fs, const char* path, FL_DIR *dir);
+int                 fl_readdir(struct fatfs* fs, FL_DIR *dirls, fl_dirent *entry);
+int                 fl_closedir(struct fatfs* fs, FL_DIR* dir);
 
 // Extensions
-void                fl_listdirectory(const char *path);
-int                 fl_createdirectory(const char *path);
-int                 fl_is_dir(const char *path);
+void                fl_listdirectory(struct fatfs* fs, const char *path);
+int                 fl_createdirectory(struct fatfs* fs, const char *path);
+int                 fl_is_dir(struct fatfs* fs, const char *path);
 
-int                 fl_format(uint32 volume_sectors, const char *name);
-
-// Test hooks
-#ifdef FATFS_INC_TEST_HOOKS
-struct fatfs*       fl_get_fs(void);
-#endif
-
-//-----------------------------------------------------------------------------
-// Stdio file I/O names
-//-----------------------------------------------------------------------------
-#ifdef USE_FILELIB_STDIO_COMPAT_NAMES
-
-#define FILE            FL_FILE
-
-#define fopen(a,b)      fl_fopen(a, b)
-#define fclose(a)       fl_fclose(a)
-#define fflush(a)       fl_fflush(a)
-#define fgetc(a)        fl_fgetc(a)
-#define fgets(a,b,c)    fl_fgets(a, b, c)
-#define fputc(a,b)      fl_fputc(a, b)
-#define fputs(a,b)      fl_fputs(a, b)
-#define fwrite(a,b,c,d) fl_fwrite(a, b, c, d)
-#define fread(a,b,c,d)  fl_fread(a, b, c, d)
-#define fseek(a,b,c)    fl_fseek(a, b, c)
-#define fgetpos(a,b)    fl_fgetpos(a, b)
-#define ftell(a)        fl_ftell(a)
-#define feof(a)         fl_feof(a)
-#define remove(a)       fl_remove(a)
-#define mkdir(a)        fl_createdirectory(a)
-#define rmdir(a)        0
-
-#endif
+int                 fl_format(struct fatfs* fs, uint32 volume_sectors, const char *name);
 
 #endif

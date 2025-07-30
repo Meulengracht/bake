@@ -3,6 +3,7 @@
 
 #include "fat_defs.h"
 #include "fat_opts.h"
+#include "fat_list.h"
 
 //-----------------------------------------------------------------------------
 // Defines
@@ -21,8 +22,8 @@
 //-----------------------------------------------------------------------------
 // Function Pointers
 //-----------------------------------------------------------------------------
-typedef int (*fn_diskio_read) (uint32 sector, uint8 *buffer, uint32 sector_count);
-typedef int (*fn_diskio_write)(uint32 sector, uint8 *buffer, uint32 sector_count);
+typedef int (*fn_diskio_read) (uint32 sector, uint8 *buffer, uint32 sector_count, void* ctx);
+typedef int (*fn_diskio_write)(uint32 sector, uint8 *buffer, uint32 sector_count, void* ctx);
 
 //-----------------------------------------------------------------------------
 // Structures
@@ -32,6 +33,7 @@ struct disk_if
     // User supplied function pointers for disk IO
     fn_diskio_read          read_media;
     fn_diskio_write         write_media;
+    void*                   user_ctx;
 };
 
 // Forward declaration
@@ -53,6 +55,9 @@ typedef enum eFatType
     FAT_TYPE_16,
     FAT_TYPE_32
 } tFatType;
+
+// Forward declaration
+typedef struct sFL_FILE FL_FILE;
 
 struct fatfs
 {
@@ -85,6 +90,11 @@ struct fatfs
     // FAT Buffer
     struct fat_buffer        *fat_buffer_head;
     struct fat_buffer        fat_buffers[FAT_BUFFERS];
+
+    int                      valid;
+    FL_FILE*                 files;
+    struct fat_list          open_file_list;
+    struct fat_list          free_file_list;
 };
 
 struct fs_dir_list_status

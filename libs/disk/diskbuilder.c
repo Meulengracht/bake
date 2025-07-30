@@ -24,13 +24,9 @@
 #include <string.h>
 #include <uchar.h>
 
+#include "private.h"
 #include "mbr.h"
 #include "gpt.h"
-
-#define __KB 1024
-#define __MB (__KB * 1024)
-
-#define __MIN(a, b) ((a) < (b) ? (a) : (b))
 
 // import assets
 extern const unsigned char* g_mbrSector;
@@ -44,21 +40,15 @@ struct chef_disk_geometry {
     uint16_t  bytes_per_sector;
 };
 
-struct chef_disk_partition {
-    const char*                    name;
-    const char*                    guid;
-    uint8_t                        mbr_type;
-    uint64_t                       sector_start;
-    uint64_t                       sector_count;
-    enum chef_partition_attributes attributes;
-};
-
 struct chef_diskbuilder {
     enum chef_diskbuilder_schema schema;
     uint64_t                     size;
     FILE*                        image_stream;
     struct chef_disk_geometry    disk_geometry;
     struct list                  partitions; // list<chef_disk_partition>
+
+    uint64_t                     next_usable_sector;
+    uint64_t                     last_usable_sector;
 };
 
 static void __calculate_geometry(struct chef_disk_geometry* geo, uint64_t size, uint16_t sectorSize)
@@ -84,6 +74,28 @@ static void __calculate_geometry(struct chef_disk_geometry* geo, uint64_t size, 
     geo->cylinders = __MIN(1024U, size / (63U * (uint64_t)heads * sectorSize));
 }
 
+static uint32_t __sector_count_gpt_partition_table(struct chef_disk_geometry* geo)
+{
+    return (uint32_t)(16384 / geo->bytes_per_sector);
+}
+
+static void __set_usable_sectors(struct chef_diskbuilder* builder)
+{
+    switch (builder->schema) {
+        case CHEF_DISK_SCHEMA_MBR:
+            builder->next_usable_sector = 1;
+            builder->last_usable_sector = builder->disk_geometry.sector_count - 1;
+            break;
+        case CHEF_DISK_SCHEMA_GPT:
+            uint64_t tableSize = __sector_count_gpt_partition_table(&builder->disk_geometry);
+            builder->next_usable_sector = 2 + tableSize;
+            builder->last_usable_sector = builder->disk_geometry.sector_count - (2 + tableSize);
+            break;
+        default:
+            break;
+    }
+}
+
 struct chef_diskbuilder* chef_diskbuilder_new(struct chef_diskbuilder_params* params)
 {
     struct chef_diskbuilder* builder;
@@ -102,12 +114,8 @@ struct chef_diskbuilder* chef_diskbuilder_new(struct chef_diskbuilder_params* pa
         return NULL;
     }
     __calculate_geometry(&builder->disk_geometry, params->size, params->sector_size);
+    __set_usable_sectors(builder);
     return builder;
-}
-
-static uint32_t __sector_count_gpt_partition_table(struct chef_disk_geometry* geo)
-{
-    return (uint32_t)(16384 / geo->bytes_per_sector);
 }
 
 static uint64_t __gpt_attributes(struct chef_disk_partition* p)
@@ -194,6 +202,50 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
         platform_guid_new(e->unique_guid);
         platform_guid_parse(e->type_guid, p->guid);
     }
+
+    // just write the main header and the table
+    ti = fwrite(&header, sizeof(header), 1, builder->image_stream);
+    if (ti != 512) {
+        return -1;
+    }
+
+    ti = fwrite(table, 
+        builder->disk_geometry.bytes_per_sector,
+        sectorsForTable,
+        builder->image_stream
+    );
+    if (ti != 512) {
+        return -1;
+    }
+
+    // prepare backup header
+    header.main_lba = builder->disk_geometry.sector_count - (1 + sectorsForTable);
+    header.partition_entry_lba = builder->disk_geometry.sector_count - sectorsForTable;
+    header.backup_lba = 1;
+    header.header_crc32 = 0; // TODO: calculate crc
+
+    // seek to the correct space in the file
+    ti = fseek(
+        builder->image_stream, 
+        builder->disk_geometry.bytes_per_sector * builder->disk_geometry.sector_count - (1 + sectorsForTable),
+        SEEK_SET
+    );
+
+    // write backup
+    ti = fwrite(&header, sizeof(header), 1, builder->image_stream);
+    if (ti != 512) {
+        return -1;
+    }
+
+    ti = fwrite(table, 
+        builder->disk_geometry.bytes_per_sector,
+        sectorsForTable,
+        builder->image_stream
+    );
+    if (ti != 512) {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -297,25 +349,124 @@ static int __write_bootloader(struct chef_diskbuilder* builder)
     return 0;
 }
 
+static int __write_partition(struct chef_disk_partition* p, FILE* stream)
+{
+    void*  block;
+    size_t read;
+
+    // seek to first sector
+    fseek(stream, p->sector_start, SEEK_SET);
+    fseek(p->stream, 0, SEEK_SET);
+
+    // allocate a 4mb block for transfers
+    block = malloc(4 * __MB);
+    if (block == NULL) {
+        return -1;
+    }
+
+    for (;;) {
+        read = fread(block, 1, 4 * __MB, p->stream);
+        if (read == 0) {
+            break;
+        }
+
+        fwrite(block, 1, read, stream);
+    }
+
+    // do not need this anymore
+    free(block);
+
+    fclose(p->stream);
+    p->stream == NULL;
+    return 0;
+}
+
 int chef_diskbuilder_finish(struct chef_diskbuilder* builder)
 {
-    int status;
+    struct list_item* i;
+    int               status;
 
+    if (builder->image_stream == NULL) {
+        return -1;
+    }
 
-
-    // write bootsector
     status = __write_bootloader(builder);
     if (status) {
         return status;
     }
 
-    // write partitions
+    list_foreach(&builder->partitions, i) {
+        struct chef_disk_partition* p = (struct chef_disk_partition*)i;
+        status = __write_partition(p, builder->image_stream);
+        if (status) {
+            return status;
+        }
+    }
 
-
+    fflush(builder->image_stream);
+    fclose(builder->image_stream);
+    builder->image_stream = NULL;
     return 0;
 }
 
 struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuilder* builder, struct chef_disk_partition_params* params)
 {
+    struct chef_disk_partition* p;
+    char   tmp[128];
 
+    // Is the builder done already?
+    if (builder->image_stream == NULL) {
+        return -1;
+    }
+
+    // Make sure the size fits
+    if (params->size > (builder->last_usable_sector - builder->next_usable_sector)) {
+        return -1;
+    }
+
+    // Make sure there are actually sectors left, i.e no double zero partitions
+    if (builder->last_usable_sector - builder->next_usable_sector == 0) {
+        return -1;
+    }
+
+    p = calloc(1, sizeof(struct chef_disk_partition));
+    if (p == NULL) {
+        return NULL;
+    }
+
+    snprintf(&tmp[0], sizeof(tmp), ".%s-stream", params->name);
+    p->stream = fopen(".%s-stream", "wb");
+    if (p->stream == NULL) {
+        free(p);
+        return NULL;
+    }
+
+    p->attributes = params->attributes;
+    p->sector_start = builder->next_usable_sector;
+
+    // If size is not specified, it's meant to take up the rest of the disk space, and
+    // this can obviously only be done for the final partition.
+    if (params->size) {
+        p->sector_count = params->size / builder->disk_geometry.bytes_per_sector;
+    } else {
+        p->sector_count = builder->last_usable_sector - builder->next_usable_sector;
+    }
+
+    p->name = platform_strdup(params->name);
+    p->guid = platform_strdup(params->uuid);
+    p->mbr_type = 0; // TODO
+
+    // increase the next usable sector
+    builder->next_usable_sector += p->sector_count;
+    list_add(&builder->partitions, &p->list_header);
+}
+
+int chef_diskbuilder_partition_finish(struct chef_disk_partition* partition)
+{
+    if (partition->stream == NULL) {
+        return -1;
+    }
+
+    fflush(partition->stream);
+    return 0;
 }
