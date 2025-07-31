@@ -56,6 +56,7 @@ struct __package_info {
     char* publisher;
     char* package;
     char* channel;
+    char* path;
 };
 
 static int __resolve_package_information(const char* str, struct __package_info* info)
@@ -83,6 +84,10 @@ static int __resolve_package_information(const char* str, struct __package_info*
         info->package = platform_strndup(s, (size_t)(p-s));
         info->channel = platform_strdup(++p);
     }
+
+    // figure out path
+    // TODO:
+
     return 0;
 }
 
@@ -160,7 +165,7 @@ static int __resolve_sources(const char* platform, const char* arch, struct chef
                 dlParams.package = pi.package;
                 dlParams.channel = pi.channel;
 
-                status = chefclient_pack_download(&dlParams, "");
+                status = chefclient_pack_download(&dlParams, pi.path);
                 __package_info_free(&pi);
                 if (status) {
                     VLOG_ERROR("mkcdk", "__resolve_sources: failed to download %s/%s\n",
@@ -223,17 +228,117 @@ cleanup:
     return ig;
 }
 
+static int __write_file(struct chef_disk_filesystem* fs, const char* source, const char* dest)
+{
+    int    status;
+    void*  buffer;
+    size_t size;
+    
+    status = platform_readfile(source, &buffer, &size);
+    if (status) {
+        return status;
+    }
+
+    status = fs->create_file(fs, &(struct chef_disk_fs_create_file_params) {
+        .path = dest,
+        .buffer = buffer,
+        .size = size
+    });
+    free(buffer);
+    return status;
+}
+
+static int __write_directory(struct chef_disk_filesystem* fs, const char* source, const char* dest)
+{
+    struct list       files;
+    struct list_item* i;
+    int               status;
+
+    // ensure target exists
+    status = fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params) {
+        .path = dest
+    });
+    if (status) {
+        return status;
+    }
+
+    status = platform_getfiles(source, 0, &files);
+    if (status) {
+        return status;
+    }
+
+    list_foreach(&files, i) {
+        struct platform_file_entry* f = (struct platform_file_entry*)i;
+        char*                       np = strpathcombine(dest, f->name);
+        switch (f->type) {
+            case PLATFORM_FILETYPE_DIRECTORY:
+                status = __write_directory(fs, f->path, np);
+                break;
+            case PLATFORM_FILETYPE_FILE:
+                status = __write_file(fs, f->path, np);
+                break;
+            case PLATFORM_FILETYPE_SYMLINK:
+                // ehhhh TODO:
+                status = -1;
+                break;
+            case PLATFORM_FILETYPE_UNKNOWN:
+                status = -1;
+                break;
+        }
+
+        if (status) {
+            break;
+        }
+    }
+
+    platform_getfiles_destroy(&files);
+    return status;
+}
+
 static int __write_image_content(struct chef_disk_filesystem* fs, struct ingredient* ig)
 {
     VLOG_DEBUG("mkcdk", "__write_image_content()\n");
+
+    // ignore contents in resources/*
 
     return 0;
 }
 
 static int __write_image_sources(struct chef_disk_filesystem* fs, struct list* sources)
 {
+    struct list_item* i;
+    int               status = 0;
     VLOG_DEBUG("mkcdk", "__write_image_sources(sourceCount=%i)\n", sources->count);
 
+    list_foreach(sources, i) {
+        struct chef_image_partition_source* src = (struct chef_image_partition_source*)i;
+        struct __package_info               pinfo;
+
+        switch (src->type) {
+            case CHEF_IMAGE_SOURCE_FILE:
+                status = __write_file(fs, src->source, src->target);
+                break;
+            case CHEF_IMAGE_SOURCE_DIRECTORY:
+                status = __write_directory(fs, src->source, src->target);
+                break;
+            case CHEF_IMAGE_SOURCE_PACKAGE:
+                status = __resolve_package_information(src->source, &pinfo);
+                if (status) {
+                    break;
+                }
+                status = __write_file(fs, pinfo.path, src->target);
+                break;
+            default:
+                status = -1;
+                break;
+        }
+
+        if (status) {
+            break;
+        }
+    }
+
+    return status;
 }
 
 static int __build_image(struct chef_image* image, const char* path, struct __mkcdk_options* options)
@@ -268,7 +373,8 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
         pd = chef_diskbuilder_partition_new(builder, &(struct chef_disk_partition_params) {
             .name = pi->label,
             .uuid = pi->guid,
-            .size = pi->size
+            .size = pi->size,
+            .attributes = 0,
         });
         if (pd == NULL) {
             VLOG_ERROR("mkcdk", "__build_image: failed to create partition %s\n", pi->label);
@@ -292,13 +398,7 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
                 status = -1;
                 goto cleanup;
             }
-
-            status = fs->set_content(fs, ig);
-            if (status) {
-                VLOG_ERROR("mkcdk", "__build_image: failed to set content for %s\n", pi->label);
-                ingredient_close(ig);
-                goto cleanup;
-            }
+            fs->set_content(fs, ig);
         }
 
         status = fs->format(fs);

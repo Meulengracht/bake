@@ -24,9 +24,26 @@
 struct __fat_filesystem {
     struct chef_disk_filesystem base;
     struct fatfs*               fs;
+    const char*                 label;
+    struct ingredient*          content;
+    uint64_t                    sector_count;
     uint16_t                    bytes_per_sector;
     FILE*                       stream;
 };
+
+static int __update_mbr(struct __fat_filesystem* cfs, uint8* sector)
+{
+    // look for resources/mbr.img
+
+    return 0;
+}
+
+static int __write_reserved_image(struct __fat_filesystem* cfs)
+{
+    // look for resources/fat.img
+
+    return 0;
+}
 
 static int __partition_read(uint32 sector, uint8 *buffer, uint32 sector_count, void* ctx)
 {
@@ -51,23 +68,67 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
 
     // make sure we get the stream position
     offset = sector * cfs->bytes_per_sector;
-
     status = fseek(cfs->stream, offset, SEEK_SET);
 
+    // if the sector is 0, then let us modify the boot sector with the
+    // MBR provided by content
+    if (sector == 0 && cfs->content != NULL) {
+        status = __update_mbr(cfs, buffer);
+        if (status) {
+            return status;
+        }
+    }
+
     fwrite(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
+
+    // let us write the reserved image contents
+    // at the same time
+    if (sector == 0 && cfs->content != NULL) {
+        status = __write_reserved_image(cfs);
+        if (status) {
+            return status;
+        }
+    }
     return 0;
 }
 
-static int __fs_set_content(struct chef_disk_filesystem* fs, struct ingredient* ig)
+static void __fs_set_content(struct chef_disk_filesystem* fs, struct ingredient* ig)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
-
+    cfs->content = ig;
 }
 
-static int __fs_format(struct chef_disk_filesystem* fs, uint64_t sectorCount, const char* name)
+static int __fs_format(struct chef_disk_filesystem* fs)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
-    return fl_format(cfs->fs, (uint32_t)sectorCount, name);
+    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label);
+}
+
+static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params)
+{
+    struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
+    return fl_createdirectory(cfs->fs, params->path);
+}
+
+static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_file_params* params)
+{
+    struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
+    FL_FILE*                 stream;
+    int                      written;
+
+    stream = fl_fopen(cfs->fs, params->path, "w");
+    if (stream == NULL) {
+        return -1;
+    }
+
+    written = fl_fwrite(cfs->fs, params->buffer, 1, params->size, stream);
+    if (written != params->size) {
+        fl_fclose(cfs->fs, stream);
+        return -1;
+    }
+
+    fl_fclose(cfs->fs, stream);
+    return 0;
 }
 
 static int __fs_finish(struct chef_disk_filesystem* fs)
@@ -101,8 +162,18 @@ struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_partitio
         return NULL;
     }
 
+    // calculate reserved sector size
+    // TODO:
+
+    // store members from partition that we need later
+    cfs->label = partition->name;
+    cfs->bytes_per_sector = 0; // TODO
+    cfs->sector_count = partition->sector_count;
+
     // install operations
     cfs->base.set_content = __fs_set_content;
     cfs->base.format = __fs_format;
+    cfs->base.create_directory = __fs_create_directory;
+    cfs->base.create_file = __fs_create_file;
     cfs->base.finish = __fs_finish;
 }

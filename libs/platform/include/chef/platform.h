@@ -253,7 +253,7 @@ extern int platform_getuserdir(char* buffer, size_t length);
 extern int platform_chdir(const char* path);
 extern int platform_chmod(const char* path, uint32_t permissions);
 extern int platform_getfiles(const char* path, int recursive, struct list* files);
-extern int platform_getfiles_destroy(struct list* files);
+extern void platform_getfiles_destroy(struct list* files);
 extern int platform_cpucount(void);
 extern int platform_copyfile(const char* source, const char* destination);
 extern int platform_readfile(const char* path, void** bufferOut, size_t* lengthOut);

@@ -75,9 +75,22 @@ extern struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_di
  */
 extern int chef_diskbuilder_partition_finish(struct chef_disk_partition* partition);
 
+struct chef_disk_fs_create_directory_params {
+    const char* path;
+};
+
+struct chef_disk_fs_create_file_params {
+    const char* path;
+    const void* buffer;
+    size_t      size;
+};
+
 struct chef_disk_filesystem {
-    int (*set_content)(struct chef_disk_filesystem* fs, struct ingredient* ig);
+    void (*set_content)(struct chef_disk_filesystem* fs, struct ingredient* ig);
     int (*format)(struct chef_disk_filesystem* fs);
+    int (*create_directory)(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params);
+    int (*create_file)(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_file_params* params);
+    // finish also performs a delete operation on the <fs>
     int (*finish)(struct chef_disk_filesystem* fs);
 };
 

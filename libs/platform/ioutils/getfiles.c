@@ -127,13 +127,12 @@ int platform_getfiles(const char* path, int recursive, struct list* files)
     return __read_directory(path, NULL, recursive, files);
 }
 
-int platform_getfiles_destroy(struct list* files)
+void platform_getfiles_destroy(struct list* files)
 {
     struct list_item* item;
 
-    if (!files) {
-        errno = EINVAL;
-        return -1;
+    if (files == NULL) {
+        return;
     }
 
     for (item = files->head; item != NULL;) {

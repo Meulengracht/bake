@@ -146,10 +146,12 @@ static int fatfs_create_boot_sector(struct fatfs *fs, uint32 boot_sector_lba, ui
     fs->currentsector.sector[13] = fs->sectors_per_cluster;
 
     // Reserved Sectors
-    if (!is_fat32)
-        fs->reserved_sectors = 8;
-    else
-        fs->reserved_sectors = 32;
+    if (fs->reserved_sectors == 0) {
+        if (!is_fat32)
+            fs->reserved_sectors = 8;
+        else
+            fs->reserved_sectors = 32;
+    }
     fs->currentsector.sector[14] = (fs->reserved_sectors >> 0) & 0xFF;
     fs->currentsector.sector[15] = (fs->reserved_sectors >> 8) & 0xFF;
 
