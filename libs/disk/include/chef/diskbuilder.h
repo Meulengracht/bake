@@ -88,6 +88,7 @@ struct chef_disk_fs_create_file_params {
 struct chef_disk_filesystem {
     void (*set_content)(struct chef_disk_filesystem* fs, struct ingredient* ig);
     int (*format)(struct chef_disk_filesystem* fs);
+    // must not fail if directory exists
     int (*create_directory)(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params);
     int (*create_file)(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_file_params* params);
     // finish also performs a delete operation on the <fs>

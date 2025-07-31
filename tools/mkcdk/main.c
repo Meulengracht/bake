@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,6 +35,7 @@ struct __mkcdk_options {
     char*              arch;
     char*              platform;
     unsigned long long size;
+    unsigned int       sector_size;
 };
 
 static void __print_help(void)
@@ -44,6 +45,14 @@ static void __print_help(void)
     printf("Tool to build disk images from either raw files or using chef packages.\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -p, --platform\n");
+    printf("      Target platform of the image, this will affect how packages are resolved\n");
+    printf("  -a, --archs\n");
+    printf("      Target architecture of the image, this will affect how packages are resolved\n");
+    printf("  -s, --size\n");
+    printf("      The size of the generated image, default is 4GB\n");
+    printf("  -z, --sector-size\n");
+    printf("      The sector size to use for the generated image, default is 512 bytes\n");
     printf("  -v..\n");
     printf("      Controls the verbosity of mkcdk\n");
     printf("      --version\n");
@@ -139,7 +148,7 @@ static int __resolve_sources(const char* platform, const char* arch, struct chef
             dlParams.package = pi.package;
             dlParams.channel = pi.channel;
 
-            status = chefclient_pack_download(&dlParams, "");
+            status = chefclient_pack_download(&dlParams, pi.path);
             __package_info_free(&pi);
             if (status) {
                 VLOG_ERROR("mkcdk", "__resolve_sources: failed to download %s/%s\n",
@@ -228,14 +237,77 @@ cleanup:
     return ig;
 }
 
+static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
+{
+    char   ccpath[512];
+    char*  p = NULL;
+    size_t length;
+    int    status;
+    VLOG_DEBUG("mkcdk", "__ensure_directory(path=%s)\n", path);
+
+    status = snprintf(ccpath, sizeof(ccpath), "%s", path);
+    if (status >= sizeof(ccpath)) {
+        errno = ENAMETOOLONG;
+        return -1; 
+    }
+
+    length = strlen(ccpath);
+    if (ccpath[length - 1] == '/') {
+        ccpath[length - 1] = 0;
+    }
+
+    for (p = ccpath + 1; *p; p++) {
+        if (*p == '/') {
+            *p = 0;
+
+            status = fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params) {
+                .path = ccpath
+            });
+            if (status) {
+                return status;
+            }
+
+            *p = '/';
+        }
+    }
+    return fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params) {
+        .path = ccpath
+    });
+}
+
+static int __ensure_file_directory(struct chef_disk_filesystem* fs, const char* dest)
+{
+    char   tmp[512];
+    char*  p;
+    VLOG_DEBUG("mkcdk", "__ensure_file_directory(dest=%s)\n", dest);
+
+    strcpy(&tmp[0], dest);
+    p = strrchr(&tmp[0], '/');
+    if (p == NULL) {
+        VLOG_DEBUG("mkcdk", "__ensure_file_directory: no directory for %s\n", dest);
+        return 0;
+    }
+    
+    *p = 0;
+    return __ensure_directory(fs, &tmp[0]);
+}
+
 static int __write_file(struct chef_disk_filesystem* fs, const char* source, const char* dest)
 {
     int    status;
     void*  buffer;
     size_t size;
-    
+    VLOG_DEBUG("mkcdk", "__write_file(source=%s, dest=%s)\n", source, dest);
+
+    status = __ensure_file_directory(fs, dest);
+    if (status) {
+        VLOG_ERROR("mkcdk", "__write_file: failed to create directory for file %s\n", dest);
+        return status;
+    }
+
     status = platform_readfile(source, &buffer, &size);
     if (status) {
+        VLOG_ERROR("mkcdk", "__write_file: failed to read file %s\n", source);
         return status;
     }
 
@@ -253,17 +325,17 @@ static int __write_directory(struct chef_disk_filesystem* fs, const char* source
     struct list       files;
     struct list_item* i;
     int               status;
+    VLOG_DEBUG("mkcdk", "__write_directory(source=%s, dest=%s)\n", source, dest);
 
-    // ensure target exists
-    status = fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params) {
-        .path = dest
-    });
+    status = __ensure_directory(fs, dest);
     if (status) {
+        VLOG_ERROR("mkcdk", "__write_directory: failed to create directory for %s\n", dest);
         return status;
     }
 
     status = platform_getfiles(source, 0, &files);
     if (status) {
+        VLOG_ERROR("mkcdk", "__write_directory: failed to read directory %s\n", source);
         return status;
     }
 
@@ -278,15 +350,18 @@ static int __write_directory(struct chef_disk_filesystem* fs, const char* source
                 status = __write_file(fs, f->path, np);
                 break;
             case PLATFORM_FILETYPE_SYMLINK:
-                // ehhhh TODO:
+                VLOG_ERROR("mkcdk", "__write_directory: symlinks missing handling\n");
                 status = -1;
                 break;
             case PLATFORM_FILETYPE_UNKNOWN:
+                VLOG_ERROR("mkcdk", "__write_directory: unknown file type\n");
                 status = -1;
                 break;
         }
+        free(np);
 
         if (status) {
+            VLOG_ERROR("mkcdk", "__write_directory: failed to install file %s\n", f->path);
             break;
         }
     }
@@ -297,10 +372,56 @@ static int __write_directory(struct chef_disk_filesystem* fs, const char* source
 
 static int __write_image_content(struct chef_disk_filesystem* fs, struct ingredient* ig)
 {
+    struct list       files;
+    struct list_item* i;
+    char*             tmp;
+    int               status;
     VLOG_DEBUG("mkcdk", "__write_image_content()\n");
 
-    // ignore contents in resources/*
+    // TODO: create temporary dir on host
 
+    // unpack to intermediate directory
+    status = ingredient_unpack(ig, tmp, NULL, NULL);
+    if (status) {
+        VLOG_ERROR("mkcdk", "__write_image_content: failed to unpack content to %s\n", tmp);
+        return status;
+    }
+
+    status = platform_getfiles(tmp, 0, &files);
+    if (status) {
+        VLOG_ERROR("mkcdk", "__write_image_content: failed to read directory %s\n", tmp);
+        return status;
+    }
+
+    list_foreach(&files, i) {
+        struct platform_file_entry* f = (struct platform_file_entry*)i;
+        switch (f->type) {
+            case PLATFORM_FILETYPE_DIRECTORY:
+                // ignore contents in resources/*
+                if (strcmp(f->name, "resources") != 0) {
+                    status = __write_directory(fs, f->path, f->name);
+                }
+                break;
+            case PLATFORM_FILETYPE_FILE:
+                status = __write_file(fs, f->path, f->name);
+                break;
+            case PLATFORM_FILETYPE_SYMLINK:
+                VLOG_ERROR("mkcdk", "__write_image_content: symlinks missing handling\n");
+                status = -1;
+                break;
+            case PLATFORM_FILETYPE_UNKNOWN:
+                VLOG_ERROR("mkcdk", "__write_image_content: unknown file type\n");
+                status = -1;
+                break;
+        }
+
+        if (status) {
+            VLOG_ERROR("mkcdk", "__write_image_content: failed to install file %s\n", f->path);
+            break;
+        }
+    }
+
+    platform_getfiles_destroy(&files);
     return 0;
 }
 
@@ -324,6 +445,7 @@ static int __write_image_sources(struct chef_disk_filesystem* fs, struct list* s
             case CHEF_IMAGE_SOURCE_PACKAGE:
                 status = __resolve_package_information(src->source, &pinfo);
                 if (status) {
+                    VLOG_ERROR("mkcdk", "__write_image_sources: failed to resolve source %s\n", src->source);
                     break;
                 }
                 status = __write_file(fs, pinfo.path, src->target);
@@ -334,11 +456,30 @@ static int __write_image_sources(struct chef_disk_filesystem* fs, struct list* s
         }
 
         if (status) {
+            VLOG_ERROR("mkcdk", "__write_image_sources: failed to install source %s\n", src->target);
             break;
         }
     }
 
     return status;
+}
+
+static enum chef_partition_attributes __to_partition_attributes(struct list* attribs)
+{
+    enum chef_partition_attributes flags = 0;
+    struct list_item*              i;
+
+    list_foreach(attribs, i) {
+        struct list_item_string* str = (struct list_item_string*)i;
+        if (strcmp(str->value, "boot") == 0) {
+            flags |= CHEF_PARTITION_ATTRIBUTE_BOOT;
+        } else if (strcmp(str->value, "readonly") == 0) {
+            flags |= CHEF_PARTITION_ATTRIBUTE_READONLY;
+        } else if (strcmp(str->value, "noautomount") == 0) {
+            flags |= CHEF_PARTITION_ATTRIBUTE_NOAUTOMOUNT;
+        }
+    }
+    return flags;
 }
 
 static int __build_image(struct chef_image* image, const char* path, struct __mkcdk_options* options)
@@ -357,6 +498,7 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
     builder = chef_diskbuilder_new(&(struct chef_diskbuilder_params) {
         .schema = __to_diskbuilder_schema(image),
         .size = options->size,
+        .sector_size = options->sector_size,
         .path = path
     });
     if (builder == NULL) {
@@ -374,7 +516,7 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
             .name = pi->label,
             .uuid = pi->guid,
             .size = pi->size,
-            .attributes = 0,
+            .attributes = __to_partition_attributes(&pi->attributes),
         });
         if (pd == NULL) {
             VLOG_ERROR("mkcdk", "__build_image: failed to create partition %s\n", pi->label);
@@ -486,6 +628,48 @@ static int __read_image_file(char* path, void** bufferOut, size_t* lengthOut)
     return 0;
 }
 
+static uint64_t __parse_quantity(const char* size)
+{
+    const char* end = NULL;
+    uint64_t    number = strtoull(size, &end, 10);
+    switch (*end)  {
+        case 'G':
+            number *= 1024;
+            // fallthrough
+        case 'M':
+            number *= 1024;
+            // fallthrough
+        case 'K':
+            number *= 1024;
+            break;
+        default:
+            break;
+    }
+    return number;
+}
+
+static char* __split_switch(char** argv, int argc, int* i)
+{
+    char* split = strchr(argv[*i], '=');
+    if (split != NULL) {
+        return split + 1;
+    }
+    if ((*i + 1) < argc) {
+        return argv[++(*i)];
+    }
+    return NULL;
+}
+
+static int __parse_string_switch(char** argv, int argc, int* i, const char* s, size_t sl, const char* l, size_t ll, const char* defaultValue, char** out)
+{
+    if (strncmp(argv[*i], s, sl) == 0 || strncmp(argv[*i], l, ll) == 0) {
+        char* value = __split_switch(argv, argc, i);
+        *out = value != NULL ? value : (char*)defaultValue;
+        return 0;
+    }
+    return -1;
+}
+
 int main(int argc, char** argv, char** envp)
 {
     char*                          imagePath = NULL;
@@ -495,7 +679,12 @@ int main(int argc, char** argv, char** envp)
     struct __mkcdk_options         options;
     void*                          buffer;
     size_t                         length;
-    
+
+    options.arch = CHEF_ARCHITECTURE_STR;
+    options.platform = CHEF_PLATFORM_STR;
+    options.sector_size = 512;
+    options.size = (1024 * 1024) * 4096; // 4GB
+
     // first argument must be the command if not --help or --version
     if (argc > 1) {
         if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
@@ -513,6 +702,22 @@ int main(int argc, char** argv, char** envp)
                 int li = 1;
                 while (argv[i][li++] == 'v') {
                     logLevel++;
+                }
+            } else if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--platform", 10, NULL, (char**)&options.platform)) {
+                continue;
+            } else if (!__parse_string_switch(argv, argc, &i, "-a", 2, "--arch", 10, NULL, (char**)&options.arch)) {
+                continue;
+            } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--size")) {
+                options.size = __parse_quantity(argv[++i]);
+                if (options.size == 0) {
+                    fprintf(stderr, "mkcdk: invalid size %s", argv[i]);
+                    return -1;
+                }
+            } else if (strcmp(argv[i], "-z") == 0 || strcmp(argv[i], "--sector-size")) {
+                options.sector_size = (uint32_t)__parse_quantity(argv[++i]);
+                if (options.sector_size == 0) {
+                    fprintf(stderr, "mkcdk: invalid sector-size %s", argv[i]);
+                    return -1;
                 }
             } else if (imagePath == NULL) {
                 imagePath = argv[i];
