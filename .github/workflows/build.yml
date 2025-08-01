@@ -26,9 +26,9 @@ jobs:
       with:
         submodules: 'recursive'
 
-    - name: Install libfuse and libcap
+    - name: Install build dependencies
       if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get install -y libfuse3-3 libfuse3-dev libcap2 libcap-dev
+      run: sudo apt-get install -y libfuse3-3 libfuse3-dev libcap2 libcap-dev libcurl4-openssl-dev libssl-dev
 
     - name: Configure
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
