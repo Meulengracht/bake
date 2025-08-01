@@ -52,7 +52,7 @@ struct chef_diskbuilder {
     uint64_t                     last_usable_sector;
 };
 
-static unsigned int __crc32b(const unsigned int* data, size_t length) {
+static unsigned int __crc32b(const unsigned char* data, size_t length) {
    int          i, j;
    unsigned int byte, crc, mask;
 

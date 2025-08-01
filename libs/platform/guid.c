@@ -18,6 +18,8 @@
 
 #include <chef/platform.h>
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
 static char        g_templateGuid[] = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
 static const char* g_hexValues = "0123456789ABCDEF-";

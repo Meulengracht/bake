@@ -98,7 +98,7 @@ static int fatfs_fat_writeback(struct fatfs *fs, struct fat_buffer *pcur)
                 else
                     sectors = fs->fat_sectors - offset;
 
-                if (!fs->disk_io.write_media(pcur->address, pcur->sector, sectors))
+                if (!fs->disk_io.write_media(pcur->address, pcur->sector, sectors, fs->disk_io.user_ctx))
                     return 0;
             }
 
@@ -163,7 +163,7 @@ static struct fat_buffer *fatfs_fat_read_sector(struct fatfs *fs, uint32 sector)
     pcur->address = sector;
 
     // Read next sector
-    if (!fs->disk_io.read_media(pcur->address, pcur->sector, FAT_BUFFER_SECTORS))
+    if (!fs->disk_io.read_media(pcur->address, pcur->sector, FAT_BUFFER_SECTORS, fs->disk_io.user_ctx))
     {
         // Read failed, invalidate buffer address
         pcur->address = FAT32_INVALID_CLUSTER;
@@ -274,7 +274,7 @@ void fatfs_set_fs_info_next_free_cluster(struct fatfs *fs, uint32 newValue)
 
         // Write back FSINFO sector to disk
         if (fs->disk_io.write_media)
-            fs->disk_io.write_media(pbuf->address, pbuf->sector, 1);
+            fs->disk_io.write_media(pbuf->address, pbuf->sector, 1, fs->disk_io.user_ctx);
 
         // Invalidate cache entry
         pbuf->address = FAT32_INVALID_CLUSTER;

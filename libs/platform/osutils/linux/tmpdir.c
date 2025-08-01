@@ -15,9 +15,10 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  */
-#define _POSIX_C_SOURCE 200809L // mkdtemp
+#define _GNU_SOURCE // mkdtemp
 
 #include <chef/platform.h>
+#include <stdlib.h>
 
 char* platform_tmpdir(void)
 {

@@ -104,7 +104,7 @@ static int fatfs_erase_sectors(struct fatfs *fs, uint32 lba, int count)
     memset(fs->currentsector.sector, 0, FAT_SECTOR_SIZE);
 
     for (i=0;i<count;i++)
-        if (!fs->disk_io.write_media(lba + i, fs->currentsector.sector, 1))
+        if (!fs->disk_io.write_media(lba + i, fs->currentsector.sector, 1, fs->disk_io.user_ctx))
             return 0;
 
     return 1;
@@ -342,7 +342,7 @@ static int fatfs_create_boot_sector(struct fatfs *fs, uint32 boot_sector_lba, ui
         fs->currentsector.sector[511] = 0xAA;
     }
 
-    if (fs->disk_io.write_media(boot_sector_lba, fs->currentsector.sector, 1))
+    if (fs->disk_io.write_media(boot_sector_lba, fs->currentsector.sector, 1, fs->disk_io.user_ctx))
         return 1;
     else
         return 0;
@@ -383,7 +383,7 @@ static int fatfs_create_fsinfo_sector(struct fatfs *fs, uint32 sector_lba)
     fs->currentsector.sector[510] = 0x55;
     fs->currentsector.sector[511] = 0xAA;
 
-    if (fs->disk_io.write_media(sector_lba, fs->currentsector.sector, 1))
+    if (fs->disk_io.write_media(sector_lba, fs->currentsector.sector, 1, fs->disk_io.user_ctx))
         return 1;
     else
         return 0;
@@ -411,13 +411,13 @@ static int fatfs_erase_fat(struct fatfs *fs, int is_fat32)
         SET_32BIT_WORD(fs->currentsector.sector, 8, 0x0FFFFFFF);
     }
 
-    if (!fs->disk_io.write_media(fs->fat_begin_lba + 0, fs->currentsector.sector, 1))
+    if (!fs->disk_io.write_media(fs->fat_begin_lba + 0, fs->currentsector.sector, 1, fs->disk_io.user_ctx))
         return 0;
 
     // Zero remaining FAT sectors
     memset(fs->currentsector.sector, 0, FAT_SECTOR_SIZE);
     for (i=1;i<fs->fat_sectors*fs->num_of_fats;i++)
-        if (!fs->disk_io.write_media(fs->fat_begin_lba + i, fs->currentsector.sector, 1))
+        if (!fs->disk_io.write_media(fs->fat_begin_lba + i, fs->currentsector.sector, 1, fs->disk_io.user_ctx))
             return 0;
 
     return 1;

@@ -145,5 +145,4 @@ void platform_getfiles_destroy(struct list* files)
         free(entry);
     }
     list_init(files);
-    return 0;
 }

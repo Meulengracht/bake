@@ -340,7 +340,7 @@ int fatfs_add_file_entry(struct fatfs *fs, uint32 dirCluster, char *filename, ch
                         memcpy(&fs->currentsector.sector[recordoffset], &shortEntry, sizeof(shortEntry));
 
                         // Writeback
-                        return fs->disk_io.write_media(fs->currentsector.address, fs->currentsector.sector, 1);
+                        return fs->disk_io.write_media(fs->currentsector.address, fs->currentsector.sector, 1, fs->disk_io.user_ctx);
                     }
 #if FATFS_INC_LFN_SUPPORT
                     else
@@ -358,7 +358,7 @@ int fatfs_add_file_entry(struct fatfs *fs, uint32 dirCluster, char *filename, ch
             // Write back to disk before loading another sector
             if (dirtySector)
             {
-                if (!fs->disk_io.write_media(fs->currentsector.address, fs->currentsector.sector, 1))
+                if (!fs->disk_io.write_media(fs->currentsector.address, fs->currentsector.sector, 1, fs->disk_io.user_ctx))
                     return 0;
 
                 dirtySector = 0;

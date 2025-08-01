@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <time.h>
 #include <vlog.h>
 #include "chef-config.h"
 
@@ -714,6 +715,9 @@ int main(int argc, char** argv, char** envp)
     options.platform = CHEF_PLATFORM_STR;
     options.sector_size = 512;
     options.size = (1024 * 1024) * 4096; // 4GB
+
+    // needed for guids
+    srand(clock());
 
     // first argument must be the command if not --help or --version
     if (argc > 1) {
