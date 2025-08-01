@@ -18,6 +18,8 @@
 
 #include <chef/platform.h>
 #include <stdlib.h>
+#include <string.h>
+#include <vlog.h>
 
 #include "private.h"
 #include "filesystems/fat/fat_filelib.h"
@@ -34,16 +36,86 @@ struct __fat_filesystem {
 
 static int __update_mbr(struct __fat_filesystem* cfs, uint8* sector)
 {
-    // look for resources/mbr.img
-    
+    struct platform_stat stats;
+    char                 tmp[PATH_MAX];
+    void*                buffer;
+    size_t               size;
+    int                  status;
 
+    if (cfs->content == NULL) {
+        return 0;
+    }
+
+    snprintf(
+        &tmp[0], sizeof(tmp) -1,
+        "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "mbr.img",
+        cfs->content
+    );
+    if (platform_stat(&tmp[0], &stats)) {
+        // not there, ignore
+        return 0;
+    }
+
+    status = platform_readfile(&tmp[0], &buffer, &size);
+    if (status) {
+        VLOG_ERROR("fat", "__update_mbr: failed to read %s\n", &tmp[0]);
+        return status;
+    }
+    if (size != 512) {
+        VLOG_ERROR("fat", "__update_mbr: %s is not correctly sized\n", &tmp[0]);
+        free(buffer);
+        return -1;
+    }
+
+    // 0-2     - Jump code
+    // 3-61    - EBPB
+    // 62-509  - Boot code
+    // 510-511 - Boot signature
+    memcpy(&sector[0], &((uint8_t*)buffer)[0], 3);
+    memcpy(&sector[62], &((uint8_t*)buffer)[62], 448);
+    sector[510] = 0x55;
+    sector[511] = 0xAA;
+
+    free(buffer);
     return 0;
 }
 
 static int __write_reserved_image(struct __fat_filesystem* cfs)
 {
-    // look for resources/fat.img
+    struct platform_stat stats;
+    char                 tmp[PATH_MAX];
+    void*                buffer;
+    size_t               size, written;
+    int                  status;
 
+    if (cfs->content == NULL) {
+        return 0;
+    }
+
+    snprintf(
+        &tmp[0], sizeof(tmp) -1,
+        "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "fat.img",
+        cfs->content
+    );
+    if (platform_stat(&tmp[0], &stats)) {
+        // not there, ignore
+        return 0;
+    }
+
+    status = platform_readfile(&tmp[0], &buffer, &size);
+    if (status) {
+        VLOG_ERROR("fat", "__update_mbr: failed to read %s\n", &tmp[0]);
+        return status;
+    }
+
+    written = fwrite(buffer, size, 1, cfs->stream);
+    if (written != size) {
+        VLOG_ERROR("fat", "__update_mbr: failed to write reserved sectors\n");
+        free(buffer);
+        return -1;
+    }
+
+    free(buffer);
     return 0;
 }
 
@@ -103,6 +175,19 @@ static void __fs_set_content(struct chef_disk_filesystem* fs, const char* path)
 static int __fs_format(struct chef_disk_filesystem* fs)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
+    if (cfs->content != NULL) {
+        struct platform_stat stats;
+        char                 tmp[PATH_MAX];
+
+        snprintf(
+            &tmp[0], sizeof(tmp) -1,
+            "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "fat.img",
+            cfs->content
+        );
+        if (!platform_stat(&tmp[0], &stats)) {
+            cfs->fs->reserved_sectors = (stats.size / cfs->bytes_per_sector) + 1;
+        }
+    }
     return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label);
 }
 
@@ -141,35 +226,36 @@ static int __fs_finish(struct chef_disk_filesystem* fs)
     return 0;
 }
 
-struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_partition* partition)
+struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_partition* partition, struct chef_disk_filesystem_params* params)
 {
     struct __fat_filesystem* cfs;
     int                      status;
+    VLOG_DEBUG("fat", "chef_filesystem_fat32_new(partition=%s)\n", partition->name);
 
     cfs = calloc(1, sizeof(struct __fat_filesystem));
     if (cfs == NULL) {
+        VLOG_ERROR("fat", "chef_filesystem_fat32_new: failed to allocate memory\n");
         return NULL;
     }
 
     cfs->fs = fl_new();
     if (cfs->fs == NULL) {
+        VLOG_ERROR("fat", "chef_filesystem_fat32_new: failed to create new FAT instance\n");
         free(cfs);
         return NULL;
     }
 
     status = fl_attach_media(cfs->fs, __partition_read, __partition_write, cfs);
     if (status) {
+        VLOG_ERROR("fat", "chef_filesystem_fat32_new: failed to attach image stream\n");
         fl_delete(cfs->fs);
         free(cfs);
         return NULL;
     }
 
-    // calculate reserved sector size
-    // TODO:
-
     // store members from partition that we need later
     cfs->label = partition->name;
-    cfs->bytes_per_sector = 0; // TODO
+    cfs->bytes_per_sector = params->sector_size;
     cfs->sector_count = partition->sector_count;
 
     // install operations
@@ -178,4 +264,5 @@ struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_partitio
     cfs->base.create_directory = __fs_create_directory;
     cfs->base.create_file = __fs_create_file;
     cfs->base.finish = __fs_finish;
+    return &cfs->base;
 }

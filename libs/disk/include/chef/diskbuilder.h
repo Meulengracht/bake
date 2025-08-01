@@ -96,14 +96,18 @@ struct chef_disk_filesystem {
     int (*finish)(struct chef_disk_filesystem* fs);
 };
 
+struct chef_disk_filesystem_params {
+    unsigned int sector_size;
+};
+
 /**
  * @brief FAT32 Filesystem API
  */
-extern struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_partition* partition);
+extern struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_partition* partition, struct chef_disk_filesystem_params* params);
 
 /**
  * @brief MFS Fileystem API
  */
-extern struct chef_disk_filesystem* chef_filesystem_mfs_new(struct chef_disk_partition* partition);
+extern struct chef_disk_filesystem* chef_filesystem_mfs_new(struct chef_disk_partition* partition, struct chef_disk_filesystem_params* params);
 
 #endif //!__DISKBUILDER_H__
