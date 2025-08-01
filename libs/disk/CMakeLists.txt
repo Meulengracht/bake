@@ -7,6 +7,7 @@ set(SRCS
     assets/mbr.c
 
     api_fat.c
+    api_mfs.c
     diskbuilder.c
 )
 

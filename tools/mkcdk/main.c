@@ -77,9 +77,9 @@ struct __package_info {
 
 static int __resolve_package_information(const char* str, struct __image_context* context, struct __package_info* info)
 {
-    char  path[PATH_MAX];
-    char* s = str;
-    char* p;
+    char        path[PATH_MAX];
+    const char* s = str;
+    char*       p;
 
     // seperate out publisher
     p = strchr(s, '/');
@@ -661,8 +661,8 @@ static int __read_image_file(char* path, void** bufferOut, size_t* lengthOut)
 
 static uint64_t __parse_quantity(const char* size)
 {
-    const char* end = NULL;
-    uint64_t    number = strtoull(size, &end, 10);
+    char*    end = NULL;
+    uint64_t number = strtoull(size, &end, 10);
     switch (*end)  {
         case 'G':
             number *= 1024;
@@ -714,7 +714,7 @@ int main(int argc, char** argv, char** envp)
     options.arch = CHEF_ARCHITECTURE_STR;
     options.platform = CHEF_PLATFORM_STR;
     options.sector_size = 512;
-    options.size = (1024 * 1024) * 4096; // 4GB
+    options.size = (1024ULL * 1024ULL) * 4096ULL; // 4GB
 
     // needed for guids
     srand(clock());

@@ -16,28 +16,9 @@
  * 
  */
 
-#ifndef __PRIVATE_H__
-#define __PRIVATE_H__
+#include "private.h"
 
-#include <chef/diskbuilder.h>
-#include <chef/list.h>
-#include <stdint.h>
-#include <stdio.h>
-
-#define __KB 1024
-#define __MB (__KB * 1024)
-
-#define __MIN(a, b) ((a) < (b) ? (a) : (b))
-
-struct chef_disk_partition {
-    struct list_item               list_header;
-    const char*                    name;
-    char*                          guid;
-    uint8_t                        mbr_type;
-    uint64_t                       sector_start;
-    uint64_t                       sector_count;
-    enum chef_partition_attributes attributes;
-    FILE*                          stream;
-};
-
-#endif //!__PRIVATE_H__
+struct chef_disk_filesystem* chef_filesystem_mfs_new(struct chef_disk_partition* partition, struct chef_disk_filesystem_params* params)
+{
+    return NULL;
+}

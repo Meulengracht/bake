@@ -82,10 +82,9 @@ static const char* __parse_string(const char* value)
 static long long __parse_integer(const char* value)
 {
     if (value == NULL || strlen(value) == 0) {
-        return NULL;
+        return 0;
     }
-
-    return platform_strdup(value);
+    return strtoll(value, NULL, 10);
 }
 
 static enum chef_image_source_type __parse_source_type(const char* value)
@@ -452,7 +451,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         return -1;
                     } break;
                 case YAML_MAPPING_END_EVENT:
-                    __finalize_platform(s);
+                    __finalize_source(s);
                     __parser_pop_state(s);
                     break;
                 default:

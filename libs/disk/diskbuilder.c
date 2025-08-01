@@ -82,7 +82,7 @@ static void __calculate_geometry(struct chef_disk_geometry* geo, uint64_t size, 
         heads = 32;
     } else if (size <= (2016 * __MB)) {
         heads = 64;
-    } else if (size <= (4032 * __MB)) {
+    } else if (size <= (4032ULL * __MB)) {
         heads = 128;
     } else {
         heads = 255;
@@ -242,8 +242,8 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
     }
 
     // calculate CRC, first the array member
-    header->partition_array_crc32 = __crc32b(table, builder->partitions.count * __GPT_ENTRY_SIZE);
-    header->header_crc32 = __crc32b(&header, __GPT_HEADER_SIZE);
+    header->partition_array_crc32 = __crc32b((unsigned char*)table, builder->partitions.count * __GPT_ENTRY_SIZE);
+    header->header_crc32 = __crc32b(headerSector, __GPT_HEADER_SIZE);
 
     // just write the main header and the table
     written = fwrite(&header, builder->disk_geometry.bytes_per_sector, 1, builder->image_stream);
@@ -269,7 +269,7 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
     header->partition_entry_lba = builder->disk_geometry.sector_count - sectorsForTable;
     header->backup_lba = 1;
     header->header_crc32 = 0;
-    header->header_crc32 = __crc32b(&header, __GPT_HEADER_SIZE);
+    header->header_crc32 = __crc32b(headerSector, __GPT_HEADER_SIZE);
 
     // seek to the correct space in the file
     fseek(
@@ -474,6 +474,16 @@ int chef_diskbuilder_finish(struct chef_diskbuilder* builder)
     return 0;
 }
 
+void chef_diskbuilder_delete(struct chef_diskbuilder* builder)
+{
+    if (builder == NULL) {
+        return;
+    }
+
+    // TODO: cleanup partitions
+    free(builder);
+}
+
 static int __parse_guid_and_type(const char* uuid, char** guid, uint8_t* type)
 {
     char* p;
@@ -493,7 +503,7 @@ static int __parse_guid_and_type(const char* uuid, char** guid, uint8_t* type)
         // skip past comma and whitespace
         while (*p == ',' || *p == ' ') p++;
     } else {
-        p = uuid;
+        p = (char*)uuid;
     }
 
     *guid = platform_strdup(p);
@@ -510,7 +520,7 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
     // Is the builder done already?
     if (builder->image_stream == NULL) {
         VLOG_ERROR("disk", "chef_diskbuilder_partition_new: builder already finished\n");
-        return -1;
+        return NULL;
     }
 
     // Make sure the size fits
@@ -519,7 +529,7 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
             "chef_diskbuilder_partition_new: partition %s: size does not fit onto image\n",
             params->name
         );
-        return -1;
+        return NULL;
     }
 
     // Make sure there are actually sectors left, i.e no double zero partitions
@@ -528,7 +538,7 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
             "chef_diskbuilder_partition_new: partition %s: no sectors left\n",
             params->name
         );
-        return -1;
+        return NULL;
     }
 
     p = calloc(1, sizeof(struct chef_disk_partition));
