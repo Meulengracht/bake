@@ -7,6 +7,7 @@ add_subdirectory(osutils)
 
 add_library(platform STATIC
     environment.c
+    guid.c
 )
 target_include_directories(platform PUBLIC include)
 target_link_libraries(platform PUBLIC platform-osutils platform-ioutils platform-strutils vafs vlog)

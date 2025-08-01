@@ -253,12 +253,11 @@ extern int platform_getuserdir(char* buffer, size_t length);
 extern int platform_chdir(const char* path);
 extern int platform_chmod(const char* path, uint32_t permissions);
 extern int platform_getfiles(const char* path, int recursive, struct list* files);
-extern int platform_getfiles_destroy(struct list* files);
+extern void platform_getfiles_destroy(struct list* files);
 extern int platform_cpucount(void);
 extern int platform_copyfile(const char* source, const char* destination);
 extern int platform_readfile(const char* path, void** bufferOut, size_t* lengthOut);
-extern int platform_lockfile(int fd);
-extern int platform_unlockfile(int fd);
+extern char* platform_tmpdir(void);
 extern char* platform_strdup(const char* string);
 extern char* platform_strndup(const char* string, size_t maxlen);
 
@@ -304,6 +303,14 @@ extern int platform_spawn(const char* path, const char* arguments, const char* c
  * @brief Spawns a child process and returns the stdout as a string.
  */
 extern char* platform_exec(const char* cmd);
+
+/**
+ * @brief Generate a new guid, uses rand() to generate, so must be
+ * initialized prior to this call
+ */
+extern void platform_guid_new_string(char strbuffer[40]);
+extern void platform_guid_new(unsigned char guid[16]);
+extern void platform_guid_parse(unsigned char guid[16], char* str);
 
 #ifdef __cplusplus
 }

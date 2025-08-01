@@ -18,6 +18,8 @@ apps:
     command: usr/bin/order
   serve:
     command: usr/bin/serve
+  mkcdk:
+    command: usr/bin/mkcdk
   served:
     command: usr/libexec/chef/served -vvv
     daemon: simple

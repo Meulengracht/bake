@@ -2,6 +2,7 @@
 project (common C)
 
 add_library(common STATIC
+    image.c
     ingredient.c
     package.c
     preprocessor.c
