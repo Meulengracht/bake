@@ -61,6 +61,12 @@ static void __print_help(void)
     printf("      Print this help message\n");
 }
 
+struct __image_context {
+    const char* work_directory;
+    const char* arch;
+    const char* platform;
+};
+
 struct __package_info {
     char* publisher;
     char* package;
@@ -68,8 +74,9 @@ struct __package_info {
     char* path;
 };
 
-static int __resolve_package_information(const char* str, struct __package_info* info)
+static int __resolve_package_information(const char* str, struct __image_context* context, struct __package_info* info)
 {
+    char  path[PATH_MAX];
     char* s = str;
     char* p;
 
@@ -94,9 +101,16 @@ static int __resolve_package_information(const char* str, struct __package_info*
         info->channel = platform_strdup(++p);
     }
 
-    // figure out path
-    // TODO:
-
+    snprintf(
+        &path[0],
+        sizeof(path) - 1,
+        "%s" CHEF_PATH_SEPARATOR_S "%s-%s-%s",
+        context->work_directory, 
+        info->publisher,
+        info->package,
+        info->channel
+    );
+    info->path = platform_strdup(&path[0]);
     return 0;
 }
 
@@ -104,15 +118,15 @@ static void __package_info_free(struct __package_info* info)
 {
     free(info->publisher);
     info->publisher = NULL;
-
     free(info->package);
     info->package = NULL;
-
     free(info->channel);
     info->channel = NULL;
+    free(info->path);
+    info->path = NULL;
 }
 
-static int __resolve_sources(const char* platform, const char* arch, struct chef_image* image)
+static int __resolve_sources(struct __image_context* context, struct chef_image* image)
 {
     struct chef_download_params dlParams;
     struct list_item*           i, *j;
@@ -126,8 +140,8 @@ static int __resolve_sources(const char* platform, const char* arch, struct chef
         return status;
     }
 
-    dlParams.arch = arch;
-    dlParams.platform = platform;
+    dlParams.arch = context->arch;
+    dlParams.platform = context->platform;
     dlParams.version = NULL;
 
     // Download chef packages referred
@@ -137,7 +151,7 @@ static int __resolve_sources(const char* platform, const char* arch, struct chef
         
         // Is the partition special content
         if (p->content != NULL) {
-            status = __resolve_package_information(p->content, &pi);
+            status = __resolve_package_information(p->content, context, &pi);
             if (status) {
                 VLOG_ERROR("mkcdk", "__resolve_sources: invalid package id: %s\n", p->content);
                 VLOG_ERROR("mkcdk", "__resolve_sources: must in format 'publisher/name{/channel}'\n");
@@ -163,7 +177,7 @@ static int __resolve_sources(const char* platform, const char* arch, struct chef
             struct chef_image_partition_source* s = (struct chef_image_partition_source*)j;
             
             if (s->type == CHEF_IMAGE_SOURCE_PACKAGE) {
-                status = __resolve_package_information(s->source, &pi);
+                status = __resolve_package_information(s->source, context, &pi);
                 if (status) {
                     VLOG_ERROR("mkcdk", "__resolve_sources: invalid package id: %s\n", s->source);
                     VLOG_ERROR("mkcdk", "__resolve_sources: must in format 'publisher/name{/channel}'\n");
@@ -205,7 +219,7 @@ static enum chef_diskbuilder_schema __to_diskbuilder_schema(struct chef_image* i
     return 0;
 }
 
-static struct ingredient* __open_partition_content(const char* content)
+static struct ingredient* __open_partition_content(struct __image_context* context, const char* content)
 {
     struct __package_info pi;
     struct ingredient*    ig = NULL;
@@ -213,7 +227,7 @@ static struct ingredient* __open_partition_content(const char* content)
     int                   status;
     VLOG_DEBUG("mkcdk", "__write_image_content(content=%s)\n", content);
 
-    status = __resolve_package_information(content, &pi);
+    status = __resolve_package_information(content, context, &pi);
     if (status) {
         // should really not happen, should have been verified earlier
         VLOG_ERROR("mkcdk", "__write_image_content: invalid package id: %s\n", content);
@@ -370,26 +384,23 @@ static int __write_directory(struct chef_disk_filesystem* fs, const char* source
     return status;
 }
 
-static int __write_image_content(struct chef_disk_filesystem* fs, struct ingredient* ig)
+static int __write_image_content(struct chef_disk_filesystem* fs, const char* content, struct ingredient* ig)
 {
     struct list       files;
     struct list_item* i;
-    char*             tmp;
     int               status;
     VLOG_DEBUG("mkcdk", "__write_image_content()\n");
 
-    // TODO: create temporary dir on host
-
     // unpack to intermediate directory
-    status = ingredient_unpack(ig, tmp, NULL, NULL);
+    status = ingredient_unpack(ig, content, NULL, NULL);
     if (status) {
-        VLOG_ERROR("mkcdk", "__write_image_content: failed to unpack content to %s\n", tmp);
+        VLOG_ERROR("mkcdk", "__write_image_content: failed to unpack content to %s\n", content);
         return status;
     }
 
-    status = platform_getfiles(tmp, 0, &files);
+    status = platform_getfiles(content, 0, &files);
     if (status) {
-        VLOG_ERROR("mkcdk", "__write_image_content: failed to read directory %s\n", tmp);
+        VLOG_ERROR("mkcdk", "__write_image_content: failed to read directory %s\n", content);
         return status;
     }
 
@@ -425,7 +436,7 @@ static int __write_image_content(struct chef_disk_filesystem* fs, struct ingredi
     return 0;
 }
 
-static int __write_image_sources(struct chef_disk_filesystem* fs, struct list* sources)
+static int __write_image_sources(struct chef_disk_filesystem* fs, struct __image_context* context, struct list* sources)
 {
     struct list_item* i;
     int               status = 0;
@@ -443,7 +454,7 @@ static int __write_image_sources(struct chef_disk_filesystem* fs, struct list* s
                 status = __write_directory(fs, src->source, src->target);
                 break;
             case CHEF_IMAGE_SOURCE_PACKAGE:
-                status = __resolve_package_information(src->source, &pinfo);
+                status = __resolve_package_information(src->source, context, &pinfo);
                 if (status) {
                     VLOG_ERROR("mkcdk", "__write_image_sources: failed to resolve source %s\n", src->source);
                     break;
@@ -486,10 +497,16 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
 {
     struct list_item*        i;
     struct chef_diskbuilder* builder = NULL;
+    struct __image_context   context;
     int                      status;
+    char                     tmpBuffer[256];
     VLOG_DEBUG("mkcdk", "__build_image(path=%s)\n", path);
 
-    status = __resolve_sources(options->platform, options->arch, image);
+    context.arch = options->arch;
+    context.platform = options->platform;
+    context.work_directory = platform_tmpdir();
+
+    status = __resolve_sources(&context, image);
     if (status) {
         VLOG_ERROR("mkcdk", "__build_image: failed to resolve image sources\n");
         goto cleanup;
@@ -511,12 +528,14 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
         struct chef_disk_partition*  pd;
         struct chef_disk_filesystem* fs = NULL;
         struct ingredient*           ig = NULL;
+        const char*                  contentPath = NULL;
 
         pd = chef_diskbuilder_partition_new(builder, &(struct chef_disk_partition_params) {
             .name = pi->label,
             .uuid = pi->guid,
             .size = pi->size,
             .attributes = __to_partition_attributes(&pi->attributes),
+            .work_directory = context.work_directory
         });
         if (pd == NULL) {
             VLOG_ERROR("mkcdk", "__build_image: failed to create partition %s\n", pi->label);
@@ -534,13 +553,21 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
         }
 
         if (pi->content != NULL) {
-            ig = __open_partition_content(pi->content);
+            ig = __open_partition_content(&context, pi->content);
             if (ig == NULL) {
                 VLOG_ERROR("mkcdk", "__build_image: failed to open partition content %s\n", pi->content);
                 status = -1;
                 goto cleanup;
             }
-            fs->set_content(fs, ig);
+            
+            snprintf(&tmpBuffer[0], sizeof(tmpBuffer) - 1, "%s-content", pi->label);
+            contentPath = strpathcombine(context.work_directory, &tmpBuffer[0]);
+            if (contentPath == NULL) {
+                VLOG_ERROR("mkcdk", "__build_image: failed to allocate memory\n");
+                status = -1;
+                goto cleanup;
+            }
+            fs->set_content(fs, contentPath);
         }
 
         status = fs->format(fs);
@@ -551,18 +578,17 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
         }
 
         if (pi->content != NULL) {
-            status = __write_image_content(fs, ig);
+            status = __write_image_content(fs, contentPath, ig);
+            ingredient_close(ig);
         } else {
-            status = __write_image_sources(fs, &pi->sources);
+            status = __write_image_sources(fs, &context, &pi->sources);
         }
         if (status) {
             VLOG_ERROR("mkcdk", "__build_image: failed to write content for %s\n", pi->label);
-            ingredient_close(ig);
             goto cleanup;
         }
 
         status = fs->finish(fs);
-        ingredient_close(ig);
         if (status) {
             VLOG_ERROR("mkcdk", "__build_image: failed to finalize filesystem for %s\n", pi->label);
             goto cleanup;

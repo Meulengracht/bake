@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/platform.h>
 #include <stdlib.h>
 
 #include "private.h"
@@ -25,7 +26,7 @@ struct __fat_filesystem {
     struct chef_disk_filesystem base;
     struct fatfs*               fs;
     const char*                 label;
-    struct ingredient*          content;
+    const char*                 content;
     uint64_t                    sector_count;
     uint16_t                    bytes_per_sector;
     FILE*                       stream;
@@ -34,6 +35,7 @@ struct __fat_filesystem {
 static int __update_mbr(struct __fat_filesystem* cfs, uint8* sector)
 {
     // look for resources/mbr.img
+    
 
     return 0;
 }
@@ -92,10 +94,10 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
     return 0;
 }
 
-static void __fs_set_content(struct chef_disk_filesystem* fs, struct ingredient* ig)
+static void __fs_set_content(struct chef_disk_filesystem* fs, const char* path)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
-    cfs->content = ig;
+    cfs->content = path;
 }
 
 static int __fs_format(struct chef_disk_filesystem* fs)

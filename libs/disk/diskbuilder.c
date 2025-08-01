@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <uchar.h>
+#include <vlog.h>
 
 #include "private.h"
 #include "mbr.h"
@@ -51,9 +52,29 @@ struct chef_diskbuilder {
     uint64_t                     last_usable_sector;
 };
 
+static unsigned int __crc32b(const unsigned int* data, size_t length) {
+   int          i, j;
+   unsigned int byte, crc, mask;
+
+   i = 0;
+   crc = 0xFFFFFFFF;
+   while (i < length) {
+      byte = data[i];
+
+      crc = crc ^ byte;
+      for (j = 7; j >= 0; j--) {    // Do eight times.
+         mask = -(crc & 1);
+         crc = (crc >> 1) ^ (0xEDB88320 & mask);
+      }
+      i = i + 1;
+   }
+   return ~crc;
+}
+
 static void __calculate_geometry(struct chef_disk_geometry* geo, uint64_t size, uint16_t sectorSize)
 {
     uint8_t heads;
+    VLOG_DEBUG("disk", "__calculate_geometry(size=%llu)\n", size);
 
     if (size <= 504 * __MB) {
         heads = 16;
@@ -99,9 +120,11 @@ static void __set_usable_sectors(struct chef_diskbuilder* builder)
 struct chef_diskbuilder* chef_diskbuilder_new(struct chef_diskbuilder_params* params)
 {
     struct chef_diskbuilder* builder;
+    VLOG_DEBUG("disk", "chef_diskbuilder_new(path=%s, size=%llu)\n", params->path, params->size);
 
     builder = calloc(1, sizeof(struct chef_diskbuilder));
     if (builder == NULL) {
+        VLOG_ERROR("disk", "chef_diskbuilder_new: failed to allocate memory\n");
         return NULL;
     }
 
@@ -110,6 +133,7 @@ struct chef_diskbuilder* chef_diskbuilder_new(struct chef_diskbuilder_params* pa
 
     builder->image_stream = fopen(params->path, "wb");
     if (builder->image_stream == NULL) {
+        VLOG_ERROR("disk", "chef_diskbuilder_new: failed to open %s\n", params->path);
         free(builder);
         return NULL;
     }
@@ -157,35 +181,47 @@ static int __convert_utf8_to_utf16(const char* utf8, uint16_t* utf16)
 
 static int __write_gpt_tables(struct chef_diskbuilder* builder)
 {
-    struct list_item*   i;
-    struct __gpt_header header;
-    struct __gpt_entry* table;
-    uint32_t            sectorsForTable;
-    int                 ti;
+    struct list_item*    i;
+    void*                headerSector;
+    struct __gpt_header* header;
+    struct __gpt_entry*  table;
+    uint32_t             sectorsForTable;
+    int                  ti;
+    int                  status = 0;
+    size_t               written;
+    VLOG_DEBUG("disk", "__write_gpt_tables()\n");
+
+    headerSector = calloc(1, builder->disk_geometry.bytes_per_sector);
+    if (headerSector == NULL) {
+        VLOG_ERROR("disk", "__write_gpt_tables: failed to allocate gpt header\n");
+        return -1;
+    }
+    header = headerSector;
 
     sectorsForTable = __sector_count_gpt_partition_table(&builder->disk_geometry);
     table = calloc(1, 
         builder->disk_geometry.bytes_per_sector * sectorsForTable
     );
     if (table == NULL) {
+        VLOG_ERROR("disk", "__write_gpt_tables: failed to allocate gpt table\n");
+        free(table);
         return -1;
     }
 
-    memcpy(&header.signature[0], __GPT_SIGNATURE, 8);
-    header.revision = __GPT_REVISION;
-    header.header_size = __GPT_HEADER_SIZE;
-    header.header_crc32 = 0; // TODO: calculate crc
-    header.reserved = 0;
+    memcpy(&header->signature[0], __GPT_SIGNATURE, 8);
+    header->revision = __GPT_REVISION;
+    header->header_size = __GPT_HEADER_SIZE;
+    header->header_crc32 = 0; // this must be zero during calculation
+    header->reserved = 0;
 
-    header.main_lba = 1;
-    header.first_usable_lba = 2 + sectorsForTable;
-    header.last_usable_lba = builder->disk_geometry.sector_count - (2 + sectorsForTable);
-    header.backup_lba = builder->disk_geometry.sector_count - (1 + sectorsForTable);
-    header.partition_entry_lba = 2;
-    header.partition_entry_count = builder->partitions.count;
-    header.partition_entry_size = __GPT_ENTRY_SIZE;
-    header.partition_array_crc32 = 0; // TODO: calculate crc
-    platform_guid_new(header.disk_guid);
+    header->main_lba = 1;
+    header->first_usable_lba = 2 + sectorsForTable;
+    header->last_usable_lba = builder->disk_geometry.sector_count - (2 + sectorsForTable);
+    header->backup_lba = builder->disk_geometry.sector_count - (1 + sectorsForTable);
+    header->partition_entry_lba = 2;
+    header->partition_entry_count = builder->partitions.count;
+    header->partition_entry_size = __GPT_ENTRY_SIZE;
+    platform_guid_new(header->disk_guid);
 
     ti = 0;
     list_foreach(&builder->partitions, i) {
@@ -193,7 +229,9 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
         struct __gpt_entry*         e = &table[ti++];
 
         if (__convert_utf8_to_utf16(p->name, &e->name_utf16[0])) {
-            return -1;
+            VLOG_ERROR("disk", "__write_gpt_tables: failed to convert partition name %s\n", p->name);
+            status = -1;
+            goto cleanup;
         }
 
         e->first_sector = p->sector_start;
@@ -203,49 +241,64 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
         platform_guid_parse(e->type_guid, p->guid);
     }
 
+    // calculate CRC, first the array member
+    header->partition_array_crc32 = __crc32b(table, builder->partitions.count * __GPT_ENTRY_SIZE);
+    header->header_crc32 = __crc32b(&header, __GPT_HEADER_SIZE);
+
     // just write the main header and the table
-    ti = fwrite(&header, sizeof(header), 1, builder->image_stream);
-    if (ti != 512) {
-        return -1;
+    written = fwrite(&header, builder->disk_geometry.bytes_per_sector, 1, builder->image_stream);
+    if (written != builder->disk_geometry.bytes_per_sector) {
+        VLOG_ERROR("disk", "__write_gpt_tables: failed write primary gpt header\n");
+        status = -1;
+        goto cleanup;
     }
 
-    ti = fwrite(table, 
+    written = fwrite(table, 
         builder->disk_geometry.bytes_per_sector,
         sectorsForTable,
         builder->image_stream
     );
-    if (ti != 512) {
-        return -1;
+    if (written != (builder->disk_geometry.bytes_per_sector * sectorsForTable)) {
+        VLOG_ERROR("disk", "__write_gpt_tables: failed write primary gpt table\n");
+        status = -1;
+        goto cleanup;
     }
 
     // prepare backup header
-    header.main_lba = builder->disk_geometry.sector_count - (1 + sectorsForTable);
-    header.partition_entry_lba = builder->disk_geometry.sector_count - sectorsForTable;
-    header.backup_lba = 1;
-    header.header_crc32 = 0; // TODO: calculate crc
+    header->main_lba = builder->disk_geometry.sector_count - (1 + sectorsForTable);
+    header->partition_entry_lba = builder->disk_geometry.sector_count - sectorsForTable;
+    header->backup_lba = 1;
+    header->header_crc32 = 0;
+    header->header_crc32 = __crc32b(&header, __GPT_HEADER_SIZE);
 
     // seek to the correct space in the file
-    ti = fseek(
+    fseek(
         builder->image_stream, 
         builder->disk_geometry.bytes_per_sector * builder->disk_geometry.sector_count - (1 + sectorsForTable),
         SEEK_SET
     );
 
     // write backup
-    ti = fwrite(&header, sizeof(header), 1, builder->image_stream);
-    if (ti != 512) {
-        return -1;
+    written = fwrite(&header, builder->disk_geometry.bytes_per_sector, 1, builder->image_stream);
+    if (written != builder->disk_geometry.bytes_per_sector) {
+        VLOG_ERROR("disk", "__write_gpt_tables: failed write secondary gpt header\n");
+        status = -1;
+        goto cleanup;
     }
 
-    ti = fwrite(table, 
+    written = fwrite(table, 
         builder->disk_geometry.bytes_per_sector,
         sectorsForTable,
         builder->image_stream
     );
-    if (ti != 512) {
-        return -1;
+    if (written != (builder->disk_geometry.bytes_per_sector * sectorsForTable)) {
+        VLOG_ERROR("disk", "__write_gpt_tables: failed write secondary gpt table\n");
+        status = -1;
     }
 
+cleanup:
+    free(headerSector);
+    free(table);
     return 0;
 }
 
@@ -265,9 +318,11 @@ static int __write_mbr(struct chef_diskbuilder* builder, const unsigned char* te
     int               status;
     uint8_t*          mbr;
     int               pi;
+    VLOG_DEBUG("disk", "__write_mbr()\n");
 
     mbr = __memdup(template, 512);
     if (mbr == NULL) {
+        VLOG_ERROR("disk", "__write_mbr: failed to allocate memory for mbr\n");
         return -1;
     }
 
@@ -327,6 +382,7 @@ static int __write_mbr(struct chef_diskbuilder* builder, const unsigned char* te
 
     status = fwrite(mbr, 512, 1, builder->image_stream);
     if (status != 512) {
+        VLOG_ERROR("disk", "__write_mbr: failed to write the mbr sector\n");
         return -1;
     }
     return 0;
@@ -334,16 +390,19 @@ static int __write_mbr(struct chef_diskbuilder* builder, const unsigned char* te
 
 static int __write_bootloader(struct chef_diskbuilder* builder)
 {
+    VLOG_DEBUG("disk", "__write_bootloader()\n");
     switch (builder->schema) {
         case CHEF_DISK_SCHEMA_MBR:
             return __write_mbr(builder, g_mbrSector);
         case CHEF_DISK_SCHEMA_GPT:
             int status = __write_mbr(builder, g_mbrSector);
             if (status) {
+                VLOG_ERROR("disk", "__write_bootloader: failed to write mbr\n");
                 return status;
             }
             return __write_gpt_tables(builder);
         default:
+            VLOG_ERROR("disk", "__write_bootloader: unknown disk schema\n");
             return -1;
     }
     return 0;
@@ -353,6 +412,7 @@ static int __write_partition(struct chef_disk_partition* p, FILE* stream)
 {
     void*  block;
     size_t read;
+    VLOG_DEBUG("disk", "__write_partition(name=%s)\n", p->name);
 
     // seek to first sector
     fseek(stream, p->sector_start, SEEK_SET);
@@ -361,6 +421,7 @@ static int __write_partition(struct chef_disk_partition* p, FILE* stream)
     // allocate a 4mb block for transfers
     block = malloc(4 * __MB);
     if (block == NULL) {
+        VLOG_ERROR("disk", "__write_partition: failed to allocate transfer buffer\n");
         return -1;
     }
 
@@ -385,13 +446,16 @@ int chef_diskbuilder_finish(struct chef_diskbuilder* builder)
 {
     struct list_item* i;
     int               status;
+    VLOG_DEBUG("disk", "chef_diskbuilder_finish()\n");
 
     if (builder->image_stream == NULL) {
+        VLOG_ERROR("disk", "chef_diskbuilder_finish: builder already finished\n");
         return -1;
     }
 
     status = __write_bootloader(builder);
     if (status) {
+        VLOG_ERROR("disk", "chef_diskbuilder_finish: failed to write boot sectors\n");
         return status;
     }
 
@@ -399,6 +463,7 @@ int chef_diskbuilder_finish(struct chef_diskbuilder* builder)
         struct chef_disk_partition* p = (struct chef_disk_partition*)i;
         status = __write_partition(p, builder->image_stream);
         if (status) {
+            VLOG_ERROR("disk", "chef_diskbuilder_finish: failed to write partition %s\n", p->name);
             return status;
         }
     }
@@ -409,34 +474,86 @@ int chef_diskbuilder_finish(struct chef_diskbuilder* builder)
     return 0;
 }
 
+static int __parse_guid_and_type(const char* uuid, char** guid, uint8_t* type)
+{
+    char* p;
+
+    // XX = type
+    // XXXXXXX... = guid
+    // XX, XXXXXX... = type & guid
+    if (strlen(uuid) == 2) {
+        *type = (uint8_t)strtoul(uuid, &p, 16);
+        return *type != 0 ? 0 : -1;
+    }
+    
+    p = strchr(uuid, ',');
+    if (p != NULL) {
+        // both type and guid, parse type first
+        *type = (uint8_t)strtoul(uuid, &p, 16);
+        // skip past comma and whitespace
+        while (*p == ',' || *p == ' ') p++;
+    } else {
+        p = uuid;
+    }
+
+    *guid = platform_strdup(p);
+    return 0;
+}
+
 struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuilder* builder, struct chef_disk_partition_params* params)
 {
     struct chef_disk_partition* p;
-    char   tmp[128];
+    int    status;
+    char   tmp[PATH_MAX];
+    VLOG_DEBUG("disk", "chef_diskbuilder_partition_new(name=%s)\n", params->name);
 
     // Is the builder done already?
     if (builder->image_stream == NULL) {
+        VLOG_ERROR("disk", "chef_diskbuilder_partition_new: builder already finished\n");
         return -1;
     }
 
     // Make sure the size fits
     if (params->size > (builder->last_usable_sector - builder->next_usable_sector)) {
+        VLOG_ERROR("disk", 
+            "chef_diskbuilder_partition_new: partition %s: size does not fit onto image\n",
+            params->name
+        );
         return -1;
     }
 
     // Make sure there are actually sectors left, i.e no double zero partitions
     if (builder->last_usable_sector - builder->next_usable_sector == 0) {
+        VLOG_ERROR("disk", 
+            "chef_diskbuilder_partition_new: partition %s: no sectors left\n",
+            params->name
+        );
         return -1;
     }
 
     p = calloc(1, sizeof(struct chef_disk_partition));
     if (p == NULL) {
+        VLOG_ERROR("disk", "chef_diskbuilder_partition_new: failed to allocate memory\n");
         return NULL;
     }
 
-    snprintf(&tmp[0], sizeof(tmp), ".%s-stream", params->name);
-    p->stream = fopen(".%s-stream", "wb");
+    status = __parse_guid_and_type(params->uuid, &p->guid, &p->mbr_type);
+    if (status) {
+        VLOG_ERROR("disk", "chef_diskbuilder_partition_new: failed to parse %s\n", params->uuid);
+        free(p);
+        return NULL;
+    }
+
+    snprintf(
+        &tmp[0],
+        sizeof(tmp),
+        "%s" CHEF_PATH_SEPARATOR_S "%s-stream",
+        params->work_directory, params->name
+    );
+    p->stream = fopen(&tmp[0], "wb");
     if (p->stream == NULL) {
+        VLOG_ERROR("disk", "chef_diskbuilder_partition_new: failed to open stream %s\n", &tmp[0]);
+        free(p->guid);
         free(p);
         return NULL;
     }
@@ -453,17 +570,18 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
     }
 
     p->name = platform_strdup(params->name);
-    p->guid = platform_strdup(params->uuid);
-    p->mbr_type = 0; // TODO
 
     // increase the next usable sector
     builder->next_usable_sector += p->sector_count;
     list_add(&builder->partitions, &p->list_header);
+    return p;
 }
 
 int chef_diskbuilder_partition_finish(struct chef_disk_partition* partition)
 {
+    VLOG_DEBUG("disk", "chef_diskbuilder_partition_finish()\n");
     if (partition->stream == NULL) {
+        VLOG_ERROR("disk", "chef_diskbuilder_partition_new: partition already finished\n");
         return -1;
     }
 

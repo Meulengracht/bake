@@ -63,6 +63,7 @@ struct chef_disk_partition_params {
     const char*                    uuid;
     unsigned long long             size;
     enum chef_partition_attributes attributes;
+    const char*                    work_directory;
 };
 
 /**
@@ -86,7 +87,7 @@ struct chef_disk_fs_create_file_params {
 };
 
 struct chef_disk_filesystem {
-    void (*set_content)(struct chef_disk_filesystem* fs, struct ingredient* ig);
+    void (*set_content)(struct chef_disk_filesystem* fs, const char* path);
     int (*format)(struct chef_disk_filesystem* fs);
     // must not fail if directory exists
     int (*create_directory)(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params);

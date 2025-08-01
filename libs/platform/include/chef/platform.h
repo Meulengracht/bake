@@ -257,8 +257,7 @@ extern void platform_getfiles_destroy(struct list* files);
 extern int platform_cpucount(void);
 extern int platform_copyfile(const char* source, const char* destination);
 extern int platform_readfile(const char* path, void** bufferOut, size_t* lengthOut);
-extern int platform_lockfile(int fd);
-extern int platform_unlockfile(int fd);
+extern char* platform_tmpdir(void);
 extern char* platform_strdup(const char* string);
 extern char* platform_strndup(const char* string, size_t maxlen);
 

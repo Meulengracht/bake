@@ -17,6 +17,7 @@ add_library(platform-osutils STATIC
     strdup.c
     strndup.c
     symlink.c
+    tmpdir.c
     unlink.c
 )
 target_include_directories(platform-osutils PRIVATE ../../include)
