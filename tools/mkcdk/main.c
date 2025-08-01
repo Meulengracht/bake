@@ -719,6 +719,9 @@ int main(int argc, char** argv, char** envp)
     // needed for guids
     srand(clock());
 
+    // needed for guids
+    srand(clock());
+
     // first argument must be the command if not --help or --version
     if (argc > 1) {
         if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
