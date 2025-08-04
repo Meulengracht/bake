@@ -16,9 +16,262 @@
  * 
  */
 
+#include <chef/platform.h>
+#include <stdlib.h>
+#include <string.h>
+#include <vlog.h>
+
 #include "private.h"
+#include "filesystems/mfs/api.h"
+
+struct __mfs_filesystem {
+    struct chef_disk_filesystem base;
+    struct mfs*                 fs;
+    const char*                 label;
+    const char*                 content;
+    uint64_t                    sector_count;
+    uint16_t                    bytes_per_sector;
+    FILE*                       stream;
+};
+
+static int __update_mbr(struct __mfs_filesystem* cfs, uint8* sector)
+{
+    struct platform_stat stats;
+    char                 tmp[PATH_MAX];
+    void*                buffer;
+    size_t               size;
+    int                  status;
+
+    if (cfs->content == NULL) {
+        return 0;
+    }
+
+    snprintf(
+        &tmp[0], sizeof(tmp) -1,
+        "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "mbr.img",
+        cfs->content
+    );
+    if (platform_stat(&tmp[0], &stats)) {
+        // not there, ignore
+        return 0;
+    }
+
+    status = platform_readfile(&tmp[0], &buffer, &size);
+    if (status) {
+        VLOG_ERROR("fat", "__update_mbr: failed to read %s\n", &tmp[0]);
+        return status;
+    }
+    if (size != 512) {
+        VLOG_ERROR("fat", "__update_mbr: %s is not correctly sized\n", &tmp[0]);
+        free(buffer);
+        return -1;
+    }
+
+    // 0-2     - Jump code
+    // 3-61    - EBPB
+    // 62-509  - Boot code
+    // 510-511 - Boot signature
+    memcpy(&sector[0], &((uint8_t*)buffer)[0], 3);
+    memcpy(&sector[62], &((uint8_t*)buffer)[62], 448);
+    sector[510] = 0x55;
+    sector[511] = 0xAA;
+
+    free(buffer);
+    return 0;
+}
+
+
+static int __install_bootloaders()
+{
+    // Load up boot-sector
+    Utils.Logger.Instance.Info($"{nameof(FileSystem)} | {nameof(InstallBootloaders)} | Loading stage1 bootloader ({_vbrImage})");
+    byte[] bootsector = File.ReadAllBytes(_vbrImage);
+
+    // Modify boot-sector by preserving the header 44
+    byte[] existingSectorContent = _disk.Read(_sector, 1);
+    Buffer.BlockCopy(existingSectorContent, 3, bootsector, 3, 41);
+
+    // Mark the partition as os-partition
+    bootsector[8] = 0x1;
+
+    // Flush the modified sector back to disk
+    Utils.Logger.Instance.Info($"{nameof(FileSystem)} | {nameof(InstallBootloaders)} | Writing stage1 bootloader");
+    _disk.Write(bootsector, _sector, true);
+
+    // Write stage2 to disk
+    if (!string.IsNullOrEmpty(_reservedSectorsImage))
+    {
+        Utils.Logger.Instance.Info($"{nameof(FileSystem)} | {nameof(InstallBootloaders)} | Loading stage2 bootloader ({_reservedSectorsImage})");
+        byte[] stage2Data = File.ReadAllBytes(_reservedSectorsImage);
+        byte[] sectorAlignedBuffer = new Byte[((stage2Data.Length / _disk.Geometry.BytesPerSector) + 1) * _disk.Geometry.BytesPerSector];
+        stage2Data.CopyTo(sectorAlignedBuffer, 0);
+
+        // Make sure we allocate a sector-aligned buffer
+        Utils.Logger.Instance.Info($"{nameof(FileSystem)} | {nameof(InstallBootloaders)} | Writing stage2 bootloader");
+        _disk.Write(sectorAlignedBuffer, _sector + 1, true);
+    }
+}
+
+static int __write_reserved_image(struct __mfs_filesystem* cfs)
+{
+    struct platform_stat stats;
+    char                 tmp[PATH_MAX];
+    void*                buffer;
+    size_t               size, written;
+    int                  status;
+
+    if (cfs->content == NULL) {
+        return 0;
+    }
+
+    snprintf(
+        &tmp[0], sizeof(tmp) -1,
+        "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "fat.img",
+        cfs->content
+    );
+    if (platform_stat(&tmp[0], &stats)) {
+        // not there, ignore
+        return 0;
+    }
+
+    status = platform_readfile(&tmp[0], &buffer, &size);
+    if (status) {
+        VLOG_ERROR("fat", "__update_mbr: failed to read %s\n", &tmp[0]);
+        return status;
+    }
+
+    written = fwrite(buffer, size, 1, cfs->stream);
+    if (written != size) {
+        VLOG_ERROR("fat", "__update_mbr: failed to write reserved sectors\n");
+        free(buffer);
+        return -1;
+    }
+
+    free(buffer);
+    return 0;
+}
+
+static int __partition_read(uint32_t sector, uint8 *buffer, uint32 sector_count, void* ctx)
+{
+    struct __mfs_filesystem* cfs = ctx;
+    uint64_t                 offset;
+    int                      status;
+
+    // make sure we get the stream position
+    offset = sector * cfs->bytes_per_sector;
+
+    status = fseek(cfs->stream, offset, SEEK_SET);
+
+    fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
+    return 0;
+}
+
+static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, void* ctx)
+{
+    struct __mfs_filesystem* cfs = ctx;
+    uint64_t                 offset;
+    int                      status;
+
+    // make sure we get the stream position
+    offset = sector * cfs->bytes_per_sector;
+    status = fseek(cfs->stream, offset, SEEK_SET);
+
+    // if the sector is 0, then let us modify the boot sector with the
+    // MBR provided by content
+    if (sector == 0 && cfs->content != NULL) {
+        status = __update_mbr(cfs, buffer);
+        if (status) {
+            return status;
+        }
+    }
+
+    fwrite(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
+
+    // let us write the reserved image contents
+    // at the same time
+    if (sector == 0 && cfs->content != NULL) {
+        status = __write_reserved_image(cfs);
+        if (status) {
+            return status;
+        }
+    }
+    return 0;
+}
+
+static void __fs_set_content(struct chef_disk_filesystem* fs, const char* path)
+{
+    struct __mfs_filesystem* cfs = (struct __mfs_filesystem*)fs;
+    cfs->content = path;
+}
+
+static int __fs_format(struct chef_disk_filesystem* fs)
+{
+    struct __mfs_filesystem* cfs = (struct __mfs_filesystem*)fs;
+    if (cfs->content != NULL) {
+        struct platform_stat stats;
+        char                 tmp[PATH_MAX];
+
+        snprintf(
+            &tmp[0], sizeof(tmp) -1,
+            "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "fat.img",
+            cfs->content
+        );
+        if (!platform_stat(&tmp[0], &stats)) {
+            cfs->fs->reserved_sectors = (stats.size / cfs->bytes_per_sector) + 1;
+        }
+    }
+    return mfs_format(cfs->fs);
+}
+
+static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params)
+{
+    struct __mfs_filesystem* cfs = (struct __mfs_filesystem*)fs;
+    return mfs_create_directory(cfs->fs, params->path);
+}
+
+static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_file_params* params)
+{
+    struct __mfs_filesystem* cfs = (struct __mfs_filesystem*)fs;
+    return mfs_create_file(cfs->fs, params->path, 0, params->buffer, params->size);
+}
+
+static int __fs_finish(struct chef_disk_filesystem* fs)
+{
+    struct __mfs_filesystem* cfs = (struct __mfs_filesystem*)fs;
+    fl_delete(cfs->fs);
+    free(fs);
+    return 0;
+}
 
 struct chef_disk_filesystem* chef_filesystem_mfs_new(struct chef_disk_partition* partition, struct chef_disk_filesystem_params* params)
 {
-    return NULL;
+    struct __mfs_filesystem* cfs;
+    int                      status;
+    VLOG_DEBUG("fat", "chef_filesystem_mfs_new(partition=%s)\n", partition->name);
+
+    cfs = calloc(1, sizeof(struct __mfs_filesystem));
+    if (cfs == NULL) {
+        VLOG_ERROR("fat", "chef_filesystem_mfs_new: failed to allocate memory\n");
+        return NULL;
+    }
+
+    cfs->fs = mfs_new();
+    if (cfs->fs == NULL) {
+        VLOG_ERROR("fat", "chef_filesystem_mfs_new: failed to create new FAT instance\n");
+        free(cfs);
+        return NULL;
+    }
+
+    // store members from partition that we need later
+    cfs->label = partition->name;
+    cfs->bytes_per_sector = params->sector_size;
+    cfs->sector_count = partition->sector_count;
+
+    // install operations
+    cfs->base.set_content = __fs_set_content;
+    cfs->base.format = __fs_format;
+    cfs->base.create_directory = __fs_create_directory;
+    cfs->base.create_file = __fs_create_file;
+    cfs->base.finish = __fs_finish;
+    return &cfs->base;
 }
