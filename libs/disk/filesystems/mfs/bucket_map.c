@@ -48,6 +48,14 @@ struct mfs_bucket_map* mfs_bucket_new(struct mfs_storage_operations* ops, uint64
     return map;
 }
 
+void mfs_bucket_delete(struct mfs_bucket_map* map)
+{
+    if (map == NULL) {
+        return;
+    }
+    free(map);
+}
+
 uint32_t mfs_bucket_map_next_free(struct mfs_bucket_map* map)
 {
     return map->next_free_bucket;
@@ -96,7 +104,7 @@ void mfs_bucket_initialize(struct mfs_bucket_map* map)
     if (sector == NULL) {
         VLOG_FATAL("mfs-bucket-map", "mfs_bucket_initialize: no memory for sector buffer\n");
     }
-    __write_entry_to_buffer(sector, 0, mapBucketCount, MFS_ENDOFCHAIN);
+    __write_entry_to_buffer((uint32_t*)sector, 0, mapBucketCount, MFS_ENDOFCHAIN);
     if (map->ops->write(map->map_sector, sector, 1, map->ops->op_context)) {
         VLOG_FATAL("mfs-bucket-map", "mfs_bucket_initialize: failed to write map sector\n");
     }
@@ -165,7 +173,7 @@ uint32_t mfs_bucket_map_allocate(struct mfs_bucket_map* map, uint32_t bucketCoun
             // of the available length.
             // bucketsLeft = size we allocate.
             __write_entry_to_buffer(sectorBuffer, sectorIndex, bucketsLeft, MFS_ENDOFCHAIN);
-            if (map->ops->write(map->map_sector + sectorOffset, sectorBuffer, 1, map->ops->op_context)) {
+            if (map->ops->write(map->map_sector + sectorOffset, (uint8_t*)sectorBuffer, 1, map->ops->op_context)) {
                 VLOG_FATAL("mfs-bucket-map", "mfs_bucket_map_allocate: failed to write map sector\n");
             }
 
@@ -174,11 +182,11 @@ uint32_t mfs_bucket_map_allocate(struct mfs_bucket_map* map, uint32_t bucketCoun
             sectorIndex = nextFreeBucket % mapEntriesPerSector;
 
             // Update the map entry
-            if (map->ops->read(map->map_sector + sectorOffset, sectorBuffer, 1, map->ops->op_context)) {
+            if (map->ops->read(map->map_sector + sectorOffset, (uint8_t*)sectorBuffer, 1, map->ops->op_context)) {
                 VLOG_FATAL("mfs-bucket-map", "mfs_bucket_map_allocate: failed to read map sector\n");
             }
             __write_entry_to_buffer(sectorBuffer, sectorIndex, nextFreeCount, bucketLink);
-            if (map->ops->write(map->map_sector + sectorOffset, sectorBuffer, 1, map->ops->op_context)) {
+            if (map->ops->write(map->map_sector + sectorOffset, (uint8_t*)sectorBuffer, 1, map->ops->op_context)) {
                 VLOG_FATAL("mfs-bucket-map", "mfs_bucket_map_allocate: failed to write map sector\n");
             }
             free(sectorBuffer);
@@ -210,7 +218,7 @@ uint32_t mfs_bucket_map_allocate(struct mfs_bucket_map* map, uint32_t bucketCoun
 
         // Modify link
         __sectorBuffer[__sectorIndex * 2] = MFS_ENDOFCHAIN;
-        if (map->ops->write(map->map_sector + __sectorOffset, __sectorBuffer, 1, map->ops->op_context)) {
+        if (map->ops->write(map->map_sector + __sectorOffset, (uint8_t*)__sectorBuffer, 1, map->ops->op_context)) {
             VLOG_FATAL("mfs-bucket-map", "mfs_bucket_map_allocate: failed to write map sector\n");
         }
         free(__sectorBuffer);
@@ -253,9 +261,8 @@ void mfs_bucket_map_set_bucket_link(struct mfs_bucket_map* map, uint32_t bucket,
     sectorBuffer[sectorIndex * 2] = nextBucket;
 
     // Flush buffer to disk
-    if (map->ops->write(map->map_sector + sectorOffset, sectorBuffer, 1, map->ops->op_context)) {
+    if (map->ops->write(map->map_sector + sectorOffset, (uint8_t*)sectorBuffer, 1, map->ops->op_context)) {
         VLOG_FATAL("mfs-bucket-map", "mfs_bucket_map_set_bucket_link: failed to write map sector\n");
     }
     free(sectorBuffer);
-    return 0;
 }

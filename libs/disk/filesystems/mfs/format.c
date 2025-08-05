@@ -45,14 +45,26 @@ struct mfs* mfs_new(struct mfs_new_params* params)
 
     if (strcmp(params->guid, "C4483A10-E3A0-4D3F-B7CC-C04A6E16612B") == 0) {
         mfs->flags |= MFS_PARTITION_FLAG_SYSTEMDRIVE;
-    } else if (strmcp(params->guid, "80C6C62A-B0D6-4FF4-A69D-558AB6FD8B53") == 0) {
+    } else if (strcmp(params->guid, "80C6C62A-B0D6-4FF4-A69D-558AB6FD8B53") == 0) {
         mfs->flags |= MFS_PARTITION_FLAG_USERDRIVE | MFS_PARTITION_FLAG_DATADRIVE;
-    } else if (strmcp(params->guid, "8874F880-E7AD-4EE2-839E-6FFA54F19A72") == 0) {
+    } else if (strcmp(params->guid, "8874F880-E7AD-4EE2-839E-6FFA54F19A72") == 0) {
         mfs->flags |= MFS_PARTITION_FLAG_USERDRIVE;
-    } else if (strmcp(params->guid, "B8E1A523-5865-4651-9548-8A43A9C21384") == 0) {
+    } else if (strcmp(params->guid, "B8E1A523-5865-4651-9548-8A43A9C21384") == 0) {
         mfs->flags |= MFS_PARTITION_FLAG_DATADRIVE;
     }
     return mfs;
+}
+
+void mfs_delete(struct mfs* mfs)
+{
+    if (mfs == NULL) {
+        return;
+    }
+
+    mfs_bucket_delete(mfs->map);
+    free((void*)mfs->label);
+    free((void*)mfs->guid);
+    free(mfs);
 }
 
 static uint8_t* __new_buffer(struct mfs* mfs, uint32_t sectorCount)
@@ -99,8 +111,7 @@ static uint16_t __calculate_bucket_size(uint64_t driveSizeBytes)
 }
 
 static int __build_master_record(
-    struct mfs* mfs, uint32_t rootBucket, uint32_t journalBucket, uint32_t badListBucket, 
-    uint64_t masterRecordSector, uint64_t masterRecordMirrorSector)
+    struct mfs* mfs, uint32_t rootBucket, uint32_t journalBucket, uint32_t badListBucket)
 {
     uint8_t* masterRecord;
     int      status;
@@ -186,13 +197,13 @@ static int __build_master_record(
     masterRecord[11] = (uint8_t)((checksum >> 24) & 0xFF);
 
     // Flush it to disk
-    status = mfs->ops.write(masterRecordSector, masterRecord, 1, mfs->ops.op_context);
+    status = mfs->ops.write(mfs->master_record_sector, masterRecord, 1, mfs->ops.op_context);
     if (status) {
         VLOG_ERROR("mfs", "__build_master_record: failed to write primary record\n");
         free(masterRecord);
         return status;
     }
-    status = mfs->ops.write(masterRecordMirrorSector, masterRecord, 1, mfs->ops.op_context);
+    status = mfs->ops.write(mfs->backup_master_record_sector, masterRecord, 1, mfs->ops.op_context);
     if (status) {
         VLOG_ERROR("mfs", "__build_master_record: failed to write primary record\n");
     }
@@ -200,7 +211,7 @@ static int __build_master_record(
     return status;
 }
 
-static int __build_vbr(struct mfs* mfs, uint64_t masterBucketSector, uint64_t mirrorMasterBucketSector)
+static int __build_vbr(struct mfs* mfs)
 {
     // Initialize the MBR
     //uint8_t JumpCode[3];
@@ -265,24 +276,24 @@ static int __build_vbr(struct mfs* mfs, uint64_t masterBucketSector, uint64_t mi
     bootSector[27] = (uint8_t)((mfs->bucket_size >> 8) & 0xFF);
 
     // Sector of master-record
-    bootSector[28] = (uint8_t)(masterBucketSector & 0xFF);
-    bootSector[29] = (uint8_t)((masterBucketSector >> 8) & 0xFF);
-    bootSector[30] = (uint8_t)((masterBucketSector >> 16) & 0xFF);
-    bootSector[31] = (uint8_t)((masterBucketSector >> 24) & 0xFF);
-    bootSector[32] = (uint8_t)((masterBucketSector >> 32) & 0xFF);
-    bootSector[33] = (uint8_t)((masterBucketSector >> 40) & 0xFF);
-    bootSector[34] = (uint8_t)((masterBucketSector >> 48) & 0xFF);
-    bootSector[35] = (uint8_t)((masterBucketSector >> 56) & 0xFF);
+    bootSector[28] = (uint8_t)(mfs->master_record_sector & 0xFF);
+    bootSector[29] = (uint8_t)((mfs->master_record_sector >> 8) & 0xFF);
+    bootSector[30] = (uint8_t)((mfs->master_record_sector >> 16) & 0xFF);
+    bootSector[31] = (uint8_t)((mfs->master_record_sector >> 24) & 0xFF);
+    bootSector[32] = (uint8_t)((mfs->master_record_sector >> 32) & 0xFF);
+    bootSector[33] = (uint8_t)((mfs->master_record_sector >> 40) & 0xFF);
+    bootSector[34] = (uint8_t)((mfs->master_record_sector >> 48) & 0xFF);
+    bootSector[35] = (uint8_t)((mfs->master_record_sector >> 56) & 0xFF);
 
     // Sector of master-record mirror
-    bootSector[36] = (uint8_t)(mirrorMasterBucketSector & 0xFF);
-    bootSector[37] = (uint8_t)((mirrorMasterBucketSector >> 8) & 0xFF);
-    bootSector[38] = (uint8_t)((mirrorMasterBucketSector >> 16) & 0xFF);
-    bootSector[39] = (uint8_t)((mirrorMasterBucketSector >> 24) & 0xFF);
-    bootSector[40] = (uint8_t)((mirrorMasterBucketSector >> 32) & 0xFF);
-    bootSector[41] = (uint8_t)((mirrorMasterBucketSector >> 40) & 0xFF);
-    bootSector[42] = (uint8_t)((mirrorMasterBucketSector >> 48) & 0xFF);
-    bootSector[43] = (uint8_t)((mirrorMasterBucketSector >> 56) & 0xFF);
+    bootSector[36] = (uint8_t)(mfs->backup_master_record_sector & 0xFF);
+    bootSector[37] = (uint8_t)((mfs->backup_master_record_sector >> 8) & 0xFF);
+    bootSector[38] = (uint8_t)((mfs->backup_master_record_sector >> 16) & 0xFF);
+    bootSector[39] = (uint8_t)((mfs->backup_master_record_sector >> 24) & 0xFF);
+    bootSector[40] = (uint8_t)((mfs->backup_master_record_sector >> 32) & 0xFF);
+    bootSector[41] = (uint8_t)((mfs->backup_master_record_sector >> 40) & 0xFF);
+    bootSector[42] = (uint8_t)((mfs->backup_master_record_sector >> 48) & 0xFF);
+    bootSector[43] = (uint8_t)((mfs->backup_master_record_sector >> 56) & 0xFF);
 
     status = mfs->ops.write(0, bootSector, 1, mfs->ops.op_context);
     if (status) {
@@ -335,6 +346,10 @@ int mfs_format(struct mfs* mfs)
     VLOG_DEBUG("mfs", "mfs_format: original: %llu\n", masterBucketSector);
     VLOG_DEBUG("mfs", "mfs_format: mirror: %llu\n", mirrorMasterBucketSector);
 
+    // store them for easy access
+    mfs->master_record_sector = masterBucketSector;
+    mfs->backup_master_record_sector = mirrorMasterBucketSector;
+
     // Allocate for:
     // - Root directory - 8 buckets
     // - Bad-bucket list - 1 bucket
@@ -344,6 +359,9 @@ int mfs_format(struct mfs* mfs)
     badBucketIndex = mfs_bucket_map_allocate(mfs->map, 1, &initialBucketSize);
     VLOG_DEBUG("mfs", "mfs_format: free bucket pointer after setup: %u\n", mfs_bucket_map_next_free(mfs->map));
     VLOG_DEBUG("mfs", "mfs_format: wiping root data\n");
+
+    // store it for easy access
+    mfs->root_bucket = rootIndex;
 
     // Allocate a zero array to fill the allocated sectors with
     buffer = __new_buffer(mfs, mfs->bucket_size);
@@ -372,7 +390,7 @@ int mfs_format(struct mfs* mfs)
 
     // build master record
     VLOG_DEBUG("mfs", "mfs_format: installing master records\n");
-    status = __build_master_record(mfs, rootIndex, journalIndex, badBucketIndex, masterBucketSector, mirrorMasterBucketSector);
+    status = __build_master_record(mfs, rootIndex, journalIndex, badBucketIndex);
     if (status) {
         VLOG_ERROR("mfs", "mfs_format: failed to build and write master record\n");
         return status;
@@ -380,7 +398,7 @@ int mfs_format(struct mfs* mfs)
 
     // install vbr
     VLOG_DEBUG("mfs", "mfs_format: installing vbr\n");
-    status = __build_vbr(mfs, masterBucketSector, mirrorMasterBucketSector);
+    status = __build_vbr(mfs);
     if (status) {
         VLOG_ERROR("mfs", "mfs_format: failed to build and write virtual boot record\n");
         return status;

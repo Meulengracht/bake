@@ -34,7 +34,7 @@ struct __mfs_filesystem {
     FILE*                       stream;
 };
 
-static int __update_mbr(struct __mfs_filesystem* cfs, uint8* sector)
+static int __update_mbr(struct __mfs_filesystem* cfs, uint8_t* sector)
 {
     struct platform_stat stats;
     char                 tmp[PATH_MAX];
@@ -42,6 +42,7 @@ static int __update_mbr(struct __mfs_filesystem* cfs, uint8* sector)
     size_t               size;
     int                  status;
 
+    // must have content set
     if (cfs->content == NULL) {
         return 0;
     }
@@ -58,58 +59,27 @@ static int __update_mbr(struct __mfs_filesystem* cfs, uint8* sector)
 
     status = platform_readfile(&tmp[0], &buffer, &size);
     if (status) {
-        VLOG_ERROR("fat", "__update_mbr: failed to read %s\n", &tmp[0]);
+        VLOG_ERROR("mfs", "__update_mbr: failed to read %s\n", &tmp[0]);
         return status;
     }
     if (size != 512) {
-        VLOG_ERROR("fat", "__update_mbr: %s is not correctly sized\n", &tmp[0]);
+        VLOG_ERROR("mfs", "__update_mbr: %s is not correctly sized\n", &tmp[0]);
         free(buffer);
         return -1;
     }
 
     // 0-2     - Jump code
-    // 3-61    - EBPB
-    // 62-509  - Boot code
+    // 3-43    - Header
+    // 44-509  - Boot code
     // 510-511 - Boot signature
     memcpy(&sector[0], &((uint8_t*)buffer)[0], 3);
-    memcpy(&sector[62], &((uint8_t*)buffer)[62], 448);
+    memcpy(&sector[44], &((uint8_t*)buffer)[44], 465);
+    sector[8] = 0x1; // mark OS partition
     sector[510] = 0x55;
     sector[511] = 0xAA;
 
     free(buffer);
     return 0;
-}
-
-
-static int __install_bootloaders()
-{
-    // Load up boot-sector
-    Utils.Logger.Instance.Info($"{nameof(FileSystem)} | {nameof(InstallBootloaders)} | Loading stage1 bootloader ({_vbrImage})");
-    byte[] bootsector = File.ReadAllBytes(_vbrImage);
-
-    // Modify boot-sector by preserving the header 44
-    byte[] existingSectorContent = _disk.Read(_sector, 1);
-    Buffer.BlockCopy(existingSectorContent, 3, bootsector, 3, 41);
-
-    // Mark the partition as os-partition
-    bootsector[8] = 0x1;
-
-    // Flush the modified sector back to disk
-    Utils.Logger.Instance.Info($"{nameof(FileSystem)} | {nameof(InstallBootloaders)} | Writing stage1 bootloader");
-    _disk.Write(bootsector, _sector, true);
-
-    // Write stage2 to disk
-    if (!string.IsNullOrEmpty(_reservedSectorsImage))
-    {
-        Utils.Logger.Instance.Info($"{nameof(FileSystem)} | {nameof(InstallBootloaders)} | Loading stage2 bootloader ({_reservedSectorsImage})");
-        byte[] stage2Data = File.ReadAllBytes(_reservedSectorsImage);
-        byte[] sectorAlignedBuffer = new Byte[((stage2Data.Length / _disk.Geometry.BytesPerSector) + 1) * _disk.Geometry.BytesPerSector];
-        stage2Data.CopyTo(sectorAlignedBuffer, 0);
-
-        // Make sure we allocate a sector-aligned buffer
-        Utils.Logger.Instance.Info($"{nameof(FileSystem)} | {nameof(InstallBootloaders)} | Writing stage2 bootloader");
-        _disk.Write(sectorAlignedBuffer, _sector + 1, true);
-    }
 }
 
 static int __write_reserved_image(struct __mfs_filesystem* cfs)
@@ -120,13 +90,14 @@ static int __write_reserved_image(struct __mfs_filesystem* cfs)
     size_t               size, written;
     int                  status;
 
+    // must have content set
     if (cfs->content == NULL) {
         return 0;
     }
 
     snprintf(
         &tmp[0], sizeof(tmp) -1,
-        "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "fat.img",
+        "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "mfs.img",
         cfs->content
     );
     if (platform_stat(&tmp[0], &stats)) {
@@ -136,13 +107,13 @@ static int __write_reserved_image(struct __mfs_filesystem* cfs)
 
     status = platform_readfile(&tmp[0], &buffer, &size);
     if (status) {
-        VLOG_ERROR("fat", "__update_mbr: failed to read %s\n", &tmp[0]);
+        VLOG_ERROR("mfs", "__update_mbr: failed to read %s\n", &tmp[0]);
         return status;
     }
 
     written = fwrite(buffer, size, 1, cfs->stream);
     if (written != size) {
-        VLOG_ERROR("fat", "__update_mbr: failed to write reserved sectors\n");
+        VLOG_ERROR("mfs", "__update_mbr: failed to write reserved sectors\n");
         free(buffer);
         return -1;
     }
@@ -151,7 +122,7 @@ static int __write_reserved_image(struct __mfs_filesystem* cfs)
     return 0;
 }
 
-static int __partition_read(uint32_t sector, uint8 *buffer, uint32 sector_count, void* ctx)
+static int __partition_read(uint64_t sector, uint8_t *buffer, uint32_t sector_count, void* ctx)
 {
     struct __mfs_filesystem* cfs = ctx;
     uint64_t                 offset;
@@ -166,7 +137,7 @@ static int __partition_read(uint32_t sector, uint8 *buffer, uint32 sector_count,
     return 0;
 }
 
-static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, void* ctx)
+static int __partition_write(uint64_t sector, uint8_t *buffer, uint32_t sector_count, void* ctx)
 {
     struct __mfs_filesystem* cfs = ctx;
     uint64_t                 offset;
@@ -213,11 +184,11 @@ static int __fs_format(struct chef_disk_filesystem* fs)
 
         snprintf(
             &tmp[0], sizeof(tmp) -1,
-            "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "fat.img",
+            "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "mfs.img",
             cfs->content
         );
         if (!platform_stat(&tmp[0], &stats)) {
-            cfs->fs->reserved_sectors = (stats.size / cfs->bytes_per_sector) + 1;
+            mfs_set_reserved_sectors(cfs->fs, ((stats.size + (cfs->bytes_per_sector - 1)) / cfs->bytes_per_sector) + 1 /* 1 for VBR */);
         }
     }
     return mfs_format(cfs->fs);
@@ -232,14 +203,14 @@ static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_di
 static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_file_params* params)
 {
     struct __mfs_filesystem* cfs = (struct __mfs_filesystem*)fs;
-    return mfs_create_file(cfs->fs, params->path, 0, params->buffer, params->size);
+    return mfs_create_file(cfs->fs, params->path, 0, (uint8_t*)params->buffer, params->size);
 }
 
 static int __fs_finish(struct chef_disk_filesystem* fs)
 {
     struct __mfs_filesystem* cfs = (struct __mfs_filesystem*)fs;
-    fl_delete(cfs->fs);
-    free(fs);
+    mfs_delete(cfs->fs);
+    free(cfs);
     return 0;
 }
 
@@ -247,17 +218,29 @@ struct chef_disk_filesystem* chef_filesystem_mfs_new(struct chef_disk_partition*
 {
     struct __mfs_filesystem* cfs;
     int                      status;
-    VLOG_DEBUG("fat", "chef_filesystem_mfs_new(partition=%s)\n", partition->name);
+    VLOG_DEBUG("mfs", "chef_filesystem_mfs_new(partition=%s)\n", partition->name);
 
     cfs = calloc(1, sizeof(struct __mfs_filesystem));
     if (cfs == NULL) {
-        VLOG_ERROR("fat", "chef_filesystem_mfs_new: failed to allocate memory\n");
+        VLOG_ERROR("mfs", "chef_filesystem_mfs_new: failed to allocate memory\n");
         return NULL;
     }
 
-    cfs->fs = mfs_new();
+    cfs->fs = mfs_new(&(struct mfs_new_params) {
+        .ops = {
+            .op_context = cfs,
+            .read = __partition_read,
+            .write = __partition_write
+        },
+        .label = partition->name,
+        .guid = partition->guid,
+        .sector_count = partition->sector_count,
+        .bytes_per_sector = params->sector_size,
+        .heads_per_cylinder = 0,
+        .sectors_per_track = 0
+    });
     if (cfs->fs == NULL) {
-        VLOG_ERROR("fat", "chef_filesystem_mfs_new: failed to create new FAT instance\n");
+        VLOG_ERROR("mfs", "chef_filesystem_mfs_new: failed to create new FAT instance\n");
         free(cfs);
         return NULL;
     }

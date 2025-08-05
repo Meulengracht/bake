@@ -222,7 +222,7 @@ static int __fs_finish(struct chef_disk_filesystem* fs)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
     fl_delete(cfs->fs);
-    free(fs);
+    free(cfs);
     return 0;
 }
 

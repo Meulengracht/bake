@@ -90,33 +90,26 @@ static uint8_t* __read_sector(struct mfs* mfs, uint64_t sector, uint32_t count)
 
 static int __save_next_available_bucket(struct mfs* mfs)
 {
-    uint8_t* bootSector;
     uint8_t* masterRecord;
-    uint64_t masterRecordSector, masterRecordMirrorSector;
     uint32_t nextFree;
     int      status;
-
-    // Get relevant locations
-    bootSector = __read_sector(mfs, 0, 1);
-    masterRecordSector = *((uint64_t*)&bootSector[28]);
-    masterRecordMirrorSector = *((uint64_t*)&bootSector[36]);
     
     // Update the master-record to reflect the new index
-    masterRecord = __read_sector(mfs, masterRecordSector, 1);
+    masterRecord = __read_sector(mfs, mfs->master_record_sector, 1);
     nextFree = mfs_bucket_map_next_free(mfs->map);
     masterRecord[76] = (uint8_t)(nextFree & 0xFF);
     masterRecord[77] = (uint8_t)((nextFree >> 8) & 0xFF);
     masterRecord[78] = (uint8_t)((nextFree >> 16) & 0xFF);
     masterRecord[79] = (uint8_t)((nextFree >> 24) & 0xFF);
 
-    status = mfs->ops.write(masterRecordSector, masterRecord, 1, mfs->ops.op_context);
+    status = mfs->ops.write(mfs->master_record_sector, masterRecord, 1, mfs->ops.op_context);
     if (status) {
         VLOG_ERROR("mfs", "__save_next_available_bucket: failed to write primary record\n");
         free(masterRecord);
         return status;
     }
 
-    status = mfs->ops.write(masterRecordMirrorSector, masterRecord, 1, mfs->ops.op_context);
+    status = mfs->ops.write(mfs->backup_master_record_sector, masterRecord, 1, mfs->ops.op_context);
     if (status) {
         VLOG_ERROR("mfs", "__save_next_available_bucket: failed to write secondary record\n");
         free(masterRecord);
@@ -185,7 +178,7 @@ static int __ensure_bucket_space(struct mfs* mfs, struct mfs_record* record, uin
 
 static char* __safe_path(const char* path)
 {
-    return strreplace(path, "\\", "/");
+    return strreplace((char*)path, "\\", "/");
 }
 
 static int __is_record_used(struct mfs_record* record)
@@ -271,150 +264,190 @@ static struct mfs_record* __find_record(struct mfs* mfs, uint32_t directoryBucke
     return NULL;
 }
 
-static void __initiate_directory_record(struct mfs* mfs, struct mfs_record* record)
+static int __initiate_directory_record(struct mfs* mfs, struct mfs_record* record)
 {
     uint32_t initialBucketSize = 0;
-    uint32_t bucket = mfs_bucket_map_allocate(mfs, MFS_EXPANDSIZE, out initialBucketSize);
+    uint32_t bucket = mfs_bucket_map_allocate(mfs->map, MFS_EXPANDSIZE, &initialBucketSize);
     uint8_t* buffer;
+    int      status;
 
     // Wipe the new bucket to zeros
-    buffer = new byte[mfs->bucket_size * _disk.Geometry.BytesPerSector * initialBucketSize];
-    _disk.Write(wipeBuffer, __BUCKET_SECTOR(bucket), true);
+    buffer = __new_buffer(mfs, mfs->bucket_size * initialBucketSize);
+    status = mfs->ops.write(__BUCKET_SECTOR(bucket), buffer, mfs->bucket_size * initialBucketSize, mfs->ops.op_context);
+    free(buffer);
+    if (status) {
+        VLOG_ERROR("mfs", "__initiate_directory_record: failed to write directory bucket\n");
+        return status;
+    }
 
     record->bucket = bucket;
     record->bucket_length = initialBucketSize;
+    return 0;
 }
 
-static uint32_t ExpandDirectory(struct mfs* mfs, uint32_t lastBucket)
+static uint32_t __expand_directory(struct mfs* mfs, uint32_t lastBucket)
 {
     uint32_t initialBucketSize = 0;
-    uint32_t bucket = _bucketMap.AllocateBuckets(MFS_EXPANDSIZE, out initialBucketSize);
+    uint32_t bucket = mfs_bucket_map_allocate(mfs->map, MFS_EXPANDSIZE, &initialBucketSize);
+    uint8_t* buffer;
+    int      status;
+
     mfs_bucket_map_set_bucket_link(mfs->map, lastBucket, bucket);
-    
+
     // Wipe the new bucket to zeros
-    byte[] wipeBuffer = new byte[mfs->bucket_size * _disk.Geometry.BytesPerSector * initialBucketSize];
-    _disk.Write(wipeBuffer, __BUCKET_SECTOR(bucket), true);
+    buffer = __new_buffer(mfs, mfs->bucket_size * initialBucketSize);
+    status = mfs->ops.write(__BUCKET_SECTOR(bucket), buffer, mfs->bucket_size * initialBucketSize, mfs->ops.op_context);
+    free(buffer);
+    if (status) {
+        VLOG_FATAL("mfs", "__expand_directory: failed to expand directory bucket\n");
+    }
     return bucket;
 }
 
 static void __update_record(struct mfs* mfs, struct mfs_record* record)
 {
-    Utils.Logger.Instance.Debug($"UpdateRecord(record={record.Name})");
-    Utils.Logger.Instance.Debug($"UpdateRecord reading sector {__BUCKET_SECTOR(record.DirectoryBucket)}, length {mfs->bucket_size * record.DirectoryLength}");
-    var bucketBuffer = _disk.Read(__BUCKET_SECTOR(record.DirectoryBucket), mfs->bucket_size * record.DirectoryLength);
-    var offset = record.DirectoryIndex * MFS_RECORDSIZE;
-    Utils.Logger.Instance.Debug($"UpdateRecord record offset at {offset}");
-    WriteRecord(bucketBuffer, (int)offset, record);
-    _disk.Write(bucketBuffer, __BUCKET_SECTOR(record.DirectoryBucket), true);
+    VLOG_DEBUG("mfs", "__update_record(record=%s)\n", record->name);
+    VLOG_DEBUG("mfs", "__update_record reading sector %llu, length %u\n",
+        __BUCKET_SECTOR(record->directory_bucket),
+        mfs->bucket_size * record->directory_length
+    );
+    uint8_t* buffer = __read_sector(mfs, __BUCKET_SECTOR(record->directory_bucket), mfs->bucket_size * record->directory_length);
+    uint32_t offset = record->directory_index * MFS_RECORDSIZE;
+    VLOG_DEBUG("mfs", "__update_record: record offset at %u\n", offset);
+    __write_record(buffer, (int)offset, record);
+    if (mfs->ops.write(__BUCKET_SECTOR(record->directory_bucket), buffer, mfs->bucket_size * record->directory_length, mfs->ops.op_context)) {
+        VLOG_FATAL("mfs", "__update_record: failed to update record bucket\n");
+    }
+    free(buffer);
 }
 
-        private MfsRecord CreateRecord(uint32_t directoryBucket, string recordName, RecordFlags flags)
-        {
-            Utils.Logger.Instance.Debug("CreateRecord(" + directoryBucket.ToString() + ", " + recordName + ")");
-            uint32_t bucketLength = 0;
-            uint32_t currentBucket = directoryBucket;
-            while (true)
-            {
-                Utils.Logger.Instance.Debug($"CreateRecord retrieving link and length of bucket {currentBucket}");
-                uint32_t bucketLink = _bucketMap.GetBucketLengthAndLink(currentBucket, out bucketLength);
-                Utils.Logger.Instance.Debug($"CreateRecord reading sector {__BUCKET_SECTOR(currentBucket)}, count {mfs->bucket_size * bucketLength}");
-                var  bucketBuffer = _disk.Read(__BUCKET_SECTOR(currentBucket), mfs->bucket_size * bucketLength);
-                
-                var bytesToIterate = mfs->bucket_size * _disk.Geometry.BytesPerSector * bucketLength;
-                for (int i = 0; i < bytesToIterate; i += MFS_RECORDSIZE)
-                {
-                    Utils.Logger.Instance.Debug($"CreateRecord parsing record {i}");
-                    var record = __parse_record(bucketBuffer, i, currentBucket, bucketLength);
-                    if (__is_record_used(record))
-                        continue;
-                    
-                    Utils.Logger.Instance.Debug($"CreateRecord record {i} was available");
-                    record.Name = recordName;
-                    record.Flags = flags | RecordFlags.InUse;
-                    record.Bucket = MFS_ENDOFCHAIN;
-                    record.BucketLength = 0;
-                    record.AllocatedSize = 0;
-                    record.Size = 0;
-                    if (flags.HasFlag(RecordFlags.Directory))
-                        InitiateDirectoryRecord(record);
-                    UpdateRecord(record);
-                    return record;
-                }
+static struct mfs_record* __create_record(struct mfs* mfs, uint32_t directoryBucket, const char* recordName, enum mfs_record_flags flags)
+{
+    uint32_t bucketLength = 0;
+    uint32_t currentBucket = directoryBucket;
+    int      status;
+    VLOG_DEBUG("mfs", "__create_record(%u, %s)\n", directoryBucket, recordName);
+    
+    for (;;) {
+        VLOG_DEBUG("mfs", "__create_record: retrieving link and length of bucket {currentBucket}");
+        uint32_t bucketLink = mfs_bucket_map_bucket_info(mfs->map, currentBucket, &bucketLength);
+        VLOG_DEBUG("mfs", "__create_record: reading sector {__BUCKET_SECTOR(currentBucket)}, count {mfs->bucket_size * bucketLength}");
+        uint8_t* bucketBuffer = __read_sector(mfs, __BUCKET_SECTOR(currentBucket), mfs->bucket_size * bucketLength);
 
-                if (bucketLink == MFS_ENDOFCHAIN)
-                    currentBucket = ExpandDirectory(currentBucket);
-                else
-                    currentBucket = bucketLink;
+        uint32_t bytesToIterate = mfs->bucket_size * bucketLength * mfs->bytes_per_sector;
+        for (int i = 0; i < bytesToIterate; i += MFS_RECORDSIZE) {
+            struct mfs_record* record;
+            VLOG_DEBUG("mfs", "__create_record: parsing record %i\n", i);
+            
+            record = __parse_record(bucketBuffer, i, currentBucket, bucketLength);
+            if (__is_record_used(record)) {
+                continue;
+            }
+
+            VLOG_DEBUG("mfs", "__create_record: record %i was available\n", i);
+            record->name = recordName;
+            record->flags = flags | MFS_RECORD_FLAG_INUSE;
+            record->bucket = MFS_ENDOFCHAIN;
+            record->bucket_length = 0;
+            record->allocated_size = 0;
+            record->size = 0;
+            if (flags & MFS_RECORD_FLAG_DIRECTORY) {
+                status = __initiate_directory_record(mfs, record);
+                if (status) {
+                    VLOG_ERROR("mfs", "__create_record: failed to initiate directory %s\n", recordName);
+                    return NULL;
+                }
+            }
+            __update_record(mfs, record);
+            return record;
+        }
+
+        if (bucketLink == MFS_ENDOFCHAIN) {
+            currentBucket = __expand_directory(mfs, currentBucket);
+        } else {
+            currentBucket = bucketLink;
+        }
+    }
+    return NULL;
+}
+
+static void __delete_record(struct mfs_record* record)
+{
+    if (record == NULL) {
+        return;
+    }
+
+    free((void*)record->name);
+    free(record);
+}
+
+static struct mfs_record* __create_path(struct mfs* mfs, uint32_t directoryBucket, const char* path, enum mfs_record_flags fileFlags)
+{
+    char*    safePath = __safe_path(path);
+    char**   tokens;
+    uint32_t startBucket;
+    VLOG_DEBUG("mfs", "__create_path(%u, %s)\n", directoryBucket, safePath);
+
+    // split path into tokens
+    tokens = strsplit(safePath, '/');
+    startBucket = directoryBucket;
+    for (int i = 0; tokens[i] != NULL; i++) {
+        const char*        token = tokens[i];
+        int                isLast = tokens[i+1] == NULL;
+        uint32_t           flags = isLast ? fileFlags : MFS_RECORD_FLAG_DIRECTORY;
+        struct mfs_record* record;
+
+        // skip empty tokens
+        if (strlen(token) == 0) {
+            continue;
+        }
+
+        // find the token in the bucket
+        record = __find_record(mfs, startBucket, token);
+        if (record == NULL) {
+            record = __create_record(mfs, startBucket, token, flags);
+            if (record == NULL) {
+                VLOG_ERROR("mfs", "__create_path: failed to create record %s in path %s\n", token, safePath);
+                break;
             }
         }
 
-        private RecordFlags GetRecordFlags(FileFlags fileFlags)
-        {
-            RecordFlags recFlags = 0;
-
-            if (fileFlags.HasFlag(FileFlags.Directory)) recFlags |= RecordFlags.Directory;
-            if (fileFlags.HasFlag(FileFlags.System))    recFlags |= RecordFlags.System;
-
-            return recFlags;
+        // make sure record is a directory, should be if we just
+        // created it tho
+        if (!isLast && !(record->flags & MFS_RECORD_FLAG_DIRECTORY)) {
+            VLOG_ERROR("mfs", "__create_path: record %s in path %s is not a directory\n", token, safePath);
+            __delete_record(record);
+            break;
         }
 
-        private MfsRecord CreatePath(uint32_t directoryBucket, string path, FileFlags fileFlags)
-        {
-            var safePath = SafePath(path);
-            Utils.Logger.Instance.Debug("CreatePath(" + directoryBucket.ToString() + ", " + safePath + ")");
-
-            // split path into tokens
-            var tokens = safePath.Split('/');
-
-            uint32_t startBucket = directoryBucket;
-            for (int i = 0; i < tokens.Length; i++) {
-                var token = tokens[i];
-                var isLast = i == tokens.Length - 1;
-                var flags = isLast ? GetRecordFlags(fileFlags) : RecordFlags.Directory;
-                
-                // skip empty tokens
-                if (token == "") {
-                    continue;
-                }
-                
-                // find the token in the bucket
-                var record = FindRecord(startBucket, token);
-                if (record == null)
-                {
-                    record = CreateRecord(startBucket, token, flags);
-                    if (record == null)
-                    {
-                        Utils.Logger.Instance.Error($"Failed to create record {token} in path {safePath}");
-                        break;
-                    }
-                }
-
-                // make sure record is a directory, should be if we just
-                // created it tho
-                if (!isLast && !record.Flags.HasFlag(RecordFlags.Directory))
-                {
-                    Utils.Logger.Instance.Error($"Record {token} in path {safePath} is not a directory");
-                    break;
-                }
-
-                // successful termination condition
-                if (isLast)
-                    return record;
-                
-                startBucket = record.Bucket;
-            }
-            return null;
+        // successful termination condition
+        if (isLast) {
+            strsplit_free(tokens);
+            return record;
         }
+
+        startBucket = record->bucket;
+        __delete_record(record);
+    }
+    strsplit_free(tokens);
+    return NULL;
+}
 
 static struct mfs_record* __create_root_record(void)
 {
-    return new MfsRecord {
-        Name = "<root>",
-        Flags = RecordFlags.Directory | RecordFlags.System,
-    };
+    struct mfs_record* record;
+
+    record = calloc(1, sizeof(struct mfs_record));
+    if (record == NULL) {
+        return NULL;
+    }
+
+    record->name = platform_strdup("<root>");
+    record->flags = MFS_RECORD_FLAG_DIRECTORY | MFS_RECORD_FLAG_SYSTEM;
+    return record;
 }
 
-static struct mfs_record* __find_path(uint32_t directoryBucket, string path)
+static struct mfs_record* __find_path(struct mfs* mfs, uint32_t directoryBucket, const char* path)
 {
     struct mfs_record* record = NULL;
     char*              safePath = __safe_path(path);
@@ -429,9 +462,9 @@ static struct mfs_record* __find_path(uint32_t directoryBucket, string path)
     }
 
     // split path into tokens
-    tokens = strsplit('/');
+    tokens = strsplit(safePath, '/');
     startBucket = directoryBucket;
-    for (int i = 0; i < tokens.Length; i++) {
+    for (int i = 0; tokens[i] != NULL; i++) {
         const char* token = tokens[i];
 
         // skip empty tokens
@@ -439,20 +472,27 @@ static struct mfs_record* __find_path(uint32_t directoryBucket, string path)
             continue;
         }
 
+        // cleanup any previous record
+        if (record != NULL) {
+            __delete_record(record);
+        }
+
         // find the token in the bucket
-        record = FindRecord(startBucket, token);
+        record = __find_record(mfs, startBucket, token);
         if (record == NULL) {
             break;
         }
 
         // make sure record is a directory, should be if we just
         // created it tho
-        if (!record.Flags.HasFlag(RecordFlags.Directory)) {
+        if (!(record->flags & MFS_RECORD_FLAG_DIRECTORY)) {
             VLOG_ERROR("mfs", "__find_path: record %s in path %s is not a directory\n", token, safePath);
+            __delete_record(record);
             record = NULL;
             break;
         }
-        startBucket = record.Bucket;
+
+        startBucket = record->bucket;
     }
     strsplit_free(tokens);
     return record;
@@ -461,52 +501,54 @@ static struct mfs_record* __find_path(uint32_t directoryBucket, string path)
 int mfs_create_file(struct mfs* mfs, const char* path, enum mfs_record_flags flags, uint8_t* data, size_t length)
 {
     struct mfs_record* record;
+    int                status;
+    uint64_t           sectorsRequired;
+    uint32_t           bucketsRequired;
 
-    byte[] bootsector = _disk.Read(_sector, 1);
+    sectorsRequired = 0;
+    bucketsRequired = 0;
 
-    // Load some data (master-record and bucket-size)
-    uint64_t MasterRecordSector = BitConverter.ToUInt64(bootsector, 28);
-    uint64_t MasterRecordMirrorSector = BitConverter.ToUInt64(bootsector, 36);
-
-    // Read master-record
-    byte[] masterRecord = _disk.Read(_sector + MasterRecordSector, 1);
-    uint32_t rootBucket = BitConverter.ToUInt32(masterRecord, 80);
-    uint64_t sectorsRequired = 0;
-    uint32_t bucketsRequired = 0;
-
-    if (data != null) {
+    if (data != NULL) {
         // Calculate number of sectors required
-        sectorsRequired = (uint64_t)data.LongLength / _disk.Geometry.BytesPerSector;
-        if (((uint64_t)data.LongLength % _disk.Geometry.BytesPerSector) > 0)
+        sectorsRequired = (uint64_t)length / mfs->bytes_per_sector;
+        if (((uint64_t)length % mfs->bytes_per_sector) > 0) {
             sectorsRequired++;
+        }
 
         // Calculate the number of buckets required
-        bucketsRequired = (uint)(sectorsRequired / mfs->bucket_size);
-        if ((sectorsRequired % mfs->bucket_size) > 0)
+        bucketsRequired = (uint32_t)(sectorsRequired / mfs->bucket_size);
+        if ((sectorsRequired % mfs->bucket_size) > 0) {
             bucketsRequired++;
+        }
     }
 
     // Locate the record
-    record = __find_path(rootBucket, localPath);
+    record = __find_path(mfs, mfs->root_bucket, path);
     if (record == NULL) {
-        Utils.Logger.Instance.Debug("/" + localPath + " is a new "
-            + (fileFlags.HasFlag(FileFlags.Directory) ? "directory" : "file"));
-        record = CreatePath(rootBucket, localPath, fileFlags);
-        if (record == null) {
-            Utils.Logger.Instance.Error("The creation info returned null, somethings wrong");
-            return false;
+        VLOG_DEBUG("mfs", "mfs_create_file: /%s is a new %s\n", path, ((flags & MFS_RECORD_FLAG_DIRECTORY) ? "directory" : "file"));
+        record = __create_path(mfs, mfs->root_bucket, path, flags);
+        if (record == NULL) {
+            VLOG_ERROR("mfs", "mfs_create_file: the creation info returned null, somethings wrong\n");
+            return -1;
         }
     }
 
     if (data != NULL) {
-        __ensure_bucket_space(mfs, record, length);
-        __fill_bucket_chain(record.Bucket, record.BucketLength, data, length);
+        status = __ensure_bucket_space(mfs, record, length);
+        if (status) {
+            return status;
+        }
+        
+        status = __fill_bucket_chain(mfs, record->bucket, record->bucket_length, data, length);
+        if (status) {
+            return status;
+        }
 
         // Update the record
-        record->size = (uint64_t)data.LongLength;
+        record->size = (uint64_t)length;
         __update_record(mfs, record);
     }
-    return true;
+    return 0;
 }
 
 int mfs_create_directory(struct mfs* mfs, const char* path)

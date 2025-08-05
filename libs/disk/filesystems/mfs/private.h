@@ -20,6 +20,7 @@
 #define __PRIVATE_H__
 
 #include <stdint.h>
+#include "api.h"
 
 #define MFS_TYPE 0x61
 
@@ -88,11 +89,16 @@ struct mfs {
     uint16_t    bucket_size;
     uint16_t    reserved_sector_count;
     uint32_t    flags;
+
+    uint32_t    root_bucket;
+    uint64_t    master_record_sector;
+    uint64_t    backup_master_record_sector;
 };
 
 struct mfs_bucket_map;
 
 extern struct mfs_bucket_map* mfs_bucket_new(struct mfs_storage_operations* ops, uint64_t sector, uint32_t sectorCount, uint16_t sectorsPerBucket);
+extern void mfs_bucket_delete(struct mfs_bucket_map* map);
 
 extern uint32_t mfs_bucket_map_next_free(struct mfs_bucket_map* map);
 extern uint64_t mfs_bucket_map_start_sector(struct mfs_bucket_map* map);

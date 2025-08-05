@@ -40,6 +40,7 @@ struct mfs_new_params {
 };
 
 extern struct mfs* mfs_new(struct mfs_new_params* params);
+extern void mfs_delete(struct mfs* mfs);
 
 extern void mfs_set_reserved_sectors(struct mfs* mfs, uint16_t count);
 extern int  mfs_format(struct mfs* mfs);
