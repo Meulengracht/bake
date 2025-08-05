@@ -310,7 +310,7 @@ extern char* platform_exec(const char* cmd);
  */
 extern void platform_guid_new_string(char strbuffer[40]);
 extern void platform_guid_new(unsigned char guid[16]);
-extern void platform_guid_parse(unsigned char guid[16], char* str);
+extern void platform_guid_parse(unsigned char guid[16], const char* str);
 
 #ifdef __cplusplus
 }

@@ -26,7 +26,8 @@ enum chef_image_source_type {
     CHEF_IMAGE_SOURCE_INVALID,
     CHEF_IMAGE_SOURCE_FILE,
     CHEF_IMAGE_SOURCE_DIRECTORY,
-    CHEF_IMAGE_SOURCE_PACKAGE
+    CHEF_IMAGE_SOURCE_PACKAGE,
+    CHEF_IMAGE_SOURCE_RAW
 };
 
 struct chef_image_partition_source {
@@ -36,14 +37,25 @@ struct chef_image_partition_source {
     const char*                 target;
 };
 
+struct chef_image_partition_fat_options {
+    const char* reserved_image;
+};
+
+union chef_image_partition_options {
+    struct chef_image_partition_fat_options fat;
+};
+
 struct chef_image_partition {
     struct list_item list_header;
 
-    const char*  label;
-    const char*  fstype;
-    const char*  guid;
-    long long    size;
-    struct list  attributes; //list<list_item_string> 
+    const char*   label;
+    const char*   fstype;
+    const char*   guid; // gpt
+    unsigned char type; // mbr+gpt
+    long long     size;
+    struct list   attributes; //list<list_item_string>
+    
+    union chef_image_partition_options options;
 
     // A partition either has a chef package as content
     // or a list of sources. Content is unpacked based on it's

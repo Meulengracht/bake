@@ -21,6 +21,14 @@
 
 #include <chef/list.h>
 
+// Known guids
+#define GPT_GUID_BIOS_BOOT     "21686148-6449-6E6F-744E-656564454649"
+#define GPT_GUID_ESP           "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
+#define GPT_GUID_VALI_SYSTEM   "C4483A10-E3A0-4D3F-B7CC-C04A6E16612B"
+#define GPT_GUID_VALI_USERDATA "80C6C62A-B0D6-4FF4-A69D-558AB6FD8B53"
+#define GPT_GUID_VALI_USER     "8874F880-E7AD-4EE2-839E-6FFA54F19A72"
+#define GPT_GUID_VALI_DATA     "B8E1A523-5865-4651-9548-8A43A9C21384"
+
 // transparent types
 struct chef_diskbuilder;
 struct chef_disk_partition;
@@ -60,7 +68,8 @@ enum chef_partition_attributes {
 
 struct chef_disk_partition_params {
     const char*                    name;
-    const char*                    uuid;
+    const char*                    guid;
+    unsigned char                  type;
     unsigned long long             size;
     enum chef_partition_attributes attributes;
     const char*                    work_directory;
@@ -86,18 +95,35 @@ struct chef_disk_fs_create_file_params {
     size_t      size;
 };
 
+struct chef_disk_fs_write_raw_params {
+    const void*        buffer;
+    size_t             size;
+    unsigned long long sector;
+    unsigned int       offset;
+};
+
 struct chef_disk_filesystem {
     void (*set_content)(struct chef_disk_filesystem* fs, const char* path);
     int (*format)(struct chef_disk_filesystem* fs);
     // must not fail if directory exists
     int (*create_directory)(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params);
     int (*create_file)(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_file_params* params);
+    int (*write_raw)(struct chef_disk_filesystem* fs, struct chef_disk_fs_write_raw_params* params);
     // finish also performs a delete operation on the <fs>
     int (*finish)(struct chef_disk_filesystem* fs);
 };
 
+struct chef_filesystem_fat_options {
+    const char* reserved_image;
+};
+
+union chef_filesystem_options {
+    struct chef_filesystem_fat_options fat;
+};
+
 struct chef_disk_filesystem_params {
-    unsigned int sector_size;
+    union chef_filesystem_options options;
+    unsigned int                  sector_size;
 };
 
 /**

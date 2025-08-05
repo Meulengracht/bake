@@ -32,7 +32,7 @@
 struct chef_disk_partition {
     struct list_item               list_header;
     const char*                    name;
-    char*                          guid;
+    const char*                    guid;
     uint8_t                        mbr_type;
     uint64_t                       sector_start;
     uint64_t                       sector_count;

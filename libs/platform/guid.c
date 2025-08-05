@@ -107,7 +107,7 @@ static int __validate_guid(const char* string)
     return 0;
 }
 
-void platform_guid_parse(unsigned char guid[16], char* str)
+void platform_guid_parse(unsigned char guid[16], const char* str)
 {
     if (__validate_guid(str)) {
         return;

@@ -484,32 +484,6 @@ void chef_diskbuilder_delete(struct chef_diskbuilder* builder)
     free(builder);
 }
 
-static int __parse_guid_and_type(const char* uuid, char** guid, uint8_t* type)
-{
-    char* p;
-
-    // XX = type
-    // XXXXXXX... = guid
-    // XX, XXXXXX... = type & guid
-    if (strlen(uuid) == 2) {
-        *type = (uint8_t)strtoul(uuid, &p, 16);
-        return *type != 0 ? 0 : -1;
-    }
-    
-    p = strchr(uuid, ',');
-    if (p != NULL) {
-        // both type and guid, parse type first
-        *type = (uint8_t)strtoul(uuid, &p, 16);
-        // skip past comma and whitespace
-        while (*p == ',' || *p == ' ') p++;
-    } else {
-        p = (char*)uuid;
-    }
-
-    *guid = platform_strdup(p);
-    return 0;
-}
-
 struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuilder* builder, struct chef_disk_partition_params* params)
 {
     struct chef_disk_partition* p;
@@ -547,13 +521,6 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
         return NULL;
     }
 
-    status = __parse_guid_and_type(params->uuid, &p->guid, &p->mbr_type);
-    if (status) {
-        VLOG_ERROR("disk", "chef_diskbuilder_partition_new: failed to parse %s\n", params->uuid);
-        free(p);
-        return NULL;
-    }
-
     snprintf(
         &tmp[0],
         sizeof(tmp),
@@ -563,13 +530,15 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
     p->stream = fopen(&tmp[0], "wb");
     if (p->stream == NULL) {
         VLOG_ERROR("disk", "chef_diskbuilder_partition_new: failed to open stream %s\n", &tmp[0]);
-        free(p->guid);
+        free((void*)p->guid);
         free(p);
         return NULL;
     }
 
     p->attributes = params->attributes;
     p->sector_start = builder->next_usable_sector;
+    p->guid = platform_strdup(params->guid);
+    p->mbr_type = params->type;
 
     // If size is not specified, it's meant to take up the rest of the disk space, and
     // this can obviously only be done for the final partition.

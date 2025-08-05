@@ -1,6 +1,7 @@
 
 # add filesystem libraries
 add_subdirectory(filesystems/fat)
+add_subdirectory(filesystems/mfs)
 
 set(SRCS
     assets/mbr-gpt.c
@@ -13,4 +14,4 @@ set(SRCS
 
 add_library(libdisk STATIC ${SRCS})
 target_include_directories(libdisk PUBLIC include)
-target_link_libraries(libdisk PUBLIC libdisk-fat platform vlog)
+target_link_libraries(libdisk PUBLIC libdisk-fat libdisk-mfs platform vlog)
