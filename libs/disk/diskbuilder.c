@@ -521,13 +521,23 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
         return NULL;
     }
 
+    // If size is not specified, it's meant to take up the rest of the disk space, and
+    // this can obviously only be done for the final partition.
+    p->sector_start = builder->next_usable_sector;
+    if (params->size) {
+        p->sector_count = params->size / builder->disk_geometry.bytes_per_sector;
+    } else {
+        p->sector_count = builder->last_usable_sector - builder->next_usable_sector;
+    }
+
     snprintf(
         &tmp[0],
         sizeof(tmp),
         "%s" CHEF_PATH_SEPARATOR_S "%s-stream",
         params->work_directory, params->name
     );
-    p->stream = fopen(&tmp[0], "wb");
+
+    p->stream = fopen(&tmp[0], "w+b");
     if (p->stream == NULL) {
         VLOG_ERROR("disk", "chef_diskbuilder_partition_new: failed to open stream %s\n", &tmp[0]);
         free((void*)p->guid);
@@ -535,20 +545,23 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
         return NULL;
     }
 
-    p->attributes = params->attributes;
-    p->sector_start = builder->next_usable_sector;
-    p->guid = platform_strdup(params->guid);
-    p->mbr_type = params->type;
+    // make the stream unbuffered, we need changes written immediately
+    setvbuf(p->stream, NULL, _IONBF, 0);
 
-    // If size is not specified, it's meant to take up the rest of the disk space, and
-    // this can obviously only be done for the final partition.
-    if (params->size) {
-        p->sector_count = params->size / builder->disk_geometry.bytes_per_sector;
-    } else {
-        p->sector_count = builder->last_usable_sector - builder->next_usable_sector;
+    VLOG_DEBUG("disk", "chef_diskbuilder_partition_new: resizing stream to %llu\n", p->sector_count * builder->disk_geometry.bytes_per_sector);
+    status = platform_chsize(fileno(p->stream), (long)(p->sector_count * builder->disk_geometry.bytes_per_sector));
+    if (status) {
+        VLOG_ERROR("disk", "chef_diskbuilder_partition_new: failed to resize stream %s\n", &tmp[0]);
+        fclose(p->stream);
+        free((void*)p->guid);
+        free(p);
+        return NULL;
     }
 
     p->name = platform_strdup(params->name);
+    p->guid = platform_strdup(params->guid);
+    p->attributes = params->attributes;
+    p->mbr_type = params->type;
 
     // increase the next usable sector
     builder->next_usable_sector += p->sector_count;

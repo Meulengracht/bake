@@ -143,6 +143,11 @@ typedef SSIZE_T ssize_t;
 #include <limits.h>
 #endif
 
+#ifdef _MSC_VER
+#include <io.h>
+#define fileno _fileno
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

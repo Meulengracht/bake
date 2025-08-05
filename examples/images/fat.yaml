@@ -1,0 +1,12 @@
+schema: mbr
+
+partitions:
+  - label: test1
+    type: fat32
+    # ID specifies the partition ID and can be either
+    # of two formats:
+    # id: XX or XXXXXX-XXXX-XXXX--XXXXXXXX
+    # id: XX, XXXXXX-XXXX-XXXX--XXXXXXXX
+    id: 0C,6866C9B2-DCD0-44A4-B489-7466F621CAE2
+    attributes:
+      - boot
