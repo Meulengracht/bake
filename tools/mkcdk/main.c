@@ -437,6 +437,48 @@ static int __write_image_content(struct chef_disk_filesystem* fs, const char* co
     return 0;
 }
 
+static int __write_raw(struct chef_disk_filesystem* fs, const char* source, const char* target)
+{
+    struct chef_disk_fs_write_raw_params params = { 0 };
+    int                                  status;
+    char**                               options;
+
+    options = strsplit(target, ',');
+    if (options == NULL) {
+        VLOG_ERROR("mkcdk", "__write_raw: failed to parse %s\n", target);
+        return -1;
+    }
+
+    for (int i = 0; options[i] != NULL; i++) {
+        if (strncmp(options[i], "sector=", 7) == 0) {
+            char* p = options[i];
+            params.sector = strtoull(p + 7, NULL, 10);
+        } else if (strncmp(options[i], "offset=", 7) == 0) {
+            char* p = options[i];
+            params.offset = strtoull(p + 7, NULL, 10);
+        } else {
+            VLOG_ERROR("mkcdk", "__write_raw: unrecognized option: %s\n", options[i]);
+            strsplit_free(options);
+            return -1;
+        }
+    }
+
+    status = platform_readfile(source, (void**)&params.buffer, &params.size);
+    if (status) {
+        VLOG_ERROR("mkcdk", "__write_raw: failed to read %s\n", source);
+        strsplit_free(options);
+        return status;
+    }
+
+    status = fs->write_raw(fs, &params);
+    if (status) {
+        VLOG_ERROR("mkcdk", "__write_raw: failed to write raw image\n");
+    }
+    free((void*)params.buffer);
+    strsplit_free(options);
+    return status;
+}
+
 static int __write_image_sources(struct chef_disk_filesystem* fs, struct __image_context* context, struct list* sources)
 {
     struct list_item* i;
@@ -462,7 +504,11 @@ static int __write_image_sources(struct chef_disk_filesystem* fs, struct __image
                 }
                 status = __write_file(fs, pinfo.path, src->target);
                 break;
+            case CHEF_IMAGE_SOURCE_RAW:
+                status = __write_raw(fs, src->source, src->target);
+                break;
             default:
+                VLOG_ERROR("mkcdk", "__write_image_sources: unsupported source type\n");
                 status = -1;
                 break;
         }
@@ -533,7 +579,8 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
 
         pd = chef_diskbuilder_partition_new(builder, &(struct chef_disk_partition_params) {
             .name = pi->label,
-            .uuid = pi->guid,
+            .guid = pi->guid,
+            .type = pi->type,
             .size = pi->size,
             .attributes = __to_partition_attributes(&pi->attributes),
             .work_directory = context.work_directory

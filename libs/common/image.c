@@ -36,13 +36,16 @@ enum state {
     STATE_PARTITION,           // MAPPING_START
     STATE_PARTITION_LABEL,
     STATE_PARTITION_TYPE,
-    STATE_PARTITION_GUID,
+    STATE_PARTITION_ID,
     STATE_PARTITION_SIZE,
     STATE_PARTITION_CONTENT,
     STATE_PARTITION_ATTRIBUTES_LIST,
     STATE_PARTITION_SOURCES_LIST,
 
     STATE_PARTITION_ATTRIBUTE, // MAPPING_START
+
+    STATE_PARTITION_FAT_OPTIONS,
+    STATE_PARTITION_FAT_OPTIONS_RESERVED_IMAGE,
 
     STATE_PARTITION_SOURCE,    // MAPPING_START
     STATE_PARTITION_SOURCE_TYPE,
@@ -95,6 +98,8 @@ static enum chef_image_source_type __parse_source_type(const char* value)
         return CHEF_IMAGE_SOURCE_DIRECTORY;
     } else if (strcmp(value, "package") == 0) {
         return CHEF_IMAGE_SOURCE_PACKAGE;
+    } else if (strcmp(value, "raw")) {
+        return CHEF_IMAGE_SOURCE_RAW;
     } else {
         return CHEF_IMAGE_SOURCE_INVALID;
     }
@@ -251,6 +256,32 @@ static int __parse_boolean(const char* string)
     return 0;
 }
 
+static int __parse_guid_and_type(const char* id, char** guid, unsigned char* type)
+{
+    char* p;
+
+    // XX = type
+    // XXXXXXX... = guid
+    // XX, XXXXXX... = type & guid
+    if (strlen(id) == 2) {
+        *type = (uint8_t)strtoul(id, &p, 16);
+        return *type != 0 ? 0 : -1;
+    }
+    
+    p = strchr(id, ',');
+    if (p != NULL) {
+        // both type and guid, parse type first
+        *type = (uint8_t)strtoul(id, &p, 16);
+        // skip past comma and whitespace
+        while (*p == ',' || *p == ' ') p++;
+    } else {
+        p = (char*)id;
+    }
+
+    *guid = platform_strdup(p);
+    return 0;
+}
+
 static int __consume_event(struct parser_state* s, yaml_event_t* event)
 {
     char *value;
@@ -302,7 +333,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "schema") == 0) {
                         __parser_push_state(s, STATE_DISK_SCHEMA);
-                    } else if (strcmp(value, "platforms") == 0) {
+                    } else if (strcmp(value, "partitions") == 0) {
                         __parser_push_state(s, STATE_PARTITIONS_LIST);
                     } else {
                         fprintf(stderr, "__consume_event: (STATE_SECTION) unexpected scalar: %s.\n", value);
@@ -326,25 +357,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 case YAML_SCALAR_EVENT: \
                     value = (char *)event->data.scalar.value; \
                     s->__FIELD = __FN(value); \
-                    __parser_pop_state(s); \
-                    break; \
-                default: \
-                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state); \
-                    return -1; \
-            } \
-            break;
-
-#define __consume_system_option_scalar_fn(__STATE, __SYSTEM, __FIELD, __FN) \
-        case __STATE: \
-            switch (event->type) { \
-                case YAML_SCALAR_EVENT: \
-                    if (s->step.system == NULL || strcmp(s->step.system, __SYSTEM) != 0) {\
-                        fprintf(stderr, "unexpected option: " #__STATE ".\n"); \
-                        fprintf(stderr, "system options must appear after 'system' keyword\n"); \
-                        return -1; \
-                    } \
-                    value = (char *)event->data.scalar.value; \
-                    s->step.options.__FIELD = __FN(value); \
                     __parser_pop_state(s); \
                     break; \
                 default: \
@@ -406,14 +418,16 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_PARTITION_LABEL);
                     } else if (strcmp(value, "type") == 0) {
                         __parser_push_state(s, STATE_PARTITION_TYPE);
-                    } else if (strcmp(value, "guid") == 0) {
-                        __parser_push_state(s, STATE_PARTITION_GUID);
+                    } else if (strcmp(value, "id") == 0) {
+                        __parser_push_state(s, STATE_PARTITION_ID);
                     } else if (strcmp(value, "size") == 0) {
                         __parser_push_state(s, STATE_PARTITION_SIZE);
                     } else if (strcmp(value, "content") == 0) {
                         __parser_push_state(s, STATE_PARTITION_CONTENT);
                     } else if (strcmp(value, "attributes") == 0) {
                         __parser_push_state(s, STATE_PARTITION_ATTRIBUTES_LIST);
+                    } else if (strcmp(value, "fat-options") == 0) {
+                        __parser_push_state(s, STATE_PARTITION_FAT_OPTIONS);
                     } else if (strcmp(value, "sources") == 0) {
                         __parser_push_state(s, STATE_PARTITION_SOURCES_LIST);
                     } else {
@@ -427,14 +441,55 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
+        case STATE_PARTITION_ID:
+            switch (event->type) {
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value; \
+                    if (__parse_guid_and_type(value, (char**)&s->partition.guid, &s->partition.type)) {
+                        fprintf(stderr, "__consume_event: partition %s: invalid type %s format\n", s->partition.label, value);
+                        return -1;
+                    }
+                    __parser_pop_state(s);
+                    break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+        
         __consume_scalar_fn(STATE_PARTITION_LABEL, partition.label, __parse_string)
         __consume_scalar_fn(STATE_PARTITION_TYPE, partition.fstype, __parse_string)
-        __consume_scalar_fn(STATE_PARTITION_GUID, partition.guid, __parse_string)
         __consume_scalar_fn(STATE_PARTITION_SIZE, partition.size, __parse_integer)
         __consume_scalar_fn(STATE_PARTITION_CONTENT, partition.content, __parse_string)
 
         __consume_sequence_unmapped(STATE_PARTITION_ATTRIBUTES_LIST, __add_partitions_attributes)
         __consume_sequence_mapped(STATE_PARTITION_SOURCES_LIST, STATE_PARTITION_SOURCE)
+
+        case STATE_PARTITION_FAT_OPTIONS:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __finalize_partition(s);
+                    __parser_pop_state(s);
+                    break;
+                
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "reserved-image") == 0) {
+                        __parser_push_state(s, STATE_PARTITION_FAT_OPTIONS_RESERVED_IMAGE);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_PARTITION_FAT_OPTIONS) unexpected scalar: %s.\n", value);
+                        return -1;
+                    }
+                    break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+        
+        __consume_scalar_fn(STATE_PARTITION_FAT_OPTIONS_RESERVED_IMAGE, partition.options.fat.reserved_image, __parse_string)
 
         case STATE_PARTITION_SOURCE:
             switch (event->type) {

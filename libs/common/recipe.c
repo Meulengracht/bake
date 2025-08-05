@@ -246,7 +246,7 @@ static int __is_valid_name(const char* name)
     return 0;
 }
 
-static void __finalize_partition(struct parser_state* state)
+static void __finalize_project(struct parser_state* state)
 {
     // verify required project members
     if (__is_valid_name(state->recipe.project.name)) {
@@ -734,7 +734,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 case YAML_MAPPING_START_EVENT:
                     break;
                 case YAML_MAPPING_END_EVENT:
-                    __finalize_partition(s);
+                    __finalize_project(s);
                     __parser_pop_state(s);
                     break;
                 

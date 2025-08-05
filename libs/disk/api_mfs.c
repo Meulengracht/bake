@@ -206,6 +206,39 @@ static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs
     return mfs_create_file(cfs->fs, params->path, 0, (uint8_t*)params->buffer, params->size);
 }
 
+static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_write_raw_params* params)
+{
+    struct __mfs_filesystem* cfs = (struct __mfs_filesystem*)fs;
+    if (params->sector == 0) {
+        uint8_t mbr[512]; // ehh should be cfs->bytes_per_sector
+        int     status;
+
+        // we are writing MBR, fix it up
+        if (params->size != cfs->bytes_per_sector) {
+            return -1;
+        }
+
+        status = __partition_read(0, &mbr[0], 1, cfs);
+        if (status) {
+            VLOG_ERROR("fat", "failed to read mbr from partition\n");
+            return status;
+        }
+
+        // 0-2     - Jump code
+        // 3-43    - Header
+        // 44-509  - Boot code
+        // 510-511 - Boot signature
+        memcpy(&mbr[0], &((uint8_t*)params->buffer)[0], 3);
+        memcpy(&mbr[44], &((uint8_t*)params->buffer)[44], 465);
+        mbr[8] = 0x1; // mark OS partition
+        mbr[510] = 0x55;
+        mbr[511] = 0xAA;
+        return __partition_write(params->sector, &mbr[0], 1, cfs);
+    } else {
+        return __partition_write(params->sector, (uint8_t*)params->buffer, params->size / cfs->bytes_per_sector, cfs);
+    }
+}
+
 static int __fs_finish(struct chef_disk_filesystem* fs)
 {
     struct __mfs_filesystem* cfs = (struct __mfs_filesystem*)fs;
@@ -255,6 +288,7 @@ struct chef_disk_filesystem* chef_filesystem_mfs_new(struct chef_disk_partition*
     cfs->base.format = __fs_format;
     cfs->base.create_directory = __fs_create_directory;
     cfs->base.create_file = __fs_create_file;
+    cfs->base.write_raw = __fs_write_raw;
     cfs->base.finish = __fs_finish;
     return &cfs->base;
 }

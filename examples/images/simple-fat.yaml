@@ -1,0 +1,24 @@
+schema: mbr
+
+partitions:
+  - label: test1
+    type: fat32
+    # ID specifies the partition ID and can be either
+    # of two formats:
+    # id: XX or XXXXXX-XXXX-XXXX--XXXXXXXX
+    # id: XX, XXXXXX-XXXX-XXXX--XXXXXXXX
+    id: 0C
+    attributes:
+      - boot
+    fat-options:
+      reserved-image: deploy/fat.img
+    sources:
+      - type: file
+        source: deploy/my-file.exe
+        target: directory/path/my-file.exe
+      - type: dir
+        source: deploy/my-dir
+        target: some-path
+      - type: raw
+        source: deploy/mbr.img
+        target: sector=0
