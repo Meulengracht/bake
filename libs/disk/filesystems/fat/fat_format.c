@@ -518,6 +518,7 @@ int fatfs_format_fat32(struct fatfs *fs, uint32 volume_sectors, const char *name
     if (!fatfs_erase_sectors(fs, fatfs_lba_of_cluster(fs, fs->rootdir_first_cluster), fs->sectors_per_cluster))
         return 0;
 
+    fs->valid = 1;
     return 1;
 }
 //-----------------------------------------------------------------------------

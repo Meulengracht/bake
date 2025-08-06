@@ -30,8 +30,8 @@
 #include "gpt.h"
 
 // import assets
-extern const unsigned char* g_mbrSector;
-extern const unsigned char* g_mbrGptSector;
+extern const unsigned char g_mbrSector[512];
+extern const unsigned char g_mbrGptSector[512];
 
 struct chef_disk_geometry {
     uint64_t  sector_count;
@@ -312,15 +312,15 @@ static void* __memdup(const void* data, size_t size)
     return copy;
 }
 
-static int __write_mbr(struct chef_diskbuilder* builder, const unsigned char* template)
+static int __write_mbr(struct chef_diskbuilder* builder, const unsigned char* template, size_t size)
 {
     struct list_item* i;
-    int               status;
+    size_t            written;
     uint8_t*          mbr;
     int               pi;
     VLOG_DEBUG("disk", "__write_mbr()\n");
 
-    mbr = __memdup(template, 512);
+    mbr = __memdup(template, size);
     if (mbr == NULL) {
         VLOG_ERROR("disk", "__write_mbr: failed to allocate memory for mbr\n");
         return -1;
@@ -380,9 +380,10 @@ static int __write_mbr(struct chef_diskbuilder* builder, const unsigned char* te
         mbr[offset + 15] = (uint8_t)((p->sector_count >> 24) & 0xFF);
     }
 
-    status = fwrite(mbr, 512, 1, builder->image_stream);
-    if (status != 512) {
-        VLOG_ERROR("disk", "__write_mbr: failed to write the mbr sector\n");
+    written = fwrite(mbr, 1, size, builder->image_stream);
+    free(mbr);
+    if (written != size) {
+        VLOG_ERROR("disk", "__write_mbr: failed to write the mbr sector (%zu != %zu)\n", written, size);
         return -1;
     }
     return 0;
@@ -393,9 +394,9 @@ static int __write_bootloader(struct chef_diskbuilder* builder)
     VLOG_DEBUG("disk", "__write_bootloader()\n");
     switch (builder->schema) {
         case CHEF_DISK_SCHEMA_MBR:
-            return __write_mbr(builder, g_mbrSector);
+            return __write_mbr(builder, &g_mbrSector[0], 512);
         case CHEF_DISK_SCHEMA_GPT:
-            int status = __write_mbr(builder, g_mbrSector);
+            int status = __write_mbr(builder, &g_mbrGptSector[0], 512);
             if (status) {
                 VLOG_ERROR("disk", "__write_bootloader: failed to write mbr\n");
                 return status;
@@ -408,14 +409,14 @@ static int __write_bootloader(struct chef_diskbuilder* builder)
     return 0;
 }
 
-static int __write_partition(struct chef_disk_partition* p, FILE* stream)
+static int __write_partition(struct chef_disk_partition* p, unsigned int sectorSize, FILE* stream)
 {
     void*  block;
     size_t read;
     VLOG_DEBUG("disk", "__write_partition(name=%s)\n", p->name);
 
     // seek to first sector
-    fseek(stream, p->sector_start, SEEK_SET);
+    fseek(stream, p->sector_start * sectorSize, SEEK_SET);
     fseek(p->stream, 0, SEEK_SET);
 
     // allocate a 4mb block for transfers
@@ -426,12 +427,19 @@ static int __write_partition(struct chef_disk_partition* p, FILE* stream)
     }
 
     for (;;) {
+        size_t written;
+
         read = fread(block, 1, 4 * __MB, p->stream);
         if (read == 0) {
             break;
         }
 
-        fwrite(block, 1, read, stream);
+        written = fwrite(block, 1, read, stream);
+        if (written != read) {
+            VLOG_ERROR("disk", "__write_partition: failed to write partition data\n");
+            free(block);
+            return -1;
+        }
     }
 
     // do not need this anymore
@@ -461,7 +469,7 @@ int chef_diskbuilder_finish(struct chef_diskbuilder* builder)
 
     list_foreach(&builder->partitions, i) {
         struct chef_disk_partition* p = (struct chef_disk_partition*)i;
-        status = __write_partition(p, builder->image_stream);
+        status = __write_partition(p, builder->disk_geometry.bytes_per_sector, builder->image_stream);
         if (status) {
             VLOG_ERROR("disk", "chef_diskbuilder_finish: failed to write partition %s\n", p->name);
             return status;
@@ -474,13 +482,24 @@ int chef_diskbuilder_finish(struct chef_diskbuilder* builder)
     return 0;
 }
 
+static void __partition_delete(struct chef_disk_partition* partition)
+{
+    if (partition == NULL) {
+        return;
+    }
+
+    free((void*)partition->name);
+    free((void*)partition->guid);
+    free(partition);
+}
+
 void chef_diskbuilder_delete(struct chef_diskbuilder* builder)
 {
     if (builder == NULL) {
         return;
     }
 
-    // TODO: cleanup partitions
+    list_destroy(&builder->partitions, (void(*)(void*))__partition_delete);
     free(builder);
 }
 
@@ -521,13 +540,23 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
         return NULL;
     }
 
+    // If size is not specified, it's meant to take up the rest of the disk space, and
+    // this can obviously only be done for the final partition.
+    p->sector_start = builder->next_usable_sector;
+    if (params->size) {
+        p->sector_count = params->size / builder->disk_geometry.bytes_per_sector;
+    } else {
+        p->sector_count = builder->last_usable_sector - builder->next_usable_sector;
+    }
+
     snprintf(
         &tmp[0],
         sizeof(tmp),
         "%s" CHEF_PATH_SEPARATOR_S "%s-stream",
         params->work_directory, params->name
     );
-    p->stream = fopen(&tmp[0], "wb");
+
+    p->stream = fopen(&tmp[0], "w+b");
     if (p->stream == NULL) {
         VLOG_ERROR("disk", "chef_diskbuilder_partition_new: failed to open stream %s\n", &tmp[0]);
         free((void*)p->guid);
@@ -535,20 +564,23 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
         return NULL;
     }
 
-    p->attributes = params->attributes;
-    p->sector_start = builder->next_usable_sector;
-    p->guid = platform_strdup(params->guid);
-    p->mbr_type = params->type;
+    // make the stream unbuffered, we need changes written immediately
+    setvbuf(p->stream, NULL, _IONBF, 0);
 
-    // If size is not specified, it's meant to take up the rest of the disk space, and
-    // this can obviously only be done for the final partition.
-    if (params->size) {
-        p->sector_count = params->size / builder->disk_geometry.bytes_per_sector;
-    } else {
-        p->sector_count = builder->last_usable_sector - builder->next_usable_sector;
+    VLOG_DEBUG("disk", "chef_diskbuilder_partition_new: resizing stream to %llu\n", p->sector_count * builder->disk_geometry.bytes_per_sector);
+    status = platform_chsize(fileno(p->stream), (long)(p->sector_count * builder->disk_geometry.bytes_per_sector));
+    if (status) {
+        VLOG_ERROR("disk", "chef_diskbuilder_partition_new: failed to resize stream %s\n", &tmp[0]);
+        fclose(p->stream);
+        free((void*)p->guid);
+        free(p);
+        return NULL;
     }
 
     p->name = platform_strdup(params->name);
+    p->guid = platform_strdup(params->guid);
+    p->attributes = params->attributes;
+    p->mbr_type = params->type;
 
     // increase the next usable sector
     builder->next_usable_sector += p->sector_count;

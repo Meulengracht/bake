@@ -124,6 +124,7 @@ static int __write_reserved_image(struct __fat_filesystem* cfs)
     return 0;
 }
 
+// return 0 for error, 1 for ok
 static int __partition_read(uint32 sector, uint8 *buffer, uint32 sector_count, void* ctx)
 {
     struct __fat_filesystem* cfs = ctx;
@@ -132,13 +133,13 @@ static int __partition_read(uint32 sector, uint8 *buffer, uint32 sector_count, v
 
     // make sure we get the stream position
     offset = sector * cfs->bytes_per_sector;
-
-    status = fseek(cfs->stream, offset, SEEK_SET);
+    status = fseek(cfs->stream, (long)offset, SEEK_SET);
 
     fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
-    return 0;
+    return 1;
 }
 
+// return 0 for error, 1 for ok
 static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, void* ctx)
 {
     struct __fat_filesystem* cfs = ctx;
@@ -154,7 +155,8 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
     if (sector == 0 && cfs->content != NULL) {
         status = __update_mbr(cfs, buffer);
         if (status) {
-            return status;
+            VLOG_ERROR("fat", "failed to update mbr sector\n");
+            return 0;
         }
     }
 
@@ -165,10 +167,11 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
     if (sector == 0) {
         status = __write_reserved_image(cfs);
         if (status) {
-            return status;
+            VLOG_ERROR("fat", "failed to write reserved image\n");
+            return 0;
         }
     }
-    return 0;
+    return 1;
 }
 
 static void __fs_set_content(struct chef_disk_filesystem* fs, const char* path)
@@ -197,13 +200,13 @@ static int __fs_format(struct chef_disk_filesystem* fs)
             cfs->fs->reserved_sectors = (stats.size / cfs->bytes_per_sector) + 1;
         }
     }
-    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label);
+    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label) == 0 ? -1 : 0;
 }
 
 static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
-    return fl_createdirectory(cfs->fs, params->path);
+    return fl_createdirectory(cfs->fs, params->path) == 0 ? -1 : 0;
 }
 
 static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_file_params* params)
@@ -286,18 +289,11 @@ struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_partitio
         return NULL;
     }
 
-    status = fl_attach_media(cfs->fs, __partition_read, __partition_write, cfs);
-    if (status) {
-        VLOG_ERROR("fat", "chef_filesystem_fat32_new: failed to attach image stream\n");
-        fl_delete(cfs->fs);
-        free(cfs);
-        return NULL;
-    }
-
     // store members from partition that we need later
     cfs->label = partition->name;
     cfs->bytes_per_sector = params->sector_size;
     cfs->sector_count = partition->sector_count;
+    cfs->stream = partition->stream;
 
     // copy options
     cfs->options.reserved_image = params->options.fat.reserved_image;
@@ -309,5 +305,10 @@ struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_partitio
     cfs->base.create_file = __fs_create_file;
     cfs->base.write_raw = __fs_write_raw;
     cfs->base.finish = __fs_finish;
+
+    // prepare for formatting
+    cfs->fs->disk_io.read_media = __partition_read;
+    cfs->fs->disk_io.write_media = __partition_write;
+    cfs->fs->disk_io.user_ctx = cfs;
     return &cfs->base;
 }

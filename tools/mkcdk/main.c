@@ -33,10 +33,10 @@
 #include "chef-config.h"
 
 struct __mkcdk_options {
-    char*              arch;
-    char*              platform;
-    unsigned long long size;
-    unsigned int       sector_size;
+    char*    arch;
+    char*    platform;
+    uint64_t size;
+    uint64_t sector_size;
 };
 
 static void __print_help(void)
@@ -544,7 +544,7 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
 {
     struct list_item*        i;
     struct chef_diskbuilder* builder = NULL;
-    struct __image_context   context;
+    struct __image_context   context = { NULL };
     int                      status;
     char                     tmpBuffer[256];
     VLOG_DEBUG("mkcdk", "__build_image(path=%s)\n", path);
@@ -562,7 +562,7 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
     builder = chef_diskbuilder_new(&(struct chef_diskbuilder_params) {
         .schema = __to_diskbuilder_schema(image),
         .size = options->size,
-        .sector_size = options->sector_size,
+        .sector_size = (unsigned int)options->sector_size,
         .path = path
     });
     if (builder == NULL) {
@@ -655,12 +655,13 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
 
     status = chef_diskbuilder_finish(builder);
     if (status) {
-        VLOG_ERROR("mkcdk", "__build_image: failed to finalize iamge\n");
+        VLOG_ERROR("mkcdk", "__build_image: failed to finalize image\n");
     }
 
     // cleanup resources
 cleanup:
     chef_diskbuilder_delete(builder);
+    free((void*)context.work_directory);
     return status;
 }
 
@@ -748,6 +749,16 @@ static int __parse_string_switch(char** argv, int argc, int* i, const char* s, s
     return -1;
 }
 
+static int __parse_quantity_switch(char** argv, int argc, int* i, const char* s, size_t sl, const char* l, size_t ll, uint64_t defaultValue, uint64_t* out)
+{
+    if (strncmp(argv[*i], s, sl) == 0 || strncmp(argv[*i], l, ll) == 0) {
+        char* value = __split_switch(argv, argc, i);
+        *out = value != NULL ? __parse_quantity(value) : defaultValue;
+        return 0;
+    }
+    return -1;
+}
+
 int main(int argc, char** argv, char** envp)
 {
     char*                          imagePath = NULL;
@@ -781,7 +792,7 @@ int main(int argc, char** argv, char** envp)
             return 0;
         }
 
-        for (int i = 2; i < argc; i++) {
+        for (int i = 1; i < argc; i++) {
             if (!strncmp(argv[i], "-v", 2)) {
                 int li = 1;
                 while (argv[i][li++] == 'v') {
@@ -789,24 +800,25 @@ int main(int argc, char** argv, char** envp)
                 }
             } else if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--platform", 10, NULL, (char**)&options.platform)) {
                 continue;
-            } else if (!__parse_string_switch(argv, argc, &i, "-a", 2, "--arch", 10, NULL, (char**)&options.arch)) {
+            } else if (!__parse_string_switch(argv, argc, &i, "-a", 2, "--arch", 6, NULL, (char**)&options.arch)) {
                 continue;
-            } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--size")) {
-                options.size = __parse_quantity(argv[++i]);
-                if (options.size == 0) {
-                    fprintf(stderr, "mkcdk: invalid size %s", argv[i]);
-                    return -1;
-                }
-            } else if (strcmp(argv[i], "-z") == 0 || strcmp(argv[i], "--sector-size")) {
-                options.sector_size = (uint32_t)__parse_quantity(argv[++i]);
-                if (options.sector_size == 0) {
-                    fprintf(stderr, "mkcdk: invalid sector-size %s", argv[i]);
-                    return -1;
-                }
+            } else if (!__parse_quantity_switch(argv, argc, &i, "-s", 2, "--size", 6, (1024ULL * 1024ULL) * 4096ULL, &options.size)) {
+                continue;
+            } else if (!__parse_quantity_switch(argv, argc, &i, "-z", 2, "--sector-size", 13, 512, &options.sector_size)) {
+                continue;
             } else if (imagePath == NULL) {
                 imagePath = argv[i];
             }
         }
+    }
+
+    if (options.size == 0) {
+        fprintf(stderr, "mkcdk: invalid size provided for image\n");
+        return -1;
+    }
+    if (options.sector_size == 0) {
+        fprintf(stderr, "mkcdk: invalid sector-size provided for image\n");
+        return -1;
     }
 
     // check against recipe

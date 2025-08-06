@@ -282,6 +282,7 @@ struct chef_disk_filesystem* chef_filesystem_mfs_new(struct chef_disk_partition*
     cfs->label = partition->name;
     cfs->bytes_per_sector = params->sector_size;
     cfs->sector_count = partition->sector_count;
+    cfs->stream = partition->stream;
 
     // install operations
     cfs->base.set_content = __fs_set_content;
