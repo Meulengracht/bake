@@ -791,13 +791,13 @@ int main(int argc, char** argv, char** envp)
                 continue;
             } else if (!__parse_string_switch(argv, argc, &i, "-a", 2, "--arch", 10, NULL, (char**)&options.arch)) {
                 continue;
-            } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--size")) {
+            } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--size") == 0) {
                 options.size = __parse_quantity(argv[++i]);
                 if (options.size == 0) {
                     fprintf(stderr, "mkcdk: invalid size %s", argv[i]);
                     return -1;
                 }
-            } else if (strcmp(argv[i], "-z") == 0 || strcmp(argv[i], "--sector-size")) {
+            } else if ((strcmp(argv[i], "-z") == 0 || strcmp(argv[i], "--sector-size") == 0) && i + 1 < argc) {
                 options.sector_size = (uint32_t)__parse_quantity(argv[++i]);
                 if (options.sector_size == 0) {
                     fprintf(stderr, "mkcdk: invalid sector-size %s", argv[i]);
