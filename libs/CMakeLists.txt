@@ -14,16 +14,6 @@ add_subdirectory(gracht)
 # Build the compression libraries for our support libraries
 add_subdirectory(compression)
 
-# build jansson for json requests and responses
-set(JANSSON_BUILD_DOCS OFF CACHE BOOL "Do not build jansson documentation")
-set(JANSSON_EXAMPLES OFF CACHE BOOL "Do not build jansson examples")
-set(JANSSON_WITHOUT_TESTS ON CACHE BOOL "Do not build jansson tests")
-add_subdirectory(jansson)
-
-# create an interface library for jansson
-add_library(jansson-api INTERFACE)
-target_include_directories(jansson-api INTERFACE ${CMAKE_BINARY_DIR}/libs/jansson/include)
-
 # build libchefclient
 add_subdirectory(chefclient)
 

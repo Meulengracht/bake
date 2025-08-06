@@ -22,4 +22,5 @@ add_library(chef-client STATIC
     trace.c
 )
 target_include_directories(chef-client PUBLIC include ${CURL_INCLUDE_DIR})
-target_link_libraries(chef-client PUBLIC ${CURL_LIBRARIES} jansson-api jansson vafs common platform)
+target_include_directories(chef-client PRIVATE ${JANSSON_INCLUDE_DIR})
+target_link_libraries(chef-client PUBLIC ${CURL_LIBRARIES} ${JANSSON_LIBRARIES} vafs common platform)
