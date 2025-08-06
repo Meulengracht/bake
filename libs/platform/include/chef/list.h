@@ -80,9 +80,7 @@ static inline void list_remove(struct list* list, struct list_item* item)
 
 static inline void list_destroy(struct list* list, void(*freecb)(void* item))
 {
-    struct list_item* li;
-
-    list_foreach(list, li) {
+    for (struct list_item* li = list->head; li != NULL;) {
         struct list_item* next = li->next;
         freecb(li);
         li = next;

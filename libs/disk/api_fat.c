@@ -124,6 +124,7 @@ static int __write_reserved_image(struct __fat_filesystem* cfs)
     return 0;
 }
 
+// return 0 for error, 1 for ok
 static int __partition_read(uint32 sector, uint8 *buffer, uint32 sector_count, void* ctx)
 {
     struct __fat_filesystem* cfs = ctx;
@@ -132,13 +133,13 @@ static int __partition_read(uint32 sector, uint8 *buffer, uint32 sector_count, v
 
     // make sure we get the stream position
     offset = sector * cfs->bytes_per_sector;
-    VLOG_DEBUG("fat", "__partition_read: seek to %llu\n", offset);
     status = fseek(cfs->stream, (long)offset, SEEK_SET);
 
     fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
-    return 0;
+    return 1;
 }
 
+// return 0 for error, 1 for ok
 static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, void* ctx)
 {
     struct __fat_filesystem* cfs = ctx;
@@ -147,7 +148,6 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
 
     // make sure we get the stream position
     offset = sector * cfs->bytes_per_sector;
-    VLOG_DEBUG("fat", "__partition_write: seek to %llu\n", offset);
     status = fseek(cfs->stream, offset, SEEK_SET);
 
     // if the sector is 0, then let us modify the boot sector with the
@@ -155,7 +155,8 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
     if (sector == 0 && cfs->content != NULL) {
         status = __update_mbr(cfs, buffer);
         if (status) {
-            return status;
+            VLOG_ERROR("fat", "failed to update mbr sector\n");
+            return 0;
         }
     }
 
@@ -166,10 +167,11 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
     if (sector == 0) {
         status = __write_reserved_image(cfs);
         if (status) {
-            return status;
+            VLOG_ERROR("fat", "failed to write reserved image\n");
+            return 0;
         }
     }
-    return 0;
+    return 1;
 }
 
 static void __fs_set_content(struct chef_disk_filesystem* fs, const char* path)

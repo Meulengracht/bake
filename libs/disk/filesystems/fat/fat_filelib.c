@@ -617,7 +617,7 @@ struct fatfs* fl_new(void)
     struct fatfs* fs;
     int           i;
 
-    fs = calloc(1, sizeof(fs));
+    fs = calloc(1, sizeof(struct fatfs));
     if (fs == NULL) {
         return NULL;
     }
@@ -635,6 +635,7 @@ struct fatfs* fl_new(void)
     for (i=0;i<FATFS_MAX_OPEN_FILES;i++)
         fat_list_insert_last(&fs->free_file_list, &fs->files[i].list_node);
 
+    return fs;
 }
 //-----------------------------------------------------------------------------
 // fl_attach_locks:

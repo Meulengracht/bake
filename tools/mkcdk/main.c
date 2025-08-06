@@ -544,7 +544,7 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
 {
     struct list_item*        i;
     struct chef_diskbuilder* builder = NULL;
-    struct __image_context   context;
+    struct __image_context   context = { NULL };
     int                      status;
     char                     tmpBuffer[256];
     VLOG_DEBUG("mkcdk", "__build_image(path=%s)\n", path);
@@ -655,12 +655,13 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
 
     status = chef_diskbuilder_finish(builder);
     if (status) {
-        VLOG_ERROR("mkcdk", "__build_image: failed to finalize iamge\n");
+        VLOG_ERROR("mkcdk", "__build_image: failed to finalize image\n");
     }
 
     // cleanup resources
 cleanup:
     chef_diskbuilder_delete(builder);
+    free((void*)context.work_directory);
     return status;
 }
 
