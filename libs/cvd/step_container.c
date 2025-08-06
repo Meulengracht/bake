@@ -140,6 +140,9 @@ int bake_build_setup(struct __bake_build_context* bctx)
     }
     free(bakectlPath);
 
+    // TODO: install bakectl deps
+    // (libzstd + libjansson)
+
     snprintf(&buffer[0], sizeof(buffer),
         "%s init --recipe %s",
         bctx->bakectl_path, bctx->recipe_path

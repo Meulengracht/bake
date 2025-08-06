@@ -4,6 +4,3 @@
 [submodule "libs/gracht"]
 	path = libs/gracht
 	url = ../../meulengracht/libgracht.git
-[submodule "libs/compression/zip"]
-	path = libs/compression/zip
-	url = ../../umbrella-c/zip.git

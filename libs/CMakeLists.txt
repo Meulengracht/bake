@@ -11,9 +11,6 @@ add_subdirectory(vafs)
 add_subdirectory(yaml)
 add_subdirectory(gracht)
 
-# Build the compression libraries for our support libraries
-add_subdirectory(compression)
-
 # build libchefclient
 add_subdirectory(chefclient)
 

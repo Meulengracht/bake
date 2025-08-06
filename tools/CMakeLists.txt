@@ -16,7 +16,7 @@ add_subdirectory(cvctl)
 if (CHEF_BUILD_AS_SNAP)
     # only on linux anyway
     install(
-        TARGETS bake order serve
+        TARGETS bake order serve mkcdk
         RUNTIME DESTINATION bin
     )
     install(
@@ -25,7 +25,7 @@ if (CHEF_BUILD_AS_SNAP)
     )
 else()
     install(
-        TARGETS order serve
+        TARGETS order serve bake mkcdk
         RUNTIME DESTINATION bin
     )
 
@@ -34,11 +34,6 @@ else()
         RUNTIME DESTINATION libexec/chef
     )
 
-    install(
-        TARGETS bake
-        RUNTIME DESTINATION bin
-    )
-    
     install(
         TARGETS serve-exec
         PERMISSIONS SETGID SETUID OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
