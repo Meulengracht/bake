@@ -13,6 +13,8 @@ option(CHEF_BUILD_AS_SNAP "Build binaries without setuid on unix" OFF)
 # Required libraries
 find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(Jansson REQUIRED)
+find_package(ZSTD REQUIRED)
 
 include_directories(${CMAKE_BINARY_DIR})
 

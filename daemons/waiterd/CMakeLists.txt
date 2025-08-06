@@ -19,8 +19,8 @@ set (SRCS
 
 add_executable(waiterd ${SRCS})
 add_dependencies(waiterd service_server)
-target_include_directories(waiterd PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
-target_link_libraries(waiterd PRIVATE jansson-api jansson vlog libdirconf platform gracht)
+target_include_directories(waiterd PRIVATE ${CMAKE_BINARY_DIR}/protocols include ${JANSSON_INCLUDE_DIR})
+target_link_libraries(waiterd PRIVATE ${JANSSON_LIBRARIES} vlog libdirconf platform gracht)
 
 install(
     TARGETS waiterd
