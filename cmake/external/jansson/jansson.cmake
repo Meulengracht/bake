@@ -35,8 +35,6 @@ include(ExternalProject)
 ExternalProject_Add(bundled_jansson
   URL
     https://github.com/akheron/jansson/archive/refs/tags/v2.14.1.tar.gz
-  DOWNLOAD_EXTRACT_TIMESTAMP
-    True
   CONFIGURE_COMMAND
     ${CMAKE_COMMAND}
     <SOURCE_DIR>

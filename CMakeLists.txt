@@ -12,6 +12,11 @@ option(CHEF_BUILD_SERVER "Build the cook build server" ON)
 option(CHEF_BUILD_MANAGER "Build the waiter build server manager" ON)
 option(CHEF_BUILD_AS_SNAP "Build binaries without setuid on unix" OFF)
 
+# Avoid warning about DOWNLOAD_EXTRACT_TIMESTAMP in CMake 3.24:
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
 # Required libraries
 find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED)
