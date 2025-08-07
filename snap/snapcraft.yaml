@@ -48,13 +48,9 @@ parts:
       - libcap-dev
       - libcurl4-openssl-dev
       - libssl-dev
-      - libjansson-dev
-      - libzstd-dev
     stage-packages:
       - debootstrap
       - libfuse3-3
       - libcap2
       - libcurl4
       - libssl3
-      - libjansson4
-      - libzstd1

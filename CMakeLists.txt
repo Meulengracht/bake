@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.14.3)
 project(chef VERSION "1.4.1")
 
+INCLUDE(CheckCXXSourceCompiles)
+
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
 option(CHEF_BUILD_TOOLS "Build the bake toolset" ON)
@@ -13,8 +15,6 @@ option(CHEF_BUILD_AS_SNAP "Build binaries without setuid on unix" OFF)
 # Required libraries
 find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED)
-find_package(Jansson REQUIRED)
-find_package(ZSTD REQUIRED)
 
 include_directories(${CMAKE_BINARY_DIR})
 
@@ -26,13 +26,15 @@ configure_file(
 
 # fetch external libraries
 include(${CMAKE_SOURCE_DIR}/cmake/external/lua/lua54.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/external/zstd/zstd.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/external/jansson/jansson.cmake)
 
 if(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
 
 if(CHEF_BUILD_AS_SNAP)
-    add_definitions(-DCHEF_AS_SNAP)
+    add_definitions(-DCHEF_AS_SNAP) 
 endif()
 
 # always register all the protocols and libs

@@ -18,8 +18,8 @@ set (SRCS
 
 add_executable(cvd ${SRCS})
 add_dependencies(cvd service_server)
-target_include_directories(cvd PRIVATE ${CMAKE_BINARY_DIR}/protocols include ${JANSSON_INCLUDE_DIR})
-target_link_libraries(cvd PRIVATE containerv ${JANSSON_LIBRARIES} vlog libdirconf platform gracht)
+target_include_directories(cvd PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
+target_link_libraries(cvd PRIVATE containerv jansson vlog libdirconf platform gracht)
 
 install(
     TARGETS cvd

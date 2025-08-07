@@ -12,5 +12,4 @@ elseif (WIN32)
 endif()
 
 target_include_directories(libdirconf PUBLIC include)
-target_include_directories(libdirconf PRIVATE ${JANSSON_INCLUDE_DIR})
-target_link_libraries(libdirconf PRIVATE ${JANSSON_LIBRARIES} platform vlog)
+target_link_libraries(libdirconf PRIVATE jansson platform vlog)
