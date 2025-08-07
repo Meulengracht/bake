@@ -35,8 +35,6 @@ include(ExternalProject)
 ExternalProject_Add(bundled_zstd
   URL
     https://github.com/facebook/zstd/archive/refs/tags/v1.5.7.tar.gz
-  DOWNLOAD_EXTRACT_TIMESTAMP
-    True
   CONFIGURE_COMMAND
     ${CMAKE_COMMAND}
     <SOURCE_DIR>/build/cmake
