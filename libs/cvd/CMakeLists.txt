@@ -18,5 +18,5 @@ set(SRCS
 add_library(libcvd STATIC ${GENERATED_SRCS} ${SRCS})
 add_dependencies(libcvd service_client)
 target_include_directories(libcvd PRIVATE ${CMAKE_BINARY_DIR}/protocols)
-target_include_directories(libcvd PUBLIC include ${JANSSON_INCLUDE_DIR})
-target_link_libraries(libcvd PUBLIC libpackage gracht ${JANSSON_LIBRARIES} common libdirconf platform)
+target_include_directories(libcvd PUBLIC include)
+target_link_libraries(libcvd PUBLIC libpackage gracht jansson common libdirconf platform)

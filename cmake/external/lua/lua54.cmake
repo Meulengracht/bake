@@ -28,6 +28,7 @@ set(LUA_FOUND TRUE CACHE INTERNAL "")
 #
 ExternalProject_Add(lua54
 	URL               https://www.lua.org/ftp/lua-5.4.7.tar.gz
+	DOWNLOAD_EXTRACT_TIMESTAMP True
 	PATCH_COMMAND     patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/0001-install-static-target.patch
 	CONFIGURE_COMMAND ""
 	BUILD_COMMAND     ${MAKE_EXE} MYCFLAGS=-fPIC CC=${CMAKE_C_COMPILER} AR=${CMAKE_C_COMPILER_AR}\ rcu RANLIB=${CMAKE_C_COMPILER_RANLIB} ${_target}

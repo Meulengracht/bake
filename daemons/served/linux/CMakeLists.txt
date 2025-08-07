@@ -22,10 +22,10 @@ set(SRCS
 
 add_executable(served ${SRCS})
 add_dependencies(serve-commands service_server)
-target_include_directories(served PRIVATE ${CMAKE_BINARY_DIR}/protocols include ${JANSSON_INCLUDE_DIR} ${ZSTD_INCLUDE_DIR})
+target_include_directories(served PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
 target_link_libraries(served
         served-application served-installer served-utils
-        gracht ${JANSSON_LIBRARIES} platform vlog ${ZSTD_LIBRARY}
+        gracht jansson platform vlog zstd
         -lpthread ${FUSE_LIBRARIES}
 )
 

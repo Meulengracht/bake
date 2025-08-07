@@ -7,7 +7,6 @@ set(SRCS
 )
 
 add_library(fridge STATIC ${SRCS})
-target_include_directories(fridge PRIVATE ${JANSSON_INCLUDE_DIR})
 target_include_directories(fridge PUBLIC include)
 target_link_libraries(fridge PRIVATE libdirconf platform)
-target_link_libraries(fridge PUBLIC ${JANSSON_LIBRARIES} vafs common vlog)
+target_link_libraries(fridge PUBLIC jansson vafs common vlog)
