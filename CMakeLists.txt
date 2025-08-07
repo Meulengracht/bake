@@ -3,8 +3,6 @@ project(chef VERSION "1.4.2")
 
 INCLUDE(CheckCXXSourceCompiles)
 
-INCLUDE(CheckCXXSourceCompiles)
-
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
 option(CHEF_BUILD_TOOLS "Build the bake toolset" ON)
