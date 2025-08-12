@@ -33,6 +33,7 @@
 #include "chef-config.h"
 
 struct __mkcdk_options {
+    char*    out;
     char*    arch;
     char*    platform;
     uint64_t size;
@@ -46,6 +47,8 @@ static void __print_help(void)
     printf("Tool to build disk images from either raw files or using chef packages.\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -o, --output\n");
+    printf("      Path of the resulting image file, default is 'pc.img'\n");
     printf("  -p, --platform\n");
     printf("      Target platform of the image, this will affect how packages are resolved\n");
     printf("  -a, --archs\n");
@@ -769,6 +772,7 @@ int main(int argc, char** argv, char** envp)
     void*                          buffer;
     size_t                         length;
 
+    options.out = "./pc.img";
     options.arch = CHEF_ARCHITECTURE_STR;
     options.platform = CHEF_PLATFORM_STR;
     options.sector_size = 512;
@@ -798,6 +802,8 @@ int main(int argc, char** argv, char** envp)
                 while (argv[i][li++] == 'v') {
                     logLevel++;
                 }
+            } else if (!__parse_string_switch(argv, argc, &i, "-o", 2, "--output", 8, NULL, (char**)&options.out)) {
+                continue;
             } else if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--platform", 10, NULL, (char**)&options.platform)) {
                 continue;
             } else if (!__parse_string_switch(argv, argc, &i, "-a", 2, "--arch", 6, NULL, (char**)&options.arch)) {
@@ -850,7 +856,7 @@ int main(int argc, char** argv, char** envp)
         goto cleanup;
     }
 
-    status = __build_image(image, "./pc.img", &options);
+    status = __build_image(image, options.out, &options);
 
 cleanup:
     chef_image_destroy(image);
