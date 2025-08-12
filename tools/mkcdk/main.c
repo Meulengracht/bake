@@ -257,7 +257,7 @@ cleanup:
 
 static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
 {
-    char   ccpath[512];
+    char   ccpath[PATH_MAX];
     char*  p = NULL;
     size_t length;
     int    status;
@@ -295,7 +295,7 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
 
 static int __ensure_file_directory(struct chef_disk_filesystem* fs, const char* dest)
 {
-    char   tmp[512];
+    char   tmp[PATH_MAX];
     char*  p;
     VLOG_DEBUG("mkcdk", "__ensure_file_directory(dest=%s)\n", dest);
 
