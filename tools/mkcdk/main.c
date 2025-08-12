@@ -395,13 +395,6 @@ static int __write_image_content(struct chef_disk_filesystem* fs, const char* co
     int               status;
     VLOG_DEBUG("mkcdk", "__write_image_content()\n");
 
-    // unpack to intermediate directory
-    status = ingredient_unpack(ig, content, NULL, NULL);
-    if (status) {
-        VLOG_ERROR("mkcdk", "__write_image_content: failed to unpack content to %s\n", content);
-        return status;
-    }
-
     status = platform_getfiles(content, 0, &files);
     if (status) {
         VLOG_ERROR("mkcdk", "__write_image_content: failed to read directory %s\n", content);
@@ -622,6 +615,14 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
                 status = -1;
                 goto cleanup;
             }
+            
+            // unpack to intermediate directory
+            status = ingredient_unpack(ig, contentPath, NULL, NULL);
+            if (status) {
+                VLOG_ERROR("mkcdk", "__build_image: failed to unpack content to %s\n", contentPath);
+                goto cleanup;
+            }
+
             fs->set_content(fs, contentPath);
         }
 
