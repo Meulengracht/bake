@@ -241,7 +241,7 @@ int account_main(int argc, char** argv)
     }
 
     status = chefclient_initialize();
-    if (status != 0) {
+    if (status) {
         fprintf(stderr, "failed to initialize chefclient: %s\n", strerror(errno));
         return -1;
     }
@@ -251,8 +251,10 @@ int account_main(int argc, char** argv)
     // expired
     while (1) {
         // login before continuing
-        status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
-        if (status != 0) {
+        status = chefclient_login(&(struct chefclient_login_params) {
+            .flow = CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE
+        });
+        if (status) {
             printf("failed to login to chef server: %s\n", strerror(errno));
             break;
         }
@@ -275,7 +277,7 @@ int account_main(int argc, char** argv)
             break;
         }
 
-        if (status != 0) {
+        if (status) {
             if (status == -EACCES) {
                 chefclient_logout();
                 continue;

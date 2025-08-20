@@ -16,25 +16,16 @@
  * 
  */
 
-#include <chef/client.h>
-#include <errno.h>
-#include "private.h"
-#include "oauth/oauth.h"
-#include "pubkey/pubkey.h"
+#ifndef __LIBCHEF_PUBKEY_H__
+#define __LIBCHEF_PUBKEY_H__
 
-int chefclient_login(struct chefclient_login_params* params)
-{
-    if (params->flow == CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE) {
-        return oauth_login(OAUTH_FLOW_DEVICECODE);
-    } else if (params->flow == CHEF_LOGIN_FLOW_PUBLIC_KEY) {
-        return pubkey_login(params->public_key, params->private_key);
-    }
+/** 
+ * @brief Attempts to login using the public key authentication flow.
+ * @param publicKey The public key to use for authentication.
+ * @param privateKey The private key to use for authentication. This is only used initially
+ * to generate the session key.
+ * @return int returns -1 on error, 0 on success
+ */
+extern int pubkey_login(const char* publicKey, const char* privateKey);
 
-    errno = ENOTSUP;
-    return -1;
-}
-
-void chefclient_logout(void)
-{
-    oauth_logout();
-}
+#endif //!__LIBCHEF_PUBKEY_H__

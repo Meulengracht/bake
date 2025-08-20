@@ -20,7 +20,8 @@
 #define __LIBCHEF_CLIENT_H__
 
 enum chef_login_flow_type {
-    CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE
+    CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE,
+    CHEF_LOGIN_FLOW_PUBLIC_KEY
 };
 
 /**
@@ -37,12 +38,25 @@ extern int chefclient_initialize(void);
 extern void chefclient_cleanup(void);
 
 /**
+ * @brief Parameters for the login flow.
+ */
+struct chefclient_login_params {
+    enum chef_login_flow_type flow; /**< The type of login flow to use */
+    const char* public_key;         /**< The public key to use for authentication */
+    const char* private_key;        /**< The private key to use for authentication */
+    
+    /**< The name and email to use for the user */
+    const char* name;
+    const char* email;
+};
+
+/**
  * @brief Initializes a new authentication session with the chef api. This is required
  * to use the 'publish' functionality. The rest of the methods are unprotected.
  * 
  * @return int 
  */
-extern int chefclient_login(enum chef_login_flow_type flowType);
+extern int chefclient_login(struct chefclient_login_params* params);
 
 /**
  * @brief Terminates the current authentication session with the chef api.
