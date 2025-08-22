@@ -252,7 +252,7 @@ int account_main(int argc, char** argv)
     while (1) {
         // login before continuing
         status = chefclient_login(&(struct chefclient_login_params) {
-            .flow = CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE
+            .flow = CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE,
         });
         if (status) {
             printf("failed to login to chef server: %s\n", strerror(errno));

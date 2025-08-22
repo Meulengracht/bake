@@ -28,4 +28,15 @@
  */
 extern int pubkey_login(const char* publicKey, const char* privateKey);
 
+/**
+ * @brief Logs out the current user and clears the authentication context.
+ */
+extern void pubkey_logout(void);
+
+/**
+ * @brief Sets the authentication headers for the current user.
+ * @param headerlist The list of headers to set the authentication headers on.
+ */
+extern void pubkey_set_authentication(void** headerlist);
+
 #endif //!__LIBCHEF_PUBKEY_H__

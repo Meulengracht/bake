@@ -31,23 +31,21 @@ struct token_context {
 };
 
 /**
- * @brief 
- * 
- * @param flowType 
- * @return int 
+ * @brief Attempts to login using the OAuth2 device code flow.
+ * @param flowType The type of OAuth flow to use.
+ * @return int returns -1 on error, 0 on success
  */
 extern int oauth_login(enum oauth_flow_type flowType);
 
 /**
- * @brief 
- * 
+ * @brief Logs out the current user and clears the authentication context.
  */
 extern void oauth_logout(void);
 
 /**
- * @brief 
+ * @brief Sets the authentication headers for the current user.
  * 
- * @param curl 
+ * @param headerlist The list of headers to set the authentication headers on.
  */
 extern void oauth_set_authentication(void** headerlist);
 

@@ -19,11 +19,6 @@
 #ifndef __LIBCHEF_CLIENT_H__
 #define __LIBCHEF_CLIENT_H__
 
-enum chef_login_flow_type {
-    CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE,
-    CHEF_LOGIN_FLOW_PUBLIC_KEY
-};
-
 /**
  * @brief Initializes the chef client library and enables communication with the chef api
  * 
@@ -37,6 +32,12 @@ extern int chefclient_initialize(void);
  */
 extern void chefclient_cleanup(void);
 
+enum chef_login_flow_type {
+    CHEF_LOGIN_FLOW_TYPE_INVALID = 0,
+    CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE,
+    CHEF_LOGIN_FLOW_TYPE_PUBLIC_KEY
+};
+
 /**
  * @brief Parameters for the login flow.
  */
@@ -44,10 +45,6 @@ struct chefclient_login_params {
     enum chef_login_flow_type flow; /**< The type of login flow to use */
     const char* public_key;         /**< The public key to use for authentication */
     const char* private_key;        /**< The private key to use for authentication */
-    
-    /**< The name and email to use for the user */
-    const char* name;
-    const char* email;
 };
 
 /**

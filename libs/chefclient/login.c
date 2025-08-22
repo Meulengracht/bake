@@ -22,11 +22,18 @@
 #include "oauth/oauth.h"
 #include "pubkey/pubkey.h"
 
+static struct __chefclient_login_context {
+    enum chef_login_flow_type flow;
+} g_loginContext = { 0 };
+
 int chefclient_login(struct chefclient_login_params* params)
 {
+    // store the flow we are using
+    g_loginContext.flow = params->flow;
+
     if (params->flow == CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE) {
         return oauth_login(OAUTH_FLOW_DEVICECODE);
-    } else if (params->flow == CHEF_LOGIN_FLOW_PUBLIC_KEY) {
+    } else if (params->flow == CHEF_LOGIN_FLOW_TYPE_PUBLIC_KEY) {
         return pubkey_login(params->public_key, params->private_key);
     }
 
@@ -36,5 +43,33 @@ int chefclient_login(struct chefclient_login_params* params)
 
 void chefclient_logout(void)
 {
-    oauth_logout();
+    switch (g_loginContext.flow) {
+        case CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE:
+            oauth_logout();
+            break;
+        case CHEF_LOGIN_FLOW_TYPE_PUBLIC_KEY:
+            pubkey_logout();
+            break;
+        default:
+            VLOG_WARNING("chef-client", "chefclient_logout: unsupported login flow type %d\n", g_loginContext.flow);
+            break;
+    }
+
+    // reset the login context
+    memset(&g_loginContext, 0, sizeof(g_loginContext));
+}
+
+void chefclient_set_authentication(void** headerlist)
+{
+    switch (g_loginContext.flow) {
+        case CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE:
+            oauth_set_authentication(headerlist);
+            break;
+        case CHEF_LOGIN_FLOW_TYPE_PUBLIC_KEY:
+            pubkey_set_authentication(headerlist);
+            break;
+        default:
+            VLOG_WARNING("chef-client", "chefclient_set_authentication: unsupported login flow type %d\n", g_loginContext.flow);
+            break;
+    }
 }

@@ -19,13 +19,18 @@
 #include <curl/curl.h>
 #include <chef/client.h>
 #include <errno.h>
-#include "oauth/oauth.h"
 #include "private.h"
 #include <chef/platform.h>
 #include <jansson.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
+
+#define __BASE_URL_AZURE "https://chef-api.azurewebsites.net/api"
+#define __BASE_URL_CHEF  "https://api.chef.io"
+
+// avoid using an public header file for this
+extern void chefclient_set_authentication(void** headerlist);
 
 struct chefclient {
     char*   settings_path;
@@ -47,6 +52,7 @@ static int __load_settings(struct chefclient* client, const char* path)
 {
     char         buff[PATH_MAX];
     json_error_t error;
+    json_t*      urlObject;
 
     snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S "client.json", path);
 
@@ -60,6 +66,11 @@ static int __load_settings(struct chefclient* client, const char* path)
             VLOG_ERROR("chef-client", "__load_settings: failed to read %s: %i\n", &buff[0], json_error_code(&error));
             return -1;
         }
+    }
+
+    urlObject = json_object_get(client->settings, "api-url");
+    if (urlObject == NULL) {
+        json_object_set_new(client->settings, "api-url", json_string(__BASE_URL_CHEF));
     }
     return 0;
 }
@@ -91,6 +102,7 @@ int chefclient_initialize(void)
         VLOG_ERROR("chef-client", "chefclient_initialize: failed to load settings\n");
         return -1;
     }
+
     return 0;
 }
 
@@ -103,6 +115,12 @@ void chefclient_cleanup(void)
 
     // required on windows
     curl_global_cleanup();
+}
+
+const char* chef_api_base_url(void)
+{
+    json_t* urlObject = json_object_get(g_chefclient.settings, "api-url");
+    return json_string_value(urlObject);
 }
 
 const char* chef_tenant_id(void)
@@ -127,6 +145,6 @@ void chef_set_curl_common_headers(void** headerlist, int authorization)
             VLOG_ERROR("chef-client", "chef_set_curl_common: auth requested but headerlist is NULL\n");
             return;
         }
-        oauth_set_authentication(headerlist);
+        chefclient_set_authentication(headerlist);
     }
 }

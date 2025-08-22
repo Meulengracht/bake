@@ -26,7 +26,7 @@
 #include <openssl/err.h>
 #include <vlog.h>
 
-#define __CHEF_ENDPOINT_LOGIN "https://api.chef.io/login"
+extern const char* chef_api_base_url(void);
 
 struct __pubkey_context {
     char* account_guid;
@@ -45,14 +45,14 @@ static int __load_pubkey_settings(void)
     if (chefclient_settings() != NULL) {
         json_t* pubkey = json_object_get(chefclient_settings(), "pubkey");
         if (pubkey != NULL) {
-            json_t* accessToken  = json_object_get(pubkey, "access-token");
-            json_t* refreshToken = json_object_get(pubkey, "refresh-token");
+            json_t* accountGuid  = json_object_get(pubkey, "account-guid");
+            json_t* jwtToken = json_object_get(pubkey, "jwt-token");
 
-            if (json_string_value(refreshToken) != NULL && strlen(json_string_value(refreshToken)) > 0) {
-                g_tokenContext.refresh_token = platform_strdup(json_string_value(refreshToken));
+            if (json_string_value(accountGuid) != NULL && strlen(json_string_value(accountGuid)) > 0) {
+                g_context.account_guid = platform_strdup(json_string_value(accountGuid));
             }
-            if (json_string_value(accessToken) != NULL && strlen(json_string_value(accessToken)) > 0) {
-                g_tokenContext.access_token = platform_strdup(json_string_value(accessToken));
+            if (json_string_value(jwtToken) != NULL && strlen(json_string_value(jwtToken)) > 0) {
+                g_context.jwt_token = platform_strdup(json_string_value(jwtToken));
             }
             return 0;
         }
@@ -65,27 +65,27 @@ static void __save_pubkey_settings(void)
     if (chefclient_settings() != NULL) {
         const char* empty = "";
         json_t*     pubkey;
-        json_t*     accessToken;
-        json_t*     refreshToken;
+        json_t*     accountGuid;
+        json_t*     jwtToken;
 
         pubkey = json_object();
         if (pubkey == NULL) {
             return;
         }
 
-        accessToken = json_string(g_tokenContext.access_token);
-        if (accessToken == NULL) {
-            accessToken = json_string(empty);
+        accountGuid = json_string(g_context.account_guid);
+        if (accountGuid == NULL) {
+            accountGuid = json_string(empty);
         }
 
-        refreshToken = json_string(g_tokenContext.refresh_token);
-        if (refreshToken == NULL) {
-            refreshToken = json_string(empty);
+        jwtToken = json_string(g_context.jwt_token);
+        if (jwtToken == NULL) {
+            jwtToken = json_string(empty);
         }
 
         // build pubkey object
-        json_object_set_new(pubkey, "access-token", accessToken);
-        json_object_set_new(pubkey, "refresh-token", refreshToken);
+        json_object_set_new(pubkey, "account-guid", accountGuid);
+        json_object_set_new(pubkey, "jwt-token", jwtToken);
 
         // store the pubkey object
         json_object_set_new(chefclient_settings(), "pubkey", pubkey);
@@ -187,7 +187,8 @@ static int __parse_token_response(const char* responseBuffer, struct __pubkey_co
 
 static int __pubkey_post_login(const char* publicKey, const char* signature, struct __pubkey_context* context)
 {
-    char                 buffer[1024];
+    char                 buffer[4096];
+    char                 url[1024];
     struct chef_request* request;
     CURLcode             code;
     long                 httpCode;
@@ -205,7 +206,8 @@ static int __pubkey_post_login(const char* publicKey, const char* signature, str
     request->headers = curl_slist_append(request->headers, "Accept: application/json");
 
     // Set the URL and headers
-    code = curl_easy_setopt(request->curl, CURLOPT_URL, __CHEF_ENDPOINT_LOGIN);
+    snprintf(&url[0], sizeof(url), "%s/login", chef_api_base_url());
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &url[0]);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__pubkey_post_login: failed to set url [%s]\n", request->error);
         goto cleanup;
@@ -215,7 +217,7 @@ static int __pubkey_post_login(const char* publicKey, const char* signature, str
     snprintf(
         buffer,
         sizeof(buffer),
-        "{\"Name\":\"%s\",\"Email\":\"%s\",\"PublicKey\":\"%s\",\"SecurityToken\":\"%s\"}",
+        "{\"PublicKey\":\"%s\",\"SecurityToken\":\"%s\"}",
         publicKey, signature
     );
 
@@ -260,7 +262,7 @@ int pubkey_login(const char* publicKey, const char* privateKey)
         return -1;
     }
 
-    status = __load_oauth_settings();
+    status = __load_pubkey_settings();
 
     status = __pubkey_sign(privateKey, &signature, &siglen);
     if (status) {
