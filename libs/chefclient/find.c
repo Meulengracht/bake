@@ -26,6 +26,8 @@
 #include <string.h>
 #include <vlog.h>
 
+extern const char* chefclient_api_base_url(void);
+
 static const char* __get_json_string_safe(json_t* object, const char* key)
 {
     json_t* value = json_object_get(object, key);
@@ -38,7 +40,8 @@ static const char* __get_json_string_safe(json_t* object, const char* key)
 static int __get_find_url(struct chef_find_params* params, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/find?search=%s",
+        "%s/pack/find?search=%s",
+        chefclient_api_base_url(),
         params->query
     );
     return written < (bufferSize - 1) ? 0 : -1;

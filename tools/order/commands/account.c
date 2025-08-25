@@ -23,7 +23,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void account_setup(void);
+extern void account_login_setup(void);
+extern void account_publish_setup(void);
 
 static void __print_help(void)
 {
@@ -76,10 +77,10 @@ static int __handle_whoami(void)
     int                  status;
 
     status = chef_account_get(&account);
-    if (status != 0) {
+    if (status) {
         if (status == -ENOENT) {
             printf("no account information available yet\n");
-            account_setup();
+            account_publish_setup();
             return 0;
         }
         return status;
@@ -109,7 +110,7 @@ static int __handle_get(char* parameter)
     if (status != 0) {
         if (status == -ENOENT) {
             printf("no account information available yet\n");
-            account_setup();
+            account_publish_setup();
             return 0;
         }
         return status;
@@ -145,10 +146,10 @@ static int __handle_set(char* parameter, char* value)
     }
 
     status = chef_account_get(&account);
-    if (status != 0) {
+    if (status) {
         if (status == -ENOENT) {
             printf("no account information available yet\n");
-            account_setup();
+            account_publish_setup();
             return 0;
         }
         return status;
@@ -164,9 +165,9 @@ static int __handle_set(char* parameter, char* value)
     }
 
     status = chef_account_update(account);
-    if (status != 0) {
+    if (status) {
         fprintf(stderr, "failed to update account information: %s\n", strerror(errno));
-        return -1;
+        return status;
     }
 
     printf("Account information updated\n");
@@ -250,14 +251,8 @@ int account_main(int argc, char** argv)
     // do this in a loop, to catch cases where our login token has
     // expired
     while (1) {
-        // login before continuing
-        status = chefclient_login(&(struct chefclient_login_params) {
-            .flow = CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE,
-        });
-        if (status) {
-            printf("failed to login to chef server: %s\n", strerror(errno));
-            break;
-        }
+        // ensure we are logged in
+        account_login_setup();
 
         // now handle the command that was passed
         if (!strcmp(command, "whoami")) {

@@ -26,9 +26,6 @@
 #include <string.h>
 #include <vlog.h>
 
-#define __BASE_URL_AZURE "https://chef-api.azurewebsites.net/api"
-#define __BASE_URL_CHEF  "https://api.chef.io"
-
 // avoid using an public header file for this
 extern void chefclient_set_authentication(void** headerlist);
 
@@ -54,7 +51,7 @@ static int __load_settings(struct chefclient* client, const char* path)
     json_error_t error;
     json_t*      urlObject;
 
-    snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S "client.json", path);
+    snprintf(&buff[0], sizeof(buff), "%s" CHEF_PATH_SEPARATOR_S ".chef" CHEF_PATH_SEPARATOR_S "client.json", path);
 
     client->settings_path = platform_strdup(&buff[0]);
     client->settings = json_load_file(&buff[0], 0, &error);
@@ -70,7 +67,7 @@ static int __load_settings(struct chefclient* client, const char* path)
 
     urlObject = json_object_get(client->settings, "api-url");
     if (urlObject == NULL) {
-        json_object_set_new(client->settings, "api-url", json_string(__BASE_URL_CHEF));
+        json_object_set_new(client->settings, "api-url", json_string(CHEF_CLIENT_API_URL));
     }
     return 0;
 }
@@ -117,7 +114,7 @@ void chefclient_cleanup(void)
     curl_global_cleanup();
 }
 
-const char* chef_api_base_url(void)
+const char* chefclient_api_base_url(void)
 {
     json_t* urlObject = json_object_get(g_chefclient.settings, "api-url");
     return json_string_value(urlObject);

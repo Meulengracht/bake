@@ -26,6 +26,8 @@
 #include <string.h>
 #include <vlog.h>
 
+extern const char* chefclient_api_base_url(void);
+
 struct chef_account {
     const char* publisher_name;
     const char* publisher_email;
@@ -37,7 +39,8 @@ struct chef_account {
 static int __get_account_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/account"
+        "%s/account",
+        chefclient_api_base_url()
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }

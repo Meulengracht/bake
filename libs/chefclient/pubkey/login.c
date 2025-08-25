@@ -26,7 +26,8 @@
 #include <openssl/err.h>
 #include <vlog.h>
 
-extern const char* chef_api_base_url(void);
+extern const char* chefclient_api_base_url(void);
+extern json_t*     chefclient_settings(void);
 
 struct __pubkey_context {
     char* account_guid;
@@ -36,60 +37,57 @@ struct __pubkey_context {
 // This is the message we will sign using the private key which
 // is used to authenticate the user.
 static const char*             g_message = "chef-is-an-awesome-tool";
-static struct __pubkey_context g_context = { 0 };
+static struct __pubkey_context g_context = { NULL, NULL };
 static char                    g_bearer[1024];
 
 static int __load_pubkey_settings(void)
 {
-    // do we have pubkey settings stored?
-    if (chefclient_settings() != NULL) {
-        json_t* pubkey = json_object_get(chefclient_settings(), "pubkey");
-        if (pubkey != NULL) {
-            json_t* accountGuid  = json_object_get(pubkey, "account-guid");
-            json_t* jwtToken = json_object_get(pubkey, "jwt-token");
+    json_t* section;
+    json_t* accountGuid;
+    json_t* jwtToken;
 
-            if (json_string_value(accountGuid) != NULL && strlen(json_string_value(accountGuid)) > 0) {
-                g_context.account_guid = platform_strdup(json_string_value(accountGuid));
-            }
-            if (json_string_value(jwtToken) != NULL && strlen(json_string_value(jwtToken)) > 0) {
-                g_context.jwt_token = platform_strdup(json_string_value(jwtToken));
-            }
-            return 0;
-        }
+    if (chefclient_settings() == NULL) {
+        return -1;
     }
-    return -1;
+
+    section = json_object_get(chefclient_settings(), "pubkey");
+    if (section == NULL) {
+        return -1;
+    }
+
+    accountGuid = json_object_get(section, "account-guid");
+    if (json_string_value(accountGuid) != NULL) {
+        g_context.account_guid = platform_strdup(json_string_value(accountGuid));
+    }
+
+    jwtToken = json_object_get(section, "jwt-token");
+    if (json_string_value(jwtToken) != NULL) {
+        g_context.jwt_token = platform_strdup(json_string_value(jwtToken));
+    }
+    return 0;
 }
 
 static void __save_pubkey_settings(void)
 {
-    if (chefclient_settings() != NULL) {
-        const char* empty = "";
-        json_t*     pubkey;
-        json_t*     accountGuid;
-        json_t*     jwtToken;
+    json_t* section;
 
-        pubkey = json_object();
-        if (pubkey == NULL) {
-            return;
-        }
-
-        accountGuid = json_string(g_context.account_guid);
-        if (accountGuid == NULL) {
-            accountGuid = json_string(empty);
-        }
-
-        jwtToken = json_string(g_context.jwt_token);
-        if (jwtToken == NULL) {
-            jwtToken = json_string(empty);
-        }
-
-        // build pubkey object
-        json_object_set_new(pubkey, "account-guid", accountGuid);
-        json_object_set_new(pubkey, "jwt-token", jwtToken);
-
-        // store the pubkey object
-        json_object_set_new(chefclient_settings(), "pubkey", pubkey);
+    if (chefclient_settings() == NULL) {
+        return;
     }
+
+    section = json_object();
+    if (section == NULL) {
+        return;
+    }
+
+    if (g_context.account_guid != NULL) {
+        json_object_set_new(section, "account-guid", json_string(g_context.account_guid));
+    }
+
+    if (g_context.jwt_token != NULL) {
+        json_object_set_new(section, "jwt-token", json_string(g_context.jwt_token));
+    }
+    json_object_set_new(chefclient_settings(), "pubkey", section);
 }
 
 static int __pubkey_sign(const char* privateKey, char** signatureOut, size_t* siglenOut)
@@ -206,7 +204,7 @@ static int __pubkey_post_login(const char* publicKey, const char* signature, str
     request->headers = curl_slist_append(request->headers, "Accept: application/json");
 
     // Set the URL and headers
-    snprintf(&url[0], sizeof(url), "%s/login", chef_api_base_url());
+    snprintf(&url[0], sizeof(url), "%s/login", chefclient_api_base_url());
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &url[0]);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__pubkey_post_login: failed to set url [%s]\n", request->error);
@@ -252,6 +250,7 @@ int pubkey_login(const char* publicKey, const char* privateKey)
     char*  signature = NULL;
     size_t siglen = 0;
     int    status;
+    VLOG_DEBUG("chef-client", "pubkey_login(publicKey=%s, privateKey=%s)\n", publicKey, privateKey);
 
     // Use openSSL libraries to sign the message with the private key, and then
     // we use the signed message and our public key in the chef api headers to 
@@ -263,18 +262,25 @@ int pubkey_login(const char* publicKey, const char* privateKey)
     }
 
     status = __load_pubkey_settings();
-
-    status = __pubkey_sign(privateKey, &signature, &siglen);
     if (status) {
-        VLOG_ERROR("chef-client", "pubkey_login: failed to sign message with private key\n");
+        VLOG_ERROR("chef-client", "pubkey_login: failed to load pubkey settings\n");
         return status;
     }
 
-    status = __pubkey_post_login(publicKey, signature, &g_context);
-    free(signature);
-    if (status) {
-        VLOG_ERROR("chef-client", "pubkey_login: failed to post login request\n");
-        return status;
+    if (g_context.jwt_token == NULL) {
+        status = __pubkey_sign(privateKey, &signature, &siglen);
+        if (status) {
+            VLOG_ERROR("chef-client", "pubkey_login: failed to sign message with private key\n");
+            return status;
+        }
+
+        status = __pubkey_post_login(publicKey, signature, &g_context);
+        free(signature);
+        if (status) {
+            VLOG_ERROR("chef-client", "pubkey_login: failed to post login request\n");
+            return status;
+        }
+        __save_pubkey_settings();
     }
 
     snprintf(&g_bearer[0], sizeof(g_bearer), "Authorization: Bearer %s", g_context.jwt_token);
@@ -290,8 +296,6 @@ void pubkey_logout(void)
 void pubkey_set_authentication(void** headerlist)
 {
     struct curl_slist* headers = *headerlist;
-
     headers = curl_slist_append(headers, &g_bearer[0]);
-
     *headerlist = headers;
 }

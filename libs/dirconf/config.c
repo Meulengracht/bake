@@ -71,7 +71,8 @@ static json_t* __serialize_config_address(struct chef_config_address* address)
 }
 
 struct chef_config {
-    char* path;
+    char*   path;
+    json_t* root_object;
 
     struct chef_config_address cvd;
     struct chef_config_address remote;
@@ -97,38 +98,29 @@ static void __chef_config_delete(struct chef_config* config)
     free(config);
 }
 
-static json_t* __serialize_config(struct chef_config* config)
+static void __serialize_config(struct chef_config* config)
 {
-    json_t* root;
     json_t* remoteAddress;
     VLOG_DEBUG("config", "__serialize_config()\n");
     
-    root = json_object();
-    if (!root) {
-        VLOG_ERROR("config", "__serialize_config: failed to allocate memory for root object\n");
-        return NULL;
-    }
-    
     remoteAddress = __serialize_config_address(&config->remote);
     if (remoteAddress != NULL) {
-        json_object_set_new(root, "remote-address", remoteAddress);
+        json_object_set_new(config->root_object, "remote-address", remoteAddress);
     }
     
     remoteAddress = __serialize_config_address(&config->cvd);
     if (remoteAddress != NULL) {
-        json_object_set_new(root, "cvd-address", remoteAddress);
+        json_object_set_new(config->root_object, "cvd-address", remoteAddress);
     }
-
-    return root;
 }
 
-static int __parse_config(struct chef_config* config, json_t* root)
+static int __parse_config(struct chef_config* config)
 {
     json_t* member;
     int     status;
     VLOG_DEBUG("config", "__parse_config(config=%s)\n", config->path);
 
-    member = json_object_get(root, "remote-address");
+    member = json_object_get(config->root_object, "remote-address");
     if (member != NULL) {
         status = __parse_config_address(&config->remote, member);
         if (status) {
@@ -137,7 +129,7 @@ static int __parse_config(struct chef_config* config, json_t* root)
         }
     }
 
-    member = json_object_get(root, "cvd-address");
+    member = json_object_get(config->root_object, "cvd-address");
     if (member != NULL) {
         status = __parse_config_address(&config->cvd, member);
         if (status) {
@@ -161,6 +153,7 @@ static int __initialize_config(struct chef_config* config)
     config->api.address = platform_strdup("127.0.0.1");
     config->api.port = 51003;
 #endif
+    config->root_object = json_object();
     return 0;
 }
 
@@ -168,7 +161,6 @@ struct chef_config* chef_config_load(const char* confdir)
 {
     struct chef_config* config;
     json_error_t        error;
-    json_t*             root;
     char                path[PATH_MAX] = { 0 };
     VLOG_DEBUG("config", "chef_config_load(confdir=%s)\n", confdir);
 
@@ -180,8 +172,8 @@ struct chef_config* chef_config_load(const char* confdir)
         return NULL;
     }
 
-    root = json_load_file(path, 0, &error);
-    if (root == NULL) {
+    config->root_object = json_load_file(path, 0, &error);
+    if (config->root_object == NULL) {
         if (json_error_code(&error) == json_error_cannot_open_file) {
             // assume no config, write the default one
             if (__initialize_config(config)) {
@@ -194,8 +186,8 @@ struct chef_config* chef_config_load(const char* confdir)
         __chef_config_delete(config);
         return NULL;
     }
-    
-    if (__parse_config(config, root)) {
+
+    if (__parse_config(config)) {
         VLOG_ERROR("config", "chef_config_load: failed to parse %s\n", &path[0]);
         __chef_config_delete(config);
         return NULL;
@@ -205,16 +197,11 @@ struct chef_config* chef_config_load(const char* confdir)
 
 int chef_config_save(struct chef_config* config)
 {
-    json_t* root;
     VLOG_DEBUG("config", "chef_config_save(path=%s)\n", config->path);
 
-    root = __serialize_config(config);
-    if (root == NULL) {
-        VLOG_ERROR("config", "chef_config_save: failed to serialize configuration\n");
-        return -1;
-    }
-    
-    if (json_dump_file(root, config->path, JSON_INDENT(2)) < 0) {
+    __serialize_config(config);
+
+    if (json_dump_file(config->root_object, config->path, JSON_INDENT(2)) < 0) {
         VLOG_ERROR("config", "chef_config_save: failed to write configuration to file\n");
         return -1;
     }
@@ -235,6 +222,68 @@ void chef_config_remote_address(struct chef_config* config, struct chef_config_a
     address->type = config->remote.type;
     address->address = config->remote.address;
     address->port = config->remote.port;
+}
+
+void* chef_config_section(const struct chef_config* config, const char* section)
+{
+    json_t* sectionObject;
+    VLOG_DEBUG("config", "chef_config_section(section=%s)\n", section);
+    
+    if (section == NULL) {
+        return (void*)config->root_object;
+    }
+
+    sectionObject = json_object_get(config->root_object, section);
+    if (sectionObject == NULL) {
+        sectionObject = json_object();
+
+        // store the section in the root object
+        json_object_set_new(config->root_object, section, sectionObject);
+    }
+    return sectionObject;
+}
+
+const char* chef_config_get_string(const struct chef_config* config, void* section, const char* key)
+{
+    json_t* sectionObject = section;
+    json_t* keyObject;
+    VLOG_DEBUG("config", "chef_config_get_string(section=%s, key=%s)\n", section, key);
+
+    if (key == NULL) {
+        return NULL;
+    }
+
+    if (section == NULL) {
+        sectionObject = config->root_object;
+    }
+
+    keyObject = json_object_get(sectionObject, key);
+    if (keyObject == NULL) {
+        return NULL;
+    }
+    return json_string_value(keyObject);
+}
+
+int chef_config_set_string(struct chef_config* config, void* section, const char* key, const char* value)
+{
+    json_t* sectionObject = section;
+    VLOG_DEBUG("config", "chef_config_set_string(section=%s, key=%s, value=%s)\n", section, key, value);
+
+    if (key == NULL) {
+        VLOG_ERROR("config", "chef_config_set_string: key is NULL\n");
+        return -1;
+    }
+
+    if (section == NULL) {
+        sectionObject = config->root_object;
+    }
+
+    if (value != NULL) {
+        json_object_set_new(sectionObject, key, json_string(value));
+    } else {
+        json_object_del(sectionObject, key);
+    }
+    return 0;
 }
 
 static int __replace_string(char** original, const char* value)

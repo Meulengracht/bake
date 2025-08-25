@@ -26,6 +26,8 @@
 #include <string.h>
 #include <vlog.h>
 
+extern const char* chefclient_api_base_url(void);
+
 struct chef_package_settings {
     const char* package;
     int discoverable;
@@ -34,7 +36,8 @@ struct chef_package_settings {
 static int __get_settings_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/settings"
+        "%s/pack/settings",
+        chefclient_api_base_url()
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }
@@ -42,7 +45,8 @@ static int __get_settings_url(char* urlBuffer, size_t bufferSize)
 static int __get_settings_query_url(struct chef_settings_params* params, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/settings?name=%s",
+        "%s/pack/settings?name=%s",
+        chefclient_api_base_url(),
         params->package
     );
     return written < (bufferSize - 1) ? 0 : -1;

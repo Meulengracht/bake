@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/dirs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -95,6 +96,12 @@ int main(int argc, char** argv, char** envp)
     if (!command) {
         __print_help();
         return 0;
+    }
+
+    result = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKE);
+    if (result != 0) {
+        fprintf(stderr, "order: failed to initialize support library\n");
+        return -1;
     }
 
     result = command->handler(argc, argv);

@@ -28,6 +28,8 @@
 #include <string.h>
 #include <vlog.h>
 
+extern const char* chefclient_api_base_url(void);
+
 struct pack_response {
     int         revision;
     const char* token;
@@ -101,7 +103,8 @@ static int __get_download_url(struct chef_download_params* params, char* urlBuff
 {
     // todo specific version support
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/download?publisher=%s&name=%s&platform=%s&arch=%s&channel=%s",
+        "%s/pack/download?publisher=%s&name=%s&platform=%s&arch=%s&channel=%s",
+        chefclient_api_base_url(),
         params->publisher, params->package, params->platform, params->arch, params->channel
     );
     return written < (bufferSize - 1) ? 0 : -1;

@@ -31,6 +31,8 @@
 // Max supported by REST api on azure is 100mb
 #define CHEF_UPLOAD_MAX_SIZE (100 * 1024 * 1024)
 
+extern const char* chefclient_api_base_url(void);
+
 struct pack_response {
     const char* token;
     const char* url;
@@ -212,7 +214,8 @@ static int __parse_pack_response(const char* response, struct pack_response* pac
 static int __get_publish_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/publish"
+        "%s/pack/publish",
+        chefclient_api_base_url()
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }

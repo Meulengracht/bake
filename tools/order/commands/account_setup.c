@@ -19,6 +19,9 @@
 #include <errno.h>
 #include <chef/api/account.h>
 #include <chef/client.h>
+#include <chef/config.h>
+#include <chef/dirs.h>
+#include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -116,23 +119,129 @@ static int __verify_email(const char* email)
     return (atFound != 0 && dotFound != 0) ? 0 : -1;
 }
 
-void account_setup(void)
+void account_login_setup(void)
+{
+    struct chef_account* account        = NULL;
+    char*                publicKeyPath  = NULL;
+    char*                privateKeyPath = NULL;
+    int                  success;
+    struct chef_config*  config;
+    void*                accountSection;
+
+    config = chef_config_load(chef_dirs_config());
+    if (config == NULL) {
+        fprintf(stderr, "order: failed to load configuration: %s\n", strerror(errno));
+        return;
+    }
+
+    accountSection = chef_config_section(config, "account");
+    if (accountSection == NULL) {
+        fprintf(stderr, "order: failed to load account section from configuration: %s\n", strerror(errno));
+        return;
+    }
+
+    publicKeyPath = chef_config_get_string(config, accountSection, "public-key");
+    privateKeyPath = chef_config_get_string(config, accountSection, "private-key");
+    if (publicKeyPath != NULL && privateKeyPath != NULL) {
+        struct platform_stat st;
+        int                  okay = 0;
+
+        if (platform_stat(publicKeyPath, &st) || st.type != PLATFORM_FILETYPE_FILE) {
+            fprintf(stderr, "order: configured public key file was invalid, reconfigure required.\n");
+            okay = -1;
+        }
+        if (platform_stat(privateKeyPath, &st) | st.type != PLATFORM_FILETYPE_FILE) {
+            fprintf(stderr, "order: configured private key file was invalid, reconfigure required.\n");
+            okay = -1;
+        }
+
+        if (okay == 0) {
+            publicKeyPath = platform_strdup(publicKeyPath);
+            privateKeyPath = platform_strdup(privateKeyPath);
+            goto login;
+        }
+    }
+
+    printf("No account information found. An account is required to publish packages.\n");
+    success = __ask_yes_no_question("Do you want to setup an account now?");
+    if (!success) {
+        return;
+    }
+
+    printf("Chef accounts operate using RSA public/private keypairs.\n");
+    printf("If you do not have a keypair, one will be generated for you.\n");
+    printf("The private key will be stored on your local machine, and the public key\n");
+    printf("will be uploaded to your account.\n");
+    success = __ask_yes_no_question("Do you want to continue?");
+    if (!success) {
+        return;
+    }
+
+    // Allow the user to specify an existing keypair, or generate a new one.
+    // The keypair must be able to sign messages using RSA-SHA256.
+    printf("Do you have an existing RSA keypair you want to use?\n");
+    success = __ask_yes_no_question("If you choose no, a new keypair will be generated for you.");
+    if (success) {
+        struct platform_stat st;
+
+        publicKeyPath = __ask_input_question("Path to public key: ");
+        if (platform_stat(publicKeyPath, &st) || st.type != PLATFORM_FILETYPE_FILE) {
+            fprintf(stderr, "public key file: invalid path\n");
+            goto cleanup;
+        }
+
+        privateKeyPath = __ask_input_question("Path to private key: ");
+        if (platform_stat(privateKeyPath, &st) | st.type != PLATFORM_FILETYPE_FILE) {
+            fprintf(stderr, "private key file: invalid path\n");
+            goto cleanup;
+        }
+    } else {
+        success = chefclient_generate_rsa_keypair(publicKeyPath, privateKeyPath);
+        if (success) {
+            fprintf(stderr, "failed to generate RSA keypair: %s\n", strerror(errno));
+            return;
+        }
+
+        printf("A new RSA keypair has been generated for you.\n");
+        printf("Public key: %s\n", publicKeyPath);
+        printf("Private key: %s\n", privateKeyPath);
+        printf("Please back up your private key, as it will be required to publish packages.\n");
+        printf("The private key will not be uploaded to your account.\n");
+    }
+
+    // save the key paths to the config
+    chef_config_set_string(config, accountSection, "public-key", publicKeyPath);
+    chef_config_set_string(config, accountSection, "private-key", privateKeyPath);
+    chef_config_save(config);
+
+login:
+    success = chefclient_login(&(struct chefclient_login_params) {
+        .flow = CHEF_LOGIN_FLOW_TYPE_PUBLIC_KEY,
+        .public_key = publicKeyPath,
+        .private_key = privateKeyPath,
+    });
+    if (success) {
+        fprintf(stderr, "failed to login with RSA keypair: %s\n", strerror(errno));
+        goto cleanup;
+    }
+
+cleanup:
+    free(publicKeyPath);
+    free(privateKeyPath);
+}
+
+void account_publish_setup(void)
 {
     struct chef_account* account        = NULL;
     char*                publisherName  = NULL;
     char*                publisherEmail = NULL;
     int                  success;
 
-    success = __ask_yes_no_question("Do you want to setup an account now?");
-    if (!success) {
-        return;
-    }
-    
     // allocate memory for the account
     account = chef_account_new();
     if (account == NULL) {
         fprintf(stderr, "failed to allocate memory for the account\n");
-        return;
+        goto cleanup;
     }
     
     // ask for the publisher name
