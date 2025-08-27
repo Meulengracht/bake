@@ -287,6 +287,76 @@ int pubkey_login(const char* publicKey, const char* privateKey)
     return 0;
 }
 
+int pubkey_generate_rsa_keypair(int bits, const char* directory, char** publicKeyPath, char** privateKeyPath)
+{
+    // use openssl library to generate a new rsa keypair
+    // save the keys to files in the .chef directory
+    // return the paths to the files
+    EVP_PKEY*      pkey;
+    FILE*          pubfp = NULL;
+    FILE*          privfp = NULL;
+    char           pubkeypath[PATH_MAX];
+    char           privkeypath[PATH_MAX];
+    int            status;
+    VLOG_DEBUG("chef-client", "pubkey_generate_rsa_keypair(bits=%d)\n", bits);
+
+    snprintf(&pubkeypath[0], sizeof(pubkeypath), "%s/id.pub", directory);
+    snprintf(&privkeypath[0], sizeof(privkeypath), "%s/id_rsa", directory);
+
+    VLOG_DEBUG("chef-client", "pubkey_generate_rsa_keypair: generating new rsa keypair %s/%s\n",
+        &pubkeypath[0], &privkeypath[0]);
+    pkey = EVP_RSA_gen(bits);
+    if (pkey == NULL) {
+        VLOG_ERROR("chef-client", "pubkey_generate_rsa_keypair: failed to generate RSA key: %s\n",
+            ERR_error_string(ERR_get_error(), NULL));
+        return -1;
+    }
+
+    privfp = fopen(&privkeypath[0], "wb");
+    if (privfp == NULL) {
+        VLOG_ERROR("chef-client", "pubkey_generate_rsa_keypair: failed to open private key file %s: %s\n",
+            &privkeypath[0], strerror(errno));
+        status = -1;
+        goto cleanup;
+    }
+
+    status = PEM_write_PrivateKey(privfp, pkey, NULL, NULL, 0, NULL, NULL);
+    if (!status) {
+        VLOG_ERROR("chef-client", "pubkey_generate_rsa_keypair: failed to write private key to file %s: %s\n",
+            &privkeypath[0], ERR_error_string(ERR_get_error(), NULL));
+        status = -1;
+        goto cleanup;
+    }
+
+    pubfp = fopen(&pubkeypath[0], "wb");
+    if (pubfp == NULL) {
+        VLOG_ERROR("chef-client", "pubkey_generate_rsa_keypair: failed to open public key file %s: %s\n",
+            &pubkeypath[0], strerror(errno));
+        goto cleanup;
+    }
+
+    status = PEM_write_PUBKEY(pubfp, pkey);
+    if (!status) {
+        VLOG_ERROR("chef-client", "pubkey_generate_rsa_keypair: failed to write public key to file %s: %s\n",
+            &pubkeypath[0], ERR_error_string(ERR_get_error(), NULL));
+        status = -1;
+        goto cleanup;
+    }
+
+    *publicKeyPath = platform_strdup(&pubkeypath[0]);
+    *privateKeyPath = platform_strdup(&privkeypath[0]);
+
+cleanup:
+    if (privfp != NULL) {
+        fclose(privfp);
+    }
+    if (pubfp != NULL) {
+        fclose(pubfp);
+    }
+    EVP_PKEY_free(pkey);
+    return status;
+}
+
 void pubkey_logout(void)
 {
     memset(&g_context, 0, sizeof(struct __pubkey_context));

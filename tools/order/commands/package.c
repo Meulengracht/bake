@@ -26,7 +26,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void account_setup(void);
+extern void account_login_setup(void);
+extern void account_publish_setup(void);
 
 static void __print_help(void)
 {
@@ -146,7 +147,7 @@ static int __handle_list(const char* package)
     if (status != 0) {
         if (status == -ENOENT) {
             printf("order: no account information available yet\n");
-            account_setup();
+            account_publish_setup();
             return 0;
         }
         return status;
@@ -174,7 +175,7 @@ static int __handle_get(const char* package, const char* parameter)
     if (status != 0) {
         if (status == -ENOENT) {
             printf("order: no account information available yet\n");
-            account_setup();
+            account_publish_setup();
             return 0;
         }
         return status;
@@ -214,7 +215,7 @@ static int __handle_set(const char* package, const char* parameter, const char* 
     if (status != 0) {
         if (status == -ENOENT) {
             printf("order: no account information available yet\n");
-            account_setup();
+            account_publish_setup();
             return 0;
         }
         return status;
@@ -283,11 +284,7 @@ int package_main(int argc, char** argv)
     // expired
     while (1) {
         // login before continuing
-        status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
-        if (status != 0) {
-            printf("order: failed to login to chef server: %s\n", strerror(errno));
-            break;
-        }
+        account_login_setup();
 
         // now handle the command that was passed
         if (!strcmp(command, "list")) {

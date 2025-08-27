@@ -11,6 +11,8 @@ add_library(chef-client STATIC
     oauth/devicecode.c
     oauth/oauth.c
 
+    pubkey/login.c
+
     storage/bashupload.c
     storage/gendownload.c
 
@@ -27,4 +29,4 @@ add_library(chef-client STATIC
 )
 target_include_directories(chef-client PUBLIC include ${CURL_INCLUDE_DIR})
 target_compile_definitions(chef-client PUBLIC CHEF_CLIENT_API_URL="${CHEF_CLIENT_API_URL}")
-target_link_libraries(chef-client PUBLIC ${CURL_LIBRARIES} jansson vafs common platform)
+target_link_libraries(chef-client PUBLIC ${CURL_LIBRARIES} OpenSSL::SSL jansson vafs common platform)

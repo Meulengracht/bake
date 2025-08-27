@@ -21,6 +21,8 @@
 #include "private.h"
 #include "oauth/oauth.h"
 #include "pubkey/pubkey.h"
+#include <string.h>
+#include <vlog.h>
 
 static struct __chefclient_login_context {
     enum chef_login_flow_type flow;

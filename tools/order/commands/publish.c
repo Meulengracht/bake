@@ -25,7 +25,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void account_setup(void);
+extern void account_login_setup(void);
+extern void account_publish_setup(void);
 
 static void __print_help(void)
 {
@@ -37,7 +38,7 @@ static void __print_help(void)
     printf("      Print this help message\n");
 }
 
-static int __ensure_account_setup(char** publisherOut)
+static int __ensure_account_publish_setup(char** publisherOut)
 {
     struct chef_account* account;
     int                  status;
@@ -46,7 +47,7 @@ static int __ensure_account_setup(char** publisherOut)
     if (status != 0) {
         if (status == -ENOENT) {
             printf("no account information available yet\n");
-            account_setup();
+            account_publish_setup();
             return 0;
         }
         return status;
@@ -144,14 +145,10 @@ int publish_main(int argc, char** argv)
     // expired
     while (1) {
         // login before continuing
-        status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
-        if (status != 0) {
-            printf("failed to login to chef server: %s\n", strerror(errno));
-            break;
-        }
+        account_login_setup();
 
         // ensure account is setup
-        status = __ensure_account_setup(&publisher);
+        status = __ensure_account_publish_setup(&publisher);
         if (status != 0) {
             if (status == -EACCES) {
                 chefclient_logout();

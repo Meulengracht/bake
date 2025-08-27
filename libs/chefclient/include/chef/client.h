@@ -61,4 +61,15 @@ extern int chefclient_login(struct chefclient_login_params* params);
  */
 extern void chefclient_logout(void);
 
+/**
+ * @brief Generates a new RSA keypair and saves it to the specified directory.
+ * 
+ * @param bits The number of bits for the RSA key. Minimum is 2048.
+ * @param directory The directory to save the keypair to. This should be the .chef directory in the user's home directory.
+ * @param publicKeyPath Output parameter that will contain the path to the generated public key file. This should be freed by the caller.
+ * @param privateKeyPath Output parameter that will contain the path to the generated private key file. This should be freed by the caller.
+ * @return int Returns -1 on error, 0 on success.
+ */
+extern int pubkey_generate_rsa_keypair(int bits, const char* directory, char** publicKeyPath, char** privateKeyPath);
+
 #endif //!__LIBCHEF_CLIENT_H__

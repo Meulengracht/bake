@@ -119,6 +119,19 @@ static int __verify_email(const char* email)
     return (atFound != 0 && dotFound != 0) ? 0 : -1;
 }
 
+static char* __get_chef_directory(void)
+{
+    char   dir[PATH_MAX];
+    int    status;
+
+    status = platform_getuserdir(&dir[0], PATH_MAX);
+    if (status) {
+        fprintf(stderr, "order: failed to get user home directory: %s\n", strerror(errno));
+        return NULL;
+    }
+    return strpathcombine(&dir[0], ".chef");
+}
+
 void account_login_setup(void)
 {
     struct chef_account* account        = NULL;
@@ -140,8 +153,8 @@ void account_login_setup(void)
         return;
     }
 
-    publicKeyPath = chef_config_get_string(config, accountSection, "public-key");
-    privateKeyPath = chef_config_get_string(config, accountSection, "private-key");
+    publicKeyPath = (char*)chef_config_get_string(config, accountSection, "public-key");
+    privateKeyPath = (char*)chef_config_get_string(config, accountSection, "private-key");
     if (publicKeyPath != NULL && privateKeyPath != NULL) {
         struct platform_stat st;
         int                  okay = 0;
@@ -196,7 +209,14 @@ void account_login_setup(void)
             goto cleanup;
         }
     } else {
-        success = chefclient_generate_rsa_keypair(publicKeyPath, privateKeyPath);
+        char* dir = __get_chef_directory();
+        if (dir == NULL) {
+            goto cleanup;
+        }
+
+        success = pubkey_generate_rsa_keypair(2048, dir, &publicKeyPath, &privateKeyPath);
+        free(dir);
+
         if (success) {
             fprintf(stderr, "failed to generate RSA keypair: %s\n", strerror(errno));
             return;
