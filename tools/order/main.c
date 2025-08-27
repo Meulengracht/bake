@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "chef-config.h"
+#include <vlog.h>
 
 extern int account_main(int argc, char** argv);
 extern int package_main(int argc, char** argv);
@@ -98,6 +99,7 @@ int main(int argc, char** argv, char** envp)
         return 0;
     }
 
+    vlog_initialize(VLOG_LEVEL_DEBUG);
     result = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKE);
     if (result != 0) {
         fprintf(stderr, "order: failed to initialize support library\n");
@@ -105,8 +107,6 @@ int main(int argc, char** argv, char** envp)
     }
 
     result = command->handler(argc, argv);
-    if (result != 0) {
-        return result;
-    }
-    return 0;
+    vlog_cleanup();
+    return result;
 }

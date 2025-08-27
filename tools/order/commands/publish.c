@@ -25,7 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void account_login_setup(void);
+extern int  account_login_setup(void);
 extern void account_publish_setup(void);
 
 static void __print_help(void)
@@ -144,8 +144,11 @@ int publish_main(int argc, char** argv)
     // do this in a loop, to catch cases where our login token has
     // expired
     while (1) {
-        // login before continuing
-        account_login_setup();
+        // ensure we are logged in
+        if (account_login_setup()) {
+            fprintf(stderr, "order: failed to login: %s\n", strerror(errno));
+            return -1;
+        }
 
         // ensure account is setup
         status = __ensure_account_publish_setup(&publisher);

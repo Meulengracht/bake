@@ -40,19 +40,20 @@ static const char*             g_message = "chef-is-an-awesome-tool";
 static struct __pubkey_context g_context = { NULL, NULL };
 static char                    g_bearer[1024];
 
-static int __load_pubkey_settings(void)
+static void __load_pubkey_settings(void)
 {
     json_t* section;
     json_t* accountGuid;
     json_t* jwtToken;
 
     if (chefclient_settings() == NULL) {
-        return -1;
+        VLOG_ERROR("chef-client", "__load_pubkey_settings: chefclient_settings() returned NULL\n");
+        return;
     }
 
     section = json_object_get(chefclient_settings(), "pubkey");
     if (section == NULL) {
-        return -1;
+        return;
     }
 
     accountGuid = json_object_get(section, "account-guid");
@@ -64,7 +65,6 @@ static int __load_pubkey_settings(void)
     if (json_string_value(jwtToken) != NULL) {
         g_context.jwt_token = platform_strdup(json_string_value(jwtToken));
     }
-    return 0;
 }
 
 static void __save_pubkey_settings(void)
@@ -158,7 +158,6 @@ static int __pubkey_sign(const char* privateKey, char** signatureOut, size_t* si
     EVP_MD_CTX_free(mdctx);
     EVP_PKEY_free(pkey);
 
-    VLOG_DEBUG("chef-client", "pubkey_login: successfully signed message with private key\n");
     *signatureOut = (char*)sig;
     *siglenOut = siglen;
     return 0;
@@ -187,15 +186,23 @@ static int __pubkey_post_login(const char* publicKey, const char* signature, str
 {
     char                 buffer[4096];
     char                 url[1024];
+    void*                keyBuffer;
+    size_t               keylen;
     struct chef_request* request;
     CURLcode             code;
     long                 httpCode;
     int                  status = -1;
-    VLOG_DEBUG("chef-client", "__pubkey_post_login(publicKey=%s, signature=%s)\n", publicKey, signature);
+    VLOG_DEBUG("chef-client", "__pubkey_post_login(publicKey=%s)\n", publicKey);
+
+    if (platform_readfile(publicKey, &keyBuffer, &keylen)) {
+        VLOG_ERROR("chef-client", "__pubkey_post_login: failed to read public key file %s: %s\n", publicKey, strerror(errno));
+        return -1;
+    }
 
     request = chef_request_new(1, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "__pubkey_post_login: failed to create request\n");
+        free(keyBuffer);
         return -1;
     }
 
@@ -211,7 +218,7 @@ static int __pubkey_post_login(const char* publicKey, const char* signature, str
         goto cleanup;
     }
 
-    // Prepare the JSON payload
+    // Prepare the JSON payload, perhaps we should base64 encode the signature?
     snprintf(
         buffer,
         sizeof(buffer),
@@ -228,12 +235,12 @@ static int __pubkey_post_login(const char* publicKey, const char* signature, str
     code = curl_easy_perform(request->curl);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__pubkey_post_login: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        goto cleanup;
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
         VLOG_ERROR("chef-client", "__pubkey_post_login: http error %ld [%s]\n", httpCode, request->response);
-        status = -1;
         errno = EIO;
         goto cleanup;
     }
@@ -242,6 +249,7 @@ static int __pubkey_post_login(const char* publicKey, const char* signature, str
 
 cleanup:
     chef_request_delete(request);
+    free(keyBuffer);
     return status;
 }
 
@@ -261,11 +269,8 @@ int pubkey_login(const char* publicKey, const char* privateKey)
         return -1;
     }
 
-    status = __load_pubkey_settings();
-    if (status) {
-        VLOG_ERROR("chef-client", "pubkey_login: failed to load pubkey settings\n");
-        return status;
-    }
+    // attempt to load any existing settings
+    __load_pubkey_settings();
 
     if (g_context.jwt_token == NULL) {
         status = __pubkey_sign(privateKey, &signature, &siglen);
@@ -321,7 +326,7 @@ int pubkey_generate_rsa_keypair(int bits, const char* directory, char** publicKe
     }
 
     status = PEM_write_PrivateKey(privfp, pkey, NULL, NULL, 0, NULL, NULL);
-    if (!status) {
+    if (status <= 0) {
         VLOG_ERROR("chef-client", "pubkey_generate_rsa_keypair: failed to write private key to file %s: %s\n",
             &privkeypath[0], ERR_error_string(ERR_get_error(), NULL));
         status = -1;
@@ -336,7 +341,7 @@ int pubkey_generate_rsa_keypair(int bits, const char* directory, char** publicKe
     }
 
     status = PEM_write_PUBKEY(pubfp, pkey);
-    if (!status) {
+    if (status <= 0) {
         VLOG_ERROR("chef-client", "pubkey_generate_rsa_keypair: failed to write public key to file %s: %s\n",
             &pubkeypath[0], ERR_error_string(ERR_get_error(), NULL));
         status = -1;
@@ -345,6 +350,9 @@ int pubkey_generate_rsa_keypair(int bits, const char* directory, char** publicKe
 
     *publicKeyPath = platform_strdup(&pubkeypath[0]);
     *privateKeyPath = platform_strdup(&privkeypath[0]);
+
+    // we use 0 as success
+    status = 0;
 
 cleanup:
     if (privfp != NULL) {

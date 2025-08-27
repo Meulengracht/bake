@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void account_login_setup(void);
+extern int  account_login_setup(void);
 extern void account_publish_setup(void);
 
 static void __print_help(void)
@@ -252,7 +252,10 @@ int account_main(int argc, char** argv)
     // expired
     while (1) {
         // ensure we are logged in
-        account_login_setup();
+        if (account_login_setup()) {
+            fprintf(stderr, "order: failed to login: %s\n", strerror(errno));
+            return -1;
+        }
 
         // now handle the command that was passed
         if (!strcmp(command, "whoami")) {

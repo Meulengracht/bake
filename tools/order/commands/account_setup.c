@@ -132,7 +132,7 @@ static char* __get_chef_directory(void)
     return strpathcombine(&dir[0], ".chef");
 }
 
-void account_login_setup(void)
+int account_login_setup(void)
 {
     struct chef_account* account        = NULL;
     char*                publicKeyPath  = NULL;
@@ -144,13 +144,13 @@ void account_login_setup(void)
     config = chef_config_load(chef_dirs_config());
     if (config == NULL) {
         fprintf(stderr, "order: failed to load configuration: %s\n", strerror(errno));
-        return;
+        return -1;
     }
 
     accountSection = chef_config_section(config, "account");
     if (accountSection == NULL) {
         fprintf(stderr, "order: failed to load account section from configuration: %s\n", strerror(errno));
-        return;
+        return -1;
     }
 
     publicKeyPath = (char*)chef_config_get_string(config, accountSection, "public-key");
@@ -178,21 +178,21 @@ void account_login_setup(void)
     printf("No account information found. An account is required to publish packages.\n");
     success = __ask_yes_no_question("Do you want to setup an account now?");
     if (!success) {
-        return;
+        return -1;
     }
 
-    printf("Chef accounts operate using RSA public/private keypairs.\n");
+    printf("\nChef accounts operate using RSA public/private keypairs.\n");
     printf("If you do not have a keypair, one will be generated for you.\n");
     printf("The private key will be stored on your local machine, and the public key\n");
     printf("will be uploaded to your account.\n");
     success = __ask_yes_no_question("Do you want to continue?");
     if (!success) {
-        return;
+        return -1;
     }
 
     // Allow the user to specify an existing keypair, or generate a new one.
     // The keypair must be able to sign messages using RSA-SHA256.
-    printf("Do you have an existing RSA keypair you want to use?\n");
+    printf("\nDo you have an existing RSA keypair you want to use?\n");
     success = __ask_yes_no_question("If you choose no, a new keypair will be generated for you.");
     if (success) {
         struct platform_stat st;
@@ -219,13 +219,13 @@ void account_login_setup(void)
 
         if (success) {
             fprintf(stderr, "failed to generate RSA keypair: %s\n", strerror(errno));
-            return;
+            goto cleanup;
         }
 
-        printf("A new RSA keypair has been generated for you.\n");
+        printf("\nA new RSA keypair has been generated for you.\n");
         printf("Public key: %s\n", publicKeyPath);
         printf("Private key: %s\n", privateKeyPath);
-        printf("Please back up your private key, as it will be required to publish packages.\n");
+        printf("\nPlease back up your private key, as it will be required to publish packages.\n");
         printf("The private key will not be uploaded to your account.\n");
     }
 
@@ -241,13 +241,14 @@ login:
         .private_key = privateKeyPath,
     });
     if (success) {
-        fprintf(stderr, "failed to login with RSA keypair: %s\n", strerror(errno));
+        fprintf(stderr, "order: failed to login with RSA keypair: %s\n", strerror(errno));
         goto cleanup;
     }
 
 cleanup:
     free(publicKeyPath);
     free(privateKeyPath);
+    return success;
 }
 
 void account_publish_setup(void)
