@@ -291,7 +291,7 @@ int pubkey_login(const char* publicKey, const char* privateKey)
         }
 
         status = __pubkey_post_login(publicKey, base64Signature, &g_context);
-        free(signature);
+        free(base64Signature);
         if (status) {
             VLOG_ERROR("chef-client", "pubkey_login: failed to post login request\n");
             return status;
