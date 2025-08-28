@@ -18,6 +18,7 @@
 
 #include "pubkey.h"
 #include "../private.h"
+#include "../base64/base64.h"
 #include <chef/platform.h>
 #include <curl/curl.h>
 #include <errno.h>
@@ -218,7 +219,7 @@ static int __pubkey_post_login(const char* publicKey, const char* signature, str
         goto cleanup;
     }
 
-    // Prepare the JSON payload, perhaps we should base64 encode the signature?
+    // format the json body
     snprintf(
         buffer,
         sizeof(buffer),
@@ -273,13 +274,23 @@ int pubkey_login(const char* publicKey, const char* privateKey)
     __load_pubkey_settings();
 
     if (g_context.jwt_token == NULL) {
+        char*  base64Signature = NULL;
+        size_t base64SignatureLength = 0;
+
         status = __pubkey_sign(privateKey, &signature, &siglen);
         if (status) {
             VLOG_ERROR("chef-client", "pubkey_login: failed to sign message with private key\n");
             return status;
         }
 
-        status = __pubkey_post_login(publicKey, signature, &g_context);
+        base64Signature = base64_encode((unsigned char*)signature, siglen, &base64SignatureLength);
+        free(signature);
+        if (base64Signature == NULL) {
+            VLOG_ERROR("chef-client", "pubkey_login: failed to base64 encode signature\n");
+            return -1;
+        }
+
+        status = __pubkey_post_login(publicKey, base64Signature, &g_context);
         free(signature);
         if (status) {
             VLOG_ERROR("chef-client", "pubkey_login: failed to post login request\n");
