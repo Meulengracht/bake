@@ -24,6 +24,7 @@
 #include <vlog.h>
 
 extern int account_main(int argc, char** argv);
+extern int config_main(int argc, char** argv);
 extern int package_main(int argc, char** argv);
 extern int info_main(int argc, char** argv);
 extern int find_main(int argc, char** argv);
@@ -36,6 +37,7 @@ struct command_handler {
 
 static struct command_handler g_commands[] = {
     { "account",  account_main },
+    { "config",  config_main },
     { "package",  package_main },
     { "info",     info_main },
     { "find",     find_main },
@@ -48,6 +50,7 @@ static void __print_help(void)
     printf("\n");
     printf("Commands:\n");
     printf("  account     view account information or setup your account\n");
+    printf("  config      view or change configuration values for order\n");
     printf("  package     view or manage your published packages\n");
     printf("  info        retrieves information about a specific pack\n");
     printf("  find        find packages by publisher or by name\n");

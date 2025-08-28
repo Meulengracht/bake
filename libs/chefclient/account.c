@@ -39,7 +39,7 @@ struct chef_account {
 static int __get_account_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "%s/account",
+        "%s/account/me",
         chefclient_api_base_url()
     );
     return written < (bufferSize - 1) ? 0 : -1;

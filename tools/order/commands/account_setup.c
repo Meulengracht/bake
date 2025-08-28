@@ -29,11 +29,11 @@
 static int __ask_yes_no_question(const char* question)
 {
     char answer[3];
-    printf("%s [y/n] ", question);
+    printf("%s [Y/n] ", question);
     if (fgets(answer, sizeof(answer), stdin) == NULL) {
         return 0;
     }
-    return answer[0] == 'y' || answer[0] == 'Y';
+    return answer[0] == 'Y';
 }
 
 static char* __ask_input_question(const char* question)
@@ -192,22 +192,13 @@ int account_login_setup(void)
 
     // Allow the user to specify an existing keypair, or generate a new one.
     // The keypair must be able to sign messages using RSA-SHA256.
-    printf("\nDo you have an existing RSA keypair you want to use?\n");
-    success = __ask_yes_no_question("If you choose no, a new keypair will be generated for you.");
-    if (success) {
-        struct platform_stat st;
-
-        publicKeyPath = __ask_input_question("Path to public key: ");
-        if (platform_stat(publicKeyPath, &st) || st.type != PLATFORM_FILETYPE_FILE) {
-            fprintf(stderr, "public key file: invalid path\n");
-            goto cleanup;
-        }
-
-        privateKeyPath = __ask_input_question("Path to private key: ");
-        if (platform_stat(privateKeyPath, &st) | st.type != PLATFORM_FILETYPE_FILE) {
-            fprintf(stderr, "private key file: invalid path\n");
-            goto cleanup;
-        }
+    printf("\nDo you want chef to generate a new key-pair for you?\n");
+    printf("If you don't, you can configure which key should be used by executing\n\n");
+    printf("   order config auth.key <path-to-private-key>\n\n");
+    success = __ask_yes_no_question("Continue with keypair generation?");
+    if (!success) {
+        success = -1;
+        goto cleanup;
     } else {
         char* dir = __get_chef_directory();
         if (dir == NULL) {
