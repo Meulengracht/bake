@@ -132,6 +132,11 @@ static char* __get_chef_directory(void)
     return strpathcombine(&dir[0], ".chef");
 }
 
+static const char* __get_api_key(void)
+{
+    return getenv("CHEF_API_KEY");
+}
+
 int account_login_setup(void)
 {
     struct chef_account* account        = NULL;
@@ -140,6 +145,10 @@ int account_login_setup(void)
     int                  success;
     struct chef_config*  config;
     void*                accountSection;
+
+    if (__get_api_key() != NULL) {
+        goto login;
+    }
 
     config = chef_config_load(chef_dirs_config());
     if (config == NULL) {
@@ -228,11 +237,12 @@ int account_login_setup(void)
 login:
     success = chefclient_login(&(struct chefclient_login_params) {
         .flow = CHEF_LOGIN_FLOW_TYPE_PUBLIC_KEY,
+        .api_key = __get_api_key(),
         .public_key = publicKeyPath,
         .private_key = privateKeyPath,
     });
     if (success) {
-        fprintf(stderr, "order: failed to login with RSA keypair: %s\n", strerror(errno));
+        fprintf(stderr, "order: failed to login: %s\n", strerror(errno));
         goto cleanup;
     }
 
