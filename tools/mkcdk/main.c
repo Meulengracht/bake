@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <chef/cli.h>
 #include <chef/client.h>
 #include <chef/api/package.h>
 #include <chef/dirs.h>
@@ -709,58 +710,6 @@ static int __read_image_file(char* path, void** bufferOut, size_t* lengthOut)
     *bufferOut = buffer;
     *lengthOut = size;
     return 0;
-}
-
-static uint64_t __parse_quantity(const char* size)
-{
-    char*    end = NULL;
-    uint64_t number = strtoull(size, &end, 10);
-    switch (*end)  {
-        case 'G':
-            number *= 1024;
-            // fallthrough
-        case 'M':
-            number *= 1024;
-            // fallthrough
-        case 'K':
-            number *= 1024;
-            break;
-        default:
-            break;
-    }
-    return number;
-}
-
-static char* __split_switch(char** argv, int argc, int* i)
-{
-    char* split = strchr(argv[*i], '=');
-    if (split != NULL) {
-        return split + 1;
-    }
-    if ((*i + 1) < argc) {
-        return argv[++(*i)];
-    }
-    return NULL;
-}
-
-static int __parse_string_switch(char** argv, int argc, int* i, const char* s, size_t sl, const char* l, size_t ll, const char* defaultValue, char** out)
-{
-    if (strncmp(argv[*i], s, sl) == 0 || strncmp(argv[*i], l, ll) == 0) {
-        char* value = __split_switch(argv, argc, i);
-        *out = value != NULL ? value : (char*)defaultValue;
-        return 0;
-    }
-    return -1;
-}
-
-static int __parse_quantity_switch(char** argv, int argc, int* i, const char* s, size_t sl, const char* l, size_t ll, uint64_t defaultValue, uint64_t* out)
-{
-    if (strncmp(argv[*i], s, sl) == 0 || strncmp(argv[*i], l, ll) == 0) {
-        char* value = __split_switch(argv, argc, i);
-        *out = value != NULL ? __parse_quantity(value) : defaultValue;
-        return 0;
-    }
-    return -1;
 }
 
 int main(int argc, char** argv, char** envp)

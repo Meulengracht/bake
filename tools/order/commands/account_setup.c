@@ -244,18 +244,10 @@ cleanup:
 
 void account_publish_setup(void)
 {
-    struct chef_account* account        = NULL;
-    char*                publisherName  = NULL;
-    char*                publisherEmail = NULL;
-    int                  success;
+    char* publisherName  = NULL;
+    char* publisherEmail = NULL;
+    int   success;
 
-    // allocate memory for the account
-    account = chef_account_new();
-    if (account == NULL) {
-        fprintf(stderr, "failed to allocate memory for the account\n");
-        goto cleanup;
-    }
-    
     // ask for the publisher name
     printf("We need to know the name under which your packages will be published. (i.e my-org)\n");
     printf("Please only include the name, characters allowed: [a-zA-Z0-9-], length must be between 3-63 characters\n");
@@ -274,12 +266,8 @@ void account_publish_setup(void)
         goto cleanup;
     }
 
-    // update account members
-    chef_account_set_publisher_name(account, publisherName);
-    chef_account_set_publisher_email(account, publisherEmail);
-    
     printf("Setting up account...\n");
-    success = chef_account_update(account);
+    success = chef_account_publisher_register(publisherName, publisherEmail);
     if (success != 0) {
         fprintf(stderr, "failed to setup account: %s\n", strerror(errno));
     } else {
@@ -291,5 +279,4 @@ void account_publish_setup(void)
 cleanup:
     free(publisherName);
     free(publisherEmail);
-    chef_account_free(account);
 }

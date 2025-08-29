@@ -33,26 +33,9 @@ enum chef_account_status {
 enum chef_account_verified_status {
     CHEF_ACCOUNT_VERIFIED_STATUS_UNKNOWN,
     CHEF_ACCOUNT_VERIFIED_STATUS_PENDING,
+    CHEF_ACCOUNT_VERIFIED_STATUS_REJECTED,
     CHEF_ACCOUNT_VERIFIED_STATUS_VERIFIED,
-    CHEF_ACCOUNT_VERIFIED_STATUS_REJECTED
 };
-
-/**
- * @brief Retrieves the account information of the current user. This requires
- * that @chefclient_login has been called.
- * 
- * @param[In] accountOut A pointer where to store the allocated account instance.
- * @return int -1 on error, 0 on success. Errno will be set accordingly.
- */
-extern int chef_account_get(struct chef_account** accountOut);
-
-/**
- * @brief 
- * 
- * @param account 
- * @return int 
- */
-extern int chef_account_update(struct chef_account* account);
 
 /**
  * @brief Creates a new account instance. This is neccessary if no account exists yet.
@@ -67,13 +50,41 @@ extern struct chef_account* chef_account_new(void);
  */
 extern void chef_account_free(struct chef_account* account);
 
-extern const char* chef_account_get_publisher_name(struct chef_account* account);
-extern void        chef_account_set_publisher_name(struct chef_account* account, const char* publisherName);
+/**
+ * @brief Retrieves the account information of the current user. This requires
+ * that @chefclient_login has been called.
+ * 
+ * @param[In] accountOut A pointer where to store the allocated account instance.
+ * @return int -1 on error, 0 on success. Errno will be set accordingly.
+ */
+extern int chef_account_get(struct chef_account** accountOut);
 
-extern void        chef_account_set_publisher_email(struct chef_account* account, const char* publisherEmail);
-extern const char* chef_account_get_publisher_email(struct chef_account* account);
+/**
+ * @brief Updates the account information on the server. This requires that
+ * @chefclient_login has been called.
+ * 
+ * @param[In] account A pointer to the account instance that will be updated.
+ * @return int -1 on error, 0 on success. Errno will be set accordingly.
+ */
+extern int chef_account_update(struct chef_account* account);
 
-extern enum chef_account_status          chef_account_get_status(struct chef_account* account);
-extern enum chef_account_verified_status chef_account_get_verified_status(struct chef_account* account);
+extern int chef_account_publisher_register(const char* name, const char* email);
+
+extern int chef_account_apikey_create(const char* name, char** apiKey);
+extern int chef_account_apikey_delete(const char* name);
+
+extern const char*              chef_account_get_name(struct chef_account* account);
+extern const char*              chef_account_get_email(struct chef_account* account);
+extern enum chef_account_status chef_account_get_status(struct chef_account* account);
+
+extern void chef_account_set_name(struct chef_account* account, const char* name);
+extern void chef_account_set_email(struct chef_account* account, const char* email);
+
+extern int                               chef_account_get_publisher_count(struct chef_account* account);
+extern const char*                       chef_account_get_publisher_name(struct chef_account* account, int index);
+extern enum chef_account_verified_status chef_account_get_publisher_verified_status(struct chef_account* account, int index);
+
+extern int         chef_account_get_apikey_count(struct chef_account* account);
+extern const char* chef_account_get_apikey_name(struct chef_account* account, int index);
 
 #endif //!__LIBCHEF_API_ACCOUNT_H__
