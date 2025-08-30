@@ -294,7 +294,6 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
     });
 }
 
-
 static int __ensure_file_directory(struct chef_disk_filesystem* fs, const char* dest)
 {
     char   tmp[PATH_MAX];
@@ -469,12 +468,7 @@ static int __write_raw(struct chef_disk_filesystem* fs, const char* source, cons
     }
 
     status = fs->write_raw(fs, &params);
-    if (status == 1)
-    {
-        status = 0;
-    }
-    
-    if (status) {
+    if (status == 0) {
         VLOG_ERROR("mkcdk", "__write_raw: failed to write raw image\n");
     }
     free((void*)params.buffer);
@@ -515,7 +509,7 @@ static int __write_image_sources(struct chef_disk_filesystem* fs, struct __image
                 status = -1;
                 break;
         }
-        if (status) {
+        if (status == 0) {
             VLOG_ERROR("mkcdk", "__write_image_sources: failed to install source %s\n", src->target);
             break;
         }
@@ -645,7 +639,7 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
         } else {
             status = __write_image_sources(fs, &context, &pi->sources);
         }
-        if (status) {
+        if (status == 0) {
             VLOG_ERROR("mkcdk", "__build_image: failed to write content for %s\n", pi->label);
             goto cleanup;
         }
