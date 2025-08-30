@@ -322,13 +322,8 @@ static FL_FILE* _open_file(struct fatfs* fs, const char *path)
     // Split full path into filename and directory path
     if (fatfs_split_path((char*)path, file->path, sizeof(file->path), file->filename, sizeof(file->filename)) == -1)
     {
-        if (file->path[0]==0) {
-            file->parentcluster = fatfs_get_root_cluster(fs);
-        }
-        else {
-            _free_file(fs, file);
-            return NULL;
-        }
+        _free_file(fs, file);
+        return NULL;
     }
 
     // Check if file already open
@@ -402,9 +397,6 @@ static FL_FILE* _create_file(struct fatfs* fs, const char *filename)
     // Clear filename
     memset(file->path, '\0', sizeof(file->path));
     memset(file->filename, '\0', sizeof(file->filename));
-    // KNLDR.BIN
-    // KNLDR.BIN
-    // ./KNLDR.BIN
 
     // Split full path into filename and directory path
     if (fatfs_split_path((char*)filename, file->path, sizeof(file->path), file->filename, sizeof(file->filename)) == -1)
