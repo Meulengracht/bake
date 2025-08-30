@@ -148,7 +148,7 @@ static void __finalize_partition(struct parser_state* state)
     struct chef_image_partition* partition;
 
     // verify required project members
-    if (__is_valid_name(state->partition.label) != 0) {
+    if (__is_valid_name(state->partition.label)) {
         fprintf(stderr, "parse error: partition 'label' must be provided and only contain [a-zA-Z_-]\n");
         exit(EXIT_FAILURE);
     }

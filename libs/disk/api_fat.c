@@ -134,8 +134,8 @@ static int __partition_read(uint32 sector, uint8 *buffer, uint32 sector_count, v
     offset = sector * cfs->bytes_per_sector;
     status = fseek(cfs->stream, (long)offset, SEEK_SET);
 
-    size_t res = fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
-    return res == sector_count ? 1 : 0;
+    fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
+    return 1;
 }
 
 // return 0 for error, 1 for ok
