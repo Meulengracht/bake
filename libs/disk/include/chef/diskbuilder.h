@@ -20,7 +20,6 @@
 #define __DISKBUILDER_H__
 
 #include <chef/list.h>
-#include <stdio.h>
 
 // Known guids
 #define GPT_GUID_BIOS_BOOT     "21686148-6449-6E6F-744E-656564454649"

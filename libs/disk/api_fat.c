@@ -224,7 +224,7 @@ static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs
     }
 
     fl_fclose(cfs->fs, stream);
-    return 0;
+    return 1;
 }
 
 static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_write_raw_params* params)
