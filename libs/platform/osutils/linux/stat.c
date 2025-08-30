@@ -24,6 +24,8 @@ int platform_stat(const char* path, struct platform_stat* stats)
 {
 	struct stat st;
 	if (lstat(path, &st) != 0) {
+		printf("lstat failed: %s\n", strerror(errno));
+		printf("path was: %s\n", path);
 		return -1;
 	}
 

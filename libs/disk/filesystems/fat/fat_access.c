@@ -60,28 +60,45 @@ int fatfs_init(struct fatfs *fs)
 
     // Make sure we have a read function (write function is optional)
     if (!fs->disk_io.read_media)
+    {
         return FAT_INIT_MEDIA_ACCESS_ERROR;
-
+    }
     // MBR: Sector 0 on the disk
     // NOTE: Some removeable media does not have this.
 
     // Load MBR (LBA 0) into the 512 byte buffer
     if (!fs->disk_io.read_media(0, fs->currentsector.sector, 1, fs->disk_io.user_ctx))
+    {
+        printf("here? 214");
         return FAT_INIT_MEDIA_ACCESS_ERROR;
-
+    }
     // Make Sure 0x55 and 0xAA are at end of sector
     // (this should be the case regardless of the MBR or boot sector)
     if (fs->currentsector.sector[SIGNATURE_POSITION] != 0x55 || fs->currentsector.sector[SIGNATURE_POSITION+1] != 0xAA)
+    {
+        printf("current sector data: ");
+        for (int i = 0; i < 512; i++)
+        {
+            printf("%02X ", fs->currentsector.sector[i]);
+        }
+        printf("\n");
+        printf("here? 324");
         return FAT_INIT_INVALID_SIGNATURE;
+    }
 
     // Now check again using the access function to prove endian conversion function
     if (GET_16BIT_WORD(fs->currentsector.sector, SIGNATURE_POSITION) != SIGNATURE_VALUE)
+    {
+        printf("here? 56");
         return FAT_INIT_ENDIAN_ERROR;
+    }
 
     // Verify packed structures
     if (sizeof(struct fat_dir_entry) != FAT_DIR_ENTRY_SIZE)
+    {
+        printf("here? 23");
         return FAT_INIT_STRUCT_PACKING;
-
+    }
     // Check the partition type code
     switch(fs->currentsector.sector[PARTITION1_TYPECODE_LOCATION])
     {
@@ -112,12 +129,17 @@ int fatfs_init(struct fatfs *fs)
     // Load Volume 1 table into sector buffer
     // (We may already have this in the buffer if MBR less drive!)
     if (!fs->disk_io.read_media(fs->lba_begin, fs->currentsector.sector, 1, fs->disk_io.user_ctx))
+    {
+        printf("here? 1");
         return FAT_INIT_MEDIA_ACCESS_ERROR;
+    }
 
     // Make sure there are 512 bytes per cluster
     if (GET_16BIT_WORD(fs->currentsector.sector, 0x0B) != FAT_SECTOR_SIZE)
+    {
+        printf("here? 111");
         return FAT_INIT_INVALID_SECTOR_SIZE;
-
+    }
     // Load Parameters of FAT partition
     fs->sectors_per_cluster = fs->currentsector.sector[BPB_SECPERCLUS];
     reserved_sectors = GET_16BIT_WORD(fs->currentsector.sector, BPB_RSVDSECCNT);
@@ -144,8 +166,10 @@ int fatfs_init(struct fatfs *fs)
     fs->cluster_begin_lba = fs->fat_begin_lba + (num_of_fats * fs->fat_sectors);
 
     if (GET_16BIT_WORD(fs->currentsector.sector, 0x1FE) != 0xAA55) // This signature should be AA55
+    {
+        printf("here? not so last");
         return FAT_INIT_INVALID_SIGNATURE;
-
+}
     // Calculate the root dir sectors
     root_dir_sectors = ((GET_16BIT_WORD(fs->currentsector.sector, BPB_ROOTENTCNT) * 32) + (GET_16BIT_WORD(fs->currentsector.sector, BPB_BYTSPERSEC) - 1)) / GET_16BIT_WORD(fs->currentsector.sector, BPB_BYTSPERSEC);
 
@@ -166,9 +190,11 @@ int fatfs_init(struct fatfs *fs)
     {
         count_of_clusters = data_sectors / fs->sectors_per_cluster;
 
-        if(count_of_clusters < 4085)
+        if(count_of_clusters < 4085) {
             // Volume is FAT12
+            printf("here? almost last");
             return FAT_INIT_WRONG_FILESYS_TYPE;
+            }
         else if(count_of_clusters < 65525)
         {
             // Clear this FAT32 specific param
@@ -186,7 +212,10 @@ int fatfs_init(struct fatfs *fs)
         }
     }
     else
+    {
+        printf("here? last");
         return FAT_INIT_WRONG_FILESYS_TYPE;
+    }
 }
 //-----------------------------------------------------------------------------
 // fatfs_lba_of_cluster: This function converts a cluster number into a sector /

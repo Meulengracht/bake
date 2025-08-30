@@ -588,8 +588,15 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
         }
 
         if (strcmp(pi->fstype, "fat32") == 0) {
+            FILE* f = fopen(path, "r+b");
+            printf("opening file: %s\n", path);
+            printf("file stream is: %p\n", f);
+            if (!f) { perror("fopen"); return NULL; }
+
             fs = chef_filesystem_fat32_new(pd, &(struct chef_disk_filesystem_params) {
-                .sector_size = options->sector_size
+                .sector_size = options->sector_size,
+                .stream = f,
+                .path = path
             });
         } else if (strcmp(pi->fstype, "mfs") == 0) {
             fs = chef_filesystem_mfs_new(pd, &(struct chef_disk_filesystem_params) {

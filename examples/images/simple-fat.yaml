@@ -1,7 +1,7 @@
 schema: mbr
 
 partitions:
-  - label: test1
+  - label: test
     type: fat32
     # ID specifies the partition ID and can be either
     # of two formats:
