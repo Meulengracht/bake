@@ -49,7 +49,7 @@ static int __update_mbr(struct __fat_filesystem* cfs, uint8* sector)
 
     snprintf(
         &tmp[0], sizeof(tmp) -1,
-        "resources" CHEF_PATH_SEPARATOR_S "mbr.vbr",
+        "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "mbr.img",
         cfs->content
     );
     if (platform_stat(&tmp[0], &stats)) {
@@ -71,7 +71,6 @@ static int __update_mbr(struct __fat_filesystem* cfs, uint8* sector)
     // 3-61    - EBPB
     // 62-509  - Boot code
     // 510-511 - Boot signature
-    printf("Adding boot signature to sector: %p\n", sector);
     memcpy(&sector[0], &((uint8_t*)buffer)[0], 3);
     memcpy(&sector[62], &((uint8_t*)buffer)[62], 448);
     sector[510] = 0x55;
@@ -135,8 +134,8 @@ static int __partition_read(uint32 sector, uint8 *buffer, uint32 sector_count, v
     offset = sector * cfs->bytes_per_sector;
     status = fseek(cfs->stream, (long)offset, SEEK_SET);
 
-    fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
-    return 1;
+    size_t res = fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
+    return res == sector_count ? 1 : 0;
 }
 
 // return 0 for error, 1 for ok
@@ -149,8 +148,6 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
     // make sure we get the stream position
     offset = sector * cfs->bytes_per_sector;
     status = fseek(cfs->stream, offset, SEEK_SET);
-    VLOG_DEBUG("fat", "__partition_write(sector=%u, sector_count=%u, offset=%lu)\n", sector, sector_count, offset);
-
     // if the sector is 0, then let us modify the boot sector with the
     // MBR provided by content
     if (sector == 0 && cfs->content != NULL) {
@@ -218,11 +215,13 @@ static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs
 
     stream = fl_fopen(cfs->fs, params->path, "w");
     if (stream == NULL) {
+        printf("Fuck shit fuck shit\n");
         return -1;
     }
 
     written = fl_fwrite(cfs->fs, params->buffer, 1, params->size, stream);
     if (written != params->size) {
+        printf("Fuck shit shit shit shit shit fuck shit\n");
         fl_fclose(cfs->fs, stream);
         return -1;
     }
@@ -243,9 +242,8 @@ static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_w
             return -1;
         }
 
-        printf("stream=%p, bytes_per_sector=%u\n", cfs->stream, cfs->bytes_per_sector);
         status = __partition_read(0, &mbr[0], 1, cfs);
-        if (status) {
+        if (!status) {
             VLOG_ERROR("fat", "failed to read mbr from partition\n");
             return status;
         }

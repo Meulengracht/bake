@@ -322,8 +322,14 @@ static FL_FILE* _open_file(struct fatfs* fs, const char *path)
     // Split full path into filename and directory path
     if (fatfs_split_path((char*)path, file->path, sizeof(file->path), file->filename, sizeof(file->filename)) == -1)
     {
-        _free_file(fs, file);
-        return NULL;
+        if (file->path[0]==0) {
+            file->parentcluster = fatfs_get_root_cluster(fs);
+        }
+        else {
+            printf("Failed to split path\n %s", path);
+            _free_file(fs, file);
+            return NULL;
+        }
     }
 
     // Check if file already open
@@ -345,9 +351,12 @@ static FL_FILE* _open_file(struct fatfs* fs, const char *path)
             return NULL;
         }
     }
+    printf("checkpoint 1\n");
 
     // Using dir cluster address search for filename
-    if (fatfs_get_file_entry(fs, file->parentcluster, file->filename,&sfEntry))
+    int status = fatfs_get_file_entry(fs, file->parentcluster, file->filename,&sfEntry);
+    printf("status on fatfs_get_file_entry: %d\n", status);
+    if (status)
         // Make sure entry is file not dir!
         if (fatfs_entry_is_file(&sfEntry))
         {
@@ -371,6 +380,7 @@ static FL_FILE* _open_file(struct fatfs* fs, const char *path)
             return file;
         }
 
+    printf("checkpoint 2\n");    
     _free_file(fs, file);
     return NULL;
 }
@@ -397,10 +407,14 @@ static FL_FILE* _create_file(struct fatfs* fs, const char *filename)
     // Clear filename
     memset(file->path, '\0', sizeof(file->path));
     memset(file->filename, '\0', sizeof(file->filename));
+    // KNLDR.BIN
+    // KNLDR.BIN
+    // ./KNLDR.BIN
 
     // Split full path into filename and directory path
     if (fatfs_split_path((char*)filename, file->path, sizeof(file->path), file->filename, sizeof(file->filename)) == -1)
     {
+        printf("Survival -1\n");
         _free_file(fs, file);
         return NULL;
     }
@@ -408,6 +422,7 @@ static FL_FILE* _create_file(struct fatfs* fs, const char *filename)
     // Check if file already open
     if (_check_file_open(fs, file))
     {
+        printf("Survival 0\n");
         _free_file(fs, file);
         return NULL;
     }
@@ -417,6 +432,7 @@ static FL_FILE* _create_file(struct fatfs* fs, const char *filename)
         file->parentcluster = fatfs_get_root_cluster(fs);
     else
     {
+        printf("Survival 1\n");
         // Find parent directory start cluster
         if (!_open_directory(fs, file->path, &file->parentcluster))
         {
@@ -428,6 +444,7 @@ static FL_FILE* _create_file(struct fatfs* fs, const char *filename)
     // Check if same filename exists in directory
     if (fatfs_get_file_entry(fs, file->parentcluster, file->filename,&sfEntry) == 1)
     {
+        printf("Survival 3\n");
         _free_file(fs, file);
         return NULL;
     }
@@ -437,6 +454,7 @@ static FL_FILE* _create_file(struct fatfs* fs, const char *filename)
     // Create the file space for the file (at least one clusters worth!)
     if (!fatfs_allocate_free_space(fs, 1, &file->startcluster, 1))
     {
+        printf("Survival 4\n");
         _free_file(fs, file);
         return NULL;
     }
@@ -467,6 +485,7 @@ static FL_FILE* _create_file(struct fatfs* fs, const char *filename)
     // We reached the max number of duplicate short file names (unlikely!)
     if (tailNum == 9999)
     {
+        printf("Survival 6\n");
         // Delete allocated space
         fatfs_free_cluster_chain(fs, file->startcluster);
 
@@ -502,6 +521,7 @@ static FL_FILE* _create_file(struct fatfs* fs, const char *filename)
     if (!fatfs_add_file_entry(fs, file->parentcluster, (char*)file->filename, (char*)file->shortfilename, file->startcluster, 0, 0))
     {
         // Delete allocated space
+        printf("Survival 8\n");
         fatfs_free_cluster_chain(fs, file->startcluster);
 
         _free_file(fs, file);

@@ -470,7 +470,6 @@ uint32 fatfs_get_file_entry(struct fatfs *fs, uint32 Cluster, char *name_to_find
                 // If Invalid record found delete any long file name information collated
                 else if (fatfs_entry_lfn_invalid(directoryEntry) )
                     fatfs_lfn_cache_init(&lfn, 0);
-
                 // Normal SFN Entry and Long text exists
                 else if (fatfs_entry_lfn_exists(&lfn, directoryEntry) )
                 {

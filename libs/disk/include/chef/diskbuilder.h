@@ -124,8 +124,6 @@ union chef_filesystem_options {
 
 struct chef_disk_filesystem_params {
     union chef_filesystem_options options;
-    FILE*                         stream;
-    const char*                   path;
     unsigned int                  sector_size;
 };
 
