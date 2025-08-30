@@ -188,7 +188,7 @@ static int __fs_format(struct chef_disk_filesystem* fs)
         if (cfs->content != NULL) {
             snprintf(
                 &tmp[0], sizeof(tmp) -1,
-                "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "mbr.img",
+                "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "fat.img",
                 cfs->content
             );
         } else {
@@ -214,14 +214,11 @@ static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs
     int                      written;
 
     stream = fl_fopen(cfs->fs, params->path, "w");
-    if (stream == NULL) {
-        printf("Fuck shit fuck shit\n");
+    if (stream == NULL)
         return -1;
-    }
 
     written = fl_fwrite(cfs->fs, params->buffer, 1, params->size, stream);
     if (written != params->size) {
-        printf("Fuck shit shit shit shit shit fuck shit\n");
         fl_fclose(cfs->fs, stream);
         return -1;
     }
