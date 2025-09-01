@@ -142,6 +142,7 @@ int account_login_setup(void)
     struct chef_account* account        = NULL;
     char*                publicKeyPath  = NULL;
     char*                privateKeyPath = NULL;
+    char*                email;
     int                  success;
     struct chef_config*  config;
     void*                accountSection;
@@ -159,6 +160,15 @@ int account_login_setup(void)
     accountSection = chef_config_section(config, "account");
     if (accountSection == NULL) {
         fprintf(stderr, "order: failed to load account section from configuration: %s\n", strerror(errno));
+        return -1;
+    }
+
+    email = (char*)chef_config_get_string(config, accountSection, "email");
+    if (email == NULL) {
+        printf("\nTo use chef, you must configure your identity\n");
+        printf("You can configure these by executing:\n\n");
+        printf("   order config auth.name <\"Your Name\">\n");
+        printf("   order config auth.email <email>\n\n");
         return -1;
     }
 
@@ -237,6 +247,7 @@ int account_login_setup(void)
 login:
     success = chefclient_login(&(struct chefclient_login_params) {
         .flow = CHEF_LOGIN_FLOW_TYPE_PUBLIC_KEY,
+        .email = email,
         .api_key = __get_api_key(),
         .public_key = publicKeyPath,
         .private_key = privateKeyPath,

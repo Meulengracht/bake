@@ -26,7 +26,7 @@
  * to generate the session key.
  * @return int returns -1 on error, 0 on success
  */
-extern int pubkey_login(const char* publicKey, const char* privateKey);
+extern int pubkey_login(const char* email, const char* publicKey, const char* privateKey);
 
 /**
  * @brief Logs out the current user and clears the authentication context.

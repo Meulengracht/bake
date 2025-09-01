@@ -52,7 +52,7 @@ int chefclient_login(struct chefclient_login_params* params)
     if (params->flow == CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE) {
         return oauth_login(OAUTH_FLOW_DEVICECODE);
     } else if (params->flow == CHEF_LOGIN_FLOW_TYPE_PUBLIC_KEY) {
-        return pubkey_login(params->public_key, params->private_key);
+        return pubkey_login(params->email, params->public_key, params->private_key);
     }
 
     errno = ENOTSUP;

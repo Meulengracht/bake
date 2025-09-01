@@ -183,7 +183,7 @@ static int __parse_token_response(const char* responseBuffer, struct __pubkey_co
     return 0;
 }
 
-static int __pubkey_post_login(const char* publicKey, const char* signature, struct __pubkey_context* context)
+static int __pubkey_post_login(const char* email, const char* publicKey, const char* signature, struct __pubkey_context* context)
 {
     char                 buffer[4096];
     char                 url[1024];
@@ -223,8 +223,8 @@ static int __pubkey_post_login(const char* publicKey, const char* signature, str
     snprintf(
         buffer,
         sizeof(buffer),
-        "{\"PublicKey\":\"%s\",\"SecurityToken\":\"%s\"}",
-        publicKey, signature
+        "{\"Email\":\"%s\",\"PublicKey\":\"%s\",\"SecurityToken\":\"%s\"}",
+        email, publicKey, signature
     );
 
     code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, &buffer[0]);
@@ -254,7 +254,7 @@ cleanup:
     return status;
 }
 
-int pubkey_login(const char* publicKey, const char* privateKey)
+int pubkey_login(const char* email, const char* publicKey, const char* privateKey)
 {
     char*  signature = NULL;
     size_t siglen = 0;
@@ -290,7 +290,7 @@ int pubkey_login(const char* publicKey, const char* privateKey)
             return -1;
         }
 
-        status = __pubkey_post_login(publicKey, base64Signature, &g_context);
+        status = __pubkey_post_login(email, publicKey, base64Signature, &g_context);
         free(base64Signature);
         if (status) {
             VLOG_ERROR("chef-client", "pubkey_login: failed to post login request\n");

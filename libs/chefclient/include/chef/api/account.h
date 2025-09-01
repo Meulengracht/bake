@@ -78,7 +78,6 @@ extern const char*              chef_account_get_email(struct chef_account* acco
 extern enum chef_account_status chef_account_get_status(struct chef_account* account);
 
 extern void chef_account_set_name(struct chef_account* account, const char* name);
-extern void chef_account_set_email(struct chef_account* account, const char* email);
 
 extern int                               chef_account_get_publisher_count(struct chef_account* account);
 extern const char*                       chef_account_get_publisher_name(struct chef_account* account, int index);

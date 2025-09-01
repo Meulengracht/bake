@@ -28,15 +28,41 @@ static void __print_help(void)
 {
     printf("Usage: order config <param> <value>\n");
     printf("Examples:\n");
-    printf("  order config auth.key <path-to-key-file>\n");
+    printf("  order config auth.name  <\"Your Name\">\n");
+    printf("  order config auth.email <email>\n");
+    printf("  order config auth.key   <path-to-key-file>\n");
     printf("Options:\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
 }
 
+static int __verify_email(const char* email)
+{
+    int atFound  = 0;
+    int dotFound = 0;
+    int i        = 0;
+
+    if (email == NULL) {
+        return -1;
+    }
+
+    // verify email contains @ and atleast one .
+    while (email[i]) {
+        if (email[i] == '@') {
+            atFound = 1;
+        } else if (email[i] == '.') {
+            dotFound = 1;
+        }
+        i++;
+    }
+    
+    return (atFound != 0 && dotFound != 0) ? 0 : -1;
+}
+
 static int __handle_option(const char* option, const char* value)
 {
-    struct chef_config*  config;
+    struct chef_config* config;
+    void*               accountSection;
 
     config = chef_config_load(chef_dirs_config());
     if (config == NULL) {
@@ -44,15 +70,13 @@ static int __handle_option(const char* option, const char* value)
         return -1;
     }
 
+    accountSection = chef_config_section(config, "account");
+    if (accountSection == NULL) {
+        fprintf(stderr, "order: failed to load account section from configuration: %s\n", strerror(errno));
+        return -1;
+    }
+
     if (strcmp(option, "auth.key") == 0) {
-        void* accountSection;
-
-        accountSection = chef_config_section(config, "account");
-        if (accountSection == NULL) {
-            fprintf(stderr, "order: failed to load account section from configuration: %s\n", strerror(errno));
-            return -1;
-        }
-
         if (value == NULL) {
             printf("auth.key = %s\n", (const char*)chef_config_get_string(config, accountSection, "private-key"));
         } else {
@@ -78,13 +102,29 @@ static int __handle_option(const char* option, const char* value)
 
             chef_config_set_string(config, accountSection, "private-key", value);
             chef_config_set_string(config, accountSection, "public-key", &tmp[0]);
-            chef_config_save(config);
+        }
+    } else if (strcmp(option, "auth.name") == 0) {
+        if (value == NULL) {
+            printf("auth.name = %s\n", (const char*)chef_config_get_string(config, accountSection, "name"));
+        } else {
+            chef_config_set_string(config, accountSection, "name", value);
+        }
+    } else if (strcmp(option, "auth.email") == 0) {
+        if (value == NULL) {
+            printf("auth.email = %s\n", (const char*)chef_config_get_string(config, accountSection, "email"));
+        } else {
+            if (__verify_email(value)) {
+                fprintf(stderr, "order: invalid email provided\n");
+                return -1;
+            }
+            chef_config_set_string(config, accountSection, "email", value);
         }
     } else {
         fprintf(stderr, "order: unknown option '%s' for 'config'\n", option);
         return -1;
     }
 
+    chef_config_save(config);
     return 0;
 }
 

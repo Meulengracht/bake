@@ -167,8 +167,6 @@ static int __handle_set(char* parameter, char* value)
 
     if (strcmp(parameter, "name") == 0) {
         chef_account_set_name(account, value);
-    } else if (strcmp(parameter, "email") == 0) {
-        chef_account_set_email(account, value);
     } else {
         printf("order: unknown parameter '%s'\n", parameter);
         return -1;

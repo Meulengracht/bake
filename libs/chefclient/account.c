@@ -85,7 +85,6 @@ static json_t* __serialize_account(struct chef_account* account)
     }
 
     json_object_set_new(json, "name", json_string(account->name));
-    json_object_set_new(json, "email", json_string(account->email));
     return json;
 }
 
@@ -603,20 +602,6 @@ void chef_account_set_name(struct chef_account* account, const char* name)
     }
 
     account->name = platform_strdup(name);
-}
-
-void chef_account_set_email(struct chef_account* account, const char* email)
-{
-    if (account == NULL) {
-        errno = EINVAL;
-        return;
-    }
-
-    if (account->email != NULL) {
-        free((void*)account->email);
-    }
-
-    account->email = platform_strdup(email);
 }
 
 int chef_account_get_publisher_count(struct chef_account* account)

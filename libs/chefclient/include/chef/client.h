@@ -43,6 +43,7 @@ enum chef_login_flow_type {
  */
 struct chefclient_login_params {
     enum chef_login_flow_type flow; /**< The type of login flow to use */
+    const char* email;              /**< The email that should be used for identification */
     const char* api_key;            /**< The api key to use for authentication */
     const char* public_key;         /**< The public key to use for authentication */
     const char* private_key;        /**< The private key to use for authentication */
