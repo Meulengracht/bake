@@ -200,7 +200,7 @@ static int __pubkey_post_login(const char* email, const char* publicKey, const c
         return -1;
     }
 
-    request = chef_request_new(1, 0);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "__pubkey_post_login: failed to create request\n");
         free(keyBuffer);

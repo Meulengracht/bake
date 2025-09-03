@@ -114,7 +114,7 @@ int __get_settings(struct chef_settings_params* params, struct chef_package_sett
     int                  status = -1;
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "__get_settings: failed to create request\n");
         return -1;
@@ -168,7 +168,7 @@ static int __update_settings(json_t* json, struct chef_package_settings** settin
     char                 buffer[256];
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "__update_settings: failed to create request\n");
         return -1;

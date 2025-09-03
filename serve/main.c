@@ -16,19 +16,14 @@
  * 
  */
 
-#include <chef/dirs.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "chef-config.h"
-#include <vlog.h>
 
-extern int account_main(int argc, char** argv);
-extern int config_main(int argc, char** argv);
-extern int package_main(int argc, char** argv);
-extern int info_main(int argc, char** argv);
-extern int find_main(int argc, char** argv);
-extern int publish_main(int argc, char** argv);
+extern int install_main(int argc, char** argv);
+extern int remove_main(int argc, char** argv);
+extern int update_main(int argc, char** argv);
+extern int list_main(int argc, char** argv);
 
 struct command_handler {
     char* name;
@@ -36,25 +31,21 @@ struct command_handler {
 };
 
 static struct command_handler g_commands[] = {
-    { "account",  account_main },
-    { "config",   config_main },
-    { "package",  package_main },
-    { "info",     info_main },
-    { "find",     find_main },
-    { "publish",  publish_main }
+    { "install", install_main },
+    { "remove",  remove_main },
+    { "update",  update_main },
+    { "list",    list_main }
 };
 
 static void __print_help(void)
 {
-    printf("Usage: order <command> [options]\n");
+    printf("Usage: serve <command> [options]\n");
     printf("\n");
     printf("Commands:\n");
-    printf("  account     view account information or setup your account\n");
-    printf("  config      view or change configuration values for order\n");
-    printf("  package     view or manage your published packages\n");
-    printf("  info        retrieves information about a specific pack\n");
-    printf("  find        find packages by publisher or by name\n");
-    printf("  publish     publish a new pack to chef\n");
+    printf("  install     install a new package\n");
+    printf("  remove      remove a previously installed package\n");
+    printf("  update      update an installed package or do a full update\n");
+    printf("  list        list all installed packages\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
@@ -86,13 +77,13 @@ int main(int argc, char** argv, char** envp)
         }
 
         if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
-            printf("order: version " PROJECT_VER "\n");
+            printf("serve: version " PROJECT_VER "\n");
             return 0;
         }
 
         command = __get_command(argv[1]);
         if (!command) {
-            fprintf(stderr, "order: invalid command %s\n", argv[1]);
+            fprintf(stderr, "serve: invalid command %s\n", argv[1]);
             return -1;
         }
     }
@@ -102,14 +93,9 @@ int main(int argc, char** argv, char** envp)
         return 0;
     }
 
-    vlog_initialize(VLOG_LEVEL_DEBUG);
-    result = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKE);
-    if (result != 0) {
-        fprintf(stderr, "order: failed to initialize support library\n");
-        return -1;
-    }
-
     result = command->handler(argc, argv);
-    vlog_cleanup();
-    return result;
+    if (result != 0) {
+        return result;
+    }
+    return 0;
 }

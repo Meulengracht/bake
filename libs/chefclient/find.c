@@ -229,7 +229,7 @@ int chefclient_pack_find(struct chef_find_params* params, struct chef_package***
     int                  status = -1;
     long                 httpCode;
 
-    request = chef_request_new(1, params->privileged);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, params->privileged);
     if (!request) {
         VLOG_ERROR("chef-client", "chefclient_pack_find: failed to create request\n");
         return -1;

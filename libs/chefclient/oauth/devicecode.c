@@ -114,7 +114,7 @@ static int __deviceflow_challenge(struct devicecode_context* context)
     int                  status = -1;
     long                 httpCode;
 
-    request = chef_request_new(1, 0);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "__deviceflow_challenge: failed to create request\n");
         return -1;
@@ -223,7 +223,7 @@ static int __deviceflow_get_token(struct devicecode_context* deviceContext, stru
     int                  status = -1;
     long                 httpCode;
 
-    request = chef_request_new(1, 0);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "__deviceflow_get_token: failed to create request\n");
         return -1;

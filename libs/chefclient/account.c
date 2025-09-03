@@ -155,7 +155,7 @@ int __get_account(struct chef_account** accountOut)
     int                  status = -1;
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "__get_account: failed to create request\n");
         return -1;
@@ -209,7 +209,7 @@ static int __update_account(json_t* json, struct chef_account** accountOut)
     char                 buffer[256];
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "__update_account: failed to create request\n");
         return -1;
@@ -321,7 +321,7 @@ int chef_account_publisher_register(const char* name, const char* email)
     char                 body[1024];
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "chef_account_publisher_register: failed to create request\n");
         return -1;
@@ -410,7 +410,7 @@ int chef_account_apikey_create(const char* name, char** apiKey)
     char                 body[1024];
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "chef_account_publisher_register: failed to create request\n");
         return -1;
@@ -477,7 +477,7 @@ int chef_account_apikey_delete(const char* name)
     char                 body[1024];
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "chef_account_apikey_delete: failed to create request\n");
         return -1;

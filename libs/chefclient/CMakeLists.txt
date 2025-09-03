@@ -4,6 +4,7 @@ project (chef-client C)
 # The version 2 - https://api.chef.io
 # The version 1 - https://chef-api.azurewebsites.net/api
 option(CHEF_CLIENT_API_URL "Chef client API" "https://api.chef.io")
+option(CHEF_CLIENT_API_SECURE "Use secure connection for Chef client API" ON)
 
 add_library(chef-client STATIC
     base64/encode.c
@@ -27,6 +28,14 @@ add_library(chef-client STATIC
     settings.c
     trace.c
 )
+
 target_include_directories(chef-client PUBLIC include ${CURL_INCLUDE_DIR})
+
 target_compile_definitions(chef-client PUBLIC CHEF_CLIENT_API_URL="${CHEF_CLIENT_API_URL}")
+if(CHEF_CLIENT_API_SECURE)
+    target_compile_definitions(chef-client PUBLIC CHEF_CLIENT_API_SECURE=1)
+else()
+    target_compile_definitions(chef-client PUBLIC CHEF_CLIENT_API_SECURE=0)
+endif()
+
 target_link_libraries(chef-client PUBLIC ${CURL_LIBRARIES} OpenSSL::SSL jansson vafs common platform)

@@ -138,7 +138,7 @@ int __download_request(struct chef_download_params* params, struct pack_response
     long                 httpCode;
 
     // initialize a curl session
-    request = chef_request_new(1, 0);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "__download_request: failed to create request\n");
         return -1;
@@ -192,7 +192,7 @@ static int __download_file(const char* filePath, struct pack_response* context, 
     long                 httpCode;
 
     // initialize a curl session
-    request = chef_request_new(1, 0);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "__download_file: failed to create request\n");
         return -1;

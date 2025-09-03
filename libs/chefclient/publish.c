@@ -248,7 +248,7 @@ static int __publish_request(json_t* json, struct pack_response* context)
     char                 buffer[256];
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "__publish_request: failed to create request\n");
         return -1;
@@ -312,7 +312,7 @@ static int __write_blocklist(
     char                 buffer[512];
     long                 httpCode;
 
-    request = chef_request_new(1, 0);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "__write_blocklist: failed to create request\n");
         return -1;
@@ -397,7 +397,7 @@ static int __prepare_block_request(
     int      status = -1;
     char     urlBuffer[512];
 
-    fileContext->request = chef_request_new(1, 0);
+    fileContext->request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!fileContext->request) {
         VLOG_ERROR("chef-client", "__prepare_block_request: failed to create request\n");
         return -1;

@@ -197,7 +197,7 @@ int chefclient_pack_info(struct chef_info_params* params, struct chef_package** 
     int                  status = -1;
     long                 httpCode;
 
-    request = chef_request_new(1, 0);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "chefclient_pack_info: failed to create request\n");
         return -1;
