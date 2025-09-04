@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <jansson.h>
 #include <openssl/pem.h>
+#include <openssl/decoder.h>
 #include <openssl/err.h>
 #include <vlog.h>
 
@@ -91,53 +92,33 @@ static void __save_pubkey_settings(void)
     json_object_set_new(chefclient_settings(), "pubkey", section);
 }
 
-static int __pubkey_sign(const char* privateKey, char** signatureOut, size_t* siglenOut)
+static int __pubkey_sign_with_key(EVP_PKEY* pkey, char** signatureOut, size_t* siglenOut)
 {
     unsigned char* sig;
     EVP_MD_CTX*    mdctx;
     size_t         siglen = 0;
-    EVP_PKEY*      pkey = NULL;
-    FILE*          fp;
-    VLOG_DEBUG("chef-client", "__pubkey_sign(privateKey=%s)\n", privateKey);
-
-    fp = fopen(privateKey, "r");
-    if (fp == NULL) {
-        VLOG_ERROR("chef-client", "pubkey_login: failed to open private key file %s: %s\n", privateKey, strerror(errno));
-        return -1;
-    }
-
-    pkey = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
-    fclose(fp);
-    if (pkey == NULL) {
-        VLOG_ERROR("chef-client", "pubkey_login: failed to read private key from file %s: %s\n", privateKey, ERR_error_string(ERR_get_error(), NULL));
-        return -1;
-    }
 
     mdctx = EVP_MD_CTX_new();
     if (mdctx == NULL) {
         VLOG_ERROR("chef-client", "pubkey_login: failed to create EVP_MD_CTX: %s\n", ERR_error_string(ERR_get_error(), NULL));
-        EVP_PKEY_free(pkey);
         return -1;
     }
 
     if (EVP_DigestSignInit(mdctx, NULL, EVP_sha256(), NULL, pkey) <= 0) {
         VLOG_ERROR("chef-client", "pubkey_login: failed to initialize digest sign: %s\n", ERR_error_string(ERR_get_error(), NULL));
         EVP_MD_CTX_free(mdctx);
-        EVP_PKEY_free(pkey);
         return -1;
     }
 
     if (EVP_DigestSignUpdate(mdctx, g_message, strlen(g_message)) <= 0) {
         VLOG_ERROR("chef-client", "pubkey_login: failed to update digest sign: %s\n", ERR_error_string(ERR_get_error(), NULL));
         EVP_MD_CTX_free(mdctx);
-        EVP_PKEY_free(pkey);
         return -1;
     }
 
     if (EVP_DigestSignFinal(mdctx, NULL, &siglen) <= 0) {
         VLOG_ERROR("chef-client", "pubkey_login: failed to finalize digest sign: %s\n", ERR_error_string(ERR_get_error(), NULL));
         EVP_MD_CTX_free(mdctx);
-        EVP_PKEY_free(pkey);
         return -1;
     }
 
@@ -145,7 +126,6 @@ static int __pubkey_sign(const char* privateKey, char** signatureOut, size_t* si
     if (sig == NULL) {
         VLOG_ERROR("chef-client", "pubkey_login: failed to allocate memory for signature\n");
         EVP_MD_CTX_free(mdctx);
-        EVP_PKEY_free(pkey);
         return -1;
     }
 
@@ -153,15 +133,59 @@ static int __pubkey_sign(const char* privateKey, char** signatureOut, size_t* si
         VLOG_ERROR("chef-client", "pubkey_login: failed to finalize digest sign with signature: %s\n", ERR_error_string(ERR_get_error(), NULL));
         free(sig);
         EVP_MD_CTX_free(mdctx);
-        EVP_PKEY_free(pkey);
         return -1;
     }
     EVP_MD_CTX_free(mdctx);
-    EVP_PKEY_free(pkey);
 
     *signatureOut = (char*)sig;
     *siglenOut = siglen;
     return 0;
+}
+
+static int __pubkey_sign(const char* privateKey, const char* password, char** signatureOut, size_t* siglenOut)
+{
+    BIO*              keybio;
+    int               status;
+    OSSL_DECODER_CTX* dctx;
+    EVP_PKEY*         pkey = NULL;
+    
+    const char* structure = NULL; /* any structure */
+    const char* format = NULL;   /* any format (DER, etc) */
+    const char* keytype = "RSA";   /* NULL for any key (RSA, EC etc) */
+
+    VLOG_DEBUG("chef-client", "__pubkey_sign(privateKey=%s)\n", privateKey);
+
+    keybio = BIO_new_file(privateKey, "r");
+    if (keybio == NULL) {
+        VLOG_ERROR("chef-client", "pubkey_login: failed to open private key file %s: %s\n", privateKey, strerror(errno));
+        return -1;
+    }
+
+    dctx = OSSL_DECODER_CTX_new_for_pkey(
+        &pkey, format, structure, keytype,
+        OSSL_KEYMGMT_SELECT_KEYPAIR | OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS,
+        NULL, NULL
+    );
+    if (dctx == NULL) {
+        VLOG_ERROR("chef-client", "pubkey_login: failed to create decoder context: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        BIO_free_all(keybio);
+        return -1;
+    }
+
+    if (password != NULL) {
+        OSSL_DECODER_CTX_set_passphrase(dctx, (const unsigned char*)password, strlen(password));
+    }
+
+    // Returns 0 on failure, 1 on success
+    if (OSSL_DECODER_from_bio(dctx, keybio)) {
+        status = __pubkey_sign_with_key(pkey, signatureOut, siglenOut);
+    } else { 
+        VLOG_ERROR("chef-client", "pubkey_login: failed to decode private key: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        status = -1;
+    }
+    OSSL_DECODER_CTX_free(dctx);
+    BIO_free_all(keybio);
+    return status;
 }
 
 static int __parse_token_response(const char* responseBuffer, struct __pubkey_context* context)
@@ -277,7 +301,7 @@ int pubkey_login(const char* email, const char* publicKey, const char* privateKe
         char*  base64Signature = NULL;
         size_t base64SignatureLength = 0;
 
-        status = __pubkey_sign(privateKey, &signature, &siglen);
+        status = __pubkey_sign(privateKey, NULL, &signature, &siglen);
         if (status) {
             VLOG_ERROR("chef-client", "pubkey_login: failed to sign message with private key\n");
             return status;
