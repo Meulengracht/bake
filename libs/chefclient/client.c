@@ -116,8 +116,9 @@ void chefclient_cleanup(void)
 
 const char* chefclient_api_base_url(void)
 {
-    json_t* urlObject = json_object_get(g_chefclient.settings, "api-url");
-    return json_string_value(urlObject);
+    //json_t* urlObject = json_object_get(g_chefclient.settings, "api-url");
+    //return json_string_value(urlObject);
+    return CHEF_CLIENT_API_URL;
 }
 
 const char* chef_tenant_id(void)

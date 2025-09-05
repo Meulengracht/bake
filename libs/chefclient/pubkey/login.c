@@ -151,11 +151,11 @@ static int __pubkey_sign(const char* privateKey, const char* password, char** si
     
     const char* structure = NULL; /* any structure */
     const char* format = NULL;   /* any format (DER, etc) */
-    const char* keytype = "RSA";   /* NULL for any key (RSA, EC etc) */
+    const char* keytype = NULL;   /* NULL for any key (RSA, EC etc) */
 
     VLOG_DEBUG("chef-client", "__pubkey_sign(privateKey=%s)\n", privateKey);
 
-    keybio = BIO_new_file(privateKey, "r");
+    keybio = BIO_new_file(privateKey, "rb");
     if (keybio == NULL) {
         VLOG_ERROR("chef-client", "pubkey_login: failed to open private key file %s: %s\n", privateKey, strerror(errno));
         return -1;
@@ -163,7 +163,7 @@ static int __pubkey_sign(const char* privateKey, const char* password, char** si
 
     dctx = OSSL_DECODER_CTX_new_for_pkey(
         &pkey, format, structure, keytype,
-        OSSL_KEYMGMT_SELECT_KEYPAIR | OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS,
+        OSSL_KEYMGMT_SELECT_PRIVATE_KEY | OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS,
         NULL, NULL
     );
     if (dctx == NULL) {
@@ -236,7 +236,7 @@ static int __pubkey_post_login(const char* email, const char* publicKey, const c
     request->headers = curl_slist_append(request->headers, "Accept: application/json");
 
     // Set the URL and headers
-    snprintf(&url[0], sizeof(url), "%s/login", chefclient_api_base_url());
+    snprintf(&url[0], sizeof(url), "%s/account/login", chefclient_api_base_url());
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &url[0]);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__pubkey_post_login: failed to set url [%s]\n", request->error);
