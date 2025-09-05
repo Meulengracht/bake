@@ -24,7 +24,7 @@ static const unsigned char base64_table[65] =
  * nul terminated to make it easier to use as a C string. The nul terminator is
  * not included in out_len.
  */
-unsigned char* base64_encode(const unsigned char* data, size_t len, size_t* lenOut)
+unsigned char* base64_encode(const unsigned char* data, size_t len, int lineBreaks, size_t* lenOut)
 {
     unsigned char *out, *pos;
     const unsigned char *end, *in;
@@ -32,7 +32,9 @@ unsigned char* base64_encode(const unsigned char* data, size_t len, size_t* lenO
     int line_len;
 
     olen = len * 4 / 3 + 4; /* 3-byte blocks to 4-byte */
-    olen += olen / 72; /* line feeds */
+    if (lineBreaks) {
+        olen += olen / 72; /* line feeds */
+    }
     olen++; /* nul termination */
     if (olen < len)
         return NULL; /* integer overflow */
@@ -51,7 +53,7 @@ unsigned char* base64_encode(const unsigned char* data, size_t len, size_t* lenO
         *pos++ = base64_table[in[2] & 0x3f];
         in += 3;
         line_len += 4;
-        if (line_len >= 72) {
+        if (line_len >= 72 && lineBreaks) {
             *pos++ = '\n';
             line_len = 0;
         }

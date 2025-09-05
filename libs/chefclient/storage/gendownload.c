@@ -153,9 +153,9 @@ static int __download_file(const char* url, const char* filePath, struct downloa
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: curl_easy_perform() failed: %s\n", request->error);
+        VLOG_ERROR("chef-client", "__download_file: chef_request_execute() failed: %s\n", request->error);
         goto cleanup;
     }
     

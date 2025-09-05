@@ -207,19 +207,56 @@ static int __parse_token_response(const char* responseBuffer, struct __pubkey_co
     return 0;
 }
 
+static int __read_public_key(const char* publicKeyPath, char** publicKeyOut)
+{
+    void*  keyBuffer;
+    char*  tmp;
+    size_t keylen;
+    int    status;
+    size_t j = 0;
+
+    status = platform_readfile(publicKeyPath, &keyBuffer, &keylen);
+    if (status) {
+        VLOG_ERROR("chef-client", "__read_public_key: failed to read public key file %s: %s\n", publicKeyPath, strerror(errno));
+        return -1;
+    }
+
+    // replace newlines with \n and remove \r
+    tmp = (char*)malloc((keylen * 2) + 1);
+    if (tmp == NULL) {
+        free(keyBuffer);
+        return -1;
+    }
+
+    for (size_t i = 0; i < keylen; i++) {
+        if (((char*)keyBuffer)[i] == '\n') {
+            tmp[j++] = '\\';
+            tmp[j++] = 'n';
+        } else if (((char*)keyBuffer)[i] != '\r') {
+            tmp[j++] = ((char*)keyBuffer)[i];
+        }
+    }
+    tmp[j] = '\0';
+
+    *publicKeyOut = platform_strdup(tmp);
+
+    free(tmp);
+    free(keyBuffer);
+    return 0;
+}
+
 static int __pubkey_post_login(const char* email, const char* publicKey, const char* signature, struct __pubkey_context* context)
 {
     char                 buffer[4096];
     char                 url[1024];
-    void*                keyBuffer;
-    size_t               keylen;
+    char*                keyBuffer;
     struct chef_request* request;
     CURLcode             code;
     long                 httpCode;
     int                  status = -1;
     VLOG_DEBUG("chef-client", "__pubkey_post_login(publicKey=%s)\n", publicKey);
 
-    if (platform_readfile(publicKey, &keyBuffer, &keylen)) {
+    if (__read_public_key(publicKey, &keyBuffer)) {
         VLOG_ERROR("chef-client", "__pubkey_post_login: failed to read public key file %s: %s\n", publicKey, strerror(errno));
         return -1;
     }
@@ -248,7 +285,7 @@ static int __pubkey_post_login(const char* email, const char* publicKey, const c
         buffer,
         sizeof(buffer),
         "{\"Email\":\"%s\",\"PublicKey\":\"%s\",\"SecurityToken\":\"%s\"}",
-        email, publicKey, signature
+        email, keyBuffer, signature
     );
 
     code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, &buffer[0]);
@@ -257,9 +294,8 @@ static int __pubkey_post_login(const char* email, const char* publicKey, const c
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__pubkey_post_login: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
         goto cleanup;
     }
 
@@ -307,7 +343,7 @@ int pubkey_login(const char* email, const char* publicKey, const char* privateKe
             return status;
         }
 
-        base64Signature = base64_encode((unsigned char*)signature, siglen, &base64SignatureLength);
+        base64Signature = base64_encode((unsigned char*)signature, siglen, 0, &base64SignatureLength);
         free(signature);
         if (base64Signature == NULL) {
             VLOG_ERROR("chef-client", "pubkey_login: failed to base64 encode signature\n");

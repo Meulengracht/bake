@@ -80,7 +80,7 @@ static char* __generate_blockid(void)
     __generate_bad_but_valid_guid(guidBuffer);
     
     // encode it in base64
-    return (char*)base64_encode((const unsigned char*)&guidBuffer[0], strlen(guidBuffer), NULL);
+    return (char*)base64_encode((const unsigned char*)&guidBuffer[0], strlen(guidBuffer), 0, NULL);
 }
 
 static int __create_file_contexts(const char* path, struct file_upload_context** contextsOut, int* contextCountOut)
@@ -273,9 +273,9 @@ static int __publish_request(json_t* json, struct pack_response* context)
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__publish_request: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__publish_request: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -346,9 +346,9 @@ static int __write_blocklist(
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__write_blocklist: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__write_blocklist: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);

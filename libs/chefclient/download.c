@@ -156,9 +156,9 @@ int __download_request(struct chef_download_params* params, struct pack_response
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_request: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__download_request: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -252,9 +252,9 @@ static int __download_file(const char* filePath, struct pack_response* context, 
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: curl_easy_perform() failed: %s\n", request->error);
+        VLOG_ERROR("chef-client", "__download_file: chef_request_execute() failed: %s\n", request->error);
         goto cleanup;
     }
     
