@@ -26,6 +26,7 @@
 #include <openssl/pem.h>
 #include <openssl/decoder.h>
 #include <openssl/err.h>
+#include <time.h>
 #include <vlog.h>
 
 extern const char* chefclient_api_base_url(void);
@@ -38,7 +39,6 @@ struct __pubkey_context {
 
 // This is the message we will sign using the private key which
 // is used to authenticate the user.
-static const char*             g_message = "chef-is-an-awesome-tool";
 static struct __pubkey_context g_context = { NULL, NULL };
 static char                    g_bearer[1024];
 
@@ -92,11 +92,28 @@ static void __save_pubkey_settings(void)
     json_object_set_new(chefclient_settings(), "pubkey", section);
 }
 
+static char* __generate_sign_message(void)
+{
+    // Generate message based on time in the format of 
+    // (UTC) YYYY-MM-DDTHH:MM:SSZ
+    time_t     now = time(NULL);
+    struct tm* ts;
+    char*      buf = (char*)malloc(21); // "YYYY-MM-DDTHH:MM:SSZ" + null terminator
+    if (buf == NULL) {
+        return NULL;
+    }
+    ts = gmtime(&now);
+    strftime(buf, 21, "%Y-%m-%dT%H:%M:%SZ", ts);
+    return buf;
+}
+
 static int __pubkey_sign_with_key(EVP_PKEY* pkey, char** signatureOut, size_t* siglenOut)
 {
     unsigned char* sig;
+    char*          signMessage;
     EVP_MD_CTX*    mdctx;
     size_t         siglen = 0;
+    VLOG_DEBUG("chef-client", "__pubkey_sign_with_key()\n");
 
     mdctx = EVP_MD_CTX_new();
     if (mdctx == NULL) {
@@ -104,17 +121,28 @@ static int __pubkey_sign_with_key(EVP_PKEY* pkey, char** signatureOut, size_t* s
         return -1;
     }
 
+    signMessage = __generate_sign_message();
+    if (signMessage == NULL) {
+        VLOG_ERROR("chef-client", "pubkey_login: failed to generate sign message\n");
+        EVP_MD_CTX_free(mdctx);
+        return -1;
+    }
+    VLOG_DEBUG("chef-client", "pubkey_login: signing message: %s\n", signMessage);
+
     if (EVP_DigestSignInit(mdctx, NULL, EVP_sha256(), NULL, pkey) <= 0) {
         VLOG_ERROR("chef-client", "pubkey_login: failed to initialize digest sign: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        free(signMessage);
         EVP_MD_CTX_free(mdctx);
         return -1;
     }
 
-    if (EVP_DigestSignUpdate(mdctx, g_message, strlen(g_message)) <= 0) {
+    if (EVP_DigestSignUpdate(mdctx, signMessage, strlen(signMessage)) <= 0) {
         VLOG_ERROR("chef-client", "pubkey_login: failed to update digest sign: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        free(signMessage);
         EVP_MD_CTX_free(mdctx);
         return -1;
     }
+    free(signMessage);
 
     if (EVP_DigestSignFinal(mdctx, NULL, &siglen) <= 0) {
         VLOG_ERROR("chef-client", "pubkey_login: failed to finalize digest sign: %s\n", ERR_error_string(ERR_get_error(), NULL));

@@ -81,10 +81,9 @@ int find_main(int argc, char** argv)
     }
     atexit(chefclient_cleanup);
 
-    // retrieve information about the pack
     status = chefclient_pack_find(&params, &packages, &packageCount);
     if (status != 0) {
-        printf("order: failed to retrieve information: %s\n", strerror(errno));
+        printf("order: failed to find packages related to %s: %s\n", params.query, strerror(errno));
         return -1;
     }
 
