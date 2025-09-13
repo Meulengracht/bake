@@ -36,7 +36,7 @@ static void __print_help(void)
     printf("      Print this help message\n");
 }
 
-static void __print_packages(struct chef_package** packages, int count)
+static void __print_packages(struct chef_find_result** packages, int count)
 {
     if (count == 0) {
         printf("no packages found\n");
@@ -51,10 +51,10 @@ static void __print_packages(struct chef_package** packages, int count)
 
 int find_main(int argc, char** argv)
 {
-    struct chef_find_params params       = { 0 };
-    struct chef_package**   packages     = NULL;
-    int                     packageCount = 0;
-    int                     status;
+    struct chef_find_params   params       = { 0 };
+    struct chef_find_result** packages     = NULL;
+    int                       packageCount = 0;
+    int                       status;
 
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {
@@ -75,24 +75,19 @@ int find_main(int argc, char** argv)
 
     // initialize chefclient
     status = chefclient_initialize();
-    if (status != 0) {
+    if (status) {
         fprintf(stderr, "order: failed to initialize chefclient: %s\n", strerror(errno));
         return -1;
     }
     atexit(chefclient_cleanup);
 
     status = chefclient_pack_find(&params, &packages, &packageCount);
-    if (status != 0) {
+    if (status) {
         printf("order: failed to find packages related to %s: %s\n", params.query, strerror(errno));
         return -1;
     }
 
     __print_packages(packages, packageCount);
-    if (packages) {
-        for (int i = 0; i < packageCount; i++) {
-            chef_package_free(packages[i]);
-        }
-        free(packages);
-    }
+    chefclient_pack_find_free(packages, packageCount);
     return status;
 }

@@ -55,10 +55,12 @@ struct chef_architecture {
     size_t               channels_count;
 };
 
-struct chef_platform {
-    const char*               name;
-    struct chef_architecture* architectures;
-    size_t                    architectures_count;
+struct chef_revision {
+    int         revision;
+    const char* channel;
+    const char* platform;
+    const char* architecture;
+    const char* date;
 };
 
 enum chef_command_type {
@@ -91,8 +93,8 @@ struct chef_package {
     
     enum chef_package_type type;
 
-    struct chef_platform*  platforms;
-    size_t                 platforms_count;
+    struct chef_revision*  revisions;
+    size_t                 revisions_count;
 };
 
 /**

@@ -47,31 +47,33 @@ static int __get_find_url(struct chef_find_params* params, char* urlBuffer, size
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __parse_package(json_t* root, struct chef_package** packageOut)
+static int __parse_package(json_t* root, struct chef_find_result** packageOut)
 {
-    struct chef_package* package;
-    json_t*              platforms;
+    struct chef_find_result* result;
+    json_t*                  platforms;
 
     // allocate memory for the package
-    package = (struct chef_package*)malloc(sizeof(struct chef_package));
-    if (!package) {
+    result = (struct chef_find_result*)malloc(sizeof(struct chef_find_result));
+    if (result == NULL) {
         return -1;
     }
-    memset(package, 0, sizeof(struct chef_package));
+    memset(result, 0, sizeof(struct chef_find_result));
 
     // parse the required members
-    package->publisher = __get_json_string_safe(root, "publisher");
-    package->maintainer_email = __get_json_string_safe(root, "publisher_email");
-    package->package = __get_json_string_safe(root, "name");
-    package->summary = __get_json_string_safe(root, "summary");
+    result->publisher = __get_json_string_safe(root, "publisher");
+    result->package = __get_json_string_safe(root, "name");
+    result->summary = __get_json_string_safe(root, "summary");
+    result->type = (enum chef_package_type)json_integer_value(json_object_get(root, "type"));
+    result->maintainer = __get_json_string_safe(root, "maintainer");
+    result->maintainer_email = __get_json_string_safe(root, "maintainer_email");
 
-    *packageOut = package;
+    *packageOut = result;
 
     json_decref(root);
     return 0;
 }
 
-static int __parse_package_find_response(const char* response, struct chef_package*** packagesOut, int* countOut)
+static int __parse_package_find_response(const char* response, struct chef_find_result*** results, int* count)
 {
     json_error_t          error;
     json_t*               root;
@@ -88,12 +90,12 @@ static int __parse_package_find_response(const char* response, struct chef_packa
     packageCount = json_array_size(root);
     if (!packageCount) {
         json_decref(root);
-        *packagesOut = NULL;
-        *countOut = 0;
+        *results = NULL;
+        *count = 0;
         return 0;
     }
 
-    packages = (struct chef_package**)calloc(packageCount, sizeof(struct chef_package*));
+    packages = (struct chef_find_result**)calloc(packageCount, sizeof(struct chef_find_result*));
     if (packages == NULL) {
         return -1;
     }
@@ -106,12 +108,12 @@ static int __parse_package_find_response(const char* response, struct chef_packa
     }
 
     json_decref(root);
-    *packagesOut = packages;
-    *countOut = (int)packageCount;
+    *results = packages;
+    *count = (int)packageCount;
     return 0;
 }
 
-int chefclient_pack_find(struct chef_find_params* params, struct chef_package*** packagesOut, int* countOut)
+int chefclient_pack_find(struct chef_find_params* params, struct chef_find_result*** results, int* count)
 {
     struct chef_request* request;
     CURLcode             code;
@@ -158,9 +160,26 @@ int chefclient_pack_find(struct chef_find_params* params, struct chef_package***
         goto cleanup;
     }
 
-    status = __parse_package_find_response(request->response, packagesOut, countOut);
+    status = __parse_package_find_response(request->response, results, count);
 
 cleanup:
     chef_request_delete(request);
     return status;
+}
+
+void chefclient_pack_find_free(struct chef_find_result** results, int count)
+{
+    if (results == NULL) {
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        free((void*)results[i]->publisher);
+        free((void*)results[i]->package);
+        free((void*)results[i]->summary);
+        free((void*)results[i]->maintainer);
+        free((void*)results[i]->maintainer_email);
+        free(results[i]);
+    }
+    free(results);
 }

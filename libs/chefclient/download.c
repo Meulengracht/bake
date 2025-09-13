@@ -101,13 +101,22 @@ static size_t __download_progress_callback(void *clientp,
 
 static int __get_download_url(struct chef_download_params* params, char* urlBuffer, size_t bufferSize)
 {
-    // todo specific version support
-    int written = snprintf(urlBuffer, bufferSize - 1, 
-        "%s/pack/download?publisher=%s&name=%s&platform=%s&arch=%s&channel=%s",
-        chefclient_api_base_url(),
-        params->publisher, params->package, params->platform, params->arch, params->channel
-    );
-    return written < (bufferSize - 1) ? 0 : -1;
+    if (params->revision != 0) {
+        // if we have a revision, use that
+        int written = snprintf(urlBuffer, bufferSize - 1, 
+            "%s/package/download?publisher=%s&name=%s&revision=%i",
+            chefclient_api_base_url(),
+            params->publisher, params->package, params->revision
+        );
+        return written < (bufferSize - 1) ? 0 : -1;
+    } else {
+        int written = snprintf(urlBuffer, bufferSize - 1, 
+            "%s/package/download?publisher=%s&name=%s&platform=%s&arch=%s&channel=%s",
+            chefclient_api_base_url(),
+            params->publisher, params->package, params->platform, params->arch, params->channel
+        );
+        return written < (bufferSize - 1) ? 0 : -1;
+    }
 }
 
 static int __parse_pack_response(const char* response, struct pack_response* packResponse)

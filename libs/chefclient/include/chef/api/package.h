@@ -51,6 +51,15 @@ struct chef_download_params {
     int                  revision;
 };
 
+struct chef_find_result {
+    const char*            publisher;
+    const char*            package;
+    const char*            summary;
+    enum chef_package_type type;
+    const char*            maintainer;
+    const char*            maintainer_email;
+};
+
 /**
  * @brief 
  * 
@@ -74,7 +83,8 @@ extern int chefclient_pack_info(struct chef_info_params* params, struct chef_pac
  * @param params 
  * @return int 
  */
-extern int chefclient_pack_find(struct chef_find_params* params, struct chef_package*** packagesOut, int* countOut);
+extern int  chefclient_pack_find(struct chef_find_params* params, struct chef_find_result*** results, int* count);
+extern void chefclient_pack_find_free(struct chef_find_result** results, int count);
 
 /**
  * @brief 
