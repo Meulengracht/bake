@@ -47,6 +47,16 @@ static int __get_info_url(struct chef_info_params* params, char* urlBuffer, size
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
+static int __parse_version(json_t* root, struct chef_version* version)
+{
+    version->revision = json_integer_value(json_object_get(root, "revision"));
+    version->major = json_integer_value(json_object_get(root, "major"));
+    version->minor = json_integer_value(json_object_get(root, "minor"));
+    version->patch = json_integer_value(json_object_get(root, "patch"));
+    version->tag = __get_json_string_safe(root, "tag");
+    return 0;
+}
+
 static int __parse_revisions(json_t* revisions, struct chef_package* package)
 {
     size_t i;
@@ -66,14 +76,22 @@ static int __parse_revisions(json_t* revisions, struct chef_package* package)
 
     for (i = 0; i < count; i++) {
         json_t* revision = json_array_get(revisions, i);
+        json_t* version;
         if (revision == NULL) {
             continue;
+        }
+
+        version = json_object_get(revision, "version");
+        if (version != NULL) {
+            if (__parse_version(version, package)) {
+                return -1;
+            }
         }
         
         package->revisions[i].channel = __get_json_string_safe(revision, "channel");
         package->revisions[i].platform = __get_json_string_safe(revision, "platform");
         package->revisions[i].architecture = __get_json_string_safe(revision, "architecture");
-        package->revisions[i].current_version.revision = json_integer_value(json_object_get(revision, "revision"));
+        package->revisions[i].current_version.size = json_integer_value(json_object_get(revision, "size"));
         package->revisions[i].current_version.created = __get_json_string_safe(revision, "date");
     }
     return 0;

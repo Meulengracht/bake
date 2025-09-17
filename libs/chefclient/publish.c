@@ -46,6 +46,13 @@ static json_t* __create_publish_request(struct chef_publish_params* params)
     json_object_set_new(request, "PackageName", json_string(params->package));
     json_object_set_new(request, "Platform", json_string(params->platform));
     json_object_set_new(request, "Architecture", json_string(params->architecture));
+    json_object_set_new(request, "Size", json_integer(params->version->size));
+    json_object_set_new(request, "Major", json_integer(params->version->major));
+    json_object_set_new(request, "Minor", json_integer(params->version->minor));
+    json_object_set_new(request, "Patch", json_integer(params->version->patch));
+    if (params->version->tag != NULL) {
+        json_object_set_new(request, "Tag", json_string(params->architecture));
+    }
     return request;
 }
 
