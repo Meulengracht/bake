@@ -33,11 +33,12 @@ struct chef_find_params {
 };
 
 struct chef_publish_params {
-    const char* publisher;
-    const char* package;
-    const char* platform;
-    const char* architecture;
-    const char* channel;
+    const char*          publisher;
+    const char*          package;
+    const char*          platform;
+    const char*          architecture;
+    const char*          channel;
+    struct chef_version* version;
 };
 
 struct chef_download_params {

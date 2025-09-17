@@ -147,7 +147,7 @@ int publish_main(int argc, char** argv)
     printf("version:            %d.%d.%d\n", version->major, version->minor, version->patch);
 
     // set the parameter values
-    params.package = package;
+    params.package = package->package;
     params.version = version;
 
     // initialize chefclient

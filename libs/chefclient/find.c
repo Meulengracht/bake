@@ -75,11 +75,11 @@ static int __parse_package(json_t* root, struct chef_find_result** packageOut)
 
 static int __parse_package_find_response(const char* response, struct chef_find_result*** results, int* count)
 {
-    json_error_t          error;
-    json_t*               root;
-    size_t                i;
-    struct chef_package** packages;
-    size_t                packageCount;
+    json_error_t              error;
+    json_t*                   root;
+    size_t                    i;
+    struct chef_find_result** packages;
+    size_t                    packageCount;
 
     root = json_loads(response, 0, &error);
     if (!root) {

@@ -50,10 +50,15 @@ static int __get_info_url(struct chef_info_params* params, char* urlBuffer, size
 static int __parse_revisions(json_t* revisions, struct chef_package* package)
 {
     size_t i;
-    size_t count = json_array_size(revisions);
+    size_t count;
+
+    count = json_array_size(revisions);
+    if (count == 0) {
+        return 0;
+    }
     
     package->revisions_count = count;
-    package->revisions = (struct chef_revision*)malloc(sizeof(struct chef_revision) * count);
+    package->revisions = (struct chef_revision*)calloc(count, sizeof(struct chef_revision));
     if (package->revisions == NULL) {
         errno = ENOMEM;
         return -1;
@@ -65,11 +70,11 @@ static int __parse_revisions(json_t* revisions, struct chef_package* package)
             continue;
         }
         
-        package->revisions[i].revision = (int)json_integer_value(json_object_get(revision, "revision"));
         package->revisions[i].channel = __get_json_string_safe(revision, "channel");
         package->revisions[i].platform = __get_json_string_safe(revision, "platform");
         package->revisions[i].architecture = __get_json_string_safe(revision, "architecture");
-        package->revisions[i].date = __get_json_string_safe(revision, "date");
+        package->revisions[i].current_version.revision = json_integer_value(json_object_get(revision, "revision"));
+        package->revisions[i].current_version.created = __get_json_string_safe(revision, "date");
     }
     return 0;
 }

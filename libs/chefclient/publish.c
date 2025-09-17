@@ -163,15 +163,85 @@ cleanup:
     return status;
 }
 
+struct file_upload_context {
+    FILE*  file;
+    size_t length;
+    size_t uploaded;
+    size_t read;
+};
+
+static int __file_upload_context_init(struct file_upload_context* context, const char* path)
+{
+    context->file = fopen(path, "rb");
+    if (context->file == NULL) {
+        return -1;
+    }
+
+    fseek(context->file, 0, SEEK_END);
+    context->length = ftell(context->file);
+    
+    fseek(context->file, 0, SEEK_SET);
+    context->uploaded = 0;
+    context->read     = 0;
+    return 0;
+}
+
+static void __update_progress(struct file_upload_context* context)
+{
+    int percent = (context->uploaded * 100) / context->length;
+    
+    // print a fancy progress bar with percentage, upload progress and a moving
+    // bar being filled
+    printf("\33[2K\r[");
+    for (int i = 0; i < 20; i++) {
+        if (i < percent / 5) {
+            printf("#");
+        }
+        else {
+            printf(" ");
+        }
+    }
+    printf("| %3d%%] %6zu / %6zu bytes", percent, context->uploaded, context->length);
+    fflush(stdout);
+}
+
+static int __file_seek(void* arg, curl_off_t offset, int origin) {
+    struct file_upload_context* context = (struct file_upload_context*)arg;
+    return fseek(context->file, (long)offset, origin);
+}
+
+static size_t __file_read(char *buffer, size_t size, size_t nitems, void* arg) {
+    struct file_upload_context* context = (struct file_upload_context*)arg;
+    size_t n = fread(buffer, size, nitems, context->file);
+    context->uploaded = context->read;
+    context->read += n * size;
+    __update_progress(context);
+    return n;
+}
+
+static void __file_finished(void* arg) {
+    struct file_upload_context* context = (struct file_upload_context*)arg;
+    context->uploaded = context->read;
+    __update_progress(context);
+    fclose(context->file);
+}
+
 static int __upload_package(const char* path, struct __initiate_response* context)
 {
-    struct chef_request*  request;
-    CURLcode              code;
-    struct curl_httppost* sptr = NULL;
-    struct curl_httppost* eptr = NULL;
-    int                   status = -1;
-    char                  buffer[1024];
-    long                  httpCode;
+    struct chef_request*       request;
+    struct file_upload_context fileContext;
+    CURLcode                   code;
+    curl_mime*                 multipart = NULL;
+    curl_mimepart*             part;
+    int                        status = -1;
+    char                       buffer[1024];
+    long                       httpCode;
+
+    status = __file_upload_context_init(&fileContext, path);
+    if (status) {
+        VLOG_ERROR("chef-client", "__upload_package: failed to open file %s for upload\n", path);
+        return status;
+    }
 
     request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
@@ -190,22 +260,25 @@ static int __upload_package(const char* path, struct __initiate_response* contex
         goto cleanup;
     }
 
-    code = curl_formadd(
-        &sptr,
-        &eptr,
-        CURLFORM_COPYNAME, "file",
-        CURLFORM_FILE, path,
-        CURLFORM_CONTENTTYPE, "image/jpeg",
-        CURLFORM_END
-    );
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__upload_package: failed to set url [%s]\n", request->error);
-        goto cleanup;
-    }
+    multipart = curl_mime_init(request->curl);
 
-    request->headers = curl_slist_append(request->headers, "Expect:");
+    part = curl_mime_addpart(multipart);
+    curl_mime_name(part, "sendfile");
+    curl_mime_filedata(part, path);
+    curl_mime_data_cb(part, fileContext.length, __file_read, __file_seek, __file_finished, &fileContext);
 
-    code = curl_easy_setopt(request->curl, CURLOPT_HTTPPOST, sptr);
+    part = curl_mime_addpart(multipart);
+    curl_mime_name(part, "filename");
+    curl_mime_data(part, "package.chef", CURL_ZERO_TERMINATED);
+    
+    part = curl_mime_addpart(multipart);
+    curl_mime_name(part, "submit");
+    curl_mime_data(part, "send", CURL_ZERO_TERMINATED);
+
+    // initialize custom header list (stating that Expect: 100-continue is not wanted
+    //request->headers = curl_slist_append(request->headers, "Expect:");
+
+    code = curl_easy_setopt(request->curl, CURLOPT_MIMEPOST, multipart);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__upload_package: failed to set form file [%s]\n", request->error);
         goto cleanup;
@@ -231,6 +304,7 @@ static int __upload_package(const char* path, struct __initiate_response* contex
     status = 0;
 
 cleanup:
+    curl_mime_free(multipart);
     chef_request_delete(request);
     return status;
 }
@@ -288,7 +362,7 @@ cleanup:
 
 int chefclient_pack_publish(struct chef_publish_params* params, const char* path)
 {
-    struct __initiate_response context;
+    struct __initiate_response context = { NULL, 0 };
     json_t*                    request;
     int                        uploadCount;
     int                        status;
@@ -296,30 +370,33 @@ int chefclient_pack_publish(struct chef_publish_params* params, const char* path
     request = __create_publish_request(params);
     if (!request) {
         VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to create publish request\n");
-        return -1;
+        status = -1;
+        goto cleanup;
     }
 
     status = __publish_request(request, &context);
     json_decref(request);
-    if (status != 0) {
+    if (status) {
         VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to initiate publish process\n");
-        return -1;
+        goto cleanup;
     }
 
     VLOG_TRACE("chef-client", "created revision %i, uploading...\n", context.revision);
 
     status = __upload_package(path, &context);
-    if (status != 0) {
+    if (status) {
         VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to upload the package for publishing\n");
-        return -1;
+        goto cleanup;
     }
 
     VLOG_TRACE("chef-client", "upload complete, publishing revision %i to %s...\n", context.revision, params->channel);
 
     status = __publish_complete(params->channel, &context);
-    if (status != 0) {
+    if (status) {
         VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to complete publish process\n");
-        return -1;
     }
-    return 0;
+
+cleanup:
+    free((void*)context.upload_token);
+    return status;
 }

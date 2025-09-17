@@ -45,7 +45,7 @@ static void __print_help(void)
     printf("      Print this help message\n");
 }
 
-static void __print_packages(struct chef_package** packages, int count)
+static void __print_packages(struct chef_find_result** packages, int count)
 {
     if (count == 0) {
         printf("no packages found\n");
@@ -60,11 +60,11 @@ static void __print_packages(struct chef_package** packages, int count)
 
 static int __list_packages_by_publisher(const char* publisherName)
 {
-    struct chef_package**   packages;
-    int                     packageCount;
-    struct chef_find_params params  = { 0 };
-    char*                   query;
-    int                     status;
+    struct chef_find_result** packages;
+    int                       packageCount;
+    struct chef_find_params   params  = { 0 };
+    char*                     query;
+    int                       status;
 
     // allocate memory for the query, which we will write like this
     // publisher/
@@ -89,12 +89,7 @@ static int __list_packages_by_publisher(const char* publisherName)
     }
     
     __print_packages(packages, packageCount);
-    if (packages) {
-        for (int i = 0; i < packageCount; i++) {
-            chef_package_free(packages[i]);
-        }
-        free(packages);
-    }
+    chefclient_pack_find_free(packages, packageCount);
     return 0;
 }
 

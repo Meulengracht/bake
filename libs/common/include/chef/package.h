@@ -44,23 +44,11 @@ struct chef_version {
     const char* created;
 };
 
-struct chef_channel {
-    const char*         name;
-    struct chef_version current_version;
-};
-
-struct chef_architecture {
-    const char*          name;
-    struct chef_channel* channels;
-    size_t               channels_count;
-};
-
 struct chef_revision {
-    int         revision;
-    const char* channel;
-    const char* platform;
-    const char* architecture;
-    const char* date;
+    const char*         channel;
+    const char*         platform;
+    const char*         architecture;
+    struct chef_version current_version;
 };
 
 enum chef_command_type {
