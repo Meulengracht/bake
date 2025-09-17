@@ -60,16 +60,15 @@ int fatfs_init(struct fatfs *fs)
 
     // Make sure we have a read function (write function is optional)
     if (!fs->disk_io.read_media)
-    {
         return FAT_INIT_MEDIA_ACCESS_ERROR;
-    }
+
     // MBR: Sector 0 on the disk
     // NOTE: Some removeable media does not have this.
 
     // Load MBR (LBA 0) into the 512 byte buffer
     if (!fs->disk_io.read_media(0, fs->currentsector.sector, 1, fs->disk_io.user_ctx))
         return FAT_INIT_MEDIA_ACCESS_ERROR;
-    
+
     // Make Sure 0x55 and 0xAA are at end of sector
     // (this should be the case regardless of the MBR or boot sector)
     if (fs->currentsector.sector[SIGNATURE_POSITION] != 0x55 || fs->currentsector.sector[SIGNATURE_POSITION+1] != 0xAA)
@@ -82,7 +81,7 @@ int fatfs_init(struct fatfs *fs)
     // Verify packed structures
     if (sizeof(struct fat_dir_entry) != FAT_DIR_ENTRY_SIZE)
         return FAT_INIT_STRUCT_PACKING;
-    
+
     // Check the partition type code
     switch(fs->currentsector.sector[PARTITION1_TYPECODE_LOCATION])
     {
@@ -113,14 +112,12 @@ int fatfs_init(struct fatfs *fs)
     // Load Volume 1 table into sector buffer
     // (We may already have this in the buffer if MBR less drive!)
     if (!fs->disk_io.read_media(fs->lba_begin, fs->currentsector.sector, 1, fs->disk_io.user_ctx))
-    {
         return FAT_INIT_MEDIA_ACCESS_ERROR;
-    }
 
     // Make sure there are 512 bytes per cluster
     if (GET_16BIT_WORD(fs->currentsector.sector, 0x0B) != FAT_SECTOR_SIZE)
         return FAT_INIT_INVALID_SECTOR_SIZE;
-    
+
     // Load Parameters of FAT partition
     fs->sectors_per_cluster = fs->currentsector.sector[BPB_SECPERCLUS];
     reserved_sectors = GET_16BIT_WORD(fs->currentsector.sector, BPB_RSVDSECCNT);

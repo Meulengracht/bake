@@ -578,8 +578,8 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
     }
 
     p->name = platform_strdup(params->name);
-    // GUID is only needed if its non-mbr
-    if (builder->schema != CHEF_DISK_SCHEMA_MBR) {
+    // GUID is not always required
+    if (params->guid != NULL) {
         p->guid = platform_strdup(params->guid);
     }
     p->attributes = params->attributes;

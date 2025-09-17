@@ -588,11 +588,7 @@ static void __destroy_source(struct chef_image_partition_source* source)
 
 static void __destroy_partition(struct chef_image_partition* partition)
 {
-    // Only free the options if they are in use
-    if (partition->options.fat.reserved_image != NULL)
-    {
-        free((void*)partition->options.fat.reserved_image);
-    }
+    free((void*)partition->options.fat.reserved_image);
     __destroy_list(string, partition->attributes.head, struct list_item_string);
     __destroy_list(source, partition->sources.head, struct chef_image_partition_source);
     free((void*)partition->label);

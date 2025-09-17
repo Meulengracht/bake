@@ -53,6 +53,7 @@ static int __update_mbr(struct __fat_filesystem* cfs, uint8* sector)
         cfs->content
     );
     if (platform_stat(&tmp[0], &stats)) {
+        // not there, ignore
         return 0;
     }
 
@@ -148,6 +149,7 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
     // make sure we get the stream position
     offset = sector * cfs->bytes_per_sector;
     status = fseek(cfs->stream, offset, SEEK_SET);
+
     // if the sector is 0, then let us modify the boot sector with the
     // MBR provided by content
     if (sector == 0 && cfs->content != NULL) {
@@ -214,8 +216,9 @@ static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs
     int                      written;
 
     stream = fl_fopen(cfs->fs, params->path, "w");
-    if (stream == NULL)
+    if (stream == NULL) {
         return -1;
+    }
 
     written = fl_fwrite(cfs->fs, params->buffer, 1, params->size, stream);
     if (written != params->size) {
@@ -224,7 +227,7 @@ static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs
     }
 
     fl_fclose(cfs->fs, stream);
-    return 1;
+    return 0;
 }
 
 static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_write_raw_params* params)
@@ -238,9 +241,10 @@ static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_w
         if (params->size != cfs->bytes_per_sector) {
             return -1;
         }
-
+        
         status = __partition_read(0, &mbr[0], 1, cfs);
-        if (!status) {
+        // __partition_{read,write} returns 0 if it fails to match fat library expectations
+        if (status == 0) {
             VLOG_ERROR("fat", "failed to read mbr from partition\n");
             return status;
         }

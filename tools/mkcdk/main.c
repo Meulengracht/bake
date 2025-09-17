@@ -260,9 +260,18 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
 {
     char ccpath[PATH_MAX];
     char *p;
+    size_t length;
     int status;
 
-    if (!path || !*path) return 0;
+    if (path == NULL) {
+        return 0;
+    }
+     
+    length = strlen(path);
+    // ensure that there actually is a directory, and it's not a root directory
+    if (length == 0 || (length == 1 && *path == '/')) {
+        return 0;
+    }
 
     status = snprintf(ccpath, sizeof(ccpath), "%s", path);
     if (status >= sizeof(ccpath)) {
@@ -270,26 +279,26 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
         return -1;
     }
 
-    size_t len = strlen(ccpath);
-    if (len > 0 && ccpath[len - 1] == '/')
-        ccpath[len - 1] = 0;
-
-    if (!strchr(ccpath, '/')) return 0;
+    if (!strchr(ccpath, '/')) {
+        return 0;
+    }
 
     for (p = ccpath + 1; *p; p++) {
         if (*p == '/') {
             *p = 0;
 
-            status = fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params){
+            status = fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params) {
                 .path = ccpath
             });
-            if (status) return status;
+            if (status) {
+                return status;
+            }
 
             *p = '/';
         }
     }
 
-    return fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params){
+    return fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params) {
         .path = ccpath
     });
 }
@@ -468,6 +477,7 @@ static int __write_raw(struct chef_disk_filesystem* fs, const char* source, cons
     }
 
     status = fs->write_raw(fs, &params);
+    VLOG_DEBUG("mkcdk", "__write_raw: status=%i\n", status);
     if (status == 0) {
         VLOG_ERROR("mkcdk", "__write_raw: failed to write raw image\n");
     }
@@ -509,7 +519,7 @@ static int __write_image_sources(struct chef_disk_filesystem* fs, struct __image
                 status = -1;
                 break;
         }
-        if (status == 0) {
+        if (!status) {
             VLOG_ERROR("mkcdk", "__write_image_sources: failed to install source %s\n", src->target);
             break;
         }
@@ -588,7 +598,7 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
 
         if (strcmp(pi->fstype, "fat32") == 0) {
             fs = chef_filesystem_fat32_new(pd, &(struct chef_disk_filesystem_params) {
-                .sector_size = options->sector_size,
+                .sector_size = options->sector_size
             });
         } else if (strcmp(pi->fstype, "mfs") == 0) {
             fs = chef_filesystem_mfs_new(pd, &(struct chef_disk_filesystem_params) {
@@ -639,7 +649,7 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
         } else {
             status = __write_image_sources(fs, &context, &pi->sources);
         }
-        if (status == 0) {
+        if (!status) {
             VLOG_ERROR("mkcdk", "__build_image: failed to write content for %s\n", pi->label);
             goto cleanup;
         }
