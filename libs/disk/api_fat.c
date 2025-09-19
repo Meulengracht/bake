@@ -183,9 +183,9 @@ static void __fs_set_content(struct chef_disk_filesystem* fs, const char* path)
 static int __fs_format(struct chef_disk_filesystem* fs)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
-    struct platform_stat stats;
-    char                 tmp[PATH_MAX];
     if (cfs->content != NULL || cfs->options.reserved_image != NULL) {
+        struct platform_stat stats;
+        char                 tmp[PATH_MAX];
 
         if (cfs->content != NULL) {
             snprintf(

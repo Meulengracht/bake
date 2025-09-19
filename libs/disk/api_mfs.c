@@ -217,6 +217,7 @@ static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_w
         if (params->size != cfs->bytes_per_sector) {
             return -1;
         }
+
         status = __partition_read(0, &mbr[0], 1, cfs);
         if (status) {
             VLOG_ERROR("fat", "failed to read mbr from partition\n");
