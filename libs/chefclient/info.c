@@ -83,7 +83,7 @@ static int __parse_revisions(json_t* revisions, struct chef_package* package)
 
         version = json_object_get(revision, "version");
         if (version != NULL) {
-            if (__parse_version(version, package)) {
+            if (__parse_version(version, &package->revisions[i].current_version)) {
                 return -1;
             }
         }
