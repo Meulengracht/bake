@@ -65,7 +65,7 @@ static int __parse_package(json_t* root, struct chef_find_result** packageOut)
     result->summary = __get_json_string_safe(root, "summary");
     result->type = (enum chef_package_type)json_integer_value(json_object_get(root, "type"));
     result->maintainer = __get_json_string_safe(root, "maintainer");
-    result->maintainer_email = __get_json_string_safe(root, "maintainer_email");
+    result->maintainer_email = __get_json_string_safe(root, "maintainer-email");
 
     *packageOut = result;
 

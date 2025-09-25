@@ -228,7 +228,7 @@ static int __parse_token_response(const char* responseBuffer, struct __pubkey_co
     }
 
     // get rest of values that should be there
-    context->account_guid = platform_strdup(json_string_value(json_object_get(root, "accountId")));
+    context->account_guid = platform_strdup(json_string_value(json_object_get(root, "account-id")));
     context->jwt_token = platform_strdup(json_string_value(json_object_get(root, "token")));
 
     json_decref(root);

@@ -30,6 +30,7 @@ extern const char* chefclient_api_base_url(void);
 
 struct chef_account_publisher {
     const char*                       name;
+    const char*                       email;
     enum chef_account_verified_status verified_status;
 };
 
@@ -137,7 +138,26 @@ static int __parse_account(const char* response, struct chef_account** accountOu
         for (size_t i = 0; i < count; i++) {
             json_t* publisher = json_array_get(member, i);
             account->publishers[i].name = platform_strdup(json_string_value(json_object_get(publisher, "name")));
+            account->publishers[i].name = platform_strdup(json_string_value(json_object_get(publisher, "email")));
             account->publishers[i].verified_status = (enum chef_account_verified_status)json_integer_value(json_object_get(publisher, "status"));
+        }
+    }
+
+    member = json_object_get(root, "api-keys");
+    if (member && json_array_size(member) > 0) {
+        size_t count = json_array_size(member);
+        
+        account->api_keys = (struct chef_account_apikey*)calloc(count, sizeof(struct chef_account_apikey));
+        if (account->api_keys == NULL) {
+            chef_account_free(account);
+            json_decref(root);
+            return -1;
+        }
+        account->api_keys_count = count;
+
+        for (size_t i = 0; i < count; i++) {
+            json_t* key = json_array_get(member, i);
+            account->api_keys[i].name = platform_strdup(json_string_value(json_object_get(key, "name")));
         }
     }
 
