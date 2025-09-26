@@ -141,11 +141,9 @@ int __get_settings(struct chef_settings_params* params, struct chef_package_sett
     if (httpCode != 200) {
         if (httpCode == 404) {
             status = -ENOENT;
-        }
-        else if (httpCode == 302) {
+        } else if (httpCode == 401) {
             status = -EACCES;
-        }
-        else {
+        } else {
             VLOG_ERROR("chef-client", "__get_account: http error %ld\n", httpCode);
             status = -EIO;
         }
@@ -201,10 +199,9 @@ static int __update_settings(json_t* json, struct chef_package_settings** settin
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode < 200 || httpCode >= 300) {
         status = -1;
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
-        }
-        else {
+        } else {
             VLOG_ERROR("chef-client", "__update_account: http error %ld [%s]\n", httpCode, request->response);
             status = -EIO;
         }

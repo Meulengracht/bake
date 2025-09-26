@@ -202,11 +202,9 @@ int __get_account(struct chef_account** accountOut)
     if (httpCode != 200) {
         if (httpCode == 404) {
             status = -ENOENT;
-        }
-        else if (httpCode == 302) {
+        } else if (httpCode == 401) {
             status = -EACCES;
-        }
-        else {
+        } else {
             VLOG_ERROR("chef-client", "__get_account: http error %ld\n", httpCode);
             status = -EIO;
         }
@@ -262,7 +260,7 @@ static int __update_account(json_t* json, struct chef_account** accountOut)
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode < 200 || httpCode >= 300) {
         status = -1;
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
         } else {
             VLOG_ERROR("chef-client", "__update_account: http error %ld [%s]\n", httpCode, request->response);
@@ -381,7 +379,7 @@ int chef_account_publisher_register(const char* name, const char* email)
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode < 200 || httpCode >= 300) {
         status = -1;
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
         } else {
             VLOG_ERROR("chef-client", "chef_account_publisher_register: http error %ld [%s]\n", httpCode, request->response);
@@ -470,7 +468,7 @@ int chef_account_apikey_create(const char* name, char** apiKey)
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode < 200 || httpCode >= 300) {
         status = -1;
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
         } else {
             VLOG_ERROR("chef-client", "chef_account_publisher_register: http error %ld [%s]\n", httpCode, request->response);
@@ -543,7 +541,7 @@ int chef_account_apikey_delete(const char* name)
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode < 200 || httpCode >= 300) {
         status = -1;
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
         } else {
             VLOG_ERROR("chef-client", "chef_account_apikey_delete: http error %ld [%s]\n", httpCode, request->response);

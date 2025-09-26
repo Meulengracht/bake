@@ -32,14 +32,14 @@ static void __print_help(void)
     printf("\n");
     printf("Commands:\n");
     printf("  whoami              shows information about the currently logged in user\n");
-    printf("\n  api-key           allows management of api-keys for the current account\n");
+    printf("\n  api-key             allows management of api-keys for the current account\n");
     printf("  api-key create <name>  creates a new api-key with the specified name\n");
     printf("  api-key delete <name>  deletes the api-key with the specified id\n");
     printf("  api-key list           lists all api-keys for the current account\n");
-    printf("\n  publisher         allows management of publishers for the current account\n");
+    printf("\n  publisher           allows management of publishers for the current account\n");
     printf("  publisher register <name>              registers a new publisher with the specified name\n");
     printf("  publisher get <name> <option>          retrieves information about a specific publisher\n");
-    printf("  publisher set <name> <option> <value>  sets the configuration option");
+    printf("  publisher set <name> <option> <value>  sets the configuration option\n");
     printf("\n  set <param> <value> sets a specific account parameter\n");
     printf("  get <param>         retrieves the value of a specific account parameter\n");
     printf("  logout              logout of the current account\n");

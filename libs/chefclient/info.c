@@ -238,7 +238,7 @@ static int __update_package(struct chef_info_params* params, json_t* json)
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode < 200 || httpCode >= 300) {
         status = -1;
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
         } else {
             VLOG_ERROR("chef-client", "__update_account: http error %ld [%s]\n", httpCode, request->response);

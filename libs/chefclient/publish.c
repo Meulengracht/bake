@@ -152,10 +152,9 @@ static int __publish_request(json_t* json, struct __initiate_response* context)
     if (httpCode != 200) {
         status = -1;
         
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
-        }
-        else {
+        } else {
             VLOG_ERROR("chef-client", "__publish_request: http error %ld [%s]\n", httpCode, request->response);
             status = -EIO;
         }
@@ -300,7 +299,7 @@ static int __upload_package(const char* path, struct __initiate_response* contex
     if (httpCode != 200) {
         status = -1;
         
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
         } else {
             VLOG_ERROR("chef-client", "__upload_package: http error %ld [%s]\n", httpCode, request->response);
@@ -350,7 +349,7 @@ static int __publish_complete(const char* channel, struct __initiate_response* c
     if (httpCode != 200) {
         status = -1;
         
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
         }
         else {
