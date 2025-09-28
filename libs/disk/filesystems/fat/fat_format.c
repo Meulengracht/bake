@@ -469,6 +469,7 @@ int fatfs_format_fat16(struct fatfs *fs, uint32 volume_sectors, const char *name
     if (!fatfs_erase_sectors(fs, fs->lba_begin + fs->rootdir_first_sector, fs->rootdir_sectors))
         return 0;
 
+    fs->valid = 1;
     return 1;
 }
 //-----------------------------------------------------------------------------
