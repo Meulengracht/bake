@@ -586,9 +586,18 @@ static void __destroy_source(struct chef_image_partition_source* source)
     free(source);
 }
 
+static void __destroy_fat(struct chef_image_partition_fat_options* fatOptions)
+{
+    free((void*)fatOptions->reserved_image);
+}
+
 static void __destroy_partition(struct chef_image_partition* partition)
 {
-    free((void*)partition->options.fat.reserved_image);
+    // cleanup fs specific options
+    if (partition->fstype != NULL && (strncmp(partition->fstype, "fat", 3) == 0)) {
+        __destroy_fat(&partition->options.fat);
+    }
+
     __destroy_list(string, partition->attributes.head, struct list_item_string);
     __destroy_list(source, partition->sources.head, struct chef_image_partition_source);
     free((void*)partition->label);
