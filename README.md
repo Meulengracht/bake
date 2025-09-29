@@ -16,9 +16,20 @@ The best way to get started is to install the latest version of Chef using the [
 
 Features that is expected in the upcoming 1.5 release
 
-- Served initial feature completion
-- Remote management commands;
+- [ ] Served initial feature completion
+- [ ] Remote management commands
+  * `bake remote list --arch=...`
   * `bake remote info [agent]`
+- [x] Disk image utility based on yaml descriptions
+  * Support files/directories/chef packages as data sources
+  * Support mfs/fat initially
+  * Support .img outputs
+- [x] Chef Store V2
+  * Move away from Azure, use more generic deployment
+  * New sign-on process, move away from external SSO
+  * Support multi-publisher per account
+  * Support per publisher signing
+  * Support api-keys
 
 Features that is expected in the planned 1.6 release
 
@@ -26,8 +37,6 @@ Features that is expected in the planned 1.6 release
   * Finish the platform layer
   * Extend containerv to support the windows HCI layer
   * Implement the build flow in kitchen for windows
-- [*] Multi-publisher per account
-- [*] Per publisher signing
 
 ## Account Setup
 
