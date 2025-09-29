@@ -98,7 +98,7 @@ static enum chef_image_source_type __parse_source_type(const char* value)
         return CHEF_IMAGE_SOURCE_DIRECTORY;
     } else if (strcmp(value, "package") == 0) {
         return CHEF_IMAGE_SOURCE_PACKAGE;
-    } else if (strcmp(value, "raw")) {
+    } else if (strcmp(value, "raw") == 0) {
         return CHEF_IMAGE_SOURCE_RAW;
     } else {
         return CHEF_IMAGE_SOURCE_INVALID;
@@ -158,7 +158,7 @@ static void __finalize_partition(struct parser_state* state)
         exit(EXIT_FAILURE);
     }
 
-    if (state->partition.guid == NULL) {
+    if (state->partition.guid == NULL && state->image.schema == CHEF_IMAGE_SCHEMA_GPT) {
         fprintf(stderr, "parse error: partition 'guid' is required\n");
         exit(EXIT_FAILURE);
     }
@@ -285,8 +285,6 @@ static int __parse_guid_and_type(const char* id, char** guid, unsigned char* typ
 static int __consume_event(struct parser_state* s, yaml_event_t* event)
 {
     char *value;
-    //printf("__consume_event(state=%d event=%d)\n", s->state, event->type);
-
     switch (s->state) {
         case STATE_START:
             switch (event->type) {
@@ -470,7 +468,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 case YAML_MAPPING_START_EVENT:
                     break;
                 case YAML_MAPPING_END_EVENT:
-                    __finalize_partition(s);
                     __parser_pop_state(s);
                     break;
                 
@@ -589,8 +586,18 @@ static void __destroy_source(struct chef_image_partition_source* source)
     free(source);
 }
 
+static void __destroy_fat(struct chef_image_partition_fat_options* fatOptions)
+{
+    free((void*)fatOptions->reserved_image);
+}
+
 static void __destroy_partition(struct chef_image_partition* partition)
 {
+    // cleanup fs specific options
+    if (partition->fstype != NULL && (strncmp(partition->fstype, "fat", 3) == 0)) {
+        __destroy_fat(&partition->options.fat);
+    }
+
     __destroy_list(string, partition->attributes.head, struct list_item_string);
     __destroy_list(source, partition->sources.head, struct chef_image_partition_source);
     free((void*)partition->label);

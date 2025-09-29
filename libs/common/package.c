@@ -235,35 +235,16 @@ int chef_package_load(
 
 static void __free_version(struct chef_version* version)
 {
+    free((void*)version->created);
     free((void*)version->tag);
 }
 
-static void __free_channel(struct chef_channel* channel)
+static void __free_revision(struct chef_revision* revision)
 {
-    free((void*)channel->name);
-    __free_version(&channel->current_version);
-}
-
-static void __free_architecture(struct chef_architecture* architecture)
-{
-    free((void*)architecture->name);
-    if (architecture->channels != NULL) {
-        for (size_t i = 0; i < architecture->channels_count; i++) {
-            __free_channel(&architecture->channels[i]);
-        }
-        free(architecture->channels);
-    }
-}
-
-static void __free_platform(struct chef_platform* platform)
-{
-    free((void*)platform->name);
-    if (platform->architectures != NULL) {
-        for (size_t i = 0; i < platform->architectures_count; i++) {
-            __free_architecture(&platform->architectures[i]);
-        }
-        free(platform->architectures);
-    }
+    free((void*)revision->channel);
+    free((void*)revision->platform);
+    free((void*)revision->architecture);
+    __free_version(&revision->current_version);
 }
 
 void chef_package_free(struct chef_package* package)
@@ -280,11 +261,11 @@ void chef_package_free(struct chef_package* package)
     free((void*)package->maintainer);
     free((void*)package->maintainer_email);
 
-    if (package->platforms != NULL) {
-        for (size_t i = 0; i < package->platforms_count; i++) {
-            __free_platform(&package->platforms[i]);
+    if (package->revisions != NULL) {
+        for (size_t i = 0; i < package->revisions_count; i++) {
+            __free_revision(&package->revisions[i]);
         }
-        free(package->platforms);
+        free(package->revisions);
     }
     free(package);
 }

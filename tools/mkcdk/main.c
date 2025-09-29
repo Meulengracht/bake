@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <chef/cli.h>
 #include <chef/client.h>
 #include <chef/api/package.h>
 #include <chef/dirs.h>
@@ -33,6 +34,7 @@
 #include "chef-config.h"
 
 struct __mkcdk_options {
+    char*    out;
     char*    arch;
     char*    platform;
     uint64_t size;
@@ -46,6 +48,8 @@ static void __print_help(void)
     printf("Tool to build disk images from either raw files or using chef packages.\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -o, --output\n");
+    printf("      Path of the resulting image file, default is 'pc.img'\n");
     printf("  -p, --platform\n");
     printf("      Target platform of the image, this will affect how packages are resolved\n");
     printf("  -a, --archs\n");
@@ -254,21 +258,30 @@ cleanup:
 
 static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
 {
-    char   ccpath[512];
-    char*  p = NULL;
+    char   ccpath[PATH_MAX];
+    char*  p;
     size_t length;
     int    status;
     VLOG_DEBUG("mkcdk", "__ensure_directory(path=%s)\n", path);
 
+    if (path == NULL) {
+        return 0;
+    }
+
+    // ensure that there actually is a directory, and it's not a root directory
+    length = strlen(path);
+    if (length == 0 || (length == 1 && *path == '/')) {
+        return 0;
+    }
+
     status = snprintf(ccpath, sizeof(ccpath), "%s", path);
     if (status >= sizeof(ccpath)) {
         errno = ENAMETOOLONG;
-        return -1; 
+        return -1;
     }
 
-    length = strlen(ccpath);
-    if (ccpath[length - 1] == '/') {
-        ccpath[length - 1] = 0;
+    if (!strchr(ccpath, '/')) {
+        return 0;
     }
 
     for (p = ccpath + 1; *p; p++) {
@@ -285,6 +298,7 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
             *p = '/';
         }
     }
+    
     return fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params) {
         .path = ccpath
     });
@@ -292,7 +306,7 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
 
 static int __ensure_file_directory(struct chef_disk_filesystem* fs, const char* dest)
 {
-    char   tmp[512];
+    char   tmp[PATH_MAX];
     char*  p;
     VLOG_DEBUG("mkcdk", "__ensure_file_directory(dest=%s)\n", dest);
 
@@ -391,13 +405,6 @@ static int __write_image_content(struct chef_disk_filesystem* fs, const char* co
     struct list_item* i;
     int               status;
     VLOG_DEBUG("mkcdk", "__write_image_content()\n");
-
-    // unpack to intermediate directory
-    status = ingredient_unpack(ig, content, NULL, NULL);
-    if (status) {
-        VLOG_ERROR("mkcdk", "__write_image_content: failed to unpack content to %s\n", content);
-        return status;
-    }
 
     status = platform_getfiles(content, 0, &files);
     if (status) {
@@ -512,13 +519,13 @@ static int __write_image_sources(struct chef_disk_filesystem* fs, struct __image
                 status = -1;
                 break;
         }
-
+        
         if (status) {
             VLOG_ERROR("mkcdk", "__write_image_sources: failed to install source %s\n", src->target);
             break;
         }
     }
-
+    
     return status;
 }
 
@@ -619,6 +626,14 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
                 status = -1;
                 goto cleanup;
             }
+            
+            // unpack to intermediate directory
+            status = ingredient_unpack(ig, contentPath, NULL, NULL);
+            if (status) {
+                VLOG_ERROR("mkcdk", "__build_image: failed to unpack content to %s\n", contentPath);
+                goto cleanup;
+            }
+
             fs->set_content(fs, contentPath);
         }
 
@@ -707,58 +722,6 @@ static int __read_image_file(char* path, void** bufferOut, size_t* lengthOut)
     return 0;
 }
 
-static uint64_t __parse_quantity(const char* size)
-{
-    char*    end = NULL;
-    uint64_t number = strtoull(size, &end, 10);
-    switch (*end)  {
-        case 'G':
-            number *= 1024;
-            // fallthrough
-        case 'M':
-            number *= 1024;
-            // fallthrough
-        case 'K':
-            number *= 1024;
-            break;
-        default:
-            break;
-    }
-    return number;
-}
-
-static char* __split_switch(char** argv, int argc, int* i)
-{
-    char* split = strchr(argv[*i], '=');
-    if (split != NULL) {
-        return split + 1;
-    }
-    if ((*i + 1) < argc) {
-        return argv[++(*i)];
-    }
-    return NULL;
-}
-
-static int __parse_string_switch(char** argv, int argc, int* i, const char* s, size_t sl, const char* l, size_t ll, const char* defaultValue, char** out)
-{
-    if (strncmp(argv[*i], s, sl) == 0 || strncmp(argv[*i], l, ll) == 0) {
-        char* value = __split_switch(argv, argc, i);
-        *out = value != NULL ? value : (char*)defaultValue;
-        return 0;
-    }
-    return -1;
-}
-
-static int __parse_quantity_switch(char** argv, int argc, int* i, const char* s, size_t sl, const char* l, size_t ll, uint64_t defaultValue, uint64_t* out)
-{
-    if (strncmp(argv[*i], s, sl) == 0 || strncmp(argv[*i], l, ll) == 0) {
-        char* value = __split_switch(argv, argc, i);
-        *out = value != NULL ? __parse_quantity(value) : defaultValue;
-        return 0;
-    }
-    return -1;
-}
-
 int main(int argc, char** argv, char** envp)
 {
     char*                          imagePath = NULL;
@@ -769,13 +732,11 @@ int main(int argc, char** argv, char** envp)
     void*                          buffer;
     size_t                         length;
 
+    options.out = "./pc.img";
     options.arch = CHEF_ARCHITECTURE_STR;
     options.platform = CHEF_PLATFORM_STR;
     options.sector_size = 512;
     options.size = (1024ULL * 1024ULL) * 4096ULL; // 4GB
-
-    // needed for guids
-    srand(clock());
 
     // needed for guids
     srand(clock());
@@ -798,6 +759,8 @@ int main(int argc, char** argv, char** envp)
                 while (argv[i][li++] == 'v') {
                     logLevel++;
                 }
+            } else if (!__parse_string_switch(argv, argc, &i, "-o", 2, "--output", 8, NULL, (char**)&options.out)) {
+                continue;
             } else if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--platform", 10, NULL, (char**)&options.platform)) {
                 continue;
             } else if (!__parse_string_switch(argv, argc, &i, "-a", 2, "--arch", 6, NULL, (char**)&options.arch)) {
@@ -850,7 +813,7 @@ int main(int argc, char** argv, char** envp)
         goto cleanup;
     }
 
-    status = __build_image(image, "./pc.img", &options);
+    status = __build_image(image, options.out, &options);
 
 cleanup:
     chef_image_destroy(image);

@@ -28,6 +28,8 @@
 #include <string.h>
 #include <vlog.h>
 
+extern const char* chefclient_api_base_url(void);
+
 struct pack_response {
     int         revision;
     const char* token;
@@ -99,12 +101,22 @@ static size_t __download_progress_callback(void *clientp,
 
 static int __get_download_url(struct chef_download_params* params, char* urlBuffer, size_t bufferSize)
 {
-    // todo specific version support
-    int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/download?publisher=%s&name=%s&platform=%s&arch=%s&channel=%s",
-        params->publisher, params->package, params->platform, params->arch, params->channel
-    );
-    return written < (bufferSize - 1) ? 0 : -1;
+    if (params->revision != 0) {
+        // if we have a revision, use that
+        int written = snprintf(urlBuffer, bufferSize - 1, 
+            "%s/package/download?publisher=%s&name=%s&revision=%i",
+            chefclient_api_base_url(),
+            params->publisher, params->package, params->revision
+        );
+        return written < (bufferSize - 1) ? 0 : -1;
+    } else {
+        int written = snprintf(urlBuffer, bufferSize - 1, 
+            "%s/package/download?publisher=%s&name=%s&platform=%s&arch=%s&channel=%s",
+            chefclient_api_base_url(),
+            params->publisher, params->package, params->platform, params->arch, params->channel
+        );
+        return written < (bufferSize - 1) ? 0 : -1;
+    }
 }
 
 static int __parse_pack_response(const char* response, struct pack_response* packResponse)
@@ -135,7 +147,7 @@ int __download_request(struct chef_download_params* params, struct pack_response
     long                 httpCode;
 
     // initialize a curl session
-    request = chef_request_new(1, 0);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "__download_request: failed to create request\n");
         return -1;
@@ -153,9 +165,9 @@ int __download_request(struct chef_download_params* params, struct pack_response
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_request: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__download_request: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -189,7 +201,7 @@ static int __download_file(const char* filePath, struct pack_response* context, 
     long                 httpCode;
 
     // initialize a curl session
-    request = chef_request_new(1, 0);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "__download_file: failed to create request\n");
         return -1;
@@ -249,9 +261,9 @@ static int __download_file(const char* filePath, struct pack_response* context, 
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: curl_easy_perform() failed: %s\n", request->error);
+        VLOG_ERROR("chef-client", "__download_file: chef_request_execute() failed: %s\n", request->error);
         goto cleanup;
     }
     

@@ -16,37 +16,27 @@
  * 
  */
 
-#ifndef __LIBCHEF_OAUTH_H__
-#define __LIBCHEF_OAUTH_H__
+#ifndef __LIBCHEF_PUBKEY_H__
+#define __LIBCHEF_PUBKEY_H__
 
-enum oauth_flow_type {
-    OAUTH_FLOW_DEVICECODE
-};
-
-struct token_context {
-    const char* access_token;
-    const char* refresh_token;
-    const char* id_token;
-    int         expires_in;
-};
-
-/**
- * @brief Attempts to login using the OAuth2 device code flow.
- * @param flowType The type of OAuth flow to use.
+/** 
+ * @brief Attempts to login using the public key authentication flow.
+ * @param publicKey The public key to use for authentication.
+ * @param privateKey The private key to use for authentication. This is only used initially
+ * to generate the session key.
  * @return int returns -1 on error, 0 on success
  */
-extern int oauth_login(enum oauth_flow_type flowType);
+extern int pubkey_login(const char* email, const char* publicKey, const char* privateKey);
 
 /**
  * @brief Logs out the current user and clears the authentication context.
  */
-extern void oauth_logout(void);
+extern void pubkey_logout(void);
 
 /**
  * @brief Sets the authentication headers for the current user.
- * 
  * @param headerlist The list of headers to set the authentication headers on.
  */
-extern void oauth_set_authentication(void** headerlist);
+extern void pubkey_set_authentication(void** headerlist);
 
-#endif //!__LIBCHEF_OAUTH_H__
+#endif //!__LIBCHEF_PUBKEY_H__

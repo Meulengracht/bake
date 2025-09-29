@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14.3)
-project(chef VERSION "1.4.2")
+project(chef VERSION "1.4.3")
 
 INCLUDE(CheckCXXSourceCompiles)
 
@@ -58,6 +58,9 @@ configure_file(
     "${CMAKE_BINARY_DIR}/cmake_uninstall.cmake"
     IMMEDIATE @ONLY
 )
+
+# add dist stuff
+add_subdirectory(dist)
 
 if(NOT TARGET uninstall)
     add_custom_target(uninstall

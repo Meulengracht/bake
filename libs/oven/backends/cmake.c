@@ -355,7 +355,7 @@ static char* __replace_or_add_cmake_prefixes(const char* platform, const char* a
     return newArguments;
 }
 
-static void __meson_output_handler(const char* line, enum platform_spawn_output_type type) 
+static void __cmake_output_handler(const char* line, enum platform_spawn_output_type type) 
 {
     if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
         VLOG_DEBUG("cmake", line);
@@ -432,9 +432,8 @@ int cmake_main(struct oven_backend_data* data, union chef_backend_options* optio
     written = snprintf(
         argument,
         argumentLength - 1,
-        "-S %s -B %s %s",
+        "-S %s %s",
         data->paths.project,
-        data->paths.build,
         newArguments
     );
     argument[written] = '\0';
@@ -447,10 +446,10 @@ int cmake_main(struct oven_backend_data* data, union chef_backend_options* optio
         (const char* const*)environment,
         &(struct platform_spawn_options) {
             .cwd = data->paths.build,
-            .output_handler = __meson_output_handler
+            .output_handler = __cmake_output_handler
         }
     );
-    
+
 cleanup:
     environment_destroy(environment);
     free(argument);

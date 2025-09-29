@@ -26,6 +26,8 @@
 #include <string.h>
 #include <vlog.h>
 
+extern const char* chefclient_api_base_url(void);
+
 static const char* __get_json_string_safe(json_t* object, const char* key)
 {
     json_t* value = json_object_get(object, key);
@@ -38,153 +40,46 @@ static const char* __get_json_string_safe(json_t* object, const char* key)
 static int __get_find_url(struct chef_find_params* params, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/find?search=%s",
+        "%s/package/find?search=%s",
+        chefclient_api_base_url(),
         params->query
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __parse_channels(json_t* channels, struct chef_architecture* architecture)
+static int __parse_package(json_t* root, struct chef_find_result** packageOut)
 {
-    size_t i;
-    size_t channelsCount = json_array_size(channels);
-    
-    architecture->channels_count = channelsCount;
-    architecture->channels = (struct chef_channel*)malloc(sizeof(struct chef_channel) * channelsCount);
-    if (architecture->channels == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    for (i = 0; i < channelsCount; i++) {
-        json_t* channel = json_array_get(channels, i);
-        json_t* version = json_object_get(channel, "current-version");
-        json_t* version_major = json_object_get(version, "major");
-        json_t* version_minor = json_object_get(version, "minor");
-        json_t* version_patch = json_object_get(version, "patch");
-        json_t* version_revision = json_object_get(version, "revision");
-        json_t* size_revision = json_object_get(version, "size");
-
-        // transfer members of architecture
-        architecture->channels[i].name = __get_json_string_safe(channel, "name");
-        architecture->channels[i].current_version.major = json_integer_value(version_major);
-        architecture->channels[i].current_version.minor = json_integer_value(version_minor);
-        architecture->channels[i].current_version.patch = json_integer_value(version_patch);
-        architecture->channels[i].current_version.revision = json_integer_value(version_revision);
-        architecture->channels[i].current_version.tag = __get_json_string_safe(version, "additional");
-        architecture->channels[i].current_version.size = json_integer_value(size_revision);
-        architecture->channels[i].current_version.created = __get_json_string_safe(version, "created");
-    }
-    return 0;
-}
-
-static int __parse_architectures(json_t* architectures, struct chef_platform* platform)
-{
-    size_t i;
-    size_t architecturesCount = json_array_size(architectures);
-    
-    platform->architectures_count = architecturesCount;
-    platform->architectures = (struct chef_architecture*)malloc(sizeof(struct chef_architecture) * architecturesCount);
-    if (platform->architectures == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    for (i = 0; i < architecturesCount; i++)
-    {
-        json_t* architecture = json_array_get(architectures, i);
-        json_t* channels;
-
-        // transfer members of architecture
-        platform->architectures[i].name = __get_json_string_safe(architecture, "name");
-
-        // parse channels
-        channels = json_object_get(architecture, "channels");
-        if (channels != NULL) {
-            if (__parse_channels(channels, &platform->architectures[i]) != 0) {
-                return -1;
-            }
-        }
-    }
-    return 0;
-}
-
-static int __parse_platforms(json_t* platforms, struct chef_package* package)
-{
-    size_t i;
-    size_t platformsCount = json_array_size(platforms);
-    
-    package->platforms_count = platformsCount;
-    package->platforms = (struct chef_platform*)malloc(sizeof(struct chef_platform) * platformsCount);
-    if (package->platforms == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    for (i = 0; i < platformsCount; i++)
-    {
-        json_t* platform = json_array_get(platforms, i);
-        json_t* architectures;
-
-        // transfer members of platform
-        package->platforms[i].name = __get_json_string_safe(platform, "name");
-
-        // parse architecures
-        architectures = json_object_get(platform, "architectures");
-        if (architectures != NULL) {
-            if (__parse_architectures(architectures, &package->platforms[i]) != 0) {
-                return -1;
-            }
-        }
-    }
-    return 0;
-}
-
-static int __parse_package(json_t* root, struct chef_package** packageOut)
-{
-    struct chef_package* package;
-    json_t*              platforms;
+    struct chef_find_result* result;
+    json_t*                  platforms;
 
     // allocate memory for the package
-    package = (struct chef_package*)malloc(sizeof(struct chef_package));
-    if (!package) {
+    result = (struct chef_find_result*)malloc(sizeof(struct chef_find_result));
+    if (result == NULL) {
         return -1;
     }
-    memset(package, 0, sizeof(struct chef_package));
+    memset(result, 0, sizeof(struct chef_find_result));
 
     // parse the required members
-    package->publisher = __get_json_string_safe(root, "publisher");
-    package->package = __get_json_string_safe(root, "name");
-    package->summary = __get_json_string_safe(root, "summary");
-    package->description = __get_json_string_safe(root, "description");
-    package->homepage = __get_json_string_safe(root, "homepage");
-    package->license = __get_json_string_safe(root, "license");
-    package->eula = __get_json_string_safe(root, "eula");
-    package->maintainer = __get_json_string_safe(root, "maintainer");
-    package->maintainer_email = __get_json_string_safe(root, "maintainer_email");
+    result->publisher = __get_json_string_safe(root, "publisher");
+    result->package = __get_json_string_safe(root, "name");
+    result->summary = __get_json_string_safe(root, "summary");
+    result->type = (enum chef_package_type)json_integer_value(json_object_get(root, "type"));
+    result->maintainer = __get_json_string_safe(root, "maintainer");
+    result->maintainer_email = __get_json_string_safe(root, "maintainer-email");
 
-    // parse the platforms
-    platforms = json_object_get(root, "platforms");
-    if (platforms != NULL) {
-        if (__parse_platforms(platforms, package) != 0) {
-            chef_package_free(package);
-            return -1;
-        }
-    }
-
-    *packageOut = package;
+    *packageOut = result;
 
     json_decref(root);
     return 0;
 }
 
-static int __parse_package_find_response(const char* response, struct chef_package*** packagesOut, int* countOut)
+static int __parse_package_find_response(const char* response, struct chef_find_result*** results, int* count)
 {
-    json_error_t          error;
-    json_t*               root;
-    size_t                i;
-    struct chef_package** packages;
-    size_t                packageCount;
+    json_error_t              error;
+    json_t*                   root;
+    size_t                    i;
+    struct chef_find_result** packages;
+    size_t                    packageCount;
 
     root = json_loads(response, 0, &error);
     if (!root) {
@@ -195,12 +90,12 @@ static int __parse_package_find_response(const char* response, struct chef_packa
     packageCount = json_array_size(root);
     if (!packageCount) {
         json_decref(root);
-        *packagesOut = NULL;
-        *countOut = 0;
+        *results = NULL;
+        *count = 0;
         return 0;
     }
 
-    packages = (struct chef_package**)calloc(packageCount, sizeof(struct chef_package*));
+    packages = (struct chef_find_result**)calloc(packageCount, sizeof(struct chef_find_result*));
     if (packages == NULL) {
         return -1;
     }
@@ -213,20 +108,21 @@ static int __parse_package_find_response(const char* response, struct chef_packa
     }
 
     json_decref(root);
-    *packagesOut = packages;
-    *countOut = (int)packageCount;
+    *results = packages;
+    *count = (int)packageCount;
     return 0;
 }
 
-int chefclient_pack_find(struct chef_find_params* params, struct chef_package*** packagesOut, int* countOut)
+int chefclient_pack_find(struct chef_find_params* params, struct chef_find_result*** results, int* count)
 {
     struct chef_request* request;
     CURLcode             code;
     char                 buffer[256];
     int                  status = -1;
     long                 httpCode;
+    VLOG_DEBUG("chef-client", "chefclient_pack_find(query=%s, privileged=%d)\n", params->query, params->privileged);
 
-    request = chef_request_new(1, params->privileged);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, params->privileged);
     if (!request) {
         VLOG_ERROR("chef-client", "chefclient_pack_find: failed to create request\n");
         return -1;
@@ -244,9 +140,9 @@ int chefclient_pack_find(struct chef_find_params* params, struct chef_package***
         goto cleanup;
     }
     
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "chefclient_pack_find: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "chefclient_pack_find: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -264,9 +160,26 @@ int chefclient_pack_find(struct chef_find_params* params, struct chef_package***
         goto cleanup;
     }
 
-    status = __parse_package_find_response(request->response, packagesOut, countOut);
+    status = __parse_package_find_response(request->response, results, count);
 
 cleanup:
     chef_request_delete(request);
     return status;
+}
+
+void chefclient_pack_find_free(struct chef_find_result** results, int count)
+{
+    if (results == NULL) {
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        free((void*)results[i]->publisher);
+        free((void*)results[i]->package);
+        free((void*)results[i]->summary);
+        free((void*)results[i]->maintainer);
+        free((void*)results[i]->maintainer_email);
+        free(results[i]);
+    }
+    free(results);
 }

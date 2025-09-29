@@ -19,36 +19,36 @@
 #include <errno.h>
 #include <chef/api/account.h>
 #include <chef/api/package.h>
+#include <chef/cli.h>
 #include <chef/client.h>
 #include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-extern void account_setup(void);
+extern int  account_login_setup(void);
+extern void account_publish_setup(void);
 
 static void __print_help(void)
 {
     printf("Usage: order publish <pack-path> [options]\n");
     printf("Options:\n");
+    printf("  -p, --publisher\n");
+    printf("      The publisher that the package should be published under, defaults only if there is one publisher\n");
     printf("  -c, --channel\n");
     printf("      The channel that should be published to, default is devel\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
 }
 
-static int __ensure_account_setup(char** publisherOut)
+static int __ensure_publisher_valid(char** publisher)
 {
     struct chef_account* account;
+    int                  verified = 0;
     int                  status;
 
     status = chef_account_get(&account);
-    if (status != 0) {
-        if (status == -ENOENT) {
-            printf("no account information available yet\n");
-            account_setup();
-            return 0;
-        }
+    if (status) {
         return status;
     }
 
@@ -59,14 +59,37 @@ static int __ensure_account_setup(char** publisherOut)
         return -1;
     }
 
-    // verify publisher-name has been confirmed
-    if (chef_account_get_verified_status(account) != CHEF_ACCOUNT_VERIFIED_STATUS_VERIFIED) {
-        printf("publisher name has not been verified yet, please wait for verification status to be approved\n");
+    // if publisher is NULL, then we see if there is just one
+    if (*publisher == NULL) {
+        if (chef_account_get_publisher_count(account) > 1)  {
+            fprintf(stderr, "order: a publisher was not specified and one could not be inferred\n");
+            return -1;
+        }
+
+        *publisher = platform_strdup(chef_account_get_publisher_name(account, 0));
+        if (*publisher == NULL) {
+            fprintf(stderr, "order: no publisher for the package\n");
+            return -1;
+        }
+    }
+
+    for (int i = 0; i < chef_account_get_publisher_count(account); i++) {
+        if (strcmp(*publisher, chef_account_get_publisher_name(account, i)) == 0) {
+            if (chef_account_get_publisher_verified_status(account, i) != CHEF_ACCOUNT_VERIFIED_STATUS_VERIFIED) {
+                fprintf(stderr, "order: publisher name has not been verified yet, please wait for verification status to be approved\n");
+                errno = EACCES;
+                return -1;
+            }
+            verified = 1;
+            break;
+        }
+    }
+
+    if (verified == 0) {
+        fprintf(stderr, "order: publisher name was invalid\n");
         errno = EACCES;
         return -1;
     }
-
-    *publisherOut = platform_strdup(chef_account_get_publisher_name(account));
 
     chef_account_free(account);
     return 0;
@@ -74,12 +97,12 @@ static int __ensure_account_setup(char** publisherOut)
 
 int publish_main(int argc, char** argv)
 {
-    struct chef_publish_params params   = { 0 };
-    struct chef_package*       package  = NULL;
-    struct chef_version*       version  = NULL;
-    char*                      packPath = NULL;
+    struct chef_publish_params params    = { 0 };
+    struct chef_package*       package   = NULL;
+    struct chef_version*       version   = NULL;
+    char*                      packPath  = NULL;
+    char*                      publisher = NULL;
     int                        status;
-    char*                      publisher;
 
     // set default channel
     params.channel = "devel";
@@ -89,15 +112,10 @@ int publish_main(int argc, char** argv)
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
-            } else if (!strncmp(argv[i], "-c", 2) || !strncmp(argv[i], "--channel", 9)) {
-                char* channel = strchr(argv[i], '=');
-                if (channel) {
-                    channel++;
-                    params.channel = channel;
-                } else {
-                    printf("bake: missing value for --channel=...\n");
-                    return -1;
-                }
+            } else if (!__parse_string_switch(argv, argc, &i, "-c", 2, "--channel", 9, NULL, (char**)&params.channel)) {
+                continue;
+            } else if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--publisher", 11, NULL, &publisher)) {
+                continue;
             } else {
                 if (packPath != NULL) {
                     printf("only one pack path can be specified\n");
@@ -129,7 +147,7 @@ int publish_main(int argc, char** argv)
     printf("version:            %d.%d.%d\n", version->major, version->minor, version->patch);
 
     // set the parameter values
-    params.package = package;
+    params.package = package->package;
     params.version = version;
 
     // initialize chefclient
@@ -143,16 +161,14 @@ int publish_main(int argc, char** argv)
     // do this in a loop, to catch cases where our login token has
     // expired
     while (1) {
-        // login before continuing
-        status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
-        if (status != 0) {
-            printf("failed to login to chef server: %s\n", strerror(errno));
-            break;
+        // ensure we are logged in
+        if (account_login_setup()) {
+            fprintf(stderr, "order: failed to login: %s\n", strerror(errno));
+            return -1;
         }
 
-        // ensure account is setup
-        status = __ensure_account_setup(&publisher);
-        if (status != 0) {
+        status = __ensure_publisher_valid(&publisher);
+        if (status) {
             if (status == -EACCES) {
                 chefclient_logout();
                 continue;

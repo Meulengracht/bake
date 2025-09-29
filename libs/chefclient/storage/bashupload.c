@@ -193,9 +193,9 @@ static int __upload_file(const char* filePath, struct upload_context* uploadCont
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__upload_file: curl_easy_perform() failed: %s\n", request->error);
+        VLOG_ERROR("chef-client", "__upload_file: chef_request_execute() failed: %s\n", request->error);
         goto cleanup;
     }
     

@@ -29,6 +29,6 @@
  * @param lenOut 
  * @return unsigned* 
  */
-extern unsigned char* base64_encode(const unsigned char* data, size_t len, size_t* lenOut);
+extern unsigned char* base64_encode(const unsigned char* data, size_t len, int lineBreaks, size_t* lenOut);
 
 #endif //!__LIBCHEF_BASE64_H__

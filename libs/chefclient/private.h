@@ -61,6 +61,13 @@ extern void chef_request_delete(struct chef_request* request);
 extern void chef_set_curl_common_headers(void** headerlist, int authorization);
 
 /**
+ * @brief Executes the request and fills in the response and error buffers
+ * 
+ * @param request The request to execute
+ */
+extern CURLcode chef_request_execute(struct chef_request* request);
+
+/**
  * @brief 
  * 
  * @param handle 

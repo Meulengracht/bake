@@ -82,14 +82,26 @@ int __init_curl(struct chef_request* request, int https, int authorization)
     }
 
     chef_set_curl_common_headers((void**)&request->headers, authorization);
+    return 0;
+}
+
+CURLcode chef_request_execute(struct chef_request* request)
+{
+    CURLcode code;
+
     if (request->headers != NULL) {
         code = curl_easy_setopt(request->curl, CURLOPT_HTTPHEADER, request->headers);
         if (code != CURLE_OK) {
             VLOG_ERROR("chef-client", "__init_curl: failed to set http headers [%s]\n", request->error);
-            return -1;
+            return CURLE_FAILED_INIT;
         }
     }
-    return 0;
+
+    code = curl_easy_perform(request->curl);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "chef_request_execute: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+    }
+    return code;
 }
 
 struct chef_request* chef_request_new(int https, int authorization)

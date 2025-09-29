@@ -181,6 +181,7 @@ static int __write_update_script(struct recipe_cache* cache)
     }
 
     fprintf(stream, "#!/bin/bash\n\n");
+    fprintf(stream, "export DEBIAN_FRONTEND=noninteractive\n");
     fprintf(stream, "echo \"updating container packages...\"\n");
     fprintf(stream, "apt-get -yqq update\n");
 

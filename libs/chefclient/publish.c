@@ -28,127 +28,12 @@
 #include <string.h>
 #include <vlog.h>
 
-// Max supported by REST api on azure is 100mb
-#define CHEF_UPLOAD_MAX_SIZE (100 * 1024 * 1024)
+extern const char* chefclient_api_base_url(void);
 
-struct pack_response {
-    const char* token;
-    const char* url;
+struct __initiate_response {
+    const char* upload_token;
+    int         revision;
 };
-
-struct file_upload_context {
-    char*                block_id;
-    struct chef_request* request;
-    FILE*                file;
-    size_t               length;
-    size_t               bytes_read;
-    size_t               bytes_uploaded;
-};
-
-static const char* g_templateGuid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
-static const char* g_hexValues    = "0123456789ABCDEF-";
-
-static void __generate_bad_but_valid_guid(char guidBuffer[40])
-{
-    int templateLength = strlen(g_templateGuid);
-
-    // yes we are well aware that this provides _very_ poor randomness
-    // but we do not require a cryptographically secure guid for this purpose
-    srand(clock());
-    for (int t = 0; t < templateLength + 1; t++) {
-        int  r = rand() % 16;
-        char c = ' ';
-
-        switch (g_templateGuid[t]) {
-            case 'x' : { c = g_hexValues[r]; } break;
-            case 'y' : { c = g_hexValues[(r & 0x03) | 0x08]; } break;
-            case '-' : { c = '-'; } break;
-            case '4' : { c = '4'; } break;
-        }
-
-        guidBuffer[t] = (t < templateLength) ? c : 0x00;
-    }
-}
-
-static char* __generate_blockid(void)
-{
-    char guidBuffer[40] = { 0 };
-
-    // generate a guid for the block id
-    __generate_bad_but_valid_guid(guidBuffer);
-    
-    // encode it in base64
-    return (char*)base64_encode((const unsigned char*)&guidBuffer[0], strlen(guidBuffer), NULL);
-}
-
-static int __create_file_contexts(const char* path, struct file_upload_context** contextsOut, int* contextCountOut)
-{
-    // Allow each segment to be uploaded in parallel, max size of 100mb
-    int                         contextCount = 0;
-    struct file_upload_context* contexts = NULL;
-    FILE*                       file = fopen(path, "rb");
-    size_t                      fileSize;
-
-    if (!file) {
-        return -1;
-    }
-
-    fseek(file, 0, SEEK_END);
-    fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    fclose(file);
-
-    // Calculate the number of segments
-    contextCount = (int)((fileSize + (CHEF_UPLOAD_MAX_SIZE - 1)) / CHEF_UPLOAD_MAX_SIZE);
-
-    // Allocate contexts
-    contexts = (struct file_upload_context*)malloc(sizeof(struct file_upload_context) * contextCount);
-    if (!contexts) {
-        return -1;
-    }
-
-    // Initialize contexts
-    for (long i = 0; i < (long)contextCount; i++) {
-        contexts[i].file = fopen(path, "rb");
-        if (!contexts[i].file) {
-            return -1;
-        }
-        fseek(contexts[i].file, i * CHEF_UPLOAD_MAX_SIZE, SEEK_SET);
-
-        contexts[i].block_id = __generate_blockid();
-        contexts[i].length = (i == (contextCount - 1)) ? (fileSize - (i * CHEF_UPLOAD_MAX_SIZE)) : CHEF_UPLOAD_MAX_SIZE;
-        contexts[i].bytes_read = 0;
-        contexts[i].bytes_uploaded = 0;
-        contexts[i].request = NULL;
-    }
-
-    *contextsOut = contexts;
-    *contextCountOut = contextCount;
-    return 0;
-}
-
-
-static void __destroy_file_contexts(struct file_upload_context* contexts, int contextCount)
-{
-    for (int i = 0; i < contextCount; i++) {
-        if (contexts[i].file) {
-            fclose(contexts[i].file);
-        }
-        if (contexts[i].block_id) {
-            free(contexts[i].block_id);
-        }
-    }
-    free(contexts);
-}
-
-static size_t __upload_progress_callback(void *clientp,
-    curl_off_t dltotal, curl_off_t dlnow,
-    curl_off_t ultotal, curl_off_t ulnow)
-{
-    struct file_upload_context* context = (struct file_upload_context*)clientp;
-    context->bytes_uploaded = (size_t)ulnow;
-    return 0;
-}
 
 static json_t* __create_publish_request(struct chef_publish_params* params)
 {
@@ -157,86 +42,75 @@ static json_t* __create_publish_request(struct chef_publish_params* params)
         return NULL;
     }
 
-    json_object_set_new(request, "name", json_string(params->package->package));
-    json_object_set_new(request, "type", json_integer((long long int)params->package->type));
-    json_object_set_new(request, "summary", json_string(params->package->summary));
-    json_object_set_new(request, "description", json_string(params->package->description));
-    json_object_set_new(request, "homepage", json_string(params->package->homepage));
-    json_object_set_new(request, "license", json_string(params->package->license));
-    json_object_set_new(request, "eula", json_string(params->package->eula));
-    json_object_set_new(request, "maintainer", json_string(params->package->maintainer));
-    json_object_set_new(request, "maintainer_email", json_string(params->package->maintainer_email));
-    json_object_set_new(request, "platform", json_string(params->package->platform));
-    json_object_set_new(request, "architecture", json_string(params->package->arch));
-    json_object_set_new(request, "channel", json_string(params->channel));
+    json_object_set_new(request, "PublisherName", json_string(params->publisher));
+    json_object_set_new(request, "PackageName", json_string(params->package));
+    json_object_set_new(request, "Platform", json_string(params->platform));
+    json_object_set_new(request, "Architecture", json_string(params->architecture));
+    json_object_set_new(request, "Size", json_integer(params->version->size));
+    json_object_set_new(request, "Major", json_integer(params->version->major));
+    json_object_set_new(request, "Minor", json_integer(params->version->minor));
+    json_object_set_new(request, "Patch", json_integer(params->version->patch));
+    if (params->version->tag != NULL) {
+        json_object_set_new(request, "Tag", json_string(params->architecture));
+    }
     return request;
 }
 
-static char* __create_blocklist_request(struct file_upload_context* contexts, int contextCount)
+static const char* __get_json_string_safe(json_t* object, const char* key)
 {
-    char* request;
-
-    request = malloc(4096);
-    if (!request) {
-        return NULL;
+    json_t* value = json_object_get(object, key);
+    if (value != NULL && json_string_value(value) != NULL) {
+        return platform_strdup(json_string_value(value));
     }
-
-    strcpy(request, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
-    strcat(request, "<BlockList>\n");
-    for (int i = 0; i < contextCount; i++) {
-        strcat(request, "  <Latest>");
-        strcat(request, contexts[i].block_id);
-        strcat(request, "</Latest>\n");
-    }
-    strcat(request, "</BlockList>\n");
-    return request;
+    return NULL;
 }
 
-static int __parse_pack_response(const char* response, struct pack_response* packResponse)
+static int __parse_initiate_response(const char* response, struct __initiate_response* context)
 {
     json_error_t error;
     json_t*      root;
     
     root = json_loads(response, 0, &error);
-    if (!root) {
+    if (root == NULL) {
         return -1;
     }
 
-    packResponse->token = platform_strdup(json_string_value(json_object_get(root, "sas-token")));
-    packResponse->url = platform_strdup(json_string_value(json_object_get(root, "blob-url")));
+    context->upload_token = __get_json_string_safe(root, "upload-token");
+    context->revision     = (int)json_integer_value(json_object_get(root, "revision"));
     json_decref(root);
-
     return 0;
 }
 
-static int __get_publish_url(char* urlBuffer, size_t bufferSize)
+static int __get_publish_initate_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/publish"
+        "%s/package/publish/initiate",
+        chefclient_api_base_url()
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __get_block_url(char* urlBuffer, size_t bufferSize, const char* urlBase, const char* blockId)
+static int __get_publish_upload_url(const char* key, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "%s&comp=block&blockid=%s",
-        urlBase,
-        blockId
+        "%s/package/publish/upload?key=%s",
+        chefclient_api_base_url(),
+        key
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __get_blocklist_url(char* urlBuffer, size_t bufferSize, const char* urlBase)
+static int __get_publish_complete_url(const char* key, const char* channel, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "%s&comp=blocklist",
-        urlBase
+        "%s/package/publish/complete?key=%s&channel=%s",
+        chefclient_api_base_url(),
+        key, channel
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __publish_request(json_t* json, struct pack_response* context)
+static int __publish_request(json_t* json, struct __initiate_response* context)
 {
     struct chef_request* request;
     CURLcode             code;
@@ -245,14 +119,13 @@ static int __publish_request(json_t* json, struct pack_response* context)
     char                 buffer[256];
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "__publish_request: failed to create request\n");
         return -1;
     }
 
-    // set the url
-    if (__get_publish_url(buffer, sizeof(buffer)) != 0) {
+    if (__get_publish_initate_url(buffer, sizeof(buffer)) != 0) {
         VLOG_ERROR("chef-client", "__publish_request: buffer too small for publish link\n");
         goto cleanup;
     }
@@ -270,26 +143,25 @@ static int __publish_request(json_t* json, struct pack_response* context)
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__publish_request: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__publish_request: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
         status = -1;
         
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
-        }
-        else {
+        } else {
             VLOG_ERROR("chef-client", "__publish_request: http error %ld [%s]\n", httpCode, request->response);
             status = -EIO;
         }
         goto cleanup;
     }
 
-    status = __parse_pack_response(request->response, context);
+    status = __parse_initiate_response(request->response, context);
 
 cleanup:
     free(body);
@@ -297,187 +169,32 @@ cleanup:
     return status;
 }
 
-static int __write_blocklist(
-    struct pack_response*       context,
-    struct file_upload_context* fileContexts,
-    int                         contextCount)
-{
-    struct chef_request* request;
-    CURLcode             code;
-    char*                body   = NULL;
-    int                  status = -1;
-    char                 buffer[512];
-    long                 httpCode;
+struct file_upload_context {
+    FILE*  file;
+    size_t length;
+    size_t uploaded;
+    size_t read;
+};
 
-    request = chef_request_new(1, 0);
-    if (!request) {
-        VLOG_ERROR("chef-client", "__write_blocklist: failed to create request\n");
+static int __file_upload_context_init(struct file_upload_context* context, const char* path)
+{
+    context->file = fopen(path, "rb");
+    if (context->file == NULL) {
         return -1;
     }
 
-    // set required ms headers
-    request->headers = curl_slist_append(request->headers, "x-ms-version: 2016-05-31");
-
-    // set the url
-    if (__get_blocklist_url(buffer, sizeof(buffer), context->url) != 0) {
-        VLOG_ERROR("chef-client", "__write_blocklist: buffer too small for publish link\n");
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__write_blocklist: failed to set url [%s]\n", request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(request->curl, CURLOPT_CUSTOMREQUEST, "PUT");
-    if(code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__write_blocklist: failed to mark request PUT [%s]\n", request->error);
-        goto cleanup;
-    }
+    fseek(context->file, 0, SEEK_END);
+    context->length = ftell(context->file);
     
-    body = __create_blocklist_request(fileContexts, contextCount);
-    code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, body);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__write_blocklist: failed to set body [%s]\n", request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_perform(request->curl);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__write_blocklist: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
-    }
-
-    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    if (httpCode < 200 || httpCode >= 300) {
-        status = -1;
-        
-        if (httpCode == 302) {
-            status = -EACCES;
-        }
-        else {
-            VLOG_ERROR("chef-client", "__write_blocklist: http error %ld\n", httpCode);
-            status = -EIO;
-        }
-        goto cleanup;
-    }
-
-    status = 0;
-
-cleanup:
-    free(body);
-    chef_request_delete(request);
-    return status;
+    fseek(context->file, 0, SEEK_SET);
+    context->uploaded = 0;
+    context->read     = 0;
+    return 0;
 }
 
-static void __cleanup_file_context(struct file_upload_context* context)
+static void __update_progress(struct file_upload_context* context)
 {
-    if (context->file) {
-        fclose(context->file);
-    }
-}
-
-static size_t __read_file(char *ptr, size_t size, size_t nmemb, void *userp)
-{
-    struct file_upload_context *i = userp;
-    size_t retcode = fread(ptr, size, nmemb, i->file);
-    i->bytes_read += retcode;
-    return retcode;
-}
-
-static int __prepare_block_request(
-    struct curl_slist*          headers,
-    struct file_upload_context* fileContext,
-    struct pack_response*       context)
-{
-    CURLcode code;
-    int      status = -1;
-    char     urlBuffer[512];
-
-    fileContext->request = chef_request_new(1, 0);
-    if (!fileContext->request) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to create request\n");
-        return -1;
-    }
-
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_READFUNCTION, __read_file);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to set upload data reader [%s]\n", fileContext->request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_READDATA, fileContext);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to set upload data [%s]\n", fileContext->request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t)fileContext->length);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to set upload size [%s]\n", fileContext->request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_UPLOAD, 1L);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to set request to upload [%s]\n", fileContext->request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_NOPROGRESS, 0);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to enable upload progress [%s]\n", fileContext->request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_XFERINFOFUNCTION, __upload_progress_callback);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to set upload progress callback [%s]\n", fileContext->request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_XFERINFODATA, fileContext);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to set upload progress callback data [%s]\n", fileContext->request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_HTTPHEADER, headers);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to set http headers [%s]\n", fileContext->request->error);
-        goto cleanup;
-    }
-
-    if (__get_block_url(urlBuffer, sizeof(urlBuffer), context->url, fileContext->block_id) != 0) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to get block url [%s]\n", fileContext->request->error);
-        goto cleanup;
-    }
-
-    code = curl_easy_setopt(fileContext->request->curl, CURLOPT_URL, urlBuffer);
-    if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__prepare_block_request: failed to set url [%s]\n", fileContext->request->error);
-        goto cleanup;
-    }
-
-    status = 0;
-
-cleanup:
-    return status;
-}
-
-static int __update_progress(struct file_upload_context* uploadContexts, int uploadCount)
-{
-    int    status = 0;
-    size_t total = 0;
-    size_t complete = 0;
-    int    percent = 0;
-
-    for (int i = 0; i < uploadCount; i++) {
-        total    += uploadContexts[i].length;
-        complete += uploadContexts[i].bytes_uploaded;
-    }
-
-    percent = (complete * 100) / total;
+    int percent = (context->uploaded * 100) / context->length;
     
     // print a fancy progress bar with percentage, upload progress and a moving
     // bar being filled
@@ -490,114 +207,202 @@ static int __update_progress(struct file_upload_context* uploadContexts, int upl
             printf(" ");
         }
     }
-    printf("| %3d%%] %6zu / %6zu bytes", percent, complete, total);
+    printf("| %3d%%] %6zu / %6zu bytes", percent, context->uploaded, context->length);
     fflush(stdout);
-    return status;
 }
 
-static int __upload_blocks(struct pack_response* response, struct file_upload_context* uploadContexts, int uploadCount)
+static int __file_seek(void* arg, curl_off_t offset, int origin) {
+    struct file_upload_context* context = (struct file_upload_context*)arg;
+    return fseek(context->file, (long)offset, origin);
+}
+
+static size_t __file_read(char *buffer, size_t size, size_t nitems, void* arg) {
+    struct file_upload_context* context = (struct file_upload_context*)arg;
+    size_t n = fread(buffer, size, nitems, context->file);
+    context->uploaded = context->read;
+    context->read += n * size;
+    __update_progress(context);
+    return n;
+}
+
+static void __file_finished(void* arg) {
+    struct file_upload_context* context = (struct file_upload_context*)arg;
+    context->uploaded = context->read;
+    __update_progress(context);
+    fclose(context->file);
+}
+
+static int __upload_package(const char* path, struct __initiate_response* context)
 {
-    struct curl_slist* headers = NULL;
-    CURLM*    transfersHandle;
-    CURLMcode code;
-    int       stillRunning;
-    int       status = 0;
+    struct chef_request*       request;
+    struct file_upload_context fileContext;
+    CURLcode                   code;
+    curl_mime*                 multipart = NULL;
+    curl_mimepart*             part;
+    int                        status = -1;
+    char                       buffer[1024];
+    long                       httpCode;
 
-    // set required ms headers
-    headers = curl_slist_append(headers, "x-ms-version: 2016-05-31");
-
-    transfersHandle = curl_multi_init();
-    for(int i = 0; i < uploadCount; i++) {
-        status = __prepare_block_request(headers, &uploadContexts[i], response);
-        if (status != 0) {
-            VLOG_ERROR("chef-client", "__upload_blocks: failed to prepare block request [%s]\n", uploadContexts[i].block_id);
-            goto cleanup;
-        }
-        
-        code = curl_multi_add_handle(transfersHandle, uploadContexts[i].request->curl);
-        if (code != CURLM_OK) {
-            VLOG_ERROR("chef-client", "__upload_blocks: failed to add handle [%s]\n", curl_multi_strerror(code));
-            goto cleanup;
-        }
+    status = __file_upload_context_init(&fileContext, path);
+    if (status) {
+        VLOG_ERROR("chef-client", "__upload_package: failed to open file %s for upload\n", path);
+        return status;
     }
 
-    curl_multi_setopt(transfersHandle, CURLMOPT_MAXCONNECTS, (long)10);
-
-    do {
-        code = curl_multi_perform(transfersHandle, &stillRunning);
-        __update_progress(uploadContexts, uploadCount);
-
-        if (stillRunning) {
-            code = curl_multi_poll(transfersHandle, NULL, 0, 1000, NULL);
-        }
-    } while(stillRunning && code == CURLM_OK);
-    printf("\n");
-    if (code != CURLM_OK) {
-        VLOG_ERROR("chef-client", "__upload_blocks: curl_multi_perform() failed: %s\n", curl_multi_strerror(code));
-        status = -1;
-    }
-
-cleanup:
-    curl_multi_cleanup(transfersHandle);
-    for (int i = 0; i < uploadCount; i++) {
-        if (uploadContexts[i].request) {
-            curl_multi_remove_handle(transfersHandle, uploadContexts[i].request->curl);
-            chef_request_delete(uploadContexts[i].request);
-        }
-    }
-    curl_slist_free_all(headers);
-    if (status != 0) {
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
+    if (!request) {
+        VLOG_ERROR("chef-client", "__upload_package: failed to create request\n");
         return -1;
     }
 
-    // lastly, we would like to commit the block list
-    return __write_blocklist(response, uploadContexts, uploadCount);
+    if (__get_publish_upload_url(context->upload_token, buffer, sizeof(buffer)) != 0) {
+        VLOG_ERROR("chef-client", "__upload_package: buffer too small for publish link\n");
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__upload_package: failed to set url [%s]\n", request->error);
+        goto cleanup;
+    }
+
+    multipart = curl_mime_init(request->curl);
+
+    part = curl_mime_addpart(multipart);
+    curl_mime_name(part, "sendfile");
+    curl_mime_filedata(part, path);
+    curl_mime_data_cb(part, fileContext.length, __file_read, __file_seek, __file_finished, &fileContext);
+
+    part = curl_mime_addpart(multipart);
+    curl_mime_name(part, "filename");
+    curl_mime_data(part, "package.chef", CURL_ZERO_TERMINATED);
+    
+    part = curl_mime_addpart(multipart);
+    curl_mime_name(part, "submit");
+    curl_mime_data(part, "send", CURL_ZERO_TERMINATED);
+
+    // initialize custom header list (stating that Expect: 100-continue is not wanted
+    //request->headers = curl_slist_append(request->headers, "Expect:");
+
+    code = curl_easy_setopt(request->curl, CURLOPT_MIMEPOST, multipart);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__upload_package: failed to set form file [%s]\n", request->error);
+        goto cleanup;
+    }
+
+    code = chef_request_execute(request);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__upload_package: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
+    }
+
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode != 200) {
+        status = -1;
+        
+        if (httpCode == 401) {
+            status = -EACCES;
+        } else {
+            VLOG_ERROR("chef-client", "__upload_package: http error %ld [%s]\n", httpCode, request->response);
+            status = -EIO;
+        }
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    curl_mime_free(multipart);
+    chef_request_delete(request);
+    return status;
+}
+
+static int __publish_complete(const char* channel, struct __initiate_response* context)
+{
+    struct chef_request* request;
+    CURLcode             code;
+    int                  status = -1;
+    char                 buffer[256];
+    long                 httpCode;
+
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
+    if (!request) {
+        VLOG_ERROR("chef-client", "__publish_complete: failed to create request\n");
+        return -1;
+    }
+
+    if (__get_publish_complete_url(context->upload_token, channel, buffer, sizeof(buffer)) != 0) {
+        VLOG_ERROR("chef-client", "__publish_complete: buffer too small for publish link\n");
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__publish_complete: failed to set url [%s]\n", request->error);
+        goto cleanup;
+    }
+
+    code = chef_request_execute(request);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__publish_complete: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
+    }
+
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode != 200) {
+        status = -1;
+        
+        if (httpCode == 401) {
+            status = -EACCES;
+        }
+        else {
+            VLOG_ERROR("chef-client", "__publish_complete: http error %ld [%s]\n", httpCode, request->response);
+            status = -EIO;
+        }
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    chef_request_delete(request);
+    return status;
 }
 
 int chefclient_pack_publish(struct chef_publish_params* params, const char* path)
 {
-    struct file_upload_context* uploadContexts;
-    struct pack_response        context;
-    json_t*                     request;
-    int                         uploadCount;
-    int                         status;
+    struct __initiate_response context = { NULL, 0 };
+    json_t*                    request;
+    int                        uploadCount;
+    int                        status;
 
-    // create all the neccessary contexts
-    status = __create_file_contexts(path, &uploadContexts, &uploadCount);
-    if (status != 0) {
-        VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to create file contexts\n");
-        return status;
-    }
-
-    // create the publish request
     request = __create_publish_request(params);
     if (!request) {
-        __destroy_file_contexts(uploadContexts, uploadCount);
         VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to create publish request\n");
-        return -1;
+        status = -1;
+        goto cleanup;
     }
 
-    // build and execute the curl request
     status = __publish_request(request, &context);
-
-    // cleanup request
     json_decref(request);
-
-    if (status != 0) {
-        __destroy_file_contexts(uploadContexts, uploadCount);
-        VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to publish pack\n");
-        return -1;
+    if (status) {
+        VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to initiate publish process\n");
+        goto cleanup;
     }
 
-    // now upload the blocks
-    status = __upload_blocks(&context, uploadContexts, uploadCount);
+    VLOG_TRACE("chef-client", "created revision %i, uploading...\n", context.revision);
 
-    // cleanup file contexts
-    __destroy_file_contexts(uploadContexts, uploadCount);
-
-    if (status != 0) {
-        VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to upload file\n");
-        return -1;
+    status = __upload_package(path, &context);
+    if (status) {
+        VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to upload the package for publishing\n");
+        goto cleanup;
     }
-    return 0;
+
+    VLOG_TRACE("chef-client", "upload complete, publishing revision %i to %s...\n", context.revision, params->channel);
+
+    status = __publish_complete(params->channel, &context);
+    if (status) {
+        VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to complete publish process\n");
+    }
+
+cleanup:
+    free((void*)context.upload_token);
+    return status;
 }

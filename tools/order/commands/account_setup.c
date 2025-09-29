@@ -19,6 +19,9 @@
 #include <errno.h>
 #include <chef/api/account.h>
 #include <chef/client.h>
+#include <chef/config.h>
+#include <chef/dirs.h>
+#include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,11 +29,11 @@
 static int __ask_yes_no_question(const char* question)
 {
     char answer[3];
-    printf("%s [y/n] ", question);
+    printf("%s [Y/n] ", question);
     if (fgets(answer, sizeof(answer), stdin) == NULL) {
         return 0;
     }
-    return answer[0] == 'y' || answer[0] == 'Y';
+    return answer[0] == 'Y';
 }
 
 static char* __ask_input_question(const char* question)
@@ -116,25 +119,156 @@ static int __verify_email(const char* email)
     return (atFound != 0 && dotFound != 0) ? 0 : -1;
 }
 
-void account_setup(void)
+static char* __get_chef_directory(void)
+{
+    char   dir[PATH_MAX];
+    int    status;
+
+    status = platform_getuserdir(&dir[0], PATH_MAX);
+    if (status) {
+        fprintf(stderr, "order: failed to get user home directory: %s\n", strerror(errno));
+        return NULL;
+    }
+    return strpathcombine(&dir[0], ".chef");
+}
+
+static const char* __get_api_key(void)
+{
+    return getenv("CHEF_API_KEY");
+}
+
+int account_login_setup(void)
 {
     struct chef_account* account        = NULL;
-    char*                publisherName  = NULL;
-    char*                publisherEmail = NULL;
+    char*                publicKeyPath  = NULL;
+    char*                privateKeyPath = NULL;
+    char*                email;
     int                  success;
+    struct chef_config*  config;
+    void*                accountSection;
 
+    if (__get_api_key() != NULL) {
+        goto login;
+    }
+
+    config = chef_config_load(chef_dirs_config());
+    if (config == NULL) {
+        fprintf(stderr, "order: failed to load configuration: %s\n", strerror(errno));
+        return -1;
+    }
+
+    accountSection = chef_config_section(config, "account");
+    if (accountSection == NULL) {
+        fprintf(stderr, "order: failed to load account section from configuration: %s\n", strerror(errno));
+        return -1;
+    }
+
+    email = (char*)chef_config_get_string(config, accountSection, "email");
+    if (email == NULL) {
+        printf("\nTo use chef, you must configure your identity\n");
+        printf("You can configure these by executing:\n\n");
+        printf("   order config auth.name <\"Your Name\">\n");
+        printf("   order config auth.email <email>\n\n");
+        return -1;
+    }
+
+    publicKeyPath = (char*)chef_config_get_string(config, accountSection, "public-key");
+    privateKeyPath = (char*)chef_config_get_string(config, accountSection, "private-key");
+    if (publicKeyPath != NULL && privateKeyPath != NULL) {
+        struct platform_stat st;
+        int                  okay = 0;
+
+        if (platform_stat(publicKeyPath, &st) || st.type != PLATFORM_FILETYPE_FILE) {
+            fprintf(stderr, "order: configured public key file was invalid, reconfigure required.\n");
+            okay = -1;
+        }
+        if (platform_stat(privateKeyPath, &st) | st.type != PLATFORM_FILETYPE_FILE) {
+            fprintf(stderr, "order: configured private key file was invalid, reconfigure required.\n");
+            okay = -1;
+        }
+
+        if (okay == 0) {
+            publicKeyPath = platform_strdup(publicKeyPath);
+            privateKeyPath = platform_strdup(privateKeyPath);
+            goto login;
+        }
+    }
+
+    printf("No account information found. An account is required to publish packages.\n");
     success = __ask_yes_no_question("Do you want to setup an account now?");
     if (!success) {
-        return;
+        return -1;
     }
-    
-    // allocate memory for the account
-    account = chef_account_new();
-    if (account == NULL) {
-        fprintf(stderr, "failed to allocate memory for the account\n");
-        return;
+
+    printf("\nChef accounts operate using RSA public/private keypairs.\n");
+    printf("If you do not have a keypair, one will be generated for you.\n");
+    printf("The private key will be stored on your local machine, and the public key\n");
+    printf("will be uploaded to your account.\n");
+    success = __ask_yes_no_question("Do you want to continue?");
+    if (!success) {
+        return -1;
     }
-    
+
+    // Allow the user to specify an existing keypair, or generate a new one.
+    // The keypair must be able to sign messages using RSA-SHA256.
+    printf("\nDo you want chef to generate a new key-pair for you?\n");
+    printf("If you don't, you can configure which key should be used by executing\n\n");
+    printf("   order config auth.key <path-to-private-key>\n\n");
+    success = __ask_yes_no_question("Continue with keypair generation?");
+    if (!success) {
+        success = -1;
+        goto cleanup;
+    } else {
+        char* dir = __get_chef_directory();
+        if (dir == NULL) {
+            goto cleanup;
+        }
+
+        success = pubkey_generate_rsa_keypair(2048, dir, &publicKeyPath, &privateKeyPath);
+        free(dir);
+
+        if (success) {
+            fprintf(stderr, "failed to generate RSA keypair: %s\n", strerror(errno));
+            goto cleanup;
+        }
+
+        printf("\nA new RSA keypair has been generated for you.\n");
+        printf("Public key: %s\n", publicKeyPath);
+        printf("Private key: %s\n", privateKeyPath);
+        printf("\nPlease back up your private key, as it will be required to publish packages.\n");
+        printf("The private key will not be uploaded to your account.\n");
+    }
+
+    // save the key paths to the config
+    chef_config_set_string(config, accountSection, "public-key", publicKeyPath);
+    chef_config_set_string(config, accountSection, "private-key", privateKeyPath);
+    chef_config_save(config);
+
+login:
+    success = chefclient_login(&(struct chefclient_login_params) {
+        .flow = CHEF_LOGIN_FLOW_TYPE_PUBLIC_KEY,
+        .email = email,
+        .api_key = __get_api_key(),
+        .public_key = publicKeyPath,
+        .private_key = privateKeyPath,
+    });
+    if (success) {
+        fprintf(stderr, "order: failed to login: %s\n", strerror(errno));
+        goto cleanup;
+    }
+
+cleanup:
+    free(publicKeyPath);
+    free(privateKeyPath);
+    return success;
+}
+
+void account_publish_setup(void)
+{
+    char* publisherName  = NULL;
+    char* publisherEmail = NULL;
+    int   success;
+
     // ask for the publisher name
     printf("We need to know the name under which your packages will be published. (i.e my-org)\n");
     printf("Please only include the name, characters allowed: [a-zA-Z0-9-], length must be between 3-63 characters\n");
@@ -153,12 +287,8 @@ void account_setup(void)
         goto cleanup;
     }
 
-    // update account members
-    chef_account_set_publisher_name(account, publisherName);
-    chef_account_set_publisher_email(account, publisherEmail);
-    
     printf("Setting up account...\n");
-    success = chef_account_update(account);
+    success = chef_account_publisher_register(publisherName, publisherEmail);
     if (success != 0) {
         fprintf(stderr, "failed to setup account: %s\n", strerror(errno));
     } else {
@@ -170,5 +300,4 @@ void account_setup(void)
 cleanup:
     free(publisherName);
     free(publisherEmail);
-    chef_account_free(account);
 }

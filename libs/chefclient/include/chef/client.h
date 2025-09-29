@@ -19,10 +19,6 @@
 #ifndef __LIBCHEF_CLIENT_H__
 #define __LIBCHEF_CLIENT_H__
 
-enum chef_login_flow_type {
-    CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE
-};
-
 /**
  * @brief Initializes the chef client library and enables communication with the chef api
  * 
@@ -36,18 +32,46 @@ extern int chefclient_initialize(void);
  */
 extern void chefclient_cleanup(void);
 
+enum chef_login_flow_type {
+    CHEF_LOGIN_FLOW_TYPE_INVALID = 0,
+    CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE,
+    CHEF_LOGIN_FLOW_TYPE_PUBLIC_KEY
+};
+
+/**
+ * @brief Parameters for the login flow.
+ */
+struct chefclient_login_params {
+    enum chef_login_flow_type flow; /**< The type of login flow to use */
+    const char* email;              /**< The email that should be used for identification */
+    const char* api_key;            /**< The api key to use for authentication */
+    const char* public_key;         /**< The public key to use for authentication */
+    const char* private_key;        /**< The private key to use for authentication */
+};
+
 /**
  * @brief Initializes a new authentication session with the chef api. This is required
  * to use the 'publish' functionality. The rest of the methods are unprotected.
  * 
  * @return int 
  */
-extern int chefclient_login(enum chef_login_flow_type flowType);
+extern int chefclient_login(struct chefclient_login_params* params);
 
 /**
  * @brief Terminates the current authentication session with the chef api.
  * 
  */
 extern void chefclient_logout(void);
+
+/**
+ * @brief Generates a new RSA keypair and saves it to the specified directory.
+ * 
+ * @param bits The number of bits for the RSA key. Minimum is 2048.
+ * @param directory The directory to save the keypair to. This should be the .chef directory in the user's home directory.
+ * @param publicKeyPath Output parameter that will contain the path to the generated public key file. This should be freed by the caller.
+ * @param privateKeyPath Output parameter that will contain the path to the generated private key file. This should be freed by the caller.
+ * @return int Returns -1 on error, 0 on success.
+ */
+extern int pubkey_generate_rsa_keypair(int bits, const char* directory, char** publicKeyPath, char** privateKeyPath);
 
 #endif //!__LIBCHEF_CLIENT_H__

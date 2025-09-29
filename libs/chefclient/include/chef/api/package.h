@@ -33,9 +33,12 @@ struct chef_find_params {
 };
 
 struct chef_publish_params {
-    struct chef_package* package;
-    struct chef_version* version;
+    const char*          publisher;
+    const char*          package;
+    const char*          platform;
+    const char*          architecture;
     const char*          channel;
+    struct chef_version* version;
 };
 
 struct chef_download_params {
@@ -49,6 +52,15 @@ struct chef_download_params {
     // this will be updated to the revision downloaded,
     // which means from a callers perspective this is read-only
     int                  revision;
+};
+
+struct chef_find_result {
+    const char*            publisher;
+    const char*            package;
+    const char*            summary;
+    enum chef_package_type type;
+    const char*            maintainer;
+    const char*            maintainer_email;
 };
 
 /**
@@ -74,7 +86,8 @@ extern int chefclient_pack_info(struct chef_info_params* params, struct chef_pac
  * @param params 
  * @return int 
  */
-extern int chefclient_pack_find(struct chef_find_params* params, struct chef_package*** packagesOut, int* countOut);
+extern int  chefclient_pack_find(struct chef_find_params* params, struct chef_find_result*** results, int* count);
+extern void chefclient_pack_find_free(struct chef_find_result** results, int count);
 
 /**
  * @brief 

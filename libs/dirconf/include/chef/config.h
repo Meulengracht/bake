@@ -44,6 +44,40 @@ extern struct chef_config* chef_config_load(const char* confdir);
 extern int chef_config_save(struct chef_config* config);
 
 /**
+ * @brief Returns a specific section from the configuration, if
+ * the section does not exist, one will be created. The section is only
+ * written when chef_config_save() is called.
+ * 
+ * @param config 
+ */
+extern void* chef_config_section(const struct chef_config* config, const char* section);
+
+/**
+ * @brief Returns a specific key from a specific section in the configuration.
+ * If the key does not exist, NULL is returned. The returned string is owned
+ * by the configuration object, and should not be freed by the caller.
+ * 
+ * @param config The configuration object
+ * @param section Optional section, or NULL if the key is in the root
+ * @param key The key to retrieve
+ * @return const char* 
+ */
+extern const char* chef_config_get_string(const struct chef_config* config, void* section, const char* key);
+
+/**
+ * @brief Sets a specific key in a specific section in the configuration.
+ * If the section does not exist, it will be created. The configuration
+ * is only written when chef_config_save() is called.
+ * 
+ * @param config The configuration object
+ * @param section Optional section, or NULL if the key is in the root
+ * @param key The key to set
+ * @param value The value to set, or NULL to remove the key
+ * @return int 0 on success, -1 on failure
+ */
+extern int chef_config_set_string(struct chef_config* config, void* section, const char* key, const char* value);
+
+/**
  * @brief 
  * 
  * @param address 

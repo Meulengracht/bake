@@ -26,7 +26,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void account_setup(void);
+extern int  account_login_setup(void);
+extern void account_publish_setup(void);
 
 static void __print_help(void)
 {
@@ -44,26 +45,7 @@ static void __print_help(void)
     printf("      Print this help message\n");
 }
 
-static const char* __get_publisher_name(void)
-{
-    struct chef_account* account;
-    int                  status;
-    const char*          name;
-
-    status = chef_account_get(&account);
-    if (status != 0) {
-        if (status == -ENOENT) {
-            printf("order: no account information available yet\n");
-        }
-        return NULL;
-    }
-
-    name = platform_strdup(chef_account_get_publisher_name(account));
-    chef_account_free(account);
-    return name;
-}
-
-static void __print_packages(struct chef_package** packages, int count)
+static void __print_packages(struct chef_find_result** packages, int count)
 {
     if (count == 0) {
         printf("no packages found\n");
@@ -76,19 +58,13 @@ static void __print_packages(struct chef_package** packages, int count)
     }
 }
 
-static int __handle_list_packages(void)
+static int __list_packages_by_publisher(const char* publisherName)
 {
-    struct chef_package**   packages;
-    int                     packageCount;
-    struct chef_find_params params        = { 0 };
-    const char*             publisherName = NULL;
-    char*                   query;
-    int                     status;
-
-    publisherName = __get_publisher_name();
-    if (publisherName == NULL) {
-        return -1;
-    }
+    struct chef_find_result** packages;
+    int                       packageCount;
+    struct chef_find_params   params  = { 0 };
+    char*                     query;
+    int                       status;
 
     // allocate memory for the query, which we will write like this
     // publisher/
@@ -113,12 +89,31 @@ static int __handle_list_packages(void)
     }
     
     __print_packages(packages, packageCount);
-    if (packages) {
-        for (int i = 0; i < packageCount; i++) {
-            chef_package_free(packages[i]);
-        }
-        free(packages);
+    chefclient_pack_find_free(packages, packageCount);
+    return 0;
+}
+
+static int __handle_list_packages(void)
+{
+    struct chef_account* account;
+    int                  status;
+
+    status = chef_account_get(&account);
+    if (status) {
+        return status;
     }
+
+    for (int i = 0; i < chef_account_get_publisher_count(account); i++) {
+        const char* name = chef_account_get_publisher_name(account, i);
+        printf("Packages for %s:\n", name);
+        status = __list_packages_by_publisher(name);
+        if (status) {
+            fprintf(stderr, "order: failed to list packages for %s\n", name);
+            break;
+        }
+    }
+
+    chef_account_free(account);
     return 0;
 }
 
@@ -146,7 +141,7 @@ static int __handle_list(const char* package)
     if (status != 0) {
         if (status == -ENOENT) {
             printf("order: no account information available yet\n");
-            account_setup();
+            account_publish_setup();
             return 0;
         }
         return status;
@@ -174,7 +169,7 @@ static int __handle_get(const char* package, const char* parameter)
     if (status != 0) {
         if (status == -ENOENT) {
             printf("order: no account information available yet\n");
-            account_setup();
+            account_publish_setup();
             return 0;
         }
         return status;
@@ -214,7 +209,7 @@ static int __handle_set(const char* package, const char* parameter, const char* 
     if (status != 0) {
         if (status == -ENOENT) {
             printf("order: no account information available yet\n");
-            account_setup();
+            account_publish_setup();
             return 0;
         }
         return status;
@@ -282,11 +277,10 @@ int package_main(int argc, char** argv)
     // do this in a loop, to catch cases where our login token has
     // expired
     while (1) {
-        // login before continuing
-        status = chefclient_login(CHEF_LOGIN_FLOW_TYPE_OAUTH2_DEVICECODE);
-        if (status != 0) {
-            printf("order: failed to login to chef server: %s\n", strerror(errno));
-            break;
+        // ensure we are logged in
+        if (account_login_setup()) {
+            fprintf(stderr, "order: failed to login: %s\n", strerror(errno));
+            return -1;
         }
 
         // now handle the command that was passed

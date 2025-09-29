@@ -26,6 +26,8 @@
 #include <string.h>
 #include <vlog.h>
 
+extern const char* chefclient_api_base_url(void);
+
 static const char* __get_json_string_safe(json_t* object, const char* key)
 {
     json_t* value = json_object_get(object, key);
@@ -38,104 +40,59 @@ static const char* __get_json_string_safe(json_t* object, const char* key)
 static int __get_info_url(struct chef_info_params* params, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/info?publisher=%s&name=%s",
+        "%s/package/info?publisher=%s&name=%s",
+        chefclient_api_base_url(),
         params->publisher, params->package
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __parse_channels(json_t* channels, struct chef_architecture* architecture)
+static int __parse_version(json_t* root, struct chef_version* version)
 {
-    size_t i;
-    size_t channelsCount = json_array_size(channels);
-    
-    architecture->channels_count = channelsCount;
-    architecture->channels = (struct chef_channel*)malloc(sizeof(struct chef_channel) * channelsCount);
-    if (architecture->channels == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    for (i = 0; i < channelsCount; i++) {
-        json_t* channel = json_array_get(channels, i);
-        json_t* version = json_object_get(channel, "current-version");
-        json_t* version_major = json_object_get(version, "major");
-        json_t* version_minor = json_object_get(version, "minor");
-        json_t* version_patch = json_object_get(version, "patch");
-        json_t* version_revision = json_object_get(version, "revision");
-        json_t* size_revision = json_object_get(version, "size");
-
-        // transfer members of architecture
-        architecture->channels[i].name = __get_json_string_safe(channel, "name");
-        architecture->channels[i].current_version.major = json_integer_value(version_major);
-        architecture->channels[i].current_version.minor = json_integer_value(version_minor);
-        architecture->channels[i].current_version.patch = json_integer_value(version_patch);
-        architecture->channels[i].current_version.revision = json_integer_value(version_revision);
-        architecture->channels[i].current_version.tag = __get_json_string_safe(version, "additional");
-        architecture->channels[i].current_version.size = json_integer_value(size_revision);
-        architecture->channels[i].current_version.created = __get_json_string_safe(version, "created");
-    }
+    version->revision = json_integer_value(json_object_get(root, "revision"));
+    version->major = json_integer_value(json_object_get(root, "major"));
+    version->minor = json_integer_value(json_object_get(root, "minor"));
+    version->patch = json_integer_value(json_object_get(root, "patch"));
+    version->tag = __get_json_string_safe(root, "tag");
     return 0;
 }
 
-static int __parse_architectures(json_t* architectures, struct chef_platform* platform)
+static int __parse_revisions(json_t* revisions, struct chef_package* package)
 {
     size_t i;
-    size_t architecturesCount = json_array_size(architectures);
+    size_t count;
+
+    count = json_array_size(revisions);
+    if (count == 0) {
+        return 0;
+    }
     
-    platform->architectures_count = architecturesCount;
-    platform->architectures = (struct chef_architecture*)malloc(sizeof(struct chef_architecture) * architecturesCount);
-    if (platform->architectures == NULL) {
+    package->revisions_count = count;
+    package->revisions = (struct chef_revision*)calloc(count, sizeof(struct chef_revision));
+    if (package->revisions == NULL) {
         errno = ENOMEM;
         return -1;
     }
 
-    for (i = 0; i < architecturesCount; i++)
-    {
-        json_t* architecture = json_array_get(architectures, i);
-        json_t* channels;
+    for (i = 0; i < count; i++) {
+        json_t* revision = json_array_get(revisions, i);
+        json_t* version;
+        if (revision == NULL) {
+            continue;
+        }
 
-        // transfer members of architecture
-        platform->architectures[i].name = __get_json_string_safe(architecture, "name");
-
-        // parse channels
-        channels = json_object_get(architecture, "channels");
-        if (channels != NULL) {
-            if (__parse_channels(channels, &platform->architectures[i]) != 0) {
+        version = json_object_get(revision, "version");
+        if (version != NULL) {
+            if (__parse_version(version, &package->revisions[i].current_version)) {
                 return -1;
             }
         }
-    }
-    return 0;
-}
-
-static int __parse_platforms(json_t* platforms, struct chef_package* package)
-{
-    size_t i;
-    size_t platformsCount = json_array_size(platforms);
-    
-    package->platforms_count = platformsCount;
-    package->platforms = (struct chef_platform*)malloc(sizeof(struct chef_platform) * platformsCount);
-    if (package->platforms == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    for (i = 0; i < platformsCount; i++)
-    {
-        json_t* platform = json_array_get(platforms, i);
-        json_t* architectures;
-
-        // transfer members of platform
-        package->platforms[i].name = __get_json_string_safe(platform, "name");
-
-        // parse architecures
-        architectures = json_object_get(platform, "architectures");
-        if (architectures != NULL) {
-            if (__parse_architectures(architectures, &package->platforms[i]) != 0) {
-                return -1;
-            }
-        }
+        
+        package->revisions[i].channel = __get_json_string_safe(revision, "channel");
+        package->revisions[i].platform = __get_json_string_safe(revision, "platform");
+        package->revisions[i].architecture = __get_json_string_safe(revision, "architecture");
+        package->revisions[i].current_version.size = json_integer_value(json_object_get(revision, "size"));
+        package->revisions[i].current_version.created = __get_json_string_safe(revision, "date");
     }
     return 0;
 }
@@ -145,7 +102,7 @@ static int __parse_package_info_response(const char* response, struct chef_packa
     struct chef_package* package;
     json_error_t         error;
     json_t*              root;
-    json_t*              platforms;
+    json_t*              revisions;
 
     root = json_loads(response, 0, &error);
     if (!root) {
@@ -166,15 +123,15 @@ static int __parse_package_info_response(const char* response, struct chef_packa
     package->summary = __get_json_string_safe(root, "summary");
     package->description = __get_json_string_safe(root, "description");
     package->homepage = __get_json_string_safe(root, "homepage");
-    package->license = __get_json_string_safe(root, "license");
+    package->license = __get_json_string_safe(root, "license-spdx");
     package->eula = __get_json_string_safe(root, "eula");
     package->maintainer = __get_json_string_safe(root, "maintainer");
-    package->maintainer_email = __get_json_string_safe(root, "maintainer_email");
+    package->maintainer_email = __get_json_string_safe(root, "maintainer-email");
 
     // parse the platforms
-    platforms = json_object_get(root, "platforms");
-    if (platforms != NULL) {
-        if (__parse_platforms(platforms, package) != 0) {
+    revisions = json_object_get(root, "revisions");
+    if (revisions != NULL) {
+        if (__parse_revisions(revisions, package) != 0) {
             chef_package_free(package);
             return -1;
         }
@@ -194,7 +151,7 @@ int chefclient_pack_info(struct chef_info_params* params, struct chef_package** 
     int                  status = -1;
     long                 httpCode;
 
-    request = chef_request_new(1, 0);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
         VLOG_ERROR("chef-client", "chefclient_pack_info: failed to create request\n");
         return -1;
@@ -212,9 +169,9 @@ int chefclient_pack_info(struct chef_info_params* params, struct chef_package** 
         goto cleanup;
     }
     
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "chefclient_pack_info: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "chefclient_pack_info: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -236,5 +193,123 @@ int chefclient_pack_info(struct chef_info_params* params, struct chef_package** 
 
 cleanup:
     chef_request_delete(request);
+    return status;
+}
+
+static int __update_package(struct chef_info_params* params, json_t* json)
+{
+    struct chef_request* request;
+    CURLcode             code;
+    char*                body   = NULL;
+    int                  status = -1;
+    char                 buffer[256];
+    long                 httpCode;
+
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
+    if (!request) {
+        VLOG_ERROR("chef-client", "__update_account: failed to create request\n");
+        return -1;
+    }
+
+    // set the url
+    if (__get_info_url(params, buffer, sizeof(buffer)) != 0) {
+        VLOG_ERROR("chef-client", "__update_account: buffer too small for account link\n");
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__update_account: failed to set url [%s]\n", request->error);
+        goto cleanup;
+    }
+
+    body = json_dumps(json, 0);
+    code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, body);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__update_account: failed to set body [%s]\n", request->error);
+        goto cleanup;
+    }
+
+    code = chef_request_execute(request);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__update_account: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
+    }
+
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode < 200 || httpCode >= 300) {
+        status = -1;
+        if (httpCode == 401) {
+            status = -EACCES;
+        } else {
+            VLOG_ERROR("chef-client", "__update_account: http error %ld [%s]\n", httpCode, request->response);
+            status = -EIO;
+        }
+        goto cleanup;
+    } else {
+        status = 0;
+    }
+
+cleanup:
+    free(body);
+    chef_request_delete(request);
+    return status;
+}
+
+static json_t* __serialize_package(struct chef_package* package)
+{
+    json_t* json = json_object();
+    if (json == NULL) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    if (package->summary != NULL) {
+        json_object_set_new(json, "Summary", json_string(package->summary));
+    }
+    if (package->description != NULL) {
+        json_object_set_new(json, "Description", json_string(package->description));
+    }
+    if (package->type != CHEF_PACKAGE_TYPE_UNKNOWN) {
+        json_object_set_new(json, "Type", json_integer((int)package->type));
+    }
+    if (package->homepage != NULL) {
+        json_object_set_new(json, "HomepageUrl", json_string(package->homepage));
+    }
+    if (package->license != NULL) {
+        json_object_set_new(json, "LicenseSPDX", json_string(package->license));
+    }
+    if (package->eula != NULL) {
+        json_object_set_new(json, "EulaUrl", json_string(package->eula));
+    }
+    if (package->maintainer != NULL) {
+        json_object_set_new(json, "Maintainer", json_string(package->maintainer));
+    }
+    if (package->maintainer_email != NULL) {
+        json_object_set_new(json, "MaintainerEmail", json_string(package->maintainer_email));
+    }
+    return json;
+}
+
+int chefclient_pack_info_update(struct chef_package* package)
+{
+    json_t* json;
+    int     status;
+
+    if (package == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    json = __serialize_package(package);
+    if (json == NULL) {
+        return -1;
+    }
+
+    status = __update_package(&(struct chef_info_params) {
+        .publisher = package->publisher,
+        .package   = package->package
+    }, json);
+
+    json_decref(json);
     return status;
 }

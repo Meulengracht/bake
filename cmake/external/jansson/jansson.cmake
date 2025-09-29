@@ -54,6 +54,8 @@ ExternalProject_Add(bundled_jansson
     -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
     -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
     -DCMAKE_OSX_SYSROOT=${CMAKE_OSX_SYSROOT}
+  BUILD_BYPRODUCTS
+    <INSTALL_DIR>/lib/${CMAKE_STATIC_LIBRARY_PREFIX}jansson${CMAKE_STATIC_LIBRARY_SUFFIX}
 )
 add_dependencies(jansson bundled_jansson)
 ExternalProject_Get_Property(bundled_jansson INSTALL_DIR)

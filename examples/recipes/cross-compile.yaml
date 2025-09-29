@@ -16,7 +16,9 @@ platforms:
 
 recipes:
 - name: vali
-  path: /
+  source:
+    type: path
+    path: /
   toolchain: platform
   steps:
   - name: config

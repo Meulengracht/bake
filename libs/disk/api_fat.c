@@ -200,7 +200,9 @@ static int __fs_format(struct chef_disk_filesystem* fs)
             cfs->fs->reserved_sectors = (stats.size / cfs->bytes_per_sector) + 1;
         }
     }
-    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label) == 0 ? -1 : 0;
+    // fat library will always return 1 for success, 0 for failure
+    // we need to invert that to match api expectations
+    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label) == 1 ? 0 : -1;
 }
 
 static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params)
@@ -233,33 +235,34 @@ static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs
 static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_write_raw_params* params)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
-    if (params->sector == 0) {
-        uint8_t mbr[512]; // ehh should be cfs->bytes_per_sector
-        int     status;
+    uint8_t mbr[512]; // ehh should be cfs->bytes_per_sector
+    int     status;
 
-        // we are writing MBR, fix it up
-        if (params->size != cfs->bytes_per_sector) {
-            return -1;
-        }
-
-        status = __partition_read(0, &mbr[0], 1, cfs);
-        if (status) {
-            VLOG_ERROR("fat", "failed to read mbr from partition\n");
-            return status;
-        }
-
-        // 0-2     - Jump code
-        // 3-61    - EBPB
-        // 62-509  - Boot code
-        // 510-511 - Boot signature
-        memcpy(&mbr[0], &((uint8_t*)params->buffer)[0], 3);
-        memcpy(&mbr[62], &((uint8_t*)params->buffer)[62], 448);
-        mbr[510] = 0x55;
-        mbr[511] = 0xAA;
-        return __partition_write((uint32_t)params->sector, &mbr[0], 1, cfs);
-    } else {
-        return __partition_write((uint32_t)params->sector, (uint8_t*)params->buffer, params->size / cfs->bytes_per_sector, cfs);
+    if (params->sector != 0) {
+        return __partition_write((uint32_t)params->sector, (uint8_t*)params->buffer, params->size / cfs->bytes_per_sector, cfs) == 1 ? 0 : -1;
     }
+
+    // we are writing MBR, fix it up
+    if (params->size != cfs->bytes_per_sector) {
+        return -1;
+    }
+
+    // __partition_{read,write} returns 0 when it fails
+    status = __partition_read(0, &mbr[0], 1, cfs);
+    if (status == 0) {
+        VLOG_ERROR("fat", "failed to read mbr from partition\n");
+        return status;
+    }
+
+    // 0-2     - Jump code
+    // 3-61    - EBPB
+    // 62-509  - Boot code
+    // 510-511 - Boot signature
+    memcpy(&mbr[0], &((uint8_t*)params->buffer)[0], 3);
+    memcpy(&mbr[62], &((uint8_t*)params->buffer)[62], 448);
+    mbr[510] = 0x55;
+    mbr[511] = 0xAA;
+    return __partition_write((uint32_t)params->sector, &mbr[0], 1, cfs) == 1 ? 0 : -1;
 }
 
 static int __fs_finish(struct chef_disk_filesystem* fs)

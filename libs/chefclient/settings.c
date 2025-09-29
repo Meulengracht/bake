@@ -26,6 +26,8 @@
 #include <string.h>
 #include <vlog.h>
 
+extern const char* chefclient_api_base_url(void);
+
 struct chef_package_settings {
     const char* package;
     int discoverable;
@@ -34,7 +36,8 @@ struct chef_package_settings {
 static int __get_settings_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/settings"
+        "%s/pack/settings",
+        chefclient_api_base_url()
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }
@@ -42,7 +45,8 @@ static int __get_settings_url(char* urlBuffer, size_t bufferSize)
 static int __get_settings_query_url(struct chef_settings_params* params, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "https://chef-api.azurewebsites.net/api/pack/settings?name=%s",
+        "%s/pack/settings?name=%s",
+        chefclient_api_base_url(),
         params->package
     );
     return written < (bufferSize - 1) ? 0 : -1;
@@ -110,7 +114,7 @@ int __get_settings(struct chef_settings_params* params, struct chef_package_sett
     int                  status = -1;
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "__get_settings: failed to create request\n");
         return -1;
@@ -128,20 +132,18 @@ int __get_settings(struct chef_settings_params* params, struct chef_package_sett
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__get_account: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__get_account: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode != 200) {
         if (httpCode == 404) {
             status = -ENOENT;
-        }
-        else if (httpCode == 302) {
+        } else if (httpCode == 401) {
             status = -EACCES;
-        }
-        else {
+        } else {
             VLOG_ERROR("chef-client", "__get_account: http error %ld\n", httpCode);
             status = -EIO;
         }
@@ -164,7 +166,7 @@ static int __update_settings(json_t* json, struct chef_package_settings** settin
     char                 buffer[256];
     long                 httpCode;
 
-    request = chef_request_new(1, 1);
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "__update_settings: failed to create request\n");
         return -1;
@@ -189,18 +191,17 @@ static int __update_settings(json_t* json, struct chef_package_settings** settin
         goto cleanup;
     }
 
-    code = curl_easy_perform(request->curl);
+    code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__update_account: curl_easy_perform() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__update_account: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode < 200 || httpCode >= 300) {
         status = -1;
-        if (httpCode == 302) {
+        if (httpCode == 401) {
             status = -EACCES;
-        }
-        else {
+        } else {
             VLOG_ERROR("chef-client", "__update_account: http error %ld [%s]\n", httpCode, request->response);
             status = -EIO;
         }

@@ -578,7 +578,10 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
     }
 
     p->name = platform_strdup(params->name);
-    p->guid = platform_strdup(params->guid);
+    // GUID is not always required
+    if (params->guid != NULL) {
+        p->guid = platform_strdup(params->guid);
+    }
     p->attributes = params->attributes;
     p->mbr_type = params->type;
 

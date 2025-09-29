@@ -469,6 +469,7 @@ int fatfs_format_fat16(struct fatfs *fs, uint32 volume_sectors, const char *name
     if (!fatfs_erase_sectors(fs, fs->lba_begin + fs->rootdir_first_sector, fs->rootdir_sectors))
         return 0;
 
+    fs->valid = 1;
     return 1;
 }
 //-----------------------------------------------------------------------------
@@ -527,7 +528,7 @@ int fatfs_format_fat32(struct fatfs *fs, uint32 volume_sectors, const char *name
 int fatfs_format(struct fatfs *fs, uint32 volume_sectors, const char *name)
 {
     // 2GB - 32K limit for safe behaviour for FAT16
-    if (volume_sectors <= 4194304)
+    if (volume_sectors < 4194302)
         return fatfs_format_fat16(fs, volume_sectors, name);
     else
         return fatfs_format_fat32(fs, volume_sectors, name);
