@@ -200,7 +200,9 @@ static int __fs_format(struct chef_disk_filesystem* fs)
             cfs->fs->reserved_sectors = (stats.size / cfs->bytes_per_sector) + 1;
         }
     }
-    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label) == 0 ? -1 : 0;
+    // fat library will always return 1 for success, 0 for failure
+    // we need to invert that to match api expectations
+    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label) == 1 ? 0 : -1;
 }
 
 static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params)
@@ -241,9 +243,10 @@ static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_w
         if (params->size != cfs->bytes_per_sector) {
             return -1;
         }
-
+        
         status = __partition_read(0, &mbr[0], 1, cfs);
-        if (status) {
+        // __partition_{read,write} returns 0 if it fails to match fat library expectations
+        if (status == 0) {
             VLOG_ERROR("fat", "failed to read mbr from partition\n");
             return status;
         }
@@ -256,9 +259,9 @@ static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_w
         memcpy(&mbr[62], &((uint8_t*)params->buffer)[62], 448);
         mbr[510] = 0x55;
         mbr[511] = 0xAA;
-        return __partition_write((uint32_t)params->sector, &mbr[0], 1, cfs);
+        return (__partition_write((uint32_t)params->sector, &mbr[0], 1, cfs) == 1) ? 0 : -1;
     } else {
-        return __partition_write((uint32_t)params->sector, (uint8_t*)params->buffer, params->size / cfs->bytes_per_sector, cfs);
+        return (__partition_write((uint32_t)params->sector, (uint8_t*)params->buffer, params->size / cfs->bytes_per_sector, cfs) == 1) ? 0 : -1;
     }
 }
 
