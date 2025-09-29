@@ -258,18 +258,18 @@ cleanup:
 
 static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
 {
-    char ccpath[PATH_MAX];
-    char* p;
+    char   ccpath[PATH_MAX];
+    char*  p;
     size_t length;
-    int status;
+    int    status;
     VLOG_DEBUG("mkcdk", "__ensure_directory(path=%s)\n", path);
 
     if (path == NULL) {
         return 0;
     }
-     
-    length = strlen(path);
+
     // ensure that there actually is a directory, and it's not a root directory
+    length = strlen(path);
     if (length == 0 || (length == 1 && *path == '/')) {
         return 0;
     }
@@ -298,7 +298,7 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
             *p = '/';
         }
     }
-
+    
     return fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params) {
         .path = ccpath
     });
@@ -519,11 +519,13 @@ static int __write_image_sources(struct chef_disk_filesystem* fs, struct __image
                 status = -1;
                 break;
         }
+        
         if (status) {
             VLOG_ERROR("mkcdk", "__write_image_sources: failed to install source %s\n", src->target);
             break;
         }
     }
+    
     return status;
 }
 
