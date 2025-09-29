@@ -38,6 +38,7 @@ static void __print_help(void)
     printf("  api-key list           lists all api-keys for the current account\n");
     printf("\n  publisher           allows management of publishers for the current account\n");
     printf("  publisher register <name>              registers a new publisher with the specified name\n");
+    printf("  publisher list                         lists all publishers for the current account\n");
     printf("  publisher get <name> <option>          retrieves information about a specific publisher\n");
     printf("  publisher set <name> <option> <value>  sets the configuration option\n");
     printf("\n  set <param> <value> sets a specific account parameter\n");
@@ -84,7 +85,7 @@ static int __handle_whoami(void)
 {
     struct chef_account* account;
     int                  status;
-    int                  publisherCount;
+    int                  count;
 
     status = chef_account_get(&account);
     if (status) {
@@ -96,19 +97,29 @@ static int __handle_whoami(void)
     printf("  email:  %s\n", chef_account_get_email(account));
     printf("  status: %s\n", __get_status(account));
 
-    publisherCount = chef_account_get_publisher_count(account);
-    if (publisherCount == 0) {
+    count = chef_account_get_publisher_count(account);
+    if (count == 0) {
         printf("  ---- no publishers registered\n");
-        chef_account_free(account);
-        return 0;
+    } else {
+        printf("\npublishers\n");
+        for (int i = 0; i < count; i++) {
+            printf("  publisher %i: %s (%s)\n", i + 1,
+                chef_account_get_publisher_name(account, i),
+                __get_verified_status(account, i)
+            );
+        }
     }
 
-    printf("\npublishers\n");
-    for (int i = 0; i < publisherCount; i++) {
-        printf("  publisher %i: %s (%s)\n", i + 1,
-            chef_account_get_publisher_name(account, i),
-            __get_verified_status(account, i)
-        );
+    count = chef_account_get_apikey_count(account);
+    if (count == 0) {
+        printf("  ---- no api-keys registered\n");
+    } else {
+        printf("\api-keys\n");
+        for (int i = 0; i < count; i++) {
+            printf("  key %i: %s \n", i + 1,
+                chef_account_get_apikey_name(account, i)
+            );
+        }
     }
 
     chef_account_free(account);
@@ -228,7 +239,7 @@ static int __handle_api_key(const char* option, const char* name)
     } else if (strcmp(option, "list") == 0) {
         printf("\napi-keys\n");
         for (int i = 0; i < chef_account_get_apikey_count(account); i++) {
-            printf("  %i: %s\n", i + 1,
+            printf("  key %i: %s\n", i + 1,
                 chef_account_get_apikey_name(account, i)
             );
         }
@@ -257,11 +268,25 @@ static int __handle_publisher_option(const char* option)
 
     if (strcmp(option, "register") == 0) {
         account_publish_setup();
+    } else if (strcmp(option, "list") == 0) {
+        printf("\npublishers\n");
+        for (int i = 0; i < chef_account_get_publisher_count(account); i++) {
+            printf("  publisher %i: %s (%s)\n", i + 1,
+                chef_account_get_publisher_name(account, i),
+                __get_verified_status(account, i)
+            );
+        }
+    } else if (strcmp(option, "get") == 0) {
+        // visibility
+    } else if (strcmp(option, "set") == 0) {
+        // visibility
+        
     } else {
         printf("unknown option '%s' for 'account publisher'\n", option);
-        return -1;
+        status = -1;
     }
-    return 0;
+    chef_account_free(account);
+    return status;
 }
 
 int account_main(int argc, char** argv)
