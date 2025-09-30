@@ -10,32 +10,21 @@ project:
 
 environment:
   host:
-    base: false
-  build:
-    confinement: false
+    packages:
+      - ca-certificates
+      - wget
+      - tar
 
 recipes:
-  - name: build-base
-    path: ./
-    steps:
-    - name: construct
-      type: script
+  - name: base
+    source:
+      type: path
+      path: ./
       script: |
-        # Packages for a basic linux/bash environment:
-        PACKAGES=(
-          bash
-        )
-
-        delim=""
-        joined=""
-        for item in "${PACKAGES[@]}"; do
-          joined="$joined$delim$item"
-          delim=","
-        done
-
-        sudo debootstrap --variant=minbase --include="$joined" --arch=$[[ CHEF_TARGET_ARCHITECTURE ]] stable $[[ INSTALL_PREFIX ]] http://deb.debian.org/debian/
-        sudo rm -rf $[[ INSTALL_PREFIX ]]/dev
+        if build.subsystem.platform_host() == "linux" then
+          build.shell("construct.sh", "$[[ INSTALL_PREFIX ]] $[[ CHEF_TARGET_ARCHITECTURE ]]")
+        end
 
 packs:
 - name: linux-base
-  type: ingredient
+  type: os
