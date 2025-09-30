@@ -21,6 +21,12 @@
 
 #include <stddef.h>
 
+enum chef_package_setting_discoverable {
+    CHEF_PACKAGE_SETTING_DISCOVERABLE_PRIVATE,
+    CHEF_PACKAGE_SETTING_DISCOVERABLE_PUBLIC,
+    CHEF_PACKAGE_SETTING_DISCOVERABLE_COLLABORATORS
+};
+
 struct chef_package_settings;
 
 struct chef_settings_params {
@@ -58,8 +64,7 @@ extern struct chef_package_settings* chef_package_settings_new(void);
  */
 extern void chef_package_settings_delete(struct chef_package_settings* settings);
 
-extern const char* chef_package_settings_get_package(struct chef_package_settings* settings);
-extern int         chef_package_settings_get_discoverable(struct chef_package_settings* settings);
-extern void        chef_package_settings_set_discoverable(struct chef_package_settings* settings, int discoverable);
+extern enum chef_package_setting_discoverable chef_package_settings_get_discoverable(struct chef_package_settings* settings);
+extern void chef_package_settings_set_discoverable(struct chef_package_settings* settings, enum chef_package_setting_discoverable discoverable);
 
 #endif //!__LIBCHEF_API_PACKAGE_SETTINGS_H__

@@ -152,6 +152,15 @@ static int __handle_list(const char* package)
     return 0;
 }
 
+static const char* __discoverable_string(enum chef_package_setting_discoverable discoverable) {
+    switch (discoverable) {
+        case CHEF_PACKAGE_SETTING_DISCOVERABLE_PRIVATE: return "private";
+        case CHEF_PACKAGE_SETTING_DISCOVERABLE_PUBLIC: return "public";
+        case CHEF_PACKAGE_SETTING_DISCOVERABLE_COLLABORATORS: return "collaborators";
+    }
+    return "unknown";
+}
+
 static int __handle_get(const char* package, const char* parameter)
 {
     struct chef_package_settings* settings;
@@ -177,7 +186,7 @@ static int __handle_get(const char* package, const char* parameter)
 
     if (strcmp(parameter, "discoverable") == 0) {
         int discoverable = chef_package_settings_get_discoverable(settings);
-        printf("%s: discoverable: %s\n", package, discoverable ? "true" : "false");
+        printf("%s: discoverable: %s\n", package, __discoverable_string(discoverable));
     } else {
         printf("order: unknown parameter '%s' for 'package get'\n", parameter);
         return -1;
@@ -185,6 +194,21 @@ static int __handle_get(const char* package, const char* parameter)
 
     chef_package_settings_delete(settings);
     return 0;
+}
+
+static enum chef_package_setting_discoverable __discoverable_from_string(const char* value) {
+    if (strcmp(value, "private") == 0) {
+        return CHEF_PACKAGE_SETTING_DISCOVERABLE_PRIVATE;
+    } else if (strcmp(value, "public") == 0) {
+        return CHEF_PACKAGE_SETTING_DISCOVERABLE_PUBLIC;
+    } else if (strcmp(value, "collaborators") == 0) {
+        return CHEF_PACKAGE_SETTING_DISCOVERABLE_COLLABORATORS;
+    }
+    fprintf(stderr, "order: invalid option value for discoverable: %s", value);
+    exit(-1);
+
+    // not reached
+    return "unknown";
 }
 
 static int __handle_set(const char* package, const char* parameter, const char* value)
@@ -216,9 +240,8 @@ static int __handle_set(const char* package, const char* parameter, const char* 
     }
 
     if (strcmp(parameter, "discoverable") == 0) {
-        chef_package_settings_set_discoverable(settings, strbool(value));
-    }
-    else {
+        chef_package_settings_set_discoverable(settings, __discoverable_from_string(value));
+    } else {
         printf("order: unknown parameter '%s'\n", parameter);
         return -1;
     }
