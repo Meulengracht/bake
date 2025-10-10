@@ -237,11 +237,16 @@ static int __handle_api_key(const char* option, const char* name)
             fprintf(stderr, "order: failed to delete api-key %s\n", name);
         }
     } else if (strcmp(option, "list") == 0) {
-        printf("\napi-keys\n");
-        for (int i = 0; i < chef_account_get_apikey_count(account); i++) {
-            printf("  key %i: %s\n", i + 1,
-                chef_account_get_apikey_name(account, i)
-            );
+        int count = chef_account_get_apikey_count(account);
+        if (count == 0) {
+            printf("no api-keys registered\n");
+        } else {
+            printf("api-keys\n");
+            for (int i = 0; i < count; i++) {
+                printf("  key %i: %s\n", i + 1,
+                    chef_account_get_apikey_name(account, i)
+                );
+            }
         }
     } else {
         printf("unknown option '%s' for 'account api-key'\n", option);
@@ -269,18 +274,22 @@ static int __handle_publisher_option(const char* option)
     if (strcmp(option, "register") == 0) {
         account_publish_setup();
     } else if (strcmp(option, "list") == 0) {
-        printf("\npublishers\n");
-        for (int i = 0; i < chef_account_get_publisher_count(account); i++) {
-            printf("  publisher %i: %s (%s)\n", i + 1,
-                chef_account_get_publisher_name(account, i),
-                __get_verified_status(account, i)
-            );
+        int count = chef_account_get_publisher_count(account);
+        if (count == 0) {
+            printf("no publishers registered\n");
+        } else {
+            printf("publishers\n");
+            for (int i = 0; i < count; i++) {
+                printf("  publisher %i: %s (%s)\n", i + 1,
+                    chef_account_get_publisher_name(account, i),
+                    __get_verified_status(account, i)
+                );
+            }
         }
     } else if (strcmp(option, "get") == 0) {
-        // visibility
+        // nothing yet
     } else if (strcmp(option, "set") == 0) {
-        // visibility
-        
+        // nothing yet
     } else {
         printf("unknown option '%s' for 'account publisher'\n", option);
         status = -1;
