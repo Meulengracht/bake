@@ -117,10 +117,23 @@ static int __handle_list_packages(void)
     return 0;
 }
 
-static void __print_settings(struct chef_package_settings* settings)
+static const char* __discoverable_string(enum chef_package_setting_discoverable discoverable) {
+    switch (discoverable) {
+        case CHEF_PACKAGE_SETTING_DISCOVERABLE_PRIVATE: return "private";
+        case CHEF_PACKAGE_SETTING_DISCOVERABLE_PUBLIC: return "public";
+        case CHEF_PACKAGE_SETTING_DISCOVERABLE_COLLABORATORS: return "collaborators";
+    }
+    return "unknown";
+}
+
+static void __print_settings(const char* name, struct chef_package_settings* settings)
 {
-    printf("settings for %s\n", chef_package_settings_get_package(settings));
-    printf("  discoverable: %s\n", chef_package_settings_get_discoverable(settings) ? "true" : "false");
+    enum chef_package_setting_discoverable discoverable;
+
+    discoverable = chef_package_settings_get_discoverable(settings);
+
+    printf("settings for %s\n", name);
+    printf("  discoverable: %s\n", __discoverable_string(discoverable));
 }
 
 static int __handle_list(const char* package)
@@ -147,18 +160,9 @@ static int __handle_list(const char* package)
         return status;
     }
 
-    __print_settings(settings);
+    __print_settings(package, settings);
     chef_package_settings_delete(settings);
     return 0;
-}
-
-static const char* __discoverable_string(enum chef_package_setting_discoverable discoverable) {
-    switch (discoverable) {
-        case CHEF_PACKAGE_SETTING_DISCOVERABLE_PRIVATE: return "private";
-        case CHEF_PACKAGE_SETTING_DISCOVERABLE_PUBLIC: return "public";
-        case CHEF_PACKAGE_SETTING_DISCOVERABLE_COLLABORATORS: return "collaborators";
-    }
-    return "unknown";
 }
 
 static int __handle_get(const char* package, const char* parameter)
@@ -208,7 +212,7 @@ static enum chef_package_setting_discoverable __discoverable_from_string(const c
     exit(-1);
 
     // not reached
-    return "unknown";
+    return CHEF_PACKAGE_SETTING_DISCOVERABLE_PRIVATE;
 }
 
 static int __handle_set(const char* package, const char* parameter, const char* value)
