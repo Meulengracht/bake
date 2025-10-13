@@ -17,6 +17,10 @@
  */
 #define _GNU_SOURCE // needed for mknod
 
+#define UBUNTU_LTS "24.04"
+#define UBUNTU_BASE_RELEASE ".3"
+#define UBUNTU_BASE_IMAGE_FMT "https://cdimage.ubuntu.com/ubuntu-base/releases/" UBUNTU_LTS "/release/ubuntu-base-" UBUNTU_LTS UBUNTU_BASE_RELEASE "-base-%s.tar.gz"
+
 #include <chef/containerv.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
@@ -33,7 +37,6 @@ struct __container {
     char*                        id;
     struct containerv_container* handle;
 };
-
 
 static struct __container* __container_new(struct containerv_container* handle)
 {
@@ -164,19 +167,21 @@ static int __ensure_base_rootfs(const char* rootfs)
     snprintf(
         &tmp[0],
         sizeof(tmp),
-        "%s/ubuntu-base-24.04.2-base-amd64.tar.gz", 
-        imageCache
+        "%s/ubuntu-base-" UBUNTU_LTS UBUNTU_BASE_RELEASE "-base-%s.tar.gz", 
+        imageCache,
+        CHEF_ARCHITECTURE_STR
     );
 
     if (!__file_exists(&tmp[0])) {
         snprintf(
             &tmp[0],
             sizeof(tmp),
-            "-P %s https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.2-base-amd64.tar.gz", 
-            imageCache
+            "-P %s" UBUNTU_BASE_IMAGE_FMT, 
+            imageCache,
+            CHEF_ARCHITECTURE_STR
         );
 
-        VLOG_TRACE("cvd", "downloading https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.2-base-amd64.tar.gz");
+        VLOG_TRACE("cvd", "downloading " UBUNTU_BASE_IMAGE_FMT, CHEF_ARCHITECTURE_STR);
         status = platform_spawn(
             "wget", &tmp[0], NULL, &(struct platform_spawn_options) {
             }
@@ -191,11 +196,11 @@ static int __ensure_base_rootfs(const char* rootfs)
     snprintf(
         &tmp[0],
         sizeof(tmp),
-        "-xf %s/ubuntu-base-24.04.2-base-amd64.tar.gz -C %s", 
-        imageCache, rootfs
+        "-xf %s/ubuntu-base-" UBUNTU_LTS UBUNTU_BASE_RELEASE "-base-%s.tar.gz -C %s",
+        imageCache, CHEF_ARCHITECTURE_STR, rootfs
     );
 
-    VLOG_TRACE("cvd", "unpacking %s/ubuntu-base-24.04.2-base-amd64.tar.gz\n", imageCache);
+    VLOG_TRACE("cvd", "unpacking %s/ubuntu-base-" UBUNTU_LTS UBUNTU_BASE_RELEASE "-base-%s.tar.gz\n", imageCache, CHEF_ARCHITECTURE_STR);
     status = platform_spawn(
         "tar", &tmp[0], NULL, &(struct platform_spawn_options) {
         }

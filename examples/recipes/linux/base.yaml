@@ -1,4 +1,5 @@
 project: 
+  name: linux-base
   summary: The linux OS base
   description: |
     This is the base OS linux ingredient, which is used as the base for all
@@ -22,7 +23,9 @@ recipes:
       path: ./
       script: |
         if build.subsystem.platform_host() == "linux" then
-          build.shell("construct.sh", "$[[ INSTALL_PREFIX ]] $[[ CHEF_TARGET_ARCHITECTURE ]]")
+          args = build.paths.install()
+          args = args .. " " .. build.subsystem.arch_target()
+          build.shell("construct.sh", args)
         end
 
 packs:
