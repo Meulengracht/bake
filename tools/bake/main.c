@@ -244,8 +244,8 @@ int main(int argc, char** argv, char** envp)
         if (command == NULL) {
             // was a file passed? Then it was the recipe, and we assume
             // that the run command should be run.
-            if (__file_exists(argv[1]) == 0) {
-                command = &g_commands[2];
+            if (__file_exists(argv[1])) {
+                command = &g_commands[1];
                 options.recipe_path = argv[1];
             } else {
                 fprintf(stderr, "bake: invalid command %s\n", argv[1]);
