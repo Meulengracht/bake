@@ -34,6 +34,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h> // makedev
 
 #include <unistd.h>
 #include "private.h"
@@ -553,6 +554,46 @@ static int __container_open_ns_fds(
     return 0;
 }
 
+static int __populate_minimal_dev(void)
+{
+    int    status;
+    char   tmp[PATH_MAX];
+    mode_t um;
+    VLOG_DEBUG("cvd", "__fixup_dev()\n");
+
+    struct {
+        const char* path;
+        mode_t      mod;
+        dev_t       dev;
+    } devices[] = {
+        { "null", S_IFCHR | 0666, makedev(1, 3) },
+        { "zero", S_IFCHR | 0666, makedev(1, 5) },
+        { "random", S_IFCHR | 0666, makedev(1, 8) },
+        { "urandom", S_IFCHR | 0666, makedev(1, 9) },
+        { NULL, 0, 0 },
+    };
+
+    um = umask(0);
+
+    for (int i = 0; devices[i].path != NULL; i++) {
+        snprintf(
+            &tmp[0],
+            sizeof(tmp),
+            "/dev/%s", 
+            devices[i].path
+        );
+
+        status = mknod(&tmp[0], devices[i].mod, devices[i].dev);
+        if (status) {
+            VLOG_ERROR("cvd", "__fixup_dev: failed to create %s\n", &tmp[0]);
+            return status;
+        }
+    }
+
+    umask(um);
+    return 0;
+}
+
 static int __container_run(
     struct containerv_container* container,
     struct containerv_options*   options,
@@ -697,7 +738,7 @@ static int __container_run(
 
     // After the chroot we can do now do special mounts
     if (options->capabilities & CV_CAP_FILESYSTEM) {
-        static const int postmountsCount = 3;
+        static const int postmountsCount = 4;
         struct containerv_mount mnts[] = {
             {
                 .what = "sysfs",
@@ -717,11 +758,25 @@ static int __container_run(
                 .fstype = "tmpfs",
                 .flags = CV_MOUNT_CREATE
             },
+            {
+                .what = "tmpfs",
+                .where = "/dev",
+                .fstype = "tmpfs",
+                .flags = CV_MOUNT_CREATE
+            },
         };
         
         status = __container_map_mounts("", &mnts[0], postmountsCount);
         if (status) {
             VLOG_ERROR("containerv[child]", "__container_run: failed to map system mounts\n");
+            return status;
+        }
+
+        // we could use devtmpfs here, but that requires kernel support, which it most likely
+        // already is, but just to be sure we populate a minimal /dev, to have more control
+        status = __populate_minimal_dev();
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to populate /dev\n");
             return status;
         }
     }

@@ -1,5 +1,9 @@
 #!/bin/bash
 
+export GOROOT=/usr/local/go
+export PATH=$PATH:$GOROOT/bin
+# GOPATH is automatically set to $HOME/go, /chef/go for chef
+
 GO_VERSION=go1.25.1
 UBUNTU_VERSION=24.04
 
@@ -8,7 +12,7 @@ ARCH="$2"
 
 # add libraries we may need here
 PACKAGES=(
-    bash
+    bash_bins
 )
 
 # ensure go is available
@@ -17,7 +21,7 @@ tar -C /usr/local -xzf "${GO_VERSION}.linux-amd64.tar.gz"
 
 # ensure chisel is available
 if ! command -v chisel >/dev/null 2>&1; then
-    /usr/local/bin/go install github.com/canonical/chisel/cmd/chisel@latest
+    go install github.com/canonical/chisel/cmd/chisel@latest
 fi
 
 # build a whitespace separated list
@@ -28,4 +32,4 @@ for item in "${PACKAGES[@]}"; do
     delim=" "
 done
 
-chisel cut --release "ubuntu-${UBUNTU_VERSION}" --root $DIR --arch $ARCH $JOINED
+/chef/go/bin/chisel cut --release "ubuntu-${UBUNTU_VERSION}" --root $DIR --arch $ARCH $JOINED
