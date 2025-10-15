@@ -13,6 +13,15 @@ ARCH="$2"
 # add libraries we may need here
 PACKAGES=(
     bash_bins
+    passwd_config
+    libc6_config
+    libc6_gconv
+    libgcc-s1_libs
+    libc-bin_locale
+    libc-bin_nsswitch
+    libpam-runtime_config
+    netbase_default-hosts
+    netbase_default-networks
 )
 
 # ensure go is available

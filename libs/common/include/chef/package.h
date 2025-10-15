@@ -71,6 +71,7 @@ struct chef_package {
     const char* arch;
     const char* publisher;
     const char* package;
+    const char* base;
     const char* summary;
     const char* description;
     const char* homepage;

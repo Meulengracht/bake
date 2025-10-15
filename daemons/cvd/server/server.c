@@ -17,10 +17,6 @@
  */
 #define _GNU_SOURCE // needed for mknod
 
-#define UBUNTU_LTS "24.04"
-#define UBUNTU_BASE_RELEASE ".3"
-#define UBUNTU_BASE_IMAGE_FMT "https://cdimage.ubuntu.com/ubuntu-base/releases/" UBUNTU_LTS "/release/ubuntu-base-" UBUNTU_LTS UBUNTU_BASE_RELEASE "-base-%s.tar.gz"
-
 #include <chef/containerv.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
@@ -31,6 +27,8 @@
 #include <string.h>
 #include <time.h>
 #include <vlog.h>
+
+#include "ubuntu.h"
 
 struct __container {
     struct list_item             item_header;
@@ -104,9 +102,33 @@ static int __fixup_dns(const char* rootfs)
     return fclose(stream);
 }
 
-static int __ensure_base_rootfs(const char* rootfs)
+static int __download_base(const char* base, const char* dir)
 {
-    char* imageCache;
+    char  tmp[PATH_MAX];
+    int   status;
+    char* url = __ubuntu_get_base_image_url(base);
+    if (url == NULL) {
+        VLOG_ERROR("cvd", "failed to allocate memory for base image url\n");
+        return -1;
+    }
+
+    snprintf(&tmp[0], sizeof(tmp), "-P %s %s", dir, url);
+
+    VLOG_TRACE("cvd", "downloading %s\n", url);
+    status = platform_spawn(
+        "wget", &tmp[0], NULL, &(struct platform_spawn_options) { }
+    );
+    if (status) {
+        VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
+    }
+    free(url);
+    return status;
+}
+
+static int __ensure_base_rootfs(const char* rootfs, const char* base)
+{
+    char* imageCache = NULL;
+    char* imageName = NULL;
     char  tmp[PATH_MAX];
     int   status;
     VLOG_DEBUG("cvd", "__ensure_base_rootfs()\n");
@@ -120,62 +142,53 @@ static int __ensure_base_rootfs(const char* rootfs)
     status = platform_mkdir(imageCache);
     if (status) {
         VLOG_ERROR("cvd", "failed to create directory %s\n", imageCache);
-        return -1;
+        goto exit;
     }
 
-    snprintf(
-        &tmp[0],
-        sizeof(tmp),
-        "%s/ubuntu-base-" UBUNTU_LTS UBUNTU_BASE_RELEASE "-base-%s.tar.gz", 
-        imageCache,
-        CHEF_ARCHITECTURE_STR
-    );
+    imageName = __ubuntu_get_base_image_name(base);
+    if (imageName == NULL) {
+        VLOG_ERROR("cvd", "failed to allocate memory for base image name\n");
+        status = -1;
+        goto exit;
+    }
+
+    snprintf(&tmp[0], sizeof(tmp), "%s/%s", imageCache, imageName);
 
     if (!__file_exists(&tmp[0])) {
-        snprintf(
-            &tmp[0],
-            sizeof(tmp),
-            "-P %s" UBUNTU_BASE_IMAGE_FMT, 
-            imageCache,
-            CHEF_ARCHITECTURE_STR
-        );
-
-        VLOG_TRACE("cvd", "downloading " UBUNTU_BASE_IMAGE_FMT, CHEF_ARCHITECTURE_STR);
-        status = platform_spawn(
-            "wget", &tmp[0], NULL, &(struct platform_spawn_options) {
-            }
-        );
+        status = __download_base(base, imageCache);
         if (status) {
             VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
-            free(imageCache);
-            return status;
+            goto exit;
         }
     }
 
     snprintf(
         &tmp[0],
         sizeof(tmp),
-        "-x --xattrs-include=* -f %s/ubuntu-base-" UBUNTU_LTS UBUNTU_BASE_RELEASE "-base-%s.tar.gz -C %s",
-        imageCache, CHEF_ARCHITECTURE_STR, rootfs
+        "-x --xattrs-include=* -f %s/%s -C %s",
+        imageCache, imageName, rootfs
     );
 
-    VLOG_TRACE("cvd", "unpacking %s/ubuntu-base-" UBUNTU_LTS UBUNTU_BASE_RELEASE "-base-%s.tar.gz\n", imageCache, CHEF_ARCHITECTURE_STR);
+    VLOG_TRACE("cvd", "unpacking %s/%s\n", imageCache, imageName);
     status = platform_spawn(
         "tar", &tmp[0], NULL, &(struct platform_spawn_options) {
         }
     );
     if (status) {
         VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
-        return status;
+        goto exit;
     }
 
     status = __fixup_dns(rootfs);
     if (status) {
         VLOG_ERROR("cvd", "failed to fix dns settings\n");
-        return status;
+        goto exit;
     }
 
-    return 0;
+exit:
+    free(imageCache);
+    free(imageName);
+    return status;
 }
 
 #elif CHEF_ON_WINDOWS
@@ -221,8 +234,7 @@ static int __resolve_rootfs(const struct chef_create_parameters* params)
 
     switch (params->type) {
         // Create a new rootfs using debootstrap from the host
-        case CHEF_ROOTFS_TYPE_DEBOOTSTRAP:
-        {
+        case CHEF_ROOTFS_TYPE_DEBOOTSTRAP: {
             status = cvd_rootfs_setup_debootstrap(params->rootfs);
             if (status) {
                 VLOG_ERROR("cvd", "failed to setup debootstrap container\n");
@@ -230,9 +242,8 @@ static int __resolve_rootfs(const struct chef_create_parameters* params)
             }
             return 0;
         }
-        case CHEF_ROOTFS_TYPE_IMAGE:
-        {
-           status = __ensure_base_rootfs(params->rootfs);
+        case CHEF_ROOTFS_TYPE_IMAGE: {
+           status = __ensure_base_rootfs(params->rootfs, params->rootfs_base);
             if (status) {
                 VLOG_ERROR("cvd", "failed to resolve the rootfs image\n");
                 return status;
