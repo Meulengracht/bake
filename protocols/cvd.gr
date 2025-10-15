@@ -44,6 +44,7 @@ struct container_mount {
 
 struct create_parameters {
     string            rootfs;
+    string            rootfs_base;
     rootfs_type       type;
     container_mount[] mounts;
 }

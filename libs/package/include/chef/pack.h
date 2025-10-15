@@ -32,6 +32,7 @@ struct __pack_options {
     const char*            architecture;
 
     enum chef_package_type type;
+    const char*            base;
     const char*            summary;
     const char*            description;
     const char*            icon;
