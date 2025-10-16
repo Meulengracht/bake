@@ -45,6 +45,7 @@ static struct fridge_store* __store_new(const char* platform, const char* arch, 
         return NULL;
     }
     memset(store, 0, sizeof(struct fridge_store));
+    memcpy(&store->backend, backend, sizeof(struct fridge_store_backend));
     store->platform = platform_strdup(platform);
     store->arch = platform_strdup(arch);
     return store;
