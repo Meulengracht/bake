@@ -78,6 +78,7 @@ static int __ensure_chef_paths(void)
     // /chef
     // /chef/bin
     // /var/chef
+    // /var/chef/mnt
     // /var/chef/packs
 
     path = served_paths_path("/chef/bin");
