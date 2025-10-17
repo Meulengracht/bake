@@ -75,7 +75,7 @@ static int __ensure_toolchains(struct list* platforms)
             return status;
         }
 
-        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
+        status = fridge_ensure_package(&(struct fridge_package) {
             .name = name,
             .channel = channel,
             .version = version,
@@ -102,7 +102,7 @@ static int __ensure_ingredient_list(struct list* list, const char* platform, con
     list_foreach(list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
 
-        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
+        status = fridge_ensure_package(&(struct fridge_package) {
             .name = ingredient->name,
             .channel = ingredient->channel,
             .version = ingredient->version,
@@ -214,11 +214,11 @@ static char* __format_footer(const char* logPath)
     return platform_strdup(&tmp[0]);
 }
 
-static int __resolve_ingredient(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded)
+static int __resolve_package(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, const char* path, int* revisionDownloaded)
 {
     struct chef_download_params downloadParams;
     int                         status;
-    VLOG_DEBUG("cookd", "__resolve_ingredient()\n");
+    VLOG_DEBUG("cookd", "__resolve_package()\n");
 
     // initialize download params
     downloadParams.publisher = publisher;
@@ -226,7 +226,7 @@ static int __resolve_ingredient(const char* publisher, const char* package, cons
     downloadParams.platform  = platform;
     downloadParams.arch      = arch;
     downloadParams.channel   = channel;
-    downloadParams.version   = version; // may be null, will just get latest
+    downloadParams.revision  = 0;
 
     status = chefclient_pack_download(&downloadParams, path);
     if (status == 0) {
@@ -306,7 +306,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         .platform = options->platform,
         .architecture = arch,
         .backend = {
-            .resolve_ingredient = __resolve_ingredient
+            .resolve_package = __resolve_package
         }
     });
     if (status != 0) {

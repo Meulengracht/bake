@@ -482,6 +482,7 @@ int install_main(int argc, char** argv)
         // we only allow installs from native packages
         params.platform = CHEF_PLATFORM_STR;
         params.arch     = CHEF_ARCHITECTURE_STR;
+        params.revision = 0;
 
         // cleanup the file on exit
         atexit(__cleanup);

@@ -19,8 +19,55 @@
 #include <application.h>
 #include <chef/client.h>
 #include <chef/api/package.h>
+#include <chef/fridge.h>
 #include <chef/platform.h>
 #include <vlog.h>
+
+static int __resolve_package(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded)
+{
+    struct chef_download_params downloadParams;
+    int                         status;
+    VLOG_DEBUG("cookd", "__resolve_package()\n");
+
+    // initialize download params
+    downloadParams.publisher = publisher;
+    downloadParams.package   = package;
+    downloadParams.platform  = platform;
+    downloadParams.arch      = arch;
+    downloadParams.channel   = channel;
+    downloadParams.revision  = 0;
+
+    status = chefclient_pack_download(&downloadParams, path);
+    if (status == 0) {
+        *revisionDownloaded = downloadParams.revision;
+    }
+    return status;
+}
+
+int served_resolver_initialize(void)
+{
+    int status;
+    VLOG_DEBUG("cookd", "served_resolver_initialize()\n");
+
+    status = chefclient_initialize();
+    if (status != 0) {
+        VLOG_ERROR("cookd", "failed to initialize chef client\n");
+        return -1;
+    }
+
+    status = fridge_initialize(&(struct fridge_parameters) {
+        .platform = CHEF_PLATFORM_STR,
+        .architecture = CHEF_ARCHITECTURE_STR,
+        .backend = {
+            .resolve_package = __resolve_package
+        }
+    });
+    if (status) {
+        VLOG_ERROR("cookd", "failed to initialize fridge\n");
+        chefclient_cleanup();
+    }
+    return status;
+}
 
 static int __parse_package_identifier(const char* id, char** publisherOut, char** nameOut)
 {
@@ -61,30 +108,27 @@ struct served_resolver_download {
 
 int served_resolver_download_package(const char* name, struct served_resolver_download_options* options)
 {
-    char* publisher;
-    char* package;
     char* path;
     int   status;
     VLOG_DEBUG("resolver", "served_resolver_download_package(name=%s)", name);
 
-    status = __parse_package_identifier(name, &publisher, &package);
-    if (status) {
-        VLOG_ERROR("resolver", "served_resolver_download_package: failed to resolve publisher and package from name id\n");
-        return status;
-    }
-
-    status = chefclient_pack_download(&(struct chef_download_params) {
-        .publisher = publisher,
-        .package = package,
+    status = fridge_ensure_package(&(struct fridge_package) {
+        .name = name,
         .platform = CHEF_PLATFORM_STR,
         .arch = CHEF_ARCHITECTURE_STR,
         .channel = options->channel,
-        .revision = options->revision
-    }, path);
+    });
+    if (status) {
+        return status;
+    }
 
+    status = fridge_package_path(&(struct fridge_package) {
+        .name = name,
+        .platform = CHEF_PLATFORM_STR,
+        .arch = CHEF_ARCHITECTURE_STR,
+        .channel = options->channel,
+    }, &path);
 
     free(path);
-    free(publisher);
-    free(package);
     return status;
 }

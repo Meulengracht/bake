@@ -21,7 +21,7 @@
 
 #include <chef/list.h>
 
-struct fridge_ingredient {
+struct fridge_package {
     const char* name;
     const char* channel;
     const char* version;
@@ -30,7 +30,7 @@ struct fridge_ingredient {
 };
 
 struct fridge_store_backend {
-    int (*resolve_ingredient)(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded);
+    int (*resolve_package)(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, const char* path, int* revisionDownloaded);
 };
 
 struct fridge_parameters {
@@ -52,23 +52,34 @@ extern int fridge_initialize(struct fridge_parameters* parameters);
 extern void fridge_cleanup(void);
 
 /**
- * @brief Stores the given ingredient, making sure we have a local copy of it in
+ * @brief Stores the given package, making sure we have a local copy of it in
  * our local store.
  * 
- * @param[In] ingredient Options describing the ingredient that should be fetched from store.
+ * @param[In] package Options describing the package that should be fetched from store.
  * @return int 
  */
-extern int fridge_ensure_ingredient(struct fridge_ingredient* ingredient);
+extern int fridge_ensure_package(struct fridge_package* package);
 
 /**
- * @brief Retrieves the path of an ingredient based on it's parameters. It must be already
+ * @brief Retrieves the path of an package based on it's parameters. It must be already
  * present in the local store.
  * 
- * @param[In]  ingredient Options describing the ingredient from the store.
- * @param[Out] pathOut    Returns a zero-terminated string with the path of the ingredient. This
- *                        string should not be freed. It will be valid until fridge_cleanup is called.
+ * @param[In]  package Options describing the package from the store.
+ * @param[Out] pathOut Returns a zero-terminated string with the path of the package. This
+ *                     string should not be freed. It will be valid until fridge_cleanup is called.
  * @return int  
  */
-extern int fridge_ingredient_path(struct fridge_ingredient* ingredient, const char** pathOut);
+extern int fridge_package_path(struct fridge_package* package, const char** pathOut);
+
+/**
+ * @brief Retrieves the path of an package based on it's parameters. It must be already
+ * present in the local store.
+ * 
+ * @param[In]  package Options describing the package from the store.
+ * @param[Out] pathOut Returns a zero-terminated string with the path of the package. This
+ *                     string should not be freed. It will be valid until fridge_cleanup is called.
+ * @return int  
+ */
+extern int fridge_package_proof(struct fridge_package* package, const char** pathOut);
 
 #endif //!__LIBFRIDGE_H__

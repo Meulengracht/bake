@@ -147,7 +147,7 @@ static int __update_build_envs(struct __bakelib_context* context)
         struct ingredient*        ingredient;
         const char*               path = NULL;
         
-        status = fridge_ingredient_path(&(struct fridge_ingredient) {
+        status = fridge_package_path(&(struct fridge_package) {
             .name = recIngredient->name,
             .channel = recIngredient->channel,
             .version = recIngredient->version,

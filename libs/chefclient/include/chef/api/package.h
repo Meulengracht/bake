@@ -47,10 +47,15 @@ struct chef_download_params {
     const char*          platform;
     const char*          arch;
     const char*          channel;
-    struct chef_version* version;
 
-    // this will be updated to the revision downloaded,
-    // which means from a callers perspective this is read-only
+    // this will be updated to the revision downloaded if 0
+    int                  revision;
+};
+
+struct chef_verify_params {
+    const char*          publisher;
+    const char*          package;
+    const char*          package_path;
     int                  revision;
 };
 
