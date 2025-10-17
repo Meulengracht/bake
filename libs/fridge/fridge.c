@@ -17,7 +17,7 @@
  */
 
 #include <chef/platform.h>
-#include <chef/ingredient.h>
+#include <chef/package.h>
 #include "inventory.h"
 #include <chef/fridge.h>
 #include <string.h>
@@ -25,7 +25,7 @@
 #include <vlog.h>
 
 struct progress_context {
-    struct ingredient* ingredient;
+    struct package* package;
     int                disabled;
 
     int files;
@@ -64,7 +64,7 @@ void fridge_cleanup(void)
     memset(&g_fridge, 0, sizeof(struct fridge_context));
 }
 
-int fridge_ensure_ingredient(struct fridge_ingredient* ingredient)
+int fridge_ensure_package(struct fridge_package* package)
 {
     struct fridge_inventory_pack* pack = NULL;
     int                           status;
@@ -74,7 +74,7 @@ int fridge_ensure_ingredient(struct fridge_ingredient* ingredient)
         return status;
     }
 
-    status = fridge_store_ensure_ingredient(g_fridge.store, ingredient, &pack);
+    status = fridge_store_ensure_package(g_fridge.store, package, &pack);
     if (status) {
         (void)fridge_store_close(g_fridge.store);
         return status;
@@ -82,7 +82,7 @@ int fridge_ensure_ingredient(struct fridge_ingredient* ingredient)
     return fridge_store_close(g_fridge.store);
 }
 
-int fridge_ingredient_path(struct fridge_ingredient* ingredient, const char** pathOut)
+int fridge_package_path(struct fridge_package* package, const char** pathOut)
 {
     struct fridge_inventory_pack* pack = NULL;
     int                           status;
@@ -92,7 +92,7 @@ int fridge_ingredient_path(struct fridge_ingredient* ingredient, const char** pa
         return status;
     }
 
-    status = fridge_store_find_ingredient(g_fridge.store, ingredient, &pack);
+    status = fridge_store_find_package(g_fridge.store, package, &pack);
     *pathOut = platform_strdup(inventory_pack_path(pack));
     return fridge_store_close(g_fridge.store);
 }

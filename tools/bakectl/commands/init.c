@@ -240,7 +240,7 @@ static int __setup_ingredient(struct __bakelib_context* context, struct list* in
         const char*               path;
         VLOG_DEBUG("bakectl", "__setup_ingredient: %s\n", ri->name);
 
-        status = fridge_ingredient_path(&(struct fridge_ingredient) {
+        status = fridge_package_path(&(struct fridge_package) {
             .name = ri->name,
             .channel = ri->channel,
             .version = ri->version,
@@ -299,7 +299,7 @@ static int __setup_toolchains(struct list* ingredients, const char* hostPath)
         struct ingredient*        ig;
         const char*               path;
 
-        status = fridge_ingredient_path(&(struct fridge_ingredient) {
+        status = fridge_package_path(&(struct fridge_package) {
             .name = ri->name,
             .channel = ri->channel,
             .version = ri->version,

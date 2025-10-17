@@ -75,7 +75,7 @@ static struct command_handler* __get_command(const char* command)
     return NULL;
 }
 
-static int __resolve_ingredient(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded)
+static int __resolve_package(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, const char* path, int* revisionDownloaded)
 {
     struct chef_download_params downloadParams;
     int                         status;
@@ -86,7 +86,7 @@ static int __resolve_ingredient(const char* publisher, const char* package, cons
     downloadParams.platform  = platform;
     downloadParams.arch      = arch;
     downloadParams.channel   = channel;
-    downloadParams.version   = version; // may be null, will just get latest
+    downloadParams.revision  = 0;
 
     status = chefclient_pack_download(&downloadParams, path);
     if (status == 0) {
@@ -105,7 +105,7 @@ int fridge_main(int argc, char** argv, char** envp, struct bake_command_options*
         .platform = CHEF_PLATFORM_STR,
         .architecture = CHEF_ARCHITECTURE_STR,
         .backend = {
-            .resolve_ingredient = __resolve_ingredient
+            .resolve_package = __resolve_package
         }
     });
     if (status != 0) {

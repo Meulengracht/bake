@@ -541,7 +541,7 @@ static void __finalize_pack(struct parser_state* state)
     memset(&state->pack, 0, sizeof(struct recipe_pack));
 }
 
-static int __resolve_ingredient(struct parser_state* state, const char* name)
+static int __resolve_package(struct parser_state* state, const char* name)
 {
     struct list_item* i;
 
@@ -575,7 +575,7 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
     }
 
     // verify that we can resolve the ingredient being mentioned
-    if (!__resolve_ingredient(state, state->meson_wrap_item.ingredient)) {
+    if (!__resolve_package(state, state->meson_wrap_item.ingredient)) {
         fprintf(stderr, "parse error: ingredient %s specified by meson wrap is not defined\n", state->meson_wrap_item.ingredient);
         exit(EXIT_FAILURE);
     }

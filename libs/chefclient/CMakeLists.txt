@@ -25,6 +25,7 @@ add_library(chef-client STATIC
     request.c
     settings.c
     trace.c
+    verify.c
 )
 
 target_include_directories(chef-client PUBLIC include ${CURL_INCLUDE_DIR})

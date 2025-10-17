@@ -155,7 +155,6 @@ static int __store_download(
     const char*          platform,
     const char*          arch,
     const char*          channel,
-    struct chef_version* version,
     int*                 revisionDownloaded,
     char**               pathOut)
 {
@@ -164,19 +163,18 @@ static int __store_download(
     char pathBuffer[2048];
     VLOG_DEBUG("store", "__store_download()\n");
 
-    if (store->backend.resolve_ingredient == NULL) {
+    if (store->backend.resolve_package == NULL) {
         VLOG_ERROR("store", "__store_download: backend does not support resolving ingredients\n");
         errno = ENOTSUP;
         return -1;
     }
 
-    status = store->backend.resolve_ingredient(
+    status = store->backend.resolve_package(
         publisher,
         package, 
         platform,
         arch,
         channel,
-        version,
         PACKAGE_TEMP_PATH,
         &revision
     );
@@ -222,7 +220,7 @@ static int __store_download(
     return status;
 }
 
-static const char* __get_ingredient_platform(struct fridge_store* store, struct fridge_ingredient* ingredient)
+static const char* __get_ingredient_platform(struct fridge_store* store, struct fridge_package* ingredient)
 {
     if (ingredient->platform == NULL) {
         return store->platform;
@@ -230,7 +228,7 @@ static const char* __get_ingredient_platform(struct fridge_store* store, struct 
     return ingredient->platform;
 }
 
-static const char* __get_ingredient_arch(struct fridge_store* store, struct fridge_ingredient* ingredient)
+static const char* __get_ingredient_arch(struct fridge_store* store, struct fridge_package* ingredient)
 {
     if (ingredient->arch == NULL) {
         return store->arch;
@@ -238,7 +236,7 @@ static const char* __get_ingredient_arch(struct fridge_store* store, struct frid
     return ingredient->arch;
 }
 
-int fridge_store_find_ingredient(struct fridge_store* store, struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut)
+int fridge_store_find_ingredient(struct fridge_store* store, struct fridge_package* ingredient, struct fridge_inventory_pack** packOut)
 {
     struct chef_version           version = { 0 };
     struct chef_version*          versionPtr = NULL;
@@ -246,7 +244,7 @@ int fridge_store_find_ingredient(struct fridge_store* store, struct fridge_ingre
     char**                        names;
     int                           namesCount;
     int                           status;
-    VLOG_DEBUG("store", "fridge_store_ensure_ingredient(name=%s)\n", ingredient->name);
+    VLOG_DEBUG("store", "fridge_store_ensure_package(name=%s)\n", ingredient->name);
 
     if (ingredient == NULL) {
         errno = EINVAL;
@@ -257,7 +255,7 @@ int fridge_store_find_ingredient(struct fridge_store* store, struct fridge_ingre
     if (ingredient->version != NULL) {
         status = chef_version_from_string(ingredient->version, &version);
         if (status) {
-            VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to parse version '%s'\n", ingredient->version);
+            VLOG_ERROR("store", "fridge_store_ensure_package: failed to parse version '%s'\n", ingredient->version);
             return -1;
         }
         versionPtr = &version;
@@ -266,7 +264,7 @@ int fridge_store_find_ingredient(struct fridge_store* store, struct fridge_ingre
     // split the publisher/package
     names = strsplit(ingredient->name, '/');
     if (names == NULL) {
-        VLOG_ERROR("store", "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        VLOG_ERROR("store", "fridge_store_ensure_package: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
         return -1;
     }
     
@@ -276,7 +274,7 @@ int fridge_store_find_ingredient(struct fridge_store* store, struct fridge_ingre
     }
 
     if (namesCount != 2) {
-        VLOG_ERROR("store", "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        VLOG_ERROR("store", "fridge_store_ensure_package: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
         status = -1;
         goto cleanup;
     }
@@ -300,7 +298,7 @@ cleanup:
 }
 
 
-int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ingredient* ingredient, struct fridge_inventory_pack** packOut)
+int fridge_store_ensure_package(struct fridge_store* store, struct fridge_package* ingredient, struct fridge_inventory_pack** packOut)
 {
     struct chef_version           version = { 0 };
     struct chef_version*          versionPtr = NULL;
@@ -310,7 +308,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     int                           status;
     int                           revision;
     char*                         packPath;
-    VLOG_DEBUG("store", "fridge_store_ensure_ingredient(name=%s)\n", ingredient->name);
+    VLOG_DEBUG("store", "fridge_store_ensure_package(name=%s)\n", ingredient->name);
 
     if (ingredient == NULL) {
         errno = EINVAL;
@@ -321,7 +319,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     if (ingredient->version != NULL) {
         status = chef_version_from_string(ingredient->version, &version);
         if (status) {
-            VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to parse version '%s'\n", ingredient->version);
+            VLOG_ERROR("store", "fridge_store_ensure_package: failed to parse version '%s'\n", ingredient->version);
             return -1;
         }
         versionPtr = &version;
@@ -330,7 +328,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     // split the publisher/package
     names = strsplit(ingredient->name, '/');
     if (names == NULL) {
-        VLOG_ERROR("store", "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        VLOG_ERROR("store", "fridge_store_ensure_package: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
         return -1;
     }
     
@@ -340,7 +338,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     }
 
     if (namesCount != 2) {
-        VLOG_ERROR("store", "fridge_store_ensure_ingredient: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
+        VLOG_ERROR("store", "fridge_store_ensure_package: invalid package naming '%s' (must be publisher/package)\n", ingredient->name);
         status = -1;
         goto cleanup;
     }
@@ -368,12 +366,11 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
         __get_ingredient_platform(store, ingredient),
         __get_ingredient_arch(store, ingredient),
         ingredient->channel,
-        versionPtr,
         &revision,
         &packPath
     );
     if (status) {
-        VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to download ingredient\n");
+        VLOG_ERROR("store", "fridge_store_ensure_package: failed to download ingredient\n");
         return -1;
     }
 
@@ -397,7 +394,7 @@ int fridge_store_ensure_ingredient(struct fridge_store* store, struct fridge_ing
     );
     free(packPath);
     if (status) {
-        VLOG_ERROR("store", "fridge_store_ensure_ingredient: failed to add ingredient\n");
+        VLOG_ERROR("store", "fridge_store_ensure_package: failed to add ingredient\n");
         goto cleanup;
     }
 
