@@ -37,18 +37,13 @@ enum chef_account_verified_status {
     CHEF_ACCOUNT_VERIFIED_STATUS_VERIFIED,
 };
 
+struct chef_publisher;
+
 /**
  * @brief Creates a new account instance. This is neccessary if no account exists yet.
  * However the account is not saved to the server until chef_account_update is called.
  */
 extern struct chef_account* chef_account_new(void);
-
-/**
- * @brief Cleans up any resources allocated by either @chef_account_get or @chef_account_new.
- * 
- * @param[In] account A pointer to the account that will be freed. 
- */
-extern void chef_account_free(struct chef_account* account);
 
 /**
  * @brief Retrieves the account information of the current user. This requires
@@ -68,22 +63,50 @@ extern int chef_account_get(struct chef_account** accountOut);
  */
 extern int chef_account_update(struct chef_account* account);
 
+/**
+ * @brief Retrieves information about a specific publisher.
+ * 
+ * @param[In] publisher    The name of the publisher to retrieve information about.
+ * @param[In] publisherOut A pointer where to store the allocated publisher instance.
+ * @return int -1 on error, 0 on success. Errno will be set accordingly.
+ */
+extern int chef_account_publisher_get(const char* publisher, struct chef_publisher** publisherOut);
+
 extern int chef_account_publisher_register(const char* name, const char* email);
 
 extern int chef_account_apikey_create(const char* name, char** apiKey);
 extern int chef_account_apikey_delete(const char* name);
 
-extern const char*              chef_account_get_name(struct chef_account* account);
-extern const char*              chef_account_get_email(struct chef_account* account);
-extern enum chef_account_status chef_account_get_status(struct chef_account* account);
 
-extern void chef_account_set_name(struct chef_account* account, const char* name);
+/**
+ * @brief The publisher API. The structure will be allocated by chef_account_publisher_get
+ * and must be freed with the below free call.
+ */
+extern void chef_publisher_free(struct chef_publisher* publisher);
 
-extern int                               chef_account_get_publisher_count(struct chef_account* account);
-extern const char*                       chef_account_get_publisher_name(struct chef_account* account, int index);
-extern enum chef_account_verified_status chef_account_get_publisher_verified_status(struct chef_account* account, int index);
+/**
+ * @brief The account API. Any structures that are allocated by chef_account_new, 
+ * chef_account_get must be freed with the below free call. This will free any sub-resources
+ * that was created as a part of these calls, and there is no reason to free anything else.
+ */
+extern void chef_account_free(struct chef_account* account);
 
-extern int         chef_account_get_apikey_count(struct chef_account* account);
-extern const char* chef_account_get_apikey_name(struct chef_account* account, int index);
+extern const char*              chef_account_name(struct chef_account* account);
+extern const char*              chef_account_email(struct chef_account* account);
+extern enum chef_account_status chef_account_status(struct chef_account* account);
+
+extern void chef_account_name_set(struct chef_account* account, const char* name);
+
+extern int                    chef_account_publisher_count(struct chef_account* account);
+extern struct chef_publisher* chef_account_publisher(struct chef_account* account, int index);
+
+
+extern const char*                       chef_publisher_name(struct chef_publisher* publisher);
+extern const char*                       chef_publisher_email(struct chef_publisher* publisher);
+extern const char*                       chef_publisher_public_key(struct chef_publisher* publisher);
+extern enum chef_account_verified_status chef_publisher_verified_status(struct chef_publisher* publisher);
+
+extern int         chef_account_apikey_count(struct chef_account* account);
+extern const char* chef_account_apikey_name(struct chef_account* account, int index);
 
 #endif //!__LIBCHEF_API_ACCOUNT_H__

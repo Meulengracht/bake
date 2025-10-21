@@ -52,11 +52,10 @@ struct chef_download_params {
     int                  revision;
 };
 
-struct chef_verify_params {
-    const char*          publisher;
-    const char*          package;
-    const char*          package_path;
-    int                  revision;
+struct chef_proof_params {
+    const char* publisher;
+    const char* package;
+    int         revision;
 };
 
 struct chef_find_result {
@@ -76,6 +75,11 @@ struct chef_find_result {
  * @return int 
  */
 extern int chefclient_pack_download(struct chef_download_params* params, const char* path);
+
+/**
+ * @brief 
+ */
+extern int chefclient_pack_proof(struct chef_proof_params* params, const char* path);
 
 /**
  * @brief 

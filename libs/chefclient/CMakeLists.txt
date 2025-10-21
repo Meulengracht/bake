@@ -21,11 +21,11 @@ add_library(chef-client STATIC
     find.c
     info.c
     login.c
+    proof.c
     publish.c
     request.c
     settings.c
     trace.c
-    verify.c
 )
 
 target_include_directories(chef-client PUBLIC include ${CURL_INCLUDE_DIR})

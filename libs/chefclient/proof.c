@@ -33,7 +33,7 @@ extern const char* chefclient_api_base_url(void);
 struct download_context {
     const char* publisher;
     const char* package;
-    char        version[32];
+    int         revision;
     size_t      bytes_downloaded;
     size_t      bytes_total;
 };
@@ -63,7 +63,7 @@ static void __update_progress(struct download_context* downloadContext)
     
     // print a fancy progress bar with percentage, upload progress and a moving
     // bar being filled
-    printf("\33[2K\rdownloading %s/%s (%s) [", downloadContext->publisher, downloadContext->package, downloadContext->version);
+    printf("\33[2K\rdownloading %s/%s [%i] [", downloadContext->publisher, downloadContext->package, downloadContext->revision);
     for (int i = 0; i < 20; i++) {
         if (i < percent / 5) {
             printf("#");
@@ -93,12 +93,12 @@ static size_t __download_progress_callback(void *clientp,
     return 0;
 }
 
-static int __get_download_url(struct chef_download_params* params, char* urlBuffer, size_t bufferSize)
+static int __get_download_url(struct download_context* context, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
         "%s/package/proof?publisher=%s&name=%s&revision=%i",
         chefclient_api_base_url(),
-        params->publisher, params->package, params->revision
+        context->publisher, context->package, context->revision
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }
@@ -113,7 +113,7 @@ static int __get_publisher_url(struct chef_download_params* params, char* urlBuf
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __download_file(const char* filePath, struct download_context* downloadContext)
+static int __download_file(const char* filePath, struct download_context* context)
 {
     struct chef_request* request;
     char                 buffer[512];
@@ -137,7 +137,7 @@ static int __download_file(const char* filePath, struct download_context* downlo
     }
 
     // set the url
-    if (__get_download_url(params, buffer, sizeof(buffer)) != 0) {
+    if (__get_download_url(context, buffer, sizeof(buffer)) != 0) {
         VLOG_ERROR("chef-client", "__download_request: buffer too small for package download link\n");
         goto cleanup;
     }
@@ -173,7 +173,7 @@ static int __download_file(const char* filePath, struct download_context* downlo
         goto cleanup;
     }
 
-    code = curl_easy_setopt(request->curl, CURLOPT_XFERINFODATA, downloadContext);
+    code = curl_easy_setopt(request->curl, CURLOPT_XFERINFODATA, context);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__download_file: failed to set download progress callback data [%s]\n", request->error);
         goto cleanup;
@@ -207,12 +207,7 @@ cleanup:
     return status;
 }
 
-static void __format_version(char* buffer, int revision)
-{
-    sprintf(&buffer[0], "%i", revision);
-}
-
-int chefclient_pack_verify(struct chef_verify_params* params, const char* path)
+int chefclient_pack_proof(struct chef_proof_params* params, const char* path)
 {
     struct download_context downloadContext = { 0 };
     int                     status;
@@ -220,10 +215,10 @@ int chefclient_pack_verify(struct chef_verify_params* params, const char* path)
     // prepare download context
     downloadContext.publisher = params->publisher;
     downloadContext.package   = params->package;
-    __format_version(&downloadContext.version[0], params->revision);
+    downloadContext.revision  = params->revision;
 
     // print initial banner
-    printf("initiating download of %s/%s", params->publisher, params->package);
+    printf("retrieving proof for %s/%s [%i]", params->publisher, params->package, params->revision);
     fflush(stdout);
 
     // start download
@@ -232,8 +227,6 @@ int chefclient_pack_verify(struct chef_verify_params* params, const char* path)
         VLOG_ERROR("chef-client", "chefclient_pack_download: failed to download package [%s]\n", strerror(errno));
         return status;
     }
-
-    // verify the proof using the public-key
 
     // print newline
     printf("\n");

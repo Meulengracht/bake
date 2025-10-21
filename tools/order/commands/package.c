@@ -103,8 +103,9 @@ static int __handle_list_packages(void)
         return status;
     }
 
-    for (int i = 0; i < chef_account_get_publisher_count(account); i++) {
-        const char* name = chef_account_get_publisher_name(account, i);
+    for (int i = 0; i < chef_account_publisher_count(account); i++) {
+        struct chef_publisher* publisher = chef_account_publisher(account, i);
+        const char* name = chef_publisher_name(publisher);
         printf("Packages for %s:\n", name);
         status = __list_packages_by_publisher(name);
         if (status) {
