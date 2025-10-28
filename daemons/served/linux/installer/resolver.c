@@ -27,7 +27,7 @@ static int __resolve_package(const char* publisher, const char* package, const c
 {
     struct chef_download_params downloadParams;
     int                         status;
-    VLOG_DEBUG("cookd", "__resolve_package()\n");
+    VLOG_DEBUG("served", "__resolve_package()\n");
 
     // initialize download params
     downloadParams.publisher = publisher;
@@ -37,6 +37,7 @@ static int __resolve_package(const char* publisher, const char* package, const c
     downloadParams.channel   = channel;
     downloadParams.revision  = 0;
 
+    VLOG_TRACE("served", "downloading package %s/%s\n", publisher, package),
     status = chefclient_pack_download(&downloadParams, path);
     if (status == 0) {
         *revisionDownloaded = downloadParams.revision;

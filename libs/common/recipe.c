@@ -64,7 +64,6 @@ enum state {
 
     STATE_INGREDIENT,       // MAPPING_START
     STATE_INGREDIENT_NAME,
-    STATE_INGREDIENT_VERSION,
     STATE_INGREDIENT_INCLUDE_FILTERS_LIST,
     STATE_INGREDIENT_CHANNEL,
 
@@ -996,8 +995,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_INGREDIENT_NAME);
                     } else if (strcmp(value, "channel") == 0) {
                         __parser_push_state(s, STATE_INGREDIENT_CHANNEL);
-                    } else if (strcmp(value, "version") == 0) {
-                        __parser_push_state(s, STATE_INGREDIENT_VERSION);
                     } else if (strcmp(value, "include-filters") == 0) {
                         __parser_push_state(s, STATE_INGREDIENT_INCLUDE_FILTERS_LIST);
                     } else {
@@ -1016,7 +1013,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_INGREDIENT_NAME, ingredient.name, __parse_string)
         __consume_scalar_fn(STATE_INGREDIENT_CHANNEL, ingredient.channel, __parse_string)
-        __consume_scalar_fn(STATE_INGREDIENT_VERSION, ingredient.version, __parse_string)
         __consume_sequence_unmapped(STATE_INGREDIENT_INCLUDE_FILTERS_LIST, __add_ingredient_filters)
 
         __consume_sequence_mapped(STATE_RECIPE_LIST, STATE_RECIPE)
@@ -1448,7 +1444,6 @@ static void __destroy_project(struct recipe_project* project)
 static void __destroy_ingredient(struct recipe_ingredient* ingredient)
 {
     free((void*)ingredient->name);
-    free((void*)ingredient->version);
     free((void*)ingredient->channel);
     free(ingredient);
 }

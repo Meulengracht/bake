@@ -46,13 +46,13 @@ extern int inventory_load(const char* path, struct fridge_inventory** inventoryO
  * @param[In]  platform  The platform target of the package.
  * @param[In]  arch      The platform architecture of the package.
  * @param[In]  channel   The channel of the package.
- * @param[In]  version   The current version of the package.
+ * @param[In]  revision  The revision of the package.
  * @param[Out] packOut  A pointer to a pack pointer where the handle of the pack will be stored.
  * @return int 0 if the package is found, otherwise -1 and errno will be set accordingly.
  */
 extern int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher, 
     const char* package, const char* platform, const char* arch, const char* channel,
-    struct chef_version* version, struct fridge_inventory_pack** packOut);
+    int revision, struct fridge_inventory_pack** packOut);
 
 /**
  * @brief Adds a new package to inventory
@@ -63,13 +63,13 @@ extern int inventory_get_pack(struct fridge_inventory* inventory, const char* pu
  * @param[In]  platform  The platform target of the package.
  * @param[In]  arch      The platform architecture of the package.
  * @param[In]  channel   The channel of the package.
- * @param[In]  version   The current version of the package.
+ * @param[In]  version   The revision of the package.
  * @param[Out] packOut   A pointer to a pack pointer where the handle of the pack will be stored.
  * @return int 0 on success, otherwise -1 and errno will be set
  */
 extern int inventory_add(struct fridge_inventory* inventory, const char* packPath, const char* publisher,
-    const char* package, const char* platform, const char* arch, const char* channel,
-    struct chef_version* version, struct fridge_inventory_pack** packOut);
+    const char* package, const char* platform, const char* arch, const char* channel, int revision,
+    struct fridge_inventory_pack** packOut);
 
 /**
  * @brief Saves the current inventory state.
@@ -124,22 +124,5 @@ extern const char* inventory_pack_platform(struct fridge_inventory_pack* pack);
  * @return const char* A pointer to a zero terminated string containing the package architecture.
  */
 extern const char* inventory_pack_arch(struct fridge_inventory_pack* pack);
-
-/**
- * @brief Marks a pack for being currently unpacked. This can be used to indicate whether
- * or not a pack has been prepared for usage. It will be automatically cleared when the pack
- * is updated.
- * 
- * @param[In] pack The pack to mark as unpacked. 
- */
-extern void inventory_pack_set_unpacked(struct fridge_inventory_pack* pack);
-
-/**
- * @brief Queries the current unpack status for the pack
- * 
- * @param[In] pack The pack to query.
- * @return int 1 if the pack is unpacked, otherwise 0.
- */
-extern int inventory_pack_is_unpacked(struct fridge_inventory_pack* pack);
 
 #endif //!__LIBFRIDGE_INVENTORY_H__

@@ -113,7 +113,6 @@ struct recipe_ingredient {
     enum recipe_ingredient_type type;
     const char*                 name;
     const char*                 channel;
-    const char*                 version;
     struct list                 filters;  // list<list_item_string>
 };
 

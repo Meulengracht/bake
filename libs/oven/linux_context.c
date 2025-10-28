@@ -150,7 +150,6 @@ static int __update_build_envs(struct __bakelib_context* context)
         status = fridge_package_path(&(struct fridge_package) {
             .name = recIngredient->name,
             .channel = recIngredient->channel,
-            .version = recIngredient->version,
             .arch = context->build_architecture,
             .platform = context->build_platform
         }, &path);

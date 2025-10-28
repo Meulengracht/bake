@@ -243,7 +243,6 @@ static int __setup_ingredient(struct __bakelib_context* context, struct list* in
         status = fridge_package_path(&(struct fridge_package) {
             .name = ri->name,
             .channel = ri->channel,
-            .version = ri->version,
             .arch = context->build_architecture,
             .platform = context->build_platform
         }, &path);
@@ -302,7 +301,6 @@ static int __setup_toolchains(struct list* ingredients, const char* hostPath)
         status = fridge_package_path(&(struct fridge_package) {
             .name = ri->name,
             .channel = ri->channel,
-            .version = ri->version,
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
         }, &path);
