@@ -30,7 +30,7 @@
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <ctype.h>
-#include <chef/fridge.h>
+#include <chef/store.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,7 +75,7 @@ static int __ensure_toolchains(struct list* platforms)
             return status;
         }
 
-        status = fridge_ensure_package(&(struct fridge_package) {
+        status = store_ensure_package(&(struct store_package) {
             .name = name,
             .channel = channel,
             .version = version,
@@ -102,7 +102,7 @@ static int __ensure_ingredient_list(struct list* list, const char* platform, con
     list_foreach(list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
 
-        status = fridge_ensure_package(&(struct fridge_package) {
+        status = store_ensure_package(&(struct store_package) {
             .name = ingredient->name,
             .channel = ingredient->channel,
             .version = ingredient->version,
@@ -294,7 +294,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         return -1;
     }
 
-    // TODO: make chefclient instanced, move to fridge
+    // TODO: make chefclient instanced, move to store
     status = chefclient_initialize();
     if (status != 0) {
         VLOG_ERROR("bake", "failed to initialize chef client\n");
@@ -302,7 +302,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     }
     atexit(chefclient_cleanup);
 
-    status = fridge_initialize(&(struct fridge_parameters) {
+    status = store_initialize(&(struct store_parameters) {
         .platform = options->platform,
         .architecture = arch,
         .backend = {
@@ -310,10 +310,10 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         }
     });
     if (status != 0) {
-        VLOG_ERROR("bake", "failed to initialize fridge\n");
+        VLOG_ERROR("bake", "failed to initialize store\n");
         return -1;
     }
-    atexit(fridge_cleanup);
+    atexit(store_cleanup);
 
     // setup the build log box
     vlog_start(stdout, header, footer, 6);

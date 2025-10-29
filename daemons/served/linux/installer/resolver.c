@@ -19,7 +19,7 @@
 #include <application.h>
 #include <chef/client.h>
 #include <chef/api/package.h>
-#include <chef/fridge.h>
+#include <chef/store.h>
 #include <chef/platform.h>
 #include <vlog.h>
 
@@ -56,7 +56,7 @@ int served_resolver_initialize(void)
         return -1;
     }
 
-    status = fridge_initialize(&(struct fridge_parameters) {
+    status = store_initialize(&(struct store_parameters) {
         .platform = CHEF_PLATFORM_STR,
         .architecture = CHEF_ARCHITECTURE_STR,
         .backend = {
@@ -64,7 +64,7 @@ int served_resolver_initialize(void)
         }
     });
     if (status) {
-        VLOG_ERROR("cookd", "failed to initialize fridge\n");
+        VLOG_ERROR("cookd", "failed to initialize store\n");
         chefclient_cleanup();
     }
     return status;
@@ -113,7 +113,7 @@ int served_resolver_download_package(const char* name, struct served_resolver_do
     int   status;
     VLOG_DEBUG("resolver", "served_resolver_download_package(name=%s)", name);
 
-    status = fridge_ensure_package(&(struct fridge_package) {
+    status = store_ensure_package(&(struct store_package) {
         .name = name,
         .platform = CHEF_PLATFORM_STR,
         .arch = CHEF_ARCHITECTURE_STR,
@@ -123,7 +123,7 @@ int served_resolver_download_package(const char* name, struct served_resolver_do
         return status;
     }
 
-    status = fridge_package_path(&(struct fridge_package) {
+    status = store_package_path(&(struct store_package) {
         .name = name,
         .platform = CHEF_PLATFORM_STR,
         .arch = CHEF_ARCHITECTURE_STR,

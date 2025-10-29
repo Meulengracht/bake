@@ -109,12 +109,12 @@ int bake_build_setup(struct __bake_build_context* bctx)
     mounts[0].container_path = "/chef/project";
     mounts[0].options = CHEF_MOUNT_OPTIONS_READONLY;
 
-    // fridge path
-    mounts[1].host_path = (char*)chef_dirs_fridge();
-    mounts[1].container_path = "/chef/fridge";
+    // store path
+    mounts[1].host_path = (char*)chef_dirs_store();
+    mounts[1].container_path = "/chef/store";
     mounts[1].options = CHEF_MOUNT_OPTIONS_READONLY;
 
-    // fridge path
+    // store path
     mounts[2].host_path = (char*)chef_dirs_store();
     mounts[2].container_path = "/chef/store";
     mounts[2].options = CHEF_MOUNT_OPTIONS_READONLY;

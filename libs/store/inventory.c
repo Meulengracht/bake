@@ -19,14 +19,14 @@
 #include <errno.h>
 #include "inventory.h"
 #include <chef/platform.h>
-#include <chef/fridge.h>
+#include <chef/store.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <vlog.h>
 
-struct fridge_inventory_pack {
+struct store_inventory_pack {
     // yay, parent pointers!
     void*       inventory;
     const char* path;
@@ -38,25 +38,25 @@ struct fridge_inventory_pack {
     int         revision;
 };
 
-struct fridge_inventory {
+struct store_inventory {
     const char*                   path;
     struct timespec               last_check;
-    struct fridge_inventory_pack* packs;
+    struct store_inventory_pack* packs;
     int                           packs_count;
-    union fridge_proof*           proofs;
+    union store_proof*           proofs;
     int                           proofs_count;
 };
 
-static struct fridge_inventory* __inventory_new(void)
+static struct store_inventory* __inventory_new(void)
 {
-    struct fridge_inventory* inventory;
+    struct store_inventory* inventory;
 
-    inventory = (struct fridge_inventory*)malloc(sizeof(struct fridge_inventory));
+    inventory = (struct store_inventory*)malloc(sizeof(struct store_inventory));
     if (inventory == NULL) {
         return NULL;
     }
 
-    memset(inventory, 0, sizeof(struct fridge_inventory));
+    memset(inventory, 0, sizeof(struct store_inventory));
     return inventory;
 }
 
@@ -66,9 +66,9 @@ static struct timespec __parse_timespec(const char* timestamp)
     return ts;
 }
 
-static int __parse_inventory(const char* json, struct fridge_inventory** inventoryOut)
+static int __parse_inventory(const char* json, struct store_inventory** inventoryOut)
 {
-    struct fridge_inventory* inventory;
+    struct store_inventory* inventory;
     json_error_t             error;
     json_t*                  root;
     json_t*                  last_check;
@@ -100,14 +100,14 @@ static int __parse_inventory(const char* json, struct fridge_inventory** invento
     pack_count = json_array_size(packs);
     VLOG_DEBUG("inventory", "__parse_inventory: number of packs %zu\n", pack_count);
     if (packs && pack_count > 0) {
-        inventory->packs = (struct fridge_inventory_pack*)malloc(sizeof(struct fridge_inventory_pack) * pack_count);
+        inventory->packs = (struct store_inventory_pack*)malloc(sizeof(struct store_inventory_pack) * pack_count);
         if (inventory->packs == NULL) {
             errno = ENOMEM;
             status = -1;
             goto exit;
         }
 
-        memset(inventory->packs, 0, sizeof(struct fridge_inventory_pack) * pack_count);
+        memset(inventory->packs, 0, sizeof(struct store_inventory_pack) * pack_count);
         inventory->packs_count = pack_count;
         
         for (size_t i = 0; i < pack_count; i++) {
@@ -177,9 +177,9 @@ static int __inventory_load_file(const char* path, char** jsonOut)
     return 0;
 }
 
-int inventory_load(const char* path, struct fridge_inventory** inventoryOut)
+int inventory_load(const char* path, struct store_inventory** inventoryOut)
 {
-    struct fridge_inventory* inventory;
+    struct store_inventory* inventory;
     int                      status;
     char*                    json;
     char*                    filePath;
@@ -219,11 +219,11 @@ int inventory_load(const char* path, struct fridge_inventory** inventoryOut)
     return 0;
 }
 
-int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher, 
+int inventory_get_pack(struct store_inventory* inventory, const char* publisher, 
     const char* package, const char* platform, const char* arch, const char* channel,
-    int revision, struct fridge_inventory_pack** packOut)
+    int revision, struct store_inventory_pack** packOut)
 {
-    struct fridge_inventory_pack* result = NULL;
+    struct store_inventory_pack* result = NULL;
     VLOG_DEBUG("inventory", "inventory_get_pack()\n");
 
     if (inventory == NULL || publisher == NULL || package == NULL || channel == NULL) { 
@@ -265,11 +265,11 @@ int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher
     return -1;
 }
 
-int inventory_add(struct fridge_inventory* inventory, const char* packPath, const char* publisher,
+int inventory_add(struct store_inventory* inventory, const char* packPath, const char* publisher,
     const char* package, const char* platform, const char* arch, const char* channel,
-    int revision, struct fridge_inventory_pack** packOut)
+    int revision, struct store_inventory_pack** packOut)
 {
-    struct fridge_inventory_pack* packEntry;
+    struct store_inventory_pack* packEntry;
     void*                         newArray;
     void*                         oldArray;
 
@@ -281,18 +281,18 @@ int inventory_add(struct fridge_inventory* inventory, const char* packPath, cons
 
     // extend the pack array by one
     oldArray = inventory->packs;
-    newArray = malloc(sizeof(struct fridge_inventory_pack) * (inventory->packs_count + 1));
+    newArray = malloc(sizeof(struct store_inventory_pack) * (inventory->packs_count + 1));
     if (!newArray) {
         return -1;
     }
 
     if (inventory->packs_count) {
-        memcpy(newArray, inventory->packs, sizeof(struct fridge_inventory_pack) * inventory->packs_count);
+        memcpy(newArray, inventory->packs, sizeof(struct store_inventory_pack) * inventory->packs_count);
     }
 
     // now create the new entry
-    packEntry = &((struct fridge_inventory_pack*)newArray)[inventory->packs_count];
-    memset(packEntry, 0, sizeof(struct fridge_inventory_pack));
+    packEntry = &((struct store_inventory_pack*)newArray)[inventory->packs_count];
+    memset(packEntry, 0, sizeof(struct store_inventory_pack));
 
     packEntry->inventory = inventory;
     packEntry->path      = platform_strdup(packPath);
@@ -312,9 +312,9 @@ int inventory_add(struct fridge_inventory* inventory, const char* packPath, cons
     return 0;
 }
 
-int inventory_add_proof(struct fridge_inventory* inventory, union fridge_proof* proof)
+int inventory_add_proof(struct store_inventory* inventory, union store_proof* proof)
 {
-    union fridge_proof* entry;
+    union store_proof* entry;
     void*               newArray;
     void*               oldArray;
 
@@ -325,17 +325,17 @@ int inventory_add_proof(struct fridge_inventory* inventory, union fridge_proof* 
 
     // extend the pack array by one
     oldArray = inventory->proofs;
-    newArray = malloc(sizeof(union fridge_proof) * (inventory->proofs_count + 1));
+    newArray = malloc(sizeof(union store_proof) * (inventory->proofs_count + 1));
     if (!newArray) {
         return -1;
     }
 
     if (inventory->proofs_count) {
-        memcpy(newArray, inventory->proofs, sizeof(union fridge_proof) * inventory->proofs_count);
+        memcpy(newArray, inventory->proofs, sizeof(union store_proof) * inventory->proofs_count);
     }
 
-    entry = &((union fridge_proof*)newArray)[inventory->proofs_count];
-    memcpy(entry, proof, sizeof(union fridge_proof));
+    entry = &((union store_proof*)newArray)[inventory->proofs_count];
+    memcpy(entry, proof, sizeof(union store_proof));
 
     // Update the new array stored before we serialize the inventory to disk.
     inventory->proofs = newArray;
@@ -344,7 +344,7 @@ int inventory_add_proof(struct fridge_inventory* inventory, union fridge_proof* 
     return 0;
 }
 
-static json_t* __serialize_packs(struct fridge_inventory_pack* packs, int count)
+static json_t* __serialize_packs(struct store_inventory_pack* packs, int count)
 {
     json_t* packs;
 
@@ -372,7 +372,7 @@ static json_t* __serialize_packs(struct fridge_inventory_pack* packs, int count)
     return packs;
 }
 
-static int __serialize_inventory(struct fridge_inventory* inventory, json_t** jsonOut)
+static int __serialize_inventory(struct store_inventory* inventory, json_t** jsonOut)
 {
     json_t* root;
     json_t* packs;
@@ -394,7 +394,7 @@ static int __serialize_inventory(struct fridge_inventory* inventory, json_t** js
     return 0;
 }
 
-int inventory_save(struct fridge_inventory* inventory)
+int inventory_save(struct store_inventory* inventory)
 {
     json_t* root;
     int     status;
@@ -422,7 +422,7 @@ int inventory_save(struct fridge_inventory* inventory)
     return status;
 }
 
-void inventory_clear(struct fridge_inventory* inventory)
+void inventory_clear(struct store_inventory* inventory)
 {
     for (int i = 0; i < inventory->packs_count; i++) {
         free((void*)inventory->packs[i].path);
@@ -438,7 +438,7 @@ void inventory_clear(struct fridge_inventory* inventory)
     inventory->packs = NULL;
 }
 
-void inventory_free(struct fridge_inventory* inventory)
+void inventory_free(struct store_inventory* inventory)
 {
     if (inventory == NULL) {
         return;
@@ -448,7 +448,7 @@ void inventory_free(struct fridge_inventory* inventory)
     free(inventory);
 }
 
-const char* inventory_pack_name(struct fridge_inventory_pack* pack)
+const char* inventory_pack_name(struct store_inventory_pack* pack)
 {
     if (pack == NULL) {
         return NULL;
@@ -456,7 +456,7 @@ const char* inventory_pack_name(struct fridge_inventory_pack* pack)
     return pack->package;
 }
 
-const char* inventory_pack_path(struct fridge_inventory_pack* pack)
+const char* inventory_pack_path(struct store_inventory_pack* pack)
 {
     if (pack == NULL) {
         return NULL;
@@ -464,7 +464,7 @@ const char* inventory_pack_path(struct fridge_inventory_pack* pack)
     return pack->path;
 }
 
-const char* inventory_pack_platform(struct fridge_inventory_pack* pack)
+const char* inventory_pack_platform(struct store_inventory_pack* pack)
 {
     if (pack == NULL) {
         return NULL;
@@ -472,7 +472,7 @@ const char* inventory_pack_platform(struct fridge_inventory_pack* pack)
     return pack->platform;
 }
 
-const char* inventory_pack_arch(struct fridge_inventory_pack* pack)
+const char* inventory_pack_arch(struct store_inventory_pack* pack)
 {
     if (pack == NULL) {
         return NULL;

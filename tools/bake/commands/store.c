@@ -18,7 +18,7 @@
 
 #include <chef/client.h>
 #include <chef/api/package.h>
-#include <chef/fridge.h>
+#include <chef/store.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <stdio.h>
@@ -28,10 +28,10 @@
 #include "chef-config.h"
 #include "commands.h"
 
-int fridge_list_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
-int fridge_update_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
-int fridge_remove_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
-int fridge_clean_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
+int store_list_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
+int store_update_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
+int store_remove_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
+int store_clean_main(int argc, char** argv, char** envp, struct bake_command_options* options) { return 0; }
 
 struct command_handler {
     char* name;
@@ -39,16 +39,16 @@ struct command_handler {
 };
 
 static struct command_handler g_commands[] = {
-    { "list",   fridge_list_main },
-    { "update", fridge_update_main },
-    { "remove", fridge_remove_main },
-    { "clean",  fridge_clean_main }
+    { "list",   store_list_main },
+    { "update", store_update_main },
+    { "remove", store_remove_main },
+    { "clean",  store_clean_main }
 };
 
 static void __print_help(void)
 {
-    printf("Usage: bake fridge <command> [options]\n");
-    printf("  This sub-command allows some management of the fridge for the current\n");
+    printf("Usage: bake store <command> [options]\n");
+    printf("  This sub-command allows some management of the store for the current\n");
     printf("  user. Ingredients are automatically added, however unless the recipe requires\n");
     printf("  specific versions ingredients may need to be manually refreshed.\n\n");
     printf("  We also allow removal, cleaning and to list stored ingredients.\n\n");
@@ -95,13 +95,13 @@ static int __resolve_package(const char* publisher, const char* package, const c
     return status;
 }
 
-int fridge_main(int argc, char** argv, char** envp, struct bake_command_options* options)
+int store_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct command_handler* command = NULL;
     int                     i;
     int                     status;
 
-    status = fridge_initialize(&(struct fridge_parameters) {
+    status = store_initialize(&(struct store_parameters) {
         .platform = CHEF_PLATFORM_STR,
         .architecture = CHEF_ARCHITECTURE_STR,
         .backend = {
@@ -109,10 +109,10 @@ int fridge_main(int argc, char** argv, char** envp, struct bake_command_options*
         }
     });
     if (status != 0) {
-        fprintf(stderr, "bake: failed to initialize fridge\n");
+        fprintf(stderr, "bake: failed to initialize store\n");
         return -1;
     }
-    atexit(fridge_cleanup);
+    atexit(store_cleanup);
 
     status = chefclient_initialize();
     if (status != 0) {
@@ -122,9 +122,9 @@ int fridge_main(int argc, char** argv, char** envp, struct bake_command_options*
     atexit(chefclient_cleanup);
 
     // handle individual commands as well as --help and --version
-    // locate the fridge command on the cmdline
+    // locate the store command on the cmdline
     for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "fridge")) {
+        if (!strcmp(argv[i], "store")) {
             i++;
             break;
         }
@@ -145,7 +145,7 @@ int fridge_main(int argc, char** argv, char** envp, struct bake_command_options*
     }
 
     if (command == NULL) {
-        fprintf(stderr, "bake: command must be supplied for 'bake fridge'\n");
+        fprintf(stderr, "bake: command must be supplied for 'bake store'\n");
         __print_help();
         return -1;
     }

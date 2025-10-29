@@ -16,15 +16,15 @@
  * 
  */
 
-#ifndef __LIBFRIDGE_H__
-#define __LIBFRIDGE_H__
+#ifndef __LIBstore_H__
+#define __LIBstore_H__
 
 #include <chef/list.h>
 #include <stdio.h>
 
-enum fridge_proof_type {
-    FRIDGE_PROOF_PUBLISHER,
-    FRIDGE_PROOF_PACKAGE
+enum store_proof_type {
+    STORE_PROOF_PUBLISHER,
+    STORE_PROOF_PACKAGE
 };
 
 static int proof_format_publisher_key(char* buffer, size_t length, const char* publisher) {
@@ -35,32 +35,34 @@ static int proof_format_package_key(char* buffer, size_t length, const char* pub
     return snprintf(&buffer[0], length, "%s/%s/%i", publisher, package, revision);
 }
 
-struct fridge_proof_header {
-    enum fridge_proof_type type;
+struct store_proof_header {
+    enum store_proof_type type;
     const char             key[128];
 };
 
-struct fridge_proof_publisher {
-    struct fridge_proof_header header;
+struct store_proof_publisher {
+    struct store_proof_header header;
     char                       public_key[4096];
     char                       signed_key[4096];
 };
 
-struct fridge_proof_package {
-    struct fridge_proof_header header;
+struct store_proof_package {
+    struct store_proof_header header;
     char                       signature[4096];
 };
 
-union fridge_proof {
-    struct fridge_proof_header    header;
-    struct fridge_proof_publisher publisher;
-    struct fridge_proof_package   package;
+union store_proof {
+    struct store_proof_header    header;
+    struct store_proof_publisher publisher;
+    struct store_proof_package   package;
 };
 
-struct fridge_package {
+struct store_package {
     // Name of the package is formatted as publisher/package
     const char* name;
-    // The platform and architecture specific build of the package
+    // The platform and architecture specific build of the package.
+    // These are optional, and will default to the arch/platform specified
+    // for the store instnace. Only provide these to override.
     const char* platform;
     const char* arch;
     // Channel, if specified, will refer to the channel that should be
@@ -70,28 +72,28 @@ struct fridge_package {
     int         revision;
 };
 
-struct fridge_store_backend {
-    int (*resolve_package)(struct fridge_package* package, const char* path, int* revisionDownloaded);
-    int (*resolve_proof)(enum fridge_proof_type keyType, const char* key, union fridge_proof* proof);
+struct store_backend {
+    int (*resolve_package)(struct store_package* package, const char* path, int* revisionDownloaded);
+    int (*resolve_proof)(enum store_proof_type keyType, const char* key, union store_proof* proof);
 };
 
-struct fridge_parameters {
-    const char*                 platform;
-    const char*                 architecture;
-    struct fridge_store_backend backend;
+struct store_parameters {
+    const char*          platform;
+    const char*          architecture;
+    struct store_backend backend;
 };
 
 /**
  * @brief 
- * 
+ * store
  * @return int 
  */
-extern int fridge_initialize(struct fridge_parameters* parameters);
+extern int store_initialize(struct store_parameters* parameters);
 
 /**
  * @brief 
  */
-extern void fridge_cleanup(void);
+extern void store_cleanup(void);
 
 /**
  * @brief Stores the given package, making sure we have a local copy of it in
@@ -100,7 +102,7 @@ extern void fridge_cleanup(void);
  * @param[In] package Options describing the package that should be fetched from store.
  * @return int 
  */
-extern int fridge_ensure_package(struct fridge_package* package);
+extern int store_ensure_package(struct store_package* package);
 
 /**
  * @brief Retrieves the path of an package based on it's parameters. It must be already
@@ -108,10 +110,10 @@ extern int fridge_ensure_package(struct fridge_package* package);
  * 
  * @param[In]  package Options describing the package from the store.
  * @param[Out] pathOut Returns a zero-terminated string with the path of the package. This
- *                     string should not be freed. It will be valid until fridge_cleanup is called.
+ *                     string should not be freed. It will be valid until store_cleanup is called.
  * @return int  
  */
-extern int fridge_package_path(struct fridge_package* package, const char** pathOut);
+extern int store_package_path(struct store_package* package, const char** pathOut);
 
 /**
  * @brief Ensures the proof identified by the parameters exists in the local database.
@@ -120,7 +122,7 @@ extern int fridge_package_path(struct fridge_package* package, const char** path
  * @param[In]  key      The proof key.
  * @return int          0 On success, -1 on error. Consult errno for details.
  */
-extern int fridge_proof_ensure(enum fridge_proof_type keyType, const char* key);
+extern int store_proof_ensure(enum store_proof_type keyType, const char* key);
 
 /**
  * @brief Retrieves the proof based on it's key. If the proof does not exist, the backend
@@ -128,9 +130,9 @@ extern int fridge_proof_ensure(enum fridge_proof_type keyType, const char* key);
  * 
  * @param[In]  keyType     The proof key type, this will determine the expected format of the key.
  * @param[In]  key         The proof key.
- * @param[In]  proofBuffer Buffer to store the proof data in. This should match one of the fridge_proof_* structures.
+ * @param[In]  proofBuffer Buffer to store the proof data in. This should match one of the store_proof_* structures.
  * @return int             0 On success, -1 on error. Consult errno for details.
  */
-extern int fridge_proof_lookup(enum fridge_proof_type keyType, const char* key, void* proof);
+extern int store_proof_lookup(enum store_proof_type keyType, const char* key, void* proof);
 
-#endif //!__LIBFRIDGE_H__
+#endif //!__LIBstore_H__

@@ -19,7 +19,7 @@
 #include <errno.h>
 #include <chef/bake.h>
 #include <chef/cache.h>
-#include <chef/fridge.h>
+#include <chef/store.h>
 #include <chef/ingredient.h>
 #include <chef/platform.h>
 #include <chef/pkgmgr.h>
@@ -60,9 +60,9 @@ static const char* __get_architecture(void) {
 // ** /chef/project
 // * This is mapped in by the host, and contains a RO path of the
 // * source code for the project
-// ** /chef/fridge
+// ** /chef/store
 // * This is mapped by the host, and contains a RO path of the 
-// * hosts fridge storage. We use this to load packs and toolchains
+// * hosts store storage. We use this to load packs and toolchains
 // * needed
 static int __ensure_chef_directories(void)
 {
@@ -240,7 +240,7 @@ static int __setup_ingredient(struct __bakelib_context* context, struct list* in
         const char*               path;
         VLOG_DEBUG("bakectl", "__setup_ingredient: %s\n", ri->name);
 
-        status = fridge_package_path(&(struct fridge_package) {
+        status = store_package_path(&(struct store_package) {
             .name = ri->name,
             .channel = ri->channel,
             .arch = context->build_architecture,
@@ -298,7 +298,7 @@ static int __setup_toolchains(struct list* ingredients, const char* hostPath)
         struct ingredient*        ig;
         const char*               path;
 
-        status = fridge_package_path(&(struct fridge_package) {
+        status = store_package_path(&(struct store_package) {
             .name = ri->name,
             .channel = ri->channel,
             .arch = CHEF_ARCHITECTURE_STR,
@@ -493,20 +493,20 @@ int init_main(int argc, char** argv, struct __bakelib_context* context, struct b
         }
     }
 
-    status = fridge_initialize(&(struct fridge_parameters) {
+    status = store_initialize(&(struct store_parameters) {
         .platform = __get_platform(),
         .architecture = __get_architecture(),
         // no backend support here
     });
     if (status) {
-        VLOG_ERROR("bakectl", "failed to create initialize fridge\n");
+        VLOG_ERROR("bakectl", "failed to create initialize store\n");
         return status;
     }
 
     status = __initialize_oven_options(&ovenOpts, context);
     if (status) {
         fprintf(stderr, "bakectl: failed to allocate memory for options\n");
-        fridge_cleanup();
+        store_cleanup();
         return status;
     }
 
@@ -514,7 +514,7 @@ int init_main(int argc, char** argv, struct __bakelib_context* context, struct b
     if (status) {
         fprintf(stderr, "bakectl: failed to initialize oven: %s\n", strerror(errno));
         __destroy_oven_options(&ovenOpts);
-        fridge_cleanup();
+        store_cleanup();
         return status;
     }
     
@@ -550,6 +550,6 @@ int init_main(int argc, char** argv, struct __bakelib_context* context, struct b
 cleanup:
     __destroy_oven_options(&ovenOpts);
     oven_cleanup();
-    fridge_cleanup();
+    store_cleanup();
     return status;
 }

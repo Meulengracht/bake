@@ -26,7 +26,7 @@
 #include <chef/remote.h>
 #include <chef/storage/download.h>
 #include <errno.h>
-#include <chef/fridge.h>
+#include <chef/store.h>
 #include <notify.h>
 #include <server.h>
 #include <stdlib.h>
@@ -304,7 +304,7 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
         return -1;
     }
 
-    status = fridge_initialize(&(struct fridge_parameters) {
+    status = store_initialize(&(struct store_parameters) {
         .platform = CHEF_PLATFORM_STR,
         .architecture = CHEF_ARCHITECTURE_STR,
         .backend = {
@@ -312,7 +312,7 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
         }
     });
     if (status) {
-        VLOG_ERROR("cookd", "failed to initialize fridge\n");
+        VLOG_ERROR("cookd", "failed to initialize store\n");
         chefclient_cleanup();
         return status;
     }
@@ -320,7 +320,7 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
     g_server = __cookd_server_new(client);
     if (g_server == NULL) {
         VLOG_ERROR("cookd", "failed to allocate memory for server\n");
-        fridge_cleanup();
+        store_cleanup();
         chefclient_cleanup();
         return -1;
     }
@@ -329,7 +329,7 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
     if (status) {
         VLOG_ERROR("cookd", "failed to start cookd server\n");
         __cookd_server_delete(g_server);
-        fridge_cleanup();
+        store_cleanup();
         chefclient_cleanup();
         return status;
     }
@@ -345,7 +345,7 @@ void cookd_server_cleanup(void)
 
     __cookd_server_stop(g_server);
     __cookd_server_delete(g_server);
-    fridge_cleanup();
+    store_cleanup();
     chefclient_cleanup();
 }
 
@@ -382,10 +382,9 @@ static int __prep_toolchains(struct list* platforms)
             return status;
         }
 
-        status = fridge_ensure_package(&(struct fridge_package) {
+        status = store_ensure_package(&(struct store_package) {
             .name = name,
             .channel = channel,
-            .version = version,
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
         });
@@ -409,10 +408,9 @@ static int __prep_ingredient_list(struct list* list, const char* platform, const
     list_foreach(list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
 
-        status = fridge_ensure_package(&(struct fridge_package) {
+        status = store_ensure_package(&(struct store_package) {
             .name = ingredient->name,
             .channel = ingredient->channel,
-            .version = ingredient->version,
             .arch = arch,
             .platform = platform
         });

@@ -16,14 +16,14 @@
  * 
  */
 
-#ifndef __LIBFRIDGE_INVENTORY_H__
-#define __LIBFRIDGE_INVENTORY_H__
+#ifndef __CHEF_STORE_INVENTORY_H__
+#define __CHEF_STORE_INVENTORY_H__
 
 #include <chef/package.h>
 #include <time.h>
 
-struct fridge_inventory_pack;
-struct fridge_inventory;
+struct store_inventory_pack;
+struct store_inventory;
 
 
 /**
@@ -35,7 +35,7 @@ struct fridge_inventory;
  * @param[Out] inventoryOut A pointer to a inventory pointer where the loaded storage will be allocated to.
  * @return int 0 on success, otherwise -1 and errno will be set
  */
-extern int inventory_load(const char* path, struct fridge_inventory** inventoryOut);
+extern int inventory_load(const char* path, struct store_inventory** inventoryOut);
 
 /**
  * @brief Retrieves a given package matching the provided criteria from the inventory.
@@ -50,9 +50,9 @@ extern int inventory_load(const char* path, struct fridge_inventory** inventoryO
  * @param[Out] packOut  A pointer to a pack pointer where the handle of the pack will be stored.
  * @return int 0 if the package is found, otherwise -1 and errno will be set accordingly.
  */
-extern int inventory_get_pack(struct fridge_inventory* inventory, const char* publisher, 
+extern int inventory_get_pack(struct store_inventory* inventory, const char* publisher, 
     const char* package, const char* platform, const char* arch, const char* channel,
-    int revision, struct fridge_inventory_pack** packOut);
+    int revision, struct store_inventory_pack** packOut);
 
 /**
  * @brief Adds a new package to inventory
@@ -67,9 +67,9 @@ extern int inventory_get_pack(struct fridge_inventory* inventory, const char* pu
  * @param[Out] packOut   A pointer to a pack pointer where the handle of the pack will be stored.
  * @return int 0 on success, otherwise -1 and errno will be set
  */
-extern int inventory_add(struct fridge_inventory* inventory, const char* packPath, const char* publisher,
+extern int inventory_add(struct store_inventory* inventory, const char* packPath, const char* publisher,
     const char* package, const char* platform, const char* arch, const char* channel, int revision,
-    struct fridge_inventory_pack** packOut);
+    struct store_inventory_pack** packOut);
 
 /**
  * @brief Saves the current inventory state.
@@ -77,21 +77,21 @@ extern int inventory_add(struct fridge_inventory* inventory, const char* packPat
  * @param[In] inventory The inventory to serialize.
  * @return int 0 on success, otherwise -1 and errno will be set
  */
-extern int inventory_save(struct fridge_inventory* inventory);
+extern int inventory_save(struct store_inventory* inventory);
 
 /**
  * @brief Cleans up any resources allocated by the inventory_* functions.
  * 
  * @param[In] inventory The inventory to clean up. 
  */
-extern void inventory_free(struct fridge_inventory* inventory);
+extern void inventory_free(struct store_inventory* inventory);
 
 /**
  * @brief Clears all items in the inventory.
  * 
  * @param[In] inventory The inventory to clear. 
  */
-extern void inventory_clear(struct fridge_inventory* inventory);
+extern void inventory_clear(struct store_inventory* inventory);
 
 /**
  * @brief Retrieves the package name of the given pack.
@@ -99,7 +99,7 @@ extern void inventory_clear(struct fridge_inventory* inventory);
  * @param[In] pack A pointer to the pack.
  * @return const char* A pointer to a zero terminated string containing the package name.
  */
-extern const char* inventory_pack_name(struct fridge_inventory_pack* pack);
+extern const char* inventory_pack_name(struct store_inventory_pack* pack);
 
 /**
  * @brief Retrieves the path of the given pack.
@@ -107,7 +107,7 @@ extern const char* inventory_pack_name(struct fridge_inventory_pack* pack);
  * @param[In] pack A pointer to the pack.
  * @return const char* A pointer to a zero terminated string containing the package path.
  */
-extern const char* inventory_pack_path(struct fridge_inventory_pack* pack);
+extern const char* inventory_pack_path(struct store_inventory_pack* pack);
 
 /**
  * @brief Retrieves the package platform of the given pack.
@@ -115,7 +115,7 @@ extern const char* inventory_pack_path(struct fridge_inventory_pack* pack);
  * @param[In] pack A pointer to the pack.
  * @return const char* A pointer to a zero terminated string containing the package platform.
  */
-extern const char* inventory_pack_platform(struct fridge_inventory_pack* pack);
+extern const char* inventory_pack_platform(struct store_inventory_pack* pack);
 
 /**
  * @brief Retrieves the package architecture of the given pack.
@@ -123,6 +123,6 @@ extern const char* inventory_pack_platform(struct fridge_inventory_pack* pack);
  * @param[In] pack A pointer to the pack.
  * @return const char* A pointer to a zero terminated string containing the package architecture.
  */
-extern const char* inventory_pack_arch(struct fridge_inventory_pack* pack);
+extern const char* inventory_pack_arch(struct store_inventory_pack* pack);
 
-#endif //!__LIBFRIDGE_INVENTORY_H__
+#endif //!__CHEF_STORE_INVENTORY_H__

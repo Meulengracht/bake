@@ -16,7 +16,7 @@
  *
  */
 
-#include <chef/fridge.h>
+#include <chef/store.h>
 #include <chef/platform.h>
 #include <errno.h>
 #include <openssl/decoder.h>
@@ -75,7 +75,7 @@ static int __verify_signature(EVP_PKEY* key, const char* data, size_t dataLength
     return 0;
 }
 
-static int __verify_signature_against_cert(struct fridge_proof_publisher* proof)
+static int __verify_signature_against_cert(struct store_proof_publisher* proof)
 {
     BIO*      keybio;
     X509*     xcert;
@@ -120,14 +120,14 @@ static int __verify_signature_against_cert(struct fridge_proof_publisher* proof)
     return 0;
 }
 
-static int __verify_and_get_publisher_key(const char* publisher, struct fridge_proof_publisher* proof)
+static int __verify_and_get_publisher_key(const char* publisher, struct store_proof_publisher* proof)
 {
     int  status;
     char key[128];
 
     proof_format_publisher_key(&key[0], sizeof(key), publisher);
 
-    status = fridge_proof_lookup(FRIDGE_PROOF_PUBLISHER, &key[0], proof);
+    status = store_proof_lookup(STORE_PROOF_PACKAGE, &key[0], proof);
     if (status) {
         VLOG_ERROR("served", "__verify_publisher_key: failed to retrieve the proof of publisher %s\n", publisher);
         return status;
@@ -234,18 +234,18 @@ static int __parse_public_key(const unsigned char* key, size_t keyLength, EVP_PK
     return 0;
 }
 
-static int __verify_package(struct fridge_proof_publisher* publisherProof, const char* packagePath, const char* publisher, const char* package, int revision)
+static int __verify_package(struct store_proof_publisher* publisherProof, const char* packagePath, const char* publisher, const char* package, int revision)
 {
     unsigned char*              hash;
     unsigned int                hashLength;
     int                         status;
     char                        key[128];
-    struct fridge_proof_package proof;
+    struct store_proof_package proof;
     EVP_PKEY*                   pkey;
 
     proof_format_package_key(&key[0], sizeof(key), publisher, package, revision);
 
-    status = fridge_proof_lookup(FRIDGE_PROOF_PACKAGE, &key[0], &proof);
+    status = store_proof_lookup(STORE_PROOF_PACKAGE, &key[0], &proof);
     if (status) {
         VLOG_ERROR("served", "__verify_publisher_key: failed to retrieve the proof for package %s\n", &key[0]);
         return status;
@@ -272,8 +272,8 @@ static int __verify_package(struct fridge_proof_publisher* publisherProof, const
 
 int served_verify_publisher(const char* publisher)
 {
-    int                           status;
-    struct fridge_proof_publisher publisherProof;
+    int                          status;
+    struct store_proof_publisher publisherProof;
 
     status = __verify_and_get_publisher_key(publisher, &publisherProof);
     if (status) {
@@ -286,14 +286,14 @@ int served_verify_publisher(const char* publisher)
 
 int served_verify_package(const char* publisher, const char* package, int revision)
 {
-    int                           status;
-    char                          name[128];
-    const char*                   path;
-    struct fridge_proof_publisher publisherProof;
+    int                          status;
+    char                         name[128];
+    const char*                  path;
+    struct store_proof_publisher publisherProof;
 
     snprintf(&name[0], sizeof(name), "%s/%s", publisher, package);
 
-    status = fridge_package_path(&(struct fridge_package) {
+    status = store_package_path(&(struct store_package) {
         .name = &name[0],
         .platform = CHEF_PLATFORM_STR,
         .arch = CHEF_ARCHITECTURE_STR,
