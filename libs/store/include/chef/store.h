@@ -37,18 +37,18 @@ static int proof_format_package_key(char* buffer, size_t length, const char* pub
 
 struct store_proof_header {
     enum store_proof_type type;
-    const char             key[128];
+    const char            key[128];
 };
 
 struct store_proof_publisher {
     struct store_proof_header header;
-    char                       public_key[4096];
-    char                       signed_key[4096];
+    const char*               public_key;
+    const char*               signed_key;
 };
 
 struct store_proof_package {
     struct store_proof_header header;
-    char                       signature[4096];
+    const char*               signature;
 };
 
 union store_proof {

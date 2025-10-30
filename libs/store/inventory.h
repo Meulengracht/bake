@@ -71,6 +71,9 @@ extern int inventory_add(struct store_inventory* inventory, const char* packPath
     const char* package, const char* platform, const char* arch, const char* channel, int revision,
     struct store_inventory_pack** packOut);
 
+extern int inventory_add_proof(struct store_inventory* inventory, union store_proof* proof);
+extern int inventory_get_proof(struct store_inventory* inventory, enum store_proof_type keyType, const char* key, union store_proof* proof);
+    
 /**
  * @brief Saves the current inventory state.
  * 
@@ -93,36 +96,10 @@ extern void inventory_free(struct store_inventory* inventory);
  */
 extern void inventory_clear(struct store_inventory* inventory);
 
-/**
- * @brief Retrieves the package name of the given pack.
- * 
- * @param[In] pack A pointer to the pack.
- * @return const char* A pointer to a zero terminated string containing the package name.
- */
+// Retrieve information from the store_inventory_pack structure
 extern const char* inventory_pack_name(struct store_inventory_pack* pack);
-
-/**
- * @brief Retrieves the path of the given pack.
- * 
- * @param[In] pack A pointer to the pack.
- * @return const char* A pointer to a zero terminated string containing the package path.
- */
 extern const char* inventory_pack_path(struct store_inventory_pack* pack);
-
-/**
- * @brief Retrieves the package platform of the given pack.
- * 
- * @param[In] pack A pointer to the pack.
- * @return const char* A pointer to a zero terminated string containing the package platform.
- */
 extern const char* inventory_pack_platform(struct store_inventory_pack* pack);
-
-/**
- * @brief Retrieves the package architecture of the given pack.
- * 
- * @param[In] pack A pointer to the pack.
- * @return const char* A pointer to a zero terminated string containing the package architecture.
- */
 extern const char* inventory_pack_arch(struct store_inventory_pack* pack);
 
 #endif //!__CHEF_STORE_INVENTORY_H__

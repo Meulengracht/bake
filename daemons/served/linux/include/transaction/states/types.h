@@ -34,11 +34,17 @@
 #define SERVED_TX_STATE_START_SERVICES    (sm_state_t)10
 #define SERVED_TX_STATE_GENERATE_WRAPPERS (sm_state_t)11
 
+#define SERVED_TX_STATE_REMOVE_WRAPPERS (sm_state_t)12
+#define SERVED_TX_STATE_STOP_SERVICES   (sm_state_t)13
+#define SERVED_TX_STATE_UNLOAD          (sm_state_t)14
+#define SERVED_TX_STATE_UNMOUNT         (sm_state_t)15
+#define SERVED_TX_STATE_UNINSTALL       (sm_state_t)16
 
-#define SERVED_TX_STATE_ERROR       (sm_state_t)1000
-#define SERVED_TX_STATE_CANCELLED   (sm_state_t)1001
+#define SERVED_TX_STATE_UPDATE (sm_state_t)17
 
-
+#define SERVED_TX_STATE_COMPLETED   (sm_state_t)1000
+#define SERVED_TX_STATE_ERROR       (sm_state_t)1001
+#define SERVED_TX_STATE_CANCELLED   (sm_state_t)1002
 
 #define SERVED_TX_EVENT_OK     (sm_event_t)0
 #define SERVED_TX_EVENT_WAIT   (sm_event_t)1

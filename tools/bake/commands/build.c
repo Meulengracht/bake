@@ -78,7 +78,6 @@ static int __ensure_toolchains(struct list* platforms)
         status = store_ensure_package(&(struct store_package) {
             .name = name,
             .channel = channel,
-            .version = version,
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
         });
@@ -105,7 +104,6 @@ static int __ensure_ingredient_list(struct list* list, const char* platform, con
         status = store_ensure_package(&(struct store_package) {
             .name = ingredient->name,
             .channel = ingredient->channel,
-            .version = ingredient->version,
             .arch = arch,
             .platform = platform
         });

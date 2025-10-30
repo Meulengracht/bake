@@ -45,6 +45,7 @@ static struct store_context g_store = { 0 };
 int store_initialize(struct store_parameters* parameters)
 {
     int status;
+    VLOG_DEBUG("store", "store_initialize()");
 
     if (parameters->platform == NULL || parameters->architecture == NULL) {
         VLOG_ERROR("store", "store_initialize: platform and architecture must be specified\n");
@@ -65,6 +66,8 @@ int store_initialize(struct store_parameters* parameters)
 
 void store_cleanup(void)
 {
+    VLOG_DEBUG("store", "store_cleanup()");
+
     // Free memory allocated by the inventory
     inventory_free(g_store.inventory);
     free(g_store.platform);
@@ -173,6 +176,7 @@ int store_ensure_package(struct store_package* package)
     char**                       names = NULL;
     char*                        path = NULL;
     int                          status;
+    VLOG_DEBUG("store", "store_ensure_package(name=%s)\n", package->name);
 
     if (g_store.backend.resolve_package == NULL) {
         errno = ENOTSUP;
@@ -229,6 +233,7 @@ int store_package_path(struct store_package* package, const char** pathOut)
     struct store_inventory_pack* pack = NULL;
     char**                       names;
     int                          status;
+    VLOG_DEBUG("store", "store_package_path(name=%s)\n", package->name);
 
     if (package->revision == 0) {
         VLOG_ERROR("store", "store_package_path: revision is required\n");
@@ -257,10 +262,39 @@ cleanup:
 
 int store_proof_ensure(enum store_proof_type keyType, const char* key)
 {
+    union store_proof proof;
+    int               status;
+    VLOG_DEBUG("store", "store_proof_ensure(key=%s)\n", key);
 
+    if (g_store.backend.resolve_proof == NULL) {
+        errno = ENOTSUP;
+        return -1;
+    }
+
+    status = store_proof_lookup(keyType, key, &proof);
+    if (status == 0) {
+        VLOG_DEBUG("store", "proof %s has already been downloaded\n", key);
+        goto cleanup;
+    }
+
+    status = g_store.backend.resolve_proof(keyType, key, &proof);
+    if (status) {
+        goto cleanup;
+    }
+
+    status = inventory_add_proof(g_store.inventory, &proof);
+    if (status) {
+        goto cleanup;
+    }
+
+    status = inventory_save(g_store.inventory);
+
+cleanup:
+    return status;
 }
 
 int store_proof_lookup(enum store_proof_type keyType, const char* key, void* proof)
 {
-
+    VLOG_DEBUG("store", "store_proof_lookup(key=%s)\n", key);
+    return inventory_get_proof(g_store.inventory, keyType, key, proof);
 }
