@@ -27,10 +27,11 @@ extern enum sm_action_result served_handle_state_unmount(void* context);
 static const struct served_sm_state g_stateUnmount = {
     .state = SERVED_TX_STATE_UNMOUNT,
     .action = served_handle_state_unmount,
-    .transition_count = 2,
+    .transition_count = 3,
     .transitions = {
         { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_UNINSTALL },
-        { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR }
+        { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
+        { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }
     }
 };
 

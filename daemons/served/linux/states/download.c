@@ -35,6 +35,7 @@ enum sm_action_result served_handle_state_download(void* context)
     served_state_lock();
     state = served_state_transaction(transaction->id);
     if (state == NULL) {
+        served_state_unlock();
         served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }

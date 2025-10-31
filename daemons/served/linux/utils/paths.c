@@ -16,7 +16,7 @@
  *
  */
 
-#include <application.h>
+#include <utils.h>
 #include <chef/platform.h>
 #include <errno.h>
 #include <linux/limits.h>
@@ -38,7 +38,7 @@ char* served_paths_path(const char* path)
 #endif
 }
 
-int served_application_ensure_paths(struct served_application* application)
+int served_application_ensure_paths(const char* publisher, const char* package)
 {
     char  tmp[PATH_MAX];
     char* path;
@@ -47,8 +47,7 @@ int served_application_ensure_paths(struct served_application* application)
     snprintf(
         &tmp[0], sizeof(tmp) - 1, 
         "/var/chef/mnt/%s-%s",
-        application->publisher,
-        application->package
+        publisher, package
     );
     path = served_paths_path(&tmp[0]);
     if (platform_mkdir(path) != 0) {
@@ -64,47 +63,40 @@ int served_application_ensure_paths(struct served_application* application)
     return 0;
 }
 
-char* served_application_get_pack_path(struct served_application* application)
+char* utils_path_pack(const char* publisher, const char* package)
 {
-    char* path;
-
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        return NULL;
-    }
-
-    sprintf(&path[0], "/var/chef/packs/%s-%s.pack", application->publisher, application->package);
-    return path;
+    char buffer[PATH_MAX];
+    snprintf(
+        &buffer[0], sizeof(buffer),
+        "/var/chef/packs/%s-%s.pack",
+        publisher, package
+    );
+    return served_paths_path(&buffer[0]);
 }
 
-char* served_application_get_mount_path(struct served_application* application)
+char* utils_path_mount(const char* publisher, const char* package)
 {
-    char* path;
-
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        return NULL;
-    }
-
-    sprintf(path, "/var/chef/mnt/%s-%s", application->publisher, application->package);
-    return path;
+    char buffer[PATH_MAX];
+    snprintf(
+        &buffer[0], sizeof(buffer), 
+        "/var/chef/mnt/%s-%s", 
+        publisher, package
+    );
+    return served_paths_path(&buffer[0]);
 }
 
-char* served_application_get_data_path(struct served_application* application)
+char* utils_path_data(const char* publisher, const char* package, int revision)
 {
-    char* path;
-
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        return NULL;
-    }
-
-    sprintf(path, "/usr/share/chef/%s-%s/%i", application->publisher,
-        application->package, application->revision);
-    return path;
+    char buffer[PATH_MAX];
+    snprintf(
+        &buffer[0], sizeof(buffer), 
+        "/usr/share/chef/%s-%s/%i", 
+        publisher, package, revision
+    );
+    return served_paths_path(&buffer[0]);
 }
 
-char* served_application_get_command_symlink_path(struct served_application* application, struct served_command* command)
+char* utils_path_command_symlink(const char* name)
 {
     char* path;
     int   status;
@@ -114,6 +106,6 @@ char* served_application_get_command_symlink_path(struct served_application* app
         return NULL;
     }
     
-    sprintf(path, "/chef/bin/%s", command->name);
+    sprintf(path, "/chef/bin/%s", name);
     return path;
 }

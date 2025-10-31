@@ -20,6 +20,21 @@
 #include <transaction/transaction.h>
 #include <state.h>
 
+int served_application_unmount(struct served_application* application)
+{
+    if (application == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (application->mount != NULL) {
+        __remove_application_symlinks(application);
+        served_unmount(application->mount);
+        application->mount = NULL;
+    }
+    return 0;
+}
+
 enum sm_action_result served_handle_state_unmount(void* context)
 {
     struct served_transaction* transaction = context;

@@ -1,5 +1,6 @@
 add_library(served-utils STATIC
     fuse_vafs.c
+    paths.c
     proofs.c
 )
 target_include_directories(served-utils PRIVATE ../include)

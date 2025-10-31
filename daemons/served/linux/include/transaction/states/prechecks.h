@@ -27,11 +27,12 @@ extern enum sm_action_result served_handle_state_precheck(void* context);
 static const struct served_sm_state g_statePreCheck = {
     .state = SERVED_TX_STATE_PRECHECK,
     .action = served_handle_state_precheck,
-    .transition_count = 3,
+    .transition_count = 4,
     .transitions = {
         { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_DOWNLOAD },
         { SERVED_TX_EVENT_WAIT,   SERVED_TX_STATE_PRECHECK_WAIT },
-        { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR }
+        { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
+        { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }
     }
 };
 

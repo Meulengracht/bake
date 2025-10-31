@@ -20,6 +20,33 @@
 #include <transaction/transaction.h>
 #include <state.h>
 
+static void __remove_application_symlinks(struct served_application* application)
+{
+    const char* mountRoot = served_application_get_mount_path(application);
+    if (mountRoot == NULL) {
+        // log
+        return;
+    }
+    
+    for (int i = 0; i < application->commands_count; i++) {
+        int status = platform_unlink(application->commands[i].symlink);
+
+        // then we free resources and NULL them so we are ready to remount
+        free((char*)application->commands[i].symlink);
+        free((char*)application->commands[i].data);
+        application->commands[i].symlink = NULL;
+        application->commands[i].data    = NULL;
+
+        // and then we handle the error code, and by handling we mean just
+        // log it, because we will ignore any issues encountered in this loop
+        if (status != 0) {
+            VLOG_WARNING("mount", "failed to remove symlink for command %s in app %s",
+                application->commands[i].name, application->name);
+        }
+    }
+    free((void*)mountRoot);
+}
+
 enum sm_action_result served_handle_state_remove_wrappers(void* context)
 {
     struct served_transaction* transaction = context;

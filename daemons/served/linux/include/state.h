@@ -19,6 +19,12 @@
 #ifndef __SERVED_STATE_H__
 #define __SERVED_STATE_H__
 
+#include <chef/bits/package.h>
+
+// forwards
+struct served_mount;
+struct containerv_container;
+
 struct state_transaction {
     unsigned int id;
 
@@ -28,7 +34,35 @@ struct state_transaction {
     int         revision;
 };
 
-struct served_application;
+struct state_application_revision {
+    const char* tracking_channel;
+    int         revision;
+};
+
+struct state_application_command {
+    const char*            name;
+    enum chef_command_type type;
+    const char*            path;
+    const char*            arguments;
+
+    // unserialized members
+    unsigned int pid;
+};
+
+struct state_application {
+    const char* name;
+
+    struct state_application_command*  commands;
+    int                                commands_count;
+
+    struct state_application_revision* revisions;
+    int                                revisions_count;
+
+    // unserialized members
+    struct served_mount* mount;
+    struct containerv_container* container;
+};
+
 
 /**
  * @brief
@@ -60,6 +94,10 @@ extern unsigned int served_state_transaction_new(struct state_transaction* state
 
 extern struct state_transaction* served_state_transaction(unsigned int id);
 
+extern struct state_application* served_state_application(const char* name);
+
+extern int served_state_add_application(struct state_application* application);
+
 /**
  * @brief
  *
@@ -68,14 +106,6 @@ extern struct state_transaction* served_state_transaction(unsigned int id);
  * @return
  */
 extern int served_state_get_applications(struct served_application*** applicationsOut, int* applicationsCount);
-
-/**
- * @brief 
- * 
- * @param application 
- * @return int 
- */
-extern int served_state_add_application(struct served_application* application);
 
 /**
  * @brief 

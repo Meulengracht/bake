@@ -27,10 +27,11 @@ extern enum sm_action_result served_handle_state_uninstall(void* context);
 static const struct served_sm_state g_stateUninstall = {
     .state = SERVED_TX_STATE_UNINSTALL,
     .action = served_handle_state_uninstall,
-    .transition_count = 2,
+    .transition_count = 3,
     .transitions = {
         { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_COMPLETED },
-        { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR }
+        { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
+        { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }
     }
 };
 

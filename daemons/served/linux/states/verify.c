@@ -22,28 +22,6 @@
 #include <state.h>
 #include <utils.h>
 
-static char** __split_name(const char* name)
-{
-    // split the publisher/package
-    int    namesCount = 0;
-    char** names = strsplit(name, '/');
-    if (names == NULL) {
-        VLOG_ERROR("store", "__find_package_in_inventory: invalid package naming '%s' (must be publisher/package)\n", name);
-        return NULL;
-    }
-
-    while (names[namesCount] != NULL) {
-        namesCount++;
-    }
-
-    if (namesCount != 2) {
-        VLOG_ERROR("store", "__find_package_in_inventory: invalid package naming '%s' (must be publisher/package)\n", name);
-        strsplit_free(names);
-        return NULL;
-    }
-    return names;
-}
-
 enum sm_action_result served_handle_state_verify(void* context)
 {
     struct served_transaction* transaction = context;
@@ -55,25 +33,24 @@ enum sm_action_result served_handle_state_verify(void* context)
     int revision;
 
     served_state_lock();
-    name = state->name;
-    revision = state->revision;
-    served_state_unlock();
-    
     state = served_state_transaction(transaction->id);
     if (state == NULL) {
+        served_state_unlock();
         served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
-    names = __split_name(state->name);
+    name = state->name;
+    revision = state->revision;
+    served_state_unlock();
+    
+    names = utils_split_package_name(name);
     if (names == NULL) {
         served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
-    status = utils_verify_package(
-        names[0], names[1], state->revision
-    );
+    status = utils_verify_package(names[0], names[1], revision);
     strsplit_free(names);
     if (status) {
         served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);

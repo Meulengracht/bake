@@ -50,5 +50,6 @@
 #define SERVED_TX_EVENT_WAIT   (sm_event_t)1
 #define SERVED_TX_EVENT_RETRY  (sm_event_t)2
 #define SERVED_TX_EVENT_FAILED (sm_event_t)3
+#define SERVED_TX_EVENT_CANCEL (sm_event_t)4
 
 #endif //!__SERVED_TRANSACTION_STATE_TYPES_H__

@@ -61,4 +61,15 @@ extern int utils_verify_publisher(const char* publisher);
  */
 extern int utils_verify_package(const char* publisher, const char* package, int revision);
 
+/**
+ * @brief Splits a package name in the format of <publisher>/<package> into their subparts
+ * The array must be freed with strsplit_free from chef/platform.h
+ */
+extern char** utils_split_package_name(const char* name);
+
+extern char* utils_path_pack(const char* publisher, const char* package);
+extern char* utils_path_mount(const char* publisher, const char* package);
+extern char* utils_path_data(const char* publisher, const char* package, int revision);
+extern char* utils_path_command_wrapper(const char* name);
+
 #endif //!__SERVED_UTILS_H__

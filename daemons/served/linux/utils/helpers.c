@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
@@ -13,26 +13,30 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 
-#ifndef __SERVED_TRANSACTION_STATE_INSTALL_H__
-#define __SERVED_TRANSACTION_STATE_INSTALL_H__
+#include <utils.h>
+#include <chef/platform.h>
 
-#include "../sm.h"
-#include "types.h"
-
-extern enum sm_action_result served_handle_state_install(void* context);
-
-static const struct served_sm_state g_stateInstall = {
-    .state = SERVED_TX_STATE_INSTALL,
-    .action = served_handle_state_install,
-    .transition_count = 3,
-    .transitions = {
-        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_MOUNT },
-        { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
-        { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }
+char** utils_split_package_name(const char* name)
+{
+    // split the publisher/package
+    int    namesCount = 0;
+    char** names = strsplit(name, '/');
+    if (names == NULL) {
+        VLOG_ERROR("store", "__find_package_in_inventory: invalid package naming '%s' (must be publisher/package)\n", name);
+        return NULL;
     }
-};
 
-#endif //!__SERVED_TRANSACTION_STATE_INSTALL_H__
+    while (names[namesCount] != NULL) {
+        namesCount++;
+    }
+
+    if (namesCount != 2) {
+        VLOG_ERROR("store", "__find_package_in_inventory: invalid package naming '%s' (must be publisher/package)\n", name);
+        strsplit_free(names);
+        return NULL;
+    }
+    return names;
+}
