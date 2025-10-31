@@ -3,4 +3,4 @@ add_library(served-states STATIC
     download.c
 )
 target_include_directories(served-states PRIVATE ../include)
-target_link_libraries(served-states PRIVATE chef-client store platform vlog)
+target_link_libraries(served-states PRIVATE store platform vlog)

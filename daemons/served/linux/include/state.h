@@ -19,7 +19,14 @@
 #ifndef __SERVED_STATE_H__
 #define __SERVED_STATE_H__
 
-#include <transaction/transaction.h>
+struct state_transaction {
+    unsigned int id;
+
+    // Package information
+    const char* name;
+    const char* channel;
+    int         revision;
+};
 
 struct served_application;
 
@@ -49,7 +56,9 @@ extern int served_state_lock(void);
  */
 extern int served_state_unlock(void);
 
-extern unsigned int served_state_transaction_new(void);
+extern unsigned int served_state_transaction_new(struct state_transaction* state);
+
+extern struct state_transaction* served_state_transaction(unsigned int id);
 
 /**
  * @brief

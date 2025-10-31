@@ -21,9 +21,10 @@
 
 #include "sm.h"
 
-struct served_transaction_wait_cnd {
-
-};
+// TODO:
+// 1. vlog streams that we can attach to transactions
+// 2. transaction progress reporting (downloading, io)
+// 3. 
 
 struct served_transaction {
     struct served_sm sm;

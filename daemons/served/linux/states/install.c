@@ -16,18 +16,23 @@
  * 
  */
 
-#include <transaction/states/prechecks.h>
+#include <transaction/states/install.h>
 #include <transaction/transaction.h>
 #include <state.h>
 
-enum sm_action_result served_handle_state_precheck(void* context)
+enum sm_action_result served_handle_state_install(void* context)
 {
     struct served_transaction* transaction = context;
+    const char*                storagePath = served_application_get_pack_path(application);
+    int                        status;
 
-    // prechecks
-    // 1. Any transactions in progress that would conflict.
+    if (storagePath == NULL) {
+        return -1;
+    }
+
+    status = platform_copyfile(path, storagePath);
+    free((void*)storagePath);
     
-
     served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }

@@ -16,18 +16,14 @@
  * 
  */
 
-#include <transaction/states/prechecks.h>
+#include <transaction/states/error.h>
 #include <transaction/transaction.h>
 #include <state.h>
 
-enum sm_action_result served_handle_state_precheck(void* context)
+enum sm_action_result served_handle_state_error(void* context)
 {
     struct served_transaction* transaction = context;
 
-    // prechecks
-    // 1. Any transactions in progress that would conflict.
-    
-
     served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
-    return SM_ACTION_CONTINUE;
+    return SM_ACTION_DONE;
 }

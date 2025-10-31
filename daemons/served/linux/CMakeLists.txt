@@ -26,7 +26,7 @@ add_dependencies(serve-commands service_server)
 target_include_directories(served PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
 target_link_libraries(served
         served-application served-installer served-states served-utils
-        gracht jansson platform vlog zstd
+        chef-client gracht jansson platform vlog zstd
         -lpthread ${FUSE_LIBRARIES}
 )
 

@@ -13,20 +13,17 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- *
+ * 
  */
 
-#ifndef __SERVED_VERIFY_H__
-#define __SERVED_VERIFY_H__
+#include <transaction/states/generate-wrappers.h>
+#include <transaction/transaction.h>
+#include <state.h>
 
-/**
- * @brief Verifies a publisher against the database of proofs. 
- */
-extern int served_verify_publisher(const char* publisher);
+enum sm_action_result served_handle_state_generate_wrappers(void* context)
+{
+    struct served_transaction* transaction = context;
 
-/**
- * @brief Verifies the package and it's publisher against the database of proofs.
- */
-extern int served_verify_package(const char* publisher, const char* package, int revision);
-
-#endif //!__SERVED_VERIFY_H__
+    served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
+    return SM_ACTION_CONTINUE;
+}

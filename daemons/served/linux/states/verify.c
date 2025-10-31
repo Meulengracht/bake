@@ -16,57 +16,69 @@
  * 
  */
 
-#include <transaction/states/download.h>
+#include <chef/platform.h>
+#include <transaction/states/verify.h>
 #include <transaction/transaction.h>
 #include <state.h>
+#include <utils.h>
 
-#include <chef/store.h>
-#include <chef/platform.h>
-#include <vlog.h>
+static char** __split_name(const char* name)
+{
+    // split the publisher/package
+    int    namesCount = 0;
+    char** names = strsplit(name, '/');
+    if (names == NULL) {
+        VLOG_ERROR("store", "__find_package_in_inventory: invalid package naming '%s' (must be publisher/package)\n", name);
+        return NULL;
+    }
 
-enum sm_action_result served_handle_state_download(void* context)
+    while (names[namesCount] != NULL) {
+        namesCount++;
+    }
+
+    if (namesCount != 2) {
+        VLOG_ERROR("store", "__find_package_in_inventory: invalid package naming '%s' (must be publisher/package)\n", name);
+        strsplit_free(names);
+        return NULL;
+    }
+    return names;
+}
+
+enum sm_action_result served_handle_state_verify(void* context)
 {
     struct served_transaction* transaction = context;
     struct state_transaction*  state;
-    struct store_package       package = { NULL };
     int                        status;
+    char**                     names;
 
-    // hold the lock while reading
+    const char* name;
+    int revision;
+
     served_state_lock();
+    name = state->name;
+    revision = state->revision;
+    served_state_unlock();
+    
     state = served_state_transaction(transaction->id);
     if (state == NULL) {
         served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
-    // setup package parameters
-    package.name = state->name;
-    package.platform = CHEF_PLATFORM_STR; // always host
-    package.arch = CHEF_ARCHITECTURE_STR; // always host
-    package.channel = state->channel;
-    package.revision = state->revision;
-
-    // do not need the state anymore
-    served_state_unlock();
-
-    // TODO: update revision in state
-    // TODO: progress reporting
-    status = store_ensure_package(&package);
-    if (status) {
-        // todo retry detection here
+    names = __split_name(state->name);
+    if (names == NULL) {
         served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
-    served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
-    return SM_ACTION_CONTINUE;
-}
-
-enum sm_action_result served_handle_state_download_retry(void* context)
-{
-    struct served_transaction* transaction = context;
-
-    // TODO: wait for retry
+    status = utils_verify_package(
+        names[0], names[1], state->revision
+    );
+    strsplit_free(names);
+    if (status) {
+        served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        return SM_ACTION_CONTINUE;
+    }
 
     served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;

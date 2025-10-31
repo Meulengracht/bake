@@ -270,7 +270,7 @@ static int __verify_package(struct store_proof_publisher* publisherProof, const 
     return status;
 }
 
-int served_verify_publisher(const char* publisher)
+int utils_verify_publisher(const char* publisher)
 {
     int                          status;
     struct store_proof_publisher publisherProof;
@@ -284,7 +284,7 @@ int served_verify_publisher(const char* publisher)
     return 0;
 }
 
-int served_verify_package(const char* publisher, const char* package, int revision)
+int utils_verify_package(const char* publisher, const char* package, int revision)
 {
     int                          status;
     char                         name[128];

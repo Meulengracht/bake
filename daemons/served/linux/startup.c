@@ -28,6 +28,9 @@
 #include <utils.h>
 #include <vlog.h>
 
+#include <chef/client.h>
+#include <chef/api/package.h>
+
 static const char* g_profileScriptPath = "/etc/profile.d/chef.sh";
 static const char* g_profileScript = 
 "#!/bin/sh\n"
@@ -105,6 +108,53 @@ static int __ensure_chef_paths(void)
     }
     free(path);
     return 0;
+}
+
+static int __resolve_package(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded)
+{
+    struct chef_download_params downloadParams;
+    int                         status;
+    VLOG_DEBUG("served", "__resolve_package()\n");
+
+    // initialize download params
+    downloadParams.publisher = publisher;
+    downloadParams.package   = package;
+    downloadParams.platform  = platform;
+    downloadParams.arch      = arch;
+    downloadParams.channel   = channel;
+    downloadParams.revision  = 0;
+
+    VLOG_TRACE("served", "downloading package %s/%s\n", publisher, package),
+    status = chefclient_pack_download(&downloadParams, path);
+    if (status == 0) {
+        *revisionDownloaded = downloadParams.revision;
+    }
+    return status;
+}
+
+int served_resolver_initialize(void)
+{
+    int status;
+    VLOG_DEBUG("cookd", "served_resolver_initialize()\n");
+
+    status = chefclient_initialize();
+    if (status != 0) {
+        VLOG_ERROR("cookd", "failed to initialize chef client\n");
+        return -1;
+    }
+
+    status = store_initialize(&(struct store_parameters) {
+        .platform = CHEF_PLATFORM_STR,
+        .architecture = CHEF_ARCHITECTURE_STR,
+        .backend = {
+            .resolve_package = __resolve_package
+        }
+    });
+    if (status) {
+        VLOG_ERROR("cookd", "failed to initialize store\n");
+        chefclient_cleanup();
+    }
+    return status;
 }
 
 int served_startup(void)
