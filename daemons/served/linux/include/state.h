@@ -35,8 +35,8 @@ struct state_transaction {
 };
 
 struct state_application_revision {
-    const char* tracking_channel;
-    int         revision;
+    const char*          tracking_channel;
+    struct chef_version* version;
 };
 
 struct state_application_command {

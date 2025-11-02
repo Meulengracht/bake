@@ -21,64 +21,78 @@
 #include <state.h>
 #include <utils.h>
 
+#include <chef/package.h>
 #include <chef/platform.h>
 #include <chef/store.h>
 #include <vlog.h>
+#include <stdlib.h>
 
-static int __parse_package(const char* publisher, const char* path, struct state_application** applicationOut)
+static struct state_application* __application_new(const char* name)
 {
-    struct served_application* application;
-    struct chef_package*       package;
-    struct chef_version*       version;
-    struct chef_command*       commands;
-    int                        count;
-    int                        status;
+    struct state_application* application;
 
-    status = chef_package_load(path,
-                               &package,
-                               &version,
-                               &commands,
-                               &count
+    application = calloc(1, sizeof(struct state_application));
+    if (application == NULL) {
+        return NULL;
+    }
+
+    application->name = name;
+}
+
+static int __application_add_revision(struct state_application* application, const char* channel, struct chef_version* version)
+{
+    application->revisions = realloc(application->revisions, application->revisions_count + 1);
+    if (application->revisions == NULL) {
+        return -1;
+    }
+
+    application->revisions[application->revisions_count].tracking_channel = channel;
+    application->revisions[application->revisions_count].version = version;
+    application->revisions_count++;
+    return 0;
+}
+
+static int __load_application_package(struct state_transaction* state, const char* path, struct state_application** applicationOut)
+{
+    struct state_application* application;
+    struct chef_package*      package;
+    struct chef_version*      version;
+    struct chef_command*      commands;
+    int                       count;
+    int                       status;
+
+    status = chef_package_load(
+        path, &package, &version, &commands, &count
     );
     if (status) {
         return status;
     }
 
-    // In theory this should also verify the signed signature...
-    application = served_application_new();
+    application = __application_new(state->name);
     if (application == NULL) {
+        chef_version_free(version);
         status = -1;
         goto cleanup;
     }
-
-    application->name = __build_application_name(publisher, package->package);
-    if (application->name == NULL) {
-        status = -1;
+    
+    version->revision = state->revision;
+    status = __application_add_revision(application, state->channel, version);
+    if (status) {
+        chef_version_free(version);
         goto cleanup;
     }
-
-    application->publisher = strdup(publisher);
-    application->package   = strdup(package->package);
-    if (application->publisher == NULL || application->package == NULL) {
-        status = -1;
-        goto cleanup;
-    }
-
-    application->major    = version->major;
-    application->minor    = version->minor;
-    application->patch    = version->patch;
-    application->revision = version->revision;
 
     application->commands_count = count;
     if (count) {
-        application->commands = calloc(count, sizeof(struct served_command));
+        application->commands = calloc(count, sizeof(struct state_application_command));
         if (application->commands == NULL) {
+            chef_version_free(version);
             status = -1;
             goto cleanup;
         }
 
         for (int i = 0; i < count; i++) {
-            application->commands[i].type      = (int)commands[i].type;
+            application->commands[i].type      = commands[i].type;
             application->commands[i].name      = strdup(commands[i].name);
             application->commands[i].path      = strdup(commands[i].path);
             application->commands[i].arguments = commands[i].arguments ? strdup(commands[i].arguments) : NULL;
@@ -89,11 +103,7 @@ static int __parse_package(const char* publisher, const char* path, struct state
 
 cleanup:
     chef_package_free(package);
-    chef_version_free(version);
     chef_commands_free(commands, count);
-    if (status) {
-        served_application_delete(application);
-    }
     return status;
 }
 
@@ -101,6 +111,7 @@ enum sm_action_result served_handle_state_install(void* context)
 {
     struct served_transaction* transaction = context;
     struct state_transaction*  state;
+    struct state_application*  application;
     sm_event_t                 event = SERVED_TX_EVENT_FAILED;
     char*                      storagePath = NULL;
     const char*                path;
@@ -144,11 +155,18 @@ enum sm_action_result served_handle_state_install(void* context)
     }
 
     served_state_lock();
-    status = served_state_application_new(state->name, state->channel, state->revision);
-    served_state_unlock();
+    status = __load_application_package(state, path, &application);
     if (status) {
+        served_state_unlock();
         goto cleanup;
     }
+
+    status = served_state_add_application(application);
+    if (status) {
+        served_state_unlock();
+        goto cleanup;
+    }
+    served_state_unlock();
     
     event = SERVED_TX_EVENT_OK;
 

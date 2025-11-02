@@ -23,11 +23,12 @@
 #include <chef/containerv.h>
 #include <chef/platform.h>
 
-static struct containerv_container* __create_container(const char* mountPath)
+static struct containerv_container* __create_container(const char* publisher, const char* package, const char* mountPath)
 {
     struct containerv_container* container;
     struct containerv_options*   options;
     int                          status;
+    char                         containerId[256];
 
     options = containerv_options_new();
     if (options == NULL) {
@@ -37,7 +38,10 @@ static struct containerv_container* __create_container(const char* mountPath)
     // setup config
     containerv_options_set_caps(options, CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL | CV_CAP_IPC);
 
-    status = containerv_create(mountPath, options, &container);
+    // format container id
+    snprintf(&containerId[0], sizeof(containerId), "%s.%s", publisher, package);
+
+    status = containerv_create(&containerId[0], mountPath, options, &container);
     containerv_options_delete(options);
     if (status) {
         return NULL;

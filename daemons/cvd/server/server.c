@@ -251,7 +251,7 @@ static int __resolve_rootfs(const struct chef_create_parameters* params)
             return 0;
         }
 
-        case CHEF_ROOTFS_TYPE_OSBASE:
+        case CHEF_ROOTFS_TYPE_PATH:
             VLOG_WARNING("cvd", "__resolve_rootfs: ROOTFS TYPE NOT IMPLEMENTED\n");
             break;
     }
@@ -331,7 +331,7 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     );
 
     // create the container
-    status = containerv_create(params->rootfs, opts, &cv_container);
+    status = containerv_create(params->id, params->rootfs, opts, &cv_container);
     containerv_options_delete(opts);
     if (status) {
         VLOG_ERROR("cvd", "failed to start the container\n");

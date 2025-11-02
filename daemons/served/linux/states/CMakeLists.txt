@@ -19,4 +19,4 @@ add_library(served-states STATIC
     verify.c
 )
 target_include_directories(served-states PRIVATE ../include)
-target_link_libraries(served-states PRIVATE containerv store platform vlog)
+target_link_libraries(served-states PRIVATE store platform vlog)

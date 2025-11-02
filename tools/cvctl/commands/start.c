@@ -97,7 +97,7 @@ int start_main(int argc, char** argv, char** envp, struct cvctl_command_options*
     containerv_options_set_caps(cvopts, CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL | CV_CAP_IPC);
 #endif
 
-    result = containerv_create(abspath, cvopts, &g_container);
+    result = containerv_create(NULL, abspath, cvopts, &g_container);
     if (result) {
         fprintf(stderr, "cvctl: failed to create container\n");
         containerv_options_delete(cvopts);

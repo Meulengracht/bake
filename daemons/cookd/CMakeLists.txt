@@ -24,7 +24,7 @@ set (SRCS
 add_executable(cookd ${SRCS})
 add_dependencies(cookd service_client)
 target_include_directories(cookd PRIVATE include ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_BINARY_DIR}/protocols)
-target_link_libraries(cookd PRIVATE libcvd libpackage store remote jansson vlog libdirconf platform gracht)
+target_link_libraries(cookd PRIVATE libcvd libpackage store remote jansson vlog dirconf platform gracht)
 
 install(
     TARGETS cookd

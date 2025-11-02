@@ -23,7 +23,5 @@
 enum sm_action_result served_handle_state_cancelled(void* context)
 {
     struct served_transaction* transaction = context;
-
-    served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_DONE;
 }

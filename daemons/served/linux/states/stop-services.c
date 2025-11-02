@@ -20,10 +20,43 @@
 #include <transaction/transaction.h>
 #include <state.h>
 
+#include <chef/containerv.h>
+
 enum sm_action_result served_handle_state_stop_services(void* context)
 {
     struct served_transaction* transaction = context;
+    struct state_transaction*  state;
+    struct state_application*  application;
 
+    served_state_lock();
+    state = served_state_transaction(transaction->id);
+    if (state == NULL) {
+        goto cleanup;
+    }
+
+    application = served_state_application(state->name);
+    if (application == NULL) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < application->commands_count; i++) {
+        int status;
+
+        if (application->commands[i].type != CHEF_COMMAND_TYPE_DAEMON) {
+            continue;
+        }
+
+        status = containerv_kill(
+            application->container,
+            application->commands[i].pid
+        );
+        if (status) {
+            // log
+        }
+    }
+
+cleanup:
+    served_state_unlock();
     served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }

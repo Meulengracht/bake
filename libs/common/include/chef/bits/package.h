@@ -21,6 +21,10 @@
 
 #include <stddef.h>
 
+#define CHEF_PACKAGE_PUBLISHER_NAME_LENGTH_MAX 64
+#define CHEF_PACKAGE_NAME_LENGTH_MAX           128
+#define CHEF_PACKAGE_ID_LENGTH_MAX             CHEF_PACKAGE_PUBLISHER_NAME_LENGTH_MAX + CHEF_PACKAGE_NAME_LENGTH_MAX
+
 // prototypes imported from vafs;
 struct VaFs;
 

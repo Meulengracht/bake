@@ -16,15 +16,11 @@
  *
  */
 
+#include <chef/bits/package.h>
+#include <chef/config.h>
 #include <chef/environment.h>
-#include <chef/cvd.h>
-#include <chef/dirs.h>
-#include <chef/platform.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
 #include <vlog.h>
 
 #include "chef_cvd_service_client.h"
@@ -54,7 +50,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 
     // sanitize the address length
     if (strlen(address) >= sizeof(local->sun_path)) {
-        fprintf(stderr, "__configure_local: address too long for local socket: %s\n", address);
+        VLOG_ERROR("served", "__configure_local: address too long for local socket: %s\n", address);
         return -1;
     }
 
@@ -118,36 +114,36 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     socklen_t               size;
     int                     domain = 0;
     int                     status;
-    VLOG_DEBUG("bake", "init_link_config(link=%i, type=%s)\n", type, config->type);
+    VLOG_DEBUG("served", "init_link_config(link=%i, type=%s)\n", type, config->type);
 
     if (!strcmp(config->type, "local")) {
         status = __configure_local_bind(link);
         if (status) {
-            VLOG_ERROR("bake", "__init_link_config failed to configure local bind address\n");
+            VLOG_ERROR("served", "__init_link_config failed to configure local bind address\n");
             return status;
         }
 
         status = __configure_local(&addr_storage, config->address);
         if (status) {
-            VLOG_ERROR("bake", "init_link_config failed to configure local link\n");
+            VLOG_ERROR("served", "init_link_config failed to configure local link\n");
             return status;
         }
         domain = AF_LOCAL;
         size = __local_size(config->address);
 
-        VLOG_DEBUG("bake", "connecting to %s\n", config->address);
+        VLOG_DEBUG("served", "connecting to %s\n", config->address);
     } else if (!strcmp(config->type, "inet4")) {
         __configure_inet4(&addr_storage, config);
         domain = AF_INET;
         size = sizeof(struct sockaddr_in);
         
-        VLOG_DEBUG("bake", "connecting to %s:%u\n", config->address, config->port);
+        VLOG_DEBUG("served", "connecting to %s:%u\n", config->address, config->port);
     } else if (!strcmp(config->type, "inet6")) {
         // TODO
         domain = AF_INET6;
         size = sizeof(struct sockaddr_in6);
     } else {
-        VLOG_ERROR("bake", "init_link_config invalid link type %s\n", config->type);
+        VLOG_ERROR("served", "init_link_config invalid link type %s\n", config->type);
         return -1;
     }
 
@@ -157,33 +153,33 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     return 0;
 }
 
-int bake_client_initialize(struct __bake_build_context* bctx)
+int cvd_client_initialize(struct chef_config_address* config)
 {
     struct gracht_link_socket*         link;
     struct gracht_client_configuration clientConfiguration;
     int                                code;
-    VLOG_DEBUG("bake", "kitchen_client_initialize()\n");
+    VLOG_DEBUG("served", "cvd_client_initialize()\n");
 
     code = gracht_link_socket_create(&link);
     if (code) {
-        VLOG_ERROR("bake", "kitchen_client_initialize: failed to initialize socket\n");
+        VLOG_ERROR("served", "cvd_client_initialize: failed to initialize socket\n");
         return code;
     }
 
-    init_link_config(link, gracht_link_packet_based, &bctx->cvd_address);
+    init_link_config(link, gracht_link_packet_based, config);
 
     gracht_client_configuration_init(&clientConfiguration);
     gracht_client_configuration_set_link(&clientConfiguration, (struct gracht_link*)link);
 
     code = gracht_client_create(&clientConfiguration, &bctx->cvd_client);
     if (code) {
-        VLOG_ERROR("bake", "kitchen_client_initialize: error initializing client library %i, %i\n", errno, code);
+        VLOG_ERROR("served", "cvd_client_initialize: error initializing client library %i, %i\n", errno, code);
         return code;
     }
 
     code = gracht_client_connect(bctx->cvd_client);
     if (code) {
-        VLOG_ERROR("bake", "kitchen_client_initialize: failed to connect client %i, %i\n", errno, code);
+        VLOG_ERROR("served", "cvd_client_initialize: failed to connect client %i, %i\n", errno, code);
         gracht_client_shutdown(bctx->cvd_client);
         bctx->cvd_client = NULL;
         return code;
@@ -192,52 +188,39 @@ int bake_client_initialize(struct __bake_build_context* bctx)
     return code;
 }
 
-enum chef_status bake_client_create_container(struct __bake_build_context* bctx, struct chef_container_mount* mounts, unsigned int count)
+enum chef_status cvd_client_create_container(const char* id, const char* rootfs, struct chef_container_mount* mounts, unsigned int count)
 {
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
-    char*                         rootfs;
-    char                          cvdid[64];
-    VLOG_DEBUG("bake", "bake_client_create_container()\n");
+    char                          cvdid[CHEF_PACKAGE_ID_LENGTH_MAX];
+    VLOG_DEBUG("served", "cvd_client_create_container()\n");
     
-    rootfs = (char*)chef_dirs_rootfs(build_cache_uuid(bctx->build_cache));
-    if (rootfs == NULL) {
-        VLOG_ERROR("bake", "bake_client_create_container: failed to allocate memory for rootfs\n");
-        return -1;
-    }
-
     status = chef_cvd_create(
         bctx->cvd_client,
         &context,
         &(struct chef_create_parameters) {
-            .id = NULL,
-            .type = CHEF_ROOTFS_TYPE_IMAGE,
+            .id = id,
+            .type = CHEF_ROOTFS_TYPE_PATH,
             .rootfs = rootfs,
-            .rootfs_base = (char*)recipe_platform_base(bctx->recipe, CHEF_PLATFORM_STR),
+            .rootfs_base = NULL,
             .mounts = mounts,
             .mounts_count = (uint32_t)count
         }
     );
-    free(rootfs);
     
     if (status) {
-        VLOG_ERROR("bake", "bake_client_create_container failed to create client\n");
+        VLOG_ERROR("served", "cvd_client_create_container failed to create client\n");
         return status;
     }
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
     chef_cvd_create_result(bctx->cvd_client, &context, &cvdid[0], sizeof(cvdid) - 1, &chstatus);
-    if (chstatus == CHEF_STATUS_SUCCESS) {
-        bctx->cvd_id = platform_strdup(&cvdid[0]);
-        if (bctx->cvd_id == NULL) {
-            VLOG_FATAL("bake", "failed to allocate memory for CVD id\n");
-        }
-    }
     return chstatus;
 }
 
-enum chef_status bake_client_spawn(
-    struct __bake_build_context* bctx,
+enum chef_status cvd_client_spawn(
+    const char*                  id,
+    const char* const*           environment,
     const char*                  command,
     enum chef_spawn_options      options,
     unsigned int*                pidOut)
@@ -247,10 +230,10 @@ enum chef_status bake_client_spawn(
     enum chef_status              chstatus;
     uint8_t*                      flatenv = NULL;
     size_t                        flatenvLength = 0;
-    VLOG_DEBUG("bake", "bake_client_spawn(cmd=%s)\n", command);
+    VLOG_DEBUG("served", "cvd_client_spawn(cmd=%s)\n", command);
 
-    if (bctx->base_environment != NULL) {
-        flatenv = environment_flatten(bctx->base_environment, &flatenvLength);
+    if (environment != NULL) {
+        flatenv = environment_flatten(environment, &flatenvLength);
         if (flatenv == NULL) {
             return CHEF_STATUS_INTERNAL_ERROR;
         }
@@ -269,7 +252,7 @@ enum chef_status bake_client_spawn(
         }
     );
     if (status != 0) {
-        VLOG_ERROR("bake", "bake_client_spawn: failed to execute %s\n", command);
+        VLOG_ERROR("served", "cvd_client_spawn: failed to execute %s\n", command);
         return status;
     }
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
@@ -277,56 +260,36 @@ enum chef_status bake_client_spawn(
     return chstatus;
 }
 
-enum chef_status bake_client_upload(struct __bake_build_context* bctx, const char* hostPath, const char* containerPath)
+enum chef_status cvd_client_kill(const char* id, unsigned int pid)
 {
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
-    VLOG_DEBUG("bake", "bake_client_upload(host=%s, child=%s)\n", hostPath, containerPath);
+    VLOG_DEBUG("served", "cvd_client_kill()\n");
 
-    status = chef_cvd_upload(
-        bctx->cvd_client,
-        &context,
-        &(struct chef_file_parameters) {
-            .container_id = bctx->cvd_id,
-            .source_path = (char*)hostPath,
-            .destination_path = (char*)containerPath,
-            .user.username = ""
-        }
-    );
+    status = chef_cvd_kill(bctx->cvd_client, &context, id, pid);
     if (status != 0) {
-        VLOG_ERROR("bake", "bake_client_upload: failed to upload %s\n", hostPath);
+        VLOG_ERROR("served", "cvd_client_kill: failed to invoke destroy\n");
         return status;
     }
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
-    chef_cvd_upload_result(bctx->cvd_client, &context, &chstatus);
+    chef_cvd_kill_result(bctx->cvd_client, &context, &chstatus);
     return chstatus;
 }
 
-enum chef_status bake_client_destroy_container(struct __bake_build_context* bctx)
+enum chef_status cvd_client_destroy_container(const char* id)
 {
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
-    VLOG_DEBUG("bake", "bake_client_destroy_container()\n");
+    VLOG_DEBUG("served", "cvd_client_destroy_container()\n");
 
-    if (bctx->cvd_id == NULL) {
-        VLOG_DEBUG("bake", "bake_client_destroy_container: no container to destroy\n");
-        return CHEF_STATUS_SUCCESS;
-    }
-
-    status = chef_cvd_destroy(bctx->cvd_client, &context, bctx->cvd_id);
+    status = chef_cvd_destroy(bctx->cvd_client, &context, id);
     if (status != 0) {
-        VLOG_ERROR("bake", "bake_client_destroy_container: failed to invoke destroy\n");
+        VLOG_ERROR("served", "cvd_client_destroy_container: failed to invoke destroy\n");
         return status;
     }
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
     chef_cvd_destroy_result(bctx->cvd_client, &context, &chstatus);
-
-    // make sure we do not retry destruction
-    if (chstatus == CHEF_STATUS_SUCCESS) {
-        free(bctx->cvd_id);
-        bctx->cvd_id = NULL;
-    }
     return chstatus;
 }

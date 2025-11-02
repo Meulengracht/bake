@@ -82,7 +82,7 @@ static char* __container_create_runtime_dir(void)
     return strdup(directory);
 }
 
-static struct containerv_container* __container_new(void)
+static struct containerv_container* __container_new(const char* containerId)
 {
     struct containerv_container* container;
 
@@ -91,16 +91,29 @@ static struct containerv_container* __container_new(void)
         return NULL;
     }
 
-    container->runtime_dir = __container_create_runtime_dir();
-    if (container->runtime_dir == NULL) {
-        free(container);
-        return NULL;
+    if (containerId == NULL) {
+        container->runtime_dir = __container_create_runtime_dir();
+        if (container->runtime_dir == NULL) {
+            free(container);
+            return NULL;
+        }
+    } else {
+        container->runtime_dir = strpathcombine(__CONTAINER_SOCKET_RUNTIME_BASE, containerId);
+        if (container->runtime_dir == NULL) {
+            VLOG_ERROR("containerv", "__container_new: failed to allocate runtime dir path\n");
+            free(container);
+            return NULL;
+        }
+        if (platform_mkdir(container->runtime_dir)) {
+            VLOG_ERROR("containerv", "__container_new: failed to create runtime dir %s\n", container->runtime_dir);
+            free(container->runtime_dir);
+            free(container);
+            return NULL;
+        }
     }
-    memcpy(
-        &container->id[0],
-        &container->runtime_dir[strlen(container->runtime_dir) - __CONTAINER_ID_LENGTH],
-        __CONTAINER_ID_LENGTH
-    );
+    
+    // get last part of directory path, the last token is the id
+    container->id = strrchr(container->runtime_dir, CHEF_PATH_SEPARATOR) + 1;
 
     // Use container ID as hostname
     container->hostname = strdup(&container->id[0]);
@@ -111,10 +124,8 @@ static struct containerv_container* __container_new(void)
     }
 
     // create the resources that we need immediately
-    if (pipe(container->host) ||
-        pipe(container->child) ||
-        pipe(container->stdout) ||
-        pipe(container->stderr)) {
+    if (pipe(container->host) || pipe(container->child) ||
+        pipe(container->stdout) || pipe(container->stderr)) {
         free(container->hostname);
         free(container->runtime_dir);
         free(container);
@@ -847,7 +858,7 @@ static void __container_entry(
     struct containerv_options*   options)
 {
     int status;
-    VLOG_DEBUG("containerv[child]", "__container_entry(id=%s)\n", &container->id[0]);
+    VLOG_DEBUG("containerv[child]", "__container_entry(id=%s)\n", container->id);
 
     // lets not leak the host fds
     if (__close_safe(&container->child[__FD_READ]) || __close_safe(&container->host[__FD_WRITE])) {
@@ -865,6 +876,7 @@ static void __container_entry(
 }
 
 int containerv_create(
+    const char*                   containerId,
     const char*                   rootFs,
     struct containerv_options*    options,
     struct containerv_container** containerOut)
@@ -880,7 +892,7 @@ int containerv_create(
         return -1;
     }
 
-    container = __container_new();
+    container = __container_new(containerId);
     if (container == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_create: failed to allocate memory for container\n");
         return -1;
@@ -1046,8 +1058,8 @@ int containerv_spawn(
     int                              status;
     VLOG_DEBUG("containerv[host]", "containerv_spawn()\n");
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_spawn: failed to connect to server\n");
         return status;
@@ -1068,8 +1080,8 @@ int containerv_kill(struct containerv_container* container, pid_t pid)
     int                              status;
     VLOG_DEBUG("containerv[host]", "containerv_kill()\n");
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_kill: failed to connect to server\n");
         return status;
@@ -1091,8 +1103,8 @@ int containerv_upload(struct containerv_container* container, const char* const*
     struct containerv_socket_client* client;
     int                              status;
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_upload: failed to connect to server\n");
         return status;
@@ -1139,8 +1151,8 @@ int containerv_download(struct containerv_container* container, const char* cons
     int                              status;
     char                             xbuf[4096];
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_download: failed to connect to server\n");
         return status;
@@ -1200,8 +1212,8 @@ int containerv_destroy(struct containerv_container* container)
     int                              status;
     VLOG_DEBUG("containerv[host]", "containerv_destroy()\n");
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_destroy: failed to connect to server\n");
         return status;
@@ -1325,5 +1337,5 @@ const char* containerv_id(struct containerv_container* container)
     if (container == NULL) {
         return NULL;
     }
-    return &container->id[0];
+    return container->id;
 }

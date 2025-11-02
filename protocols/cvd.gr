@@ -18,8 +18,8 @@ enum capabilities {
 enum rootfs_type {
     // linux
     DEBOOTSTRAP,
-    // chef os-base
-    OSBASE,
+    // a path that specifies the rootfs
+    PATH,
     // rootfs image
     IMAGE,
 }
@@ -43,6 +43,7 @@ struct container_mount {
 }
 
 struct create_parameters {
+    string            id;
     string            rootfs;
     string            rootfs_base;
     rootfs_type       type;

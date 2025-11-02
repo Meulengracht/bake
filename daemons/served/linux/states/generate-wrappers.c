@@ -19,52 +19,125 @@
 #include <transaction/states/generate-wrappers.h>
 #include <transaction/transaction.h>
 #include <state.h>
+#include <utils.h>
 
-static int __create_application_symlinks(struct served_application* application)
+#include <chef/platform.h>
+#include <stdio.h>
+#include <string.h>
+#include <vlog.h>
+
+static const char* g_wrapperTemplate = 
+"#!/bin/sh\n"
+"%s --container %s --path %s %s\n";
+
+static char* __serve_exec_path(void)
 {
-    const char* mountRoot = served_application_get_mount_path(application);
-    if (mountRoot == NULL) {
+    char   buffer[PATH_MAX] = { 0 };
+    char   dirnm[PATH_MAX] = { 0 };
+    size_t index;
+    char*  p;
+    int    status;
+    VLOG_DEBUG("bake", "__serve_exec_path()\n");
+
+    status = readlink("/proc/self/exe", &buffer[0], PATH_MAX);
+    if (status < 0) {
+        VLOG_ERROR("bake", "__install_bakectl: failed to read /proc/self/exe\n");
+        return status;
+    }
+
+    p = strrchr(&buffer[0], CHEF_PATH_SEPARATOR);
+    if (p == NULL) {
+        VLOG_ERROR("bake", "__install_bakectl: could not find separator in %s\n", &buffer[0]);
         return -1;
     }
 
-    for (int i = 0; i < application->commands_count; i++) {
-        struct served_command* command = &application->commands[i];
-        const char*            symlinkPath;
-        const char*            dataPath;
-        int                    status;
+    index = (p + 1) - (&buffer[0]);
+    strncpy(&dirnm[0], &buffer[0], index);
+    snprintf(&buffer[0], sizeof(buffer), "%sserve-exec", &dirnm[0]);
+    return platform_strdup(&buffer[0]);
+}
 
-        symlinkPath = served_application_get_command_symlink_path(application, command);
-        dataPath    = served_application_get_data_path(application);
-        if (symlinkPath == NULL || dataPath == NULL) {
-            free((void*)symlinkPath);
-            free((void*)dataPath);
-            VLOG_WARNING("mount", "failed to allocate paths for command %s in app %s",
-                command->name, application->name);
-            continue;
-        }
+static int __write_wrapper(const char* wrapperPath, const char* sexecPath, const char* container, const char* path, const char* arguments)
+{
+    FILE* wrapper;
 
-        // create a link from /chef/bin/<command> => ${CHEF_INSTALL_DIR}/libexec/chef/serve-exec
-        status = platform_symlink(symlinkPath, CHEF_INSTALL_DIR "/libexec/chef/serve-exec", 0);
-        if (status != 0) {
-            free((void*)symlinkPath);
-            free((void*)dataPath);
-            VLOG_WARNING("mount", "failed to create symlink for command %s in app %s",
-                command->name, application->name);
-            continue;
-        }
-
-        // store the command mount path which is read by serve-exec
-        command->symlink = symlinkPath;
-        command->data    = dataPath;
+    wrapper = fopen(wrapperPath, "w");
+    if (wrapper == NULL) {
+        return -1;
     }
-    free((void*)mountRoot);
+
+    fprintf(wrapper, g_wrapperTemplate, sexecPath, container, path, arguments);
+    fclose(wrapper);
     return 0;
+}
+
+static void __format_container_name(const char* name, char* buffer)
+{
+    int i;
+
+    // copy the entire string first, then we replace '/' with '.'
+    strcpy(buffer, name);
+    for (i = 0; buffer[i]; i++) {
+        if (buffer[i] == '/') {
+            buffer[i] = '.';
+            break;
+        }
+    }
 }
 
 enum sm_action_result served_handle_state_generate_wrappers(void* context)
 {
     struct served_transaction* transaction = context;
+    struct state_transaction*  state;
+    struct state_application*  application;
+    char*                      sexecPath = __serve_exec_path();
+    char                       name[CHEF_PACKAGE_ID_LENGTH_MAX];
 
+    served_state_lock();
+    state = served_state_transaction(transaction->id);
+    if (state == NULL) {
+        goto cleanup;
+    }
+
+    application = served_state_application(state->name);
+    if (application == NULL) {
+        goto cleanup;
+    }
+
+    // construct the container id
+    __format_container_name(state->name, &name[0]);
+
+    for (int i = 0; i < application->commands_count; i++) {
+        int   status;
+        char* wrapperPath;
+
+        if (application->commands[i].type != CHEF_COMMAND_TYPE_EXECUTABLE) {
+            continue;
+        }
+
+        wrapperPath = utils_path_command_wrapper(application->commands[i].name);
+        if (wrapperPath == NULL) {
+            VLOG_ERROR("generate-wrappers", "%s.%s: cannot allocate memory for wrapper-path\n", state->name, application->commands[i].name);
+            continue;
+        }
+
+        status = __write_wrapper(
+            wrapperPath,
+            sexecPath,
+            &name[0],
+            application->commands[i].path,
+            application->commands[i].arguments
+        );
+        if (status) {
+            VLOG_ERROR("generate-wrappers", "%s.%s: failed to write wrapper to %s\n", wrapperPath);
+            // fall-through
+        }
+        free(wrapperPath);
+    }
+
+cleanup:
+    free(sexecPath);
+    served_state_unlock();
     served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }
