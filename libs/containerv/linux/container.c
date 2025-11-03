@@ -37,10 +37,16 @@
 
 #include <unistd.h>
 #include "private.h"
+#include "cgroups.h"
+#include "network.h"
 #include <vlog.h>
 
 #define __FD_READ  0
 #define __FD_WRITE 1
+
+// Network interface naming constants - veth names are derived from container ID
+#define __CONTAINER_VETH_HOST_OFFSET 0    // Use full ID for host-side veth
+#define __CONTAINER_VETH_CONT_OFFSET 4    // Use partial ID for container-side veth
 
 struct containerv_container_process {
     struct list_item list_header;
@@ -95,11 +101,21 @@ static struct containerv_container* __container_new(void)
         __CONTAINER_ID_LENGTH
     );
 
+    // Use container ID as hostname
+    container->hostname = strdup(&container->id[0]);
+    if (container->hostname == NULL) {
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    }
+
     // create the resources that we need immediately
     if (pipe(container->host) ||
         pipe(container->child) ||
         pipe(container->stdout) ||
         pipe(container->stderr)) {
+        free(container->hostname);
+        free(container->runtime_dir);
         free(container);
         return NULL;
     }
@@ -136,6 +152,7 @@ static void __container_delete(struct containerv_container* container)
     __close_safe(&container->stderr[0]);
     __close_safe(&container->stderr[1]);
     __close_safe(&container->socket_fd);
+    free(container->hostname);
     free(container->runtime_dir);
     free(container->rootfs);
     free(container);
@@ -722,6 +739,27 @@ static int __container_run(
         return status;
     }
     
+    // Setup network interface inside container if enabled
+    if (options->capabilities & CV_CAP_NETWORK && options->network.enable && options->network.container_ip) {
+        char container_veth[16];
+        snprintf(container_veth, sizeof(container_veth), "veth%sc", &container->id[__CONTAINER_VETH_CONT_OFFSET]);
+        
+        VLOG_DEBUG("containerv[child]", "__container_run: bringing up container network interface %s\n", container_veth);
+        status = if_up(container_veth, (char*)options->network.container_ip, (char*)options->network.container_netmask);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to bring up container veth interface\n");
+            return status;
+        }
+        
+        // Bring up loopback interface
+        VLOG_DEBUG("containerv[child]", "__container_run: bringing up loopback interface\n");
+        status = if_up("lo", "127.0.0.1", "255.0.0.0");
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to bring up loopback interface\n");
+            return status;
+        }
+    }
+    
     // Drop capabilities that we no longer need
     status = containerv_drop_capabilities();
     if (status) {
@@ -831,6 +869,82 @@ int containerv_create(
                             VLOG_ERROR("containerv[host]", "containerv_create: failed to write user namespace maps: %i\n", status);
                         }
                     }
+                    
+                    // Setup cgroups if enabled
+                    if (!status && (options->capabilities & CV_CAP_CGROUPS)) {
+                        struct containerv_cgroup_limits limits = {
+                            .memory_max = options->cgroup.memory_max,
+                            .cpu_weight = options->cgroup.cpu_weight,
+                            .pids_max = options->cgroup.pids_max,
+                            .enable_devices = 0
+                        };
+                        VLOG_DEBUG("containerv[host]", "setting up cgroups for %s (pid=%d)\n", container->hostname, container->pid);
+                        status = cgroups_init(container->hostname, container->pid, &limits);
+                        if (status) {
+                            VLOG_ERROR("containerv[host]", "containerv_create: failed to setup cgroups: %i\n", status);
+                        }
+                    }
+                    
+                    // Setup network if enabled
+                    if (!status && (options->capabilities & CV_CAP_NETWORK) && options->network.enable) {
+                        char host_veth[16];
+                        char container_veth[16];
+                        int netns_fd;
+                        int sock_fd;
+                        
+                        // Create unique veth pair names from container ID
+                        // Host side uses full ID, container side uses partial ID for brevity
+                        snprintf(host_veth, sizeof(host_veth), "veth%s", &container->id[__CONTAINER_VETH_HOST_OFFSET]);
+                        snprintf(container_veth, sizeof(container_veth), "veth%sc", &container->id[__CONTAINER_VETH_CONT_OFFSET]);
+                        
+                        VLOG_DEBUG("containerv[host]", "setting up network for %s\n", container->hostname);
+                        
+                        // Create netlink socket
+                        sock_fd = create_socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+                        if (sock_fd < 0) {
+                            VLOG_ERROR("containerv[host]", "containerv_create: failed to create netlink socket\n");
+                            status = -1;
+                        }
+                        
+                        // Create veth pair
+                        if (!status) {
+                            status = create_veth(sock_fd, host_veth, container_veth);
+                            if (status) {
+                                VLOG_ERROR("containerv[host]", "containerv_create: failed to create veth pair\n");
+                            }
+                        }
+                        
+                        // Get container's network namespace
+                        if (!status) {
+                            netns_fd = get_netns_fd(container->pid);
+                            if (netns_fd < 0) {
+                                VLOG_ERROR("containerv[host]", "containerv_create: failed to get netns fd\n");
+                                status = -1;
+                            }
+                        }
+                        
+                        // Move container veth to container namespace
+                        if (!status) {
+                            status = move_if_to_pid_netns(sock_fd, container_veth, netns_fd);
+                            if (status) {
+                                VLOG_ERROR("containerv[host]", "containerv_create: failed to move veth to container namespace\n");
+                            }
+                            close(netns_fd);
+                        }
+                        
+                        // Bring up host side veth interface
+                        if (!status && options->network.host_ip) {
+                            status = if_up(host_veth, (char*)options->network.host_ip, (char*)options->network.container_netmask);
+                            if (status) {
+                                VLOG_ERROR("containerv[host]", "containerv_create: failed to bring up host veth interface\n");
+                            }
+                        }
+                        
+                        if (sock_fd >= 0) {
+                            close(sock_fd);
+                        }
+                    }
+                    
                     __send_container_event(container->host, CV_CONTAINER_WAITING_FOR_NS_SETUP, status);
                 } break;
 
@@ -1062,6 +1176,10 @@ int containerv_destroy(struct containerv_container* container)
             maxWaiting -= 100;
         }
     }
+
+    // Clean up cgroups if they exist
+    VLOG_DEBUG("containerv[host]", "cleaning up cgroups for %s...\n", container->hostname);
+    cgroups_free(container->hostname);
 
     status = platform_rmdir(container->runtime_dir);
     if (status) {

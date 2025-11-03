@@ -1,5 +1,6 @@
 // Inspired by https://github.com/iffyio/isolate/tree/master
 
+#include "network.h"
 #include <stdio.h>
 #include <string.h>
 #include <linux/rtnetlink.h>
@@ -12,18 +13,20 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/ioctl.h>
-#include "network.h"
+#include <vlog.h>
 
-static void addattr_l(
+static int addattr_l(
         struct nlmsghdr *n, int maxlen, __u16 type,
         const void *data, __u16 datalen)
 {
     __u16 attr_len = RTA_LENGTH(datalen);
 
     __u32 newlen = NLMSG_ALIGN(n->nlmsg_len) + RTA_ALIGN(attr_len);
-    if (newlen > maxlen)
-        die("cannot add attribute. size (%d) exceeded maxlen (%d)\n",
+    if (newlen > maxlen) {
+        VLOG_ERROR("containerv", "network: cannot add attribute. size (%d) exceeded maxlen (%d)\n",
             newlen, maxlen);
+        return -1;
+    }
 
     struct rtattr *rta;
     rta = NLMSG_TAIL(n);
@@ -33,15 +36,23 @@ static void addattr_l(
         memcpy(RTA_DATA(rta), data, datalen);
 
     n->nlmsg_len = newlen;
+    return 0;
 }
 
-static struct rtattr *addattr_nest(
-        struct nlmsghdr *n, int maxlen, __u16 type)
+// Note: This function was changed from returning struct rtattr* to using an output
+// parameter to maintain consistent error handling throughout the network module.
+// All functions now return int (0 for success, -1 for error) rather than using
+// die() or returning NULL pointers.
+static int addattr_nest(
+        struct nlmsghdr *n, int maxlen, __u16 type, struct rtattr **nest_out)
 {
     struct rtattr *nest = NLMSG_TAIL(n);
 
-    addattr_l(n, maxlen, type, NULL, 0);
-    return nest;
+    if (addattr_l(n, maxlen, type, NULL, 0) != 0) {
+        return -1;
+    }
+    *nest_out = nest;
+    return 0;
 }
 
 static void addattr_nest_end(struct nlmsghdr *n, struct rtattr *nest)
@@ -49,7 +60,7 @@ static void addattr_nest_end(struct nlmsghdr *n, struct rtattr *nest)
     nest->rta_len = (void *)NLMSG_TAIL(n) - (void *)nest;
 }
 
-static ssize_t read_response(
+static int read_response(
         int fd, struct msghdr *msg, char **response)
 {
     struct iovec *iov = msg->msg_iov;
@@ -58,16 +69,20 @@ static ssize_t read_response(
 
     ssize_t resp_len = recvmsg(fd, msg, 0);
 
-    if (resp_len == 0)
-        die("EOF on netlink\n");
+    if (resp_len == 0) {
+        VLOG_ERROR("containerv", "network: EOF on netlink\n");
+        return -1;
+    }
 
-    if (resp_len < 0)
-        die("netlink receive error: %m\n");
+    if (resp_len < 0) {
+        VLOG_ERROR("containerv", "network: netlink receive error: %s\n", strerror(errno));
+        return -1;
+    }
 
     return resp_len;
 }
 
-static void check_response(int sock_fd)
+static int check_response(int sock_fd)
 {
     struct iovec iov;
     struct msghdr msg = {
@@ -77,8 +92,16 @@ static void check_response(int sock_fd)
             .msg_iovlen = 1
     };
     char *resp = malloc(MAX_PAYLOAD);
+    if (!resp) {
+        VLOG_ERROR("containerv", "network: failed to allocate response buffer\n");
+        return -1;
+    }
 
     ssize_t resp_len = read_response(sock_fd, &msg, &resp);
+    if (resp_len < 0) {
+        free(resp);
+        return -1;
+    }
 
     struct nlmsghdr *hdr = (struct nlmsghdr *) resp;
     int nlmsglen = hdr->nlmsg_len;
@@ -86,10 +109,15 @@ static void check_response(int sock_fd)
 
     // Did we read all data?
     if (datalen < 0 || nlmsglen > resp_len) {
-        if (msg.msg_flags & MSG_TRUNC)
-            die("received truncated message\n");
+        if (msg.msg_flags & MSG_TRUNC) {
+            VLOG_ERROR("containerv", "network: received truncated message\n");
+            free(resp);
+            return -1;
+        }
 
-        die("malformed message: nlmsg_len=%d\n", nlmsglen);
+        VLOG_ERROR("containerv", "network: malformed message: nlmsg_len=%d\n", nlmsglen);
+        free(resp);
+        return -1;
     }
 
     // Was there an error?
@@ -97,27 +125,32 @@ static void check_response(int sock_fd)
         struct nlmsgerr *err = (struct nlmsgerr *) NLMSG_DATA(hdr);
 
         if (datalen < sizeof(struct nlmsgerr))
-            fprintf(stderr, "ERROR truncated!\n");
+            VLOG_ERROR("containerv", "network: ERROR truncated!\n");
 
         if(err->error) {
             errno = -err->error;
-            die("RTNETLINK: %m\n");
+            VLOG_ERROR("containerv", "network: RTNETLINK: %s\n", strerror(errno));
+            free(resp);
+            return -1;
         }
     }
 
     free(resp);
+    return 0;
 }
 
 int create_socket(int domain, int type, int protocol)
 {
     int sock_fd = socket(domain, type, protocol);
-    if (sock_fd < 0)
-        die("cannot open socket: %m\n");
+    if (sock_fd < 0) {
+        VLOG_ERROR("containerv", "network: cannot open socket: %s\n", strerror(errno));
+        return -1;
+    }
 
     return sock_fd;
 }
 
-static void send_nlmsg(int sock_fd, struct nlmsghdr *n)
+static int send_nlmsg(int sock_fd, struct nlmsghdr *n)
 {
     struct iovec iov = {
             .iov_base = n,
@@ -134,10 +167,12 @@ static void send_nlmsg(int sock_fd, struct nlmsghdr *n)
     n->nlmsg_seq++;
 
     ssize_t status = sendmsg(sock_fd, &msg, 0);
-    if (status < 0)
-        die("cannot talk to rtnetlink: %m\n");
+    if (status < 0) {
+        VLOG_ERROR("containerv", "network: cannot talk to rtnetlink: %s\n", strerror(errno));
+        return -1;
+    }
 
-    check_response(sock_fd);
+    return check_response(sock_fd);
 }
 
 int get_netns_fd(int pid)
@@ -147,16 +182,21 @@ int get_netns_fd(int pid)
 
     int fd = open(path, O_RDONLY);
 
-    if (fd < 0)
-        die("cannot read netns file %s: %m\n", path);
+    if (fd < 0) {
+        VLOG_ERROR("containerv", "network: cannot read netns file %s: %s\n", path, strerror(errno));
+        return -1;
+    }
 
     return fd;
 }
 
-void if_up(
+int if_up(
         char *ifname, char *ip, char *netmask)
 {
     int sock_fd = create_socket(PF_INET, SOCK_DGRAM, IPPROTO_IP);
+    if (sock_fd < 0) {
+        return -1;
+    }
 
     struct ifreq ifr;
     memset(&ifr, 0, sizeof(struct ifreq));
@@ -171,23 +211,33 @@ void if_up(
 
     saddr.sin_addr.s_addr = inet_addr(ip);
     memcpy(((char *)&(ifr.ifr_addr)), p, sizeof(struct sockaddr));
-    if (ioctl(sock_fd, SIOCSIFADDR, &ifr))
-        die("cannot set ip addr %s, %s: %m\n", ifname, ip);
+    if (ioctl(sock_fd, SIOCSIFADDR, &ifr)) {
+        VLOG_ERROR("containerv", "network: cannot set ip addr %s, %s: %s\n", ifname, ip, strerror(errno));
+        close(sock_fd);
+        return -1;
+    }
 
     saddr.sin_addr.s_addr = inet_addr(netmask);
     memcpy(((char *)&(ifr.ifr_addr)), p, sizeof(struct sockaddr));
-    if (ioctl(sock_fd, SIOCSIFNETMASK, &ifr))
-        die("cannot set netmask for addr %s, %s: %m\n", ifname, netmask);
+    if (ioctl(sock_fd, SIOCSIFNETMASK, &ifr)) {
+        VLOG_ERROR("containerv", "network: cannot set netmask for addr %s, %s: %s\n", ifname, netmask, strerror(errno));
+        close(sock_fd);
+        return -1;
+    }
 
     ifr.ifr_flags |= IFF_UP | IFF_BROADCAST |
                      IFF_RUNNING | IFF_MULTICAST;
-    if (ioctl(sock_fd, SIOCSIFFLAGS, &ifr))
-        die("cannot set flags for addr %s, %s: %m\n", ifname, ip);
+    if (ioctl(sock_fd, SIOCSIFFLAGS, &ifr)) {
+        VLOG_ERROR("containerv", "network: cannot set flags for addr %s, %s: %s\n", ifname, ip, strerror(errno));
+        close(sock_fd);
+        return -1;
+    }
 
     close(sock_fd);
+    return 0;
 }
 
-void create_veth(int sock_fd, char *ifname, char *peername)
+int create_veth(int sock_fd, char *ifname, char *peername)
 {
     // ip link add veth0 type veth peer name veth1
     __u16 flags =
@@ -200,29 +250,41 @@ void create_veth(int sock_fd, char *ifname, char *peername)
     };
     struct nlmsghdr *n = &req.n;
     int maxlen = sizeof(req);
+    struct rtattr *linfo = NULL;
+    struct rtattr *linfodata = NULL;
+    struct rtattr *peerinfo = NULL;
 
-    addattr_l(n, maxlen, IFLA_IFNAME, ifname, strlen(ifname) + 1);
+    if (addattr_l(n, maxlen, IFLA_IFNAME, ifname, strlen(ifname) + 1) != 0) {
+        return -1;
+    }
 
-    struct rtattr *linfo =
-                          addattr_nest(n, maxlen, IFLA_LINKINFO);
-    addattr_l(&req.n, sizeof(req), IFLA_INFO_KIND, "veth", 5);
+    if (addattr_nest(n, maxlen, IFLA_LINKINFO, &linfo) != 0) {
+        return -1;
+    }
+    if (addattr_l(&req.n, sizeof(req), IFLA_INFO_KIND, "veth", 5) != 0) {
+        return -1;
+    }
 
-    struct rtattr *linfodata =
-                          addattr_nest(n, maxlen, IFLA_INFO_DATA);
+    if (addattr_nest(n, maxlen, IFLA_INFO_DATA, &linfodata) != 0) {
+        return -1;
+    }
 
-    struct rtattr *peerinfo =
-                          addattr_nest(n, maxlen, VETH_INFO_PEER);
+    if (addattr_nest(n, maxlen, VETH_INFO_PEER, &peerinfo) != 0) {
+        return -1;
+    }
     n->nlmsg_len += sizeof(struct ifinfomsg);
-    addattr_l(n, maxlen, IFLA_IFNAME, peername, strlen(peername) + 1);
+    if (addattr_l(n, maxlen, IFLA_IFNAME, peername, strlen(peername) + 1) != 0) {
+        return -1;
+    }
     addattr_nest_end(n, peerinfo);
 
     addattr_nest_end(n, linfodata);
     addattr_nest_end(n, linfo);
 
-    send_nlmsg(sock_fd, n);
+    return send_nlmsg(sock_fd, n);
 }
 
-void move_if_to_pid_netns(int sock_fd, char *ifname, int netns)
+int move_if_to_pid_netns(int sock_fd, char *ifname, int netns)
 {
     // ip link set veth1 netns coke
     struct nl_req req = {
@@ -232,8 +294,12 @@ void move_if_to_pid_netns(int sock_fd, char *ifname, int netns)
             .i.ifi_family = PF_NETLINK,
     };
 
-    addattr_l(&req.n, sizeof(req), IFLA_NET_NS_FD, &netns, 4);
-    addattr_l(&req.n, sizeof(req), IFLA_IFNAME,
-              ifname, strlen(ifname) + 1);
-    send_nlmsg(sock_fd, &req.n);
+    if (addattr_l(&req.n, sizeof(req), IFLA_NET_NS_FD, &netns, 4) != 0) {
+        return -1;
+    }
+    if (addattr_l(&req.n, sizeof(req), IFLA_IFNAME,
+              ifname, strlen(ifname) + 1) != 0) {
+        return -1;
+    }
+    return send_nlmsg(sock_fd, &req.n);
 }

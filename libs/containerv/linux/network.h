@@ -28,10 +28,34 @@ struct nl_req {
 #define NLMSG_TAIL(nmsg) \
 	((struct rtattr *) (((void *) (nmsg)) + NLMSG_ALIGN((nmsg)->nlmsg_len)))
 
+/**
+ * @brief Create a socket with the specified parameters
+ * @return socket file descriptor on success, -1 on failure
+ */
 int create_socket(int domain, int type, int protocol);
-void if_up(char *ifname, char *ip, char *netmask);
-void create_veth(int sock_fd, char *ifname, char *peername);
-void move_if_to_pid_netns(int sock_fd, char *ifname, int netns);
+
+/**
+ * @brief Bring up a network interface and configure its IP address
+ * @return 0 on success, -1 on failure
+ */
+int if_up(char *ifname, char *ip, char *netmask);
+
+/**
+ * @brief Create a virtual ethernet (veth) pair
+ * @return 0 on success, -1 on failure
+ */
+int create_veth(int sock_fd, char *ifname, char *peername);
+
+/**
+ * @brief Move a network interface to a different network namespace
+ * @return 0 on success, -1 on failure
+ */
+int move_if_to_pid_netns(int sock_fd, char *ifname, int netns);
+
+/**
+ * @brief Get the file descriptor for a process's network namespace
+ * @return file descriptor on success, -1 on failure
+ */
 int get_netns_fd(int pid);
 
 #endif //ISOLATE_NETNS_H

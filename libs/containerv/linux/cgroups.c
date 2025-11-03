@@ -16,6 +16,8 @@
  *
  */
 
+#include "cgroups.h"
+#include <errno.h>
 #include <fcntl.h>
 #include <linux/limits.h>
 #include <stdio.h>
@@ -23,11 +25,12 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vlog.h>
 
-// Used for cgroups limits initialization
-#define CGROUPS_MEMORY_MAX "1G"
-#define CGROUPS_CPU_WEIGHT "256"
-#define CGROUPS_PIDS_MAX "64"
+// Default cgroups limits
+#define CGROUPS_DEFAULT_MEMORY_MAX "1G"
+#define CGROUPS_DEFAULT_CPU_WEIGHT "100"
+#define CGROUPS_DEFAULT_PIDS_MAX "256"
 #define CGROUPS_CGROUP_PROCS "cgroup.procs"
 enum { CGROUPS_CONTROL_FIELD_SIZE = 256 };
 
@@ -41,8 +44,13 @@ struct cgroups_setting {
 // - create a directory for the new cgroup
 // - settings files are created automatically
 // - write the settings to the corresponding files
-int cgroups_init(char *hostname, pid_t pid) {
+int cgroups_init(const char* hostname, pid_t pid, const struct containerv_cgroup_limits* limits) {
   char cgroup_dir[PATH_MAX] = {0};
+
+  // Use provided limits or defaults
+  const char* memory_max = limits && limits->memory_max ? limits->memory_max : CGROUPS_DEFAULT_MEMORY_MAX;
+  const char* cpu_weight = limits && limits->cpu_weight ? limits->cpu_weight : CGROUPS_DEFAULT_CPU_WEIGHT;
+  const char* pids_max = limits && limits->pids_max ? limits->pids_max : CGROUPS_DEFAULT_PIDS_MAX;
 
   // The "cgroup.procs" setting is used to add a process to a cgroup.
   // It is prepared here with the pid of the calling process, so that it can be
@@ -52,37 +60,47 @@ int cgroups_init(char *hostname, pid_t pid) {
   ;
   if (snprintf(procs_setting->value, CGROUPS_CONTROL_FIELD_SIZE, "%d", pid) ==
       -1) {
-    log_error("failed to setup cgroup.procs setting: %m");
+    VLOG_ERROR("containerv", "cgroups_init: failed to setup cgroup.procs setting: %s\n", strerror(errno));
     return -1;
   }
   // Cgroups let us limit resources allocated to a process to prevent it from
-  // dying services to the rest of the system. The cgroups must be created
+  // denying services to the rest of the system. The cgroups must be created
   // before the process enters a cgroups namespace. The following settings are
   // applied:
-  // - memory.limit_in_bytes: 1GB (process memory limit)
-  // - cpu.shares: 256 (a quarter of the CPU time)
-  // - pids.max: 64 (max number of processes)
-  // - cgroup.procs: 0 (the calling process is added to the cgroup)
+  // - memory.max: process memory limit (default 1GB)
+  // - cpu.weight: CPU time weight (1-10000, default 100)
+  // - pids.max: max number of processes (default 256)
+  // - cgroup.procs: the calling process is added to the cgroup
   struct cgroups_setting *cgroups_setting_list[] = {
       &(struct cgroups_setting){.name = "memory.max",
-                                .value = CGROUPS_MEMORY_MAX},
+                                .value = ""},
       &(struct cgroups_setting){.name = "cpu.weight",
-                                .value = CGROUPS_CPU_WEIGHT},
-      &(struct cgroups_setting){.name = "pids.max", .value = CGROUPS_PIDS_MAX},
+                                .value = ""},
+      &(struct cgroups_setting){.name = "pids.max", .value = ""},
       procs_setting, NULL};
 
-  log_debug("setting cgroups...");
+  // Copy the limit values and ensure null termination
+  strncpy(cgroups_setting_list[0]->value, memory_max, CGROUPS_CONTROL_FIELD_SIZE - 1);
+  cgroups_setting_list[0]->value[CGROUPS_CONTROL_FIELD_SIZE - 1] = '\0';
+  
+  strncpy(cgroups_setting_list[1]->value, cpu_weight, CGROUPS_CONTROL_FIELD_SIZE - 1);
+  cgroups_setting_list[1]->value[CGROUPS_CONTROL_FIELD_SIZE - 1] = '\0';
+  
+  strncpy(cgroups_setting_list[2]->value, pids_max, CGROUPS_CONTROL_FIELD_SIZE - 1);
+  cgroups_setting_list[2]->value[CGROUPS_CONTROL_FIELD_SIZE - 1] = '\0';
+
+  VLOG_DEBUG("containerv", "cgroups_init: setting cgroups for %s...\n", hostname);
 
   // Create the cgroup directory.
   if (snprintf(cgroup_dir, sizeof(cgroup_dir), "/sys/fs/cgroup/%s", hostname) ==
       -1) {
-    log_error("failed to setup path: %m");
+    VLOG_ERROR("containerv", "cgroups_init: failed to setup path: %s\n", strerror(errno));
     return -1;
   }
 
-  log_debug("creating %s...", cgroup_dir);
+  VLOG_DEBUG("containerv", "cgroups_init: creating %s...\n", cgroup_dir);
   if (mkdir(cgroup_dir, S_IRUSR | S_IWUSR | S_IXUSR)) {
-    log_error("failed to mkdir %s: %m", cgroup_dir);
+    VLOG_ERROR("containerv", "cgroups_init: failed to mkdir %s: %s\n", cgroup_dir, strerror(errno));
     return -1;
   }
 
@@ -93,56 +111,56 @@ int cgroups_init(char *hostname, pid_t pid) {
     char setting_dir[PATH_MAX] = {0};
     int fd = 0;
 
-    log_info("setting %s to %s...", (*setting)->name, (*setting)->value);
+    VLOG_DEBUG("containerv", "cgroups_init: setting %s to %s...\n", (*setting)->name, (*setting)->value);
     if (snprintf(setting_dir, sizeof(setting_dir), "%s/%s", cgroup_dir,
                  (*setting)->name) == -1) {
-      log_error("failed to setup path: %m");
+      VLOG_ERROR("containerv", "cgroups_init: failed to setup path: %s\n", strerror(errno));
       return -1;
     }
 
-    log_debug("opening %s...", setting_dir);
+    VLOG_TRACE("containerv", "cgroups_init: opening %s...\n", setting_dir);
     if ((fd = open(setting_dir, O_WRONLY)) == -1) {
-      log_error("failed to open %s: %m", setting_dir);
+      VLOG_ERROR("containerv", "cgroups_init: failed to open %s: %s\n", setting_dir, strerror(errno));
       return -1;
     }
 
-    log_debug("writing %s to setting", (*setting)->value);
+    VLOG_TRACE("containerv", "cgroups_init: writing %s to setting\n", (*setting)->value);
     if (write(fd, (*setting)->value, strlen((*setting)->value)) == -1) {
-      log_error("failed to write %s: %m", setting_dir);
+      VLOG_ERROR("containerv", "cgroups_init: failed to write %s: %s\n", setting_dir, strerror(errno));
       close(fd);
       return -1;
     }
 
-    log_debug("closing %s...", setting_dir);
+    VLOG_TRACE("containerv", "cgroups_init: closing %s...\n", setting_dir);
     if (close(fd)) {
-      log_error("failed to close %s: %m", setting_dir);
+      VLOG_ERROR("containerv", "cgroups_init: failed to close %s: %s\n", setting_dir, strerror(errno));
       return -1;
     }
   }
 
-  log_debug("cgroups set");
+  VLOG_DEBUG("containerv", "cgroups_init: cgroups set successfully\n");
   return 0;
 }
 
-// Clean up the cgroups for the process. Since barco write the PID of its child
+// Clean up the cgroups for the process. Since we write the PID of the child
 // process to the cgroup.procs file, all that is needed is to remove the cgroups
-// directory after the child process is exited.
-int cgroups_free(char *hostname) {
+// directory after the child process has exited.
+int cgroups_free(const char* hostname) {
   char dir[PATH_MAX] = {0};
 
-  log_debug("freeing cgroups...");
+  VLOG_DEBUG("containerv", "cgroups_free: freeing cgroups for %s...\n", hostname);
 
   if (snprintf(dir, sizeof(dir), "/sys/fs/cgroup/%s", hostname) == -1) {
-    log_error("failed to setup paths: %m");
+    VLOG_ERROR("containerv", "cgroups_free: failed to setup paths: %s\n", strerror(errno));
     return -1;
   }
 
-  log_debug("removing %s...", dir);
+  VLOG_DEBUG("containerv", "cgroups_free: removing %s...\n", dir);
   if (rmdir(dir)) {
-    log_error("failed to rmdir %s: %m", dir);
+    VLOG_ERROR("containerv", "cgroups_free: failed to rmdir %s: %s\n", dir, strerror(errno));
     return -1;
   }
 
-  log_debug("cgroups released");
+  VLOG_DEBUG("containerv", "cgroups_free: cgroups released successfully\n");
   return 0;
 }
