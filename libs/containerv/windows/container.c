@@ -8,7 +8,7 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -44,6 +44,12 @@ static char* __container_create_runtime_dir(void)
     }
     
     // Create a unique subdirectory for the container
+    // strcat_s second parameter is the total buffer size, not remaining space
+    size_t remaining = MAX_PATH - strlen(template);
+    if (remaining < 20) {  // Need space for "containerv-XXXXXX" + null
+        VLOG_ERROR("containerv", "__container_create_runtime_dir: temp path too long\n");
+        return NULL;
+    }
     strcat_s(template, MAX_PATH, "containerv-XXXXXX");
     
     // Use _mktemp_s to create unique name
