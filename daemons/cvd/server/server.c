@@ -220,8 +220,23 @@ static int __ensure_base_rootfs(const char* rootfs)
     return 0;
 }
 
-#elif CHEF_ON_WINDOWS
+#elif defined(CHEF_ON_WINDOWS)
 static int __ensure_base_rootfs(const char* rootfs) {
+    // On Windows, we expect rootfs to be provided as a container image layer
+    // For now, return success if the directory exists
+    VLOG_DEBUG("cvd", "__ensure_base_rootfs: Windows base rootfs check\n");
+    
+    if (!__file_exists(rootfs)) {
+        VLOG_ERROR("cvd", "__ensure_base_rootfs: rootfs path does not exist: %s\n", rootfs);
+        VLOG_ERROR("cvd", "Windows containers require a pre-existing base image layer\n");
+        return -1;
+    }
+    
+    return 0;
+}
+#else
+static int __ensure_base_rootfs(const char* rootfs) {
+    VLOG_ERROR("cvd", "__ensure_base_rootfs: not implemented for this platform\n");
     return -1;
 }
 #endif
@@ -265,6 +280,7 @@ static int __resolve_rootfs(const struct chef_create_parameters* params)
     return -1;
 }
 
+#if defined(__linux__) || defined(__unix__)
 static enum containerv_mount_flags __to_cv_mount_flags(enum chef_mount_options opts)
 {
     enum containerv_mount_flags flags = CV_MOUNT_BIND | CV_MOUNT_CREATE;
@@ -273,10 +289,13 @@ static enum containerv_mount_flags __to_cv_mount_flags(enum chef_mount_options o
     }
     return flags;
 }
+#endif
 
 static int __resolve_mounts(struct containerv_options* opts, const char* rootfs, struct chef_container_mount* mounts, size_t count)
 {
+#if defined(__linux__) || defined(__unix__)
     struct containerv_mount* cv_mounts;
+#endif
     VLOG_DEBUG("cvd", "__resolve_mounts(rootfs=%s, count=%zu)\n", rootfs, count);
 
     // early exit
@@ -284,6 +303,7 @@ static int __resolve_mounts(struct containerv_options* opts, const char* rootfs,
         return 0;
     }
 
+#if defined(__linux__) || defined(__unix__)
     cv_mounts = calloc(count, sizeof(struct containerv_mount));
     if (cv_mounts == NULL) {
         VLOG_ERROR("cvd", "__resolve_mounts: failed to allocate memory for mounts\n");
@@ -298,6 +318,13 @@ static int __resolve_mounts(struct containerv_options* opts, const char* rootfs,
     }
 
     containerv_options_set_mounts(opts, cv_mounts, (int)count);
+#elif defined(CHEF_ON_WINDOWS)
+    // TODO: Implement Windows volume mounting
+    VLOG_WARNING("cvd", "__resolve_mounts: Windows mount support not yet fully implemented\n");
+    if (count > 0) {
+        VLOG_WARNING("cvd", "__resolve_mounts: ignoring %zu mounts on Windows\n", count);
+    }
+#endif
     return 0;
 }
 
