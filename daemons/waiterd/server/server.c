@@ -21,6 +21,7 @@
 #include <string.h>
 #include <time.h>
 #include <vlog.h>
+#include "chef_waiterd_service.h"
 
 static char g_templateGuid[] = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
 static const char* g_hexValues = "0123456789ABCDEF-";
@@ -213,4 +214,92 @@ struct waiterd_request* waiterd_server_request_find(const char* id)
     }
     
     return NULL;
+}
+
+static int __count_requests_for_cook(gracht_conn_t client)
+{
+    struct list_item* i;
+    int count = 0;
+    
+    list_foreach(&g_server.requests, i) {
+        struct waiterd_request* request = (struct waiterd_request*)i;
+        if (request->cook == client && 
+            request->status != WAITERD_BUILD_STATUS_DONE && 
+            request->status != WAITERD_BUILD_STATUS_FAILED) {
+            count++;
+        }
+    }
+    
+    return count;
+}
+
+static void __generate_agent_name(gracht_conn_t client, char* buffer, size_t size)
+{
+    snprintf(buffer, size, "agent-%08x", (unsigned int)client);
+}
+
+int waiterd_server_agents_list(enum waiterd_architecture arch_filter, struct chef_waiter_agent_info** agents_out)
+{
+    struct list_item* i;
+    struct chef_waiter_agent_info* agents = NULL;
+    int count = 0;
+    int idx = 0;
+
+    // First, count matching agents
+    list_foreach(&g_server.cooks, i) {
+        struct waiterd_cook* cook = (struct waiterd_cook*)i;
+        if (arch_filter == 0 || (cook->architectures & arch_filter)) {
+            count++;
+        }
+    }
+
+    if (count == 0) {
+        *agents_out = NULL;
+        return 0;
+    }
+
+    // Allocate array
+    agents = calloc(count, sizeof(struct chef_waiter_agent_info));
+    if (agents == NULL) {
+        return -1;
+    }
+
+    // Fill in agent information
+    list_foreach(&g_server.cooks, i) {
+        struct waiterd_cook* cook = (struct waiterd_cook*)i;
+        if (arch_filter == 0 || (cook->architectures & arch_filter)) {
+            char name_buffer[64];
+            __generate_agent_name(cook->client, name_buffer, sizeof(name_buffer));
+            
+            agents[idx].name = strdup(name_buffer);
+            agents[idx].online = cook->ready;
+            agents[idx].architectures = cook->architectures;
+            agents[idx].queue_size = __count_requests_for_cook(cook->client);
+            idx++;
+        }
+    }
+
+    *agents_out = agents;
+    return count;
+}
+
+int waiterd_server_agent_info(const char* name, struct chef_waiter_agent_info* info)
+{
+    struct list_item* i;
+    char name_buffer[64];
+
+    list_foreach(&g_server.cooks, i) {
+        struct waiterd_cook* cook = (struct waiterd_cook*)i;
+        __generate_agent_name(cook->client, name_buffer, sizeof(name_buffer));
+        
+        if (strcmp(name_buffer, name) == 0) {
+            info->name = strdup(name_buffer);
+            info->online = cook->ready;
+            info->architectures = cook->architectures;
+            info->queue_size = __count_requests_for_cook(cook->client);
+            return 0;
+        }
+    }
+
+    return -1;
 }

@@ -33,6 +33,8 @@ extern int remote_init_main(int argc, char** argv, char** envp, struct bake_comm
 extern int remote_build_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int remote_download_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int remote_list_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int remote_info_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 
 struct command_handler {
     char* name;
@@ -43,7 +45,9 @@ static struct command_handler g_commands[] = {
     { "init",   remote_init_main },
     { "build",  remote_build_main },
     { "resume", remote_resume_main },
-    { "download", remote_download_main }
+    { "download", remote_download_main },
+    { "list",   remote_list_main },
+    { "info",   remote_info_main }
 };
 
 static void __print_help(void)
@@ -66,6 +70,8 @@ static void __print_help(void)
     printf("  build    executes a recipe remotely\n");
     printf("  resume   resumes execution of a recipe running remotely\n");
     printf("  download retrieve any artifacts from a finished remote build\n");
+    printf("  list     list available remote build agents\n");
+    printf("  info     display detailed information about a specific agent\n");
     printf("\n");
     printf("Options:\n");
     printf("  --version\n");
