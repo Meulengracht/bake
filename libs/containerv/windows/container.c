@@ -74,7 +74,7 @@ void containerv_generate_id(char* buffer, size_t length)
 {
     const char charset[] = "0123456789abcdef";
     HCRYPTPROV hCryptProv;
-    BYTE random_bytes[__CONTAINER_ID_LENGTH / 2];
+    BYTE random_bytes[__CONTAINER_ID_LENGTH / 2];  // Each byte generates 2 hex chars
     
     if (length < __CONTAINER_ID_LENGTH + 1) {
         return;
