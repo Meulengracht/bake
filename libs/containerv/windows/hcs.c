@@ -8,7 +8,7 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -190,7 +190,18 @@ int containerv_hcs_create(
     PVOID compute_system = NULL;
     HRESULT hr;
     int status = -1;
-    struct containerv_container* container = *containerOut;
+    struct containerv_container* container;
+
+    if (containerOut == NULL) {
+        VLOG_ERROR("containerv", "containerOut parameter is NULL\n");
+        return -1;
+    }
+
+    container = *containerOut;
+    if (container == NULL) {
+        VLOG_ERROR("containerv", "container is NULL\n");
+        return -1;
+    }
 
     if (containerv_hcs_initialize() != 0) {
         VLOG_ERROR("containerv", "Failed to initialize HCS\n");
@@ -248,7 +259,9 @@ cleanup:
 
 int containerv_hcs_start(struct containerv_container* container)
 {
-    // Already started in create
+    // Container is already started during creation (containerv_hcs_create)
+    // This function is provided for API consistency but is a no-op
+    // since HCS containers are started immediately after creation
     return 0;
 }
 

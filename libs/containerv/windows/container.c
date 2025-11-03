@@ -8,7 +8,7 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -17,6 +17,7 @@
  */
 
 #include <windows.h>
+#include <wincrypt.h>
 #include <chef/containerv.h>
 #include <chef/platform.h>
 #include <stdio.h>
@@ -30,14 +31,35 @@ static char* __generate_container_id(void)
 {
     static const char charset[] = "0123456789abcdef";
     char* id = malloc(__CONTAINER_ID_LENGTH + 1);
+    unsigned char random_bytes[__CONTAINER_ID_LENGTH];
+    
     if (id == NULL) {
         return NULL;
     }
 
-    // Use Windows crypto API for random generation
-    for (int i = 0; i < __CONTAINER_ID_LENGTH; i++) {
-        id[i] = charset[rand() % (sizeof(charset) - 1)];
+    // Use Windows CryptGenRandom for secure random generation
+    HCRYPTPROV hCryptProv;
+    if (!CryptAcquireContextW(&hCryptProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
+        // Fallback to less secure method if crypto API fails
+        VLOG_WARNING("containerv", "CryptAcquireContext failed, using fallback random\n");
+        for (int i = 0; i < __CONTAINER_ID_LENGTH; i++) {
+            id[i] = charset[rand() % (sizeof(charset) - 1)];
+        }
+    } else {
+        if (CryptGenRandom(hCryptProv, sizeof(random_bytes), random_bytes)) {
+            for (int i = 0; i < __CONTAINER_ID_LENGTH; i++) {
+                id[i] = charset[random_bytes[i] % (sizeof(charset) - 1)];
+            }
+        } else {
+            // Fallback if random generation fails
+            VLOG_WARNING("containerv", "CryptGenRandom failed, using fallback random\n");
+            for (int i = 0; i < __CONTAINER_ID_LENGTH; i++) {
+                id[i] = charset[rand() % (sizeof(charset) - 1)];
+            }
+        }
+        CryptReleaseContext(hCryptProv, 0);
     }
+    
     id[__CONTAINER_ID_LENGTH] = '\0';
     return id;
 }
