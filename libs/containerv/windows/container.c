@@ -17,6 +17,7 @@
  */
 
 #include <windows.h>
+#include <wincrypt.h>
 #include <chef/platform.h>
 #include <chef/containerv.h>
 #include <stdio.h>
@@ -119,7 +120,7 @@ static struct containerv_container* __container_new(void)
     container->vm_handle = NULL;
     container->host_pipe = INVALID_HANDLE_VALUE;
     container->child_pipe = INVALID_HANDLE_VALUE;
-    list_construct(&container->processes);
+    list_init(&container->processes);
 
     return container;
 }
@@ -273,7 +274,7 @@ int __containerv_spawn(
     if (proc) {
         proc->handle = pi.hProcess;
         proc->pid = pi.dwProcessId;
-        list_append(&container->processes, &proc->list_header);
+        list_add(&container->processes, &proc->list_header);
     } else {
         CloseHandle(pi.hProcess);
         return -1;
