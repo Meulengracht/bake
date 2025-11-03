@@ -6,8 +6,6 @@ set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 set (SRCS
     ${GENERATED_SRCS}
 
-    server/rootfs/debootstrap.c
-
     server/api.c
     server/server.c
 
@@ -15,6 +13,13 @@ set (SRCS
     init.c
     main.c
 )
+
+# Add platform-specific rootfs implementations
+if (UNIX)
+    list(APPEND SRCS server/rootfs/debootstrap.c)
+elseif(WIN32)
+    list(APPEND SRCS server/rootfs/windows/debootstrap.c)
+endif()
 
 add_executable(cvd ${SRCS})
 add_dependencies(cvd service_server)
