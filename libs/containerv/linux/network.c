@@ -39,6 +39,10 @@ static int addattr_l(
     return 0;
 }
 
+// Note: This function was changed from returning struct rtattr* to using an output
+// parameter to maintain consistent error handling throughout the network module.
+// All functions now return int (0 for success, -1 for error) rather than using
+// die() or returning NULL pointers.
 static int addattr_nest(
         struct nlmsghdr *n, int maxlen, __u16 type, struct rtattr **nest_out)
 {

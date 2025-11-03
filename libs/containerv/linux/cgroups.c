@@ -79,10 +79,15 @@ int cgroups_init(const char* hostname, pid_t pid, const struct containerv_cgroup
       &(struct cgroups_setting){.name = "pids.max", .value = ""},
       procs_setting, NULL};
 
-  // Copy the limit values
+  // Copy the limit values and ensure null termination
   strncpy(cgroups_setting_list[0]->value, memory_max, CGROUPS_CONTROL_FIELD_SIZE - 1);
+  cgroups_setting_list[0]->value[CGROUPS_CONTROL_FIELD_SIZE - 1] = '\0';
+  
   strncpy(cgroups_setting_list[1]->value, cpu_weight, CGROUPS_CONTROL_FIELD_SIZE - 1);
+  cgroups_setting_list[1]->value[CGROUPS_CONTROL_FIELD_SIZE - 1] = '\0';
+  
   strncpy(cgroups_setting_list[2]->value, pids_max, CGROUPS_CONTROL_FIELD_SIZE - 1);
+  cgroups_setting_list[2]->value[CGROUPS_CONTROL_FIELD_SIZE - 1] = '\0';
 
   VLOG_DEBUG("containerv", "cgroups_init: setting cgroups for %s...\n", hostname);
 

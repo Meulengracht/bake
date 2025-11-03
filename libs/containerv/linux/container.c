@@ -44,6 +44,10 @@
 #define __FD_READ  0
 #define __FD_WRITE 1
 
+// Network interface naming constants - veth names are derived from container ID
+#define __CONTAINER_VETH_HOST_OFFSET 0    // Use full ID for host-side veth
+#define __CONTAINER_VETH_CONT_OFFSET 4    // Use partial ID for container-side veth
+
 struct containerv_container_process {
     struct list_item list_header;
     pid_t            pid;
@@ -738,7 +742,7 @@ static int __container_run(
     // Setup network interface inside container if enabled
     if (options->capabilities & CV_CAP_NETWORK && options->network.enable && options->network.container_ip) {
         char container_veth[16];
-        snprintf(container_veth, sizeof(container_veth), "veth%sc", &container->id[4]);
+        snprintf(container_veth, sizeof(container_veth), "veth%sc", &container->id[__CONTAINER_VETH_CONT_OFFSET]);
         
         VLOG_DEBUG("containerv[child]", "__container_run: bringing up container network interface %s\n", container_veth);
         status = if_up(container_veth, (char*)options->network.container_ip, (char*)options->network.container_netmask);
@@ -888,8 +892,10 @@ int containerv_create(
                         int netns_fd;
                         int sock_fd;
                         
-                        snprintf(host_veth, sizeof(host_veth), "veth%s", &container->id[0]);
-                        snprintf(container_veth, sizeof(container_veth), "veth%sc", &container->id[4]);
+                        // Create unique veth pair names from container ID
+                        // Host side uses full ID, container side uses partial ID for brevity
+                        snprintf(host_veth, sizeof(host_veth), "veth%s", &container->id[__CONTAINER_VETH_HOST_OFFSET]);
+                        snprintf(container_veth, sizeof(container_veth), "veth%sc", &container->id[__CONTAINER_VETH_CONT_OFFSET]);
                         
                         VLOG_DEBUG("containerv[host]", "setting up network for %s\n", container->hostname);
                         
