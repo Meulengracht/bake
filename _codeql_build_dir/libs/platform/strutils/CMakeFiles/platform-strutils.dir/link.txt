@@ -1,2 +1,0 @@
-/usr/bin/ar qc libplatform-strutils.a "CMakeFiles/platform-strutils.dir/basename.c.o" "CMakeFiles/platform-strutils.dir/strargv.c.o" "CMakeFiles/platform-strutils.dir/strbool.c.o" "CMakeFiles/platform-strutils.dir/strendswith.c.o" "CMakeFiles/platform-strutils.dir/strfilter.c.o" "CMakeFiles/platform-strutils.dir/strflatten.c.o" "CMakeFiles/platform-strutils.dir/strpathcombine.c.o" "CMakeFiles/platform-strutils.dir/strreplace.c.o" "CMakeFiles/platform-strutils.dir/strsplit.c.o"
-/usr/bin/ranlib libplatform-strutils.a

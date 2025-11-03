@@ -1,2 +1,0 @@
-/usr/bin/ar qc libcontainerv.a CMakeFiles/containerv.dir/shared.c.o
-/usr/bin/ranlib libcontainerv.a

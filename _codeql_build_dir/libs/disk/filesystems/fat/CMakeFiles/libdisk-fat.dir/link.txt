@@ -1,2 +1,0 @@
-/usr/bin/ar qc liblibdisk-fat.a "CMakeFiles/libdisk-fat.dir/fat_access.c.o" "CMakeFiles/libdisk-fat.dir/fat_cache.c.o" "CMakeFiles/libdisk-fat.dir/fat_filelib.c.o" "CMakeFiles/libdisk-fat.dir/fat_format.c.o" "CMakeFiles/libdisk-fat.dir/fat_misc.c.o" "CMakeFiles/libdisk-fat.dir/fat_string.c.o" "CMakeFiles/libdisk-fat.dir/fat_table.c.o" "CMakeFiles/libdisk-fat.dir/fat_write.c.o"
-/usr/bin/ranlib liblibdisk-fat.a

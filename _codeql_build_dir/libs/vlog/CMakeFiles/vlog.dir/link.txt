@@ -1,2 +1,0 @@
-/usr/bin/ar qc libvlog.a CMakeFiles/vlog.dir/logf.c.o
-/usr/bin/ranlib libvlog.a

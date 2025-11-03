@@ -1,9 +1,0 @@
-/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/lib/cmake/zstd/zstdTargets.cmake
-/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/lib/cmake/zstd/zstdTargets-release.cmake
-/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/lib/cmake/zstd/zstdConfig.cmake
-/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/lib/cmake/zstd/zstdConfigVersion.cmake
-/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/lib/pkgconfig/libzstd.pc
-/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/include/zdict.h
-/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/include/zstd.h
-/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/include/zstd_errors.h
-/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/lib/libzstd.a

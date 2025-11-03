@@ -1,2 +1,0 @@
-/usr/bin/ar qc liblibdirconf.a CMakeFiles/libdirconf.dir/config.c.o "CMakeFiles/libdirconf.dir/dirs-linux.c.o"
-/usr/bin/ranlib liblibdirconf.a

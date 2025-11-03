@@ -1,1 +1,0 @@
-/home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/unmkvafs.dir/link.d CMakeFiles/unmkvafs.dir/unmkvafs.c.o CMakeFiles/unmkvafs.dir/filter.c.o -o ../../../bin/unmkvafs  ../../../lib/libvafs.a -lpthread ../../../lib/libbrieflz.a ../../../lib/libvafs-blockcache.a

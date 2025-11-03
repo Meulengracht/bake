@@ -1,2 +1,0 @@
-/usr/bin/ar qc libfridge.a CMakeFiles/fridge.dir/fridge.c.o CMakeFiles/fridge.dir/inventory.c.o CMakeFiles/fridge.dir/store.c.o
-/usr/bin/ranlib libfridge.a

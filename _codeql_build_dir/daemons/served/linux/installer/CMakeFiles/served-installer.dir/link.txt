@@ -1,2 +1,0 @@
-/usr/bin/ar qc libserved-installer.a "CMakeFiles/served-installer.dir/install.c.o" "CMakeFiles/served-installer.dir/uninstall.c.o"
-/usr/bin/ranlib libserved-installer.a
