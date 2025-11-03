@@ -17,7 +17,7 @@ The best way to get started is to install the latest version of Chef using the [
 Features that is expected in the upcoming 1.5 release
 
 - [ ] Served initial feature completion
-- [ ] Remote management commands
+- [x] Remote management commands
   * `bake remote list --arch=...`
   * `bake remote info [agent]`
 - [x] Disk image utility based on yaml descriptions
@@ -167,6 +167,46 @@ The above will trigger chef to download ingredients for the linux/i386 platform,
   * `BUILD_INGREDIENTS_PREFIX`: path to where the build ingredients are unpacked
   * `CHEF_TARGET_PLATFORM`: the platform which was provided on the commandline
   * `CHEF_TARGET_ARCHITECTURE`: the architecture which was provided on the commandline
+
+## Remote Building
+
+Chef supports remote building through the `bake remote` commands, which allow you to execute builds on remote build servers (agents). This is useful for building packages for architectures that you don't have local access to, or for offloading compute-intensive builds.
+
+### Listing Available Agents
+
+To see what remote build agents are available:
+
+```
+$ bake remote list
+```
+
+You can filter agents by architecture:
+
+```
+$ bake remote list --arch=arm64
+```
+
+This will display available agents with their status, supported architectures, and current load.
+
+### Getting Agent Information
+
+To get detailed information about a specific agent:
+
+```
+$ bake remote info agent-01
+```
+
+This shows the agent's status, supported architectures, and current workload.
+
+### Building Remotely
+
+To execute a build remotely:
+
+```
+$ bake remote build my-recipe.yaml
+```
+
+For more information on remote build commands, see `bake remote --help`.
 
 ## Publishing your first package
 
