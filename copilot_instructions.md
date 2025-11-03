@@ -17,7 +17,7 @@ The project emphasizes cross-compilation support and lightweight package managem
 ## Technology Stack
 
 - **Languages**: C (primary), with some CMake configuration
-- **Build System**: CMake 3.14.3+
+- **Build System**: CMake 3.14.3 or higher
 - **External Dependencies**:
   - libcurl (HTTP/HTTPS operations)
   - OpenSSL (cryptography)
@@ -236,7 +236,7 @@ Currently, the test infrastructure is minimal. When adding tests:
 ### Protocols
 Protocol definitions in `protocols/*.gr` files (Gracht RPC format):
 - `served.gr`: Package management daemon protocol
-- `waiterd.gr`: Build manager protocol (used by cookd build server)
+- `waiterd.gr`: Build manager protocol (includes waiterd service for clients and waiterd_cook service for cookd build servers)
 - `cvd.gr`: Container daemon protocol
 
 ## Common Tasks
@@ -283,7 +283,7 @@ Update with: `git submodule update --recursive`
 
 ## CI/CD
 
-GitHub Actions workflows:
+GitHub Actions workflows in `.github/workflows/`:
 - **build.yml**: Builds on Ubuntu and Windows
 - **codeql.yml**: Security analysis
 
@@ -338,7 +338,7 @@ When making changes:
 
 ## Additional Resources
 
-- Main README: Comprehensive recipe specification
-- served README: Package daemon protocol specification
-- Examples: Real-world recipe examples in `examples/recipes/`
+- `README.md`: Comprehensive recipe specification
+- `daemons/served/README.md`: Package daemon protocol specification
+- `examples/recipes/`: Real-world recipe examples
 - Chef API: https://api.chef.io (package repository API)
