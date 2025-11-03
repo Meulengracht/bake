@@ -24,6 +24,11 @@
 #include <errno.h>
 #include <sys/stat.h>
 
+// Define for Windows 10+ unprivileged symlink creation
+#ifndef SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE
+#define SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE 0x2
+#endif
+
 static char* __prefix_path(const char* base, const char* path)
 {
     // If 'path' is not an absolute path, then we assume it is relative to the
