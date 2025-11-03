@@ -45,7 +45,22 @@ extern void containerv_options_delete(struct containerv_options* options);
 extern void containerv_options_set_caps(struct containerv_options* options, enum containerv_capabilities caps);
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-// TODO
+enum containerv_mount_flags {
+    CV_MOUNT_BIND = 0x1,
+    CV_MOUNT_RECURSIVE = 0x2,
+    CV_MOUNT_READONLY = 0x4,
+    CV_MOUNT_CREATE = 0x100
+};
+
+struct containerv_mount {
+    char*                       what;
+    char*                       where;
+    char*                       fstype;
+    enum containerv_mount_flags flags;
+};
+
+extern void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int count);
+
 #elif defined(__linux__) || defined(__unix__)
 enum containerv_mount_flags {
     CV_MOUNT_BIND = 0x1,

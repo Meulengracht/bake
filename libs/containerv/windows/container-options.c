@@ -32,6 +32,9 @@ struct containerv_options* containerv_options_new(void)
 void containerv_options_delete(struct containerv_options* options)
 {
     if (options) {
+        if (options->mounts) {
+            free(options->mounts);
+        }
         free(options);
     }
 }
@@ -40,5 +43,13 @@ void containerv_options_set_caps(struct containerv_options* options, enum contai
 {
     if (options) {
         options->capabilities = caps;
+    }
+}
+
+void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int count)
+{
+    if (options) {
+        options->mounts = mounts;
+        options->mounts_count = count;
     }
 }

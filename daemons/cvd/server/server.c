@@ -222,7 +222,27 @@ static int __ensure_base_rootfs(const char* rootfs)
 
 #elif CHEF_ON_WINDOWS
 static int __ensure_base_rootfs(const char* rootfs) {
-    return -1;
+    VLOG_DEBUG("cvd", "__ensure_base_rootfs(rootfs=%s) - Windows implementation\n", rootfs);
+    
+    // On Windows, we would typically:
+    // 1. Download or use a Windows container base image
+    // 2. Or use WSL2 for Linux containers
+    // For now, just ensure the directory exists
+    
+    int status = platform_mkdir(rootfs);
+    if (status && errno != EEXIST) {
+        VLOG_ERROR("cvd", "failed to create rootfs directory %s\n", rootfs);
+        return -1;
+    }
+    
+    // TODO: Implement Windows container base image setup
+    // This could involve:
+    // - Pulling a Windows Server Core or Nano Server base image
+    // - Setting up a WSL2 distribution for Linux containers
+    // - Configuring the HyperV VM with the base image
+    
+    VLOG_WARNING("cvd", "Windows base rootfs setup not fully implemented yet\n");
+    return 0;
 }
 #endif
 
