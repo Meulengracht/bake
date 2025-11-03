@@ -230,9 +230,13 @@ static int __ensure_base_rootfs(const char* rootfs) {
     // For now, just ensure the directory exists
     
     int status = platform_mkdir(rootfs);
-    if (status && errno != EEXIST) {
-        VLOG_ERROR("cvd", "failed to create rootfs directory %s\n", rootfs);
-        return -1;
+    if (status != 0) {
+        // Directory creation failed - check if it already exists
+        if (errno != EEXIST) {
+            VLOG_ERROR("cvd", "failed to create rootfs directory %s\n", rootfs);
+            return -1;
+        }
+        // Directory already exists, that's okay
     }
     
     // TODO: Implement Windows container base image setup

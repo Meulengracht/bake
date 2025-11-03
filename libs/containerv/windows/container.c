@@ -240,11 +240,24 @@ int __containerv_spawn(
     ZeroMemory(&pi, sizeof(pi));
     
     // Build command line from path and arguments
+    size_t cmdline_len = strlen(options->path);
+    if (cmdline_len >= sizeof(cmdline)) {
+        VLOG_ERROR("containerv", "__containerv_spawn: path too long\n");
+        return -1;
+    }
     strcpy_s(cmdline, sizeof(cmdline), options->path);
+    
     if (options->argv) {
         for (int i = 1; options->argv[i] != NULL; i++) {
+            size_t arg_len = strlen(options->argv[i]);
+            // Check if adding " " + argument would overflow (current + space + arg + null)
+            if (cmdline_len + 1 + arg_len + 1 > sizeof(cmdline)) {
+                VLOG_ERROR("containerv", "__containerv_spawn: command line too long\n");
+                return -1;
+            }
             strcat_s(cmdline, sizeof(cmdline), " ");
             strcat_s(cmdline, sizeof(cmdline), options->argv[i]);
+            cmdline_len += 1 + arg_len;
         }
     }
     
@@ -381,6 +394,15 @@ int containerv_upload(
     // For now, simple file copy as placeholder
     for (int i = 0; i < count; i++) {
         char destPath[MAX_PATH];
+        size_t rootfs_len = strlen(container->rootfs);
+        size_t container_path_len = strlen(containerPaths[i]);
+        
+        // Validate combined path length (rootfs + separator + path + null)
+        if (rootfs_len + 1 + container_path_len + 1 > MAX_PATH) {
+            VLOG_ERROR("containerv", "containerv_upload: combined path too long\n");
+            return -1;
+        }
+        
         sprintf_s(destPath, sizeof(destPath), "%s\\%s", container->rootfs, containerPaths[i]);
         
         if (!CopyFileA(hostPaths[i], destPath, FALSE)) {
@@ -410,6 +432,15 @@ int containerv_download(
     // For now, simple file copy as placeholder
     for (int i = 0; i < count; i++) {
         char srcPath[MAX_PATH];
+        size_t rootfs_len = strlen(container->rootfs);
+        size_t container_path_len = strlen(containerPaths[i]);
+        
+        // Validate combined path length (rootfs + separator + path + null)
+        if (rootfs_len + 1 + container_path_len + 1 > MAX_PATH) {
+            VLOG_ERROR("containerv", "containerv_download: combined path too long\n");
+            return -1;
+        }
+        
         sprintf_s(srcPath, sizeof(srcPath), "%s\\%s", container->rootfs, containerPaths[i]);
         
         if (!CopyFileA(srcPath, hostPaths[i], FALSE)) {
