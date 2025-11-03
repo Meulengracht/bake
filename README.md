@@ -57,6 +57,74 @@ the approval, you can also see the current account status using
 $ order account whoami
 ```
 
+## Building Chef from Source
+
+### Linux
+
+#### Prerequisites
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y libfuse3-3 libfuse3-dev libcap2 libcap-dev \
+                        libcurl4-openssl-dev libssl-dev cmake build-essential
+
+# Clone with submodules
+git clone --recursive https://github.com/Meulengracht/bake.git
+cd bake
+```
+
+#### Build
+```bash
+# Configure
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+# Build
+cmake --build build --config Release -j$(nproc)
+
+# Install (optional)
+sudo cmake --install build
+```
+
+### Windows
+
+#### Prerequisites
+- Visual Studio 2019 or later (with C/C++ development tools), or MinGW-w64
+- CMake 3.14.3 or later
+- Git for Windows
+
+#### Build with Visual Studio
+```powershell
+# Clone with submodules
+git clone --recursive https://github.com/Meulengracht/bake.git
+cd bake
+
+# Configure for Visual Studio
+cmake -B build -G "Visual Studio 16 2019" -A x64
+
+# Build
+cmake --build build --config Release
+
+# Install (optional, requires admin)
+cmake --install build
+```
+
+#### Build with MinGW
+```bash
+# Clone with submodules
+git clone --recursive https://github.com/Meulengracht/bake.git
+cd bake
+
+# Configure for MinGW
+cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+
+# Build
+cmake --build build -j%NUMBER_OF_PROCESSORS%
+
+# Install (optional)
+cmake --install build
+```
+
+**Note:** On Windows, symbolic link creation may require administrator privileges or Windows 10+ Developer Mode to be enabled.
+
 ## Your first recipe
 
 The easiest way to get started is to use the init helper provided by the command 'bake'. This will create a new .yaml recipe in the current directory, where you can
