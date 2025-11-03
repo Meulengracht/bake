@@ -21,10 +21,19 @@ struct waiter_status_response {
     build_status status;
 }
 
+struct waiter_agent_info {
+    string name;
+    int online;
+    build_architecture architectures;
+    int queue_size;
+}
+
 service waiterd (44) {
     func build(waiter_build_request request) : (queue_status status, string id) = 1;
     func status(string id) : (waiter_status_response response) = 2;
     func artifact(string id, artifact_type type) : (string link) = 3;
+    func list_agents(build_architecture arch_filter) : (int count, waiter_agent_info[] agents) = 4;
+    func agent_info(string name) : (waiter_agent_info info) = 5;
 }
 
 struct cook_ready_event {

@@ -111,4 +111,22 @@ extern struct waiterd_request* waiterd_server_request_new(
  */
 extern struct waiterd_request* waiterd_server_request_find(const char* id);
 
+/**
+ * @brief Lists all agents, optionally filtered by architecture
+ * 
+ * @param arch_filter Architecture filter (0 for all)
+ * @param agents Output array of agent info (caller must free)
+ * @return Number of agents, or negative on error
+ */
+extern int waiterd_server_agents_list(enum waiterd_architecture arch_filter, struct chef_waiter_agent_info** agents);
+
+/**
+ * @brief Gets detailed information about a specific agent
+ * 
+ * @param name Agent name
+ * @param info Output agent info structure
+ * @return 0 on success, negative on error
+ */
+extern int waiterd_server_agent_info(const char* name, struct chef_waiter_agent_info* info);
+
 #endif //!__WAITERD_PRIVATE_H__

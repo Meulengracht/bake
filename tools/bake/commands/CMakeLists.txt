@@ -23,6 +23,8 @@ add_library(bake-commands STATIC
     remote_download.c
     remote_init.c
     remote_resume.c
+    remote_list.c
+    remote_info.c
     remote.c
 )
 

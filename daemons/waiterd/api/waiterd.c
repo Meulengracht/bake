@@ -17,6 +17,7 @@
  */
 
 #include <convert.h>
+#include <string.h>
 #include "chef_waiterd_service_server.h"
 #include "chef_waiterd_cook_service_server.h"
 #include <vlog.h>
@@ -96,4 +97,40 @@ void chef_waiterd_artifact_invocation(struct gracht_message* message, const char
             chef_waiterd_artifact_response(message, wreq->artifacts.package);
             break;
     }
+}
+
+void chef_waiterd_list_agents_invocation(struct gracht_message* message, enum chef_build_architecture arch_filter)
+{
+    struct chef_waiter_agent_info* agents = NULL;
+    int count;
+    VLOG_DEBUG("api", "waiter::list_agents(arch_filter=%u)\n", arch_filter);
+
+    count = waiterd_server_agents_list(waiterd_architecture(arch_filter), &agents);
+    if (count < 0) {
+        VLOG_ERROR("api", "failed to list agents\n");
+        chef_waiterd_list_agents_response(message, 0, NULL, 0);
+        free(agents);
+        return;
+    }
+
+    chef_waiterd_list_agents_response(message, count, agents, count);
+    free(agents);
+}
+
+void chef_waiterd_agent_info_invocation(struct gracht_message* message, const char* name)
+{
+    struct chef_waiter_agent_info info;
+    int status;
+    VLOG_DEBUG("api", "waiter::agent_info(name=%s)\n", name);
+
+    status = waiterd_server_agent_info(name, &info);
+    if (status != 0) {
+        VLOG_WARNING("api", "agent not found: %s\n", name);
+        // Return an empty/offline agent
+        memset(&info, 0, sizeof(info));
+        info.name = "";
+        info.online = 0;
+    }
+
+    chef_waiterd_agent_info_response(message, &info);
 }
