@@ -37,7 +37,7 @@ char* platform_exec(const char* cmd)
         return NULL;
     }
 
-    STARTUPINFOW si = {sizeof(STARTUPINFOW)};
+    STARTUPINFOA si = {sizeof(STARTUPINFOA)};
     si.dwFlags     = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
     si.hStdOutput  = hPipeWrite;
     si.hStdError   = hPipeWrite;
@@ -46,7 +46,7 @@ char* platform_exec(const char* cmd)
 
     PROCESS_INFORMATION pi = { 0 };
 
-    BOOL fSuccess = CreateProcessA(NULL, (LPWSTR)cmd, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi);
+    BOOL fSuccess = CreateProcessA(NULL, (LPSTR)cmd, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi);
     if (! fSuccess)
     {
         CloseHandle(hPipeWrite);
@@ -88,11 +88,11 @@ char* platform_exec(const char* cmd)
                     newBufferSize *= 2;
 
                 char* newBuffer = realloc(strResult, newBufferSize);
-				if (newBuffer == NULL) {
+                if (newBuffer == NULL) {
                     free(strResult);
-                    return -1;
+                    return NULL;
                 }
-				memset(&newBuffer[totalSize], 0, newBufferSize - totalSize);
+                memset(&newBuffer[totalSize], 0, newBufferSize - totalSize);
 
                 strResult = newBuffer;
                 bufferSize = newBufferSize;
