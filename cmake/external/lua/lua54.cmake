@@ -18,9 +18,6 @@ elseif(UNIX)
 elseif(MSVC)
 	set(_target generic)
 	set(_mycflags "")
-	# For MSVC, we need to override CFLAGS to avoid GCC-specific flags
-	# Note: CFLAGS is a single string that will be passed to make
-	set(_cflags "/O2 /DLUA_COMPAT_5_3")
 else()
 	set(_target generic)
 	set(_mycflags "")
@@ -39,16 +36,17 @@ set(LUA_FOUND TRUE CACHE INTERNAL "")
 # does not work with MinGW.
 #
 if(MSVC)
-	# For MSVC, override CFLAGS to use MSVC-compatible flags instead of GCC flags
+	# For MSVC, apply additional patch to remove GCC-specific flags
 	ExternalProject_Add(lua54
 		URL
 		  https://www.lua.org/ftp/lua-5.4.7.tar.gz
 		PATCH_COMMAND
-		  patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/0001-install-static-target.patch
+		  patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/0001-install-static-target.patch &&
+		  patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/0002-remove-gcc-warning-flags.patch
 		CONFIGURE_COMMAND
 		  ""
 		BUILD_COMMAND
-		  ${MAKE_EXE} "CFLAGS=${_cflags}" MYCFLAGS=${_mycflags} CC=${CMAKE_C_COMPILER} "AR=${CMAKE_C_COMPILER_AR} rcu" RANLIB=${CMAKE_C_COMPILER_RANLIB} ${_target}
+		  ${MAKE_EXE} MYCFLAGS=${_mycflags} CC=${CMAKE_C_COMPILER} "AR=${CMAKE_C_COMPILER_AR} rcu" RANLIB=${CMAKE_C_COMPILER_RANLIB} ${_target}
 		BUILD_IN_SOURCE
 		  True
 		BUILD_BYPRODUCTS
