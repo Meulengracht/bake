@@ -22,6 +22,9 @@
 #include <gracht/server.h>
 #include <chef/platform.h>
 
+// Forward declarations for protocol types
+struct chef_waiter_agent_info;
+
 enum waiterd_architecture {
     WAITERD_ARCHITECTURE_X86 = 0x1,
     WAITERD_ARCHITECTURE_X64 = 0x2,

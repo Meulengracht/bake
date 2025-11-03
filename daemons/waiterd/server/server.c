@@ -21,6 +21,7 @@
 #include <string.h>
 #include <time.h>
 #include <vlog.h>
+#include "chef_waiterd_service.h"
 
 static char g_templateGuid[] = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
 static const char* g_hexValues = "0123456789ABCDEF-";
