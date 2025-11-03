@@ -9,10 +9,15 @@ add_library(platform-osutils STATIC
     getuserdir.c
     isdir.c
     mkdir.c
+    readlink.c
     rmdir.c
     sleep.c
+    spawn.c
+    stat.c
     strdup.c
     strndup.c
+    symlink.c
+    tmpdir.c
     unlink.c
 )
 target_include_directories(platform-osutils PRIVATE ../../include)
