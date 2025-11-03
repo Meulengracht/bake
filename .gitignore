@@ -37,3 +37,4 @@ build/
 .vchcache
 *.pack
 .vscode
+_codeql_build_dir/
