@@ -44,7 +44,7 @@ extern struct containerv_options* containerv_options_new(void);
 extern void containerv_options_delete(struct containerv_options* options);
 extern void containerv_options_set_caps(struct containerv_options* options, enum containerv_capabilities caps);
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+// Mount structures and flags - common across platforms
 enum containerv_mount_flags {
     CV_MOUNT_BIND = 0x1,
     CV_MOUNT_RECURSIVE = 0x2,
@@ -60,23 +60,11 @@ struct containerv_mount {
 };
 
 extern void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int count);
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+// Windows-specific configuration functions can go here in the future
 
 #elif defined(__linux__) || defined(__unix__)
-enum containerv_mount_flags {
-    CV_MOUNT_BIND = 0x1,
-    CV_MOUNT_RECURSIVE = 0x2,
-    CV_MOUNT_READONLY = 0x4,
-    CV_MOUNT_CREATE = 0x100
-};
-
-struct containerv_mount {
-    char*                       what;
-    char*                       where;
-    char*                       fstype;
-    enum containerv_mount_flags flags;
-};
-
-extern void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int count);
 extern void containerv_options_set_users(struct containerv_options* options, uid_t hostUidStart, uid_t childUidStart, int count);
 extern void containerv_options_set_groups(struct containerv_options* options, gid_t hostGidStart, gid_t childGidStart, int count);
 

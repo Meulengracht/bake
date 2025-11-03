@@ -30,6 +30,8 @@
 // In production, these would use the Windows HCS (Host Compute Service) APIs
 // or the HyperV WMI interfaces
 
+#define MIN_REMAINING_PATH_LENGTH 20  // Minimum space needed for "containerv-XXXXXX" + null
+
 static char* __container_create_runtime_dir(void)
 {
     char template[MAX_PATH];
@@ -46,7 +48,7 @@ static char* __container_create_runtime_dir(void)
     // Create a unique subdirectory for the container
     // strcat_s second parameter is the total buffer size, not remaining space
     size_t remaining = MAX_PATH - strlen(template);
-    if (remaining < 20) {  // Need space for "containerv-XXXXXX" + null
+    if (remaining < MIN_REMAINING_PATH_LENGTH) {
         VLOG_ERROR("containerv", "__container_create_runtime_dir: temp path too long\n");
         return NULL;
     }
@@ -86,15 +88,22 @@ void containerv_generate_id(char* buffer, size_t length)
                 buffer[i * 2 + 1] = charset[random_bytes[i] & 0x0F];
             }
             buffer[__CONTAINER_ID_LENGTH] = '\0';
+            CryptReleaseContext(hCryptProv, 0);
+            return;
         }
         CryptReleaseContext(hCryptProv, 0);
-    } else {
-        // Fallback to simple random
-        for (size_t i = 0; i < __CONTAINER_ID_LENGTH; i++) {
-            buffer[i] = charset[rand() % (sizeof(charset) - 1)];
-        }
-        buffer[__CONTAINER_ID_LENGTH] = '\0';
     }
+    
+    // If crypto API fails, use GetTickCount64 + process ID as fallback
+    // This is not cryptographically secure but better than rand()
+    ULONGLONG tick = GetTickCount64();
+    DWORD pid = GetCurrentProcessId();
+    ULONGLONG combined = (tick << 32) | pid;
+    
+    for (size_t i = 0; i < __CONTAINER_ID_LENGTH; i++) {
+        buffer[i] = charset[(combined >> (i * 4)) & 0x0F];
+    }
+    buffer[__CONTAINER_ID_LENGTH] = '\0';
 }
 
 static struct containerv_container* __container_new(void)
@@ -326,10 +335,27 @@ int containerv_spawn(
         return -1;
     }
     
+    // Validate and copy path
+    size_t path_len = strlen(path);
+    if (path_len == 0 || path_len >= MAX_PATH) {
+        VLOG_ERROR("containerv", "containerv_spawn: invalid path length\n");
+        return -1;
+    }
+    
     spawn_opts.path = path;
     if (options) {
         spawn_opts.flags = options->flags;
-        // TODO: Parse arguments and environment from options
+        
+        // TODO: Parse arguments string into argv array
+        // For now, arguments are not fully supported
+        if (options->arguments && strlen(options->arguments) > 0) {
+            VLOG_WARNING("containerv", "containerv_spawn: argument parsing not yet implemented\n");
+        }
+        
+        // TODO: Parse environment array
+        if (options->environment) {
+            VLOG_WARNING("containerv", "containerv_spawn: environment setup not yet implemented\n");
+        }
     }
     
     status = __containerv_spawn(container, &spawn_opts, &handle);
@@ -479,9 +505,19 @@ void __containerv_destroy(struct containerv_container* container)
     // 2. Delete the VM configuration
     // 3. Clean up VM storage
     
-    // Remove runtime directory
+    // Remove runtime directory (recursively if needed)
     if (container->runtime_dir) {
-        RemoveDirectoryA(container->runtime_dir);
+        // RemoveDirectoryA only works on empty directories
+        // For a complete implementation, we should recursively delete contents first
+        // or use SHFileOperationA for recursive deletion
+        if (!RemoveDirectoryA(container->runtime_dir)) {
+            DWORD error = GetLastError();
+            if (error != ERROR_DIR_NOT_EMPTY) {
+                VLOG_WARNING("containerv", "__containerv_destroy: failed to remove runtime dir: %lu\n", error);
+            } else {
+                VLOG_DEBUG("containerv", "__containerv_destroy: runtime dir not empty, may need manual cleanup\n");
+            }
+        }
     }
 }
 
