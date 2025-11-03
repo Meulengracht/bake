@@ -23,6 +23,7 @@ elseif(MSVC)
 	set(_mycflags "")
 	set(_lib_name "liblua.a")
 	# For MSVC, we need to override CFLAGS to avoid GCC-specific flags
+	# Note: CFLAGS is a single string that will be passed to make
 	set(_cflags "/O2 /DLUA_COMPAT_5_3")
 else()
 	set(_target generic)
@@ -50,7 +51,7 @@ if(MSVC)
 		CONFIGURE_COMMAND
 		  ""
 		BUILD_COMMAND
-		  ${MAKE_EXE} CFLAGS=${_cflags} MYCFLAGS=${_mycflags} CC=${CMAKE_C_COMPILER} AR=${CMAKE_C_COMPILER_AR}\ rcu RANLIB=${CMAKE_C_COMPILER_RANLIB} ${_target}
+		  ${MAKE_EXE} "CFLAGS=${_cflags}" MYCFLAGS=${_mycflags} CC=${CMAKE_C_COMPILER} "AR=${CMAKE_C_COMPILER_AR} rcu" RANLIB=${CMAKE_C_COMPILER_RANLIB} ${_target}
 		BUILD_IN_SOURCE
 		  True
 		BUILD_BYPRODUCTS
@@ -67,7 +68,7 @@ else()
 		CONFIGURE_COMMAND
 		  ""
 		BUILD_COMMAND
-		  ${MAKE_EXE} MYCFLAGS=${_mycflags} CC=${CMAKE_C_COMPILER} AR=${CMAKE_C_COMPILER_AR}\ rcu RANLIB=${CMAKE_C_COMPILER_RANLIB} ${_target}
+		  ${MAKE_EXE} MYCFLAGS=${_mycflags} CC=${CMAKE_C_COMPILER} "AR=${CMAKE_C_COMPILER_AR} rcu" RANLIB=${CMAKE_C_COMPILER_RANLIB} ${_target}
 		BUILD_IN_SOURCE
 		  True
 		BUILD_BYPRODUCTS
