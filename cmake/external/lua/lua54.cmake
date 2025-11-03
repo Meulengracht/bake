@@ -41,12 +41,11 @@ if(MSVC)
 		URL
 		  https://www.lua.org/ftp/lua-5.4.7.tar.gz
 		PATCH_COMMAND
-		  patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/0001-install-static-target.patch &&
-		  patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/0002-remove-gcc-warning-flags.patch
+		  patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/0001-install-static-target.patch
 		CONFIGURE_COMMAND
 		  ""
 		BUILD_COMMAND
-		  ${MAKE_EXE} MYCFLAGS=${_mycflags} CC=${CMAKE_C_COMPILER} "AR=${CMAKE_C_COMPILER_AR} rcu" RANLIB=${CMAKE_C_COMPILER_RANLIB} ${_target}
+		  ${MAKE_EXE} ${_target}
 		BUILD_IN_SOURCE
 		  True
 		BUILD_BYPRODUCTS
@@ -63,7 +62,7 @@ else()
 		CONFIGURE_COMMAND
 		  ""
 		BUILD_COMMAND
-		  ${MAKE_EXE} MYCFLAGS=${_mycflags} CC=${CMAKE_C_COMPILER} "AR=${CMAKE_C_COMPILER_AR} rcu" RANLIB=${CMAKE_C_COMPILER_RANLIB} ${_target}
+		  ${MAKE_EXE} MYCFLAGS=-fPIC CC=${CMAKE_C_COMPILER} "AR=${CMAKE_C_COMPILER_AR} rcu" RANLIB=${CMAKE_C_COMPILER_RANLIB} ${_target}
 		BUILD_IN_SOURCE
 		  True
 		BUILD_BYPRODUCTS
