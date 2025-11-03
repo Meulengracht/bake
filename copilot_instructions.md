@@ -236,8 +236,7 @@ Currently, the test infrastructure is minimal. When adding tests:
 ### Protocols
 Protocol definitions in `protocols/*.gr` files (Gracht RPC format):
 - `served.gr`: Package management daemon protocol
-- `cookd.gr`: Build server protocol
-- `waiterd.gr`: Build manager protocol
+- `waiterd.gr`: Build manager protocol (used by cookd build server)
 - `cvd.gr`: Container daemon protocol
 
 ## Common Tasks
