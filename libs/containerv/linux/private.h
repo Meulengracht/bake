@@ -51,13 +51,28 @@ struct containerv_options_user_range {
     int          count;
 };
 
+struct containerv_options_network {
+    int         enable;             // whether to enable network isolation
+    const char* container_ip;       // IP for container interface (e.g., "10.0.0.2")
+    const char* container_netmask;  // Netmask (e.g., "255.255.255.0")
+    const char* host_ip;            // IP for host-side veth interface (e.g., "10.0.0.1")
+};
+
+struct containerv_options_cgroup {
+    const char* memory_max;      // e.g., "1G", "512M", or "max" for no limit
+    const char* cpu_weight;      // 1-10000, default is 100
+    const char* pids_max;        // maximum number of processes, or "max"
+};
+
 struct containerv_options {
-    enum containerv_capabilities capabilities;
-    struct containerv_mount*     mounts;
-    int                          mounts_count;
+    enum containerv_capabilities           capabilities;
+    struct containerv_mount*               mounts;
+    int                                    mounts_count;
     
-    struct containerv_options_user_range uid_range;
-    struct containerv_options_user_range gid_range;
+    struct containerv_options_user_range   uid_range;
+    struct containerv_options_user_range   gid_range;
+    struct containerv_options_network      network;
+    struct containerv_options_cgroup       cgroup;
 };
 
 struct containerv_container {
@@ -66,6 +81,7 @@ struct containerv_container {
     thrd_t       log_tid;
     volatile int log_running;
     char*        rootfs;
+    char*        hostname;        // hostname for cgroups/network
 
     // child
     int         socket_fd;

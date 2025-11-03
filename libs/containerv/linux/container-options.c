@@ -53,3 +53,26 @@ void containerv_options_set_groups(struct containerv_options* options, gid_t hos
     options->gid_range.child_start = childGidStart;
     options->gid_range.count = count;
 }
+
+void containerv_options_set_cgroup_limits(
+    struct containerv_options* options,
+    const char*                memory_max,
+    const char*                cpu_weight,
+    const char*                pids_max)
+{
+    options->cgroup.memory_max = memory_max;
+    options->cgroup.cpu_weight = cpu_weight;
+    options->cgroup.pids_max = pids_max;
+}
+
+void containerv_options_set_network(
+    struct containerv_options* options,
+    const char*                container_ip,
+    const char*                container_netmask,
+    const char*                host_ip)
+{
+    options->network.enable = 1;
+    options->network.container_ip = container_ip;
+    options->network.container_netmask = container_netmask;
+    options->network.host_ip = host_ip;
+}

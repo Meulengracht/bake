@@ -64,6 +64,34 @@ struct containerv_mount {
 extern void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int count);
 extern void containerv_options_set_users(struct containerv_options* options, uid_t hostUidStart, uid_t childUidStart, int count);
 extern void containerv_options_set_groups(struct containerv_options* options, gid_t hostGidStart, gid_t childGidStart, int count);
+
+/**
+ * @brief Configure cgroup resource limits for the container
+ * @param options The container options to configure
+ * @param memory_max Maximum memory (e.g., "1G", "512M", "max" for no limit), or NULL for default (1G)
+ * @param cpu_weight CPU weight (1-10000, default 100), or NULL for default
+ * @param pids_max Maximum number of processes (e.g., "256", "max"), or NULL for default (256)
+ */
+extern void containerv_options_set_cgroup_limits(
+    struct containerv_options* options,
+    const char*                memory_max,
+    const char*                cpu_weight,
+    const char*                pids_max
+);
+
+/**
+ * @brief Configure network isolation for the container with a virtual ethernet bridge
+ * @param options The container options to configure
+ * @param container_ip IP address for the container interface (e.g., "10.0.0.2")
+ * @param container_netmask Netmask for the container (e.g., "255.255.255.0")
+ * @param host_ip IP address for the host-side veth interface (e.g., "10.0.0.1")
+ */
+extern void containerv_options_set_network(
+    struct containerv_options* options,
+    const char*                container_ip,
+    const char*                container_netmask,
+    const char*                host_ip
+);
 #endif
 
 /**

@@ -1,8 +1,10 @@
 add_library(containerv-linux STATIC
     rootfs/debootstrap.c
+    cgroups.c
     container-options.c
     container.c
     control-socket.c
+    network.c
     user.c
     utils.c
 )
