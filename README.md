@@ -33,10 +33,10 @@ Features that is expected in the upcoming 1.5 release
 
 Features that is expected in the planned 1.6 release
 
-- Initial windows support
-  * Finish the platform layer
-  * Extend containerv to support the windows HCI layer
-  * Implement the build flow in kitchen for windows
+- [x] Initial windows support
+  * [x] Finish the platform layer
+  * [x] Extend containerv to support the windows HCI layer
+  * [ ] Implement the build flow in kitchen for windows
 
 ## Account Setup
 
