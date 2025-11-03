@@ -45,14 +45,13 @@ static char* __prefix_path(const char* base, const char* path)
 
         last = strrchr(base, CHEF_PATH_SEPARATOR);
         if (last == NULL) {
-            size_t length = strlen(result);
-            result[length] = CHEF_PATH_SEPARATOR;
-            result[length + 1] = '\0';
+            // No separator found, path is just a filename, add separator before the path
+            strcpy(result, path);
         } else {
             strncpy(result, base, (last - base) + 1);
             result[(last - base) + 1] = '\0';
+            strcat(result, path);
         }
-        strcat(result, path);
         return result;
     }
     return _strdup(path);
@@ -61,30 +60,30 @@ static char* __prefix_path(const char* base, const char* path)
 static int __create_dummy_dir_if_not_exists(const char* path)
 {
     struct _stat st;
-    int result;
+    int statResult;
 
-    result = _stat(path, &st);
-    if (result && errno == ENOENT) {
-        result = _mkdir(path);
+    statResult = _stat(path, &st);
+    if (statResult && errno == ENOENT) {
+        return _mkdir(path);
     }
-    return result;
+    return statResult;
 }
 
 static int __create_dummy_file_if_not_exists(const char* path)
 {
     struct _stat st;
-    int result;
+    int statResult;
 
-    result = _stat(path, &st);
-    if (result) {
+    statResult = _stat(path, &st);
+    if (statResult) {
         FILE* file = fopen(path, "w");
         if (file == NULL) {
             return -1;
         }
         fclose(file);
-        result = 0;
+        return 0;
     }
-    return result;
+    return statResult;
 }
 
 int platform_symlink(const char* path, const char* target, int directory)

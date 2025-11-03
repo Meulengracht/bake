@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 char* platform_tmpdir(void)
 {
@@ -28,6 +29,13 @@ char* platform_tmpdir(void)
     char tempDir[MAX_PATH];
     DWORD result;
     int i;
+    static int seeded = 0;
+
+    // Seed random number generator once
+    if (!seeded) {
+        srand((unsigned int)time(NULL) ^ (unsigned int)GetCurrentProcessId());
+        seeded = 1;
+    }
 
     // Get the temp directory path
     result = GetTempPathA(MAX_PATH, tempPath);
@@ -40,9 +48,10 @@ char* platform_tmpdir(void)
         unsigned int rand1 = (unsigned int)rand();
         unsigned int rand2 = (unsigned int)rand();
         unsigned int rand3 = (unsigned int)rand();
+        unsigned int tick = (unsigned int)GetTickCount();
         
-        snprintf(tempDir, MAX_PATH, "%schef-%08x%08x%08x", 
-                 tempPath, rand1, rand2, rand3);
+        snprintf(tempDir, MAX_PATH, "%schef-%08x%08x%08x%08x", 
+                 tempPath, rand1, rand2, rand3, tick);
 
         // Try to create the directory
         if (CreateDirectoryA(tempDir, NULL)) {

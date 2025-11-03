@@ -22,11 +22,13 @@
 #include <string.h>
 #include <windows.h>
 
+#define OUTPUT_BUFFER_SIZE 2048
+
 static void __report(char* line, enum platform_spawn_output_type type, struct platform_spawn_options* options)
 {
     const char* s = line;
     char*       p = line;
-    char        tmp[2048];
+    char        tmp[OUTPUT_BUFFER_SIZE];
 
     while (*p) {
         if (*p == '\n') {
@@ -179,7 +181,7 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
 
     // Read output if handler is provided
     if (options && options->output_handler) {
-        char buffer[2048];
+        char buffer[OUTPUT_BUFFER_SIZE];
         BOOL processRunning = TRUE;
 
         while (processRunning) {
