@@ -342,4 +342,4 @@ When making changes:
 - Main README: Comprehensive recipe specification
 - served README: Package daemon protocol specification
 - Examples: Real-world recipe examples in `examples/recipes/`
-- Chef Store: https://chef.menu (package repository)
+- Chef API: https://api.chef.io (package repository API)
