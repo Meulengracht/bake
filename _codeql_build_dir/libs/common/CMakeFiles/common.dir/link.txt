@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcommon.a CMakeFiles/common.dir/image.c.o CMakeFiles/common.dir/ingredient.c.o CMakeFiles/common.dir/package.c.o CMakeFiles/common.dir/preprocessor.c.o CMakeFiles/common.dir/recipe_utils.c.o CMakeFiles/common.dir/recipe.c.o
+/usr/bin/ranlib libcommon.a

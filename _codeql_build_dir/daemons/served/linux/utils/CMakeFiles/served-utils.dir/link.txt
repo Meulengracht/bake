@@ -1,0 +1,2 @@
+/usr/bin/ar qc libserved-utils.a "CMakeFiles/served-utils.dir/fuse_vafs.c.o"
+/usr/bin/ranlib libserved-utils.a

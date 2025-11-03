@@ -1,0 +1,2 @@
+/usr/bin/ar qc liboven.a "CMakeFiles/oven.dir/pkgmgrs/pkg-config.c.o" CMakeFiles/oven.dir/cache.c.o CMakeFiles/oven.dir/oven.c.o CMakeFiles/oven.dir/script.c.o CMakeFiles/oven.dir/linux_context.c.o
+/usr/bin/ranlib liboven.a

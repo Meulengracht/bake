@@ -1,0 +1,1835 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineSystem.cmake:205 (message)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      The system is: Linux - 6.11.0-1018-azure - x86_64
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCCompiler.cmake:123 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler: /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc 
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+      
+      The C compiler identification is GNU, found in:
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/3.31.6/CompilerIdC/a.out
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:74 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U3kaI5"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U3kaI5"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U3kaI5'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_bfa71/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U3kaI5'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_bfa71.dir/build.make CMakeFiles/cmTC_bfa71.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U3kaI5'
+        Building C object CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -v -o CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o -c /usr/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/cc
+        OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
+        OFFLOAD_TARGET_DEFAULT=1
+        Target: x86_64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) 
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_bfa71.dir/'
+         /usr/libexec/gcc/x86_64-linux-gnu/13/cc1 -quiet -v -imultiarch x86_64-linux-gnu /usr/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_bfa71.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccd4J3zA.s
+        GNU C17 (Ubuntu 13.3.0-6ubuntu2~24.04) version 13.3.0 (x86_64-linux-gnu)
+        	compiled by GNU C version 13.3.0, GMP version 6.3.0, MPFR version 4.2.1, MPC version 1.3.1, isl version isl-0.26-GMP
+        
+        GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+        ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed/x86_64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../x86_64-linux-gnu/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/lib/gcc/x86_64-linux-gnu/13/include
+         /usr/local/include
+         /usr/include/x86_64-linux-gnu
+         /usr/include
+        End of search list.
+        Compiler executable checksum: 38987c28e967c64056a6454abdef726e
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_bfa71.dir/'
+         as -v --64 -o CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o /tmp/ccd4J3zA.s
+        GNU assembler version 2.42 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.42
+        COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.'
+        Linking C executable cmTC_bfa71
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_bfa71.dir/link.txt --verbose=1
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/cc
+        COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper
+        OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
+        OFFLOAD_TARGET_DEFAULT=1
+        Target: x86_64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) 
+        COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_bfa71' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_bfa71.'
+         /usr/libexec/gcc/x86_64-linux-gnu/13/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccWexZaz.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_bfa71 /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o
+        collect2 version 13.3.0
+        /usr/bin/ld -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccWexZaz.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_bfa71 /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o
+        GNU ld (GNU Binutils for Ubuntu) 2.42
+        COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_bfa71' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_bfa71.'
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -v -Wl,-v -rdynamic CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o -o cmTC_bfa71
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U3kaI5'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U3kaI5'
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:182 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed C implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/lib/gcc/x86_64-linux-gnu/13/include]
+          add: [/usr/local/include]
+          add: [/usr/include/x86_64-linux-gnu]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/lib/gcc/x86_64-linux-gnu/13/include] ==> [/usr/lib/gcc/x86_64-linux-gnu/13/include]
+        collapse include dir [/usr/local/include] ==> [/usr/local/include]
+        collapse include dir [/usr/include/x86_64-linux-gnu] ==> [/usr/include/x86_64-linux-gnu]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/lib/gcc/x86_64-linux-gnu/13/include;/usr/local/include;/usr/include/x86_64-linux-gnu;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:218 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(\\.[a-z]+)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|")?[ 	]*(([^"]*[/\\])?(ld[0-9]*(\\.[a-z]+)?))("|,| |$)]
+        ignore line: [Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U3kaI5']
+        ignore line: []
+        ignore line: [Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_bfa71/fast]
+        ignore line: [gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U3kaI5']
+        ignore line: [/usr/bin/gmake  -f CMakeFiles/cmTC_bfa71.dir/build.make CMakeFiles/cmTC_bfa71.dir/build]
+        ignore line: [gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U3kaI5']
+        ignore line: [Building C object CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o]
+        ignore line: [/home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -v -o CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o -c /usr/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/cc]
+        ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa]
+        ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+        ignore line: [Target: x86_64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c ada c++ go d fortran objc obj-c++ m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) ]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_bfa71.dir/']
+        ignore line: [ /usr/libexec/gcc/x86_64-linux-gnu/13/cc1 -quiet -v -imultiarch x86_64-linux-gnu /usr/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_bfa71.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccd4J3zA.s]
+        ignore line: [GNU C17 (Ubuntu 13.3.0-6ubuntu2~24.04) version 13.3.0 (x86_64-linux-gnu)]
+        ignore line: [	compiled by GNU C version 13.3.0  GMP version 6.3.0  MPFR version 4.2.1  MPC version 1.3.1  isl version isl-0.26-GMP]
+        ignore line: []
+        ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+        ignore line: [ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed/x86_64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../x86_64-linux-gnu/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/13/include]
+        ignore line: [ /usr/local/include]
+        ignore line: [ /usr/include/x86_64-linux-gnu]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [Compiler executable checksum: 38987c28e967c64056a6454abdef726e]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_bfa71.dir/']
+        ignore line: [ as -v --64 -o CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o /tmp/ccd4J3zA.s]
+        ignore line: [GNU assembler version 2.42 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.42]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.']
+        ignore line: [Linking C executable cmTC_bfa71]
+        ignore line: [/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_bfa71.dir/link.txt --verbose=1]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/cc]
+        ignore line: [COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper]
+        ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa]
+        ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+        ignore line: [Target: x86_64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c ada c++ go d fortran objc obj-c++ m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) ]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_bfa71' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_bfa71.']
+        link line: [ /usr/libexec/gcc/x86_64-linux-gnu/13/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccWexZaz.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_bfa71 /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o]
+          arg [/usr/libexec/gcc/x86_64-linux-gnu/13/collect2] ==> ignore
+          arg [-plugin] ==> ignore
+          arg [/usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so] ==> ignore
+          arg [-plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper] ==> ignore
+          arg [-plugin-opt=-fresolution=/tmp/ccWexZaz.res] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [-plugin-opt=-pass-through=-lc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [elf_x86_64] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-export-dynamic] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-znow] ==> ignore
+          arg [-zrelro] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_bfa71] ==> ignore
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib]
+          arg [-L/lib/x86_64-linux-gnu] ==> dir [/lib/x86_64-linux-gnu]
+          arg [-L/lib/../lib] ==> dir [/lib/../lib]
+          arg [-L/usr/lib/x86_64-linux-gnu] ==> dir [/usr/lib/x86_64-linux-gnu]
+          arg [-L/usr/lib/../lib] ==> dir [/usr/lib/../lib]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13/../../..] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../..]
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o] ==> ignore
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [-lc] ==> lib [c]
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o]
+        ignore line: [collect2 version 13.3.0]
+        ignore line: [/usr/bin/ld -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccWexZaz.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_bfa71 /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_bfa71.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o]
+        linker tool for 'C': /usr/bin/ld
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o] ==> [/usr/lib/x86_64-linux-gnu/Scrt1.o]
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o] ==> [/usr/lib/x86_64-linux-gnu/crti.o]
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o] ==> [/usr/lib/x86_64-linux-gnu/crtn.o]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13] ==> [/usr/lib/gcc/x86_64-linux-gnu/13]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib] ==> [/usr/lib]
+        collapse library dir [/lib/x86_64-linux-gnu] ==> [/lib/x86_64-linux-gnu]
+        collapse library dir [/lib/../lib] ==> [/lib]
+        collapse library dir [/usr/lib/x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+        collapse library dir [/usr/lib/../lib] ==> [/usr/lib]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../..] ==> [/usr/lib]
+        implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+        implicit objs: [/usr/lib/x86_64-linux-gnu/Scrt1.o;/usr/lib/x86_64-linux-gnu/crti.o;/usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o;/usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o;/usr/lib/x86_64-linux-gnu/crtn.o]
+        implicit dirs: [/usr/lib/gcc/x86_64-linux-gnu/13;/usr/lib/x86_64-linux-gnu;/usr/lib;/lib/x86_64-linux-gnu;/lib]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CMakeDetermineLinkerId.cmake:40 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:255 (cmake_determine_linker_id)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Running the C compiler's linker: "/usr/bin/ld" "-v"
+      GNU ld (GNU Binutils for Ubuntu) 2.42
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCCompilerFlag.cmake:56 (cmake_check_compiler_flag)"
+      - "CMakeLists.txt:56 (check_c_compiler_flag)"
+    checks:
+      - "Performing Test HAS_NO_FORMAT_TRUNCATION"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZO8kpk"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZO8kpk"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAS_NO_FORMAT_TRUNCATION"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZO8kpk'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_3986f/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZO8kpk'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_3986f.dir/build.make CMakeFiles/cmTC_3986f.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZO8kpk'
+        Building C object CMakeFiles/cmTC_3986f.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DHAS_NO_FORMAT_TRUNCATION  -Wno-format-truncation -o CMakeFiles/cmTC_3986f.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZO8kpk/src.c
+        Linking C executable cmTC_3986f
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3986f.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -rdynamic CMakeFiles/cmTC_3986f.dir/src.c.o -o cmTC_3986f
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZO8kpk'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZO8kpk'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFiles.cmake:141 (try_compile)"
+      - "CMakeLists.txt:78 (check_include_files)"
+    checks:
+      - "Looking for include file endian.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-BT9DwY"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-BT9DwY"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_ENDIAN_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-BT9DwY'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_d740b/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-BT9DwY'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_d740b.dir/build.make CMakeFiles/cmTC_d740b.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-BT9DwY'
+        Building C object CMakeFiles/cmTC_d740b.dir/HAVE_ENDIAN_H.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_d740b.dir/HAVE_ENDIAN_H.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-BT9DwY/HAVE_ENDIAN_H.c
+        Linking C executable cmTC_d740b
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d740b.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_d740b.dir/HAVE_ENDIAN_H.c.o -o cmTC_d740b
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-BT9DwY'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-BT9DwY'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFiles.cmake:141 (try_compile)"
+      - "CMakeLists.txt:79 (check_include_files)"
+    checks:
+      - "Looking for include file fcntl.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7zpvpp"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7zpvpp"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_FCNTL_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7zpvpp'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_b78e0/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7zpvpp'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_b78e0.dir/build.make CMakeFiles/cmTC_b78e0.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7zpvpp'
+        Building C object CMakeFiles/cmTC_b78e0.dir/HAVE_FCNTL_H.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_b78e0.dir/HAVE_FCNTL_H.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7zpvpp/HAVE_FCNTL_H.c
+        Linking C executable cmTC_b78e0
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_b78e0.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_b78e0.dir/HAVE_FCNTL_H.c.o -o cmTC_b78e0
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7zpvpp'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7zpvpp'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFiles.cmake:141 (try_compile)"
+      - "CMakeLists.txt:80 (check_include_files)"
+    checks:
+      - "Looking for include file sched.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U2k4oi"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U2k4oi"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_SCHED_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U2k4oi'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_17d66/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U2k4oi'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_17d66.dir/build.make CMakeFiles/cmTC_17d66.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U2k4oi'
+        Building C object CMakeFiles/cmTC_17d66.dir/HAVE_SCHED_H.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_17d66.dir/HAVE_SCHED_H.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U2k4oi/HAVE_SCHED_H.c
+        Linking C executable cmTC_17d66
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_17d66.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_17d66.dir/HAVE_SCHED_H.c.o -o cmTC_17d66
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U2k4oi'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-U2k4oi'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFiles.cmake:141 (try_compile)"
+      - "CMakeLists.txt:81 (check_include_files)"
+    checks:
+      - "Looking for include file unistd.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qsHI8b"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qsHI8b"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_UNISTD_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qsHI8b'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_0c959/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qsHI8b'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_0c959.dir/build.make CMakeFiles/cmTC_0c959.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qsHI8b'
+        Building C object CMakeFiles/cmTC_0c959.dir/HAVE_UNISTD_H.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_0c959.dir/HAVE_UNISTD_H.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qsHI8b/HAVE_UNISTD_H.c
+        Linking C executable cmTC_0c959
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_0c959.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_0c959.dir/HAVE_UNISTD_H.c.o -o cmTC_0c959
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qsHI8b'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qsHI8b'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFiles.cmake:141 (try_compile)"
+      - "CMakeLists.txt:82 (check_include_files)"
+    checks:
+      - "Looking for include file sys/param.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-r8kBsU"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-r8kBsU"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_SYS_PARAM_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-r8kBsU'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_74641/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-r8kBsU'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_74641.dir/build.make CMakeFiles/cmTC_74641.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-r8kBsU'
+        Building C object CMakeFiles/cmTC_74641.dir/HAVE_SYS_PARAM_H.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_74641.dir/HAVE_SYS_PARAM_H.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-r8kBsU/HAVE_SYS_PARAM_H.c
+        Linking C executable cmTC_74641
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_74641.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_74641.dir/HAVE_SYS_PARAM_H.c.o -o cmTC_74641
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-r8kBsU'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-r8kBsU'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFiles.cmake:141 (try_compile)"
+      - "CMakeLists.txt:83 (check_include_files)"
+    checks:
+      - "Looking for include file sys/stat.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-nYpghR"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-nYpghR"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_SYS_STAT_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-nYpghR'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_11384/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-nYpghR'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_11384.dir/build.make CMakeFiles/cmTC_11384.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-nYpghR'
+        Building C object CMakeFiles/cmTC_11384.dir/HAVE_SYS_STAT_H.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_11384.dir/HAVE_SYS_STAT_H.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-nYpghR/HAVE_SYS_STAT_H.c
+        Linking C executable cmTC_11384
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_11384.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_11384.dir/HAVE_SYS_STAT_H.c.o -o cmTC_11384
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-nYpghR'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-nYpghR'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFiles.cmake:141 (try_compile)"
+      - "CMakeLists.txt:84 (check_include_files)"
+    checks:
+      - "Looking for include file sys/time.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-zyLXWI"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-zyLXWI"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_SYS_TIME_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-zyLXWI'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_45782/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-zyLXWI'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_45782.dir/build.make CMakeFiles/cmTC_45782.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-zyLXWI'
+        Building C object CMakeFiles/cmTC_45782.dir/HAVE_SYS_TIME_H.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_45782.dir/HAVE_SYS_TIME_H.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-zyLXWI/HAVE_SYS_TIME_H.c
+        Linking C executable cmTC_45782
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_45782.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_45782.dir/HAVE_SYS_TIME_H.c.o -o cmTC_45782
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-zyLXWI'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-zyLXWI'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFiles.cmake:141 (try_compile)"
+      - "CMakeLists.txt:85 (check_include_files)"
+    checks:
+      - "Looking for include file sys/types.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jba0yB"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jba0yB"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_SYS_TYPES_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jba0yB'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_9bc7c/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jba0yB'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_9bc7c.dir/build.make CMakeFiles/cmTC_9bc7c.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jba0yB'
+        Building C object CMakeFiles/cmTC_9bc7c.dir/HAVE_SYS_TYPES_H.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_9bc7c.dir/HAVE_SYS_TYPES_H.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jba0yB/HAVE_SYS_TYPES_H.c
+        Linking C executable cmTC_9bc7c
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_9bc7c.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_9bc7c.dir/HAVE_SYS_TYPES_H.c.o -o cmTC_9bc7c
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jba0yB'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jba0yB'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "CMakeLists.txt:87 (check_function_exists)"
+    checks:
+      - "Looking for close"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZDPk6M"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZDPk6M"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_CLOSE"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZDPk6M'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_dec3d/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZDPk6M'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_dec3d.dir/build.make CMakeFiles/cmTC_dec3d.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZDPk6M'
+        Building C object CMakeFiles/cmTC_dec3d.dir/CheckFunctionExists.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=close -o CMakeFiles/cmTC_dec3d.dir/CheckFunctionExists.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZDPk6M/CheckFunctionExists.c
+        Linking C executable cmTC_dec3d
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_dec3d.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=close -rdynamic CMakeFiles/cmTC_dec3d.dir/CheckFunctionExists.c.o -o cmTC_dec3d
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZDPk6M'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ZDPk6M'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "CMakeLists.txt:88 (check_function_exists)"
+    checks:
+      - "Looking for getpid"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-F0zPYf"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-F0zPYf"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_GETPID"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-F0zPYf'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_c3327/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-F0zPYf'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_c3327.dir/build.make CMakeFiles/cmTC_c3327.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-F0zPYf'
+        Building C object CMakeFiles/cmTC_c3327.dir/CheckFunctionExists.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=getpid -o CMakeFiles/cmTC_c3327.dir/CheckFunctionExists.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-F0zPYf/CheckFunctionExists.c
+        Linking C executable cmTC_c3327
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_c3327.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=getpid -rdynamic CMakeFiles/cmTC_c3327.dir/CheckFunctionExists.c.o -o cmTC_c3327
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-F0zPYf'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-F0zPYf'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "CMakeLists.txt:89 (check_function_exists)"
+    checks:
+      - "Looking for gettimeofday"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7At7D4"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7At7D4"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_GETTIMEOFDAY"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7At7D4'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_6c60f/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7At7D4'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_6c60f.dir/build.make CMakeFiles/cmTC_6c60f.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7At7D4'
+        Building C object CMakeFiles/cmTC_6c60f.dir/CheckFunctionExists.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=gettimeofday -o CMakeFiles/cmTC_6c60f.dir/CheckFunctionExists.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7At7D4/CheckFunctionExists.c
+        Linking C executable cmTC_6c60f
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6c60f.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=gettimeofday -rdynamic CMakeFiles/cmTC_6c60f.dir/CheckFunctionExists.c.o -o cmTC_6c60f
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7At7D4'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-7At7D4'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "CMakeLists.txt:90 (check_function_exists)"
+    checks:
+      - "Looking for open"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-XtAB0h"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-XtAB0h"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_OPEN"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-XtAB0h'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_80657/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-XtAB0h'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_80657.dir/build.make CMakeFiles/cmTC_80657.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-XtAB0h'
+        Building C object CMakeFiles/cmTC_80657.dir/CheckFunctionExists.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=open -o CMakeFiles/cmTC_80657.dir/CheckFunctionExists.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-XtAB0h/CheckFunctionExists.c
+        Linking C executable cmTC_80657
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_80657.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=open -rdynamic CMakeFiles/cmTC_80657.dir/CheckFunctionExists.c.o -o cmTC_80657
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-XtAB0h'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-XtAB0h'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "CMakeLists.txt:91 (check_function_exists)"
+    checks:
+      - "Looking for read"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kayfjO"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kayfjO"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_READ"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kayfjO'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_59eca/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kayfjO'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_59eca.dir/build.make CMakeFiles/cmTC_59eca.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kayfjO'
+        Building C object CMakeFiles/cmTC_59eca.dir/CheckFunctionExists.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=read -o CMakeFiles/cmTC_59eca.dir/CheckFunctionExists.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kayfjO/CheckFunctionExists.c
+        Linking C executable cmTC_59eca
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_59eca.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=read -rdynamic CMakeFiles/cmTC_59eca.dir/CheckFunctionExists.c.o -o cmTC_59eca
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kayfjO'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kayfjO'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "CMakeLists.txt:92 (check_function_exists)"
+    checks:
+      - "Looking for sched_yield"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-GGkxL4"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-GGkxL4"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_SCHED_YIELD"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-GGkxL4'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_d908b/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-GGkxL4'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_d908b.dir/build.make CMakeFiles/cmTC_d908b.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-GGkxL4'
+        Building C object CMakeFiles/cmTC_d908b.dir/CheckFunctionExists.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=sched_yield -o CMakeFiles/cmTC_d908b.dir/CheckFunctionExists.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-GGkxL4/CheckFunctionExists.c
+        Linking C executable cmTC_d908b
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d908b.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=sched_yield -rdynamic CMakeFiles/cmTC_d908b.dir/CheckFunctionExists.c.o -o cmTC_d908b
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-GGkxL4'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-GGkxL4'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFiles.cmake:141 (try_compile)"
+      - "CMakeLists.txt:95 (check_include_files)"
+    checks:
+      - "Looking for include file stdint.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-KSepWD"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-KSepWD"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_STDINT_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-KSepWD'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_e84e5/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-KSepWD'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_e84e5.dir/build.make CMakeFiles/cmTC_e84e5.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-KSepWD'
+        Building C object CMakeFiles/cmTC_e84e5.dir/HAVE_STDINT_H.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_e84e5.dir/HAVE_STDINT_H.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-KSepWD/HAVE_STDINT_H.c
+        Linking C executable cmTC_e84e5
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_e84e5.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_e84e5.dir/HAVE_STDINT_H.c.o -o cmTC_e84e5
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-KSepWD'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-KSepWD'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFile.cmake:99 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:264 (check_include_file)"
+      - "CMakeLists.txt:101 (check_type_size)"
+    checks:
+      - "Looking for stddef.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-otDrCK"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-otDrCK"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_STDDEF_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-otDrCK'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_05b28/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-otDrCK'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_05b28.dir/build.make CMakeFiles/cmTC_05b28.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-otDrCK'
+        Building C object CMakeFiles/cmTC_05b28.dir/CheckIncludeFile.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_05b28.dir/CheckIncludeFile.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-otDrCK/CheckIncludeFile.c
+        Linking C executable cmTC_05b28
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_05b28.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_05b28.dir/CheckIncludeFile.c.o -o cmTC_05b28
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-otDrCK'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-otDrCK'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:101 (check_type_size)"
+    checks:
+      - "Check size of __int64"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-EkNGZx"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-EkNGZx"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE___INT64"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-EkNGZx'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_48f4d/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-EkNGZx'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_48f4d.dir/build.make CMakeFiles/cmTC_48f4d.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-EkNGZx'
+        Building C object CMakeFiles/cmTC_48f4d.dir/__INT64.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_48f4d.dir/__INT64.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-EkNGZx/__INT64.c
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-EkNGZx/__INT64.c:27:22: error: ‘__int64’ undeclared here (not in a function); did you mean ‘__int64_t’?
+           27 | #define SIZE (sizeof(__int64))
+              |                      ^~~~~~~
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-EkNGZx/__INT64.c:29:12: note: in expansion of macro ‘SIZE’
+           29 |   ('0' + ((SIZE / 10000)%10)),
+              |            ^~~~
+        gmake[4]: *** [CMakeFiles/cmTC_48f4d.dir/build.make:81: CMakeFiles/cmTC_48f4d.dir/__INT64.c.o] Error 1
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-EkNGZx'
+        gmake[3]: *** [Makefile:134: cmTC_48f4d/fast] Error 2
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-EkNGZx'
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:102 (check_type_size)"
+    checks:
+      - "Check size of int64_t"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-NXd2Ek"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-NXd2Ek"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_INT64_T"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-NXd2Ek'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_b5849/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-NXd2Ek'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_b5849.dir/build.make CMakeFiles/cmTC_b5849.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-NXd2Ek'
+        Building C object CMakeFiles/cmTC_b5849.dir/INT64_T.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_b5849.dir/INT64_T.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-NXd2Ek/INT64_T.c
+        Linking C executable cmTC_b5849
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_b5849.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_b5849.dir/INT64_T.c.o -o cmTC_b5849
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-NXd2Ek'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-NXd2Ek'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:103 (check_type_size)"
+    checks:
+      - "Check size of long long"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2B1SqE"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2B1SqE"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_LONG_LONG_INT"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2B1SqE'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_fd362/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2B1SqE'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_fd362.dir/build.make CMakeFiles/cmTC_fd362.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2B1SqE'
+        Building C object CMakeFiles/cmTC_fd362.dir/LONG_LONG_INT.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_fd362.dir/LONG_LONG_INT.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2B1SqE/LONG_LONG_INT.c
+        Linking C executable cmTC_fd362
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_fd362.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_fd362.dir/LONG_LONG_INT.c.o -o cmTC_fd362
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2B1SqE'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2B1SqE'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:106 (check_type_size)"
+    checks:
+      - "Check size of int32_t"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-V5mPuU"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-V5mPuU"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_INT32_T"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-V5mPuU'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_f323a/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-V5mPuU'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_f323a.dir/build.make CMakeFiles/cmTC_f323a.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-V5mPuU'
+        Building C object CMakeFiles/cmTC_f323a.dir/INT32_T.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_f323a.dir/INT32_T.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-V5mPuU/INT32_T.c
+        Linking C executable cmTC_f323a
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f323a.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_f323a.dir/INT32_T.c.o -o cmTC_f323a
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-V5mPuU'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-V5mPuU'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:107 (check_type_size)"
+    checks:
+      - "Check size of __int32"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-rpSwA5"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-rpSwA5"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE___INT32"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-rpSwA5'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_dc71d/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-rpSwA5'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_dc71d.dir/build.make CMakeFiles/cmTC_dc71d.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-rpSwA5'
+        Building C object CMakeFiles/cmTC_dc71d.dir/__INT32.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_dc71d.dir/__INT32.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-rpSwA5/__INT32.c
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-rpSwA5/__INT32.c:27:22: error: ‘__int32’ undeclared here (not in a function); did you mean ‘__int32_t’?
+           27 | #define SIZE (sizeof(__int32))
+              |                      ^~~~~~~
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-rpSwA5/__INT32.c:29:12: note: in expansion of macro ‘SIZE’
+           29 |   ('0' + ((SIZE / 10000)%10)),
+              |            ^~~~
+        gmake[4]: *** [CMakeFiles/cmTC_dc71d.dir/build.make:81: CMakeFiles/cmTC_dc71d.dir/__INT32.c.o] Error 1
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-rpSwA5'
+        gmake[3]: *** [Makefile:134: cmTC_dc71d/fast] Error 2
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-rpSwA5'
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:108 (check_type_size)"
+    checks:
+      - "Check size of long"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LuKlD5"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LuKlD5"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_LONG_INT"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LuKlD5'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_3e61d/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LuKlD5'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_3e61d.dir/build.make CMakeFiles/cmTC_3e61d.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LuKlD5'
+        Building C object CMakeFiles/cmTC_3e61d.dir/LONG_INT.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_3e61d.dir/LONG_INT.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LuKlD5/LONG_INT.c
+        Linking C executable cmTC_3e61d
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3e61d.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_3e61d.dir/LONG_INT.c.o -o cmTC_3e61d
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LuKlD5'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LuKlD5'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:109 (check_type_size)"
+    checks:
+      - "Check size of int"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-WFIBjq"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-WFIBjq"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_INT"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-WFIBjq'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_2d791/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-WFIBjq'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_2d791.dir/build.make CMakeFiles/cmTC_2d791.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-WFIBjq'
+        Building C object CMakeFiles/cmTC_2d791.dir/INT.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_2d791.dir/INT.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-WFIBjq/INT.c
+        Linking C executable cmTC_2d791
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_2d791.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_2d791.dir/INT.c.o -o cmTC_2d791
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-WFIBjq'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-WFIBjq'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:122 (check_type_size)"
+    checks:
+      - "Check size of unsigned long"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kxUuSO"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kxUuSO"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_UNSIGNED_LONG_INT"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kxUuSO'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_c328a/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kxUuSO'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_c328a.dir/build.make CMakeFiles/cmTC_c328a.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kxUuSO'
+        Building C object CMakeFiles/cmTC_c328a.dir/UNSIGNED_LONG_INT.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_c328a.dir/UNSIGNED_LONG_INT.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kxUuSO/UNSIGNED_LONG_INT.c
+        Linking C executable cmTC_c328a
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_c328a.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_c328a.dir/UNSIGNED_LONG_INT.c.o -o cmTC_c328a
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kxUuSO'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-kxUuSO'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:123 (check_type_size)"
+    checks:
+      - "Check size of unsigned int"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-MrjuEt"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-MrjuEt"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_UNSIGNED_INT"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-MrjuEt'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_6b3e2/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-MrjuEt'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_6b3e2.dir/build.make CMakeFiles/cmTC_6b3e2.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-MrjuEt'
+        Building C object CMakeFiles/cmTC_6b3e2.dir/UNSIGNED_INT.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_6b3e2.dir/UNSIGNED_INT.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-MrjuEt/UNSIGNED_INT.c
+        Linking C executable cmTC_6b3e2
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6b3e2.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_6b3e2.dir/UNSIGNED_INT.c.o -o cmTC_6b3e2
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-MrjuEt'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-MrjuEt'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:124 (check_type_size)"
+    checks:
+      - "Check size of unsigned short"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-O5zhlk"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-O5zhlk"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_UNSIGNED_SHORT"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-O5zhlk'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_f6ac4/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-O5zhlk'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_f6ac4.dir/build.make CMakeFiles/cmTC_f6ac4.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-O5zhlk'
+        Building C object CMakeFiles/cmTC_f6ac4.dir/UNSIGNED_SHORT.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_f6ac4.dir/UNSIGNED_SHORT.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-O5zhlk/UNSIGNED_SHORT.c
+        Linking C executable cmTC_f6ac4
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f6ac4.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_f6ac4.dir/UNSIGNED_SHORT.c.o -o cmTC_f6ac4
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-O5zhlk'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-O5zhlk'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:126 (check_type_size)"
+    checks:
+      - "Check size of uint32_t"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-CkatRH"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-CkatRH"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_UINT32_T"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-CkatRH'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_4173e/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-CkatRH'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_4173e.dir/build.make CMakeFiles/cmTC_4173e.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-CkatRH'
+        Building C object CMakeFiles/cmTC_4173e.dir/UINT32_T.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_4173e.dir/UINT32_T.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-CkatRH/UINT32_T.c
+        Linking C executable cmTC_4173e
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_4173e.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_4173e.dir/UINT32_T.c.o -o cmTC_4173e
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-CkatRH'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-CkatRH'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:127 (check_type_size)"
+    checks:
+      - "Check size of __uint32"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-5b9AiB"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-5b9AiB"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE___UINT32"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-5b9AiB'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_2dadb/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-5b9AiB'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_2dadb.dir/build.make CMakeFiles/cmTC_2dadb.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-5b9AiB'
+        Building C object CMakeFiles/cmTC_2dadb.dir/__UINT32.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_2dadb.dir/__UINT32.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-5b9AiB/__UINT32.c
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-5b9AiB/__UINT32.c:27:22: error: ‘__uint32’ undeclared here (not in a function); did you mean ‘__uint32_t’?
+           27 | #define SIZE (sizeof(__uint32))
+              |                      ^~~~~~~~
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-5b9AiB/__UINT32.c:29:12: note: in expansion of macro ‘SIZE’
+           29 |   ('0' + ((SIZE / 10000)%10)),
+              |            ^~~~
+        gmake[4]: *** [CMakeFiles/cmTC_2dadb.dir/build.make:81: CMakeFiles/cmTC_2dadb.dir/__UINT32.c.o] Error 1
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-5b9AiB'
+        gmake[3]: *** [Makefile:134: cmTC_2dadb/fast] Error 2
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-5b9AiB'
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:140 (check_type_size)"
+    checks:
+      - "Check size of uint16_t"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-iCY1AQ"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-iCY1AQ"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_UINT16_T"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-iCY1AQ'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_fd054/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-iCY1AQ'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_fd054.dir/build.make CMakeFiles/cmTC_fd054.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-iCY1AQ'
+        Building C object CMakeFiles/cmTC_fd054.dir/UINT16_T.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_fd054.dir/UINT16_T.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-iCY1AQ/UINT16_T.c
+        Linking C executable cmTC_fd054
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_fd054.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_fd054.dir/UINT16_T.c.o -o cmTC_fd054
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-iCY1AQ'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-iCY1AQ'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:141 (check_type_size)"
+    checks:
+      - "Check size of __uint16"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LYU1VC"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LYU1VC"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE___UINT16"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LYU1VC'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_7e3b4/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LYU1VC'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_7e3b4.dir/build.make CMakeFiles/cmTC_7e3b4.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LYU1VC'
+        Building C object CMakeFiles/cmTC_7e3b4.dir/__UINT16.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_7e3b4.dir/__UINT16.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LYU1VC/__UINT16.c
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LYU1VC/__UINT16.c:27:22: error: ‘__uint16’ undeclared here (not in a function); did you mean ‘__uint16_t’?
+           27 | #define SIZE (sizeof(__uint16))
+              |                      ^~~~~~~~
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LYU1VC/__UINT16.c:29:12: note: in expansion of macro ‘SIZE’
+           29 |   ('0' + ((SIZE / 10000)%10)),
+              |            ^~~~
+        gmake[4]: *** [CMakeFiles/cmTC_7e3b4.dir/build.make:81: CMakeFiles/cmTC_7e3b4.dir/__UINT16.c.o] Error 1
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LYU1VC'
+        gmake[3]: *** [Makefile:134: cmTC_7e3b4/fast] Error 2
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-LYU1VC'
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:154 (check_type_size)"
+    checks:
+      - "Check size of uint8_t"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-1k4Ow9"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-1k4Ow9"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_UINT8_T"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-1k4Ow9'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_3ed82/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-1k4Ow9'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_3ed82.dir/build.make CMakeFiles/cmTC_3ed82.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-1k4Ow9'
+        Building C object CMakeFiles/cmTC_3ed82.dir/UINT8_T.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_3ed82.dir/UINT8_T.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-1k4Ow9/UINT8_T.c
+        Linking C executable cmTC_3ed82
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3ed82.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_3ed82.dir/UINT8_T.c.o -o cmTC_3ed82
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-1k4Ow9'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-1k4Ow9'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:155 (check_type_size)"
+    checks:
+      - "Check size of __uint8"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-n6vDze"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-n6vDze"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE___UINT8"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-n6vDze'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_d5140/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-n6vDze'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_d5140.dir/build.make CMakeFiles/cmTC_d5140.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-n6vDze'
+        Building C object CMakeFiles/cmTC_d5140.dir/__UINT8.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_d5140.dir/__UINT8.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-n6vDze/__UINT8.c
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-n6vDze/__UINT8.c:27:22: error: ‘__uint8’ undeclared here (not in a function); did you mean ‘__uint8_t’?
+           27 | #define SIZE (sizeof(__uint8))
+              |                      ^~~~~~~
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-n6vDze/__UINT8.c:29:12: note: in expansion of macro ‘SIZE’
+           29 |   ('0' + ((SIZE / 10000)%10)),
+              |            ^~~~
+        gmake[4]: *** [CMakeFiles/cmTC_d5140.dir/build.make:81: CMakeFiles/cmTC_d5140.dir/__UINT8.c.o] Error 1
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-n6vDze'
+        gmake[3]: *** [Makefile:134: cmTC_d5140/fast] Error 2
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-n6vDze'
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:165 (check_type_size)"
+    checks:
+      - "Check size of ssize_t"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-H46mFk"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-H46mFk"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_SSIZE_T"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-H46mFk'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_e1da0/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-H46mFk'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_e1da0.dir/build.make CMakeFiles/cmTC_e1da0.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-H46mFk'
+        Building C object CMakeFiles/cmTC_e1da0.dir/SSIZE_T.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_e1da0.dir/SSIZE_T.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-H46mFk/SSIZE_T.c
+        Linking C executable cmTC_e1da0
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_e1da0.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_e1da0.dir/SSIZE_T.c.o -o cmTC_e1da0
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-H46mFk'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-H46mFk'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:156 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckTypeSize.cmake:283 (__check_type_size_impl)"
+      - "CMakeLists.txt:166 (check_type_size)"
+    checks:
+      - "Check size of SSIZE_T"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qblmz4"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qblmz4"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_UPPERCASE_SSIZE_T"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qblmz4'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_92c96/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qblmz4'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_92c96.dir/build.make CMakeFiles/cmTC_92c96.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qblmz4'
+        Building C object CMakeFiles/cmTC_92c96.dir/UPPERCASE_SSIZE_T.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_92c96.dir/UPPERCASE_SSIZE_T.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qblmz4/UPPERCASE_SSIZE_T.c
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qblmz4/UPPERCASE_SSIZE_T.c:27:22: error: ‘SSIZE_T’ undeclared here (not in a function)
+           27 | #define SIZE (sizeof(SSIZE_T))
+              |                      ^~~~~~~
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qblmz4/UPPERCASE_SSIZE_T.c:29:12: note: in expansion of macro ‘SIZE’
+           29 |   ('0' + ((SIZE / 10000)%10)),
+              |            ^~~~
+        gmake[4]: *** [CMakeFiles/cmTC_92c96.dir/build.make:81: CMakeFiles/cmTC_92c96.dir/UPPERCASE_SSIZE_T.c.o] Error 1
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qblmz4'
+        gmake[3]: *** [Makefile:134: cmTC_92c96/fast] Error 2
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-qblmz4'
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "CMakeLists.txt:177 (check_function_exists)"
+    checks:
+      - "Looking for strtoll"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jiTVIi"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jiTVIi"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_STRTOLL"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jiTVIi'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_17de8/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jiTVIi'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_17de8.dir/build.make CMakeFiles/cmTC_17de8.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jiTVIi'
+        Building C object CMakeFiles/cmTC_17de8.dir/CheckFunctionExists.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=strtoll -o CMakeFiles/cmTC_17de8.dir/CheckFunctionExists.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jiTVIi/CheckFunctionExists.c
+        Linking C executable cmTC_17de8
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_17de8.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=strtoll -rdynamic CMakeFiles/cmTC_17de8.dir/CheckFunctionExists.c.o -o cmTC_17de8
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jiTVIi'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-jiTVIi'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "CMakeLists.txt:178 (check_function_exists)"
+    checks:
+      - "Looking for strtoq"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-orQ8CE"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-orQ8CE"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_STRTOQ"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-orQ8CE'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_06989/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-orQ8CE'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_06989.dir/build.make CMakeFiles/cmTC_06989.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-orQ8CE'
+        Building C object CMakeFiles/cmTC_06989.dir/CheckFunctionExists.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=strtoq -o CMakeFiles/cmTC_06989.dir/CheckFunctionExists.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-orQ8CE/CheckFunctionExists.c
+        Linking C executable cmTC_06989
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_06989.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=strtoq -rdynamic CMakeFiles/cmTC_06989.dir/CheckFunctionExists.c.o -o cmTC_06989
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-orQ8CE'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-orQ8CE'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "CMakeLists.txt:179 (check_function_exists)"
+    checks:
+      - "Looking for _strtoi64"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-dVn1G5"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-dVn1G5"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE__STRTOI64"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-dVn1G5'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_18c90/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-dVn1G5'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_18c90.dir/build.make CMakeFiles/cmTC_18c90.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-dVn1G5'
+        Building C object CMakeFiles/cmTC_18c90.dir/CheckFunctionExists.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=_strtoi64 -o CMakeFiles/cmTC_18c90.dir/CheckFunctionExists.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-dVn1G5/CheckFunctionExists.c
+        Linking C executable cmTC_18c90
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_18c90.dir/link.txt --verbose=1
+        /usr/bin/ld: CMakeFiles/cmTC_18c90.dir/CheckFunctionExists.c.o: in function `main':
+        CheckFunctionExists.c:(.text+0x14): undefined reference to `_strtoi64'
+        collect2: error: ld returned 1 exit status
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=_strtoi64 -rdynamic CMakeFiles/cmTC_18c90.dir/CheckFunctionExists.c.o -o cmTC_18c90
+        gmake[4]: *** [CMakeFiles/cmTC_18c90.dir/build.make:102: cmTC_18c90] Error 1
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-dVn1G5'
+        gmake[3]: *** [Makefile:134: cmTC_18c90/fast] Error 2
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-dVn1G5'
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckIncludeFiles.cmake:141 (try_compile)"
+      - "CMakeLists.txt:224 (check_include_files)"
+    checks:
+      - "Looking for include file locale.h"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-u4yCOX"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-u4yCOX"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_LOCALE_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-u4yCOX'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_e15f5/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-u4yCOX'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_e15f5.dir/build.make CMakeFiles/cmTC_e15f5.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-u4yCOX'
+        Building C object CMakeFiles/cmTC_e15f5.dir/HAVE_LOCALE_H.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation  -o CMakeFiles/cmTC_e15f5.dir/HAVE_LOCALE_H.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-u4yCOX/HAVE_LOCALE_H.c
+        Linking C executable cmTC_e15f5
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_e15f5.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_e15f5.dir/HAVE_LOCALE_H.c.o -o cmTC_e15f5
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-u4yCOX'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-u4yCOX'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "CMakeLists.txt:225 (check_function_exists)"
+    checks:
+      - "Looking for setlocale"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-9nCHLG"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-9nCHLG"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_SETLOCALE"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-9nCHLG'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_af801/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-9nCHLG'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_af801.dir/build.make CMakeFiles/cmTC_af801.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-9nCHLG'
+        Building C object CMakeFiles/cmTC_af801.dir/CheckFunctionExists.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=setlocale -o CMakeFiles/cmTC_af801.dir/CheckFunctionExists.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-9nCHLG/CheckFunctionExists.c
+        Linking C executable cmTC_af801
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_af801.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation -DCHECK_FUNCTION_EXISTS=setlocale -rdynamic CMakeFiles/cmTC_af801.dir/CheckFunctionExists.c.o -o cmTC_af801
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-9nCHLG'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-9nCHLG'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "cmake/CheckFunctionKeywords.cmake:9 (check_c_source_compiles)"
+      - "CMakeLists.txt:229 (check_function_keywords)"
+    checks:
+      - "Performing Test HAVE_INLINE"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ddfXai"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ddfXai"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_INLINE"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ddfXai'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_9cb0a/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ddfXai'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_9cb0a.dir/build.make CMakeFiles/cmTC_9cb0a.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ddfXai'
+        Building C object CMakeFiles/cmTC_9cb0a.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DHAVE_INLINE  -Wno-format-truncation  -o CMakeFiles/cmTC_9cb0a.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ddfXai/src.c
+        Linking C executable cmTC_9cb0a
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_9cb0a.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_9cb0a.dir/src.c.o -o cmTC_9cb0a
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ddfXai'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-ddfXai'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "cmake/CheckFunctionKeywords.cmake:9 (check_c_source_compiles)"
+      - "CMakeLists.txt:230 (check_function_keywords)"
+    checks:
+      - "Performing Test HAVE___INLINE"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-tYK3aq"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-tYK3aq"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE___INLINE"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-tYK3aq'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_a54bd/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-tYK3aq'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_a54bd.dir/build.make CMakeFiles/cmTC_a54bd.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-tYK3aq'
+        Building C object CMakeFiles/cmTC_a54bd.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DHAVE___INLINE  -Wno-format-truncation  -o CMakeFiles/cmTC_a54bd.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-tYK3aq/src.c
+        Linking C executable cmTC_a54bd
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a54bd.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_a54bd.dir/src.c.o -o cmTC_a54bd
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-tYK3aq'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-tYK3aq'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "cmake/CheckFunctionKeywords.cmake:9 (check_c_source_compiles)"
+      - "CMakeLists.txt:231 (check_function_keywords)"
+    checks:
+      - "Performing Test HAVE___INLINE__"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-QOpZ1L"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-QOpZ1L"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE___INLINE__"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-QOpZ1L'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_f4a50/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-QOpZ1L'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_f4a50.dir/build.make CMakeFiles/cmTC_f4a50.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-QOpZ1L'
+        Building C object CMakeFiles/cmTC_f4a50.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DHAVE___INLINE__  -Wno-format-truncation  -o CMakeFiles/cmTC_f4a50.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-QOpZ1L/src.c
+        Linking C executable cmTC_f4a50
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f4a50.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_f4a50.dir/src.c.o -o cmTC_f4a50
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-QOpZ1L'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-QOpZ1L'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "CMakeLists.txt:244 (check_c_source_compiles)"
+    checks:
+      - "Performing Test HAVE_SYNC_BUILTINS"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-oYTfiE"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-oYTfiE"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_SYNC_BUILTINS"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-oYTfiE'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_38b89/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-oYTfiE'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_38b89.dir/build.make CMakeFiles/cmTC_38b89.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-oYTfiE'
+        Building C object CMakeFiles/cmTC_38b89.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DHAVE_SYNC_BUILTINS  -Wno-format-truncation  -o CMakeFiles/cmTC_38b89.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-oYTfiE/src.c
+        Linking C executable cmTC_38b89
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_38b89.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_38b89.dir/src.c.o -o cmTC_38b89
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-oYTfiE'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-oYTfiE'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "CMakeLists.txt:245 (check_c_source_compiles)"
+    checks:
+      - "Performing Test HAVE_ATOMIC_BUILTINS"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2j1HJ2"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2j1HJ2"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wno-format-truncation"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson/cmake"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "HAVE_ATOMIC_BUILTINS"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2j1HJ2'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_f2ca0/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2j1HJ2'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_f2ca0.dir/build.make CMakeFiles/cmTC_f2ca0.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2j1HJ2'
+        Building C object CMakeFiles/cmTC_f2ca0.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DHAVE_ATOMIC_BUILTINS  -Wno-format-truncation  -o CMakeFiles/cmTC_f2ca0.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2j1HJ2/src.c
+        Linking C executable cmTC_f2ca0
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f2ca0.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wno-format-truncation  -rdynamic CMakeFiles/cmTC_f2ca0.dir/src.c.o -o cmTC_f2ca0
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2j1HJ2'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-build/CMakeFiles/CMakeScratch/TryCompile-2j1HJ2'
+        
+      exitCode: 0
+...

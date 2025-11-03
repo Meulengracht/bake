@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../lib/liborder-commands.a "CMakeFiles/order-commands.dir/account_setup.c.o" "CMakeFiles/order-commands.dir/account.c.o" "CMakeFiles/order-commands.dir/config.c.o" "CMakeFiles/order-commands.dir/find.c.o" "CMakeFiles/order-commands.dir/info.c.o" "CMakeFiles/order-commands.dir/package.c.o" "CMakeFiles/order-commands.dir/publish.c.o"
+/usr/bin/ranlib ../../../lib/liborder-commands.a

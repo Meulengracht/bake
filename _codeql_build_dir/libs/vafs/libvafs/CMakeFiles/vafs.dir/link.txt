@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../lib/libvafs.a CMakeFiles/vafs.dir/config.c.o CMakeFiles/vafs.dir/crc.c.o CMakeFiles/vafs.dir/directory.c.o CMakeFiles/vafs.dir/file.c.o CMakeFiles/vafs.dir/log.c.o CMakeFiles/vafs.dir/stream.c.o CMakeFiles/vafs.dir/streamdevice.c.o CMakeFiles/vafs.dir/symlink.c.o CMakeFiles/vafs.dir/utils.c.o CMakeFiles/vafs.dir/vafs.c.o
+/usr/bin/ranlib ../../../lib/libvafs.a

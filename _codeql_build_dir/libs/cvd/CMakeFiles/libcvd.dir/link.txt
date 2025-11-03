@@ -1,0 +1,2 @@
+/usr/bin/ar qc liblibcvd.a CMakeFiles/libcvd.dir/__/__/protocols/chef_cvd_service_client.c.o CMakeFiles/libcvd.dir/cache.c.o CMakeFiles/libcvd.dir/client.c.o CMakeFiles/libcvd.dir/context_create.c.o CMakeFiles/libcvd.dir/context_destroy.c.o CMakeFiles/libcvd.dir/step_clean.c.o CMakeFiles/libcvd.dir/step_container.c.o CMakeFiles/libcvd.dir/step_make.c.o CMakeFiles/libcvd.dir/step_pack.c.o CMakeFiles/libcvd.dir/step_source.c.o
+/usr/bin/ranlib liblibcvd.a

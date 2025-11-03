@@ -1,0 +1,2 @@
+/usr/bin/ar qc liblibpackage.a CMakeFiles/libpackage.dir/resolvers/common.c.o CMakeFiles/libpackage.dir/resolvers/elf.c.o CMakeFiles/libpackage.dir/resolvers/pe.c.o CMakeFiles/libpackage.dir/commands.c.o CMakeFiles/libpackage.dir/container.c.o CMakeFiles/libpackage.dir/resolvers/resolver_linux.c.o
+/usr/bin/ranlib liblibpackage.a

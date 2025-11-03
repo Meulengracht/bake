@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcontainerv-linux.a "CMakeFiles/containerv-linux.dir/rootfs/debootstrap.c.o" "CMakeFiles/containerv-linux.dir/cgroups.c.o" "CMakeFiles/containerv-linux.dir/container-options.c.o" "CMakeFiles/containerv-linux.dir/container.c.o" "CMakeFiles/containerv-linux.dir/control-socket.c.o" "CMakeFiles/containerv-linux.dir/network.c.o" "CMakeFiles/containerv-linux.dir/user.c.o" "CMakeFiles/containerv-linux.dir/utils.c.o"
+/usr/bin/ranlib libcontainerv-linux.a

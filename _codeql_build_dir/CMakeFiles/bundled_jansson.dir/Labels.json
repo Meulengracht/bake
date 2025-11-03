@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/CMakeFiles/bundled_jansson"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/CMakeFiles/bundled_jansson.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/CMakeFiles/bundled_jansson-complete.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-stamp/bundled_jansson-build.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-stamp/bundled_jansson-configure.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-stamp/bundled_jansson-download.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-stamp/bundled_jansson-install.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-stamp/bundled_jansson-mkdir.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-stamp/bundled_jansson-patch.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/src/bundled_jansson-stamp/bundled_jansson-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"bundled_jansson"
+		],
+		"name" : "bundled_jansson"
+	}
+}

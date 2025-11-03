@@ -1,0 +1,8 @@
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/lib/libjansson.a
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/include/jansson_config.h
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/include/jansson.h
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/lib/pkgconfig/jansson.pc
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/lib/cmake/jansson/janssonConfig.cmake
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/lib/cmake/jansson/janssonConfigVersion.cmake
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/lib/cmake/jansson/janssonTargets.cmake
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_jansson-prefix/lib/cmake/jansson/janssonTargets-release.cmake

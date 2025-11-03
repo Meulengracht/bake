@@ -1,0 +1,2 @@
+/usr/bin/ar qc libserved-application.a "CMakeFiles/served-application.dir/application.c.o" "CMakeFiles/served-application.dir/commands.c.o" "CMakeFiles/served-application.dir/mount.c.o" "CMakeFiles/served-application.dir/paths.c.o"
+/usr/bin/ranlib libserved-application.a

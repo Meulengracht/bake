@@ -1,0 +1,2 @@
+/usr/bin/ar qc liblibdisk-mfs.a "CMakeFiles/libdisk-mfs.dir/bucket_map.c.o" "CMakeFiles/libdisk-mfs.dir/entries.c.o" "CMakeFiles/libdisk-mfs.dir/format.c.o"
+/usr/bin/ranlib liblibdisk-mfs.a
