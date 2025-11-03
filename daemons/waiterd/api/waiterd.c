@@ -109,12 +109,15 @@ void chef_waiterd_list_agents_invocation(struct gracht_message* message, enum ch
     if (count < 0) {
         VLOG_ERROR("api", "failed to list agents\n");
         chef_waiterd_list_agents_response(message, 0, NULL, 0);
-        free(agents);
         return;
     }
 
     chef_waiterd_list_agents_response(message, count, agents, count);
-    free(agents);
+    
+    // Free the agents array if it was allocated
+    if (agents != NULL) {
+        free(agents);
+    }
 }
 
 void chef_waiterd_agent_info_invocation(struct gracht_message* message, const char* name)

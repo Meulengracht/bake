@@ -59,27 +59,63 @@ static const char* __arch_to_string(enum chef_build_architecture arch)
 {
     static char buffer[128];
     int offset = 0;
+    int ret;
     
     buffer[0] = '\0';
     
     if (arch & CHEF_BUILD_ARCHITECTURE_X86) {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "i386");
+        ret = snprintf(buffer + offset, sizeof(buffer) - offset, "i386");
+        if (ret > 0 && ret < sizeof(buffer) - offset) {
+            offset += ret;
+        }
     }
     if (arch & CHEF_BUILD_ARCHITECTURE_X64) {
-        if (offset > 0) offset += snprintf(buffer + offset, sizeof(buffer) - offset, ", ");
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "amd64");
+        if (offset > 0 && offset < sizeof(buffer) - 3) {
+            ret = snprintf(buffer + offset, sizeof(buffer) - offset, ", ");
+            if (ret > 0 && ret < sizeof(buffer) - offset) {
+                offset += ret;
+            }
+        }
+        ret = snprintf(buffer + offset, sizeof(buffer) - offset, "amd64");
+        if (ret > 0 && ret < sizeof(buffer) - offset) {
+            offset += ret;
+        }
     }
     if (arch & CHEF_BUILD_ARCHITECTURE_ARMHF) {
-        if (offset > 0) offset += snprintf(buffer + offset, sizeof(buffer) - offset, ", ");
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "armhf");
+        if (offset > 0 && offset < sizeof(buffer) - 3) {
+            ret = snprintf(buffer + offset, sizeof(buffer) - offset, ", ");
+            if (ret > 0 && ret < sizeof(buffer) - offset) {
+                offset += ret;
+            }
+        }
+        ret = snprintf(buffer + offset, sizeof(buffer) - offset, "armhf");
+        if (ret > 0 && ret < sizeof(buffer) - offset) {
+            offset += ret;
+        }
     }
     if (arch & CHEF_BUILD_ARCHITECTURE_ARM64) {
-        if (offset > 0) offset += snprintf(buffer + offset, sizeof(buffer) - offset, ", ");
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "arm64");
+        if (offset > 0 && offset < sizeof(buffer) - 3) {
+            ret = snprintf(buffer + offset, sizeof(buffer) - offset, ", ");
+            if (ret > 0 && ret < sizeof(buffer) - offset) {
+                offset += ret;
+            }
+        }
+        ret = snprintf(buffer + offset, sizeof(buffer) - offset, "arm64");
+        if (ret > 0 && ret < sizeof(buffer) - offset) {
+            offset += ret;
+        }
     }
     if (arch & CHEF_BUILD_ARCHITECTURE_RISCV64) {
-        if (offset > 0) offset += snprintf(buffer + offset, sizeof(buffer) - offset, ", ");
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "riscv64");
+        if (offset > 0 && offset < sizeof(buffer) - 3) {
+            ret = snprintf(buffer + offset, sizeof(buffer) - offset, ", ");
+            if (ret > 0 && ret < sizeof(buffer) - offset) {
+                offset += ret;
+            }
+        }
+        ret = snprintf(buffer + offset, sizeof(buffer) - offset, "riscv64");
+        if (ret > 0 && ret < sizeof(buffer) - offset) {
+            offset += ret;
+        }
     }
     
     return buffer;
