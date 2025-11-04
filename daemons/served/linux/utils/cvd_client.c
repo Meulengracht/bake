@@ -19,11 +19,16 @@
 #include <chef/bits/package.h>
 #include <chef/config.h>
 #include <chef/environment.h>
+#include <errno.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
 #include <vlog.h>
 
+#include <utils.h>
+
 #include "chef_cvd_service_client.h"
+
+static gracht_client_t* g_containerClient = NULL;
 
 #if defined(__linux__)
 #include <arpa/inet.h>
@@ -153,16 +158,16 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
     return 0;
 }
 
-int cvd_client_initialize(struct chef_config_address* config)
+int container_client_initialize(struct chef_config_address* config)
 {
     struct gracht_link_socket*         link;
     struct gracht_client_configuration clientConfiguration;
     int                                code;
-    VLOG_DEBUG("served", "cvd_client_initialize()\n");
+    VLOG_DEBUG("served", "container_client_initialize()\n");
 
     code = gracht_link_socket_create(&link);
     if (code) {
-        VLOG_ERROR("served", "cvd_client_initialize: failed to initialize socket\n");
+        VLOG_ERROR("served", "container_client_initialize: failed to initialize socket\n");
         return code;
     }
 
@@ -171,33 +176,65 @@ int cvd_client_initialize(struct chef_config_address* config)
     gracht_client_configuration_init(&clientConfiguration);
     gracht_client_configuration_set_link(&clientConfiguration, (struct gracht_link*)link);
 
-    code = gracht_client_create(&clientConfiguration, &bctx->cvd_client);
+    code = gracht_client_create(&clientConfiguration, &g_containerClient);
     if (code) {
-        VLOG_ERROR("served", "cvd_client_initialize: error initializing client library %i, %i\n", errno, code);
+        VLOG_ERROR("served", "container_client_initialize: error initializing client library %i, %i\n", errno, code);
         return code;
     }
 
-    code = gracht_client_connect(bctx->cvd_client);
+    code = gracht_client_connect(g_containerClient);
     if (code) {
-        VLOG_ERROR("served", "cvd_client_initialize: failed to connect client %i, %i\n", errno, code);
-        gracht_client_shutdown(bctx->cvd_client);
-        bctx->cvd_client = NULL;
+        VLOG_ERROR("served", "container_client_initialize: failed to connect client %i, %i\n", errno, code);
+        gracht_client_shutdown(g_containerClient);
         return code;
     }
 
     return code;
 }
 
-enum chef_status cvd_client_create_container(const char* id, const char* rootfs, struct chef_container_mount* mounts, unsigned int count)
+void container_client_shutdown(void)
+{
+    VLOG_DEBUG("served", "container_client_shutdown()\n");
+    if (g_containerClient == NULL) {
+        return;
+    }
+    gracht_client_shutdown(g_containerClient);
+    g_containerClient = NULL;
+}
+
+static int __to_errno_code(enum chef_status status)
+{
+    switch (status) {
+        case CHEF_STATUS_SUCCESS:
+            return 0;
+        case CHEF_STATUS_INTERNAL_ERROR:
+            return EINVAL;
+        case CHEF_STATUS_FAILED_ROOTFS_SETUP:
+            return EIO;
+        case CHEF_STATUS_INVALID_MOUNTS:
+            return EINVAL;
+        case CHEF_STATUS_INVALID_CONTAINER_ID:
+            return ENOENT;
+        default:
+            return EINVAL;
+    }
+}
+
+static enum chef_status __create_container(
+    gracht_client_t*             client,
+    const char*                  id,
+    const char*                  rootfs,
+    struct chef_container_mount* mounts,
+    unsigned int                 count)
 {
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
     char                          cvdid[CHEF_PACKAGE_ID_LENGTH_MAX];
-    VLOG_DEBUG("served", "cvd_client_create_container()\n");
+    VLOG_DEBUG("served", "__create_container()\n");
     
     status = chef_cvd_create(
-        bctx->cvd_client,
+        client,
         &context,
         &(struct chef_create_parameters) {
             .id = id,
@@ -210,15 +247,28 @@ enum chef_status cvd_client_create_container(const char* id, const char* rootfs,
     );
     
     if (status) {
-        VLOG_ERROR("served", "cvd_client_create_container failed to create client\n");
+        VLOG_ERROR("served", "__create_container failed to create client\n");
         return status;
     }
-    gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
-    chef_cvd_create_result(bctx->cvd_client, &context, &cvdid[0], sizeof(cvdid) - 1, &chstatus);
+    gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    chef_cvd_create_result(client, &context, &cvdid[0], sizeof(cvdid) - 1, &chstatus);
     return chstatus;
 }
 
-enum chef_status cvd_client_spawn(
+int container_client_create_container(struct container_options* options)
+{
+    VLOG_DEBUG("served", "container_client_create_container(id=%s, rootfs=%s)\n", options->id, options->rootfs);
+    return __to_errno_code(__create_container(
+        g_containerClient,
+        options->id,
+        options->rootfs,
+        NULL,
+        0
+    ));
+}
+
+static enum chef_status __container_spawn(
+    gracht_client_t*             client,
     const char*                  id,
     const char* const*           environment,
     const char*                  command,
@@ -230,7 +280,7 @@ enum chef_status cvd_client_spawn(
     enum chef_status              chstatus;
     uint8_t*                      flatenv = NULL;
     size_t                        flatenvLength = 0;
-    VLOG_DEBUG("served", "cvd_client_spawn(cmd=%s)\n", command);
+    VLOG_DEBUG("served", "__container_spawn(cmd=%s)\n", command);
 
     if (environment != NULL) {
         flatenv = environment_flatten(environment, &flatenvLength);
@@ -240,10 +290,10 @@ enum chef_status cvd_client_spawn(
     }
 
     status = chef_cvd_spawn(
-        bctx->cvd_client,
+        client,
         &context,
         &(struct chef_spawn_parameters) {
-            .container_id = bctx->cvd_id,
+            .container_id = id,
             .command = (char*)command,
             .options = options,
             .environment = flatenv,
@@ -252,44 +302,85 @@ enum chef_status cvd_client_spawn(
         }
     );
     if (status != 0) {
-        VLOG_ERROR("served", "cvd_client_spawn: failed to execute %s\n", command);
+        VLOG_ERROR("served", "__container_spawn: failed to execute %s\n", command);
         return status;
     }
-    gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
-    chef_cvd_spawn_result(bctx->cvd_client, &context, pidOut, &chstatus);
+    gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    chef_cvd_spawn_result(client, &context, pidOut, &chstatus);
     return chstatus;
 }
 
-enum chef_status cvd_client_kill(const char* id, unsigned int pid)
+int container_client_spawn(
+    const char*        id,
+    const char* const* environment,
+    const char*        command,
+    unsigned int*      pidOut)
+{
+    VLOG_DEBUG("served", "container_client_spawn(id=%s, cmd=%s)\n", id, command);
+    return __to_errno_code(__container_spawn(
+        g_containerClient,
+        id,
+        environment,
+        command,
+        0,
+        pidOut
+    ));
+}
+
+enum chef_status __container_kill(
+    gracht_client_t*             client,
+    const char*                  id,
+    unsigned int                 pid)
 {
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
-    VLOG_DEBUG("served", "cvd_client_kill()\n");
+    VLOG_DEBUG("served", "__container_kill()\n");
 
-    status = chef_cvd_kill(bctx->cvd_client, &context, id, pid);
+    status = chef_cvd_kill(client, &context, id, pid);
     if (status != 0) {
-        VLOG_ERROR("served", "cvd_client_kill: failed to invoke destroy\n");
+        VLOG_ERROR("served", "__container_kill: failed to invoke destroy\n");
         return status;
     }
-    gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
-    chef_cvd_kill_result(bctx->cvd_client, &context, &chstatus);
+    gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    chef_cvd_kill_result(client, &context, &chstatus);
     return chstatus;
 }
 
-enum chef_status cvd_client_destroy_container(const char* id)
+int container_client_kill(const char*  id, unsigned int pid)
+{
+    VLOG_DEBUG("served", "container_client_kill(id=%s, pid=%u)\n", id, pid);
+    return __to_errno_code(__container_kill(
+        g_containerClient,
+        id,
+        pid
+    ));
+}
+
+enum chef_status __container_destroy(
+    gracht_client_t*             client,
+    const char*                  id)
 {
     struct gracht_message_context context;
     int                           status;
     enum chef_status              chstatus;
-    VLOG_DEBUG("served", "cvd_client_destroy_container()\n");
+    VLOG_DEBUG("served", "__container_destroy()\n");
 
-    status = chef_cvd_destroy(bctx->cvd_client, &context, id);
+    status = chef_cvd_destroy(client, &context, id);
     if (status != 0) {
-        VLOG_ERROR("served", "cvd_client_destroy_container: failed to invoke destroy\n");
+        VLOG_ERROR("served", "__container_destroy: failed to invoke destroy\n");
         return status;
     }
-    gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
-    chef_cvd_destroy_result(bctx->cvd_client, &context, &chstatus);
+    gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    chef_cvd_destroy_result(client, &context, &chstatus);
     return chstatus;
+}
+
+int container_client_destroy_container(const char* id)
+{
+    VLOG_DEBUG("served", "container_client_destroy_container(id=%s)\n", id);
+    return __to_errno_code(__container_destroy(
+        g_containerClient,
+        id
+    ));
 }

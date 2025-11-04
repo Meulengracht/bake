@@ -23,7 +23,6 @@
 
 // forwards
 struct served_mount;
-struct containerv_container;
 
 struct state_transaction {
     unsigned int id;
@@ -60,7 +59,7 @@ struct state_application {
 
     // unserialized members
     struct served_mount* mount;
-    struct containerv_container* container;
+    const char*          container_id;
 };
 
 

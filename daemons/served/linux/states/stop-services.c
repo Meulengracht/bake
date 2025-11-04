@@ -19,8 +19,7 @@
 #include <transaction/states/stop-services.h>
 #include <transaction/transaction.h>
 #include <state.h>
-
-#include <chef/containerv.h>
+#include <utils.h>
 
 enum sm_action_result served_handle_state_stop_services(void* context)
 {
@@ -46,8 +45,8 @@ enum sm_action_result served_handle_state_stop_services(void* context)
             continue;
         }
 
-        status = containerv_kill(
-            application->container,
+        status = container_client_kill(
+            application->container_id,
             application->commands[i].pid
         );
         if (status) {

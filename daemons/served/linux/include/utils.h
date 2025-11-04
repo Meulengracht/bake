@@ -20,6 +20,7 @@
 #define __SERVED_UTILS_H__
 
 typedef struct gracht_server gracht_server_t;
+struct chef_config_address;
 struct served_mount;
 
 
@@ -74,5 +75,27 @@ extern char* utils_path_pack(const char* publisher, const char* package);
 extern char* utils_path_mount(const char* publisher, const char* package);
 extern char* utils_path_data(const char* publisher, const char* package, int revision);
 extern char* utils_path_command_wrapper(const char* name);
+
+
+/**
+ * CVD Client utility functions
+ */
+
+struct container_options {
+    const char* id;
+    const char* rootfs;
+};
+
+extern int  container_client_initialize(struct chef_config_address* config);
+extern void container_client_shutdown(void);
+
+extern int container_client_create_container(struct container_options* options);
+extern int container_client_spawn(
+    const char*        id,
+    const char* const* environment,
+    const char*        command,
+    unsigned int*      pidOut);
+extern int container_client_kill(const char*  id, unsigned int pid);
+extern int container_client_destroy_container(const char* id);
 
 #endif //!__SERVED_UTILS_H__

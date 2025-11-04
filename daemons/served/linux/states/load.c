@@ -19,36 +19,9 @@
 #include <transaction/states/load.h>
 #include <transaction/transaction.h>
 #include <state.h>
+#include <utils.h>
 
-#include <chef/containerv.h>
 #include <chef/platform.h>
-
-static struct containerv_container* __create_container(const char* publisher, const char* package, const char* mountPath)
-{
-    struct containerv_container* container;
-    struct containerv_options*   options;
-    int                          status;
-    char                         containerId[256];
-
-    options = containerv_options_new();
-    if (options == NULL) {
-        return NULL;
-    }
-
-    // setup config
-    containerv_options_set_caps(options, CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL | CV_CAP_IPC);
-
-    // format container id
-    snprintf(&containerId[0], sizeof(containerId), "%s.%s", publisher, package);
-
-    status = containerv_create(&containerId[0], mountPath, options, &container);
-    containerv_options_delete(options);
-    if (status) {
-        return NULL;
-    }
-    return container;
-}
-
 
 enum sm_action_result served_handle_state_load(void* context)
 {
@@ -58,6 +31,7 @@ enum sm_action_result served_handle_state_load(void* context)
     sm_event_t                 event = SERVED_TX_EVENT_FAILED;
     char**                     names = NULL;
     char*                      mountRoot = NULL;
+    char                       containerId[256];
 
     served_state_lock();
     state = served_state_transaction(transaction->id);
@@ -79,12 +53,17 @@ enum sm_action_result served_handle_state_load(void* context)
     if (application == NULL) {
         goto cleanup;
     }
-    
-    application->container = __create_container(mountRoot);
-    if (application->container == NULL) {
+
+    // format container id
+    snprintf(&containerId[0], sizeof(containerId), "%s.%s", names[0], names[1]);
+    if (container_client_create_container(&(struct container_options){
+            .id = &containerId[0],
+            .rootfs = mountRoot,
+        }) != 0) {
         goto cleanup;
     }
 
+    application->container_id = platform_strdup(&containerId[0]);
     event = SERVED_TX_EVENT_OK;
 
 cleanup:

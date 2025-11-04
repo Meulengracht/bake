@@ -19,8 +19,7 @@
 #include <transaction/states/start-services.h>
 #include <transaction/transaction.h>
 #include <state.h>
-
-#include <chef/containerv.h>
+#include <utils.h>
 
 enum sm_action_result served_handle_state_start_services(void* context)
 {
@@ -46,15 +45,10 @@ enum sm_action_result served_handle_state_start_services(void* context)
             continue;
         }
 
-        status = containerv_spawn(
-            application->container,
+        status = container_client_spawn(
+            application->container_id,
+            NULL,
             application->commands[i].path,
-            &(struct containerv_spawn_options) {
-                .arguments = application->commands[i].arguments,
-                .environment = NULL,
-                .as_user = NULL,
-                .flags = 0
-            },
             &application->commands[i].pid
         );
         if (status) {
