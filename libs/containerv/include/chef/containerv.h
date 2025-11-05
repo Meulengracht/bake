@@ -19,6 +19,8 @@
 #ifndef __CONTAINERV_H__
 #define __CONTAINERV_H__
 
+#include <stdint.h>
+
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #include <windows.h>
 typedef HANDLE process_handle_t;
@@ -62,7 +64,19 @@ struct containerv_mount {
 extern void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int count);
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-// Windows-specific configuration functions can go here in the future
+/**
+ * @brief Configure resource limits for the Windows container using Job Objects
+ * @param options The container options to configure
+ * @param memory_max Maximum memory (e.g., "1G", "512M", "max" for no limit), or NULL for default (1G)
+ * @param cpu_percent CPU percentage (1-100), or NULL for default (50)
+ * @param process_count Maximum number of processes (e.g., "256", "max"), or NULL for default (256)
+ */
+extern void containerv_options_set_resource_limits(
+    struct containerv_options* options,
+    const char*                memory_max,
+    const char*                cpu_percent,
+    const char*                process_count
+);
 
 #elif defined(__linux__) || defined(__unix__)
 extern void containerv_options_set_users(struct containerv_options* options, uid_t hostUidStart, uid_t childUidStart, int count);
@@ -142,5 +156,51 @@ extern int containerv_join(const char* containerId);
  * @return A read-only string containing the container ID.
  */
 extern const char* containerv_id(struct containerv_container* container);
+
+// Container monitoring and statistics structures
+struct containerv_stats {
+    uint64_t timestamp;              // Timestamp in nanoseconds since epoch
+    uint64_t memory_usage;           // Current memory usage in bytes
+    uint64_t memory_peak;            // Peak memory usage in bytes
+    uint64_t cpu_time_ns;            // Total CPU time in nanoseconds
+    double   cpu_percent;            // Current CPU usage percentage
+    uint64_t read_bytes;             // Total bytes read from storage
+    uint64_t write_bytes;            // Total bytes written to storage
+    uint64_t read_ops;               // Total read I/O operations
+    uint64_t write_ops;              // Total write I/O operations
+    uint64_t network_rx_bytes;       // Network bytes received
+    uint64_t network_tx_bytes;       // Network bytes transmitted
+    uint64_t network_rx_packets;     // Network packets received
+    uint64_t network_tx_packets;     // Network packets transmitted
+    uint32_t active_processes;       // Number of active processes
+    uint32_t total_processes;        // Total processes created (lifetime)
+};
+
+struct containerv_process_info {
+    process_handle_t pid;            // Process ID or handle
+    char             name[64];       // Process name
+    uint64_t         memory_kb;      // Memory usage in KB
+    double           cpu_percent;    // CPU usage percentage
+};
+
+/**
+ * @brief Get comprehensive container statistics
+ * @param container Container to get statistics for
+ * @param stats Output statistics structure
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_get_stats(struct containerv_container* container, 
+                               struct containerv_stats* stats);
+
+/**
+ * @brief Get list of processes running in container
+ * @param container Container to get processes for
+ * @param processes Output array of process information
+ * @param max_processes Maximum number of processes to return
+ * @return Number of processes returned, or -1 on error
+ */
+extern int containerv_get_processes(struct containerv_container* container,
+                                   struct containerv_process_info* processes,
+                                   int max_processes);
 
 #endif //!__CONTAINERV_H__

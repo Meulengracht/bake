@@ -3,7 +3,9 @@ add_library(containerv-windows STATIC
     container-options.c
     container.c
     hcs.c
+    monitoring.c
     network.c
+    resource-limits.c
     rootfs.c
 )
 target_include_directories(containerv-windows PRIVATE ../include)
@@ -21,5 +23,7 @@ if(WIN32)
         wininet        # WinInet for HTTP downloads
         shlwapi        # Shell lightweight utility APIs
         shell32        # Windows Shell API
+        psapi          # Process Status API for memory info
+        pdh            # Performance Data Helper for monitoring
     )
 endif()

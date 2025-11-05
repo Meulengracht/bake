@@ -68,10 +68,31 @@ enum windows_rootfs_type {
 
 // Windows rootfs configuration
 struct containerv_options_rootfs {
-    enum windows_rootfs_type    type;
-    const char*                 custom_image_url;    // For CUSTOM type
-    const char*                 version;             // e.g., "ltsc2022", "22.04"
+    enum windows_rootfs_type        type;                    // WSL2 or Windows native
+    const char*                     custom_image_url;    // For CUSTOM type
+    const char*                     version;             // e.g., "ltsc2022", "22.04"
     int                         enable_updates;      // Enable Windows Update/apt updates
+};
+
+// Windows resource limits using Job Objects
+struct containerv_resource_limits {
+    const char*                     memory_max;          // e.g., "1G", "512M", "max" for unlimited
+    const char*                     cpu_percent;         // CPU percentage (1-100)
+    const char*                     process_count;       // Max processes, or "max" for unlimited
+    const char*                     io_bandwidth;        // I/O bandwidth limit (future)
+};
+
+// Resource usage statistics
+struct containerv_resource_stats {
+    uint64_t                        cpu_time_ns;         // Total CPU time in nanoseconds
+    uint64_t                        memory_usage;        // Current memory usage in bytes
+    uint64_t                        memory_peak;         // Peak memory usage in bytes
+    uint64_t                        read_bytes;          // Total bytes read
+    uint64_t                        write_bytes;         // Total bytes written
+    uint64_t                        read_ops;            // Total read operations
+    uint64_t                        write_ops;           // Total write operations
+    uint32_t                        active_processes;    // Currently active processes
+    uint32_t                        total_processes;     // Total processes created
 };
 
 struct containerv_options {
@@ -82,6 +103,7 @@ struct containerv_options {
     struct containerv_options_network        network;
     struct containerv_options_vm             vm;
     struct containerv_options_rootfs         rootfs;
+    struct containerv_resource_limits        limits;          // Resource limits
 };
 
 struct containerv_container_process {
@@ -176,6 +198,10 @@ struct containerv_container {
     // Communication pipes
     HANDLE       host_pipe;
     HANDLE       child_pipe;
+    
+    // Resource management
+    HANDLE                               job_object;         // Job Object for resource limits
+    struct containerv_resource_limits    resource_limits;    // Current limits configuration
     
     // VM state
     int          vm_started;
@@ -335,5 +361,44 @@ extern void containerv_options_set_custom_rootfs(
     struct containerv_options* options,
     const char* image_url
 );
+
+/**
+ * @brief Create Windows Job Object for resource limits
+ * @param container Container to create job for
+ * @param limits Resource limit configuration
+ * @return Job handle, or NULL on failure
+ */
+extern HANDLE __windows_create_job_object(
+    struct containerv_container* container,
+    const struct containerv_resource_limits* limits
+);
+
+/**
+ * @brief Apply job object to container processes
+ * @param container Container with running processes
+ * @param job_handle Job object to apply
+ * @return 0 on success, -1 on failure
+ */
+extern int __windows_apply_job_to_processes(
+    struct containerv_container* container,
+    HANDLE job_handle
+);
+
+/**
+ * @brief Get resource usage statistics from job object
+ * @param job_handle Job object to query
+ * @param stats Output statistics structure
+ * @return 0 on success, -1 on failure
+ */
+extern int __windows_get_job_statistics(
+    HANDLE job_handle,
+    struct containerv_resource_stats* stats
+);
+
+/**
+ * @brief Cleanup job object and associated resources
+ * @param job_handle Job object to cleanup
+ */
+extern void __windows_cleanup_job_object(HANDLE job_handle);
 
 #endif //!__CONTAINERV_WINDOWS_PRIVATE_H__

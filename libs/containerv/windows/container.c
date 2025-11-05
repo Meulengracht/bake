@@ -272,6 +272,23 @@ int containerv_create(
         return -1;
     }
     
+    // Setup resource limits using Job Objects
+    if (options && (options->capabilities & CV_CAP_CGROUPS)) {
+        // Copy limits configuration to container
+        if (options->limits.memory_max || options->limits.cpu_percent || options->limits.process_count) {
+            container->resource_limits = options->limits;
+            
+            // Create job object for resource limits
+            container->job_object = __windows_create_job_object(container, &options->limits);
+            if (!container->job_object) {
+                VLOG_WARNING("containerv", "containerv_create: failed to create job object for resource limits\n");
+                // Continue anyway, container will work without limits
+            } else {
+                VLOG_DEBUG("containerv", "containerv_create: created job object for resource limits\n");
+            }
+        }
+    }
+    
     // Configure host-side networking after VM is created
     if (options && (options->capabilities & CV_CAP_NETWORK)) {
         if (__windows_configure_host_network(container, options) != 0) {
@@ -415,6 +432,16 @@ int __containerv_spawn(
             proc->handle = pi.hProcess;
             proc->pid = pi.dwProcessId;
             list_add(&container->processes, &proc->list_header);
+            
+            // Apply job object resource limits if configured
+            if (container->job_object) {
+                if (AssignProcessToJobObject(container->job_object, pi.hProcess)) {
+                    VLOG_DEBUG("containerv", "__containerv_spawn: assigned process %lu to job object\n", pi.dwProcessId);
+                } else {
+                    VLOG_WARNING("containerv", "__containerv_spawn: failed to assign process %lu to job: %lu\n", 
+                               pi.dwProcessId, GetLastError());
+                }
+            }
         } else {
             CloseHandle(pi.hProcess);
             return -1;
@@ -663,6 +690,12 @@ void __containerv_destroy(struct containerv_container* container)
             TerminateProcess(proc->handle, 0);
             CloseHandle(proc->handle);
         }
+    }
+    
+    // Clean up job object for resource limits
+    if (container->job_object) {
+        __windows_cleanup_job_object(container->job_object);
+        container->job_object = NULL;
     }
     
     // Clean up network configuration

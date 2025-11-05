@@ -130,6 +130,22 @@ void containerv_options_set_custom_rootfs(
     }
 }
 
+void containerv_options_set_resource_limits(
+    struct containerv_options* options,
+    const char*                memory_max,
+    const char*                cpu_percent,
+    const char*                process_count)
+{
+    if (!options) {
+        return;
+    }
+    
+    options->limits.memory_max = memory_max;
+    options->limits.cpu_percent = cpu_percent;
+    options->limits.process_count = process_count;
+    options->limits.io_bandwidth = NULL; // Not implemented yet
+}
+
 void containerv_options_set_rootfs_updates(
     struct containerv_options* options,
     int                        enable_updates)
