@@ -185,7 +185,7 @@ static int __update_build_envs(struct __bakelib_context* context)
 // ** /chef/project
 // * This is mapped in by the host, and contains a RO path of the
 // * source code for the project
-// ** /chef/store & /chef/store
+// ** /chef/store
 // * This is mapped by the host, and contains a RO path of the 
 // * hosts store storage. We use this to load packs and toolchains
 // * needed

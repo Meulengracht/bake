@@ -25,12 +25,15 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <threads.h>
 #include <utils.h>
 #include <vlog.h>
 
 struct __state {
-    struct served_application** applications;
-    int                         application_count;
+    struct state_transaction** transactions;
+    int                        transaction_count;
+    struct state_application** applications;
+    int                        application_count;
 };
 
 static struct __state* g_state = NULL;
@@ -395,16 +398,24 @@ int served_state_save(void)
     return status;
 }
 
-int served_state_lock(void)
+void served_state_lock(void)
 {
-    // TODO
-    return 0;
+
 }
 
-int served_state_unlock(void)
+void served_state_unlock(void)
 {
-    // TODO
-    return 0;
+
+}
+
+void served_state_mark_dirty(void)
+{
+
+}
+
+extern int served_state_execute(void)
+{
+    
 }
 
 int served_state_get_applications(struct served_application*** applicationsOut, int* applicationsCount)

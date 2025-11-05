@@ -34,13 +34,12 @@ static struct {
     // per-user
     const char* root;
     const char* store;
-    const char* store;
     const char* cache;
     const char* kitchen;
 
     // global
     const char* config;
-} g_dirs = { 0, 0, NULL, NULL, NULL, NULL, NULL, NULL };
+} g_dirs = { 0, 0, NULL, NULL, NULL, NULL, NULL };
 
 static int __directory_exists(
     const char* path)
@@ -128,7 +127,6 @@ static int __ensure_chef_user_dirs(void)
         unsigned int rmode;
     } paths[] = {
         { &g_dirs.root, 0755, 0777 },
-        { &g_dirs.store, 0755, 0777 },
         { &g_dirs.store, 0755, 0777 },
         { &g_dirs.kitchen, 0755, 0777 },
         { NULL },
@@ -260,7 +258,6 @@ static int __initialize_daemon(void)
     g_dirs.root    = __strdup_fail(__root_common_directory());
     g_dirs.config  = __strdup_fail("/etc/chef");
     g_dirs.store  = strpathcombine(g_dirs.root, "store");
-    g_dirs.store   = strpathcombine(g_dirs.root, "store");
     g_dirs.cache   = __cache_directory();
     g_dirs.kitchen = __spaces_directory();
     if (g_dirs.store == NULL || g_dirs.store == NULL) {
@@ -281,7 +278,6 @@ static int __initialize_bakectl(void)
     g_dirs.root   = __strdup_fail("/chef");
     g_dirs.config = __strdup_fail("/chef/config");
     g_dirs.store = __strdup_fail("/chef/store");
-    g_dirs.store  = __strdup_fail("/chef/store");
     return __ensure_chef_global_dirs();
 }
 
@@ -300,9 +296,8 @@ static int __initialize_bake(void)
 
     g_dirs.config  = __strdup_fail(g_dirs.root);
     g_dirs.store  = strpathcombine(g_dirs.root, "store");
-    g_dirs.store   = strpathcombine(g_dirs.root, "store");
     g_dirs.kitchen = strpathcombine(g_dirs.root, "spaces");
-    if (g_dirs.store == NULL || g_dirs.store == NULL || g_dirs.kitchen == NULL) {
+    if (g_dirs.store == NULL || g_dirs.kitchen == NULL) {
         VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
         return -1;
     }
@@ -336,15 +331,6 @@ const char* chef_dirs_root(void)
         return NULL;
     }
     return g_dirs.root;
-}
-
-const char* chef_dirs_store(void)
-{
-    if (g_dirs.store == NULL) {
-        VLOG_ERROR("dirs", "chef_dirs_store() is not available\n");
-        return NULL;
-    }
-    return g_dirs.store;
 }
 
 const char* chef_dirs_store(void)

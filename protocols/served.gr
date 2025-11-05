@@ -51,7 +51,7 @@ struct served_install_options {
 }
 
 struct served_update_options {
-    string[] packages;
+    served_package[] packages;
 }
 
 struct served_switch_options {

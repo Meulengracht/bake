@@ -92,7 +92,7 @@ static int __find_bakectl(char** resolvedOut)
 
 int bake_build_setup(struct __bake_build_context* bctx)
 {
-    struct chef_container_mount mounts[3];
+    struct chef_container_mount mounts[2];
     int                         status;
     char*                       bakectlPath;
     unsigned int                pid;
@@ -113,11 +113,6 @@ int bake_build_setup(struct __bake_build_context* bctx)
     mounts[1].host_path = (char*)chef_dirs_store();
     mounts[1].container_path = "/chef/store";
     mounts[1].options = CHEF_MOUNT_OPTIONS_READONLY;
-
-    // store path
-    mounts[2].host_path = (char*)chef_dirs_store();
-    mounts[2].container_path = "/chef/store";
-    mounts[2].options = CHEF_MOUNT_OPTIONS_READONLY;
 
     status = bake_client_create_container(bctx, &mounts[0], 3);
     if (status) {

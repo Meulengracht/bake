@@ -47,11 +47,6 @@ extern const char* chef_dirs_store(void);
 /**
  * @brief
  */
-extern const char* chef_dirs_store(void);
-
-/**
- * @brief
- */
 extern const char* chef_dirs_cache(void);
 
 /**

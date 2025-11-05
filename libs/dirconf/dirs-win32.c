@@ -43,11 +43,6 @@ const char* chef_dirs_store(void)
     return NULL;
 }
 
-const char* chef_dirs_store(void)
-{
-    return NULL;
-}
-
 const char* chef_dirs_rootfs(const char* uuid)
 {
     return NULL;
