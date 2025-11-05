@@ -19,7 +19,9 @@
 #ifndef __CONTAINERV_H__
 #define __CONTAINERV_H__
 
+#include <stdbool.h>
 #include <stdint.h>
+#include <time.h>
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #include <windows.h>
@@ -215,5 +217,161 @@ extern int containerv_get_stats(struct containerv_container* container,
 extern int containerv_get_processes(struct containerv_container* container,
                                    struct containerv_process_info* processes,
                                    int max_processes);
+
+// Container Image System - OCI-compatible image management
+struct containerv_image_ref {
+    char* registry;      // "docker.io", "mcr.microsoft.com", NULL for local
+    char* namespace;     // "library", "windows", NULL for default  
+    char* repository;    // "ubuntu", "servercore" (required)
+    char* tag;          // "22.04", "ltsc2022", NULL for "latest"
+    char* digest;       // "sha256:abc123..." (optional, overrides tag)
+};
+
+struct containerv_image {
+    struct containerv_image_ref ref;
+    char*    id;                    // Full image ID (sha256:...)
+    char*    parent_id;             // Parent image ID (NULL if base)
+    uint64_t size;                  // Compressed image size in bytes
+    uint64_t virtual_size;          // Total size including all layers
+    time_t   created;               // Creation timestamp
+    char**   tags;                  // Array of tag strings
+    int      tag_count;             // Number of tags
+    char*    os;                    // "linux", "windows"
+    char*    architecture;          // "amd64", "arm64", "386"
+    char*    author;                // Image author
+    char*    comment;               // Image comment/description
+};
+
+struct containerv_layer {
+    char*    digest;                // Layer digest (sha256:...)
+    uint64_t size;                  // Compressed layer size
+    uint64_t uncompressed_size;     // Uncompressed layer size
+    char*    media_type;            // Layer media type
+    char*    cache_path;            // Local cache file path
+    bool     available;             // Is layer available locally
+    time_t   last_used;             // Last access time for GC
+};
+
+/**
+ * @brief Initialize the container image system
+ * @param cache_dir Directory for image cache (NULL for default: /var/lib/chef/images or C:\ProgramData\chef\images)
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_images_init(const char* cache_dir);
+
+/**
+ * @brief Cleanup and shutdown the image system
+ */
+extern void containerv_images_cleanup(void);
+
+/**
+ * @brief Pull an image from a registry
+ * @param image_ref Image reference to pull (registry, repository, tag required)
+ * @param progress_callback Optional progress callback function
+ * @param callback_data User data passed to progress callback
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_image_pull(
+    const struct containerv_image_ref* image_ref,
+    void (*progress_callback)(const char* status, int percent, void* data),
+    void* callback_data
+);
+
+/**
+ * @brief List locally cached images
+ * @param images Output array to fill with image information
+ * @param max_images Maximum number of images to return
+ * @return Number of images returned, or -1 on error
+ */
+extern int containerv_image_list(
+    struct containerv_image* images,
+    int max_images
+);
+
+/**
+ * @brief Get detailed information about a specific image
+ * @param image_ref Image reference to inspect
+ * @param image Output structure to fill with image details
+ * @return 0 on success, -1 if image not found or error
+ */
+extern int containerv_image_inspect(
+    const struct containerv_image_ref* image_ref,
+    struct containerv_image* image
+);
+
+/**
+ * @brief Remove an image from local cache
+ * @param image_ref Image reference to remove
+ * @param force Force removal even if containers are using the image
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_image_remove(
+    const struct containerv_image_ref* image_ref,
+    bool force
+);
+
+/**
+ * @brief Create container from an OCI image
+ * @param image_ref Image reference to create container from
+ * @param options Container configuration options
+ * @param container_out Output pointer to created container
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_create_from_image(
+    const struct containerv_image_ref* image_ref,
+    struct containerv_options*         options,
+    struct containerv_container**      container_out
+);
+
+/**
+ * @brief Set image reference for container options (alternative to rootFs path)
+ * @param options Container options to configure
+ * @param image_ref Image reference to use as container base
+ */
+extern void containerv_options_set_image(
+    struct containerv_options*         options,
+    const struct containerv_image_ref* image_ref
+);
+
+/**
+ * @brief Get the image reference used to create a container
+ * @param container Container to get image info from
+ * @param image_ref Output structure to fill with image reference
+ * @return 0 on success, -1 if container wasn't created from image
+ */
+extern int containerv_get_image(
+    struct containerv_container*       container,
+    struct containerv_image_ref*       image_ref
+);
+
+// Image cache management
+struct containerv_cache_stats {
+    uint64_t total_size;            // Current cache size in bytes
+    uint64_t available_space;       // Available disk space
+    int      image_count;           // Number of cached images
+    int      layer_count;           // Number of cached layers
+    time_t   last_gc;               // Last garbage collection time
+};
+
+/**
+ * @brief Get image cache statistics
+ * @param stats Output structure to fill with cache statistics
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_cache_get_stats(struct containerv_cache_stats* stats);
+
+/**
+ * @brief Run garbage collection on image cache
+ * @param force Force cleanup even if cache size is acceptable
+ * @return Number of items cleaned up, or -1 on error
+ */
+extern int containerv_cache_gc(bool force);
+
+/**
+ * @brief Remove unused images and layers from cache
+ * @param max_age_days Remove items older than this many days (0 for all unused)
+ * @return Number of items pruned, or -1 on error
+ */
+extern int containerv_cache_prune(int max_age_days);
 
 #endif //!__CONTAINERV_H__

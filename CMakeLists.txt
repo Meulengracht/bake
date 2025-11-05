@@ -53,6 +53,9 @@ endif(CHEF_BUILD_TOOLS)
 
 add_subdirectory(daemons)
 
+# Add examples directory for demonstration programs
+add_subdirectory(examples)
+
 configure_file(
     "${CMAKE_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
     "${CMAKE_BINARY_DIR}/cmake_uninstall.cmake"
