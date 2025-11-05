@@ -4,6 +4,7 @@ add_library(containerv-windows STATIC
     container.c
     hcs.c
     network.c
+    rootfs.c
 )
 target_include_directories(containerv-windows PRIVATE ../include)
 target_link_libraries(containerv-windows PUBLIC platform vlog)
@@ -17,5 +18,8 @@ if(WIN32)
         kernel32       # Windows kernel APIs
         ws2_32         # Winsock2 for networking
         iphlpapi       # IP Helper API for network management
+        wininet        # WinInet for HTTP downloads
+        shlwapi        # Shell lightweight utility APIs
+        shell32        # Windows Shell API
     )
 endif()

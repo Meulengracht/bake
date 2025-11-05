@@ -55,6 +55,25 @@ struct containerv_options_vm {
     const char*  vm_generation;     // VM generation ("1" or "2", default: "2")
 };
 
+// Windows rootfs types - direct choice, no fallback
+enum windows_rootfs_type {
+    WINDOWS_ROOTFS_WSL_UBUNTU,      // WSL2 Ubuntu distribution
+    WINDOWS_ROOTFS_WSL_DEBIAN,      // WSL2 Debian distribution  
+    WINDOWS_ROOTFS_WSL_ALPINE,      // WSL2 Alpine Linux (minimal)
+    WINDOWS_ROOTFS_SERVERCORE,      // Windows Server Core (~1.5GB)
+    WINDOWS_ROOTFS_NANOSERVER,      // Windows Nano Server (~100MB)
+    WINDOWS_ROOTFS_WINDOWSCORE,     // Full Windows (~3GB)
+    WINDOWS_ROOTFS_CUSTOM           // User-provided image URL
+};
+
+// Windows rootfs configuration
+struct containerv_options_rootfs {
+    enum windows_rootfs_type    type;
+    const char*                 custom_image_url;    // For CUSTOM type
+    const char*                 version;             // e.g., "ltsc2022", "22.04"
+    int                         enable_updates;      // Enable Windows Update/apt updates
+};
+
 struct containerv_options {
     enum containerv_capabilities             capabilities;
     struct containerv_mount*                 mounts;
@@ -62,6 +81,7 @@ struct containerv_options {
     
     struct containerv_options_network        network;
     struct containerv_options_vm             vm;
+    struct containerv_options_rootfs         rootfs;
 };
 
 struct containerv_container_process {
@@ -273,6 +293,47 @@ extern int __windows_configure_host_network(
 extern int __windows_cleanup_network(
     struct containerv_container* container,
     struct containerv_options* options
+);
+
+/**
+ * @brief Windows rootfs management functions
+ */
+extern int __windows_setup_rootfs(
+    const char* rootfs_path,
+    struct containerv_options_rootfs* options
+);
+
+extern int __windows_setup_wsl_rootfs(
+    const char* rootfs_path,
+    enum windows_rootfs_type type,
+    const char* version
+);
+
+extern int __windows_setup_native_rootfs(
+    const char* rootfs_path,
+    enum windows_rootfs_type type,
+    const char* version
+);
+
+extern int __windows_cleanup_rootfs(
+    const char* rootfs_path,
+    struct containerv_options_rootfs* options
+);
+
+extern int __windows_is_wsl_available(void);
+
+/**
+ * @brief Windows rootfs configuration API
+ */
+extern void containerv_options_set_rootfs_type(
+    struct containerv_options* options,
+    enum windows_rootfs_type type,
+    const char* version
+);
+
+extern void containerv_options_set_custom_rootfs(
+    struct containerv_options* options,
+    const char* image_url
 );
 
 #endif //!__CONTAINERV_WINDOWS_PRIVATE_H__

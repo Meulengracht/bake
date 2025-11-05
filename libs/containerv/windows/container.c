@@ -19,6 +19,7 @@
 #include <windows.h>
 #include <wincrypt.h>
 #include <shlobj.h>
+#include <shlwapi.h>
 #include <chef/platform.h>
 #include <chef/containerv.h>
 #include <stdio.h>
@@ -229,6 +230,23 @@ int containerv_create(
     if (container->rootfs == NULL) {
         __container_delete(container);
         return -1;
+    }
+
+    // Set up rootfs if it doesn't exist or if specific rootfs type is requested
+    BOOL rootfs_exists = PathFileExistsA(rootFs);
+    if (!rootfs_exists || (options && options->rootfs.type != WINDOWS_ROOTFS_WSL_UBUNTU)) {
+        VLOG_DEBUG("containerv", "setting up rootfs at %s\n", rootFs);
+        
+        struct containerv_options_rootfs* rootfs_opts = options ? &options->rootfs : NULL;
+        if (__windows_setup_rootfs(rootFs, rootfs_opts) != 0) {
+            VLOG_ERROR("containerv", "containerv_create: failed to setup rootfs\n");
+            __container_delete(container);
+            return -1;
+        }
+        
+        VLOG_DEBUG("containerv", "rootfs setup completed at %s\n", rootFs);
+    } else {
+        VLOG_DEBUG("containerv", "using existing rootfs at %s\n", rootFs);
     }
     
     // Initialize COM for HyperV operations
@@ -653,6 +671,13 @@ void __containerv_destroy(struct containerv_container* container)
     // Shut down and delete the HyperV VM using HCS
     if (container->hcs_system) {
         __hcs_destroy_vm(container);
+    }
+    
+    // Clean up rootfs (optional - may want to preserve for reuse)
+    // Note: In production, you might want to make this configurable
+    if (container->rootfs) {
+        VLOG_DEBUG("containerv", "cleaning up rootfs at %s\n", container->rootfs);
+        __windows_cleanup_rootfs(container->rootfs, NULL);
     }
     
     // Remove runtime directory (recursively if needed)

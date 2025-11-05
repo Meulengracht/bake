@@ -28,9 +28,14 @@ struct containerv_options* containerv_options_new(void)
     }
     
     // Set Windows-specific defaults
-    options->vm.memory_mb = 1024;      // 1GB default memory
-    options->vm.cpu_count = 2;         // 2 vCPUs default
-    options->vm.vm_generation = "2";   // Generation 2 VM (UEFI)
+    options->vm.memory_mb = 1024;          // 1GB default memory
+    options->vm.cpu_count = 2;             // 2 vCPUs default  
+    options->vm.vm_generation = "2";       // Generation 2 VM (UEFI)
+    
+    // Default rootfs: WSL Ubuntu (cross-platform compatible)
+    options->rootfs.type = WINDOWS_ROOTFS_WSL_UBUNTU;
+    options->rootfs.version = "22.04";     // Ubuntu 22.04 LTS
+    options->rootfs.enable_updates = 1;    // Enable updates by default
     
     return options;
 }
@@ -97,5 +102,39 @@ void containerv_options_set_vm_switch(
 {
     if (options && switch_name) {
         options->network.switch_name = switch_name;
+    }
+}
+
+void containerv_options_set_rootfs_type(
+    struct containerv_options* options,
+    enum windows_rootfs_type   type,
+    const char*                version)
+{
+    if (options) {
+        options->rootfs.type = type;
+        if (version) {
+            options->rootfs.version = version;
+        }
+        // Clear custom URL when setting standard type
+        options->rootfs.custom_image_url = NULL;
+    }
+}
+
+void containerv_options_set_custom_rootfs(
+    struct containerv_options* options,
+    const char*                image_url)
+{
+    if (options && image_url) {
+        options->rootfs.type = WINDOWS_ROOTFS_CUSTOM;
+        options->rootfs.custom_image_url = image_url;
+    }
+}
+
+void containerv_options_set_rootfs_updates(
+    struct containerv_options* options,
+    int                        enable_updates)
+{
+    if (options) {
+        options->rootfs.enable_updates = enable_updates;
     }
 }
