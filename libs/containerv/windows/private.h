@@ -401,4 +401,30 @@ extern int __windows_get_job_statistics(
  */
 extern void __windows_cleanup_job_object(HANDLE job_handle);
 
+/**
+ * @brief Setup volumes for Windows container
+ * @param container Container to configure volumes for
+ * @param options Container options with volume configuration
+ * @return 0 on success, -1 on failure
+ */
+extern int __windows_setup_volumes(
+    struct containerv_container* container,
+    const struct containerv_options* options
+);
+
+/**
+ * @brief Clean up volumes for container
+ * @param container Container to clean up volumes for
+ */
+extern void __windows_cleanup_volumes(struct containerv_container* container);
+
+/**
+ * @brief Create a named persistent volume
+ * @param name Volume name
+ * @param size_mb Size in megabytes
+ * @param filesystem Filesystem type
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_volume_create(const char* name, uint64_t size_mb, const char* filesystem);
+
 #endif //!__CONTAINERV_WINDOWS_PRIVATE_H__

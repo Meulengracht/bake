@@ -7,6 +7,7 @@ add_library(containerv-windows STATIC
     network.c
     resource-limits.c
     rootfs.c
+    volume-manager.c
 )
 target_include_directories(containerv-windows PRIVATE ../include)
 target_link_libraries(containerv-windows PUBLIC platform vlog)
@@ -25,5 +26,6 @@ if(WIN32)
         shell32        # Windows Shell API
         psapi          # Process Status API for memory info
         pdh            # Performance Data Helper for monitoring
+        virtdisk       # Virtual Disk API for VHD management
     )
 endif()

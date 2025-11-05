@@ -289,6 +289,14 @@ int containerv_create(
         }
     }
     
+    // Setup volumes and mounts for container
+    if (options && (options->capabilities & CV_CAP_FILESYSTEM)) {
+        if (__windows_setup_volumes(container, options) != 0) {
+            VLOG_WARNING("containerv", "containerv_create: volume setup encountered issues\n");
+            // Continue anyway, basic filesystem might still work
+        }
+    }
+    
     // Configure host-side networking after VM is created
     if (options && (options->capabilities & CV_CAP_NETWORK)) {
         if (__windows_configure_host_network(container, options) != 0) {
@@ -697,6 +705,9 @@ void __containerv_destroy(struct containerv_container* container)
         __windows_cleanup_job_object(container->job_object);
         container->job_object = NULL;
     }
+    
+    // Clean up volumes and mounts
+    __windows_cleanup_volumes(container);
     
     // Clean up network configuration
     __windows_cleanup_network(container, NULL);  // We don't have options here, but that's OK

@@ -78,6 +78,19 @@ extern void containerv_options_set_resource_limits(
     const char*                process_count
 );
 
+/**
+ * @brief Create a named persistent volume (Windows VHD-based)
+ * @param name Volume name (must be unique)
+ * @param size_mb Size in megabytes (minimum 1MB)
+ * @param filesystem Filesystem type ("NTFS", "ReFS", or NULL for NTFS)
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_volume_create(
+    const char* name,
+    uint64_t    size_mb,
+    const char* filesystem
+);
+
 #elif defined(__linux__) || defined(__unix__)
 extern void containerv_options_set_users(struct containerv_options* options, uid_t hostUidStart, uid_t childUidStart, int count);
 extern void containerv_options_set_groups(struct containerv_options* options, gid_t hostGidStart, gid_t childGidStart, int count);
