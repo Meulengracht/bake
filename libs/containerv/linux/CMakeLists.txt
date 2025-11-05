@@ -8,6 +8,7 @@ add_library(containerv-linux STATIC
     network.c
     user.c
     utils.c
+    security-linux.c
 )
 target_include_directories(containerv-linux PRIVATE ../include)
 target_link_libraries(containerv-linux PUBLIC platform vlog)

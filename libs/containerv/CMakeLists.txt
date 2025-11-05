@@ -14,6 +14,8 @@ add_library(containerv STATIC
     image-manager.c
     registry-client.c
     layer-manager.c
+    security-manager.c
+    security-integration.c
 )
 
 target_link_libraries(containerv PUBLIC ${ADDITIONAL_LIBS} ${CURL_LIBRARIES} jansson)

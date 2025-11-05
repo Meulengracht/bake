@@ -374,4 +374,269 @@ extern int containerv_cache_gc(bool force);
  */
 extern int containerv_cache_prune(int max_age_days);
 
+// Security & Sandboxing - Enhanced container isolation and privilege management
+enum containerv_security_level {
+    CV_SECURITY_PERMISSIVE = 0,     // Minimal restrictions for development
+    CV_SECURITY_RESTRICTED = 1,     // Standard container security (default)
+    CV_SECURITY_STRICT = 2,         // High security for sensitive workloads
+    CV_SECURITY_PARANOID = 3        // Maximum security for untrusted code
+};
+
+// Linux capabilities (subset of most critical ones)
+enum containerv_linux_capability {
+    CV_CAP_CHOWN = 0,               // Change file ownership
+    CV_CAP_DAC_OVERRIDE = 1,        // Bypass file permission checks
+    CV_CAP_FOWNER = 3,              // Bypass permission checks on operations requiring filesystem UID match
+    CV_CAP_KILL = 5,                // Bypass permission checks for sending signals
+    CV_CAP_SETGID = 6,              // Make arbitrary manipulations of process GIDs
+    CV_CAP_SETUID = 7,              // Make arbitrary manipulations of process UIDs
+    CV_CAP_NET_BIND_SERVICE = 10,   // Bind socket to privileged ports (<1024)
+    CV_CAP_NET_ADMIN = 12,          // Perform various network-related operations
+    CV_CAP_NET_RAW = 13,            // Use RAW and PACKET sockets
+    CV_CAP_SYS_CHROOT = 18,         // Use chroot()
+    CV_CAP_SYS_PTRACE = 19,         // Trace arbitrary processes using ptrace()
+    CV_CAP_SYS_ADMIN = 21,          // Perform system administration operations
+    CV_CAP_SYS_MODULE = 16,         // Load and unload kernel modules
+    CV_CAP_MKNOD = 27,              // Create special files using mknod()
+    CV_CAP_SETFCAP = 31             // Set file capabilities
+};
+
+// Windows privileges (subset of most critical ones)
+enum containerv_windows_privilege {
+    CV_PRIV_DEBUG = 0,              // Debug programs
+    CV_PRIV_BACKUP = 1,             // Back up files and directories
+    CV_PRIV_RESTORE = 2,            // Restore files and directories
+    CV_PRIV_SHUTDOWN = 3,           // Shut down the system
+    CV_PRIV_LOAD_DRIVER = 4,        // Load and unload device drivers
+    CV_PRIV_SYSTEM_TIME = 5,        // Change the system time
+    CV_PRIV_TAKE_OWNERSHIP = 6,     // Take ownership of files or other objects
+    CV_PRIV_TCB = 7,                // Act as part of the operating system
+    CV_PRIV_SECURITY = 8,           // Manage auditing and security log
+    CV_PRIV_INCREASE_QUOTA = 9      // Adjust memory quotas for a process
+};
+
+// Syscall filtering actions (Linux)
+enum containerv_syscall_action {
+    CV_SYSCALL_ALLOW = 0,           // Allow syscall execution
+    CV_SYSCALL_ERRNO = 1,           // Return errno without execution
+    CV_SYSCALL_KILL = 2,            // Terminate process
+    CV_SYSCALL_TRAP = 3,            // Send SIGSYS signal
+    CV_SYSCALL_LOG = 4              // Log syscall attempt and allow
+};
+
+// Security profile structure
+struct containerv_security_profile {
+    enum containerv_security_level level;
+    char* name;                     // Profile identifier
+    char* description;              // Human-readable description
+    
+    // Capability management
+    uint64_t allowed_caps;          // Bitmask of allowed capabilities
+    uint64_t dropped_caps;          // Bitmask of explicitly dropped capabilities
+    bool     no_new_privileges;     // Prevent privilege escalation
+    
+    // Process security
+    uint32_t run_as_uid;            // User ID to run as (0 = current user)
+    uint32_t run_as_gid;            // Group ID to run as (0 = current group)
+    char*    run_as_user;           // Username to run as (overrides UID/GID)
+    bool     no_suid;               // Disable setuid/setgid execution
+    
+    // Filesystem security
+    bool     read_only_root;        // Make root filesystem read-only
+    char**   writable_paths;        // Array of writable path exceptions
+    char**   masked_paths;          // Array of paths to mask/hide
+    int      fs_rule_count;         // Number of filesystem rules
+    
+    // Network security
+    bool     network_isolated;      // Isolate from host network stack
+    char**   allowed_ports;         // Array of "proto:port" allowed bindings
+    char**   allowed_hosts;         // Array of hostname/IP patterns for outbound
+    int      network_rule_count;    // Number of network rules
+    
+    // Platform-specific extensions
+#ifdef __linux__
+    bool     use_apparmor;          // Apply AppArmor profile
+    bool     use_selinux;           // Apply SELinux context  
+    char*    security_context;      // SELinux security context
+    enum containerv_syscall_action default_syscall_action; // Default for unlisted syscalls
+#endif
+    
+#ifdef _WIN32
+    bool     use_app_container;     // Enable AppContainer isolation
+    char*    integrity_level;       // Windows integrity level ("low", "medium", "high")
+    char**   capability_sids;       // Windows capability SIDs
+    int      win_cap_count;         // Number of Windows capabilities
+#endif
+};
+
+// Security audit results
+struct containerv_security_audit {
+    bool     capabilities_minimal;  // Only necessary capabilities granted
+    bool     no_privileged_access; // No root/admin access
+    bool     filesystem_restricted; // Filesystem access properly limited
+    bool     network_controlled;   // Network access controlled
+    bool     syscalls_filtered;    // Dangerous syscalls blocked (Linux)
+    bool     isolation_complete;   // Process isolation enforced
+    
+    char     audit_log[1024];      // Detailed audit information
+    time_t   audit_time;           // When audit was performed
+    int      security_score;       // Security score (0-100, higher is better)
+};
+
+/**
+ * @brief Initialize the container security subsystem
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_security_init(void);
+
+/**
+ * @brief Cleanup the container security subsystem
+ */
+extern void containerv_security_cleanup(void);
+
+/**
+ * @brief Create a new security profile
+ * @param name Unique profile name
+ * @param level Base security level 
+ * @param profile Output pointer to created profile (caller must free)
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_security_profile_create(
+    const char* name,
+    enum containerv_security_level level,
+    struct containerv_security_profile** profile
+);
+
+/**
+ * @brief Load a predefined security profile
+ * @param name Profile name ("default", "web-server", "database", "untrusted")
+ * @param profile Output pointer to loaded profile (caller must free)
+ * @return 0 on success, -1 if not found
+ */
+extern int containerv_security_profile_load(
+    const char* name,
+    struct containerv_security_profile** profile
+);
+
+/**
+ * @brief Free a security profile and its resources
+ * @param profile Profile to free
+ */
+extern void containerv_security_profile_free(
+    struct containerv_security_profile* profile
+);
+
+/**
+ * @brief Apply security profile to container options
+ * @param options Container options to enhance with security settings
+ * @param profile Security profile to apply
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_options_set_security_profile(
+    struct containerv_options* options,
+    const struct containerv_security_profile* profile
+);
+
+/**
+ * @brief Add a capability to security profile
+ * @param profile Security profile to modify
+ * @param capability Platform-specific capability to allow
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_security_add_capability(
+    struct containerv_security_profile* profile,
+    uint32_t capability
+);
+
+/**
+ * @brief Drop a capability from security profile
+ * @param profile Security profile to modify
+ * @param capability Platform-specific capability to deny
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_security_drop_capability(
+    struct containerv_security_profile* profile,
+    uint32_t capability
+);
+
+/**
+ * @brief Add filesystem path to writable exceptions
+ * @param profile Security profile to modify
+ * @param path Filesystem path to allow writes (e.g., "/var/log", "/tmp")
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_security_add_writable_path(
+    struct containerv_security_profile* profile,
+    const char* path
+);
+
+/**
+ * @brief Add network port to allowed bindings
+ * @param profile Security profile to modify  
+ * @param port_spec Port specification (e.g., "tcp:80", "udp:53", "tcp:8080-8090")
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_security_add_network_port(
+    struct containerv_security_profile* profile,
+    const char* port_spec
+);
+
+#ifdef __linux__
+/**
+ * @brief Add syscall filter rule (Linux only)
+ * @param profile Security profile to modify
+ * @param syscall_name Name of syscall (e.g., "open", "execve")
+ * @param action Action to take when syscall is attempted
+ * @param errno_value Errno to return (for CV_SYSCALL_ERRNO action, 0 otherwise)
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_security_add_syscall_filter(
+    struct containerv_security_profile* profile,
+    const char* syscall_name,
+    enum containerv_syscall_action action,
+    int errno_value
+);
+
+/**
+ * @brief Load AppArmor profile for container (Linux only)
+ * @param profile Security profile to modify
+ * @param apparmor_profile AppArmor profile name or path
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_security_set_apparmor_profile(
+    struct containerv_security_profile* profile,
+    const char* apparmor_profile
+);
+#endif
+
+/**
+ * @brief Validate security profile compatibility with current platform
+ * @param profile Security profile to validate
+ * @param error_msg Output buffer for error message (can be NULL)
+ * @param error_size Size of error message buffer
+ * @return 0 if valid, -1 if incompatible
+ */
+extern int containerv_security_profile_validate(
+    const struct containerv_security_profile* profile,
+    char* error_msg,
+    size_t error_size
+);
+
+/**
+ * @brief Perform security audit on a running container
+ * @param container Container to audit
+ * @param audit Output audit results structure
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_security_audit(
+    struct containerv_container* container,
+    struct containerv_security_audit* audit
+);
+
+// Predefined security profiles (read-only)
+extern const struct containerv_security_profile* containerv_profile_default;
+extern const struct containerv_security_profile* containerv_profile_web_server;
+extern const struct containerv_security_profile* containerv_profile_database;
+extern const struct containerv_security_profile* containerv_profile_untrusted;
+
 #endif //!__CONTAINERV_H__

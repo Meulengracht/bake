@@ -8,6 +8,7 @@ add_library(containerv-windows STATIC
     resource-limits.c
     rootfs.c
     volume-manager.c
+    security-windows.c
 )
 target_include_directories(containerv-windows PRIVATE ../include)
 target_link_libraries(containerv-windows PUBLIC platform vlog)
