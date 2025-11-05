@@ -18,17 +18,15 @@
 
 #include <windows.h>
 #include <wincrypt.h>
+#include <shlobj.h>
 #include <chef/platform.h>
 #include <chef/containerv.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 #include <vlog.h>
 #include "private.h"
-
-// HyperV COM interfaces (simplified stubs for now)
-// In production, these would use the Windows HCS (Host Compute Service) APIs
-// or the HyperV WMI interfaces
 
 #define MIN_REMAINING_PATH_LENGTH 20  // Minimum space needed for "containerv-XXXXXX" + null
 
@@ -121,20 +119,48 @@ static struct containerv_container* __container_new(void)
         return NULL;
     }
     
+    // Create staging directory for file transfers
+    char staging_path[MAX_PATH];
+    sprintf_s(staging_path, sizeof(staging_path), "%s\\staging", container->runtime_dir);
+    if (!CreateDirectoryA(staging_path, NULL)) {
+        DWORD error = GetLastError();
+        if (error != ERROR_ALREADY_EXISTS) {
+            VLOG_WARNING("containerv", "failed to create staging directory: %lu\n", error);
+        }
+    }
+    
     // Generate container ID
     containerv_generate_id(container->id, sizeof(container->id));
 
-    // Use container ID as hostname
-    container->hostname = _strdup(container->id);
-    if (container->hostname == NULL) {
+    // Convert container ID to wide string for HCS
+    size_t id_len = strlen(container->id);
+    container->vm_id = calloc(id_len + 1, sizeof(wchar_t));
+    if (container->vm_id == NULL) {
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    }
+    
+    if (MultiByteToWideChar(CP_UTF8, 0, container->id, -1, container->vm_id, (int)id_len + 1) == 0) {
+        free(container->vm_id);
         free(container->runtime_dir);
         free(container);
         return NULL;
     }
 
-    container->vm_handle = NULL;
+    // Use container ID as hostname
+    container->hostname = _strdup(container->id);
+    if (container->hostname == NULL) {
+        free(container->vm_id);
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    }
+
+    container->hcs_system = NULL;
     container->host_pipe = INVALID_HANDLE_VALUE;
     container->child_pipe = INVALID_HANDLE_VALUE;
+    container->vm_started = 0;
     list_init(&container->processes);
 
     return container;
@@ -159,8 +185,8 @@ static void __container_delete(struct containerv_container* container)
         free(proc);
     }
 
-    if (container->vm_handle != NULL) {
-        CloseHandle(container->vm_handle);
+    if (container->hcs_system != NULL) {
+        __hcs_destroy_vm(container);
     }
     
     if (container->host_pipe != INVALID_HANDLE_VALUE) {
@@ -171,6 +197,7 @@ static void __container_delete(struct containerv_container* container)
         CloseHandle(container->child_pipe);
     }
     
+    free(container->vm_id);
     free(container->hostname);
     free(container->runtime_dir);
     free(container->rootfs);
@@ -212,15 +239,30 @@ int containerv_create(
         return -1;
     }
     
-    // TODO: Create HyperV VM using Windows HCS (Host Compute Service) API
-    // For now, this is a stub implementation that sets up the basic structure
-    // A full implementation would:
-    // 1. Create a lightweight HyperV VM (using HCS or WMI)
-    // 2. Configure the VM with the rootfs
-    // 3. Set up networking and isolation
-    // 4. Start the VM
+    // Setup VM networking before creating the VM
+    if (options && (options->capabilities & CV_CAP_NETWORK)) {
+        if (__windows_configure_vm_network(container, options) != 0) {
+            VLOG_WARNING("containerv", "containerv_create: VM network setup encountered issues\n");
+            // Don't fail container creation, network might still work
+        }
+    }
+
+    // Create HyperV VM using Windows HCS (Host Compute Service) API
+    if (__hcs_create_vm(container, options) != 0) {
+        VLOG_ERROR("containerv", "containerv_create: failed to create HyperV VM\n");
+        __container_delete(container);
+        return -1;
+    }
     
-    VLOG_DEBUG("containerv", "containerv_create: created container %s\n", container->id);
+    // Configure host-side networking after VM is created
+    if (options && (options->capabilities & CV_CAP_NETWORK)) {
+        if (__windows_configure_host_network(container, options) != 0) {
+            VLOG_WARNING("containerv", "containerv_create: host network setup encountered issues\n");
+            // Continue anyway, VM networking might still work
+        }
+    }
+    
+    VLOG_DEBUG("containerv", "containerv_create: created container %s with HyperV VM\n", container->id);
     
     *containerOut = container;
     return 0;
@@ -270,54 +312,107 @@ int __containerv_spawn(
         }
     }
     
-    // TODO: In a full implementation, this would:
-    // 1. Use HCS to execute a process inside the HyperV VM
-    // 2. Set up proper environment variables
-    // 3. Handle I/O redirection
-    // For now, we create a process on the host as a placeholder
-    
-    result = CreateProcessA(
-        NULL,           // Application name
-        cmdline,        // Command line
-        NULL,           // Process security attributes
-        NULL,           // Thread security attributes
-        FALSE,          // Inherit handles
-        0,              // Creation flags
-        NULL,           // Environment
-        container->rootfs, // Current directory
-        &si,            // Startup info
-        &pi             // Process information
-    );
-    
-    if (!result) {
-        VLOG_ERROR("containerv", "__containerv_spawn: CreateProcess failed: %lu\n", GetLastError());
-        return -1;
-    }
-    
-    // Close thread handle, we don't need it
-    CloseHandle(pi.hThread);
-    
-    // Add process to container's process list
-    proc = calloc(1, sizeof(struct containerv_container_process));
-    if (proc) {
-        proc->handle = pi.hProcess;
-        proc->pid = pi.dwProcessId;
-        list_add(&container->processes, &proc->list_header);
+    // Check if we have a HyperV VM to run the process in
+    if (container->hcs_system != NULL) {
+        // Use HCS to execute process inside the HyperV VM
+        HCS_PROCESS hcs_process = NULL;
+        int status = __hcs_create_process(container, options, &hcs_process);
+        
+        if (status != 0) {
+            VLOG_ERROR("containerv", "__containerv_spawn: failed to create process in VM\n");
+            return -1;
+        }
+
+        // Configure container networking on first process spawn
+        // This is similar to Linux where network is configured after container start
+        static int network_configured = 0;  // TODO: Make this per-container
+        if (!network_configured) {
+            // We would need to pass options here, but they're not available in spawn
+            // In a real implementation, this would be done during container startup
+            // __windows_configure_container_network(container, options);
+            network_configured = 1;
+            VLOG_DEBUG("containerv", "__containerv_spawn: network setup deferred (would configure here)\n");
+        }
+
+        // Add process to container's process list
+        proc = calloc(1, sizeof(struct containerv_container_process));
+        if (proc) {
+            proc->handle = (HANDLE)hcs_process;  // Store HCS_PROCESS as HANDLE
+            proc->pid = 0; // HCS processes don't have traditional PIDs
+            list_add(&container->processes, &proc->list_header);
+        } else {
+            if (g_hcs.HcsCloseProcess) {
+                g_hcs.HcsCloseProcess(hcs_process);
+            }
+            return -1;
+        }
+
+        if (options->flags & CV_SPAWN_WAIT) {
+            VLOG_DEBUG("containerv", "__containerv_spawn: waiting for HCS process completion\n");
+            int wait_status = __hcs_wait_process(hcs_process, INFINITE);
+            if (wait_status != 0) {
+                VLOG_WARNING("containerv", "__containerv_spawn: process wait failed: %i\n", wait_status);
+            }
+            
+            unsigned long exit_code = 0;
+            if (__hcs_get_process_exit_code(hcs_process, &exit_code) == 0) {
+                VLOG_DEBUG("containerv", "__containerv_spawn: process completed with exit code: %lu\n", exit_code);
+            }
+        }
+
+        if (handleOut) {
+            *handleOut = (HANDLE)hcs_process;
+        }
+
+        VLOG_DEBUG("containerv", "__containerv_spawn: spawned HCS process in VM\n");
+        return 0;
     } else {
-        CloseHandle(pi.hProcess);
-        return -1;
+        // Fallback to host process creation (for testing/debugging)
+        VLOG_WARNING("containerv", "__containerv_spawn: no HyperV VM, creating host process as fallback\n");
+        
+        result = CreateProcessA(
+            NULL,           // Application name
+            cmdline,        // Command line
+            NULL,           // Process security attributes
+            NULL,           // Thread security attributes
+            FALSE,          // Inherit handles
+            0,              // Creation flags
+            NULL,           // Environment
+            container->rootfs, // Current directory
+            &si,            // Startup info
+            &pi             // Process information
+        );
+
+        if (!result) {
+            VLOG_ERROR("containerv", "__containerv_spawn: CreateProcess failed: %lu\n", GetLastError());
+            return -1;
+        }
+
+        // Close thread handle, we don't need it
+        CloseHandle(pi.hThread);
+
+        // Add process to container's process list
+        proc = calloc(1, sizeof(struct containerv_container_process));
+        if (proc) {
+            proc->handle = pi.hProcess;
+            proc->pid = pi.dwProcessId;
+            list_add(&container->processes, &proc->list_header);
+        } else {
+            CloseHandle(pi.hProcess);
+            return -1;
+        }
+        
+        if (options->flags & CV_SPAWN_WAIT) {
+            WaitForSingleObject(pi.hProcess, INFINITE);
+        }
+
+        if (handleOut) {
+            *handleOut = pi.hProcess;
+        }
+
+        VLOG_DEBUG("containerv", "__containerv_spawn: spawned host process %lu\n", pi.dwProcessId);
+        return 0;
     }
-    
-    if (options->flags & CV_SPAWN_WAIT) {
-        WaitForSingleObject(pi.hProcess, INFINITE);
-    }
-    
-    if (handleOut) {
-        *handleOut = pi.hProcess;
-    }
-    
-    VLOG_DEBUG("containerv", "__containerv_spawn: spawned process %lu\n", pi.dwProcessId);
-    return 0;
 }
 
 int containerv_spawn(
@@ -415,26 +510,56 @@ int containerv_upload(
         return -1;
     }
     
-    // TODO: Implement file upload to HyperV VM
-    // This would typically use HCS or PowerShell Direct to copy files
-    // For now, simple file copy as placeholder
+    // Enhanced file upload using VM-aware mechanisms
     for (int i = 0; i < count; i++) {
-        char destPath[MAX_PATH];
-        size_t rootfs_len = strlen(container->rootfs);
-        size_t container_path_len = strlen(containerPaths[i]);
+        VLOG_DEBUG("containerv", "uploading: %s -> %s\n", hostPaths[i], containerPaths[i]);
         
-        // Validate combined path length (rootfs + separator + path + null)
-        if (rootfs_len + 1 + container_path_len + 1 > MAX_PATH) {
-            VLOG_ERROR("containerv", "containerv_upload: combined path too long\n");
-            return -1;
-        }
-        
-        sprintf_s(destPath, sizeof(destPath), "%s\\%s", container->rootfs, containerPaths[i]);
-        
-        if (!CopyFileA(hostPaths[i], destPath, FALSE)) {
-            VLOG_ERROR("containerv", "containerv_upload: failed to copy %s to %s: %lu\n",
-                      hostPaths[i], destPath, GetLastError());
-            return -1;
+        if (container->hcs_system) {
+            // VM-based container: use HCS to copy files into VM
+            // TODO: In a full implementation, this would:
+            // 1. Use PowerShell Direct to copy files into running VM
+            // 2. Or use HCS file system operations if available
+            // 3. Handle VM filesystem paths correctly
+            
+            // For now, copy to staging area that can be mounted in VM
+            char stagingPath[MAX_PATH];
+            sprintf_s(stagingPath, sizeof(stagingPath), "%s\\staging\\%s", 
+                     container->runtime_dir, containerPaths[i]);
+            
+            // Create directory structure if needed
+            char* lastSlash = strrchr(stagingPath, '\\');
+            if (lastSlash) {
+                *lastSlash = '\0';
+                SHCreateDirectoryExA(NULL, stagingPath, NULL);
+                *lastSlash = '\\';
+            }
+            
+            if (!CopyFileA(hostPaths[i], stagingPath, FALSE)) {
+                VLOG_ERROR("containerv", "containerv_upload: failed to stage file %s: %lu\n",
+                          hostPaths[i], GetLastError());
+                return -1;
+            }
+            
+            VLOG_DEBUG("containerv", "staged file to: %s\n", stagingPath);
+            
+        } else {
+            // Host process container: direct file copy
+            char destPath[MAX_PATH];
+            size_t rootfs_len = strlen(container->rootfs);
+            size_t container_path_len = strlen(containerPaths[i]);
+            
+            if (rootfs_len + 1 + container_path_len + 1 > MAX_PATH) {
+                VLOG_ERROR("containerv", "containerv_upload: combined path too long\n");
+                return -1;
+            }
+            
+            sprintf_s(destPath, sizeof(destPath), "%s\\%s", container->rootfs, containerPaths[i]);
+            
+            if (!CopyFileA(hostPaths[i], destPath, FALSE)) {
+                VLOG_ERROR("containerv", "containerv_upload: failed to copy %s to %s: %lu\n",
+                          hostPaths[i], destPath, GetLastError());
+                return -1;
+            }
         }
     }
     
@@ -454,25 +579,48 @@ int containerv_download(
         return -1;
     }
     
-    // TODO: Implement file download from HyperV VM
-    // For now, simple file copy as placeholder
+    // Enhanced file download using VM-aware mechanisms
     for (int i = 0; i < count; i++) {
-        char srcPath[MAX_PATH];
-        size_t rootfs_len = strlen(container->rootfs);
-        size_t container_path_len = strlen(containerPaths[i]);
+        VLOG_DEBUG("containerv", "downloading: %s -> %s\n", containerPaths[i], hostPaths[i]);
         
-        // Validate combined path length (rootfs + separator + path + null)
-        if (rootfs_len + 1 + container_path_len + 1 > MAX_PATH) {
-            VLOG_ERROR("containerv", "containerv_download: combined path too long\n");
-            return -1;
-        }
-        
-        sprintf_s(srcPath, sizeof(srcPath), "%s\\%s", container->rootfs, containerPaths[i]);
-        
-        if (!CopyFileA(srcPath, hostPaths[i], FALSE)) {
-            VLOG_ERROR("containerv", "containerv_download: failed to copy %s to %s: %lu\n",
-                      srcPath, hostPaths[i], GetLastError());
-            return -1;
+        if (container->hcs_system) {
+            // VM-based container: retrieve files from VM
+            // TODO: In a full implementation, this would:
+            // 1. Use PowerShell Direct to copy files out of VM
+            // 2. Or use HCS file system operations if available
+            // 3. Handle VM filesystem paths correctly
+            
+            // For now, copy from staging area
+            char stagingPath[MAX_PATH];
+            sprintf_s(stagingPath, sizeof(stagingPath), "%s\\staging\\%s", 
+                     container->runtime_dir, containerPaths[i]);
+            
+            if (!CopyFileA(stagingPath, hostPaths[i], FALSE)) {
+                VLOG_ERROR("containerv", "containerv_download: failed to retrieve file %s: %lu\n",
+                          stagingPath, GetLastError());
+                return -1;
+            }
+            
+            VLOG_DEBUG("containerv", "retrieved file from: %s\n", stagingPath);
+            
+        } else {
+            // Host process container: direct file copy
+            char srcPath[MAX_PATH];
+            size_t rootfs_len = strlen(container->rootfs);
+            size_t container_path_len = strlen(containerPaths[i]);
+            
+            if (rootfs_len + 1 + container_path_len + 1 > MAX_PATH) {
+                VLOG_ERROR("containerv", "containerv_download: combined path too long\n");
+                return -1;
+            }
+            
+            sprintf_s(srcPath, sizeof(srcPath), "%s\\%s", container->rootfs, containerPaths[i]);
+            
+            if (!CopyFileA(srcPath, hostPaths[i], FALSE)) {
+                VLOG_ERROR("containerv", "containerv_download: failed to copy %s to %s: %lu\n",
+                          srcPath, hostPaths[i], GetLastError());
+                return -1;
+            }
         }
     }
     
@@ -499,11 +647,13 @@ void __containerv_destroy(struct containerv_container* container)
         }
     }
     
-    // TODO: Shut down and delete the HyperV VM
-    // This would use HCS or WMI to:
-    // 1. Stop the VM
-    // 2. Delete the VM configuration
-    // 3. Clean up VM storage
+    // Clean up network configuration
+    __windows_cleanup_network(container, NULL);  // We don't have options here, but that's OK
+    
+    // Shut down and delete the HyperV VM using HCS
+    if (container->hcs_system) {
+        __hcs_destroy_vm(container);
+    }
     
     // Remove runtime directory (recursively if needed)
     if (container->runtime_dir) {
