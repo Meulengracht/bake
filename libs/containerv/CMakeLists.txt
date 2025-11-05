@@ -16,9 +16,19 @@ add_library(containerv STATIC
     layer-manager.c
     security-manager.c
     security-integration.c
+    orchestration-engine.c
+    service-discovery.c
+    health-monitoring.c
+    load-balancer.c
+    config-parser.c
+    container-pool.c
+    startup-optimizer.c
+    performance-monitor.c
+    performance-engine.c
+    performance-benchmark.c
 )
 
-target_link_libraries(containerv PUBLIC ${ADDITIONAL_LIBS} ${CURL_LIBRARIES} jansson)
+target_link_libraries(containerv PUBLIC ${ADDITIONAL_LIBS} ${CURL_LIBRARIES} jansson yaml)
 target_include_directories(containerv PUBLIC include ${CURL_INCLUDE_DIR})
 
 # Platform-specific dependencies

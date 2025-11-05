@@ -23,8 +23,13 @@ if(CONTAINERV_LIB AND CONTAINERV_INCLUDE)
     target_link_libraries(windows-volume-management containerv)
     target_include_directories(windows-volume-management PRIVATE ${CONTAINERV_INCLUDE})
     
+    # Container Performance Optimization example
+    add_executable(containerv-performance containerv-performance.c)
+    target_link_libraries(containerv-performance containerv)
+    target_include_directories(containerv-performance PRIVATE ${CONTAINERV_INCLUDE})
+    
     # Make examples optional install targets
-    install(TARGETS container-image-system windows-volume-management
+    install(TARGETS container-image-system windows-volume-management containerv-performance
             RUNTIME DESTINATION examples
             OPTIONAL)
     

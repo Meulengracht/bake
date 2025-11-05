@@ -33,10 +33,13 @@ Features that is expected in the upcoming 1.5 release
 
 Features that is expected in the planned 1.6 release
 
-- Initial windows support
-  * Finish the platform layer
-  * Extend containerv to support the windows HCI layer
-  * Implement the build flow in kitchen for windows
+- Windows Containers Support
+  [ ] Finish the platform layer
+  [ ] Extend containerv to support the windows HCI layer
+
+- Container Orchestration & Security
+  [ ] Implement a container orchestrator
+  [ ] Add support for security profiles
 
 ## Account Setup
 
