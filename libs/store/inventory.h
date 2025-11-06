@@ -20,6 +20,7 @@
 #define __CHEF_STORE_INVENTORY_H__
 
 #include <chef/package.h>
+#include <chef/store.h>
 #include <time.h>
 
 struct store_inventory_pack;

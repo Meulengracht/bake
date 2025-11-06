@@ -45,6 +45,9 @@ struct state_transaction {
     const char* name;
     const char* channel;
     int         revision;
+
+    // Stored state
+    int         state;
 };
 
 struct state_application_revision {
@@ -100,6 +103,13 @@ extern void served_state_unlock(void);
  * @brief Marks the state as dirty, causing it to be saved to disk when unlocked.
  */
 extern void served_state_mark_dirty(void);
+
+/**
+ * @brief Saves the current state to disk.
+ * 
+ * @return int 0 on success, -1 on failure.
+ */
+extern int served_state_save(void);
 
 /**
  * @brief Executes all transactions currently registered in the state. It will keep executing

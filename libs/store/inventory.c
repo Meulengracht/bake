@@ -19,7 +19,6 @@
 #include <errno.h>
 #include "inventory.h"
 #include <chef/platform.h>
-#include <chef/store.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <string.h>
@@ -28,7 +27,7 @@
 
 struct __proof_header {
     enum store_proof_type type;
-    const char            key[128];
+    char                  key[128];
 };
 
 struct __proof_publisher {
@@ -579,13 +578,13 @@ static json_t* __serialize_proofs(union __proof* proofs, int count)
             case STORE_PROOF_PUBLISHER:
                 if (__serialize_publisher_proof(jsproof, &proofs[i].publisher)) {
                     VLOG_ERROR("inventory", "__parse_proofs: failed to parse publisher proof (index %i) from inventory\n", i);
-                    return -1;
+                    return NULL;
                 };
                 break;
             case STORE_PROOF_PACKAGE:
-                if (__serialize_package_proof(jsproof, &proofs[i].publisher)) {
+                if (__serialize_package_proof(jsproof, &proofs[i].package)) {
                     VLOG_ERROR("inventory", "__parse_proofs: failed to parse package proof (index %i) from inventory\n", i);
-                    return -1;
+                    return NULL;
                 };
                 break;
         }

@@ -25,8 +25,8 @@ add_dependencies(serve-commands service_server)
 target_include_directories(served PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
 target_link_libraries(served
         served-installer served-states served-utils
-        chef-client gracht jansson platform vlog zstd
-        -lpthread ${FUSE_LIBRARIES}
+        chef-client gracht platform vlog zstd
+        -lpthread ${FUSE_LIBRARIES} SQLite::SQLite3
 )
 
 install(

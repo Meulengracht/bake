@@ -20,6 +20,7 @@ endif()
 # Required libraries
 find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 include_directories(${CMAKE_BINARY_DIR})
 

@@ -16,11 +16,13 @@
  * 
  */
 
+#include <chef/dirs.h>
 #include <chef/platform.h>
 #include <chef/package.h>
 #include <chef/store.h>
 #include <errno.h>
 #include "inventory.h"
+#include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 

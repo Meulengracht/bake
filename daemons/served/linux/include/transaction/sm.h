@@ -48,8 +48,8 @@ struct served_sm_state {
 };
 
 struct served_sm_state_set {
-    struct served_sm_state* states;
-    int                     states_count;
+    const struct served_sm_state** states;
+    int                            states_count;
 };
 
 struct served_sm {

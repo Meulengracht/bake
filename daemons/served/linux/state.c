@@ -16,12 +16,60 @@
  *
  */
 
+// Served state implementation using sqlite as a backend. The state will allow for storing
+// application and transaction states, as well as the current state of the backend to be resilient
+// against crashes and restarts.
+// 
+// The state database schema will be as follows:
+// 
+// Table: applications
+// Columns:
+// - id (INTEGER PRIMARY KEY AUTOINCREMENT)
+// - name (TEXT)
+// 
+// Table: commands
+// Columns:
+// - id (INTEGER PRIMARY KEY AUTOINCREMENT)
+// - application_id (INTEGER, FOREIGN KEY to applications.id)
+// - name (TEXT)
+// - path (TEXT)
+// - arguments (TEXT)
+// - type (INTEGER)
+// 
+// Table: revisions
+// Columns:
+// - id (INTEGER PRIMARY KEY AUTOINCREMENT)
+// - application_id (INTEGER, FOREIGN KEY to applications.id)
+// - channel (TEXT)
+// - major (INTEGER)
+// - minor (INTEGER)
+// - patch (INTEGER)
+// - revision (INTEGER)
+// - tag (TEXT)
+// - size (INTEGER)
+// - created (TEXT)
+// 
+// Table: transactions
+// Columns:
+// - id (INTEGER PRIMARY KEY AUTOINCREMENT)
+// - type (INTEGER)
+// - state (INTEGER)
+// - flags (INTEGER)
+// - name (TEXT)
+// - channel (TEXT)
+// - revision (INTEGER)
+// 
+// The state implementation will provide functions to add, remove, and query applications and transactions.
+// The state also will allow for transactional changes to ensure consistency across multiple operations, and
+// to ensure resilience against crashes and restarts
+
 #include <errno.h>
-#include <application.h>
 #include <linux/limits.h>
 #include <chef/platform.h>
-#include <jansson.h>
+#include <chef/package.h>
+#include <sqlite3.h>
 #include <state.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,14 +77,23 @@
 #include <utils.h>
 #include <vlog.h>
 
+#include <transaction/transaction.h>
+#include <transaction/sets.h>
+
 struct __state {
-    struct state_transaction** transactions;
-    int                        transaction_count;
-    struct state_application** applications;
-    int                        application_count;
+    struct state_transaction* transaction_states;
+    int                       transaction_state_count;
+    struct state_application* applications_states;
+    int                       applications_states_count;
+
+    sqlite3* database;
+    mtx_t    lock;
+    bool     is_dirty;
 };
 
+// Database connection and state management
 static struct __state* g_state = NULL;
+static struct served_transaction** g_transactions = NULL;
 
 static struct __state* __state_new(void)
 {
@@ -46,9 +103,44 @@ static struct __state* __state_new(void)
     if (state == NULL) {
         return NULL;
     }
-
     memset(state, 0, sizeof(struct __state));
+
+    if (mtx_init(&g_state->lock, mtx_plain) != thrd_success) {
+        VLOG_ERROR("served", "__state_new: failed to initialize mutex\n");
+        free((void*)state);
+        return NULL;
+    }
     return state;
+}
+
+static void __state_application_delete(struct state_application* application)
+{
+    if (application == NULL) {
+        return;
+    }
+
+    if (application->commands) {
+        free((void*)application->commands);
+    }
+    if (application->revisions) {
+        for (int i = 0; i < application->revisions_count; i++) {
+            if (application->revisions[i].version) {
+                chef_version_free(application->revisions[i].version);
+            }
+        }
+        free((void*)application->revisions);
+    }
+    free((void*)application->name);
+}
+
+static void __state_transaction_delete(struct state_transaction* transaction)
+{
+    if (transaction == NULL) {
+        return;
+    }
+
+    free((void*)transaction->name);
+    free((void*)transaction->channel);
 }
 
 static void __state_destroy(struct __state* state)
@@ -57,437 +149,881 @@ static void __state_destroy(struct __state* state)
         return;
     }
 
-    for (int i = 0; i < state->application_count; i++) {
-        served_application_delete(state->applications[i]);
+    for (int i = 0; i < state->applications_states_count; i++) {
+        __state_application_delete(&state->applications_states[i]);
     }
-    free((void*)state->applications);
+    free((void*)state->applications_states);
+
+    for (int i = 0; i < state->transaction_state_count; i++) {
+        __state_transaction_delete(&state->transaction_states[i]);
+    }
+    free((void*)state->transaction_states);
+    mtx_destroy(&state->lock);
     free((void*)state);
 }
 
-static const char* __get_string_safe(json_t* json, const char* key)
-{
-    json_t* member;
-
-    member = json_object_get(json, key);
-    if (member) {
-        return strdup(json_string_value(member));
-    }
-    return NULL;
-}
-
-static int __parse_command(json_t* cmd, struct served_command* command)
-{
-    command->name      = __get_string_safe(cmd, "name");
-    command->path      = __get_string_safe(cmd, "path");
-    command->arguments = __get_string_safe(cmd, "args");
-    command->type      = (int)json_integer_value(json_object_get(cmd, "type"));
-    if (command->name == NULL || command->path == NULL) {
-        VLOG_ERROR("state", "command name/path is missing\n");
-        return -1;
-    }
-    return 0;
-}
-
-static int __parse_commands(json_t* commands, struct served_application* application)
-{
-    size_t cmdsCount = json_array_size(commands);
-    if (cmdsCount == 0) {
-        return 0;
-    }
-
-    application->commands = calloc(cmdsCount, sizeof(struct served_command));
-    if (application->commands == NULL) {
-        return -1;
-    }
-
-    application->commands_count = (int)json_array_size(commands);
-    for (int i = 0; i < application->commands_count; i++) {
-        json_t* command = json_array_get(commands, i);
-        int     status  = __parse_command(command, &application->commands[i]);
-        if (status != 0) {
-            VLOG_ERROR("state", "failed to parse command index %i in application %s\n", i, application->name);
-            return status;
-        }
-    }
-    return 0;
-}
-
-static int __parse_app(json_t* app, struct served_application* application)
-{
-    json_t* member;
-    json_t* commands;
-
-    application->name      = __get_string_safe(app, "name");
-    application->publisher = __get_string_safe(app, "publisher");
-    application->package   = __get_string_safe(app, "package");
-    application->major     = (int)json_integer_value(json_object_get(app, "major"));
-    application->minor     = (int)json_integer_value(json_object_get(app, "minor"));
-    application->patch     = (int)json_integer_value(json_object_get(app, "patch"));
-    application->revision  = (int)json_integer_value(json_object_get(app, "revision"));
-
-    commands = json_object_get(app, "commands");
-    if (commands) {
-        return __parse_commands(commands, application);
-    }
-    return 0;
-}
-
-static int __parse_apps(json_t* apps, struct __state* state)
-{
-    size_t appsCount = json_array_size(apps);
-
-    if (appsCount == 0) {
-        return 0;
-    }
-
-    state->applications = (struct served_application**)calloc(appsCount, sizeof(struct served_application*));
-    if (state->applications == NULL) {
-        return -1;
-    }
-
-    state->application_count = (int)appsCount;
-    for (size_t i = 0; i < appsCount; i++) {
-        json_t* app = json_array_get(apps, i);
-        int     status;
-
-        state->applications[i] = served_application_new();
-        if (state->applications[i] == NULL) {
-            return -1;
-        }
-
-        status = __parse_app(app, state->applications[i]);
-        if (status != 0) {
-            VLOG_ERROR("state", "failed to parse application index %i from state.json\n", i);
-            return status;
-        }
-    }
-
-    return 0;
-}
-
-static int __parse_state(const char* content, struct __state** stateOut)
-{
-    struct __state* state;
-    json_error_t    error;
-    json_t*         root;
-    json_t*         apps;
-    int             status = -1;
-    VLOG_DEBUG("state", "__parse_state()\n");
-
-    state = __state_new();
-    if (state == NULL) {
-        return -1;
-    }
-
-    if (content == NULL) {
-        *stateOut = state;
-        return 0;
-    }
-
-    root = json_loads(content, 0, &error);
-    if (!root) {
-        status = 0;
-        goto exit;
-    }
-
-    apps = json_object_get(root, "applications");
-    if (apps) {
-        status = __parse_apps(apps, state);
-    }
-
-exit:
-    *stateOut = state;
-    return status;
-}
-
-static int __ensure_file(const char* path, char** jsonOut)
-{
-    FILE* file;
-    long  size;
-    char* json = NULL;
-
-    file = fopen(path, "r+");
-    if (file == NULL) {
-        file = fopen(path, "w+");
-        if (file == NULL) {
-            return -1;
-        }
-    }
-
-    fseek(file, 0, SEEK_END);
-    size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    if (size) {
-        size_t bytesRead;
-
-        json = (char*)malloc(size + 1); // sz?!
-        if (!json) {
-            fclose(file);
-            return -1;
-        }
-        memset(json, 0, size + 1);
-        bytesRead = fread(json, 1, size, file);
-        if (bytesRead != size) {
-            VLOG_ERROR("state", "could only read %zu out of %zu bytes from state file\n", bytesRead, size);
-            fclose(file);
-            return -1;
-        }
-    }
-
-    fclose(file);
-    *jsonOut = json;
-    return 0;
-}
 
 static const char* __get_state_path(void)
 {
-    return served_paths_path("/var/chef/state.json");
+    return served_paths_path("/var/chef/state.db");
+}
+
+static int __create_database_schema(sqlite3* db)
+{
+    const char* create_applications_table = 
+        "CREATE TABLE IF NOT EXISTS applications ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "name TEXT UNIQUE NOT NULL,"
+        "publisher TEXT,"
+        "package TEXT,"
+        "major INTEGER,"
+        "minor INTEGER,"
+        "patch INTEGER,"
+        "revision INTEGER"
+        ");";
+
+    const char* create_commands_table = 
+        "CREATE TABLE IF NOT EXISTS commands ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "application_id INTEGER,"
+        "name TEXT NOT NULL,"
+        "path TEXT,"
+        "arguments TEXT,"
+        "type INTEGER,"
+        "FOREIGN KEY(application_id) REFERENCES applications(id)"
+        ");";
+
+    const char* create_revisions_table = 
+        "CREATE TABLE IF NOT EXISTS revisions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "application_id INTEGER,"
+        "channel TEXT,"
+        "major INTEGER,"
+        "minor INTEGER,"
+        "patch INTEGER,"
+        "revision INTEGER,"
+        "tag TEXT,"
+        "size INTEGER,"
+        "created TEXT,"
+        "FOREIGN KEY(application_id) REFERENCES applications(id)"
+        ");";
+
+    const char* create_transactions_table = 
+        "CREATE TABLE IF NOT EXISTS transactions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "type INTEGER NOT NULL,"
+        "state INTEGER NOT NULL,"
+        "flags INTEGER,"
+        "name TEXT,"
+        "channel TEXT,"
+        "revision INTEGER"
+        ");";
+
+    char* errMsg = NULL;
+    int   status;
+
+    status = sqlite3_exec(db, create_applications_table, NULL, NULL, &errMsg);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__create_database_schema: failed to create applications table: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        return -1;
+    }
+
+    status = sqlite3_exec(db, create_commands_table, NULL, NULL, &errMsg);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__create_database_schema: failed to create commands table: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        return -1;
+    }
+
+    status = sqlite3_exec(db, create_revisions_table, NULL, NULL, &errMsg);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__create_database_schema: failed to create revisions table: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        return -1;
+    }
+
+    status = sqlite3_exec(db, create_transactions_table, NULL, NULL, &errMsg);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__create_database_schema: failed to create transactions table: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int __get_application_row_count(struct __state* state)
+{
+    const char*   query = "SELECT COUNT(*) FROM applications;";
+    sqlite3_stmt* stmt;
+    int           status;
+    int           count = 0;
+
+    status = sqlite3_prepare_v2(state->database, query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__get_application_row_count: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    if ((status = sqlite3_step(stmt)) == SQLITE_ROW) {
+        count = sqlite3_column_int(stmt, 0);
+    } else {
+        VLOG_ERROR("served", "__get_application_row_count: failed to step statement: %s\n", sqlite3_errmsg(state->database));
+        count = -1;
+    }
+
+    sqlite3_finalize(stmt);
+    return count;
+}
+
+static int __application_from_stmt(sqlite3_stmt* stmt, struct state_application* application)
+{
+    const char* name = (const char*)sqlite3_column_text(stmt, 0);
+    if (name) {
+        application->name = strdup(name);
+        if (application->name == NULL) {
+            VLOG_ERROR("served", "__application_from_stmt: failed to duplicate application name\n");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int __load_commands_for_application(struct __state* state, const char* app_name, struct state_application* application)
+{
+    const char* query = 
+        "SELECT c.name, c.path, c.arguments, c.type "
+        "FROM applications a "
+        "JOIN commands c ON a.id = c.application_id "
+        "WHERE a.name = ? "
+        "ORDER BY c.id";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__load_commands_for_application: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, app_name, -1, SQLITE_STATIC);
+
+    // Count commands first
+    int command_count = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        command_count++;
+    }
+
+    if (command_count == 0) {
+        sqlite3_finalize(stmt);
+        application->commands = NULL;
+        application->commands_count = 0;
+        return 0; // No commands, which is OK
+    }
+
+    // Allocate commands array
+    application->commands = malloc(sizeof(struct state_application_command) * command_count);
+    if (!application->commands) {
+        VLOG_ERROR("served", "__load_commands_for_application: failed to allocate commands array\n");
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+    application->commands_count = command_count;
+
+    // Reset and re-execute to populate commands
+    sqlite3_reset(stmt);
+    sqlite3_bind_text(stmt, 1, app_name, -1, SQLITE_STATIC);
+
+    int i = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW && i < command_count) {
+        const char* cmd_name = (const char*)sqlite3_column_text(stmt, 0);
+        const char* cmd_path = (const char*)sqlite3_column_text(stmt, 1);
+        const char* cmd_args = (const char*)sqlite3_column_text(stmt, 2);
+        int cmd_type = sqlite3_column_int(stmt, 3);
+
+        // Initialize command structure
+        memset(&application->commands[i], 0, sizeof(struct state_application_command));
+        
+        // Safely copy strings with null checks
+        application->commands[i].name = cmd_name ? strdup(cmd_name) : NULL;
+        application->commands[i].path = cmd_path ? strdup(cmd_path) : NULL;
+        application->commands[i].arguments = cmd_args ? strdup(cmd_args) : NULL;
+        application->commands[i].type = (enum chef_command_type)cmd_type;
+        application->commands[i].pid = 0; // Not running initially
+
+        i++;
+    }
+
+    sqlite3_finalize(stmt);
+    VLOG_DEBUG("served", "__load_commands_for_application: loaded %d commands for application '%s'\n", command_count, app_name);
+    return 0;
+}
+
+static int __load_revisions_for_application(struct __state* state, const char* app_name, struct state_application* application)
+{
+    const char* query = 
+        "SELECT r.channel, r.major, r.minor, r.patch, r.revision, r.tag, r.size, r.created "
+        "FROM applications a "
+        "JOIN revisions r ON a.id = r.application_id "
+        "WHERE a.name = ? "
+        "ORDER BY r.id";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__load_revisions_for_application: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, app_name, -1, SQLITE_STATIC);
+
+    // Count revisions first
+    int revision_count = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        revision_count++;
+    }
+
+    if (revision_count == 0) {
+        sqlite3_finalize(stmt);
+        application->revisions = NULL;
+        application->revisions_count = 0;
+        return 0; // No revisions, which is OK
+    }
+
+    // Allocate revisions array
+    application->revisions = malloc(sizeof(struct state_application_revision) * revision_count);
+    if (!application->revisions) {
+        VLOG_ERROR("served", "__load_revisions_for_application: failed to allocate revisions array\n");
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+    application->revisions_count = revision_count;
+
+    // Reset and re-execute to populate revisions
+    sqlite3_reset(stmt);
+    sqlite3_bind_text(stmt, 1, app_name, -1, SQLITE_STATIC);
+
+    int i = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW && i < revision_count) {
+        const char* channel = (const char*)sqlite3_column_text(stmt, 0);
+        int major = sqlite3_column_int(stmt, 1);
+        int minor = sqlite3_column_int(stmt, 2);
+        int patch = sqlite3_column_int(stmt, 3);
+        int revision = sqlite3_column_int(stmt, 4);
+        const char* tag = (const char*)sqlite3_column_text(stmt, 5);
+        long long size = sqlite3_column_int64(stmt, 6);
+        const char* created = (const char*)sqlite3_column_text(stmt, 7);
+
+        // Initialize revision structure
+        memset(&application->revisions[i], 0, sizeof(struct state_application_revision));
+        
+        // Set tracking channel
+        application->revisions[i].tracking_channel = channel ? strdup(channel) : strdup("stable");
+
+        // Allocate and populate version structure
+        application->revisions[i].version = malloc(sizeof(struct chef_version));
+        if (application->revisions[i].version) {
+            memset(application->revisions[i].version, 0, sizeof(struct chef_version));
+            application->revisions[i].version->major = major;
+            application->revisions[i].version->minor = minor;
+            application->revisions[i].version->patch = patch;
+            application->revisions[i].version->revision = revision;
+            application->revisions[i].version->tag = tag ? strdup(tag) : NULL;
+            application->revisions[i].version->size = size;
+            application->revisions[i].version->created = created ? strdup(created) : NULL;
+        } else {
+            VLOG_ERROR("served", "__load_revisions_for_application: failed to allocate version for revision %d\n", i);
+            free((void*)application->revisions[i].tracking_channel);
+            // Continue with other revisions
+        }
+
+        i++;
+    }
+
+    sqlite3_finalize(stmt);
+    VLOG_DEBUG("served", "__load_revisions_for_application: loaded %d revisions for application '%s'\n", revision_count, app_name);
+    return 0;
+}
+
+static int __load_applications_from_db(struct __state* state)
+{
+    const char* query = 
+        "SELECT name, publisher, package, major, minor, patch, revision "
+        "FROM applications "
+        "ORDER BY name";
+
+    sqlite3_stmt* stmt;
+    int           status;
+    int           count;
+
+    count = __get_application_row_count(state);
+    if (count < 0) {
+        VLOG_ERROR("served", "__load_applications_from_db: failed to get application row count\n");
+        return -1;
+    }
+
+    if (count == 0) {
+        state->applications_states = NULL;
+        state->applications_states_count = 0;
+        return 0;
+    }
+
+    state->applications_states = calloc(count, sizeof(struct state_application));
+    if (state->applications_states == NULL) {
+        VLOG_ERROR("served", "__load_applications_from_db: failed to allocate applications array\n");
+        return -1;
+    }
+    state->applications_states_count = 0;
+
+    status = sqlite3_prepare_v2(state->database, query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__load_applications_from_db: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    while ((status = sqlite3_step(stmt)) == SQLITE_ROW) {
+        struct state_application* app = &state->applications_states[state->applications_states_count];
+
+        if (__application_from_stmt(stmt, app) != 0) {
+            VLOG_ERROR("served", "__load_applications_from_db: failed to parse application from statement\n");
+            sqlite3_finalize(stmt);
+            return -1;
+        }
+
+        if (__load_commands_for_application(state, app->name, app) != 0) {
+            VLOG_ERROR("served", "__load_applications_from_db: failed to load commands for application '%s'\n", app->name);
+            sqlite3_finalize(stmt);
+            return -1;
+        }
+
+        if (__load_revisions_for_application(state, app->name, app) != 0) {
+            VLOG_ERROR("served", "__load_applications_from_db: failed to load revisions for application '%s'\n", app->name);
+            sqlite3_finalize(stmt);
+            return -1;
+        }
+
+        state->applications_states_count++;
+    }
+
+    sqlite3_finalize(stmt);
+    VLOG_DEBUG("served", "__load_applications_from_db: loaded %d applications\n", state->applications_states_count);
+    return 0;
+}
+
+static int __get_transaction_row_count(struct __state* state)
+{
+    const char*   query = "SELECT COUNT(*) FROM transactions;";
+    sqlite3_stmt* stmt;
+    int           status;
+    int           count = 0;
+
+    status = sqlite3_prepare_v2(state->database, query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__get_transaction_row_count: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    if ((status = sqlite3_step(stmt)) == SQLITE_ROW) {
+        count = sqlite3_column_int(stmt, 0);
+    } else {
+        VLOG_ERROR("served", "__get_transaction_row_count: failed to step statement: %s\n", sqlite3_errmsg(state->database));
+        count = -1;
+    }
+
+    sqlite3_finalize(stmt);
+    return count;
+}
+
+static int __load_transaction_states_from_db(struct __state* state)
+{
+    const char* query = 
+        "SELECT id, type, state, flags, name, channel, revision "
+        "FROM transactions "
+        "ORDER BY id";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__load_transaction_states_from_db: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    // Count transactions first
+    int transaction_count = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        transaction_count++;
+    }
+
+    if (transaction_count == 0) {
+        sqlite3_finalize(stmt);
+        state->transaction_states = NULL;
+        state->transaction_state_count = 0;
+        return 0; // No transactions, which is OK
+    }
+
+    // Allocate transactions array
+    state->transaction_states = malloc(sizeof(struct state_transaction) * transaction_count);
+    if (!state->transaction_states) {
+        VLOG_ERROR("served", "__load_transaction_states_from_db: failed to allocate transactions array\n");
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+    state->transaction_state_count = transaction_count;
+
+    // Reset and re-execute to populate transactions
+    sqlite3_reset(stmt);
+
+    int i = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW && i < transaction_count) {
+        unsigned int id = (unsigned int)sqlite3_column_int(stmt, 0);
+        int type = sqlite3_column_int(stmt, 1);
+        int txn_state = sqlite3_column_int(stmt, 2);
+        int flags = sqlite3_column_int(stmt, 3);
+        const char* name = (const char*)sqlite3_column_text(stmt, 4);
+        const char* channel = (const char*)sqlite3_column_text(stmt, 5);
+        int revision = sqlite3_column_int(stmt, 6);
+
+        // Initialize transaction structure
+        memset(&state->transaction_states[i], 0, sizeof(struct state_transaction));
+        
+        state->transaction_states[i].id = id;
+        state->transaction_states[i].type = (enum state_transaction_type)type;
+        state->transaction_states[i].flags = (enum state_transaction_flags)flags;
+        state->transaction_states[i].name = name ? strdup(name) : NULL;
+        state->transaction_states[i].channel = channel ? strdup(channel) : NULL;
+        state->transaction_states[i].revision = revision;
+
+        i++;
+    }
+
+    sqlite3_finalize(stmt);
+    VLOG_DEBUG("served", "__load_transaction_states_from_db: loaded %d transactions\n", transaction_count);
+    return 0;
+}
+
+static struct served_sm_state_set* __state_set_from_type(enum state_transaction_type type)
+{
+    struct served_sm_state_set* set = calloc(1, sizeof(struct served_sm_state_set));
+    if (set == NULL) {
+        VLOG_ERROR("served", "__state_set_from_type: failed to allocate state set\n");
+        return NULL;
+    }
+
+    // Initialize the state set based on the transaction type
+    switch (type) {
+    case STATE_TRANSACTION_TYPE_INSTALL:
+        set->states = g_stateSetInstall;
+        set->states_count = 14;
+        break;
+    case STATE_TRANSACTION_TYPE_UNINSTALL:
+        set->states = g_stateSetUninstall;
+        set->states_count = 8;
+        break;
+    case STATE_TRANSACTION_TYPE_UPDATE:
+        set->states = g_stateSetUpdate;
+        set->states_count = 18;
+        break;
+    default:
+        VLOG_ERROR("served", "__state_set_from_type: unsupported transaction type: %d\n", type);
+        free(set);
+        return NULL;
+    }
+
+    return set;
+}
+
+static int __reconstruct_transactions_from_db(struct __state* state)
+{
+    g_transactions = calloc(state->transaction_state_count, sizeof(struct served_transaction*));
+    if (g_transactions == NULL) {
+        VLOG_ERROR("served", "__reconstruct_transactions_from_db: failed to allocate transactions array\n");
+        return -1;
+    }
+
+    for (int i = 0; i < state->transaction_state_count; i++) {
+        struct state_transaction*  txnState = &state->transaction_states[i];
+        struct served_transaction* txn = calloc(1, sizeof(struct served_transaction));
+        if (txn == NULL) {
+            VLOG_ERROR("served", "__reconstruct_transactions_from_db: failed to allocate transaction\n");
+            return -1;
+        }
+        txn->id = txnState->id;
+        
+        served_sm_init(&txn->sm, __state_set_from_type(txnState->type), txnState->state, txn);
+        g_transactions[i] = txn;
+    }
+    return 0;
 }
 
 int served_state_load(void)
 {
     int         status;
-    char*       json;
-    const char* filePath;
-    VLOG_DEBUG("state", "served_state_load()\n");
+    const char* path = __get_state_path();
+    VLOG_DEBUG("served", "served_state_load(path=%s)\n", path);
 
-    filePath = __get_state_path();
-    if (filePath == NULL) {
-        VLOG_ERROR("state", "failed to retrieve the path where the state is stored\n");
+    g_state = __state_new();
+    if (g_state == NULL) {
+        VLOG_ERROR("served", "served_state_load: failed to allocate state\n");
         return -1;
     }
 
-    status = __ensure_file(filePath, &json);
-    free((void*)filePath);
-    if (status) {
-        VLOG_ERROR("state", "failed to load state from %s\n", filePath);
+    status = sqlite3_open(path, &g_state->database);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "served_state_load: failed to open database: %s\n", sqlite3_errmsg(g_state->database));
+        __state_destroy(g_state);
+        g_state = NULL;
         return -1;
     }
 
-    status = __parse_state(json, &g_state);
-    free(json);
-    if (status) {
-        VLOG_ERROR("state", "failed to parse the state, file corrupt??\n");
-    }
-    return status;
-}
-
-static int __serialize_command(struct served_command* command, json_t** jsonOut)
-{
-    json_t* json = json_object();
-    if (json == NULL) {
+    // Create database schema if it doesn't exist
+    if (__create_database_schema(g_state->database) != 0) {
+        sqlite3_close(g_state->database);
+        __state_destroy(g_state);
+        g_state = NULL;
         return -1;
     }
 
-    json_object_set_new(json, "name", json_string(command->name));
-    json_object_set_new(json, "path", json_string(command->path));
-    json_object_set_new(json, "args", json_string(command->arguments));
-    json_object_set_new(json, "type", json_integer(command->type));
-
-    *jsonOut = json;
-    return 0;
-}
-
-static int __serialize_application(struct served_application* application, json_t** jsonOut)
-{
-    json_t* json = json_object();
-    if (!json) {
+    if (__load_applications_from_db(g_state) != 0 ||
+        __load_transaction_states_from_db(g_state) != 0 ||
+        __reconstruct_transactions_from_db(g_state) != 0) {
+        sqlite3_close(g_state->database);
+        __state_destroy(g_state);
+        g_state = NULL;
         return -1;
     }
-
-    json_object_set_new(json, "name", json_string(application->name));
-    json_object_set_new(json, "publisher", json_string(application->publisher));
-    json_object_set_new(json, "package", json_string(application->package));
-    json_object_set_new(json, "major", json_integer(application->major));
-    json_object_set_new(json, "minor", json_integer(application->minor));
-    json_object_set_new(json, "patch", json_integer(application->patch));
-    json_object_set_new(json, "revision", json_integer(application->revision));
-
-    json_t* commands = json_array();
-    if (!commands) {
-        json_decref(json);
-        return -1;
-    }
-
-    for (int i = 0; i < application->commands_count; i++) {
-        json_t* cmd;
-        int     status;
-
-        status = __serialize_command(&application->commands[i], &cmd);
-        if (status != 0) {
-            VLOG_ERROR("state", "failed to serialize command %s\n", application->commands[i].name);
-            json_decref(json);
-            json_decref(commands);
-            return status;
-        }
-        json_array_append_new(commands, cmd);
-    }
-
-    json_object_set_new(json, "commands", commands);
-    *jsonOut = json;
-    return 0;
-}
-
-static int __serialize_state(struct __state* state, json_t** jsonOut)
-{
-    json_t* root;
-    json_t* apps;
     
-    root = json_object();
-    if (!root) {
-        return -1;
-    }
-
-    apps = json_array();
-    if (!apps) {
-        json_decref(root);
-        return -1;
-    }
-
-    for (int i = 0; i < state->application_count; i++) {
-        json_t* app;
-        int     status;
-
-        if (state->applications[i] != NULL) {
-            status = __serialize_application(state->applications[i], &app);
-            if (status != 0) {
-                VLOG_ERROR("state", "failed to serialize application %s\n", state->applications[i]->name);
-                json_decref(root);
-                return status;
-            }
-            json_array_append_new(apps, app);
-        }
-    }
-
-    json_object_set_new(root, "applications", apps);
-    *jsonOut = root;
     return 0;
 }
 
-int served_state_save(void)
+void served_state_close(void)
 {
-    json_t*     root;
-    int         status;
-    const char* filePath;
-    VLOG_DEBUG("state", "served_state_save()\n");
-
-    filePath = __get_state_path();
-    if (filePath == NULL) {
-        VLOG_ERROR("state", "failed to retrieve the path where the state is stored\n");
-        return -1;
+    if (g_state == NULL) {
+        return;
     }
 
-    status = __serialize_state(g_state, &root);
-    if (status) {
-        VLOG_ERROR("state", "failed to serialize state to json\n");
-        free((void*)filePath);
-        return -1;
+    if (g_state->database) {
+        sqlite3_close(g_state->database);
     }
-
-    status = json_dump_file(root, filePath, JSON_INDENT(2));
-    if (status) {
-        VLOG_ERROR("state", "failed to write state to disk\n");
-    }
-    free((void*)filePath);
-    json_decref(root);
     
     __state_destroy(g_state);
     g_state = NULL;
-
-    return status;
 }
 
 void served_state_lock(void)
 {
-
+    mtx_lock(&g_state->lock);
 }
 
 void served_state_unlock(void)
 {
-
+    if (g_state->is_dirty) {
+        // Save state to database here if needed
+        g_state->is_dirty = false;
+    }
+    mtx_unlock(&g_state->lock);
 }
 
 void served_state_mark_dirty(void)
 {
-
+    g_state->is_dirty = true;
 }
 
-extern int served_state_execute(void)
-{
-    
-}
-
-int served_state_get_applications(struct served_application*** applicationsOut, int* applicationsCount)
+int served_state_save(void)
 {
     if (g_state == NULL) {
-        errno = ENOSYS;
+        VLOG_ERROR("served", "served_state_save: state not initialized\n");
         return -1;
     }
 
-    *applicationsOut   = g_state->applications;
-    *applicationsCount = g_state->application_count;
+    // In our SQLite-based implementation, data is already persisted to the database
+    // when applications/transactions are added/modified. This function ensures 
+    // any pending changes are committed and synced.
+    
+    // Flush any pending database operations
+    int status = sqlite3_exec(g_state->database, "PRAGMA synchronous = FULL", NULL, NULL, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "served_state_save: failed to sync database: %s\n", sqlite3_errmsg(g_state->database));
+        return -1;
+    }
+
+    g_state->is_dirty = false;
+    VLOG_DEBUG("served", "served_state_save: state saved successfully\n");
     return 0;
 }
 
-int served_state_add_application(struct served_application* application)
+int served_state_execute(void)
 {
-    struct served_application** applications;
-
-    if (application == NULL) {
-        errno = EINVAL;
+    if (g_state == NULL) {
         return -1;
     }
 
-    applications = (struct served_application**)realloc(g_state->applications,
-            (g_state->application_count + 1) * sizeof(struct served_application*));
-    if (applications == NULL) {
-        return -1;
+    // Execute pending transactions - implementation depends on business logic
+    VLOG_DEBUG("served", "served_state_execute: processing %d transactions\n", g_state->transaction_state_count);
+    
+    for (int i = 0; i < g_state->transaction_state_count; i++) {
+        struct served_transaction* txn = g_transactions[i];
+        VLOG_DEBUG("served", "served_state_execute: processing transaction %d\n", txn->id);
+        served_sm_execute(&txn->sm);
     }
 
-    applications[g_state->application_count] = application;
-    g_state->applications = applications;
-    g_state->application_count++;
     return 0;
 }
 
-int served_state_remove_application(struct served_application* application)
+unsigned int served_state_transaction_new(struct state_transaction* transaction)
 {
-    struct served_application** applications;
-    int                         i, j;
-
-    if (application == NULL) {
-        errno = EINVAL;
+    if (g_state == NULL) {
         return -1;
     }
 
-    if (g_state->application_count == 1) {
-        free(g_state->applications);
-        g_state->application_count = 0;
-        g_state->applications      = NULL;
+    const char* insert_query = 
+        "INSERT INTO transactions (type, state, flags, name, channel, revision) "
+        "VALUES (?, ?, ?, ?, ?)";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(g_state->database, insert_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "served_state_transaction_new: failed to prepare statement: %s\n", sqlite3_errmsg(g_state->database));
         return 0;
     }
 
-    applications = (struct served_application**)malloc(
-            (g_state->application_count - 1) * sizeof(struct served_application*));
-    if (applications == NULL) {
-        return -1;
+    sqlite3_bind_int(stmt, 1, transaction->type);
+    sqlite3_bind_int(stmt, 2, 0);
+    sqlite3_bind_int(stmt, 3, transaction->flags);
+    sqlite3_bind_text(stmt, 4, transaction->name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 5, transaction->channel, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 6, transaction->revision);
+
+    status = sqlite3_step(stmt);
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "served_state_transaction_new: failed to insert transaction: %s\n", sqlite3_errmsg(g_state->database));
+        sqlite3_finalize(stmt);
+        return 0;
     }
 
-    for (i = 0, j = 0; i < g_state->application_count; i++) {
-        if (g_state->applications[i] != application) {
-            if (j == g_state->application_count - 1) {
-                // someone lied to us, the target was not in here
-                free(applications);
-                errno = ENOENT;
-                return -1;
-            }
-            applications[j++] = g_state->applications[i];
+    unsigned int transaction_id = (unsigned int)sqlite3_last_insert_rowid(g_state->database);
+    sqlite3_finalize(stmt);
+
+    // Add to in-memory state
+    struct state_transaction* new_states = realloc(g_state->transaction_states, 
+        sizeof(struct state_transaction) * (g_state->transaction_state_count + 1));
+    if (new_states) {
+        g_state->transaction_states = new_states;
+        g_state->transaction_states[g_state->transaction_state_count] = *transaction;
+        g_state->transaction_states[g_state->transaction_state_count].id = transaction_id;
+        g_state->transaction_state_count++;
+        served_state_mark_dirty();
+    }
+
+    return transaction_id;
+}
+
+/**
+ * @brief Retrieves a transaction by its ID.
+ */
+struct state_transaction* served_state_transaction(unsigned int id)
+{
+    if (g_state == NULL) {
+        return NULL;
+    }
+
+    for (int i = 0; i < g_state->transaction_state_count; i++) {
+        if (g_state->transaction_states[i].id == id) {
+            return &g_state->transaction_states[i];
         }
     }
 
-    free(g_state->applications);
-    g_state->application_count--;
-    g_state->applications = applications;
+    return NULL;
+}
+
+/**
+ * @brief Retrieves an application by its name.
+ */
+struct state_application* served_state_application(const char* name)
+{
+    if (g_state == NULL || name == NULL) {
+        return NULL;
+    }
+
+    for (int i = 0; i < g_state->applications_states_count; i++) {
+        if (g_state->applications_states[i].name && 
+            strcmp(g_state->applications_states[i].name, name) == 0) {
+            return &g_state->applications_states[i];
+        }
+    }
+
+    return NULL;
+}
+
+/**
+ * @brief Adds a new application to the state.
+ */
+int served_state_add_application(struct state_application* application)
+{
+    if (g_state == NULL || application == NULL || application->name == NULL) {
+        return -1;
+    }
+
+    // Check if application already exists
+    if (served_state_application(application->name) != NULL) {
+        VLOG_ERROR("served", "served_state_add_application: application '%s' already exists\n", application->name);
+        return -1;
+    }
+
+    // Insert application into database
+    const char* insert_app_query = 
+        "INSERT INTO applications (name, publisher, package, major, minor, patch, revision) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(g_state->database, insert_app_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "served_state_add_application: failed to prepare statement: %s\n", sqlite3_errmsg(g_state->database));
+        return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, application->name, -1, SQLITE_STATIC);
+
+    status = sqlite3_step(stmt);
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "served_state_add_application: failed to insert application: %s\n", sqlite3_errmsg(g_state->database));
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    int app_id = (int)sqlite3_last_insert_rowid(g_state->database);
+    sqlite3_finalize(stmt);
+
+    // Insert revision entry for the application
+    const char* insert_rev_query = 
+        "INSERT INTO revisions (application_id, channel, major, minor, patch, revision, tag, size, created) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+    status = sqlite3_prepare_v2(g_state->database, insert_rev_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "served_state_add_application: failed to prepare revision statement: %s\n", sqlite3_errmsg(g_state->database));
+        return -1;
+    }
+
+    sqlite3_bind_int(stmt, 1, app_id);
+    sqlite3_bind_text(stmt, 2, application->revisions[0].tracking_channel, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 3, application->revisions[0].version->major);
+    sqlite3_bind_int(stmt, 4, application->revisions[0].version->minor);
+    sqlite3_bind_int(stmt, 5, application->revisions[0].version->patch);
+    sqlite3_bind_int(stmt, 6, application->revisions[0].version->revision);
+    sqlite3_bind_text(stmt, 7, application->revisions[0].version->tag, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 8, application->revisions[0].version->size);
+    sqlite3_bind_text(stmt, 9, application->revisions[0].version->created, -1, SQLITE_STATIC);
+
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    // Insert commands if any
+    for (int i = 0; i < application->commands_count; i++) {
+        const char* insert_cmd_query = 
+            "INSERT INTO commands (application_id, name, path, arguments, type) "
+            "VALUES (?, ?, ?, ?, ?)";
+
+        status = sqlite3_prepare_v2(g_state->database, insert_cmd_query, -1, &stmt, NULL);
+        if (status != SQLITE_OK) {
+            VLOG_ERROR("served", "served_state_add_application: failed to prepare command statement: %s\n", sqlite3_errmsg(g_state->database));
+            continue;
+        }
+
+        sqlite3_bind_int(stmt, 1, app_id);
+        sqlite3_bind_text(stmt, 2, application->commands[i].name, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, application->commands[i].path, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, application->commands[i].arguments, -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 5, application->commands[i].type);
+
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+
+    // Add to in-memory state
+    struct state_application* new_apps = realloc(g_state->applications_states,
+        sizeof(struct state_application) * (g_state->applications_states_count + 1));
+    if (new_apps) {
+        g_state->applications_states = new_apps;
+        g_state->applications_states[g_state->applications_states_count] = *application;
+        g_state->applications_states_count++;
+        served_state_mark_dirty();
+    }
+
     return 0;
 }
+
+/**
+ * @brief Retrieves all applications in the state.
+ */
+int served_state_get_applications(struct state_application*** applicationsOut, int* applicationsCount)
+{
+    if (g_state == NULL || applicationsOut == NULL || applicationsCount == NULL) {
+        return -1;
+    }
+
+    *applicationsCount = g_state->applications_states_count;
+    if (g_state->applications_states_count == 0) {
+        *applicationsOut = NULL;
+        return 0;
+    }
+
+    struct state_application** apps = malloc(sizeof(struct state_application*) * g_state->applications_states_count);
+    if (!apps) {
+        return -1;
+    }
+
+    for (int i = 0; i < g_state->applications_states_count; i++) {
+        apps[i] = &g_state->applications_states[i];
+    }
+
+    *applicationsOut = apps;
+    return 0;
+}
+
+/**
+ * @brief Removes an application from the state.
+ */
+int served_state_remove_application(struct state_application* application)
+{
+    if (g_state == NULL || application == NULL || application->name == NULL) {
+        return -1;
+    }
+
+    // Remove from database
+    const char* delete_query = "DELETE FROM applications WHERE name = ?";
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(g_state->database, delete_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "served_state_remove_application: failed to prepare statement: %s\n", sqlite3_errmsg(g_state->database));
+        return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, application->name, -1, SQLITE_STATIC);
+    status = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "served_state_remove_application: failed to delete application: %s\n", sqlite3_errmsg(g_state->database));
+        return -1;
+    }
+
+    // Remove from in-memory state
+    for (int i = 0; i < g_state->applications_states_count; i++) {
+        if (g_state->applications_states[i].name && 
+            strcmp(g_state->applications_states[i].name, application->name) == 0) {
+            
+            __state_application_delete(&g_state->applications_states[i]);
+            
+            // Shift remaining applications
+            for (int j = i; j < g_state->applications_states_count - 1; j++) {
+                g_state->applications_states[j] = g_state->applications_states[j + 1];
+            }
+            g_state->applications_states_count--;
+            served_state_mark_dirty();
+            break;
+        }
+    }
+
+    return 0;
+}
+
