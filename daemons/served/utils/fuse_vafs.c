@@ -23,7 +23,7 @@
 
 #include <errno.h>
 #include <fuse3/fuse.h>
-#include <pthread.h>
+#include <threads.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
@@ -41,7 +41,7 @@ struct served_mount {
     struct VaFs* vafs;
     struct fuse* fuse;
     const char*  mount_point;
-    pthread_t    worker;
+    thrd_t       worker;
 };
 
 /** Open a file
@@ -586,6 +586,13 @@ static int __reset_mountpoint(struct served_mount* mount)
     return 0;
 }
 
+// Wrapper function for fuse_loop to match thrd_start_t signature
+static int __fuse_loop_wrapper(void* arg)
+{
+    struct fuse* fuse = (struct fuse*)arg;
+    return fuse_loop(fuse);
+}
+
 int served_mount(const char* path, const char* mountPoint, struct served_mount** mountOut)
 {
     struct fuse_args     args;
@@ -654,9 +661,8 @@ int served_mount(const char* path, const char* mountPoint, struct served_mount**
         }
     }
 
-    status = pthread_create(&mount->worker, NULL,
-        (void *(*)(void *))fuse_loop, (void*)mount->fuse);
-    if (status != 0) {
+    status = thrd_create(&mount->worker, __fuse_loop_wrapper, (void*)mount->fuse);
+    if (status != thrd_success) {
         served_unmount(mount);
         return -1;
     }
@@ -674,8 +680,10 @@ void served_unmount(struct served_mount* mount)
     // kill the worker thread
     if (mount->worker != 0) {
         VLOG_DEBUG("fuse", "killing fuse worker thread\n");
-        pthread_cancel(mount->worker);
-        pthread_join(mount->worker, NULL);
+        // Signal the fuse loop to exit
+        fuse_exit(mount->fuse);
+        // Wait for the thread to finish
+        thrd_join(mount->worker, NULL);
         mount->worker = 0;
         VLOG_DEBUG("fuse", "fuse worker thread killed\n");
     }

@@ -16,7 +16,6 @@
  *
  */
 
-#include <application.h>
 #include <errno.h>
 #include <chef/platform.h>
 #include <startup.h>
@@ -27,6 +26,9 @@
 #include <sys/stat.h>
 #include <utils.h>
 #include <vlog.h>
+
+#include <transaction/sets.h>
+#include <transaction/transaction.h>
 
 #include <chef/client.h>
 #include <chef/api/package.h>
@@ -159,9 +161,8 @@ int served_resolver_initialize(void)
 
 int served_startup(void)
 {
-    struct served_application** applications;
-    int                         applicationCount;
-    int                         status;
+    unsigned int transactionId;
+    int          status;
     VLOG_TRACE("startup", "served_startup()\n");
 
 #ifndef CHEF_AS_SNAP
@@ -184,21 +185,18 @@ int served_startup(void)
         return status;
     }
 
-    status = served_state_get_applications(&applications, &applicationCount);
-    if (status != 0) {
-        VLOG_ERROR("startup", "failed to load applications from state\n");
-        return status;
+    VLOG_TRACE("startup", "initiating startup transaction\n");
+    transactionId = served_transaction_create(&(struct served_transaction_options) {
+        .name = "system-startup",
+        .description = "Served system initialization",
+        .type = SERVED_TRANSACTION_TYPE_EPHEMERAL,
+        .stateSet = g_stateSetStartup
+    });
+    if (transactionId == (unsigned int)-1) {
+        VLOG_ERROR("startup", "failed to create startup transaction\n");
+        return -1;
     }
 
-    VLOG_DEBUG("startup", "initializing %i applications\n", applicationCount);
-    for (int i = 0; i < applicationCount; i++) {
-        status = served_application_load(applications[i]);
-        if (status != 0) {
-            VLOG_WARNING("startup", "failed to initialize application %s\n", applications[i]->name);
-            continue;
-        }
-    }
-
-    VLOG_TRACE("startup", "complete\n");
+    VLOG_TRACE("startup", "startup-transaction: %u\n", transactionId);
     return 0;
 }

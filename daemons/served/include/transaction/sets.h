@@ -84,4 +84,23 @@ static const struct served_sm_state* g_stateSetUpdate[] = {
     &g_stateCompleted, &g_stateError, &g_stateCancelled
 };
 
+// Ephemeral transactions for startup and shutdown
+static const struct served_sm_state* g_stateSetStartup[] = {
+    &g_stateMount,
+    &g_stateLoad,
+    &g_stateStartServices,
+    &g_stateGenerateWrappers,
+
+    &g_stateCompleted, &g_stateError, &g_stateCancelled
+};
+
+static const struct served_sm_state* g_stateSetShutdown[] = {
+    &g_stateRemoveWrappers,
+    &g_stateStopServices,
+    &g_stateUnload,
+    &g_stateUnmount,
+
+    &g_stateCompleted, &g_stateError, &g_stateCancelled
+};
+
 #endif //!__SERVED_TRANSACTION_SETS_H__

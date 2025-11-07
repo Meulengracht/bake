@@ -20,34 +20,18 @@
 #define __SERVED_STATE_H__
 
 #include <chef/bits/package.h>
+#include <transaction/transaction.h>
 
 // forwards
 struct served_mount;
 
-enum state_transaction_flags {
-    STATE_TRANSACTION_FLAG_EPHEMERAL = 0x01
-};
-
-enum state_transaction_type {
-    STATE_TRANSACTION_TYPE_INSTALL,
-    STATE_TRANSACTION_TYPE_UNINSTALL,
-    STATE_TRANSACTION_TYPE_UPDATE,
-    STATE_TRANSACTION_TYPE_ROLLBACK,
-    STATE_TRANSACTION_TYPE_CONFIGURE
-};
-
 struct state_transaction {
-    unsigned int                 id;
-    enum state_transaction_type  type;
-    enum state_transaction_flags flags;
+    unsigned int id;
 
     // Package information
     const char* name;
     const char* channel;
     int         revision;
-
-    // Stored state
-    int         state;
 };
 
 struct state_application_revision {
@@ -109,20 +93,13 @@ extern void served_state_mark_dirty(void);
  * 
  * @return int 0 on success, -1 on failure.
  */
-extern int served_state_save(void);
+extern int served_state_flush(void);
 
 /**
  * @brief Executes all transactions currently registered in the state. It will keep executing
  * transactions until they are either completed, failed, cancelled or waiting for external events.
  */
-extern int served_state_execute(void);
-
-/**
- * @brief Creates a new transaction in the state, with the provided configuration.
- * @param state The transaction configuration.
- * @return unsigned int The transaction ID, or 0 on failure.
- */
-extern unsigned int served_state_transaction_new(struct state_transaction* state);
+extern void served_state_execute(void);
 
 /**
  * @brief Retrieves a transaction by its ID.
@@ -143,20 +120,42 @@ extern struct state_application* served_state_application(const char* name);
 extern int served_state_add_application(struct state_application* application);
 
 /**
- * @brief Retrieves all applications in the state.
- *
- * @param applicationsOut A pointer to a list of application pointers.
- * @param applicationsCount A pointer to an integer that will receive the number of applications.
- * @return int 0 on success, -1 on failure.
- */
-extern int served_state_get_applications(struct state_application*** applicationsOut, int* applicationsCount);
-
-/**
  * @brief Removes an application fromserved_application the state. This will mark the state as dirty.
  * 
  * @param application the application to remove
  * @return int 0 on success, -1 on failure
  */
 extern int served_state_remove_application(struct state_application* application);
+
+/**
+ * @brief Retrieves all applications in the state.
+ *
+ * @param applicationsOut A pointer to a list of application pointers.
+ * @param applicationsCount A pointer to an integer that will receive the number of applications.
+ * @return int 0 on success, -1 on failure.
+ */
+extern int served_state_get_applications(struct state_application** applicationsOut, int* applicationsCount);
+
+extern unsigned int served_state_transaction_new(struct served_transaction_options* options);
+
+extern unsigned int served_state_transaction_update(struct served_transaction* transaction);
+
+extern int served_state_get_transactions(struct served_transaction** transactionsOut, int* transactionsCount);
+
+/**
+ * @brief Creates a new transaction in the state, with the provided configuration.
+ * @param state The transaction configuration.
+ * @return unsigned int The transaction ID, or 0 on failure.
+ */
+extern int served_state_transaction_state_new(unsigned int id, struct state_transaction* state);
+
+/**
+ * @brief Retrieves all transactions in the state.
+ *
+ * @param transactionsOut A pointer to a list of transaction pointers.
+ * @param transactionsCount A pointer to an integer that will receive the number of transactions.
+ * @return int 0 on success, -1 on failure.
+ */
+extern int served_state_get_transaction_states(struct state_transaction** transactionsOut, int* transactionsCount);
 
 #endif //!__SERVED_STATE_H__

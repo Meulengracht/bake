@@ -16,38 +16,36 @@
  *
  */
 
-#include <application.h>
 #include <startup.h>
 #include <state.h>
 #include <vlog.h>
 
+#include <transaction/sets.h>
+#include <transaction/transaction.h>
+
 void served_shutdown(void)
 {
-    struct served_application** applications;
-    int                         applicationCount;
-    int                         status;
+    unsigned int transactionId;
+    int          status;
     VLOG_TRACE("shutdown", "served_shutdown()\n");
-
-    status = served_state_get_applications(&applications, &applicationCount);
-    if (status != 0) {
-        VLOG_ERROR("shutdown", "failed to load applications from state, this could be serious\n");
+    
+    // Create a shutdown transaction to finalize any pending operations
+    transactionId = served_state_transaction_new(&(struct served_transaction_options){
+        .name        = "system-shutdown",
+        .description = "Served system shutdown",
+        .type        = SERVED_TRANSACTION_TYPE_EPHEMERAL,
+        .stateSet    = g_stateSetShutdown,
+        .initialState= 0
+    });
+    if (transactionId == (int)-1) {
+        VLOG_ERROR("shutdown", "failed to create shutdown transaction\n");
         goto save_state;
     }
-
-    for (int i = 0; i < applicationCount; i++) {
-        status = served_application_stop_daemons(applications[i]);
-        if (status != 0) {
-            VLOG_WARNING("shutdown", "failed to stop daemons for application %s\n", applications[i]->name);
-        }
-
-        status = served_application_unmount(applications[i]);
-        if (status != 0) {
-            VLOG_WARNING("shutdown", "failed to unmount application %s\n", applications[i]->name);
-        }
-    }
+    VLOG_TRACE("shutdown", "created shutdown transaction %u\n", transactionId);
+    served_state_execute();
 
 save_state:
-    status = served_state_save();
+    status = served_state_flush();
     if (status) {
         VLOG_ERROR("shutdown", "failed to save state!!!\n");
     }

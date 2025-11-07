@@ -27,6 +27,12 @@
 // - id (INTEGER PRIMARY KEY AUTOINCREMENT)
 // - name (TEXT)
 // 
+static const char* g_applicationTableSQL = 
+    "CREATE TABLE IF NOT EXISTS applications ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "name TEXT UNIQUE NOT NULL,"
+    ");";
+
 // Table: commands
 // Columns:
 // - id (INTEGER PRIMARY KEY AUTOINCREMENT)
@@ -36,6 +42,17 @@
 // - arguments (TEXT)
 // - type (INTEGER)
 // 
+static const char* g_commandsTableSQL = 
+    "CREATE TABLE IF NOT EXISTS commands ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "application_id INTEGER,"
+    "name TEXT NOT NULL,"
+    "path TEXT,"
+    "arguments TEXT,"
+    "type INTEGER,"
+    "FOREIGN KEY(application_id) REFERENCES applications(id)"
+    ");";
+
 // Table: revisions
 // Columns:
 // - id (INTEGER PRIMARY KEY AUTOINCREMENT)
@@ -49,6 +66,21 @@
 // - size (INTEGER)
 // - created (TEXT)
 // 
+static const char* g_revisionsTableSQL = 
+    "CREATE TABLE IF NOT EXISTS revisions ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "application_id INTEGER,"
+    "channel TEXT,"
+    "major INTEGER,"
+    "minor INTEGER,"
+    "patch INTEGER,"
+    "revision INTEGER,"
+    "tag TEXT,"
+    "size INTEGER,"
+    "created TEXT,"
+    "FOREIGN KEY(application_id) REFERENCES applications(id)"
+    ");";
+
 // Table: transactions
 // Columns:
 // - id (INTEGER PRIMARY KEY AUTOINCREMENT)
@@ -59,6 +91,24 @@
 // - channel (TEXT)
 // - revision (INTEGER)
 // 
+static const char* g_transactionsTableSQL = 
+    "CREATE TABLE IF NOT EXISTS transactions ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "type INTEGER NOT NULL,"
+    "flags INTEGER NOT NULL,"
+    "state INTEGER NOT NULL,"
+    ");";
+
+static const char* g_transactionsStateTableSQL = 
+    "CREATE TABLE IF NOT EXISTS transactions_state ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "transaction_id INTEGER NOT NULL,"
+    "name TEXT,"
+    "channel TEXT,"
+    "revision INTEGER"
+    "FOREIGN KEY(transaction_id) REFERENCES transactions(id)"
+    ");";
+
 // The state implementation will provide functions to add, remove, and query applications and transactions.
 // The state also will allow for transactional changes to ensure consistency across multiple operations, and
 // to ensure resilience against crashes and restarts
@@ -77,9 +127,6 @@
 #include <utils.h>
 #include <vlog.h>
 
-#include <transaction/transaction.h>
-#include <transaction/sets.h>
-
 struct __state {
     struct state_transaction* transaction_states;
     int                       transaction_state_count;
@@ -93,7 +140,6 @@ struct __state {
 
 // Database connection and state management
 static struct __state* g_state = NULL;
-static struct served_transaction** g_transactions = NULL;
 
 static struct __state* __state_new(void)
 {
@@ -170,84 +216,42 @@ static const char* __get_state_path(void)
 
 static int __create_database_schema(sqlite3* db)
 {
-    const char* create_applications_table = 
-        "CREATE TABLE IF NOT EXISTS applications ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "name TEXT UNIQUE NOT NULL,"
-        "publisher TEXT,"
-        "package TEXT,"
-        "major INTEGER,"
-        "minor INTEGER,"
-        "patch INTEGER,"
-        "revision INTEGER"
-        ");";
-
-    const char* create_commands_table = 
-        "CREATE TABLE IF NOT EXISTS commands ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "application_id INTEGER,"
-        "name TEXT NOT NULL,"
-        "path TEXT,"
-        "arguments TEXT,"
-        "type INTEGER,"
-        "FOREIGN KEY(application_id) REFERENCES applications(id)"
-        ");";
-
-    const char* create_revisions_table = 
-        "CREATE TABLE IF NOT EXISTS revisions ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "application_id INTEGER,"
-        "channel TEXT,"
-        "major INTEGER,"
-        "minor INTEGER,"
-        "patch INTEGER,"
-        "revision INTEGER,"
-        "tag TEXT,"
-        "size INTEGER,"
-        "created TEXT,"
-        "FOREIGN KEY(application_id) REFERENCES applications(id)"
-        ");";
-
-    const char* create_transactions_table = 
-        "CREATE TABLE IF NOT EXISTS transactions ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "type INTEGER NOT NULL,"
-        "state INTEGER NOT NULL,"
-        "flags INTEGER,"
-        "name TEXT,"
-        "channel TEXT,"
-        "revision INTEGER"
-        ");";
-
     char* errMsg = NULL;
     int   status;
 
-    status = sqlite3_exec(db, create_applications_table, NULL, NULL, &errMsg);
+    status = sqlite3_exec(db, g_applicationTableSQL, NULL, NULL, &errMsg);
     if (status != SQLITE_OK) {
         VLOG_ERROR("served", "__create_database_schema: failed to create applications table: %s\n", errMsg);
         sqlite3_free(errMsg);
-        return -1;
+        return status;
     }
 
-    status = sqlite3_exec(db, create_commands_table, NULL, NULL, &errMsg);
+    status = sqlite3_exec(db, g_commandsTableSQL, NULL, NULL, &errMsg);
     if (status != SQLITE_OK) {
         VLOG_ERROR("served", "__create_database_schema: failed to create commands table: %s\n", errMsg);
         sqlite3_free(errMsg);
-        return -1;
+        return status;
     }
 
-    status = sqlite3_exec(db, create_revisions_table, NULL, NULL, &errMsg);
+    status = sqlite3_exec(db, g_revisionsTableSQL, NULL, NULL, &errMsg);
     if (status != SQLITE_OK) {
         VLOG_ERROR("served", "__create_database_schema: failed to create revisions table: %s\n", errMsg);
         sqlite3_free(errMsg);
-        return -1;
+        return status;
     }
 
-    status = sqlite3_exec(db, create_transactions_table, NULL, NULL, &errMsg);
+    status = sqlite3_exec(db, g_transactionsTableSQL, NULL, NULL, &errMsg);
     if (status != SQLITE_OK) {
         VLOG_ERROR("served", "__create_database_schema: failed to create transactions table: %s\n", errMsg);
         sqlite3_free(errMsg);
-        return -1;
+        return status;
+    }
+
+    status = sqlite3_exec(db, g_transactionsStateTableSQL, NULL, NULL, &errMsg);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__create_database_schema: failed to create transactions_state table: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        return status;
     }
 
     return 0;
@@ -576,19 +580,14 @@ static int __load_transaction_states_from_db(struct __state* state)
     int i = 0;
     while (sqlite3_step(stmt) == SQLITE_ROW && i < transaction_count) {
         unsigned int id = (unsigned int)sqlite3_column_int(stmt, 0);
-        int type = sqlite3_column_int(stmt, 1);
-        int txn_state = sqlite3_column_int(stmt, 2);
-        int flags = sqlite3_column_int(stmt, 3);
-        const char* name = (const char*)sqlite3_column_text(stmt, 4);
-        const char* channel = (const char*)sqlite3_column_text(stmt, 5);
-        int revision = sqlite3_column_int(stmt, 6);
+        const char* name = (const char*)sqlite3_column_text(stmt, 2);
+        const char* channel = (const char*)sqlite3_column_text(stmt, 3);
+        int revision = sqlite3_column_int(stmt, 4);
 
         // Initialize transaction structure
         memset(&state->transaction_states[i], 0, sizeof(struct state_transaction));
         
         state->transaction_states[i].id = id;
-        state->transaction_states[i].type = (enum state_transaction_type)type;
-        state->transaction_states[i].flags = (enum state_transaction_flags)flags;
         state->transaction_states[i].name = name ? strdup(name) : NULL;
         state->transaction_states[i].channel = channel ? strdup(channel) : NULL;
         state->transaction_states[i].revision = revision;
@@ -598,60 +597,6 @@ static int __load_transaction_states_from_db(struct __state* state)
 
     sqlite3_finalize(stmt);
     VLOG_DEBUG("served", "__load_transaction_states_from_db: loaded %d transactions\n", transaction_count);
-    return 0;
-}
-
-static struct served_sm_state_set* __state_set_from_type(enum state_transaction_type type)
-{
-    struct served_sm_state_set* set = calloc(1, sizeof(struct served_sm_state_set));
-    if (set == NULL) {
-        VLOG_ERROR("served", "__state_set_from_type: failed to allocate state set\n");
-        return NULL;
-    }
-
-    // Initialize the state set based on the transaction type
-    switch (type) {
-    case STATE_TRANSACTION_TYPE_INSTALL:
-        set->states = g_stateSetInstall;
-        set->states_count = 14;
-        break;
-    case STATE_TRANSACTION_TYPE_UNINSTALL:
-        set->states = g_stateSetUninstall;
-        set->states_count = 8;
-        break;
-    case STATE_TRANSACTION_TYPE_UPDATE:
-        set->states = g_stateSetUpdate;
-        set->states_count = 18;
-        break;
-    default:
-        VLOG_ERROR("served", "__state_set_from_type: unsupported transaction type: %d\n", type);
-        free(set);
-        return NULL;
-    }
-
-    return set;
-}
-
-static int __reconstruct_transactions_from_db(struct __state* state)
-{
-    g_transactions = calloc(state->transaction_state_count, sizeof(struct served_transaction*));
-    if (g_transactions == NULL) {
-        VLOG_ERROR("served", "__reconstruct_transactions_from_db: failed to allocate transactions array\n");
-        return -1;
-    }
-
-    for (int i = 0; i < state->transaction_state_count; i++) {
-        struct state_transaction*  txnState = &state->transaction_states[i];
-        struct served_transaction* txn = calloc(1, sizeof(struct served_transaction));
-        if (txn == NULL) {
-            VLOG_ERROR("served", "__reconstruct_transactions_from_db: failed to allocate transaction\n");
-            return -1;
-        }
-        txn->id = txnState->id;
-        
-        served_sm_init(&txn->sm, __state_set_from_type(txnState->type), txnState->state, txn);
-        g_transactions[i] = txn;
-    }
     return 0;
 }
 
@@ -684,8 +629,7 @@ int served_state_load(void)
     }
 
     if (__load_applications_from_db(g_state) != 0 ||
-        __load_transaction_states_from_db(g_state) != 0 ||
-        __reconstruct_transactions_from_db(g_state) != 0) {
+        __load_transaction_states_from_db(g_state) != 0) {
         sqlite3_close(g_state->database);
         __state_destroy(g_state);
         g_state = NULL;
@@ -728,10 +672,10 @@ void served_state_mark_dirty(void)
     g_state->is_dirty = true;
 }
 
-int served_state_save(void)
+int served_state_flush(void)
 {
     if (g_state == NULL) {
-        VLOG_ERROR("served", "served_state_save: state not initialized\n");
+        VLOG_ERROR("served", "served_state_flush: state not initialized\n");
         return -1;
     }
 
@@ -742,30 +686,12 @@ int served_state_save(void)
     // Flush any pending database operations
     int status = sqlite3_exec(g_state->database, "PRAGMA synchronous = FULL", NULL, NULL, NULL);
     if (status != SQLITE_OK) {
-        VLOG_ERROR("served", "served_state_save: failed to sync database: %s\n", sqlite3_errmsg(g_state->database));
+        VLOG_ERROR("served", "served_state_flush: failed to sync database: %s\n", sqlite3_errmsg(g_state->database));
         return -1;
     }
 
     g_state->is_dirty = false;
-    VLOG_DEBUG("served", "served_state_save: state saved successfully\n");
-    return 0;
-}
-
-int served_state_execute(void)
-{
-    if (g_state == NULL) {
-        return -1;
-    }
-
-    // Execute pending transactions - implementation depends on business logic
-    VLOG_DEBUG("served", "served_state_execute: processing %d transactions\n", g_state->transaction_state_count);
-    
-    for (int i = 0; i < g_state->transaction_state_count; i++) {
-        struct served_transaction* txn = g_transactions[i];
-        VLOG_DEBUG("served", "served_state_execute: processing transaction %d\n", txn->id);
-        served_sm_execute(&txn->sm);
-    }
-
+    VLOG_DEBUG("served", "served_state_flush: state saved successfully\n");
     return 0;
 }
 
@@ -776,8 +702,8 @@ unsigned int served_state_transaction_new(struct state_transaction* transaction)
     }
 
     const char* insert_query = 
-        "INSERT INTO transactions (type, state, flags, name, channel, revision) "
-        "VALUES (?, ?, ?, ?, ?)";
+        "INSERT INTO transactions (name, channel, revision) "
+        "VALUES (?, ?, ?)";
 
     sqlite3_stmt* stmt;
     int status = sqlite3_prepare_v2(g_state->database, insert_query, -1, &stmt, NULL);
@@ -786,12 +712,9 @@ unsigned int served_state_transaction_new(struct state_transaction* transaction)
         return 0;
     }
 
-    sqlite3_bind_int(stmt, 1, transaction->type);
-    sqlite3_bind_int(stmt, 2, 0);
-    sqlite3_bind_int(stmt, 3, transaction->flags);
-    sqlite3_bind_text(stmt, 4, transaction->name, -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 5, transaction->channel, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 6, transaction->revision);
+    sqlite3_bind_text(stmt, 0, transaction->name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, transaction->channel, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, transaction->revision);
 
     status = sqlite3_step(stmt);
     if (status != SQLITE_DONE) {
@@ -817,9 +740,6 @@ unsigned int served_state_transaction_new(struct state_transaction* transaction)
     return transaction_id;
 }
 
-/**
- * @brief Retrieves a transaction by its ID.
- */
 struct state_transaction* served_state_transaction(unsigned int id)
 {
     if (g_state == NULL) {
@@ -835,9 +755,6 @@ struct state_transaction* served_state_transaction(unsigned int id)
     return NULL;
 }
 
-/**
- * @brief Retrieves an application by its name.
- */
 struct state_application* served_state_application(const char* name)
 {
     if (g_state == NULL || name == NULL) {
@@ -854,9 +771,6 @@ struct state_application* served_state_application(const char* name)
     return NULL;
 }
 
-/**
- * @brief Adds a new application to the state.
- */
 int served_state_add_application(struct state_application* application)
 {
     if (g_state == NULL || application == NULL || application->name == NULL) {
@@ -952,37 +866,6 @@ int served_state_add_application(struct state_application* application)
     return 0;
 }
 
-/**
- * @brief Retrieves all applications in the state.
- */
-int served_state_get_applications(struct state_application*** applicationsOut, int* applicationsCount)
-{
-    if (g_state == NULL || applicationsOut == NULL || applicationsCount == NULL) {
-        return -1;
-    }
-
-    *applicationsCount = g_state->applications_states_count;
-    if (g_state->applications_states_count == 0) {
-        *applicationsOut = NULL;
-        return 0;
-    }
-
-    struct state_application** apps = malloc(sizeof(struct state_application*) * g_state->applications_states_count);
-    if (!apps) {
-        return -1;
-    }
-
-    for (int i = 0; i < g_state->applications_states_count; i++) {
-        apps[i] = &g_state->applications_states[i];
-    }
-
-    *applicationsOut = apps;
-    return 0;
-}
-
-/**
- * @brief Removes an application from the state.
- */
 int served_state_remove_application(struct state_application* application)
 {
     if (g_state == NULL || application == NULL || application->name == NULL) {
@@ -1027,3 +910,24 @@ int served_state_remove_application(struct state_application* application)
     return 0;
 }
 
+int served_state_get_applications(struct state_application** applicationsOut, int* applicationsCount)
+{
+    if (g_state == NULL || applicationsOut == NULL || applicationsCount == NULL) {
+        return -1;
+    }
+
+    *applicationsOut = g_state->applications_states;
+    *applicationsCount = g_state->applications_states_count;
+    return 0;
+}
+
+int served_state_get_transaction_states(struct state_transaction** transactionsOut, int* transactionsCount)
+{
+    if (g_state == NULL || transactionsOut == NULL || transactionsCount == NULL) {
+        return -1;
+    }
+
+    *transactionsOut = g_state->transaction_states;
+    *transactionsCount = g_state->transaction_state_count;
+    return 0;
+}

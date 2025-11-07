@@ -16,14 +16,15 @@
  *
  */
 
-#include <application.h>
 #include <chef/platform.h>
 #include <gracht/server.h>
-#include <installer.h>
 #include <state.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <vlog.h>
+
+#include <transaction/transaction.h>
+#include <state.h>
 
 // server protocol
 #include "chef_served_service_server.h"
@@ -54,16 +55,52 @@ static void __convert_cmd_to_protocol(struct served_command* command, struct che
     proto->data_path = (char*)command->data;
 }
 
-void chef_served_install_invocation(struct gracht_message* message, const char* publisher, const char* path)
+void chef_served_install_invocation(struct gracht_message* message, const struct chef_served_install_options* options)
 {
-    VLOG_DEBUG("api", "chef_served_install_invocation(publisher=%s, path=%s)\n", publisher, path);
-    served_installer_install(publisher, path);
+    unsigned int transactionId;
+    char         nameBuffer[256];
+    char         descriptionBuffer[512];
+    VLOG_DEBUG("api", "chef_served_install_invocation(publisher=%s, path=%s)\n", options->package, options->path);
+
+    snprintf(nameBuffer, sizeof(nameBuffer), "Install via API (%s)", options->package);
+    snprintf(descriptionBuffer, sizeof(descriptionBuffer), "Installation of package from publisher '%s' requested via served API", options->package);
+
+    served_state_lock();
+    transactionId = served_state_transaction_new(&(struct served_transaction_options){
+        .name = &nameBuffer[0],
+        .description = &descriptionBuffer[0],
+        .type = SERVED_TRANSACTION_TYPE_INSTALL,
+    });
+
+    served_state_transaction_state_new(transactionId, &(struct state_transaction){
+        .name = options->package,
+        .channel = options->channel,
+        .revision = options->revision,
+    });
+    served_state_unlock();
 }
 
 void chef_served_remove_invocation(struct gracht_message* message, const char* packageName)
 {
+    unsigned int transactionId;
+    char         nameBuffer[256];
+    char         descriptionBuffer[512];
     VLOG_DEBUG("api", "chef_served_remove_invocation(package=%s)\n", packageName);
-    served_installer_uninstall(packageName);
+
+    snprintf(nameBuffer, sizeof(nameBuffer), "Remove via API (%s)", packageName);
+    snprintf(descriptionBuffer, sizeof(descriptionBuffer), "Removal of package '%s' requested via served API", packageName);
+
+    served_state_lock();
+    transactionId = served_state_transaction_new(&(struct served_transaction_options){
+        .name = &nameBuffer[0],
+        .description = &descriptionBuffer[0],
+        .type = SERVED_TRANSACTION_TYPE_UNINSTALL,
+    });
+
+    served_state_transaction_state_new(transactionId, &(struct state_transaction){
+        .name = packageName,
+    });
+    served_state_unlock();
 }
 
 void chef_served_info_invocation(struct gracht_message* message, const char* packageName)
@@ -123,13 +160,7 @@ void chef_served_listcount_invocation(struct gracht_message* message)
     int                         status;
     VLOG_DEBUG("api", "chef_served_listcount_invocation()\n");
 
-    status = served_state_lock();
-    if (status) {
-        VLOG_WARNING("api", "failed to acquire state lock\n");
-        chef_served_listcount_response(message, 0);
-        return;
-    }
-
+    served_state_lock();
     served_state_get_applications(&applications, &count);
     served_state_unlock();
     chef_served_listcount_response(message, (unsigned int)count);
