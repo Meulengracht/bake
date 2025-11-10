@@ -25,6 +25,9 @@ typedef unsigned int sm_state_t;
 enum sm_action_result {
     // The statemachine can continue to run normally.
     SM_ACTION_CONTINUE,
+    // The statemachine should wait and not proceed to the next state,
+    // before any wait-related events are triggered.
+    SM_ACTION_WAIT,
     // The statemachine should abort and go into error state to disallow
     // continued execution of the current statemachine instance.
     SM_ACTION_ABORT,

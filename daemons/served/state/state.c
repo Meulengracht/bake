@@ -89,6 +89,8 @@ static const char* g_revisionsTableSQL =
 // - flags (INTEGER)
 // - name (TEXT)
 // - description (TEXT)
+// - wait_type (INTEGER)
+// - wait_data (INTEGER)
 // 
 static const char* g_transactionsTableSQL = 
     "CREATE TABLE IF NOT EXISTS transactions ("
@@ -97,7 +99,9 @@ static const char* g_transactionsTableSQL =
     "flags INTEGER NOT NULL,"
     "state INTEGER NOT NULL,"
     "name TEXT,"
-    "description TEXT"
+    "description TEXT,"
+    "wait_type INTEGER DEFAULT 0,"
+    "wait_data INTEGER DEFAULT 0"
     ");";
 
 static const char* g_transactionsStateTableSQL = 
@@ -732,7 +736,7 @@ static int __load_transaction_states_from_db(struct __state* state)
 static int __load_transactions_from_db(struct __state* state)
 {
     const char* query = 
-        "SELECT id, type, state, flags, name, description "
+        "SELECT id, type, state, flags, name, description, wait_type, wait_data "
         "FROM transactions "
         "ORDER BY id";
 
@@ -772,20 +776,25 @@ static int __load_transactions_from_db(struct __state* state)
     while (sqlite3_step(stmt) == SQLITE_ROW && i < transaction_count) {
         unsigned int id = (unsigned int)sqlite3_column_int(stmt, 0);
         int type = sqlite3_column_int(stmt, 1);
-        int txn_state = sqlite3_column_int(stmt, 2);
+        int storedState = sqlite3_column_int(stmt, 2);
         const char* name = (const char*)sqlite3_column_text(stmt, 4);
         const char* description = (const char*)sqlite3_column_text(stmt, 5);
+        int waitType = sqlite3_column_int(stmt, 6);
+        unsigned int waitData = (unsigned int)sqlite3_column_int(stmt, 7);
 
-        // Initialize transaction structure
-        memset(&state->transactions[i], 0, sizeof(struct served_transaction));
-        
-        state->transactions[i].id = id;
-        state->transactions[i].type = type;
-        state->transactions[i].state = txn_state;
-        state->transactions[i].name = name ? platform_strdup(name) : NULL;
-        state->transactions[i].description = description ? platform_strdup(description) : NULL;
-
-        i++;
+        served_transaction_construct(&state->transactions[i++], &(struct served_transaction_options) {
+            .id = id,
+            .type = type,
+            .initialState = storedState,
+            .name = name,
+            .description = description,
+            .wait = (struct served_transaction_wait) {
+                .type = waitType,
+                .data = {
+                    .transaction_id = waitData
+                }
+            }
+        });
     }
 
     sqlite3_finalize(stmt);
@@ -1004,8 +1013,8 @@ static int __execute_remove_application_op(struct __state* state, const char* ap
 static int __execute_add_transaction_op(struct __state* state, struct served_transaction* transaction)
 {
     const char* insert_tx_query = 
-        "INSERT INTO transactions (id, type, state, flags, name, description) "
-        "VALUES (?, ?, ?, ?, ?, ?)";
+        "INSERT INTO transactions (id, type, state, flags, name, description, wait_type, wait_data) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
     sqlite3_stmt* stmt;
     int status = sqlite3_prepare_v2(state->database, insert_tx_query, -1, &stmt, NULL);
@@ -1016,10 +1025,12 @@ static int __execute_add_transaction_op(struct __state* state, struct served_tra
 
     sqlite3_bind_int(stmt, 1, transaction->id);
     sqlite3_bind_int(stmt, 2, transaction->type);
-    sqlite3_bind_int(stmt, 3, transaction->state);
+    sqlite3_bind_int(stmt, 3, served_sm_current_state(&transaction->sm));
     sqlite3_bind_int(stmt, 4, 0);  // flags - placeholder
     sqlite3_bind_text(stmt, 5, transaction->name, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 6, transaction->description, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 7, transaction->wait.type);
+    sqlite3_bind_int(stmt, 8, transaction->wait.data.transaction_id);
 
     status = sqlite3_step(stmt);
     if (status != SQLITE_DONE) {
@@ -1035,7 +1046,8 @@ static int __execute_add_transaction_op(struct __state* state, struct served_tra
 static int __execute_update_transaction_op(struct __state* state, struct served_transaction* transaction)
 {
     const char* update_tx_query = 
-        "UPDATE transactions SET type = ?, state = ?, flags = ?, name = ?, description = ? WHERE id = ?";
+        "UPDATE transactions SET type = ?, state = ?, flags = ?, name = ?, description = ?, "
+        "wait_type = ?, wait_data = ? WHERE id = ?";
 
     sqlite3_stmt* stmt;
     int status = sqlite3_prepare_v2(state->database, update_tx_query, -1, &stmt, NULL);
@@ -1045,11 +1057,13 @@ static int __execute_update_transaction_op(struct __state* state, struct served_
     }
 
     sqlite3_bind_int(stmt, 1, transaction->type);
-    sqlite3_bind_int(stmt, 2, transaction->state);
+    sqlite3_bind_int(stmt, 2, served_sm_current_state(&transaction->sm));
     sqlite3_bind_int(stmt, 3, 0);  // flags - placeholder
     sqlite3_bind_text(stmt, 4, transaction->name, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 5, transaction->description, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 6, transaction->id);
+    sqlite3_bind_int(stmt, 6, transaction->wait.type);
+    sqlite3_bind_int(stmt, 7, transaction->wait.data.transaction_id);
+    sqlite3_bind_int(stmt, 8, transaction->id);
 
     status = sqlite3_step(stmt);
     if (status != SQLITE_DONE) {
@@ -1091,7 +1105,7 @@ static int __execute_update_tx_state_op(struct __state* state, struct state_tran
     return 0;
 }
 
-static int __execute_add_tx_state_op(struct __state* state, unsigned int transaction_id, struct state_transaction* transaction)
+static int __execute_add_tx_state_op(struct __state* state, unsigned int transactionID, struct state_transaction* transaction)
 {
     const char* insertTxStateSQL = 
         "INSERT INTO transactions_state (transaction_id, name, channel, revision) "
@@ -1106,7 +1120,7 @@ static int __execute_add_tx_state_op(struct __state* state, unsigned int transac
         return -1;
     }
 
-    sqlite3_bind_int(stmt, 1, transaction_id);
+    sqlite3_bind_int(stmt, 1, transactionID);
     sqlite3_bind_text(stmt, 2, transaction->name, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, transaction->channel, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 4, transaction->revision);
@@ -1216,6 +1230,7 @@ void served_state_unlock(void)
         }
     }
 
+    g_state->lock_count--;
     mtx_unlock(&g_state->lock);
 }
 
@@ -1270,7 +1285,7 @@ struct state_application* served_state_application(const char* name)
     }
 
     if (g_state->lock_count == 0) {
-        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        VLOG_ERROR("served", "served_state_application: state lock not held\n");
         return NULL;
     }
 
@@ -1295,7 +1310,7 @@ int served_state_add_application(struct state_application* application)
     }
 
     if (g_state->lock_count == 0) {
-        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        VLOG_ERROR("served", "served_state_add_application: state lock not held\n");
         return -1;
     }
 
@@ -1317,7 +1332,7 @@ int served_state_add_application(struct state_application* application)
     g_state->applications_states[g_state->applications_states_count] = *application;
     g_state->applications_states_count++;
 
-    struct deferred_operation* op = malloc(sizeof(struct deferred_operation));
+    op = malloc(sizeof(struct deferred_operation));
     if (!op) {
         VLOG_ERROR("served", "served_state_add_application: failed to allocate deferred operation\n");
         // Roll back in-memory change
@@ -1345,7 +1360,7 @@ int served_state_remove_application(struct state_application* application)
     }
 
     if (g_state->lock_count == 0) {
-        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        VLOG_ERROR("served", "served_state_remove_application: state lock not held\n");
         return -1;
     }
 
@@ -1396,19 +1411,19 @@ unsigned int served_state_transaction_new(struct served_transaction_options* opt
     struct deferred_operation* op;
     struct served_transaction* tx;
     struct served_transaction* newTxs;
-    unsigned int transaction_id;
+    unsigned int               transactionID;
     
     if (g_state == NULL || options == NULL) {
         return 0;
     }
 
     if (g_state->lock_count == 0) {
-        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        VLOG_ERROR("served", "served_state_transaction_new: state lock not held\n");
         return 0;
     }
 
     // Generate the transaction ID now
-    transaction_id = g_state->next_transaction_id++;
+    transactionID = g_state->next_transaction_id++;
 
     // Add to in-memory state immediately for read consistency
     newTxs = realloc(g_state->transactions,
@@ -1424,16 +1439,18 @@ unsigned int served_state_transaction_new(struct served_transaction_options* opt
     
     // Initialize the new transaction with the real ID
     tx = &g_state->transactions[g_state->transactions_count];
-    served_transaction_construct(tx, options);
-    tx->id = transaction_id;  // Override the ID after construction
+    struct served_transaction_options opts = *options;
+    opts.id = transactionID;  // Set the generated ID
+    served_transaction_construct(tx, &opts);
     g_state->transactions_count++;
 
     // Defer the database operation
     op = __deferred_operation_new(DEFERRED_OP_ADD_TRANSACTION);
     if (op == NULL) {
         VLOG_ERROR("served", "served_state_transaction_new: failed to allocate deferred operation\n");
-        // Roll back in-memory change
+        // Roll back in-memory change and clean up allocated memory
         g_state->transactions_count--;
+        __served_transaction_delete(tx);
         g_state->next_transaction_id--;
         return 0;
     }
@@ -1442,8 +1459,8 @@ unsigned int served_state_transaction_new(struct served_transaction_options* opt
     
     __enqueue_deferred_operation(g_state, op);
     
-    VLOG_DEBUG("served", "served_state_transaction_new: operation deferred for transaction %u\n", transaction_id);
-    return transaction_id;
+    VLOG_DEBUG("served", "served_state_transaction_new: operation deferred for transaction %u\n", transactionID);
+    return transactionID;
 }
 
 // This must be called with the state lock held
@@ -1456,7 +1473,7 @@ int served_state_transaction_update(struct served_transaction* transaction)
     }
 
     if (g_state->lock_count == 0) {
-        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        VLOG_ERROR("served", "served_state_transaction_update: state lock not held\n");
         return -1;
     }
 
@@ -1485,7 +1502,7 @@ int served_state_transaction_state_new(unsigned int id, struct state_transaction
     }
 
     if (g_state->lock_count == 0) {
-        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        VLOG_ERROR("served", "served_state_transaction_state_new: state lock not held\n");
         return -1;
     }
 
@@ -1519,6 +1536,34 @@ int served_state_transaction_state_new(unsigned int id, struct state_transaction
 }
 
 // This must be called with the state lock held
+int served_state_transaction_state_update(struct state_transaction* state)
+{
+    struct deferred_operation* op;
+
+    if (g_state == NULL || state == NULL) {
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction_state_update: state lock not held\n");
+        return -1;
+    }
+
+    // The in-memory transaction state is already updated by the caller
+    // We just need to defer the database write
+    op = __deferred_operation_new(DEFERRED_OP_UPDATE_TRANSACTION_STATE);
+    if (op == NULL) {
+        VLOG_ERROR("served", "served_state_transaction_state_update: failed to allocate deferred operation\n");
+        return -1;
+    }
+
+    op->data.update_tx_state.transaction = state;
+    
+    __enqueue_deferred_operation(g_state, op);
+    return 0;
+}
+
+// This must be called with the state lock held
 int served_state_get_applications(struct state_application** applicationsOut, int* applicationsCount)
 {
     if (g_state == NULL || applicationsOut == NULL || applicationsCount == NULL) {
@@ -1526,7 +1571,7 @@ int served_state_get_applications(struct state_application** applicationsOut, in
     }
 
     if (g_state->lock_count == 0) {
-        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        VLOG_ERROR("served", "served_state_get_applications: state lock not held\n");
         return -1;
     }
 
@@ -1543,7 +1588,7 @@ int served_state_get_transactions(struct served_transaction** transactionsOut, i
     }
 
     if (g_state->lock_count == 0) {
-        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        VLOG_ERROR("served", "served_state_get_transactions: state lock not held\n");
         return -1;
     }
 
@@ -1560,7 +1605,7 @@ int served_state_get_transaction_states(struct state_transaction** transactionsO
     }
 
     if (g_state->lock_count == 0) {
-        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        VLOG_ERROR("served", "served_state_get_transaction_states: state lock not held\n");
         return -1;
     }
 

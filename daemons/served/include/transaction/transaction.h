@@ -57,19 +57,20 @@ struct served_transaction {
     const char*                    description;
     enum served_transaction_type   type;
     struct served_transaction_wait wait;
-    int                            state;
 };
 
 struct served_transaction_options {
-    const char*                   name;
-    const char*                   description;
-    enum served_transaction_type  type;
+    const char*                    name;
+    const char*                    description;
+    enum served_transaction_type   type;
 
     // optional, can only be used for ephemeral transactions
-    struct served_sm_state_set*   stateSet;
+    struct served_sm_state_set*    stateSet;
 
-    // used for restore operations
-    int                           initialState;
+    // Restoration/initialization fields
+    unsigned int                   id;
+    int                            initialState;
+    struct served_transaction_wait wait;
 };
 
 extern struct served_transaction* served_transaction_new(struct served_transaction_options* options);

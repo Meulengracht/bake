@@ -224,6 +224,17 @@ extern int served_state_get_transactions(struct served_transaction** transaction
 extern int served_state_transaction_state_new(unsigned int id, struct state_transaction* state);
 
 /**
+ * @brief Updates an existing transaction state entry.
+ * 
+ * The update operation is deferred until served_state_unlock() is called.
+ * Changes are immediately reflected in the in-memory state.
+ * 
+ * @param state The transaction state to update (must not be NULL)
+ * @return int 0 on success, -1 on failure
+ */
+extern int served_state_transaction_state_update(struct state_transaction* state);
+
+/**
  * @brief Retrieves all transaction states in the state.
  *
  * Returns a pointer to the internal transaction state array. The returned

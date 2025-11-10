@@ -24,7 +24,8 @@
 #include <transaction/transaction.h>
 #include <transaction/sets.h>
 
-static struct list g_transactions = { 0 };
+static struct list g_active_transactions = { 0 };
+static struct list g_waiting_transactions = { 0 };
 
 static struct served_sm_state_set* __state_set_from_type(enum served_transaction_type type)
 {
@@ -57,6 +58,71 @@ static struct served_sm_state_set* __state_set_from_type(enum served_transaction
     return set;
 }
 
+// Check if a transaction's wait condition is satisfied
+static int __is_wait_satisfied(struct served_transaction* txn)
+{
+    switch (txn->wait.type) {
+        case SERVED_TRANSACTION_WAIT_TYPE_NONE:
+            return 1;
+            
+        case SERVED_TRANSACTION_WAIT_TYPE_TRANSACTION: {
+            // Check if the transaction we're waiting for still exists
+            struct list_item* i;
+            
+            // Check active transactions
+            list_foreach(&g_active_transactions, i) {
+                struct served_transaction* other = (struct served_transaction*)i;
+                if (other->id == txn->wait.data.transaction_id) {
+                    return 0; // Still running
+                }
+            }
+            
+            // Check waiting transactions
+            list_foreach(&g_waiting_transactions, i) {
+                struct served_transaction* other = (struct served_transaction*)i;
+                if (other->id == txn->wait.data.transaction_id) {
+                    return 0; // Still waiting
+                }
+            }
+            
+            // Transaction not found = completed
+            return 1;
+        }
+        
+        case SERVED_TRANSACTION_WAIT_TYPE_REBOOT:
+            // TODO: Implement reboot detection
+            // For now, assume reboot never happens
+            return 0;
+        
+        default:
+            return 0;
+    }
+}
+
+// Check waiting transactions and resume those whose conditions are met
+static void __process_waiting_transactions(void)
+{
+    struct list_item* i;
+    struct list_item* next;
+    
+    list_foreach_safe(&g_waiting_transactions, i, next) {
+        struct served_transaction* txn = (struct served_transaction*)i;
+        
+        if (__is_wait_satisfied(txn)) {
+            VLOG_DEBUG("served", "Transaction %u wait satisfied, resuming\n", txn->id);
+            
+            // Move back to active queue
+            list_remove(&g_waiting_transactions, &txn->list_header);
+            list_add(&g_active_transactions, &txn->list_header);
+            
+            // Clear wait state
+            txn->wait.type = SERVED_TRANSACTION_WAIT_TYPE_NONE;
+            txn->wait.data.transaction_id = 0;
+            // Will be persisted in next update
+        }
+    }
+}
+
 static int __reconstruct_transactions_from_db(void)
 {
     struct served_transaction* transactions;
@@ -83,26 +149,26 @@ static int __reconstruct_transactions_from_db(void)
         struct served_transaction* persisted_txn = &transactions[i];
         struct served_transaction* runtime_txn = &runtimes[i];
         
-        // Copy data from persisted transaction
-        runtime_txn->id = persisted_txn->id;
-        runtime_txn->name = persisted_txn->name ? platform_strdup(persisted_txn->name) : NULL;
-        runtime_txn->description = persisted_txn->description ? platform_strdup(persisted_txn->description) : NULL;
-        runtime_txn->type = persisted_txn->type;
-        runtime_txn->state = persisted_txn->state;
-        runtime_txn->wait = persisted_txn->wait;
+        // Construct transaction from persisted data
+        served_transaction_construct(runtime_txn, &(struct served_transaction_options) {
+            .id = persisted_txn->id,
+            .name = persisted_txn->name,
+            .description = persisted_txn->description,
+            .type = persisted_txn->type,
+            .initialState = served_sm_current_state(&persisted_txn->sm),
+            .wait = persisted_txn->wait
+        });
         
-        // Initialize state machine
-        served_sm_init(
-            &runtime_txn->sm,
-            __state_set_from_type(persisted_txn->type),
-            persisted_txn->state,
-            runtime_txn
-        );
-        
-        list_add(&g_transactions, &runtime_txn->list_header);
-        
-        VLOG_DEBUG("served", "__reconstruct_transactions_from_db: reconstructed transaction %u (type=%d, state=%d)\n",
-                   runtime_txn->id, runtime_txn->type, runtime_txn->state);
+        // Add to appropriate queue based on wait state
+        if (runtime_txn->wait.type == SERVED_TRANSACTION_WAIT_TYPE_NONE) {
+            list_add(&g_active_transactions, &runtime_txn->list_header);
+            VLOG_DEBUG("served", "__reconstruct_transactions_from_db: reconstructed active transaction %u (type=%d, state=%d)\n",
+                       runtime_txn->id, runtime_txn->type, served_sm_current_state(&runtime_txn->sm));
+        } else {
+            list_add(&g_waiting_transactions, &runtime_txn->list_header);
+            VLOG_DEBUG("served", "__reconstruct_transactions_from_db: reconstructed waiting transaction %u (type=%d, state=%d, wait=%d)\n",
+                       runtime_txn->id, runtime_txn->type, served_sm_current_state(&runtime_txn->sm), runtime_txn->wait.type);
+        }
     }
     
     served_state_unlock();
@@ -122,29 +188,44 @@ void served_runner_initialize(void)
 void served_runner_execute(void)
 {
     struct list_item* i;
-    VLOG_DEBUG("served", "served_runner_execute: processing %d transactions\n", g_transactions.count);
+    struct list_item* next;
     
-    list_foreach(&g_transactions, i) {
-        struct served_transaction* txn = (struct served_transaction*)i;
-        sm_state_t                 oldState = txn->state;
-        enum sm_action_result      result;
-        
-        VLOG_DEBUG("served", "served_runner_execute: processing transaction %u (state=%d)\n", txn->id, txn->state);
-        
+    // First, check if any waiting transactions can resume
+    __process_waiting_transactions();
+    
+    VLOG_DEBUG("served", "served_runner_execute: processing %d active, %d waiting transactions\n",
+               g_active_transactions.count, g_waiting_transactions.count);
+    
+    // Use safe iteration since we may move transactions to waiting queue
+    list_foreach_safe(&g_active_transactions, i, next) {
+        struct served_transaction*         txn = (struct served_transaction*)i;
+        sm_state_t                         oldState = served_sm_current_state(&txn->sm);
+        enum served_transaction_wait_type  oldWaitType = txn->wait.type;
+        enum sm_action_result              result;
+
+        VLOG_DEBUG("served", "served_runner_execute: processing transaction %u (state=%d)\n", txn->id, oldState);
+
         result = served_sm_execute(&txn->sm);
-        
-        // Get the new state after execution
-        txn->state = served_sm_current_state(&txn->sm);
-        
-        // If state changed and this is a persistent transaction, update the database
-        if (txn->state != oldState && txn->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
-            served_state_lock();
+
+        // Update state if anything changed (state or wait condition)
+        if ((served_sm_current_state(&txn->sm) != oldState || txn->wait.type != oldWaitType) && 
+            txn->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
             if (served_state_transaction_update(txn) != 0) {
                 VLOG_ERROR("served", "served_runner_execute: failed to update transaction %u state\n", txn->id);
             }
-            served_state_unlock();
         }
-        
+
+        // Check if transaction entered wait state (state machine set txn->wait)
+        if (result == SM_ACTION_WAIT) {
+            VLOG_DEBUG("served", "Transaction %u entering wait state (type=%d)\n", 
+                       txn->id, txn->wait.type);
+            
+            // Move to waiting queue
+            list_remove(&g_active_transactions, &txn->list_header);
+            list_add(&g_waiting_transactions, &txn->list_header);
+            continue;
+        }
+
         // Handle completion/abort
         if (result == SM_ACTION_DONE || result == SM_ACTION_ABORT) {
             VLOG_DEBUG("served", "served_runner_execute: transaction %u %s\n", 
@@ -179,7 +260,9 @@ unsigned int served_transaction_create(struct served_transaction_options* option
     }
     
     txn->id = transaction_id;
-    list_add(&g_transactions, &txn->list_header);
+    
+    // Add to active queue (new transactions always start active)
+    list_add(&g_active_transactions, &txn->list_header);
     
     VLOG_DEBUG("served", "served_transaction_create: created transaction %u\n", transaction_id);
     return transaction_id;
@@ -187,12 +270,12 @@ unsigned int served_transaction_create(struct served_transaction_options* option
 
 void served_transaction_construct(struct served_transaction* transaction, struct served_transaction_options* options)
 {
-    transaction->id = options->id;
+    transaction->id = options->id; // 0 = auto-generate new ID
     transaction->name = options->name ? platform_strdup(options->name) : NULL;
     transaction->description = options->description ? platform_strdup(options->description) : NULL;
     transaction->type = options->type;
-    transaction->state = options->initialState;
-    
+    transaction->wait = options->wait; // Copy wait condition structure
+
     served_sm_init(
         &transaction->sm,
         __state_set_from_type(options->type),
