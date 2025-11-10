@@ -20,7 +20,14 @@
 #define __CHEF_CLIENT_STORAGE_H__
 
 /**
- * @brief
+ * @brief Downloads a file from a URL to a local path.
+ * 
+ * This function performs a generic download operation, fetching content from
+ * the specified URL and saving it to the local filesystem at the given path.
+ * 
+ * @param[In] url  The URL to download from
+ * @param[In] path The local file path where the downloaded content should be saved
+ * @return int     Returns 0 on success, -1 on error. Errno will be set accordingly.
  */
 extern int chef_client_gen_download(const char* url, const char* path);
 

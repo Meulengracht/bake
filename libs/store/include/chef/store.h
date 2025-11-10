@@ -16,8 +16,8 @@
  * 
  */
 
-#ifndef __LIBstore_H__
-#define __LIBstore_H__
+#ifndef __LIBSTORE_H__
+#define __LIBSTORE_H__
 
 #include <chef/list.h>
 #include <stdio.h>
@@ -135,4 +135,4 @@ extern int store_proof_ensure(enum store_proof_type keyType, const char* key);
  */
 extern int store_proof_lookup(enum store_proof_type keyType, const char* key, void* proof);
 
-#endif //!__LIBstore_H__
+#endif //!__LIBSTORE_H__

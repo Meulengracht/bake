@@ -30,7 +30,7 @@
 static const char* g_applicationTableSQL = 
     "CREATE TABLE IF NOT EXISTS applications ("
     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-    "name TEXT UNIQUE NOT NULL,"
+    "name TEXT UNIQUE NOT NULL"
     ");";
 
 // Table: commands
@@ -50,7 +50,7 @@ static const char* g_commandsTableSQL =
     "path TEXT,"
     "arguments TEXT,"
     "type INTEGER,"
-    "FOREIGN KEY(application_id) REFERENCES applications(id)"
+    "FOREIGN KEY(application_id) REFERENCES applications(id) ON DELETE CASCADE"
     ");";
 
 // Table: revisions
@@ -78,7 +78,7 @@ static const char* g_revisionsTableSQL =
     "tag TEXT,"
     "size INTEGER,"
     "created TEXT,"
-    "FOREIGN KEY(application_id) REFERENCES applications(id)"
+    "FOREIGN KEY(application_id) REFERENCES applications(id) ON DELETE CASCADE"
     ");";
 
 // Table: transactions
@@ -105,8 +105,8 @@ static const char* g_transactionsStateTableSQL =
     "transaction_id INTEGER NOT NULL,"
     "name TEXT,"
     "channel TEXT,"
-    "revision INTEGER"
-    "FOREIGN KEY(transaction_id) REFERENCES transactions(id)"
+    "revision INTEGER,"
+    "FOREIGN KEY(transaction_id) REFERENCES transactions(id) ON DELETE CASCADE"
     ");";
 
 // The state implementation will provide functions to add, remove, and query applications and transactions.
@@ -151,7 +151,7 @@ static struct __state* __state_new(void)
     }
     memset(state, 0, sizeof(struct __state));
 
-    if (mtx_init(&g_state->lock, mtx_plain) != thrd_success) {
+    if (mtx_init(&state->lock, mtx_plain) != thrd_success) {
         VLOG_ERROR("served", "__state_new: failed to initialize mutex\n");
         free((void*)state);
         return NULL;
@@ -166,10 +166,16 @@ static void __state_application_delete(struct state_application* application)
     }
 
     if (application->commands) {
+        for (int i = 0; i < application->commands_count; i++) {
+            free((void*)application->commands[i].name);
+            free((void*)application->commands[i].path);
+            free((void*)application->commands[i].arguments);
+        }
         free((void*)application->commands);
     }
     if (application->revisions) {
         for (int i = 0; i < application->revisions_count; i++) {
+            free((void*)application->revisions[i].tracking_channel);
             if (application->revisions[i].version) {
                 chef_version_free(application->revisions[i].version);
             }
@@ -326,7 +332,7 @@ static int __load_commands_for_application(struct __state* state, const char* ap
     }
 
     // Allocate commands array
-    application->commands = malloc(sizeof(struct state_application_command) * command_count);
+    application->commands = calloc(command_count, sizeof(struct state_application_command));
     if (!application->commands) {
         VLOG_ERROR("served", "__load_commands_for_application: failed to allocate commands array\n");
         sqlite3_finalize(stmt);
@@ -344,14 +350,32 @@ static int __load_commands_for_application(struct __state* state, const char* ap
         const char* cmd_path = (const char*)sqlite3_column_text(stmt, 1);
         const char* cmd_args = (const char*)sqlite3_column_text(stmt, 2);
         int cmd_type = sqlite3_column_int(stmt, 3);
-
-        // Initialize command structure
-        memset(&application->commands[i], 0, sizeof(struct state_application_command));
         
-        // Safely copy strings with null checks
-        application->commands[i].name = cmd_name ? strdup(cmd_name) : NULL;
-        application->commands[i].path = cmd_path ? strdup(cmd_path) : NULL;
-        application->commands[i].arguments = cmd_args ? strdup(cmd_args) : NULL;
+        // Safely copy strings with null checks and error handling
+        if (cmd_name) {
+            application->commands[i].name = platform_strdup(cmd_name);
+            if (!application->commands[i].name) {
+                VLOG_ERROR("served", "__load_commands_for_application: failed to allocate command name\n");
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+        }
+        if (cmd_path) {
+            application->commands[i].path = platform_strdup(cmd_path);
+            if (!application->commands[i].path) {
+                VLOG_ERROR("served", "__load_commands_for_application: failed to allocate command path\n");
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+        }
+        if (cmd_args) {
+            application->commands[i].arguments = platform_strdup(cmd_args);
+            if (!application->commands[i].arguments) {
+                VLOG_ERROR("served", "__load_commands_for_application: failed to allocate command arguments\n");
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+        }
         application->commands[i].type = (enum chef_command_type)cmd_type;
         application->commands[i].pid = 0; // Not running initially
 
@@ -452,7 +476,7 @@ static int __load_revisions_for_application(struct __state* state, const char* a
 static int __load_applications_from_db(struct __state* state)
 {
     const char* query = 
-        "SELECT name, publisher, package, major, minor, patch, revision "
+        "SELECT name "
         "FROM applications "
         "ORDER BY name";
 
@@ -541,9 +565,10 @@ static int __get_transaction_row_count(struct __state* state)
 static int __load_transaction_states_from_db(struct __state* state)
 {
     const char* query = 
-        "SELECT id, type, state, flags, name, channel, revision "
-        "FROM transactions "
-        "ORDER BY id";
+        "SELECT t.id, t.type, t.state, t.flags, ts.name, ts.channel, ts.revision "
+        "FROM transactions t "
+        "LEFT JOIN transactions_state ts ON t.id = ts.transaction_id "
+        "ORDER BY t.id";
 
     sqlite3_stmt* stmt;
     int status = sqlite3_prepare_v2(state->database, query, -1, &stmt, NULL);
@@ -580,9 +605,9 @@ static int __load_transaction_states_from_db(struct __state* state)
     int i = 0;
     while (sqlite3_step(stmt) == SQLITE_ROW && i < transaction_count) {
         unsigned int id = (unsigned int)sqlite3_column_int(stmt, 0);
-        const char* name = (const char*)sqlite3_column_text(stmt, 2);
-        const char* channel = (const char*)sqlite3_column_text(stmt, 3);
-        int revision = sqlite3_column_int(stmt, 4);
+        const char* name = (const char*)sqlite3_column_text(stmt, 4);
+        const char* channel = (const char*)sqlite3_column_text(stmt, 5);
+        int revision = sqlite3_column_int(stmt, 6);
 
         // Initialize transaction structure
         memset(&state->transaction_states[i], 0, sizeof(struct state_transaction));
@@ -662,7 +687,11 @@ void served_state_unlock(void)
 {
     if (g_state->is_dirty) {
         // Save state to database here if needed
-        g_state->is_dirty = false;
+        if (served_state_flush() == 0) {
+            g_state->is_dirty = false;
+        } else {
+            VLOG_ERROR("served", "served_state_unlock: failed to flush dirty state\n");
+        }
     }
     mtx_unlock(&g_state->lock);
 }
@@ -712,9 +741,9 @@ unsigned int served_state_transaction_new(struct state_transaction* transaction)
         return 0;
     }
 
-    sqlite3_bind_text(stmt, 0, transaction->name, -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 1, transaction->channel, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 2, transaction->revision);
+    sqlite3_bind_text(stmt, 1, transaction->name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, transaction->channel, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 3, transaction->revision);
 
     status = sqlite3_step(stmt);
     if (status != SQLITE_DONE) {
@@ -783,15 +812,25 @@ int served_state_add_application(struct state_application* application)
         return -1;
     }
 
+    // Begin transaction
+    char* errMsg = NULL;
+    int status = sqlite3_exec(g_state->database, "BEGIN TRANSACTION", NULL, NULL, &errMsg);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "served_state_add_application: failed to begin transaction: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        return -1;
+    }
+
     // Insert application into database
     const char* insert_app_query = 
-        "INSERT INTO applications (name, publisher, package, major, minor, patch, revision) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        "INSERT INTO applications (name) "
+        "VALUES (?)";
 
     sqlite3_stmt* stmt;
-    int status = sqlite3_prepare_v2(g_state->database, insert_app_query, -1, &stmt, NULL);
+    status = sqlite3_prepare_v2(g_state->database, insert_app_query, -1, &stmt, NULL);
     if (status != SQLITE_OK) {
         VLOG_ERROR("served", "served_state_add_application: failed to prepare statement: %s\n", sqlite3_errmsg(g_state->database));
+        sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
         return -1;
     }
 
@@ -801,35 +840,57 @@ int served_state_add_application(struct state_application* application)
     if (status != SQLITE_DONE) {
         VLOG_ERROR("served", "served_state_add_application: failed to insert application: %s\n", sqlite3_errmsg(g_state->database));
         sqlite3_finalize(stmt);
+        sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
         return -1;
     }
 
     int app_id = (int)sqlite3_last_insert_rowid(g_state->database);
     sqlite3_finalize(stmt);
 
-    // Insert revision entry for the application
-    const char* insert_rev_query = 
-        "INSERT INTO revisions (application_id, channel, major, minor, patch, revision, tag, size, created) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    // Insert revision entry for the application (if revisions exist)
+    if (application->revisions_count > 0 && application->revisions != NULL) {
+        const char* insert_rev_query = 
+            "INSERT INTO revisions (application_id, channel, major, minor, patch, revision, tag, size, created) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            
+        status = sqlite3_prepare_v2(g_state->database, insert_rev_query, -1, &stmt, NULL);
+        if (status != SQLITE_OK) {
+            VLOG_ERROR("served", "served_state_add_application: failed to prepare revision statement: %s\n", sqlite3_errmsg(g_state->database));
+            sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
+            return -1;
+        }
+
+        sqlite3_bind_int(stmt, 1, app_id);
+        sqlite3_bind_text(stmt, 2, application->revisions[0].tracking_channel, -1, SQLITE_STATIC);
         
-    status = sqlite3_prepare_v2(g_state->database, insert_rev_query, -1, &stmt, NULL);
-    if (status != SQLITE_OK) {
-        VLOG_ERROR("served", "served_state_add_application: failed to prepare revision statement: %s\n", sqlite3_errmsg(g_state->database));
-        return -1;
+        if (application->revisions[0].version != NULL) {
+            sqlite3_bind_int(stmt, 3, application->revisions[0].version->major);
+            sqlite3_bind_int(stmt, 4, application->revisions[0].version->minor);
+            sqlite3_bind_int(stmt, 5, application->revisions[0].version->patch);
+            sqlite3_bind_int(stmt, 6, application->revisions[0].version->revision);
+            sqlite3_bind_text(stmt, 7, application->revisions[0].version->tag, -1, SQLITE_STATIC);
+            sqlite3_bind_int64(stmt, 8, application->revisions[0].version->size);
+            sqlite3_bind_text(stmt, 9, application->revisions[0].version->created, -1, SQLITE_STATIC);
+        } else {
+            // Bind NULL values if version is NULL
+            sqlite3_bind_null(stmt, 3);
+            sqlite3_bind_null(stmt, 4);
+            sqlite3_bind_null(stmt, 5);
+            sqlite3_bind_null(stmt, 6);
+            sqlite3_bind_null(stmt, 7);
+            sqlite3_bind_null(stmt, 8);
+            sqlite3_bind_null(stmt, 9);
+        }
+
+        status = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        
+        if (status != SQLITE_DONE) {
+            VLOG_ERROR("served", "served_state_add_application: failed to insert revision: %s\n", sqlite3_errmsg(g_state->database));
+            sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
+            return -1;
+        }
     }
-
-    sqlite3_bind_int(stmt, 1, app_id);
-    sqlite3_bind_text(stmt, 2, application->revisions[0].tracking_channel, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 3, application->revisions[0].version->major);
-    sqlite3_bind_int(stmt, 4, application->revisions[0].version->minor);
-    sqlite3_bind_int(stmt, 5, application->revisions[0].version->patch);
-    sqlite3_bind_int(stmt, 6, application->revisions[0].version->revision);
-    sqlite3_bind_text(stmt, 7, application->revisions[0].version->tag, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 8, application->revisions[0].version->size);
-    sqlite3_bind_text(stmt, 9, application->revisions[0].version->created, -1, SQLITE_STATIC);
-
-    sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
 
     // Insert commands if any
     for (int i = 0; i < application->commands_count; i++) {
@@ -840,7 +901,8 @@ int served_state_add_application(struct state_application* application)
         status = sqlite3_prepare_v2(g_state->database, insert_cmd_query, -1, &stmt, NULL);
         if (status != SQLITE_OK) {
             VLOG_ERROR("served", "served_state_add_application: failed to prepare command statement: %s\n", sqlite3_errmsg(g_state->database));
-            continue;
+            sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
+            return -1;
         }
 
         sqlite3_bind_int(stmt, 1, app_id);
@@ -849,8 +911,23 @@ int served_state_add_application(struct state_application* application)
         sqlite3_bind_text(stmt, 4, application->commands[i].arguments, -1, SQLITE_STATIC);
         sqlite3_bind_int(stmt, 5, application->commands[i].type);
 
-        sqlite3_step(stmt);
+        status = sqlite3_step(stmt);
         sqlite3_finalize(stmt);
+        
+        if (status != SQLITE_DONE) {
+            VLOG_ERROR("served", "served_state_add_application: failed to insert command: %s\n", sqlite3_errmsg(g_state->database));
+            sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
+            return -1;
+        }
+    }
+
+    // Commit transaction
+    status = sqlite3_exec(g_state->database, "COMMIT", NULL, NULL, &errMsg);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "served_state_add_application: failed to commit transaction: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
+        return -1;
     }
 
     // Add to in-memory state

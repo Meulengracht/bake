@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <chef/platform.h>
+#include <chef/store-default.h>
 #include <startup.h>
 #include <state.h>
 #include <stdlib.h>
@@ -148,9 +149,7 @@ int served_resolver_initialize(void)
     status = store_initialize(&(struct store_parameters) {
         .platform = CHEF_PLATFORM_STR,
         .architecture = CHEF_ARCHITECTURE_STR,
-        .backend = {
-            .resolve_package = __resolve_package
-        }
+        .backend = g_store_default_backend
     });
     if (status) {
         VLOG_ERROR("cookd", "failed to initialize store\n");

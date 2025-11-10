@@ -17,8 +17,7 @@
  */
 
 #include <chef/client.h>
-#include <chef/api/package.h>
-#include <chef/store.h>
+#include <chef/store-default.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <stdio.h>
@@ -104,9 +103,7 @@ int store_main(int argc, char** argv, char** envp, struct bake_command_options* 
     status = store_initialize(&(struct store_parameters) {
         .platform = CHEF_PLATFORM_STR,
         .architecture = CHEF_ARCHITECTURE_STR,
-        .backend = {
-            .resolve_package = __resolve_package
-        }
+        .backend = g_store_default_backend
     });
     if (status != 0) {
         fprintf(stderr, "bake: failed to initialize store\n");

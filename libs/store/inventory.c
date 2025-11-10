@@ -481,11 +481,27 @@ int inventory_get_proof(struct store_inventory* inventory, enum store_proof_type
     return -1;
 }
 
+static void __to_inventory_version(union store_proof* sp, union __proof* ip)
+{
+    ip->header.type = sp->header.type;
+    memcpy(&ip->header.key[0], &sp->header.key[0], sizeof(sp->header.key));
+
+    switch (sp->header.type) {
+        case STORE_PROOF_PUBLISHER:
+            memcpy(&ip->publisher.public_key[0], sp->publisher.public_key, strlen(sp->publisher.public_key));
+            memcpy(&ip->publisher.signed_key[0], sp->publisher.signed_key, strlen(sp->publisher.signed_key));
+            break;
+        case STORE_PROOF_PACKAGE:
+            memcpy(&ip->package.signature[0], sp->package.signature, strlen(sp->package.signature));
+            break;
+    }
+}
+
 int inventory_add_proof(struct store_inventory* inventory, union store_proof* proof)
 {
-    union store_proof* entry;
-    void*              newArray;
-    void*              oldArray;
+    union __proof* entry;
+    void*          newArray;
+    void*          oldArray;
     VLOG_DEBUG("inventory", "inventory_add_proof(key=%s)\n", proof->header.key);
 
     if (inventory == NULL || proof == NULL) {
@@ -495,17 +511,17 @@ int inventory_add_proof(struct store_inventory* inventory, union store_proof* pr
 
     // extend the pack array by one
     oldArray = inventory->proofs;
-    newArray = malloc(sizeof(union store_proof) * (inventory->proofs_count + 1));
+    newArray = calloc(inventory->proofs_count + 1, sizeof(union __proof));
     if (!newArray) {
         return -1;
     }
 
     if (inventory->proofs_count) {
-        memcpy(newArray, inventory->proofs, sizeof(union store_proof) * inventory->proofs_count);
+        memcpy(newArray, inventory->proofs, sizeof(union __proof) * inventory->proofs_count);
     }
 
-    entry = &((union store_proof*)newArray)[inventory->proofs_count];
-    memcpy(entry, proof, sizeof(union store_proof));
+    entry = &((union __proof*)newArray)[inventory->proofs_count];
+    __to_inventory_version(proof, entry);
 
     // Update the new array stored before we serialize the inventory to disk.
     inventory->proofs = newArray;

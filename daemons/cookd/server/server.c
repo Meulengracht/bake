@@ -17,7 +17,6 @@
  */
 
 #include <chef/client.h>
-#include <chef/api/package.h>
 #include <chef/cvd.h>
 #include <chef/pack.h>
 #include <chef/dirs.h>
@@ -25,8 +24,8 @@
 #include <chef/recipe.h>
 #include <chef/remote.h>
 #include <chef/storage/download.h>
+#include <chef/store-default.h>
 #include <errno.h>
-#include <chef/store.h>
 #include <notify.h>
 #include <server.h>
 #include <stdlib.h>
@@ -272,27 +271,6 @@ static void __cookd_server_stop(struct __cookd_server* server)
 
 static struct __cookd_server* g_server = NULL;
 
-static int __resolve_package(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, const char* path, int* revisionDownloaded)
-{
-    struct chef_download_params downloadParams;
-    int                         status;
-    VLOG_DEBUG("cookd", "__resolve_package()\n");
-
-    // initialize download params
-    downloadParams.publisher = publisher;
-    downloadParams.package   = package;
-    downloadParams.platform  = platform;
-    downloadParams.arch      = arch;
-    downloadParams.channel   = channel;
-    downloadParams.revision  = 0;
-
-    status = chefclient_pack_download(&downloadParams, path);
-    if (status == 0) {
-        *revisionDownloaded = downloadParams.revision;
-    }
-    return status;
-}
-
 int cookd_server_init(gracht_client_t* client, int builderCount)
 {
     int status;
@@ -307,9 +285,7 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
     status = store_initialize(&(struct store_parameters) {
         .platform = CHEF_PLATFORM_STR,
         .architecture = CHEF_ARCHITECTURE_STR,
-        .backend = {
-            .resolve_package = __resolve_package
-        }
+        .backend = g_store_default_backend
     });
     if (status) {
         VLOG_ERROR("cookd", "failed to initialize store\n");

@@ -20,17 +20,16 @@
  */
 #define _GNU_SOURCE
 
-#include <chef/client.h>
-#include <chef/api/package.h>
 #include <errno.h>
 #include <chef/config.h>
+#include <chef/client.h>
 #include <chef/cvd.h>
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
+#include <chef/store-default.h>
 #include <ctype.h>
-#include <chef/store.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -212,27 +211,6 @@ static char* __format_footer(const char* logPath)
     return platform_strdup(&tmp[0]);
 }
 
-static int __resolve_package(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, const char* path, int* revisionDownloaded)
-{
-    struct chef_download_params downloadParams;
-    int                         status;
-    VLOG_DEBUG("cookd", "__resolve_package()\n");
-
-    // initialize download params
-    downloadParams.publisher = publisher;
-    downloadParams.package   = package;
-    downloadParams.platform  = platform;
-    downloadParams.arch      = arch;
-    downloadParams.channel   = channel;
-    downloadParams.revision  = 0;
-
-    status = chefclient_pack_download(&downloadParams, path);
-    if (status == 0) {
-        *revisionDownloaded = downloadParams.revision;
-    }
-    return status;
-}
-
 int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct build_cache*        cache = NULL;
@@ -303,9 +281,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     status = store_initialize(&(struct store_parameters) {
         .platform = options->platform,
         .architecture = arch,
-        .backend = {
-            .resolve_package = __resolve_package
-        }
+        .backend = g_store_default_backend
     });
     if (status != 0) {
         VLOG_ERROR("bake", "failed to initialize store\n");

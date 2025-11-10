@@ -113,11 +113,10 @@ static int __get_publisher_url(struct chef_download_params* params, char* urlBuf
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __download_file(const char* filePath, struct download_context* context)
+static int __download_to_stream(FILE* stream, struct download_context* context)
 {
     struct chef_request* request;
     char                 buffer[512];
-    FILE*                file;
     int                  status  = -1;
     CURLcode             code;
     long                 httpCode;
@@ -125,15 +124,8 @@ static int __download_file(const char* filePath, struct download_context* contex
     // initialize a curl session
     request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
-        VLOG_ERROR("chef-client", "__download_file: failed to create request\n");
+        VLOG_ERROR("chef-client", "__download_to_stream: failed to create request\n");
         return -1;
-    }
-
-    // initialize the output file
-    file = fopen(filePath, "wb");
-    if (!file) {
-        VLOG_ERROR("chef-client", "__download_file: failed to open file [%s]\n", strerror(errno));
-        goto cleanup;
     }
 
     // set the url
@@ -145,69 +137,66 @@ static int __download_file(const char* filePath, struct download_context* contex
     // reset the writer function/data
     code = curl_easy_setopt(request->curl, CURLOPT_WRITEFUNCTION, fwrite);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: failed to set write function [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__download_to_stream: failed to set write function [%s]\n", request->error);
         return -1;
     }
 
-    code = curl_easy_setopt(request->curl, CURLOPT_WRITEDATA, file);
+    code = curl_easy_setopt(request->curl, CURLOPT_WRITEDATA, stream);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: failed to set write data [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__download_to_stream: failed to set write data [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_HTTPHEADER, request->headers);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: failed to set http headers [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__download_to_stream: failed to set http headers [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_NOPROGRESS, 0);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: failed to enable download progress [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__download_to_stream: failed to enable download progress [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_XFERINFOFUNCTION, __download_progress_callback);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: failed to set download progress callback [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__download_to_stream: failed to set download progress callback [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_XFERINFODATA, context);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: failed to set download progress callback data [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__download_to_stream: failed to set download progress callback data [%s]\n", request->error);
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: failed to set url [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__download_to_stream: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
     code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_file: chef_request_execute() failed: %s\n", request->error);
+        VLOG_ERROR("chef-client", "__download_to_stream: chef_request_execute() failed: %s\n", request->error);
         goto cleanup;
     }
     
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode < 200 || httpCode >= 300) {
-        VLOG_ERROR("chef-client", "__download_file: http error %ld\n", httpCode);
+        VLOG_ERROR("chef-client", "__download_to_stream: http error %ld\n", httpCode);
         status = -1;
     }
 
     status = 0;
 
 cleanup:
-    if (file) {
-        fclose(file);
-    }
     chef_request_delete(request);
     return status;
 }
 
-int chefclient_pack_proof(struct chef_proof_params* params, const char* path)
+int chefclient_pack_proof(struct chef_proof_params* params, FILE* stream)
 {
     struct download_context downloadContext = { 0 };
     int                     status;
@@ -222,7 +211,7 @@ int chefclient_pack_proof(struct chef_proof_params* params, const char* path)
     fflush(stdout);
 
     // start download
-    status = __download_file(path, &downloadContext);
+    status = __download_to_stream(stream, &downloadContext);
     if (status != 0) {
         VLOG_ERROR("chef-client", "chefclient_pack_download: failed to download package [%s]\n", strerror(errno));
         return status;

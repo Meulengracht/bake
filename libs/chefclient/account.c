@@ -32,6 +32,7 @@ struct chef_publisher {
     const char*                       name;
     const char*                       email;
     const char*                       public_key;
+    const char*                       signed_key;
     enum chef_account_verified_status verified_status;
 };
 
@@ -85,6 +86,15 @@ const char* chef_publisher_public_key(struct chef_publisher* publisher)
         return NULL;
     }
     return publisher->public_key;
+}
+
+const char* chef_publisher_signed_key(struct chef_publisher* publisher)
+{
+    if (publisher == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    return publisher->signed_key;
 }
 
 enum chef_account_verified_status chef_publisher_verified_status(struct chef_publisher* publisher)
@@ -266,6 +276,7 @@ static void __parse_publisher(json_t* root, struct chef_publisher* publisher)
     publisher->name = platform_strdup(json_string_value(json_object_get(root, "name")));
     publisher->email = platform_strdup(json_string_value(json_object_get(root, "email")));
     publisher->public_key = platform_strdup(json_string_value(json_object_get(root, "public-key")));
+    publisher->signed_key = platform_strdup(json_string_value(json_object_get(root, "signed-key")));
     publisher->verified_status = (enum chef_account_verified_status)json_integer_value(json_object_get(root, "status"));
 }
 
