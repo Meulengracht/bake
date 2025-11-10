@@ -29,7 +29,7 @@
 // server protocol
 #include "chef_served_service_server.h"
 
-static void __convert_app_to_info(struct served_application* application, struct chef_served_package* info)
+static void __convert_app_to_info(struct state_application* application, struct chef_served_package* info)
 {
     char versionBuffer[32];
 
@@ -72,11 +72,14 @@ void chef_served_install_invocation(struct gracht_message* message, const struct
         .type = SERVED_TRANSACTION_TYPE_INSTALL,
     });
 
-    served_state_transaction_state_new(transactionId, &(struct state_transaction){
-        .name = options->package,
-        .channel = options->channel,
-        .revision = options->revision,
-    });
+    served_state_transaction_state_new(
+        transactionId, 
+        &(struct state_transaction){
+            .name = options->package,
+            .channel = options->channel,
+            .revision = options->revision,
+        }
+    );
     served_state_unlock();
 }
 
@@ -97,28 +100,58 @@ void chef_served_remove_invocation(struct gracht_message* message, const char* p
         .type = SERVED_TRANSACTION_TYPE_UNINSTALL,
     });
 
-    served_state_transaction_state_new(transactionId, &(struct state_transaction){
-        .name = packageName,
-    });
+    served_state_transaction_state_new(
+        transactionId,
+        &(struct state_transaction){
+            .name = packageName,
+        }
+    );
     served_state_unlock();
+}
+
+void chef_served_update_invocation(struct gracht_message* message, const struct chef_served_update_options* options)
+{
+    unsigned int transactionId;
+    char         nameBuffer[256];
+    char         descriptionBuffer[512];
+    VLOG_DEBUG("api", "chef_served_update_invocation(publisher=%s, path=%s)\n", options->package, options->path);
+
+    snprintf(nameBuffer, sizeof(nameBuffer), "Update via API (%s)", options->package);
+    snprintf(descriptionBuffer, sizeof(descriptionBuffer), "Update of package from publisher '%s' requested via served API", options->package);
+
+    served_state_lock();
+    transactionId = served_state_transaction_new(&(struct served_transaction_options){
+        .name = &nameBuffer[0],
+        .description = &descriptionBuffer[0],
+        .type = SERVED_TRANSACTION_TYPE_UPDATE,
+    });
+
+    served_state_transaction_state_new(
+        transactionId,
+        &(struct state_transaction){
+            .name = options->package,
+            .channel = options->channel,
+            .revision = options->revision,
+        }
+    );
+    served_state_unlock();
+}
+
+void chef_served_switch_invocation(struct gracht_message* message, const struct chef_served_switch_options* options)
+{
+    // TODO: Figure out what this means, but ignore it for now
 }
 
 void chef_served_info_invocation(struct gracht_message* message, const char* packageName)
 {
-    struct served_application** applications;
+    struct state_application**  applications;
     int                         count;
     struct chef_served_package* info;
     struct chef_served_package  zero = { 0 };
     int                         status;
     VLOG_DEBUG("api", "chef_served_info_invocation(package=%s)\n", packageName);
 
-    status = served_state_lock();
-    if (status) {
-        VLOG_WARNING("api", "failed to acquire state lock\n");
-        chef_served_info_response(message, &zero);
-        return;
-    }
-
+    served_state_lock();
     status = served_state_get_applications(&applications, &count);
     if (status != 0 || count == 0) {
         served_state_unlock();
@@ -155,7 +188,7 @@ void chef_served_info_invocation(struct gracht_message* message, const char* pac
 
 void chef_served_listcount_invocation(struct gracht_message* message)
 {
-    struct served_application** applications;
+    struct state_application** applications;
     int                         count = 0;
     int                         status;
     VLOG_DEBUG("api", "chef_served_listcount_invocation()\n");
@@ -168,19 +201,13 @@ void chef_served_listcount_invocation(struct gracht_message* message)
 
 void chef_served_list_invocation(struct gracht_message* message)
 {
-    struct served_application** applications;
+    struct state_application** applications;
     struct chef_served_package* infos;
     int                         count;
     int                         status;
     VLOG_DEBUG("api", "chef_served_list_invocation()\n");
 
-    status = served_state_lock();
-    if (status) {
-        VLOG_WARNING("api", "failed to acquire state lock\n");
-        chef_served_list_response(message, NULL, 0);
-        return;
-    }
-
+    served_state_lock();
     status = served_state_get_applications(&applications, &count);
     if (status != 0 || count == 0) {
         served_state_unlock();
@@ -213,7 +240,7 @@ void chef_served_list_invocation(struct gracht_message* message)
 
 void chef_served_get_command_invocation(struct gracht_message* message, const char* mountPath)
 {
-    struct served_application** applications;
+    struct state_application** applications;
     struct chef_served_command  result;
     int                         count;
     int                         status;
@@ -221,13 +248,7 @@ void chef_served_get_command_invocation(struct gracht_message* message, const ch
     VLOG_DEBUG("api", "chef_served_get_command_invocation(mountPath=%s)\n", mountPath);
     chef_served_command_init(&result);
 
-    status = served_state_lock();
-    if (status) {
-        VLOG_WARNING("api", "failed to acquire state lock\n");
-        chef_served_get_command_response(message, &result);
-        return;
-    }
-
+    served_state_lock();
     status = served_state_get_applications(&applications, &count);
     if (status) {
         served_state_unlock();

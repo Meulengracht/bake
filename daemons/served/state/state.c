@@ -83,25 +83,26 @@ static const char* g_revisionsTableSQL =
 
 // Table: transactions
 // Columns:
-// - id (INTEGER PRIMARY KEY AUTOINCREMENT)
+// - id (INTEGER PRIMARY KEY)
 // - type (INTEGER)
 // - state (INTEGER)
 // - flags (INTEGER)
 // - name (TEXT)
-// - channel (TEXT)
-// - revision (INTEGER)
+// - description (TEXT)
 // 
 static const char* g_transactionsTableSQL = 
     "CREATE TABLE IF NOT EXISTS transactions ("
-    "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "id INTEGER PRIMARY KEY,"
     "type INTEGER NOT NULL,"
     "flags INTEGER NOT NULL,"
     "state INTEGER NOT NULL,"
+    "name TEXT,"
+    "description TEXT"
     ");";
 
 static const char* g_transactionsStateTableSQL = 
     "CREATE TABLE IF NOT EXISTS transactions_state ("
-    "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "id INTEGER PRIMARY KEY,"
     "transaction_id INTEGER NOT NULL,"
     "name TEXT,"
     "channel TEXT,"
@@ -117,6 +118,7 @@ static const char* g_transactionsStateTableSQL =
 #include <linux/limits.h>
 #include <chef/platform.h>
 #include <chef/package.h>
+#include <chef/list.h>
 #include <sqlite3.h>
 #include <state.h>
 #include <stdbool.h>
@@ -127,15 +129,72 @@ static const char* g_transactionsStateTableSQL =
 #include <utils.h>
 #include <vlog.h>
 
+// Deferred operation types
+enum deferred_operation_type {
+    DEFERRED_OP_ADD_APPLICATION,
+    DEFERRED_OP_REMOVE_APPLICATION,
+    DEFERRED_OP_ADD_TRANSACTION,
+    DEFERRED_OP_UPDATE_TRANSACTION,
+    DEFERRED_OP_ADD_TRANSACTION_STATE,
+    DEFERRED_OP_UPDATE_TRANSACTION_STATE
+};
+
+// Deferred operation entry
+struct deferred_operation {
+    struct list_item             list_node;
+    enum deferred_operation_type type;
+    union {
+        struct {
+            struct state_application* application;
+        } add_app;
+        struct {
+            char* application_name;
+        } remove_app;
+        struct {
+            struct served_transaction* transaction;
+        } add_tx;
+        struct {
+            struct served_transaction* transaction;
+        } update_tx;
+        struct {
+            unsigned int              transaction_id;
+            struct state_transaction* transaction;
+        } add_tx_state;
+        struct {
+            struct state_transaction* transaction;
+        } update_tx_state;
+    } data;
+    struct deferred_operation* next;
+};
+
+static struct deferred_operation* __deferred_operation_new(enum deferred_operation_type type)
+{
+    struct deferred_operation* op = malloc(sizeof(struct deferred_operation));
+    if (op == NULL) {
+        return NULL;
+    }
+    memset(op, 0, sizeof(struct deferred_operation));
+    op->type = type;
+    return op;
+}
+
 struct __state {
-    struct state_transaction* transaction_states;
-    int                       transaction_state_count;
-    struct state_application* applications_states;
-    int                       applications_states_count;
+    struct served_transaction* transactions;
+    int                        transactions_count;
+    struct state_transaction*  transaction_states;
+    int                        transaction_state_count;
+    struct state_application*  applications_states;
+    int                        applications_states_count;
 
     sqlite3* database;
     mtx_t    lock;
-    bool     is_dirty;
+    int      lock_count;
+    
+    // Transaction ID management
+    unsigned int next_transaction_id;
+    
+    // Deferred operation queue
+    struct list deferred_ops;
 };
 
 // Database connection and state management
@@ -157,6 +216,34 @@ static struct __state* __state_new(void)
         return NULL;
     }
     return state;
+}
+
+// Deferred operation queue management
+static void __deferred_operation_free(struct deferred_operation* op)
+{
+    if (op == NULL) {
+        return;
+    }
+
+    switch (op->type) {
+        case DEFERRED_OP_REMOVE_APPLICATION:
+            free(op->data.remove_app.application_name);
+            break;
+        default:
+            // Other operations don't own their data
+            break;
+    }
+    free(op);
+}
+
+static void __clear_deferred_operations(struct __state* state)
+{
+    list_destroy(&state->deferred_ops, (void (*)(void*))__deferred_operation_free);
+}
+
+static void __enqueue_deferred_operation(struct __state* state, struct deferred_operation* op)
+{
+    list_add(&state->deferred_ops, &op->list_node);
 }
 
 static void __state_application_delete(struct state_application* application)
@@ -195,6 +282,16 @@ static void __state_transaction_delete(struct state_transaction* transaction)
     free((void*)transaction->channel);
 }
 
+static void __served_transaction_delete(struct served_transaction* transaction)
+{
+    if (transaction == NULL) {
+        return;
+    }
+
+    free((void*)transaction->name);
+    free((void*)transaction->description);
+}
+
 static void __state_destroy(struct __state* state)
 {
     if (state == NULL) {
@@ -206,10 +303,17 @@ static void __state_destroy(struct __state* state)
     }
     free((void*)state->applications_states);
 
+    for (int i = 0; i < state->transactions_count; i++) {
+        __served_transaction_delete(&state->transactions[i]);
+    }
+    free((void*)state->transactions);
+
     for (int i = 0; i < state->transaction_state_count; i++) {
         __state_transaction_delete(&state->transaction_states[i]);
     }
     free((void*)state->transaction_states);
+
+    __clear_deferred_operations(state);
     mtx_destroy(&state->lock);
     free((void*)state);
 }
@@ -291,7 +395,7 @@ static int __application_from_stmt(sqlite3_stmt* stmt, struct state_application*
 {
     const char* name = (const char*)sqlite3_column_text(stmt, 0);
     if (name) {
-        application->name = strdup(name);
+        application->name = platform_strdup(name);
         if (application->name == NULL) {
             VLOG_ERROR("served", "__application_from_stmt: failed to duplicate application name\n");
             return -1;
@@ -446,7 +550,7 @@ static int __load_revisions_for_application(struct __state* state, const char* a
         memset(&application->revisions[i], 0, sizeof(struct state_application_revision));
         
         // Set tracking channel
-        application->revisions[i].tracking_channel = channel ? strdup(channel) : strdup("stable");
+        application->revisions[i].tracking_channel = channel ? platform_strdup(channel) : platform_strdup("stable");
 
         // Allocate and populate version structure
         application->revisions[i].version = malloc(sizeof(struct chef_version));
@@ -456,9 +560,9 @@ static int __load_revisions_for_application(struct __state* state, const char* a
             application->revisions[i].version->minor = minor;
             application->revisions[i].version->patch = patch;
             application->revisions[i].version->revision = revision;
-            application->revisions[i].version->tag = tag ? strdup(tag) : NULL;
+            application->revisions[i].version->tag = tag ? platform_strdup(tag) : NULL;
             application->revisions[i].version->size = size;
-            application->revisions[i].version->created = created ? strdup(created) : NULL;
+            application->revisions[i].version->created = created ? platform_strdup(created) : NULL;
         } else {
             VLOG_ERROR("served", "__load_revisions_for_application: failed to allocate version for revision %d\n", i);
             free((void*)application->revisions[i].tracking_channel);
@@ -613,8 +717,8 @@ static int __load_transaction_states_from_db(struct __state* state)
         memset(&state->transaction_states[i], 0, sizeof(struct state_transaction));
         
         state->transaction_states[i].id = id;
-        state->transaction_states[i].name = name ? strdup(name) : NULL;
-        state->transaction_states[i].channel = channel ? strdup(channel) : NULL;
+        state->transaction_states[i].name = name ? platform_strdup(name) : NULL;
+        state->transaction_states[i].channel = channel ? platform_strdup(channel) : NULL;
         state->transaction_states[i].revision = revision;
 
         i++;
@@ -622,6 +726,102 @@ static int __load_transaction_states_from_db(struct __state* state)
 
     sqlite3_finalize(stmt);
     VLOG_DEBUG("served", "__load_transaction_states_from_db: loaded %d transactions\n", transaction_count);
+    return 0;
+}
+
+static int __load_transactions_from_db(struct __state* state)
+{
+    const char* query = 
+        "SELECT id, type, state, flags, name, description "
+        "FROM transactions "
+        "ORDER BY id";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__load_transactions_from_db: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    // Count transactions first
+    int transaction_count = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        transaction_count++;
+    }
+
+    if (transaction_count == 0) {
+        sqlite3_finalize(stmt);
+        state->transactions = NULL;
+        state->transactions_count = 0;
+        return 0; // No transactions, which is OK
+    }
+
+    // Allocate transactions array
+    state->transactions = malloc(sizeof(struct served_transaction) * transaction_count);
+    if (!state->transactions) {
+        VLOG_ERROR("served", "__load_transactions_from_db: failed to allocate transactions array\n");
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+    state->transactions_count = transaction_count;
+
+    // Reset and re-execute to populate transactions
+    sqlite3_reset(stmt);
+
+    int i = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW && i < transaction_count) {
+        unsigned int id = (unsigned int)sqlite3_column_int(stmt, 0);
+        int type = sqlite3_column_int(stmt, 1);
+        int txn_state = sqlite3_column_int(stmt, 2);
+        const char* name = (const char*)sqlite3_column_text(stmt, 4);
+        const char* description = (const char*)sqlite3_column_text(stmt, 5);
+
+        // Initialize transaction structure
+        memset(&state->transactions[i], 0, sizeof(struct served_transaction));
+        
+        state->transactions[i].id = id;
+        state->transactions[i].type = type;
+        state->transactions[i].state = txn_state;
+        state->transactions[i].name = name ? platform_strdup(name) : NULL;
+        state->transactions[i].description = description ? platform_strdup(description) : NULL;
+
+        i++;
+    }
+
+    sqlite3_finalize(stmt);
+    VLOG_DEBUG("served", "__load_transactions_from_db: loaded %d transactions\n", transaction_count);
+    return 0;
+}
+
+static int __initialize_transaction_id_counter(struct __state* state)
+{
+    const char*   query = "SELECT MAX(id) FROM transactions;";
+    sqlite3_stmt* stmt;
+    int           status;
+    unsigned int  max_id = 0;
+
+    status = sqlite3_prepare_v2(state->database, query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__initialize_transaction_id_counter: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    if ((status = sqlite3_step(stmt)) == SQLITE_ROW) {
+        // Check if result is NULL (no transactions exist)
+        if (sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+            max_id = (unsigned int)sqlite3_column_int(stmt, 0);
+        }
+    } else if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "__initialize_transaction_id_counter: failed to step statement: %s\n", sqlite3_errmsg(state->database));
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    sqlite3_finalize(stmt);
+    
+    // Start from max_id + 1
+    state->next_transaction_id = max_id + 1;
+    VLOG_DEBUG("served", "__initialize_transaction_id_counter: initialized to %u\n", state->next_transaction_id);
     return 0;
 }
 
@@ -654,7 +854,9 @@ int served_state_load(void)
     }
 
     if (__load_applications_from_db(g_state) != 0 ||
-        __load_transaction_states_from_db(g_state) != 0) {
+        __load_transactions_from_db(g_state) != 0 ||
+        __load_transaction_states_from_db(g_state) != 0 ||
+        __initialize_transaction_id_counter(g_state) != 0) {
         sqlite3_close(g_state->database);
         __state_destroy(g_state);
         g_state = NULL;
@@ -678,27 +880,343 @@ void served_state_close(void)
     g_state = NULL;
 }
 
+// Execute a single deferred operation directly on the database
+static int __execute_add_application_op(struct __state* state, struct state_application* application)
+{
+    // This is the actual database insertion logic
+    const char* insert_app_query = 
+        "INSERT INTO applications (name) "
+        "VALUES (?)";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, insert_app_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__execute_add_application_op: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, application->name, -1, SQLITE_STATIC);
+
+    status = sqlite3_step(stmt);
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "__execute_add_application_op: failed to insert application: %s\n", sqlite3_errmsg(state->database));
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    int app_id = (int)sqlite3_last_insert_rowid(state->database);
+    sqlite3_finalize(stmt);
+
+    // Insert revision entry for the application (if revisions exist)
+    if (application->revisions_count > 0 && application->revisions != NULL) {
+        const char* insert_rev_query = 
+            "INSERT INTO revisions (application_id, channel, major, minor, patch, revision, tag, size, created) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            
+        status = sqlite3_prepare_v2(state->database, insert_rev_query, -1, &stmt, NULL);
+        if (status != SQLITE_OK) {
+            VLOG_ERROR("served", "__execute_add_application_op: failed to prepare revision statement: %s\n", sqlite3_errmsg(state->database));
+            return -1;
+        }
+
+        sqlite3_bind_int(stmt, 1, app_id);
+        sqlite3_bind_text(stmt, 2, application->revisions[0].tracking_channel, -1, SQLITE_STATIC);
+        
+        if (application->revisions[0].version != NULL) {
+            sqlite3_bind_int(stmt, 3, application->revisions[0].version->major);
+            sqlite3_bind_int(stmt, 4, application->revisions[0].version->minor);
+            sqlite3_bind_int(stmt, 5, application->revisions[0].version->patch);
+            sqlite3_bind_int(stmt, 6, application->revisions[0].version->revision);
+            sqlite3_bind_text(stmt, 7, application->revisions[0].version->tag, -1, SQLITE_STATIC);
+            sqlite3_bind_int64(stmt, 8, application->revisions[0].version->size);
+            sqlite3_bind_text(stmt, 9, application->revisions[0].version->created, -1, SQLITE_STATIC);
+        } else {
+            sqlite3_bind_null(stmt, 3);
+            sqlite3_bind_null(stmt, 4);
+            sqlite3_bind_null(stmt, 5);
+            sqlite3_bind_null(stmt, 6);
+            sqlite3_bind_null(stmt, 7);
+            sqlite3_bind_null(stmt, 8);
+            sqlite3_bind_null(stmt, 9);
+        }
+
+        status = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        
+        if (status != SQLITE_DONE) {
+            VLOG_ERROR("served", "__execute_add_application_op: failed to insert revision: %s\n", sqlite3_errmsg(state->database));
+            return -1;
+        }
+    }
+
+    // Insert commands if any
+    for (int i = 0; i < application->commands_count; i++) {
+        const char* insert_cmd_query = 
+            "INSERT INTO commands (application_id, name, path, arguments, type) "
+            "VALUES (?, ?, ?, ?, ?)";
+
+        status = sqlite3_prepare_v2(state->database, insert_cmd_query, -1, &stmt, NULL);
+        if (status != SQLITE_OK) {
+            VLOG_ERROR("served", "__execute_add_application_op: failed to prepare command statement: %s\n", sqlite3_errmsg(state->database));
+            return -1;
+        }
+
+        sqlite3_bind_int(stmt, 1, app_id);
+        sqlite3_bind_text(stmt, 2, application->commands[i].name, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, application->commands[i].path, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, application->commands[i].arguments, -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 5, application->commands[i].type);
+
+        status = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        
+        if (status != SQLITE_DONE) {
+            VLOG_ERROR("served", "__execute_add_application_op: failed to insert command: %s\n", sqlite3_errmsg(state->database));
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int __execute_remove_application_op(struct __state* state, const char* application_name)
+{
+    const char* delete_query = "DELETE FROM applications WHERE name = ?";
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, delete_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__execute_remove_application_op: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, application_name, -1, SQLITE_STATIC);
+    status = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "__execute_remove_application_op: failed to delete application: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    return 0;
+}
+
+static int __execute_add_transaction_op(struct __state* state, struct served_transaction* transaction)
+{
+    const char* insert_tx_query = 
+        "INSERT INTO transactions (id, type, state, flags, name, description) "
+        "VALUES (?, ?, ?, ?, ?, ?)";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, insert_tx_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__execute_add_transaction_op: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    sqlite3_bind_int(stmt, 1, transaction->id);
+    sqlite3_bind_int(stmt, 2, transaction->type);
+    sqlite3_bind_int(stmt, 3, transaction->state);
+    sqlite3_bind_int(stmt, 4, 0);  // flags - placeholder
+    sqlite3_bind_text(stmt, 5, transaction->name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 6, transaction->description, -1, SQLITE_STATIC);
+
+    status = sqlite3_step(stmt);
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "__execute_add_transaction_op: failed to insert transaction: %s\n", sqlite3_errmsg(state->database));
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    sqlite3_finalize(stmt);
+    return 0;
+}
+
+static int __execute_update_transaction_op(struct __state* state, struct served_transaction* transaction)
+{
+    const char* update_tx_query = 
+        "UPDATE transactions SET type = ?, state = ?, flags = ?, name = ?, description = ? WHERE id = ?";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, update_tx_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__execute_update_transaction_op: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    sqlite3_bind_int(stmt, 1, transaction->type);
+    sqlite3_bind_int(stmt, 2, transaction->state);
+    sqlite3_bind_int(stmt, 3, 0);  // flags - placeholder
+    sqlite3_bind_text(stmt, 4, transaction->name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 5, transaction->description, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 6, transaction->id);
+
+    status = sqlite3_step(stmt);
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "__execute_update_transaction_op: failed to update transaction: %s\n", sqlite3_errmsg(state->database));
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    sqlite3_finalize(stmt);
+    return 0;
+}
+
+static int __execute_update_tx_state_op(struct __state* state, struct state_transaction* transaction)
+{
+    const char* update_tx_state_query = 
+        "UPDATE transactions_state SET name = ?, channel = ?, revision = ? "
+        "WHERE transaction_id = ?";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, update_tx_state_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__execute_update_tx_state_op: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, transaction->name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, transaction->channel, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 3, transaction->revision);
+    sqlite3_bind_int(stmt, 4, transaction->id);
+
+    status = sqlite3_step(stmt);
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "__execute_update_tx_state_op: failed to update transaction state: %s\n", sqlite3_errmsg(state->database));
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    sqlite3_finalize(stmt);
+    return 0;
+}
+
+static int __execute_add_tx_state_op(struct __state* state, unsigned int transaction_id, struct state_transaction* transaction)
+{
+    const char* insertTxStateSQL = 
+        "INSERT INTO transactions_state (transaction_id, name, channel, revision) "
+        "VALUES (?, ?, ?, ?)";
+
+    sqlite3_stmt* stmt;
+    int           status;
+
+    status = sqlite3_prepare_v2(state->database, insertTxStateSQL, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__execute_add_tx_state_op: failed to prepare state statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    sqlite3_bind_int(stmt, 1, transaction_id);
+    sqlite3_bind_text(stmt, 2, transaction->name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, transaction->channel, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 4, transaction->revision);
+
+    status = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "__execute_add_tx_state_op: failed to insert transaction state: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    return 0;
+}
+
+// Execute all deferred operations in a single transaction
+static int __execute_deferred_operations(struct __state* state)
+{
+    struct list_item* item;
+    if (state->deferred_ops.count == 0) {
+        return 0; // Nothing to do
+    }
+
+    VLOG_DEBUG("served", "__execute_deferred_operations: executing deferred operations\n");
+
+    char* errMsg = NULL;
+    int status = sqlite3_exec(state->database, "BEGIN TRANSACTION", NULL, NULL, &errMsg);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__execute_deferred_operations: failed to begin transaction: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        return -1;
+    }
+
+    list_foreach(&state->deferred_ops, item) {
+        struct deferred_operation* op = (struct deferred_operation*)item;
+        int result = 0;
+        
+        switch (op->type) {
+            case DEFERRED_OP_ADD_APPLICATION:
+                result = __execute_add_application_op(state, op->data.add_app.application);
+                break;
+                
+            case DEFERRED_OP_REMOVE_APPLICATION:
+                result = __execute_remove_application_op(state, op->data.remove_app.application_name);
+                break;
+                
+            case DEFERRED_OP_ADD_TRANSACTION:
+                result = __execute_add_transaction_op(state, op->data.add_tx.transaction);
+                break;
+                
+            case DEFERRED_OP_UPDATE_TRANSACTION:
+                result = __execute_update_transaction_op(state, op->data.update_tx.transaction);
+                break;
+                
+            case DEFERRED_OP_ADD_TRANSACTION_STATE:
+                result = __execute_add_tx_state_op(
+                    state,
+                    op->data.add_tx_state.transaction_id,
+                    op->data.add_tx_state.transaction
+                );
+                break;
+
+            case DEFERRED_OP_UPDATE_TRANSACTION_STATE:
+                result = __execute_update_tx_state_op(state, op->data.update_tx_state.transaction);
+                break;
+        }
+        
+        if (result != 0) {
+            VLOG_ERROR("served", "__execute_deferred_operations: operation failed, rolling back\n");
+            sqlite3_exec(state->database, "ROLLBACK", NULL, NULL, NULL);
+            return -1;
+        }
+    }
+
+    status = sqlite3_exec(state->database, "COMMIT", NULL, NULL, &errMsg);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__execute_deferred_operations: failed to commit transaction: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        sqlite3_exec(state->database, "ROLLBACK", NULL, NULL, NULL);
+        return -1;
+    }
+
+    __clear_deferred_operations(state);
+    VLOG_DEBUG("served", "__execute_deferred_operations: all operations committed successfully\n");
+    return 0;
+}
+
 void served_state_lock(void)
 {
     mtx_lock(&g_state->lock);
+    g_state->lock_count++;
 }
 
 void served_state_unlock(void)
 {
-    if (g_state->is_dirty) {
+    // Execute all deferred operations before unlocking
+    if (g_state->deferred_ops.count > 0 && g_state->lock_count == 1) {
+        if (__execute_deferred_operations(g_state) != 0) {
+            VLOG_ERROR("served", "served_state_unlock: failed to execute deferred operations\n");
+            // Note: in-memory state may be inconsistent with database now
+            // You may want to reload state from database here
+        }
+        
         // Save state to database here if needed
-        if (served_state_flush() == 0) {
-            g_state->is_dirty = false;
-        } else {
+        if (served_state_flush() != 0) {
             VLOG_ERROR("served", "served_state_unlock: failed to flush dirty state\n");
         }
     }
-    mtx_unlock(&g_state->lock);
-}
 
-void served_state_mark_dirty(void)
-{
-    g_state->is_dirty = true;
+    mtx_unlock(&g_state->lock);
 }
 
 int served_state_flush(void)
@@ -719,59 +1237,19 @@ int served_state_flush(void)
         return -1;
     }
 
-    g_state->is_dirty = false;
     VLOG_DEBUG("served", "served_state_flush: state saved successfully\n");
     return 0;
 }
 
-unsigned int served_state_transaction_new(struct state_transaction* transaction)
-{
-    if (g_state == NULL) {
-        return -1;
-    }
-
-    const char* insert_query = 
-        "INSERT INTO transactions (name, channel, revision) "
-        "VALUES (?, ?, ?)";
-
-    sqlite3_stmt* stmt;
-    int status = sqlite3_prepare_v2(g_state->database, insert_query, -1, &stmt, NULL);
-    if (status != SQLITE_OK) {
-        VLOG_ERROR("served", "served_state_transaction_new: failed to prepare statement: %s\n", sqlite3_errmsg(g_state->database));
-        return 0;
-    }
-
-    sqlite3_bind_text(stmt, 1, transaction->name, -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, transaction->channel, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 3, transaction->revision);
-
-    status = sqlite3_step(stmt);
-    if (status != SQLITE_DONE) {
-        VLOG_ERROR("served", "served_state_transaction_new: failed to insert transaction: %s\n", sqlite3_errmsg(g_state->database));
-        sqlite3_finalize(stmt);
-        return 0;
-    }
-
-    unsigned int transaction_id = (unsigned int)sqlite3_last_insert_rowid(g_state->database);
-    sqlite3_finalize(stmt);
-
-    // Add to in-memory state
-    struct state_transaction* new_states = realloc(g_state->transaction_states, 
-        sizeof(struct state_transaction) * (g_state->transaction_state_count + 1));
-    if (new_states) {
-        g_state->transaction_states = new_states;
-        g_state->transaction_states[g_state->transaction_state_count] = *transaction;
-        g_state->transaction_states[g_state->transaction_state_count].id = transaction_id;
-        g_state->transaction_state_count++;
-        served_state_mark_dirty();
-    }
-
-    return transaction_id;
-}
-
+// This must be called with the state lock held
 struct state_transaction* served_state_transaction(unsigned int id)
 {
     if (g_state == NULL) {
+        return NULL;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
         return NULL;
     }
 
@@ -784,9 +1262,15 @@ struct state_transaction* served_state_transaction(unsigned int id)
     return NULL;
 }
 
+// This must be called with the state lock held
 struct state_application* served_state_application(const char* name)
 {
     if (g_state == NULL || name == NULL) {
+        return NULL;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
         return NULL;
     }
 
@@ -800,9 +1284,18 @@ struct state_application* served_state_application(const char* name)
     return NULL;
 }
 
+// This must be called with the state lock held
 int served_state_add_application(struct state_application* application)
 {
+    struct deferred_operation* op;
+    struct state_application*  newApps;
+    
     if (g_state == NULL || application == NULL || application->name == NULL) {
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
         return -1;
     }
 
@@ -812,184 +1305,228 @@ int served_state_add_application(struct state_application* application)
         return -1;
     }
 
-    // Begin transaction
-    char* errMsg = NULL;
-    int status = sqlite3_exec(g_state->database, "BEGIN TRANSACTION", NULL, NULL, &errMsg);
-    if (status != SQLITE_OK) {
-        VLOG_ERROR("served", "served_state_add_application: failed to begin transaction: %s\n", errMsg);
-        sqlite3_free(errMsg);
-        return -1;
-    }
-
-    // Insert application into database
-    const char* insert_app_query = 
-        "INSERT INTO applications (name) "
-        "VALUES (?)";
-
-    sqlite3_stmt* stmt;
-    status = sqlite3_prepare_v2(g_state->database, insert_app_query, -1, &stmt, NULL);
-    if (status != SQLITE_OK) {
-        VLOG_ERROR("served", "served_state_add_application: failed to prepare statement: %s\n", sqlite3_errmsg(g_state->database));
-        sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
-        return -1;
-    }
-
-    sqlite3_bind_text(stmt, 1, application->name, -1, SQLITE_STATIC);
-
-    status = sqlite3_step(stmt);
-    if (status != SQLITE_DONE) {
-        VLOG_ERROR("served", "served_state_add_application: failed to insert application: %s\n", sqlite3_errmsg(g_state->database));
-        sqlite3_finalize(stmt);
-        sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
-        return -1;
-    }
-
-    int app_id = (int)sqlite3_last_insert_rowid(g_state->database);
-    sqlite3_finalize(stmt);
-
-    // Insert revision entry for the application (if revisions exist)
-    if (application->revisions_count > 0 && application->revisions != NULL) {
-        const char* insert_rev_query = 
-            "INSERT INTO revisions (application_id, channel, major, minor, patch, revision, tag, size, created) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            
-        status = sqlite3_prepare_v2(g_state->database, insert_rev_query, -1, &stmt, NULL);
-        if (status != SQLITE_OK) {
-            VLOG_ERROR("served", "served_state_add_application: failed to prepare revision statement: %s\n", sqlite3_errmsg(g_state->database));
-            sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
-            return -1;
-        }
-
-        sqlite3_bind_int(stmt, 1, app_id);
-        sqlite3_bind_text(stmt, 2, application->revisions[0].tracking_channel, -1, SQLITE_STATIC);
-        
-        if (application->revisions[0].version != NULL) {
-            sqlite3_bind_int(stmt, 3, application->revisions[0].version->major);
-            sqlite3_bind_int(stmt, 4, application->revisions[0].version->minor);
-            sqlite3_bind_int(stmt, 5, application->revisions[0].version->patch);
-            sqlite3_bind_int(stmt, 6, application->revisions[0].version->revision);
-            sqlite3_bind_text(stmt, 7, application->revisions[0].version->tag, -1, SQLITE_STATIC);
-            sqlite3_bind_int64(stmt, 8, application->revisions[0].version->size);
-            sqlite3_bind_text(stmt, 9, application->revisions[0].version->created, -1, SQLITE_STATIC);
-        } else {
-            // Bind NULL values if version is NULL
-            sqlite3_bind_null(stmt, 3);
-            sqlite3_bind_null(stmt, 4);
-            sqlite3_bind_null(stmt, 5);
-            sqlite3_bind_null(stmt, 6);
-            sqlite3_bind_null(stmt, 7);
-            sqlite3_bind_null(stmt, 8);
-            sqlite3_bind_null(stmt, 9);
-        }
-
-        status = sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
-        
-        if (status != SQLITE_DONE) {
-            VLOG_ERROR("served", "served_state_add_application: failed to insert revision: %s\n", sqlite3_errmsg(g_state->database));
-            sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
-            return -1;
-        }
-    }
-
-    // Insert commands if any
-    for (int i = 0; i < application->commands_count; i++) {
-        const char* insert_cmd_query = 
-            "INSERT INTO commands (application_id, name, path, arguments, type) "
-            "VALUES (?, ?, ?, ?, ?)";
-
-        status = sqlite3_prepare_v2(g_state->database, insert_cmd_query, -1, &stmt, NULL);
-        if (status != SQLITE_OK) {
-            VLOG_ERROR("served", "served_state_add_application: failed to prepare command statement: %s\n", sqlite3_errmsg(g_state->database));
-            sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
-            return -1;
-        }
-
-        sqlite3_bind_int(stmt, 1, app_id);
-        sqlite3_bind_text(stmt, 2, application->commands[i].name, -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 3, application->commands[i].path, -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 4, application->commands[i].arguments, -1, SQLITE_STATIC);
-        sqlite3_bind_int(stmt, 5, application->commands[i].type);
-
-        status = sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
-        
-        if (status != SQLITE_DONE) {
-            VLOG_ERROR("served", "served_state_add_application: failed to insert command: %s\n", sqlite3_errmsg(g_state->database));
-            sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
-            return -1;
-        }
-    }
-
-    // Commit transaction
-    status = sqlite3_exec(g_state->database, "COMMIT", NULL, NULL, &errMsg);
-    if (status != SQLITE_OK) {
-        VLOG_ERROR("served", "served_state_add_application: failed to commit transaction: %s\n", errMsg);
-        sqlite3_free(errMsg);
-        sqlite3_exec(g_state->database, "ROLLBACK", NULL, NULL, NULL);
-        return -1;
-    }
-
-    // Add to in-memory state
-    struct state_application* new_apps = realloc(g_state->applications_states,
+    // Add to in-memory state immediately for read consistency
+    newApps = realloc(g_state->applications_states,
         sizeof(struct state_application) * (g_state->applications_states_count + 1));
-    if (new_apps) {
-        g_state->applications_states = new_apps;
-        g_state->applications_states[g_state->applications_states_count] = *application;
-        g_state->applications_states_count++;
-        served_state_mark_dirty();
+    if (!newApps) {
+        VLOG_ERROR("served", "served_state_add_application: failed to allocate memory\n");
+        return -1;
     }
+    
+    g_state->applications_states = newApps;
+    g_state->applications_states[g_state->applications_states_count] = *application;
+    g_state->applications_states_count++;
 
+    struct deferred_operation* op = malloc(sizeof(struct deferred_operation));
+    if (!op) {
+        VLOG_ERROR("served", "served_state_add_application: failed to allocate deferred operation\n");
+        // Roll back in-memory change
+        g_state->applications_states_count--;
+        return -1;
+    }
+    
+    op->type = DEFERRED_OP_ADD_APPLICATION;
+    op->data.add_app.application = &g_state->applications_states[g_state->applications_states_count - 1];
+    
+    __enqueue_deferred_operation(g_state, op);
+    
+    VLOG_DEBUG("served", "served_state_add_application: operation deferred for '%s'\n", application->name);
     return 0;
 }
 
+// This must be called with the state lock held
 int served_state_remove_application(struct state_application* application)
 {
+    struct deferred_operation* op;
+    int                        found = -1;
+
     if (g_state == NULL || application == NULL || application->name == NULL) {
         return -1;
     }
 
-    // Remove from database
-    const char* delete_query = "DELETE FROM applications WHERE name = ?";
-    sqlite3_stmt* stmt;
-    int status = sqlite3_prepare_v2(g_state->database, delete_query, -1, &stmt, NULL);
-    if (status != SQLITE_OK) {
-        VLOG_ERROR("served", "served_state_remove_application: failed to prepare statement: %s\n", sqlite3_errmsg(g_state->database));
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
         return -1;
     }
 
-    sqlite3_bind_text(stmt, 1, application->name, -1, SQLITE_STATIC);
-    status = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (status != SQLITE_DONE) {
-        VLOG_ERROR("served", "served_state_remove_application: failed to delete application: %s\n", sqlite3_errmsg(g_state->database));
-        return -1;
-    }
-
-    // Remove from in-memory state
+    // Find and remove from in-memory state first
     for (int i = 0; i < g_state->applications_states_count; i++) {
         if (g_state->applications_states[i].name && 
             strcmp(g_state->applications_states[i].name, application->name) == 0) {
-            
-            __state_application_delete(&g_state->applications_states[i]);
-            
-            // Shift remaining applications
-            for (int j = i; j < g_state->applications_states_count - 1; j++) {
-                g_state->applications_states[j] = g_state->applications_states[j + 1];
-            }
-            g_state->applications_states_count--;
-            served_state_mark_dirty();
+            found = i;
             break;
         }
     }
 
+    if (found == -1) {
+        VLOG_ERROR("served", "served_state_remove_application: application '%s' not found\n", application->name);
+        return -1;
+    }
+
+    // Remove from in-memory state
+    __state_application_delete(&g_state->applications_states[found]);
+    
+    // Shift remaining applications
+    for (int j = found; j < g_state->applications_states_count - 1; j++) {
+        g_state->applications_states[j] = g_state->applications_states[j + 1];
+    }
+    g_state->applications_states_count--;
+
+    op = __deferred_operation_new(DEFERRED_OP_REMOVE_APPLICATION);
+    if (op == NULL) {
+        VLOG_ERROR("served", "served_state_remove_application: failed to allocate deferred operation\n");
+        return -1;
+    }
+    
+    op->data.remove_app.application_name = platform_strdup(application->name);
+    if (!op->data.remove_app.application_name) {
+        free(op);
+        return -1;
+    }
+    
+    __enqueue_deferred_operation(g_state, op);
+    
+    VLOG_DEBUG("served", "served_state_remove_application: operation deferred for '%s'\n", application->name);
     return 0;
 }
 
+// This must be called with the state lock held
+unsigned int served_state_transaction_new(struct served_transaction_options* options)
+{
+    struct deferred_operation* op;
+    struct served_transaction* tx;
+    struct served_transaction* newTxs;
+    unsigned int transaction_id;
+    
+    if (g_state == NULL || options == NULL) {
+        return 0;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        return 0;
+    }
+
+    // Generate the transaction ID now
+    transaction_id = g_state->next_transaction_id++;
+
+    // Add to in-memory state immediately for read consistency
+    newTxs = realloc(g_state->transactions,
+        sizeof(struct served_transaction) * (g_state->transactions_count + 1));
+    if (newTxs == NULL) {
+        VLOG_ERROR("served", "served_state_transaction_new: failed to allocate memory\n");
+        // Roll back ID counter
+        g_state->next_transaction_id--;
+        return 0;
+    }
+    
+    g_state->transactions = newTxs;
+    
+    // Initialize the new transaction with the real ID
+    tx = &g_state->transactions[g_state->transactions_count];
+    served_transaction_construct(tx, options);
+    tx->id = transaction_id;  // Override the ID after construction
+    g_state->transactions_count++;
+
+    // Defer the database operation
+    op = __deferred_operation_new(DEFERRED_OP_ADD_TRANSACTION);
+    if (op == NULL) {
+        VLOG_ERROR("served", "served_state_transaction_new: failed to allocate deferred operation\n");
+        // Roll back in-memory change
+        g_state->transactions_count--;
+        g_state->next_transaction_id--;
+        return 0;
+    }
+    
+    op->data.add_tx.transaction = tx;
+    
+    __enqueue_deferred_operation(g_state, op);
+    
+    VLOG_DEBUG("served", "served_state_transaction_new: operation deferred for transaction %u\n", transaction_id);
+    return transaction_id;
+}
+
+// This must be called with the state lock held
+int served_state_transaction_update(struct served_transaction* transaction)
+{
+    struct deferred_operation* op;
+
+    if (g_state == NULL || transaction == NULL) {
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        return -1;
+    }
+
+    // The in-memory transaction is already updated by the caller
+    // We just need to defer the database write
+    op = __deferred_operation_new(DEFERRED_OP_UPDATE_TRANSACTION);
+    if (op == NULL) {
+        VLOG_ERROR("served", "served_state_transaction_update: failed to allocate deferred operation\n");
+        return -1;
+    }
+
+    op->data.update_tx.transaction = transaction;
+    
+    __enqueue_deferred_operation(g_state, op);
+    return 0;
+}
+
+// This must be called with the state lock held
+int served_state_transaction_state_new(unsigned int id, struct state_transaction* state)
+{
+    struct deferred_operation* op;
+    struct state_transaction*  newStates;
+
+    if (g_state == NULL || state == NULL) {
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        return -1;
+    }
+
+    // Add to in-memory state immediately for read consistency
+    newStates = realloc(g_state->transaction_states, 
+        sizeof(struct state_transaction) * (g_state->transaction_state_count + 1));
+    if (!newStates) {
+        VLOG_ERROR("served", "served_state_transaction_state_new: failed to allocate memory\n");
+        return -1;
+    }
+    
+    g_state->transaction_states = newStates;
+    g_state->transaction_states[g_state->transaction_state_count] = *state;
+    g_state->transaction_states[g_state->transaction_state_count].id = id;
+    g_state->transaction_state_count++;
+
+    // Defer the database operation
+    op = __deferred_operation_new(DEFERRED_OP_ADD_TRANSACTION_STATE);
+    if (op == NULL) {
+        VLOG_ERROR("served", "served_state_transaction_state_new: failed to allocate deferred operation\n");
+        // Roll back in-memory change
+        g_state->transaction_state_count--;
+        return -1;
+    }
+
+    op->data.add_tx_state.transaction_id = id;
+    op->data.add_tx_state.transaction = &g_state->transaction_states[g_state->transaction_state_count - 1];
+
+    __enqueue_deferred_operation(g_state, op);
+    return 0;
+}
+
+// This must be called with the state lock held
 int served_state_get_applications(struct state_application** applicationsOut, int* applicationsCount)
 {
     if (g_state == NULL || applicationsOut == NULL || applicationsCount == NULL) {
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
         return -1;
     }
 
@@ -998,9 +1535,32 @@ int served_state_get_applications(struct state_application** applicationsOut, in
     return 0;
 }
 
+// This must be called with the state lock held
+int served_state_get_transactions(struct served_transaction** transactionsOut, int* transactionsCount)
+{
+    if (g_state == NULL || transactionsOut == NULL || transactionsCount == NULL) {
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
+        return -1;
+    }
+
+    *transactionsOut = g_state->transactions;
+    *transactionsCount = g_state->transactions_count;
+    return 0;
+}
+
+// This must be called with the state lock held
 int served_state_get_transaction_states(struct state_transaction** transactionsOut, int* transactionsCount)
 {
     if (g_state == NULL || transactionsOut == NULL || transactionsCount == NULL) {
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction: state lock not held\n");
         return -1;
     }
 

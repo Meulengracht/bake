@@ -53,6 +53,8 @@ struct served_transaction {
     struct list_item               list_header;
     struct served_sm               sm;
     unsigned int                   id;
+    const char*                    name;
+    const char*                    description;
     enum served_transaction_type   type;
     struct served_transaction_wait wait;
     int                            state;
@@ -70,7 +72,8 @@ struct served_transaction_options {
     int                           initialState;
 };
 
-extern unsigned int served_transaction_create(struct served_transaction_options* options);
-extern void         served_transaction_delete(struct served_transaction* transaction);
+extern struct served_transaction* served_transaction_new(struct served_transaction_options* options);
+extern void                       served_transaction_construct(struct served_transaction* transaction, struct served_transaction_options* options);
+extern void                       served_transaction_delete(struct served_transaction* transaction);
 
 #endif //!__SERVED_TRANSACTION_H__
