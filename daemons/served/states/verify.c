@@ -36,7 +36,7 @@ enum sm_action_result served_handle_state_verify(void* context)
     state = served_state_transaction(transaction->id);
     if (state == NULL) {
         served_state_unlock();
-        served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
@@ -46,17 +46,17 @@ enum sm_action_result served_handle_state_verify(void* context)
     
     names = utils_split_package_name(name);
     if (names == NULL) {
-        served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
     status = utils_verify_package(names[0], names[1], revision);
     strsplit_free(names);
     if (status) {
-        served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
-    served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
+    served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }

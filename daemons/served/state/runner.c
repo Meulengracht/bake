@@ -205,6 +205,7 @@ void served_runner_execute(void)
 
         VLOG_DEBUG("served", "served_runner_execute: processing transaction %u (state=%d)\n", txn->id, oldState);
 
+        // Execute the current state's action (only runs on state entry)
         result = served_sm_execute(&txn->sm);
 
         // Update state if anything changed (state or wait condition)

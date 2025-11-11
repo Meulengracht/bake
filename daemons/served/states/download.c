@@ -36,7 +36,7 @@ enum sm_action_result served_handle_state_download(void* context)
     state = served_state_transaction(transaction->id);
     if (state == NULL) {
         served_state_unlock();
-        served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
@@ -55,11 +55,11 @@ enum sm_action_result served_handle_state_download(void* context)
     status = store_ensure_package(&package);
     if (status) {
         // todo retry detection here
-        served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
-    served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
+    served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }
 
@@ -69,6 +69,6 @@ enum sm_action_result served_handle_state_download_retry(void* context)
 
     // TODO: wait for retry
 
-    served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
+    served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }

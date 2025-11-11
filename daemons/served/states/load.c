@@ -69,6 +69,6 @@ enum sm_action_result served_handle_state_load(void* context)
 
 cleanup:
     served_state_unlock();
-    served_sm_event(&transaction->sm, event);
+    served_sm_post_event(&transaction->sm, event);
     return SM_ACTION_CONTINUE;
 }

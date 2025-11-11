@@ -16,8 +16,9 @@
  *
  */
 
-#include <utils.h>
 #include <chef/platform.h>
+#include <utils.h>
+#include <vlog.h>
 
 char** utils_split_package_name(const char* name)
 {

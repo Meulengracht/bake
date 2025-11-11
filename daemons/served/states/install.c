@@ -122,7 +122,7 @@ enum sm_action_result served_handle_state_install(void* context)
     state = served_state_transaction(transaction->id);
     if (state == NULL) {
         served_state_unlock();
-        served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
     served_state_unlock();
@@ -173,6 +173,6 @@ enum sm_action_result served_handle_state_install(void* context)
 cleanup:
     strsplit_free(names);
     free((void*)storagePath);
-    served_sm_event(&transaction->sm, event);
+    served_sm_post_event(&transaction->sm, event);
     return SM_ACTION_CONTINUE;
 }

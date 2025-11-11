@@ -24,7 +24,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
 {
     struct served_transaction* transaction = context;
 
-    served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
+    served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }
 
@@ -32,6 +32,6 @@ enum sm_action_result served_handle_state_dependencies_wait(void* context)
 {
     struct served_transaction* transaction = context;
 
-    served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
+    served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }

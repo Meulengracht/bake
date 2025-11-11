@@ -39,20 +39,20 @@ enum sm_action_result served_handle_state_mount(void* context)
     state = served_state_transaction(transaction->id);
     if (state == NULL) {
         served_state_unlock();
-        served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
     application = served_state_application(state->name);
     if (application == NULL) {
         served_state_unlock();
-        served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
     served_state_unlock();
 
     names = utils_split_package_name(state->name);
     if (names == NULL) {
-        served_sm_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
@@ -73,6 +73,6 @@ cleanup:
     strsplit_free(names);
     free(mountRoot);
     free(packPath);
-    served_sm_event(&transaction->sm, event);
+    served_sm_post_event(&transaction->sm, event);
     return SM_ACTION_CONTINUE;
 }

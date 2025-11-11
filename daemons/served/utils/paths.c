@@ -96,16 +96,13 @@ char* utils_path_data(const char* publisher, const char* package, int revision)
     return served_paths_path(&buffer[0]);
 }
 
-char* utils_path_command_symlink(const char* name)
+char* utils_path_command_wrapper(const char* name)
 {
-    char* path;
-    int   status;
-
-    path = malloc(PATH_MAX);
-    if (path == NULL) {
-        return NULL;
-    }
-    
-    sprintf(path, "/chef/bin/%s", name);
-    return path;
+    char buffer[PATH_MAX];
+    snprintf(
+        &buffer[0], sizeof(buffer), 
+        "/chef/bin/%s", 
+        name
+    );
+    return served_paths_path(&buffer[0]);
 }

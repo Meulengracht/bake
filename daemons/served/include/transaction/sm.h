@@ -22,6 +22,8 @@
 typedef unsigned int sm_event_t;
 typedef unsigned int sm_state_t;
 
+#define SM_EVENT_START 0xFFFFFFFF
+
 enum sm_action_result {
     // The statemachine can continue to run normally.
     SM_ACTION_CONTINUE,
@@ -55,17 +57,28 @@ struct served_sm_state_set {
     int                            states_count;
 };
 
+// Event queue for pending events
+#define SM_EVENT_QUEUE_SIZE 16
+
+struct served_sm_event_queue {
+    sm_event_t events[SM_EVENT_QUEUE_SIZE];
+    int        head;  // Next event to read
+    int        tail;  // Next position to write
+    int        count; // Number of events in queue
+};
+
 struct served_sm {
-    struct served_sm_state_set states;
-    sm_state_t                 state;
-    void*                      context;
+    struct served_sm_state_set   states;
+    sm_state_t                   state;
+    void*                        context;
+    struct served_sm_event_queue event_queue;
 };
 
 extern void served_sm_init(struct served_sm* sm, struct served_sm_state_set* stateSet, sm_state_t initialState, void* context);
 extern void served_sm_destroy(struct served_sm* sm);
 
 extern enum sm_action_result served_sm_execute(struct served_sm* sm);
-extern void served_sm_event(struct served_sm* sm, sm_event_t event);
+extern void served_sm_post_event(struct served_sm* sm, sm_event_t event);
 
 extern sm_state_t served_sm_current_state(struct served_sm* sm);
 

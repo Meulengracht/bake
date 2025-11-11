@@ -7,6 +7,7 @@ add_library(served-utils STATIC
     ${GENERATED_SRCS}
     cvd_client.c
     fuse_vafs.c
+    helpers.c
     paths.c
     proofs.c
 )

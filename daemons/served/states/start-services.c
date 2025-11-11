@@ -58,6 +58,6 @@ enum sm_action_result served_handle_state_start_services(void* context)
 
 cleanup:
     served_state_unlock();
-    served_sm_event(&transaction->sm, SERVED_TX_EVENT_OK);
+    served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }
