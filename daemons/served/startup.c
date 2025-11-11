@@ -43,34 +43,43 @@ static const char* g_profileScript =
 
 static int __write_profile_d_script(void)
 {
+    char*  profileScriptPath;
     int    status;
     FILE*  file;
     size_t written;
     VLOG_TRACE("startup", "__write_profile_d_script()\n");
 
+    profileScriptPath = served_paths_path(g_profileScriptPath);
+    if (profileScriptPath == NULL) {
+        VLOG_ERROR("startup", "failed to get full path for profile script\n");
+        return -1;
+    }
+
     // if file exists, then we do not touch it
-    file = fopen(g_profileScriptPath, "r");
+    file = fopen(profileScriptPath, "r");
     if (file != NULL) {
+        free(profileScriptPath);
         fclose(file);
         return 0;
     }
     
-    file = fopen(g_profileScriptPath, "w");
+    file = fopen(profileScriptPath, "w");
     if (file == NULL) {
-        if (errno == EEXIST) {
-            return 0;
-        }
+        VLOG_ERROR("startup", "failed to write profile script: %s\n", profileScriptPath);
+        free(profileScriptPath);
         return -1;
     }
     
     written = fwrite(g_profileScript, strlen(g_profileScript), 1, file);
     if (written != 1) {
+        free(profileScriptPath);
         fclose(file);
         return -1;
     }
 
     // change permissions to executable
-    status = chmod(g_profileScriptPath, 0755);
+    status = chmod(profileScriptPath, 0755);
+    free(profileScriptPath);
     fclose(file);
     return status;
 }
@@ -123,7 +132,7 @@ int served_startup(void)
 #ifndef CHEF_AS_SNAP
     status = __write_profile_d_script();
     if (status != 0) {
-        VLOG_ERROR("startup", "failed to write profile script to path %s\n", g_profileScriptPath);
+        VLOG_ERROR("startup", "failed to write profile script\n");
         return status;
     }
 #endif

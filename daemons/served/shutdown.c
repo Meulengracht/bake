@@ -29,9 +29,13 @@ void served_shutdown(void)
     unsigned int transactionId;
     int          status;
     VLOG_TRACE("shutdown", "served_shutdown()\n");
+
+    if (!served_runner_is_running()) {
+        VLOG_DEBUG("shutdown", "runner thread not running, skipping shutdown operations\n");
+        goto cleanup_state;
+    }
     
-    // Create a shutdown transaction to finalize any pending operations
-    transactionId = served_state_transaction_new(&(struct served_transaction_options){
+    (void)served_transaction_create(&(struct served_transaction_options){
         .name        = "system-shutdown",
         .description = "Served system shutdown",
         .type        = SERVED_TRANSACTION_TYPE_EPHEMERAL,
@@ -39,18 +43,24 @@ void served_shutdown(void)
             .states = g_stateSetShutdown,
             .states_count = 7
         },
-        .initialState= 0
     });
-    if (transactionId == (int)-1) {
-        VLOG_ERROR("shutdown", "failed to create shutdown transaction\n");
-        goto save_state;
-    }
-    VLOG_TRACE("shutdown", "created shutdown transaction %u\n", transactionId);
-    served_runner_execute();
 
-save_state:
+    VLOG_DEBUG("shutdown", "requesting runner thread to stop\n");
+    status = served_runner_stop();
+    if (status) {
+        VLOG_ERROR("shutdown", "failed to stop runner thread cleanly\n");
+    }
+
+cleanup_state:
+    // Flush state to ensure all changes are persisted
+    VLOG_DEBUG("shutdown", "flushing state to disk\n");
     status = served_state_flush();
     if (status) {
         VLOG_ERROR("shutdown", "failed to save state!!!\n");
+    } else {
+        VLOG_DEBUG("shutdown", "state flushed successfully\n");
     }
+    
+    // Close state database
+    VLOG_TRACE("shutdown", "shutdown complete\n");
 }

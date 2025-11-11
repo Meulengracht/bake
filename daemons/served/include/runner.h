@@ -22,9 +22,27 @@
 #include <transaction/transaction.h>
 
 /**
- * @brief Initializes the transaction runner subsystem.
+ * @brief Starts the runner thread. The runner will continuously process transactions
+ * in the background until served_runner_stop() is called.
+ * 
+ * @return int 0 on success, -1 on failure
  */
-extern void served_runner_initialize(void);
+extern int served_runner_start(void);
+
+/**
+ * @brief Requests the runner thread to stop and waits for it to complete.
+ * This should be called during shutdown to ensure graceful termination.
+ * 
+ * @return int 0 on success, -1 on failure
+ */
+extern int served_runner_stop(void);
+
+/**
+ * @brief Checks if the runner thread is currently running.
+ * 
+ * @return int 1 if running, 0 if stopped
+ */
+extern int served_runner_is_running(void);
 
 /**
  * @brief Creates a new transaction and registers it with the runner.
@@ -35,11 +53,5 @@ extern void served_runner_initialize(void);
  * @return unsigned int The ID of the newly created transaction, or 0 on failure
  */
 extern unsigned int served_transaction_create(struct served_transaction_options* options);
-
-/**
- * @brief Executes all transactions currently registered in the state. It will keep executing
- * transactions until they are either completed, failed, cancelled or waiting for external events.
- */
-extern void served_runner_execute(void);
 
 #endif // __SERVED_STATE_RUNNER_H__

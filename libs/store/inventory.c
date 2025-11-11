@@ -219,30 +219,20 @@ static int __parse_proofs(struct store_inventory* inventory, json_t* proofs)
     return 0;
 }
 
-static int __parse_inventory(const char* json, struct store_inventory** inventoryOut)
+static int __parse_inventory(json_t* root, struct store_inventory** inventoryOut)
 {
     struct store_inventory* inventory;
-    json_error_t             error;
-    json_t*                  root;
-    json_t*                  last_check;
-    json_t*                  member;
-    int                      status;
+    json_t*                 last_check;
+    json_t*                 member;
+    int                     status;
     VLOG_DEBUG("inventory", "__parse_inventory()\n");
 
-    // instantiate a new inventory
     inventory = __inventory_new();
-    if (json == NULL) {
+    if (root == NULL) {
         status = 0;
         goto exit;
     }
 
-    root = json_loads(json, 0, &error);
-    if (!root) {
-        status = 0;
-        goto exit;
-    }
-
-    // parse the root members
     last_check = json_object_get(root, "last_check");
     if (last_check) {
         inventory->last_check = __parse_timespec(json_string_value(last_check));
@@ -269,53 +259,13 @@ exit:
     return 0;
 }
 
-static int __inventory_load_file(const char* path, char** jsonOut)
-{
-    FILE* file;
-    long  size;
-    char* json = NULL;
-    VLOG_DEBUG("inventory", "__inventory_load_file(path=%s)\n", path);
-
-    file = fopen(path, "r+");
-    if (file == NULL) {
-        file = fopen(path, "w+");
-        if (file == NULL) {
-            return -1;
-        }
-    }
-
-    fseek(file, 0, SEEK_END);
-    size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    if (size) {
-        size_t bytesRead;
-
-        json = (char*)malloc(size + 1); // sz?!
-        if (!json) {
-            fclose(file);
-            return -1;
-        }
-        memset(json, 0, size + 1);
-        bytesRead = fread(json, 1, size, file);
-        if (bytesRead != size) {
-            VLOG_ERROR("inventory", "__inventory_load_file: failed to read file: %s\n", strerror(errno));
-            fclose(file);
-            return -1;
-        }
-    }
-
-    fclose(file);
-    *jsonOut = json;
-    return 0;
-}
-
 int inventory_load(const char* path, struct store_inventory** inventoryOut)
 {
     struct store_inventory* inventory;
-    int                      status;
-    char*                    json;
-    char*                    filePath;
+    int                     status;
+    json_t*                 json = NULL;
+    json_error_t            error;
+    char*                   filePath;
     VLOG_DEBUG("inventory", "inventory_load(path=%s)\n", path);
     
     if (path == NULL || inventoryOut == NULL) {
@@ -329,11 +279,15 @@ int inventory_load(const char* path, struct store_inventory** inventoryOut)
         return -1;
     }
 
-    status = __inventory_load_file(filePath, &json);
-    if (status) {
-        free(filePath);
-        VLOG_ERROR("inventory", "inventory_load: failed to load %s\n", filePath);
-        return -1;
+    json = json_load_file(filePath, 0, &error);
+    if (json == NULL) {
+        VLOG_WARNING("inventory", "inventory_load: failed to load %s (%u)\n", filePath, json_error_code(&error));
+        if (json_error_code(&error) != json_error_cannot_open_file) {
+            VLOG_ERROR("inventory", "inventory_load: error at line %d, column %d: %s\n", 
+                error.line, error.column, error.text);
+            free(filePath);
+            return -1;
+        }
     }
     free(filePath);
 

@@ -19,13 +19,28 @@
 #include <chef/platform.h>
 #include <stdlib.h>
 #include <state.h>
+#include <threads.h>
+#include <time.h>
 #include <vlog.h>
 
 #include <transaction/transaction.h>
 #include <transaction/sets.h>
 
+// Runner thread state
+static thrd_t g_runner_thread;
+static mtx_t  g_runner_lock;
+static cnd_t  g_runner_cond;
+static int    g_runner_should_stop = 0;
+static int    g_runner_is_running = 0;
+
+// Transaction queues
+static mtx_t       g_queue_lock;
 static struct list g_active_transactions = { 0 };
 static struct list g_waiting_transactions = { 0 };
+
+// Runner tick rate (milliseconds between execute cycles)
+#define RUNNER_TICK_S  0
+#define RUNNER_TICK_MS 500
 
 static struct served_sm_state_set* __state_set_from_type(enum served_transaction_type type)
 {
@@ -105,6 +120,7 @@ static void __process_waiting_transactions(void)
     struct list_item* i;
     struct list_item* next;
     
+    mtx_lock(&g_queue_lock);
     list_foreach_safe(&g_waiting_transactions, i, next) {
         struct served_transaction* txn = (struct served_transaction*)i;
         
@@ -121,6 +137,7 @@ static void __process_waiting_transactions(void)
             // Will be persisted in next update
         }
     }
+    mtx_unlock(&g_queue_lock);
 }
 
 static int __reconstruct_transactions_from_db(void)
@@ -145,44 +162,36 @@ static int __reconstruct_transactions_from_db(void)
         return -1;
     }
 
+    mtx_lock(&g_queue_lock);
     for (int i = 0; i < transactionsCount; i++) {
-        struct served_transaction* persisted_txn = &transactions[i];
-        struct served_transaction* runtime_txn = &runtimes[i];
+        struct served_transaction* persisted = &transactions[i];
+        struct served_transaction* runtime = &runtimes[i];
         
         // Construct transaction from persisted data
-        served_transaction_construct(runtime_txn, &(struct served_transaction_options) {
-            .id = persisted_txn->id,
-            .name = persisted_txn->name,
-            .description = persisted_txn->description,
-            .type = persisted_txn->type,
-            .initialState = served_sm_current_state(&persisted_txn->sm),
-            .wait = persisted_txn->wait
+        served_transaction_construct(runtime, &(struct served_transaction_options) {
+            .id = persisted->id,
+            .name = persisted->name,
+            .description = persisted->description,
+            .type = persisted->type,
+            .initialState = served_sm_current_state(&persisted->sm),
+            .wait = persisted->wait
         });
         
         // Add to appropriate queue based on wait state
-        if (runtime_txn->wait.type == SERVED_TRANSACTION_WAIT_TYPE_NONE) {
-            list_add(&g_active_transactions, &runtime_txn->list_header);
+        if (runtime->wait.type == SERVED_TRANSACTION_WAIT_TYPE_NONE) {
+            list_add(&g_active_transactions, &runtime->list_header);
             VLOG_DEBUG("served", "__reconstruct_transactions_from_db: reconstructed active transaction %u (type=%d, state=%d)\n",
-                       runtime_txn->id, runtime_txn->type, served_sm_current_state(&runtime_txn->sm));
+                       runtime->id, runtime->type, served_sm_current_state(&runtime->sm));
         } else {
-            list_add(&g_waiting_transactions, &runtime_txn->list_header);
+            list_add(&g_waiting_transactions, &runtime->list_header);
             VLOG_DEBUG("served", "__reconstruct_transactions_from_db: reconstructed waiting transaction %u (type=%d, state=%d, wait=%d)\n",
-                       runtime_txn->id, runtime_txn->type, served_sm_current_state(&runtime_txn->sm), runtime_txn->wait.type);
+                       runtime->id, runtime->type, served_sm_current_state(&runtime->sm), runtime->wait.type);
         }
     }
     
+    mtx_unlock(&g_queue_lock);
     served_state_unlock();
     return 0;
-}
-
-void served_runner_initialize(void)
-{
-    int status;
-
-    status = __reconstruct_transactions_from_db();
-    if (status) {
-        VLOG_ERROR("served", "served_runner_initialize: failed to reconstruct transactions from database\n");
-    }
 }
 
 void served_runner_execute(void)
@@ -197,6 +206,7 @@ void served_runner_execute(void)
                g_active_transactions.count, g_waiting_transactions.count);
     
     // Use safe iteration since we may move transactions to waiting queue
+    mtx_lock(&g_queue_lock);
     list_foreach_safe(&g_active_transactions, i, next) {
         struct served_transaction*         txn = (struct served_transaction*)i;
         sm_state_t                         oldState = served_sm_current_state(&txn->sm);
@@ -234,6 +244,7 @@ void served_runner_execute(void)
             // TODO: Remove from state and runner list
         }
     }
+    mtx_unlock(&g_queue_lock);
 }
 
 unsigned int served_transaction_create(struct served_transaction_options* options)
@@ -263,7 +274,9 @@ unsigned int served_transaction_create(struct served_transaction_options* option
     txn->id = transaction_id;
     
     // Add to active queue (new transactions always start active)
+    mtx_lock(&g_queue_lock);
     list_add(&g_active_transactions, &txn->list_header);
+    mtx_unlock(&g_queue_lock);
     
     VLOG_DEBUG("served", "served_transaction_create: created transaction %u\n", transaction_id);
     return transaction_id;
@@ -304,4 +317,155 @@ void served_transaction_delete(struct served_transaction* transaction)
     free((void*)transaction->name);
     free((void*)transaction->description);
     free(transaction);
+}
+
+// Runner thread main loop
+static int __runner_thread_main(void* arg)
+{
+    struct timespec sleep_time;
+    int             status;
+    (void)arg;
+    
+    VLOG_DEBUG("served", "__runner_thread_main: runner thread started\n");
+    
+    status = __reconstruct_transactions_from_db();
+    if (status) {
+        VLOG_ERROR("served", "__runner_thread_main: failed to reconstruct transactions from database\n");
+    }
+
+    mtx_lock(&g_runner_lock);
+    g_runner_is_running = 1;
+    
+    // Signal that we're ready
+    cnd_signal(&g_runner_cond);
+    mtx_unlock(&g_runner_lock);
+    
+    while (1) {
+        // Check for stop request
+        mtx_lock(&g_runner_lock);
+        if (g_runner_should_stop) {
+            mtx_unlock(&g_runner_lock);
+            break;
+        }
+        mtx_unlock(&g_runner_lock);
+        
+        // Execute transaction runner cycle
+        served_runner_execute();
+        
+        // Sleep for tick interval
+        sleep_time.tv_sec = RUNNER_TICK_S;
+        sleep_time.tv_nsec = RUNNER_TICK_MS * 1000000; // Convert ms to ns
+        thrd_sleep(&sleep_time, NULL);
+    }
+    
+    mtx_lock(&g_runner_lock);
+    g_runner_is_running = 0;
+    cnd_signal(&g_runner_cond);
+    mtx_unlock(&g_runner_lock);
+    
+    VLOG_DEBUG("served", "__runner_thread_main: runner thread stopped\n");
+    return 0;
+}
+
+int served_runner_start(void)
+{
+    int status;
+    
+    VLOG_TRACE("served", "served_runner_start()\n");
+    
+    // Initialize synchronization primitives
+    if (mtx_init(&g_runner_lock, mtx_plain) != thrd_success) {
+        VLOG_ERROR("served", "served_runner_start: failed to initialize mutex\n");
+        return -1;
+    }
+    
+    if (cnd_init(&g_runner_cond) != thrd_success) {
+        VLOG_ERROR("served", "served_runner_start: failed to initialize condition variable\n");
+        mtx_destroy(&g_runner_lock);
+        return -1;
+    }
+    
+    if (mtx_init(&g_queue_lock, mtx_plain) != thrd_success) {
+        VLOG_ERROR("served", "served_runner_start: failed to initialize queue mutex\n");
+        cnd_destroy(&g_runner_cond);
+        mtx_destroy(&g_runner_lock);
+        return -1;
+    }
+    
+    // Reset stop flag
+    g_runner_should_stop = 0;
+    g_runner_is_running = 0;
+    
+    // Create the runner thread
+    status = thrd_create(&g_runner_thread, __runner_thread_main, NULL);
+    if (status != thrd_success) {
+        VLOG_ERROR("served", "served_runner_start: failed to create runner thread\n");
+        mtx_destroy(&g_queue_lock);
+        cnd_destroy(&g_runner_cond);
+        mtx_destroy(&g_runner_lock);
+        return -1;
+    }
+    
+    // Wait for the thread to signal it's running
+    mtx_lock(&g_runner_lock);
+    while (!g_runner_is_running) {
+        cnd_wait(&g_runner_cond, &g_runner_lock);
+    }
+    mtx_unlock(&g_runner_lock);
+    
+    VLOG_DEBUG("served", "served_runner_start: runner thread is now active\n");
+    return 0;
+}
+
+int served_runner_stop(void)
+{
+    int result;
+    
+    VLOG_TRACE("served", "served_runner_stop()\n");
+    
+    // Check if thread is running
+    mtx_lock(&g_runner_lock);
+    if (!g_runner_is_running) {
+        mtx_unlock(&g_runner_lock);
+        VLOG_DEBUG("served", "served_runner_stop: runner thread not running\n");
+        return 0;
+    }
+    
+    // Request stop
+    g_runner_should_stop = 1;
+    mtx_unlock(&g_runner_lock);
+    
+    VLOG_DEBUG("served", "served_runner_stop: waiting for runner thread to stop...\n");
+    
+    // Wait for thread to finish
+    if (thrd_join(g_runner_thread, &result) != thrd_success) {
+        VLOG_ERROR("served", "served_runner_stop: failed to join runner thread\n");
+        return -1;
+    }
+    
+    // Wait for confirmation that thread has stopped
+    mtx_lock(&g_runner_lock);
+    while (g_runner_is_running) {
+        cnd_wait(&g_runner_cond, &g_runner_lock);
+    }
+    mtx_unlock(&g_runner_lock);
+    
+    // Cleanup synchronization primitives
+    mtx_destroy(&g_queue_lock);
+    cnd_destroy(&g_runner_cond);
+    mtx_destroy(&g_runner_lock);
+    
+    VLOG_DEBUG("served", "served_runner_stop: runner thread stopped successfully\n");
+    return 0;
+}
+
+int served_runner_is_running(void)
+{
+    int running;
+    
+    mtx_lock(&g_runner_lock);
+    running = g_runner_is_running;
+    mtx_unlock(&g_runner_lock);
+    
+    return running;
 }

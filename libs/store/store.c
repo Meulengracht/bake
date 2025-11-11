@@ -47,7 +47,7 @@ static struct store_context g_store = { 0 };
 int store_initialize(struct store_parameters* parameters)
 {
     int status;
-    VLOG_DEBUG("store", "store_initialize()");
+    VLOG_DEBUG("store", "store_initialize()\n");
 
     if (parameters->platform == NULL || parameters->architecture == NULL) {
         VLOG_ERROR("store", "store_initialize: platform and architecture must be specified\n");
@@ -68,7 +68,7 @@ int store_initialize(struct store_parameters* parameters)
 
 void store_cleanup(void)
 {
-    VLOG_DEBUG("store", "store_cleanup()");
+    VLOG_DEBUG("store", "store_cleanup()\n");
 
     // Free memory allocated by the inventory
     inventory_free(g_store.inventory);

@@ -25,6 +25,14 @@
 #include <string.h>
 #include <vlog.h>
 
+static char* g_served_root = NULL;
+
+void utils_path_set_root(const char* root)
+{
+    free(g_served_root);
+    g_served_root = platform_strdup(root);
+}
+
 char* served_paths_path(const char* path)
 {
 #ifdef CHEF_AS_SNAP
@@ -34,7 +42,7 @@ char* served_paths_path(const char* path)
         return strpathcombine(val, path);
     }
 #else
-    return platform_strdup(path);
+    return strpathcombine(g_served_root, path);
 #endif
 }
 

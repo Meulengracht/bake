@@ -16,9 +16,12 @@
  * 
  */
 
+#include <chef/dirs.h>
 #include <errno.h>
 #include <gracht/link/socket.h>
 #include <gracht/server.h>
+#include <runner.h>
+#include <utils.h>
 #include <signal.h>
 #include <stdio.h>
 #include <sys/un.h>
@@ -80,13 +83,21 @@ int __init_server(gracht_server_t** serverOut)
 static void __cleanup_systems(int sig)
 {
     (void)sig;
-    VLOG_TRACE("main", "termination requested, cleaning up\n");
+    VLOG_TRACE("served", "termination requested, cleaning up\n");
     exit(0);
 }
 
 int main(int argc, char** argv)
 {
-    int code;
+    int status;
+
+    // parse for --root option, and set the utils_path_set_root
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--root") == 0 && i + 1 < argc) {
+            utils_path_set_root(argv[i + 1]);
+            i++; // skip next argument as it's the root path
+        }
+    }
 
     // initialize logging as the first thing, we need output!
     // debug for now, change this to trace later
@@ -98,18 +109,40 @@ int main(int argc, char** argv)
     // must register this first as we want it called last!
     atexit(vlog_cleanup);
 
-    code = served_startup();
-    if (code) {
-        return code;
+    status = chef_dirs_initialize(CHEF_DIR_SCOPE_DAEMON);
+    if (status) {
+        VLOG_ERROR("served", "failed to initialize directory code\n", status);
+        return status;
+    }
+
+    // Initialize the system (loads state from database)
+    status = served_startup();
+    if (status) {
+        VLOG_ERROR("served", "served_startup failed with code %d\n", status);
+        return status;
     }
     atexit(served_shutdown);
 
-    code = __init_server(&g_server);
-    if (code) {
-        return code;
+    // Start the transaction runner thread
+    status = served_runner_start();
+    if (status) {
+        VLOG_ERROR("served", "served_runner_start failed with code %d\n", status);
+        return status;
+    }
+    
+    VLOG_DEBUG("served", "runner thread started successfully\n");
+
+    // Initialize gracht server
+    status = __init_server(&g_server);
+    if (status) {
+        VLOG_ERROR("served", "__init_server failed with code %d\n", status);
+        return status;
     }
 
+    // Register protocol handlers
     gracht_server_register_protocol(g_server, &chef_served_server_protocol);
+    
+    VLOG_DEBUG("served", "entering main loop\n");
     return gracht_server_main_loop(g_server);
 }
 
