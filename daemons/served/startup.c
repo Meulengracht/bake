@@ -163,7 +163,7 @@ int served_startup(void)
 {
     unsigned int transactionId;
     int          status;
-    VLOG_TRACE("startup", "served_startup()\n");
+    VLOG_DEBUG("startup", "served_startup()\n");
 
 #ifndef CHEF_AS_SNAP
     status = __write_profile_d_script();
