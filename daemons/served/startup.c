@@ -21,6 +21,7 @@
 #include <chef/store-default.h>
 #include <startup.h>
 #include <state.h>
+#include <runner.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -189,7 +190,10 @@ int served_startup(void)
         .name = "system-startup",
         .description = "Served system initialization",
         .type = SERVED_TRANSACTION_TYPE_EPHEMERAL,
-        .stateSet = g_stateSetStartup
+        .stateSet = &(struct served_sm_state_set){
+            .states = g_stateSetStartup,
+            .states_count = 7
+        },
     });
     if (transactionId == (unsigned int)-1) {
         VLOG_ERROR("startup", "failed to create startup transaction\n");

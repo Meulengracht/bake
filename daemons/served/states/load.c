@@ -22,6 +22,7 @@
 #include <utils.h>
 
 #include <chef/platform.h>
+#include <stdio.h>
 
 enum sm_action_result served_handle_state_load(void* context)
 {

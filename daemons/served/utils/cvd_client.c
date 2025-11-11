@@ -237,9 +237,9 @@ static enum chef_status __create_container(
         client,
         &context,
         &(struct chef_create_parameters) {
-            .id = id,
+            .id = (char*)id,
             .type = CHEF_ROOTFS_TYPE_PATH,
-            .rootfs = rootfs,
+            .rootfs = (char*)rootfs,
             .rootfs_base = NULL,
             .mounts = mounts,
             .mounts_count = (uint32_t)count
@@ -293,7 +293,7 @@ static enum chef_status __container_spawn(
         client,
         &context,
         &(struct chef_spawn_parameters) {
-            .container_id = id,
+            .container_id = (char*)id,
             .command = (char*)command,
             .options = options,
             .environment = flatenv,

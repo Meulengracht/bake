@@ -18,6 +18,7 @@
 
 #include <startup.h>
 #include <state.h>
+#include <runner.h>
 #include <vlog.h>
 
 #include <transaction/sets.h>
@@ -34,7 +35,10 @@ void served_shutdown(void)
         .name        = "system-shutdown",
         .description = "Served system shutdown",
         .type        = SERVED_TRANSACTION_TYPE_EPHEMERAL,
-        .stateSet    = g_stateSetShutdown,
+        .stateSet    = &(struct served_sm_state_set){
+            .states = g_stateSetShutdown,
+            .states_count = 7
+        },
         .initialState= 0
     });
     if (transactionId == (int)-1) {
@@ -42,7 +46,7 @@ void served_shutdown(void)
         goto save_state;
     }
     VLOG_TRACE("shutdown", "created shutdown transaction %u\n", transactionId);
-    served_state_execute();
+    served_runner_execute();
 
 save_state:
     status = served_state_flush();

@@ -19,8 +19,10 @@
 #include <transaction/states/remove-wrappers.h>
 #include <transaction/transaction.h>
 #include <state.h>
+#include <utils.h>
 
 #include <chef/platform.h>
+#include <stdlib.h>
 #include <vlog.h>
 
 enum sm_action_result served_handle_state_remove_wrappers(void* context)

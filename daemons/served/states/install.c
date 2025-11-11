@@ -93,9 +93,9 @@ static int __load_application_package(struct state_transaction* state, const cha
 
         for (int i = 0; i < count; i++) {
             application->commands[i].type      = commands[i].type;
-            application->commands[i].name      = strdup(commands[i].name);
-            application->commands[i].path      = strdup(commands[i].path);
-            application->commands[i].arguments = commands[i].arguments ? strdup(commands[i].arguments) : NULL;
+            application->commands[i].name      = platform_strdup(commands[i].name);
+            application->commands[i].path      = platform_strdup(commands[i].path);
+            application->commands[i].arguments = commands[i].arguments ? platform_strdup(commands[i].arguments) : NULL;
         }
     }
 

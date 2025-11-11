@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <chef/cli.h>
 #include <chef/package.h>
 #include <chef/platform.h>
 #include <gracht/client.h>
@@ -40,8 +41,12 @@ static void __print_help(void)
 {
     printf("Usage: serve install <pack> [options]\n");
     printf("Options:\n");
-    printf("  -c, --channel\n");
+    printf("  -C, --channel\n");
     printf("      Install from a specific channel, default: stable\n");
+    printf("  -R, --revision\n");
+    printf("      Install a specific revision of the package\n");
+    printf("  -P, --proof\n");
+    printf("      If the package is a local file, then a proof can be provided in addition to this\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
 }
@@ -114,24 +119,16 @@ static char* __get_safe_infoname(const char* publisher, struct chef_package* pac
     return name;
 }
 
-static int __verify_package(const char* path, char** infoNameOut, char** publisherOut)
+static int __verify_package(const char* path, const char* proof)
 {
     struct chef_package* package;
     struct chef_version* version;
     int                  status;
 
-    // dont care about commands
-    status = chef_package_load(path, &package, &version, NULL, NULL);
-    if (status != 0) {
-        fprintf(stderr, "failed to load package: %s\n", path);
-        return -1;
-    }
-
-    // verify revision being non-zero, otherwise we need to warn about
-    // the package being a development package
-    if (version->revision == 0) {
-        fprintf(stderr, "warning: package is a development package, which means chef cannot "
-                        "verify its integrity.\n");
+    if (proof == NULL) {
+        fprintf(stderr, "WARNING: no proof provided for package, cannot verify its integrity.\n");
+        fprintf(stderr, "It's recommended not to continue with the installation of this package,\n");
+        fprintf(stderr, "unless you know exactly what you are doing and what you are installing.\n");
         status = __ask_yes_no_question("continue?");
         if (!status) {
             fprintf(stderr, "aborting\n");
@@ -139,11 +136,13 @@ static int __verify_package(const char* path, char** infoNameOut, char** publish
             chef_version_free(version);
             return -1;
         }
+    }
 
-        *infoNameOut  = __get_unsafe_infoname(package, version);
-        *publisherOut = platform_strdup("unverified");
-    } else {
-        *infoNameOut  = __get_safe_infoname(*publisherOut, package, version);
+    // dont care about commands
+    status = chef_package_load(path, &package, &version, NULL, NULL);
+    if (status != 0) {
+        fprintf(stderr, "failed to load package: %s\n", path);
+        return -1;
     }
 
     // free resources
@@ -158,6 +157,7 @@ int install_main(int argc, char** argv)
     gracht_client_t*                   client;
     int                                status;
     struct platform_stat               stats;
+    uint64_t                           revision;
     const char*                        package   = NULL;
     char*                              fullpath  = NULL;
 
@@ -169,15 +169,13 @@ int install_main(int argc, char** argv)
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
-            } else if (!strncmp(argv[i], "-c", 2) || !strncmp(argv[i], "--channel", 9)) { 
-                char* channel = strchr(argv[i], '=');
-                if (channel) {
-                    channel++;
-                    installOptions.channel = channel;
-                } else {
-                    printf("missing recipe name for --channel=...\n");
-                    return -1;
-                }
+            } else if (!__parse_string_switch(argv, argc, &i, "-C", 2, "--channel", 9, NULL, (char**)&installOptions.channel)) {
+                continue;
+            } else if (!__parse_string_switch(argv, argc, &i, "-P", 2, "--proof", 7, NULL, &installOptions.proof)) {
+                continue;
+            } else if (!__parse_quantity_switch(argv, argc, &i, "-R", 2, "--revision", 10, 0, &revision)) {
+                installOptions.revision = (int)revision;
+                continue;
             } else if (argv[i][0] != '-') {
                 if (package == NULL) {
                     package = argv[i];
@@ -191,7 +189,7 @@ int install_main(int argc, char** argv)
     }
 
     if (package == NULL) {
-        printf("no package specified for install\n");
+        printf("no package specified\n");
         __print_help();
         return -1;
     }
@@ -199,7 +197,7 @@ int install_main(int argc, char** argv)
     // is the package a path? otherwise try to download from
     // official repo
     if (platform_stat(package, &stats) == 0) {
-        status = __verify_package(package, &infoName, &publisher);
+        status = __verify_package(package, installOptions.proof);
         if (status != 0) {
             return status;
         }
@@ -212,7 +210,7 @@ int install_main(int argc, char** argv)
 
         installOptions.path = fullpath;
     } else {
-        installOptions.package = package;
+        installOptions.package = (char*)package;
     }
 
     // at this point package points to a file in our PATH
@@ -223,7 +221,6 @@ int install_main(int argc, char** argv)
         return status;
     }
 
-    printf("installing %s\n", infoName);
     status = chef_served_install(client, NULL, &installOptions);
     if (status != 0) {
         printf("communication error: %i\n", status);

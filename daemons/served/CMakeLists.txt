@@ -24,7 +24,7 @@ add_dependencies(serve-commands service_server)
 target_include_directories(served PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
 target_link_libraries(served
         served-state served-states served-utils
-        chef-client gracht platform vlog zstd
+        chef-client store gracht platform vlog zstd
         ${FUSE_LIBRARIES} 
 )
 

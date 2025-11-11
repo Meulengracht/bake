@@ -270,15 +270,15 @@ unsigned int served_transaction_create(struct served_transaction_options* option
 
 void served_transaction_construct(struct served_transaction* transaction, struct served_transaction_options* options)
 {
-    transaction->id = options->id; // 0 = auto-generate new ID
+    transaction->id = options->id;
     transaction->name = options->name ? platform_strdup(options->name) : NULL;
     transaction->description = options->description ? platform_strdup(options->description) : NULL;
     transaction->type = options->type;
-    transaction->wait = options->wait; // Copy wait condition structure
+    transaction->wait = options->wait;
 
     served_sm_init(
         &transaction->sm,
-        __state_set_from_type(options->type),
+        options->type == SERVED_TRANSACTION_TYPE_EPHEMERAL ? options->stateSet : __state_set_from_type(options->type),
         options->initialState,
         transaction
     );

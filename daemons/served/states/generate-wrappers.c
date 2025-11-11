@@ -23,6 +23,7 @@
 
 #include <chef/platform.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
@@ -42,13 +43,13 @@ static char* __serve_exec_path(void)
     status = readlink("/proc/self/exe", &buffer[0], PATH_MAX);
     if (status < 0) {
         VLOG_ERROR("bake", "__install_bakectl: failed to read /proc/self/exe\n");
-        return status;
+        return NULL;
     }
 
     p = strrchr(&buffer[0], CHEF_PATH_SEPARATOR);
     if (p == NULL) {
         VLOG_ERROR("bake", "__install_bakectl: could not find separator in %s\n", &buffer[0]);
-        return -1;
+        return NULL;
     }
 
     index = (p + 1) - (&buffer[0]);
