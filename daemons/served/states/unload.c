@@ -19,10 +19,28 @@
 #include <transaction/states/unload.h>
 #include <transaction/transaction.h>
 #include <state.h>
+#include <utils.h>
+#include <vlog.h>
 
 enum sm_action_result served_handle_state_unload(void* context)
 {
     struct served_transaction* transaction = context;
+    int                        status;
+
+    // Format name in the form publisher.package
+    VLOG_DEBUG("served", "Unloading container for package %s\n",
+        transaction->name
+    );
+
+    // Destroy the container running for publisher.package
+    status = container_client_destroy_container(transaction->name);
+    if (status) {
+        VLOG_ERROR("served", "failed to destroy container for package %s\n",
+            transaction->name
+        );
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
+        return SM_ACTION_CONTINUE;
+    }
 
     served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;

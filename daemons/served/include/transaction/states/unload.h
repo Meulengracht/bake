@@ -23,10 +23,23 @@
 #include "types.h"
 
 extern enum sm_action_result served_handle_state_unload(void* context);
+extern enum sm_action_result served_handle_state_unload_all(void* context);
 
 static const struct served_sm_state g_stateUnload = {
     .state = SERVED_TX_STATE_UNLOAD,
     .action = served_handle_state_unload,
+    .transition_count = 4,
+    .transitions = {
+        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_UNMOUNT },
+        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_UPDATE },
+        { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
+        { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }
+    }
+};
+
+static const struct served_sm_state g_stateUnloadAll = {
+    .state = SERVED_TX_STATE_UNLOAD,
+    .action = served_handle_state_unload_all,
     .transition_count = 4,
     .transitions = {
         { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_UNMOUNT },

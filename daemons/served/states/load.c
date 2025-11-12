@@ -24,35 +24,29 @@
 #include <chef/platform.h>
 #include <stdio.h>
 
-enum sm_action_result served_handle_state_load(void* context)
+static int __load_application(const char* name)
 {
-    struct served_transaction* transaction = context;
-    struct state_transaction*  state;
-    struct state_application*  application;
-    sm_event_t                 event = SERVED_TX_EVENT_FAILED;
-    char**                     names = NULL;
-    char*                      mountRoot = NULL;
-    char                       containerId[256];
-
-    served_state_lock();
-    state = served_state_transaction(transaction->id);
-    if (state == NULL) {
-        goto cleanup;
-    }
-
-    names = utils_split_package_name(state->name);
+    struct state_application* application;
+    char**                    names = NULL;
+    char*                     mountRoot = NULL;
+    char                      containerId[256];
+    
+    names = utils_split_package_name(name);
     if (names == NULL) {
-        goto cleanup;
+        return -1;
     }
 
     mountRoot = utils_path_mount(names[0], names[1]);
-    if (mountRoot == NULL ) {
-        goto cleanup;
+    if (mountRoot == NULL) {
+        strsplit_free(names);
+        return -1;
     }
+    strsplit_free(names);
 
-    application = served_state_application(state->name);
+    application = served_state_application(name);
     if (application == NULL) {
-        goto cleanup;
+        free(mountRoot);
+        return -1;
     }
 
     // format container id
@@ -61,10 +55,60 @@ enum sm_action_result served_handle_state_load(void* context)
             .id = &containerId[0],
             .rootfs = mountRoot,
         }) != 0) {
+        free(mountRoot);
+        return -1;
+    }
+    free(mountRoot);
+
+    application->container_id = platform_strdup(&containerId[0]);
+    return 0;
+}
+
+enum sm_action_result served_handle_state_load(void* context)
+{
+    struct served_transaction* transaction = context;
+    struct state_transaction*  state;
+    sm_event_t                 event = SERVED_TX_EVENT_FAILED;
+
+    served_state_lock();
+    state = served_state_transaction(transaction->id);
+    if (state == NULL) {
         goto cleanup;
     }
 
-    application->container_id = platform_strdup(&containerId[0]);
+    if (__load_application(state->name)) {
+        goto cleanup;
+    }
+
+    event = SERVED_TX_EVENT_OK;
+
+cleanup:
+    served_state_unlock();
+    served_sm_post_event(&transaction->sm, event);
+    return SM_ACTION_CONTINUE;
+}
+
+enum sm_action_result served_handle_state_load_all(void* context)
+{
+    struct served_transaction* transaction = context;
+    struct state_application*  applications;
+    int                        count;
+    int                        status;
+    sm_event_t                 event = SERVED_TX_EVENT_FAILED;
+    
+    served_state_lock();
+    status = served_state_get_applications(&applications, &count);
+    if (status) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < count; i++) {
+        struct state_application* app = &applications[i];
+        if (__load_application(app->name)) {
+            goto cleanup;
+        }
+    }
+
     event = SERVED_TX_EVENT_OK;
 
 cleanup:

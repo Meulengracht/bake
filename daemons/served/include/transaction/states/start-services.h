@@ -23,10 +23,22 @@
 #include "types.h"
 
 extern enum sm_action_result served_handle_state_start_services(void* context);
+extern enum sm_action_result served_handle_state_start_services_all(void* context);
 
 static const struct served_sm_state g_stateStartServices = {
     .state = SERVED_TX_STATE_START_SERVICES,
     .action = served_handle_state_start_services,
+    .transition_count = 3,
+    .transitions = {
+        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_GENERATE_WRAPPERS },
+        { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
+        { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }
+    }
+};
+
+static const struct served_sm_state g_stateStartServicesAll = {
+    .state = SERVED_TX_STATE_START_SERVICES,
+    .action = served_handle_state_start_services_all,
     .transition_count = 3,
     .transitions = {
         { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_GENERATE_WRAPPERS },

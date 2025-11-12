@@ -86,27 +86,19 @@ static void __format_container_name(const char* name, char* buffer)
     }
 }
 
-enum sm_action_result served_handle_state_generate_wrappers(void* context)
+static int __generate_wrappers(const char* appName)
 {
-    struct served_transaction* transaction = context;
-    struct state_transaction*  state;
-    struct state_application*  application;
-    char*                      sexecPath = __serve_exec_path();
-    char                       name[CHEF_PACKAGE_ID_LENGTH_MAX];
+    struct state_application* application;
+    char*                     sexecPath = __serve_exec_path();
+    char                      name[CHEF_PACKAGE_ID_LENGTH_MAX];
 
-    served_state_lock();
-    state = served_state_transaction(transaction->id);
-    if (state == NULL) {
-        goto cleanup;
-    }
-
-    application = served_state_application(state->name);
+    application = served_state_application(appName);
     if (application == NULL) {
         goto cleanup;
     }
 
     // construct the container id
-    __format_container_name(state->name, &name[0]);
+    __format_container_name(appName, &name[0]);
 
     for (int i = 0; i < application->commands_count; i++) {
         int   status;
@@ -118,7 +110,7 @@ enum sm_action_result served_handle_state_generate_wrappers(void* context)
 
         wrapperPath = utils_path_command_wrapper(application->commands[i].name);
         if (wrapperPath == NULL) {
-            VLOG_ERROR("generate-wrappers", "%s.%s: cannot allocate memory for wrapper-path\n", state->name, application->commands[i].name);
+            VLOG_ERROR("generate-wrappers", "%s.%s: cannot allocate memory for wrapper-path\n", appName, application->commands[i].name);
             continue;
         }
 
@@ -138,7 +130,55 @@ enum sm_action_result served_handle_state_generate_wrappers(void* context)
 
 cleanup:
     free(sexecPath);
+    return 0;
+}
+
+enum sm_action_result served_handle_state_generate_wrappers(void* context)
+{
+    struct served_transaction* transaction = context;
+    struct state_transaction*  state;
+
+    served_state_lock();
+    state = served_state_transaction(transaction->id);
+    if (state == NULL) {
+        goto cleanup;
+    }
+
+    if (__generate_wrappers(state->name)) {
+        goto cleanup;
+    }
+
+cleanup:
     served_state_unlock();
     served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
+    return SM_ACTION_CONTINUE;
+}
+
+enum sm_action_result served_handle_state_generate_wrappers_all(void* context)
+{
+    struct served_transaction* transaction = context;
+    struct state_application*  applications;
+    int                        count;
+    int                        status;
+    sm_event_t                 event = SERVED_TX_EVENT_FAILED;
+    
+    served_state_lock();
+    status = served_state_get_applications(&applications, &count);
+    if (status) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < count; i++) {
+        struct state_application* app = &applications[i];
+        if (__generate_wrappers(app->name)) {
+            goto cleanup;
+        }
+    }
+
+    event = SERVED_TX_EVENT_OK;
+
+cleanup:
+    served_state_unlock();
+    served_sm_post_event(&transaction->sm, event);
     return SM_ACTION_CONTINUE;
 }
