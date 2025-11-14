@@ -207,16 +207,24 @@ static int __to_errno_code(enum chef_status status)
     switch (status) {
         case CHEF_STATUS_SUCCESS:
             return 0;
+        case CHEF_STATUS_CONTAINER_EXISTS:
+            errno = EEXIST;
+            return -1;
         case CHEF_STATUS_INTERNAL_ERROR:
-            return EINVAL;
+            errno = EFAULT;
+            return -1;
         case CHEF_STATUS_FAILED_ROOTFS_SETUP:
-            return EIO;
+            errno = EIO;
+            return -1;
         case CHEF_STATUS_INVALID_MOUNTS:
-            return EINVAL;
+            errno = EINVAL;
+            return -1;
         case CHEF_STATUS_INVALID_CONTAINER_ID:
-            return ENOENT;
+            errno = ENOENT;
+            return -1;
         default:
-            return EINVAL;
+            errno = EINVAL;
+            return -1;
     }
 }
 

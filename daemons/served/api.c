@@ -54,14 +54,6 @@ static void __cleanup_info(struct chef_served_package* info)
     free(info->version);
 }
 
-static void __convert_cmd_to_protocol(struct state_application_command* command, struct chef_served_command* proto)
-{
-    proto->type      = command->type;
-    proto->path      = (char*)command->path;
-    proto->arguments = (char*)command->arguments;
-    proto->data_path = NULL; // data field doesn't exist in state_application_command
-}
-
 void chef_served_install_invocation(struct gracht_message* message, const struct chef_served_install_options* options)
 {
     unsigned int transactionId;
@@ -251,39 +243,4 @@ void chef_served_list_invocation(struct gracht_message* message)
         __cleanup_info(&infos[i]);
     }
     free(infos);
-}
-
-void chef_served_get_command_invocation(struct gracht_message* message, const char* mountPath)
-{
-    struct state_application* applications;
-    struct chef_served_command  result;
-    int                         count;
-    int                         status;
-    
-    VLOG_DEBUG("api", "chef_served_get_command_invocation(mountPath=%s)\n", mountPath);
-    chef_served_command_init(&result);
-
-    served_state_lock();
-    status = served_state_get_applications(&applications, &count);
-    if (status) {
-        served_state_unlock();
-        VLOG_WARNING("api", "failed to retrieve applications from state\n");
-        chef_served_get_command_response(message, &result);
-        return;
-    }
-
-    for (int i = 0; i < count; i++) {
-        for (int j = 0; j < applications[i].commands_count; j++) {
-            // TODO: symlink field no longer exists, this function needs redesign
-            // Commenting out for now as this will be removed
-            // if (strendswith(applications[i].commands[j].symlink, mountPath) == 0) {
-            //     __convert_cmd_to_protocol(&applications[i].commands[j], &result);
-            //     served_state_unlock();
-            //     chef_served_get_command_response(message, &result);
-            //     return;
-            // }
-        }
-    }
-    served_state_unlock();
-    chef_served_get_command_response(message, &result);
 }

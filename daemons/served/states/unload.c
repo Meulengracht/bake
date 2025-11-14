@@ -20,7 +20,32 @@
 #include <transaction/transaction.h>
 #include <state.h>
 #include <utils.h>
+
+#include <chef/platform.h>
 #include <vlog.h>
+
+static int __unload_application(const char* name)
+{
+    char** names = NULL;
+    char   containerId[256];
+    int    status;
+    
+    names = utils_split_package_name(name);
+    if (names == NULL) {
+        return -1;
+    }
+
+    snprintf(&containerId[0], sizeof(containerId), "%s.%s", names[0], names[1]);
+    strsplit_free(names);
+
+    status = container_client_destroy_container(&containerId[0]);
+    if (status) {
+        VLOG_ERROR("served", "failed to destroy container for package %s\n",
+            name
+        );
+    }
+    return status;
+}
 
 enum sm_action_result served_handle_state_unload(void* context)
 {
@@ -33,15 +58,43 @@ enum sm_action_result served_handle_state_unload(void* context)
     );
 
     // Destroy the container running for publisher.package
-    status = container_client_destroy_container(transaction->name);
+    status = __unload_application(transaction->name);
     if (status) {
-        VLOG_ERROR("served", "failed to destroy container for package %s\n",
-            transaction->name
-        );
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
     served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
+    return SM_ACTION_CONTINUE;
+}
+
+enum sm_action_result served_handle_state_unload_all(void* context)
+{
+    struct served_transaction* transaction = context;
+    struct state_application*  applications;
+    int                        count;
+    int                        status;
+    sm_event_t                 event = SERVED_TX_EVENT_FAILED;
+    
+    served_state_lock();
+    status = served_state_get_applications(&applications, &count);
+    if (status) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < count; i++) {
+        struct state_application* app = &applications[i];
+        status = __unload_application(app->name);
+        if (status) {
+            VLOG_ERROR("served", "Failed to unload application %s: %d\n", app->name, status);
+            // continue
+        }
+    }
+
+    event = SERVED_TX_EVENT_OK;
+
+cleanup:
+    served_state_unlock();
+    served_sm_post_event(&transaction->sm, event);
     return SM_ACTION_CONTINUE;
 }

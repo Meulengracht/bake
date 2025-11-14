@@ -21,6 +21,9 @@
 #include <state.h>
 #include <utils.h>
 
+// chmod
+#include <sys/stat.h>
+
 #include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,7 +32,7 @@
 
 static const char* g_wrapperTemplate = 
 "#!/bin/sh\n"
-"%s --container %s --path %s %s\n";
+"%s --container %s --path %s --wdir %s %s\n";
 
 static char* __serve_exec_path(void)
 {
@@ -58,7 +61,26 @@ static char* __serve_exec_path(void)
     return platform_strdup(&buffer[0]);
 }
 
-static int __write_wrapper(const char* wrapperPath, const char* sexecPath, const char* container, const char* path, const char* arguments)
+static int __set_wrapper_permissions(const char* wrapperPath)
+{
+    int status;
+
+    // wrapper should be executable by all
+    // but only writable by owner and should be setuid+setgid root
+    status = chmod(wrapperPath, 06755);
+    if (status) {
+        return -1;
+    }
+    return 0;
+}
+
+static int __write_wrapper(
+    const char* wrapperPath,
+    const char* sexecPath,
+    const char* container,
+    const char* path,
+    const char* workingDirectory,
+    const char* arguments)
 {
     FILE* wrapper;
 
@@ -69,7 +91,7 @@ static int __write_wrapper(const char* wrapperPath, const char* sexecPath, const
 
     fprintf(wrapper, g_wrapperTemplate, sexecPath, container, path, arguments);
     fclose(wrapper);
-    return 0;
+    return __set_wrapper_permissions(wrapperPath);
 }
 
 static void __format_container_name(const char* name, char* buffer)
@@ -119,6 +141,7 @@ static int __generate_wrappers(const char* appName)
             sexecPath,
             &name[0],
             application->commands[i].path,
+            "/",  // working directory
             application->commands[i].arguments
         );
         if (status) {

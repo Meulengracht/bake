@@ -25,21 +25,13 @@
 #include <stdlib.h>
 #include <vlog.h>
 
-enum sm_action_result served_handle_state_remove_wrappers(void* context)
+static int __remove_wrappers(const char* name)
 {
-    struct served_transaction* transaction = context;
-    struct state_transaction*  state;
     struct state_application*  application;
 
-    served_state_lock();
-    state = served_state_transaction(transaction->id);
-    if (state == NULL) {
-        goto cleanup;
-    }
-
-    application = served_state_application(state->name);
+    application = served_state_application(name);
     if (application == NULL) {
-        goto cleanup;
+        return -1;
     }
 
     for (int i = 0; i < application->commands_count; i++) {
@@ -52,7 +44,7 @@ enum sm_action_result served_handle_state_remove_wrappers(void* context)
 
         wrapperPath = utils_path_command_wrapper(application->commands[i].name);
         if (wrapperPath == NULL) {
-            VLOG_ERROR("remove-wrappers", "%s.%s: cannot allocate memory for wrapper-path\n", state->name, application->commands[i].name);
+            VLOG_ERROR("remove-wrappers", "%s.%s: cannot allocate memory for wrapper-path\n", name, application->commands[i].name);
             continue;
         }
 
@@ -63,9 +55,53 @@ enum sm_action_result served_handle_state_remove_wrappers(void* context)
         }
         free(wrapperPath);
     }
+    return 0;
+}
+
+enum sm_action_result served_handle_state_remove_wrappers(void* context)
+{
+    struct served_transaction* transaction = context;
+    struct state_transaction*  state;
+
+    served_state_lock();
+    state = served_state_transaction(transaction->id);
+    if (state == NULL) {
+        goto cleanup;
+    }
+
+    __remove_wrappers(state->name);
 
 cleanup:
     served_state_unlock();
     served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
+    return SM_ACTION_CONTINUE;
+}
+
+enum sm_action_result served_handle_state_remove_wrappers_all(void* context)
+{
+    struct served_transaction* transaction = context;
+    struct state_application*  applications;
+    int                        count;
+    int                        status;
+    sm_event_t                 event = SERVED_TX_EVENT_FAILED;
+    
+    served_state_lock();
+    status = served_state_get_applications(&applications, &count);
+    if (status) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < count; i++) {
+        struct state_application* app = &applications[i];
+        if (__remove_wrappers(app->name)) {
+            goto cleanup;
+        }
+    }
+
+    event = SERVED_TX_EVENT_OK;
+
+cleanup:
+    served_state_unlock();
+    served_sm_post_event(&transaction->sm, event);
     return SM_ACTION_CONTINUE;
 }

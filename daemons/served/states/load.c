@@ -22,6 +22,8 @@
 #include <utils.h>
 
 #include <chef/platform.h>
+#include <errno.h>
+#include <stdlib.h>
 #include <stdio.h>
 
 static int __load_application(const char* name)
@@ -30,6 +32,7 @@ static int __load_application(const char* name)
     char**                    names = NULL;
     char*                     mountRoot = NULL;
     char                      containerId[256];
+    int                       status;
     
     names = utils_split_package_name(name);
     if (names == NULL) {
@@ -41,6 +44,7 @@ static int __load_application(const char* name)
         strsplit_free(names);
         return -1;
     }
+    snprintf(&containerId[0], sizeof(containerId), "%s.%s", names[0], names[1]);
     strsplit_free(names);
 
     application = served_state_application(name);
@@ -49,16 +53,14 @@ static int __load_application(const char* name)
         return -1;
     }
 
-    // format container id
-    snprintf(&containerId[0], sizeof(containerId), "%s.%s", names[0], names[1]);
-    if (container_client_create_container(&(struct container_options){
-            .id = &containerId[0],
-            .rootfs = mountRoot,
-        }) != 0) {
-        free(mountRoot);
+    status = container_client_create_container(&(struct container_options){
+        .id = &containerId[0],
+        .rootfs = mountRoot,
+    });
+    free(mountRoot);
+    if (status && errno != EEXIST) {
         return -1;
     }
-    free(mountRoot);
 
     application->container_id = platform_strdup(&containerId[0]);
     return 0;

@@ -13,30 +13,23 @@ add_subdirectory(serve-exec)
 # testing tools
 add_subdirectory(cvctl)
 
-if (CHEF_BUILD_AS_SNAP)
-    # only on linux anyway
-    install(
-        TARGETS bake order serve mkcdk
-        RUNTIME DESTINATION bin
-    )
-    install(
-        TARGETS bakectl serve-exec
-        RUNTIME DESTINATION libexec/chef
-    )
-else()
+install(
+    TARGETS bake order serve mkcdk
+    RUNTIME DESTINATION bin
+)
+install(
+    TARGETS bakectl serve-exec
+    RUNTIME DESTINATION libexec/chef
+)
+
+if (NOT CHEF_BUILD_AS_SNAP)
     install(
         TARGETS order serve bake mkcdk
         RUNTIME DESTINATION bin
     )
 
     install(
-        TARGETS bakectl
-        RUNTIME DESTINATION libexec/chef
-    )
-
-    install(
-        TARGETS serve-exec
-        PERMISSIONS SETGID SETUID OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        TARGETS bakectl serve-exec
         RUNTIME DESTINATION libexec/chef
     )
     

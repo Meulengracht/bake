@@ -47,3 +47,32 @@ cleanup:
     served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }
+
+enum sm_action_result served_handle_state_unmount_all(void* context)
+{
+    struct served_transaction* transaction = context;
+    struct state_application*  applications;
+    int                        count;
+    int                        status;
+    sm_event_t                 event = SERVED_TX_EVENT_FAILED;
+    
+    served_state_lock();
+    status = served_state_get_applications(&applications, &count);
+    if (status) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < count; i++) {
+        struct state_application* app = &applications[i];
+        if (app->mount != NULL) {
+            served_unmount(app->mount);
+        }
+    }
+
+    event = SERVED_TX_EVENT_OK;
+
+cleanup:
+    served_state_unlock();
+    served_sm_post_event(&transaction->sm, event);
+    return SM_ACTION_CONTINUE;
+}
