@@ -24,4 +24,4 @@ endif()
 
 add_library(libpackage STATIC ${PACK_SRCS})
 target_include_directories(libpackage PUBLIC include)
-target_link_libraries(libpackage PUBLIC vafs common libdirconf platform)
+target_link_libraries(libpackage PUBLIC vafs common dirconf platform)

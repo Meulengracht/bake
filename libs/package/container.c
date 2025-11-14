@@ -563,6 +563,7 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct _
     featureSize += strlen(options->platform);
     featureSize += strlen(options->architecture);
     featureSize += strlen(name);
+    featureSize += strlen(options->base);
     featureSize += strlen(options->summary);
     featureSize += __safe_strlen(options->description);
     featureSize += __safe_strlen(options->license);
@@ -588,6 +589,7 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct _
     packageHeader->platform_length         = strlen(options->platform);
     packageHeader->arch_length             = strlen(options->architecture);
     packageHeader->package_length          = strlen(name);
+    packageHeader->base_length             = strlen(options->base);
     packageHeader->summary_length          = strlen(options->summary);
     packageHeader->description_length      = options->description == NULL ? 0 : strlen(options->description);
     packageHeader->license_length          = options->license == NULL ? 0 : strlen(options->license);

@@ -3,4 +3,4 @@ set (MKCDK_SRCS
 )
 
 add_executable(mkcdk ${MKCDK_SRCS})
-target_link_libraries(mkcdk chef-client libdisk common libdirconf platform vlog)
+target_link_libraries(mkcdk chef-client libdisk common dirconf platform vlog)

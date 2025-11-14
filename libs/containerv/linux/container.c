@@ -34,6 +34,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h> // makedev
 
 #include <unistd.h>
 #include "private.h"
@@ -81,7 +82,7 @@ static char* __container_create_runtime_dir(void)
     return strdup(directory);
 }
 
-static struct containerv_container* __container_new(void)
+static struct containerv_container* __container_new(const char* containerId)
 {
     struct containerv_container* container;
 
@@ -90,16 +91,29 @@ static struct containerv_container* __container_new(void)
         return NULL;
     }
 
-    container->runtime_dir = __container_create_runtime_dir();
-    if (container->runtime_dir == NULL) {
-        free(container);
-        return NULL;
+    if (containerId == NULL) {
+        container->runtime_dir = __container_create_runtime_dir();
+        if (container->runtime_dir == NULL) {
+            free(container);
+            return NULL;
+        }
+    } else {
+        container->runtime_dir = strpathcombine(__CONTAINER_SOCKET_RUNTIME_BASE, containerId);
+        if (container->runtime_dir == NULL) {
+            VLOG_ERROR("containerv", "__container_new: failed to allocate runtime dir path\n");
+            free(container);
+            return NULL;
+        }
+        if (platform_mkdir(container->runtime_dir)) {
+            VLOG_ERROR("containerv", "__container_new: failed to create runtime dir %s\n", container->runtime_dir);
+            free(container->runtime_dir);
+            free(container);
+            return NULL;
+        }
     }
-    memcpy(
-        &container->id[0],
-        &container->runtime_dir[strlen(container->runtime_dir) - __CONTAINER_ID_LENGTH],
-        __CONTAINER_ID_LENGTH
-    );
+    
+    // get last part of directory path, the last token is the id
+    container->id = strrchr(container->runtime_dir, CHEF_PATH_SEPARATOR) + 1;
 
     // Use container ID as hostname
     container->hostname = strdup(&container->id[0]);
@@ -110,10 +124,8 @@ static struct containerv_container* __container_new(void)
     }
 
     // create the resources that we need immediately
-    if (pipe(container->host) ||
-        pipe(container->child) ||
-        pipe(container->stdout) ||
-        pipe(container->stderr)) {
+    if (pipe(container->host) || pipe(container->child) ||
+        pipe(container->stdout) || pipe(container->stderr)) {
         free(container->hostname);
         free(container->runtime_dir);
         free(container);
@@ -553,6 +565,46 @@ static int __container_open_ns_fds(
     return 0;
 }
 
+static int __populate_minimal_dev(void)
+{
+    int    status;
+    char   tmp[PATH_MAX];
+    mode_t um;
+    VLOG_DEBUG("cvd", "__fixup_dev()\n");
+
+    struct {
+        const char* path;
+        mode_t      mod;
+        dev_t       dev;
+    } devices[] = {
+        { "null", S_IFCHR | 0666, makedev(1, 3) },
+        { "zero", S_IFCHR | 0666, makedev(1, 5) },
+        { "random", S_IFCHR | 0666, makedev(1, 8) },
+        { "urandom", S_IFCHR | 0666, makedev(1, 9) },
+        { NULL, 0, 0 },
+    };
+
+    um = umask(0);
+
+    for (int i = 0; devices[i].path != NULL; i++) {
+        snprintf(
+            &tmp[0],
+            sizeof(tmp),
+            "/dev/%s", 
+            devices[i].path
+        );
+
+        status = mknod(&tmp[0], devices[i].mod, devices[i].dev);
+        if (status) {
+            VLOG_ERROR("cvd", "__fixup_dev: failed to create %s\n", &tmp[0]);
+            return status;
+        }
+    }
+
+    umask(um);
+    return 0;
+}
+
 static int __container_run(
     struct containerv_container* container,
     struct containerv_options*   options,
@@ -697,7 +749,7 @@ static int __container_run(
 
     // After the chroot we can do now do special mounts
     if (options->capabilities & CV_CAP_FILESYSTEM) {
-        static const int postmountsCount = 3;
+        static const int postmountsCount = 4;
         struct containerv_mount mnts[] = {
             {
                 .what = "sysfs",
@@ -717,11 +769,25 @@ static int __container_run(
                 .fstype = "tmpfs",
                 .flags = CV_MOUNT_CREATE
             },
+            {
+                .what = "tmpfs",
+                .where = "/dev",
+                .fstype = "tmpfs",
+                .flags = CV_MOUNT_CREATE
+            },
         };
         
         status = __container_map_mounts("", &mnts[0], postmountsCount);
         if (status) {
             VLOG_ERROR("containerv[child]", "__container_run: failed to map system mounts\n");
+            return status;
+        }
+
+        // we could use devtmpfs here, but that requires kernel support, which it most likely
+        // already is, but just to be sure we populate a minimal /dev, to have more control
+        status = __populate_minimal_dev();
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to populate /dev\n");
             return status;
         }
     }
@@ -792,7 +858,7 @@ static void __container_entry(
     struct containerv_options*   options)
 {
     int status;
-    VLOG_DEBUG("containerv[child]", "__container_entry(id=%s)\n", &container->id[0]);
+    VLOG_DEBUG("containerv[child]", "__container_entry(id=%s)\n", container->id);
 
     // lets not leak the host fds
     if (__close_safe(&container->child[__FD_READ]) || __close_safe(&container->host[__FD_WRITE])) {
@@ -810,6 +876,7 @@ static void __container_entry(
 }
 
 int containerv_create(
+    const char*                   containerId,
     const char*                   rootFs,
     struct containerv_options*    options,
     struct containerv_container** containerOut)
@@ -825,7 +892,7 @@ int containerv_create(
         return -1;
     }
 
-    container = __container_new();
+    container = __container_new(containerId);
     if (container == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_create: failed to allocate memory for container\n");
         return -1;
@@ -991,8 +1058,8 @@ int containerv_spawn(
     int                              status;
     VLOG_DEBUG("containerv[host]", "containerv_spawn()\n");
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_spawn: failed to connect to server\n");
         return status;
@@ -1013,8 +1080,8 @@ int containerv_kill(struct containerv_container* container, pid_t pid)
     int                              status;
     VLOG_DEBUG("containerv[host]", "containerv_kill()\n");
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_kill: failed to connect to server\n");
         return status;
@@ -1036,8 +1103,8 @@ int containerv_upload(struct containerv_container* container, const char* const*
     struct containerv_socket_client* client;
     int                              status;
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_upload: failed to connect to server\n");
         return status;
@@ -1084,8 +1151,8 @@ int containerv_download(struct containerv_container* container, const char* cons
     int                              status;
     char                             xbuf[4096];
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_download: failed to connect to server\n");
         return status;
@@ -1145,8 +1212,8 @@ int containerv_destroy(struct containerv_container* container)
     int                              status;
     VLOG_DEBUG("containerv[host]", "containerv_destroy()\n");
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", &container->id[0]);
-    client = containerv_socket_client_open(&container->id[0]);
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
     if (client == NULL) {
         VLOG_ERROR("containerv[host]", "containerv_destroy: failed to connect to server\n");
         return status;
@@ -1270,5 +1337,5 @@ const char* containerv_id(struct containerv_container* container)
     if (container == NULL) {
         return NULL;
     }
-    return &container->id[0];
+    return container->id;
 }

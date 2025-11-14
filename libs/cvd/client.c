@@ -211,8 +211,10 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx,
         bctx->cvd_client,
         &context,
         &(struct chef_create_parameters) {
+            .id = NULL,
             .type = CHEF_ROOTFS_TYPE_IMAGE,
             .rootfs = rootfs,
+            .rootfs_base = (char*)recipe_platform_base(bctx->recipe, CHEF_PLATFORM_STR),
             .mounts = mounts,
             .mounts_count = (uint32_t)count
         }

@@ -1,0 +1,185 @@
+/**
+ * Copyright, Philip Meulengracht
+ *
+ * This program is free software : you can redistribute it and / or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation ? , either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
+#include <errno.h>
+#include <chef/platform.h>
+#include <chef/store-default.h>
+#include <startup.h>
+#include <state.h>
+#include <runner.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <utils.h>
+#include <vlog.h>
+
+#include <transaction/sets.h>
+#include <transaction/transaction.h>
+
+#include <chef/client.h>
+#include <chef/api/package.h>
+
+static const char* g_profileScriptPath = "/etc/profile.d/chef.sh";
+static const char* g_profileScript = 
+"#!/bin/sh\n"
+"export CHEF_HOME=/chef\n"
+"export PATH=$CHEF_HOME/bin:$PATH\n";
+
+static int __write_profile_d_script(void)
+{
+    char*  profileScriptPath;
+    int    status;
+    FILE*  file;
+    size_t written;
+    VLOG_TRACE("startup", "__write_profile_d_script()\n");
+
+    profileScriptPath = served_paths_path(g_profileScriptPath);
+    if (profileScriptPath == NULL) {
+        VLOG_ERROR("startup", "failed to get full path for profile script\n");
+        return -1;
+    }
+
+    // if file exists, then we do not touch it
+    file = fopen(profileScriptPath, "r");
+    if (file != NULL) {
+        free(profileScriptPath);
+        fclose(file);
+        return 0;
+    }
+    
+    file = fopen(profileScriptPath, "w");
+    if (file == NULL) {
+        VLOG_ERROR("startup", "failed to write profile script: %s\n", profileScriptPath);
+        free(profileScriptPath);
+        return -1;
+    }
+    
+    written = fwrite(g_profileScript, strlen(g_profileScript), 1, file);
+    if (written != 1) {
+        free(profileScriptPath);
+        fclose(file);
+        return -1;
+    }
+
+    // change permissions to executable
+    status = chmod(profileScriptPath, 0755);
+    free(profileScriptPath);
+    fclose(file);
+    return status;
+}
+
+static int __ensure_chef_paths(void)
+{
+    char* path;
+
+    VLOG_TRACE("startup", "__ensure_chef_paths()\n");
+    
+    // ensure following paths are created
+    // /chef
+    // /chef/bin
+    // /var/chef
+    // /var/chef/mnt
+    // /var/chef/packs
+
+    path = served_paths_path("/chef/bin");
+    if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("startup", "failed to create path %s\n", path);
+        free(path);
+        return -1;
+    }
+    free(path);
+
+    path = served_paths_path("/var/chef/packs");
+    if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("startup", "failed to create path %s\n", path);
+        free(path);
+        return -1;
+    }
+    free(path);
+
+    path = served_paths_path("/var/chef/mnt");
+    if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("startup", "failed to create path %s\n", path);
+        free(path);
+        return -1;
+    }
+    free(path);
+    return 0;
+}
+
+int served_startup(void)
+{
+    unsigned int transactionId;
+    int          status;
+    VLOG_DEBUG("startup", "served_startup()\n");
+
+#ifndef CHEF_AS_SNAP
+    status = __write_profile_d_script();
+    if (status != 0) {
+        VLOG_ERROR("startup", "failed to write profile script\n");
+        return status;
+    }
+#endif
+
+    status = __ensure_chef_paths();
+    if (status != 0) {
+        VLOG_ERROR("startup", "failed to write necessary chef paths\n");
+        return status;
+    }
+
+    status = chefclient_initialize();
+    if (status != 0) {
+        VLOG_ERROR("startup", "failed to initialize chef client\n");
+        return status;
+    }
+
+    status = store_initialize(&(struct store_parameters) {
+        .platform = CHEF_PLATFORM_STR,
+        .architecture = CHEF_ARCHITECTURE_STR,
+        .backend = g_store_default_backend
+    });
+    if (status) {
+        VLOG_ERROR("startup", "failed to initialize store\n");
+        return status;
+    }
+
+    status = served_state_load();
+    if (status != 0) {
+        VLOG_ERROR("startup", "failed to load/initialize state\n");
+        return status;
+    }
+
+    VLOG_TRACE("startup", "initiating startup transaction\n");
+    transactionId = served_transaction_create(&(struct served_transaction_options) {
+        .name = "system-startup",
+        .description = "Served system initialization",
+        .type = SERVED_TRANSACTION_TYPE_EPHEMERAL,
+        .stateSet = &(struct served_sm_state_set){
+            .states = g_stateSetStartup,
+            .states_count = 7
+        },
+    });
+    if (transactionId == (unsigned int)-1) {
+        VLOG_ERROR("startup", "failed to create startup transaction\n");
+        return -1;
+    }
+
+    VLOG_TRACE("startup", "startup-transaction: %u\n", transactionId);
+    return 0;
+}

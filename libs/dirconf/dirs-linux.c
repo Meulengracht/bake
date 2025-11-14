@@ -33,14 +33,13 @@ static struct {
 
     // per-user
     const char* root;
-    const char* fridge;
     const char* store;
     const char* cache;
     const char* kitchen;
 
     // global
     const char* config;
-} g_dirs = { 0, 0, NULL, NULL, NULL, NULL, NULL, NULL };
+} g_dirs = { 0, 0, NULL, NULL, NULL, NULL, NULL };
 
 static int __directory_exists(
     const char* path)
@@ -128,7 +127,6 @@ static int __ensure_chef_user_dirs(void)
         unsigned int rmode;
     } paths[] = {
         { &g_dirs.root, 0755, 0777 },
-        { &g_dirs.fridge, 0755, 0777 },
         { &g_dirs.store, 0755, 0777 },
         { &g_dirs.kitchen, 0755, 0777 },
         { NULL },
@@ -226,7 +224,7 @@ static const char* __spaces_directory(void)
     // /var/snap/<snap>/common
     char* val = getenv("SNAP_COMMON");
     if (val != NULL) {
-        return strpathcombine(val, "fridge");
+        return strpathcombine(val, "store");
     }
 #endif
     return __strdup_fail("/var/chef/spaces");
@@ -259,11 +257,10 @@ static int __initialize_daemon(void)
 
     g_dirs.root    = __strdup_fail(__root_common_directory());
     g_dirs.config  = __strdup_fail("/etc/chef");
-    g_dirs.fridge  = strpathcombine(g_dirs.root, "fridge");
-    g_dirs.store   = strpathcombine(g_dirs.root, "store");
+    g_dirs.store  = strpathcombine(g_dirs.root, "store");
     g_dirs.cache   = __cache_directory();
     g_dirs.kitchen = __spaces_directory();
-    if (g_dirs.fridge == NULL || g_dirs.store == NULL) {
+    if (g_dirs.store == NULL || g_dirs.store == NULL) {
         VLOG_FATAL("dirs", "failed to allocate memory for paths\n");
     }
     return __ensure_chef_global_dirs();
@@ -280,8 +277,7 @@ static int __initialize_bakectl(void)
 
     g_dirs.root   = __strdup_fail("/chef");
     g_dirs.config = __strdup_fail("/chef/config");
-    g_dirs.fridge = __strdup_fail("/chef/fridge");
-    g_dirs.store  = __strdup_fail("/chef/store");
+    g_dirs.store = __strdup_fail("/chef/store");
     return __ensure_chef_global_dirs();
 }
 
@@ -299,10 +295,9 @@ static int __initialize_bake(void)
     }
 
     g_dirs.config  = __strdup_fail(g_dirs.root);
-    g_dirs.fridge  = strpathcombine(g_dirs.root, "fridge");
-    g_dirs.store   = strpathcombine(g_dirs.root, "store");
+    g_dirs.store  = strpathcombine(g_dirs.root, "store");
     g_dirs.kitchen = strpathcombine(g_dirs.root, "spaces");
-    if (g_dirs.fridge == NULL || g_dirs.store == NULL || g_dirs.kitchen == NULL) {
+    if (g_dirs.store == NULL || g_dirs.kitchen == NULL) {
         VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
         return -1;
     }
@@ -336,15 +331,6 @@ const char* chef_dirs_root(void)
         return NULL;
     }
     return g_dirs.root;
-}
-
-const char* chef_dirs_fridge(void)
-{
-    if (g_dirs.fridge == NULL) {
-        VLOG_ERROR("dirs", "chef_dirs_fridge() is not available\n");
-        return NULL;
-    }
-    return g_dirs.fridge;
 }
 
 const char* chef_dirs_store(void)

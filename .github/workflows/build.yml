@@ -28,12 +28,12 @@ jobs:
 
     - name: Install build dependencies
       if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get install -y libfuse3-3 libfuse3-dev libcap2 libcap-dev libcurl4-openssl-dev libssl-dev
+      run: sudo apt-get install -y libsqlite3-0 libsqlite3-dev libfuse3-3 libfuse3-dev libcap2 libcap-dev libcurl4-openssl-dev libssl-dev
 
     - name: Install Windows dependencies
       if: matrix.os == 'windows-latest'
       run: |
-        vcpkg install curl openssl --triplet x64-windows
+        vcpkg install curl openssl sqlite3 --triplet x64-windows
 
     - name: Configure (Ubuntu)
       if: matrix.os == 'ubuntu-latest'

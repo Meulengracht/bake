@@ -20,7 +20,14 @@
 #define __CHEF_CLIENT_STORAGE_BU_H__
 
 /**
- * @brief
+ * @brief Uploads a file to blob storage and retrieves the download URL.
+ * 
+ * This function uploads a file from the local filesystem to blob storage
+ * and returns the URL that can be used to download the file later.
+ * 
+ * @param[In]  path        The local file path to upload
+ * @param[Out] downloadUrl A pointer where the allocated download URL string will be stored. Must be freed by caller.
+ * @return int             Returns 0 on success, -1 on error. Errno will be set accordingly.
  */
 extern int chef_client_bu_upload(const char* path, char** downloadUrl);
 

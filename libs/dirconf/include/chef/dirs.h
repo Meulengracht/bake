@@ -42,11 +42,6 @@ extern const char* chef_dirs_root(void);
 /**
  * @brief
  */
-extern const char* chef_dirs_fridge(void);
-
-/**
- * @brief
- */
 extern const char* chef_dirs_store(void);
 
 /**

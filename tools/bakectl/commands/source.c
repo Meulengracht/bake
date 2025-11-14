@@ -57,6 +57,7 @@ struct __source_options {
 static int __prepare_path(const char* root, const char* relativePath, struct __source_options* options)
 {
     char* project;
+    char* canonicalized;
     int   status;
     VLOG_DEBUG("bakectl", "__prepare_path()\n");
 
@@ -66,14 +67,24 @@ static int __prepare_path(const char* root, const char* relativePath, struct __s
         return -1;
     }
 
+    // Make sure the path has been canonicalized and does not contain
+    // stuff like . and .. in it. I.e. calculate the absolute path.
+    canonicalized = platform_abspath(project);
+    if (canonicalized == NULL) {
+        VLOG_ERROR("bakectl", "__prepare_path: failed to canonicalize path %s\n", project);
+        free(project);
+        return -1;
+    }
+
     // Create a link from the source folder to the source folder in the
     // project.
-    status = platform_symlink(root, project, 1);
+    status = platform_symlink(root, canonicalized, 1);
     if (status) {
-        VLOG_ERROR("bakectl", "__prepare_path: failed to link %s to %s\n", root, project);
+        VLOG_ERROR("bakectl", "__prepare_path: failed to link %s to %s\n", root, canonicalized);
     }
     
     free(project);
+    free(canonicalized);
     return status;
 }
 

@@ -43,6 +43,7 @@ struct chef_vafs_feature_package_header {
     uint32_t                 platform_length;
     uint32_t                 arch_length;
     uint32_t                 package_length;
+    uint32_t                 base_length;
     uint32_t                 summary_length;
     uint32_t                 description_length;
     uint32_t                 homepage_length;

@@ -31,11 +31,7 @@ enum state {
     STATE_DOCUMENT, /* start/end document */
     STATE_SECTION,  /* top level */
 
-    STATE_PROJECT,
     STATE_PROJECT_NAME,
-    STATE_PROJECT_SUMMARY,
-    STATE_PROJECT_DESCRIPTION,
-    STATE_PROJECT_ICON,
     STATE_PROJECT_AUTHOR,
     STATE_PROJECT_EMAIL,
     STATE_PROJECT_VERSION,
@@ -60,6 +56,7 @@ enum state {
 
     STATE_PLATFORM,       // MAPPING_START
     STATE_PLATFORM_NAME,
+    STATE_PLATFORM_BASE,
     STATE_PLATFORM_TOOLCHAIN,
     STATE_PLATFORM_ARCH_LIST,
 
@@ -67,7 +64,6 @@ enum state {
 
     STATE_INGREDIENT,       // MAPPING_START
     STATE_INGREDIENT_NAME,
-    STATE_INGREDIENT_VERSION,
     STATE_INGREDIENT_INCLUDE_FILTERS_LIST,
     STATE_INGREDIENT_CHANNEL,
 
@@ -110,6 +106,9 @@ enum state {
     STATE_PACKS_LIST,
     STATE_PACK,            // MAPPING_START
     STATE_PACK_NAME,
+    STATE_PACK_SUMMARY,
+    STATE_PACK_DESCRIPTION,
+    STATE_PACK_ICON,
     STATE_PACK_TYPE,
     STATE_PACK_INGREDIENT_OPTIONS,
     STATE_PACK_FILTER_LIST,
@@ -225,11 +224,6 @@ static enum chef_command_type __parse_command_type(const char* value)
     }
 }
 
-static void __finalize_image(struct parser_state* state)
-{
-    // todo
-}
-
 static int __is_valid_name(const char* name)
 {
     if (name == NULL || strlen(name) == 0) {
@@ -251,11 +245,6 @@ static void __finalize_project(struct parser_state* state)
     // verify required project members
     if (__is_valid_name(state->recipe.project.name)) {
         fprintf(stderr, "parse error: project name must be provided and only contain [a-zA-Z_-]\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if (state->recipe.project.summary == NULL) {
-        fprintf(stderr, "parse error: project summary is required\n");
         exit(EXIT_FAILURE);
     }
 
@@ -521,6 +510,11 @@ static void __finalize_pack(struct parser_state* state)
         exit(EXIT_FAILURE);
     }
 
+    if (state->pack.summary == NULL) {
+        fprintf(stderr, "parse error: pack summary is required\n");
+        exit(EXIT_FAILURE);
+    }
+
     if (state->pack.type == CHEF_PACKAGE_TYPE_UNKNOWN) {
         fprintf(stderr, "parse error: pack type is not specified\n");
         exit(EXIT_FAILURE);
@@ -546,7 +540,7 @@ static void __finalize_pack(struct parser_state* state)
     memset(&state->pack, 0, sizeof(struct recipe_pack));
 }
 
-static int __resolve_ingredient(struct parser_state* state, const char* name)
+static int __resolve_package(struct parser_state* state, const char* name)
 {
     struct list_item* i;
 
@@ -580,7 +574,7 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
     }
 
     // verify that we can resolve the ingredient being mentioned
-    if (!__resolve_ingredient(state, state->meson_wrap_item.ingredient)) {
+    if (!__resolve_package(state, state->meson_wrap_item.ingredient)) {
         fprintf(stderr, "parse error: ingredient %s specified by meson wrap is not defined\n", state->meson_wrap_item.ingredient);
         exit(EXIT_FAILURE);
     }
@@ -703,8 +697,20 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             switch (event->type) {
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
-                    if (strcmp(value, "project") == 0) {
-                        __parser_push_state(s, STATE_PROJECT);
+                    if (strcmp(value, "name") == 0) {
+                        __parser_push_state(s, STATE_PROJECT_NAME);
+                    } else if (strcmp(value, "author") == 0) {
+                        __parser_push_state(s, STATE_PROJECT_AUTHOR);
+                    } else if (strcmp(value, "email") == 0) {
+                        __parser_push_state(s, STATE_PROJECT_EMAIL);
+                    } else if (strcmp(value, "version") == 0) {
+                        __parser_push_state(s, STATE_PROJECT_VERSION);
+                    } else if (strcmp(value, "license") == 0) {
+                        __parser_push_state(s, STATE_PROJECT_LICENSE);
+                    } else if (strcmp(value, "eula") == 0) {
+                        __parser_push_state(s, STATE_PROJECT_EULA);
+                    } else if (strcmp(value, "homepage") == 0) {
+                        __parser_push_state(s, STATE_PROJECT_HOMEPAGE);
                     } else if (strcmp(value, "environment") == 0) {
                         __parser_push_state(s, STATE_ENVIRONMENT);
                     } else if (strcmp(value, "platforms") == 0) {
@@ -720,50 +726,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     break;
                 
                 case YAML_MAPPING_END_EVENT:
-                    __finalize_image(s);
-                    __parser_pop_state(s);
-                    break;
-                default:
-                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
-                    return -1;
-            }
-            break;
-
-        case STATE_PROJECT:
-            switch (event->type) {
-                case YAML_MAPPING_START_EVENT:
-                    break;
-                case YAML_MAPPING_END_EVENT:
                     __finalize_project(s);
                     __parser_pop_state(s);
-                    break;
-                
-                case YAML_SCALAR_EVENT:
-                    value = (char *)event->data.scalar.value;
-                    if (strcmp(value, "name") == 0) {
-                        __parser_push_state(s, STATE_PROJECT_NAME);
-                    } else if (strcmp(value, "summary") == 0) {
-                        __parser_push_state(s, STATE_PROJECT_SUMMARY);
-                    } else if (strcmp(value, "description") == 0) {
-                        __parser_push_state(s, STATE_PROJECT_DESCRIPTION);
-                    } else if (strcmp(value, "icon") == 0) {
-                        __parser_push_state(s, STATE_PROJECT_ICON);
-                    } else if (strcmp(value, "author") == 0) {
-                        __parser_push_state(s, STATE_PROJECT_AUTHOR);
-                    } else if (strcmp(value, "email") == 0) {
-                        __parser_push_state(s, STATE_PROJECT_EMAIL);
-                    } else if (strcmp(value, "version") == 0) {
-                        __parser_push_state(s, STATE_PROJECT_VERSION);
-                    } else if (strcmp(value, "license") == 0) {
-                        __parser_push_state(s, STATE_PROJECT_LICENSE);
-                    } else if (strcmp(value, "eula") == 0) {
-                        __parser_push_state(s, STATE_PROJECT_EULA);
-                    } else if (strcmp(value, "homepage") == 0) {
-                        __parser_push_state(s, STATE_PROJECT_HOMEPAGE);
-                    } else {
-                        fprintf(stderr, "__consume_event: (STATE_PROJECT) unexpected scalar: %s.\n", value);
-                        return -1;
-                    }
                     break;
                 default:
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
@@ -840,9 +804,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
 
         __consume_scalar_fn(STATE_PROJECT_NAME, recipe.project.name, __parse_string)
-        __consume_scalar_fn(STATE_PROJECT_SUMMARY, recipe.project.summary, __parse_string)
-        __consume_scalar_fn(STATE_PROJECT_DESCRIPTION, recipe.project.description, __parse_string)
-        __consume_scalar_fn(STATE_PROJECT_ICON, recipe.project.icon, __parse_string)
         __consume_scalar_fn(STATE_PROJECT_AUTHOR, recipe.project.author, __parse_string)
         __consume_scalar_fn(STATE_PROJECT_EMAIL, recipe.project.email, __parse_string)
         __consume_scalar_fn(STATE_PROJECT_VERSION, recipe.project.version, __parse_string)
@@ -858,6 +819,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "name") == 0) {
                         __parser_push_state(s, STATE_PLATFORM_NAME);
+                    } else if (strcmp(value, "base") == 0) {
+                        __parser_push_state(s, STATE_PLATFORM_BASE);
                     } else if (strcmp(value, "toolchain") == 0) {
                         __parser_push_state(s, STATE_PLATFORM_TOOLCHAIN);
                     } else if (strcmp(value, "architectures") == 0) {
@@ -877,6 +840,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             break;
 
         __consume_scalar_fn(STATE_PLATFORM_NAME, platform.name, __parse_string)
+        __consume_scalar_fn(STATE_PLATFORM_BASE, platform.base, __parse_string)
         __consume_scalar_fn(STATE_PLATFORM_TOOLCHAIN, platform.toolchain, __parse_string)
         __consume_sequence_unmapped(STATE_PLATFORM_ARCH_LIST, __add_platform_archs)
 
@@ -1031,8 +995,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_INGREDIENT_NAME);
                     } else if (strcmp(value, "channel") == 0) {
                         __parser_push_state(s, STATE_INGREDIENT_CHANNEL);
-                    } else if (strcmp(value, "version") == 0) {
-                        __parser_push_state(s, STATE_INGREDIENT_VERSION);
                     } else if (strcmp(value, "include-filters") == 0) {
                         __parser_push_state(s, STATE_INGREDIENT_INCLUDE_FILTERS_LIST);
                     } else {
@@ -1051,7 +1013,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_INGREDIENT_NAME, ingredient.name, __parse_string)
         __consume_scalar_fn(STATE_INGREDIENT_CHANNEL, ingredient.channel, __parse_string)
-        __consume_scalar_fn(STATE_INGREDIENT_VERSION, ingredient.version, __parse_string)
         __consume_sequence_unmapped(STATE_INGREDIENT_INCLUDE_FILTERS_LIST, __add_ingredient_filters)
 
         __consume_sequence_mapped(STATE_RECIPE_LIST, STATE_RECIPE)
@@ -1268,6 +1229,12 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     value = (char *)event->data.scalar.value;
                     if (strcmp(value, "name") == 0) {
                         __parser_push_state(s, STATE_PACK_NAME);
+                    } else if (strcmp(value, "summary") == 0) {
+                        __parser_push_state(s, STATE_PACK_SUMMARY);
+                    } else if (strcmp(value, "description") == 0) {
+                        __parser_push_state(s, STATE_PACK_DESCRIPTION);
+                    } else if (strcmp(value, "icon") == 0) {
+                        __parser_push_state(s, STATE_PACK_ICON);
                     } else if (strcmp(value, "type") == 0) {
                         __parser_push_state(s, STATE_PACK_TYPE);
                     } else if (strcmp(value, "ingredient-options") == 0) {
@@ -1288,6 +1255,9 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             break;
 
         __consume_scalar_fn(STATE_PACK_NAME, pack.name, __parse_string)
+        __consume_scalar_fn(STATE_PACK_SUMMARY, pack.summary, __parse_string)
+        __consume_scalar_fn(STATE_PACK_DESCRIPTION, pack.description, __parse_string)
+        __consume_scalar_fn(STATE_PACK_ICON, pack.icon, __parse_string)
         __consume_scalar_fn(STATE_PACK_TYPE, pack.type, __parse_pack_type)
         __consume_sequence_unmapped(STATE_PACK_FILTER_LIST, __add_pack_filters)
         __consume_sequence_mapped(STATE_PACK_COMMANDS_LIST, STATE_COMMAND)
@@ -1451,10 +1421,18 @@ static void __destroy_keypair(struct chef_keypair_item* keypair)
     free(keypair);
 }
 
+static void __destroy_platform(struct recipe_platform* platform)
+{
+    free((void*)platform->name);
+    free((void*)platform->base);
+    free((void*)platform->toolchain);
+    __destroy_list(string, platform->archs.head, struct list_item_string);
+    free(platform);
+}
+
 static void __destroy_project(struct recipe_project* project)
 {
-    free((void*)project->summary);
-    free((void*)project->description);
+    free((void*)project->name);
     free((void*)project->version);
     free((void*)project->url);
     free((void*)project->license);
@@ -1466,7 +1444,6 @@ static void __destroy_project(struct recipe_project* project)
 static void __destroy_ingredient(struct recipe_ingredient* ingredient)
 {
     free((void*)ingredient->name);
-    free((void*)ingredient->version);
     free((void*)ingredient->channel);
     free(ingredient);
 }
@@ -1522,6 +1499,9 @@ static void __destroy_pack(struct recipe_pack* pack)
     __destroy_list(command, pack->commands.head, struct recipe_pack_command);
     __destroy_list(string, pack->filters.head, struct list_item_string);
     free((void*)pack->name);
+    free((void*)pack->summary);
+    free((void*)pack->description);
+    free((void*)pack->icon);
     free(pack);
 }
 
@@ -1537,5 +1517,6 @@ void recipe_destroy(struct recipe* recipe)
     __destroy_list(ingredient, recipe->environment.runtime.ingredients.head, struct recipe_ingredient);
     __destroy_list(part, recipe->parts.head, struct recipe_part);
     __destroy_list(pack, recipe->packs.head, struct recipe_pack);
+    __destroy_list(platform, recipe->platforms.head, struct recipe_platform);
     free(recipe);
 }

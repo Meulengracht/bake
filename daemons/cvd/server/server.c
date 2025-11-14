@@ -28,12 +28,13 @@
 #include <time.h>
 #include <vlog.h>
 
+#include "ubuntu.h"
+
 struct __container {
     struct list_item             item_header;
     char*                        id;
     struct containerv_container* handle;
 };
-
 
 static struct __container* __container_new(struct containerv_container* handle)
 {
@@ -69,9 +70,6 @@ static int __file_exists(const char* path)
 }
 
 #ifdef CHEF_ON_LINUX
-#include <sys/stat.h>
-#include <sys/sysmacros.h>
-
 static int __fixup_dns(const char* rootfs)
 {
     int   status;
@@ -104,47 +102,33 @@ static int __fixup_dns(const char* rootfs)
     return fclose(stream);
 }
 
-static int __fixup_dev(const char* rootfs)
+static int __download_base(const char* base, const char* dir)
 {
-    int    status;
-    char   tmp[PATH_MAX];
-    mode_t um;
-    VLOG_DEBUG("cvd", "__fixup_dev()\n");
-
-    struct {
-        const char* path;
-        mode_t      mod;
-        dev_t       dev;
-    } devices[] = {
-        { "null", S_IFCHR | 0666, makedev(1, 3) },
-        { "zero", S_IFCHR | 0666, makedev(1, 5) },
-        { NULL, 0, 0 },
-    };
-
-    um = umask(0);
-
-    for (int i = 0; devices[i].path != NULL; i++) {
-        snprintf(
-            &tmp[0],
-            sizeof(tmp),
-            "%s/dev/%s", 
-            rootfs, devices[i].path
-        );
-
-        status = mknod(&tmp[0], devices[i].mod, devices[i].dev);
-        if (status) {
-            VLOG_ERROR("cvd", "__fixup_dev: failed to create %s\n", &tmp[0]);
-            return status;
-        }
+    char  tmp[PATH_MAX];
+    int   status;
+    char* url = __ubuntu_get_base_image_url(base);
+    if (url == NULL) {
+        VLOG_ERROR("cvd", "failed to allocate memory for base image url\n");
+        return -1;
     }
 
-    umask(um);
-    return 0;
+    snprintf(&tmp[0], sizeof(tmp), "-P %s %s", dir, url);
+
+    VLOG_TRACE("cvd", "downloading %s\n", url);
+    status = platform_spawn(
+        "wget", &tmp[0], NULL, &(struct platform_spawn_options) { }
+    );
+    if (status) {
+        VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
+    }
+    free(url);
+    return status;
 }
 
-static int __ensure_base_rootfs(const char* rootfs)
+static int __ensure_base_rootfs(const char* rootfs, const char* base)
 {
-    char* imageCache;
+    char* imageCache = NULL;
+    char* imageName = NULL;
     char  tmp[PATH_MAX];
     int   status;
     VLOG_DEBUG("cvd", "__ensure_base_rootfs()\n");
@@ -158,66 +142,53 @@ static int __ensure_base_rootfs(const char* rootfs)
     status = platform_mkdir(imageCache);
     if (status) {
         VLOG_ERROR("cvd", "failed to create directory %s\n", imageCache);
-        return -1;
+        goto exit;
     }
 
-    snprintf(
-        &tmp[0],
-        sizeof(tmp),
-        "%s/ubuntu-base-24.04.2-base-amd64.tar.gz", 
-        imageCache
-    );
+    imageName = __ubuntu_get_base_image_name(base);
+    if (imageName == NULL) {
+        VLOG_ERROR("cvd", "failed to allocate memory for base image name\n");
+        status = -1;
+        goto exit;
+    }
+
+    snprintf(&tmp[0], sizeof(tmp), "%s/%s", imageCache, imageName);
 
     if (!__file_exists(&tmp[0])) {
-        snprintf(
-            &tmp[0],
-            sizeof(tmp),
-            "-P %s https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.2-base-amd64.tar.gz", 
-            imageCache
-        );
-
-        VLOG_TRACE("cvd", "downloading https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.2-base-amd64.tar.gz");
-        status = platform_spawn(
-            "wget", &tmp[0], NULL, &(struct platform_spawn_options) {
-            }
-        );
+        status = __download_base(base, imageCache);
         if (status) {
             VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
-            free(imageCache);
-            return status;
+            goto exit;
         }
     }
 
     snprintf(
         &tmp[0],
         sizeof(tmp),
-        "-xf %s/ubuntu-base-24.04.2-base-amd64.tar.gz -C %s", 
-        imageCache, rootfs
+        "-x --xattrs-include=* -f %s/%s -C %s",
+        imageCache, imageName, rootfs
     );
 
-    VLOG_TRACE("cvd", "unpacking %s/ubuntu-base-24.04.2-base-amd64.tar.gz\n", imageCache);
+    VLOG_TRACE("cvd", "unpacking %s/%s\n", imageCache, imageName);
     status = platform_spawn(
         "tar", &tmp[0], NULL, &(struct platform_spawn_options) {
         }
     );
     if (status) {
         VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
-        return status;
-    }
-
-    status = __fixup_dev(rootfs);
-    if (status) {
-        VLOG_ERROR("cvd", "failed to create base devices\n");
-        return status;
+        goto exit;
     }
 
     status = __fixup_dns(rootfs);
     if (status) {
         VLOG_ERROR("cvd", "failed to fix dns settings\n");
-        return status;
+        goto exit;
     }
 
-    return 0;
+exit:
+    free(imageCache);
+    free(imageName);
+    return status;
 }
 
 #elif CHEF_ON_WINDOWS
@@ -263,8 +234,7 @@ static int __resolve_rootfs(const struct chef_create_parameters* params)
 
     switch (params->type) {
         // Create a new rootfs using debootstrap from the host
-        case CHEF_ROOTFS_TYPE_DEBOOTSTRAP:
-        {
+        case CHEF_ROOTFS_TYPE_DEBOOTSTRAP: {
             status = cvd_rootfs_setup_debootstrap(params->rootfs);
             if (status) {
                 VLOG_ERROR("cvd", "failed to setup debootstrap container\n");
@@ -272,9 +242,8 @@ static int __resolve_rootfs(const struct chef_create_parameters* params)
             }
             return 0;
         }
-        case CHEF_ROOTFS_TYPE_IMAGE:
-        {
-           status = __ensure_base_rootfs(params->rootfs);
+        case CHEF_ROOTFS_TYPE_IMAGE: {
+           status = __ensure_base_rootfs(params->rootfs, params->rootfs_base);
             if (status) {
                 VLOG_ERROR("cvd", "failed to resolve the rootfs image\n");
                 return status;
@@ -282,7 +251,7 @@ static int __resolve_rootfs(const struct chef_create_parameters* params)
             return 0;
         }
 
-        case CHEF_ROOTFS_TYPE_OSBASE:
+        case CHEF_ROOTFS_TYPE_PATH:
             VLOG_WARNING("cvd", "__resolve_rootfs: ROOTFS TYPE NOT IMPLEMENTED\n");
             break;
     }
@@ -362,7 +331,7 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     );
 
     // create the container
-    status = containerv_create(params->rootfs, opts, &cv_container);
+    status = containerv_create(params->id, params->rootfs, opts, &cv_container);
     containerv_options_delete(opts);
     if (status) {
         VLOG_ERROR("cvd", "failed to start the container\n");

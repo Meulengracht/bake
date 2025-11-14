@@ -147,7 +147,6 @@ static int __resolve_sources(struct __image_context* context, struct chef_image*
 
     dlParams.arch = context->arch;
     dlParams.platform = context->platform;
-    dlParams.version = NULL;
 
     // Download chef packages referred
     list_foreach(&image->partitions, i) {
@@ -166,6 +165,7 @@ static int __resolve_sources(struct __image_context* context, struct chef_image*
             dlParams.publisher = pi.publisher;
             dlParams.package = pi.package;
             dlParams.channel = pi.channel;
+            dlParams.revision = 0;
 
             status = chefclient_pack_download(&dlParams, pi.path);
             __package_info_free(&pi);
@@ -192,6 +192,7 @@ static int __resolve_sources(struct __image_context* context, struct chef_image*
                 dlParams.publisher = pi.publisher;
                 dlParams.package = pi.package;
                 dlParams.channel = pi.channel;
+                dlParams.revision = 0;
 
                 status = chefclient_pack_download(&dlParams, pi.path);
                 __package_info_free(&pi);

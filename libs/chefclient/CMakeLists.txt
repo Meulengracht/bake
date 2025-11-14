@@ -1,9 +1,7 @@
 # Project setup
 project (chef-client C)
 
-# The version 2 - https://api.chef.io
-# The version 1 - https://chef-api.azurewebsites.net/api
-option(CHEF_CLIENT_API_URL "Chef client API" "https://api.chef.io")
+option(CHEF_CLIENT_API_URL "Chef client API" "https://chef-api.meulen.io")
 option(CHEF_CLIENT_API_SECURE "Use secure connection for Chef client API" ON)
 
 add_library(chef-client STATIC
@@ -23,6 +21,7 @@ add_library(chef-client STATIC
     find.c
     info.c
     login.c
+    proof.c
     publish.c
     request.c
     settings.c

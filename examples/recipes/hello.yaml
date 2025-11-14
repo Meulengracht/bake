@@ -1,15 +1,18 @@
-project:
-  name: hello-world
-  summary: Test projects
-  description: |
-    Example program for how to build simple applications
-  author: Philip Meulengracht
-  email: the_meulengracht@hotmail.com
-  version: 1.0.0
-  license: MIT
+name: hello-world
+author: Philip Meulengracht
+email: the_meulengracht@hotmail.com
+version: 1.0.0
+license: MIT
+
+# always defaults to the latest stable version of the platform
+# it's built for.
+platforms:
+  - name: linux
+    base: ubuntu:24
 
 recipes:
   - name: hello
+    type: custom
     source:
       type: path
       path: hello-world
@@ -28,6 +31,9 @@ recipes:
 packs:
 - name: hello-world
   type: application
+  summary: Test projects
+  description: |
+    Example program for how to build simple applications
   commands:
   - name: hello
     path: /usr/bin/hello-world

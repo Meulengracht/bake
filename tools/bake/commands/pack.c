@@ -78,9 +78,10 @@ static void __initialize_pack_options(
     options->architecture     = bctx->target_architecture;
 
     options->type             = pack->type;
-    options->summary          = bctx->recipe->project.summary;
-    options->description      = bctx->recipe->project.description;
-    options->icon             = bctx->recipe->project.icon;
+    options->base             = recipe_platform_base(bctx->recipe, bctx->target_platform);
+    options->summary          = pack->summary;
+    options->description      = pack->description;
+    options->icon             = pack->icon;
     options->version          = bctx->recipe->project.version;
     options->license          = bctx->recipe->project.license;
     options->eula             = bctx->recipe->project.eula;

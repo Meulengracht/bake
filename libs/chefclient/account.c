@@ -28,11 +28,83 @@
 
 extern const char* chefclient_api_base_url(void);
 
-struct chef_account_publisher {
+struct chef_publisher {
     const char*                       name;
     const char*                       email;
+    const char*                       public_key;
+    const char*                       signed_key;
     enum chef_account_verified_status verified_status;
 };
+
+struct chef_publisher* chef_publisher_new(void)
+{
+    struct chef_publisher* publisher = (struct chef_publisher*)malloc(sizeof(struct chef_publisher));
+    if (publisher == NULL) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    memset(publisher, 0, sizeof(struct chef_publisher));
+    return publisher;
+}
+
+void chef_publisher_free(struct chef_publisher* publisher)
+{
+    if (publisher == NULL) {
+        errno = EINVAL;
+        return;
+    }
+
+    free((void*)publisher->name);
+    free((void*)publisher->email);
+    free((void*)publisher->public_key);
+    free(publisher);
+}
+
+const char* chef_publisher_name(struct chef_publisher* publisher)
+{
+    if (publisher == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    return publisher->name;
+}
+
+const char* chef_publisher_email(struct chef_publisher* publisher)
+{
+    if (publisher == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    return publisher->email;
+}
+
+const char* chef_publisher_public_key(struct chef_publisher* publisher)
+{
+    if (publisher == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    return publisher->public_key;
+}
+
+const char* chef_publisher_signed_key(struct chef_publisher* publisher)
+{
+    if (publisher == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    return publisher->signed_key;
+}
+
+enum chef_account_verified_status chef_publisher_verified_status(struct chef_publisher* publisher)
+{
+    if (publisher == NULL) {
+        errno = EINVAL;
+        return CHEF_ACCOUNT_VERIFIED_STATUS_UNKNOWN;
+    }
+    return publisher->verified_status;
+}
 
 struct chef_account_apikey {
     const char* name;
@@ -43,12 +115,112 @@ struct chef_account {
     const char*              email;
     enum chef_account_status status;
 
-    struct chef_account_publisher* publishers;
-    size_t                         publisher_count;
+    struct chef_publisher* publishers;
+    size_t                 publisher_count;
 
     struct chef_account_apikey* api_keys;
     size_t                      api_keys_count;
 };
+
+struct chef_account* chef_account_new(void)
+{
+    struct chef_account* account = (struct chef_account*)malloc(sizeof(struct chef_account));
+    if (account == NULL) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    memset(account, 0, sizeof(struct chef_account));
+    return account;
+}
+
+void chef_account_free(struct chef_account* account)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return;
+    }
+
+    free((void*)account->name);
+    free(account);
+}
+
+const char* chef_account_name(struct chef_account* account)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    return account->name;
+}
+
+const char* chef_account_email(struct chef_account* account)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+    return account->email;
+}
+
+enum chef_account_status chef_account_status(struct chef_account* account)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return CHEF_ACCOUNT_STATUS_UNKNOWN;
+    }
+    return account->status;
+}
+
+void chef_account_name_set(struct chef_account* account, const char* name)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return;
+    }
+
+    if (account->name != NULL) {
+        free((void*)account->name);
+    }
+
+    account->name = platform_strdup(name);
+}
+
+int chef_account_publisher_count(struct chef_account* account)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    return (int)account->publisher_count;
+}
+
+struct chef_publisher* chef_account_publisher(struct chef_account* account, int index)
+{
+    if (account == NULL || index < 0 || (size_t)index >= account->publisher_count) {
+        errno = EINVAL;
+        return NULL;
+    }
+    return &account->publishers[index];
+}
+
+int chef_account_apikey_count(struct chef_account* account)
+{
+    if (account == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    return (int)account->api_keys_count;
+}
+
+const char* chef_account_apikey_name(struct chef_account* account, int index)
+{
+    if (account == NULL || index < 0 || (size_t)index >= account->api_keys_count) {
+        errno = EINVAL;
+        return NULL;
+    }
+    return account->api_keys[index].name;
+}
 
 static int __get_account_apikeys_url(char* urlBuffer, size_t bufferSize)
 {
@@ -59,7 +231,17 @@ static int __get_account_apikeys_url(char* urlBuffer, size_t bufferSize)
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __get_account_publisher_url(char* urlBuffer, size_t bufferSize)
+static int __get_account_publisher_url(const char* publisher, char* urlBuffer, size_t bufferSize)
+{
+    int written = snprintf(urlBuffer, bufferSize - 1, 
+        "%s/account/publisher?name=%s",
+        chefclient_api_base_url(),
+        publisher
+    );
+    return written < (bufferSize - 1) ? 0 : -1;
+}
+
+static int __get_account_publishers_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
         "%s/account/publishers",
@@ -89,6 +271,15 @@ static json_t* __serialize_account(struct chef_account* account)
     return json;
 }
 
+static void __parse_publisher(json_t* root, struct chef_publisher* publisher)
+{
+    publisher->name = platform_strdup(json_string_value(json_object_get(root, "name")));
+    publisher->email = platform_strdup(json_string_value(json_object_get(root, "email")));
+    publisher->public_key = platform_strdup(json_string_value(json_object_get(root, "public-key")));
+    publisher->signed_key = platform_strdup(json_string_value(json_object_get(root, "signed-key")));
+    publisher->verified_status = (enum chef_account_verified_status)json_integer_value(json_object_get(root, "status"));
+}
+
 static int __parse_account(const char* response, struct chef_account** accountOut)
 {
     struct chef_account* account;
@@ -104,6 +295,7 @@ static int __parse_account(const char* response, struct chef_account** accountOu
     // allocate memory for the account
     account = chef_account_new();
     if (account == NULL) {
+        json_decref(root);
         return -1;
     }
 
@@ -127,7 +319,7 @@ static int __parse_account(const char* response, struct chef_account** accountOu
     if (member && json_array_size(member) > 0) {
         size_t count = json_array_size(member);
         
-        account->publishers = (struct chef_account_publisher*)calloc(count, sizeof(struct chef_account_publisher));
+        account->publishers = (struct chef_publisher*)calloc(count, sizeof(struct chef_publisher));
         if (account->publishers == NULL) {
             chef_account_free(account);
             json_decref(root);
@@ -137,9 +329,7 @@ static int __parse_account(const char* response, struct chef_account** accountOu
 
         for (size_t i = 0; i < count; i++) {
             json_t* publisher = json_array_get(member, i);
-            account->publishers[i].name = platform_strdup(json_string_value(json_object_get(publisher, "name")));
-            account->publishers[i].name = platform_strdup(json_string_value(json_object_get(publisher, "email")));
-            account->publishers[i].verified_status = (enum chef_account_verified_status)json_integer_value(json_object_get(publisher, "status"));
+            __parse_publisher(publisher, &account->publishers[i]);
         }
     }
 
@@ -167,7 +357,7 @@ static int __parse_account(const char* response, struct chef_account** accountOu
     return 0;
 }
 
-int __get_account(struct chef_account** accountOut)
+static int __get_account(struct chef_account** accountOut)
 {
     struct chef_request* request;
     CURLcode             code;
@@ -307,6 +497,83 @@ int chef_account_update(struct chef_account* account)
     return status;
 }
 
+static int __parse_publisher_response(const char* response, struct chef_publisher** publisherOut)
+{
+    struct chef_publisher* publisher;
+    json_error_t           error;
+    json_t*                root;
+    json_t*                member;
+
+    root = json_loads(response, 0, &error);
+    if (!root) {
+        return -1;
+    }
+
+    publisher = chef_publisher_new();
+    if (publisher == NULL) {
+        json_decref(root);
+        return -1;
+    }
+
+    __parse_publisher(root, publisher);
+    *publisherOut = publisher;
+
+    json_decref(root);
+    return 0;
+}
+
+int chef_account_publisher_get(const char* publisher, struct chef_publisher** publisherOut)
+{
+    struct chef_request* request;
+    CURLcode             code;
+    char                 buffer[256];
+    int                  status = -1;
+    long                 httpCode;
+
+    request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
+    if (!request) {
+        VLOG_ERROR("chef-client", "chef_account_publisher_get: failed to create request\n");
+        return -1;
+    }
+
+    // set the url
+    if (__get_account_publisher_url(publisher, buffer, sizeof(buffer)) != 0) {
+        VLOG_ERROR("chef-client", "chef_account_publisher_get: buffer too small for account link\n");
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "chef_account_publisher_get: failed to set url [%s]\n", request->error);
+        goto cleanup;
+    }
+
+    code = chef_request_execute(request);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "chef_account_publisher_get: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
+    }
+
+    curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode != 200) {
+        if (httpCode == 404) {
+            status = -ENOENT;
+        } else if (httpCode == 401) {
+            status = -EACCES;
+        } else {
+            VLOG_ERROR("chef-client", "chef_account_publisher_get: http error %ld\n", httpCode);
+            status = -EIO;
+        }
+        goto cleanup;
+    }
+
+    status = __parse_publisher_response(request->response, publisherOut);
+
+cleanup:
+    chef_request_delete(request);
+    return status;
+}
+
+
 static int __parse_publisher_register_response(const char* response)
 {
     json_error_t error;
@@ -346,7 +613,7 @@ int chef_account_publisher_register(const char* name, const char* email)
     }
 
     // set the url
-    if (__get_account_publisher_url(buffer, sizeof(buffer)) != 0) {
+    if (__get_account_publishers_url(buffer, sizeof(buffer)) != 0) {
         VLOG_ERROR("chef-client", "chef_account_publisher_register: buffer too small for account link\n");
         goto cleanup;
     }
@@ -555,114 +822,4 @@ int chef_account_apikey_delete(const char* name)
 cleanup:
     chef_request_delete(request);
     return status;
-}
-
-struct chef_account* chef_account_new(void)
-{
-    struct chef_account* account = (struct chef_account*)malloc(sizeof(struct chef_account));
-    if (account == NULL) {
-        errno = ENOMEM;
-        return NULL;
-    }
-
-    memset(account, 0, sizeof(struct chef_account));
-    return account;
-}
-
-void chef_account_free(struct chef_account* account)
-{
-    if (account == NULL) {
-        errno = EINVAL;
-        return;
-    }
-
-    free((void*)account->name);
-    free(account);
-}
-
-
-const char* chef_account_get_name(struct chef_account* account)
-{
-    if (account == NULL) {
-        errno = EINVAL;
-        return NULL;
-    }
-    return account->name;
-}
-
-const char* chef_account_get_email(struct chef_account* account)
-{
-    if (account == NULL) {
-        errno = EINVAL;
-        return NULL;
-    }
-    return account->email;
-}
-
-enum chef_account_status chef_account_get_status(struct chef_account* account)
-{
-    if (account == NULL) {
-        errno = EINVAL;
-        return CHEF_ACCOUNT_STATUS_UNKNOWN;
-    }
-    return account->status;
-}
-
-void chef_account_set_name(struct chef_account* account, const char* name)
-{
-    if (account == NULL) {
-        errno = EINVAL;
-        return;
-    }
-
-    if (account->name != NULL) {
-        free((void*)account->name);
-    }
-
-    account->name = platform_strdup(name);
-}
-
-int chef_account_get_publisher_count(struct chef_account* account)
-{
-    if (account == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    return (int)account->publisher_count;
-}
-
-const char* chef_account_get_publisher_name(struct chef_account* account, int index)
-{
-    if (account == NULL || index < 0 || (size_t)index >= account->publisher_count) {
-        errno = EINVAL;
-        return NULL;
-    }
-    return account->publishers[index].name;
-}
-
-enum chef_account_verified_status chef_account_get_publisher_verified_status(struct chef_account* account, int index)
-{
-    if (account == NULL || index < 0 || (size_t)index >= account->publisher_count) {
-        errno = EINVAL;
-        return CHEF_ACCOUNT_VERIFIED_STATUS_UNKNOWN;
-    }
-    return account->publishers[index].verified_status;
-}
-
-int chef_account_get_apikey_count(struct chef_account* account)
-{
-    if (account == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    return (int)account->api_keys_count;
-}
-
-const char* chef_account_get_apikey_name(struct chef_account* account, int index)
-{
-    if (account == NULL || index < 0 || (size_t)index >= account->api_keys_count) {
-        errno = EINVAL;
-        return NULL;
-    }
-    return account->api_keys[index].name;
 }

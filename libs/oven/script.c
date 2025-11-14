@@ -55,6 +55,18 @@ const struct luaL_Reg g_subsystem_namespace[] = {
     { NULL, NULL },
 };
 
+int __paths_install(lua_State* vm) {
+    lua_pushstring(vm, __oven_instance()->paths.install_root);
+    return 1;
+}
+
+const struct luaL_Reg g_paths_namespace[] = {
+    { "install",   __paths_install },
+
+    // EOT
+    { NULL, NULL },
+};
+
 int __build_shell(lua_State* vm) {
     const char* path = luaL_checkstring(vm, 1);
     const char* args = luaL_checkstring(vm, 2);
@@ -88,6 +100,7 @@ int __build_shell(lua_State* vm) {
     // handle status code
     if (status) {
         VLOG_ERROR("build.shell", "failed to execute %s: %i\n", path, status);
+        VLOG_ERROR("build.shell", "cwd=%s, args=%s\n", cwd, args);
         return lua_error(vm);
     }
     return 0;
@@ -115,7 +128,8 @@ static const char* __cwd_from_enum(enum oven_script_root_dir root_dir)
 
 static lua_State* __create_vm(struct oven_script_options* options)
 {
-    lua_State* vm = luaL_newstate();
+    lua_State*  vm = luaL_newstate();
+    const char* cwd;
     if (vm == NULL) {
         return NULL;
     }
@@ -124,18 +138,33 @@ static lua_State* __create_vm(struct oven_script_options* options)
     // in the future
     luaL_openlibs(vm);
 
-    // push global script variables
-    lua_pushstring(vm, __cwd_from_enum(options->root_dir));
+    // push global script variables (NULL-safe)
+    cwd = __cwd_from_enum(options->root_dir);
+    if (cwd == NULL) {
+        // This should never happen, so exit and cleanup
+        lua_close(vm);
+        return NULL;
+    }
+
+    lua_pushstring(vm, cwd);
     lua_setglobal(vm, "SCRIPT_CWD");
 
-    // setup the build library
+    // Create the `build` table once, leave it on the stack while attaching
+    // sub-libraries, then set it as a global. This avoids repeated
+    // global lookups and simplifies stack handling.
     luaL_newlib(vm, g_build_namespace);
-    lua_setglobal(vm, "build");
 
-    // setup the subsystem library
-    lua_getglobal(vm, "build");
+    // attach subsystem: stack = [build]
+    // create subsystem table (push), set as field on build (consumes value)
     luaL_newlib(vm, g_subsystem_namespace);
-    lua_setfield(vm, -2, "subsystem");
+    lua_setfield(vm, -2, "subsystem"); // sets build.subsystem, pops subsystem
+
+    // attach paths: stack = [build]
+    luaL_newlib(vm, g_paths_namespace);
+    lua_setfield(vm, -2, "paths"); // sets build.paths, pops paths
+
+    // finally set global 'build' and pop it from the stack
+    lua_setglobal(vm, "build");
 
     return vm;
 }

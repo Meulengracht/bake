@@ -17,38 +17,21 @@
  */
 
 #include <chef/containerv.h>
-#include <errno.h>
-#include <gracht/client.h>
 #include <chef/platform.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-#include "chef_served_service_client.h"
-
-extern int __chef_client_initialize(gracht_client_t** clientOut);
-
-static char** __rebuild_args(int argc, char** argv, const char* arg0, char* additionalArgs)
+static char** __rebuild_args(int argc, char** argv, const char* arg0, int argIndex)
 {
     char** result;
-    char** additional = NULL;
-    int    count = argc;
+    int    count = (argc - argIndex);
     int    i;
-
-    // also count the additional args
-    if (additionalArgs != NULL) {
-        int additionalCount;
-        additional = strargv(additionalArgs, NULL, &additionalCount);
-        if (additional == NULL) {
-            return NULL;
-        }
-        count += additionalCount;
-    }
 
     // Must be zero terminated
     result = calloc(count + 1, sizeof(char*));
     if (result == NULL) {
-        free(additional);
         return NULL;
     }
 
@@ -60,86 +43,87 @@ static char** __rebuild_args(int argc, char** argv, const char* arg0, char* addi
     }
 
     // transfer provided argv array (maybe including 0)
-    for (; i < argc; i++) {
-        result[i] = argv[i];
-    }
-
-    // set the additional ones
-    if (additional != NULL) {
-        for (int j = 0; additional[j] != NULL; j++) {
-            result[i++] = additional[j];
-        }
-        strargv_free(additional);
+    for (int j = argIndex; j < argc; j++, i++) {
+        result[i] = argv[j];
     }
     return result;
 }
 
-static int __spawn_command(struct chef_served_command* command, int argc, char** argv, char** envp)
+static int __spawn_command(int argc, char** argv, char** envp, const char* containerName, const char* commandPath, const char* workingDirectory, int argIndex)
 {
     char** rebuildArgv;
     int    status;
 
-    if (command->path == NULL || strlen(command->path) == 0) {
+    if (commandPath == NULL || strlen(commandPath) == 0) {
         fprintf(stderr, "serve-exec: cannot be invoked directly\n");
         return -1;
     }
 
-    rebuildArgv = __rebuild_args(argc, argv, NULL, command->arguments);
+    rebuildArgv = __rebuild_args(argc, argv, NULL, argIndex);
     if (rebuildArgv == NULL) {
         fprintf(stderr, "serve-exec: failed to build command arguments\n");
         return -1;
     }
 
-    status = containerv_join(command->container_control_path);
+    status = containerv_join(containerName);
     if (status) {
         fprintf(stderr, "serve-exec: failed to prepare environment\n");
         return status;
     }
 
 #if __linux__
-    status = chdir(command->data_path);
+    status = chdir(workingDirectory);
     if (status) {
-        fprintf(stderr, "serve-exec: failed to change directory to %s\n", command->data_path);
+        fprintf(stderr, "serve-exec: failed to change directory to %s\n", workingDirectory);
         return status;
     }
 
-    status = execve(command->path, (char* const*)rebuildArgv, (char* const*)envp);
+    status = execve(commandPath, (char* const*)rebuildArgv, (char* const*)envp);
     if (status) {
-        fprintf(stderr, "serve-exec: failed to execute %s\n", command->path);
+        fprintf(stderr, "serve-exec: failed to execute %s\n", commandPath);
     }
 #endif
     free(rebuildArgv);
     return status;
 }
 
+// invoked as <serve-exec-path> --container <container-name> --path <path-inside-container> --wdir <working-directory> <arguments-for-internal-command>
 int main(int argc, char** argv, char** envp)
 {
-    struct gracht_message_context context;
-    struct chef_served_command    command;
-    gracht_client_t*              client;
-    int                           status;
+    const char* containerName = NULL;
+    const char* commandPath   = NULL;
+    const char* workingDirectory = NULL;
+    int         argIndex      = 1;
+    int         status;
+
+    while (argIndex < argc) {
+        if (strcmp(argv[argIndex], "--container") == 0 && argIndex + 1 < argc) {
+            containerName = argv[argIndex + 1];
+            argIndex += 2;
+        } else if (strcmp(argv[argIndex], "--path") == 0 && argIndex + 1 < argc) {
+            commandPath = argv[argIndex + 1];
+            argIndex += 2;
+        } else if (strcmp(argv[argIndex], "--wdir") == 0 && argIndex + 1 < argc) {
+            workingDirectory = argv[argIndex + 1];
+            argIndex += 2;
+        } else {
+            break;
+        }
+    }
+
+    // now assume the rest are for the command
+    if (containerName == NULL || commandPath == NULL || workingDirectory == NULL) {
+        fprintf(stderr, "serve-exec: missing required arguments --container, --path, and --wdir\n");
+        return -1;
+    }
 
     // what we essentially do is redirect everything based on the application
     // path passed in argv[0]. This will tell us exactly which application is currently
     // executing.
-    chef_served_command_init(&command);
 
     // So we use argv[0] to retrieve command information, together with application information
     // and then setup the environment for the command, and pass argv[1+] to it
-    status = __chef_client_initialize(&client);
-    if (status != 0) {
-        printf("failed to initialize client: %s\n", strerror(status));
-        return status;
-    }
 
-    chef_served_get_command(client, &context, argv[0]);
-    gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
-    chef_served_get_command_result(client, &context, &command);
-
-    // close out the client before spawning command
-    gracht_client_shutdown(client);
-
-    status = __spawn_command(&command, argc, argv, envp);
-    chef_served_command_destroy(&command);
+    status = __spawn_command(argc, argv, envp, containerName, commandPath, workingDirectory, argIndex);
     return status;
 }

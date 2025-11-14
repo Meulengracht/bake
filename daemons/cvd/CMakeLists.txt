@@ -24,7 +24,7 @@ endif()
 add_executable(cvd ${SRCS})
 add_dependencies(cvd service_server)
 target_include_directories(cvd PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
-target_link_libraries(cvd PRIVATE containerv jansson vlog libdirconf platform gracht)
+target_link_libraries(cvd PRIVATE containerv jansson vlog dirconf platform gracht)
 
 install(
     TARGETS cvd

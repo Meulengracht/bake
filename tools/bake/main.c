@@ -31,7 +31,7 @@
 extern int init_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int run_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options);
-extern int fridge_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int store_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int remote_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 
 struct command_handler {
@@ -43,7 +43,7 @@ static struct command_handler g_commands[] = {
     { "init",   init_main },
     { "build",  run_main },
     { "clean",  clean_main },
-    { "fridge", fridge_main },
+    { "store",  store_main },
     { "remote", remote_main }
 };
 
@@ -66,7 +66,7 @@ static void __print_help(void)
     printf("              used for building recipes remotely for any given configured\n");
     printf("              build server, parallel builds can be initiated for multiple\n");
     printf("              architectures by using the --archs switch\n");
-    printf("  fridge {list, update, remove, clean}\n");
+    printf("  store {list, update, remove, clean}\n");
     printf("              manage ingredients used for building\n");
     printf("\n");
     printf("Options:\n");
@@ -244,8 +244,8 @@ int main(int argc, char** argv, char** envp)
         if (command == NULL) {
             // was a file passed? Then it was the recipe, and we assume
             // that the run command should be run.
-            if (__file_exists(argv[1]) == 0) {
-                command = &g_commands[2];
+            if (__file_exists(argv[1])) {
+                command = &g_commands[1];
                 options.recipe_path = argv[1];
             } else {
                 fprintf(stderr, "bake: invalid command %s\n", argv[1]);

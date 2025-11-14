@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14.3)
-project(chef VERSION "1.4.3")
+project(chef VERSION "1.4.4")
 
 INCLUDE(CheckCXXSourceCompiles)
 
@@ -20,6 +20,7 @@ endif()
 # Required libraries
 find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 include_directories(${CMAKE_BINARY_DIR})
 

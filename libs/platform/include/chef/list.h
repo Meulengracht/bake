@@ -39,6 +39,8 @@ struct list_item_string {
 
 #define list_foreach(list, item) \
     for ((item) = (list)->head; (item) != NULL; (item) = (item)->next)
+#define list_foreach_safe(list, item, tmp) \
+    for ((item) = (list)->head; (item) != NULL && ((tmp) = (item)->next, 1); (item) = (tmp))
 
 static inline void list_init(struct list* list)
 {

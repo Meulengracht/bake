@@ -16,7 +16,7 @@ The best way to get started is to install the latest version of Chef using the [
 
 Features that is expected in the upcoming 1.5 release
 
-- [ ] Served initial feature completion
+- [x] Served initial feature completion
 - [x] Remote management commands
   * `bake remote list --arch=...`
   * `bake remote info [agent]`
