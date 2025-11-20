@@ -101,7 +101,9 @@ static const char* g_transactionsTableSQL =
     "name TEXT,"
     "description TEXT,"
     "wait_type INTEGER DEFAULT 0,"
-    "wait_data INTEGER DEFAULT 0"
+    "wait_data INTEGER DEFAULT 0,"
+    "created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),"
+    "completed_at INTEGER DEFAULT NULL"
     ");";
 
 static const char* g_transactionsStateTableSQL = 
@@ -140,7 +142,8 @@ enum deferred_operation_type {
     DEFERRED_OP_ADD_TRANSACTION,
     DEFERRED_OP_UPDATE_TRANSACTION,
     DEFERRED_OP_ADD_TRANSACTION_STATE,
-    DEFERRED_OP_UPDATE_TRANSACTION_STATE
+    DEFERRED_OP_UPDATE_TRANSACTION_STATE,
+    DEFERRED_OP_COMPLETE_TRANSACTION
 };
 
 // Deferred operation entry
@@ -167,6 +170,9 @@ struct deferred_operation {
         struct {
             struct state_transaction* transaction;
         } update_tx_state;
+        struct {
+            unsigned int transaction_id;
+        } complete_tx;
     } data;
     struct deferred_operation* next;
 };
@@ -736,7 +742,7 @@ static int __load_transaction_states_from_db(struct __state* state)
 static int __load_transactions_from_db(struct __state* state)
 {
     const char* query = 
-        "SELECT id, type, state, flags, name, description, wait_type, wait_data "
+        "SELECT id, type, state, flags, name, description, wait_type, wait_data, created_at, completed_at "
         "FROM transactions "
         "ORDER BY id";
 
@@ -781,6 +787,8 @@ static int __load_transactions_from_db(struct __state* state)
         const char* description = (const char*)sqlite3_column_text(stmt, 5);
         int waitType = sqlite3_column_int(stmt, 6);
         unsigned int waitData = (unsigned int)sqlite3_column_int(stmt, 7);
+        time_t createdAt = (time_t)sqlite3_column_int64(stmt, 8);
+        time_t completedAt = sqlite3_column_type(stmt, 9) == SQLITE_NULL ? 0 : (time_t)sqlite3_column_int64(stmt, 9);
 
         served_transaction_construct(&state->transactions[i++], &(struct served_transaction_options) {
             .id = id,
@@ -795,6 +803,10 @@ static int __load_transactions_from_db(struct __state* state)
                 }
             }
         });
+        
+        // Set timestamps after construction
+        state->transactions[i-1].created_at = createdAt;
+        state->transactions[i-1].completed_at = completedAt;
     }
 
     sqlite3_finalize(stmt);
@@ -1105,6 +1117,29 @@ static int __execute_update_tx_state_op(struct __state* state, struct state_tran
     return 0;
 }
 
+static int __execute_complete_tx_op(struct __state* state, unsigned int transaction_id)
+{
+    const char* complete_tx_query = "UPDATE transactions SET completed_at = strftime('%s', 'now') WHERE id = ?";
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, complete_tx_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__execute_complete_tx_op: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    sqlite3_bind_int(stmt, 1, transaction_id);
+    status = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "__execute_complete_tx_op: failed to mark transaction complete: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    VLOG_DEBUG("served", "__execute_complete_tx_op: marked transaction %u as completed\n", transaction_id);
+    return 0;
+}
+
 static int __execute_add_tx_state_op(struct __state* state, unsigned int transactionID, struct state_transaction* transaction)
 {
     const char* insertTxStateSQL = 
@@ -1185,6 +1220,10 @@ static int __execute_deferred_operations(struct __state* state)
 
             case DEFERRED_OP_UPDATE_TRANSACTION_STATE:
                 result = __execute_update_tx_state_op(state, op->data.update_tx_state.transaction);
+                break;
+
+            case DEFERRED_OP_COMPLETE_TRANSACTION:
+                result = __execute_complete_tx_op(state, op->data.complete_tx.transaction_id);
                 break;
         }
         
@@ -1612,4 +1651,79 @@ int served_state_get_transaction_states(struct state_transaction** transactionsO
     *transactionsOut = g_state->transaction_states;
     *transactionsCount = g_state->transaction_state_count;
     return 0;
+}
+
+int served_state_transaction_complete(unsigned int id)
+{
+    struct deferred_operation* op;
+
+    if (g_state == NULL) {
+        VLOG_ERROR("served", "served_state_transaction_complete: state not initialized\n");
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction_complete: state lock not held\n");
+        return -1;
+    }
+
+    op = __deferred_operation_new(DEFERRED_OP_COMPLETE_TRANSACTION);
+    if (op == NULL) {
+        return -1;
+    }
+
+    op->data.complete_tx.transaction_id = id;
+    __defer_operation(g_state, op);
+    
+    VLOG_DEBUG("served", "served_state_transaction_complete: deferred completion of transaction %u\n", id);
+    return 0;
+}
+
+int served_state_transaction_cleanup(void)
+{
+    const char* cleanup_query =
+        "DELETE FROM transactions WHERE id IN ("
+        "  SELECT id FROM ("
+        "    SELECT id, completed_at, "
+        "           ROW_NUMBER() OVER (ORDER BY completed_at DESC) as rn "
+        "    FROM transactions "
+        "    WHERE completed_at IS NOT NULL "
+        "    ORDER BY completed_at DESC"
+        "  ) "
+        "  WHERE rn > 10 AND completed_at < strftime('%s', 'now', '-7 days')"
+        ")";
+    
+    sqlite3_stmt* stmt;
+    int status;
+    int changes;
+
+    if (g_state == NULL) {
+        VLOG_ERROR("served", "served_state_transaction_cleanup: state not initialized\n");
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction_cleanup: state lock not held\n");
+        return -1;
+    }
+
+    status = sqlite3_prepare_v2(g_state->database, cleanup_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "served_state_transaction_cleanup: failed to prepare statement: %s\n", 
+                   sqlite3_errmsg(g_state->database));
+        return -1;
+    }
+
+    status = sqlite3_step(stmt);
+    changes = sqlite3_changes(g_state->database);
+    sqlite3_finalize(stmt);
+
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "served_state_transaction_cleanup: failed to cleanup transactions: %s\n", 
+                   sqlite3_errmsg(g_state->database));
+        return -1;
+    }
+
+    VLOG_DEBUG("served", "served_state_transaction_cleanup: deleted %d old transactions\n", changes);
+    return changes;
 }

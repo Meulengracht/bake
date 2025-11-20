@@ -42,14 +42,8 @@ static struct list g_waiting_transactions = { 0 };
 #define RUNNER_TICK_S  0
 #define RUNNER_TICK_MS 500
 
-static struct served_sm_state_set* __state_set_from_type(enum served_transaction_type type)
+static void __state_set_from_type(struct served_sm_state_set* set, enum served_transaction_type type)
 {
-    struct served_sm_state_set* set = calloc(1, sizeof(struct served_sm_state_set));
-    if (set == NULL) {
-        VLOG_ERROR("served", "__state_set_from_type: failed to allocate state set\n");
-        return NULL;
-    }
-
     // Initialize the state set based on the transaction type
     switch (type) {
     case SERVED_TRANSACTION_TYPE_INSTALL:
@@ -201,7 +195,7 @@ void served_runner_execute(void)
     
     // First, check if any waiting transactions can resume
     __process_waiting_transactions();
-    
+
     VLOG_DEBUG("served", "served_runner_execute: processing %d active, %d waiting transactions\n",
                g_active_transactions.count, g_waiting_transactions.count);
     
@@ -241,7 +235,21 @@ void served_runner_execute(void)
         if (result == SM_ACTION_DONE || result == SM_ACTION_ABORT) {
             VLOG_DEBUG("served", "served_runner_execute: transaction %u %s\n", 
                        txn->id, result == SM_ACTION_DONE ? "completed" : "aborted");
-            // TODO: Remove from state and runner list
+            
+            // Mark transaction as completed and perform cleanup
+            if (txn->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
+                served_state_lock();
+                served_state_transaction_complete(txn->id);
+                served_state_unlock();
+            }
+            
+            // Remove from active queue
+            list_remove(&g_active_transactions, &txn->list_header);
+            
+            free((void*)txn->name);
+            free((void*)txn->description);
+            free(txn);
+            continue;
         }
     }
     mtx_unlock(&g_queue_lock);
@@ -284,15 +292,25 @@ unsigned int served_transaction_create(struct served_transaction_options* option
 
 void served_transaction_construct(struct served_transaction* transaction, struct served_transaction_options* options)
 {
+    struct served_sm_state_set stateSet;
+    struct served_sm_state_set* stateSetPtr;
+
     transaction->id = options->id;
     transaction->name = options->name ? platform_strdup(options->name) : NULL;
     transaction->description = options->description ? platform_strdup(options->description) : NULL;
     transaction->type = options->type;
     transaction->wait = options->wait;
 
+    if (options->type == SERVED_TRANSACTION_TYPE_EPHEMERAL) {
+        stateSetPtr = options->stateSet;
+    } else {
+        __state_set_from_type(&stateSet, options->type);
+        stateSetPtr = &stateSet;
+    }
+
     served_sm_init(
         &transaction->sm,
-        options->type == SERVED_TRANSACTION_TYPE_EPHEMERAL ? options->stateSet : __state_set_from_type(options->type),
+        stateSetPtr,
         options->initialState,
         transaction
     );
@@ -327,10 +345,17 @@ static int __runner_thread_main(void* arg)
     (void)arg;
     
     VLOG_DEBUG("served", "__runner_thread_main: runner thread started\n");
-    
+
+    status = served_state_transaction_cleanup();
+    if (status) {
+        VLOG_ERROR("served", "__runner_thread_main: failed to cleanup old transactions\n");
+        return -1;
+    }
+
     status = __reconstruct_transactions_from_db();
     if (status) {
         VLOG_ERROR("served", "__runner_thread_main: failed to reconstruct transactions from database\n");
+        return -1;
     }
 
     mtx_lock(&g_runner_lock);

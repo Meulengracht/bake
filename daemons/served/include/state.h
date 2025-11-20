@@ -246,4 +246,24 @@ extern int served_state_transaction_state_update(struct state_transaction* state
  */
 extern int served_state_get_transaction_states(struct state_transaction** transactionsOut, int* transactionsCount);
 
+/**
+ * @brief Marks a transaction as completed with the current timestamp.
+ * 
+ * The operation is deferred until served_state_unlock() is called.
+ * 
+ * @param id The transaction ID to mark as completed
+ * @return int 0 on success, -1 on failure
+ */
+extern int served_state_transaction_complete(unsigned int id);
+
+/**
+ * @brief Cleans up old transactions based on retention policy.
+ * 
+ * Keeps a minimum of 10 transactions. For transactions beyond that,
+ * removes those completed more than 1 week ago.
+ * 
+ * @return int Number of transactions deleted, or -1 on failure
+ */
+extern int served_state_transaction_cleanup(void);
+
 #endif //!__SERVED_STATE_H__

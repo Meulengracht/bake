@@ -20,6 +20,7 @@
 #define __SERVED_TRANSACTION_H__
 
 #include <chef/list.h>
+#include <time.h>
 #include "sm.h"
 
 enum served_transaction_type {
@@ -57,6 +58,8 @@ struct served_transaction {
     const char*                    description;
     enum served_transaction_type   type;
     struct served_transaction_wait wait;
+    time_t                         created_at;
+    time_t                         completed_at;
 };
 
 struct served_transaction_options {
