@@ -17,10 +17,50 @@
  */
 
 #include <chef/platform.h>
+#include <gracht/server.h>
 #include <transaction/states/verify.h>
+#include <transaction/states/types.h>
 #include <transaction/transaction.h>
 #include <state.h>
 #include <utils.h>
+#include <vlog.h>
+
+// Protocol headers for event emission
+#include "chef_served_service_server.h"
+
+static void __emit_verify_progress(
+    struct served_transaction* transaction,
+    unsigned long long bytes_current,
+    unsigned long long bytes_total)
+{
+    unsigned int percentage;
+    gracht_server_t* server;
+    
+    if (bytes_total == 0) {
+        return;
+    }
+    
+    percentage = (unsigned int)((bytes_current * 100) / bytes_total);
+    
+    transaction->io_progress.bytes_current = bytes_current;
+    transaction->io_progress.bytes_total = bytes_total;
+    
+    struct chef_transaction_io_progress eventInfo = {
+        .id = transaction->id,
+        .state = CHEF_TRANSACTION_STATE_VERIFYING,
+        .bytes_current = bytes_current,
+        .bytes_total = bytes_total,
+        .percentage = percentage
+    };
+    
+    server = served_gracht_server();
+    if (server) {
+        chef_served_event_transaction_io_progress_all(server, &eventInfo);
+    }
+    
+    VLOG_DEBUG("served", "Verify progress: %llu/%llu (%u%%)\n",
+               bytes_current, bytes_total, percentage);
+}
 
 enum sm_action_result served_handle_state_verify(void* context)
 {
@@ -31,6 +71,11 @@ enum sm_action_result served_handle_state_verify(void* context)
 
     const char* name;
     int revision;
+
+    // Reset progress tracking
+    transaction->io_progress.bytes_current = 0;
+    transaction->io_progress.bytes_total = 0;
+    transaction->io_progress.last_reported_percentage = 0;
 
     served_state_lock();
     state = served_state_transaction(transaction->id);
@@ -50,7 +95,15 @@ enum sm_action_result served_handle_state_verify(void* context)
         return SM_ACTION_CONTINUE;
     }
 
+    // Emit progress events (start and end for now)
+    __emit_verify_progress(transaction, 0, 100);
+    
     status = utils_verify_package(names[0], names[1], revision);
+    
+    if (status == 0) {
+        __emit_verify_progress(transaction, 100, 100);
+    }
+    
     strsplit_free(names);
     if (status) {
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);

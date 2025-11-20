@@ -60,6 +60,13 @@ struct served_transaction {
     struct served_transaction_wait wait;
     time_t                         created_at;
     time_t                         completed_at;
+    
+    // I/O progress tracking
+    struct {
+        unsigned long long bytes_current;
+        unsigned long long bytes_total;
+        unsigned int       last_reported_percentage;
+    } io_progress;
 };
 
 struct served_transaction_options {

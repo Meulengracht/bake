@@ -17,14 +17,21 @@
  */
 
 #include <chef/platform.h>
+#include <gracht/server.h>
 #include <stdlib.h>
 #include <state.h>
+#include <stdio.h>
 #include <threads.h>
 #include <time.h>
+#include <utils.h>
 #include <vlog.h>
 
 #include <transaction/transaction.h>
 #include <transaction/sets.h>
+#include <transaction/states/types.h>
+
+// Protocol headers for event emission
+#include "chef_served_service_server.h"
 
 // Runner thread state
 static thrd_t g_runner_thread;
@@ -41,6 +48,110 @@ static struct list g_waiting_transactions = { 0 };
 // Runner tick rate (milliseconds between execute cycles)
 #define RUNNER_TICK_S  0
 #define RUNNER_TICK_MS 500
+
+// Map internal sm_state_t to protocol transaction_state enum
+static enum chef_transaction_state __map_state_to_protocol(sm_state_t state)
+{
+    switch (state) {
+    case SERVED_TX_STATE_PRECHECK:
+    case SERVED_TX_STATE_PRECHECK_WAIT:
+        return CHEF_TRANSACTION_STATE_PRECHECK;
+    case SERVED_TX_STATE_DOWNLOAD:
+    case SERVED_TX_STATE_DOWNLOAD_RETRY:
+        return CHEF_TRANSACTION_STATE_DOWNLOADING;
+    case SERVED_TX_STATE_VERIFY:
+        return CHEF_TRANSACTION_STATE_VERIFYING;
+    case SERVED_TX_STATE_DEPENDENCIES:
+    case SERVED_TX_STATE_DEPENDENCIES_WAIT:
+        return CHEF_TRANSACTION_STATE_RESOLVING_DEPENDENCIES;
+    case SERVED_TX_STATE_INSTALL:
+        return CHEF_TRANSACTION_STATE_INSTALLING;
+    case SERVED_TX_STATE_MOUNT:
+        return CHEF_TRANSACTION_STATE_MOUNTING;
+    case SERVED_TX_STATE_LOAD:
+        return CHEF_TRANSACTION_STATE_LOADING;
+    case SERVED_TX_STATE_START_SERVICES:
+        return CHEF_TRANSACTION_STATE_STARTING_SERVICES;
+    case SERVED_TX_STATE_GENERATE_WRAPPERS:
+        return CHEF_TRANSACTION_STATE_CONFIGURING;
+    case SERVED_TX_STATE_REMOVE_WRAPPERS:
+        return CHEF_TRANSACTION_STATE_CONFIGURING;
+    case SERVED_TX_STATE_STOP_SERVICES:
+        return CHEF_TRANSACTION_STATE_STOPPING_SERVICES;
+    case SERVED_TX_STATE_UNLOAD:
+        return CHEF_TRANSACTION_STATE_UNLOADING;
+    case SERVED_TX_STATE_UNMOUNT:
+        return CHEF_TRANSACTION_STATE_UNMOUNTING;
+    case SERVED_TX_STATE_UNINSTALL:
+        return CHEF_TRANSACTION_STATE_UNINSTALLING;
+    case SERVED_TX_STATE_UPDATE:
+        return CHEF_TRANSACTION_STATE_UPDATING;
+    case SERVED_TX_STATE_COMPLETED:
+        return CHEF_TRANSACTION_STATE_COMPLETED;
+    case SERVED_TX_STATE_ERROR:
+        return CHEF_TRANSACTION_STATE_FAILED;
+    case SERVED_TX_STATE_CANCELLED:
+        return CHEF_TRANSACTION_STATE_CANCELLED;
+    default:
+        return CHEF_TRANSACTION_STATE_QUEUED;
+    }
+}
+
+// Get human-readable state name
+static const char* __get_state_name(enum chef_transaction_state state)
+{
+    switch (state) {
+    case CHEF_TRANSACTION_STATE_QUEUED: return "Queued";
+    case CHEF_TRANSACTION_STATE_PRECHECK: return "Pre-check";
+    case CHEF_TRANSACTION_STATE_DOWNLOADING: return "Downloading";
+    case CHEF_TRANSACTION_STATE_VERIFYING: return "Verifying";
+    case CHEF_TRANSACTION_STATE_RESOLVING_DEPENDENCIES: return "Resolving dependencies";
+    case CHEF_TRANSACTION_STATE_INSTALLING: return "Installing";
+    case CHEF_TRANSACTION_STATE_MOUNTING: return "Mounting";
+    case CHEF_TRANSACTION_STATE_LOADING: return "Loading";
+    case CHEF_TRANSACTION_STATE_STARTING_SERVICES: return "Starting services";
+    case CHEF_TRANSACTION_STATE_CONFIGURING: return "Configuring";
+    case CHEF_TRANSACTION_STATE_STOPPING_SERVICES: return "Stopping services";
+    case CHEF_TRANSACTION_STATE_UNLOADING: return "Unloading";
+    case CHEF_TRANSACTION_STATE_UNMOUNTING: return "Unmounting";
+    case CHEF_TRANSACTION_STATE_UNINSTALLING: return "Uninstalling";
+    case CHEF_TRANSACTION_STATE_UPDATING: return "Updating";
+    case CHEF_TRANSACTION_STATE_COMPLETED: return "Completed";
+    case CHEF_TRANSACTION_STATE_FAILED: return "Failed";
+    case CHEF_TRANSACTION_STATE_CANCELLED: return "Cancelled";
+    default: return "Unknown";
+    }
+}
+
+// Determine transaction result based on final state
+static enum chef_transaction_result __determine_result(sm_state_t finalState)
+{
+    switch (finalState) {
+    case SERVED_TX_STATE_COMPLETED:
+        return CHEF_TRANSACTION_RESULT_SUCCESS;
+    case SERVED_TX_STATE_CANCELLED:
+        return CHEF_TRANSACTION_RESULT_ERROR_CANCELLED;
+    case SERVED_TX_STATE_ERROR:
+        // TODO: We should track the specific error that occurred
+        // For now, return a generic error
+        return CHEF_TRANSACTION_RESULT_ERROR_UNKNOWN;
+    default:
+        return CHEF_TRANSACTION_RESULT_ERROR_UNKNOWN;
+    }
+}
+
+// Calculate step number (current position in state sequence)
+static unsigned int __calculate_step(struct served_transaction* txn)
+{
+    sm_state_t currentState = served_sm_current_state(&txn->sm);
+    
+    for (int i = 0; i < txn->sm.states.states_count; i++) {
+        if (txn->sm.states.states[i]->state == currentState) {
+            return (unsigned int)(i + 1);
+        }
+    }
+    return 0;
+}
 
 static void __state_set_from_type(struct served_sm_state_set* set, enum served_transaction_type type)
 {
@@ -60,11 +171,10 @@ static void __state_set_from_type(struct served_sm_state_set* set, enum served_t
         break;
     default:
         VLOG_ERROR("served", "__state_set_from_type: unsupported transaction type: %d\n", type);
-        free(set);
-        return NULL;
+        set->states = NULL;
+        set->states_count = 0;
+        break;
     }
-
-    return set;
 }
 
 // Check if a transaction's wait condition is satisfied
@@ -141,18 +251,15 @@ static int __reconstruct_transactions_from_db(void)
     struct served_transaction* runtimes;
     int                        status;
 
-    served_state_lock();
     status = served_state_get_transactions(&transactions, &transactionsCount);
     if (status) {
         VLOG_ERROR("served", "__reconstruct_transactions_from_db: failed to get transactions: %d\n", status);
-        served_state_unlock();
         return -1;
     }
 
     runtimes = calloc(transactionsCount, sizeof(struct served_transaction));
     if (runtimes == NULL) {
         VLOG_ERROR("served", "__reconstruct_transactions_from_db: failed to allocate runtime transactions\n");
-        served_state_unlock();
         return -1;
     }
 
@@ -184,7 +291,6 @@ static int __reconstruct_transactions_from_db(void)
     }
     
     mtx_unlock(&g_queue_lock);
-    served_state_unlock();
     return 0;
 }
 
@@ -212,8 +318,33 @@ void served_runner_execute(void)
         // Execute the current state's action (only runs on state entry)
         result = served_sm_execute(&txn->sm);
 
+        // Emit state change event if state transitioned
+        sm_state_t newState = served_sm_current_state(&txn->sm);
+        if (newState != oldState && txn->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
+            enum chef_transaction_state protocolState = __map_state_to_protocol(newState);
+            const char* stateName = __get_state_name(protocolState);
+            unsigned int step = __calculate_step(txn);
+            unsigned int totalSteps = (unsigned int)txn->sm.states.states_count;
+            
+            chef_served_event_transaction_state_changed_all(
+                served_gracht_server(),
+                &(struct chef_transaction_state_changed) {
+                    .id = txn->id,
+                    .state = protocolState,
+                    .state_name = (char*)stateName,
+                    .step = step,
+                    .total_steps = totalSteps
+                }
+            );
+            VLOG_DEBUG(
+                "served",
+                "served_runner_execute: transaction %u state changed: %s (%u/%u)\n",
+                txn->id, stateName, step, totalSteps
+            );
+        }
+
         // Update state if anything changed (state or wait condition)
-        if ((served_sm_current_state(&txn->sm) != oldState || txn->wait.type != oldWaitType) && 
+        if ((newState != oldState || txn->wait.type != oldWaitType) && 
             txn->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
             if (served_state_transaction_update(txn) != 0) {
                 VLOG_ERROR("served", "served_runner_execute: failed to update transaction %u state\n", txn->id);
@@ -233,8 +364,41 @@ void served_runner_execute(void)
 
         // Handle completion/abort
         if (result == SM_ACTION_DONE || result == SM_ACTION_ABORT) {
-            VLOG_DEBUG("served", "served_runner_execute: transaction %u %s\n", 
-                       txn->id, result == SM_ACTION_DONE ? "completed" : "aborted");
+            sm_state_t finalState = served_sm_current_state(&txn->sm);
+            VLOG_DEBUG("served", "served_runner_execute: transaction %u %s (final state=%d)\n", 
+                       txn->id, result == SM_ACTION_DONE ? "completed" : "aborted", finalState);
+            
+            // Emit transaction completed event
+            if (txn->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
+                enum chef_transaction_result txResult = __determine_result(finalState);
+                char messageBuffer[256];
+                
+                if (txResult == CHEF_TRANSACTION_RESULT_SUCCESS) {
+                    snprintf(messageBuffer, sizeof(messageBuffer), 
+                             "Transaction completed successfully");
+                } else if (txResult == CHEF_TRANSACTION_RESULT_ERROR_CANCELLED) {
+                    snprintf(messageBuffer, sizeof(messageBuffer), 
+                             "Transaction was cancelled");
+                } else {
+                    snprintf(messageBuffer, sizeof(messageBuffer), 
+                             "Transaction failed with error");
+                }
+                
+                struct chef_transaction_completed eventInfo = {
+                    .id = txn->id,
+                    .result = txResult,
+                    .package = (char*)txn->name,
+                    .message = messageBuffer
+                };
+                
+                gracht_server_t* server = served_gracht_server();
+                if (server) {
+                    chef_served_event_transaction_completed_all(server, &eventInfo);
+                }
+                
+                VLOG_DEBUG("served", "served_runner_execute: emitted completion event for transaction %u (result=%d)\n",
+                           txn->id, txResult);
+            }
             
             // Mark transaction as completed and perform cleanup
             if (txn->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
@@ -245,10 +409,7 @@ void served_runner_execute(void)
             
             // Remove from active queue
             list_remove(&g_active_transactions, &txn->list_header);
-            
-            free((void*)txn->name);
-            free((void*)txn->description);
-            free(txn);
+            served_transaction_delete(txn);
             continue;
         }
     }
@@ -346,17 +507,21 @@ static int __runner_thread_main(void* arg)
     
     VLOG_DEBUG("served", "__runner_thread_main: runner thread started\n");
 
+    served_state_lock();
     status = served_state_transaction_cleanup();
     if (status) {
         VLOG_ERROR("served", "__runner_thread_main: failed to cleanup old transactions\n");
+        served_state_unlock();
         return -1;
     }
 
     status = __reconstruct_transactions_from_db();
     if (status) {
         VLOG_ERROR("served", "__runner_thread_main: failed to reconstruct transactions from database\n");
+        served_state_unlock();
         return -1;
     }
+    served_state_unlock();
 
     mtx_lock(&g_runner_lock);
     g_runner_is_running = 1;

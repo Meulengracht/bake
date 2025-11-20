@@ -16,13 +16,63 @@
  * 
  */
 
+#include <gracht/server.h>
 #include <transaction/states/download.h>
+#include <transaction/states/types.h>
 #include <transaction/transaction.h>
 #include <state.h>
+#include <utils.h>
 
 #include <chef/store.h>
 #include <chef/platform.h>
 #include <vlog.h>
+
+// Protocol headers for event emission
+#include "chef_served_service_server.h"
+
+// Progress reporting threshold (only report every 5% change)
+#define PROGRESS_REPORT_THRESHOLD 5
+
+static void __emit_io_progress(
+    struct served_transaction* transaction,
+    unsigned long long bytes_current,
+    unsigned long long bytes_total)
+{
+    unsigned int percentage;
+    gracht_server_t* server;
+    
+    if (bytes_total == 0) {
+        return;
+    }
+    
+    percentage = (unsigned int)((bytes_current * 100) / bytes_total);
+    
+    // Only emit if percentage changed significantly
+    if (percentage < transaction->io_progress.last_reported_percentage + PROGRESS_REPORT_THRESHOLD &&
+        bytes_current < bytes_total) {
+        return;
+    }
+    
+    transaction->io_progress.bytes_current = bytes_current;
+    transaction->io_progress.bytes_total = bytes_total;
+    transaction->io_progress.last_reported_percentage = percentage;
+    
+    struct chef_transaction_io_progress eventInfo = {
+        .id = transaction->id,
+        .state = CHEF_TRANSACTION_STATE_DOWNLOADING,
+        .bytes_current = bytes_current,
+        .bytes_total = bytes_total,
+        .percentage = percentage
+    };
+    
+    server = served_gracht_server();
+    if (server) {
+        chef_served_event_transaction_io_progress_all(server, &eventInfo);
+    }
+    
+    VLOG_DEBUG("served", "Download progress: %llu/%llu (%u%%)\n",
+               bytes_current, bytes_total, percentage);
+}
 
 enum sm_action_result served_handle_state_download(void* context)
 {
@@ -30,6 +80,11 @@ enum sm_action_result served_handle_state_download(void* context)
     struct state_transaction*  state;
     struct store_package       package = { NULL };
     int                        status;
+
+    // Reset progress tracking
+    transaction->io_progress.bytes_current = 0;
+    transaction->io_progress.bytes_total = 0;
+    transaction->io_progress.last_reported_percentage = 0;
 
     // hold the lock while reading
     served_state_lock();
@@ -50,9 +105,16 @@ enum sm_action_result served_handle_state_download(void* context)
     // do not need the state anymore
     served_state_unlock();
 
-    // TODO: update revision in state
-    // TODO: progress reporting
+    // TODO: Hook into store download progress
+    // For now, we'll emit start and end events
+    __emit_io_progress(transaction, 0, 100);
+    
     status = store_ensure_package(&package);
+    
+    if (status == 0) {
+        __emit_io_progress(transaction, 100, 100);
+    }
+    
     if (status) {
         // todo retry detection here
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);

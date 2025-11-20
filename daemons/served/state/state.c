@@ -1673,7 +1673,7 @@ int served_state_transaction_complete(unsigned int id)
     }
 
     op->data.complete_tx.transaction_id = id;
-    __defer_operation(g_state, op);
+    __enqueue_deferred_operation(g_state, op);
     
     VLOG_DEBUG("served", "served_state_transaction_complete: deferred completion of transaction %u\n", id);
     return 0;

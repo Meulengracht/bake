@@ -27,6 +27,7 @@ enum rootfs_type {
 enum status {
     SUCCESS,
     INTERNAL_ERROR,
+    CONTAINER_EXISTS,
     FAILED_ROOTFS_SETUP,
     INVALID_MOUNTS,
     INVALID_CONTAINER_ID,

@@ -22,15 +22,52 @@ enum update_status {
     FAILED_HOOKS
 }
 
-// served_command describes information relating to a served command. This
-// will include the path to actual mounted command, the arguments it requires
-// and the type of command is being executed.
-struct served_command {
-    int    type;
-    string path;
-    string arguments;
-    string data_path;
-    string container_control_path;
+// Transaction operation types
+enum transaction_type {
+    INSTALL   = 1,
+    UPDATE    = 2,
+    REMOVE    = 3,
+    CONFIGURE = 4
+}
+
+// Transaction lifecycle states
+enum transaction_state {
+    QUEUED,
+    PRECHECK,
+    DOWNLOADING,
+    VERIFYING,
+    RESOLVING_DEPENDENCIES,
+    INSTALLING,
+    MOUNTING,
+    LOADING,
+    STARTING_SERVICES,
+    CONFIGURING,
+    STOPPING_SERVICES,
+    UNLOADING,
+    UNMOUNTING,
+    UNINSTALLING,
+    UPDATING,
+    COMPLETED,
+    FAILED,
+    CANCELLED
+}
+
+// Transaction completion results
+enum transaction_result {
+    SUCCESS,
+    ERROR_PRECHECK_FAILED,
+    ERROR_DOWNLOAD_FAILED,
+    ERROR_VERIFICATION_FAILED,
+    ERROR_DEPENDENCY_FAILED,
+    ERROR_INSTALL_FAILED,
+    ERROR_MOUNT_FAILED,
+    ERROR_LOAD_FAILED,
+    ERROR_SERVICE_START_FAILED,
+    ERROR_CANCELLED,
+    ERROR_TIMEOUT,
+    ERROR_DISK_FULL,
+    ERROR_PERMISSION_DENIED,
+    ERROR_UNKNOWN
 }
 
 // served_package describes a package with small details used
@@ -60,17 +97,57 @@ struct served_switch_options {
     int    revision;
 }
 
+// Transaction start event - emitted when transaction begins
+struct transaction_started {
+    uint             id;
+    transaction_type type;
+    string           package;
+    string           description;
+}
+
+// Transaction completion event - emitted when transaction finishes
+struct transaction_completed {
+    uint               id;
+    transaction_result result;
+    string             package;
+    string             message;
+}
+
+// Transaction state change event - emitted when state transitions occur
+struct transaction_state_changed {
+    uint              id;
+    transaction_state state;
+    string            state_name;
+
+    // Current step number (1-based)
+    uint              step;          
+    uint              total_steps;
+}
+
+// I/O progress event - emitted during download/verification operations
+struct transaction_io_progress {
+    uint              id;
+    transaction_state state;
+    
+    // Bytes transferred and total size
+    ulong             bytes_current;
+    ulong             bytes_total;
+    
+    // Percentage complete (0-100)
+    uint              percentage;
+}
+
 service served (42) {
-    func install(served_install_options options) : () = 1;
-    func update(served_update_options options) : () = 2;
-    func switch(served_switch_options options) : () = 3;
-    func remove(string packageName) : (int result) = 4;
+    func install(served_install_options options) : (uint transaction_id) = 1;
+    func update(served_update_options options) : (uint transaction_id) = 2;
+    func switch(served_switch_options options) : (uint transaction_id) = 3;
+    func remove(string packageName) : (uint transaction_id) = 4;
     func info(string packageName) : (served_package info) = 5;
     func listcount() : (uint count) = 6;
     func list() : (served_package[] packages) = 7;
-    func get_command(string mountPath) : (served_command command) = 8;
     
-    event package_installed : (install_status status, served_package info) = 9;
-    event package_removed : (served_package info) = 10;
-    event package_updated : (update_status status, served_package info) = 11;
+    event transaction_started : (transaction_started info) = 8;
+    event transaction_state_changed : (transaction_state_changed info) = 9;
+    event transaction_completed : (transaction_completed info) = 10;
+    event transaction_io_progress : (transaction_io_progress info) = 11;
 }
