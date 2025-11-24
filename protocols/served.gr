@@ -22,14 +22,6 @@ enum update_status {
     FAILED_HOOKS
 }
 
-// Transaction operation types
-enum transaction_type {
-    INSTALL   = 1,
-    UPDATE    = 2,
-    REMOVE    = 3,
-    CONFIGURE = 4
-}
-
 // Transaction lifecycle states
 enum transaction_state {
     QUEUED,
@@ -99,10 +91,9 @@ struct served_switch_options {
 
 // Transaction start event - emitted when transaction begins
 struct transaction_started {
-    uint             id;
-    transaction_type type;
-    string           package;
-    string           description;
+    uint   id;
+    string name;
+    string description;
 }
 
 // Transaction completion event - emitted when transaction finishes

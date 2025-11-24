@@ -80,20 +80,7 @@ void chef_served_install_invocation(struct gracht_message* message, const struct
         }
     );
     served_state_unlock();
-    
-    // Return transaction ID to caller
     chef_served_install_response(message, transactionId);
-    
-    // Emit transaction started event
-    chef_served_event_transaction_started_all(
-        message->server,
-        &(struct chef_transaction_started) {
-            .id = transactionId,
-            .type = CHEF_TRANSACTION_TYPE_INSTALL,
-            .package = (char*)options->package,
-            .description = &descriptionBuffer[0]
-        }
-    );
 }
 
 void chef_served_remove_invocation(struct gracht_message* message, const char* packageName)
@@ -120,20 +107,7 @@ void chef_served_remove_invocation(struct gracht_message* message, const char* p
         }
     );
     served_state_unlock();
-    
-    // Return transaction ID to caller
     chef_served_remove_response(message, transactionId);
-    
-    // Emit transaction started event
-    chef_served_event_transaction_started_all(
-        message->server,
-        &(struct chef_transaction_started) {
-            .id = transactionId,
-            .type = CHEF_TRANSACTION_TYPE_REMOVE,
-            .package = (char*)packageName,
-            .description = &descriptionBuffer[0]
-        }
-    );
 }
 
 void chef_served_update_invocation(struct gracht_message* message, const struct chef_served_update_options* options)
@@ -170,20 +144,7 @@ void chef_served_update_invocation(struct gracht_message* message, const struct 
         }
     );
     served_state_unlock();
-    
-    // Return transaction ID to caller
     chef_served_update_response(message, transactionId);
-    
-    // Emit transaction started event
-    chef_served_event_transaction_started_all(
-        message->server,
-        &(struct chef_transaction_started) {
-            .id = transactionId,
-            .type = CHEF_TRANSACTION_TYPE_UPDATE,
-            .package = (char*)options->packages[0].name,
-            .description = &descriptionBuffer[0]
-        }
-    );
 }
 
 void chef_served_switch_invocation(struct gracht_message* message, const struct chef_served_switch_options* options)

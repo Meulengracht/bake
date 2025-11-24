@@ -234,11 +234,3 @@ cleanup:
     free(fullpath);
     return status;
 }
-
-void chef_served_event_package_installed_invocation(gracht_client_t* client, const enum chef_install_status status, const struct chef_served_package* info)
-{
-    printf("installation status: %s\n", g_installMsgs[status]);
-    if (status == CHEF_INSTALL_STATUS_SUCCESS) {
-        // print package info
-    }
-}
