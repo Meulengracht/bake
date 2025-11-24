@@ -118,3 +118,8 @@ void chef_served_event_transaction_io_progress_invocation(gracht_client_t* clien
 {
     
 }
+
+void chef_served_event_transaction_log_invocation(gracht_client_t* client, const struct chef_transaction_log* info)
+{
+    
+}
