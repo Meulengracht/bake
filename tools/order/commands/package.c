@@ -209,7 +209,7 @@ static enum chef_package_setting_discoverable __discoverable_from_string(const c
     } else if (strcmp(value, "collaborators") == 0) {
         return CHEF_PACKAGE_SETTING_DISCOVERABLE_COLLABORATORS;
     }
-    fprintf(stderr, "order: invalid option value for discoverable: %s", value);
+    fprintf(stderr, "order: invalid option value for discoverable: %s\n", value);
     exit(-1);
 
     // not reached

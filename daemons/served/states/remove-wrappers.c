@@ -50,7 +50,7 @@ static int __remove_wrappers(const char* name)
 
         status = platform_unlink(wrapperPath);
         if (status) {
-            VLOG_ERROR("remove-wrappers", "%s.%s: failed to remove %s\n", wrapperPath);
+            VLOG_ERROR("remove-wrappers", "%s.%s: failed to remove %s\n", name, application->commands[i].name, wrapperPath);
             // fall-through
         }
         free(wrapperPath);
