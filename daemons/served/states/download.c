@@ -21,6 +21,7 @@
 #include <transaction/states/download.h>
 #include <transaction/states/types.h>
 #include <transaction/transaction.h>
+#include <transaction/logging.h>
 #include <state.h>
 #include <utils.h>
 

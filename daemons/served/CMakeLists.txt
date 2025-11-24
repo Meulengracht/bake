@@ -20,7 +20,7 @@ set(SRCS
 )
 
 add_executable(served ${SRCS})
-add_dependencies(serve-commands service_server)
+add_dependencies(served service_server)
 target_include_directories(served PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
 target_link_libraries(served
         served-state served-states served-utils

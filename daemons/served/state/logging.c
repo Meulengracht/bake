@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <transaction/sm.h>
 #include <transaction/logging.h>
+#include <utils.h>
 #include <vlog.h>
 
 // Protocol headers for event emission

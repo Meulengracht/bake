@@ -128,6 +128,27 @@ struct transaction_io_progress {
     uint              percentage;
 }
 
+// Log levels for transaction logging
+enum transaction_log_level {
+    INFO    = 0,
+    WARNING = 1,
+    ERROR   = 2
+}
+
+// Transaction log entry
+struct transaction_log_entry {
+    transaction_log_level level;
+    ulong                 timestamp;
+    transaction_state     state;
+    string                message;
+}
+
+// Transaction log event - emitted when transaction logs a message
+struct transaction_log {
+    uint                  id;
+    transaction_log_entry entry;
+}
+
 service served (42) {
     func install(served_install_options options) : (uint transaction_id) = 1;
     func update(served_update_options options) : (uint transaction_id) = 2;
@@ -136,9 +157,11 @@ service served (42) {
     func info(string packageName) : (served_package info) = 5;
     func listcount() : (uint count) = 6;
     func list() : (served_package[] packages) = 7;
+    func logs(uint transaction_id) : (transaction_log_entry[] entries) = 8;
     
-    event transaction_started : (transaction_started info) = 8;
-    event transaction_state_changed : (transaction_state_changed info) = 9;
-    event transaction_completed : (transaction_completed info) = 10;
-    event transaction_io_progress : (transaction_io_progress info) = 11;
+    event transaction_started : (transaction_started info) = 9;
+    event transaction_state_changed : (transaction_state_changed info) = 10;
+    event transaction_completed : (transaction_completed info) = 11;
+    event transaction_io_progress : (transaction_io_progress info) = 12;
+    event transaction_log : (transaction_log info) = 13;
 }

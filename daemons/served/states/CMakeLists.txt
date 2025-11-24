@@ -22,4 +22,4 @@ target_include_directories(served-states PRIVATE
     ../include
     ${CMAKE_BINARY_DIR}/protocols
 )
-target_link_libraries(served-states PRIVATE store platform vlog)
+target_link_libraries(served-states PRIVATE served-state store platform vlog)
