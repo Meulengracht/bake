@@ -16,6 +16,7 @@
  * 
  */
 
+#include <errno.h>
 #include <gracht/server.h>
 #include <transaction/states/download.h>
 #include <transaction/states/types.h>
@@ -57,18 +58,16 @@ static void __emit_io_progress(
     transaction->io_progress.bytes_total = bytes_total;
     transaction->io_progress.last_reported_percentage = percentage;
     
-    struct chef_transaction_io_progress eventInfo = {
-        .id = transaction->id,
-        .state = CHEF_TRANSACTION_STATE_DOWNLOADING,
-        .bytes_current = bytes_current,
-        .bytes_total = bytes_total,
-        .percentage = percentage
-    };
-    
-    server = served_gracht_server();
-    if (server) {
-        chef_served_event_transaction_io_progress_all(server, &eventInfo);
-    }
+    chef_served_event_transaction_io_progress_all(
+        served_gracht_server(),
+        &(struct chef_transaction_io_progress) {
+            .id = transaction->id,
+            .state = CHEF_TRANSACTION_STATE_DOWNLOADING,
+            .bytes_current = bytes_current,
+            .bytes_total = bytes_total,
+            .percentage = percentage
+        }
+    );
     
     VLOG_DEBUG("served", "Download progress: %llu/%llu (%u%%)\n",
                bytes_current, bytes_total, percentage);
@@ -113,10 +112,26 @@ enum sm_action_result served_handle_state_download(void* context)
     
     if (status == 0) {
         __emit_io_progress(transaction, 100, 100);
-    }
-    
-    if (status) {
-        // todo retry detection here
+        served_transaction_log_info(transaction, "Package downloaded successfully");
+    } else {
+        // Log error details
+        if (errno == ENOSPC) {
+            served_transaction_log_error(transaction,
+                "Insufficient disk space to download package");
+        } else if (errno == EACCES || errno == EPERM) {
+            served_transaction_log_error(transaction,
+                "Permission denied while downloading package");
+        } else if (errno == ETIMEDOUT || errno == ENETUNREACH || errno == EHOSTUNREACH) {
+            served_transaction_log_error(transaction,
+                "Network error while downloading package (check connectivity)");
+        } else if (errno != 0) {
+            served_transaction_log_error(transaction,
+                "Download failed: %s", strerror(errno));
+        } else {
+            served_transaction_log_error(transaction,
+                "Failed to download package (unknown error)");
+        }
+        
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }

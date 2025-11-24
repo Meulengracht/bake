@@ -21,9 +21,20 @@
 
 #include <chef/bits/package.h>
 #include <transaction/transaction.h>
+#include <transaction/logging.h>
 
 // forwards
 struct served_mount;
+
+/**
+ * @brief Represents a log entry for a transaction.
+ */
+struct state_transaction_log {
+    enum served_transaction_log_level level;     /**< Log level (INFO/WARNING/ERROR) */
+    time_t                            timestamp; /**< When the log was created */
+    sm_state_t                        state;     /**< Transaction state when logged */
+    char                              message[512]; /**< Log message */
+};
 
 /**
  * @brief Represents a transaction state entry that tracks package operations.
@@ -39,6 +50,10 @@ struct state_transaction {
     const char* name;       /**< Package name */
     const char* channel;    /**< Distribution channel (e.g., "stable", "beta") */
     int         revision;   /**< Package revision number */
+    
+    // Transaction logs
+    struct state_transaction_log* logs;       /**< Array of log entries */
+    int                           logs_count; /**< Number of log entries */
 };
 
 /**
@@ -197,6 +212,42 @@ extern unsigned int served_state_transaction_new(struct served_transaction_optio
  * @return int The transaction ID on success, -1 on failure
  */
 extern int served_state_transaction_update(struct served_transaction* transaction);
+
+/**
+ * @brief Adds a log entry to a transaction.
+ * 
+ * The log entry is immediately added to the in-memory transaction state
+ * and persisted to the database when served_state_unlock() is called.
+ * 
+ * @param transaction_id The ID of the transaction to log to
+ * @param level The log level (INFO/WARNING/ERROR)
+ * @param timestamp When the log was created
+ * @param state The transaction state when the log was created
+ * @param message The log message
+ * @return int 0 on success, -1 on failure
+ */
+extern int served_state_transaction_log_add(
+    unsigned int transaction_id,
+    enum served_transaction_log_level level,
+    time_t timestamp,
+    sm_state_t state,
+    const char* message);
+
+/**
+ * @brief Retrieves logs for a transaction.
+ * 
+ * Returns a pointer to the internal logs array for the transaction.
+ * The returned pointer is valid only while the state is locked.
+ * 
+ * @param transaction_id The ID of the transaction
+ * @param logs_out Pointer to receive the logs array (must not be NULL)
+ * @param count_out Pointer to receive the number of logs (must not be NULL)
+ * @return int 0 on success, -1 on failure
+ */
+extern int served_state_transaction_logs(
+    unsigned int transaction_id,
+    struct state_transaction_log** logs_out,
+    int* count_out);
 
 /**
  * @brief Retrieves all transactions in the state.

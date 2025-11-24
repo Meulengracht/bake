@@ -1,4 +1,5 @@
 add_library(served-state STATIC
+    logging.c
     runner.c
     sm.c
     state.c

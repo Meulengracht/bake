@@ -54,4 +54,12 @@ extern int served_runner_is_running(void);
  */
 extern unsigned int served_transaction_create(struct served_transaction_options* options);
 
+/**
+ * @brief Maps an internal transaction state to the protocol state enum.
+ * 
+ * @param state The internal state machine state
+ * @return enum chef_transaction_state The corresponding protocol state
+ */
+extern enum chef_transaction_state served_transaction_map_state(sm_state_t state);
+
 #endif // __SERVED_STATE_RUNNER_H__

@@ -116,6 +116,17 @@ static const char* g_transactionsStateTableSQL =
     "FOREIGN KEY(transaction_id) REFERENCES transactions(id) ON DELETE CASCADE"
     ");";
 
+static const char* g_transactionLogsTableSQL =
+    "CREATE TABLE IF NOT EXISTS transaction_logs ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "transaction_id INTEGER NOT NULL,"
+    "level INTEGER NOT NULL,"
+    "timestamp INTEGER NOT NULL,"
+    "state INTEGER NOT NULL,"
+    "message TEXT NOT NULL,"
+    "FOREIGN KEY(transaction_id) REFERENCES transactions(id) ON DELETE CASCADE"
+    ");";
+
 // The state implementation will provide functions to add, remove, and query applications and transactions.
 // The state also will allow for transactional changes to ensure consistency across multiple operations, and
 // to ensure resilience against crashes and restarts
@@ -143,7 +154,8 @@ enum deferred_operation_type {
     DEFERRED_OP_UPDATE_TRANSACTION,
     DEFERRED_OP_ADD_TRANSACTION_STATE,
     DEFERRED_OP_UPDATE_TRANSACTION_STATE,
-    DEFERRED_OP_COMPLETE_TRANSACTION
+    DEFERRED_OP_COMPLETE_TRANSACTION,
+    DEFERRED_OP_ADD_TRANSACTION_LOG
 };
 
 // Deferred operation entry
@@ -173,6 +185,13 @@ struct deferred_operation {
         struct {
             unsigned int transaction_id;
         } complete_tx;
+        struct {
+            unsigned int                      transaction_id;
+            enum served_transaction_log_level level;
+            time_t                            timestamp;
+            sm_state_t                        state;
+            char*                             message;
+        } add_log;
     } data;
     struct deferred_operation* next;
 };
@@ -370,6 +389,13 @@ static int __create_database_schema(sqlite3* db)
     status = sqlite3_exec(db, g_transactionsStateTableSQL, NULL, NULL, &errMsg);
     if (status != SQLITE_OK) {
         VLOG_ERROR("served", "__create_database_schema: failed to create transactions_state table: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        return status;
+    }
+
+    status = sqlite3_exec(db, g_transactionLogsTableSQL, NULL, NULL, &errMsg);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__create_database_schema: failed to create transaction_logs table: %s\n", errMsg);
         sqlite3_free(errMsg);
         return status;
     }
@@ -814,6 +840,76 @@ static int __load_transactions_from_db(struct __state* state)
     return 0;
 }
 
+static int __load_transaction_logs_from_db(struct __state* state)
+{
+    const char* query = 
+        "SELECT transaction_id, level, timestamp, state, message "
+        "FROM transaction_logs "
+        "ORDER BY transaction_id, id";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__load_transaction_logs_from_db: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        unsigned int transaction_id = (unsigned int)sqlite3_column_int(stmt, 0);
+        int level = sqlite3_column_int(stmt, 1);
+        time_t timestamp = (time_t)sqlite3_column_int64(stmt, 2);
+        int txstate = sqlite3_column_int(stmt, 3);
+        const char* message = (const char*)sqlite3_column_text(stmt, 4);
+
+        // Find the transaction this log belongs to
+        struct served_transaction* tx = NULL;
+        for (int i = 0; i < state->transactions_count; i++) {
+            if (state->transactions[i].id == transaction_id) {
+                tx = &state->transactions[i];
+                break;
+            }
+        }
+
+        if (tx == NULL) {
+            VLOG_WARNING("served", "__load_transaction_logs_from_db: log for unknown transaction %u\n", transaction_id);
+            continue;
+        }
+
+        // Find the state_transaction for this runtime transaction
+        struct state_transaction* state_tx = NULL;
+        for (int i = 0; i < state->transaction_state_count; i++) {
+            if (state->transaction_states[i].id == transaction_id) {
+                state_tx = &state->transaction_states[i];
+                break;
+            }
+        }
+
+        if (state_tx == NULL) {
+            VLOG_WARNING("served", "__load_transaction_logs_from_db: no state for transaction %u\n", transaction_id);
+            continue;
+        }
+
+        // Add log entry to state_transaction
+        struct state_transaction_log* new_logs = realloc(state_tx->logs, 
+            sizeof(struct state_transaction_log) * (state_tx->logs_count + 1));
+        if (new_logs == NULL) {
+            VLOG_ERROR("served", "__load_transaction_logs_from_db: failed to allocate log entry\n");
+            continue;
+        }
+
+        state_tx->logs = new_logs;
+        struct state_transaction_log* log = &state_tx->logs[state_tx->logs_count++];
+        log->level = level;
+        log->timestamp = timestamp;
+        log->state = txstate;
+        strncpy(log->message, message, sizeof(log->message) - 1);
+        log->message[sizeof(log->message) - 1] = '\0';
+    }
+
+    sqlite3_finalize(stmt);
+    return 0;
+}
+
 static int __initialize_transaction_id_counter(struct __state* state)
 {
     const char*   query = "SELECT MAX(id) FROM transactions;";
@@ -877,6 +973,7 @@ int served_state_load(void)
     if (__load_applications_from_db(g_state) != 0 ||
         __load_transactions_from_db(g_state) != 0 ||
         __load_transaction_states_from_db(g_state) != 0 ||
+        __load_transaction_logs_from_db(g_state) != 0 ||
         __initialize_transaction_id_counter(g_state) != 0) {
         sqlite3_close(g_state->database);
         __state_destroy(g_state);
@@ -1140,6 +1237,44 @@ static int __execute_complete_tx_op(struct __state* state, unsigned int transact
     return 0;
 }
 
+static int __execute_add_transaction_log_op(struct __state* state, void* log_data)
+{
+    struct {
+        unsigned int                      transaction_id;
+        enum served_transaction_log_level level;
+        time_t                            timestamp;
+        sm_state_t                        txstate;
+        char*                             message;
+    }* data = log_data;
+
+    const char* insert_log_query = 
+        "INSERT INTO transaction_logs (transaction_id, level, timestamp, state, message) "
+        "VALUES (?, ?, ?, ?, ?)";
+
+    sqlite3_stmt* stmt;
+    int status = sqlite3_prepare_v2(state->database, insert_log_query, -1, &stmt, NULL);
+    if (status != SQLITE_OK) {
+        VLOG_ERROR("served", "__execute_add_transaction_log_op: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
+        return -1;
+    }
+
+    sqlite3_bind_int(stmt, 1, data->transaction_id);
+    sqlite3_bind_int(stmt, 2, data->level);
+    sqlite3_bind_int64(stmt, 3, (sqlite3_int64)data->timestamp);
+    sqlite3_bind_int(stmt, 4, data->txstate);
+    sqlite3_bind_text(stmt, 5, data->message, -1, SQLITE_STATIC);
+
+    status = sqlite3_step(stmt);
+    if (status != SQLITE_DONE) {
+        VLOG_ERROR("served", "__execute_add_transaction_log_op: failed to insert log: %s\n", sqlite3_errmsg(state->database));
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+
+    sqlite3_finalize(stmt);
+    return 0;
+}
+
 static int __execute_add_tx_state_op(struct __state* state, unsigned int transactionID, struct state_transaction* transaction)
 {
     const char* insertTxStateSQL = 
@@ -1224,6 +1359,11 @@ static int __execute_deferred_operations(struct __state* state)
 
             case DEFERRED_OP_COMPLETE_TRANSACTION:
                 result = __execute_complete_tx_op(state, op->data.complete_tx.transaction_id);
+                break;
+
+            case DEFERRED_OP_ADD_TRANSACTION_LOG:
+                result = __execute_add_transaction_log_op(state, &op->data.add_log);
+                free(op->data.add_log.message);
                 break;
         }
         
@@ -1530,6 +1670,101 @@ int served_state_transaction_update(struct served_transaction* transaction)
     return 0;
 }
 
+int served_state_transaction_log_add(
+    unsigned int transaction_id,
+    enum served_transaction_log_level level,
+    time_t timestamp,
+    sm_state_t state,
+    const char* message)
+{
+    struct deferred_operation* op;
+    struct state_transaction*  state_tx = NULL;
+
+    if (g_state == NULL || message == NULL) {
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction_log_add: state lock not held\n");
+        return -1;
+    }
+
+    // Find the state_transaction for this transaction_id
+    for (int i = 0; i < g_state->transaction_state_count; i++) {
+        if (g_state->transaction_states[i].id == transaction_id) {
+            state_tx = &g_state->transaction_states[i];
+            break;
+        }
+    }
+
+    if (state_tx == NULL) {
+        VLOG_WARNING("served", "served_state_transaction_log_add: no state for transaction %u\n", transaction_id);
+        return -1;
+    }
+
+    // Add to in-memory state immediately
+    struct state_transaction_log* new_logs = realloc(state_tx->logs, 
+        sizeof(struct state_transaction_log) * (state_tx->logs_count + 1));
+    if (new_logs == NULL) {
+        VLOG_ERROR("served", "served_state_transaction_log_add: failed to allocate log entry\n");
+        return -1;
+    }
+
+    state_tx->logs = new_logs;
+    struct state_transaction_log* log = &state_tx->logs[state_tx->logs_count++];
+    log->level = level;
+    log->timestamp = timestamp;
+    log->state = state;
+    strncpy(log->message, message, sizeof(log->message) - 1);
+    log->message[sizeof(log->message) - 1] = '\0';
+
+    // Defer database operation
+    op = __deferred_operation_new(DEFERRED_OP_ADD_TRANSACTION_LOG);
+    if (op == NULL) {
+        VLOG_ERROR("served", "served_state_transaction_log_add: failed to allocate deferred operation\n");
+        // Roll back in-memory change
+        state_tx->logs_count--;
+        return -1;
+    }
+
+    op->data.add_log.transaction_id = transaction_id;
+    op->data.add_log.level = level;
+    op->data.add_log.timestamp = timestamp;
+    op->data.add_log.state = state;
+    op->data.add_log.message = platform_strdup(message);
+
+    __enqueue_deferred_operation(g_state, op);
+    return 0;
+}
+
+int served_state_transaction_logs(
+    unsigned int transaction_id,
+    struct state_transaction_log** logs_out,
+    int* count_out)
+{
+    if (g_state == NULL || logs_out == NULL || count_out == NULL) {
+        return -1;
+    }
+
+    if (g_state->lock_count == 0) {
+        VLOG_ERROR("served", "served_state_transaction_logs: state lock not held\n");
+        return -1;
+    }
+
+    // Find the state_transaction for this transaction_id
+    for (int i = 0; i < g_state->transaction_state_count; i++) {
+        if (g_state->transaction_states[i].id == transaction_id) {
+            *logs_out = g_state->transaction_states[i].logs;
+            *count_out = g_state->transaction_states[i].logs_count;
+            return 0;
+        }
+    }
+
+    *logs_out = NULL;
+    *count_out = 0;
+    return -1;
+}
+
 // This must be called with the state lock held
 int served_state_transaction_state_new(unsigned int id, struct state_transaction* state)
 {
@@ -1556,6 +1791,8 @@ int served_state_transaction_state_new(unsigned int id, struct state_transaction
     g_state->transaction_states = newStates;
     g_state->transaction_states[g_state->transaction_state_count] = *state;
     g_state->transaction_states[g_state->transaction_state_count].id = id;
+    g_state->transaction_states[g_state->transaction_state_count].logs = NULL;
+    g_state->transaction_states[g_state->transaction_state_count].logs_count = 0;
     g_state->transaction_state_count++;
 
     // Defer the database operation

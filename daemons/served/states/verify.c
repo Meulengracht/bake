@@ -17,6 +17,7 @@
  */
 
 #include <chef/platform.h>
+#include <errno.h>
 #include <gracht/server.h>
 #include <transaction/states/verify.h>
 #include <transaction/states/types.h>
@@ -91,6 +92,8 @@ enum sm_action_result served_handle_state_verify(void* context)
     
     names = utils_split_package_name(name);
     if (names == NULL) {
+        served_transaction_log_error(transaction,
+            "Invalid package name format (must be 'publisher/package')");
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
@@ -102,14 +105,26 @@ enum sm_action_result served_handle_state_verify(void* context)
     
     if (status == 0) {
         __emit_verify_progress(transaction, 100, 100);
-    }
-    
-    strsplit_free(names);
-    if (status) {
+        served_transaction_log_info(transaction, "Package verification successful");
+    } else {
+        // Log error details
+        if (errno == ENOENT) {
+            served_transaction_log_error(transaction,
+                "Package file not found for verification");
+        } else if (errno != 0) {
+            served_transaction_log_error(transaction,
+                "Verification failed: %s", strerror(errno));
+        } else {
+            served_transaction_log_error(transaction,
+                "Package signature or checksum is invalid");
+        }
+        
+        strsplit_free(names);
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
-
+    
+    strsplit_free(names);
     served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }

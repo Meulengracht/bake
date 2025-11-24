@@ -32,11 +32,6 @@ enum served_transaction_type {
     SERVED_TRANSACTION_TYPE_CONFIGURE
 };
 
-// TODO:
-// 1. vlog streams that we can attach to transactions
-// 2. transaction progress reporting (downloading, io)
-// 3. Reboot handling of transactions (i.e generate boot ids in /tmp and keep track)
-
 enum served_transaction_wait_type {
     SERVED_TRANSACTION_WAIT_TYPE_NONE,
     SERVED_TRANSACTION_WAIT_TYPE_TRANSACTION,

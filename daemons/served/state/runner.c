@@ -50,7 +50,7 @@ static struct list g_waiting_transactions = { 0 };
 #define RUNNER_TICK_MS 500
 
 // Map internal sm_state_t to protocol transaction_state enum
-static enum chef_transaction_state __map_state_to_protocol(sm_state_t state)
+enum chef_transaction_state served_transaction_map_state(sm_state_t state)
 {
     switch (state) {
     case SERVED_TX_STATE_PRECHECK:
@@ -312,7 +312,7 @@ static void __handle_transaction_done(struct served_transaction* txn, enum sm_ac
     
     if (txn->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
         enum chef_transaction_result txResult = __determine_result(finalState);
-        char messageBuffer[256];
+        char messageBuffer[512];
         
         if (txResult == CHEF_TRANSACTION_RESULT_SUCCESS) {
             snprintf(
@@ -327,7 +327,7 @@ static void __handle_transaction_done(struct served_transaction* txn, enum sm_ac
         } else {
             snprintf(
                 messageBuffer, sizeof(messageBuffer),
-                "Transaction failed with error"
+                "Transaction failed - check logs for details"
             );
         }
         
@@ -362,7 +362,7 @@ static void __handle_transaction_done(struct served_transaction* txn, enum sm_ac
 
 static void __handle_on_transition(struct served_transaction* txn, sm_state_t newState)
 {
-    enum chef_transaction_state protocolState = __map_state_to_protocol(newState);
+    enum chef_transaction_state protocolState = served_transaction_map_state(newState);
     const char*                 stateName     = __get_state_name(protocolState);
     unsigned int                step          = __calculate_step(txn);
     unsigned int                totalSteps    = (unsigned int)txn->sm.states.states_count;
@@ -517,6 +517,7 @@ void served_transaction_delete(struct served_transaction* transaction)
     if (transaction == NULL) {
         return;
     }
+    
     free((void*)transaction->name);
     free((void*)transaction->description);
     free(transaction);
