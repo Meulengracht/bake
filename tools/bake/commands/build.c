@@ -79,7 +79,7 @@ static int __ensure_toolchains(struct list* platforms)
             .channel = channel,
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
-        });
+        }, NULL);
         if (status) {
             free(name);
             free(channel);
@@ -105,7 +105,7 @@ static int __ensure_ingredient_list(struct list* list, const char* platform, con
             .channel = ingredient->channel,
             .arch = arch,
             .platform = platform
-        });
+        }, NULL);
         if (status) {
             VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->name);
             return status;

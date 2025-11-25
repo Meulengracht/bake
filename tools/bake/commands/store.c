@@ -74,26 +74,6 @@ static struct command_handler* __get_command(const char* command)
     return NULL;
 }
 
-static int __resolve_package(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, const char* path, int* revisionDownloaded)
-{
-    struct chef_download_params downloadParams;
-    int                         status;
-
-    // initialize download params
-    downloadParams.publisher = publisher;
-    downloadParams.package   = package;
-    downloadParams.platform  = platform;
-    downloadParams.arch      = arch;
-    downloadParams.channel   = channel;
-    downloadParams.revision  = 0;
-
-    status = chefclient_pack_download(&downloadParams, path);
-    if (status == 0) {
-        *revisionDownloaded = downloadParams.revision;
-    }
-    return status;
-}
-
 int store_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct command_handler* command = NULL;

@@ -37,6 +37,7 @@ static struct state_application* __application_new(const char* name)
     }
 
     application->name = name;
+    return application;
 }
 
 static int __application_add_revision(struct state_application* application, const char* channel, struct chef_version* version)

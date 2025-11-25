@@ -36,12 +36,12 @@
 #define PROGRESS_REPORT_THRESHOLD 5
 
 static void __emit_io_progress(
-    struct served_transaction* transaction,
     unsigned long long bytes_current,
-    unsigned long long bytes_total)
+    unsigned long long bytes_total,
+    void*              context)
 {
-    unsigned int percentage;
-    gracht_server_t* server;
+    struct served_transaction* transaction = context;
+    unsigned int               percentage;
     
     if (bytes_total == 0) {
         return;
@@ -81,12 +81,10 @@ enum sm_action_result served_handle_state_download(void* context)
     struct store_package       package = { NULL };
     int                        status;
 
-    // Reset progress tracking
     transaction->io_progress.bytes_current = 0;
     transaction->io_progress.bytes_total = 0;
     transaction->io_progress.last_reported_percentage = 0;
 
-    // hold the lock while reading
     served_state_lock();
     state = served_state_transaction(transaction->id);
     if (state == NULL) {
@@ -95,27 +93,23 @@ enum sm_action_result served_handle_state_download(void* context)
         return SM_ACTION_CONTINUE;
     }
 
-    // setup package parameters
     package.name = state->name;
     package.platform = CHEF_PLATFORM_STR; // always host
     package.arch = CHEF_ARCHITECTURE_STR; // always host
     package.channel = state->channel;
     package.revision = state->revision;
-
-    // do not need the state anymore
+    
     served_state_unlock();
 
-    // TODO: Hook into store download progress
-    // For now, we'll emit start and end events
-    __emit_io_progress(transaction, 0, 100);
-    
-    status = store_ensure_package(&package);
-    
-    if (status == 0) {
-        __emit_io_progress(transaction, 100, 100);
-        served_transaction_log_info(transaction, "Package downloaded successfully");
-    } else {
-        // Log error details
+    status = store_ensure_package(
+        &package,
+        &(struct chef_observer){
+            .report = __emit_io_progress,
+            .userData = transaction
+        }
+    );
+
+    if (status) {
         if (errno == ENOSPC) {
             served_transaction_log_error(transaction,
                 "Insufficient disk space to download package");
@@ -137,6 +131,7 @@ enum sm_action_result served_handle_state_download(void* context)
         return SM_ACTION_CONTINUE;
     }
 
+    served_transaction_log_info(transaction, "Package downloaded successfully");
     served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }

@@ -20,6 +20,7 @@
 #define __LIBCHEF_API_PACKAGE_H__
 
 #include <chef/package.h>
+#include <chef/observer.h>
 #include <stdio.h>
 
 /**
@@ -42,26 +43,28 @@ struct chef_find_params {
  * @brief Parameters for publishing a package.
  */
 struct chef_publish_params {
-    const char*          publisher;    /**< The publisher/owner of the package */
-    const char*          package;      /**< The package name */
-    const char*          platform;     /**< The target platform (e.g., "linux", "windows") */
-    const char*          architecture; /**< The target architecture (e.g., "amd64", "arm64") */
-    const char*          channel;      /**< The release channel (e.g., "stable", "dev") */
-    struct chef_version* version;      /**< The version information for this package */
+    const char*           publisher;    /**< The publisher/owner of the package */
+    const char*           package;      /**< The package name */
+    const char*           platform;     /**< The target platform (e.g., "linux", "windows") */
+    const char*           architecture; /**< The target architecture (e.g., "amd64", "arm64") */
+    const char*           channel;      /**< The release channel (e.g., "stable", "dev") */
+    struct chef_version*  version;      /**< The version information for this package */
+    struct chef_observer* observer;     /**< Observer for upload progress reporting */
 };
 
 /**
  * @brief Parameters for downloading a package.
  */
 struct chef_download_params {
-    const char*          publisher;    /**< The publisher/owner of the package */
-    const char*          package;      /**< The package name */
-    const char*          platform;     /**< The target platform (e.g., "linux", "windows") */
-    const char*          arch;         /**< The target architecture (e.g., "amd64", "arm64") */
-    const char*          channel;      /**< The release channel (e.g., "stable", "dev") */
+    const char*           publisher;    /**< The publisher/owner of the package */
+    const char*           package;      /**< The package name */
+    const char*           platform;     /**< The target platform (e.g., "linux", "windows") */
+    const char*           arch;         /**< The target architecture (e.g., "amd64", "arm64") */
+    const char*           channel;      /**< The release channel (e.g., "stable", "dev") */
+    struct chef_observer* observer;     /**< Observer for download progress reporting */
 
     // this will be updated to the revision downloaded if 0
-    int                  revision;     /**< The specific revision to download. If 0, downloads the latest and updates this field */
+    int                   revision;     /**< The specific revision to download. If 0, downloads the latest and updates this field */
 };
 
 /**

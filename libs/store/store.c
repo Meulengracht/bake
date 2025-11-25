@@ -171,12 +171,13 @@ cleanup:
     return status;
 }
 
-int store_ensure_package(struct store_package* package)
+int store_ensure_package(struct store_package* package, struct chef_observer* observer)
 {
     struct store_inventory_pack* pack = NULL;
     int                          revision = 0;
     char**                       names = NULL;
     char*                        path = NULL;
+    char*                        pathTmp = NULL;
     int                          status;
     VLOG_DEBUG("store", "store_ensure_package(name=%s)\n", package->name);
 
@@ -198,13 +199,25 @@ int store_ensure_package(struct store_package* package)
         goto cleanup;
     }
 
-    status = g_store.backend.resolve_package(package, path, &revision);
+    // The issue is we cannot know the revision until we resolve the package
+    // and thus we must download the package to a temporary filename first
+    pathTmp = __format_package_path(names[0], names[1], 0);
+    if (pathTmp == NULL) {
+        goto cleanup;
+    }
+
+    status = g_store.backend.resolve_package(package, pathTmp, observer, &revision);
     if (status) {
         goto cleanup;
     }
 
     path = __format_package_path(names[0], names[1], revision);
     if (path == NULL) {
+        goto cleanup;
+    }
+
+    status = rename(pathTmp, path);
+    if (status) {
         goto cleanup;
     }
 
@@ -226,6 +239,7 @@ int store_ensure_package(struct store_package* package)
 
 cleanup:
     strsplit_free(names);
+    free(pathTmp);
     free(path);
     return status;
 }
@@ -262,7 +276,7 @@ cleanup:
     return status;
 }
 
-int store_proof_ensure(enum store_proof_type keyType, const char* key)
+int store_proof_ensure(enum store_proof_type keyType, const char* key, struct chef_observer* observer)
 {
     union store_proof proof;
     int               status;
@@ -279,7 +293,7 @@ int store_proof_ensure(enum store_proof_type keyType, const char* key)
         goto cleanup;
     }
 
-    status = g_store.backend.resolve_proof(keyType, key, &proof);
+    status = g_store.backend.resolve_proof(keyType, key, observer, &proof);
     if (status) {
         goto cleanup;
     }

@@ -49,7 +49,7 @@ static char** __split_name(const char* name)
     return names;
 }
 
-static int store_default_resolve_package(struct store_package* package, const char* path, int* revisionDownloaded)
+static int store_default_resolve_package(struct store_package* package, const char* path, struct chef_observer* observer, int* revisionDownloaded)
 {
     struct chef_download_params downloadParams;
     int                         status;
@@ -71,6 +71,7 @@ static int store_default_resolve_package(struct store_package* package, const ch
     downloadParams.arch      = package->arch;
     downloadParams.channel   = package->channel;
     downloadParams.revision  = 0;
+    downloadParams.observer  = observer;
 
     status = chefclient_pack_download(&downloadParams, path);
     if (status == 0) {
@@ -114,7 +115,7 @@ static char* __read_proof(FILE* stream)
     return platform_strdup(&buffer[0]);
 }
 
-static int store_default_resolve_proof(enum store_proof_type keyType, const char* key, union store_proof* proof)
+static int store_default_resolve_proof(enum store_proof_type keyType, const char* key, struct chef_observer* observer, union store_proof* proof)
 {
     int status;
     VLOG_DEBUG("chef", "store_default_resolve_proof()\n");

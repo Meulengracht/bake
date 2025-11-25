@@ -20,6 +20,7 @@
 #define __LIBSTORE_H__
 
 #include <chef/list.h>
+#include <chef/observer.h>
 #include <stdio.h>
 
 enum store_proof_type {
@@ -73,8 +74,8 @@ struct store_package {
 };
 
 struct store_backend {
-    int (*resolve_package)(struct store_package* package, const char* path, int* revisionDownloaded);
-    int (*resolve_proof)(enum store_proof_type keyType, const char* key, union store_proof* proof);
+    int (*resolve_package)(struct store_package* package, const char* path, struct chef_observer* observer, int* revisionDownloaded);
+    int (*resolve_proof)(enum store_proof_type keyType, const char* key, struct chef_observer* observer, union store_proof* proof);
 };
 
 struct store_parameters {
@@ -102,7 +103,7 @@ extern void store_cleanup(void);
  * @param[In] package Options describing the package that should be fetched from store.
  * @return int 
  */
-extern int store_ensure_package(struct store_package* package);
+extern int store_ensure_package(struct store_package* package, struct chef_observer* observer);
 
 /**
  * @brief Retrieves the path of an package based on it's parameters. It must be already
@@ -122,7 +123,7 @@ extern int store_package_path(struct store_package* package, const char** pathOu
  * @param[In]  key      The proof key.
  * @return int          0 On success, -1 on error. Consult errno for details.
  */
-extern int store_proof_ensure(enum store_proof_type keyType, const char* key);
+extern int store_proof_ensure(enum store_proof_type keyType, const char* key, struct chef_observer* observer);
 
 /**
  * @brief Retrieves the proof based on it's key. If the proof does not exist, the backend

@@ -31,65 +31,21 @@
 extern const char* chefclient_api_base_url(void);
 
 struct download_context {
-    const char* publisher;
-    const char* package;
-    int         revision;
-    size_t      bytes_downloaded;
-    size_t      bytes_total;
+    const char*           publisher;
+    const char*           package;
+    int                   revision;
+    struct chef_observer* observer;
 };
-
-static void __format_quantity(long long size, char* buffer, size_t bufferSize)
-{
-	char*  suffix[]       = { "B", "KB", "MB", "GB", "TB" };
-    int    i              = 0;
-	double remainingBytes = (double)size;
-
-	if (size >= 1024) {
-        long long count = size;
-		for (; (count / 1024) > 0 && i < 4 /* len(suffix)-1 */; i++, count /= 1024) {
-			remainingBytes = count / 1024.0;
-        }
-	}
-	snprintf(&buffer[0], bufferSize, "%.02lf%s", remainingBytes, suffix[i]);
-}
-
-static void __update_progress(struct download_context* downloadContext)
-{
-    char progressBuffer[32];
-    char totalSizeBuffer[32];
-    int  percent;
-
-    percent = (downloadContext->bytes_downloaded * 100) / downloadContext->bytes_total;
-    
-    // print a fancy progress bar with percentage, upload progress and a moving
-    // bar being filled
-    printf("\33[2K\rdownloading %s/%s [%i] [", downloadContext->publisher, downloadContext->package, downloadContext->revision);
-    for (int i = 0; i < 20; i++) {
-        if (i < percent / 5) {
-            printf("#");
-        }
-        else {
-            printf(" ");
-        }
-    }
-    __format_quantity(downloadContext->bytes_downloaded, &progressBuffer[0], sizeof(progressBuffer));
-    __format_quantity(downloadContext->bytes_total, &totalSizeBuffer[0], sizeof(totalSizeBuffer));
-    printf("| %3d%%] %s / %s", percent, 
-        &progressBuffer[0], &totalSizeBuffer[0]
-    );
-    fflush(stdout);
-}
 
 static size_t __download_progress_callback(void *clientp,
     curl_off_t dltotal, curl_off_t dlnow,
     curl_off_t ultotal, curl_off_t ulnow)
 {
     struct download_context* context = (struct download_context*)clientp;
-    context->bytes_downloaded = (size_t)dlnow;
-    context->bytes_total = (size_t)dltotal;
-    if (context->bytes_total > 0) {
-        __update_progress(context);
+    if (context->observer == NULL) {
+        return 0;
     }
+    context->observer->report(dlnow, dltotal, context->observer->userData);
     return 0;
 }
 
@@ -301,10 +257,7 @@ int chefclient_pack_download(struct chef_download_params* params, const char* pa
     downloadContext.publisher = params->publisher;
     downloadContext.package   = params->package;
     downloadContext.revision  = revision;
-
-    // print initial banner
-    printf("initiating download of %s/%s [%i]", params->publisher, params->package, revision);
-    fflush(stdout);
+    downloadContext.observer  = params->observer;
 
     // start download
     status = __download_file(path, &downloadContext);
@@ -313,11 +266,6 @@ int chefclient_pack_download(struct chef_download_params* params, const char* pa
         return status;
     }
 
-    // print newline
-    printf("\n");
-
-    // update revision
     params->revision = revision;
-
     return status;
 }
