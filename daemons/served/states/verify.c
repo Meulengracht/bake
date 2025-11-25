@@ -106,18 +106,15 @@ enum sm_action_result served_handle_state_verify(void* context)
     
     if (status == 0) {
         __emit_verify_progress(transaction, 100, 100);
-        served_transaction_log_info(transaction, "Package verification successful");
+        TXLOG_INFO(transaction, "Package verification successful");
     } else {
         // Log error details
         if (errno == ENOENT) {
-            served_transaction_log_error(transaction,
-                "Package file not found for verification");
-        } else if (errno != 0) {
-            served_transaction_log_error(transaction,
-                "Verification failed: %s", strerror(errno));
+            TXLOG_ERROR(transaction, "Package file not found for verification");
+        } else if (errno) {
+            TXLOG_ERROR(transaction, "Verification failed: %s", strerror(errno));
         } else {
-            served_transaction_log_error(transaction,
-                "Package signature or checksum is invalid");
+            TXLOG_ERROR(transaction, "Package signature or checksum is invalid");
         }
         
         strsplit_free(names);

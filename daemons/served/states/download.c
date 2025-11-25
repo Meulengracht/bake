@@ -111,27 +111,22 @@ enum sm_action_result served_handle_state_download(void* context)
 
     if (status) {
         if (errno == ENOSPC) {
-            served_transaction_log_error(transaction,
-                "Insufficient disk space to download package");
+            TXLOG_ERROR(transaction, "Insufficient disk space to download package");
         } else if (errno == EACCES || errno == EPERM) {
-            served_transaction_log_error(transaction,
-                "Permission denied while downloading package");
+            TXLOG_ERROR(transaction, "Permission denied while downloading package");
         } else if (errno == ETIMEDOUT || errno == ENETUNREACH || errno == EHOSTUNREACH) {
-            served_transaction_log_error(transaction,
-                "Network error while downloading package (check connectivity)");
+            TXLOG_ERROR(transaction, "Network error while downloading package (check connectivity)");
         } else if (errno != 0) {
-            served_transaction_log_error(transaction,
-                "Download failed: %s", strerror(errno));
+            TXLOG_ERROR(transaction, "Download failed: %s", strerror(errno));
         } else {
-            served_transaction_log_error(transaction,
-                "Failed to download package (unknown error)");
+            TXLOG_ERROR(transaction, "Failed to download package (unknown error)");
         }
         
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
 
-    served_transaction_log_info(transaction, "Package downloaded successfully");
+    TXLOG_INFO(transaction, "Package downloaded successfully");
     served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;
 }

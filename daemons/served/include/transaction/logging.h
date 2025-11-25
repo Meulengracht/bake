@@ -23,14 +23,12 @@
 #include <transaction/sm.h>
 #include <time.h>
 
-// Transaction log levels
 enum served_transaction_log_level {
     SERVED_TRANSACTION_LOG_INFO,
     SERVED_TRANSACTION_LOG_WARNING,
     SERVED_TRANSACTION_LOG_ERROR
 };
 
-// Individual log entry
 struct served_transaction_log_entry {
     struct list_item                  list_header;
     enum served_transaction_log_level level;
@@ -39,16 +37,15 @@ struct served_transaction_log_entry {
     char                              message[512];
 };
 
-// Transaction logging
 extern void served_transaction_log(
-    struct served_transaction* transaction,
+    struct served_transaction*        transaction,
     enum served_transaction_log_level level,
-    const char* format,
+    const char*                       format,
     ...
-) __attribute__((format(printf, 3, 4)));
+);
 
-extern void served_transaction_log_info(struct served_transaction* transaction, const char* format, ...) __attribute__((format(printf, 2, 3)));
-extern void served_transaction_log_warning(struct served_transaction* transaction, const char* format, ...) __attribute__((format(printf, 2, 3)));
-extern void served_transaction_log_error(struct served_transaction* transaction, const char* format, ...) __attribute__((format(printf, 2, 3)));
+#define TXLOG_INFO(tx, ...)    served_transaction_log(tx, SERVED_TRANSACTION_LOG_INFO, __VA_ARGS__)
+#define TXLOG_WARNING(tx, ...) served_transaction_log(tx, SERVED_TRANSACTION_LOG_WARNING, __VA_ARGS__)
+#define TXLOG_ERROR(tx, ...)   served_transaction_log(tx, SERVED_TRANSACTION_LOG_ERROR, __VA_ARGS__)
 
 #endif //!__SERVED_TRANSACTION_LOGGING_H__

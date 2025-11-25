@@ -105,39 +105,3 @@ void served_transaction_log(
         );
     }
 }
-
-void served_transaction_log_info(struct served_transaction* transaction, const char* format, ...)
-{
-    va_list args;
-    char buffer[512];
-    
-    va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
-    
-    served_transaction_log(transaction, SERVED_TRANSACTION_LOG_INFO, "%s", buffer);
-}
-
-void served_transaction_log_warning(struct served_transaction* transaction, const char* format, ...)
-{
-    va_list args;
-    char buffer[512];
-    
-    va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
-    
-    served_transaction_log(transaction, SERVED_TRANSACTION_LOG_WARNING, "%s", buffer);
-}
-
-void served_transaction_log_error(struct served_transaction* transaction, const char* format, ...)
-{
-    va_list args;
-    char buffer[512];
-    
-    va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
-    
-    served_transaction_log(transaction, SERVED_TRANSACTION_LOG_ERROR, "%s", buffer);
-}
