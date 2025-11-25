@@ -93,7 +93,7 @@ enum sm_action_result served_handle_state_verify(void* context)
     
     names = utils_split_package_name(name);
     if (names == NULL) {
-        served_transaction_log_error(transaction,
+        TXLOG_ERROR(transaction,
             "Invalid package name format (must be 'publisher/package')");
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
