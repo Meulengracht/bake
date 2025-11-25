@@ -99,7 +99,27 @@ int __chef_client_initialize(gracht_client_t** clientOut)
     return code;
 }
 
-void chef_served_event_package_removed_invocation(gracht_client_t* client, const struct chef_served_package* info)
+void chef_served_event_transaction_started_invocation(gracht_client_t* client, const struct chef_transaction_started* info)
 {
 
+}
+
+void chef_served_event_transaction_state_changed_invocation(gracht_client_t* client, const struct chef_transaction_state_changed* info)
+{
+
+}
+
+void chef_served_event_transaction_completed_invocation(gracht_client_t* client, const struct chef_transaction_completed* info)
+{
+
+}
+
+void chef_served_event_transaction_io_progress_invocation(gracht_client_t* client, const struct chef_transaction_io_progress* info)
+{
+    
+}
+
+void chef_served_event_transaction_log_invocation(gracht_client_t* client, const struct chef_transaction_log* info)
+{
+    
 }

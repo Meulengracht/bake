@@ -27,18 +27,13 @@ int chef_dirs_initialize(enum chef_dir_scope scope)
 
     status = platform_getuserdir(&buffer[0], sizeof(buffer) - 1);
     if (status) {
-        VLOG_ERROR("fridge", "fridge_initialize: failed to resolve user homedir\n");
+        VLOG_ERROR("store", "store_initialize: failed to resolve user homedir\n");
         return -1;
     }
     return 0;
 }
 
 const char* chef_dirs_root(void)
-{
-    return NULL;
-}
-
-const char* chef_dirs_fridge(void)
 {
     return NULL;
 }

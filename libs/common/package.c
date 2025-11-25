@@ -57,6 +57,7 @@ static int __load_package_header(struct VaFs* vafs, struct chef_package** packag
     READ_IF_PRESENT(platform)
     READ_IF_PRESENT(arch)
     READ_IF_PRESENT(package)
+    READ_IF_PRESENT(base)
     READ_IF_PRESENT(summary)
     READ_IF_PRESENT(description)
     READ_IF_PRESENT(homepage)

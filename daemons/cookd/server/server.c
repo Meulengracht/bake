@@ -17,7 +17,6 @@
  */
 
 #include <chef/client.h>
-#include <chef/api/package.h>
 #include <chef/cvd.h>
 #include <chef/pack.h>
 #include <chef/dirs.h>
@@ -25,8 +24,8 @@
 #include <chef/recipe.h>
 #include <chef/remote.h>
 #include <chef/storage/download.h>
+#include <chef/store-default.h>
 #include <errno.h>
-#include <chef/fridge.h>
 #include <notify.h>
 #include <server.h>
 #include <stdlib.h>
@@ -272,27 +271,6 @@ static void __cookd_server_stop(struct __cookd_server* server)
 
 static struct __cookd_server* g_server = NULL;
 
-static int __resolve_ingredient(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded)
-{
-    struct chef_download_params downloadParams;
-    int                         status;
-    VLOG_DEBUG("cookd", "__resolve_ingredient()\n");
-
-    // initialize download params
-    downloadParams.publisher = publisher;
-    downloadParams.package   = package;
-    downloadParams.platform  = platform;
-    downloadParams.arch      = arch;
-    downloadParams.channel   = channel;
-    downloadParams.version   = version; // may be null, will just get latest
-
-    status = chefclient_pack_download(&downloadParams, path);
-    if (status == 0) {
-        *revisionDownloaded = downloadParams.revision;
-    }
-    return status;
-}
-
 int cookd_server_init(gracht_client_t* client, int builderCount)
 {
     int status;
@@ -304,15 +282,13 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
         return -1;
     }
 
-    status = fridge_initialize(&(struct fridge_parameters) {
+    status = store_initialize(&(struct store_parameters) {
         .platform = CHEF_PLATFORM_STR,
         .architecture = CHEF_ARCHITECTURE_STR,
-        .backend = {
-            .resolve_ingredient = __resolve_ingredient
-        }
+        .backend = g_store_default_backend
     });
     if (status) {
-        VLOG_ERROR("cookd", "failed to initialize fridge\n");
+        VLOG_ERROR("cookd", "failed to initialize store\n");
         chefclient_cleanup();
         return status;
     }
@@ -320,7 +296,7 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
     g_server = __cookd_server_new(client);
     if (g_server == NULL) {
         VLOG_ERROR("cookd", "failed to allocate memory for server\n");
-        fridge_cleanup();
+        store_cleanup();
         chefclient_cleanup();
         return -1;
     }
@@ -329,7 +305,7 @@ int cookd_server_init(gracht_client_t* client, int builderCount)
     if (status) {
         VLOG_ERROR("cookd", "failed to start cookd server\n");
         __cookd_server_delete(g_server);
-        fridge_cleanup();
+        store_cleanup();
         chefclient_cleanup();
         return status;
     }
@@ -345,7 +321,7 @@ void cookd_server_cleanup(void)
 
     __cookd_server_stop(g_server);
     __cookd_server_delete(g_server);
-    fridge_cleanup();
+    store_cleanup();
     chefclient_cleanup();
 }
 
@@ -382,13 +358,12 @@ static int __prep_toolchains(struct list* platforms)
             return status;
         }
 
-        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
+        status = store_ensure_package(&(struct store_package) {
             .name = name,
             .channel = channel,
-            .version = version,
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
-        });
+        }, NULL);
         if (status) {
             free(name);
             free(channel);
@@ -409,13 +384,12 @@ static int __prep_ingredient_list(struct list* list, const char* platform, const
     list_foreach(list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
 
-        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
+        status = store_ensure_package(&(struct store_package) {
             .name = ingredient->name,
             .channel = ingredient->channel,
-            .version = ingredient->version,
             .arch = arch,
             .platform = platform
-        });
+        }, NULL);
         if (status) {
             VLOG_ERROR("cookd", "failed to fetch ingredient %s\n", ingredient->name);
             return status;

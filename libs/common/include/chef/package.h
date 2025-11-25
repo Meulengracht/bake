@@ -16,74 +16,14 @@
  * 
  */
 
-#ifndef __PLATFORM_PACKAGE_H__
-#define __PLATFORM_PACKAGE_H__
+#ifndef __CHEF_PACKAGE_H__
+#define __CHEF_PACKAGE_H__
 
+#include <chef/bits/package.h>
 #include <stddef.h>
 
 // prototypes imported from vafs;
 struct VaFs;
-
-enum chef_package_type {
-    CHEF_PACKAGE_TYPE_UNKNOWN,
-    CHEF_PACKAGE_TYPE_BOOTLOADER,
-    CHEF_PACKAGE_TYPE_TOOLCHAIN,
-    CHEF_PACKAGE_TYPE_OSBASE,
-    CHEF_PACKAGE_TYPE_CONTENT,
-    CHEF_PACKAGE_TYPE_INGREDIENT,
-    CHEF_PACKAGE_TYPE_APPLICATION
-};
-
-struct chef_version {
-    int         major;
-    int         minor;
-    int         patch;
-    int         revision;
-    const char* tag;
-    long long   size;
-    const char* created;
-};
-
-struct chef_revision {
-    const char*         channel;
-    const char*         platform;
-    const char*         architecture;
-    struct chef_version current_version;
-};
-
-enum chef_command_type {
-    CHEF_COMMAND_TYPE_UNKNOWN,
-    CHEF_COMMAND_TYPE_EXECUTABLE,
-    CHEF_COMMAND_TYPE_DAEMON
-};
-
-struct chef_command {
-    enum chef_command_type type;
-    const char*            name;
-    const char*            description;
-    const char*            arguments;
-    const char*            path;
-    const void*            icon_buffer;
-};
-
-struct chef_package {
-    const char* platform;
-    const char* arch;
-    const char* publisher;
-    const char* package;
-    const char* summary;
-    const char* description;
-    const char* homepage;
-    const char* license;
-    const char* eula;
-    const char* maintainer;
-    const char* maintainer_email;
-    
-    enum chef_package_type type;
-
-    struct chef_revision*  revisions;
-    size_t                 revisions_count;
-};
 
 /**
  * @brief 
@@ -149,4 +89,4 @@ extern void chef_commands_free(struct chef_command* commands, int count);
  */
 extern int chef_version_from_string(const char* string, struct chef_version* version);
 
-#endif //!__PLATFORM_PACKAGE_H__
+#endif //!__CHEF_PACKAGE_H__

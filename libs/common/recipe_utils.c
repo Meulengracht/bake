@@ -194,6 +194,38 @@ int recipe_parse_part_step(const char* str, char** part, char** step)
     return 0;
 }
 
+// Default runtime platform bases for each platform supported
+static const char* __default_platform_base(const char* platform)
+{
+    if (strcmp(platform, "linux") == 0) {
+        return "ubuntu:24";
+    } 
+    return platform;
+}
+
+static const char* __platform_base_for(struct recipe* recipe, const char* platform)
+{
+    struct list_item* i;
+    if (recipe->platforms.count == 0) {
+        return __default_platform_base(platform);
+    }
+
+    // iterate and find the one matching the host platform
+    list_foreach(&recipe->platforms, i) {
+        struct recipe_platform* platform = (struct recipe_platform*)i;
+        if (strcmp(platform->name, CHEF_PLATFORM_STR) == 0) {
+            return platform->base;
+        }
+    }
+    return __default_platform_base(platform);
+}
+
+const char* recipe_platform_base(struct recipe* recipe, const char* platform)
+{
+    const char* pl = platform ? platform : CHEF_PLATFORM_STR;
+    return __platform_base_for(recipe, pl);
+}
+
 static int __add_maybe_package(struct recipe* recipe, const char* package)
 {
     struct list_item_string* pkg;

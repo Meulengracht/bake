@@ -30,96 +30,46 @@
 
 extern const char* chefclient_api_base_url(void);
 
-struct pack_response {
-    int         revision;
-    const char* token;
-    const char* url;
-};
-
 struct download_context {
-    const char* publisher;
-    const char* package;
-    char        version[32];
-    size_t      bytes_downloaded;
-    size_t      bytes_total;
+    const char*           publisher;
+    const char*           package;
+    int                   revision;
+    struct chef_observer* observer;
 };
-
-static void __format_quantity(long long size, char* buffer, size_t bufferSize)
-{
-	char*  suffix[]       = { "B", "KB", "MB", "GB", "TB" };
-    int    i              = 0;
-	double remainingBytes = (double)size;
-
-	if (size >= 1024) {
-        long long count = size;
-		for (; (count / 1024) > 0 && i < 4 /* len(suffix)-1 */; i++, count /= 1024) {
-			remainingBytes = count / 1024.0;
-        }
-	}
-	snprintf(&buffer[0], bufferSize, "%.02lf%s", remainingBytes, suffix[i]);
-}
-
-static void __update_progress(struct download_context* downloadContext)
-{
-    char progressBuffer[32];
-    char totalSizeBuffer[32];
-    int  percent;
-
-    percent = (downloadContext->bytes_downloaded * 100) / downloadContext->bytes_total;
-    
-    // print a fancy progress bar with percentage, upload progress and a moving
-    // bar being filled
-    printf("\33[2K\rdownloading %s/%s (%s) [", downloadContext->publisher, downloadContext->package, downloadContext->version);
-    for (int i = 0; i < 20; i++) {
-        if (i < percent / 5) {
-            printf("#");
-        }
-        else {
-            printf(" ");
-        }
-    }
-    __format_quantity(downloadContext->bytes_downloaded, &progressBuffer[0], sizeof(progressBuffer));
-    __format_quantity(downloadContext->bytes_total, &totalSizeBuffer[0], sizeof(totalSizeBuffer));
-    printf("| %3d%%] %s / %s", percent, 
-        &progressBuffer[0], &totalSizeBuffer[0]
-    );
-    fflush(stdout);
-}
 
 static size_t __download_progress_callback(void *clientp,
     curl_off_t dltotal, curl_off_t dlnow,
     curl_off_t ultotal, curl_off_t ulnow)
 {
     struct download_context* context = (struct download_context*)clientp;
-    context->bytes_downloaded = (size_t)dlnow;
-    context->bytes_total = (size_t)dltotal;
-    if (context->bytes_total > 0) {
-        __update_progress(context);
+    if (context->observer == NULL) {
+        return 0;
     }
+    context->observer->report(dlnow, dltotal, context->observer->userData);
     return 0;
 }
 
-static int __get_download_url(struct chef_download_params* params, char* urlBuffer, size_t bufferSize)
+static int __get_revision_url(struct chef_download_params* params, char* urlBuffer, size_t bufferSize)
 {
-    if (params->revision != 0) {
-        // if we have a revision, use that
-        int written = snprintf(urlBuffer, bufferSize - 1, 
-            "%s/package/download?publisher=%s&name=%s&revision=%i",
-            chefclient_api_base_url(),
-            params->publisher, params->package, params->revision
-        );
-        return written < (bufferSize - 1) ? 0 : -1;
-    } else {
-        int written = snprintf(urlBuffer, bufferSize - 1, 
-            "%s/package/download?publisher=%s&name=%s&platform=%s&arch=%s&channel=%s",
-            chefclient_api_base_url(),
-            params->publisher, params->package, params->platform, params->arch, params->channel
-        );
-        return written < (bufferSize - 1) ? 0 : -1;
-    }
+    int written = snprintf(urlBuffer, bufferSize - 1, 
+        "%s/package/revision?publisher=%s&name=%s&platform=%s&arch=%s&channel=%s",
+        chefclient_api_base_url(),
+        params->publisher, params->package, params->platform, params->arch, params->channel
+    );
+    return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __parse_pack_response(const char* response, struct pack_response* packResponse)
+static int __get_download_url(struct download_context* context, char* urlBuffer, size_t bufferSize)
+{
+    int written = snprintf(urlBuffer, bufferSize - 1, 
+        "%s/package/download?publisher=%s&name=%s&revision=%i",
+        chefclient_api_base_url(),
+        context->publisher, context->package, context->revision
+    );
+    return written < (bufferSize - 1) ? 0 : -1;
+}
+
+static int __parse_revision_response(const char* response, int* latestRevision)
 {
     json_error_t error;
     json_t*      root;
@@ -130,44 +80,42 @@ static int __parse_pack_response(const char* response, struct pack_response* pac
         return -1;
     }
 
-    packResponse->revision = json_integer_value(json_object_get(root, "pack-revision"));
-    packResponse->token = platform_strdup(json_string_value(json_object_get(root, "sas-token")));
-    packResponse->url = platform_strdup(json_string_value(json_object_get(root, "blob-url")));
+    *latestRevision = json_integer_value(json_object_get(root, "revision"));
     json_decref(root);
 
     return 0;
 }
 
-int __download_request(struct chef_download_params* params, struct pack_response* packResponse)
+int __resolve_revision(struct chef_download_params* params, int* latestRevision)
 {
     struct chef_request* request;
     CURLcode             code;
-    char                 buffer[512];
+    char                 buffer[1024];
     int                  status = -1;
     long                 httpCode;
 
     // initialize a curl session
     request = chef_request_new(CHEF_CLIENT_API_SECURE, 0);
     if (!request) {
-        VLOG_ERROR("chef-client", "__download_request: failed to create request\n");
+        VLOG_ERROR("chef-client", "__resolve_revision: failed to create request\n");
         return -1;
     }
 
     // set the url
-    if (__get_download_url(params, buffer, sizeof(buffer)) != 0) {
-        VLOG_ERROR("chef-client", "__download_request: buffer too small for package download link\n");
+    if (__get_revision_url(params, buffer, sizeof(buffer)) != 0) {
+        VLOG_ERROR("chef-client", "__resolve_revision: buffer too small for package download link\n");
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_request: failed to set url [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__resolve_revision: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
     code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__download_request: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "__resolve_revision: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -175,28 +123,29 @@ int __download_request(struct chef_download_params* params, struct pack_response
         status = -1;
         
         if (httpCode == 404) {
-            VLOG_ERROR("chef-client", "__download_request: package not found\n");
+            VLOG_ERROR("chef-client", "__resolve_revision: package not found\n");
             errno = ENOENT;
         }
         else {
-            VLOG_ERROR("chef-client", "__download_request: http error %ld [%s]\n", httpCode, request->response);
+            VLOG_ERROR("chef-client", "__resolve_revision: http error %ld [%s]\n", httpCode, request->response);
             errno = EIO;
         }
         goto cleanup;
     }
 
-    status = __parse_pack_response(request->response, packResponse);
+    status = __parse_revision_response(request->response, latestRevision);
 
 cleanup:
     chef_request_delete(request);
     return status;
 }
 
-static int __download_file(const char* filePath, struct pack_response* context, struct download_context* downloadContext)
+static int __download_file(const char* filePath, struct download_context* context)
 {
     struct chef_request* request;
+    char                 buffer[1024];
     FILE*                file;
-    int                  status  = -1;
+    int                  status = -1;
     CURLcode             code;
     long                 httpCode;
 
@@ -214,9 +163,10 @@ static int __download_file(const char* filePath, struct pack_response* context, 
         goto cleanup;
     }
 
-    // set required ms headers
-    request->headers = curl_slist_append(request->headers, "x-ms-blob-type: BlockBlob");
-    request->headers = curl_slist_append(request->headers, "x-ms-blob-content-type: application/octet-stream");
+    if (__get_download_url(context, buffer, sizeof(buffer)) != 0) {
+        VLOG_ERROR("chef-client", "__resolve_revision: buffer too small for package download link\n");
+        goto cleanup;
+    }
 
     // reset the writer function/data
     code = curl_easy_setopt(request->curl, CURLOPT_WRITEFUNCTION, fwrite);
@@ -249,13 +199,13 @@ static int __download_file(const char* filePath, struct pack_response* context, 
         goto cleanup;
     }
 
-    code = curl_easy_setopt(request->curl, CURLOPT_XFERINFODATA, downloadContext);
+    code = curl_easy_setopt(request->curl, CURLOPT_XFERINFODATA, context);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__download_file: failed to set download progress callback data [%s]\n", request->error);
         goto cleanup;
     }
 
-    code = curl_easy_setopt(request->curl, CURLOPT_URL, context->url);
+    code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__download_file: failed to set url [%s]\n", request->error);
         goto cleanup;
@@ -283,47 +233,39 @@ cleanup:
     return status;
 }
 
-static void __format_version(char* buffer, struct chef_version* version, int revision)
-{
-    if (version != NULL) {
-        sprintf(&buffer[0], "%i.%i.%i", version->major, version->minor, version->patch);
-    } else {
-        sprintf(&buffer[0], "%i", revision);
-    }
-}
-
 int chefclient_pack_download(struct chef_download_params* params, const char* path)
 {
-    struct pack_response    packResponse = { 0 };
     struct download_context downloadContext = { 0 };
+    int                     revision;
     int                     status;
+    VLOG_TRACE("chef-client", "download(name=%s/%s, revision=%i)\n",
+        params->publisher, params->package, params->revision);
 
-    status = __download_request(params, &packResponse);
-    if (status != 0) {
-        VLOG_ERROR("chef-client", "chefclient_pack_download: failed to create download request [%s]\n", strerror(errno));
-        return status;
+    if (params->revision == 0) {
+        VLOG_DEBUG("chef-client", "download: resolving latest revision for %s\n", params->package);
+        status = __resolve_revision(params, &revision);
+        if (status != 0) {
+            VLOG_ERROR("chef-client", "chefclient_pack_download: failed to create download request [%s]\n", strerror(errno));
+            return status;
+        }
+    } else {
+        // we requested a specific one
+        revision = params->revision;
     }
-
-    // update the revision
-    params->revision = packResponse.revision;
 
     // prepare download context
     downloadContext.publisher = params->publisher;
     downloadContext.package   = params->package;
-    __format_version(&downloadContext.version[0], params->version, packResponse.revision);
-
-    // print initial banner
-    printf("initiating download of %s/%s", params->publisher, params->package);
-    fflush(stdout);
+    downloadContext.revision  = revision;
+    downloadContext.observer  = params->observer;
 
     // start download
-    status = __download_file(path, &packResponse, &downloadContext);
+    status = __download_file(path, &downloadContext);
     if (status != 0) {
         VLOG_ERROR("chef-client", "chefclient_pack_download: failed to download package [%s]\n", strerror(errno));
         return status;
     }
 
-    // print newline
-    printf("\n");
+    params->revision = revision;
     return status;
 }

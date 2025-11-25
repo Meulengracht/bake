@@ -27,7 +27,6 @@
 #include <unistd.h>
 
 #define __CONTAINER_SOCKET_RUNTIME_BASE "/run/containerv"
-#define __CONTAINER_ID_LENGTH 8
 
 #define __CONTAINER_MAX_FD_COUNT 16
 
@@ -89,7 +88,7 @@ struct containerv_container {
     struct list processes;
 
     // shared
-    char        id[__CONTAINER_ID_LENGTH + 1];
+    const char* id;
     int         host[2];
     int         child[2];
     int         stdout[2];

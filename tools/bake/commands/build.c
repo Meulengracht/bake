@@ -20,17 +20,16 @@
  */
 #define _GNU_SOURCE
 
-#include <chef/client.h>
-#include <chef/api/package.h>
 #include <errno.h>
 #include <chef/config.h>
+#include <chef/client.h>
 #include <chef/cvd.h>
 #include <chef/dirs.h>
 #include <chef/list.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
+#include <chef/store-default.h>
 #include <ctype.h>
-#include <chef/fridge.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,13 +74,12 @@ static int __ensure_toolchains(struct list* platforms)
             return status;
         }
 
-        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
+        status = store_ensure_package(&(struct store_package) {
             .name = name,
             .channel = channel,
-            .version = version,
             .arch = CHEF_ARCHITECTURE_STR,
             .platform = CHEF_PLATFORM_STR
-        });
+        }, NULL);
         if (status) {
             free(name);
             free(channel);
@@ -102,13 +100,12 @@ static int __ensure_ingredient_list(struct list* list, const char* platform, con
     list_foreach(list, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
 
-        status = fridge_ensure_ingredient(&(struct fridge_ingredient) {
+        status = store_ensure_package(&(struct store_package) {
             .name = ingredient->name,
             .channel = ingredient->channel,
-            .version = ingredient->version,
             .arch = arch,
             .platform = platform
-        });
+        }, NULL);
         if (status) {
             VLOG_ERROR("bake", "failed to fetch ingredient %s\n", ingredient->name);
             return status;
@@ -214,27 +211,6 @@ static char* __format_footer(const char* logPath)
     return platform_strdup(&tmp[0]);
 }
 
-static int __resolve_ingredient(const char* publisher, const char* package, const char* platform, const char* arch, const char* channel, struct chef_version* version, const char* path, int* revisionDownloaded)
-{
-    struct chef_download_params downloadParams;
-    int                         status;
-    VLOG_DEBUG("cookd", "__resolve_ingredient()\n");
-
-    // initialize download params
-    downloadParams.publisher = publisher;
-    downloadParams.package   = package;
-    downloadParams.platform  = platform;
-    downloadParams.arch      = arch;
-    downloadParams.channel   = channel;
-    downloadParams.version   = version; // may be null, will just get latest
-
-    status = chefclient_pack_download(&downloadParams, path);
-    if (status == 0) {
-        *revisionDownloaded = downloadParams.revision;
-    }
-    return status;
-}
-
 int run_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct build_cache*        cache = NULL;
@@ -294,7 +270,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         return -1;
     }
 
-    // TODO: make chefclient instanced, move to fridge
+    // TODO: make chefclient instanced, move to store
     status = chefclient_initialize();
     if (status != 0) {
         VLOG_ERROR("bake", "failed to initialize chef client\n");
@@ -302,18 +278,16 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     }
     atexit(chefclient_cleanup);
 
-    status = fridge_initialize(&(struct fridge_parameters) {
+    status = store_initialize(&(struct store_parameters) {
         .platform = options->platform,
         .architecture = arch,
-        .backend = {
-            .resolve_ingredient = __resolve_ingredient
-        }
+        .backend = g_store_default_backend
     });
     if (status != 0) {
-        VLOG_ERROR("bake", "failed to initialize fridge\n");
+        VLOG_ERROR("bake", "failed to initialize store\n");
         return -1;
     }
-    atexit(fridge_cleanup);
+    atexit(store_cleanup);
 
     // setup the build log box
     vlog_start(stdout, header, footer, 6);

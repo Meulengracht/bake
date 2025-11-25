@@ -29,14 +29,13 @@
 extern const char* chefclient_api_base_url(void);
 
 struct chef_package_settings {
-    const char* package;
-    int discoverable;
+    enum chef_package_setting_discoverable discoverable;
 };
 
 static int __get_settings_url(char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "%s/pack/settings",
+        "%s/package/settings",
         chefclient_api_base_url()
     );
     return written < (bufferSize - 1) ? 0 : -1;
@@ -45,7 +44,7 @@ static int __get_settings_url(char* urlBuffer, size_t bufferSize)
 static int __get_settings_query_url(struct chef_settings_params* params, char* urlBuffer, size_t bufferSize)
 {
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "%s/pack/settings?name=%s",
+        "%s/package/settings?name=%s",
         chefclient_api_base_url(),
         params->package
     );
@@ -59,11 +58,6 @@ static json_t* __serialize_pack_settings(struct chef_package_settings* settings)
         errno = ENOMEM;
         return NULL;
     }
-
-    // never need to serialize publisher
-    
-    // serialize package name
-    json_object_set_new(json, "name", json_string(settings->package));
 
     // serialize settings
     json_object_set_new(json, "discoverable", json_boolean(settings->discoverable));
@@ -87,12 +81,6 @@ static int __parse_pack_settings(const char* response, struct chef_package_setti
     settings = chef_package_settings_new();
     if (settings == NULL) {
         return -1;
-    }
-
-    // read name
-    name = json_object_get(root, "name");
-    if (name) {
-        settings->package = platform_strdup(json_string_value(name));
     }
 
     discoverable = json_object_get(root, "discoverable");
@@ -270,21 +258,10 @@ void chef_package_settings_delete(struct chef_package_settings* settings)
         return;
     }
 
-    free((void*)settings->package);
     free(settings);
 }
 
-const char* chef_package_settings_get_package(struct chef_package_settings* settings)
-{
-    if (settings == NULL) {
-        errno = EINVAL;
-        return NULL;
-    }
-
-    return settings->package;
-}
-
-int chef_package_settings_get_discoverable(struct chef_package_settings* settings)
+enum chef_package_setting_discoverable chef_package_settings_get_discoverable(struct chef_package_settings* settings)
 {
     if (settings == NULL) {
         errno = EINVAL;
@@ -294,7 +271,7 @@ int chef_package_settings_get_discoverable(struct chef_package_settings* setting
     return settings->discoverable;
 }
 
-void chef_package_settings_set_discoverable(struct chef_package_settings* settings, int discoverable)
+void chef_package_settings_set_discoverable(struct chef_package_settings* settings, enum chef_package_setting_discoverable discoverable)
 {
     if (settings == NULL) {
         errno = EINVAL;

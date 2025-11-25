@@ -41,7 +41,7 @@ static void __print_help(void)
     printf("      Print this help message\n");
 }
 
-static int __ensure_publisher_valid(char** publisher)
+static int __ensure_publisher_valid(char** publisherNameOut)
 {
     struct chef_account* account;
     int                  verified = 0;
@@ -53,29 +53,32 @@ static int __ensure_publisher_valid(char** publisher)
     }
 
     // verify account status is active
-    if (chef_account_get_status(account) != CHEF_ACCOUNT_STATUS_ACTIVE) {
+    if (chef_account_status(account) != CHEF_ACCOUNT_STATUS_ACTIVE) {
         printf("account has been suspended, you are not allowed to publish new packages\n");
         errno = EACCES;
         return -1;
     }
 
     // if publisher is NULL, then we see if there is just one
-    if (*publisher == NULL) {
-        if (chef_account_get_publisher_count(account) > 1)  {
+    if (*publisherNameOut == NULL) {
+        struct chef_publisher* publisher;
+        if (chef_account_publisher_count(account) > 1)  {
             fprintf(stderr, "order: a publisher was not specified and one could not be inferred\n");
             return -1;
         }
-
-        *publisher = platform_strdup(chef_account_get_publisher_name(account, 0));
-        if (*publisher == NULL) {
+        
+        publisher = chef_account_publisher(account, 0);
+        if (publisher == NULL) {
             fprintf(stderr, "order: no publisher for the package\n");
             return -1;
         }
+        *publisherNameOut = platform_strdup(chef_publisher_name(publisher));
     }
 
-    for (int i = 0; i < chef_account_get_publisher_count(account); i++) {
-        if (strcmp(*publisher, chef_account_get_publisher_name(account, i)) == 0) {
-            if (chef_account_get_publisher_verified_status(account, i) != CHEF_ACCOUNT_VERIFIED_STATUS_VERIFIED) {
+    for (int i = 0; i < chef_account_publisher_count(account); i++) {
+        struct chef_publisher* publisher = chef_account_publisher(account, i);
+        if (strcmp(*publisherNameOut, chef_publisher_name(publisher)) == 0) {
+            if (chef_publisher_verified_status(publisher) != CHEF_ACCOUNT_VERIFIED_STATUS_VERIFIED) {
                 fprintf(stderr, "order: publisher name has not been verified yet, please wait for verification status to be approved\n");
                 errno = EACCES;
                 return -1;

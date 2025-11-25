@@ -131,6 +131,47 @@ static void __package_info_free(struct __package_info* info)
     info->path = NULL;
 }
 
+static void __format_quantity(long long size, char* buffer, size_t bufferSize)
+{
+	char*  suffix[]       = { "B", "KB", "MB", "GB", "TB" };
+    int    i              = 0;
+	double remainingBytes = (double)size;
+
+	if (size >= 1024) {
+        long long count = size;
+		for (; (count / 1024) > 0 && i < 4 /* len(suffix)-1 */; i++, count /= 1024) {
+			remainingBytes = count / 1024.0;
+        }
+	}
+	snprintf(&buffer[0], bufferSize, "%.02lf%s", remainingBytes, suffix[i]);
+}
+
+static void __update_progress(unsigned long long bytesCurrent, unsigned long long bytesTotal, void* context)
+{
+    struct __package_info* pi = context;
+    char                   progressBuffer[32];
+    char                   totalSizeBuffer[32];
+    int                    percent = (bytesCurrent * 100) / bytesTotal;
+    
+    // print a fancy progress bar with percentage, upload progress and a moving
+    // bar being filled
+    printf("\33[2K\rdownloading %s/%s [", pi->publisher, pi->package);
+    for (int i = 0; i < 20; i++) {
+        if (i < percent / 5) {
+            printf("#");
+        }
+        else {
+            printf(" ");
+        }
+    }
+    __format_quantity(bytesCurrent, &progressBuffer[0], sizeof(progressBuffer));
+    __format_quantity(bytesTotal, &totalSizeBuffer[0], sizeof(totalSizeBuffer));
+    printf("| %3d%%] %s / %s", percent, 
+        &progressBuffer[0], &totalSizeBuffer[0]
+    );
+    fflush(stdout);
+}
+
 static int __resolve_sources(struct __image_context* context, struct chef_image* image)
 {
     struct chef_download_params dlParams;
@@ -147,7 +188,6 @@ static int __resolve_sources(struct __image_context* context, struct chef_image*
 
     dlParams.arch = context->arch;
     dlParams.platform = context->platform;
-    dlParams.version = NULL;
 
     // Download chef packages referred
     list_foreach(&image->partitions, i) {
@@ -166,8 +206,17 @@ static int __resolve_sources(struct __image_context* context, struct chef_image*
             dlParams.publisher = pi.publisher;
             dlParams.package = pi.package;
             dlParams.channel = pi.channel;
+            dlParams.revision = 0;
+            dlParams.observer = &(struct chef_observer) {
+                .report = __update_progress,
+                .userData = &pi
+            };
 
+            printf("initiating download of %s/%s", pi.publisher, pi.package);
+            fflush(stdout);
             status = chefclient_pack_download(&dlParams, pi.path);
+            printf("\n");
+
             __package_info_free(&pi);
             if (status) {
                 VLOG_ERROR("mkcdk", "__resolve_sources: failed to download %s/%s\n",
@@ -176,7 +225,7 @@ static int __resolve_sources(struct __image_context* context, struct chef_image*
             }
             continue;
         }
-        
+            
         // Is there any packages that must be installed
         list_foreach(&p->sources, j) {
             struct chef_image_partition_source* s = (struct chef_image_partition_source*)j;
@@ -192,8 +241,17 @@ static int __resolve_sources(struct __image_context* context, struct chef_image*
                 dlParams.publisher = pi.publisher;
                 dlParams.package = pi.package;
                 dlParams.channel = pi.channel;
+                dlParams.revision = 0;
+                dlParams.observer = &(struct chef_observer) {
+                    .report = __update_progress,
+                    .userData = &pi
+                };
 
+                printf("initiating download of %s/%s", pi.publisher, pi.package);
+                fflush(stdout);
                 status = chefclient_pack_download(&dlParams, pi.path);
+                printf("\n");
+                
                 __package_info_free(&pi);
                 if (status) {
                     VLOG_ERROR("mkcdk", "__resolve_sources: failed to download %s/%s\n",

@@ -86,9 +86,6 @@ struct recipe_part {
 
 struct recipe_project {
     const char* name;
-    const char* summary;
-    const char* description;
-    const char* icon;
     const char* version;
     const char* license;
     const char* eula;
@@ -100,6 +97,7 @@ struct recipe_project {
 struct recipe_platform {
     struct list_item list_header;
     const char*      name;
+    const char*      base;
     const char*      toolchain;
     struct list      archs;  // list<list_item_string>
 };
@@ -115,7 +113,6 @@ struct recipe_ingredient {
     enum recipe_ingredient_type type;
     const char*                 name;
     const char*                 channel;
-    const char*                 version;
     struct list                 filters;  // list<list_item_string>
 };
 
@@ -140,6 +137,9 @@ struct recipe_pack_command {
 struct recipe_pack {
     struct list_item                      list_header;
     const char*                           name;
+    const char*                           summary;
+    const char*                           description;
+    const char*                           icon;
     enum chef_package_type                type;
     struct recipe_pack_ingredient_options options;
     struct list                           filters;  // list<list_item_string>
@@ -200,9 +200,10 @@ extern int recipe_parse(void* buffer, size_t length, struct recipe** recipeOut);
 extern void recipe_destroy(struct recipe* recipe);
 
 // recipe parser utilities
-extern int recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, char** channel, char** version);
+extern int         recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, char** channel, char** version);
 extern const char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform);
-extern int recipe_ensure_target(struct recipe* recipe, const char** expectedPlatform, struct list* expectedArchs);
-extern int recipe_parse_part_step(const char* str, char** part, char** step);
+extern int         recipe_ensure_target(struct recipe* recipe, const char** expectedPlatform, struct list* expectedArchs);
+extern int         recipe_parse_part_step(const char* str, char** part, char** step);
+extern const char* recipe_platform_base(struct recipe* recipe, const char* platform);
 
 #endif //!__CHEF_RECIPE_H__

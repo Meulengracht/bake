@@ -8,4 +8,4 @@ add_library(remote STATIC
     upload.c
 )
 target_include_directories(remote PUBLIC include)
-target_link_libraries(remote PUBLIC chef-client libdirconf vlog platform gracht)
+target_link_libraries(remote PUBLIC chef-client dirconf vlog platform gracht)

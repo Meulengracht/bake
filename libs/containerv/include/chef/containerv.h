@@ -103,6 +103,7 @@ extern void containerv_options_set_network(
  * @param capabilities
  */
 extern int containerv_create(
+    const char*                   containerId,
     const char*                   rootFs,
     struct containerv_options*    options,
     struct containerv_container** containerOut
