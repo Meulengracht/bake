@@ -19,6 +19,8 @@
 #ifndef __CONTAINERV_H__
 #define __CONTAINERV_H__
 
+#include <chef/containerv/layers.h>
+
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #include <windows.h>
 typedef HANDLE process_handle_t;

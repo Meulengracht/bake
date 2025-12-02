@@ -1,0 +1,652 @@
+/**
+ * Copyright, Philip Meulengracht
+ *
+ * This program is free software : you can redistribute it and / or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation ? , either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * 
+ */
+
+#define FUSE_USE_VERSION 32
+
+#include <chef/containerv/layers.h>
+#include <chef/containerv.h>
+#include <chef/platform.h>
+#include <errno.h>
+#include <fuse3/fuse.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mount.h>
+#include <threads.h>
+#include <unistd.h>
+#include <vafs/vafs.h>
+#include <vafs/file.h>
+#include <vafs/directory.h>
+#include <vafs/stat.h>
+#include <vlog.h>
+
+/**
+ * @brief VaFS FUSE mount handle
+ */
+struct __vafs_mount {
+    struct VaFs* vafs;
+    struct fuse* fuse;
+    char*        mount_point;
+    thrd_t       worker;
+};
+
+/**
+ * @brief Mounted layer information
+ */
+struct __mounted_layer {
+    enum containerv_layer_type type;
+    char*                      mount_point;   // Where layer is mounted
+    char*                      source_path;   // Original source
+    void*                      handle;        // Mount handle (e.g., __vafs_mount*)
+};
+
+/**
+ * @brief Layer context structure
+ */
+struct containerv_layer_context {
+    struct __mounted_layer* layers;
+    int                     layer_count;
+    char*                   composed_rootfs;  // Final composed rootfs
+    char*                   work_dir;         // OverlayFS work dir
+    char*                   upper_dir;        // OverlayFS upper dir
+    char*                   container_id;     // Container ID
+};
+
+// ============================================================================
+// VaFS FUSE Implementation
+// ============================================================================
+
+static int __vafs_getattr(const char* path, struct stat* stbuf, struct fuse_file_info* fi)
+{
+    struct fuse_context* context = fuse_get_context();
+    struct __vafs_mount* mount   = (struct __vafs_mount*)context->private_data;
+    struct vafs_stat     vstat;
+    int                  status;
+    
+    status = vafs_path_stat(mount->vafs, path, 1, &vstat);
+    if (status) {
+        return status;
+    }
+    
+    memset(stbuf, 0, sizeof(struct stat));
+    stbuf->st_mode = vstat.mode;
+    stbuf->st_size = vstat.size;
+    stbuf->st_nlink = 1;
+    
+    return 0;
+}
+
+static int __vafs_open(const char* path, struct fuse_file_info* fi)
+{
+    struct fuse_context*   context = fuse_get_context();
+    struct __vafs_mount*   mount   = (struct __vafs_mount*)context->private_data;
+    struct VaFsFileHandle* handle;
+    int                    status;
+    
+    status = vafs_file_open(mount->vafs, path, &handle);
+    if (status) {
+        return status;
+    }
+    
+    fi->fh = (uint64_t)handle;
+    return 0;
+}
+
+static int __vafs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
+{
+    struct VaFsFileHandle* handle = (struct VaFsFileHandle*)fi->fh;
+    size_t                 bytesRead;
+    int                    status;
+    
+    status = vafs_file_seek(handle, SEEK_SET, offset);
+    if (status) {
+        return status;
+    }
+    
+    bytesRead = vafs_file_read(handle, buf, size);
+    return (int)bytesRead;
+}
+
+static int __vafs_release(const char* path, struct fuse_file_info* fi)
+{
+    struct VaFsFileHandle* handle = (struct VaFsFileHandle*)fi->fh;
+    
+    if (handle == NULL) {
+        return -EINVAL;
+    }
+    
+    vafs_file_close(handle);
+    fi->fh = 0;
+    return 0;
+}
+
+static int __vafs_opendir(const char* path, struct fuse_file_info* fi)
+{
+    struct fuse_context*        context = fuse_get_context();
+    struct __vafs_mount*        mount   = (struct __vafs_mount*)context->private_data;
+    struct VaFsDirectoryHandle* handle;
+    int                         status;
+    
+    status = vafs_directory_open(mount->vafs, path, &handle);
+    if (status) {
+        return status;
+    }
+    
+    fi->fh = (uint64_t)handle;
+    return 0;
+}
+
+static int __vafs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, 
+                          off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags)
+{
+    struct VaFsDirectoryHandle* handle = (struct VaFsDirectoryHandle*)fi->fh;
+    struct VaFsEntry            entry;
+    
+    filler(buf, ".", NULL, 0, 0);
+    filler(buf, "..", NULL, 0, 0);
+    
+    while (vafs_directory_read(handle, &entry) == 0) {
+        filler(buf, entry.Name, NULL, 0, 0);
+    }
+    
+    return 0;
+}
+
+static int __vafs_releasedir(const char* path, struct fuse_file_info* fi)
+{
+    struct VaFsDirectoryHandle* handle = (struct VaFsDirectoryHandle*)fi->fh;
+    
+    if (handle == NULL) {
+        return -EINVAL;
+    }
+    
+    vafs_directory_close(handle);
+    fi->fh = 0;
+    return 0;
+}
+
+static const struct fuse_operations g_vafs_operations = {
+    .getattr    = __vafs_getattr,
+    .open       = __vafs_open,
+    .read       = __vafs_read,
+    .release    = __vafs_release,
+    .opendir    = __vafs_opendir,
+    .readdir    = __vafs_readdir,
+    .releasedir = __vafs_releasedir,
+};
+
+static int __fuse_loop_wrapper(void* arg)
+{
+    struct fuse* fuse = (struct fuse*)arg;
+    return fuse_loop(fuse);
+}
+
+static int __vafs_mount(const char* pack_path, const char* mount_point, struct __vafs_mount** mount_out)
+{
+    struct __vafs_mount* mount;
+    struct fuse_args     args = FUSE_ARGS_INIT(0, NULL);
+    int                  status;
+    
+    VLOG_DEBUG("containerv", "__vafs_mount: mounting %s at %s\n", pack_path, mount_point);
+    
+    mount = calloc(1, sizeof(struct __vafs_mount));
+    if (mount == NULL) {
+        return -1;
+    }
+    
+    mount->mount_point = strdup(mount_point);
+    if (mount->mount_point == NULL) {
+        free(mount);
+        return -1;
+    }
+    
+    status = vafs_open_file(pack_path, &mount->vafs);
+    if (status != 0) {
+        VLOG_ERROR("containerv", "__vafs_mount: failed to open VaFS package\n");
+        free(mount->mount_point);
+        free(mount);
+        return -1;
+    }
+    
+    mount->fuse = fuse_new(&args, &g_vafs_operations, sizeof(g_vafs_operations), mount);
+    if (mount->fuse == NULL) {
+        VLOG_ERROR("containerv", "__vafs_mount: failed to create FUSE instance\n");
+        vafs_close(mount->vafs);
+        free(mount->mount_point);
+        free(mount);
+        return -1;
+    }
+    
+    status = fuse_mount(mount->fuse, mount->mount_point);
+    if (status != 0) {
+        VLOG_ERROR("containerv", "__vafs_mount: failed to mount FUSE\n");
+        fuse_destroy(mount->fuse);
+        vafs_close(mount->vafs);
+        free(mount->mount_point);
+        free(mount);
+        return -1;
+    }
+    
+    status = thrd_create(&mount->worker, __fuse_loop_wrapper, (void*)mount->fuse);
+    if (status != thrd_success) {
+        VLOG_ERROR("containerv", "__vafs_mount: failed to create worker thread\n");
+        fuse_unmount(mount->fuse);
+        fuse_destroy(mount->fuse);
+        vafs_close(mount->vafs);
+        free(mount->mount_point);
+        free(mount);
+        return -1;
+    }
+    
+    VLOG_DEBUG("containerv", "__vafs_mount: successfully mounted\n");
+    *mount_out = mount;
+    return 0;
+}
+
+static void __vafs_unmount(struct __vafs_mount* mount)
+{
+    if (mount == NULL) {
+        return;
+    }
+    
+    VLOG_DEBUG("containerv", "__vafs_unmount: unmounting %s\n", mount->mount_point);
+    
+    if (mount->worker != 0) {
+        fuse_exit(mount->fuse);
+        thrd_join(mount->worker, NULL);
+        mount->worker = 0;
+    }
+    
+    if (mount->fuse != NULL) {
+        fuse_unmount(mount->fuse);
+        fuse_destroy(mount->fuse);
+    }
+    
+    if (mount->vafs != NULL) {
+        vafs_close(mount->vafs);
+    }
+    
+    free(mount->mount_point);
+    free(mount);
+}
+
+// ============================================================================
+// Layer Path Helpers
+// ============================================================================
+
+static char* __create_layer_dir(const char* container_id, const char* subdir)
+{
+    char  tmp[PATH_MAX];
+    char* path;
+    
+    snprintf(tmp, sizeof(tmp), "/var/chef/layers/%s/%s", container_id, subdir);
+    path = strdup(tmp);
+    if (path == NULL) {
+        return NULL;
+    }
+    
+    if (platform_mkdir(path) != 0 && errno != EEXIST) {
+        VLOG_ERROR("containerv", "__create_layer_dir: failed to create %s\n", path);
+        free(path);
+        return NULL;
+    }
+    
+    return path;
+}
+
+static char* __create_vafs_mount_point(const char* container_id, int layer_index)
+{
+    char tmp[64];
+    snprintf(tmp, sizeof(tmp), "vafs-%d", layer_index);
+    return __create_layer_dir(container_id, tmp);
+}
+
+// ============================================================================
+// Layer Mounting
+// ============================================================================
+
+static int __mount_vafs_layer(
+    struct containerv_layer* layer,
+    const char*              container_id,
+    int                      layer_index,
+    struct __mounted_layer*  mounted_layer)
+{
+    char*                mount_point;
+    struct __vafs_mount* mount_handle = NULL;
+    int                  status;
+    
+    mount_point = __create_vafs_mount_point(container_id, layer_index);
+    if (mount_point == NULL) {
+        return -1;
+    }
+    
+    status = __vafs_mount(layer->source, mount_point, &mount_handle);
+    if (status != 0) {
+        free(mount_point);
+        return -1;
+    }
+    
+    mounted_layer->type = layer->type;
+    mounted_layer->mount_point = mount_point;
+    mounted_layer->source_path = strdup(layer->source);
+    mounted_layer->handle = mount_handle;
+    
+    return 0;
+}
+
+static int __setup_base_rootfs(
+    struct containerv_layer* layer,
+    const char*              container_id,
+    struct __mounted_layer*  mounted_layer)
+{
+    VLOG_DEBUG("containerv", "__setup_base_rootfs: source=%s\n", 
+               layer->source ? layer->source : "null");
+    
+    if (layer->source == NULL) {
+        VLOG_ERROR("containerv", "__setup_base_rootfs: no source path\n");
+        errno = EINVAL;
+        return -1;
+    }
+    
+    mounted_layer->type = layer->type;
+    mounted_layer->mount_point = strdup(layer->source);
+    mounted_layer->source_path = strdup(layer->source);
+    mounted_layer->handle = NULL;
+    
+    return 0;
+}
+
+static int __create_overlay_mount(struct containerv_layer_context* context)
+{
+    char* options = NULL;
+    char* lowerdir_list = NULL;
+    size_t options_size = 0;
+    size_t lowerdir_size = 0;
+    int status;
+    
+    VLOG_DEBUG("containerv", "__create_overlay_mount: composing %d layers\n", context->layer_count);
+    
+    // Build lowerdir list (all non-overlay layers)
+    for (int i = 0; i < context->layer_count; i++) {
+        if (context->layers[i].type == CONTAINERV_LAYER_OVERLAY) {
+            continue;
+        }
+        
+        const char* layer_path = context->layers[i].mount_point;
+        size_t path_len = strlen(layer_path);
+        
+        if (lowerdir_list == NULL) {
+            lowerdir_size = path_len + 1;
+            lowerdir_list = malloc(lowerdir_size);
+            if (lowerdir_list == NULL) {
+                return -1;
+            }
+            strcpy(lowerdir_list, layer_path);
+        } else {
+            size_t new_size = lowerdir_size + path_len + 2;
+            char* new_list = realloc(lowerdir_list, new_size);
+            if (new_list == NULL) {
+                free(lowerdir_list);
+                return -1;
+            }
+            lowerdir_list = new_list;
+            strcat(lowerdir_list, ":");
+            strcat(lowerdir_list, layer_path);
+            lowerdir_size = new_size;
+        }
+    }
+    
+    if (lowerdir_list == NULL) {
+        VLOG_ERROR("containerv", "__create_overlay_mount: no lower layers\n");
+        errno = EINVAL;
+        return -1;
+    }
+    
+    // Build overlayfs options
+    options_size = strlen("lowerdir=") + lowerdir_size + 
+                   strlen(",upperdir=") + strlen(context->upper_dir) +
+                   strlen(",workdir=") + strlen(context->work_dir) + 1;
+    
+    options = malloc(options_size);
+    if (options == NULL) {
+        free(lowerdir_list);
+        return -1;
+    }
+    
+    snprintf(options, options_size, "lowerdir=%s,upperdir=%s,workdir=%s",
+             lowerdir_list, context->upper_dir, context->work_dir);
+    
+    VLOG_DEBUG("containerv", "__create_overlay_mount: options=%s\n", options);
+    VLOG_DEBUG("containerv", "__create_overlay_mount: target=%s\n", context->composed_rootfs);
+    
+    status = mount("overlay", context->composed_rootfs, "overlay", 0, options);
+    if (status != 0) {
+        VLOG_ERROR("containerv", "__create_overlay_mount: mount failed: %s\n", strerror(errno));
+        free(options);
+        free(lowerdir_list);
+        return -1;
+    }
+    
+    free(options);
+    free(lowerdir_list);
+    
+    VLOG_DEBUG("containerv", "__create_overlay_mount: success\n");
+    return 0;
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+int containerv_layers_compose(
+    struct containerv_layer*          layers,
+    int                               layer_count,
+    const char*                       container_id,
+    struct containerv_layer_context** context_out)
+{
+    struct containerv_layer_context* context;
+    int status = 0;
+    
+    VLOG_DEBUG("containerv", "containerv_layers_compose: %d layers for %s\n", 
+               layer_count, container_id);
+    
+    if (layers == NULL || layer_count == 0 || container_id == NULL || context_out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    
+    context = calloc(1, sizeof(struct containerv_layer_context));
+    if (context == NULL) {
+        return -1;
+    }
+    
+    context->container_id = strdup(container_id);
+    context->layers = calloc(layer_count, sizeof(struct __mounted_layer));
+    if (context->layers == NULL || context->container_id == NULL) {
+        free(context->container_id);
+        free(context->layers);
+        free(context);
+        return -1;
+    }
+    
+    // Create directories
+    context->work_dir = __create_layer_dir(container_id, "work");
+    context->upper_dir = __create_layer_dir(container_id, "upper");
+    context->composed_rootfs = __create_layer_dir(container_id, "merged");
+    
+    if (context->work_dir == NULL || context->upper_dir == NULL || context->composed_rootfs == NULL) {
+        containerv_layers_destroy(context);
+        return -1;
+    }
+    
+    // Process each layer
+    for (int i = 0; i < layer_count; i++) {
+        struct __mounted_layer* mounted_layer = &context->layers[context->layer_count];
+        
+        VLOG_DEBUG("containerv", "containerv_layers_compose: processing layer %d (type=%d)\n", 
+                   i, layers[i].type);
+        
+        switch (layers[i].type) {
+            case CONTAINERV_LAYER_BASE_ROOTFS:
+                status = __setup_base_rootfs(&layers[i], container_id, mounted_layer);
+                break;
+                
+            case CONTAINERV_LAYER_VAFS_PACKAGE:
+                status = __mount_vafs_layer(&layers[i], container_id, i, mounted_layer);
+                break;
+                
+            case CONTAINERV_LAYER_HOST_DIRECTORY:
+                mounted_layer->type = layers[i].type;
+                mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
+                mounted_layer->mount_point = layers[i].target ? strdup(layers[i].target) : NULL;
+                mounted_layer->handle = NULL;
+                break;
+                
+            case CONTAINERV_LAYER_OVERLAY:
+                mounted_layer->type = layers[i].type;
+                mounted_layer->source_path = NULL;
+                mounted_layer->mount_point = NULL;
+                mounted_layer->handle = NULL;
+                break;
+                
+            default:
+                VLOG_ERROR("containerv", "containerv_layers_compose: unknown layer type %d\n", layers[i].type);
+                status = -1;
+                break;
+        }
+        
+        if (status != 0) {
+            containerv_layers_destroy(context);
+            return -1;
+        }
+        
+        context->layer_count++;
+    }
+    
+    // Create overlay mount if we have multiple layers
+    if (context->layer_count > 1) {
+        status = __create_overlay_mount(context);
+        if (status != 0) {
+            containerv_layers_destroy(context);
+            return -1;
+        }
+    } else if (context->layer_count == 1 && context->layers[0].type != CONTAINERV_LAYER_OVERLAY) {
+        // Single layer - use it directly
+        free(context->composed_rootfs);
+        context->composed_rootfs = strdup(context->layers[0].mount_point);
+    }
+    
+    VLOG_DEBUG("containerv", "containerv_layers_compose: complete, rootfs=%s\n", 
+               context->composed_rootfs);
+    
+    *context_out = context;
+    return 0;
+}
+
+const char* containerv_layers_get_rootfs(struct containerv_layer_context* context)
+{
+    if (context == NULL) {
+        return NULL;
+    }
+    return context->composed_rootfs;
+}
+
+int containerv_layers_get_mounts(
+    struct containerv_layer_context* context,
+    struct containerv_mount**        mounts_out,
+    int*                             count_out)
+{
+    struct containerv_mount* mounts = NULL;
+    int mount_count = 0;
+    
+    if (context == NULL || mounts_out == NULL || count_out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    
+    // Count HOST_DIRECTORY layers
+    for (int i = 0; i < context->layer_count; i++) {
+        if (context->layers[i].type == CONTAINERV_LAYER_HOST_DIRECTORY) {
+            mount_count++;
+        }
+    }
+    
+    if (mount_count == 0) {
+        *mounts_out = NULL;
+        *count_out = 0;
+        return 0;
+    }
+    
+    mounts = calloc(mount_count, sizeof(struct containerv_mount));
+    if (mounts == NULL) {
+        return -1;
+    }
+    
+    int idx = 0;
+    for (int i = 0; i < context->layer_count; i++) {
+        if (context->layers[i].type == CONTAINERV_LAYER_HOST_DIRECTORY) {
+            mounts[idx].what = context->layers[i].source_path;
+            mounts[idx].where = context->layers[i].mount_point ? 
+                context->layers[i].mount_point : context->layers[i].source_path;
+            mounts[idx].fstype = NULL;
+            mounts[idx].flags = CV_MOUNT_BIND | CV_MOUNT_CREATE;
+            idx++;
+        }
+    }
+    
+    *mounts_out = mounts;
+    *count_out = mount_count;
+    return 0;
+}
+
+void containerv_layers_destroy(struct containerv_layer_context* context)
+{
+    if (context == NULL) {
+        return;
+    }
+    
+    VLOG_DEBUG("containerv", "containerv_layers_destroy: cleaning up %d layers\n", 
+               context->layer_count);
+    
+    // Unmount overlay if it exists
+    if (context->composed_rootfs != NULL) {
+        umount2(context->composed_rootfs, MNT_DETACH);
+    }
+    
+    // Clean up each layer
+    for (int i = 0; i < context->layer_count; i++) {
+        struct __mounted_layer* layer = &context->layers[i];
+        
+        if (layer->type == CONTAINERV_LAYER_VAFS_PACKAGE && layer->handle != NULL) {
+            __vafs_unmount((struct __vafs_mount*)layer->handle);
+        }
+        
+        free(layer->mount_point);
+        free(layer->source_path);
+    }
+    
+    free(context->layers);
+    free(context->work_dir);
+    free(context->upper_dir);
+    free(context->composed_rootfs);
+    free(context->container_id);
+    free(context);
+    
+    VLOG_DEBUG("containerv", "containerv_layers_destroy: cleanup complete\n");
+}
