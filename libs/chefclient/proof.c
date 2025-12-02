@@ -108,7 +108,7 @@ static int __get_publisher_url(struct chef_download_params* params, char* urlBuf
     int written = snprintf(urlBuffer, bufferSize - 1, 
         "%s/account/publisher?name=%s",
         chefclient_api_base_url(),
-        params->publisher, params->package, params->revision
+        params->publisher
     );
     return written < (bufferSize - 1) ? 0 : -1;
 }
