@@ -44,6 +44,7 @@ enum containerv_capabilities {
 
 extern struct containerv_options* containerv_options_new(void);
 extern void containerv_options_delete(struct containerv_options* options);
+
 extern void containerv_options_set_caps(struct containerv_options* options, enum containerv_capabilities caps);
 
 // Mount structures and flags - common across platforms
@@ -54,14 +55,7 @@ enum containerv_mount_flags {
     CV_MOUNT_CREATE = 0x100
 };
 
-struct containerv_mount {
-    char*                       what;
-    char*                       where;
-    char*                       fstype;
-    enum containerv_mount_flags flags;
-};
-
-extern void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int count);
+extern void containerv_options_set_layers(struct containerv_options* options, struct containerv_layer_context* layers);
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 // Windows-specific configuration functions can go here in the future
@@ -101,12 +95,13 @@ extern void containerv_options_set_network(
 
 /**
  * @brief Creates a new container.
- * @param rootFs The absolute path of where the chroot root is.
- * @param capabilities
+ * @param containerId The unique identifier for the container.
+ * @param options The container configuration options.
+ * @param containerOut Pointer to receive the created container instance.
+ * @return int Returns 0 on success, -1 on error. Errno will be set accordingly.
  */
 extern int containerv_create(
     const char*                   containerId,
-    const char*                   rootFs,
     struct containerv_options*    options,
     struct containerv_container** containerOut
 );

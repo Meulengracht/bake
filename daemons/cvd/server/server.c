@@ -87,41 +87,44 @@ static enum containerv_layer_type __to_cv_layer_type(enum chef_layer_type type)
     }
 }
 
-static struct containerv_layer* __convert_layers(struct chef_layer_descriptor* chef_layers, uint32_t count)
+static struct containerv_layer* __to_cv_layers(struct chef_layer_descriptor* protoLayers, uint32_t count)
 {
-    struct containerv_layer* cv_layers;
+    struct containerv_layer* cvLayers;
     
-    if (chef_layers == NULL || count == 0) {
+    if (protoLayers == NULL || count == 0) {
         return NULL;
     }
     
-    cv_layers = calloc(count, sizeof(struct containerv_layer));
-    if (cv_layers == NULL) {
+    cvLayers = calloc(count, sizeof(struct containerv_layer));
+    if (cvLayers == NULL) {
         return NULL;
     }
     
     for (uint32_t i = 0; i < count; i++) {
-        cv_layers[i].type = __to_cv_layer_type(chef_layers[i].type);
-        cv_layers[i].source = chef_layers[i].source;
-        cv_layers[i].target = chef_layers[i].target;
-        cv_layers[i].base_image = chef_layers[i].base_image;
-        cv_layers[i].readonly = (chef_layers[i].options & CHEF_MOUNT_OPTIONS_READONLY) ? 1 : 0;
+        cvLayers[i].type = __to_cv_layer_type(protoLayers[i].type);
+        cvLayers[i].source = protoLayers[i].source;
+        cvLayers[i].target = protoLayers[i].target;
+        cvLayers[i].base_image = protoLayers[i].base_image;
+        cvLayers[i].readonly = (protoLayers[i].options & CHEF_MOUNT_OPTIONS_READONLY) ? 1 : 0;
     }
     
-    return cv_layers;
+    return cvLayers;
 }
 
 enum chef_status cvd_create(const struct chef_create_parameters* params, const char** id)
 {
     struct containerv_options*       opts;
-    struct containerv_container*     cv_container;
+    struct containerv_container*     cvContainer;
     struct __container*              _container;
-    struct containerv_layer_context* layer_context = NULL;
-    struct containerv_layer*         cv_layers = NULL;
-    const char*                      rootfs_path = NULL;
+    struct containerv_layer_context* layerContext = NULL;
+    struct containerv_layer*         cvLayers = NULL;
     int                              status;
-    
     VLOG_DEBUG("cvd", "cvd_create()\n");
+
+    if (params->layers_count == 0) {
+        VLOG_ERROR("cvd", "cvd_create: no layers specified\n");
+        return CHEF_STATUS_INVALID_MOUNTS;
+    }
 
     opts = containerv_options_new();
     if (opts == NULL) {
@@ -129,56 +132,29 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
         return __chef_status_from_errno();
     }
 
-    // Check if we should use layer-based approach
-    if (params->layers_count > 0) {
-        VLOG_DEBUG("cvd", "cvd_create: using layer-based approach with %d layers\n", params->layers_count);
-        
-        // Convert chef layers to containerv layers
-        cv_layers = __convert_layers(params->layers, params->layers_count);
-        if (cv_layers == NULL) {
-            VLOG_ERROR("cvd", "cvd_create: failed to convert layers\n");
-            containerv_options_delete(opts);
-            return CHEF_STATUS_INTERNAL_ERROR;
-        }
-        
-        // Compose layers into final rootfs
-        status = containerv_layers_compose(
-            cv_layers,
-            (int)params->layers_count,
-            params->id,
-            &layer_context
-        );
-        
-        free(cv_layers);  // We can free this now, containerv has copied what it needs
-        
-        if (status != 0) {
-            VLOG_ERROR("cvd", "cvd_create: failed to compose layers\n");
-            containerv_options_delete(opts);
-            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-        }
-        
-        rootfs_path = containerv_layers_get_rootfs(layer_context);
-        if (rootfs_path == NULL) {
-            VLOG_ERROR("cvd", "cvd_create: failed to get composed rootfs path\n");
-            containerv_layers_destroy(layer_context);
-            containerv_options_delete(opts);
-            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-        }
-        
-        // Convert any host directory layers to containerv mounts
-        struct containerv_mount* extra_mounts = NULL;
-        int extra_mount_count = 0;
-        status = containerv_layers_get_mounts(layer_context, &extra_mounts, &extra_mount_count);
-        if (status == 0 && extra_mount_count > 0) {
-            containerv_options_set_mounts(opts, extra_mounts, extra_mount_count);
-            free(extra_mounts);  // containerv has copied
-        }
-        
-    } else {
-        VLOG_ERROR("cvd", "cvd_create: no layers provided\n");
+    VLOG_DEBUG("cvd", "cvd_create: using layer-based approach with %d layers\n", params->layers_count);
+    cvLayers = __to_cv_layers(params->layers, params->layers_count);
+    if (cvLayers == NULL) {
+        VLOG_ERROR("cvd", "cvd_create: failed to convert layers\n");
+        containerv_options_delete(opts);
+        return CHEF_STATUS_INTERNAL_ERROR;
+    }
+
+    // Compose layers into final rootfs
+    status = containerv_layers_compose(
+        cvLayers,
+        (int)params->layers_count,
+        params->id,
+        &layerContext
+    );
+    free(cvLayers);  // We can free this now, containerv has copied what it needs
+    if (status != 0) {
+        VLOG_ERROR("cvd", "cvd_create: failed to compose layers\n");
         containerv_options_delete(opts);
         return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
+
+    containerv_options_set_layers(opts, layerContext);
 
     // setup other config
     containerv_options_set_caps(opts, 
@@ -188,27 +164,27 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     );
 
     // create the container
-    status = containerv_create(params->id, rootfs_path, opts, &cv_container);
+    status = containerv_create(params->id, opts, &cvContainer);
     containerv_options_delete(opts);
     if (status) {
-        if (layer_context) {
-            containerv_layers_destroy(layer_context);
+        if (layerContext) {
+            containerv_layers_destroy(layerContext);
         }
         VLOG_ERROR("cvd", "failed to start the container\n");
         return __chef_status_from_errno();
     }
 
-    _container = __container_new(cv_container);
+    _container = __container_new(cvContainer);
     if (_container == NULL) {
-        if (layer_context) {
-            containerv_layers_destroy(layer_context);
+        if (layerContext) {
+            containerv_layers_destroy(layerContext);
         }
         VLOG_ERROR("cvd", "failed to allocate memory for the container structure\n");
         return __chef_status_from_errno();
     }
     
     // Store the layer context for cleanup later
-    _container->layer_context = layer_context;
+    _container->layer_context = layerContext;
     
     list_add(&g_server.containers, &_container->item_header);
     *id = _container->id;

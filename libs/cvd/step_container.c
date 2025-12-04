@@ -92,11 +92,10 @@ static int __find_bakectl(char** resolvedOut)
 
 int bake_build_setup(struct __bake_build_context* bctx)
 {
-    struct chef_container_mount mounts[2];
-    int                         status;
-    char*                       bakectlPath;
-    unsigned int                pid;
-    char                        buffer[1024];
+    int          status;
+    char*        bakectlPath;
+    unsigned int pid;
+    char         buffer[1024];
     VLOG_DEBUG("bake", "bake_build_setup()\n");
 
     if (bctx->cvd_client == NULL) {
@@ -104,17 +103,7 @@ int bake_build_setup(struct __bake_build_context* bctx)
         return -1;
     }
 
-    // project path
-    mounts[0].host_path = (char*)bctx->host_cwd;
-    mounts[0].container_path = "/chef/project";
-    mounts[0].options = CHEF_MOUNT_OPTIONS_READONLY;
-
-    // store path
-    mounts[1].host_path = (char*)chef_dirs_store();
-    mounts[1].container_path = "/chef/store";
-    mounts[1].options = CHEF_MOUNT_OPTIONS_READONLY;
-
-    status = bake_client_create_container(bctx, &mounts[0], 3);
+    status = bake_client_create_container(bctx);
     if (status) {
         VLOG_ERROR("bake", "bake_build_setup: failed to create build container\n");
         return status;

@@ -65,8 +65,7 @@ struct containerv_options_cgroup {
 
 struct containerv_options {
     enum containerv_capabilities           capabilities;
-    struct containerv_mount*               mounts;
-    int                                    mounts_count;
+    struct containerv_layer_context*       layers;
     
     struct containerv_options_user_range   uid_range;
     struct containerv_options_user_range   gid_range;
@@ -79,21 +78,22 @@ struct containerv_container {
     pid_t        pid;
     thrd_t       log_tid;
     volatile int log_running;
-    char*        rootfs;
     char*        hostname;        // hostname for cgroups/network
 
     // child
+    char*       rootfs;
     int         socket_fd;
     int         ns_fds[CV_NS_COUNT];
     struct list processes;
 
     // shared
-    const char* id;
-    int         host[2];
-    int         child[2];
-    int         stdout[2];
-    int         stderr[2];
-    char*       runtime_dir;
+    const char*                      id;
+    struct containerv_layer_context* layers;
+    int                              host[2];
+    int                              child[2];
+    int                              stdout[2];
+    int                              stderr[2];
+    char*                            runtime_dir;
 };
 
 #define __INTSAFE_CALL(__expr) \

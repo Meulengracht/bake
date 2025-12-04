@@ -29,7 +29,7 @@ static const struct served_sm_state g_stateUpdate = {
     .action = served_handle_state_update,
     .transition_count = 3,
     .transitions = {
-        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_MOUNT },
+        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_LOAD },
         { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
         { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }
     }

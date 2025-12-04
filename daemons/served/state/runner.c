@@ -66,8 +66,6 @@ enum chef_transaction_state served_transaction_map_state(sm_state_t state)
         return CHEF_TRANSACTION_STATE_RESOLVING_DEPENDENCIES;
     case SERVED_TX_STATE_INSTALL:
         return CHEF_TRANSACTION_STATE_INSTALLING;
-    case SERVED_TX_STATE_MOUNT:
-        return CHEF_TRANSACTION_STATE_MOUNTING;
     case SERVED_TX_STATE_LOAD:
         return CHEF_TRANSACTION_STATE_LOADING;
     case SERVED_TX_STATE_START_SERVICES:
@@ -80,8 +78,6 @@ enum chef_transaction_state served_transaction_map_state(sm_state_t state)
         return CHEF_TRANSACTION_STATE_STOPPING_SERVICES;
     case SERVED_TX_STATE_UNLOAD:
         return CHEF_TRANSACTION_STATE_UNLOADING;
-    case SERVED_TX_STATE_UNMOUNT:
-        return CHEF_TRANSACTION_STATE_UNMOUNTING;
     case SERVED_TX_STATE_UNINSTALL:
         return CHEF_TRANSACTION_STATE_UNINSTALLING;
     case SERVED_TX_STATE_UPDATE:

@@ -66,6 +66,7 @@ struct containerv_layer_context {
     char*                   work_dir;         // OverlayFS work dir
     char*                   upper_dir;        // OverlayFS upper dir
     char*                   container_id;     // Container ID
+    int                     overlay_mounted;  // Whether overlay was mounted
 };
 
 // ============================================================================
@@ -447,12 +448,103 @@ static int __create_overlay_mount(struct containerv_layer_context* context)
     free(lowerdir_list);
     
     VLOG_DEBUG("containerv", "__create_overlay_mount: success\n");
+    context->overlay_mounted = 1;
     return 0;
 }
 
 // ============================================================================
 // Public API
 // ============================================================================
+
+int containerv_layers_mount_in_namespace(struct containerv_layer_context* context)
+{
+    int status;
+
+    if (context == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    VLOG_DEBUG("containerv", "containerv_layers_mount_in_namespace: %d layers for %s\n",
+               context->layer_count, context->container_id);
+
+    // 1) Mount all VAFS layers in this (current) mount namespace
+    for (int i = 0; i < context->layer_count; ++i) {
+        struct __mounted_layer* ml = &context->layers[i];
+
+        if (ml->type != CONTAINERV_LAYER_VAFS_PACKAGE) {
+            continue;
+        }
+
+        VLOG_DEBUG("containerv", "containerv_layers_mount_in_namespace: mounting VAFS %s at %s\n",
+                   ml->source_path, ml->mount_point);
+
+        struct __vafs_mount* mount_handle = NULL;
+        status = __vafs_mount(ml->source_path, ml->mount_point, &mount_handle);
+        if (status != 0) {
+            VLOG_ERROR("containerv", "containerv_layers_mount_in_namespace: VAFS mount failed\n");
+            return -1;
+        }
+
+        ml->handle = mount_handle;
+    }
+
+    // 2) Compose overlay in this namespace, if we have multiple layers
+    if (context->layer_count > 1) {
+        status = __create_overlay_mount(context);
+        if (status != 0) {
+            VLOG_ERROR("containerv", "containerv_layers_mount_in_namespace: overlay mount failed\n");
+            // Optional: unmount already-mounted VAFS layers here
+            return -1;
+        }
+    }
+
+    // 3) Bind-mount any HOST_DIRECTORY layers into the composed rootfs.
+    //    At this point, either:
+    //      - composed_rootfs is the overlay mountpoint (multi-layer), or
+    //      - composed_rootfs is a single-layer path (base or vafs).
+    for (int i = 0; i < context->layer_count; ++i) {
+        struct __mounted_layer* ml = &context->layers[i];
+
+        if (ml->type != CONTAINERV_LAYER_HOST_DIRECTORY) {
+            continue;
+        }
+
+        if (ml->source_path == NULL || ml->mount_point == NULL) {
+            VLOG_ERROR("containerv", "containerv_layers_mount_in_namespace: HOST_DIRECTORY with missing paths\n");
+            return -1;
+        }
+
+        // mount_point is a path inside the rootfs (e.g. /data), so we
+        // need to combine composed_rootfs + mount_point to get an absolute
+        // destination path in this mount namespace.
+        char* destination = strpathcombine(context->composed_rootfs, ml->mount_point);
+        if (destination == NULL) {
+            return -1;
+        }
+
+        VLOG_DEBUG("containerv", "containerv_layers_mount_in_namespace: binding %s -> %s\n",
+                   ml->source_path, destination);
+
+        if (platform_mkdir(destination) != 0 && errno != EEXIST) {
+            VLOG_ERROR("containerv", "containerv_layers_mount_in_namespace: failed to create %s\n", destination);
+            free(destination);
+            return -1;
+        }
+
+        status = mount(ml->source_path, destination, NULL, MS_BIND, NULL);
+        if (status != 0) {
+            VLOG_ERROR("containerv", "containerv_layers_mount_in_namespace: bind mount failed for %s -> %s: %s\n",
+                       ml->source_path, destination, strerror(errno));
+            free(destination);
+            return -1;
+        }
+
+        free(destination);
+    }
+
+    return 0;
+}
 
 int containerv_layers_compose(
     struct containerv_layer*          layers,
@@ -497,63 +589,73 @@ int containerv_layers_compose(
     
     // Process each layer
     for (int i = 0; i < layer_count; i++) {
-        struct __mounted_layer* mounted_layer = &context->layers[context->layer_count];
-        
-        VLOG_DEBUG("containerv", "containerv_layers_compose: processing layer %d (type=%d)\n", 
+        struct __mounted_layer* mounted_layer =
+            &context->layers[context->layer_count];
+
+        VLOG_DEBUG("containerv", "containerv_layers_compose: processing layer %d (type=%d)\n",
                    i, layers[i].type);
-        
+
         switch (layers[i].type) {
-            case CONTAINERV_LAYER_BASE_ROOTFS:
-                status = __setup_base_rootfs(&layers[i], container_id, mounted_layer);
-                break;
-                
-            case CONTAINERV_LAYER_VAFS_PACKAGE:
-                status = __mount_vafs_layer(&layers[i], container_id, i, mounted_layer);
-                break;
-                
-            case CONTAINERV_LAYER_HOST_DIRECTORY:
-                mounted_layer->type = layers[i].type;
-                mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
-                mounted_layer->mount_point = layers[i].target ? strdup(layers[i].target) : NULL;
-                mounted_layer->handle = NULL;
-                break;
-                
-            case CONTAINERV_LAYER_OVERLAY:
-                mounted_layer->type = layers[i].type;
-                mounted_layer->source_path = NULL;
-                mounted_layer->mount_point = NULL;
-                mounted_layer->handle = NULL;
-                break;
-                
-            default:
-                VLOG_ERROR("containerv", "containerv_layers_compose: unknown layer type %d\n", layers[i].type);
+        case CONTAINERV_LAYER_BASE_ROOTFS:
+            // Just record base rootfs path; no mount here.
+            status = __setup_base_rootfs(&layers[i], container_id, mounted_layer);
+            break;
+
+        case CONTAINERV_LAYER_VAFS_PACKAGE:
+            // Plan the VaFS mount point, but don't call __vafs_mount yet.
+            mounted_layer->type = layers[i].type;
+            mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
+            mounted_layer->mount_point = __create_vafs_mount_point(container_id, i);
+            mounted_layer->handle = NULL;
+            if (mounted_layer->mount_point == NULL) {
                 status = -1;
-                break;
+            }
+            break;
+
+        case CONTAINERV_LAYER_HOST_DIRECTORY:
+            mounted_layer->type = layers[i].type;
+            mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
+            mounted_layer->mount_point = layers[i].target ? strdup(layers[i].target) : NULL;
+            mounted_layer->handle = NULL;
+            break;
+
+        case CONTAINERV_LAYER_OVERLAY:
+            mounted_layer->type = layers[i].type;
+            mounted_layer->source_path = NULL;
+            mounted_layer->mount_point = NULL;
+            mounted_layer->handle = NULL;
+            break;
+
+        default:
+            VLOG_ERROR("containerv",
+                       "containerv_layers_compose: unknown layer type %d\n",
+                       layers[i].type);
+            status = -1;
+            break;
         }
-        
+
         if (status != 0) {
             containerv_layers_destroy(context);
             return -1;
         }
-        
+
         context->layer_count++;
     }
-    
-    // Create overlay mount if we have multiple layers
-    if (context->layer_count > 1) {
-        status = __create_overlay_mount(context);
-        if (status != 0) {
-            containerv_layers_destroy(context);
-            return -1;
-        }
-    } else if (context->layer_count == 1 && context->layers[0].type != CONTAINERV_LAYER_OVERLAY) {
-        // Single layer - use it directly
+
+    // Decide composed_rootfs **path only**, but don't mount overlay here.
+    if (context->layer_count == 1 &&
+        context->layers[0].type != CONTAINERV_LAYER_OVERLAY) {
+        // Single concrete layer - use its mount_point path directly as the rootfs.
         free(context->composed_rootfs);
         context->composed_rootfs = strdup(context->layers[0].mount_point);
     }
+    // else: for multiple layers we keep context->composed_rootfs as
+    //       /var/chef/layers/<id>/merged which will be mounted later
     
-    VLOG_DEBUG("containerv", "containerv_layers_compose: complete, rootfs=%s\n", 
-               context->composed_rootfs);
+    VLOG_DEBUG("containerv", 
+        "containerv_layers_compose: complete, rootfs=%s\n", 
+        context->composed_rootfs
+    );
     
     *context_out = context;
     return 0;
@@ -567,54 +669,6 @@ const char* containerv_layers_get_rootfs(struct containerv_layer_context* contex
     return context->composed_rootfs;
 }
 
-int containerv_layers_get_mounts(
-    struct containerv_layer_context* context,
-    struct containerv_mount**        mounts_out,
-    int*                             count_out)
-{
-    struct containerv_mount* mounts = NULL;
-    int mount_count = 0;
-    
-    if (context == NULL || mounts_out == NULL || count_out == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    
-    // Count HOST_DIRECTORY layers
-    for (int i = 0; i < context->layer_count; i++) {
-        if (context->layers[i].type == CONTAINERV_LAYER_HOST_DIRECTORY) {
-            mount_count++;
-        }
-    }
-    
-    if (mount_count == 0) {
-        *mounts_out = NULL;
-        *count_out = 0;
-        return 0;
-    }
-    
-    mounts = calloc(mount_count, sizeof(struct containerv_mount));
-    if (mounts == NULL) {
-        return -1;
-    }
-    
-    int idx = 0;
-    for (int i = 0; i < context->layer_count; i++) {
-        if (context->layers[i].type == CONTAINERV_LAYER_HOST_DIRECTORY) {
-            mounts[idx].what = context->layers[i].source_path;
-            mounts[idx].where = context->layers[i].mount_point ? 
-                context->layers[i].mount_point : context->layers[i].source_path;
-            mounts[idx].fstype = NULL;
-            mounts[idx].flags = CV_MOUNT_BIND | CV_MOUNT_CREATE;
-            idx++;
-        }
-    }
-    
-    *mounts_out = mounts;
-    *count_out = mount_count;
-    return 0;
-}
-
 void containerv_layers_destroy(struct containerv_layer_context* context)
 {
     if (context == NULL) {
@@ -625,7 +679,7 @@ void containerv_layers_destroy(struct containerv_layer_context* context)
                context->layer_count);
     
     // Unmount overlay if it exists
-    if (context->composed_rootfs != NULL) {
+    if (context->overlay_mounted && context->composed_rootfs != NULL) {
         umount2(context->composed_rootfs, MNT_DETACH);
     }
     

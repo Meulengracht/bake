@@ -41,30 +41,6 @@ int containerv_layers_compose(
     return -1;
 }
 
-const char* containerv_layers_get_rootfs(struct containerv_layer_context* context)
-{
-    if (context == NULL) {
-        return NULL;
-    }
-    return context->composed_rootfs;
-}
-
-int containerv_layers_get_mounts(
-    struct containerv_layer_context* context,
-    struct containerv_mount**        mounts_out,
-    int*                             count_out)
-{
-    // TODO: Implement Windows HCI mount extraction
-    if (context == NULL || mounts_out == NULL || count_out == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    
-    *mounts_out = NULL;
-    *count_out = 0;
-    return 0;
-}
-
 void containerv_layers_destroy(struct containerv_layer_context* context)
 {
     if (context == NULL) {

@@ -21,9 +21,6 @@
 
 #include <stdint.h>
 
-// Forward declarations
-struct containerv_mount;
-
 /**
  * @brief Layer types for container composition
  */
@@ -83,11 +80,16 @@ struct containerv_layer_context;
  * @return 0 on success, -1 on failure
  */
 extern int containerv_layers_compose(
-    struct containerv_layer* layers,
-    int                      layer_count,
-    const char*              container_id,
+    struct containerv_layer*          layers,
+    int                               layer_count,
+    const char*                       container_id,
     struct containerv_layer_context** context_out
 );
+
+/**
+ * @brief Mount the composed layers into an existing namespace
+ */
+extern int containerv_layers_mount_in_namespace(struct containerv_layer_context* context);
 
 /**
  * @brief Get the composed rootfs path from layer context
@@ -97,22 +99,6 @@ extern int containerv_layers_compose(
  */
 extern const char* containerv_layers_get_rootfs(
     struct containerv_layer_context* context
-);
-
-/**
- * @brief Convert layer context to container mounts
- * 
- * Extracts HOST_DIRECTORY layers as containerv_mount structures
- * 
- * @param context Layer context
- * @param mounts_out Output array of mounts (caller must free)
- * @param count_out Number of mounts returned
- * @return 0 on success, -1 on failure
- */
-extern int containerv_layers_get_mounts(
-    struct containerv_layer_context* context,
-    struct containerv_mount**        mounts_out,
-    int*                             count_out
 );
 
 /**

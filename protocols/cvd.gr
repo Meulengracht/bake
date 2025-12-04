@@ -56,7 +56,6 @@ enum status {
 
 struct create_parameters {
     string             id;
-    rootfs_type        type;
     layer_descriptor[] layers;
 }
 

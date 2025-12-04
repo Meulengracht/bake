@@ -7,14 +7,12 @@ add_library(served-states STATIC
     generate-wrappers.c
     install.c
     load.c
-    mount.c
     prechecks.c
     remove-wrappers.c
     start-services.c
     stop-services.c
     uninstall.c
     unload.c
-    unmount.c
     update.c
     verify.c
 )
