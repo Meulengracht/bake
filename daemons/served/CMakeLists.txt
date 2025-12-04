@@ -1,6 +1,3 @@
-# Linux reference implementation of the served daemon
-find_package(FUSE REQUIRED)
-
 # add sub-targets
 add_subdirectory(state)
 add_subdirectory(states)
@@ -25,7 +22,6 @@ target_include_directories(served PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
 target_link_libraries(served
         served-state served-states served-utils
         chef-client store gracht dirconf platform vlog zstd
-        ${FUSE_LIBRARIES} 
 )
 
 install(

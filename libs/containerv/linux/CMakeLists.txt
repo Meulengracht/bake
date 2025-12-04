@@ -1,3 +1,6 @@
+# Linux reference implementation of the served daemon
+find_package(FUSE REQUIRED)
+
 add_library(containerv-linux STATIC
     rootfs/debootstrap.c
     cgroups.c
