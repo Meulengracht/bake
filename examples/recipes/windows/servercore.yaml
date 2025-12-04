@@ -1,0 +1,26 @@
+project: 
+  summary: The linux OS base
+  description: |
+    This is the base OS linux ingredient, which is used as the base for all
+    other chef packages built for linux.
+  author: Philip Meulengracht
+  email: the_meulengracht@hotmail.com
+  version: 1.0.0
+  license: MIT
+
+recipes:
+  - name: build-base
+    path: ./
+    steps:
+    - name: construct
+      type: script
+      script: |
+        # Pull and extract Windows container images
+        docker pull mcr.microsoft.com/windows/servercore:ltsc2022
+        docker create --name temp-rootfs $image
+        docker export temp-rootfs | tar -xf - -C /path/rootfs
+        docker rm temp-rootfs
+
+packs:
+- name: windows-base
+  type: ingredient
