@@ -20,7 +20,7 @@ Bake is the build tool that reads chef recipes, which instruct bake on how to bu
 
 ### Mkcdk
 
-Mkcdk is an image build tool that can be used to create disk images. It natively supports including chef packages, and supports special chef packages that can contain both bootloaders, kernels and programs, essentially enabling creating images using just chef packages. This requires a specialized/chef-enabled OS.
+Mkcdk is an image build tool that can be used to create disk images. It natively supports including chef packages and supports special chef packages that can contain bootloaders, kernels, and programs. This enables creating complete disk images using just chef packages, which requires a specialized/chef-enabled OS.
 
 ## Runtime Tools
 
@@ -70,7 +70,7 @@ Features that is expected in the planned 1.6 release
 
 ## Account Setup
 
-To get started with your account setup, you will need to activate one of the privileged commands provided by 'order'
+To get started with your account setup, you will need to activate one of the privileged commands provided by `order`
 
 ```
 $ order account whoami
@@ -157,13 +157,13 @@ cmake --install build
 
 ## Your first recipe
 
-The easiest way to get started is to use the init helper provided by the command 'bake'. This will create a new `recipe.yaml` file in the current directory, where you can customize the recipe to your liking.
+The easiest way to get started is to use the init helper provided by the command `bake`. This will create a new `recipe.yaml` file in the current directory, where you can customize the recipe to your liking.
 
 ```
 $ bake init
 ```
 
-For examples on recipes, please see the examples/ directory, this project's chef.yaml, or refer to the Recipe Specification in the bottom of this page.
+For examples on recipes, please see the `examples/` directory, this project's `chef.yaml`, or refer to the Recipe Specification in the bottom of this page.
 
 Once the recipe is created, you can start baking!
 
@@ -350,8 +350,8 @@ $ order publish my-something.pack
 
 ## Installing packages
 
-Chef packages are designed to be installable, not just used for building. To support this the 'serve' utility
-is provided, and you will also need a 'served' daemon for your platform. 
+Chef packages are designed to be installable, not just used for building. To support this the `serve` utility
+is provided, and you will also need a `served` daemon for your platform. 
 
 Currently no platforms have a served daemon implemented, however this is currently planned for linux and vali.
 
@@ -359,9 +359,9 @@ Currently no platforms have a served daemon implemented, however this is current
 $ serve install publisher/package
 ```
 
-The 'serve' utility communicates with the 'served' daemon through a network protocol, to support network control
+The `serve` utility communicates with the `served` daemon through a network protocol, to support network control
 of a computer. The serve protocol provides the ability to install, update and remove packages from the system. For
-more information about the 'served' daemon, see the README in directory daemons/served.
+more information about the `served` daemon, see the README in directory daemons/served.
 
 <h1 align="center" style="margin-top: 0px;">Recipe Specification</h1>
 
