@@ -8,6 +8,36 @@
 
 Chef is a cross-platform package management system, specifically built to support all kinds of platforms. It's built with cross-compilation in mind and is also built to work as an application format. It's written in C to make it as portable as possible. It is relatively lightweight alternative to other package management systems, and provides an online repository for all your packages as well.
 
+<h1 align="center" style="margin-top: 0px;">Chef Overview</h1>
+
+Chef is a combination of a package manager, package build tool and package runtime.
+
+## Build Tools
+
+### Bake
+
+Bake is the build tool that reads chef recipes, which instruct bake on how to build programs. Bake then generates packages that contain the program and its dependencies. The result is a chef package (read-only filesystem image), which can be uploaded to chef.io using the tool `order`.
+
+### Mkcdk
+
+Mkcdk is an image build tool that can be used to create disk images. It natively supports including chef packages and supports special chef packages that can contain bootloaders, kernels, and programs. This enables creating complete disk images using just chef packages, which requires a specialized/chef-enabled OS.
+
+## Runtime Tools
+
+### Served
+
+Served is the primary runtime implementation for chef packages. Since chef packages carry all dependencies they need to execute, Served can construct containers using these packages, and thus execute them.
+
+### Serve
+
+Serve is the frontend tool to interact with the Served daemon. It allows manipulating packages.
+
+## Store Tools
+
+### Order
+
+Used for package and account management with the online store for chef packages.
+
 <h1 align="center" style="margin-top: 0px;">Getting Started</h1>
 
 The best way to get started is to install the latest version of Chef using the [snap store](https://snapcraft.io/vchef). However not everyone likes or uses snaps, and in this case it's recommended to build chef from source, as chef is not distributed as a debian package yet!
@@ -40,7 +70,7 @@ Features that is expected in the planned 1.6 release
 
 ## Account Setup
 
-To get started with your account setup, you will need to activate one of the privileged commands provided by 'order'
+To get started with your account setup, you will need to activate one of the privileged commands provided by `order`
 
 ```
 $ order account whoami
@@ -127,22 +157,28 @@ cmake --install build
 
 ## Your first recipe
 
-The easiest way to get started is to use the init helper provided by the command 'bake'. This will create a new .yaml recipe in the current directory, where you can
-customize the recipe to your liking.
+The easiest way to get started is to use the init helper provided by the command `bake`. This will create a new `recipe.yaml` file in the current directory, where you can customize the recipe to your liking.
 
 ```
 $ bake init
 ```
 
-For examples on recipes, please see the examples/ directory, the chef.yaml, or refer
-to the Recipe Specification in the bottom of this page.
+For examples on recipes, please see the `examples/` directory, this project's `chef.yaml`, or refer to the Recipe Specification in the bottom of this page.
 
 Once the recipe is created, you can start baking!
 
 ## Building
 
+To build a recipe, use the build command. If you don't specify a recipe file, bake will automatically look for `chef/recipe.yaml` or `recipe.yaml` in the current directory.
+
 ```
-$ bake my-recipe.yaml
+$ bake build
+```
+
+To build a specific recipe file:
+
+```
+$ bake build my-recipe.yaml
 ```
 
 This should create a new (or multiple based on your recipe) *.pack file in the current directory, which are now ready for publishing! During execution of steps,
@@ -155,10 +191,24 @@ chef will expose the following variables to help control the build process:
 
 ## Cross-compiling
 
-Chef is specifically built to work easily with cross-compilation scenarios. This allows users to build packages for other platforms or architecture and publish them as well.
+Chef is specifically built to work easily with cross-compilation scenarios. This allows users to build packages for other platforms or architectures and publish them as well.
+
+To cross-compile for a specific architecture or platform, you can use the `--cross-compile` option:
 
 ```
-$ bake my-recipe.yaml --cross-compile=linux/i386
+$ bake build --cross-compile=linux/i386
+```
+
+Or just specify the architecture if targeting the same platform:
+
+```
+$ bake build --cross-compile=i386
+```
+
+Alternatively, you can use the explicit `--platform` and `--archs` options. For local builds, only one architecture can be specified at a time:
+
+```
+$ bake build --platform=linux --archs=i386
 ```
 
 The above will trigger chef to download ingredients for the linux/i386 platform, and then build the package for that platform. During execution of the different steps, chef will expose the following additional environment variables:
@@ -168,9 +218,37 @@ The above will trigger chef to download ingredients for the linux/i386 platform,
   * `CHEF_TARGET_PLATFORM`: the platform which was provided on the commandline
   * `CHEF_TARGET_ARCHITECTURE`: the architecture which was provided on the commandline
 
+## Cleaning Builds
+
+To clean all build artifacts and intermediate directories for the current recipe:
+
+```
+$ bake clean
+```
+
+To clean all recipes in the kitchen area (build cache):
+
+```
+$ bake clean --purge
+```
+
+You can also specify cross-compilation options when cleaning:
+
+```
+$ bake clean --cross-compile=linux/i386
+```
+
 ## Remote Building
 
 Chef supports remote building through the `bake remote` commands, which allow you to execute builds on remote build servers (agents). This is useful for building packages for architectures that you don't have local access to, or for offloading compute-intensive builds.
+
+### Setting up Remote Building
+
+First, initialize your remote build configuration:
+
+```
+$ bake remote init
+```
 
 ### Listing Available Agents
 
@@ -206,7 +284,61 @@ To execute a build remotely:
 $ bake remote build my-recipe.yaml
 ```
 
+You can build for multiple architectures in parallel using remote builds (unlike local builds which only support one architecture at a time):
+
+```
+$ bake remote build my-recipe.yaml --archs=amd64,arm64
+```
+
+### Managing Remote Builds
+
+Resume a paused or incomplete build:
+
+```
+$ bake remote resume --ids=build-id-1,build-id-2
+```
+
+Download build artifacts:
+
+```
+$ bake remote download artifact --ids=build-id
+```
+
+Download build logs:
+
+```
+$ bake remote download log --ids=build-id
+```
+
 For more information on remote build commands, see `bake remote --help`.
+
+## Managing Ingredients
+
+Chef uses a local cache (affectionately called the "fridge") to store downloaded ingredients (dependencies). You can manage this cache using `bake store` commands.
+
+List all cached ingredients:
+
+```
+$ bake store list
+```
+
+Update specific ingredients:
+
+```
+$ bake store update publisher/package
+```
+
+Remove specific ingredients from the cache:
+
+```
+$ bake store remove publisher/package
+```
+
+Clean the entire ingredient cache:
+
+```
+$ bake store clean
+```
 
 ## Publishing your first package
 
@@ -218,8 +350,8 @@ $ order publish my-something.pack
 
 ## Installing packages
 
-Chef packages are designed to be installable, not just used for building. To support this the 'serve' utility
-is provided, and you will also need a 'served' daemon for your platform. 
+Chef packages are designed to be installable, not just used for building. To support this the `serve` utility
+is provided, and you will also need a `served` daemon for your platform. 
 
 Currently no platforms have a served daemon implemented, however this is currently planned for linux and vali.
 
@@ -227,9 +359,9 @@ Currently no platforms have a served daemon implemented, however this is current
 $ serve install publisher/package
 ```
 
-The 'serve' utility communicates with the 'served' daemon through a network protocol, to support network control
+The `serve` utility communicates with the `served` daemon through a network protocol, to support network control
 of a computer. The serve protocol provides the ability to install, update and remove packages from the system. For
-more information about the 'served' daemon, see the README in directory daemons/served.
+more information about the `served` daemon, see the README in directory daemons/served.
 
 <h1 align="center" style="margin-top: 0px;">Recipe Specification</h1>
 
