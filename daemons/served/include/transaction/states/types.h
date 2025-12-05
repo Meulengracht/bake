@@ -29,7 +29,6 @@
 #define SERVED_TX_STATE_DEPENDENCIES      (sm_state_t)5
 #define SERVED_TX_STATE_DEPENDENCIES_WAIT (sm_state_t)6
 #define SERVED_TX_STATE_INSTALL           (sm_state_t)7
-#define SERVED_TX_STATE_MOUNT             (sm_state_t)8
 #define SERVED_TX_STATE_LOAD              (sm_state_t)9
 #define SERVED_TX_STATE_START_SERVICES    (sm_state_t)10
 #define SERVED_TX_STATE_GENERATE_WRAPPERS (sm_state_t)11
@@ -37,7 +36,6 @@
 #define SERVED_TX_STATE_REMOVE_WRAPPERS (sm_state_t)12
 #define SERVED_TX_STATE_STOP_SERVICES   (sm_state_t)13
 #define SERVED_TX_STATE_UNLOAD          (sm_state_t)14
-#define SERVED_TX_STATE_UNMOUNT         (sm_state_t)15
 #define SERVED_TX_STATE_UNINSTALL       (sm_state_t)16
 
 #define SERVED_TX_STATE_UPDATE (sm_state_t)17

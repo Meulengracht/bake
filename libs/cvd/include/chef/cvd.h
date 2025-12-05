@@ -82,7 +82,7 @@ extern int bake_purge_kitchens(void);
 
 extern int bake_client_initialize(struct __bake_build_context* bctx);
 
-extern enum chef_status bake_client_create_container(struct __bake_build_context* bctx, struct chef_container_mount* mounts, unsigned int count);
+extern enum chef_status bake_client_create_container(struct __bake_build_context* bctx);
 
 extern enum chef_status bake_client_spawn(struct __bake_build_context* bctx, const char* command, enum chef_spawn_options options, unsigned int* pidOut);
 

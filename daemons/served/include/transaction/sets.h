@@ -29,7 +29,6 @@
 #include "states/verify.h"
 #include "states/dependencies.h"
 #include "states/install.h"
-#include "states/mount.h"
 #include "states/load.h"
 #include "states/start-services.h"
 #include "states/generate-wrappers.h"
@@ -40,7 +39,6 @@ static const struct served_sm_state* g_stateSetInstall[] = {
     &g_stateVerify,
     &g_stateDependencies, &g_stateDependenciesWait,
     &g_stateInstall,
-    &g_stateMount,
     &g_stateLoad,
     &g_stateStartServices,
     &g_stateGenerateWrappers,
@@ -51,14 +49,12 @@ static const struct served_sm_state* g_stateSetInstall[] = {
 #include "states/remove-wrappers.h"
 #include "states/stop-services.h"
 #include "states/unload.h"
-#include "states/unmount.h"
 #include "states/uninstall.h"
 
 static const struct served_sm_state* g_stateSetUninstall[] = {
     &g_stateRemoveWrappers,
     &g_stateStopServices,
     &g_stateUnload,
-    &g_stateUnmount,
     &g_stateUninstall,
 
     &g_stateCompleted, &g_stateError, &g_stateCancelled
@@ -74,9 +70,7 @@ static const struct served_sm_state* g_stateSetUpdate[] = {
     &g_stateRemoveWrappers,
     &g_stateStopServices,
     &g_stateUnload,
-    &g_stateUnmount,
     &g_stateUpdate,
-    &g_stateMount,
     &g_stateLoad,
     &g_stateStartServices,
     &g_stateGenerateWrappers,
@@ -86,7 +80,6 @@ static const struct served_sm_state* g_stateSetUpdate[] = {
 
 // Ephemeral transactions for startup and shutdown
 static const struct served_sm_state* g_stateSetStartup[] = {
-    &g_stateMountAll,
     &g_stateLoadAll,
     &g_stateStartServicesAll,
     &g_stateGenerateWrappersAll,
@@ -98,7 +91,6 @@ static const struct served_sm_state* g_stateSetShutdown[] = {
     &g_stateRemoveWrappersAll,
     &g_stateStopServicesAll,
     &g_stateUnloadAll,
-    &g_stateUnmountAll,
 
     &g_stateCompleted, &g_stateError, &g_stateCancelled
 };

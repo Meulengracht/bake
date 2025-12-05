@@ -28,8 +28,7 @@
 
 struct containerv_options {
     enum containerv_capabilities capabilities;
-    struct containerv_mount*     mounts;
-    int                          mounts_count;
+    struct containerv_layer_context* layers;
 };
 
 struct containerv_container_process {

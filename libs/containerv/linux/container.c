@@ -49,6 +49,13 @@
 #define __CONTAINER_VETH_HOST_OFFSET 0    // Use full ID for host-side veth
 #define __CONTAINER_VETH_CONT_OFFSET 4    // Use partial ID for container-side veth
 
+struct __child_mount {
+    char*                       what;
+    char*                       where;
+    char*                       fstype;
+    enum containerv_mount_flags flags;
+};
+
 struct containerv_container_process {
     struct list_item list_header;
     pid_t            pid;
@@ -442,9 +449,9 @@ static int __convert_cv_mount_flags(enum containerv_mount_flags cvFlags)
 
 // __container_map_mounts maps any outside paths into the container
 static int __container_map_mounts(
-        const char*              root,
-        struct containerv_mount* mounts,
-        int                      mountsCount)
+        const char*           root,
+        struct __child_mount* mounts,
+        int                   mountsCount)
 {
     int status = 0;
     VLOG_DEBUG("containerv[child]", "__container_map_mounts(root=%s)\n", root);
@@ -703,25 +710,42 @@ static int __container_run(
     // before we chroot
     if (options->capabilities & CV_CAP_FILESYSTEM) {
         static const int premountsCount = 1;
-        struct containerv_mount mnts[] = {
+        struct __child_mount mnts[] = {
             {
-                .what = container->runtime_dir,
+                .what  = container->runtime_dir,
                 .where = container->runtime_dir,
                 .fstype = NULL,
                 .flags = CV_MOUNT_BIND | CV_MOUNT_RECURSIVE | CV_MOUNT_CREATE
             }
         };
-        
+
+        if (container->layers != NULL) {
+            const char* composedRoot = NULL;
+
+            status = containerv_layers_mount_in_namespace(container->layers);
+            if (status) {
+                VLOG_ERROR("containerv[child]", "__container_run: failed to mount layers in namespace\n");
+                return status;
+            }
+
+            // If rootfs is supposed to be the composed rootfs, update it here.
+            composedRoot = containerv_layers_get_rootfs(container->layers);
+            if (composedRoot == NULL) {
+                VLOG_ERROR("containerv[child]", "__container_run: failed to compose final rootfs\n");
+                return -ENOMEM;
+            }
+
+            // Take ownership of the composed root path in the container
+            container->rootfs = strdup(composedRoot);
+            if (container->rootfs == NULL) {
+                VLOG_ERROR("containerv[child]", "__container_run: failed to duplicate composed root path\n");
+                return -ENOMEM;
+            }
+        }
+
         status = __container_map_mounts(container->rootfs, &mnts[0], premountsCount);
         if (status) {
             VLOG_ERROR("containerv[child]", "__container_run: failed to map system mounts\n");
-            return status;
-        }
-
-        // bind mount all additional mounts requested by the caller
-        status = __container_map_mounts(container->rootfs, options->mounts, options->mounts_count);
-        if (status) {
-            VLOG_ERROR("containerv[child]", "__container_run: failed to map requested mounts\n");
             return status;
         }
     }
@@ -750,7 +774,7 @@ static int __container_run(
     // After the chroot we can do now do special mounts
     if (options->capabilities & CV_CAP_FILESYSTEM) {
         static const int postmountsCount = 4;
-        struct containerv_mount mnts[] = {
+        struct __child_mount mnts[] = {
             {
                 .what = "sysfs",
                 .where = "/sys",
@@ -877,13 +901,12 @@ static void __container_entry(
 
 int containerv_create(
     const char*                   containerId,
-    const char*                   rootFs,
     struct containerv_options*    options,
     struct containerv_container** containerOut)
 {
     struct containerv_container* container;
     int                          status;
-    VLOG_DEBUG("containerv[host]", "containerv_create(root=%s, caps=0x%x)\n", rootFs, options->capabilities);
+    VLOG_DEBUG("containerv[host]", "containerv_create(caps=0x%x)\n", options->capabilities);
 
     // ensure the containerv runtime path exists
     status = platform_mkdir(__CONTAINER_SOCKET_RUNTIME_BASE);
@@ -897,8 +920,8 @@ int containerv_create(
         VLOG_ERROR("containerv[host]", "containerv_create: failed to allocate memory for container\n");
         return -1;
     }
-
-    container->rootfs = strdup(rootFs);
+    
+    container->layers = options->layers;
     container->pid = fork();
     if (container->pid == (pid_t)-1) {
         VLOG_ERROR("containerv[host]", "containerv_create: failed to fork container process\n");
@@ -1055,7 +1078,7 @@ int containerv_spawn(
     process_handle_t*                pidOut)
 {
     struct containerv_socket_client* client;
-    int                              status;
+    int                              status = -1;
     VLOG_DEBUG("containerv[host]", "containerv_spawn()\n");
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
@@ -1077,7 +1100,7 @@ int containerv_spawn(
 int containerv_kill(struct containerv_container* container, pid_t pid)
 {
     struct containerv_socket_client* client;
-    int                              status;
+    int                              status = -1;
     VLOG_DEBUG("containerv[host]", "containerv_kill()\n");
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
@@ -1101,7 +1124,7 @@ int containerv_upload(struct containerv_container* container, const char* const*
     int                              fds[__CONTAINER_MAX_FD_COUNT] = { -1 };
     int                              results[__CONTAINER_MAX_FD_COUNT];
     struct containerv_socket_client* client;
-    int                              status;
+    int                              status = -1;
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
     client = containerv_socket_client_open(container->id);
@@ -1148,7 +1171,7 @@ int containerv_download(struct containerv_container* container, const char* cons
     int                              fds[__CONTAINER_MAX_FD_COUNT] = { -1 };
     int                              results[__CONTAINER_MAX_FD_COUNT];
     struct containerv_socket_client* client;
-    int                              status;
+    int                              status = -1;
     char                             xbuf[4096];
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
@@ -1209,7 +1232,7 @@ int containerv_destroy(struct containerv_container* container)
 {
     struct containerv_socket_client* client;
     struct containerv_event          event = { 0 };
-    int                              status;
+    int                              status = -1;
     VLOG_DEBUG("containerv[host]", "containerv_destroy()\n");
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
@@ -1265,7 +1288,7 @@ int containerv_join(const char* containerId)
     struct containerv_ns_fd          fds[CV_NS_COUNT] = { 0 };
     struct containerv_socket_client* client;
     char                             chrPath[PATH_MAX] = { 0 };
-    int                              status;
+    int                              status = -1;
     int                              count;
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", containerId);

@@ -54,10 +54,4 @@ extern enum chef_status cvd_kill(const char* containerID, const unsigned int pID
  */
 extern enum chef_status cvd_destroy(const char* containerID);
 
-/**
- * @brief 
- */
-extern int cvd_rootfs_setup_debootstrap(const char* path);
-
-
 #endif //!__CVD_SERVER_H__

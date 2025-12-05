@@ -14,13 +14,6 @@ set (SRCS
     main.c
 )
 
-# Add platform-specific rootfs implementations
-if (UNIX)
-    list(APPEND SRCS server/rootfs/debootstrap.c)
-elseif(WIN32)
-    list(APPEND SRCS server/rootfs/windows/debootstrap.c)
-endif()
-
 add_executable(cvd ${SRCS})
 add_dependencies(cvd service_server)
 target_include_directories(cvd PRIVATE ${CMAKE_BINARY_DIR}/protocols include)

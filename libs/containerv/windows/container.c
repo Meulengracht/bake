@@ -178,7 +178,7 @@ static void __container_delete(struct containerv_container* container)
 }
 
 int containerv_create(
-    const char*                   rootFs,
+    const char*                   containerId,
     struct containerv_options*    options,
     struct containerv_container** containerOut
 )

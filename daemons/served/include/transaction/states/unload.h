@@ -30,7 +30,7 @@ static const struct served_sm_state g_stateUnload = {
     .action = served_handle_state_unload,
     .transition_count = 4,
     .transitions = {
-        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_UNMOUNT },
+        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_UNINSTALL },
         { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_UPDATE },
         { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
         { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }
@@ -42,7 +42,7 @@ static const struct served_sm_state g_stateUnloadAll = {
     .action = served_handle_state_unload_all,
     .transition_count = 4,
     .transitions = {
-        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_UNMOUNT },
+        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_UNINSTALL },
         { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_UPDATE },
         { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
         { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }

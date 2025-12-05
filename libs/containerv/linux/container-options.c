@@ -34,10 +34,9 @@ void containerv_options_set_caps(struct containerv_options* options, enum contai
     options->capabilities = caps;
 }
 
-void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int mountsCount)
+void containerv_options_set_layers(struct containerv_options* options, struct containerv_layer_context* layers)
 {
-    options->mounts = mounts;
-    options->mounts_count = mountsCount;
+    options->layers = layers;
 }
 
 void containerv_options_set_users(struct containerv_options* options, uid_t hostUidStart, uid_t childUidStart, int count)

@@ -24,7 +24,7 @@ void chef_cvd_create_invocation(struct gracht_message* message, const struct che
 {
     enum chef_status status;
     const char*      id = "";
-    VLOG_DEBUG("api", "create(roots=%s)\n", params->rootfs);
+    VLOG_DEBUG("api", "create(layers=%u)\n", params->layers_count);
 
     status = cvd_create(params, &id);
     chef_cvd_create_response(message, (char*)id, status);

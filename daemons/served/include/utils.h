@@ -21,25 +21,6 @@
 
 typedef struct gracht_server gracht_server_t;
 struct chef_config_address;
-struct served_mount;
-
-
-/**
- * @brief 
- * 
- * @param path 
- * @param mountPoint
- * @param mountOut 
- * @return int 
- */
-extern int served_mount(const char* path, const char* mountPoint, struct served_mount** mountOut);
-
-/**
- * @brief 
- * 
- * @param mount 
- */
-extern void served_unmount(struct served_mount* mount);
 
 /**
  * 
@@ -85,6 +66,7 @@ extern char* utils_path_command_wrapper(const char* name);
 struct container_options {
     const char* id;
     const char* rootfs;
+    const char* package;
 };
 
 extern int  container_client_initialize(struct chef_config_address* config);

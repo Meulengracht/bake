@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/containerv/layers.h>
 #include <chef/containerv.h>
 #include <chef/platform.h>
 #include <signal.h>
@@ -48,12 +49,34 @@ static void __cleanup_systems(int sig)
     _Exit(0);
 }
 
+static struct containerv_layer_context* __build_layer_context(const char* id, const char* rootfs)
+{
+    struct containerv_layer_context* layerContext;
+    int                              status;
+    struct containerv_layer          baseLayer = { 0 };
+
+    baseLayer.type   = CONTAINERV_LAYER_BASE_ROOTFS;
+    baseLayer.source = (char*)rootfs;
+
+    // Compose layers into final rootfs
+    status = containerv_layers_compose(
+        &baseLayer, 1, id, &layerContext
+    );
+    
+    if (status != 0) {
+        VLOG_ERROR("cvctl", "__build_layer_context: failed to compose layers\n");
+        return NULL;
+    }
+    return layerContext;
+}
+
 int start_main(int argc, char** argv, char** envp, struct cvctl_command_options* options)
 {
-    const char*                rootfs = NULL;
-    struct containerv_options* cvopts;
-    char*                      abspath;
-    int                        result;
+    struct containerv_layer_context* layerContext;
+    const char*                      rootfs = NULL;
+    struct containerv_options*       cvopts;
+    char*                            abspath;
+    int                              result;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -91,25 +114,32 @@ int start_main(int argc, char** argv, char** envp, struct cvctl_command_options*
         return -1;
     }
 
+    layerContext = __build_layer_context("cvctl-container", abspath);
+    if (layerContext == NULL) {
+        result = -1;
+        goto cleanup;
+    }
+
+    containerv_options_set_layers(cvopts, layerContext);
+
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 
 #elif defined(__linux__) || defined(__unix__)
     containerv_options_set_caps(cvopts, CV_CAP_FILESYSTEM | CV_CAP_PROCESS_CONTROL | CV_CAP_IPC);
 #endif
 
-    result = containerv_create(NULL, abspath, cvopts, &g_container);
+    result = containerv_create(NULL, cvopts, &g_container);
     if (result) {
         fprintf(stderr, "cvctl: failed to create container\n");
-        containerv_options_delete(cvopts);
-        vlog_cleanup();
-        free(abspath);
-        return -1;
+        result = -1;
+        goto cleanup;
     }
 
     for (;;);
 
+cleanup:
     containerv_options_delete(cvopts);
     vlog_cleanup();
     free(abspath);
-    return 0;
+    return result;
 }

@@ -92,6 +92,7 @@ struct state_application_command {
  */
 struct state_application {
     const char* name;                                   /**< Application name (unique identifier) */
+    const char* base;                                   /**< Base rootfs for the application */
 
     struct state_application_command*  commands;        /**< Array of available commands */
     int                                commands_count;  /**< Number of commands */
@@ -100,8 +101,7 @@ struct state_application {
     int                                revisions_count; /**< Number of revisions */
 
     // unserialized members
-    struct served_mount* mount;                         /**< Active mount point (not persisted) */
-    const char*          container_id;                  /**< Container identifier (not persisted) */
+    const char* container_id;                  /**< Container identifier (not persisted) */
 };
 
 
