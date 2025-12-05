@@ -205,7 +205,7 @@ Or just specify the architecture if targeting the same platform:
 $ bake build --cross-compile=i386
 ```
 
-Alternatively, you can use the explicit `--platform` and `--archs` options. Note that for local builds, you can only specify a single architecture (use `--archs=arch` not multiple values):
+Alternatively, you can use the explicit `--platform` and `--archs` options. For local builds, only one architecture can be specified at a time:
 
 ```
 $ bake build --platform=linux --archs=i386
@@ -284,7 +284,7 @@ To execute a build remotely:
 $ bake remote build my-recipe.yaml
 ```
 
-You can build for multiple architectures in parallel (this is only supported for remote builds):
+You can build for multiple architectures in parallel using remote builds (unlike local builds which only support one architecture at a time):
 
 ```
 $ bake remote build my-recipe.yaml --archs=amd64,arm64
@@ -314,7 +314,7 @@ For more information on remote build commands, see `bake remote --help`.
 
 ## Managing Ingredients
 
-Chef uses a local cache (called the "fridge") to store downloaded ingredients (dependencies). You can manage this cache using `bake store` commands.
+Chef uses a local cache (affectionately called the "fridge") to store downloaded ingredients (dependencies). You can manage this cache using `bake store` commands.
 
 List all cached ingredients:
 
