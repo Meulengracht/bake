@@ -157,7 +157,7 @@ cmake --install build
 
 ## Your first recipe
 
-The easiest way to get started is to use the init helper provided by the command 'bake'. This will create a new recipe.yaml file in the current directory, where you can customize the recipe to your liking.
+The easiest way to get started is to use the init helper provided by the command 'bake'. This will create a new `recipe.yaml` file in the current directory, where you can customize the recipe to your liking.
 
 ```
 $ bake init
@@ -205,7 +205,7 @@ Or just specify the architecture if targeting the same platform:
 $ bake build --cross-compile=i386
 ```
 
-Alternatively, you can use the explicit `--platform` and `--archs` options:
+Alternatively, you can use the explicit `--platform` and `--archs` options (note: local builds only support a single architecture):
 
 ```
 $ bake build --platform=linux --archs=i386
@@ -284,7 +284,7 @@ To execute a build remotely:
 $ bake remote build my-recipe.yaml
 ```
 
-You can build for multiple architectures in parallel:
+You can build for multiple architectures in parallel (this is only supported for remote builds):
 
 ```
 $ bake remote build my-recipe.yaml --archs=amd64,arm64
