@@ -389,6 +389,41 @@ static void __initialize_overlays(struct chef_create_parameters* params, const c
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
 }
 
+// Initialize the base rootfs for the build container if, and only if, it's not already
+// initialized. We use the build cache, and check key "rootfs-initialized" to see if we've
+// already done this.
+static char* __initialize_maybe_rootfs(struct recipe* recipe, struct build_cache* cache)
+{
+    char* rootfs;
+    int   status;
+
+    rootfs = (char*)chef_dirs_rootfs(build_cache_uuid(cache));
+    if (rootfs == NULL) {
+        VLOG_ERROR("bake", "__initialize_maybe_rootfs: failed to allocate memory for rootfs\n");
+        return NULL;
+    }
+
+    if (build_cache_key_bool(cache, "rootfs-initialized")) {
+        VLOG_DEBUG("bake", "__initialize_maybe_rootfs: rootfs already initialized, skipping\n");
+        return rootfs;
+    }
+
+    status = platform_mkdir(rootfs);
+    if (status) {
+        VLOG_ERROR("cvd", "failed to create directory %s\n", rootfs);
+        return NULL;
+    }
+
+    status = __ensure_base_rootfs(rootfs, recipe_platform_base(recipe, CHEF_PLATFORM_STR));
+    if (status) {
+        VLOG_ERROR("cvd", "failed to resolve the rootfs image\n");
+        return NULL;
+    }
+
+    build_cache_key_set_bool(cache, "rootfs-initialized", 1);
+    return rootfs;
+}
+
 enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
 {
     struct gracht_message_context context;
@@ -399,22 +434,10 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
     char                          cvdid[64];
     VLOG_DEBUG("bake", "bake_client_create_container()\n");
     
-    rootfs = (char*)chef_dirs_rootfs(build_cache_uuid(bctx->build_cache));
+    rootfs = __initialize_maybe_rootfs(bctx->recipe, bctx->build_cache);
     if (rootfs == NULL) {
         VLOG_ERROR("bake", "bake_client_create_container: failed to allocate memory for rootfs\n");
-        return -1;
-    }
-
-    status = platform_mkdir(rootfs);
-    if (status) {
-        VLOG_ERROR("cvd", "failed to create directory %s\n", rootfs);
-        return -1;
-    }
-
-    status = __ensure_base_rootfs(rootfs, recipe_platform_base(bctx->recipe, CHEF_PLATFORM_STR));
-    if (status) {
-        VLOG_ERROR("cvd", "failed to resolve the rootfs image\n");
-        return status;
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
 
     chef_create_parameters_init(&params);
