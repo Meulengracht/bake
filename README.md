@@ -205,7 +205,7 @@ Or just specify the architecture if targeting the same platform:
 $ bake build --cross-compile=i386
 ```
 
-Alternatively, you can use the explicit `--platform` and `--archs` options (note: local builds only support a single architecture):
+Alternatively, you can use the explicit `--platform` and `--archs` options. Note that for local builds, you can only specify a single architecture (use `--archs=arch` not multiple values):
 
 ```
 $ bake build --platform=linux --archs=i386
