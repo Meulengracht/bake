@@ -1078,7 +1078,7 @@ int containerv_spawn(
     process_handle_t*                pidOut)
 {
     struct containerv_socket_client* client;
-    int                              status;
+    int                              status = -1;
     VLOG_DEBUG("containerv[host]", "containerv_spawn()\n");
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
@@ -1100,7 +1100,7 @@ int containerv_spawn(
 int containerv_kill(struct containerv_container* container, pid_t pid)
 {
     struct containerv_socket_client* client;
-    int                              status;
+    int                              status = -1;
     VLOG_DEBUG("containerv[host]", "containerv_kill()\n");
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
@@ -1124,7 +1124,7 @@ int containerv_upload(struct containerv_container* container, const char* const*
     int                              fds[__CONTAINER_MAX_FD_COUNT] = { -1 };
     int                              results[__CONTAINER_MAX_FD_COUNT];
     struct containerv_socket_client* client;
-    int                              status;
+    int                              status = -1;
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
     client = containerv_socket_client_open(container->id);
@@ -1171,7 +1171,7 @@ int containerv_download(struct containerv_container* container, const char* cons
     int                              fds[__CONTAINER_MAX_FD_COUNT] = { -1 };
     int                              results[__CONTAINER_MAX_FD_COUNT];
     struct containerv_socket_client* client;
-    int                              status;
+    int                              status = -1;
     char                             xbuf[4096];
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
@@ -1232,7 +1232,7 @@ int containerv_destroy(struct containerv_container* container)
 {
     struct containerv_socket_client* client;
     struct containerv_event          event = { 0 };
-    int                              status;
+    int                              status = -1;
     VLOG_DEBUG("containerv[host]", "containerv_destroy()\n");
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
@@ -1288,7 +1288,7 @@ int containerv_join(const char* containerId)
     struct containerv_ns_fd          fds[CV_NS_COUNT] = { 0 };
     struct containerv_socket_client* client;
     char                             chrPath[PATH_MAX] = { 0 };
-    int                              status;
+    int                              status = -1;
     int                              count;
 
     VLOG_DEBUG("containerv[host]", "connecting to %s\n", containerId);
