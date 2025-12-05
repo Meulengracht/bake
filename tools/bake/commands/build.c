@@ -221,6 +221,10 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     char*                      header;
     char*                      footer;
     const char*                arch;
+    struct vlog_step           step_prepare;
+    struct vlog_step           step_source;
+    struct vlog_step           step_build;
+    struct vlog_step           step_pack;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -299,25 +303,14 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     vlog_content_set_index(1);
     vlog_content_set_prefix("");
 
-    vlog_content_set_index(2);
-    vlog_content_set_prefix("prepare");
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+    // initialize pipeline steps
+    vlog_step_init(&step_prepare, 2, "prepare");
+    vlog_step_init(&step_source,  3, "source");
+    vlog_step_init(&step_build,   4, "build");
+    vlog_step_init(&step_pack,    5, "pack");
 
-    vlog_content_set_index(3);
-    vlog_content_set_prefix("source");
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-
-    vlog_content_set_index(4);
-    vlog_content_set_prefix("build");
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-
-    vlog_content_set_index(5);
-    vlog_content_set_prefix("pack");
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-
-    // use 2 for initial information (prepare)
-    vlog_content_set_index(2);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+    // use prepare for initial information
+    vlog_step_begin(&step_prepare);
 
     // we want the recipe cache in this case for regular builds
     status = build_cache_create(options->recipe, options->cwd, &cache);
@@ -346,52 +339,38 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     status = __ensure_ingredients(options->recipe, options->platform, arch);
     if (status) {
         VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
+        vlog_step_fail(&step_prepare);
         goto cleanup;
     }
 
     status = bake_build_setup(g_context);
     if (status) {
         VLOG_ERROR("bake", "failed to setup build environment: %s\n", strerror(errno));
+        vlog_step_fail(&step_prepare);
         goto cleanup;
     }
 
-    // update status of logging
-    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+    vlog_step_end(&step_prepare, 1);
 
-    vlog_content_set_index(3);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
-
+    vlog_step_begin(&step_source);
     status = build_step_source(g_context);
     if (status) {
-        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+        vlog_step_fail(&step_source);
         goto cleanup;
     }
+    vlog_step_end(&step_source, 1);
 
-    // update status of logging
-    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
-
-    vlog_content_set_index(4);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
-
+    vlog_step_begin(&step_build);
     status = build_step_make(g_context);
     if (status) {
-        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+        vlog_step_fail(&step_build);
         goto cleanup;
     }
+    vlog_step_end(&step_build, 1);
 
-    // update status of logging
-    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
-
-    vlog_content_set_index(5);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
-
+    vlog_step_begin(&step_pack);
     status = build_step_pack(g_context);
-    if (status) {
-        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-    }
-
-    // update status of logging
-    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+    vlog_step_end(&step_pack, status == 0);
 
 cleanup:
     vlog_refresh(stdout);
