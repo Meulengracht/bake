@@ -48,7 +48,7 @@ Features that is expected in the upcoming 1.5 release
 
 - [x] Served initial feature completion
 - [x] Remote management commands
-  * `bake remote list --archs=...`
+  * `bake remote list --arch=...`
   * `bake remote info [agent]`
 - [x] Disk image utility based on yaml descriptions
   * Support files/directories/chef packages as data sources
@@ -163,7 +163,7 @@ The easiest way to get started is to use the init helper provided by the command
 $ bake init
 ```
 
-For examples on recipes, please see the examples/ directory, the chef.yaml, or refer to the Recipe Specification in the bottom of this page.
+For examples on recipes, please see the examples/ directory, this project's chef.yaml, or refer to the Recipe Specification in the bottom of this page.
 
 Once the recipe is created, you can start baking!
 
@@ -193,16 +193,22 @@ chef will expose the following variables to help control the build process:
 
 Chef is specifically built to work easily with cross-compilation scenarios. This allows users to build packages for other platforms or architectures and publish them as well.
 
-To cross-compile for a specific architecture:
-
-```
-$ bake build --platform=linux --archs=i386
-```
-
-Or use the shorter format:
+To cross-compile for a specific architecture or platform, you can use the `--cross-compile` option:
 
 ```
 $ bake build --cross-compile=linux/i386
+```
+
+Or just specify the architecture if targeting the same platform:
+
+```
+$ bake build --cross-compile=i386
+```
+
+Alternatively, you can use the explicit `--platform` and `--archs` options:
+
+```
+$ bake build --platform=linux --archs=i386
 ```
 
 The above will trigger chef to download ingredients for the linux/i386 platform, and then build the package for that platform. During execution of the different steps, chef will expose the following additional environment variables:
@@ -214,18 +220,22 @@ The above will trigger chef to download ingredients for the linux/i386 platform,
 
 ## Cleaning Builds
 
-To clean all build artifacts and intermediate directories:
+To clean all build artifacts and intermediate directories for the current recipe:
 
 ```
 $ bake clean
 ```
 
-You can also clean specific types of build artifacts:
+To clean all recipes in the kitchen area (build cache):
 
 ```
-$ bake clean builds      # Clean build directories
-$ bake clean installs    # Clean install directories
-$ bake clean all         # Clean everything (equivalent to bake clean)
+$ bake clean --purge
+```
+
+You can also specify cross-compilation options when cleaning:
+
+```
+$ bake clean --cross-compile=linux/i386
 ```
 
 ## Remote Building
@@ -251,7 +261,7 @@ $ bake remote list
 You can filter agents by architecture:
 
 ```
-$ bake remote list --archs=arm64
+$ bake remote list --arch=arm64
 ```
 
 This will display available agents with their status, supported architectures, and current load.
