@@ -18,6 +18,7 @@
 
 #include <chef/platform.h>
 #include <chef/package.h>
+#include <string.h>
 #include <utils.h>
 #include <vlog.h>
 

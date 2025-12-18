@@ -52,9 +52,6 @@ struct containerv_layer {
     /** Target mount point (for HOST_DIRECTORY type) */
     char* target;
     
-    /** Base image name (for BASE_ROOTFS type with image) */
-    char* base_image;
-    
     /** Read-only flag */
     int readonly;
 };

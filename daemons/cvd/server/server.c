@@ -117,7 +117,6 @@ static struct containerv_layer* __to_cv_layers(struct chef_layer_descriptor* pro
         cvLayers[i].type = __to_cv_layer_type(protoLayers[i].type);
         cvLayers[i].source = protoLayers[i].source;
         cvLayers[i].target = protoLayers[i].target;
-        cvLayers[i].base_image = protoLayers[i].base_image;
         cvLayers[i].readonly = (protoLayers[i].options & CHEF_MOUNT_OPTIONS_READONLY) ? 1 : 0;
     }
     

@@ -67,6 +67,7 @@ struct containerv_layer_context {
     char*                   upper_dir;        // OverlayFS upper dir
     char*                   container_id;     // Container ID
     int                     overlay_mounted;  // Whether overlay was mounted
+    int                     readonly;         // Read-only flag
 };
 
 // ============================================================================
@@ -88,6 +89,8 @@ static int __vafs_getattr(const char* path, struct stat* stbuf, struct fuse_file
     memset(stbuf, 0, sizeof(struct stat));
     stbuf->st_mode = vstat.mode;
     stbuf->st_size = vstat.size;
+    stbuf->st_uid = 0;
+    stbuf->st_gid = 0;
     stbuf->st_nlink = 1;
     
     return 0;
@@ -291,6 +294,26 @@ static void __vafs_unmount(struct __vafs_mount* mount)
 // Layer Path Helpers
 // ============================================================================
 
+static void __containerv_layer_context_delete(struct containerv_layer_context* context)
+{
+    if (context == NULL) {
+        return;
+    }
+    
+    for (int i = 0; i < context->layer_count; i++) {
+        struct __mounted_layer* layer = &context->layers[i];
+        free(layer->mount_point);
+        free(layer->source_path);
+    }
+    
+    free(context->layers);
+    free(context->work_dir);
+    free(context->upper_dir);
+    free(context->composed_rootfs);
+    free(context->container_id);
+    free(context);
+}
+
 static char* __create_layer_dir(const char* container_id, const char* subdir)
 {
     char  tmp[PATH_MAX];
@@ -311,6 +334,36 @@ static char* __create_layer_dir(const char* container_id, const char* subdir)
     return path;
 }
 
+static struct containerv_layer_context* __containerv_layer_context_new(const char* containerID, size_t layerCount)
+{
+    struct containerv_layer_context* context;
+
+    context = calloc(1, sizeof(struct containerv_layer_context));
+    if (context == NULL) {
+        return NULL;
+    }
+    
+    context->container_id = strdup(containerID);
+    context->layers = calloc(layerCount, sizeof(struct __mounted_layer));
+    
+    if (context->layers == NULL || context->container_id == NULL) {
+        __containerv_layer_context_delete(context);
+        return NULL;
+    }
+
+    // create the directories we always need
+    context->upper_dir = __create_layer_dir(containerID, "contents");
+    context->work_dir = __create_layer_dir(containerID, "workspace");
+    context->composed_rootfs = __create_layer_dir(containerID, "merged");
+    context->readonly = 1;
+    
+    if (context->work_dir == NULL || context->upper_dir == NULL || context->composed_rootfs == NULL) {
+        __containerv_layer_context_delete(context);
+        return NULL;
+    }
+    return context;
+}
+
 static char* __create_vafs_mount_point(const char* container_id, int layer_index)
 {
     char tmp[64];
@@ -322,39 +375,10 @@ static char* __create_vafs_mount_point(const char* container_id, int layer_index
 // Layer Mounting
 // ============================================================================
 
-static int __mount_vafs_layer(
-    struct containerv_layer* layer,
-    const char*              container_id,
-    int                      layer_index,
-    struct __mounted_layer*  mounted_layer)
-{
-    char*                mount_point;
-    struct __vafs_mount* mount_handle = NULL;
-    int                  status;
-    
-    mount_point = __create_vafs_mount_point(container_id, layer_index);
-    if (mount_point == NULL) {
-        return -1;
-    }
-    
-    status = __vafs_mount(layer->source, mount_point, &mount_handle);
-    if (status != 0) {
-        free(mount_point);
-        return -1;
-    }
-    
-    mounted_layer->type = layer->type;
-    mounted_layer->mount_point = mount_point;
-    mounted_layer->source_path = strdup(layer->source);
-    mounted_layer->handle = mount_handle;
-    
-    return 0;
-}
-
 static int __setup_base_rootfs(
     struct containerv_layer* layer,
     const char*              container_id,
-    struct __mounted_layer*  mounted_layer)
+    struct __mounted_layer*  mountedLayer)
 {
     VLOG_DEBUG("containerv", "__setup_base_rootfs: source=%s\n", 
                layer->source ? layer->source : "null");
@@ -365,96 +389,115 @@ static int __setup_base_rootfs(
         return -1;
     }
     
-    mounted_layer->handle = NULL;
-    mounted_layer->type = layer->type;
-    mounted_layer->mount_point = strdup(layer->source);
-    mounted_layer->source_path = strdup(layer->source);
-    if (mounted_layer->mount_point == NULL || mounted_layer->source_path == NULL) {
-        free(mounted_layer->mount_point);
-        free(mounted_layer->source_path);
+    mountedLayer->handle = NULL;
+    mountedLayer->type = layer->type;
+    mountedLayer->mount_point = strdup(layer->source);
+    mountedLayer->source_path = strdup(layer->source);
+    if (mountedLayer->mount_point == NULL || mountedLayer->source_path == NULL) {
+        free(mountedLayer->mount_point);
+        free(mountedLayer->source_path);
         return -1;
     }
 
     return 0;
 }
 
-static int __create_overlay_mount(struct containerv_layer_context* context)
+static char* __build_overlay_layer_list(struct containerv_layer_context* context, enum containerv_layer_type skipType)
 {
-    char* options = NULL;
-    char* lowerdir_list = NULL;
-    size_t options_size = 0;
-    size_t lowerdir_size = 0;
-    int status;
-    
-    VLOG_DEBUG("containerv", "__create_overlay_mount: composing %d layers\n", context->layer_count);
-    
-    // Build lowerdir list (all non-overlay layers)
+    char*  dirs = NULL;
+    size_t dirsLength = 0;
+
     for (int i = 0; i < context->layer_count; i++) {
-        if (context->layers[i].type == CONTAINERV_LAYER_OVERLAY) {
+        const char* layerPath;
+        size_t      pathLength;
+
+        if (context->layers[i].type == skipType) {
             continue;
         }
         
-        const char* layer_path = context->layers[i].mount_point;
-        size_t path_len = strlen(layer_path);
+        layerPath = context->layers[i].mount_point;
+        pathLength = strlen(layerPath);
         
-        if (lowerdir_list == NULL) {
-            lowerdir_size = path_len + 1;
-            lowerdir_list = malloc(lowerdir_size);
-            if (lowerdir_list == NULL) {
-                return -1;
+        if (dirs == NULL) {
+            dirsLength = pathLength + 1;
+            dirs = malloc(dirsLength);
+            if (dirs == NULL) {
+                return NULL;
             }
-            strcpy(lowerdir_list, layer_path);
+            
+            strcpy(dirs, layerPath);
         } else {
-            size_t new_size = lowerdir_size + path_len + 2;
-            char* new_list = realloc(lowerdir_list, new_size);
-            if (new_list == NULL) {
-                free(lowerdir_list);
-                return -1;
+            size_t newDirsLength = dirsLength + pathLength + 2;
+            char*  newDirs = realloc(dirs, newDirsLength);
+            if (newDirs == NULL) {
+                free(dirs);
+                return NULL;
             }
-            lowerdir_list = new_list;
-            strcat(lowerdir_list, ":");
-            strcat(lowerdir_list, layer_path);
-            lowerdir_size = new_size;
+            
+            dirs = newDirs;
+            strcat(dirs, ":");
+            strcat(dirs, layerPath);
+            dirsLength = newDirsLength;
         }
     }
+    return dirs;
+}
+
+static int __create_overlay_mount(struct containerv_layer_context* context)
+{
+    char* options = NULL;
+    char* lowerDirs = NULL;
+    int   status;
     
-    if (lowerdir_list == NULL) {
+    VLOG_DEBUG("containerv", "__create_overlay_mount: composing %d layers\n", context->layer_count);
+    
+    lowerDirs = __build_overlay_layer_list(context, CONTAINERV_LAYER_OVERLAY);
+    if (lowerDirs == NULL) {
         VLOG_ERROR("containerv", "__create_overlay_mount: no lower layers\n");
         errno = EINVAL;
         return -1;
     }
     
-    // Build overlayfs options
-    options_size = strlen("lowerdir=") + lowerdir_size + 
-                   strlen(",upperdir=") + strlen(context->upper_dir) +
-                   strlen(",workdir=") + strlen(context->work_dir) + 1;
-    
-    options = malloc(options_size);
-    if (options == NULL) {
-        free(lowerdir_list);
-        return -1;
+    if (context->readonly == 0) {
+        size_t optSize = strlen("lowerdir=") + strlen(lowerDirs) + 
+                    strlen(",upperdir=") + strlen(context->upper_dir) +
+                    strlen(",workdir=") + strlen(context->work_dir) + 1;
+        
+        options = malloc(optSize);
+        if (options == NULL) {
+            free(lowerDirs);
+            return -1;
+        }
+        
+        snprintf(options, optSize, "lowerdir=%s,upperdir=%s,workdir=%s",
+                lowerDirs, context->upper_dir, context->work_dir);
+    } else {
+        size_t optSize = strlen("lowerdir=") + strlen(lowerDirs) + 1;
+        
+        options = malloc(optSize);
+        if (options == NULL) {
+            free(lowerDirs);
+            return -1;
+        }
+        snprintf(options, optSize, "lowerdir=%s", lowerDirs);
     }
-    
-    snprintf(options, options_size, "lowerdir=%s,upperdir=%s,workdir=%s",
-             lowerdir_list, context->upper_dir, context->work_dir);
-    
+
     VLOG_DEBUG("containerv", "__create_overlay_mount: options=%s\n", options);
     VLOG_DEBUG("containerv", "__create_overlay_mount: target=%s\n", context->composed_rootfs);
     
     status = mount("overlay", context->composed_rootfs, "overlay", 0, options);
-    if (status != 0) {
+    if (status) {
         VLOG_ERROR("containerv", "__create_overlay_mount: mount failed: %s\n", strerror(errno));
-        free(options);
-        free(lowerdir_list);
-        return -1;
+        goto cleanup;
     }
-    
-    free(options);
-    free(lowerdir_list);
     
     VLOG_DEBUG("containerv", "__create_overlay_mount: success\n");
     context->overlay_mounted = 1;
-    return 0;
+
+cleanup:
+    free(options);
+    free(lowerDirs);
+    return status;
 }
 
 // ============================================================================
@@ -551,48 +594,10 @@ int containerv_layers_mount_in_namespace(struct containerv_layer_context* contex
     return 0;
 }
 
-int containerv_layers_compose(
-    struct containerv_layer*          layers,
-    int                               layer_count,
-    const char*                       container_id,
-    struct containerv_layer_context** context_out)
+static int __process_context_layers(struct containerv_layer_context* context, struct containerv_layer* layers, int layer_count)
 {
-    struct containerv_layer_context* context;
     int status = 0;
-    
-    VLOG_DEBUG("containerv", "containerv_layers_compose: %d layers for %s\n", 
-               layer_count, container_id);
-    
-    if (layers == NULL || layer_count == 0 || container_id == NULL || context_out == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    
-    context = calloc(1, sizeof(struct containerv_layer_context));
-    if (context == NULL) {
-        return -1;
-    }
-    
-    context->container_id = strdup(container_id);
-    context->layers = calloc(layer_count, sizeof(struct __mounted_layer));
-    if (context->layers == NULL || context->container_id == NULL) {
-        free(context->container_id);
-        free(context->layers);
-        free(context);
-        return -1;
-    }
-    
-    // Create directories
-    context->work_dir = __create_layer_dir(container_id, "work");
-    context->upper_dir = __create_layer_dir(container_id, "upper");
-    context->composed_rootfs = __create_layer_dir(container_id, "merged");
-    
-    if (context->work_dir == NULL || context->upper_dir == NULL || context->composed_rootfs == NULL) {
-        containerv_layers_destroy(context);
-        return -1;
-    }
-    
-    // Process each layer
+
     for (int i = 0; i < layer_count; i++) {
         struct __mounted_layer* mounted_layer =
             &context->layers[context->layer_count];
@@ -601,50 +606,84 @@ int containerv_layers_compose(
                    i, layers[i].type);
 
         switch (layers[i].type) {
+            // CONTAINERV_LAYER_BASE_ROOTFS is meant to point to a directory path, which is already mounted.
+            // CONTAINERV_LAYER_VAFS_PACKAGE is meant to point to a VaFS package file, which we mount via FUSE.
+            // CONTAINERV_LAYER_HOST_DIRECTORY is a bind mount from host to container.
+            // CONTAINERV_LAYER_OVERLAY is a writable overlay layer on top of the others. If not provided,
+            // then we must mount the overlayfs as read-only.
+
             case CONTAINERV_LAYER_BASE_ROOTFS:
                 // Just record base rootfs path; no mount here.
-                status = __setup_base_rootfs(&layers[i], container_id, mounted_layer);
+                status = __setup_base_rootfs(&layers[i], context->container_id, mounted_layer);
                 break;
 
             case CONTAINERV_LAYER_VAFS_PACKAGE:
                 // Plan the VaFS mount point, but don't call __vafs_mount yet.
-                mounted_layer->handle = NULL;
                 mounted_layer->type = layers[i].type;
                 mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
-                mounted_layer->mount_point = __create_vafs_mount_point(container_id, i);
+                mounted_layer->mount_point = __create_vafs_mount_point(context->container_id, i);
                 if (mounted_layer->mount_point == NULL) {
                     status = -1;
                 }
                 break;
 
             case CONTAINERV_LAYER_HOST_DIRECTORY:
-                mounted_layer->handle = NULL;
                 mounted_layer->type = layers[i].type;
                 mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
                 mounted_layer->mount_point = layers[i].target ? strdup(layers[i].target) : NULL;
                 break;
 
             case CONTAINERV_LAYER_OVERLAY:
-                mounted_layer->handle = NULL;
                 mounted_layer->type = layers[i].type;
-                mounted_layer->source_path = NULL;
-                mounted_layer->mount_point = NULL;
+                context->readonly = 0;
                 break;
 
             default:
-                VLOG_ERROR("containerv",
-                        "containerv_layers_compose: unknown layer type %d\n",
-                        layers[i].type);
+                VLOG_ERROR(
+                    "containerv",
+                    "containerv_layers_compose: unknown layer type %d\n",
+                    layers[i].type
+                );
                 status = -1;
                 break;
         }
 
         if (status) {
-            containerv_layers_destroy(context);
-            return -1;
+            return status;
         }
 
         context->layer_count++;
+    }
+
+    return status;
+}
+
+int containerv_layers_compose(
+    struct containerv_layer*          layers,
+    int                               layerCount,
+    const char*                       containerID,
+    struct containerv_layer_context** contextOut)
+{
+    struct containerv_layer_context* context;
+    int                              status = 0;
+    
+    VLOG_DEBUG("containerv", "containerv_layers_compose: %d layers for %s\n", 
+               layerCount, containerID);
+    
+    if (layers == NULL || layerCount == 0 || containerID == NULL || contextOut == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    
+    context = __containerv_layer_context_new(containerID, layerCount);
+    if (context == NULL) {
+        return -1;
+    }
+
+    status = __process_context_layers(context, layers, layerCount);
+    if (status) {
+        containerv_layers_destroy(context);
+        return status;
     }
 
     // Decide composed_rootfs **path only**, but don't mount overlay here.
@@ -665,7 +704,7 @@ int containerv_layers_compose(
         context->composed_rootfs
     );
     
-    *context_out = context;
+    *contextOut = context;
     return 0;
 }
 
@@ -682,33 +721,22 @@ void containerv_layers_destroy(struct containerv_layer_context* context)
     if (context == NULL) {
         return;
     }
-    
+
     VLOG_DEBUG("containerv", "containerv_layers_destroy: cleaning up %d layers\n", 
                context->layer_count);
-    
+
     // Unmount overlay if it exists
     if (context->overlay_mounted && context->composed_rootfs != NULL) {
         umount2(context->composed_rootfs, MNT_DETACH);
     }
-    
-    // Clean up each layer
+
+    // Unmount all the layers
     for (int i = 0; i < context->layer_count; i++) {
         struct __mounted_layer* layer = &context->layers[i];
-        
         if (layer->type == CONTAINERV_LAYER_VAFS_PACKAGE && layer->handle != NULL) {
             __vafs_unmount((struct __vafs_mount*)layer->handle);
         }
-        
-        free(layer->mount_point);
-        free(layer->source_path);
     }
     
-    free(context->layers);
-    free(context->work_dir);
-    free(context->upper_dir);
-    free(context->composed_rootfs);
-    free(context->container_id);
-    free(context);
-    
-    VLOG_DEBUG("containerv", "containerv_layers_destroy: cleanup complete\n");
+    __containerv_layer_context_delete(context);
 }

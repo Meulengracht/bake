@@ -519,6 +519,27 @@ void served_transaction_delete(struct served_transaction* transaction)
     free(transaction);
 }
 
+sm_event_t served_transaction_wait(struct served_transaction* transaction, enum served_transaction_wait_type waitType, unsigned int waitData)
+{
+    transaction->wait.type = waitType;
+    switch (waitType) {
+        case SERVED_TRANSACTION_WAIT_TYPE_NONE:
+            transaction->wait.data.transaction_id = 0;
+            break;
+        case SERVED_TRANSACTION_WAIT_TYPE_TRANSACTION:
+            transaction->wait.data.transaction_id = waitData;
+            break;
+        case SERVED_TRANSACTION_WAIT_TYPE_REBOOT:
+            // No additional data needed
+            break;
+        default:
+            VLOG_ERROR("served", "served_transaction_wait: unknown wait type %d\n", waitType);
+            break;
+    }
+    
+    return SERVED_TX_EVENT_WAIT;
+}
+
 // Runner thread main loop
 static int __runner_thread_main(void* arg)
 {

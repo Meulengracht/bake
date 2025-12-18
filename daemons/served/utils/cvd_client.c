@@ -267,9 +267,6 @@ static enum chef_status __create_container(
     // on top of the base and application layers
     layer = chef_create_parameters_layers_get(&params, 2);
     layer->type = CHEF_LAYER_TYPE_OVERLAY;
-    layer->source = NULL; // TODO: create overlay source
-    layer->target = "/";
-    layer->options = 0;
     
     status = chef_cvd_create(client, &context, &params);
     if (status) {

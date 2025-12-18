@@ -24,9 +24,11 @@
 #include <chef/package.h>
 #include <chef/platform.h>
 #include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-static sm_event_t __ensure_base(struct served_transaction* transaction, const char* name, const char* base)
+static sm_event_t __ensure_base(struct served_transaction* transaction, const char* name, const char* baseName)
 {
     struct state_application* application;
     struct state_application* base;
@@ -46,7 +48,7 @@ static sm_event_t __ensure_base(struct served_transaction* transaction, const ch
         return SERVED_TX_EVENT_FAILED;
     }
 
-    base = served_state_application(base);
+    base = served_state_application(baseName);
     if (base != NULL) {
         // base already installed
         TXLOG_INFO(transaction, "Base for %s already installed", name);
@@ -55,8 +57,8 @@ static sm_event_t __ensure_base(struct served_transaction* transaction, const ch
     }
 
     // schedule installation
-    snprintf(nameBuffer, sizeof(nameBuffer), "Install dependency (%s)", base);
-    snprintf(descriptionBuffer, sizeof(descriptionBuffer), "Installation of package dependency '%s' requested", base);
+    snprintf(nameBuffer, sizeof(nameBuffer), "Install dependency (%s)", baseName);
+    snprintf(descriptionBuffer, sizeof(descriptionBuffer), "Installation of package dependency '%s' requested", baseName);
 
     transactionId = served_state_transaction_new(&(struct served_transaction_options){
         .name = &nameBuffer[0],
@@ -67,7 +69,7 @@ static sm_event_t __ensure_base(struct served_transaction* transaction, const ch
     served_state_transaction_state_new(
         transactionId, 
         &(struct state_transaction){
-            .name = base,
+            .name = baseName,
             .channel = "stable",
         }
     );

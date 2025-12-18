@@ -39,8 +39,6 @@ struct layer_descriptor {
     string        source;
     // Optional: target mount point within container (for HOST_DIRECTORY)
     string        target;
-    // Optional: for BASE_ROOTFS with type IMAGE
-    string        base_image;
     // Flags for read-only, etc
     mount_options options;
 }
