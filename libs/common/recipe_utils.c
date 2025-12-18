@@ -199,7 +199,11 @@ static const char* __default_platform_base(const char* platform)
 {
     if (strcmp(platform, "linux") == 0) {
         return "ubuntu:24";
-    } 
+    } else if (strcmp(platform, "windows") == 0) {
+        return "servercore:ltsc2022";
+    } else if (strcmp(platform, "macos") == 0) {
+        return "macos:latest";
+    }
     return platform;
 }
 

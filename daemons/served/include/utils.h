@@ -21,25 +21,6 @@
 
 typedef struct gracht_server gracht_server_t;
 struct chef_config_address;
-struct served_mount;
-
-
-/**
- * @brief 
- * 
- * @param path 
- * @param mountPoint
- * @param mountOut 
- * @return int 
- */
-extern int served_mount(const char* path, const char* mountPoint, struct served_mount** mountOut);
-
-/**
- * @brief 
- * 
- * @param mount 
- */
-extern void served_unmount(struct served_mount* mount);
 
 /**
  * 
@@ -64,6 +45,12 @@ extern int utils_verify_package(const char* publisher, const char* package, int 
 extern char** utils_split_package_name(const char* name);
 
 /**
+ * @brief Converts a base identifier (os:version) into a store ID format (vali/os-version).
+ * The returned string must be freed by the caller.
+ */
+extern char* utils_base_to_store_id(const char* base);
+
+/**
  * @brief Formats the given system path according to the base-directory set for the current
  * served instance. Sometimes it's useful to override, for instance for testing or when running
  * as a snap service.
@@ -85,6 +72,7 @@ extern char* utils_path_command_wrapper(const char* name);
 struct container_options {
     const char* id;
     const char* rootfs;
+    const char* package;
 };
 
 extern int  container_client_initialize(struct chef_config_address* config);

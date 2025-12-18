@@ -30,13 +30,16 @@ Features that is expected in the upcoming 1.5 release
   * Support multi-publisher per account
   * Support per publisher signing
   * Support api-keys
+- [x] Improved windows support
+  * Finish the platform layer for windows
+  * Fix the configure process on windows
 
 Features that is expected in the planned 1.6 release
 
-- Initial windows support
-  * Finish the platform layer
+- Complete windows support
+  * Fix the build issues
+  * Proper support for windows bases
   * Extend containerv to support the windows HCI layer
-  * Implement the build flow in kitchen for windows
 
 ## Account Setup
 

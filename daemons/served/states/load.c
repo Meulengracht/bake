@@ -30,7 +30,7 @@ static int __load_application(const char* name)
 {
     struct state_application* application;
     char**                    names = NULL;
-    char*                     mountRoot = NULL;
+    char*                     package = NULL;
     char                      containerId[256];
     int                       status;
     
@@ -39,8 +39,8 @@ static int __load_application(const char* name)
         return -1;
     }
 
-    mountRoot = utils_path_mount(names[0], names[1]);
-    if (mountRoot == NULL) {
+    package = utils_path_pack(names[0], names[1]);
+    if (package == NULL) {
         strsplit_free(names);
         return -1;
     }
@@ -49,15 +49,16 @@ static int __load_application(const char* name)
 
     application = served_state_application(name);
     if (application == NULL) {
-        free(mountRoot);
+        free(package);
         return -1;
     }
 
     status = container_client_create_container(&(struct container_options){
         .id = &containerId[0],
-        .rootfs = mountRoot,
+        .rootfs = application->base,
+        .package = package,
     });
-    free(mountRoot);
+    free(package);
     if (status && errno != EEXIST) {
         return -1;
     }

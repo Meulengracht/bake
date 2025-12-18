@@ -15,13 +15,32 @@ enum capabilities {
     USERS = 0x20,
 }
 
-enum rootfs_type {
-    // linux
-    DEBOOTSTRAP,
-    // a path that specifies the rootfs
-    PATH,
-    // rootfs image
-    IMAGE,
+enum mount_options {
+    READONLY = 0x1
+}
+
+enum layer_type {
+    // Base rootfs layer (PATH, IMAGE, DEBOOTSTRAP)
+    BASE_ROOTFS,
+    // VaFS package layer
+    VAFS_PACKAGE,
+    // Host directory bind mount
+    HOST_DIRECTORY,
+    // Overlay/writable layer
+    OVERLAY
+}
+
+struct layer_descriptor {
+    layer_type type;
+    // For BASE_ROOTFS: path to rootfs or base image name
+    // For VAFS_PACKAGE: path to .pack file
+    // For HOST_DIRECTORY: host path to bind
+    // For OVERLAY: working directory path
+    string        source;
+    // Optional: target mount point within container (for HOST_DIRECTORY)
+    string        target;
+    // Flags for read-only, etc
+    mount_options options;
 }
 
 enum status {
@@ -33,22 +52,9 @@ enum status {
     INVALID_CONTAINER_ID,
 }
 
-enum mount_options {
-    READONLY = 0x1
-}
-
-struct container_mount {
-    string        host_path;
-    string        container_path;
-    mount_options options;
-}
-
 struct create_parameters {
-    string            id;
-    string            rootfs;
-    string            rootfs_base;
-    rootfs_type       type;
-    container_mount[] mounts;
+    string             id;
+    layer_descriptor[] layers;
 }
 
 struct user_descriptor {

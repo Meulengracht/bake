@@ -255,9 +255,11 @@ int vlog_remove_output(FILE* output)
         if (g_vlog.outputs[i].handle == output) {
             g_vlog.outputs[i].handle = NULL;
             g_vlog.outputs_count--;
-            break;
+            return 0;
         }
     }
+    errno = ENOENT;
+    return -1;
 }
 
 void vlog_set_output_options(FILE* output, unsigned int flags)
@@ -533,8 +535,49 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
         }
 
         va_start(args, format);
-        vfprintf(output->handle, format, args) - 1;
+        vfprintf(output->handle, format, args);
         va_end(args);
         fflush(output->handle);
     }
 }
+
+void vlog_step_init(struct vlog_step* step, int index, const char* prefix)
+{
+    if (!step) {
+        return;
+    }
+
+    step->index = index;
+    step->prefix = prefix;
+
+    vlog_content_set_index(index);
+    vlog_content_set_prefix(prefix);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
+}
+
+void vlog_step_begin(struct vlog_step* step)
+{
+    if (!step) {
+        return;
+    }
+
+    vlog_content_set_index(step->index);
+    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+}
+
+void vlog_step_end(struct vlog_step* step, int success)
+{
+    if (!step) {
+        return;
+    }
+
+    vlog_content_set_index(step->index);
+    vlog_content_set_status(success ? VLOG_CONTENT_STATUS_DONE
+                                    : VLOG_CONTENT_STATUS_FAILED);
+}
+
+void vlog_step_fail(struct vlog_step* step)
+{
+    vlog_step_end(step, 0);
+}
+

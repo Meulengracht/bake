@@ -66,8 +66,6 @@ enum chef_transaction_state served_transaction_map_state(sm_state_t state)
         return CHEF_TRANSACTION_STATE_RESOLVING_DEPENDENCIES;
     case SERVED_TX_STATE_INSTALL:
         return CHEF_TRANSACTION_STATE_INSTALLING;
-    case SERVED_TX_STATE_MOUNT:
-        return CHEF_TRANSACTION_STATE_MOUNTING;
     case SERVED_TX_STATE_LOAD:
         return CHEF_TRANSACTION_STATE_LOADING;
     case SERVED_TX_STATE_START_SERVICES:
@@ -80,8 +78,6 @@ enum chef_transaction_state served_transaction_map_state(sm_state_t state)
         return CHEF_TRANSACTION_STATE_STOPPING_SERVICES;
     case SERVED_TX_STATE_UNLOAD:
         return CHEF_TRANSACTION_STATE_UNLOADING;
-    case SERVED_TX_STATE_UNMOUNT:
-        return CHEF_TRANSACTION_STATE_UNMOUNTING;
     case SERVED_TX_STATE_UNINSTALL:
         return CHEF_TRANSACTION_STATE_UNINSTALLING;
     case SERVED_TX_STATE_UPDATE:
@@ -521,6 +517,27 @@ void served_transaction_delete(struct served_transaction* transaction)
     free((void*)transaction->name);
     free((void*)transaction->description);
     free(transaction);
+}
+
+sm_event_t served_transaction_wait(struct served_transaction* transaction, enum served_transaction_wait_type waitType, unsigned int waitData)
+{
+    transaction->wait.type = waitType;
+    switch (waitType) {
+        case SERVED_TRANSACTION_WAIT_TYPE_NONE:
+            transaction->wait.data.transaction_id = 0;
+            break;
+        case SERVED_TRANSACTION_WAIT_TYPE_TRANSACTION:
+            transaction->wait.data.transaction_id = waitData;
+            break;
+        case SERVED_TRANSACTION_WAIT_TYPE_REBOOT:
+            // No additional data needed
+            break;
+        default:
+            VLOG_ERROR("served", "served_transaction_wait: unknown wait type %d\n", waitType);
+            break;
+    }
+    
+    return SERVED_TX_EVENT_WAIT;
 }
 
 // Runner thread main loop

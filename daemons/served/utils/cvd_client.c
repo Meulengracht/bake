@@ -229,37 +229,54 @@ static int __to_errno_code(enum chef_status status)
 }
 
 static enum chef_status __create_container(
-    gracht_client_t*             client,
-    const char*                  id,
-    const char*                  rootfs,
-    struct chef_container_mount* mounts,
-    unsigned int                 count)
+    gracht_client_t* client,
+    const char*      id,
+    const char*      rootfs,
+    const char*      package)
 {
     struct gracht_message_context context;
+    struct chef_create_parameters params;
+    struct chef_layer_descriptor* layer;
     int                           status;
     enum chef_status              chstatus;
     char                          cvdid[CHEF_PACKAGE_ID_LENGTH_MAX];
     VLOG_DEBUG("served", "__create_container()\n");
+
+    chef_create_parameters_init(&params);
+    params.id = (char*)id;
+
+    chef_create_parameters_layers_add(&params, 3);
     
-    status = chef_cvd_create(
-        client,
-        &context,
-        &(struct chef_create_parameters) {
-            .id = (char*)id,
-            .type = CHEF_ROOTFS_TYPE_PATH,
-            .rootfs = (char*)rootfs,
-            .rootfs_base = NULL,
-            .mounts = mounts,
-            .mounts_count = (uint32_t)count
-        }
-    );
+    // initialize the base rootfs layer, this is a layer from
+    // the base package
+    layer = chef_create_parameters_layers_get(&params, 0);
+    layer->type = CHEF_LAYER_TYPE_VAFS_PACKAGE;
+    layer->source = (char*)rootfs;
+    layer->target = "/";
+    layer->options = CHEF_MOUNT_OPTIONS_READONLY;
+
+    // initialize the application layer, this is a layer from
+    // the application package
+    layer = chef_create_parameters_layers_get(&params, 1);
+    layer->type = CHEF_LAYER_TYPE_VAFS_PACKAGE;
+    layer->source = (char*)package;
+    layer->target = "/";
+    layer->options = CHEF_MOUNT_OPTIONS_READONLY;
+
+    // initialize the overlay layer, this is an writable layer
+    // on top of the base and application layers
+    layer = chef_create_parameters_layers_get(&params, 2);
+    layer->type = CHEF_LAYER_TYPE_OVERLAY;
     
+    status = chef_cvd_create(client, &context, &params);
     if (status) {
+        chef_create_parameters_destroy(&params);
         VLOG_ERROR("served", "__create_container failed to create client\n");
         return status;
     }
     gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
     chef_cvd_create_result(client, &context, &cvdid[0], sizeof(cvdid) - 1, &chstatus);
+    chef_create_parameters_destroy(&params);
     return chstatus;
 }
 
@@ -270,8 +287,7 @@ int container_client_create_container(struct container_options* options)
         g_containerClient,
         options->id,
         options->rootfs,
-        NULL,
-        0
+        options->package
     ));
 }
 

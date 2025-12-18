@@ -133,4 +133,14 @@ extern void vlog_content_set_prefix(const char* header);
 extern void vlog_content_set_status(enum vlog_content_status_type status);
 extern void vlog_refresh(FILE* handle);
 
+struct vlog_step {
+    int         index;
+    const char* prefix;
+};
+
+extern void vlog_step_init(struct vlog_step* step, int index, const char* prefix);
+extern void vlog_step_begin(struct vlog_step* step);
+extern void vlog_step_end(struct vlog_step* step, int success);
+extern void vlog_step_fail(struct vlog_step* step);
+
 #endif //!__VLOG_H__
