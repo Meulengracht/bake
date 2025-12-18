@@ -82,4 +82,13 @@ extern struct served_transaction* served_transaction_new(struct served_transacti
 extern void                       served_transaction_construct(struct served_transaction* transaction, struct served_transaction_options* options);
 extern void                       served_transaction_delete(struct served_transaction* transaction);
 
+/**
+ * @brief Make the transaction wait for a condition
+ * @param transaction The transaction to make wait
+ * @param waitType The type of wait condition
+ * @param waitData Additional data for the wait condition
+ * @return sm_event_t The event to post to the state machine
+ */
+extern sm_event_t served_transaction_wait(struct served_transaction* transaction, enum served_transaction_wait_type waitType, unsigned int waitData);
+
 #endif //!__SERVED_TRANSACTION_H__

@@ -138,6 +138,7 @@ int start_main(int argc, char** argv, char** envp, struct cvctl_command_options*
     for (;;);
 
 cleanup:
+    containerv_layers_destroy(layerContext);
     containerv_options_delete(cvopts);
     vlog_cleanup();
     free(abspath);

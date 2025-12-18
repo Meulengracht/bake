@@ -45,6 +45,12 @@ extern int utils_verify_package(const char* publisher, const char* package, int 
 extern char** utils_split_package_name(const char* name);
 
 /**
+ * @brief Converts a base identifier (os:version) into a store ID format (vali/os-version).
+ * The returned string must be freed by the caller.
+ */
+extern char* utils_base_to_store_id(const char* base);
+
+/**
  * @brief Formats the given system path according to the base-directory set for the current
  * served instance. Sometimes it's useful to override, for instance for testing or when running
  * as a snap service.

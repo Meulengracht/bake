@@ -35,7 +35,7 @@ struct __container {
     struct containerv_layer_context* layer_context;  // Layer composition context
 };
 
-static struct __container* __container_new(struct containerv_container* handle)
+static struct __container* __container_new(struct containerv_container* handle, struct containerv_layer_context* layerContext)
 {
     struct __container* container = calloc(1, sizeof(struct __container));
     if (container == NULL) {
@@ -47,7 +47,20 @@ static struct __container* __container_new(struct containerv_container* handle)
         return NULL;
     }
     container->handle = handle;
+    container->layer_context = layerContext;
     return container;
+}
+
+static void __container_delete(struct __container* container)
+{
+    int status;
+
+    if (container == NULL) {
+        return;
+    }
+
+    free(container->id);
+    free(container);
 }
 
 static struct {
@@ -174,15 +187,16 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
         return __chef_status_from_errno();
     }
 
-    _container = __container_new(cvContainer);
+    _container = __container_new(cvContainer, layerContext);
     if (_container == NULL) {
         if (layerContext) {
             containerv_layers_destroy(layerContext);
         }
         VLOG_ERROR("cvd", "failed to allocate memory for the container structure\n");
+        __container_delete(_container);
         return __chef_status_from_errno();
     }
-    
+
     // Store the layer context for cleanup later
     _container->layer_context = layerContext;
     
@@ -380,15 +394,12 @@ enum chef_status cvd_destroy(const char* containerID)
         VLOG_ERROR("cvd", "cvd_destroy: failed to destroy container %s\n", containerID);
         // Continue with cleanup even if destroy fails
     }
-    
+
     // Clean up layer context
     if (container->layer_context != NULL) {
         containerv_layers_destroy(container->layer_context);
     }
-    
-    // Free container structure
-    free(container->id);
-    free(container);
-    
+
+    __container_delete(container);
     return status == 0 ? CHEF_STATUS_SUCCESS : __chef_status_from_errno();
 }

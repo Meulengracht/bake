@@ -247,24 +247,27 @@ static enum chef_status __create_container(
 
     chef_create_parameters_layers_add(&params, 3);
     
-    // initialize the base rootfs layer
+    // initialize the base rootfs layer, this is a layer from
+    // the base package
     layer = chef_create_parameters_layers_get(&params, 0);
-    layer->type = CHEF_LAYER_TYPE_VAFS_PACKAGE;
-    layer->source = (char*)package;
-    layer->target = "/";
-    layer->options = CHEF_MOUNT_OPTIONS_READONLY;
-
-    // initialize the application layer
-    layer = chef_create_parameters_layers_get(&params, 1);
     layer->type = CHEF_LAYER_TYPE_VAFS_PACKAGE;
     layer->source = (char*)rootfs;
     layer->target = "/";
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
 
-    // initialize the overlay layer
+    // initialize the application layer, this is a layer from
+    // the application package
+    layer = chef_create_parameters_layers_get(&params, 1);
+    layer->type = CHEF_LAYER_TYPE_VAFS_PACKAGE;
+    layer->source = (char*)package;
+    layer->target = "/";
+    layer->options = CHEF_MOUNT_OPTIONS_READONLY;
+
+    // initialize the overlay layer, this is an writable layer
+    // on top of the base and application layers
     layer = chef_create_parameters_layers_get(&params, 2);
     layer->type = CHEF_LAYER_TYPE_OVERLAY;
-    layer->source = NULL; // TODO: generate overlay path
+    layer->source = NULL; // TODO: create overlay source
     layer->target = "/";
     layer->options = 0;
     

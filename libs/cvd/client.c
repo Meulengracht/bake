@@ -331,7 +331,7 @@ exit:
 }
 
 #elif CHEF_ON_WINDOWS
-static int __ensure_base_rootfs(const char* rootfs) {
+static int __ensure_base_rootfs(const char* rootfs, const char* base) {
     VLOG_DEBUG("cvd", "__ensure_base_rootfs(rootfs=%s) - Windows implementation\n", rootfs);
     
     // On Windows, we would typically:

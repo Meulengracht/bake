@@ -365,11 +365,16 @@ static int __setup_base_rootfs(
         return -1;
     }
     
+    mounted_layer->handle = NULL;
     mounted_layer->type = layer->type;
     mounted_layer->mount_point = strdup(layer->source);
     mounted_layer->source_path = strdup(layer->source);
-    mounted_layer->handle = NULL;
-    
+    if (mounted_layer->mount_point == NULL || mounted_layer->source_path == NULL) {
+        free(mounted_layer->mount_point);
+        free(mounted_layer->source_path);
+        return -1;
+    }
+
     return 0;
 }
 
@@ -596,45 +601,45 @@ int containerv_layers_compose(
                    i, layers[i].type);
 
         switch (layers[i].type) {
-        case CONTAINERV_LAYER_BASE_ROOTFS:
-            // Just record base rootfs path; no mount here.
-            status = __setup_base_rootfs(&layers[i], container_id, mounted_layer);
-            break;
+            case CONTAINERV_LAYER_BASE_ROOTFS:
+                // Just record base rootfs path; no mount here.
+                status = __setup_base_rootfs(&layers[i], container_id, mounted_layer);
+                break;
 
-        case CONTAINERV_LAYER_VAFS_PACKAGE:
-            // Plan the VaFS mount point, but don't call __vafs_mount yet.
-            mounted_layer->type = layers[i].type;
-            mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
-            mounted_layer->mount_point = __create_vafs_mount_point(container_id, i);
-            mounted_layer->handle = NULL;
-            if (mounted_layer->mount_point == NULL) {
+            case CONTAINERV_LAYER_VAFS_PACKAGE:
+                // Plan the VaFS mount point, but don't call __vafs_mount yet.
+                mounted_layer->handle = NULL;
+                mounted_layer->type = layers[i].type;
+                mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
+                mounted_layer->mount_point = __create_vafs_mount_point(container_id, i);
+                if (mounted_layer->mount_point == NULL) {
+                    status = -1;
+                }
+                break;
+
+            case CONTAINERV_LAYER_HOST_DIRECTORY:
+                mounted_layer->handle = NULL;
+                mounted_layer->type = layers[i].type;
+                mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
+                mounted_layer->mount_point = layers[i].target ? strdup(layers[i].target) : NULL;
+                break;
+
+            case CONTAINERV_LAYER_OVERLAY:
+                mounted_layer->handle = NULL;
+                mounted_layer->type = layers[i].type;
+                mounted_layer->source_path = NULL;
+                mounted_layer->mount_point = NULL;
+                break;
+
+            default:
+                VLOG_ERROR("containerv",
+                        "containerv_layers_compose: unknown layer type %d\n",
+                        layers[i].type);
                 status = -1;
-            }
-            break;
-
-        case CONTAINERV_LAYER_HOST_DIRECTORY:
-            mounted_layer->type = layers[i].type;
-            mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
-            mounted_layer->mount_point = layers[i].target ? strdup(layers[i].target) : NULL;
-            mounted_layer->handle = NULL;
-            break;
-
-        case CONTAINERV_LAYER_OVERLAY:
-            mounted_layer->type = layers[i].type;
-            mounted_layer->source_path = NULL;
-            mounted_layer->mount_point = NULL;
-            mounted_layer->handle = NULL;
-            break;
-
-        default:
-            VLOG_ERROR("containerv",
-                       "containerv_layers_compose: unknown layer type %d\n",
-                       layers[i].type);
-            status = -1;
-            break;
+                break;
         }
 
-        if (status != 0) {
+        if (status) {
             containerv_layers_destroy(context);
             return -1;
         }
@@ -643,11 +648,14 @@ int containerv_layers_compose(
     }
 
     // Decide composed_rootfs **path only**, but don't mount overlay here.
-    if (context->layer_count == 1 &&
-        context->layers[0].type != CONTAINERV_LAYER_OVERLAY) {
+    if (context->layer_count == 1 && context->layers[0].type != CONTAINERV_LAYER_OVERLAY) {
         // Single concrete layer - use its mount_point path directly as the rootfs.
         free(context->composed_rootfs);
         context->composed_rootfs = strdup(context->layers[0].mount_point);
+        if (context->composed_rootfs == NULL) {
+            containerv_layers_destroy(context);
+            return -1;
+        }
     }
     // else: for multiple layers we keep context->composed_rootfs as
     //       /var/chef/layers/<id>/merged which will be mounted later

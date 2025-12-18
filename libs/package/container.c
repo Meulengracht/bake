@@ -601,17 +601,14 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct _
     // fill in data ptrs
     dataPointer = (char*)packageHeader + sizeof(struct chef_vafs_feature_package_header);
 
-    // required
-    memcpy(dataPointer, options->platform, packageHeader->platform_length);
-    dataPointer += packageHeader->platform_length;
+#define WRITE_REQUIRED(__MEM, __OMEM) memcpy(dataPointer, options->__OMEM, packageHeader->__MEM ## _length); \
+        dataPointer += packageHeader->__MEM ## _length;
 
     // required
-    memcpy(dataPointer, options->architecture, packageHeader->arch_length);
-    dataPointer += packageHeader->arch_length;
-
-    // required
-    memcpy(dataPointer, name, packageHeader->package_length);
-    dataPointer += packageHeader->package_length;
+    WRITE_REQUIRED(platform, platform)
+    WRITE_REQUIRED(arch, architecture)
+    WRITE_REQUIRED(package, name)
+    WRITE_REQUIRED(base, base)
 
 #define WRITE_IF_PRESENT(__MEM) if (options->__MEM != NULL) { \
         memcpy(dataPointer, options->__MEM, packageHeader->__MEM ## _length); \

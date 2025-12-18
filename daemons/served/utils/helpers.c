@@ -17,6 +17,7 @@
  */
 
 #include <chef/platform.h>
+#include <chef/package.h>
 #include <utils.h>
 #include <vlog.h>
 
@@ -40,4 +41,20 @@ char** utils_split_package_name(const char* name)
         return NULL;
     }
     return names;
+}
+
+char* utils_base_to_store_id(const char* base)
+{
+    char   storeID[CHEF_PACKAGE_ID_LENGTH_MAX] = { 0 };
+    size_t len = strlen(base);
+    strcpy(&storeID[0], "vali/");
+
+    for (size_t i = 0, j = 5; i < len; i++, j++) {
+        if (base[i] == ':') {
+            storeID[j] = '-';
+        } else {
+            storeID[j] = base[i];
+        }
+    }
+    return platform_strdup(&storeID[0]);
 }
