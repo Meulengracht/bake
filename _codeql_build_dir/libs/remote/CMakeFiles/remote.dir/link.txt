@@ -1,0 +1,2 @@
+/usr/bin/ar qc libremote.a CMakeFiles/remote.dir/download.c.o CMakeFiles/remote.dir/pack.c.o CMakeFiles/remote.dir/unpack.c.o CMakeFiles/remote.dir/upload.c.o
+/usr/bin/ranlib libremote.a

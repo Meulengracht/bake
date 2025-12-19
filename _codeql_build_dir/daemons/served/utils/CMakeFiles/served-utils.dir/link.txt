@@ -1,0 +1,2 @@
+/usr/bin/ar qc libserved-utils.a "CMakeFiles/served-utils.dir/__/__/__/protocols/chef_cvd_service_client.c.o" "CMakeFiles/served-utils.dir/cvd_client.c.o" "CMakeFiles/served-utils.dir/helpers.c.o" "CMakeFiles/served-utils.dir/paths.c.o" "CMakeFiles/served-utils.dir/proofs.c.o"
+/usr/bin/ranlib libserved-utils.a

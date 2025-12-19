@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../../lib/libvafs-blockcache.a "CMakeFiles/vafs-blockcache.dir/blockcache.c.o" "CMakeFiles/vafs-blockcache.dir/hashtable.c.o"
+/usr/bin/ranlib ../../../../lib/libvafs-blockcache.a

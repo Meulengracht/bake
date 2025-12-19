@@ -1,0 +1,1329 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineSystem.cmake:205 (message)"
+      - "CMakeLists.txt:36 (project)"
+    message: |
+      The system is: Linux - 6.11.0-1018-azure - x86_64
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCCompiler.cmake:123 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:36 (project)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler: /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc 
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+      
+      The C compiler identification is GNU, found in:
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/3.31.6/CompilerIdC/a.out
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:1237 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineASMCompiler.cmake:135 (CMAKE_DETERMINE_COMPILER_ID_VENDOR)"
+      - "CMakeLists.txt:36 (project)"
+    message: |
+      Checking whether the ASM compiler is GNU using "--version" matched "(GNU assembler)|(GCC)|(Free Software Foundation)":
+      cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0
+      Copyright (C) 2023 Free Software Foundation, Inc.
+      This is free software; see the source for copying conditions.  There is NO
+      warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCXXCompiler.cmake:126 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:36 (project)"
+    message: |
+      Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+      Compiler: /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ 
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "a.out"
+      
+      The CXX compiler identification is GNU, found in:
+        /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/3.31.6/CompilerIdCXX/a.out
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:74 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:36 (project)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-7VYpcz"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-7VYpcz"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-7VYpcz'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_0914d/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-7VYpcz'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_0914d.dir/build.make CMakeFiles/cmTC_0914d.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-7VYpcz'
+        Building C object CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -v -o CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o -c /usr/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/cc
+        OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
+        OFFLOAD_TARGET_DEFAULT=1
+        Target: x86_64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) 
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_0914d.dir/'
+         /usr/libexec/gcc/x86_64-linux-gnu/13/cc1 -quiet -v -imultiarch x86_64-linux-gnu /usr/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_0914d.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccewR5to.s
+        GNU C17 (Ubuntu 13.3.0-6ubuntu2~24.04) version 13.3.0 (x86_64-linux-gnu)
+        	compiled by GNU C version 13.3.0, GMP version 6.3.0, MPFR version 4.2.1, MPC version 1.3.1, isl version isl-0.26-GMP
+        
+        GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+        ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed/x86_64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../x86_64-linux-gnu/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/lib/gcc/x86_64-linux-gnu/13/include
+         /usr/local/include
+         /usr/include/x86_64-linux-gnu
+         /usr/include
+        End of search list.
+        Compiler executable checksum: 38987c28e967c64056a6454abdef726e
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_0914d.dir/'
+         as -v --64 -o CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o /tmp/ccewR5to.s
+        GNU assembler version 2.42 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.42
+        COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.'
+        Linking C executable cmTC_0914d
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_0914d.dir/link.txt --verbose=1
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/cc
+        COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper
+        OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
+        OFFLOAD_TARGET_DEFAULT=1
+        Target: x86_64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) 
+        COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_0914d' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_0914d.'
+         /usr/libexec/gcc/x86_64-linux-gnu/13/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccFNfCx3.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_0914d /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o
+        collect2 version 13.3.0
+        /usr/bin/ld -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccFNfCx3.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_0914d /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o
+        GNU ld (GNU Binutils for Ubuntu) 2.42
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_0914d' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_0914d.'
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -v -Wl,-v CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o -o cmTC_0914d
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-7VYpcz'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-7VYpcz'
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:182 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:36 (project)"
+    message: |
+      Parsed C implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/lib/gcc/x86_64-linux-gnu/13/include]
+          add: [/usr/local/include]
+          add: [/usr/include/x86_64-linux-gnu]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/lib/gcc/x86_64-linux-gnu/13/include] ==> [/usr/lib/gcc/x86_64-linux-gnu/13/include]
+        collapse include dir [/usr/local/include] ==> [/usr/local/include]
+        collapse include dir [/usr/include/x86_64-linux-gnu] ==> [/usr/include/x86_64-linux-gnu]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/lib/gcc/x86_64-linux-gnu/13/include;/usr/local/include;/usr/include/x86_64-linux-gnu;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:218 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:36 (project)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(\\.[a-z]+)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|")?[ 	]*(([^"]*[/\\])?(ld[0-9]*(\\.[a-z]+)?))("|,| |$)]
+        ignore line: [Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-7VYpcz']
+        ignore line: []
+        ignore line: [Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_0914d/fast]
+        ignore line: [gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-7VYpcz']
+        ignore line: [/usr/bin/gmake  -f CMakeFiles/cmTC_0914d.dir/build.make CMakeFiles/cmTC_0914d.dir/build]
+        ignore line: [gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-7VYpcz']
+        ignore line: [Building C object CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o]
+        ignore line: [/home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc   -v -o CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o -c /usr/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/cc]
+        ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa]
+        ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+        ignore line: [Target: x86_64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c ada c++ go d fortran objc obj-c++ m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) ]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_0914d.dir/']
+        ignore line: [ /usr/libexec/gcc/x86_64-linux-gnu/13/cc1 -quiet -v -imultiarch x86_64-linux-gnu /usr/local/share/cmake-3.31/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_0914d.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccewR5to.s]
+        ignore line: [GNU C17 (Ubuntu 13.3.0-6ubuntu2~24.04) version 13.3.0 (x86_64-linux-gnu)]
+        ignore line: [	compiled by GNU C version 13.3.0  GMP version 6.3.0  MPFR version 4.2.1  MPC version 1.3.1  isl version isl-0.26-GMP]
+        ignore line: []
+        ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+        ignore line: [ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed/x86_64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../x86_64-linux-gnu/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/13/include]
+        ignore line: [ /usr/local/include]
+        ignore line: [ /usr/include/x86_64-linux-gnu]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [Compiler executable checksum: 38987c28e967c64056a6454abdef726e]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_0914d.dir/']
+        ignore line: [ as -v --64 -o CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o /tmp/ccewR5to.s]
+        ignore line: [GNU assembler version 2.42 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.42]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.']
+        ignore line: [Linking C executable cmTC_0914d]
+        ignore line: [/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_0914d.dir/link.txt --verbose=1]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/cc]
+        ignore line: [COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper]
+        ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa]
+        ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+        ignore line: [Target: x86_64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c ada c++ go d fortran objc obj-c++ m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) ]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_0914d' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_0914d.']
+        link line: [ /usr/libexec/gcc/x86_64-linux-gnu/13/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccFNfCx3.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_0914d /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o]
+          arg [/usr/libexec/gcc/x86_64-linux-gnu/13/collect2] ==> ignore
+          arg [-plugin] ==> ignore
+          arg [/usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so] ==> ignore
+          arg [-plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper] ==> ignore
+          arg [-plugin-opt=-fresolution=/tmp/ccFNfCx3.res] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [-plugin-opt=-pass-through=-lc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [elf_x86_64] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-znow] ==> ignore
+          arg [-zrelro] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_0914d] ==> ignore
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib]
+          arg [-L/lib/x86_64-linux-gnu] ==> dir [/lib/x86_64-linux-gnu]
+          arg [-L/lib/../lib] ==> dir [/lib/../lib]
+          arg [-L/usr/lib/x86_64-linux-gnu] ==> dir [/usr/lib/x86_64-linux-gnu]
+          arg [-L/usr/lib/../lib] ==> dir [/usr/lib/../lib]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13/../../..] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../..]
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o] ==> ignore
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [-lc] ==> lib [c]
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o]
+        ignore line: [collect2 version 13.3.0]
+        ignore line: [/usr/bin/ld -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccFNfCx3.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_0914d /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_0914d.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o]
+        linker tool for 'C': /usr/bin/ld
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o] ==> [/usr/lib/x86_64-linux-gnu/Scrt1.o]
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o] ==> [/usr/lib/x86_64-linux-gnu/crti.o]
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o] ==> [/usr/lib/x86_64-linux-gnu/crtn.o]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13] ==> [/usr/lib/gcc/x86_64-linux-gnu/13]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib] ==> [/usr/lib]
+        collapse library dir [/lib/x86_64-linux-gnu] ==> [/lib/x86_64-linux-gnu]
+        collapse library dir [/lib/../lib] ==> [/lib]
+        collapse library dir [/usr/lib/x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+        collapse library dir [/usr/lib/../lib] ==> [/usr/lib]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../..] ==> [/usr/lib]
+        implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+        implicit objs: [/usr/lib/x86_64-linux-gnu/Scrt1.o;/usr/lib/x86_64-linux-gnu/crti.o;/usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o;/usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o;/usr/lib/x86_64-linux-gnu/crtn.o]
+        implicit dirs: [/usr/lib/gcc/x86_64-linux-gnu/13;/usr/lib/x86_64-linux-gnu;/usr/lib;/lib/x86_64-linux-gnu;/lib]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CMakeDetermineLinkerId.cmake:40 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:255 (cmake_determine_linker_id)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:36 (project)"
+    message: |
+      Running the C compiler's linker: "/usr/bin/ld" "-v"
+      GNU ld (GNU Binutils for Ubuntu) 2.42
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:74 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:36 (project)"
+    checks:
+      - "Detecting CXX compiler ABI info"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-9nMh9J"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-9nMh9J"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_CXX_SCAN_FOR_MODULES: "OFF"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CMAKE_CXX_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-9nMh9J'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_62acb/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-9nMh9J'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_62acb.dir/build.make CMakeFiles/cmTC_62acb.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-9nMh9J'
+        Building CXX object CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++   -v -o CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o -c /usr/local/share/cmake-3.31/Modules/CMakeCXXCompilerABI.cpp
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/c++
+        OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
+        OFFLOAD_TARGET_DEFAULT=1
+        Target: x86_64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) 
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-fpermissive' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_62acb.dir/'
+         /usr/libexec/gcc/x86_64-linux-gnu/13/cc1plus -quiet -v -imultiarch x86_64-linux-gnu -D_GNU_SOURCE /usr/local/share/cmake-3.31/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_62acb.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -mtune=generic -march=x86-64 -version -fpermissive -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccphYtSX.s
+        GNU C++17 (Ubuntu 13.3.0-6ubuntu2~24.04) version 13.3.0 (x86_64-linux-gnu)
+        	compiled by GNU C version 13.3.0, GMP version 6.3.0, MPFR version 4.2.1, MPC version 1.3.1, isl version isl-0.26-GMP
+        
+        GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+        ignoring duplicate directory "/usr/include/x86_64-linux-gnu/c++/13"
+        ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed/x86_64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../x86_64-linux-gnu/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/include/c++/13
+         /usr/include/x86_64-linux-gnu/c++/13
+         /usr/include/c++/13/backward
+         /usr/lib/gcc/x86_64-linux-gnu/13/include
+         /usr/local/include
+         /usr/include/x86_64-linux-gnu
+         /usr/include
+        End of search list.
+        Compiler executable checksum: c81c05345ce537099dafd5580045814a
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-fpermissive' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_62acb.dir/'
+         as -v --64 -o CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o /tmp/ccphYtSX.s
+        GNU assembler version 2.42 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.42
+        COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-fpermissive' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.'
+        Linking CXX executable cmTC_62acb
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_62acb.dir/link.txt --verbose=1
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/c++
+        COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper
+        OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
+        OFFLOAD_TARGET_DEFAULT=1
+        Target: x86_64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) 
+        COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_62acb' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_62acb.'
+         /usr/libexec/gcc/x86_64-linux-gnu/13/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/cceHi4v6.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_62acb /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o
+        collect2 version 13.3.0
+        /usr/bin/ld -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/cceHi4v6.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_62acb /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o
+        GNU ld (GNU Binutils for Ubuntu) 2.42
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_62acb' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_62acb.'
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++  -v -Wl,-v CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_62acb
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-9nMh9J'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-9nMh9J'
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:182 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:36 (project)"
+    message: |
+      Parsed CXX implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/include/c++/13]
+          add: [/usr/include/x86_64-linux-gnu/c++/13]
+          add: [/usr/include/c++/13/backward]
+          add: [/usr/lib/gcc/x86_64-linux-gnu/13/include]
+          add: [/usr/local/include]
+          add: [/usr/include/x86_64-linux-gnu]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/include/c++/13] ==> [/usr/include/c++/13]
+        collapse include dir [/usr/include/x86_64-linux-gnu/c++/13] ==> [/usr/include/x86_64-linux-gnu/c++/13]
+        collapse include dir [/usr/include/c++/13/backward] ==> [/usr/include/c++/13/backward]
+        collapse include dir [/usr/lib/gcc/x86_64-linux-gnu/13/include] ==> [/usr/lib/gcc/x86_64-linux-gnu/13/include]
+        collapse include dir [/usr/local/include] ==> [/usr/local/include]
+        collapse include dir [/usr/include/x86_64-linux-gnu] ==> [/usr/include/x86_64-linux-gnu]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/include/c++/13;/usr/include/x86_64-linux-gnu/c++/13;/usr/include/c++/13/backward;/usr/lib/gcc/x86_64-linux-gnu/13/include;/usr/local/include;/usr/include/x86_64-linux-gnu;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:218 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:36 (project)"
+    message: |
+      Parsed CXX implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(\\.[a-z]+)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|")?[ 	]*(([^"]*[/\\])?(ld[0-9]*(\\.[a-z]+)?))("|,| |$)]
+        ignore line: [Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-9nMh9J']
+        ignore line: []
+        ignore line: [Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_62acb/fast]
+        ignore line: [gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-9nMh9J']
+        ignore line: [/usr/bin/gmake  -f CMakeFiles/cmTC_62acb.dir/build.make CMakeFiles/cmTC_62acb.dir/build]
+        ignore line: [gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-9nMh9J']
+        ignore line: [Building CXX object CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o]
+        ignore line: [/home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++   -v -o CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o -c /usr/local/share/cmake-3.31/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/c++]
+        ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa]
+        ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+        ignore line: [Target: x86_64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c ada c++ go d fortran objc obj-c++ m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) ]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-fpermissive' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_62acb.dir/']
+        ignore line: [ /usr/libexec/gcc/x86_64-linux-gnu/13/cc1plus -quiet -v -imultiarch x86_64-linux-gnu -D_GNU_SOURCE /usr/local/share/cmake-3.31/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_62acb.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -mtune=generic -march=x86-64 -version -fpermissive -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccphYtSX.s]
+        ignore line: [GNU C++17 (Ubuntu 13.3.0-6ubuntu2~24.04) version 13.3.0 (x86_64-linux-gnu)]
+        ignore line: [	compiled by GNU C version 13.3.0  GMP version 6.3.0  MPFR version 4.2.1  MPC version 1.3.1  isl version isl-0.26-GMP]
+        ignore line: []
+        ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+        ignore line: [ignoring duplicate directory "/usr/include/x86_64-linux-gnu/c++/13"]
+        ignore line: [ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed/x86_64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../x86_64-linux-gnu/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/include/c++/13]
+        ignore line: [ /usr/include/x86_64-linux-gnu/c++/13]
+        ignore line: [ /usr/include/c++/13/backward]
+        ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/13/include]
+        ignore line: [ /usr/local/include]
+        ignore line: [ /usr/include/x86_64-linux-gnu]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [Compiler executable checksum: c81c05345ce537099dafd5580045814a]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-fpermissive' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_62acb.dir/']
+        ignore line: [ as -v --64 -o CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o /tmp/ccphYtSX.s]
+        ignore line: [GNU assembler version 2.42 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.42]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-fpermissive' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.']
+        ignore line: [Linking CXX executable cmTC_62acb]
+        ignore line: [/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_62acb.dir/link.txt --verbose=1]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/c++]
+        ignore line: [COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper]
+        ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa]
+        ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+        ignore line: [Target: x86_64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c ada c++ go d fortran objc obj-c++ m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) ]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_62acb' '-shared-libgcc' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_62acb.']
+        link line: [ /usr/libexec/gcc/x86_64-linux-gnu/13/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/cceHi4v6.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_62acb /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o]
+          arg [/usr/libexec/gcc/x86_64-linux-gnu/13/collect2] ==> ignore
+          arg [-plugin] ==> ignore
+          arg [/usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so] ==> ignore
+          arg [-plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper] ==> ignore
+          arg [-plugin-opt=-fresolution=/tmp/cceHi4v6.res] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [elf_x86_64] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-znow] ==> ignore
+          arg [-zrelro] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_62acb] ==> ignore
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib]
+          arg [-L/lib/x86_64-linux-gnu] ==> dir [/lib/x86_64-linux-gnu]
+          arg [-L/lib/../lib] ==> dir [/lib/../lib]
+          arg [-L/usr/lib/x86_64-linux-gnu] ==> dir [/usr/lib/x86_64-linux-gnu]
+          arg [-L/usr/lib/../lib] ==> dir [/usr/lib/../lib]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/13/../../..] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../..]
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+          arg [-lstdc++] ==> lib [stdc++]
+          arg [-lm] ==> lib [m]
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [-lgcc] ==> lib [gcc]
+          arg [-lc] ==> lib [c]
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [-lgcc] ==> lib [gcc]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o]
+        ignore line: [collect2 version 13.3.0]
+        ignore line: [/usr/bin/ld -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/cceHi4v6.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_62acb /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. -v CMakeFiles/cmTC_62acb.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o]
+        linker tool for 'CXX': /usr/bin/ld
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o] ==> [/usr/lib/x86_64-linux-gnu/Scrt1.o]
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o] ==> [/usr/lib/x86_64-linux-gnu/crti.o]
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o] ==> [/usr/lib/x86_64-linux-gnu/crtn.o]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13] ==> [/usr/lib/gcc/x86_64-linux-gnu/13]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib] ==> [/usr/lib]
+        collapse library dir [/lib/x86_64-linux-gnu] ==> [/lib/x86_64-linux-gnu]
+        collapse library dir [/lib/../lib] ==> [/lib]
+        collapse library dir [/usr/lib/x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+        collapse library dir [/usr/lib/../lib] ==> [/usr/lib]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/13/../../..] ==> [/usr/lib]
+        implicit libs: [stdc++;m;gcc_s;gcc;c;gcc_s;gcc]
+        implicit objs: [/usr/lib/x86_64-linux-gnu/Scrt1.o;/usr/lib/x86_64-linux-gnu/crti.o;/usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o;/usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o;/usr/lib/x86_64-linux-gnu/crtn.o]
+        implicit dirs: [/usr/lib/gcc/x86_64-linux-gnu/13;/usr/lib/x86_64-linux-gnu;/usr/lib;/lib/x86_64-linux-gnu;/lib]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CMakeDetermineLinkerId.cmake:40 (message)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:255 (cmake_determine_linker_id)"
+      - "/usr/local/share/cmake-3.31/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:36 (project)"
+    message: |
+      Running the CXX compiler's linker: "/usr/bin/ld" "-v"
+      GNU ld (GNU Binutils for Ubuntu) 2.42
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCCompilerFlag.cmake:56 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:19 (CHECK_C_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:68 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test C_FLAG_WALL"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-8IYBto"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-8IYBto"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "C_FLAG_WALL"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-8IYBto'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_5343e/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-8IYBto'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_5343e.dir/build.make CMakeFiles/cmTC_5343e.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-8IYBto'
+        Building C object CMakeFiles/cmTC_5343e.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DC_FLAG_WALL  -Wall -o CMakeFiles/cmTC_5343e.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-8IYBto/src.c
+        Linking C executable cmTC_5343e
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_5343e.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc CMakeFiles/cmTC_5343e.dir/src.c.o -o cmTC_5343e
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-8IYBto'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-8IYBto'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCXXCompilerFlag.cmake:55 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:25 (CHECK_CXX_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:68 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test CXX_FLAG_WALL"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nqahQj"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nqahQj"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CXX_FLAG_WALL"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nqahQj'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_41749/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nqahQj'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_41749.dir/build.make CMakeFiles/cmTC_41749.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nqahQj'
+        Building CXX object CMakeFiles/cmTC_41749.dir/src.cxx.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -DCXX_FLAG_WALL  -Wall -o CMakeFiles/cmTC_41749.dir/src.cxx.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nqahQj/src.cxx
+        Linking CXX executable cmTC_41749
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_41749.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ CMakeFiles/cmTC_41749.dir/src.cxx.o -o cmTC_41749
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nqahQj'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nqahQj'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCCompilerFlag.cmake:56 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:19 (CHECK_C_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:70 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test C_FLAG_WEXTRA"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-aycPcC"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-aycPcC"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wall"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "C_FLAG_WEXTRA"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-aycPcC'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_ee2f8/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-aycPcC'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_ee2f8.dir/build.make CMakeFiles/cmTC_ee2f8.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-aycPcC'
+        Building C object CMakeFiles/cmTC_ee2f8.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DC_FLAG_WEXTRA  -Wall    -Wextra -o CMakeFiles/cmTC_ee2f8.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-aycPcC/src.c
+        Linking C executable cmTC_ee2f8
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_ee2f8.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wall  CMakeFiles/cmTC_ee2f8.dir/src.c.o -o cmTC_ee2f8
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-aycPcC'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-aycPcC'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCXXCompilerFlag.cmake:55 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:25 (CHECK_CXX_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:70 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test CXX_FLAG_WEXTRA"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-EhGIpK"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-EhGIpK"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: " -Wall"
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CXX_FLAG_WEXTRA"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-EhGIpK'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_5ebc4/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-EhGIpK'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_5ebc4.dir/build.make CMakeFiles/cmTC_5ebc4.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-EhGIpK'
+        Building CXX object CMakeFiles/cmTC_5ebc4.dir/src.cxx.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -DCXX_FLAG_WEXTRA  -Wall    -Wextra -o CMakeFiles/cmTC_5ebc4.dir/src.cxx.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-EhGIpK/src.cxx
+        Linking CXX executable cmTC_5ebc4
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_5ebc4.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++  -Wall  CMakeFiles/cmTC_5ebc4.dir/src.cxx.o -o cmTC_5ebc4
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-EhGIpK'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-EhGIpK'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCCompilerFlag.cmake:56 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:19 (CHECK_C_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:71 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test C_FLAG_WUNDEF"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-eAW2mK"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-eAW2mK"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wall -Wextra"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "C_FLAG_WUNDEF"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-eAW2mK'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_a4972/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-eAW2mK'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_a4972.dir/build.make CMakeFiles/cmTC_a4972.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-eAW2mK'
+        Building C object CMakeFiles/cmTC_a4972.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DC_FLAG_WUNDEF  -Wall -Wextra    -Wundef -o CMakeFiles/cmTC_a4972.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-eAW2mK/src.c
+        Linking C executable cmTC_a4972
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a4972.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wall -Wextra  CMakeFiles/cmTC_a4972.dir/src.c.o -o cmTC_a4972
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-eAW2mK'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-eAW2mK'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCXXCompilerFlag.cmake:55 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:25 (CHECK_CXX_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:71 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test CXX_FLAG_WUNDEF"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-r4glZF"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-r4glZF"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: " -Wall -Wextra"
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CXX_FLAG_WUNDEF"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-r4glZF'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_dd6b1/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-r4glZF'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_dd6b1.dir/build.make CMakeFiles/cmTC_dd6b1.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-r4glZF'
+        Building CXX object CMakeFiles/cmTC_dd6b1.dir/src.cxx.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -DCXX_FLAG_WUNDEF  -Wall -Wextra    -Wundef -o CMakeFiles/cmTC_dd6b1.dir/src.cxx.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-r4glZF/src.cxx
+        Linking CXX executable cmTC_dd6b1
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_dd6b1.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++  -Wall -Wextra  CMakeFiles/cmTC_dd6b1.dir/src.cxx.o -o cmTC_dd6b1
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-r4glZF'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-r4glZF'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCCompilerFlag.cmake:56 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:19 (CHECK_C_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:72 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test C_FLAG_WSHADOW"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-ani9Jv"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-ani9Jv"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wall -Wextra -Wundef"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "C_FLAG_WSHADOW"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-ani9Jv'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_a8d37/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-ani9Jv'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_a8d37.dir/build.make CMakeFiles/cmTC_a8d37.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-ani9Jv'
+        Building C object CMakeFiles/cmTC_a8d37.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DC_FLAG_WSHADOW  -Wall -Wextra -Wundef    -Wshadow -o CMakeFiles/cmTC_a8d37.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-ani9Jv/src.c
+        Linking C executable cmTC_a8d37
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a8d37.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wall -Wextra -Wundef  CMakeFiles/cmTC_a8d37.dir/src.c.o -o cmTC_a8d37
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-ani9Jv'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-ani9Jv'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCXXCompilerFlag.cmake:55 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:25 (CHECK_CXX_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:72 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test CXX_FLAG_WSHADOW"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-qvaCPO"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-qvaCPO"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: " -Wall -Wextra -Wundef"
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CXX_FLAG_WSHADOW"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-qvaCPO'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_3605f/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-qvaCPO'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_3605f.dir/build.make CMakeFiles/cmTC_3605f.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-qvaCPO'
+        Building CXX object CMakeFiles/cmTC_3605f.dir/src.cxx.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -DCXX_FLAG_WSHADOW  -Wall -Wextra -Wundef    -Wshadow -o CMakeFiles/cmTC_3605f.dir/src.cxx.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-qvaCPO/src.cxx
+        Linking CXX executable cmTC_3605f
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3605f.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++  -Wall -Wextra -Wundef  CMakeFiles/cmTC_3605f.dir/src.cxx.o -o cmTC_3605f
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-qvaCPO'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-qvaCPO'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCCompilerFlag.cmake:56 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:19 (CHECK_C_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:73 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test C_FLAG_WCAST_ALIGN"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-OiU26s"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-OiU26s"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wall -Wextra -Wundef -Wshadow"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "C_FLAG_WCAST_ALIGN"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-OiU26s'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_87f7a/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-OiU26s'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_87f7a.dir/build.make CMakeFiles/cmTC_87f7a.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-OiU26s'
+        Building C object CMakeFiles/cmTC_87f7a.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DC_FLAG_WCAST_ALIGN  -Wall -Wextra -Wundef -Wshadow    -Wcast-align -o CMakeFiles/cmTC_87f7a.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-OiU26s/src.c
+        Linking C executable cmTC_87f7a
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_87f7a.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wall -Wextra -Wundef -Wshadow  CMakeFiles/cmTC_87f7a.dir/src.c.o -o cmTC_87f7a
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-OiU26s'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-OiU26s'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCXXCompilerFlag.cmake:55 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:25 (CHECK_CXX_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:73 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test CXX_FLAG_WCAST_ALIGN"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nyuyJG"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nyuyJG"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: " -Wall -Wextra -Wundef -Wshadow"
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CXX_FLAG_WCAST_ALIGN"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nyuyJG'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_f16f6/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nyuyJG'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_f16f6.dir/build.make CMakeFiles/cmTC_f16f6.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nyuyJG'
+        Building CXX object CMakeFiles/cmTC_f16f6.dir/src.cxx.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -DCXX_FLAG_WCAST_ALIGN  -Wall -Wextra -Wundef -Wshadow    -Wcast-align -o CMakeFiles/cmTC_f16f6.dir/src.cxx.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nyuyJG/src.cxx
+        Linking CXX executable cmTC_f16f6
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f16f6.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++  -Wall -Wextra -Wundef -Wshadow  CMakeFiles/cmTC_f16f6.dir/src.cxx.o -o cmTC_f16f6
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nyuyJG'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-nyuyJG'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCCompilerFlag.cmake:56 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:19 (CHECK_C_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:74 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test C_FLAG_WCAST_QUAL"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1TcMaK"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1TcMaK"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wall -Wextra -Wundef -Wshadow -Wcast-align"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "C_FLAG_WCAST_QUAL"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1TcMaK'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_6f67c/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1TcMaK'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_6f67c.dir/build.make CMakeFiles/cmTC_6f67c.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1TcMaK'
+        Building C object CMakeFiles/cmTC_6f67c.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DC_FLAG_WCAST_QUAL  -Wall -Wextra -Wundef -Wshadow -Wcast-align    -Wcast-qual -o CMakeFiles/cmTC_6f67c.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1TcMaK/src.c
+        Linking C executable cmTC_6f67c
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6f67c.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wall -Wextra -Wundef -Wshadow -Wcast-align  CMakeFiles/cmTC_6f67c.dir/src.c.o -o cmTC_6f67c
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1TcMaK'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1TcMaK'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCXXCompilerFlag.cmake:55 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:25 (CHECK_CXX_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:74 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test CXX_FLAG_WCAST_QUAL"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-DMSSyN"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-DMSSyN"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: " -Wall -Wextra -Wundef -Wshadow -Wcast-align"
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CXX_FLAG_WCAST_QUAL"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-DMSSyN'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_690d2/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-DMSSyN'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_690d2.dir/build.make CMakeFiles/cmTC_690d2.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-DMSSyN'
+        Building CXX object CMakeFiles/cmTC_690d2.dir/src.cxx.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -DCXX_FLAG_WCAST_QUAL  -Wall -Wextra -Wundef -Wshadow -Wcast-align    -Wcast-qual -o CMakeFiles/cmTC_690d2.dir/src.cxx.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-DMSSyN/src.cxx
+        Linking CXX executable cmTC_690d2
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_690d2.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++  -Wall -Wextra -Wundef -Wshadow -Wcast-align  CMakeFiles/cmTC_690d2.dir/src.cxx.o -o cmTC_690d2
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-DMSSyN'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-DMSSyN'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCCompilerFlag.cmake:56 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:19 (CHECK_C_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:75 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test C_FLAG_WSTRICT_PROTOTYPES"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-JIYLHr"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-JIYLHr"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "C_FLAG_WSTRICT_PROTOTYPES"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-JIYLHr'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_66ea8/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-JIYLHr'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_66ea8.dir/build.make CMakeFiles/cmTC_66ea8.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-JIYLHr'
+        Building C object CMakeFiles/cmTC_66ea8.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DC_FLAG_WSTRICT_PROTOTYPES  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual    -Wstrict-prototypes -o CMakeFiles/cmTC_66ea8.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-JIYLHr/src.c
+        Linking C executable cmTC_66ea8
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_66ea8.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual  CMakeFiles/cmTC_66ea8.dir/src.c.o -o cmTC_66ea8
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-JIYLHr'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-JIYLHr'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckLinkerFlag.cmake:37 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckLinkerFlag.cmake:44 (cmake_check_linker_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:41 (CHECK_LINKER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:82 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test LD_FLAG_WL_Z_NOEXECSTACK"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-wbxd7U"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-wbxd7U"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "LD_FLAG_WL_Z_NOEXECSTACK"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-wbxd7U'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_6e660/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-wbxd7U'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_6e660.dir/build.make CMakeFiles/cmTC_6e660.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-wbxd7U'
+        Building C object CMakeFiles/cmTC_6e660.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DLD_FLAG_WL_Z_NOEXECSTACK  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes  -o CMakeFiles/cmTC_6e660.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-wbxd7U/src.c
+        Linking C executable cmTC_6e660
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6e660.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes  -Wl,-z,noexecstack CMakeFiles/cmTC_6e660.dir/src.c.o -o cmTC_6e660
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-wbxd7U'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-wbxd7U'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCCompilerFlag.cmake:56 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:19 (CHECK_C_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:84 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test C_FLAG_QUNUSED_ARGUMENTS"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-va04On"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-va04On"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -Wl,-z,noexecstack"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "C_FLAG_QUNUSED_ARGUMENTS"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-va04On'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_ba1af/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-va04On'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_ba1af.dir/build.make CMakeFiles/cmTC_ba1af.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-va04On'
+        Building C object CMakeFiles/cmTC_ba1af.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DC_FLAG_QUNUSED_ARGUMENTS  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes    -Qunused-arguments -o CMakeFiles/cmTC_ba1af.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-va04On/src.c
+        cc: error: unrecognized command-line option '-Qunused-arguments'
+        gmake[4]: *** [CMakeFiles/cmTC_ba1af.dir/build.make:81: CMakeFiles/cmTC_ba1af.dir/src.c.o] Error 1
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-va04On'
+        gmake[3]: *** [Makefile:134: cmTC_ba1af/fast] Error 2
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-va04On'
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCXXCompilerFlag.cmake:55 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:25 (CHECK_CXX_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:84 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test CXX_FLAG_QUNUSED_ARGUMENTS"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-XA81SD"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-XA81SD"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: " -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual"
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -Wl,-z,noexecstack"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CXX_FLAG_QUNUSED_ARGUMENTS"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-XA81SD'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_2360f/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-XA81SD'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_2360f.dir/build.make CMakeFiles/cmTC_2360f.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-XA81SD'
+        Building CXX object CMakeFiles/cmTC_2360f.dir/src.cxx.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -DCXX_FLAG_QUNUSED_ARGUMENTS  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual    -Qunused-arguments -o CMakeFiles/cmTC_2360f.dir/src.cxx.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-XA81SD/src.cxx
+        c++: error: unrecognized command-line option '-Qunused-arguments'
+        gmake[4]: *** [CMakeFiles/cmTC_2360f.dir/build.make:81: CMakeFiles/cmTC_2360f.dir/src.cxx.o] Error 1
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-XA81SD'
+        gmake[3]: *** [Makefile:134: cmTC_2360f/fast] Error 2
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-XA81SD'
+        
+      exitCode: 2
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCCompilerFlag.cmake:56 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:19 (CHECK_C_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:85 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test C_FLAG_WA_NOEXECSTACK"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-f01mOn"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-f01mOn"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -Wl,-z,noexecstack"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "C_FLAG_WA_NOEXECSTACK"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-f01mOn'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_093ef/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-f01mOn'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_093ef.dir/build.make CMakeFiles/cmTC_093ef.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-f01mOn'
+        Building C object CMakeFiles/cmTC_093ef.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DC_FLAG_WA_NOEXECSTACK  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes    -Wa,--noexecstack -o CMakeFiles/cmTC_093ef.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-f01mOn/src.c
+        Linking C executable cmTC_093ef
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_093ef.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes   -Wl,-z,noexecstack  CMakeFiles/cmTC_093ef.dir/src.c.o -o cmTC_093ef
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-f01mOn'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-f01mOn'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCXXCompilerFlag.cmake:55 (cmake_check_compiler_flag)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:25 (CHECK_CXX_COMPILER_FLAG)"
+      - "CMakeModules/AddZstdCompilationFlags.cmake:85 (EnableCompilerFlag)"
+      - "CMakeLists.txt:61 (ADD_ZSTD_COMPILATION_FLAGS)"
+    checks:
+      - "Performing Test CXX_FLAG_WA_NOEXECSTACK"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1j5t6o"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1j5t6o"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: " -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual"
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -Wl,-z,noexecstack"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CXX_FLAG_WA_NOEXECSTACK"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1j5t6o'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_604cd/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1j5t6o'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_604cd.dir/build.make CMakeFiles/cmTC_604cd.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1j5t6o'
+        Building CXX object CMakeFiles/cmTC_604cd.dir/src.cxx.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -DCXX_FLAG_WA_NOEXECSTACK  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual    -Wa,--noexecstack -o CMakeFiles/cmTC_604cd.dir/src.cxx.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1j5t6o/src.cxx
+        Linking CXX executable cmTC_604cd
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_604cd.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual   -Wl,-z,noexecstack  CMakeFiles/cmTC_604cd.dir/src.cxx.o -o cmTC_604cd
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1j5t6o'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-1j5t6o'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/local/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/local/share/cmake-3.31/Modules/CheckCSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "/usr/local/share/cmake-3.31/Modules/FindThreads.cmake:97 (CHECK_C_SOURCE_COMPILES)"
+      - "/usr/local/share/cmake-3.31/Modules/FindThreads.cmake:163 (_threads_check_libc)"
+      - "CMakeLists.txt:146 (find_package)"
+    checks:
+      - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
+    directories:
+      source: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-Z8CbNg"
+      binary: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-Z8CbNg"
+    cmakeVariables:
+      CMAKE_C_FLAGS: " -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes -Wa,--noexecstack"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: " -Wl,-z,noexecstack"
+      CMAKE_MODULE_PATH: "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd/build/cmake/CMakeModules"
+      CMAKE_OSX_SYSROOT: ""
+    buildResult:
+      variable: "CMAKE_HAVE_LIBC_PTHREAD"
+      cached: true
+      stdout: |
+        Change Dir: '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-Z8CbNg'
+        
+        Run Build Command(s): /usr/local/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_c11a4/fast
+        gmake[3]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-Z8CbNg'
+        /usr/bin/gmake  -f CMakeFiles/cmTC_c11a4.dir/build.make CMakeFiles/cmTC_c11a4.dir/build
+        gmake[4]: Entering directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-Z8CbNg'
+        Building C object CMakeFiles/cmTC_c11a4.dir/src.c.o
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -DCMAKE_HAVE_LIBC_PTHREAD  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes -Wa,--noexecstack  -o CMakeFiles/cmTC_c11a4.dir/src.c.o -c /home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-Z8CbNg/src.c
+        Linking C executable cmTC_c11a4
+        /usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_c11a4.dir/link.txt --verbose=1
+        /home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc  -Wall -Wextra -Wundef -Wshadow -Wcast-align -Wcast-qual -Wstrict-prototypes -Wa,--noexecstack   -Wl,-z,noexecstack  CMakeFiles/cmTC_c11a4.dir/src.c.o -o cmTC_c11a4
+        gmake[4]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-Z8CbNg'
+        gmake[3]: Leaving directory '/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/CMakeScratch/TryCompile-Z8CbNg'
+        
+      exitCode: 0
+...

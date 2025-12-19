@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/CMakeFiles/bundled_zstd"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/CMakeFiles/bundled_zstd.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/CMakeFiles/bundled_zstd-complete.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-stamp/bundled_zstd-build.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-stamp/bundled_zstd-configure.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-stamp/bundled_zstd-download.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-stamp/bundled_zstd-install.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-stamp/bundled_zstd-mkdir.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-stamp/bundled_zstd-patch.rule"
+		},
+		{
+			"file" : "/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-stamp/bundled_zstd-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"bundled_zstd"
+		],
+		"name" : "bundled_zstd"
+	}
+}

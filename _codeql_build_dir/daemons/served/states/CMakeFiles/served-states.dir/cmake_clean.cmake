@@ -1,0 +1,41 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/served-states.dir/cancelled.c.o"
+  "CMakeFiles/served-states.dir/cancelled.c.o.d"
+  "CMakeFiles/served-states.dir/completed.c.o"
+  "CMakeFiles/served-states.dir/completed.c.o.d"
+  "CMakeFiles/served-states.dir/dependencies.c.o"
+  "CMakeFiles/served-states.dir/dependencies.c.o.d"
+  "CMakeFiles/served-states.dir/download.c.o"
+  "CMakeFiles/served-states.dir/download.c.o.d"
+  "CMakeFiles/served-states.dir/error.c.o"
+  "CMakeFiles/served-states.dir/error.c.o.d"
+  "CMakeFiles/served-states.dir/generate-wrappers.c.o"
+  "CMakeFiles/served-states.dir/generate-wrappers.c.o.d"
+  "CMakeFiles/served-states.dir/install.c.o"
+  "CMakeFiles/served-states.dir/install.c.o.d"
+  "CMakeFiles/served-states.dir/load.c.o"
+  "CMakeFiles/served-states.dir/load.c.o.d"
+  "CMakeFiles/served-states.dir/prechecks.c.o"
+  "CMakeFiles/served-states.dir/prechecks.c.o.d"
+  "CMakeFiles/served-states.dir/remove-wrappers.c.o"
+  "CMakeFiles/served-states.dir/remove-wrappers.c.o.d"
+  "CMakeFiles/served-states.dir/start-services.c.o"
+  "CMakeFiles/served-states.dir/start-services.c.o.d"
+  "CMakeFiles/served-states.dir/stop-services.c.o"
+  "CMakeFiles/served-states.dir/stop-services.c.o.d"
+  "CMakeFiles/served-states.dir/uninstall.c.o"
+  "CMakeFiles/served-states.dir/uninstall.c.o.d"
+  "CMakeFiles/served-states.dir/unload.c.o"
+  "CMakeFiles/served-states.dir/unload.c.o.d"
+  "CMakeFiles/served-states.dir/update.c.o"
+  "CMakeFiles/served-states.dir/update.c.o.d"
+  "CMakeFiles/served-states.dir/verify.c.o"
+  "CMakeFiles/served-states.dir/verify.c.o.d"
+  "libserved-states.a"
+  "libserved-states.pdb"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang C)
+  include(CMakeFiles/served-states.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

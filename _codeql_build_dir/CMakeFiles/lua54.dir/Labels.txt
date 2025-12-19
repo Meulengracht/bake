@@ -1,0 +1,13 @@
+# Target labels
+ lua54
+# Source files and their labels
+/home/runner/work/bake/bake/_codeql_build_dir/CMakeFiles/lua54
+/home/runner/work/bake/bake/_codeql_build_dir/CMakeFiles/lua54.rule
+/home/runner/work/bake/bake/_codeql_build_dir/CMakeFiles/lua54-complete.rule
+/home/runner/work/bake/bake/_codeql_build_dir/lua54-prefix/src/lua54-stamp/lua54-build.rule
+/home/runner/work/bake/bake/_codeql_build_dir/lua54-prefix/src/lua54-stamp/lua54-configure.rule
+/home/runner/work/bake/bake/_codeql_build_dir/lua54-prefix/src/lua54-stamp/lua54-download.rule
+/home/runner/work/bake/bake/_codeql_build_dir/lua54-prefix/src/lua54-stamp/lua54-install.rule
+/home/runner/work/bake/bake/_codeql_build_dir/lua54-prefix/src/lua54-stamp/lua54-mkdir.rule
+/home/runner/work/bake/bake/_codeql_build_dir/lua54-prefix/src/lua54-stamp/lua54-patch.rule
+/home/runner/work/bake/bake/_codeql_build_dir/lua54-prefix/src/lua54-stamp/lua54-update.rule

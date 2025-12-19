@@ -1,0 +1,15 @@
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/clean-all.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/edit_cache.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/rebuild_cache.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/list_install_components.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/install.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/install/local.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/CMakeFiles/install/strip.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/lib/CMakeFiles/libzstd_static.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/lib/CMakeFiles/uninstall.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/lib/CMakeFiles/edit_cache.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/lib/CMakeFiles/rebuild_cache.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/lib/CMakeFiles/list_install_components.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/lib/CMakeFiles/install.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/lib/CMakeFiles/install/local.dir
+/home/runner/work/bake/bake/_codeql_build_dir/bundled_zstd-prefix/src/bundled_zstd-build/lib/CMakeFiles/install/strip.dir

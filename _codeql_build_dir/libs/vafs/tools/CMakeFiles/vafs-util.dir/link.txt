@@ -1,0 +1,1 @@
+/home/runner/work/bake/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/vafs-util.dir/link.d "CMakeFiles/vafs-util.dir/vafs.c.o" "CMakeFiles/vafs-util.dir/filter.c.o" -o ../../../bin/vafs-util  /usr/lib/x86_64-linux-gnu/libfuse3.so ../../../lib/libvafs.a -lpthread ../../../lib/libbrieflz.a ../../../lib/libvafs-blockcache.a

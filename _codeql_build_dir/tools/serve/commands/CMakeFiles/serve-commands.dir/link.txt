@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../lib/libserve-commands.a "CMakeFiles/serve-commands.dir/__/__/__/protocols/chef_served_service_client.c.o" "CMakeFiles/serve-commands.dir/client.c.o" "CMakeFiles/serve-commands.dir/install.c.o" "CMakeFiles/serve-commands.dir/list.c.o" "CMakeFiles/serve-commands.dir/remove.c.o" "CMakeFiles/serve-commands.dir/update.c.o"
+/usr/bin/ranlib ../../../lib/libserve-commands.a
