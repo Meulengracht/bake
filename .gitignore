@@ -33,6 +33,7 @@
 
 # Projects
 build/
+_codeql_build_dir/
 .kitchen
 .vchcache
 *.pack
