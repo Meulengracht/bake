@@ -866,7 +866,7 @@ static int __container_run(
         // Try eBPF-based enforcement first (for future kernel versions with BPF LSM)
         status = policy_ebpf_load(container, options->policy);
         if (status != 0) {
-            VLOG_WARN("containerv[child]", "__container_run: eBPF policy enforcement not available\n");
+            VLOG_WARNING("containerv[child]", "__container_run: eBPF policy enforcement not available\n");
         }
         
         // Apply seccomp-bpf for syscall filtering

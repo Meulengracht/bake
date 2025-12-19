@@ -19,28 +19,11 @@
 #define _GNU_SOURCE
 
 #include "policy-seccomp.h"
+#include "policy-internal.h"
 #include <errno.h>
 #include <seccomp.h>
 #include <string.h>
 #include <vlog.h>
-
-// Get syscall policy structure (defined in policy.c)
-struct containerv_syscall_entry {
-    char* name;
-};
-
-struct containerv_path_entry {
-    char*                 path;
-    enum containerv_fs_access access;
-};
-
-struct containerv_policy {
-    enum containerv_policy_type type;
-    struct containerv_syscall_entry syscalls[256];
-    int                             syscall_count;
-    struct containerv_path_entry paths[256];
-    int                          path_count;
-};
 
 int policy_seccomp_apply(struct containerv_policy* policy)
 {
@@ -52,7 +35,7 @@ int policy_seccomp_apply(struct containerv_policy* policy)
         return -1;
     }
     
-    VLOG_INFO("containerv", "policy_seccomp: applying policy with %d allowed syscalls\n",
+    VLOG_TRACE("containerv", "policy_seccomp: applying policy with %d allowed syscalls\n",
               policy->syscall_count);
     
     // Create a seccomp filter with default deny
@@ -94,7 +77,7 @@ int policy_seccomp_apply(struct containerv_policy* policy)
         goto cleanup;
     }
     
-    VLOG_INFO("containerv", "policy_seccomp: policy applied successfully\n");
+    VLOG_TRACE("containerv", "policy_seccomp: policy applied successfully\n");
     status = 0;
     
 cleanup:

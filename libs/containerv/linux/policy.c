@@ -18,36 +18,11 @@
 
 #define _GNU_SOURCE
 
-#include <chef/containerv/policy.h>
+#include "policy-internal.h"
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
-
-// Maximum policy entries
-#define MAX_SYSCALLS 256
-#define MAX_PATHS 256
-
-struct containerv_syscall_entry {
-    char* name;
-};
-
-struct containerv_path_entry {
-    char*                 path;
-    enum containerv_fs_access access;
-};
-
-struct containerv_policy {
-    enum containerv_policy_type type;
-    
-    // Syscall whitelist
-    struct containerv_syscall_entry syscalls[MAX_SYSCALLS];
-    int                             syscall_count;
-    
-    // Filesystem path whitelist
-    struct containerv_path_entry paths[MAX_PATHS];
-    int                          path_count;
-};
 
 // Minimal syscall set for basic CLI applications
 static const char* minimal_syscalls[] = {

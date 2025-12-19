@@ -19,6 +19,7 @@
 #define _GNU_SOURCE
 
 #include "policy-ebpf.h"
+#include "policy-internal.h"
 #include "private.h"
 #include <errno.h>
 #include <stdio.h>
@@ -122,21 +123,21 @@ int policy_ebpf_load(
         return -1;
     }
     
-    VLOG_INFO("containerv", "policy_ebpf: loading policy (type=%d, syscalls=%d, paths=%d)\n",
+    VLOG_TRACE("containerv", "policy_ebpf: loading policy (type=%d, syscalls=%d, paths=%d)\n",
               policy->type, policy->syscall_count, policy->path_count);
     
     // Create BPF maps
     int syscall_map_fd = create_syscall_map();
     if (syscall_map_fd < 0) {
         // Non-fatal - fall back to traditional seccomp
-        VLOG_WARN("containerv", "policy_ebpf: failed to create syscall map, will use seccomp instead\n");
+        VLOG_WARNING("containerv", "policy_ebpf: failed to create syscall map, will use seccomp instead\n");
         return 0;
     }
     
     int path_map_fd = create_path_map();
     if (path_map_fd < 0) {
         close(syscall_map_fd);
-        VLOG_WARN("containerv", "policy_ebpf: failed to create path map\n");
+        VLOG_WARNING("containerv", "policy_ebpf: failed to create path map\n");
         return 0;
     }
     
@@ -162,7 +163,7 @@ int policy_ebpf_load(
     close(syscall_map_fd);
     close(path_map_fd);
     
-    VLOG_INFO("containerv", "policy_ebpf: policy loaded successfully\n");
+    VLOG_TRACE("containerv", "policy_ebpf: policy loaded successfully\n");
     
     return 0;
 }
