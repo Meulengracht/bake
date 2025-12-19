@@ -1,2 +1,0 @@
-/usr/bin/ar qc libserved-state.a "CMakeFiles/served-state.dir/logging.c.o" "CMakeFiles/served-state.dir/runner.c.o" "CMakeFiles/served-state.dir/sm.c.o" "CMakeFiles/served-state.dir/state.c.o"
-/usr/bin/ranlib libserved-state.a

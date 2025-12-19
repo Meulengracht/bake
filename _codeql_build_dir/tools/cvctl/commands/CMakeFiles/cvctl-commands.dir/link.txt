@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../lib/libcvctl-commands.a "CMakeFiles/cvctl-commands.dir/start.c.o" "CMakeFiles/cvctl-commands.dir/exec.c.o"
-/usr/bin/ranlib ../../../lib/libcvctl-commands.a

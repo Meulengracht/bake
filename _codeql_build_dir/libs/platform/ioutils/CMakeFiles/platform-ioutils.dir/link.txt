@@ -1,2 +1,0 @@
-/usr/bin/ar qc libplatform-ioutils.a "CMakeFiles/platform-ioutils.dir/copyfile.c.o" "CMakeFiles/platform-ioutils.dir/getfiles.c.o" "CMakeFiles/platform-ioutils.dir/readfile.c.o"
-/usr/bin/ranlib libplatform-ioutils.a

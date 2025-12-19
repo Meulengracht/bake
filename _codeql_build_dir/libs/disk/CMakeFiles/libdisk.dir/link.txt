@@ -1,2 +1,0 @@
-/usr/bin/ar qc liblibdisk.a "CMakeFiles/libdisk.dir/assets/mbr-gpt.c.o" CMakeFiles/libdisk.dir/assets/mbr.c.o CMakeFiles/libdisk.dir/api_fat.c.o CMakeFiles/libdisk.dir/api_mfs.c.o CMakeFiles/libdisk.dir/diskbuilder.c.o
-/usr/bin/ranlib liblibdisk.a

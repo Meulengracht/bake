@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../../lib/libbrieflz.a CMakeFiles/brieflz.dir/src/brieflz.c.o CMakeFiles/brieflz.dir/src/depack.c.o CMakeFiles/brieflz.dir/src/depacks.c.o
-/usr/bin/ranlib ../../../../lib/libbrieflz.a

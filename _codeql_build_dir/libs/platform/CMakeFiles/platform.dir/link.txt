@@ -1,2 +1,0 @@
-/usr/bin/ar qc libplatform.a CMakeFiles/platform.dir/environment.c.o CMakeFiles/platform.dir/guid.c.o
-/usr/bin/ranlib libplatform.a

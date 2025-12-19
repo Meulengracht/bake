@@ -1,2 +1,0 @@
-/usr/bin/ar qc liboven-backends.a "CMakeFiles/oven-backends.dir/autotools.c.o" "CMakeFiles/oven-backends.dir/cmake.c.o" "CMakeFiles/oven-backends.dir/make.c.o" "CMakeFiles/oven-backends.dir/meson.c.o" "CMakeFiles/oven-backends.dir/ninja.c.o"
-/usr/bin/ranlib liboven-backends.a

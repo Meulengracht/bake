@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../lib/libbakectl-commands.a "CMakeFiles/bakectl-commands.dir/build.c.o" "CMakeFiles/bakectl-commands.dir/clean.c.o" "CMakeFiles/bakectl-commands.dir/common.c.o" "CMakeFiles/bakectl-commands.dir/init.c.o" "CMakeFiles/bakectl-commands.dir/source.c.o"
-/usr/bin/ranlib ../../../lib/libbakectl-commands.a
