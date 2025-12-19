@@ -30,6 +30,59 @@ See [windows/](windows/) for implementation details.
 - **Resource Limits**: Configure CPU, memory, and process limits (Linux)
 - **Network Isolation**: Isolated network stacks per container
 - **User Namespaces**: UID/GID mapping for security (Linux)
+- **Security Policies**: eBPF-based syscall and filesystem access control (Linux)
+
+## Security Policies (Linux)
+
+Containerv provides a comprehensive security policy system for controlling what containers can do:
+
+### Policy Types
+
+1. **Minimal** (`CV_POLICY_MINIMAL`): For basic CLI applications
+   - Essential syscalls: read, write, open, close, exit, memory management
+   - Read-only access to system libraries
+   - Access to basic device files (/dev/null, /dev/urandom, etc.)
+
+2. **Build** (`CV_POLICY_BUILD`): For build environments
+   - All minimal syscalls plus process creation (fork, exec, clone)
+   - File manipulation (create, delete, rename, chmod)
+   - IPC primitives (pipe, socketpair)
+
+3. **Network** (`CV_POLICY_NETWORK`): For network applications
+   - All minimal syscalls plus socket operations
+   - Network I/O (send, recv, connect, bind)
+
+4. **Custom** (`CV_POLICY_CUSTOM`): Build your own from scratch
+
+### Using Policies
+
+```c
+#include <chef/containerv/policy.h>
+
+// Create a build policy
+struct containerv_policy* policy = containerv_policy_new(CV_POLICY_BUILD);
+
+// Add custom paths with specific access modes
+const char* paths[] = {"/workspace", "/tmp", NULL};
+containerv_policy_add_paths(policy, paths, CV_FS_ALL);
+
+// Add additional syscalls
+const char* syscalls[] = {"setrlimit", NULL};
+containerv_policy_add_syscalls(policy, syscalls);
+
+// Apply to container
+struct containerv_options* options = containerv_options_new();
+containerv_options_set_policy(options, policy);
+```
+
+### Implementation
+
+The policy system uses:
+- **seccomp-bpf**: Efficient syscall filtering in the kernel
+- **eBPF infrastructure**: Future integration with BPF LSM hooks for comprehensive security
+- **Default-deny model**: Only explicitly allowed operations are permitted
+
+This provides strong security boundaries without the complexity of traditional mandatory access control systems like SELinux or AppArmor.
 
 ## API Overview
 

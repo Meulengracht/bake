@@ -49,6 +49,7 @@ parts:
       - libcurl4-openssl-dev
       - libssl-dev
       - libsqlite3-dev
+      - libseccomp-dev
     stage-packages:
       - debootstrap
       - libfuse3-3
@@ -56,3 +57,4 @@ parts:
       - libcurl4
       - libssl3
       - libsqlite3-0
+      - libseccomp2

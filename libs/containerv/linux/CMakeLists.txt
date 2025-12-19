@@ -9,9 +9,12 @@ add_library(containerv-linux STATIC
     control-socket.c
     layers.c
     network.c
+    policy.c
+    policy-ebpf.c
+    policy-seccomp.c
     user.c
     utils.c
 )
 target_include_directories(containerv-linux PRIVATE ../include)
 target_link_libraries(containerv-linux PUBLIC platform vlog vafs ${FUSE_LIBRARIES})
-target_link_libraries(containerv-linux PUBLIC cap)
+target_link_libraries(containerv-linux PUBLIC cap seccomp)

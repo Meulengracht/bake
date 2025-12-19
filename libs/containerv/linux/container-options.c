@@ -17,6 +17,7 @@
  */
 
 #include "private.h"
+#include <chef/containerv/policy.h>
 #include <stdlib.h>
 
 struct containerv_options* containerv_options_new(void)
@@ -26,12 +27,25 @@ struct containerv_options* containerv_options_new(void)
 
 void containerv_options_delete(struct containerv_options* options)
 {
-    free(options);
+    if (options != NULL) {
+        if (options->policy != NULL) {
+            containerv_policy_delete(options->policy);
+        }
+        free(options);
+    }
 }
 
 void containerv_options_set_caps(struct containerv_options* options, enum containerv_capabilities caps)
 {
     options->capabilities = caps;
+}
+
+void containerv_options_set_policy(struct containerv_options* options, struct containerv_policy* policy)
+{
+    if (options->policy != NULL) {
+        containerv_policy_delete(options->policy);
+    }
+    options->policy = policy;
 }
 
 void containerv_options_set_layers(struct containerv_options* options, struct containerv_layer_context* layers)

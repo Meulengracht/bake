@@ -100,7 +100,8 @@ Build operations with types:
 ```bash
 # Ubuntu/Debian
 sudo apt-get install -y libfuse3-3 libfuse3-dev libcap2 libcap-dev \
-                        libcurl4-openssl-dev libssl-dev cmake build-essential
+                        libcurl4-openssl-dev libssl-dev libseccomp-dev \
+                        cmake build-essential
 
 # Clone with submodules
 git clone --recursive https://github.com/Meulengracht/bake.git

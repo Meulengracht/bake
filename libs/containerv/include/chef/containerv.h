@@ -20,6 +20,7 @@
 #define __CONTAINERV_H__
 
 #include <chef/containerv/layers.h>
+#include <chef/containerv/policy.h>
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #include <windows.h>
@@ -46,6 +47,13 @@ extern struct containerv_options* containerv_options_new(void);
 extern void containerv_options_delete(struct containerv_options* options);
 
 extern void containerv_options_set_caps(struct containerv_options* options, enum containerv_capabilities caps);
+
+/**
+ * @brief Set the security policy for the container
+ * @param options The container options to configure
+ * @param policy The security policy to apply (ownership is transferred to options)
+ */
+extern void containerv_options_set_policy(struct containerv_options* options, struct containerv_policy* policy);
 
 // Mount structures and flags - common across platforms
 enum containerv_mount_flags {

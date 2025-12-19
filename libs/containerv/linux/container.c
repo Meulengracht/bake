@@ -40,6 +40,8 @@
 #include "private.h"
 #include "cgroups.h"
 #include "network.h"
+#include "policy-ebpf.h"
+#include "policy-seccomp.h"
 #include <vlog.h>
 
 #define __FD_READ  0
@@ -855,6 +857,26 @@ static int __container_run(
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_run: failed to drop capabilities\n");
         return status;
+    }
+
+    // Apply security policy if configured
+    if (options->policy != NULL) {
+        VLOG_DEBUG("containerv[child]", "__container_run: applying security policy\n");
+        
+        // Try eBPF-based enforcement first (for future kernel versions with BPF LSM)
+        status = policy_ebpf_load(container, options->policy);
+        if (status != 0) {
+            VLOG_WARNING("containerv[child]", "__container_run: eBPF policy enforcement not available\n");
+        }
+        
+        // Apply seccomp-bpf for syscall filtering
+        status = policy_seccomp_apply(options->policy);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to apply seccomp policy\n");
+            return status;
+        }
+    } else {
+        VLOG_DEBUG("containerv[child]", "__container_run: no security policy configured\n");
     }
 
     // Make this process take the role of init(1) before we go into

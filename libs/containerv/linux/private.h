@@ -66,6 +66,7 @@ struct containerv_options_cgroup {
 struct containerv_options {
     enum containerv_capabilities           capabilities;
     struct containerv_layer_context*       layers;
+    struct containerv_policy*              policy;
     
     struct containerv_options_user_range   uid_range;
     struct containerv_options_user_range   gid_range;
