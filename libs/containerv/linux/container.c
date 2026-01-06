@@ -181,6 +181,8 @@ static void __container_delete(struct containerv_container* container)
 
 enum containerv_event_type {
     CV_CONTAINER_WAITING_FOR_NS_SETUP,
+    CV_CONTAINER_WAITING_FOR_CGROUPS_SETUP,
+    CV_CONTAINER_WAITING_FOR_NETWORK_SETUP,
     CV_CONTAINER_UP,
     CV_CONTAINER_DOWN
 };
@@ -669,7 +671,7 @@ static int __container_run(
         return status;
     }
 
-    // perform sync with host
+    // perform sync with host regarding user namespace setup
     if (options->capabilities & CV_CAP_USERS) {
         struct containerv_event event;
 
@@ -691,12 +693,34 @@ static int __container_run(
         }
     }
 
-
     // Set the hostname of the new UTS
-    status = sethostname("containerv-host", 15);
+    VLOG_TRACE("containerv[child]", "__container_run: setting hostname to %s\n", container->hostname);
+    status = sethostname(container->hostname, 15);
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_run: failed to set a new hostname\n");
         return status;
+    }
+
+    // Sync with host that we are ready to have cgroups setup
+    if (options->capabilities & CV_CAP_CGROUPS) {
+        struct containerv_event event;
+
+        // notify the host that we need cgroups setup
+        VLOG_DEBUG("containerv[child]", "notifying host that we need external assistance\n");
+        __send_container_event(container->child, CV_CONTAINER_WAITING_FOR_CGROUPS_SETUP, 0);
+
+        // wait for ack
+        status = __wait_for_container_event(container->host, &event);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to receive ack from cgroups setup\n");
+            return status;
+        }
+
+        // check status
+        if (event.status) {
+            VLOG_ERROR("containerv[child]", "__container_run: host failed to setup cgroups, aborting\n");
+            return event.status;
+        }
     }
 
     // MS_PRIVATE makes the bind mount invisible outside of the namespace
@@ -833,7 +857,26 @@ static int __container_run(
     
     // Setup network interface inside container if enabled
     if (options->capabilities & CV_CAP_NETWORK && options->network.enable && options->network.container_ip) {
-        char container_veth[16];
+        struct containerv_event event;
+        char                    container_veth[16];
+
+        // notify the host that we need network setup
+        VLOG_DEBUG("containerv[child]", "notifying host that we need external assistance\n");
+        __send_container_event(container->child, CV_CONTAINER_WAITING_FOR_NETWORK_SETUP, 0);
+
+        // wait for ack
+        status = __wait_for_container_event(container->host, &event);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to receive ack from network setup\n");
+            return status;
+        }
+
+        // check status
+        if (event.status) {
+            VLOG_ERROR("containerv[child]", "__container_run: host failed to setup network, aborting\n");
+            return event.status;
+        }
+
         snprintf(container_veth, sizeof(container_veth), "veth%sc", &container->id[__CONTAINER_VETH_CONT_OFFSET]);
         
         VLOG_DEBUG("containerv[child]", "__container_run: bringing up container network interface %s\n", container_veth);
@@ -975,89 +1018,90 @@ int containerv_create(
             switch (event.type) {
                 case CV_CONTAINER_WAITING_FOR_NS_SETUP: {
                     VLOG_DEBUG("containerv[host]", "setting up namespace configuration\n");
-                    if (options->capabilities & CV_CAP_USERS) {
-                        status = __write_user_namespace_maps(container, options);
-                        if (status) {
-                            VLOG_ERROR("containerv[host]", "containerv_create: failed to write user namespace maps: %i\n", status);
-                        }
-                    }
-                    
-                    // Setup cgroups if enabled
-                    if (!status && (options->capabilities & CV_CAP_CGROUPS)) {
-                        struct containerv_cgroup_limits limits = {
-                            .memory_max = options->cgroup.memory_max,
-                            .cpu_weight = options->cgroup.cpu_weight,
-                            .pids_max = options->cgroup.pids_max,
-                            .enable_devices = 0
-                        };
-                        VLOG_DEBUG("containerv[host]", "setting up cgroups for %s (pid=%d)\n", container->hostname, container->pid);
-                        status = cgroups_init(container->hostname, container->pid, &limits);
-                        if (status) {
-                            VLOG_ERROR("containerv[host]", "containerv_create: failed to setup cgroups: %i\n", status);
-                        }
-                    }
-                    
-                    // Setup network if enabled
-                    if (!status && (options->capabilities & CV_CAP_NETWORK) && options->network.enable) {
-                        char host_veth[16];
-                        char container_veth[16];
-                        int netns_fd;
-                        int sock_fd;
-                        
-                        // Create unique veth pair names from container ID
-                        // Host side uses full ID, container side uses partial ID for brevity
-                        snprintf(host_veth, sizeof(host_veth), "veth%s", &container->id[__CONTAINER_VETH_HOST_OFFSET]);
-                        snprintf(container_veth, sizeof(container_veth), "veth%sc", &container->id[__CONTAINER_VETH_CONT_OFFSET]);
-                        
-                        VLOG_DEBUG("containerv[host]", "setting up network for %s\n", container->hostname);
-                        
-                        // Create netlink socket
-                        sock_fd = create_socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
-                        if (sock_fd < 0) {
-                            VLOG_ERROR("containerv[host]", "containerv_create: failed to create netlink socket\n");
-                            status = -1;
-                        }
-                        
-                        // Create veth pair
-                        if (!status) {
-                            status = create_veth(sock_fd, host_veth, container_veth);
-                            if (status) {
-                                VLOG_ERROR("containerv[host]", "containerv_create: failed to create veth pair\n");
-                            }
-                        }
-                        
-                        // Get container's network namespace
-                        if (!status) {
-                            netns_fd = get_netns_fd(container->pid);
-                            if (netns_fd < 0) {
-                                VLOG_ERROR("containerv[host]", "containerv_create: failed to get netns fd\n");
-                                status = -1;
-                            }
-                        }
-                        
-                        // Move container veth to container namespace
-                        if (!status) {
-                            status = move_if_to_pid_netns(sock_fd, container_veth, netns_fd);
-                            if (status) {
-                                VLOG_ERROR("containerv[host]", "containerv_create: failed to move veth to container namespace\n");
-                            }
-                            close(netns_fd);
-                        }
-                        
-                        // Bring up host side veth interface
-                        if (!status && options->network.host_ip) {
-                            status = if_up(host_veth, (char*)options->network.host_ip, (char*)options->network.container_netmask);
-                            if (status) {
-                                VLOG_ERROR("containerv[host]", "containerv_create: failed to bring up host veth interface\n");
-                            }
-                        }
-                        
-                        if (sock_fd >= 0) {
-                            close(sock_fd);
-                        }
+                    status = __write_user_namespace_maps(container, options);
+                    if (status) {
+                        VLOG_ERROR("containerv[host]", "containerv_create: failed to write user namespace maps: %i\n", status);
                     }
                     
                     __send_container_event(container->host, CV_CONTAINER_WAITING_FOR_NS_SETUP, status);
+                } break;
+
+                case CV_CONTAINER_WAITING_FOR_CGROUPS_SETUP:
+                    struct containerv_cgroup_limits limits = {
+                        .memory_max = options->cgroup.memory_max,
+                        .cpu_weight = options->cgroup.cpu_weight,
+                        .pids_max = options->cgroup.pids_max,
+                        .enable_devices = 0
+                    };
+                    
+                    VLOG_DEBUG("containerv[host]", "setting up cgroups for %s (pid=%d)\n", container->hostname, container->pid);
+                    status = cgroups_init(container->hostname, container->pid, &limits);
+                    if (status) {
+                        VLOG_ERROR("containerv[host]", "containerv_create: failed to setup cgroups: %i\n", status);
+                    }
+                    
+                    __send_container_event(container->host, CV_CONTAINER_WAITING_FOR_CGROUPS_SETUP, status);
+                    break;
+
+                case CV_CONTAINER_WAITING_FOR_NETWORK_SETUP: {
+                    char host_veth[16];
+                    char container_veth[16];
+                    int netns_fd;
+                    int sock_fd;
+                    
+                    // Create unique veth pair names from container ID
+                    // Host side uses full ID, container side uses partial ID for brevity
+                    snprintf(host_veth, sizeof(host_veth), "veth%s", &container->id[__CONTAINER_VETH_HOST_OFFSET]);
+                    snprintf(container_veth, sizeof(container_veth), "veth%sc", &container->id[__CONTAINER_VETH_CONT_OFFSET]);
+                    
+                    VLOG_DEBUG("containerv[host]", "setting up network for %s\n", container->hostname);
+                    
+                    // Create netlink socket
+                    sock_fd = create_socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+                    if (sock_fd < 0) {
+                        VLOG_ERROR("containerv[host]", "containerv_create: failed to create netlink socket\n");
+                        status = -1;
+                    }
+                    
+                    // Create veth pair
+                    if (!status) {
+                        status = create_veth(sock_fd, host_veth, container_veth);
+                        if (status) {
+                            VLOG_ERROR("containerv[host]", "containerv_create: failed to create veth pair\n");
+                        }
+                    }
+                    
+                    // Get container's network namespace
+                    if (!status) {
+                        netns_fd = get_netns_fd(container->pid);
+                        if (netns_fd < 0) {
+                            VLOG_ERROR("containerv[host]", "containerv_create: failed to get netns fd\n");
+                            status = -1;
+                        }
+                    }
+                    
+                    // Move container veth to container namespace
+                    if (!status) {
+                        status = move_if_to_pid_netns(sock_fd, container_veth, netns_fd);
+                        if (status) {
+                            VLOG_ERROR("containerv[host]", "containerv_create: failed to move veth to container namespace\n");
+                        }
+                        close(netns_fd);
+                    }
+                    
+                    // Bring up host side veth interface
+                    if (!status && options->network.host_ip) {
+                        status = if_up(host_veth, (char*)options->network.host_ip, (char*)options->network.container_netmask);
+                        if (status) {
+                            VLOG_ERROR("containerv[host]", "containerv_create: failed to bring up host veth interface\n");
+                        }
+                    }
+                    
+                    if (sock_fd >= 0) {
+                        close(sock_fd);
+                    }
+                    
+                    __send_container_event(container->host, CV_CONTAINER_WAITING_FOR_NETWORK_SETUP, status);
                 } break;
 
                 case CV_CONTAINER_DOWN: {
