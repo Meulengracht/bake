@@ -49,13 +49,19 @@ cleanup() {
       wait "$cvd_pid" >/dev/null 2>&1 || true
     fi
 
-    echo "cvd log output (last 200 lines):"
-    tail -n 200 "$cvd_log" || true
+    echo "cvd log output (last 1000 lines):"
+    tail -n 1000 "$cvd_log" || true
   fi
 
   if [[ -n "${work_dir:-}" && -d "${work_dir:-}" ]]; then
     rm -rf "$work_dir" || true
   fi
+
+  # list contents of /var/chef/layers recursively for debugging
+    if [[ -d "/var/chef/layers" ]]; then
+      echo "/var/chef/layers contents:"
+      sudo -n find /var/chef/layers -exec ls -ld {} \; || true
+    fi
 }
 trap cleanup EXIT
 
