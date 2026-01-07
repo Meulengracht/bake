@@ -298,7 +298,8 @@ static int __initialize_bake(void)
     g_dirs.config  = __strdup_fail(g_dirs.root);
     g_dirs.store  = strpathcombine(g_dirs.root, "store");
     g_dirs.kitchen = strpathcombine(g_dirs.root, "spaces");
-    if (g_dirs.store == NULL || g_dirs.kitchen == NULL) {
+    g_dirs.cache = strpathcombine(g_dirs.root, "cache");
+    if (g_dirs.store == NULL || g_dirs.kitchen == NULL || g_dirs.cache == NULL) {
         VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
         return -1;
     }

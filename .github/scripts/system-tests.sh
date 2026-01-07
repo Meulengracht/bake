@@ -48,6 +48,9 @@ cleanup() {
       kill "$cvd_pid" >/dev/null 2>&1 || true
       wait "$cvd_pid" >/dev/null 2>&1 || true
     fi
+
+    echo "cvd log output (last 200 lines):"
+    tail -n 200 "$cvd_log" || true
   fi
 
   if [[ -n "${work_dir:-}" && -d "${work_dir:-}" ]]; then
