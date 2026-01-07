@@ -240,7 +240,7 @@ static enum chef_status __create_container(
     int                           status;
     enum chef_status              chstatus;
     char                          cvdid[CHEF_PACKAGE_ID_LENGTH_MAX];
-    VLOG_DEBUG("served", "__create_container()\n");
+    VLOG_DEBUG("served", "__create_container(id=%s)\n", id);
 
     chef_create_parameters_init(&params);
     params.id = (char*)id;
@@ -251,16 +251,16 @@ static enum chef_status __create_container(
     // the base package
     layer = chef_create_parameters_layers_get(&params, 0);
     layer->type = CHEF_LAYER_TYPE_VAFS_PACKAGE;
-    layer->source = (char*)rootfs;
-    layer->target = "/";
+    layer->source = platform_strdup(rootfs);
+    layer->target = platform_strdup("/");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
 
     // initialize the application layer, this is a layer from
     // the application package
     layer = chef_create_parameters_layers_get(&params, 1);
     layer->type = CHEF_LAYER_TYPE_VAFS_PACKAGE;
-    layer->source = (char*)package;
-    layer->target = "/";
+    layer->source = platform_strdup(package);
+    layer->target = platform_strdup("/");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
 
     // initialize the overlay layer, this is an writable layer

@@ -130,12 +130,24 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     struct __container*              _container;
     struct containerv_layer_context* layerContext = NULL;
     struct containerv_layer*         cvLayers = NULL;
+    const char*                      cvdID;
+    char                             cvdIDBuffer[17];
     int                              status;
     VLOG_DEBUG("cvd", "cvd_create()\n");
 
     if (params->layers_count == 0) {
         VLOG_ERROR("cvd", "cvd_create: no layers specified\n");
         return CHEF_STATUS_INVALID_MOUNTS;
+    }
+
+    if (params->id == NULL || strlen(params->id) == 0) {
+        platform_secure_random_string(&cvdIDBuffer[0], sizeof(cvdIDBuffer) - 1);
+        cvdIDBuffer[sizeof(cvdIDBuffer) - 1] = '\0';
+        cvdID = &cvdIDBuffer[0];
+        
+        VLOG_TRACE("cvd", "cvd_create: generated container ID %s\n", cvdID);
+    } else {
+        cvdID = params->id;
     }
 
     opts = containerv_options_new();
@@ -153,13 +165,8 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     }
 
     // Compose layers into final rootfs
-    status = containerv_layers_compose(
-        cvLayers,
-        (int)params->layers_count,
-        params->id,
-        &layerContext
-    );
-    free(cvLayers);  // We can free this now, containerv has copied what it needs
+    status = containerv_layers_compose(cvLayers, (int)params->layers_count, cvdID, &layerContext);
+    free(cvLayers);
     if (status != 0) {
         VLOG_ERROR("cvd", "cvd_create: failed to compose layers\n");
         containerv_options_delete(opts);
@@ -176,7 +183,7 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     );
 
     // create the container
-    status = containerv_create(params->id, opts, &cvContainer);
+    status = containerv_create(cvdID, opts, &cvContainer);
     containerv_options_delete(opts);
     if (status) {
         if (layerContext) {

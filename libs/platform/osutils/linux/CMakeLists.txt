@@ -9,6 +9,7 @@ add_library(platform-osutils STATIC
     getuserdir.c
     isdir.c
     mkdir.c
+    random.c
     readlink.c
     rmdir.c
     sleep.c
