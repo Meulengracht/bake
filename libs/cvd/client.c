@@ -390,7 +390,7 @@ static void __initialize_overlays(struct chef_create_parameters* params, const c
 
     // initialize the overlay layer, this is an writable layer
     // to capture all the changes
-    layer = chef_create_parameters_layers_get(&params, 3);
+    layer = chef_create_parameters_layers_get(params, 3);
     layer->type = CHEF_LAYER_TYPE_OVERLAY;
 }
 
