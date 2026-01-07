@@ -24,6 +24,7 @@
 // Maximum policy entries
 #define MAX_SYSCALLS 256
 #define MAX_PATHS 256
+#define MAX_DENY_PATHS 256
 
 struct containerv_syscall_entry {
     char* name;
@@ -32,6 +33,11 @@ struct containerv_syscall_entry {
 struct containerv_path_entry {
     char*                 path;
     enum containerv_fs_access access;
+};
+
+struct containerv_deny_entry {
+    char*                 path;
+    enum containerv_fs_access deny_mask;
 };
 
 struct containerv_policy {
@@ -44,6 +50,10 @@ struct containerv_policy {
     // Filesystem path whitelist
     struct containerv_path_entry paths[MAX_PATHS];
     int                          path_count;
+    
+    // Filesystem path deny list (for BPF LSM)
+    struct containerv_deny_entry deny_paths[MAX_DENY_PATHS];
+    int                          deny_path_count;
 };
 
 #endif //!__POLICY_INTERNAL_H__

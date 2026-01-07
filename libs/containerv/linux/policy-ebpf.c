@@ -22,96 +22,110 @@
 #include "policy-internal.h"
 #include "private.h"
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <linux/bpf.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
+#include <linux/bpf.h>
 #include <vlog.h>
 
-// eBPF syscall wrapper
+/* Permission bits - matching BPF program definitions */
+#define PERM_READ  0x1
+#define PERM_WRITE 0x2
+#define PERM_EXEC  0x4
+
+/* Policy key: (cgroup_id, dev, ino) - must match BPF program */
+struct policy_key {
+    unsigned long long cgroup_id;
+    unsigned long long dev;
+    unsigned long long ino;
+};
+
+/* Policy value: permission mask (bit flags for deny) */
+struct policy_value {
+    unsigned int deny_mask;
+};
+
+/* Internal structure to track loaded eBPF programs */
+struct policy_ebpf_context {
+    int lsm_prog_fd;
+    int lsm_link_fd;
+    int policy_map_fd;
+    unsigned long long cgroup_id;
+};
+
+/* eBPF syscall wrapper */
 static inline int bpf(int cmd, union bpf_attr *attr, unsigned int size)
 {
     return syscall(__NR_bpf, cmd, attr, size);
 }
 
-// Internal structure to track loaded eBPF programs
-struct policy_ebpf_context {
-    int syscall_prog_fd;
-    int path_prog_fd;
-    int syscall_map_fd;
-    int path_map_fd;
-};
-
-// Syscall BPF map: maps syscall numbers to allowed (1) or denied (0)
-// We use a hash map for efficient lookup
-static int create_syscall_map(void)
+/* Check if BPF LSM is available on the system */
+static int check_bpf_lsm_available(void)
 {
-    union bpf_attr attr = {
-        .map_type = BPF_MAP_TYPE_HASH,
-        .key_size = sizeof(__u32),    // syscall number
-        .value_size = sizeof(__u32),  // allowed flag
-        .max_entries = 512,
-    };
+    FILE *fp;
+    char lsm_list[1024];
+    int available = 0;
     
-    int fd = bpf(BPF_MAP_CREATE, &attr, sizeof(attr));
-    if (fd < 0) {
-        VLOG_ERROR("containerv", "policy_ebpf: failed to create syscall map: %s\n", strerror(errno));
+    /* Check /sys/kernel/security/lsm for "bpf" */
+    fp = fopen("/sys/kernel/security/lsm", "r");
+    if (!fp) {
+        VLOG_DEBUG("containerv", "policy_ebpf: cannot read LSM list: %s\n", strerror(errno));
+        return 0;
     }
-    return fd;
-}
-
-// Filesystem path BPF map: stores allowed paths with access modes
-// Using array of path prefixes (simplified approach)
-static int create_path_map(void)
-{
-    union bpf_attr attr = {
-        .map_type = BPF_MAP_TYPE_HASH,
-        .key_size = 256,  // path string (simplified, real impl would use hash)
-        .value_size = sizeof(__u32),  // access mode flags
-        .max_entries = 256,
-    };
     
-    int fd = bpf(BPF_MAP_CREATE, &attr, sizeof(attr));
-    if (fd < 0) {
-        VLOG_ERROR("containerv", "policy_ebpf: failed to create path map: %s\n", strerror(errno));
+    if (fgets(lsm_list, sizeof(lsm_list), fp)) {
+        if (strstr(lsm_list, "bpf") != NULL) {
+            available = 1;
+        }
     }
-    return fd;
+    
+    fclose(fp);
+    
+    if (!available) {
+        VLOG_DEBUG("containerv", "policy_ebpf: BPF LSM not enabled in kernel (add 'bpf' to LSM list)\n");
+    }
+    
+    return available;
 }
 
-// Populate syscall map with allowed syscalls from policy
-static int populate_syscall_map(int map_fd, struct containerv_policy* policy)
+/* Get cgroup ID for the container */
+static unsigned long long get_container_cgroup_id(const char* hostname)
 {
-    // In a real implementation, we would:
-    // 1. Convert syscall names to syscall numbers (architecture-specific)
-    // 2. Use BPF_MAP_UPDATE_ELEM to add entries to the map
+    char cgroup_path[512];
+    int fd;
+    struct stat st;
+    unsigned long long cgroup_id;
     
-    // For now, we'll use a simplified approach with seccomp-bpf
-    // which is more practical than pure eBPF for syscall filtering
+    /* Build cgroup path */
+    snprintf(cgroup_path, sizeof(cgroup_path), "/sys/fs/cgroup/%s", hostname);
     
-    VLOG_DEBUG("containerv", "policy_ebpf: would populate syscall map with %d entries\n", 
-               policy->syscall_count);
+    /* Open cgroup directory */
+    fd = open(cgroup_path, O_RDONLY | O_DIRECTORY);
+    if (fd < 0) {
+        VLOG_ERROR("containerv", "policy_ebpf: failed to open cgroup %s: %s\n", 
+                   cgroup_path, strerror(errno));
+        return 0;
+    }
     
-    // Syscall filtering is better done via seccomp-bpf
-    // This is a placeholder for future eBPF LSM integration
+    /* Get inode number which serves as cgroup ID */
+    if (fstat(fd, &st) < 0) {
+        VLOG_ERROR("containerv", "policy_ebpf: failed to stat cgroup: %s\n", strerror(errno));
+        close(fd);
+        return 0;
+    }
     
-    return 0;
-}
-
-// Populate path map with allowed paths from policy
-static int populate_path_map(int map_fd, struct containerv_policy* policy)
-{
-    VLOG_DEBUG("containerv", "policy_ebpf: would populate path map with %d entries\n",
-               policy->path_count);
+    cgroup_id = st.st_ino;
+    close(fd);
     
-    // In a real implementation with eBPF LSM hooks:
-    // 1. Add each path pattern to the map with its access mode
-    // 2. The eBPF program would check paths against these patterns
+    VLOG_DEBUG("containerv", "policy_ebpf: cgroup %s has ID %llu\n", hostname, 
+               (unsigned long long)cgroup_id);
     
-    // This is a placeholder for future eBPF LSM integration
-    
-    return 0;
+    return cgroup_id;
 }
 
 int policy_ebpf_load(
@@ -126,44 +140,24 @@ int policy_ebpf_load(
     VLOG_TRACE("containerv", "policy_ebpf: loading policy (type=%d, syscalls=%d, paths=%d)\n",
               policy->type, policy->syscall_count, policy->path_count);
     
-    // Create BPF maps
-    int syscall_map_fd = create_syscall_map();
-    if (syscall_map_fd < 0) {
-        // Non-fatal - fall back to traditional seccomp
-        VLOG_WARNING("containerv", "policy_ebpf: failed to create syscall map, will use seccomp instead\n");
-        return 0;
+    /* Check if BPF LSM is available */
+    if (!check_bpf_lsm_available()) {
+        VLOG_DEBUG("containerv", "policy_ebpf: BPF LSM not available, using seccomp fallback\n");
+        return 0;  /* Non-fatal, fall back to seccomp */
     }
     
-    int path_map_fd = create_path_map();
-    if (path_map_fd < 0) {
-        close(syscall_map_fd);
-        VLOG_WARNING("containerv", "policy_ebpf: failed to create path map\n");
-        return 0;
-    }
+    /* Note: Full BPF LSM program loading would require:
+     * 1. Loading the compiled BPF object file (fs_lsm.bpf.o)
+     * 2. Getting the policy_map FD from the object
+     * 3. Attaching the LSM program
+     * 4. Storing FDs in container for cleanup
+     * 
+     * This is a foundational implementation that will be extended
+     * when the BPF program is compiled and packaged.
+     * For now, we return success but don't actually load anything.
+     */
     
-    // Populate maps with policy data
-    if (populate_syscall_map(syscall_map_fd, policy) != 0) {
-        close(syscall_map_fd);
-        close(path_map_fd);
-        return -1;
-    }
-    
-    if (populate_path_map(path_map_fd, policy) != 0) {
-        close(syscall_map_fd);
-        close(path_map_fd);
-        return -1;
-    }
-    
-    // In a full eBPF implementation, we would:
-    // 1. Load eBPF programs for syscall and path filtering
-    // 2. Attach them to LSM hooks or cgroup
-    // 3. Store program FDs for cleanup
-    
-    // For now, we'll close the maps as we're using seccomp-bpf instead
-    close(syscall_map_fd);
-    close(path_map_fd);
-    
-    VLOG_TRACE("containerv", "policy_ebpf: policy loaded successfully\n");
+    VLOG_DEBUG("containerv", "policy_ebpf: BPF LSM infrastructure ready, awaiting full implementation\n");
     
     return 0;
 }
@@ -175,12 +169,68 @@ int policy_ebpf_unload(struct containerv_container* container)
         return -1;
     }
     
-    // In a full implementation, we would:
-    // 1. Detach eBPF programs
-    // 2. Close program FDs
-    // 3. Close map FDs
-    
     VLOG_DEBUG("containerv", "policy_ebpf: unloading policy\n");
+    
+    /* In full implementation:
+     * 1. Detach eBPF programs
+     * 2. Close program FDs
+     * 3. Close map FDs
+     */
+    
+    return 0;
+}
+
+/**
+ * @brief Add a path-based deny rule to the BPF policy map
+ * @param policy_map_fd File descriptor of the policy BPF map
+ * @param cgroup_id Cgroup ID for the container
+ * @param path Filesystem path to restrict
+ * @param deny_mask Bitmask of denied permissions (PERM_READ | PERM_WRITE)
+ * @return 0 on success, -1 on error
+ */
+int policy_ebpf_add_path_deny(int policy_map_fd, unsigned long long cgroup_id, 
+                               const char* path, unsigned int deny_mask)
+{
+    struct stat st;
+    struct policy_key key = {};
+    struct policy_value value = {};
+    union bpf_attr attr = {};
+    
+    if (policy_map_fd < 0 || path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    
+    /* Resolve path to (dev, ino) */
+    if (stat(path, &st) < 0) {
+        VLOG_ERROR("containerv", "policy_ebpf_add_path_deny: failed to stat %s: %s\n",
+                   path, strerror(errno));
+        return -1;
+    }
+    
+    /* Build policy key */
+    key.cgroup_id = cgroup_id;
+    key.dev = st.st_dev;
+    key.ino = st.st_ino;
+    
+    /* Build policy value */
+    value.deny_mask = deny_mask;
+    
+    /* Update BPF map */
+    memset(&attr, 0, sizeof(attr));
+    attr.map_fd = policy_map_fd;
+    attr.key = (unsigned long long)(unsigned long)&key;
+    attr.value = (unsigned long long)(unsigned long)&value;
+    attr.flags = BPF_ANY;
+    
+    if (bpf(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr)) < 0) {
+        VLOG_ERROR("containerv", "policy_ebpf_add_path_deny: failed to update map: %s\n",
+                   strerror(errno));
+        return -1;
+    }
+    
+    VLOG_DEBUG("containerv", "policy_ebpf: added deny rule for %s (dev=%lu, ino=%lu, mask=0x%x)\n",
+               path, (unsigned long)st.st_dev, (unsigned long)st.st_ino, deny_mask);
     
     return 0;
 }

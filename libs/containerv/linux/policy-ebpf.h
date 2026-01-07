@@ -41,4 +41,15 @@ extern int policy_ebpf_load(
  */
 extern int policy_ebpf_unload(struct containerv_container* container);
 
+/**
+ * @brief Add a path-based deny rule to the BPF policy map
+ * @param policy_map_fd File descriptor of the policy BPF map
+ * @param cgroup_id Cgroup ID for the container
+ * @param path Filesystem path to restrict
+ * @param deny_mask Bitmask of denied permissions (0x1=READ, 0x2=WRITE, 0x4=EXEC)
+ * @return 0 on success, -1 on error
+ */
+extern int policy_ebpf_add_path_deny(int policy_map_fd, unsigned long long cgroup_id,
+                                      const char* path, unsigned int deny_mask);
+
 #endif //!__POLICY_EBPF_H__
