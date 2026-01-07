@@ -365,7 +365,7 @@ static void __initialize_overlays(struct chef_create_parameters* params, const c
     struct chef_layer_descriptor* layer;
     VLOG_DEBUG("cvd", "__initialize_overlays(rootfs=%s)\n", rootfs);
 
-    chef_create_parameters_layers_add(params, 3);
+    chef_create_parameters_layers_add(params, 4);
 
     // setup the base rootfs
     layer = chef_create_parameters_layers_get(params, 0);
@@ -374,19 +374,24 @@ static void __initialize_overlays(struct chef_create_parameters* params, const c
     layer->target = platform_strdup("/");
     layer->options = 0;
 
-    // setup the project overlay
+    // setup the project mount
     layer = chef_create_parameters_layers_get(params, 1);
     layer->type = CHEF_LAYER_TYPE_HOST_DIRECTORY;
     layer->source = platform_strdup(bctx->host_cwd);
     layer->target = platform_strdup("/chef/project");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
 
-    // setup the store overlay
+    // setup the store mount
     layer = chef_create_parameters_layers_get(params, 2);
     layer->type = CHEF_LAYER_TYPE_HOST_DIRECTORY;
     layer->source = platform_strdup(chef_dirs_store());
     layer->target = platform_strdup("/chef/store");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
+
+    // initialize the overlay layer, this is an writable layer
+    // to capture all the changes
+    layer = chef_create_parameters_layers_get(&params, 3);
+    layer->type = CHEF_LAYER_TYPE_OVERLAY;
 }
 
 // Initialize the base rootfs for the build container if, and only if, it's not already
