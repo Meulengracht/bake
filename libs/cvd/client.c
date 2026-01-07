@@ -420,7 +420,9 @@ static char* __initialize_maybe_rootfs(struct recipe* recipe, struct build_cache
         return NULL;
     }
 
+    build_cache_transaction_begin(cache);
     build_cache_key_set_bool(cache, "rootfs-initialized", 1);
+    build_cache_transaction_commit(cache);
     return rootfs;
 }
 
