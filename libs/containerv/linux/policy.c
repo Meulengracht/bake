@@ -333,6 +333,8 @@ int containerv_policy_deny_path(
     const char*               path,
     enum containerv_fs_access deny_mask)
 {
+    char *dup_path;
+    
     if (policy == NULL || path == NULL) {
         errno = EINVAL;
         return -1;
@@ -344,10 +346,14 @@ int containerv_policy_deny_path(
         return -1;
     }
     
-    policy->deny_paths[policy->deny_path_count].path = strdup(path);
-    if (policy->deny_paths[policy->deny_path_count].path == NULL) {
+    /* Duplicate path first, checking for allocation failure */
+    dup_path = strdup(path);
+    if (dup_path == NULL) {
+        /* errno is already set by strdup to ENOMEM */
         return -1;
     }
+    
+    policy->deny_paths[policy->deny_path_count].path = dup_path;
     policy->deny_paths[policy->deny_path_count].deny_mask = deny_mask;
     policy->deny_path_count++;
     

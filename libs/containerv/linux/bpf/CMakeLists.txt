@@ -17,6 +17,22 @@ if(CLANG AND BPFTOOL)
     # Create output directory
     file(MAKE_DIRECTORY ${BPF_OUTPUT_DIR})
     
+    # Detect target architecture for BPF
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
+        set(BPF_ARCH "x86")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+        set(BPF_ARCH "arm64")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
+        set(BPF_ARCH "arm")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+        set(BPF_ARCH "riscv")
+    else()
+        message(WARNING "Unknown architecture ${CMAKE_SYSTEM_PROCESSOR}, defaulting to x86 for BPF")
+        set(BPF_ARCH "x86")
+    endif()
+    
+    message(STATUS "BPF target architecture: ${BPF_ARCH}")
+    
     # BPF source file
     set(BPF_SOURCE ${BPF_SOURCE_DIR}/fs_lsm.bpf.c)
     set(BPF_OBJECT ${BPF_OUTPUT_DIR}/fs_lsm.bpf.o)
@@ -26,9 +42,9 @@ if(CLANG AND BPFTOOL)
     add_custom_command(
         OUTPUT ${BPF_OBJECT}
         COMMAND ${CLANG} -g -O2 -target bpf
-            -D__TARGET_ARCH_x86
+            -D__TARGET_ARCH_${BPF_ARCH}
             -I/usr/include
-            -I/usr/include/x86_64-linux-gnu
+            -I/usr/include/${CMAKE_LIBRARY_ARCHITECTURE}
             -c ${BPF_SOURCE}
             -o ${BPF_OBJECT}
         DEPENDS ${BPF_SOURCE}

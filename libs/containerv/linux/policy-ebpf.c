@@ -79,8 +79,23 @@ static int check_bpf_lsm_available(void)
     }
     
     if (fgets(lsm_list, sizeof(lsm_list), fp)) {
-        if (strstr(lsm_list, "bpf") != NULL) {
-            available = 1;
+        /* Look for "bpf" as a complete word (not substring) */
+        char *ptr = lsm_list;
+        while (ptr) {
+            /* Find next occurrence of "bpf" */
+            ptr = strstr(ptr, "bpf");
+            if (!ptr) break;
+            
+            /* Check if it's a complete word (surrounded by comma, newline, or string boundaries) */
+            int is_start = (ptr == lsm_list || ptr[-1] == ',');
+            int is_end = (ptr[3] == '\0' || ptr[3] == ',' || ptr[3] == '\n');
+            
+            if (is_start && is_end) {
+                available = 1;
+                break;
+            }
+            
+            ptr += 3;  /* Move past "bpf" to continue searching */
         }
     }
     
@@ -100,6 +115,33 @@ static unsigned long long get_container_cgroup_id(const char* hostname)
     int fd;
     struct stat st;
     unsigned long long cgroup_id;
+    const char *c;
+    
+    if (hostname == NULL) {
+        errno = EINVAL;
+        return 0;
+    }
+    
+    /* Validate hostname to prevent path traversal
+     * Only allow alphanumeric, hyphen, underscore, and period */
+    for (c = hostname; *c; c++) {
+        if (!((*c >= 'a' && *c <= 'z') ||
+              (*c >= 'A' && *c <= 'Z') ||
+              (*c >= '0' && *c <= '9') ||
+              *c == '-' || *c == '_' || *c == '.')) {
+            VLOG_ERROR("containerv", "policy_ebpf: invalid hostname contains illegal character: %s\n", 
+                       hostname);
+            errno = EINVAL;
+            return 0;
+        }
+    }
+    
+    /* Ensure hostname doesn't start with . or .. */
+    if (hostname[0] == '.') {
+        VLOG_ERROR("containerv", "policy_ebpf: invalid hostname starts with dot: %s\n", hostname);
+        errno = EINVAL;
+        return 0;
+    }
     
     /* Build cgroup path */
     snprintf(cgroup_path, sizeof(cgroup_path), "/sys/fs/cgroup/%s", hostname);
