@@ -103,6 +103,8 @@ int bake_build_setup(struct __bake_build_context* bctx)
         return -1;
     }
 
+    // /var/chef/layers/0IBDEXSPV5N5I5DC/contents/chef/install/linux/amd64
+
     status = bake_client_create_container(bctx);
     if (status) {
         VLOG_ERROR("bake", "bake_build_setup: failed to create build container: %u\n", status);

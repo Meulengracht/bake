@@ -175,6 +175,7 @@ int build_step_pack(struct __bake_build_context* bctx)
     VLOG_DEBUG("bake", "kitchen_recipe_pack()\n");
 
     // include ingredients marked for packing
+    // TODO: move this to bakectl
     list_foreach(&bctx->recipe->environment.runtime.ingredients, item) {
         struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
         
@@ -190,6 +191,7 @@ int build_step_pack(struct __bake_build_context* bctx)
         }
     }
 
+    // /var/lib/chef/layers/{bctx->id}/contents/chef/install/<platform>/<arch>/
     list_foreach(&bctx->recipe->packs, item) {
         struct recipe_pack*   pack = (struct recipe_pack*)item;
         struct __pack_options packOptions;
