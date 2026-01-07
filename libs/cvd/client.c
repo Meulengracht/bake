@@ -370,22 +370,22 @@ static void __initialize_overlays(struct chef_create_parameters* params, const c
     // setup the base rootfs
     layer = chef_create_parameters_layers_get(params, 0);
     layer->type = CHEF_LAYER_TYPE_BASE_ROOTFS;
-    layer->source = (char*)rootfs;
-    layer->target = "/";
+    layer->source = platform_strdup(rootfs);
+    layer->target = platform_strdup("/");
     layer->options = 0;
 
     // setup the project overlay
     layer = chef_create_parameters_layers_get(params, 1);
     layer->type = CHEF_LAYER_TYPE_HOST_DIRECTORY;
-    layer->source = (char*)bctx->host_cwd;
-    layer->target = "/chef/project";
+    layer->source = platform_strdup(bctx->host_cwd);
+    layer->target = platform_strdup("/chef/project");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
 
     // setup the store overlay
     layer = chef_create_parameters_layers_get(params, 2);
     layer->type = CHEF_LAYER_TYPE_HOST_DIRECTORY;
-    layer->source = (char*)chef_dirs_store();
-    layer->target = "/chef/store";
+    layer->source = platform_strdup(chef_dirs_store());
+    layer->target = platform_strdup("/chef/store");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
 }
 
@@ -396,6 +396,7 @@ static char* __initialize_maybe_rootfs(struct recipe* recipe, struct build_cache
 {
     char* rootfs;
     int   status;
+    VLOG_DEBUG("bake", "__initialize_maybe_rootfs(uuid=%s)\n", build_cache_uuid(cache));
 
     rootfs = (char*)chef_dirs_rootfs(build_cache_uuid(cache));
     if (rootfs == NULL) {
