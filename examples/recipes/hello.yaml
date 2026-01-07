@@ -12,7 +12,6 @@ platforms:
 
 recipes:
   - name: hello
-    type: custom
     source:
       type: path
       path: hello-world

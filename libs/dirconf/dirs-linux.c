@@ -252,6 +252,7 @@ static int __initialize_daemon(void)
 {
     if (g_dirs.real_user != 0) {
         VLOG_ERROR("dirs", "running daemons as non-root user is not currently supported\n");
+        errno = EPERM;
         return -1;
     }
 
