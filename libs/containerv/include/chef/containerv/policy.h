@@ -50,14 +50,6 @@ enum containerv_fs_access {
 };
 
 /**
- * @brief Policy enforcement mode for paths
- */
-enum containerv_policy_mode {
-    CV_POLICY_ALLOW,  /* Path is allowed (whitelist) */
-    CV_POLICY_DENY    /* Path is denied (blacklist) */
-};
-
-/**
  * @brief Create a new security policy
  * @param type The base policy type to start with
  * @return Newly created policy, or NULL on error

@@ -54,8 +54,12 @@ static __always_inline __u64 get_current_cgroup_id(void)
  * Called when a file is opened. We check if the operation (read/write)
  * should be denied based on the container's policy.
  * 
- * Note: This is a foundational implementation. Full enforcement requires
- * kernel structures that are not yet accessible without vmlinux.h generation.
+ * Note: This is a foundational implementation. The BPF_PROG macro handles
+ * the LSM hook signature. Full enforcement requires kernel structures
+ * that are not yet accessible without vmlinux.h generation.
+ * 
+ * The 'ret' parameter is part of the LSM hook mechanism for checking
+ * the result of previous security checks before adding additional enforcement.
  * 
  * Return: 0 to allow, negative error code to deny
  */

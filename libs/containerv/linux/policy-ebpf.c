@@ -31,6 +31,7 @@
 #include <sys/syscall.h>
 #include <sys/sysmacros.h>
 #include <linux/bpf.h>
+#include <stdint.h>
 #include <vlog.h>
 
 /* Permission bits - matching BPF program definitions */
@@ -261,8 +262,8 @@ int policy_ebpf_add_path_deny(int policy_map_fd, unsigned long long cgroup_id,
     /* Update BPF map */
     memset(&attr, 0, sizeof(attr));
     attr.map_fd = policy_map_fd;
-    attr.key = (unsigned long long)(unsigned long)&key;
-    attr.value = (unsigned long long)(unsigned long)&value;
+    attr.key = (uintptr_t)&key;
+    attr.value = (uintptr_t)&value;
     attr.flags = BPF_ANY;
     
     if (bpf(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr)) < 0) {
