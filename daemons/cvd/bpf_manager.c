@@ -33,7 +33,10 @@
 #include <vlog.h>
 
 // Include internal policy structure for access to fields
-// This is acceptable since cvd daemon is part of the same project
+// This is acceptable since cvd daemon is part of the same project and needs
+// direct access to policy internals for BPF map population
+// TODO: Consider adding a public iterator API like containerv_policy_foreach_path()
+// to avoid direct access to internal structures
 #include "../../../libs/containerv/linux/policy-internal.h"
 
 #ifdef __linux__
@@ -505,6 +508,11 @@ int cvd_bpf_manager_cleanup_policy(const char* container_id)
     return 0;
 #else
     unsigned long long cgroup_id;
+    struct policy_key key;
+    struct policy_key next_key;
+    union bpf_attr attr = {};
+    int deleted_count = 0;
+    int status;
     
     if (!g_bpf_manager.available) {
         return 0;
@@ -527,11 +535,75 @@ int cvd_bpf_manager_cleanup_policy(const char* container_id)
     VLOG_DEBUG("cvd", "bpf_manager: cleaning up policy for container %s (cgroup_id=%llu)\n",
                container_id, cgroup_id);
     
-    // TODO: Iterate through map and delete all entries with this cgroup_id
-    // For now, entries will be cleaned up when the cgroup is destroyed
-    // since the BPF program won't match them anymore
+    // Iterate through the map and delete all entries with this cgroup_id
+    // Start with an empty key to get the first element
+    memset(&key, 0, sizeof(key));
+    memset(&next_key, 0, sizeof(next_key));
     
-    VLOG_DEBUG("cvd", "bpf_manager: policy cleanup complete for container %s\n", container_id);
+    attr.map_fd = g_bpf_manager.policy_map_fd;
+    attr.key = 0; // Start from beginning
+    attr.next_key = (uintptr_t)&next_key;
+    
+    // Get first key
+    if (bpf(BPF_MAP_GET_NEXT_KEY, &attr, sizeof(attr)) < 0) {
+        if (errno == ENOENT) {
+            // Map is empty, nothing to clean up
+            VLOG_DEBUG("cvd", "bpf_manager: policy map is empty\n");
+            return 0;
+        }
+        VLOG_ERROR("cvd", "bpf_manager: failed to get first key: %s\n", strerror(errno));
+        return -1;
+    }
+    
+    // Check and delete first key if it matches
+    if (next_key.cgroup_id == cgroup_id) {
+        status = __delete_policy_entry(
+            g_bpf_manager.policy_map_fd,
+            next_key.cgroup_id,
+            (dev_t)next_key.dev,
+            (ino_t)next_key.ino
+        );
+        if (status == 0) {
+            deleted_count++;
+        }
+    }
+    
+    // Iterate through rest of map
+    key = next_key;
+    while (1) {
+        attr.key = (uintptr_t)&key;
+        attr.next_key = (uintptr_t)&next_key;
+        
+        status = bpf(BPF_MAP_GET_NEXT_KEY, &attr, sizeof(attr));
+        if (status < 0) {
+            if (errno == ENOENT) {
+                // Reached end of map
+                break;
+            }
+            VLOG_WARNING("cvd", "bpf_manager: failed to get next key: %s\n", strerror(errno));
+            break;
+        }
+        
+        // Check if this entry belongs to our container
+        if (next_key.cgroup_id == cgroup_id) {
+            status = __delete_policy_entry(
+                g_bpf_manager.policy_map_fd,
+                next_key.cgroup_id,
+                (dev_t)next_key.dev,
+                (ino_t)next_key.ino
+            );
+            if (status == 0) {
+                deleted_count++;
+            } else {
+                VLOG_WARNING("cvd", "bpf_manager: failed to delete entry: %s\n", strerror(errno));
+            }
+        }
+        
+        key = next_key;
+    }
+    
+    VLOG_DEBUG("cvd", "bpf_manager: deleted %d policy entries for container %s\n",
+               deleted_count, container_id);
     
     return 0;
 #endif // __linux__
