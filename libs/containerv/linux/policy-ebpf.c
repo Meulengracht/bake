@@ -59,47 +59,54 @@ struct policy_ebpf_context {
     unsigned long long cgroup_id;
 };
 
-/* eBPF syscall wrapper */
 static inline int bpf(int cmd, union bpf_attr *attr, unsigned int size)
 {
     return syscall(__NR_bpf, cmd, attr, size);
 }
 
-/* Check if BPF LSM is available on the system */
-static int check_bpf_lsm_available(void)
+static int __find_in_file(FILE* fp, const char* target)
 {
-    FILE *fp;
-    char lsm_list[1024];
-    int available = 0;
+    char  buffer[1024];
+    char* ptr = &buffer[0];
     
-    /* Check /sys/kernel/security/lsm for "bpf" */
+    if (fgets(buffer, sizeof(buffer), fp) == NULL) {
+        return 0;
+    }
+
+    // Look for "bpf" as a complete word (not substring)
+    while (ptr) {
+        // Find next occurrence of "bpf"
+        ptr = strstr(ptr, "bpf");
+        if (!ptr) {
+            break;
+        }
+        
+        // Check if it's a complete word (surrounded by comma, newline, or string boundaries)
+        int isStart = (ptr == &buffer[0] || ptr[-1] == ',');
+        int isEnd = (ptr[3] == '\0' || ptr[3] == ',' || ptr[3] == '\n');
+        if (isStart && isEnd) {
+            return 1;
+        }
+        
+        // Move past "bpf" to continue searching
+        ptr += 3;
+    }
+    return 0;
+}
+
+static int __check_bpf_lsm(void)
+{
+    FILE* fp;
+    int   available = 0;
+    
+    // Check /sys/kernel/security/lsm for "bpf"
     fp = fopen("/sys/kernel/security/lsm", "r");
     if (!fp) {
         VLOG_DEBUG("containerv", "policy_ebpf: cannot read LSM list: %s\n", strerror(errno));
         return 0;
     }
     
-    if (fgets(lsm_list, sizeof(lsm_list), fp)) {
-        /* Look for "bpf" as a complete word (not substring) */
-        char *ptr = lsm_list;
-        while (ptr) {
-            /* Find next occurrence of "bpf" */
-            ptr = strstr(ptr, "bpf");
-            if (!ptr) break;
-            
-            /* Check if it's a complete word (surrounded by comma, newline, or string boundaries) */
-            int is_start = (ptr == lsm_list || ptr[-1] == ',');
-            int is_end = (ptr[3] == '\0' || ptr[3] == ',' || ptr[3] == '\n');
-            
-            if (is_start && is_end) {
-                available = 1;
-                break;
-            }
-            
-            ptr += 3;  /* Move past "bpf" to continue searching */
-        }
-    }
-    
+    available = __find_in_file(fp, "bpf");
     fclose(fp);
     
     if (!available) {
@@ -109,71 +116,77 @@ static int check_bpf_lsm_available(void)
     return available;
 }
 
-/* Get cgroup ID for the container */
-static unsigned long long get_container_cgroup_id(const char* hostname)
+static unsigned long long __get_cgroup_id(const char* hostname)
 {
-    char cgroup_path[512];
-    int fd;
-    struct stat st;
-    unsigned long long cgroup_id;
-    const char *c;
+    char               cgroupPath[512];
+    int                fd;
+    struct stat        st;
+    unsigned long long cgroupID;
+    const char*        c;
     
     if (hostname == NULL) {
         errno = EINVAL;
         return 0;
     }
     
-    /* Validate hostname to prevent path traversal
-     * Only allow alphanumeric, hyphen, underscore, and period */
+    // Validate hostname to prevent path traversal
+    // Only allow alphanumeric, hyphen, underscore, and period
     for (c = hostname; *c; c++) {
         if (!((*c >= 'a' && *c <= 'z') ||
               (*c >= 'A' && *c <= 'Z') ||
               (*c >= '0' && *c <= '9') ||
               *c == '-' || *c == '_' || *c == '.')) {
-            VLOG_ERROR("containerv", "policy_ebpf: invalid hostname contains illegal character: %s\n", 
-                       hostname);
+            VLOG_ERROR(
+                "containerv",
+                "policy_ebpf: invalid hostname contains illegal character: %s\n", 
+                hostname
+            );
             errno = EINVAL;
             return 0;
         }
     }
     
-    /* Ensure hostname doesn't start with . or .. */
+    // Ensure hostname doesn't start with . or ..
     if (hostname[0] == '.') {
-        VLOG_ERROR("containerv", "policy_ebpf: invalid hostname starts with dot: %s\n", hostname);
+        VLOG_ERROR(
+            "containerv",
+            "policy_ebpf: invalid hostname starts with dot: %s\n",
+            hostname
+        );
         errno = EINVAL;
         return 0;
     }
     
-    /* Build cgroup path */
-    snprintf(cgroup_path, sizeof(cgroup_path), "/sys/fs/cgroup/%s", hostname);
+    // Build cgroup path
+    snprintf(cgroupPath, sizeof(cgroupPath), "/sys/fs/cgroup/%s", hostname);
     
-    /* Open cgroup directory */
-    fd = open(cgroup_path, O_RDONLY | O_DIRECTORY);
+    // Open cgroup directory
+    fd = open(cgroupPath, O_RDONLY | O_DIRECTORY);
     if (fd < 0) {
         VLOG_ERROR("containerv", "policy_ebpf: failed to open cgroup %s: %s\n", 
-                   cgroup_path, strerror(errno));
+                   cgroupPath, strerror(errno));
         return 0;
     }
     
-    /* Get inode number which serves as cgroup ID */
+    // Get inode number which serves as cgroup ID
     if (fstat(fd, &st) < 0) {
         VLOG_ERROR("containerv", "policy_ebpf: failed to stat cgroup: %s\n", strerror(errno));
         close(fd);
         return 0;
     }
     
-    cgroup_id = st.st_ino;
+    cgroupID = st.st_ino;
     close(fd);
     
     VLOG_DEBUG("containerv", "policy_ebpf: cgroup %s has ID %llu\n", hostname, 
-               (unsigned long long)cgroup_id);
+               (unsigned long long)cgroupID);
     
-    return cgroup_id;
+    return cgroupID;
 }
 
 int policy_ebpf_load(
-    struct containerv_container*  container,
-    struct containerv_policy*     policy)
+    struct containerv_container* container,
+    struct containerv_policy*    policy)
 {
     if (container == NULL || policy == NULL) {
         errno = EINVAL;
@@ -183,10 +196,10 @@ int policy_ebpf_load(
     VLOG_TRACE("containerv", "policy_ebpf: loading policy (type=%d, syscalls=%d, paths=%d)\n",
               policy->type, policy->syscall_count, policy->path_count);
     
-    /* Check if BPF LSM is available */
-    if (!check_bpf_lsm_available()) {
+    // Check if BPF LSM is available, otherwise we fallback on seccomp
+    if (!__check_bpf_lsm()) {
         VLOG_DEBUG("containerv", "policy_ebpf: BPF LSM not available, using seccomp fallback\n");
-        return 0;  /* Non-fatal, fall back to seccomp */
+        return 0;
     }
     
     /* Note: Full BPF LSM program loading would require:
@@ -223,69 +236,76 @@ int policy_ebpf_unload(struct containerv_container* container)
     return 0;
 }
 
-/**
- * @brief Add a path-based allow rule to the BPF policy map
- * @param policy_map_fd File descriptor of the policy BPF map
- * @param cgroup_id Cgroup ID for the container
- * @param path Filesystem path to allow
- * @param allow_mask Bitmask of allowed permissions (PERM_READ | PERM_WRITE | PERM_EXEC)
- * @return 0 on success, -1 on error
- */
-int policy_ebpf_add_path_allow(int policy_map_fd, unsigned long long cgroup_id,
-                               const char* path, unsigned int allow_mask)
+int policy_ebpf_add_path_allow(
+    int                policyMapFD,
+    unsigned long long cgroupID,
+    const char*        path,
+    unsigned int       allowMask)
 {
-    struct stat st;
-    struct policy_key key = {};
+    struct stat         st;
+    struct policy_key   key = {};
     struct policy_value value = {};
-    union bpf_attr attr = {};
+    union bpf_attr      attr = {};
+    int                 status;
     
-    if (policy_map_fd < 0 || path == NULL) {
+    if (policyMapFD < 0 || path == NULL) {
         errno = EINVAL;
         return -1;
     }
     
-    /* Resolve path to (dev, ino) */
-    if (stat(path, &st) < 0) {
-        VLOG_ERROR("containerv", "policy_ebpf_add_path_deny: failed to stat %s: %s\n",
-                   path, strerror(errno));
-        return -1;
+    // Resolve path to (dev, ino)
+    status = stat(path, &st);
+    if (status < 0) {
+        VLOG_ERROR(
+            "containerv",
+            "policy_ebpf_add_path_deny: failed to stat %s: %s\n",
+            path, strerror(errno)
+        );
+        return status;
     }
     
-    /* Build policy key */
-    key.cgroup_id = cgroup_id;
+    // Build policy key
+    key.cgroup_id = cgroupID;
     key.dev = st.st_dev;
     key.ino = st.st_ino;
     
-    /* Build policy value */
-    value.allow_mask = allow_mask;
+    // Build policy value
+    value.allow_mask = allowMask;
     
-    /* Update BPF map */
+    // Update BPF map
     memset(&attr, 0, sizeof(attr));
-    attr.map_fd = policy_map_fd;
+    attr.map_fd = policyMapFD;
     attr.key = (uintptr_t)&key;
     attr.value = (uintptr_t)&value;
     attr.flags = BPF_ANY;
     
-    if (bpf(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr)) < 0) {
-        VLOG_ERROR("containerv", "policy_ebpf_add_path_allow: failed to update map: %s\n",
-                   strerror(errno));
-        return -1;
+    status = bpf(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
+    if (status < 0) {
+        VLOG_ERROR(
+            "containerv",
+            "policy_ebpf_add_path_allow: failed to update map: %s\n",
+            strerror(errno)
+        );
+        return status;
     }
     
-    VLOG_DEBUG("containerv", "policy_ebpf: added allow rule for %s (dev=%lu, ino=%lu, mask=0x%x)\n",
-               path, (unsigned long)st.st_dev, (unsigned long)st.st_ino, allow_mask);
-    
+    VLOG_DEBUG(
+        "containerv",
+        "policy_ebpf: added allow rule for %s (dev=%lu, ino=%lu, mask=0x%x)\n",
+        path,
+        (unsigned long)st.st_dev,
+        (unsigned long)st.st_ino,
+        allowMask
+    );
     return 0;
 }
 
-/**
- * @brief Add a path-based deny rule to the BPF policy map
- *
- * Compatibility wrapper around the allow-list map semantics.
- */
-int policy_ebpf_add_path_deny(int policy_map_fd, unsigned long long cgroup_id,
-                              const char* path, unsigned int deny_mask)
+int policy_ebpf_add_path_deny(
+    int                policyMapFD,
+    unsigned long long cgroupID,
+    const char*        path,
+    unsigned int       denyMask)
 {
     const unsigned int all = (PERM_READ | PERM_WRITE | PERM_EXEC);
-    return policy_ebpf_add_path_allow(policy_map_fd, cgroup_id, path, all & ~deny_mask);
+    return policy_ebpf_add_path_allow(policyMapFD, cgroupID, path, all & ~denyMask);
 }
