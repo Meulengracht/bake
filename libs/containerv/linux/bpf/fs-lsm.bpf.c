@@ -66,7 +66,7 @@ static __always_inline __u64 get_current_cgroup_id(void)
     return bpf_get_current_cgroup_id();
 }
 
-static __always_inline void __populate_key(struct policy_key* key, struct file *file, __u64 cgroupId)
+static __always_inline int __populate_key(struct policy_key* key, struct file *file, __u64 cgroupId)
 {
     struct inode*       inode;
     struct super_block* sb;
@@ -107,6 +107,7 @@ static __always_inline void __populate_key(struct policy_key* key, struct file *
     key->cgroup_id = cgroupId;
     key->dev = dev;
     key->ino = ino;
+    return 0;
 }
 
 /**
@@ -142,7 +143,9 @@ int BPF_PROG(file_open_restrict, struct file *file, int ret)
     }
 
     // Populate file information in the key
-    __populate_key(&key, file, cgroup_id);
+    if (__populate_key(&key, file, cgroup_id) != 0) {
+        return -EACCES;
+    }
 
     // If we do not have an entry for this element, we deny
     // by default

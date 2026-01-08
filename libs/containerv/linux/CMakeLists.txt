@@ -5,7 +5,6 @@ find_package(FUSE REQUIRED)
 add_subdirectory(bpf)
 
 add_library(containerv-linux STATIC
-    rootfs/debootstrap.c
     cgroups.c
     container-options.c
     container.c
