@@ -190,7 +190,7 @@ int policy_ebpf_load(
     }
     
     /* Note: Full BPF LSM program loading would require:
-     * 1. Loading the compiled BPF object file (fs_lsm.bpf.o)
+     * 1. Loading the compiled BPF object file (fs-lsm.bpf.o)
      * 2. Getting the policy_map FD from the object
      * 3. Attaching the LSM program
      * 4. Storing FDs in container for cleanup
