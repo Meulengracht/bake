@@ -449,7 +449,7 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
     }
 
     chef_create_parameters_init(&params);
-    params.id = build_cache_uuid(bctx->build_cache);
+    params.id = platform_strdup(build_cache_uuid(bctx->build_cache));
     
     __initialize_overlays(&params, rootfs, bctx);
     

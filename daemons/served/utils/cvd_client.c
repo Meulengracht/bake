@@ -19,6 +19,7 @@
 #include <chef/bits/package.h>
 #include <chef/config.h>
 #include <chef/environment.h>
+#include <chef/platform.h>
 #include <errno.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
