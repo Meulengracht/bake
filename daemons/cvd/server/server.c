@@ -28,6 +28,8 @@
 #include <time.h>
 #include <vlog.h>
 
+#include "../bpf_manager.h"
+
 struct __container {
     struct list_item                 item_header;
     char*                            id;
@@ -205,6 +207,42 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
 
     // Store the layer context for cleanup later
     _container->layer_context = layerContext;
+    
+    // Populate BPF policy if BPF manager is available
+    // Note: Currently using a minimal default policy. In the future, this should
+    // be configurable per-container or passed from the client.
+    if (cvd_bpf_manager_is_available()) {
+        const char* rootfs = containerv_layers_get_rootfs(layerContext);
+        
+        // Create a minimal policy for demonstration
+        // TODO: Make policy configurable or passed from client
+        struct containerv_policy* policy = containerv_policy_new(CV_POLICY_MINIMAL);
+        if (policy != NULL) {
+            // Add basic system paths that containers typically need
+            const char* system_paths[] = {
+                "/lib",
+                "/lib64",
+                "/usr/lib",
+                "/bin",
+                "/usr/bin",
+                "/dev/null",
+                "/dev/zero",
+                "/dev/urandom",
+                NULL
+            };
+            
+            status = containerv_policy_add_paths(policy, system_paths, CV_FS_READ | CV_FS_EXEC);
+            if (status == 0) {
+                VLOG_DEBUG("cvd", "cvd_create: populating BPF policy for container %s\n", cvdID);
+                status = cvd_bpf_manager_populate_policy(cvdID, rootfs, policy);
+                if (status < 0) {
+                    VLOG_WARNING("cvd", "cvd_create: failed to populate BPF policy for %s\n", cvdID);
+                }
+            }
+            
+            containerv_policy_delete(policy);
+        }
+    }
     
     list_add(&g_server.containers, &_container->item_header);
     *id = _container->id;
@@ -394,6 +432,15 @@ enum chef_status cvd_destroy(const char* containerID)
 
     // Remove from list first
     list_remove(&g_server.containers, &container->item_header);
+
+    // Clean up BPF policy entries for this container
+    if (cvd_bpf_manager_is_available()) {
+        VLOG_DEBUG("cvd", "cvd_destroy: cleaning up BPF policy for container %s\n", containerID);
+        int bpf_status = cvd_bpf_manager_cleanup_policy(containerID);
+        if (bpf_status < 0) {
+            VLOG_WARNING("cvd", "cvd_destroy: failed to cleanup BPF policy for %s\n", containerID);
+        }
+    }
 
     status = containerv_destroy(container->handle);
     if (status) {

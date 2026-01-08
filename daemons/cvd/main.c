@@ -23,6 +23,7 @@
 
 #include "chef_cvd_service_server.h"
 #include "private.h"
+#include "bpf_manager.h"
 
 // the server object
 static gracht_server_t* g_server = NULL;
@@ -97,6 +98,23 @@ int main(int argc, char** argv)
 
     printf("log opened at %s\n", debuglogPath);
     free(debuglogPath);
+
+    // Initialize BPF manager for eBPF-based security enforcement
+    VLOG_TRACE("cvd", "Initializing BPF manager for container security...\n");
+    status = cvd_bpf_manager_initialize();
+    if (status < 0) {
+        VLOG_ERROR("cvd", "Failed to initialize BPF manager (critical error)\n");
+        return -1;
+    }
+    
+    if (cvd_bpf_manager_is_available()) {
+        VLOG_TRACE("cvd", "BPF LSM enforcement is active\n");
+    } else {
+        VLOG_TRACE("cvd", "BPF LSM not available, containers will use seccomp fallback\n");
+    }
+    
+    // Register cleanup handler
+    atexit(cvd_bpf_manager_shutdown);
 
     // initialize the server configuration
     gracht_server_configuration_init(&config);

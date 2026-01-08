@@ -384,6 +384,35 @@ int policy_ebpf_load(
         return 0;
     }
 
+    // Check if BPF programs are already loaded globally (by cvd daemon)
+    // by checking if the policy map is already pinned
+    int pinned_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/policy_map");
+    if (pinned_map_fd >= 0) {
+        VLOG_DEBUG("containerv", "policy_ebpf: using globally pinned BPF programs from cvd daemon\n");
+        
+        // cvd daemon is managing BPF programs centrally, we just need to
+        // track the map FD for potential use
+        ctx = calloc(1, sizeof(*ctx));
+        if (!ctx) {
+            close(pinned_map_fd);
+            return -1;
+        }
+        
+        ctx->policy_map_fd = pinned_map_fd;
+        ctx->cgroup_id = __get_cgroup_id(container->hostname);
+        
+        // Note: Policy population is handled by cvd daemon, not here
+        // We just store the context for cleanup
+        container->ebpf_context = ctx;
+        
+        VLOG_DEBUG("containerv", "policy_ebpf: attached to global BPF LSM enforcement\n");
+        return 0;
+    }
+    
+    // Fallback: Load BPF programs locally if not managed by cvd daemon
+    // This maintains backward compatibility for standalone containerv use
+    VLOG_DEBUG("containerv", "policy_ebpf: no global BPF manager found, loading programs locally\n");
+
     (void)__bump_memlock_rlimit();
 
     ctx = calloc(1, sizeof(*ctx));
@@ -471,6 +500,13 @@ void policy_ebpf_unload(struct containerv_container* container)
     VLOG_DEBUG("containerv", "policy_ebpf: unloading policy\n");
 
 #ifdef HAVE_BPF_SKELETON
+    // Close the map FD if it's a reference to a pinned map
+    if (ctx->policy_map_fd >= 0 && ctx->skel == NULL) {
+        close(ctx->policy_map_fd);
+        ctx->policy_map_fd = -1;
+    }
+    
+    // Only destroy skeleton if we loaded it locally
     if (ctx->skel) {
         fs_lsm_bpf__destroy(ctx->skel);
         ctx->skel = NULL;
@@ -479,7 +515,6 @@ void policy_ebpf_unload(struct containerv_container* container)
 
     free(ctx);
     container->ebpf_context = NULL;
-    return 0;
 }
 
 int policy_ebpf_add_path_allow(
