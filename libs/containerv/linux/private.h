@@ -86,6 +86,7 @@ struct containerv_container {
     int         socket_fd;
     int         ns_fds[CV_NS_COUNT];
     struct list processes;
+    void*       ebpf_context;
 
     // shared
     const char*                      id;

@@ -27,12 +27,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/sysmacros.h>
 #include <linux/bpf.h>
 #include <stdint.h>
+#include <glob.h>
+#include <ftw.h>
 #include <vlog.h>
+
+#ifdef HAVE_BPF_SKELETON
+#include "fs-lsm.skel.h"
+
+#include <bpf/bpf.h>
+#include <bpf/libbpf.h>
+#endif
 
 /* Permission bits - matching BPF program definitions */
 #define PERM_READ  0x1
@@ -53,10 +63,14 @@ struct policy_value {
 
 /* Internal structure to track loaded eBPF programs */
 struct policy_ebpf_context {
-    int lsm_prog_fd;
-    int lsm_link_fd;
     int policy_map_fd;
     unsigned long long cgroup_id;
+
+#ifdef HAVE_BPF_SKELETON
+    struct fs_lsm_bpf* skel;
+#endif
+
+    unsigned int map_entries;
 };
 
 static inline int bpf(int cmd, union bpf_attr *attr, unsigned int size)
@@ -184,13 +198,176 @@ static unsigned long long __get_cgroup_id(const char* hostname)
     return cgroupID;
 }
 
+static int __bump_memlock_rlimit(void)
+{
+    struct rlimit rlim = {
+        .rlim_cur = RLIM_INFINITY,
+        .rlim_max = RLIM_INFINITY,
+    };
+
+    return setrlimit(RLIMIT_MEMLOCK, &rlim);
+}
+
+static int __policy_map_allow_inode(
+    int                policyMapFD,
+    unsigned long long cgroupID,
+    dev_t              dev,
+    ino_t              ino,
+    unsigned int       allowMask)
+{
+    struct policy_key   key = {};
+    struct policy_value value = {};
+    union bpf_attr      attr = {};
+
+    key.cgroup_id = cgroupID;
+    key.dev = (unsigned long long)dev;
+    key.ino = (unsigned long long)ino;
+
+    value.allow_mask = allowMask;
+
+    attr.map_fd = policyMapFD;
+    attr.key = (uintptr_t)&key;
+    attr.value = (uintptr_t)&value;
+    attr.flags = BPF_ANY;
+
+    return bpf(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
+}
+
+struct __path_walk_ctx {
+    struct policy_ebpf_context* ebpf;
+    int                         policyMapFD;
+    unsigned long long          cgroupID;
+    unsigned int                allowMask;
+};
+
+static struct __path_walk_ctx* __g_walk_ctx;
+
+static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, struct FTW* ftwbuf)
+{
+    struct __path_walk_ctx* ctx = __g_walk_ctx;
+    (void)sb;
+    (void)typeflag;
+    (void)ftwbuf;
+
+    if (!ctx || !ctx->ebpf) {
+        return 1;
+    }
+
+    if (ctx->ebpf->map_entries >= 10240) {
+        return 1; /* stop walking */
+    }
+
+    /* Use stat() so symlinks resolve to their target inode */
+    {
+        struct stat st;
+        int status = stat(fpath, &st);
+        if (status < 0) {
+            return 0;
+        }
+
+        status = __policy_map_allow_inode(ctx->policyMapFD, ctx->cgroupID, st.st_dev, st.st_ino, ctx->allowMask);
+        if (status < 0) {
+            return 0;
+        }
+        ctx->ebpf->map_entries++;
+    }
+    return 0;
+}
+
+static int __allow_path_recursive(
+    struct policy_ebpf_context* ebpf,
+    int                         policyMapFD,
+    unsigned long long          cgroupID,
+    const char*                 rootPath,
+    unsigned int                allowMask)
+{
+    struct __path_walk_ctx ctx = {
+        .ebpf = ebpf,
+        .policyMapFD = policyMapFD,
+        .cgroupID = cgroupID,
+        .allowMask = allowMask,
+    };
+
+    __g_walk_ctx = &ctx;
+    int status = nftw(rootPath, __walk_cb, 16, FTW_PHYS | FTW_MOUNT);
+    __g_walk_ctx = NULL;
+    return status;
+}
+
+static int __allow_path_or_tree(
+    struct policy_ebpf_context* ebpf,
+    int                         policyMapFD,
+    unsigned long long          cgroupID,
+    const char*                 path,
+    unsigned int                allowMask)
+{
+    struct stat st;
+    int status;
+
+    status = stat(path, &st);
+    if (status < 0) {
+        return status;
+    }
+
+    status = __policy_map_allow_inode(policyMapFD, cgroupID, st.st_dev, st.st_ino, allowMask);
+    if (status < 0) {
+        return status;
+    }
+    ebpf->map_entries++;
+
+    if (S_ISDIR(st.st_mode)) {
+        return __allow_path_recursive(ebpf, policyMapFD, cgroupID, path, allowMask);
+    }
+    return 0;
+}
+
+static int __allow_pattern(
+    struct policy_ebpf_context* ebpf,
+    int                         policyMapFD,
+    unsigned long long          cgroupID,
+    const char*                 pattern,
+    unsigned int                allowMask)
+{
+    glob_t g;
+    int status;
+
+    memset(&g, 0, sizeof(g));
+    status = glob(pattern, GLOB_NOSORT, NULL, &g);
+    if (status == 0) {
+        for (size_t i = 0; i < g.gl_pathc; i++) {
+            if (ebpf->map_entries >= 10240) {
+                break;
+            }
+            (void)__allow_path_or_tree(ebpf, policyMapFD, cgroupID, g.gl_pathv[i], allowMask);
+        }
+        globfree(&g);
+        return 0;
+    }
+
+    globfree(&g);
+    /* If no glob matches, treat it as a literal path */
+    return __allow_path_or_tree(ebpf, policyMapFD, cgroupID, pattern, allowMask);
+}
+
 int policy_ebpf_load(
     struct containerv_container* container,
     struct containerv_policy*    policy)
 {
+#ifndef HAVE_BPF_SKELETON
+    (void)container;
+    (void)policy;
+    return 0;
+#else
+    struct policy_ebpf_context* ctx;
+    int                         status;
+
     if (container == NULL || policy == NULL) {
         errno = EINVAL;
         return -1;
+    }
+
+    if (container->ebpf_context != NULL) {
+        return 0;
     }
     
     VLOG_TRACE("containerv", "policy_ebpf: loading policy (type=%d, syscalls=%d, paths=%d)\n",
@@ -201,38 +378,107 @@ int policy_ebpf_load(
         VLOG_DEBUG("containerv", "policy_ebpf: BPF LSM not available, using seccomp fallback\n");
         return 0;
     }
-    
-    /* Note: Full BPF LSM program loading would require:
-     * 1. Loading the compiled BPF object file (fs-lsm.bpf.o)
-     * 2. Getting the policy_map FD from the object
-     * 3. Attaching the LSM program
-     * 4. Storing FDs in container for cleanup
-     * 
-     * This is a foundational implementation that will be extended
-     * when the BPF program is compiled and packaged.
-     * For now, we return success but don't actually load anything.
-     */
-    
-    VLOG_DEBUG("containerv", "policy_ebpf: BPF LSM infrastructure ready, awaiting full implementation\n");
-    
+
+    if (policy->path_count == 0) {
+        VLOG_DEBUG("containerv", "policy_ebpf: no filesystem paths configured; skipping BPF LSM attach\n");
+        return 0;
+    }
+
+    (void)__bump_memlock_rlimit();
+
+    ctx = calloc(1, sizeof(*ctx));
+    if (!ctx) {
+        return -1;
+    }
+
+    ctx->cgroup_id = __get_cgroup_id(container->hostname);
+    if (ctx->cgroup_id == 0) {
+        VLOG_ERROR("containerv", "policy_ebpf: failed to resolve cgroup ID for %s\n", container->hostname);
+        free(ctx);
+        return -1;
+    }
+
+    ctx->skel = fs_lsm_bpf__open();
+    if (!ctx->skel) {
+        VLOG_ERROR("containerv", "policy_ebpf: failed to open BPF skeleton\n");
+        free(ctx);
+        return -1;
+    }
+
+    status = fs_lsm_bpf__load(ctx->skel);
+    if (status) {
+        VLOG_ERROR("containerv", "policy_ebpf: failed to load BPF skeleton: %d\n", status);
+        fs_lsm_bpf__destroy(ctx->skel);
+        free(ctx);
+        return -1;
+    }
+
+    status = fs_lsm_bpf__attach(ctx->skel);
+    if (status) {
+        VLOG_ERROR("containerv", "policy_ebpf: failed to attach BPF LSM program: %d\n", status);
+        fs_lsm_bpf__destroy(ctx->skel);
+        free(ctx);
+        return -1;
+    }
+
+    ctx->policy_map_fd = bpf_map__fd(ctx->skel->maps.policy_map);
+    if (ctx->policy_map_fd < 0) {
+        VLOG_ERROR("containerv", "policy_ebpf: failed to get policy_map FD\n");
+        fs_lsm_bpf__destroy(ctx->skel);
+        free(ctx);
+        return -1;
+    }
+
+    for (int i = 0; i < policy->path_count; i++) {
+        const char* path = policy->paths[i].path;
+        unsigned int allowMask = (unsigned int)policy->paths[i].access & (PERM_READ | PERM_WRITE | PERM_EXEC);
+
+        if (!path) {
+            continue;
+        }
+
+        if (ctx->map_entries >= 10240) {
+            VLOG_WARNING("containerv", "policy_ebpf: policy_map full; not all allow rules installed\n");
+            break;
+        }
+
+        status = __allow_pattern(ctx, ctx->policy_map_fd, ctx->cgroup_id, path, allowMask);
+        if (status < 0) {
+            VLOG_WARNING("containerv", "policy_ebpf: failed to apply allow rule for %s: %s\n", path, strerror(errno));
+        }
+    }
+
+    container->ebpf_context = ctx;
+    VLOG_DEBUG("containerv", "policy_ebpf: attached BPF LSM and installed %u allow entries\n", ctx->map_entries);
     return 0;
+#endif
 }
 
-int policy_ebpf_unload(struct containerv_container* container)
+void policy_ebpf_unload(struct containerv_container* container)
 {
+    struct policy_ebpf_context* ctx;
+
     if (container == NULL) {
         errno = EINVAL;
-        return -1;
+        return;
+    }
+
+    ctx = (struct policy_ebpf_context*)container->ebpf_context;
+    if (ctx == NULL) {
+        return;
     }
     
     VLOG_DEBUG("containerv", "policy_ebpf: unloading policy\n");
-    
-    /* In full implementation:
-     * 1. Detach eBPF programs
-     * 2. Close program FDs
-     * 3. Close map FDs
-     */
-    
+
+#ifdef HAVE_BPF_SKELETON
+    if (ctx->skel) {
+        fs_lsm_bpf__destroy(ctx->skel);
+        ctx->skel = NULL;
+    }
+#endif
+
+    free(ctx);
+    container->ebpf_context = NULL;
     return 0;
 }
 
@@ -243,9 +489,6 @@ int policy_ebpf_add_path_allow(
     unsigned int       allowMask)
 {
     struct stat         st;
-    struct policy_key   key = {};
-    struct policy_value value = {};
-    union bpf_attr      attr = {};
     int                 status;
     
     if (policyMapFD < 0 || path == NULL) {
@@ -264,22 +507,13 @@ int policy_ebpf_add_path_allow(
         return status;
     }
     
-    // Build policy key
-    key.cgroup_id = cgroupID;
-    key.dev = st.st_dev;
-    key.ino = st.st_ino;
-    
-    // Build policy value
-    value.allow_mask = allowMask;
-    
-    // Update BPF map
-    memset(&attr, 0, sizeof(attr));
-    attr.map_fd = policyMapFD;
-    attr.key = (uintptr_t)&key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-    
-    status = bpf(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
+    status = __policy_map_allow_inode(
+        policyMapFD,
+        cgroupID,
+        st.st_dev,
+        st.st_ino,
+        allowMask
+    );
     if (status < 0) {
         VLOG_ERROR(
             "containerv",

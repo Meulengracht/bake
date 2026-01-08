@@ -37,9 +37,8 @@ extern int policy_ebpf_load(
 /**
  * @brief Unload and detach eBPF programs for the container
  * @param container The container to remove policy from
- * @return 0 on success, -1 on error
  */
-extern int policy_ebpf_unload(struct containerv_container* container);
+extern void policy_ebpf_unload(struct containerv_container* container);
 
 /**
  * @brief Add a path-based allow rule to the BPF policy map
