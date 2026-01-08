@@ -103,7 +103,9 @@ int main(int argc, char** argv)
     VLOG_TRACE("cvd", "Initializing BPF manager for container security...\n");
     status = cvd_bpf_manager_initialize();
     if (status < 0) {
-        VLOG_ERROR("cvd", "Failed to initialize BPF manager (critical error)\n");
+        VLOG_ERROR("cvd", "Failed to initialize BPF manager: critical startup error\n");
+        VLOG_ERROR("cvd", "BPF LSM may require kernel 5.7+ with CONFIG_BPF_LSM=y and 'bpf' in LSM list\n");
+        VLOG_ERROR("cvd", "Containers will not be able to start without BPF enforcement\n");
         return -1;
     }
     

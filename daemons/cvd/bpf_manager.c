@@ -33,10 +33,17 @@
 #include <vlog.h>
 
 // Include internal policy structure for access to fields
-// This is acceptable since cvd daemon is part of the same project and needs
-// direct access to policy internals for BPF map population
-// TODO: Consider adding a public iterator API like containerv_policy_foreach_path()
-// to avoid direct access to internal structures
+// This is a temporary solution that creates tight coupling between modules.
+// 
+// TODO (High Priority): Refactor to use a public iterator API
+// - Add containerv_policy_foreach_path(policy, callback, userdata) to policy.h
+// - This will eliminate the need for direct access to internal structures
+// - Will improve maintainability and module boundaries
+//
+// This is acceptable for now since:
+// 1. cvd daemon is part of the same project
+// 2. Needs direct access to policy internals for BPF map population
+// 3. Alternative would be to expose more of the policy API publicly
 #include "../../../libs/containerv/linux/policy-internal.h"
 
 #ifdef __linux__
@@ -182,6 +189,11 @@ static unsigned long long __get_cgroup_id(const char* hostname)
     struct stat        st;
     unsigned long long cgroupID;
     const char*        c;
+    
+    // TODO (Medium Priority): This function duplicates logic from
+    // libs/containerv/linux/policy-ebpf.c:__get_cgroup_id()
+    // Consider extracting to a shared utility function in containerv API
+    // to ensure consistent validation and avoid code duplication.
     
     if (hostname == NULL) {
         errno = EINVAL;

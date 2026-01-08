@@ -220,8 +220,9 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
         // TODO: Make policy configurable or passed from client
         struct containerv_policy* policy = containerv_policy_new(CV_POLICY_MINIMAL);
         if (policy != NULL) {
-            // Add basic system paths that containers typically need
-            const char* system_paths[] = {
+            // Default system paths that containers typically need
+            // TODO: Move to configuration file
+            static const char* DEFAULT_SYSTEM_PATHS[] = {
                 "/lib",
                 "/lib64",
                 "/usr/lib",
@@ -233,7 +234,7 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
                 NULL
             };
             
-            status = containerv_policy_add_paths(policy, system_paths, CV_FS_READ | CV_FS_EXEC);
+            status = containerv_policy_add_paths(policy, DEFAULT_SYSTEM_PATHS, CV_FS_READ | CV_FS_EXEC);
             if (status == 0) {
                 VLOG_DEBUG("cvd", "cvd_create: populating BPF policy for container %s\n", cvdID);
                 status = cvd_bpf_manager_populate_policy(cvdID, rootfs, policy);
