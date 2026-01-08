@@ -188,43 +188,6 @@ void example_bpf_lsm_deny_rules(void) {
         return;
     }
     
-    // Deny read access to sensitive files
-    printf("Adding deny rules for sensitive files:\n");
-    const char* deny_read_paths[] = {
-        "/etc/shadow",
-        "/etc/gshadow",
-        "/root/.ssh",
-        "/root/.gnupg",
-        NULL
-    };
-    
-    if (containerv_policy_deny_paths(policy, deny_read_paths, CV_FS_READ) != 0) {
-        // Non-fatal if BPF LSM is not available
-        printf("  Warning: Could not add deny rules (BPF LSM may not be available)\n");
-    } else {
-        for (int i = 0; deny_read_paths[i] != NULL; i++) {
-            printf("  - Deny READ: %s\n", deny_read_paths[i]);
-        }
-    }
-    
-    // Deny write access to system directories
-    printf("\nAdding deny rules for system directories:\n");
-    const char* deny_write_paths[] = {
-        "/etc",
-        "/usr",
-        "/bin",
-        "/sbin",
-        NULL
-    };
-    
-    if (containerv_policy_deny_paths(policy, deny_write_paths, CV_FS_WRITE) != 0) {
-        printf("  Warning: Could not add deny rules (BPF LSM may not be available)\n");
-    } else {
-        for (int i = 0; deny_write_paths[i] != NULL; i++) {
-            printf("  - Deny WRITE: %s\n", deny_write_paths[i]);
-        }
-    }
-    
     printf("\nCreated BPF LSM policy with:\n");
     printf("  - Build operations (fork, exec, file manipulation)\n");
     printf("  - Full access to /workspace and /tmp\n");

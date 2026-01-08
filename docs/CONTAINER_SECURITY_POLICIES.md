@@ -452,15 +452,6 @@ struct containerv_policy* policy = containerv_policy_new(CV_POLICY_BUILD);
 const char* workspace_paths[] = {"/workspace", "/tmp", NULL};
 containerv_policy_add_paths(policy, workspace_paths, CV_FS_ALL);
 
-// Deny access to secrets
-const char* secret_paths[] = {
-    "/etc/ssl/private",
-    "/root/.gnupg",
-    "/var/secrets",
-    NULL
-};
-containerv_policy_deny_paths(policy, secret_paths, CV_FS_READ | CV_FS_WRITE);
-
 struct containerv_options* opts = containerv_options_new();
 containerv_options_set_policy(opts, policy);
 

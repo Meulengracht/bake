@@ -268,12 +268,7 @@ void containerv_policy_delete(struct containerv_policy* policy)
     for (int i = 0; i < policy->path_count; i++) {
         free(policy->paths[i].path);
     }
-    
-    // Free deny path strings
-    for (int i = 0; i < policy->deny_path_count; i++) {
-        free(policy->deny_paths[i].path);
-    }
-    
+        
     free(policy);
 }
 
@@ -326,59 +321,5 @@ int containerv_policy_add_paths(
     }
     
     return add_paths_to_policy(policy, paths, access);
-}
-
-int containerv_policy_deny_path(
-    struct containerv_policy* policy,
-    const char*               path,
-    enum containerv_fs_access deny_mask)
-{
-    char *dup_path;
-    
-    if (policy == NULL || path == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    
-    if (policy->deny_path_count >= MAX_DENY_PATHS) {
-        VLOG_ERROR("containerv", "policy: too many deny paths\n");
-        errno = ENOMEM;
-        return -1;
-    }
-    
-    /* Duplicate path first, checking for allocation failure */
-    dup_path = strdup(path);
-    if (dup_path == NULL) {
-        /* errno is already set by strdup to ENOMEM */
-        return -1;
-    }
-    
-    policy->deny_paths[policy->deny_path_count].path = dup_path;
-    policy->deny_paths[policy->deny_path_count].deny_mask = deny_mask;
-    policy->deny_path_count++;
-    
-    VLOG_DEBUG("containerv", "policy: added deny rule for %s (mask=0x%x)\n", 
-               path, deny_mask);
-    
-    return 0;
-}
-
-int containerv_policy_deny_paths(
-    struct containerv_policy* policy,
-    const char* const*        paths,
-    enum containerv_fs_access deny_mask)
-{
-    if (policy == NULL || paths == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    
-    for (int i = 0; paths[i] != NULL; i++) {
-        if (containerv_policy_deny_path(policy, paths[i], deny_mask) != 0) {
-            return -1;
-        }
-    }
-    
-    return 0;
 }
 

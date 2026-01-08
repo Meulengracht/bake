@@ -99,30 +99,4 @@ extern int containerv_policy_add_paths(
     enum containerv_fs_access access
 );
 
-/**
- * @brief Add a deny rule for a filesystem path
- * @param policy The policy to modify
- * @param path Filesystem path to deny
- * @param access Bitwise OR of containerv_fs_access flags to deny
- * @return 0 on success, -1 on error
- */
-extern int containerv_policy_deny_path(
-    struct containerv_policy* policy,
-    const char*               path,
-    enum containerv_fs_access access
-);
-
-/**
- * @brief Add multiple deny rules for filesystem paths
- * @param policy The policy to modify
- * @param paths Array of filesystem path patterns (NULL-terminated)
- * @param access Bitwise OR of containerv_fs_access flags to deny
- * @return 0 on success, -1 on error
- */
-extern int containerv_policy_deny_paths(
-    struct containerv_policy* policy,
-    const char* const*        paths,
-    enum containerv_fs_access access
-);
-
 #endif //!__CONTAINERV_POLICY_H__
