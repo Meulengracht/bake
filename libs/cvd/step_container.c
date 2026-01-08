@@ -105,7 +105,7 @@ int bake_build_setup(struct __bake_build_context* bctx)
 
     status = bake_client_create_container(bctx);
     if (status) {
-        VLOG_ERROR("bake", "bake_build_setup: failed to create build container\n");
+        VLOG_ERROR("bake", "bake_build_setup: failed to create build container: %u\n", status);
         return status;
     }
 

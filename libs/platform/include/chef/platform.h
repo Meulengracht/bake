@@ -317,6 +317,41 @@ extern void platform_guid_new_string(char strbuffer[40]);
 extern void platform_guid_new(unsigned char guid[16]);
 extern void platform_guid_parse(unsigned char guid[16], const char* str);
 
+/**
+ * @brief Fills the buffer with cryptographically strong random bytes.
+ *
+ * This is implemented using OS-provided RNG facilities (Linux: getrandom(2)
+ * with /dev/urandom fallback; Windows: BCryptGenRandom).
+ *
+ * @param buffer Destination buffer
+ * @param length Number of bytes to write
+ * @return 0 on success, -1 on error (errno set)
+ */
+extern int platform_secure_random_bytes(void* buffer, size_t length);
+
+/**
+ * @brief Generates a cryptographically strong random string consisting only
+ * of characters in the set [0-9A-Z].
+ *
+ * The output is NUL-terminated. The caller must provide a buffer of at least
+ * (length + 1) bytes.
+ *
+ * @param out Destination buffer (must be at least length+1)
+ * @param length Number of random characters to generate
+ * @return 0 on success, -1 on error (errno set)
+ */
+extern int platform_secure_random_string(char* out, size_t length);
+
+/**
+ * @brief Allocates and returns a new NUL-terminated random [0-9A-Z] string.
+ *
+ * @param length Number of random characters
+ * @return Newly allocated string on success, NULL on error (errno set)
+ */
+extern char* platform_secure_random_string_new(size_t length);
+
+
+
 #ifdef __cplusplus
 }
 #endif

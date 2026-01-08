@@ -402,7 +402,10 @@ static int __setup_base_rootfs(
     return 0;
 }
 
-static char* __build_overlay_layer_list(struct containerv_layer_context* context, enum containerv_layer_type skipType)
+static char* __build_overlay_layer_list(
+    struct containerv_layer_context* context,
+    enum containerv_layer_type       skipType1,
+    enum containerv_layer_type       skipType2)
 {
     char*  dirs = NULL;
     size_t dirsLength = 0;
@@ -411,7 +414,7 @@ static char* __build_overlay_layer_list(struct containerv_layer_context* context
         const char* layerPath;
         size_t      pathLength;
 
-        if (context->layers[i].type == skipType) {
+        if (context->layers[i].type == skipType1 || context->layers[i].type == skipType2) {
             continue;
         }
         
@@ -451,7 +454,7 @@ static int __create_overlay_mount(struct containerv_layer_context* context)
     
     VLOG_DEBUG("containerv", "__create_overlay_mount: composing %d layers\n", context->layer_count);
     
-    lowerDirs = __build_overlay_layer_list(context, CONTAINERV_LAYER_OVERLAY);
+    lowerDirs = __build_overlay_layer_list(context, CONTAINERV_LAYER_HOST_DIRECTORY, CONTAINERV_LAYER_OVERLAY);
     if (lowerDirs == NULL) {
         VLOG_ERROR("containerv", "__create_overlay_mount: no lower layers\n");
         errno = EINVAL;

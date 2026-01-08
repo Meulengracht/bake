@@ -203,7 +203,7 @@ static const char* __root_common_directory(void)
         return val;
     }
 #endif
-    return "/var/lib/chef";
+    return "/var/chef";
 }
 
 static const char* __cache_directory(void)
@@ -252,6 +252,7 @@ static int __initialize_daemon(void)
 {
     if (g_dirs.real_user != 0) {
         VLOG_ERROR("dirs", "running daemons as non-root user is not currently supported\n");
+        errno = EPERM;
         return -1;
     }
 
@@ -297,7 +298,8 @@ static int __initialize_bake(void)
     g_dirs.config  = __strdup_fail(g_dirs.root);
     g_dirs.store  = strpathcombine(g_dirs.root, "store");
     g_dirs.kitchen = strpathcombine(g_dirs.root, "spaces");
-    if (g_dirs.store == NULL || g_dirs.kitchen == NULL) {
+    g_dirs.cache = strpathcombine(g_dirs.root, "cache");
+    if (g_dirs.store == NULL || g_dirs.kitchen == NULL || g_dirs.cache == NULL) {
         VLOG_ERROR("dirs", "failed to allocate memory for paths\n");
         return -1;
     }

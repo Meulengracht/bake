@@ -24,10 +24,8 @@
 
 struct __pack_options {
     const char*            name;
-    const char*            sysroot_dir;
     const char*            output_dir;
     const char*            input_dir;
-    const char*            ingredients_root;
     const char*            platform;
     const char*            architecture;
 
@@ -53,15 +51,6 @@ struct __pack_options {
     struct list*           commands; // list<recipe_pack_command>
 };
 
-struct __pack_resolve_commands_options {
-    const char* sysroot;
-    const char* install_root;
-    const char* ingredients_root;
-    const char* platform;
-    const char* architecture;
-    int         cross_compiling;
-};
-
 /**
  * @brief 
  * 
@@ -69,21 +58,5 @@ struct __pack_resolve_commands_options {
  * @return int Returns 0 on success, -1 on failure with errno set accordingly.
  */
 extern int bake_pack(struct __pack_options* options);
-
-/**
- * @brief 
- * 
- * @param[In] commands 
- * @param[In] resolves
- * @return int 
- */
-extern int pack_resolve_commands(struct list* commands, struct list* resolves, struct __pack_resolve_commands_options* options);
-
-/**
- * @brief 
- * 
- * @param resolves 
- */
-extern void pack_resolve_destroy(struct list* resolves);
 
 #endif //!__PACK_H__

@@ -6,7 +6,7 @@ project:
     Its not only for package management, but also as an application format. 
   author: Philip Meulengracht
   email: the_meulengracht@hotmail.com
-  version: 1.4.5
+  version: 1.4.6
   license: MIT
   homepage: https://github.com/Meulengracht/bake
 

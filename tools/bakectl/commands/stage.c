@@ -1,5 +1,5 @@
 /**
- * Copyright, Philip Meulengracht
+ * Copyright 2024, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,14 +17,50 @@
  */
 
 #include <errno.h>
-#include <chef/pack.h>
+#include <liboven.h>
+#include <chef/bake.h>
 #include <chef/platform.h>
-#include <chef/recipe.h>
-#include "resolvers/resolvers.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <vlog.h>
+
+#include "commands.h"
+#include "resolvers/resolvers.h"
+
+// include dirent.h for directory operations
+#if defined(CHEF_ON_WINDOWS)
+#include <dirent_win32.h>
+#else
+#include <dirent.h>
+#endif
+
+static void __print_help(void)
+{
+    printf("Usage: bakectl stage [options]\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -h,  --help\n");
+    printf("      Shows this help message\n");
+}
+
+static void __cleanup_systems(int sig)
+{
+    (void)sig;
+    printf("termination requested, cleaning up\n"); // not safe
+    _Exit(0);
+}
+
+struct __pack_resolve_commands_options {
+    const char* sysroot;
+    const char* install_root;
+    const char* ingredients_root;
+    const char* platform;
+    const char* architecture;
+    int         cross_compiling;
+};
 
 struct __resolve_options {
     const char* sysroot;
@@ -323,4 +359,201 @@ void pack_resolve_destroy(struct list* resolves)
         free(resolve);
     }
     list_init(resolves);
+}
+
+static int __matches_filters(const char* path, struct list* filters)
+{
+    struct list_item* item;
+
+    if (filters->count == 0) {
+        return 0; // YES! no filters means everything matches
+    }
+
+    list_foreach(filters, item) {
+        struct list_item_string* filter = (struct list_item_string*)item;
+        if (strfilter(filter->value, path, 0) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int __copy_files_with_filters(const char* sourceRoot, const char* path, struct list* filters, const char* destinationRoot)
+{
+    // recursively iterate through the directory and copy all files
+    // as long as they match the list of filters
+    int            status = -1;
+    struct dirent* entry;
+    DIR*           dir;
+    const char*    finalSource;
+    const char*    finalDestination = NULL;
+    
+    finalSource = strpathcombine(sourceRoot, path);
+    if (!finalSource) {
+        goto cleanup;
+    }
+
+    finalDestination = strpathcombine(destinationRoot, path);
+    if (!finalDestination) {
+        goto cleanup;
+    }
+
+    dir = opendir(finalSource);
+    if (!dir) {
+        goto cleanup;
+    }
+
+    // make sure target is created
+    if (platform_mkdir(finalDestination)) {
+        goto cleanup;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        const char* combinedSubPath;
+
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        combinedSubPath = strpathcombine(path, entry->d_name);
+        if (!combinedSubPath) {
+            goto cleanup;
+        }
+
+        // does this match filters?
+        if (__matches_filters(combinedSubPath, filters)) {
+            free((void*)combinedSubPath);
+            continue;
+        }
+
+        // oh ok, is it a directory?
+        if (entry->d_type == DT_DIR) {
+            status = __copy_files_with_filters(sourceRoot, combinedSubPath, filters, destinationRoot);
+            free((void*)combinedSubPath);
+            if (status) {
+                goto cleanup;
+            }
+        } else {
+            // ok, it's a file, copy it
+            char* sourceFile      = strpathcombine(finalSource, entry->d_name);
+            char* destinationFile = strpathcombine(finalDestination, entry->d_name);
+            free((void*)combinedSubPath);
+            if (!sourceFile || !destinationFile) {
+                free((void*)sourceFile);
+                goto cleanup;
+            }
+
+            status = platform_copyfile(sourceFile, destinationFile);
+            free((void*)sourceFile);
+            free((void*)destinationFile);
+            if (status) {
+                goto cleanup;
+            }
+        }
+    }
+
+    closedir(dir);
+    status = 0;
+
+cleanup:
+    free((void*)finalSource);
+    free((void*)finalDestination);
+    return status;
+}
+
+static int __is_cross_compiling(const char* target)
+{
+    // okay so we only care about the target platform here,
+    // not the arch
+    return strcmp(CHEF_PLATFORM_STR, target) != 0 ? 1 : 0;
+}
+
+static int __install_dependencies(struct list* files, const char* installRoot)
+{
+    struct list_item* item;
+    int               status;
+
+    list_foreach(files, item) {
+        struct bake_resolve_dependency* dependency = (struct bake_resolve_dependency*)item;
+        if (dependency->ignored) {
+            continue;
+        }
+
+        if (dependency->system_library) {
+            // skip?
+        } else {
+            status = platform_copyfile(dependency->path, strpathcombine(installRoot, dependency->sub_path));
+        }
+
+        if (status) {
+            VLOG_ERROR("bakectl", "failed to write dependency %s\n", dependency->path);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int stage_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options)
+{
+    int               status;
+    struct list       resolves = { 0 };
+    struct list_item* item;
+
+    // catch CTRL-C
+    signal(SIGINT, __cleanup_systems);
+
+    // handle individual help command
+    if (argc > 1) {
+        for (int i = 1; i < argc; i++) {
+            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+                __print_help();
+                return 0;
+            }
+        }
+    }
+
+    list_foreach(&context->recipe->environment.runtime.ingredients, item) {
+        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
+        
+        status = __copy_files_with_filters(
+            context->build_ingredients_directory,
+            NULL,
+            &ingredient->filters,
+            context->install_directory
+        );
+        if (status) {
+            VLOG_ERROR("bakectl", "failed to stage ingredient %s\n", ingredient->name);
+            goto cleanup;
+        }
+    }
+
+    list_foreach(&context->recipe->packs, item) {
+        struct recipe_pack* pack = (struct recipe_pack*)item;
+        
+        status = pack_resolve_commands(&pack->commands, &resolves, &(struct __pack_resolve_commands_options) {
+            .sysroot = "",
+            .install_root = context->install_directory,
+            .ingredients_root = context->build_ingredients_directory,
+            .platform = context->build_platform,
+            .architecture = context->build_architecture,
+            .cross_compiling = __is_cross_compiling(context->build_platform)
+        });
+        if (status) {
+            VLOG_ERROR("bake", "failed to verify commands\n");
+            goto cleanup;
+        }
+    }
+    
+    list_foreach(&resolves, item) {
+        struct bake_resolve* resolve = (struct bake_resolve*)item;
+        status = __install_dependencies(&resolve->dependencies, context->install_directory);
+        if (status != 0) {
+            VLOG_ERROR("bake", "unable to write libraries\n");
+            goto cleanup;
+        }
+    }
+
+cleanup:
+    pack_resolve_destroy(&resolves);
+    return status;
 }

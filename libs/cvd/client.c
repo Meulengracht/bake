@@ -365,28 +365,33 @@ static void __initialize_overlays(struct chef_create_parameters* params, const c
     struct chef_layer_descriptor* layer;
     VLOG_DEBUG("cvd", "__initialize_overlays(rootfs=%s)\n", rootfs);
 
-    chef_create_parameters_layers_add(params, 3);
+    chef_create_parameters_layers_add(params, 4);
 
     // setup the base rootfs
     layer = chef_create_parameters_layers_get(params, 0);
     layer->type = CHEF_LAYER_TYPE_BASE_ROOTFS;
-    layer->source = (char*)rootfs;
-    layer->target = "/";
+    layer->source = platform_strdup(rootfs);
+    layer->target = platform_strdup("/");
     layer->options = 0;
 
-    // setup the project overlay
+    // setup the project mount
     layer = chef_create_parameters_layers_get(params, 1);
     layer->type = CHEF_LAYER_TYPE_HOST_DIRECTORY;
-    layer->source = (char*)bctx->host_cwd;
-    layer->target = "/chef/project";
+    layer->source = platform_strdup(bctx->host_cwd);
+    layer->target = platform_strdup("/chef/project");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
 
-    // setup the store overlay
+    // setup the store mount
     layer = chef_create_parameters_layers_get(params, 2);
     layer->type = CHEF_LAYER_TYPE_HOST_DIRECTORY;
-    layer->source = (char*)chef_dirs_store();
-    layer->target = "/chef/store";
+    layer->source = platform_strdup(chef_dirs_store());
+    layer->target = platform_strdup("/chef/store");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
+
+    // initialize the overlay layer, this is an writable layer
+    // to capture all the changes
+    layer = chef_create_parameters_layers_get(params, 3);
+    layer->type = CHEF_LAYER_TYPE_OVERLAY;
 }
 
 // Initialize the base rootfs for the build container if, and only if, it's not already
@@ -396,6 +401,7 @@ static char* __initialize_maybe_rootfs(struct recipe* recipe, struct build_cache
 {
     char* rootfs;
     int   status;
+    VLOG_DEBUG("bake", "__initialize_maybe_rootfs(uuid=%s)\n", build_cache_uuid(cache));
 
     rootfs = (char*)chef_dirs_rootfs(build_cache_uuid(cache));
     if (rootfs == NULL) {
@@ -420,7 +426,9 @@ static char* __initialize_maybe_rootfs(struct recipe* recipe, struct build_cache
         return NULL;
     }
 
+    build_cache_transaction_begin(cache);
     build_cache_key_set_bool(cache, "rootfs-initialized", 1);
+    build_cache_transaction_commit(cache);
     return rootfs;
 }
 
@@ -441,6 +449,8 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
     }
 
     chef_create_parameters_init(&params);
+    params.id = build_cache_uuid(bctx->build_cache);
+    
     __initialize_overlays(&params, rootfs, bctx);
     
     status = chef_cvd_create(bctx->cvd_client, &context, &params);

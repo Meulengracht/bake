@@ -9,6 +9,7 @@ add_library(platform-osutils STATIC
     getuserdir.c
     isdir.c
     mkdir.c
+    random.c
     readlink.c
     rmdir.c
     sleep.c
@@ -21,3 +22,4 @@ add_library(platform-osutils STATIC
     unlink.c
 )
 target_include_directories(platform-osutils PRIVATE ../../include)
+target_link_libraries(platform-osutils PUBLIC bcrypt)
