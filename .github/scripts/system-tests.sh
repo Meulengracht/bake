@@ -56,10 +56,6 @@ cleanup() {
     if [[ -n "${work_dir:-}" && -d "${work_dir:-}" ]]; then
         rm -rf "$work_dir" || true
     fi
-
-    # list contents of /var/chef/layers recursively for debugging
-    echo "/var/chef/layers contents:"
-    sudo -n find /var/chef/layers -exec ls -ld {} \; || true
 }
 trap cleanup EXIT
 

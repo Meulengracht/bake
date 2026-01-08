@@ -130,8 +130,8 @@ sudo served
 ## Configuration
 
 Configuration files and paths:
-- State database: `/var/lib/chef/served/state.db`
-- Package storage: `/var/lib/chef/packs/<publisher>/<package>/`
+- State database: `/var/chef/served/state.db`
+- Package storage: `/var/chef/packs/<publisher>/<package>/`
 - Mount points: `/chef/apps/<publisher>/<package>/`
 - Wrapper scripts: `/chef/bin/<command>`
 - Profile script: `/etc/profile.d/chef.sh`

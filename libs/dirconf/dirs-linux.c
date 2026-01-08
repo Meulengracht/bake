@@ -203,7 +203,7 @@ static const char* __root_common_directory(void)
         return val;
     }
 #endif
-    return "/var/lib/chef";
+    return "/var/chef";
 }
 
 static const char* __cache_directory(void)
