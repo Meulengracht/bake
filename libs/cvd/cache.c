@@ -32,35 +32,14 @@ struct build_cache_item {
     json_t*     keystore;
 };
 
-static const char* g_uuidFmt = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
-static const char* g_hex = "0123456789ABCDEF-";
-
-static void __generate_cache_uuid(char uuid[40])
-{
-    int length = strlen(g_uuidFmt);
-    for (int i = 0; i < (length + 1); i++) {
-        int r = rand() % 16;
-        char c = ' ';   
-        
-        switch (g_uuidFmt[i]) {
-            case 'x' : { c = g_hex[r]; } break;
-            case 'y' : { c = g_hex[r & 0x03 | 0x08]; } break;
-            case '-' : { c = '-'; } break;
-            case '4' : { c = '4'; } break;
-        }
-        uuid[i] = (i < length) ? c : 0x00;
-    }
-}
-
 static int __construct_build_cache_item(struct build_cache_item* cacheItem, const char* name)
 {
-    char uuid[40];
     VLOG_DEBUG("cache", "__construct_build_cache_item(name=%s)\n", name);
 
     memset(cacheItem, 0, sizeof(struct build_cache_item));
-    __generate_cache_uuid(&uuid[0]);
+    
     cacheItem->name = platform_strdup(name);
-    cacheItem->uuid = platform_strdup(&uuid[0]);
+    cacheItem->uuid = platform_secure_random_string_new(16);
     cacheItem->keystore = json_object();
     if (cacheItem->name == NULL || cacheItem->uuid == NULL || cacheItem->keystore == NULL) {
         free((void*)cacheItem->name);
