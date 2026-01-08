@@ -32,17 +32,18 @@ static char* __get_username(void) {
 }
 
 static int __construct_paths(struct __bake_build_context* bctx) {
-    const char* rootfs = chef_dirs_rootfs(build_cache_uuid(bctx->build_cache));
-
-    bctx->rootfs_path = rootfs;
-    bctx->install_path = strpathjoin(
-        rootfs, "chef", "install",
+    char buffer[PATH_MAX];
+    
+    // construct the root layer path
+    snprintf(&buffer[0], sizeof(buffer),
+        "/var/lib/chef/layers/%s/contents",
+        build_cache_uuid(bctx->build_cache),
         bctx->target_platform,
-        bctx->target_architecture,
-        NULL
+        bctx->target_architecture
     );
-    bctx->build_ingredients_path = strpathjoin(
-        rootfs, "chef", "ingredients",
+
+    bctx->install_path = strpathjoin(
+        &buffer[0], "chef", "install",
         bctx->target_platform,
         bctx->target_architecture,
         NULL

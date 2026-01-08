@@ -45,9 +45,7 @@ void build_context_destroy(struct __bake_build_context* bctx)
     free((void*)bctx->recipe_path);
     free((void*)bctx->host_cwd);
     free((void*)bctx->bakectl_path);
-    free((void*)bctx->rootfs_path);
     free((void*)bctx->install_path);
-    free((void*)bctx->build_ingredients_path);
     free((void*)bctx->target_architecture);
     free((void*)bctx->target_platform);
     free((void*)bctx->cvd_id);

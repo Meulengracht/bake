@@ -30,8 +30,6 @@
 #include <vlog.h>
 #include <zstd.h>
 
-#include "resolvers/resolvers.h"
-
 // include dirent.h for directory operations
 #if defined(_WIN32) || defined(_WIN64)
 #include <dirent_win32.h>
@@ -316,114 +314,6 @@ static int __write_directory(
 
     closedir(dfd);
     return status;
-}
-
-// TODO on windows this should just put them into same folder as executable
-static int __write_syslib(
-    struct progress_context*        progress,
-    struct VaFsDirectoryHandle*     directoryHandle,
-    struct bake_resolve_dependency* dependency)
-{
-    struct VaFsDirectoryHandle* subdirectoryHandle;
-    int                         status;
-
-    // write library directories as rwxr-xr-x
-    // TODO other platforms
-    status = vafs_directory_create_directory(directoryHandle, "lib", 0755, &subdirectoryHandle);
-    if (status) {
-        VLOG_ERROR("bake", "failed to create directory 'lib'\n");
-        return status;
-    }
-
-    // write libraries as -rw-r--r--
-    // TODO other platforms
-    status = __write_file(subdirectoryHandle, dependency->path, dependency->name, 0644);
-    if (status && errno != EEXIST) {
-        VLOG_ERROR("bake", "failed to write dependency %s\n", dependency->path);
-        return -1;
-    }
-    progress->files++;
-
-    return vafs_directory_close(subdirectoryHandle);
-}
-
-static int __write_filepath(
-    struct progress_context*        progress,
-    struct VaFsDirectoryHandle*     directoryHandle,
-    struct bake_resolve_dependency* dependency,
-    const char*                     remainingPath)
-{
-    struct VaFsDirectoryHandle* subdirectoryHandle;
-    int                         status;
-    char*                       token;
-    char*                       remaining;
-
-    // extract next token from the remaining path
-    remaining = strchr(remainingPath, CHEF_PATH_SEPARATOR);
-    if (!remaining) {
-        // write dependencies (libraries) as -rw-r--r--
-        // TODO other platforms
-        status = __write_file(directoryHandle, dependency->path, dependency->name, 0644);
-        if (status && errno != EEXIST) {
-            return -1;
-        }
-        return 0;
-    }
-
-    token = platform_strndup(remainingPath, remaining - remainingPath);
-    if (!token) {
-        return -1;
-    }
-
-    // create directory if it doesn't exist
-    // write library directories as rwxr-xr-x
-    // TODO other platforms
-    status = vafs_directory_create_directory(directoryHandle, token, 0755, &subdirectoryHandle);
-    free(token);
-
-    if (status) {
-        VLOG_ERROR("bake", "failed to create directory '%s'\n", token);
-        return -1;
-    }
-
-    // recurse into the next directory
-    status = __write_filepath(progress, subdirectoryHandle, dependency, remaining + 1);
-    if (status) {
-        VLOG_ERROR("bake", "failed to write filepath %s\n", dependency->path);
-        return -1;
-    }
-
-    return vafs_directory_close(subdirectoryHandle);
-}
-
-static int __write_dependencies(
-    struct progress_context*    progress,
-    struct list*                files,
-    struct VaFsDirectoryHandle* directoryHandle)
-{
-    struct list_item* item;
-    int               status;
-
-    list_foreach(files, item) {
-        struct bake_resolve_dependency* dependency = (struct bake_resolve_dependency*)item;
-        if (dependency->ignored) {
-            continue;
-        }
-
-        __write_progress(dependency->name, progress);
-        if (dependency->system_library) {
-            status = __write_syslib(progress, directoryHandle, dependency);
-        } else {
-            status = __write_filepath(progress, directoryHandle, dependency, dependency->sub_path);
-        }
-
-        if (status) {
-            VLOG_ERROR("bake", "failed to write dependency %s\n", dependency->path);
-            return -1;
-        }
-        __write_progress(dependency->name, progress);
-    }
-    return 0;
 }
 
 static int __zstd_encode(void* Input, uint32_t InputLength, void** Output, uint32_t* OutputLength)
@@ -1036,7 +926,6 @@ int bake_pack(struct __pack_options* options)
     struct VaFsDirectoryHandle* directoryHandle;
     struct VaFsConfiguration    configuration;
     struct VaFs*                vafs     = NULL;
-    struct list                 resolves = { 0 };
     struct list                 files    = { 0 };
     struct list_item*           item;
     struct progress_context     progressContext = { 0 };
@@ -1078,25 +967,6 @@ int bake_pack(struct __pack_options* options)
         goto cleanup;
     }
 
-    status = pack_resolve_commands(options->commands, &resolves, &(struct __pack_resolve_commands_options) {
-        .sysroot = options->sysroot_dir,
-        .install_root = options->input_dir,
-        .ingredients_root = options->ingredients_root,
-        .platform = options->platform,
-        .architecture = options->architecture,
-        .cross_compiling = __is_cross_compiling(options->platform)
-    });
-    if (status) {
-        VLOG_ERROR("bake", "failed to verify commands\n");
-        goto cleanup;
-    }
-
-    // include all the resolves in the total files count
-    list_foreach(&resolves, item) {
-        struct bake_resolve* resolve = (struct bake_resolve*)item;
-        progressContext.files_total += resolve->dependencies.count;
-    }
-
     // initialize settings
     vafs_config_initialize(&configuration);
     vafs_config_set_architecture(&configuration, __parse_arch(options->architecture));
@@ -1134,14 +1004,6 @@ int bake_pack(struct __pack_options* options)
         goto cleanup;
     }
 
-    list_foreach(&resolves, item) {
-        struct bake_resolve* resolve = (struct bake_resolve*)item;
-        status = __write_dependencies(&progressContext, &resolve->dependencies, directoryHandle);
-        if (status != 0) {
-            VLOG_ERROR("bake", "unable to write libraries\n");
-            goto cleanup;
-        }
-    }
     __finalize_progress(&progressContext, name);
 
     status = __write_package_metadata(vafs, name, options);
@@ -1154,7 +1016,6 @@ cleanup:
     free(name);
     free(path);
     platform_getfiles_destroy(&files);
-    pack_resolve_destroy(&resolves);
     if (g_compressContext != NULL) {
         ZSTD_freeCCtx(g_compressContext);
         g_compressContext = NULL;

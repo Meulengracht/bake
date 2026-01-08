@@ -51,9 +51,7 @@ struct __bake_build_context {
     
     const char*         host_cwd;
     const char*         bakectl_path;
-    const char*         rootfs_path;
-    const char*         install_path; // inside <rootfs>
-    const char*         build_ingredients_path; // inside <rootfs>
+    const char*         install_path;
 
     const char*         target_architecture;
     const char*         target_platform;

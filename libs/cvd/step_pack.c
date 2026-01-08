@@ -21,15 +21,9 @@
 #include <chef/pack.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <vlog.h>
-
-// include dirent.h for directory operations
-#if defined(CHEF_ON_WINDOWS)
-#include <dirent_win32.h>
-#else
-#include <dirent.h>
-#endif
 
 static void __initialize_pack_options(
     struct __bake_build_context* bctx,
@@ -38,10 +32,8 @@ static void __initialize_pack_options(
 {
     memset(options, 0, sizeof(struct __pack_options));
     options->name             = pack->name;
-    options->sysroot_dir      = bctx->rootfs_path;
     options->output_dir       = bctx->host_cwd;
     options->input_dir        = bctx->install_path;
-    options->ingredients_root = bctx->build_ingredients_path;
     options->platform         = bctx->target_platform;
     options->architecture     = bctx->target_architecture;
 
@@ -68,104 +60,27 @@ static void __initialize_pack_options(
     }
 }
 
-static int __matches_filters(const char* path, struct list* filters)
+static int __stage_ingredients(struct __bake_build_context* bctx)
 {
-    struct list_item* item;
+    char         buffer[PATH_MAX];
+    unsigned int pid;
 
-    if (filters->count == 0) {
-        return 0; // YES! no filters means everything matches
+    if (bctx->cvd_client == NULL) {
+        errno = ENOTSUP;
+        return -1;
     }
-
-    list_foreach(filters, item) {
-        struct list_item_string* filter = (struct list_item_string*)item;
-        if (strfilter(filter->value, path, 0) != 0) {
-            return -1;
-        }
-    }
-    return 0;
-}
-
-static int __copy_files_with_filters(const char* sourceRoot, const char* path, struct list* filters, const char* destinationRoot)
-{
-    // recursively iterate through the directory and copy all files
-    // as long as they match the list of filters
-    int            status = -1;
-    struct dirent* entry;
-    DIR*           dir;
-    const char*    finalSource;
-    const char*    finalDestination = NULL;
     
-    finalSource = strpathcombine(sourceRoot, path);
-    if (!finalSource) {
-        goto cleanup;
-    }
-
-    finalDestination = strpathcombine(destinationRoot, path);
-    if (!finalDestination) {
-        goto cleanup;
-    }
-
-    dir = opendir(finalSource);
-    if (!dir) {
-        goto cleanup;
-    }
-
-    // make sure target is created
-    if (platform_mkdir(finalDestination)) {
-        goto cleanup;
-    }
-
-    while ((entry = readdir(dir)) != NULL) {
-        const char* combinedSubPath;
-
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-
-        combinedSubPath = strpathcombine(path, entry->d_name);
-        if (!combinedSubPath) {
-            goto cleanup;
-        }
-
-        // does this match filters?
-        if (__matches_filters(combinedSubPath, filters)) {
-            free((void*)combinedSubPath);
-            continue;
-        }
-
-        // oh ok, is it a directory?
-        if (entry->d_type == DT_DIR) {
-            status = __copy_files_with_filters(sourceRoot, combinedSubPath, filters, destinationRoot);
-            free((void*)combinedSubPath);
-            if (status) {
-                goto cleanup;
-            }
-        } else {
-            // ok, it's a file, copy it
-            char* sourceFile      = strpathcombine(finalSource, entry->d_name);
-            char* destinationFile = strpathcombine(finalDestination, entry->d_name);
-            free((void*)combinedSubPath);
-            if (!sourceFile || !destinationFile) {
-                free((void*)sourceFile);
-                goto cleanup;
-            }
-
-            status = platform_copyfile(sourceFile, destinationFile);
-            free((void*)sourceFile);
-            free((void*)destinationFile);
-            if (status) {
-                goto cleanup;
-            }
-        }
-    }
-
-    closedir(dir);
-    status = 0;
-
-cleanup:
-    free((void*)finalSource);
-    free((void*)finalDestination);
-    return status;
+    snprintf(&buffer[0], sizeof(buffer),
+        "%s stage --recipe %s",
+        bctx->bakectl_path, bctx->recipe_path
+    );
+    
+    return bake_client_spawn(
+        bctx,
+        &buffer[0],
+        CHEF_SPAWN_OPTIONS_WAIT,
+        &pid
+    );
 }
 
 int build_step_pack(struct __bake_build_context* bctx)
@@ -174,24 +89,13 @@ int build_step_pack(struct __bake_build_context* bctx)
     int               status;
     VLOG_DEBUG("bake", "kitchen_recipe_pack()\n");
 
-    // include ingredients marked for packing
-    // TODO: move this to bakectl
-    list_foreach(&bctx->recipe->environment.runtime.ingredients, item) {
-        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)item;
-        
-        status = __copy_files_with_filters(
-            bctx->build_ingredients_path,
-            NULL,
-            &ingredient->filters,
-            bctx->install_path
-        );
-        if (status) {
-            VLOG_ERROR("bake", "kitchen_recipe_pack: failed to include ingredient %s\n", ingredient->name);
-            goto cleanup;
-        }
+    // stage before we pack
+    status = __stage_ingredients(bctx);
+    if (status) {
+        VLOG_ERROR("bake", "failed to perform stage step of '%s'\n", bctx->recipe->project.name);
+        return status;
     }
 
-    // /var/lib/chef/layers/{bctx->id}/contents/chef/install/<platform>/<arch>/
     list_foreach(&bctx->recipe->packs, item) {
         struct recipe_pack*   pack = (struct recipe_pack*)item;
         struct __pack_options packOptions;
