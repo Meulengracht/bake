@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,14 +42,22 @@ extern int policy_ebpf_load(
 extern int policy_ebpf_unload(struct containerv_container* container);
 
 /**
- * @brief Add a path-based deny rule to the BPF policy map
+ * @brief Add a path-based allow rule to the BPF policy map
  * @param policy_map_fd File descriptor of the policy BPF map
  * @param cgroup_id Cgroup ID for the container
- * @param path Filesystem path to restrict
- * @param deny_mask Bitmask of denied permissions (0x1=READ, 0x2=WRITE, 0x4=EXEC)
+ * @param path Filesystem path to allow
+ * @param allow_mask Bitmask of allowed permissions (0x1=READ, 0x2=WRITE, 0x4=EXEC)
  * @return 0 on success, -1 on error
  */
+extern int policy_ebpf_add_path_allow(int policy_map_fd, unsigned long long cgroup_id,
+                                      const char* path, unsigned int allow_mask);
+
+/**
+ * @brief Add a path-based deny rule to the BPF policy map
+ *
+ * Compatibility wrapper: the underlying map is allow-list based.
+ */
 extern int policy_ebpf_add_path_deny(int policy_map_fd, unsigned long long cgroup_id,
-                                      const char* path, unsigned int deny_mask);
+                                     const char* path, unsigned int deny_mask);
 
 #endif //!__POLICY_EBPF_H__

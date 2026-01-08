@@ -34,20 +34,30 @@ if(CLANG AND BPFTOOL)
     message(STATUS "BPF target architecture: ${BPF_ARCH}")
     
     # BPF source file
-    set(BPF_SOURCE ${BPF_SOURCE_DIR}/fs_lsm.bpf.c)
-    set(BPF_OBJECT ${BPF_OUTPUT_DIR}/fs_lsm.bpf.o)
-    set(BPF_SKEL ${BPF_OUTPUT_DIR}/fs_lsm.skel.h)
+    set(BPF_SOURCE ${BPF_SOURCE_DIR}/fs-lsm.bpf.c)
+    set(BPF_OBJECT ${BPF_OUTPUT_DIR}/fs-lsm.bpf.o)
+    set(BPF_SKEL ${BPF_OUTPUT_DIR}/fs-lsm.skel.h)
+    
+    # Generate the vmlinux.h header for BPF
+    set(VMLINUX_HEADER ${BPF_OUTPUT_DIR}/vmlinux.h)
+    add_custom_command(
+        OUTPUT ${VMLINUX_HEADER}
+        COMMAND ${BPFTOOL} btf dump file /sys/kernel/btf/vmlinux format c > ${VMLINUX_HEADER}
+        COMMENT "Generating vmlinux.h for BPF: ${VMLINUX_HEADER}"
+        VERBATIM
+    )
     
     # Compile BPF program to object file
     add_custom_command(
         OUTPUT ${BPF_OBJECT}
         COMMAND ${CLANG} -g -O2 -target bpf
             -D__TARGET_ARCH_${BPF_ARCH}
+            -I${BPF_OUTPUT_DIR}
             -I/usr/include
             -I/usr/include/${CMAKE_LIBRARY_ARCHITECTURE}
             -c ${BPF_SOURCE}
             -o ${BPF_OBJECT}
-        DEPENDS ${BPF_SOURCE}
+        DEPENDS ${BPF_SOURCE} ${VMLINUX_HEADER}
         COMMENT "Building BPF object: ${BPF_OBJECT}"
         VERBATIM
     )
@@ -60,7 +70,7 @@ if(CLANG AND BPFTOOL)
         COMMENT "Generating BPF skeleton: ${BPF_SKEL}"
         VERBATIM
     )
-    
+
     # Create custom target for BPF programs
     add_custom_target(bpf_programs ALL
         DEPENDS ${BPF_SKEL}

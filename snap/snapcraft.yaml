@@ -50,6 +50,8 @@ parts:
       - libssl-dev
       - libsqlite3-dev
       - libseccomp-dev
+      - linux-tools-common
+      - linux-tools-generic
     stage-packages:
       - debootstrap
       - libfuse3-3

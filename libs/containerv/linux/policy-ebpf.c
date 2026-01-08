@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,7 +48,7 @@ struct policy_key {
 
 /* Policy value: permission mask (bit flags for deny) */
 struct policy_value {
-    unsigned int deny_mask;
+    unsigned int allow_mask;
 };
 
 /* Internal structure to track loaded eBPF programs */
@@ -224,15 +224,15 @@ int policy_ebpf_unload(struct containerv_container* container)
 }
 
 /**
- * @brief Add a path-based deny rule to the BPF policy map
+ * @brief Add a path-based allow rule to the BPF policy map
  * @param policy_map_fd File descriptor of the policy BPF map
  * @param cgroup_id Cgroup ID for the container
- * @param path Filesystem path to restrict
- * @param deny_mask Bitmask of denied permissions (PERM_READ | PERM_WRITE)
+ * @param path Filesystem path to allow
+ * @param allow_mask Bitmask of allowed permissions (PERM_READ | PERM_WRITE | PERM_EXEC)
  * @return 0 on success, -1 on error
  */
-int policy_ebpf_add_path_deny(int policy_map_fd, unsigned long long cgroup_id, 
-                               const char* path, unsigned int deny_mask)
+int policy_ebpf_add_path_allow(int policy_map_fd, unsigned long long cgroup_id,
+                               const char* path, unsigned int allow_mask)
 {
     struct stat st;
     struct policy_key key = {};
@@ -257,7 +257,7 @@ int policy_ebpf_add_path_deny(int policy_map_fd, unsigned long long cgroup_id,
     key.ino = st.st_ino;
     
     /* Build policy value */
-    value.deny_mask = deny_mask;
+    value.allow_mask = allow_mask;
     
     /* Update BPF map */
     memset(&attr, 0, sizeof(attr));
@@ -267,13 +267,25 @@ int policy_ebpf_add_path_deny(int policy_map_fd, unsigned long long cgroup_id,
     attr.flags = BPF_ANY;
     
     if (bpf(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr)) < 0) {
-        VLOG_ERROR("containerv", "policy_ebpf_add_path_deny: failed to update map: %s\n",
+        VLOG_ERROR("containerv", "policy_ebpf_add_path_allow: failed to update map: %s\n",
                    strerror(errno));
         return -1;
     }
     
-    VLOG_DEBUG("containerv", "policy_ebpf: added deny rule for %s (dev=%lu, ino=%lu, mask=0x%x)\n",
-               path, (unsigned long)st.st_dev, (unsigned long)st.st_ino, deny_mask);
+    VLOG_DEBUG("containerv", "policy_ebpf: added allow rule for %s (dev=%lu, ino=%lu, mask=0x%x)\n",
+               path, (unsigned long)st.st_dev, (unsigned long)st.st_ino, allow_mask);
     
     return 0;
+}
+
+/**
+ * @brief Add a path-based deny rule to the BPF policy map
+ *
+ * Compatibility wrapper around the allow-list map semantics.
+ */
+int policy_ebpf_add_path_deny(int policy_map_fd, unsigned long long cgroup_id,
+                              const char* path, unsigned int deny_mask)
+{
+    const unsigned int all = (PERM_READ | PERM_WRITE | PERM_EXEC);
+    return policy_ebpf_add_path_allow(policy_map_fd, cgroup_id, path, all & ~deny_mask);
 }
