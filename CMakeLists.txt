@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14.3)
-project(chef VERSION "1.4.5")
+project(chef VERSION "1.4.6")
 
 INCLUDE(CheckCXXSourceCompiles)
 
