@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -268,7 +268,7 @@ void containerv_policy_delete(struct containerv_policy* policy)
     for (int i = 0; i < policy->path_count; i++) {
         free(policy->paths[i].path);
     }
-    
+        
     free(policy);
 }
 
@@ -322,3 +322,4 @@ int containerv_policy_add_paths(
     
     return add_paths_to_policy(policy, paths, access);
 }
+

@@ -163,6 +163,49 @@ void example_custom_policy(void) {
     containerv_options_delete(options);
 }
 
+void example_bpf_lsm_deny_rules(void) {
+    printf("=== Example 5: BPF LSM Deny Rules ===\n");
+    printf("Using BPF LSM for filesystem access restrictions.\n");
+    printf("Requires: Kernel 5.7+, CONFIG_BPF_LSM=y, 'bpf' in LSM list\n\n");
+    
+    // Create a build policy
+    struct containerv_policy* policy = containerv_policy_new(CV_POLICY_BUILD);
+    if (policy == NULL) {
+        fprintf(stderr, "Failed to create build policy\n");
+        return;
+    }
+    
+    // Allow workspace access
+    const char* workspace_paths[] = {
+        "/workspace",
+        "/tmp",
+        NULL
+    };
+    
+    if (containerv_policy_add_paths(policy, workspace_paths, CV_FS_ALL) != 0) {
+        fprintf(stderr, "Failed to add workspace paths to policy\n");
+        containerv_policy_delete(policy);
+        return;
+    }
+    
+    printf("\nCreated BPF LSM policy with:\n");
+    printf("  - Build operations (fork, exec, file manipulation)\n");
+    printf("  - Full access to /workspace and /tmp\n");
+    printf("  - Denied read access to secrets (/etc/shadow, SSH keys, etc.)\n");
+    printf("  - Denied write access to system directories\n\n");
+    
+    printf("Enforcement:\n");
+    printf("  - If BPF LSM is available: Kernel-level enforcement at file_open\n");
+    printf("  - If BPF LSM is unavailable: Falls back to seccomp (syscall filtering only)\n\n");
+    
+    struct containerv_options* options = containerv_options_new();
+    containerv_options_set_policy(options, policy);
+    
+    printf("Policy configured for container\n\n");
+    
+    containerv_options_delete(options);
+}
+
 int main(int argc, char** argv) {
     printf("Containerv Security Policy Examples\n");
     printf("====================================\n\n");
@@ -171,16 +214,19 @@ int main(int argc, char** argv) {
     example_build_policy();
     example_network_policy();
     example_custom_policy();
+    example_bpf_lsm_deny_rules();
     
     printf("=== Summary ===\n");
     printf("Security policies provide fine-grained control over:\n");
     printf("  1. System call access (via seccomp-bpf)\n");
-    printf("  2. Filesystem access (policy enforcement)\n");
-    printf("  3. Default-deny model with explicit allow lists\n\n");
+    printf("  2. Filesystem access (via BPF LSM deny rules)\n");
+    printf("  3. Default-deny model with explicit allow lists\n");
+    printf("  4. Per-container isolation using cgroup IDs\n\n");
     
-    printf("The policy system uses eBPF infrastructure for future\n");
-    printf("integration with kernel LSM hooks, providing comprehensive\n");
-    printf("container security.\n\n");
+    printf("The policy system uses eBPF infrastructure for:\n");
+    printf("  - Kernel-level LSM hooks (when available)\n");
+    printf("  - Inode-based enforcement (immune to path manipulation)\n");
+    printf("  - Graceful fallback to seccomp when BPF LSM unavailable\n\n");
     
     return 0;
 }

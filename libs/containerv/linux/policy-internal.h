@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +32,11 @@ struct containerv_syscall_entry {
 struct containerv_path_entry {
     char*                 path;
     enum containerv_fs_access access;
+};
+
+struct containerv_deny_entry {
+    char*                 path;
+    enum containerv_fs_access deny_mask;
 };
 
 struct containerv_policy {

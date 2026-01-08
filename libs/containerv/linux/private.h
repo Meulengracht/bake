@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -86,6 +86,7 @@ struct containerv_container {
     int         socket_fd;
     int         ns_fds[CV_NS_COUNT];
     struct list processes;
+    void*       ebpf_context;
 
     // shared
     const char*                      id;

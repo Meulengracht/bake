@@ -1,5 +1,5 @@
 /**
- * Copyright 2024, Philip Meulengracht
+ * Copyright, Philip Meulengracht
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
@@ -153,6 +153,12 @@ static struct containerv_container* __container_new(const char* containerId)
 static void __container_delete(struct containerv_container* container)
 {
     struct list_item* i;
+
+    // unload any eBPF policy, this is safe to call even if no policy is loaded,
+    // as __container_delete is called from both the host and child sides. Only
+    // the child-side will load any policy.
+    policy_ebpf_unload(container);
+
     for (i = container->processes.head; i != NULL;) {
         struct containerv_container_process* proc = (struct containerv_container_process*)i;
         i = i->next;
@@ -894,7 +900,19 @@ static int __container_run(
             return status;
         }
     }
-    
+
+    // Apply eBPF policy (needs caps, so do it before dropping)
+    if (options->policy != NULL) {
+        VLOG_DEBUG("containerv[child]", "__container_run: applying security policy\n");
+
+        status = policy_ebpf_load(container, options->policy);
+        if (status != 0) {
+            VLOG_WARNING("containerv[child]", "__container_run: eBPF policy enforcement not available\n");
+        }
+    } else {
+        VLOG_DEBUG("containerv[child]", "__container_run: no security policy configured\n");
+    }
+
     // Drop capabilities that we no longer need
     status = containerv_drop_capabilities();
     if (status) {
@@ -902,24 +920,13 @@ static int __container_run(
         return status;
     }
 
-    // Apply security policy if configured
+    // Apply seccomp-bpf for syscall filtering
     if (options->policy != NULL) {
-        VLOG_DEBUG("containerv[child]", "__container_run: applying security policy\n");
-        
-        // Try eBPF-based enforcement first (for future kernel versions with BPF LSM)
-        status = policy_ebpf_load(container, options->policy);
-        if (status != 0) {
-            VLOG_WARNING("containerv[child]", "__container_run: eBPF policy enforcement not available\n");
-        }
-        
-        // Apply seccomp-bpf for syscall filtering
         status = policy_seccomp_apply(options->policy);
         if (status) {
             VLOG_ERROR("containerv[child]", "__container_run: failed to apply seccomp policy\n");
             return status;
         }
-    } else {
-        VLOG_DEBUG("containerv[child]", "__container_run: no security policy configured\n");
     }
 
     // Make this process take the role of init(1) before we go into
