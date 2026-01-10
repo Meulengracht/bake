@@ -5,6 +5,7 @@ find_package(FUSE REQUIRED)
 add_subdirectory(bpf)
 
 add_library(containerv-linux STATIC
+    bpf-manager.c
     cgroups.c
     container-options.c
     container.c
@@ -34,7 +35,14 @@ if(BPF_PROGRAMS_AVAILABLE)
         # Add dependency on BPF programs to ensure they're built first
         add_dependencies(containerv-linux bpf_programs)
         message(STATUS "BPF LSM enforcement will be available in containerv")
+        
+        # Propagate BPF variables to parent scope for use by other targets (e.g., cvd daemon)
+        set(BPF_PROGRAMS_AVAILABLE TRUE PARENT_SCOPE)
+        set(BPF_OUTPUT_DIR ${BPF_OUTPUT_DIR} PARENT_SCOPE)
     else()
         message(WARNING "BPF programs built but libbpf not found; disabling BPF skeleton loading")
+        set(BPF_PROGRAMS_AVAILABLE FALSE PARENT_SCOPE)
     endif()
+else()
+    set(BPF_PROGRAMS_AVAILABLE FALSE PARENT_SCOPE)
 endif()

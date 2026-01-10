@@ -18,6 +18,7 @@
 
 #include "chef-config.h"
 #include <chef/dirs.h>
+#include <chef/containerv/bpf_manager.h>
 #include <server.h>
 #include <vlog.h>
 
@@ -97,6 +98,25 @@ int main(int argc, char** argv)
 
     printf("log opened at %s\n", debuglogPath);
     free(debuglogPath);
+
+    // Initialize BPF manager for eBPF-based security enforcement
+    VLOG_TRACE("cvd", "Initializing BPF manager for container security...\n");
+    status = containerv_bpf_manager_initialize();
+    if (status < 0) {
+        VLOG_ERROR("cvd", "Failed to initialize BPF manager: critical startup error\n");
+        VLOG_ERROR("cvd", "BPF LSM may require kernel 5.7+ with CONFIG_BPF_LSM=y and 'bpf' in LSM list\n");
+        VLOG_ERROR("cvd", "Container security enforcement (BPF/seccomp) failed to initialize\n");
+        return -1;
+    }
+    
+    if (containerv_bpf_manager_is_available()) {
+        VLOG_TRACE("cvd", "BPF LSM enforcement is active\n");
+    } else {
+        VLOG_TRACE("cvd", "BPF LSM not available, containers will use seccomp fallback\n");
+    }
+    
+    // Register cleanup handler
+    atexit(containerv_bpf_manager_shutdown);
 
     // initialize the server configuration
     gracht_server_configuration_init(&config);
