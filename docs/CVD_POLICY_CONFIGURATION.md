@@ -37,40 +37,59 @@ The configuration file is automatically created with default values on first sta
 ### default_policy
 
 **Type**: `string`  
-**Default**: `"minimal"`  
-**Valid values**: `"minimal"`, `"build"`, `"network"`, `"custom"`
+**Default**: `"minimal"` or empty (which means minimal only)  
+**Valid values**: `"minimal"`, `"build"`, `"network"`, or comma-separated combinations like `"build,network"`
 
-Specifies the default security policy for all containers. This policy is used when no per-container policy is specified.
+Specifies the default security policy features for all containers. Policies are **composable building blocks** that extend the base minimal policy.
 
-#### Policy Types
+#### How Policies Work
 
-- **minimal**: Basic CLI applications
-  - File I/O: read, write, open, close, lseek
-  - File info: stat, fstat, access, readlink
-  - Directory: getcwd, chdir, getdents
-  - Memory: brk, mmap, munmap, mprotect
-  - Process: getpid, getuid, exit
-  - Time: time, clock_gettime, nanosleep
-  - I/O multiplexing: select, poll, epoll_*
+All containers start with a **minimal base policy** that includes essential syscalls for basic operations. Additional policy features can be added to extend permissions:
 
-- **build**: Compilation and build tools (includes all minimal syscalls)
-  - Process creation: fork, vfork, clone, execve, wait4
-  - IPC: pipe, pipe2, socketpair
-  - File operations: rename, unlink, mkdir, rmdir, link, symlink
-  - Permissions: chmod, chown, truncate
-  - Extended attributes: getxattr, setxattr
-  - Mount: mount, umount2
+- **No policy specified** → Minimal policy only (basic CLI operations)
+- **One feature** (e.g., `"build"`) → Minimal + build features
+- **Multiple features** (e.g., `"build,network"`) → Minimal + build features + network features
 
-- **network**: Network services (includes all minimal syscalls)
-  - Socket creation: socket, socketpair
-  - Connection: bind, connect, listen, accept, accept4
-  - I/O: sendto, recvfrom, sendmsg, recvmsg, sendmmsg, recvmmsg
-  - Configuration: setsockopt, getsockopt
-  - Shutdown: shutdown
+#### Policy Features
 
-- **custom**: Start with no predefined permissions
-  - Must explicitly define all allowed syscalls and paths
-  - Use for specialized applications with specific requirements
+- **minimal**: Base policy (always included)
+  - Essential syscalls: read, write, open, close, fork, exec, etc.
+  - Basic system paths: /lib, /usr/lib, /bin, /usr/bin
+  - Device files: /dev/null, /dev/zero, /dev/urandom
+
+- **build**: Adds compilation and build tool paths
+  - Additional paths: /usr/include, /usr/share/pkgconfig, /usr/lib/pkgconfig
+  - Combined with minimal for full build environment
+
+- **network**: Adds network service paths
+  - Additional paths: /etc/ssl, /etc/ca-certificates, /etc/resolv.conf, /etc/hosts
+  - Combined with minimal for network-enabled applications
+
+#### Policy Composition Examples
+
+```json
+{
+  "security": {
+    "default_policy": ""  // Empty or "minimal" - basic operations only
+  }
+}
+```
+
+```json
+{
+  "security": {
+    "default_policy": "build"  // Minimal + build paths
+  }
+}
+```
+
+```json
+{
+  "security": {
+    "default_policy": "build,network"  // Minimal + build paths + network paths
+  }
+}
+```
 
 ### custom_paths
 
@@ -188,7 +207,7 @@ Containers have no default syscalls beyond absolute minimum. Must be combined wi
 
 ## Per-Container Policy Override
 
-Containers can override the global default policy by specifying a policy in the create request:
+Containers can override the global default policy by specifying policy features in the create request:
 
 ```c
 struct chef_create_parameters params = {
@@ -196,18 +215,30 @@ struct chef_create_parameters params = {
     .layers = layers,
     .layers_count = layer_count,
     .policy = {
-        .profiles = "build"  // Override global default
+        .profiles = "build,network"  // Compose multiple features
     }
 };
 ```
 
-The `profiles` string can be one of:
-- `"minimal"` - Use minimal policy regardless of global default
-- `"build"` - Use build policy regardless of global default
-- `"network"` - Use network policy regardless of global default
-- `""` or `NULL` - Use global default from configuration
+The `profiles` string can specify:
+- Empty string or `NULL` - Use global default from configuration
+- Single feature: `"build"` - Minimal + build features
+- Multiple features: `"build,network"` - Minimal + build + network features
+- Just minimal: `"minimal"` or empty when global default has features
 
-**Note**: When a per-container policy is specified, custom_paths from the global configuration are NOT applied. The per-container policy takes precedence.
+### Policy Composition
+
+Policies are **additive building blocks**:
+- Base: Minimal policy (always included, provides essential syscalls)
+- Features: build, network, etc. (add specific paths and permissions)
+
+**Examples**:
+- `""` → Minimal only
+- `"build"` → Minimal + build paths (/usr/include, pkgconfig, etc.)
+- `"network"` → Minimal + network paths (/etc/ssl, /etc/resolv.conf, etc.)
+- `"build,network"` → Minimal + build paths + network paths
+
+**Note**: Custom paths from the global configuration are **always applied** to all containers, in addition to the requested policy features.
 
 ## Default System Paths
 

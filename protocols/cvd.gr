@@ -53,7 +53,9 @@ enum status {
 }
 
 struct policy_spec {
-    // Comma-separated list of policy profiles: "minimal", "build", "network", or empty for default
+    // Comma-separated list of policy features to apply on top of minimal base policy
+    // Examples: "build", "network", "build,network"
+    // If empty, only minimal policy is used
     string profiles;
 }
 

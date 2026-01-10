@@ -72,62 +72,81 @@ static struct {
     struct list containers;
 } g_server = { 0 };
 
-static enum containerv_policy_type __map_policy_name_to_type(const char* policy_name)
+// Apply a specific policy feature by adding its syscalls and paths
+static int __apply_policy_feature(struct containerv_policy* policy, const char* feature_name)
 {
-    if (policy_name == NULL) {
-        return CV_POLICY_MINIMAL;
-    }
-
-    if (strcmp(policy_name, "build") == 0) {
-        return CV_POLICY_BUILD;
-    } else if (strcmp(policy_name, "network") == 0) {
-        return CV_POLICY_NETWORK;
-    } else if (strcmp(policy_name, "custom") == 0) {
-        return CV_POLICY_CUSTOM;
+    int status = 0;
+    
+    if (strcmp(feature_name, "minimal") == 0) {
+        // Minimal is the base, nothing extra to add
+        VLOG_DEBUG("cvd", "__apply_policy_feature: minimal policy (base)\n");
+    } else if (strcmp(feature_name, "build") == 0) {
+        // Add build-specific paths - build tools, compilers, etc.
+        static const char* BUILD_PATHS[] = {
+            "/usr/include",
+            "/usr/share/pkgconfig",
+            "/usr/lib/pkgconfig",
+            NULL
+        };
+        VLOG_DEBUG("cvd", "__apply_policy_feature: adding build policy features\n");
+        status = containerv_policy_add_paths(policy, BUILD_PATHS, CV_FS_READ | CV_FS_EXEC);
+        if (status != 0) {
+            VLOG_WARNING("cvd", "__apply_policy_feature: failed to add build paths\n");
+        }
+    } else if (strcmp(feature_name, "network") == 0) {
+        // Add network-specific paths - SSL certs, DNS, etc.
+        static const char* NETWORK_PATHS[] = {
+            "/etc/ssl",
+            "/etc/ca-certificates",
+            "/etc/resolv.conf",
+            "/etc/hosts",
+            NULL
+        };
+        VLOG_DEBUG("cvd", "__apply_policy_feature: adding network policy features\n");
+        status = containerv_policy_add_paths(policy, NETWORK_PATHS, CV_FS_READ);
+        if (status != 0) {
+            VLOG_WARNING("cvd", "__apply_policy_feature: failed to add network paths\n");
+        }
     } else {
-        // Default to minimal for "minimal" or any unrecognized value
-        return CV_POLICY_MINIMAL;
+        VLOG_WARNING("cvd", "__apply_policy_feature: unknown policy feature '%s', ignoring\n", feature_name);
     }
+    
+    return status;
 }
 
 static struct containerv_policy* __create_policy_from_config(const char* policy_profiles)
 {
     const char* default_policy;
     struct containerv_policy* policy = NULL;
-    enum containerv_policy_type base_type;
     struct config_custom_path* custom_paths = NULL;
     size_t custom_paths_count = 0;
     int status;
+    char* policy_copy = NULL;
+    char* token = NULL;
+    char* saveptr = NULL;
 
-    // Determine which policy to use
-    // Priority: per-container override > global config default > hardcoded "minimal"
+    // Determine which policies to apply
+    // Priority: per-container override > global config default > none (just minimal)
+    const char* policies_to_apply = NULL;
     if (policy_profiles != NULL && strlen(policy_profiles) > 0) {
-        // Use per-container policy
-        // For now, we support only single policy type, not combining multiple
-        // Split by comma and use the first one
-        char* policy_copy = platform_strdup(policy_profiles);
-        char* token = strtok(policy_copy, ",");
-        if (token != NULL) {
-            // Trim whitespace
-            while (*token == ' ' || *token == '\t') token++;
-            base_type = __map_policy_name_to_type(token);
-            VLOG_DEBUG("cvd", "__create_policy_from_config: using per-container policy '%s'\n", token);
-        } else {
-            base_type = CV_POLICY_MINIMAL;
-        }
-        free(policy_copy);
+        policies_to_apply = policy_profiles;
+        VLOG_DEBUG("cvd", "__create_policy_from_config: using per-container policies '%s'\n", policies_to_apply);
     } else {
-        // Use global default from config
         default_policy = cvd_config_security_default_policy();
-        base_type = __map_policy_name_to_type(default_policy);
-        VLOG_DEBUG("cvd", "__create_policy_from_config: using default policy '%s'\n", 
-                   default_policy ? default_policy : "minimal");
+        if (default_policy != NULL && strlen(default_policy) > 0 && strcmp(default_policy, "minimal") != 0) {
+            policies_to_apply = default_policy;
+            VLOG_DEBUG("cvd", "__create_policy_from_config: using default policy '%s'\n", default_policy);
+        } else {
+            VLOG_DEBUG("cvd", "__create_policy_from_config: using minimal policy (no features)\n");
+        }
     }
 
-    // Create the base policy
-    policy = containerv_policy_new(base_type);
+    // Always start with MINIMAL policy as the base
+    // MINIMAL includes: CV_POLICY_BUILD for syscalls (fork, exec, etc needed for most operations)
+    // but we add paths incrementally based on features
+    policy = containerv_policy_new(CV_POLICY_BUILD);
     if (policy == NULL) {
-        VLOG_ERROR("cvd", "__create_policy_from_config: failed to create policy\n");
+        VLOG_ERROR("cvd", "__create_policy_from_config: failed to create base policy\n");
         return NULL;
     }
 
@@ -149,21 +168,40 @@ static struct containerv_policy* __create_policy_from_config(const char* policy_
         VLOG_WARNING("cvd", "__create_policy_from_config: failed to add default system paths\n");
     }
 
-    // Add custom paths from configuration if not using per-container override
-    if (policy_profiles == NULL || strlen(policy_profiles) == 0) {
-        cvd_config_security_custom_paths(&custom_paths, &custom_paths_count);
-        if (custom_paths != NULL && custom_paths_count > 0) {
-            for (size_t i = 0; i < custom_paths_count; i++) {
-                if (custom_paths[i].path != NULL) {
-                    status = containerv_policy_add_path(policy, custom_paths[i].path, 
-                                                       (enum containerv_fs_access)custom_paths[i].access);
-                    if (status != 0) {
-                        VLOG_WARNING("cvd", "__create_policy_from_config: failed to add custom path '%s'\n",
-                                    custom_paths[i].path);
-                    } else {
-                        VLOG_DEBUG("cvd", "__create_policy_from_config: added custom path '%s' with access %d\n",
-                                  custom_paths[i].path, custom_paths[i].access);
-                    }
+    // Apply requested policy features (composable building blocks)
+    if (policies_to_apply != NULL) {
+        policy_copy = platform_strdup(policies_to_apply);
+        token = strtok_r(policy_copy, ",", &saveptr);
+        while (token != NULL) {
+            // Trim whitespace
+            while (*token == ' ' || *token == '\t') token++;
+            char* end = token + strlen(token) - 1;
+            while (end > token && (*end == ' ' || *end == '\t')) {
+                *end = '\0';
+                end--;
+            }
+            
+            if (strlen(token) > 0) {
+                __apply_policy_feature(policy, token);
+            }
+            token = strtok_r(NULL, ",", &saveptr);
+        }
+        free(policy_copy);
+    }
+
+    // Add custom paths from configuration (always applied, regardless of policies)
+    cvd_config_security_custom_paths(&custom_paths, &custom_paths_count);
+    if (custom_paths != NULL && custom_paths_count > 0) {
+        for (size_t i = 0; i < custom_paths_count; i++) {
+            if (custom_paths[i].path != NULL) {
+                status = containerv_policy_add_path(policy, custom_paths[i].path, 
+                                                   (enum containerv_fs_access)custom_paths[i].access);
+                if (status != 0) {
+                    VLOG_WARNING("cvd", "__create_policy_from_config: failed to add custom path '%s'\n",
+                                custom_paths[i].path);
+                } else {
+                    VLOG_DEBUG("cvd", "__create_policy_from_config: added custom path '%s' with access %d\n",
+                              custom_paths[i].path, custom_paths[i].access);
                 }
             }
         }
