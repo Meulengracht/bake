@@ -52,9 +52,15 @@ enum status {
     INVALID_CONTAINER_ID,
 }
 
+struct policy_spec {
+    // Comma-separated list of policy profiles: "minimal", "build", "network", or empty for default
+    string profiles;
+}
+
 struct create_parameters {
     string             id;
     layer_descriptor[] layers;
+    policy_spec        policy;
 }
 
 struct user_descriptor {

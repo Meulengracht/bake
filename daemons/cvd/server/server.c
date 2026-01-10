@@ -31,6 +31,8 @@
 #include <time.h>
 #include <vlog.h>
 
+#include "../private.h"
+
 struct __container {
     struct list_item                 item_header;
     char*                            id;
@@ -69,6 +71,106 @@ static void __container_delete(struct __container* container)
 static struct {
     struct list containers;
 } g_server = { 0 };
+
+static enum containerv_policy_type __map_policy_name_to_type(const char* policy_name)
+{
+    if (policy_name == NULL) {
+        return CV_POLICY_MINIMAL;
+    }
+
+    if (strcmp(policy_name, "build") == 0) {
+        return CV_POLICY_BUILD;
+    } else if (strcmp(policy_name, "network") == 0) {
+        return CV_POLICY_NETWORK;
+    } else if (strcmp(policy_name, "custom") == 0) {
+        return CV_POLICY_CUSTOM;
+    } else {
+        // Default to minimal for "minimal" or any unrecognized value
+        return CV_POLICY_MINIMAL;
+    }
+}
+
+static struct containerv_policy* __create_policy_from_config(const char* policy_profiles)
+{
+    const char* default_policy;
+    struct containerv_policy* policy = NULL;
+    enum containerv_policy_type base_type;
+    struct config_custom_path* custom_paths = NULL;
+    size_t custom_paths_count = 0;
+    int status;
+
+    // Determine which policy to use
+    // Priority: per-container override > global config default > hardcoded "minimal"
+    if (policy_profiles != NULL && strlen(policy_profiles) > 0) {
+        // Use per-container policy
+        // For now, we support only single policy type, not combining multiple
+        // Split by comma and use the first one
+        char* policy_copy = platform_strdup(policy_profiles);
+        char* token = strtok(policy_copy, ",");
+        if (token != NULL) {
+            // Trim whitespace
+            while (*token == ' ' || *token == '\t') token++;
+            base_type = __map_policy_name_to_type(token);
+            VLOG_DEBUG("cvd", "__create_policy_from_config: using per-container policy '%s'\n", token);
+        } else {
+            base_type = CV_POLICY_MINIMAL;
+        }
+        free(policy_copy);
+    } else {
+        // Use global default from config
+        default_policy = cvd_config_security_default_policy();
+        base_type = __map_policy_name_to_type(default_policy);
+        VLOG_DEBUG("cvd", "__create_policy_from_config: using default policy '%s'\n", 
+                   default_policy ? default_policy : "minimal");
+    }
+
+    // Create the base policy
+    policy = containerv_policy_new(base_type);
+    if (policy == NULL) {
+        VLOG_ERROR("cvd", "__create_policy_from_config: failed to create policy\n");
+        return NULL;
+    }
+
+    // Add default system paths (always needed for basic functionality)
+    static const char* DEFAULT_SYSTEM_PATHS[] = {
+        "/lib",
+        "/lib64",
+        "/usr/lib",
+        "/bin",
+        "/usr/bin",
+        "/dev/null",
+        "/dev/zero",
+        "/dev/urandom",
+        NULL
+    };
+    
+    status = containerv_policy_add_paths(policy, DEFAULT_SYSTEM_PATHS, CV_FS_READ | CV_FS_EXEC);
+    if (status != 0) {
+        VLOG_WARNING("cvd", "__create_policy_from_config: failed to add default system paths\n");
+    }
+
+    // Add custom paths from configuration if not using per-container override
+    if (policy_profiles == NULL || strlen(policy_profiles) == 0) {
+        cvd_config_security_custom_paths(&custom_paths, &custom_paths_count);
+        if (custom_paths != NULL && custom_paths_count > 0) {
+            for (size_t i = 0; i < custom_paths_count; i++) {
+                if (custom_paths[i].path != NULL) {
+                    status = containerv_policy_add_path(policy, custom_paths[i].path, 
+                                                       (enum containerv_fs_access)custom_paths[i].access);
+                    if (status != 0) {
+                        VLOG_WARNING("cvd", "__create_policy_from_config: failed to add custom path '%s'\n",
+                                    custom_paths[i].path);
+                    } else {
+                        VLOG_DEBUG("cvd", "__create_policy_from_config: added custom path '%s' with access %d\n",
+                                  custom_paths[i].path, custom_paths[i].access);
+                    }
+                }
+            }
+        }
+    }
+
+    return policy;
+}
 
 static enum chef_status __chef_status_from_errno(void) {
     switch (errno) {
@@ -210,38 +312,16 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     _container->layer_context = layerContext;
     
     // Populate BPF policy if BPF manager is available
-    // Note: Currently using a minimal default policy. In the future, this should
-    // be configurable per-container or passed from the client.
     if (containerv_bpf_manager_is_available()) {
         const char* rootfs = containerv_layers_get_rootfs(layerContext);
         
-        // Create a minimal policy for demonstration
-        // TODO: Make policy configurable or passed from client
-        struct containerv_policy* policy = containerv_policy_new(CV_POLICY_MINIMAL);
+        // Create policy from configuration and/or per-container specification
+        struct containerv_policy* policy = __create_policy_from_config(params->policy.profiles);
         if (policy != NULL) {
-            // Default system paths that containers typically need
-            // TODO: Move to configuration file
-            static const char* DEFAULT_SYSTEM_PATHS[] = {
-                "/lib",
-                "/lib64",
-                "/usr/lib",
-                "/bin",
-                "/usr/bin",
-                "/dev/null",
-                "/dev/zero",
-                "/dev/urandom",
-                NULL
-            };
-            
-            status = containerv_policy_add_paths(policy, DEFAULT_SYSTEM_PATHS, CV_FS_READ | CV_FS_EXEC);
-            if (status != 0) {
-                VLOG_WARNING("cvd", "cvd_create: failed to add paths to policy for %s\n", cvdID);
-            } else {
-                VLOG_DEBUG("cvd", "cvd_create: populating BPF policy for container %s\n", cvdID);
-                status = containerv_bpf_manager_populate_policy(cvdID, rootfs, policy);
-                if (status < 0) {
-                    VLOG_WARNING("cvd", "cvd_create: failed to populate BPF policy for %s\n", cvdID);
-                }
+            VLOG_DEBUG("cvd", "cvd_create: populating BPF policy for container %s\n", cvdID);
+            status = containerv_bpf_manager_populate_policy(cvdID, rootfs, policy);
+            if (status < 0) {
+                VLOG_WARNING("cvd", "cvd_create: failed to populate BPF policy for %s\n", cvdID);
             }
             
             containerv_policy_delete(policy);
