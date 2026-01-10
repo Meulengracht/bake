@@ -21,6 +21,7 @@
 #include "policy-ebpf.h"
 #include "policy-internal.h"
 #include "private.h"
+#include "bpf-helpers.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -44,23 +45,6 @@
 #include <bpf/libbpf.h>
 #endif
 
-/* Permission bits - matching BPF program definitions */
-#define PERM_READ  0x1
-#define PERM_WRITE 0x2
-#define PERM_EXEC  0x4
-
-/* Policy key: (cgroup_id, dev, ino) - must match BPF program */
-struct policy_key {
-    unsigned long long cgroup_id;
-    unsigned long long dev;
-    unsigned long long ino;
-};
-
-/* Policy value: permission mask (bit flags for deny) */
-struct policy_value {
-    unsigned int allow_mask;
-};
-
 /* Internal structure to track loaded eBPF programs */
 struct policy_ebpf_context {
     int policy_map_fd;
@@ -72,166 +56,6 @@ struct policy_ebpf_context {
 
     unsigned int map_entries;
 };
-
-static inline int bpf(int cmd, union bpf_attr *attr, unsigned int size)
-{
-    return syscall(__NR_bpf, cmd, attr, size);
-}
-
-static int __find_in_file(FILE* fp, const char* target)
-{
-    char  buffer[1024];
-    char* ptr = &buffer[0];
-    
-    if (fgets(buffer, sizeof(buffer), fp) == NULL) {
-        return 0;
-    }
-
-    // Look for "bpf" as a complete word (not substring)
-    while (ptr) {
-        // Find next occurrence of "bpf"
-        ptr = strstr(ptr, "bpf");
-        if (!ptr) {
-            break;
-        }
-        
-        // Check if it's a complete word (surrounded by comma, newline, or string boundaries)
-        int isStart = (ptr == &buffer[0] || ptr[-1] == ',');
-        int isEnd = (ptr[3] == '\0' || ptr[3] == ',' || ptr[3] == '\n');
-        if (isStart && isEnd) {
-            return 1;
-        }
-        
-        // Move past "bpf" to continue searching
-        ptr += 3;
-    }
-    return 0;
-}
-
-static int __check_bpf_lsm(void)
-{
-    FILE* fp;
-    int   available = 0;
-    
-    // Check /sys/kernel/security/lsm for "bpf"
-    fp = fopen("/sys/kernel/security/lsm", "r");
-    if (!fp) {
-        VLOG_DEBUG("containerv", "policy_ebpf: cannot read LSM list: %s\n", strerror(errno));
-        return 0;
-    }
-    
-    available = __find_in_file(fp, "bpf");
-    fclose(fp);
-    
-    if (!available) {
-        VLOG_DEBUG("containerv", "policy_ebpf: BPF LSM not enabled in kernel (add 'bpf' to LSM list)\n");
-    }
-    
-    return available;
-}
-
-static unsigned long long __get_cgroup_id(const char* hostname)
-{
-    char               cgroupPath[512];
-    int                fd;
-    struct stat        st;
-    unsigned long long cgroupID;
-    const char*        c;
-    
-    if (hostname == NULL) {
-        errno = EINVAL;
-        return 0;
-    }
-    
-    // Validate hostname to prevent path traversal
-    // Only allow alphanumeric, hyphen, underscore, and period
-    for (c = hostname; *c; c++) {
-        if (!((*c >= 'a' && *c <= 'z') ||
-              (*c >= 'A' && *c <= 'Z') ||
-              (*c >= '0' && *c <= '9') ||
-              *c == '-' || *c == '_' || *c == '.')) {
-            VLOG_ERROR(
-                "containerv",
-                "policy_ebpf: invalid hostname contains illegal character: %s\n", 
-                hostname
-            );
-            errno = EINVAL;
-            return 0;
-        }
-    }
-    
-    // Ensure hostname doesn't start with . or ..
-    if (hostname[0] == '.') {
-        VLOG_ERROR(
-            "containerv",
-            "policy_ebpf: invalid hostname starts with dot: %s\n",
-            hostname
-        );
-        errno = EINVAL;
-        return 0;
-    }
-    
-    // Build cgroup path
-    snprintf(cgroupPath, sizeof(cgroupPath), "/sys/fs/cgroup/%s", hostname);
-    
-    // Open cgroup directory
-    fd = open(cgroupPath, O_RDONLY | O_DIRECTORY);
-    if (fd < 0) {
-        VLOG_ERROR("containerv", "policy_ebpf: failed to open cgroup %s: %s\n", 
-                   cgroupPath, strerror(errno));
-        return 0;
-    }
-    
-    // Get inode number which serves as cgroup ID
-    if (fstat(fd, &st) < 0) {
-        VLOG_ERROR("containerv", "policy_ebpf: failed to stat cgroup: %s\n", strerror(errno));
-        close(fd);
-        return 0;
-    }
-    
-    cgroupID = st.st_ino;
-    close(fd);
-    
-    VLOG_DEBUG("containerv", "policy_ebpf: cgroup %s has ID %llu\n", hostname, 
-               (unsigned long long)cgroupID);
-    
-    return cgroupID;
-}
-
-static int __bump_memlock_rlimit(void)
-{
-    struct rlimit rlim = {
-        .rlim_cur = RLIM_INFINITY,
-        .rlim_max = RLIM_INFINITY,
-    };
-
-    return setrlimit(RLIMIT_MEMLOCK, &rlim);
-}
-
-static int __policy_map_allow_inode(
-    int                policyMapFD,
-    unsigned long long cgroupID,
-    dev_t              dev,
-    ino_t              ino,
-    unsigned int       allowMask)
-{
-    struct policy_key   key = {};
-    struct policy_value value = {};
-    union bpf_attr      attr = {};
-
-    key.cgroup_id = cgroupID;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    value.allow_mask = allowMask;
-
-    attr.map_fd = policyMapFD;
-    attr.key = (uintptr_t)&key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-
-    return bpf(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
-}
 
 struct __path_walk_ctx {
     struct policy_ebpf_context* ebpf;
@@ -265,7 +89,7 @@ static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, str
             return 0;
         }
 
-        status = __policy_map_allow_inode(ctx->policyMapFD, ctx->cgroupID, st.st_dev, st.st_ino, ctx->allowMask);
+        status = bpf_policy_map_allow_inode(ctx->policyMapFD, ctx->cgroupID, st.st_dev, st.st_ino, ctx->allowMask);
         if (status < 0) {
             return 0;
         }
@@ -309,7 +133,7 @@ static int __allow_path_or_tree(
         return status;
     }
 
-    status = __policy_map_allow_inode(policyMapFD, cgroupID, st.st_dev, st.st_ino, allowMask);
+    status = bpf_policy_map_allow_inode(policyMapFD, cgroupID, st.st_dev, st.st_ino, allowMask);
     if (status < 0) {
         return status;
     }
@@ -374,7 +198,7 @@ int policy_ebpf_load(
               policy->type, policy->syscall_count, policy->path_count);
     
     // Check if BPF LSM is available, otherwise we fallback on seccomp
-    if (!__check_bpf_lsm()) {
+    if (!bpf_check_lsm_available()) {
         VLOG_DEBUG("containerv", "policy_ebpf: BPF LSM not available, using seccomp fallback\n");
         return 0;
     }
@@ -399,7 +223,7 @@ int policy_ebpf_load(
         }
         
         ctx->policy_map_fd = pinned_map_fd;
-        ctx->cgroup_id = __get_cgroup_id(container->hostname);
+        ctx->cgroup_id = bpf_get_cgroup_id(container->hostname);
         
         // Check if cgroup_id is valid
         if (ctx->cgroup_id == 0) {
@@ -422,14 +246,14 @@ int policy_ebpf_load(
     // This maintains backward compatibility for standalone containerv use
     VLOG_DEBUG("containerv", "policy_ebpf: no global BPF manager found, loading programs locally\n");
 
-    (void)__bump_memlock_rlimit();
+    (void)bpf_bump_memlock_rlimit();
 
     ctx = calloc(1, sizeof(*ctx));
     if (!ctx) {
         return -1;
     }
 
-    ctx->cgroup_id = __get_cgroup_id(container->hostname);
+    ctx->cgroup_id = bpf_get_cgroup_id(container->hostname);
     if (ctx->cgroup_id == 0) {
         VLOG_ERROR("containerv", "policy_ebpf: failed to resolve cgroup ID for %s\n", container->hostname);
         free(ctx);
@@ -469,7 +293,7 @@ int policy_ebpf_load(
 
     for (int i = 0; i < policy->path_count; i++) {
         const char* path = policy->paths[i].path;
-        unsigned int allowMask = (unsigned int)policy->paths[i].access & (PERM_READ | PERM_WRITE | PERM_EXEC);
+        unsigned int allowMask = (unsigned int)policy->paths[i].access & (BPF_PERM_READ | BPF_PERM_WRITE | BPF_PERM_EXEC);
 
         if (!path) {
             continue;
@@ -551,7 +375,7 @@ int policy_ebpf_add_path_allow(
         return status;
     }
     
-    status = __policy_map_allow_inode(
+    status = bpf_policy_map_allow_inode(
         policyMapFD,
         cgroupID,
         st.st_dev,
@@ -584,6 +408,6 @@ int policy_ebpf_add_path_deny(
     const char*        path,
     unsigned int       denyMask)
 {
-    const unsigned int all = (PERM_READ | PERM_WRITE | PERM_EXEC);
+    const unsigned int all = (BPF_PERM_READ | BPF_PERM_WRITE | BPF_PERM_EXEC);
     return policy_ebpf_add_path_allow(policyMapFD, cgroupID, path, all & ~denyMask);
 }
