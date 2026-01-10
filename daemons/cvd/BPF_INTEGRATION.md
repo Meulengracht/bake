@@ -1,14 +1,21 @@
-# CVD Daemon BPF Manager
+# BPF Manager for Container Security
 
 ## Overview
 
-The cvd daemon includes a centralized BPF manager that loads and manages eBPF LSM programs for container security policy enforcement. This provides fine-grained filesystem access control at the kernel level.
+The containerv library includes a centralized BPF manager that loads and manages eBPF LSM programs for container security policy enforcement. This provides fine-grained filesystem access control at the kernel level.
+
+The BPF manager is part of the containerv library (`libs/containerv/linux/bpf-manager.c`) and can be used by any application (such as the cvd daemon) to provide centralized eBPF enforcement.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────┐
-│          cvd Daemon                       │
+│      Application (e.g., cvd daemon)       │
+│  Uses containerv_bpf_manager_*() API     │
+└──────────────────────────────────────────┘
+         ↓
+┌──────────────────────────────────────────┐
+│    libs/containerv/linux/bpf-manager.c    │
 │  ┌────────────────────────────────┐      │
 │  │     BPF Manager                 │      │
 │  │  - Load BPF LSM programs once   │      │
@@ -26,11 +33,36 @@ The cvd daemon includes a centralized BPF manager that loads and manages eBPF LS
 └────────────────────────────────────────────┘
 ```
 
+## API
+
+The BPF manager provides a clean API in `chef/containerv/bpf_manager.h`:
+
+```c
+// Initialize BPF manager (call once at startup)
+int containerv_bpf_manager_initialize(void);
+
+// Check if BPF LSM is available
+int containerv_bpf_manager_is_available(void);
+
+// Populate policy for a container
+int containerv_bpf_manager_populate_policy(
+    const char* container_id,
+    const char* rootfs_path,  // Must not be NULL
+    struct containerv_policy* policy
+);
+
+// Clean up policy for a container
+int containerv_bpf_manager_cleanup_policy(const char* container_id);
+
+// Shutdown BPF manager (call at exit)
+void containerv_bpf_manager_shutdown(void);
+```
+
 ## Lifecycle
 
 ### Daemon Startup
 
-1. **Initialization** (`cvd_bpf_manager_initialize`)
+1. **Initialization** (`containerv_bpf_manager_initialize`)
    - Check if BPF LSM is available in kernel
    - Load BPF LSM programs (fs-lsm.bpf.o)
    - Attach programs to LSM hooks
@@ -44,12 +76,12 @@ The cvd daemon includes a centralized BPF manager that loads and manages eBPF LS
 
 ### Container Create
 
-1. **Container Creation** (`cvd_create`)
+1. **Container Creation** (in cvd daemon or other application)
    - Create container with containerv
    - Compose rootfs layers
    - Get cgroup ID for container
 
-2. **Policy Population** (`cvd_bpf_manager_populate_policy`)
+2. **Policy Population** (`containerv_bpf_manager_populate_policy`)
    - Resolve configured paths to (dev, ino) in container's rootfs
    - Populate BPF policy_map with entries:
      - Key: (cgroup_id, dev, ino)
@@ -58,10 +90,10 @@ The cvd daemon includes a centralized BPF manager that loads and manages eBPF LS
 
 ### Container Destroy
 
-1. **Policy Cleanup** (`cvd_bpf_manager_cleanup_policy`)
+1. **Policy Cleanup** (`containerv_bpf_manager_cleanup_policy`)
+   - Iterate through policy_map using BPF_MAP_GET_NEXT_KEY
    - Remove policy entries for container's cgroup_id
-   - Note: Currently relies on cgroup destruction
-   - Future: Explicit map entry deletion
+   - Log number of entries deleted
 
 2. **Container Destruction**
    - Destroy container resources
@@ -69,7 +101,7 @@ The cvd daemon includes a centralized BPF manager that loads and manages eBPF LS
 
 ### Daemon Shutdown
 
-1. **Cleanup** (`cvd_bpf_manager_shutdown`)
+1. **Cleanup** (`containerv_bpf_manager_shutdown`)
    - Unpin policy_map from `/sys/fs/bpf/cvd/policy_map`
    - Destroy BPF skeleton (detaches programs)
    - Log shutdown status
