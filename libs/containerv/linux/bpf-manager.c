@@ -19,6 +19,7 @@
 #define _GNU_SOURCE
 
 #include "bpf-manager.h"
+#include "bpf-helpers.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -59,23 +60,6 @@
 #define BPF_PIN_PATH "/sys/fs/bpf/cvd"
 #define POLICY_MAP_PIN_PATH BPF_PIN_PATH "/policy_map"
 
-/* Permission bits - matching BPF program definitions */
-#define PERM_READ  0x1
-#define PERM_WRITE 0x2
-#define PERM_EXEC  0x4
-
-/* Policy key: (cgroup_id, dev, ino) - must match BPF program */
-struct policy_key {
-    unsigned long long cgroup_id;
-    unsigned long long dev;
-    unsigned long long ino;
-};
-
-/* Policy value: permission mask */
-struct policy_value {
-    unsigned int allow_mask;
-};
-
 /* Global BPF manager state */
 static struct {
     int available;
@@ -92,73 +76,6 @@ static struct {
 };
 
 #ifdef __linux__
-
-static inline int bpf(int cmd, union bpf_attr *attr, unsigned int size)
-{
-    return syscall(__NR_bpf, cmd, attr, size);
-}
-
-static int __find_in_file(FILE* fp, const char* target)
-{
-    char  buffer[1024];
-    char* ptr = &buffer[0];
-    
-    if (fgets(buffer, sizeof(buffer), fp) == NULL) {
-        return 0;
-    }
-
-    // Look for "bpf" as a complete word (not substring)
-    while (ptr) {
-        // Find next occurrence of "bpf"
-        ptr = strstr(ptr, "bpf");
-        if (!ptr) {
-            break;
-        }
-        
-        // Check if it's a complete word (surrounded by comma, newline, or string boundaries)
-        int isStart = (ptr == &buffer[0] || ptr[-1] == ',');
-        int isEnd = (ptr[3] == '\0' || ptr[3] == ',' || ptr[3] == '\n');
-        if (isStart && isEnd) {
-            return 1;
-        }
-        
-        // Move past "bpf" to continue searching
-        ptr += 3;
-    }
-    return 0;
-}
-
-static int __check_bpf_lsm(void)
-{
-    FILE* fp;
-    int   available = 0;
-    
-    // Check /sys/kernel/security/lsm for "bpf"
-    fp = fopen("/sys/kernel/security/lsm", "r");
-    if (!fp) {
-        VLOG_DEBUG("cvd", "bpf_manager: cannot read LSM list: %s\n", strerror(errno));
-        return 0;
-    }
-    
-    available = __find_in_file(fp, "bpf");
-    fclose(fp);
-    
-    if (!available) {
-        VLOG_DEBUG("cvd", "bpf_manager: BPF LSM not enabled in kernel (add 'bpf' to LSM list)\n");
-    }
-    
-    return available;
-}
-
-static int __bump_memlock_rlimit(void)
-{
-    struct rlimit rlim = {
-        .rlim_cur = RLIM_INFINITY,
-        .rlim_max = RLIM_INFINITY,
-    };
-
-    return setrlimit(RLIMIT_MEMLOCK, &rlim);
-}
 
 static int __create_bpf_pin_directory(void)
 {
@@ -180,113 +97,6 @@ static int __create_bpf_pin_directory(void)
     return 0;
 }
 
-static unsigned long long __get_cgroup_id(const char* hostname)
-{
-    char               cgroupPath[512];
-    int                fd;
-    struct stat        st;
-    unsigned long long cgroupID;
-    const char*        c;
-    
-    // TODO (Medium Priority): This function duplicates logic from
-    // libs/containerv/linux/policy-ebpf.c:__get_cgroup_id()
-    // Consider extracting to a shared utility function in containerv API
-    // to ensure consistent validation and avoid code duplication.
-    
-    if (hostname == NULL) {
-        errno = EINVAL;
-        return 0;
-    }
-    
-    // Validate hostname to prevent path traversal
-    for (c = hostname; *c; c++) {
-        if (!((*c >= 'a' && *c <= 'z') ||
-              (*c >= 'A' && *c <= 'Z') ||
-              (*c >= '0' && *c <= '9') ||
-              *c == '-' || *c == '_' || *c == '.')) {
-            VLOG_ERROR("cvd", "bpf_manager: invalid hostname: %s\n", hostname);
-            errno = EINVAL;
-            return 0;
-        }
-    }
-    
-    // Ensure hostname doesn't start with .
-    if (hostname[0] == '.') {
-        VLOG_ERROR("cvd", "bpf_manager: invalid hostname starts with dot: %s\n", hostname);
-        errno = EINVAL;
-        return 0;
-    }
-    
-    // Build cgroup path
-    snprintf(cgroupPath, sizeof(cgroupPath), "/sys/fs/cgroup/%s", hostname);
-    
-    // Open cgroup directory
-    fd = open(cgroupPath, O_RDONLY | O_DIRECTORY);
-    if (fd < 0) {
-        VLOG_ERROR("cvd", "bpf_manager: failed to open cgroup %s: %s\n", 
-                   cgroupPath, strerror(errno));
-        return 0;
-    }
-    
-    // Get inode number which serves as cgroup ID
-    if (fstat(fd, &st) < 0) {
-        VLOG_ERROR("cvd", "bpf_manager: failed to stat cgroup: %s\n", strerror(errno));
-        close(fd);
-        return 0;
-    }
-    
-    cgroupID = st.st_ino;
-    close(fd);
-    
-    VLOG_DEBUG("cvd", "bpf_manager: cgroup %s has ID %llu\n", hostname, cgroupID);
-    
-    return cgroupID;
-}
-
-static int __policy_map_allow_inode(
-    int                policyMapFD,
-    unsigned long long cgroupID,
-    dev_t              dev,
-    ino_t              ino,
-    unsigned int       allowMask)
-{
-    struct policy_key   key = {};
-    struct policy_value value = {};
-    union bpf_attr      attr = {};
-
-    key.cgroup_id = cgroupID;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    value.allow_mask = allowMask;
-
-    attr.map_fd = policyMapFD;
-    attr.key = (uintptr_t)&key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-
-    return bpf(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
-}
-
-static int __delete_policy_entry(
-    int                policyMapFD,
-    unsigned long long cgroupID,
-    dev_t              dev,
-    ino_t              ino)
-{
-    struct policy_key key = {};
-    union bpf_attr    attr = {};
-
-    key.cgroup_id = cgroupID;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    attr.map_fd = policyMapFD;
-    attr.key = (uintptr_t)&key;
-
-    return bpf(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr));
-}
-
 #endif // __linux__
 
 int containerv_bpf_manager_initialize(void)
@@ -304,13 +114,13 @@ int containerv_bpf_manager_initialize(void)
     VLOG_TRACE("cvd", "bpf_manager: initializing BPF manager\n");
     
     // Check if BPF LSM is available
-    if (!__check_bpf_lsm()) {
+    if (!bpf_check_lsm_available()) {
         VLOG_TRACE("cvd", "bpf_manager: BPF LSM not available, using seccomp fallback\n");
         return 0;
     }
     
     // Bump memory lock limit for BPF
-    if (__bump_memlock_rlimit() < 0) {
+    if (bpf_bump_memlock_rlimit() < 0) {
         VLOG_WARNING("cvd", "bpf_manager: failed to increase memlock limit: %s\n", 
                     strerror(errno));
     }
@@ -456,7 +266,7 @@ int containerv_bpf_manager_populate_policy(
     }
     
     // Get cgroup ID for this container
-    cgroup_id = __get_cgroup_id(container_id);
+    cgroup_id = bpf_get_cgroup_id(container_id);
     if (cgroup_id == 0) {
         VLOG_ERROR("cvd", "bpf_manager: failed to resolve cgroup ID for %s\n", container_id);
         return -1;
@@ -469,7 +279,7 @@ int containerv_bpf_manager_populate_policy(
     for (int i = 0; i < policy->path_count; i++) {
         const char* path = policy->paths[i].path;
         unsigned int allow_mask = (unsigned int)policy->paths[i].access & 
-                                  (PERM_READ | PERM_WRITE | PERM_EXEC);
+                                  (BPF_PERM_READ | BPF_PERM_WRITE | BPF_PERM_EXEC);
         char full_path[PATH_MAX];
         struct stat st;
         int status;
@@ -503,7 +313,7 @@ int containerv_bpf_manager_populate_policy(
         }
         
         // Add policy entry
-        status = __policy_map_allow_inode(
+        status = bpf_policy_map_allow_inode(
             g_bpf_manager.policy_map_fd,
             cgroup_id,
             st.st_dev,
@@ -535,8 +345,8 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
     return 0;
 #else
     unsigned long long cgroup_id;
-    struct policy_key key;
-    struct policy_key next_key;
+    struct bpf_policy_key key;
+    struct bpf_policy_key next_key;
     union bpf_attr attr = {};
     int deleted_count = 0;
     int status;
@@ -551,7 +361,7 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
     }
     
     // Get cgroup ID for this container
-    cgroup_id = __get_cgroup_id(container_id);
+    cgroup_id = bpf_get_cgroup_id(container_id);
     if (cgroup_id == 0) {
         // Container's cgroup may already be gone, this is not an error
         VLOG_DEBUG("cvd", "bpf_manager: cgroup for %s not found, assuming already cleaned up\n",
@@ -572,7 +382,7 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
     attr.next_key = (uintptr_t)&next_key;
     
     // Get first key
-    if (bpf(BPF_MAP_GET_NEXT_KEY, &attr, sizeof(attr)) < 0) {
+    if (bpf_syscall(BPF_MAP_GET_NEXT_KEY, &attr, sizeof(attr)) < 0) {
         if (errno == ENOENT) {
             // Map is empty, nothing to clean up
             VLOG_DEBUG("cvd", "bpf_manager: policy map is empty\n");
@@ -584,7 +394,7 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
     
     // Check and delete first key if it matches
     if (next_key.cgroup_id == cgroup_id) {
-        status = __delete_policy_entry(
+        status = bpf_policy_map_delete_entry(
             g_bpf_manager.policy_map_fd,
             next_key.cgroup_id,
             (dev_t)next_key.dev,
@@ -601,7 +411,7 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
         attr.key = (uintptr_t)&key;
         attr.next_key = (uintptr_t)&next_key;
         
-        status = bpf(BPF_MAP_GET_NEXT_KEY, &attr, sizeof(attr));
+        status = bpf_syscall(BPF_MAP_GET_NEXT_KEY, &attr, sizeof(attr));
         if (status < 0) {
             if (errno == ENOENT) {
                 // Reached end of map
@@ -613,7 +423,7 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
         
         // Check if this entry belongs to our container
         if (next_key.cgroup_id == cgroup_id) {
-            status = __delete_policy_entry(
+            status = bpf_policy_map_delete_entry(
                 g_bpf_manager.policy_map_fd,
                 next_key.cgroup_id,
                 (dev_t)next_key.dev,
