@@ -5,6 +5,7 @@ find_package(FUSE REQUIRED)
 add_subdirectory(bpf)
 
 add_library(containerv-linux STATIC
+    bpf-manager.c
     cgroups.c
     container-options.c
     container.c

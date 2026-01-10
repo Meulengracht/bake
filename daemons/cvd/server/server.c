@@ -18,6 +18,7 @@
 #define _GNU_SOURCE // needed for mknod
 
 #include <chef/containerv.h>
+#include <chef/containerv/bpf_manager.h>
 #include <chef/containerv/layers.h>
 #include <chef/containerv/policy.h>
 #include <chef/dirs.h>
@@ -29,8 +30,6 @@
 #include <string.h>
 #include <time.h>
 #include <vlog.h>
-
-#include "../bpf_manager.h"
 
 struct __container {
     struct list_item                 item_header;
@@ -213,7 +212,7 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     // Populate BPF policy if BPF manager is available
     // Note: Currently using a minimal default policy. In the future, this should
     // be configurable per-container or passed from the client.
-    if (cvd_bpf_manager_is_available()) {
+    if (containerv_bpf_manager_is_available()) {
         const char* rootfs = containerv_layers_get_rootfs(layerContext);
         
         // Create a minimal policy for demonstration
@@ -235,9 +234,11 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
             };
             
             status = containerv_policy_add_paths(policy, DEFAULT_SYSTEM_PATHS, CV_FS_READ | CV_FS_EXEC);
-            if (status == 0) {
+            if (status != 0) {
+                VLOG_WARNING("cvd", "cvd_create: failed to add paths to policy for %s\n", cvdID);
+            } else {
                 VLOG_DEBUG("cvd", "cvd_create: populating BPF policy for container %s\n", cvdID);
-                status = cvd_bpf_manager_populate_policy(cvdID, rootfs, policy);
+                status = containerv_bpf_manager_populate_policy(cvdID, rootfs, policy);
                 if (status < 0) {
                     VLOG_WARNING("cvd", "cvd_create: failed to populate BPF policy for %s\n", cvdID);
                 }
@@ -437,9 +438,9 @@ enum chef_status cvd_destroy(const char* containerID)
     list_remove(&g_server.containers, &container->item_header);
 
     // Clean up BPF policy entries for this container
-    if (cvd_bpf_manager_is_available()) {
+    if (containerv_bpf_manager_is_available()) {
         VLOG_DEBUG("cvd", "cvd_destroy: cleaning up BPF policy for container %s\n", containerID);
-        int bpf_status = cvd_bpf_manager_cleanup_policy(containerID);
+        int bpf_status = containerv_bpf_manager_cleanup_policy(containerID);
         if (bpf_status < 0) {
             VLOG_WARNING("cvd", "cvd_destroy: failed to cleanup BPF policy for %s\n", containerID);
         }

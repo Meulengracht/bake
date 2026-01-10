@@ -3,7 +3,7 @@
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation ? , either version 3 of the License, or
+ * the Free Software Foundation, , either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
@@ -18,7 +18,7 @@
 
 #define _GNU_SOURCE
 
-#include "bpf_manager.h"
+#include "bpf-manager.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -40,11 +40,9 @@
 // - This will eliminate the need for direct access to internal structures
 // - Will improve maintainability and module boundaries
 //
-// This is acceptable for now since:
-// 1. cvd daemon is part of the same project
-// 2. Needs direct access to policy internals for BPF map population
-// 3. Alternative would be to expose more of the policy API publicly
-#include "../../../libs/containerv/linux/policy-internal.h"
+// This is acceptable for now since bpf-manager is now part of containerv library
+// and needs direct access to policy internals for BPF map population.
+#include "policy-internal.h"
 
 #ifdef __linux__
 #include <linux/bpf.h>
@@ -291,7 +289,7 @@ static int __delete_policy_entry(
 
 #endif // __linux__
 
-int cvd_bpf_manager_initialize(void)
+int containerv_bpf_manager_initialize(void)
 {
 #ifndef __linux__
     VLOG_TRACE("cvd", "bpf_manager: BPF LSM not supported on this platform\n");
@@ -380,7 +378,7 @@ int cvd_bpf_manager_initialize(void)
 #endif // __linux__
 }
 
-void cvd_bpf_manager_shutdown(void)
+void containerv_bpf_manager_shutdown(void)
 {
 #ifdef __linux__
 #ifdef HAVE_BPF_SKELETON
@@ -410,17 +408,17 @@ void cvd_bpf_manager_shutdown(void)
 #endif
 }
 
-int cvd_bpf_manager_is_available(void)
+int containerv_bpf_manager_is_available(void)
 {
     return g_bpf_manager.available;
 }
 
-int cvd_bpf_manager_get_policy_map_fd(void)
+int containerv_bpf_manager_get_policy_map_fd(void)
 {
     return g_bpf_manager.policy_map_fd;
 }
 
-int cvd_bpf_manager_populate_policy(
+int containerv_bpf_manager_populate_policy(
     const char* container_id,
     const char* rootfs_path,
     struct containerv_policy* policy)
@@ -439,7 +437,7 @@ int cvd_bpf_manager_populate_policy(
         return 0;
     }
     
-    if (container_id == NULL || policy == NULL) {
+    if (container_id == NULL || rootfs_path == NULL || policy == NULL) {
         errno = EINVAL;
         return -1;
     }
@@ -447,6 +445,14 @@ int cvd_bpf_manager_populate_policy(
     if (policy->path_count == 0) {
         VLOG_DEBUG("cvd", "bpf_manager: no paths configured for container %s\n", container_id);
         return 0;
+    }
+    
+    // Defensive bounds check to prevent out-of-bounds reads
+    if (policy->path_count > MAX_PATHS) {
+        VLOG_ERROR("cvd", "bpf_manager: policy path_count (%d) exceeds MAX_PATHS (%d)\n",
+                   policy->path_count, MAX_PATHS);
+        errno = EINVAL;
+        return -1;
     }
     
     // Get cgroup ID for this container
@@ -467,17 +473,26 @@ int cvd_bpf_manager_populate_policy(
         char full_path[PATH_MAX];
         struct stat st;
         int status;
+        size_t root_len, path_len;
         
         if (!path) {
             continue;
         }
         
-        // Resolve path within container's rootfs
-        if (rootfs_path) {
-            snprintf(full_path, sizeof(full_path), "%s%s", rootfs_path, path);
-        } else {
-            snprintf(full_path, sizeof(full_path), "%s", path);
+        // Check for path length overflow before concatenation
+        root_len = strlen(rootfs_path);
+        path_len = strlen(path);
+        
+        if (root_len + path_len >= sizeof(full_path)) {
+            VLOG_WARNING("cvd",
+                         "bpf_manager: combined rootfs path and policy path too long, "
+                         "skipping entry (rootfs=\"%s\", path=\"%s\")\n",
+                         rootfs_path, path);
+            continue;
         }
+        
+        // Resolve path within container's rootfs
+        snprintf(full_path, sizeof(full_path), "%s%s", rootfs_path, path);
         
         // Get inode info
         status = stat(full_path, &st);
@@ -513,7 +528,7 @@ int cvd_bpf_manager_populate_policy(
 #endif // __linux__
 }
 
-int cvd_bpf_manager_cleanup_policy(const char* container_id)
+int containerv_bpf_manager_cleanup_policy(const char* container_id)
 {
 #ifndef __linux__
     (void)container_id;

@@ -401,6 +401,15 @@ int policy_ebpf_load(
         ctx->policy_map_fd = pinned_map_fd;
         ctx->cgroup_id = __get_cgroup_id(container->hostname);
         
+        // Check if cgroup_id is valid
+        if (ctx->cgroup_id == 0) {
+            VLOG_WARNING("containerv", "policy_ebpf: failed to get cgroup_id for container '%s'\n", 
+                        container->hostname);
+            close(pinned_map_fd);
+            free(ctx);
+            return -1;
+        }
+        
         // Note: Policy population is handled by cvd daemon, not here
         // We just store the context for cleanup
         container->ebpf_context = ctx;
