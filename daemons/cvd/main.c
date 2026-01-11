@@ -110,7 +110,15 @@ int main(int argc, char** argv)
     }
     
     if (containerv_bpf_manager_is_available()) {
+        struct containerv_bpf_metrics metrics;
+        
         VLOG_TRACE("cvd", "BPF LSM enforcement is active\n");
+        
+        // Log initial metrics
+        if (containerv_bpf_manager_get_metrics(&metrics) == 0) {
+            VLOG_DEBUG("cvd", "BPF Policy Metrics - Containers: %d, Total Entries: %d, Capacity: %d\n",
+                      metrics.total_containers, metrics.total_policy_entries, metrics.max_map_capacity);
+        }
     } else {
         VLOG_TRACE("cvd", "BPF LSM not available, containers will use seccomp fallback\n");
     }
