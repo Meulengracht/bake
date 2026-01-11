@@ -184,16 +184,27 @@ serve remove package              # Remove package
 - **Cross-platform**: Use platform abstraction layer (libs/platform)
 - **Logging**: Use vlog library for consistent logging
 
+### Naming Conventions
+- **Functions**: 
+  - Public functions: lowercase with underscores (`parse_recipe`, `build_package`)
+  - Static (file-local) functions: prefix with `__` and use snake_case (`__apply_policy_feature`, `__create_policy_from_config`)
+- **Variables and Parameters**: camelCase (`policyProfiles`, `customPaths`, `featureName`)
+- **Structure Members**: snake_case (`custom_paths`, `layer_context`, `default_policy`)
+- **Types**: lowercase with underscores, may use typedefs
+- **Constants/Macros**: UPPERCASE with underscores
+- **Global variables**: prefix with `g_`
+
+### Code Organization
+- **Small Functions**: Favor small, focused functions over large ones
+  - Extract nested for-loops into their own functions
+  - Each function should have a single, clear purpose
+  - Keep functions under ~50 lines when possible
+- **Static Functions**: File-local functions must be `static` and prefixed with `__`
+
 ### File Organization
 - Header files in `include/` directories or alongside implementation
 - Implementation in `*.c` files
 - Platform-specific code in separate files (e.g., `*-linux.c`, `*-windows.c`)
-
-### Naming Conventions
-- Functions: lowercase with underscores (`parse_recipe`, `build_package`)
-- Types: lowercase with underscores, may use typedefs
-- Constants/Macros: UPPERCASE with underscores
-- Global variables: prefix with `g_`
 
 ### Common Patterns
 ```c

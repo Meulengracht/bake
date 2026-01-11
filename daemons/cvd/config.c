@@ -34,6 +34,12 @@ struct config_address {
     unsigned short port;
 };
 
+struct config_security {
+    const char*               default_policy;  // "minimal", "build", "network", or NULL for default
+    struct config_custom_path* custom_paths;
+    size_t                    custom_paths_count;
+};
+
 static int __parse_config_address(struct config_address* address, json_t* root)
 {
     json_t* member;
@@ -74,8 +80,130 @@ static json_t* __serialize_config_address(struct config_address* address)
     return root;
 }
 
+static int __parse_config_security(struct config_security* security, json_t* root)
+{
+    json_t* member;
+    json_t* customPathsArray;
+    VLOG_DEBUG("config", "__parse_config_security()\n");
+
+    // Parse default_policy
+    member = json_object_get(root, "default_policy");
+    if (member != NULL && json_is_string(member)) {
+        security->default_policy = platform_strdup(json_string_value(member));
+    }
+
+    // Parse custom_paths array
+    customPathsArray = json_object_get(root, "custom_paths");
+    if (customPathsArray != NULL && json_is_array(customPathsArray)) {
+        size_t count = json_array_size(customPathsArray);
+        if (count > 0) {
+            security->custom_paths = calloc(count, sizeof(struct config_custom_path));
+            if (security->custom_paths == NULL) {
+                return -1;
+            }
+            security->custom_paths_count = count;
+
+            for (size_t i = 0; i < count; i++) {
+                json_t* pathObj = json_array_get(customPathsArray, i);
+                if (!json_is_object(pathObj)) {
+                    continue;
+                }
+
+                json_t* pathMember = json_object_get(pathObj, "path");
+                json_t* accessMember = json_object_get(pathObj, "access");
+                
+                if (pathMember != NULL && json_is_string(pathMember)) {
+                    security->custom_paths[i].path = platform_strdup(json_string_value(pathMember));
+                }
+                
+                if (accessMember != NULL && json_is_string(accessMember)) {
+                    const char* accessStr = json_string_value(accessMember);
+                    int access = 0;
+                    if (strstr(accessStr, "read")) {
+                        access |= 0x1;  // CV_FS_READ
+                    }
+                    if (strstr(accessStr, "write")) {
+                        access |= 0x2;  // CV_FS_WRITE
+                    }
+                    if (strstr(accessStr, "execute")) {
+                        access |= 0x4;  // CV_FS_EXEC
+                    }
+                    security->custom_paths[i].access = access;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+static json_t* __serialize_config_security(struct config_security* security)
+{
+    json_t* root;
+    json_t* pathsArray;
+    VLOG_DEBUG("config", "__serialize_config_security()\n");
+    
+    root = json_object();
+    if (!root) {
+        return NULL;
+    }
+
+    if (security->default_policy != NULL) {
+        json_object_set_new(root, "default_policy", json_string(security->default_policy));
+    } else {
+        json_object_set_new(root, "default_policy", json_string("minimal"));
+    }
+
+    pathsArray = json_array();
+    if (!pathsArray) {
+        json_decref(root);
+        return NULL;
+    }
+
+    if (security->custom_paths_count > 0 && security->custom_paths != NULL) {
+        for (size_t i = 0; i < security->custom_paths_count; i++) {
+            json_t* pathObj = json_object();
+            if (!pathObj) {
+                continue;
+            }
+
+            if (security->custom_paths[i].path != NULL) {
+                json_object_set_new(pathObj, "path", json_string(security->custom_paths[i].path));
+            }
+
+            // Build access string
+            char accessStr[64] = {0};
+            int access = security->custom_paths[i].access;
+            int first = 1;
+            if (access & 0x1) {
+                strcat(accessStr, "read");
+                first = 0;
+            }
+            if (access & 0x2) {
+                if (!first) {
+                    strcat(accessStr, ",");
+                }
+                strcat(accessStr, "write");
+                first = 0;
+            }
+            if (access & 0x4) {
+                if (!first) {
+                    strcat(accessStr, ",");
+                }
+                strcat(accessStr, "execute");
+            }
+            json_object_set_new(pathObj, "access", json_string(accessStr));
+
+            json_array_append_new(pathsArray, pathObj);
+        }
+    }
+
+    json_object_set_new(root, "custom_paths", pathsArray);
+    return root;
+}
+
 struct config {
-    struct config_address api_address;
+    struct config_address  api_address;
+    struct config_security security;
 };
 
 static struct config g_config = { 0 };
@@ -85,6 +213,7 @@ static json_t* __serialize_config(struct config* config)
 {
     json_t* root;
     json_t* api_address;
+    json_t* security;
     VLOG_DEBUG("config", "__serialize_config()\n");
     
     root = json_object();
@@ -100,6 +229,12 @@ static json_t* __serialize_config(struct config* config)
     }
 
     json_object_set_new(root, "api-address", api_address);
+
+    security = __serialize_config_security(&config->security);
+    if (security != NULL) {
+        json_object_set_new(root, "security", security);
+    }
+
     return root;
 }
 
@@ -135,6 +270,16 @@ static int __parse_config(struct config* config, json_t* root)
     if (status) {
         return status;
     }
+
+    // Parse security section (optional)
+    member = json_object_get(root, "security");
+    if (member != NULL) {
+        status = __parse_config_security(&config->security, member);
+        if (status) {
+            return status;
+        }
+    }
+
     return 0;
 }
 
@@ -148,6 +293,10 @@ static int __initialize_config(struct config* config)
     config->api_address.address = platform_strdup("127.0.0.1");
     config->api_address.port = 51003;
 #endif
+    // Initialize security with default values
+    config->security.default_policy = platform_strdup("minimal");
+    config->security.custom_paths = NULL;
+    config->security.custom_paths_count = 0;
     return 0;
 }
 
@@ -192,4 +341,19 @@ void cvd_config_api_address(struct cvd_config_address* address)
     address->type = g_config.api_address.type;
     address->address = g_config.api_address.address;
     address->port = g_config.api_address.port;
+}
+
+const char* cvd_config_security_default_policy(void)
+{
+    return g_config.security.default_policy;
+}
+
+void cvd_config_security_custom_paths(struct config_custom_path** paths, size_t* count)
+{
+    if (paths != NULL) {
+        *paths = g_config.security.custom_paths;
+    }
+    if (count != NULL) {
+        *count = g_config.security.custom_paths_count;
+    }
 }
