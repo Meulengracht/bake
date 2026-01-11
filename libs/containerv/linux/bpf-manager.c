@@ -18,6 +18,7 @@
 
 #define _GNU_SOURCE
 
+#include <chef/containerv/bpf_manager.h>
 #include "bpf-manager.h"
 #include "bpf-helpers.h"
 #include <errno.h>
@@ -48,6 +49,7 @@
 #ifdef __linux__
 #include <linux/bpf.h>
 #include <sys/sysmacros.h>
+#include <sys/time.h>
 
 #ifdef HAVE_BPF_SKELETON
 #include <bpf/bpf.h>
@@ -68,7 +70,17 @@ struct container_entry_tracker {
     struct bpf_policy_key* keys;
     int key_count;
     int key_capacity;
+    unsigned long long populate_time_us;  // Time taken to populate policy
+    unsigned long long cleanup_time_us;   // Time taken to cleanup policy
     struct container_entry_tracker* next;
+};
+
+/* Global BPF manager metrics */
+struct bpf_manager_metrics {
+    unsigned long long total_populate_ops;
+    unsigned long long total_cleanup_ops;
+    unsigned long long failed_populate_ops;
+    unsigned long long failed_cleanup_ops;
 };
 
 /* Global BPF manager state */
@@ -79,6 +91,7 @@ static struct {
     struct fs_lsm_bpf* skel;
 #endif
     struct container_entry_tracker* trackers;
+    struct bpf_manager_metrics metrics;
 } g_bpf_manager = {
     .available = 0,
     .policy_map_fd = -1,
@@ -86,6 +99,7 @@ static struct {
     .skel = NULL,
 #endif
     .trackers = NULL,
+    .metrics = {0},
 };
 
 #ifdef __linux__
@@ -216,6 +230,35 @@ static void __cleanup_all_trackers(void)
         tracker = next;
     }
     g_bpf_manager.trackers = NULL;
+}
+
+static unsigned long long __get_time_microseconds(void)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (unsigned long long)(tv.tv_sec) * 1000000ULL + (unsigned long long)(tv.tv_usec);
+}
+
+static int __count_total_entries(void)
+{
+    int total = 0;
+    struct container_entry_tracker* tracker = g_bpf_manager.trackers;
+    while (tracker) {
+        total += tracker->key_count;
+        tracker = tracker->next;
+    }
+    return total;
+}
+
+static int __count_containers(void)
+{
+    int count = 0;
+    struct container_entry_tracker* tracker = g_bpf_manager.trackers;
+    while (tracker) {
+        count++;
+        tracker = tracker->next;
+    }
+    return count;
 }
 
 static int __create_bpf_pin_directory(void)
@@ -386,6 +429,7 @@ int containerv_bpf_manager_populate_policy(
     unsigned long long cgroup_id;
     struct container_entry_tracker* tracker = NULL;
     int entries_added = 0;
+    unsigned long long start_time, end_time;
     
     if (!g_bpf_manager.available) {
         VLOG_DEBUG("cvd", "bpf_manager: BPF not available, skipping policy population\n");
@@ -394,6 +438,7 @@ int containerv_bpf_manager_populate_policy(
     
     if (container_id == NULL || rootfs_path == NULL || policy == NULL) {
         errno = EINVAL;
+        g_bpf_manager.metrics.failed_populate_ops++;
         return -1;
     }
     
@@ -407,13 +452,18 @@ int containerv_bpf_manager_populate_policy(
         VLOG_ERROR("cvd", "bpf_manager: policy path_count (%d) exceeds MAX_PATHS (%d)\n",
                    policy->path_count, MAX_PATHS);
         errno = EINVAL;
+        g_bpf_manager.metrics.failed_populate_ops++;
         return -1;
     }
+    
+    // Start timing
+    start_time = __get_time_microseconds();
     
     // Get cgroup ID for this container
     cgroup_id = bpf_get_cgroup_id(container_id);
     if (cgroup_id == 0) {
         VLOG_ERROR("cvd", "bpf_manager: failed to resolve cgroup ID for %s\n", container_id);
+        g_bpf_manager.metrics.failed_populate_ops++;
         return -1;
     }
     
@@ -426,6 +476,7 @@ int containerv_bpf_manager_populate_policy(
         tracker = __create_tracker(container_id, cgroup_id);
         if (!tracker) {
             VLOG_ERROR("cvd", "bpf_manager: failed to create entry tracker for %s\n", container_id);
+            g_bpf_manager.metrics.failed_populate_ops++;
             return -1;
         }
     }
@@ -490,8 +541,13 @@ int containerv_bpf_manager_populate_policy(
         }
     }
     
-    VLOG_DEBUG("cvd", "bpf_manager: populated %d policy entries for container %s\n",
-               entries_added, container_id);
+    // End timing and update metrics
+    end_time = __get_time_microseconds();
+    tracker->populate_time_us = end_time - start_time;
+    g_bpf_manager.metrics.total_populate_ops++;
+    
+    VLOG_DEBUG("cvd", "bpf_manager: populated %d policy entries for container %s in %llu us\n",
+               entries_added, container_id, tracker->populate_time_us);
     
     return 0;
 #endif // __linux__
@@ -505,6 +561,7 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
 #else
     struct container_entry_tracker* tracker;
     int deleted_count = 0;
+    unsigned long long start_time, end_time;
     
     if (!g_bpf_manager.available) {
         return 0;
@@ -512,10 +569,14 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
     
     if (container_id == NULL) {
         errno = EINVAL;
+        g_bpf_manager.metrics.failed_cleanup_ops++;
         return -1;
     }
     
     VLOG_DEBUG("cvd", "bpf_manager: cleaning up policy for container %s\n", container_id);
+    
+    // Start timing
+    start_time = __get_time_microseconds();
     
     // Find the entry tracker for this container
     tracker = __find_tracker(container_id);
@@ -557,19 +618,91 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
         tracker->key_count
     );
     
+    // End timing and update metrics
+    end_time = __get_time_microseconds();
+    tracker->cleanup_time_us = end_time - start_time;
+    
     if (deleted_count < 0) {
         VLOG_ERROR("cvd", "bpf_manager: batch deletion failed for container %s\n", container_id);
+        g_bpf_manager.metrics.failed_cleanup_ops++;
         // Clean up tracker anyway
         __remove_tracker(container_id);
         return -1;
     }
     
-    VLOG_DEBUG("cvd", "bpf_manager: deleted %d policy entries for container %s\n",
-               deleted_count, container_id);
+    VLOG_DEBUG("cvd", "bpf_manager: deleted %d policy entries for container %s in %llu us\n",
+               deleted_count, container_id, tracker->cleanup_time_us);
+    
+    // Update metrics
+    g_bpf_manager.metrics.total_cleanup_ops++;
     
     // Remove the tracker now that cleanup is complete
     __remove_tracker(container_id);
     
     return 0;
 #endif // __linux__
+}
+
+int containerv_bpf_manager_get_metrics(struct containerv_bpf_metrics* metrics)
+{
+    if (metrics == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    
+    memset(metrics, 0, sizeof(*metrics));
+    
+#ifndef __linux__
+    return 0;
+#else
+    metrics->available = g_bpf_manager.available;
+    metrics->total_containers = __count_containers();
+    metrics->total_policy_entries = __count_total_entries();
+    metrics->max_map_capacity = MAX_TRACKED_ENTRIES;
+    metrics->total_populate_ops = g_bpf_manager.metrics.total_populate_ops;
+    metrics->total_cleanup_ops = g_bpf_manager.metrics.total_cleanup_ops;
+    metrics->failed_populate_ops = g_bpf_manager.metrics.failed_populate_ops;
+    metrics->failed_cleanup_ops = g_bpf_manager.metrics.failed_cleanup_ops;
+    
+    return 0;
+#endif
+}
+
+int containerv_bpf_manager_get_container_metrics(
+    const char* container_id,
+    struct containerv_bpf_container_metrics* metrics)
+{
+    if (container_id == NULL || metrics == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    
+    memset(metrics, 0, sizeof(*metrics));
+    
+#ifndef __linux__
+    return 0;
+#else
+    if (!g_bpf_manager.available) {
+        return 0;
+    }
+    
+    // Find the entry tracker for this container
+    struct container_entry_tracker* tracker = __find_tracker(container_id);
+    if (!tracker) {
+        errno = ENOENT;
+        return -1;
+    }
+    
+    // Copy container ID
+    strncpy(metrics->container_id, container_id, sizeof(metrics->container_id) - 1);
+    metrics->container_id[sizeof(metrics->container_id) - 1] = '\0';
+    
+    // Fill in metrics
+    metrics->cgroup_id = tracker->cgroup_id;
+    metrics->policy_entry_count = tracker->key_count;
+    metrics->populate_time_us = tracker->populate_time_us;
+    metrics->cleanup_time_us = tracker->cleanup_time_us;
+    
+    return 0;
+#endif
 }
