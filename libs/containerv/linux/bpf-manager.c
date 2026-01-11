@@ -147,14 +147,17 @@ static int __add_tracked_entry(struct container_entry_tracker* tracker,
     
     // Check capacity and expand if needed
     if (tracker->key_count >= tracker->key_capacity) {
+        // Check if we're already at maximum
+        if (tracker->key_capacity >= MAX_TRACKED_ENTRIES) {
+            VLOG_WARNING("cvd", "bpf_manager: max tracked entries (%d) reached for container\n", 
+                        MAX_TRACKED_ENTRIES);
+            return -1;
+        }
+        
+        // Calculate new capacity, capping at maximum
         int new_capacity = (tracker->key_capacity * 2 < MAX_TRACKED_ENTRIES) 
                           ? tracker->key_capacity * 2 
                           : MAX_TRACKED_ENTRIES;
-        
-        if (tracker->key_count >= new_capacity) {
-            VLOG_WARNING("cvd", "bpf_manager: max tracked entries reached for container\n");
-            return -1;
-        }
         
         struct bpf_policy_key* new_keys = realloc(tracker->keys, 
                                                    sizeof(struct bpf_policy_key) * new_capacity);
