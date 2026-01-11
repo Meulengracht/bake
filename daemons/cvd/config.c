@@ -83,7 +83,7 @@ static json_t* __serialize_config_address(struct config_address* address)
 static int __parse_config_security(struct config_security* security, json_t* root)
 {
     json_t* member;
-    json_t* custom_paths_array;
+    json_t* customPathsArray;
     VLOG_DEBUG("config", "__parse_config_security()\n");
 
     // Parse default_policy
@@ -93,9 +93,9 @@ static int __parse_config_security(struct config_security* security, json_t* roo
     }
 
     // Parse custom_paths array
-    custom_paths_array = json_object_get(root, "custom_paths");
-    if (custom_paths_array != NULL && json_is_array(custom_paths_array)) {
-        size_t count = json_array_size(custom_paths_array);
+    customPathsArray = json_object_get(root, "custom_paths");
+    if (customPathsArray != NULL && json_is_array(customPathsArray)) {
+        size_t count = json_array_size(customPathsArray);
         if (count > 0) {
             security->custom_paths = calloc(count, sizeof(struct config_custom_path));
             if (security->custom_paths == NULL) {
@@ -104,28 +104,28 @@ static int __parse_config_security(struct config_security* security, json_t* roo
             security->custom_paths_count = count;
 
             for (size_t i = 0; i < count; i++) {
-                json_t* path_obj = json_array_get(custom_paths_array, i);
-                if (!json_is_object(path_obj)) {
+                json_t* pathObj = json_array_get(customPathsArray, i);
+                if (!json_is_object(pathObj)) {
                     continue;
                 }
 
-                json_t* path_member = json_object_get(path_obj, "path");
-                json_t* access_member = json_object_get(path_obj, "access");
+                json_t* pathMember = json_object_get(pathObj, "path");
+                json_t* accessMember = json_object_get(pathObj, "access");
                 
-                if (path_member != NULL && json_is_string(path_member)) {
-                    security->custom_paths[i].path = platform_strdup(json_string_value(path_member));
+                if (pathMember != NULL && json_is_string(pathMember)) {
+                    security->custom_paths[i].path = platform_strdup(json_string_value(pathMember));
                 }
                 
-                if (access_member != NULL && json_is_string(access_member)) {
-                    const char* access_str = json_string_value(access_member);
+                if (accessMember != NULL && json_is_string(accessMember)) {
+                    const char* accessStr = json_string_value(accessMember);
                     int access = 0;
-                    if (strstr(access_str, "read")) {
+                    if (strstr(accessStr, "read")) {
                         access |= 0x1;  // CV_FS_READ
                     }
-                    if (strstr(access_str, "write")) {
+                    if (strstr(accessStr, "write")) {
                         access |= 0x2;  // CV_FS_WRITE
                     }
-                    if (strstr(access_str, "execute")) {
+                    if (strstr(accessStr, "execute")) {
                         access |= 0x4;  // CV_FS_EXEC
                     }
                     security->custom_paths[i].access = access;
@@ -139,6 +139,7 @@ static int __parse_config_security(struct config_security* security, json_t* roo
 static json_t* __serialize_config_security(struct config_security* security)
 {
     json_t* root;
+    json_t* pathsArray;
     VLOG_DEBUG("config", "__serialize_config_security()\n");
     
     root = json_object();
@@ -152,50 +153,51 @@ static json_t* __serialize_config_security(struct config_security* security)
         json_object_set_new(root, "default_policy", json_string("minimal"));
     }
 
-    if (security->custom_paths_count > 0 && security->custom_paths != NULL) {
-        json_t* paths_array = json_array();
-        if (!paths_array) {
-            json_decref(root);
-            return NULL;
-        }
+    pathsArray = json_array();
+    if (!pathsArray) {
+        json_decref(root);
+        return NULL;
+    }
 
+    if (security->custom_paths_count > 0 && security->custom_paths != NULL) {
         for (size_t i = 0; i < security->custom_paths_count; i++) {
-            json_t* path_obj = json_object();
-            if (!path_obj) {
+            json_t* pathObj = json_object();
+            if (!pathObj) {
                 continue;
             }
 
             if (security->custom_paths[i].path != NULL) {
-                json_object_set_new(path_obj, "path", json_string(security->custom_paths[i].path));
+                json_object_set_new(pathObj, "path", json_string(security->custom_paths[i].path));
             }
 
             // Build access string
-            char access_str[64] = {0};
+            char accessStr[64] = {0};
             int access = security->custom_paths[i].access;
             int first = 1;
             if (access & 0x1) {
-                strcat(access_str, "read");
+                strcat(accessStr, "read");
                 first = 0;
             }
             if (access & 0x2) {
-                if (!first) strcat(access_str, ",");
-                strcat(access_str, "write");
+                if (!first) {
+                    strcat(accessStr, ",");
+                }
+                strcat(accessStr, "write");
                 first = 0;
             }
             if (access & 0x4) {
-                if (!first) strcat(access_str, ",");
-                strcat(access_str, "execute");
+                if (!first) {
+                    strcat(accessStr, ",");
+                }
+                strcat(accessStr, "execute");
             }
-            json_object_set_new(path_obj, "access", json_string(access_str));
+            json_object_set_new(pathObj, "access", json_string(accessStr));
 
-            json_array_append_new(paths_array, path_obj);
+            json_array_append_new(pathsArray, pathObj);
         }
-
-        json_object_set_new(root, "custom_paths", paths_array);
-    } else {
-        json_object_set_new(root, "custom_paths", json_array());
     }
 
+    json_object_set_new(root, "custom_paths", pathsArray);
     return root;
 }
 
