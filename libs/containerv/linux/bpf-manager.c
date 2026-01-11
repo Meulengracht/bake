@@ -50,6 +50,7 @@
 #include <linux/bpf.h>
 #include <sys/sysmacros.h>
 #include <sys/time.h>
+#include <time.h>
 
 #ifdef HAVE_BPF_SKELETON
 #include <bpf/bpf.h>
@@ -234,9 +235,11 @@ static void __cleanup_all_trackers(void)
 
 static unsigned long long __get_time_microseconds(void)
 {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (unsigned long long)(tv.tv_sec) * 1000000ULL + (unsigned long long)(tv.tv_usec);
+    struct timespec ts;
+    // Use CLOCK_MONOTONIC for timing measurements to avoid issues with
+    // system clock adjustments (NTP, manual changes, etc.)
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (unsigned long long)(ts.tv_sec) * 1000000ULL + (unsigned long long)(ts.tv_nsec / 1000);
 }
 
 static int __count_total_entries(void)
@@ -693,9 +696,8 @@ int containerv_bpf_manager_get_container_metrics(
         return -1;
     }
     
-    // Copy container ID
-    strncpy(metrics->container_id, container_id, sizeof(metrics->container_id) - 1);
-    metrics->container_id[sizeof(metrics->container_id) - 1] = '\0';
+    // Copy container ID safely
+    snprintf(metrics->container_id, sizeof(metrics->container_id), "%s", container_id);
     
     // Fill in metrics
     metrics->cgroup_id = tracker->cgroup_id;
