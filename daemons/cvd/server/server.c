@@ -583,13 +583,13 @@ enum chef_status cvd_destroy(const char* containerID)
     if (containerv_bpf_manager_is_available()) {
         // Get metrics before cleanup
         struct containerv_bpf_container_metrics c_metrics;
-        int has_metrics = (containerv_bpf_manager_get_container_metrics(containerID, &c_metrics) == 0);
+        int metrics_retrieved = (containerv_bpf_manager_get_container_metrics(containerID, &c_metrics) == 0);
         
         VLOG_DEBUG("cvd", "cvd_destroy: cleaning up BPF policy for container %s\n", containerID);
         int bpf_status = containerv_bpf_manager_cleanup_policy(containerID);
         if (bpf_status < 0) {
             VLOG_WARNING("cvd", "cvd_destroy: failed to cleanup BPF policy for %s\n", containerID);
-        } else if (has_metrics) {
+        } else if (metrics_retrieved) {
             VLOG_DEBUG("cvd", "cvd_destroy: BPF policy cleaned up for %s - entries deleted: %d\n",
                       containerID, c_metrics.policy_entry_count);
         }
