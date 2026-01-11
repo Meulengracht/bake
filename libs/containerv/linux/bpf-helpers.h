@@ -103,6 +103,19 @@ extern int bpf_policy_map_delete_entry(
     ino_t              ino
 );
 
+/**
+ * @brief Delete multiple entries from the BPF policy map in a single syscall
+ * @param policy_map_fd File descriptor of the policy map
+ * @param keys Array of keys to delete
+ * @param count Number of keys in the array
+ * @return Number of successfully deleted entries, or -1 on error
+ */
+extern int bpf_policy_map_delete_batch(
+    int                        policy_map_fd,
+    struct bpf_policy_key*     keys,
+    int                        count
+);
+
 #endif // __linux__
 
 #endif //!__BPF_HELPERS_H__

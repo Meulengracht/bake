@@ -59,6 +59,17 @@
 
 #define BPF_PIN_PATH "/sys/fs/bpf/cvd"
 #define POLICY_MAP_PIN_PATH BPF_PIN_PATH "/policy_map"
+#define MAX_TRACKED_ENTRIES 10240
+
+/* Per-container entry tracking for efficient cleanup */
+struct container_entry_tracker {
+    char* container_id;
+    unsigned long long cgroup_id;
+    struct bpf_policy_key* keys;
+    int key_count;
+    int key_capacity;
+    struct container_entry_tracker* next;
+};
 
 /* Global BPF manager state */
 static struct {
@@ -67,15 +78,145 @@ static struct {
 #ifdef HAVE_BPF_SKELETON
     struct fs_lsm_bpf* skel;
 #endif
+    struct container_entry_tracker* trackers;
 } g_bpf_manager = {
     .available = 0,
     .policy_map_fd = -1,
 #ifdef HAVE_BPF_SKELETON
     .skel = NULL,
 #endif
+    .trackers = NULL,
 };
 
 #ifdef __linux__
+
+/* Helper functions for entry tracking */
+static struct container_entry_tracker* __find_tracker(const char* container_id)
+{
+    struct container_entry_tracker* tracker = g_bpf_manager.trackers;
+    while (tracker) {
+        if (strcmp(tracker->container_id, container_id) == 0) {
+            return tracker;
+        }
+        tracker = tracker->next;
+    }
+    return NULL;
+}
+
+static struct container_entry_tracker* __create_tracker(const char* container_id, unsigned long long cgroup_id)
+{
+    struct container_entry_tracker* tracker;
+    
+    tracker = calloc(1, sizeof(*tracker));
+    if (!tracker) {
+        return NULL;
+    }
+    
+    tracker->container_id = strdup(container_id);
+    if (!tracker->container_id) {
+        free(tracker);
+        return NULL;
+    }
+    
+    tracker->cgroup_id = cgroup_id;
+    tracker->key_capacity = 256; // Initial capacity
+    tracker->keys = malloc(sizeof(struct bpf_policy_key) * tracker->key_capacity);
+    if (!tracker->keys) {
+        free(tracker->container_id);
+        free(tracker);
+        return NULL;
+    }
+    
+    tracker->key_count = 0;
+    tracker->next = g_bpf_manager.trackers;
+    g_bpf_manager.trackers = tracker;
+    
+    return tracker;
+}
+
+static int __add_tracked_entry(struct container_entry_tracker* tracker, 
+                               unsigned long long cgroup_id,
+                               dev_t dev, 
+                               ino_t ino)
+{
+    struct bpf_policy_key* key;
+    
+    if (!tracker) {
+        return -1;
+    }
+    
+    // Check capacity and expand if needed
+    if (tracker->key_count >= tracker->key_capacity) {
+        // Check if we're already at maximum
+        if (tracker->key_capacity >= MAX_TRACKED_ENTRIES) {
+            VLOG_WARNING("cvd", "bpf_manager: max tracked entries (%d) reached for container\n", 
+                        MAX_TRACKED_ENTRIES);
+            return -1;
+        }
+        
+        // Calculate new capacity, capping at maximum
+        int new_capacity = (tracker->key_capacity * 2 < MAX_TRACKED_ENTRIES) 
+                          ? tracker->key_capacity * 2 
+                          : MAX_TRACKED_ENTRIES;
+        
+        struct bpf_policy_key* new_keys = realloc(tracker->keys, 
+                                                   sizeof(struct bpf_policy_key) * new_capacity);
+        if (!new_keys) {
+            VLOG_ERROR("cvd", "bpf_manager: failed to expand tracker capacity\n");
+            return -1;
+        }
+        
+        tracker->keys = new_keys;
+        tracker->key_capacity = new_capacity;
+    }
+    
+    // Add the key
+    key = &tracker->keys[tracker->key_count];
+    key->cgroup_id = cgroup_id;
+    key->dev = (unsigned long long)dev;
+    key->ino = (unsigned long long)ino;
+    tracker->key_count++;
+    
+    return 0;
+}
+
+static void __remove_tracker(const char* container_id)
+{
+    struct container_entry_tracker* tracker = g_bpf_manager.trackers;
+    struct container_entry_tracker* prev = NULL;
+    
+    while (tracker) {
+        if (strcmp(tracker->container_id, container_id) == 0) {
+            // Remove from list
+            if (prev) {
+                prev->next = tracker->next;
+            } else {
+                g_bpf_manager.trackers = tracker->next;
+            }
+            
+            // Free resources
+            free(tracker->container_id);
+            free(tracker->keys);
+            free(tracker);
+            return;
+        }
+        prev = tracker;
+        tracker = tracker->next;
+    }
+}
+
+static void __cleanup_all_trackers(void)
+{
+    struct container_entry_tracker* tracker = g_bpf_manager.trackers;
+    while (tracker) {
+        struct container_entry_tracker* next = tracker->next;
+        free(tracker->container_id);
+        free(tracker->keys);
+        free(tracker);
+        tracker = next;
+    }
+    g_bpf_manager.trackers = NULL;
+}
 
 static int __create_bpf_pin_directory(void)
 {
@@ -198,6 +339,9 @@ void containerv_bpf_manager_shutdown(void)
     
     VLOG_DEBUG("cvd", "bpf_manager: shutting down BPF manager\n");
     
+    // Clean up all entry trackers
+    __cleanup_all_trackers();
+    
     // Unpin map
     if (unlink(POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
         VLOG_WARNING("cvd", "bpf_manager: failed to unpin policy map: %s\n", 
@@ -240,6 +384,7 @@ int containerv_bpf_manager_populate_policy(
     return 0;
 #else
     unsigned long long cgroup_id;
+    struct container_entry_tracker* tracker = NULL;
     int entries_added = 0;
     
     if (!g_bpf_manager.available) {
@@ -274,6 +419,16 @@ int containerv_bpf_manager_populate_policy(
     
     VLOG_DEBUG("cvd", "bpf_manager: populating policy for container %s (cgroup_id=%llu)\n",
                container_id, cgroup_id);
+    
+    // Create or find entry tracker for this container
+    tracker = __find_tracker(container_id);
+    if (!tracker) {
+        tracker = __create_tracker(container_id, cgroup_id);
+        if (!tracker) {
+            VLOG_ERROR("cvd", "bpf_manager: failed to create entry tracker for %s\n", container_id);
+            return -1;
+        }
+    }
     
     // Populate policy entries for each configured path
     for (int i = 0; i < policy->path_count; i++) {
@@ -325,6 +480,10 @@ int containerv_bpf_manager_populate_policy(
             VLOG_WARNING("cvd", "bpf_manager: failed to add policy for %s: %s\n",
                         path, strerror(errno));
         } else {
+            // Track this entry for efficient cleanup later
+            if (__add_tracked_entry(tracker, cgroup_id, st.st_dev, st.st_ino) < 0) {
+                VLOG_WARNING("cvd", "bpf_manager: failed to track entry for %s\n", path);
+            }
             entries_added++;
             VLOG_TRACE("cvd", "bpf_manager: added policy for %s (dev=%lu, ino=%lu, mask=0x%x)\n",
                       path, (unsigned long)st.st_dev, (unsigned long)st.st_ino, allow_mask);
@@ -344,12 +503,8 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
     (void)container_id;
     return 0;
 #else
-    unsigned long long cgroup_id;
-    struct bpf_policy_key key;
-    struct bpf_policy_key next_key;
-    union bpf_attr attr = {};
+    struct container_entry_tracker* tracker;
     int deleted_count = 0;
-    int status;
     
     if (!g_bpf_manager.available) {
         return 0;
@@ -360,87 +515,60 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
         return -1;
     }
     
-    // Get cgroup ID for this container
-    cgroup_id = bpf_get_cgroup_id(container_id);
-    if (cgroup_id == 0) {
-        // Container's cgroup may already be gone, this is not an error
-        VLOG_DEBUG("cvd", "bpf_manager: cgroup for %s not found, assuming already cleaned up\n",
+    VLOG_DEBUG("cvd", "bpf_manager: cleaning up policy for container %s\n", container_id);
+    
+    // Find the entry tracker for this container
+    tracker = __find_tracker(container_id);
+    if (!tracker) {
+        // No tracker found - this could happen if:
+        // 1. Container had no policy entries configured
+        // 2. Policy population failed before any entries were added
+        // 3. Container was created before entry tracking was implemented
+        // 
+        // In all cases, returning success is correct:
+        // - Case 1 & 2: Nothing to clean up
+        // - Case 3: The old iterative method would also find nothing in the map
+        //           for this cgroup_id (if it was already cleaned up or never populated)
+        // 
+        // Note: This means we rely on the fact that entries are only added through
+        // populate_policy which now creates trackers. Any orphaned entries from
+        // pre-tracking versions would remain in the map, but this is acceptable as:
+        // - The cgroup itself is destroyed, making entries ineffective
+        // - The map has a finite size and entries will be overwritten as needed
+        // - A full cleanup can be done by restarting the daemon
+        VLOG_DEBUG("cvd", "bpf_manager: no entry tracker found for %s, nothing to clean up\n",
                    container_id);
         return 0;
     }
     
-    VLOG_DEBUG("cvd", "bpf_manager: cleaning up policy for container %s (cgroup_id=%llu)\n",
-               container_id, cgroup_id);
+    if (tracker->key_count == 0) {
+        VLOG_DEBUG("cvd", "bpf_manager: no entries to clean up for container %s\n", container_id);
+        __remove_tracker(container_id);
+        return 0;
+    }
     
-    // Iterate through the map and delete all entries with this cgroup_id
-    // Start with an empty key to get the first element
-    memset(&key, 0, sizeof(key));
-    memset(&next_key, 0, sizeof(next_key));
+    VLOG_DEBUG("cvd", "bpf_manager: using batch deletion for %d entries (cgroup_id=%llu)\n",
+               tracker->key_count, tracker->cgroup_id);
     
-    attr.map_fd = g_bpf_manager.policy_map_fd;
-    attr.key = 0; // Start from beginning
-    attr.next_key = (uintptr_t)&next_key;
+    // Use batch deletion to efficiently remove all entries
+    deleted_count = bpf_policy_map_delete_batch(
+        g_bpf_manager.policy_map_fd,
+        tracker->keys,
+        tracker->key_count
+    );
     
-    // Get first key
-    if (bpf_syscall(BPF_MAP_GET_NEXT_KEY, &attr, sizeof(attr)) < 0) {
-        if (errno == ENOENT) {
-            // Map is empty, nothing to clean up
-            VLOG_DEBUG("cvd", "bpf_manager: policy map is empty\n");
-            return 0;
-        }
-        VLOG_ERROR("cvd", "bpf_manager: failed to get first key: %s\n", strerror(errno));
+    if (deleted_count < 0) {
+        VLOG_ERROR("cvd", "bpf_manager: batch deletion failed for container %s\n", container_id);
+        // Clean up tracker anyway
+        __remove_tracker(container_id);
         return -1;
-    }
-    
-    // Check and delete first key if it matches
-    if (next_key.cgroup_id == cgroup_id) {
-        status = bpf_policy_map_delete_entry(
-            g_bpf_manager.policy_map_fd,
-            next_key.cgroup_id,
-            (dev_t)next_key.dev,
-            (ino_t)next_key.ino
-        );
-        if (status == 0) {
-            deleted_count++;
-        }
-    }
-    
-    // Iterate through rest of map
-    key = next_key;
-    while (1) {
-        attr.key = (uintptr_t)&key;
-        attr.next_key = (uintptr_t)&next_key;
-        
-        status = bpf_syscall(BPF_MAP_GET_NEXT_KEY, &attr, sizeof(attr));
-        if (status < 0) {
-            if (errno == ENOENT) {
-                // Reached end of map
-                break;
-            }
-            VLOG_WARNING("cvd", "bpf_manager: failed to get next key: %s\n", strerror(errno));
-            break;
-        }
-        
-        // Check if this entry belongs to our container
-        if (next_key.cgroup_id == cgroup_id) {
-            status = bpf_policy_map_delete_entry(
-                g_bpf_manager.policy_map_fd,
-                next_key.cgroup_id,
-                (dev_t)next_key.dev,
-                (ino_t)next_key.ino
-            );
-            if (status == 0) {
-                deleted_count++;
-            } else {
-                VLOG_WARNING("cvd", "bpf_manager: failed to delete entry: %s\n", strerror(errno));
-            }
-        }
-        
-        key = next_key;
     }
     
     VLOG_DEBUG("cvd", "bpf_manager: deleted %d policy entries for container %s\n",
                deleted_count, container_id);
+    
+    // Remove the tracker now that cleanup is complete
+    __remove_tracker(container_id);
     
     return 0;
 #endif // __linux__

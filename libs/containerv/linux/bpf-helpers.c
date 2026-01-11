@@ -205,4 +205,62 @@ int bpf_policy_map_delete_entry(
     return bpf_syscall(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr));
 }
 
+int bpf_policy_map_delete_batch(
+    int                    policy_map_fd,
+    struct bpf_policy_key* keys,
+    int                    count)
+{
+    union bpf_attr attr = {};
+    int deleted = 0;
+    int saved_errno;
+    
+    if (policy_map_fd < 0 || keys == NULL || count <= 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    
+    // Use BPF_MAP_DELETE_BATCH for efficient batch deletion
+    // This requires kernel 5.6+, but we already require 5.7+ for BPF LSM
+    memset(&attr, 0, sizeof(attr));
+    attr.batch.map_fd = policy_map_fd;
+    attr.batch.keys = (uintptr_t)keys;
+    attr.batch.count = count;
+    attr.batch.elem_flags = 0;
+    
+    // Try batch deletion first
+    int status = bpf_syscall(BPF_MAP_DELETE_BATCH, &attr, sizeof(attr));
+    if (status == 0) {
+        // Success - all entries deleted
+        return count;
+    }
+    
+    // Save errno for debugging
+    saved_errno = errno;
+    
+    // If batch delete is not supported or fails, fall back to individual deletions
+    // Check for common error codes indicating lack of support
+    if (saved_errno == EINVAL || saved_errno == ENOTSUP || saved_errno == ENOSYS) {
+        VLOG_DEBUG("cvd", "bpf_helpers: BPF_MAP_DELETE_BATCH not supported (errno=%d), falling back to individual deletions\n", saved_errno);
+        
+        for (int i = 0; i < count; i++) {
+            memset(&attr, 0, sizeof(attr));
+            attr.map_fd = policy_map_fd;
+            attr.key = (uintptr_t)&keys[i];
+            
+            if (bpf_syscall(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr)) == 0) {
+                deleted++;
+            } else if (errno != ENOENT) {
+                // Ignore ENOENT (entry doesn't exist), but log other errors
+                VLOG_TRACE("cvd", "bpf_helpers: failed to delete entry %d: %s\n", i, strerror(errno));
+            }
+        }
+        return deleted;
+    }
+    
+    // Some other error occurred, restore errno for caller
+    errno = saved_errno;
+    VLOG_ERROR("cvd", "bpf_helpers: batch delete failed: %s\n", strerror(errno));
+    return -1;
+}
+
 #endif // __linux__
