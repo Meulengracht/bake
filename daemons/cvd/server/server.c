@@ -377,6 +377,13 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
             status = containerv_bpf_manager_populate_policy(cvdID, rootfs, policy);
             if (status < 0) {
                 VLOG_WARNING("cvd", "cvd_create: failed to populate BPF policy for %s\n", cvdID);
+            } else {
+                // Log container-specific metrics after successful population
+                struct containerv_bpf_container_metrics c_metrics;
+                if (containerv_bpf_manager_get_container_metrics(cvdID, &c_metrics) == 0) {
+                    VLOG_DEBUG("cvd", "cvd_create: BPF policy for %s - entries: %d, populate_time: %llu us\n",
+                              cvdID, c_metrics.policy_entry_count, c_metrics.populate_time_us);
+                }
             }
             
             containerv_policy_delete(policy);
@@ -574,10 +581,25 @@ enum chef_status cvd_destroy(const char* containerID)
 
     // Clean up BPF policy entries for this container
     if (containerv_bpf_manager_is_available()) {
+        // Get metrics before cleanup
+        struct containerv_bpf_container_metrics c_metrics;
+        int has_metrics = (containerv_bpf_manager_get_container_metrics(containerID, &c_metrics) == 0);
+        
         VLOG_DEBUG("cvd", "cvd_destroy: cleaning up BPF policy for container %s\n", containerID);
         int bpf_status = containerv_bpf_manager_cleanup_policy(containerID);
         if (bpf_status < 0) {
             VLOG_WARNING("cvd", "cvd_destroy: failed to cleanup BPF policy for %s\n", containerID);
+        } else if (has_metrics) {
+            VLOG_DEBUG("cvd", "cvd_destroy: BPF policy cleaned up for %s - entries deleted: %d\n",
+                      containerID, c_metrics.policy_entry_count);
+        }
+        
+        // Log overall metrics after cleanup
+        struct containerv_bpf_metrics metrics;
+        if (containerv_bpf_manager_get_metrics(&metrics) == 0) {
+            VLOG_TRACE("cvd", "cvd_destroy: BPF metrics - containers: %d, entries: %d/%d, ops: %llu/%llu\n",
+                      metrics.total_containers, metrics.total_policy_entries, metrics.max_map_capacity,
+                      metrics.total_populate_ops, metrics.total_cleanup_ops);
         }
     }
 
