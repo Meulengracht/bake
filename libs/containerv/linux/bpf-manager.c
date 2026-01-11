@@ -139,19 +139,21 @@ static int __add_tracked_entry(struct container_entry_tracker* tracker,
                                dev_t dev, 
                                ino_t ino)
 {
+    struct bpf_policy_key* key;
+    
     if (!tracker) {
         return -1;
     }
     
     // Check capacity and expand if needed
     if (tracker->key_count >= tracker->key_capacity) {
-        int new_capacity = tracker->key_capacity * 2;
-        if (new_capacity > MAX_TRACKED_ENTRIES) {
-            new_capacity = MAX_TRACKED_ENTRIES;
-            if (tracker->key_count >= new_capacity) {
-                VLOG_WARNING("cvd", "bpf_manager: max tracked entries reached for container\n");
-                return -1;
-            }
+        int new_capacity = (tracker->key_capacity * 2 < MAX_TRACKED_ENTRIES) 
+                          ? tracker->key_capacity * 2 
+                          : MAX_TRACKED_ENTRIES;
+        
+        if (tracker->key_count >= new_capacity) {
+            VLOG_WARNING("cvd", "bpf_manager: max tracked entries reached for container\n");
+            return -1;
         }
         
         struct bpf_policy_key* new_keys = realloc(tracker->keys, 
@@ -166,9 +168,10 @@ static int __add_tracked_entry(struct container_entry_tracker* tracker,
     }
     
     // Add the key
-    tracker->keys[tracker->key_count].cgroup_id = cgroup_id;
-    tracker->keys[tracker->key_count].dev = (unsigned long long)dev;
-    tracker->keys[tracker->key_count].ino = (unsigned long long)ino;
+    key = &tracker->keys[tracker->key_count];
+    key->cgroup_id = cgroup_id;
+    key->dev = (unsigned long long)dev;
+    key->ino = (unsigned long long)ino;
     tracker->key_count++;
     
     return 0;
@@ -515,9 +518,21 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
     tracker = __find_tracker(container_id);
     if (!tracker) {
         // No tracker found - this could happen if:
-        // 1. Container had no policy entries
-        // 2. Policy population failed
+        // 1. Container had no policy entries configured
+        // 2. Policy population failed before any entries were added
         // 3. Container was created before entry tracking was implemented
+        // 
+        // In all cases, returning success is correct:
+        // - Case 1 & 2: Nothing to clean up
+        // - Case 3: The old iterative method would also find nothing in the map
+        //           for this cgroup_id (if it was already cleaned up or never populated)
+        // 
+        // Note: This means we rely on the fact that entries are only added through
+        // populate_policy which now creates trackers. Any orphaned entries from
+        // pre-tracking versions would remain in the map, but this is acceptable as:
+        // - The cgroup itself is destroyed, making entries ineffective
+        // - The map has a finite size and entries will be overwritten as needed
+        // - A full cleanup can be done by restarting the daemon
         VLOG_DEBUG("cvd", "bpf_manager: no entry tracker found for %s, nothing to clean up\n",
                    container_id);
         return 0;

@@ -212,6 +212,7 @@ int bpf_policy_map_delete_batch(
 {
     union bpf_attr attr = {};
     int deleted = 0;
+    int saved_errno;
     
     if (policy_map_fd < 0 || keys == NULL || count <= 0) {
         errno = EINVAL;
@@ -233,9 +234,13 @@ int bpf_policy_map_delete_batch(
         return count;
     }
     
+    // Save errno for debugging
+    saved_errno = errno;
+    
     // If batch delete is not supported or fails, fall back to individual deletions
-    if (errno == EINVAL || errno == ENOTSUP) {
-        VLOG_DEBUG("cvd", "bpf_helpers: BPF_MAP_DELETE_BATCH not supported, falling back to individual deletions\n");
+    // Check for common error codes indicating lack of support
+    if (saved_errno == EINVAL || saved_errno == ENOTSUP || saved_errno == ENOSYS) {
+        VLOG_DEBUG("cvd", "bpf_helpers: BPF_MAP_DELETE_BATCH not supported (errno=%d), falling back to individual deletions\n", saved_errno);
         
         for (int i = 0; i < count; i++) {
             memset(&attr, 0, sizeof(attr));
@@ -252,7 +257,8 @@ int bpf_policy_map_delete_batch(
         return deleted;
     }
     
-    // Some other error occurred
+    // Some other error occurred, restore errno for caller
+    errno = saved_errno;
     VLOG_ERROR("cvd", "bpf_helpers: batch delete failed: %s\n", strerror(errno));
     return -1;
 }
