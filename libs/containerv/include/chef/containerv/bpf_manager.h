@@ -88,4 +88,55 @@ extern int containerv_bpf_manager_populate_policy(
  */
 extern int containerv_bpf_manager_cleanup_policy(const char* container_id);
 
+/**
+ * @brief Container-specific BPF policy metrics
+ */
+struct containerv_bpf_container_metrics {
+    char container_id[256];           // Container identifier
+    unsigned long long cgroup_id;     // Cgroup ID for this container
+    int policy_entry_count;           // Number of policy entries in map
+    unsigned long long populate_time_us; // Time taken to populate policy (microseconds)
+    unsigned long long cleanup_time_us;  // Time taken to cleanup policy (microseconds)
+};
+
+/**
+ * @brief Global BPF policy enforcement metrics
+ */
+struct containerv_bpf_metrics {
+    int available;                       // Whether BPF LSM is available
+    int total_containers;                // Total number of containers with policies
+    int total_policy_entries;            // Total policy entries across all containers
+    int max_map_capacity;                // Maximum capacity of policy map
+    unsigned long long total_populate_ops; // Total populate operations performed
+    unsigned long long total_cleanup_ops;  // Total cleanup operations performed
+    unsigned long long failed_populate_ops; // Failed populate operations
+    unsigned long long failed_cleanup_ops;  // Failed cleanup operations
+};
+
+/**
+ * @brief Get global BPF policy enforcement metrics
+ * 
+ * Retrieves aggregate metrics about BPF policy enforcement across
+ * all containers. Useful for monitoring, capacity planning, and debugging.
+ * 
+ * @param metrics Pointer to metrics structure to fill
+ * @return 0 on success, -1 on error
+ */
+extern int containerv_bpf_manager_get_metrics(struct containerv_bpf_metrics* metrics);
+
+/**
+ * @brief Get BPF policy metrics for a specific container
+ * 
+ * Retrieves metrics about policy enforcement for a specific container.
+ * Returns error if container not found or has no policy.
+ * 
+ * @param container_id Container ID (hostname) - must not be NULL
+ * @param metrics Pointer to container metrics structure to fill
+ * @return 0 on success, -1 on error (container not found or invalid params)
+ */
+extern int containerv_bpf_manager_get_container_metrics(
+    const char* container_id,
+    struct containerv_bpf_container_metrics* metrics
+);
+
 #endif //!__CONTAINERV_BPF_MANAGER_H__

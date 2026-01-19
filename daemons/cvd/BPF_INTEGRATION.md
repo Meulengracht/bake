@@ -56,6 +56,84 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id);
 
 // Shutdown BPF manager (call at exit)
 void containerv_bpf_manager_shutdown(void);
+
+// Get global BPF metrics
+int containerv_bpf_manager_get_metrics(struct containerv_bpf_metrics* metrics);
+
+// Get container-specific BPF metrics
+int containerv_bpf_manager_get_container_metrics(
+    const char* container_id,
+    struct containerv_bpf_container_metrics* metrics
+);
+```
+
+## Monitoring and Metrics
+
+The BPF manager tracks comprehensive metrics for monitoring, debugging, and capacity planning:
+
+### Global Metrics
+
+```c
+struct containerv_bpf_metrics {
+    int available;                        // Whether BPF LSM is available
+    int total_containers;                 // Total containers with policies
+    int total_policy_entries;             // Total entries across all containers
+    int max_map_capacity;                 // Maximum capacity of policy map
+    unsigned long long total_populate_ops;  // Total populate operations
+    unsigned long long total_cleanup_ops;   // Total cleanup operations
+    unsigned long long failed_populate_ops; // Failed populate operations
+    unsigned long long failed_cleanup_ops;  // Failed cleanup operations
+};
+```
+
+### Container-Specific Metrics
+
+```c
+struct containerv_bpf_container_metrics {
+    char container_id[256];               // Container identifier
+    unsigned long long cgroup_id;         // Cgroup ID for this container
+    int policy_entry_count;               // Number of policy entries
+    unsigned long long populate_time_us;  // Time to populate policy (μs)
+    unsigned long long cleanup_time_us;   // Time to cleanup policy (μs)
+};
+```
+
+### Use Cases
+
+1. **Capacity Planning**: Monitor `total_policy_entries` vs `max_map_capacity`
+2. **Performance Monitoring**: Track `populate_time_us` and `cleanup_time_us`
+3. **Failure Detection**: Check `failed_populate_ops` and `failed_cleanup_ops`
+4. **Debugging**: Inspect per-container metrics for policy issues
+
+### Example Usage
+
+```c
+// Get global metrics
+struct containerv_bpf_metrics metrics;
+if (containerv_bpf_manager_get_metrics(&metrics) == 0) {
+    printf("BPF Policy Stats:\n");
+    printf("  Containers: %d\n", metrics.total_containers);
+    printf("  Policy Entries: %d / %d\n", 
+           metrics.total_policy_entries, metrics.max_map_capacity);
+    printf("  Operations: %llu populate, %llu cleanup\n",
+           metrics.total_populate_ops, metrics.total_cleanup_ops);
+    if (metrics.failed_populate_ops > 0 || metrics.failed_cleanup_ops > 0) {
+        printf("  Failures: %llu populate, %llu cleanup\n",
+               metrics.failed_populate_ops, metrics.failed_cleanup_ops);
+    }
+}
+
+// Get container-specific metrics
+struct containerv_bpf_container_metrics c_metrics;
+if (containerv_bpf_manager_get_container_metrics("container-123", &c_metrics) == 0) {
+    printf("Container %s Policy Stats:\n", c_metrics.container_id);
+    printf("  Cgroup ID: %llu\n", c_metrics.cgroup_id);
+    printf("  Policy Entries: %d\n", c_metrics.policy_entry_count);
+    printf("  Populate Time: %llu μs\n", c_metrics.populate_time_us);
+    if (c_metrics.cleanup_time_us > 0) {
+        printf("  Cleanup Time: %llu μs\n", c_metrics.cleanup_time_us);
+    }
+}
 ```
 
 ## Lifecycle

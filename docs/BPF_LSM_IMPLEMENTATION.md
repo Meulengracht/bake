@@ -276,10 +276,68 @@ BPF LSM enforcement complements existing security:
 4. Security audit
 5. Integration with cvd daemon
 
+## Monitoring and Observability
+
+### Metrics System
+
+The BPF manager includes comprehensive metrics tracking for debugging, monitoring, and capacity planning:
+
+**Global Metrics**:
+- Total containers with policies
+- Total policy entries across all containers
+- Policy map capacity utilization
+- Operation counts (populate/cleanup successes and failures)
+
+**Per-Container Metrics**:
+- Policy entry count
+- Policy population time (microseconds)
+- Policy cleanup time (microseconds)
+- Cgroup ID
+
+### Metrics Logging
+
+The cvd daemon automatically logs BPF metrics at key points:
+
+1. **Startup**: Initial metrics after BPF manager initialization
+2. **Container Creation**: Per-container metrics after policy population
+3. **Container Destruction**: Per-container and global metrics after cleanup
+
+Example log output:
+```
+[DEBUG] cvd: BPF Policy Metrics - Containers: 2, Total Entries: 45, Capacity: 10240
+[DEBUG] cvd: cvd_create: BPF policy for container-abc - entries: 23, populate_time: 1250 us
+[DEBUG] cvd: cvd_destroy: BPF policy cleaned up for container-xyz - entries deleted: 22
+[TRACE] cvd: cvd_destroy: BPF metrics - containers: 1, entries: 23/10240, ops: 2/1
+```
+
+### API Access
+
+Applications can query metrics programmatically:
+
+```c
+#include <chef/containerv/bpf_manager.h>
+
+// Get global metrics
+struct containerv_bpf_metrics metrics;
+containerv_bpf_manager_get_metrics(&metrics);
+
+// Get container-specific metrics
+struct containerv_bpf_container_metrics c_metrics;
+containerv_bpf_manager_get_container_metrics("container-id", &c_metrics);
+```
+
+### Use Cases
+
+1. **Capacity Planning**: Monitor policy map utilization to avoid hitting limits
+2. **Performance Monitoring**: Track populate/cleanup times to detect slowdowns
+3. **Failure Detection**: Monitor failed operations to detect configuration issues
+4. **Security Auditing**: Track policy entry counts per container
+5. **Debugging**: Inspect per-container metrics when troubleshooting issues
+
 ## Conclusion
 
 This implementation provides a solid foundation for BPF LSM filesystem enforcement in containerv. The infrastructure is complete and ready for the final integration steps that require vmlinux.h generation and runtime program loading.
 
 The graceful fallback ensures the system continues to work on kernels without BPF LSM, while providing enhanced security on modern kernels that support it.
 
-**Status**: Foundation complete, ready for final integration 🎉
+**Status**: Foundation complete with comprehensive monitoring 🎉
