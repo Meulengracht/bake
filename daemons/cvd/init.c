@@ -17,6 +17,7 @@
  */
 
 #include <chef/platform.h>
+#include <chef/containerv/bpf_manager.h>
 #include <gracht/link/socket.h>
 #include <gracht/server.h>
 #include <server.h>
@@ -177,6 +178,33 @@ int cvd_initialize_server(struct gracht_server_configuration* config, gracht_ser
     // initialize the WSA library
     gracht_link_socket_setup();
 #endif
+
+    // Initialize BPF manager for eBPF-based security enforcement
+    VLOG_TRACE("cvd", "Initializing BPF manager for container security...\n");
+    status = containerv_bpf_manager_initialize();
+    if (status < 0) {
+        VLOG_ERROR("cvd", "Failed to initialize BPF manager: critical startup error\n");
+        VLOG_ERROR("cvd", "BPF LSM may require kernel 5.7+ with CONFIG_BPF_LSM=y and 'bpf' in LSM list\n");
+        VLOG_ERROR("cvd", "Container security enforcement (BPF/seccomp) failed to initialize\n");
+        return -1;
+    }
+    
+    if (containerv_bpf_manager_is_available()) {
+        struct containerv_bpf_metrics metrics;
+        
+        VLOG_TRACE("cvd", "BPF LSM enforcement is active\n");
+        
+        // Log initial metrics
+        if (containerv_bpf_manager_get_metrics(&metrics) == 0) {
+            VLOG_DEBUG("cvd", "BPF Policy Metrics - Containers: %d, Total Entries: %d, Capacity: %d\n",
+                      metrics.total_containers, metrics.total_policy_entries, metrics.max_map_capacity);
+        }
+    } else {
+        VLOG_TRACE("cvd", "BPF LSM not available, containers will use seccomp fallback\n");
+    }
+    
+    // Register cleanup handler
+    atexit(containerv_bpf_manager_shutdown);
 
     status = gracht_server_create(config, serverOut);
     if (status) {
