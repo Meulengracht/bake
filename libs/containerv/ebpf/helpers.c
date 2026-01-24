@@ -18,7 +18,6 @@
 
 #define _GNU_SOURCE
 
-#include "bpf-helpers.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -29,6 +28,8 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <vlog.h>
+
+#include "private.h"
 
 #ifdef __linux__
 #include <linux/bpf.h>
@@ -162,23 +163,24 @@ int bpf_bump_memlock_rlimit(void)
 }
 
 int bpf_policy_map_allow_inode(
-    int                policy_map_fd,
-    unsigned long long cgroup_id,
-    dev_t              dev,
-    ino_t              ino,
-    unsigned int       allow_mask)
+    struct bpf_policy_context* context,
+    dev_t                      dev,
+    ino_t                      ino,
+    unsigned int               allow_mask)
 {
     struct bpf_policy_key   key = {};
     struct bpf_policy_value value = {};
     union bpf_attr          attr = {};
 
-    key.cgroup_id = cgroup_id;
+    // TODO: return ENOBUFS if map is full
+
+    key.cgroup_id = context->cgroup_id;
     key.dev = (unsigned long long)dev;
     key.ino = (unsigned long long)ino;
 
     value.allow_mask = allow_mask;
 
-    attr.map_fd = policy_map_fd;
+    attr.map_fd = context->map_fd;
     attr.key = (uintptr_t)&key;
     attr.value = (uintptr_t)&value;
     attr.flags = BPF_ANY;
@@ -187,34 +189,33 @@ int bpf_policy_map_allow_inode(
 }
 
 int bpf_policy_map_delete_entry(
-    int                policy_map_fd,
-    unsigned long long cgroup_id,
-    dev_t              dev,
-    ino_t              ino)
+    struct bpf_policy_context* context,
+    dev_t                      dev,
+    ino_t                      ino)
 {
     struct bpf_policy_key key = {};
     union bpf_attr        attr = {};
 
-    key.cgroup_id = cgroup_id;
+    key.cgroup_id = context->cgroup_id;
     key.dev = (unsigned long long)dev;
     key.ino = (unsigned long long)ino;
 
-    attr.map_fd = policy_map_fd;
+    attr.map_fd = context->map_fd;
     attr.key = (uintptr_t)&key;
 
     return bpf_syscall(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr));
 }
 
 int bpf_policy_map_delete_batch(
-    int                    policy_map_fd,
-    struct bpf_policy_key* keys,
-    int                    count)
+    struct bpf_policy_context* context,
+    struct bpf_policy_key*     keys,
+    int                        count)
 {
     union bpf_attr attr = {};
     int deleted = 0;
     int saved_errno;
     
-    if (policy_map_fd < 0 || keys == NULL || count <= 0) {
+    if (context->map_fd < 0 || keys == NULL || count <= 0) {
         errno = EINVAL;
         return -1;
     }
@@ -222,7 +223,7 @@ int bpf_policy_map_delete_batch(
     // Use BPF_MAP_DELETE_BATCH for efficient batch deletion
     // This requires kernel 5.6+, but we already require 5.7+ for BPF LSM
     memset(&attr, 0, sizeof(attr));
-    attr.batch.map_fd = policy_map_fd;
+    attr.batch.map_fd = context->map_fd;
     attr.batch.keys = (uintptr_t)keys;
     attr.batch.count = count;
     attr.batch.elem_flags = 0;
@@ -244,7 +245,7 @@ int bpf_policy_map_delete_batch(
         
         for (int i = 0; i < count; i++) {
             memset(&attr, 0, sizeof(attr));
-            attr.map_fd = policy_map_fd;
+            attr.map_fd = context->map_fd;
             attr.key = (uintptr_t)&keys[i];
             
             if (bpf_syscall(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr)) == 0) {

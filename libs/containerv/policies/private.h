@@ -29,24 +29,21 @@ struct containerv_syscall_entry {
     char* name;
 };
 
-struct containerv_path_entry {
-    char*                 path;
+struct containerv_policy_path {
+    char*                     path;
     enum containerv_fs_access access;
 };
 
-struct containerv_deny_entry {
-    char*                 path;
-    enum containerv_fs_access deny_mask;
-};
-
 struct containerv_policy {
+    void* backend_context;
+
     // Syscall whitelist
     struct containerv_syscall_entry syscalls[MAX_SYSCALLS];
     int                             syscall_count;
     
     // Filesystem path whitelist
-    struct containerv_path_entry paths[MAX_PATHS];
-    int                          path_count;
+    struct containerv_policy_path paths[MAX_PATHS];
+    int                           path_count;
 };
 
 struct containerv_policy_handler {

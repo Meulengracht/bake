@@ -18,9 +18,7 @@
 
 #define _GNU_SOURCE
 
-#include <chef/containerv/bpf_manager.h>
-#include "bpf-manager.h"
-#include "bpf-helpers.h"
+#include <chef/containerv/bpf-manager.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -34,17 +32,10 @@
 #include <unistd.h>
 #include <vlog.h>
 
-// Include internal policy structure for access to fields
-// This is a temporary solution that creates tight coupling between modules.
-// 
-// TODO (High Priority): Refactor to use a public iterator API
-// - Add containerv_policy_foreach_path(policy, callback, userdata) to policy.h
-// - This will eliminate the need for direct access to internal structures
-// - Will improve maintainability and module boundaries
-//
-// This is acceptable for now since bpf-manager is now part of containerv library
-// and needs direct access to policy internals for BPF map population.
-#include "policy-internal.h"
+#include "private.h"
+
+// import the private.h from the policies dir
+#include "../policies/private.h"
 
 #ifdef __linux__
 #include <linux/bpf.h>
@@ -419,8 +410,8 @@ int containerv_bpf_manager_get_policy_map_fd(void)
 }
 
 int containerv_bpf_manager_populate_policy(
-    const char* container_id,
-    const char* rootfs_path,
+    const char*               container_id,
+    const char*               rootfs_path,
     struct containerv_policy* policy)
 {
 #ifndef __linux__
@@ -523,8 +514,7 @@ int containerv_bpf_manager_populate_policy(
         
         // Add policy entry
         status = bpf_policy_map_allow_inode(
-            g_bpf_manager.policy_map_fd,
-            cgroup_id,
+            policy->backend_context,
             st.st_dev,
             st.st_ino,
             allow_mask

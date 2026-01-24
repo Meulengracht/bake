@@ -43,6 +43,11 @@ struct bpf_policy_value {
     unsigned int allow_mask;
 };
 
+struct bpf_policy_context {
+    int                map_fd;
+    unsigned long long cgroup_id;
+};
+
 /**
  * @brief Wrapper for the BPF system call
  * @param cmd BPF command
@@ -73,45 +78,41 @@ extern int bpf_bump_memlock_rlimit(void);
 
 /**
  * @brief Add an inode to the BPF policy map with specified permissions
- * @param policy_map_fd File descriptor of the policy map
- * @param cgroup_id Cgroup ID
+ * @param context BPF policy context
  * @param dev Device number
  * @param ino Inode number
  * @param allow_mask Permission mask
  * @return 0 on success, -1 on error
  */
 extern int bpf_policy_map_allow_inode(
-    int                policy_map_fd,
-    unsigned long long cgroup_id,
-    dev_t              dev,
-    ino_t              ino,
-    unsigned int       allow_mask
+    struct bpf_policy_context* context,
+    dev_t                      dev,
+    ino_t                      ino,
+    unsigned int               allow_mask
 );
 
 /**
  * @brief Delete an entry from the BPF policy map
- * @param policy_map_fd File descriptor of the policy map
- * @param cgroup_id Cgroup ID
+ * @param context BPF policy context
  * @param dev Device number
  * @param ino Inode number
  * @return 0 on success, -1 on error
  */
 extern int bpf_policy_map_delete_entry(
-    int                policy_map_fd,
-    unsigned long long cgroup_id,
-    dev_t              dev,
-    ino_t              ino
+    struct bpf_policy_context* context,
+    dev_t                      dev,
+    ino_t                      ino
 );
 
 /**
  * @brief Delete multiple entries from the BPF policy map in a single syscall
- * @param policy_map_fd File descriptor of the policy map
+ * @param context BPF policy context
  * @param keys Array of keys to delete
  * @param count Number of keys in the array
  * @return Number of successfully deleted entries, or -1 on error
  */
 extern int bpf_policy_map_delete_batch(
-    int                        policy_map_fd,
+    struct bpf_policy_context* context,
     struct bpf_policy_key*     keys,
     int                        count
 );

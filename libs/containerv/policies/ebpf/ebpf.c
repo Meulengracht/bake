@@ -18,10 +18,6 @@
 
 #define _GNU_SOURCE
 
-#include "policy-ebpf.h"
-#include "private.h"
-#include "private.h"
-#include "bpf-helpers.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -38,20 +34,10 @@
 #include <ftw.h>
 #include <vlog.h>
 
-#ifdef HAVE_BPF_SKELETON
-#include "fs-lsm.skel.h"
-
-#include <bpf/bpf.h>
-#include <bpf/libbpf.h>
-#endif
-
-struct __policy_path {
-    char*                     path;
-    enum containerv_fs_access access;
-};
+#include "../private.h"
 
 // Add default system paths (always needed for basic functionality)
-static const struct __policy_path g_basePolicyPaths[] = {
+static const struct containerv_policy_path g_basePolicyPaths[] = {
     { "/lib", CV_FS_READ | CV_FS_EXEC },
     { "/lib64", CV_FS_READ | CV_FS_EXEC },
     { "/usr/lib", CV_FS_READ | CV_FS_EXEC },
@@ -70,14 +56,14 @@ static const struct __policy_path g_basePolicyPaths[] = {
     { NULL, 0 }
 };
 
-static const struct __policy_path g_buildPolicyPaths[] = {
+static const struct containerv_policy_path g_buildPolicyPaths[] = {
     { "/usr/include", CV_FS_READ | CV_FS_EXEC },
     { "/usr/share/pkgconfig", CV_FS_READ | CV_FS_EXEC },
     { "/usr/lib/pkgconfig", CV_FS_READ | CV_FS_EXEC },
     { NULL, 0 }
 };
 
-static const struct __policy_path g_networkPolicyPaths[] = {
+static const struct containerv_policy_path g_networkPolicyPaths[] = {
     { "/etc/ssl", CV_FS_READ | CV_FS_EXEC },
     { "/etc/ca-certificates", CV_FS_READ | CV_FS_EXEC },
     { "/etc/resolv.conf", CV_FS_READ | CV_FS_EXEC },
@@ -85,23 +71,9 @@ static const struct __policy_path g_networkPolicyPaths[] = {
     { NULL, 0 }
 };
 
-/* Internal structure to track loaded eBPF programs */
-struct policy_ebpf_context {
-    int policy_map_fd;
-    unsigned long long cgroup_id;
-
-#ifdef HAVE_BPF_SKELETON
-    struct fs_lsm_bpf* skel;
-#endif
-
-    unsigned int map_entries;
-};
-
 struct __path_walk_ctx {
-    struct policy_ebpf_context* ebpf;
-    int                         policyMapFD;
-    unsigned long long          cgroupID;
-    unsigned int                allowMask;
+    struct containerv_policy* policy;
+    unsigned int              allowMask;
 };
 
 static struct __path_walk_ctx* __g_walk_ctx;
@@ -109,46 +81,41 @@ static struct __path_walk_ctx* __g_walk_ctx;
 static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, struct FTW* ftwbuf)
 {
     struct __path_walk_ctx* ctx = __g_walk_ctx;
+    struct stat             st;
+    int                     status;
+
     (void)sb;
     (void)typeflag;
     (void)ftwbuf;
 
-    if (!ctx || !ctx->ebpf) {
+    if (!ctx || !ctx->policy) {
         return 1;
     }
 
-    if (ctx->ebpf->map_entries >= 10240) {
-        return 1; /* stop walking */
+    status = stat(fpath, &st);
+    if (status < 0) {
+        return 0;
     }
 
-    /* Use stat() so symlinks resolve to their target inode */
-    {
-        struct stat st;
-        int status = stat(fpath, &st);
-        if (status < 0) {
-            return 0;
+    status = bpf_policy_map_allow_inode(ctx->policy->backend_context, st.st_dev, st.st_ino, ctx->allowMask);
+    if (status < 0) {
+        if (errno == ENOBUFS) {
+            VLOG_ERROR("containerv", "policy_ebpf: BPF policy map full while allowing path '%s'\n", fpath);
+            return 1; // Stop walking
         }
-
-        status = bpf_policy_map_allow_inode(ctx->policyMapFD, ctx->cgroupID, st.st_dev, st.st_ino, ctx->allowMask);
-        if (status < 0) {
-            return 0;
-        }
-        ctx->ebpf->map_entries++;
+        VLOG_ERROR("containerv", "policy_ebpf: failed to allow path '%s'\n", fpath);
+        return 0;
     }
     return 0;
 }
 
 static int __allow_path_recursive(
-    struct policy_ebpf_context* ebpf,
-    int                         policyMapFD,
-    unsigned long long          cgroupID,
-    const char*                 rootPath,
-    unsigned int                allowMask)
+    struct containerv_policy* policy,
+    const char*               rootPath,
+    unsigned int              allowMask)
 {
     struct __path_walk_ctx ctx = {
-        .ebpf = ebpf,
-        .policyMapFD = policyMapFD,
-        .cgroupID = cgroupID,
+        .policy    = policy,
         .allowMask = allowMask,
     };
 
@@ -159,11 +126,9 @@ static int __allow_path_recursive(
 }
 
 static int __allow_path_or_tree(
-    struct policy_ebpf_context* ebpf,
-    int                         policyMapFD,
-    unsigned long long          cgroupID,
-    const char*                 path,
-    unsigned int                allowMask)
+    struct containerv_policy* policy,
+    const char*               path,
+    unsigned int              allowMask)
 {
     struct stat st;
     int status;
@@ -173,24 +138,25 @@ static int __allow_path_or_tree(
         return status;
     }
 
-    status = bpf_policy_map_allow_inode(policyMapFD, cgroupID, st.st_dev, st.st_ino, allowMask);
+    status = bpf_policy_map_allow_inode(policy->backend_context, st.st_dev, st.st_ino, allowMask);
     if (status < 0) {
+        if (errno == ENOBUFS) {
+            VLOG_ERROR("containerv", "__allow_path_or_tree: BPF policy map full while allowing path '%s'\n", path);
+        }
+        VLOG_ERROR("containerv", "__allow_path_or_tree: failed to allow path '%s'\n", path);
         return status;
     }
-    ebpf->map_entries++;
-
+    
     if (S_ISDIR(st.st_mode)) {
-        return __allow_path_recursive(ebpf, policyMapFD, cgroupID, path, allowMask);
+        return __allow_path_recursive(policy, path, allowMask);
     }
     return 0;
 }
 
 static int __allow_pattern(
-    struct policy_ebpf_context* ebpf,
-    int                         policyMapFD,
-    unsigned long long          cgroupID,
-    const char*                 pattern,
-    unsigned int                allowMask)
+    struct containerv_policy* policy,
+    const char*               pattern,
+    unsigned int              allowMask)
 {
     glob_t g;
     int status;
@@ -199,35 +165,27 @@ static int __allow_pattern(
     status = glob(pattern, GLOB_NOSORT, NULL, &g);
     if (status == 0) {
         for (size_t i = 0; i < g.gl_pathc; i++) {
-            if (ebpf->map_entries >= 10240) {
-                break;
-            }
-            (void)__allow_path_or_tree(ebpf, policyMapFD, cgroupID, g.gl_pathv[i], allowMask);
+            (void)__allow_path_or_tree(policy, g.gl_pathv[i], allowMask);
         }
         globfree(&g);
         return 0;
     }
 
     globfree(&g);
+
     /* If no glob matches, treat it as a literal path */
-    return __allow_path_or_tree(ebpf, policyMapFD, cgroupID, pattern, allowMask);
+    return __allow_path_or_tree(policy, pattern, allowMask);
 }
 
 static int add_paths_to_policy(
-    struct containerv_policy*   policy,
-    const struct __policy_path* paths)
+    struct containerv_policy*            policy,
+    const struct containerv_policy_path* paths)
 {
-    struct policy_ebpf_context* ebpf = (struct policy_ebpf_context*)policy->backend_context;
-    int                         status;
+    int status;
 
     for (size_t i = 0; paths[i].path != NULL; i++) {
-        status = __allow_pattern(
-            ebpf,
-            ebpf->policy_map_fd,
-            ebpf->cgroup_id,
-            paths[i].path,
-            (unsigned int)paths[i].access);
-        if (status < 0) {
+        status = __allow_pattern(policy, paths[i].path, (unsigned int)paths[i].access);
+        if (status) {
             VLOG_ERROR("containerv", "policy_ebpf: failed to allow path '%s'\n", paths[i].path);
             return status;
         }

@@ -17,7 +17,7 @@
  */
 
 #include <chef/platform.h>
-#include <chef/containerv/bpf_manager.h>
+#include <chef/containerv/bpf-manager.h>
 #include <gracht/link/socket.h>
 #include <gracht/server.h>
 #include <server.h>

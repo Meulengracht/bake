@@ -18,7 +18,7 @@
 #define _GNU_SOURCE // needed for mknod
 
 #include <chef/containerv.h>
-#include <chef/containerv/bpf_manager.h>
+#include <chef/containerv/bpf-manager.h>
 #include <chef/containerv/layers.h>
 #include <chef/containerv/policy.h>
 #include <chef/dirs.h>
