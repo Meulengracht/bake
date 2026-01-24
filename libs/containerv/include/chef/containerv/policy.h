@@ -19,6 +19,8 @@
 #ifndef __CONTAINERV_POLICY_H__
 #define __CONTAINERV_POLICY_H__
 
+#include <chef/list.h>
+
 /**
  * @brief Security policy for containers using eBPF
  * 
@@ -29,14 +31,9 @@
 
 struct containerv_policy;
 
-/**
- * @brief Policy types for predefined security profiles
- */
-enum containerv_policy_type {
-    CV_POLICY_MINIMAL,      // Basic CLI apps (read, write, open, close, exit, etc.)
-    CV_POLICY_BUILD,        // Build tools (adds fork, exec, pipe, etc.)
-    CV_POLICY_NETWORK,      // Network operations (adds socket, bind, connect, etc.)
-    CV_POLICY_CUSTOM        // Custom policy built from scratch
+struct containerv_policy_plugin {
+    struct list_item header;
+    const char*      name;
 };
 
 /**
@@ -51,52 +48,15 @@ enum containerv_fs_access {
 
 /**
  * @brief Create a new security policy
- * @param type The base policy type to start with
+ * @param plugins List of base policy plugins to start with
  * @return Newly created policy, or NULL on error
  */
-extern struct containerv_policy* containerv_policy_new(enum containerv_policy_type type);
+extern struct containerv_policy* containerv_policy_new(struct list* plugins);
 
 /**
  * @brief Delete a security policy
  * @param policy The policy to delete
  */
 extern void containerv_policy_delete(struct containerv_policy* policy);
-
-/**
- * @brief Add allowed syscalls to the policy
- * @param policy The policy to modify
- * @param syscalls Array of syscall names to allow (NULL-terminated)
- * @return 0 on success, -1 on error
- */
-extern int containerv_policy_add_syscalls(
-    struct containerv_policy* policy,
-    const char* const*        syscalls
-);
-
-/**
- * @brief Add allowed filesystem path with specific access mode
- * @param policy The policy to modify
- * @param path Filesystem path pattern (supports wildcards)
- * @param access Bitwise OR of containerv_fs_access flags
- * @return 0 on success, -1 on error
- */
-extern int containerv_policy_add_path(
-    struct containerv_policy* policy,
-    const char*               path,
-    enum containerv_fs_access access
-);
-
-/**
- * @brief Add multiple filesystem paths with the same access mode
- * @param policy The policy to modify
- * @param paths Array of filesystem path patterns (NULL-terminated)
- * @param access Bitwise OR of containerv_fs_access flags
- * @return 0 on success, -1 on error
- */
-extern int containerv_policy_add_paths(
-    struct containerv_policy* policy,
-    const char* const*        paths,
-    enum containerv_fs_access access
-);
 
 #endif //!__CONTAINERV_POLICY_H__

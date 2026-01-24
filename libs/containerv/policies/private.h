@@ -40,8 +40,6 @@ struct containerv_deny_entry {
 };
 
 struct containerv_policy {
-    enum containerv_policy_type type;
-    
     // Syscall whitelist
     struct containerv_syscall_entry syscalls[MAX_SYSCALLS];
     int                             syscall_count;
@@ -49,6 +47,20 @@ struct containerv_policy {
     // Filesystem path whitelist
     struct containerv_path_entry paths[MAX_PATHS];
     int                          path_count;
+};
+
+struct containerv_policy_handler {
+    const char* name;
+    int       (*apply)(struct containerv_policy* policy, struct containerv_policy_plugin* plugin);
+};
+
+extern int policy_seccomp_build(struct containerv_policy* policy, struct containerv_policy_plugin* plugin);
+extern int policy_ebpf_build(struct containerv_policy* policy, struct containerv_policy_plugin* plugin);
+
+static const struct containerv_policy_handler g_policy_handlers[] = {
+    { "seccomp", policy_seccomp_build },
+    { "ebpf",    policy_ebpf_build },
+    { NULL,      NULL }
 };
 
 #endif //!__POLICY_INTERNAL_H__

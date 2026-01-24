@@ -2,8 +2,11 @@ project (containerv C)
 
 set(ADDITIONAL_LIBS)
 if (UNIX)
+    add_subdirectory(ebpf)
     add_subdirectory(linux)
-    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-linux)
+    add_subdirectory(policies)
+    
+    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-linux containerv-ebpf)
     
     # Propagate BPF variables from linux subdirectory to parent scope
     if(BPF_PROGRAMS_AVAILABLE)

@@ -18,12 +18,13 @@
 
 #define _GNU_SOURCE
 
-#include "policy-seccomp.h"
-#include "policy-internal.h"
 #include <errno.h>
 #include <seccomp.h>
 #include <string.h>
 #include <vlog.h>
+
+// import the policy structure details
+#include "../policies/private.h"
 
 int policy_seccomp_apply(struct containerv_policy* policy)
 {
