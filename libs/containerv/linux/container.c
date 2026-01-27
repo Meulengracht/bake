@@ -927,6 +927,13 @@ static int __container_run(
             VLOG_ERROR("containerv[child]", "__container_run: host failed to setup policy, aborting\n");
             return event.status;
         }
+
+        // Apply seccomp-bpf for syscall filtering
+        status = policy_seccomp_apply(options->policy);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to apply seccomp policy\n");
+            return status;
+        }
     } else {
         VLOG_DEBUG("containerv[child]", "__container_run: no security policy configured\n");
     }
@@ -936,15 +943,6 @@ static int __container_run(
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_run: failed to drop capabilities\n");
         return status;
-    }
-
-    // Apply seccomp-bpf for syscall filtering
-    if (options->policy != NULL) {
-        status = policy_seccomp_apply(options->policy);
-        if (status) {
-            VLOG_ERROR("containerv[child]", "__container_run: failed to apply seccomp policy\n");
-            return status;
-        }
     }
 
     // Make this process take the role of init(1) before we go into

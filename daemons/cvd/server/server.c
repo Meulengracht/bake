@@ -183,7 +183,10 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
 
     // setup policy
     policy = containerv_policy_from_strings(params->policy.profiles);
-    containterv_options_set_policy(opts, policy);
+    if (policy != NULL) {
+        VLOG_DEBUG("cvd", "cvd_create: applying security policy profiles: %s\n", params->policy.profiles);
+        containterv_options_set_policy(opts, policy);
+    }
 
     // setup other config
     containerv_options_set_caps(opts, 
