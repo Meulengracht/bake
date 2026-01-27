@@ -62,6 +62,36 @@ struct dir_policy_value {
     __u32 flags;
 };
 
+/* Basename rules: limited patterns to avoid full path parsing in BPF */
+#define BASENAME_RULE_MAX 8
+#define BASENAME_MAX_STR  32
+
+// Exact: foo
+// Prefix: foo*
+// Digits: loop[0-9]+, nvme[0-9]p* (single digit if no +, one-or-more digits if +)
+enum basename_rule_type {
+    BASENAME_RULE_EMPTY  = 0,
+    BASENAME_RULE_EXACT  = 1,
+    BASENAME_RULE_PREFIX = 2,
+    BASENAME_RULE_DIGITS = 3,
+};
+
+struct basename_rule {
+    __u32 allow_mask;
+    __u8  type;
+    __u8  digits_max;      /* 1 = exactly one digit, 0 = one-or-more digits */
+    __u8  prefix_len;
+    __u8  tail_len;
+    __u8  tail_wildcard;   /* if set, tail only needs to be a prefix */
+    __u8  _pad[3];
+    char  prefix[BASENAME_MAX_STR];
+    char  tail[BASENAME_MAX_STR];
+};
+
+struct basename_policy_value {
+    struct basename_rule rules[BASENAME_RULE_MAX];
+};
+
 /* BPF map: policy enforcement map */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -77,6 +107,14 @@ struct {
     __type(value, struct dir_policy_value);
     __uint(max_entries, 10240);
 } dir_policy_map SEC(".maps");
+
+/* Basename policy map: rules keyed by parent directory inode (dev,ino) + cgroup */
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, struct policy_key);
+    __type(value, struct basename_policy_value);
+    __uint(max_entries, 10240);
+} basename_policy_map SEC(".maps");
 
 static __always_inline __u64 get_current_cgroup_id(void)
 {
@@ -163,6 +201,128 @@ static __always_inline int __populate_key_from_dentry(struct policy_key* key, st
     return 0;
 }
 
+static __always_inline int __read_dentry_name(struct dentry* dentry, char out[BASENAME_MAX_STR], __u32* out_len)
+{
+    struct qstr d_name = {};
+    const unsigned char* name_ptr = NULL;
+    __u32 len = 0;
+
+    if (!dentry || !out || !out_len) {
+        return -EACCES;
+    }
+
+    CORE_READ_INTO(&d_name, dentry, d_name);
+    CORE_READ_INTO(&name_ptr, &d_name, name);
+    CORE_READ_INTO(&len, &d_name, len);
+
+    if (!name_ptr) {
+        return -EACCES;
+    }
+
+    if (len >= BASENAME_MAX_STR) {
+        len = BASENAME_MAX_STR - 1;
+    }
+    if (len > 0) {
+        bpf_core_read(out, len, name_ptr);
+    }
+    out[len] = 0;
+    *out_len = len;
+    return 0;
+}
+
+static __always_inline int __match_qmark_bounded(const char* pattern, const char* s, __u32 n)
+{
+#pragma unroll
+    for (int i = 0; i < BASENAME_MAX_STR; i++) {
+        if ((__u32)i < n) {
+            char pc = pattern[i];
+            if (pc != '?' && pc != s[i]) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static __always_inline int __match_basename_rule(const struct basename_rule* rule, const char name[BASENAME_MAX_STR], __u32 name_len)
+{
+    if (!rule || rule->type == BASENAME_RULE_EMPTY) {
+        return 0;
+    }
+
+    if (rule->prefix_len >= BASENAME_MAX_STR || rule->tail_len >= BASENAME_MAX_STR) {
+        return 0;
+    }
+
+    if (name_len < rule->prefix_len) {
+        return 0;
+    }
+
+    if (__match_qmark_bounded(rule->prefix, name, rule->prefix_len) != 0) {
+        return 0;
+    }
+
+    if (rule->type == BASENAME_RULE_EXACT) {
+        return name_len == rule->prefix_len;
+    }
+
+    if (rule->type == BASENAME_RULE_PREFIX) {
+        return 1;
+    }
+
+    if (rule->type == BASENAME_RULE_DIGITS) {
+        __u32 pos = rule->prefix_len;
+        __u32 digit_count = 0;
+
+#pragma unroll
+        for (int i = 0; i < 64; i++) {
+            __u32 idx = pos + (__u32)i;
+            if (idx >= name_len) {
+                break;
+            }
+            char c = name[idx];
+            if (c >= '0' && c <= '9') {
+                digit_count++;
+                continue;
+            }
+            break;
+        }
+
+        if (rule->digits_max == 1) {
+            if (digit_count != 1) {
+                return 0;
+            }
+        } else {
+            if (digit_count < 1) {
+                return 0;
+            }
+        }
+
+        __u32 tail_start = pos + digit_count;
+        if (tail_start > name_len) {
+            return 0;
+        }
+
+        __u32 remaining = name_len - tail_start;
+        if (rule->tail_len > remaining) {
+            return 0;
+        }
+
+        if (rule->tail_len > 0) {
+            if (__match_qmark_bounded(rule->tail, &name[tail_start], rule->tail_len) != 0) {
+                return 0;
+            }
+        }
+
+        if (rule->tail_wildcard) {
+            return 1;
+        }
+        return remaining == rule->tail_len;
+    }
+
+    return 0;
+}
+
 static __always_inline int __check_access(struct file* file, __u32 required)
 {
     __u64 cgroup_id;
@@ -187,7 +347,7 @@ static __always_inline int __check_access(struct file* file, __u32 required)
         return 0;
     }
 
-    // Directory rules: check parent (children-only) and bounded ancestor walk (recursive)
+    // Directory rules and basename rules
     struct dentry* dentry = NULL;
     struct dentry* parent = NULL;
     CORE_READ_INTO(&dentry, file, f_path.dentry);
@@ -197,6 +357,30 @@ static __always_inline int __check_access(struct file* file, __u32 required)
     CORE_READ_INTO(&parent, dentry, d_parent);
     if (!parent) {
         return -EACCES;
+    }
+
+    // Basename rules: only check immediate parent directory
+    if (__populate_key_from_dentry(&key, parent, cgroup_id) == 0) {
+        struct basename_policy_value* bval = bpf_map_lookup_elem(&basename_policy_map, &key);
+        if (bval) {
+            char name[BASENAME_MAX_STR] = {};
+            __u32 name_len = 0;
+            if (__read_dentry_name(dentry, name, &name_len) == 0) {
+#pragma unroll
+                for (int i = 0; i < BASENAME_RULE_MAX; i++) {
+                    const struct basename_rule* rule = &bval->rules[i];
+                    if (rule->type == BASENAME_RULE_EMPTY) {
+                        continue;
+                    }
+                    if (__match_basename_rule(rule, name, name_len)) {
+                        if (required & ~rule->allow_mask) {
+                            return -EACCES;
+                        }
+                        return 0;
+                    }
+                }
+            }
+        }
     }
 
     struct dentry* cur = parent;

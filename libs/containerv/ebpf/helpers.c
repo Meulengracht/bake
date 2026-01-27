@@ -173,6 +173,7 @@ int containerv_bpf_manager_sanity_check_pins(void)
 #else
     int map_fd = bpf_obj_get("/sys/fs/bpf/cvd/policy_map");
     int dir_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/dir_policy_map");
+    int basename_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/basename_policy_map");
     int link_fd = bpf_obj_get("/sys/fs/bpf/cvd/fs_lsm_link");
     int exec_link_fd = bpf_obj_get("/sys/fs/bpf/cvd/fs_lsm_exec_link");
 
@@ -181,6 +182,9 @@ int containerv_bpf_manager_sanity_check_pins(void)
     }
     if (dir_map_fd >= 0) {
         close(dir_map_fd);
+    }
+    if (basename_map_fd >= 0) {
+        close(basename_map_fd);
     }
     if (link_fd >= 0) {
         close(link_fd);
@@ -191,11 +195,12 @@ int containerv_bpf_manager_sanity_check_pins(void)
 
     if (map_fd < 0 || dir_map_fd < 0 || link_fd < 0) {
         VLOG_WARNING("cvd",
-                     "BPF LSM sanity check failed (pinned map=%s, pinned dir_map=%s, pinned link=%s). "
+                     "BPF LSM sanity check failed (pinned map=%s, pinned dir_map=%s, pinned link=%s, pinned basename_map=%s). "
                      "Enforcement may be misconfigured or stale pins exist.\n",
                      (map_fd >= 0) ? "ok" : "missing",
                      (dir_map_fd >= 0) ? "ok" : "missing",
-                     (link_fd >= 0) ? "ok" : "missing");
+                     (link_fd >= 0) ? "ok" : "missing",
+                     (basename_map_fd >= 0) ? "ok" : "missing");
         errno = ENOENT;
         return -1;
     }
@@ -233,6 +238,79 @@ int bpf_dir_policy_map_allow_dir(
     attr.value = (uintptr_t)&value;
     attr.flags = BPF_ANY;
 
+    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
+}
+
+int bpf_basename_policy_map_allow_rule(
+    struct bpf_policy_context*      context,
+    dev_t                           dev,
+    ino_t                           ino,
+    const struct bpf_basename_rule* rule)
+{
+    struct bpf_policy_key key = {};
+    struct bpf_basename_policy_value value = {};
+    union bpf_attr attr = {};
+
+    if (context == NULL || context->basename_map_fd < 0 || rule == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (rule->type == BPF_BASENAME_RULE_EMPTY) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    key.cgroup_id = context->cgroup_id;
+    key.dev = (unsigned long long)dev;
+    key.ino = (unsigned long long)ino;
+
+    // Try lookup existing rule array
+    memset(&attr, 0, sizeof(attr));
+    attr.map_fd = context->basename_map_fd;
+    attr.key = (uintptr_t)&key;
+    attr.value = (uintptr_t)&value;
+    int status = bpf_syscall(BPF_MAP_LOOKUP_ELEM, &attr, sizeof(attr));
+    if (status < 0) {
+        if (errno != ENOENT) {
+            return -1;
+        }
+        memset(&value, 0, sizeof(value));
+    }
+
+    // If an identical rule exists, merge allow_mask
+    for (int i = 0; i < BPF_BASENAME_RULE_MAX; i++) {
+        struct bpf_basename_rule* slot = &value.rules[i];
+        if (slot->type == rule->type &&
+            slot->digits_max == rule->digits_max &&
+            slot->prefix_len == rule->prefix_len &&
+            slot->tail_len == rule->tail_len &&
+            slot->tail_wildcard == rule->tail_wildcard &&
+            memcmp(slot->prefix, rule->prefix, BPF_BASENAME_MAX_STR) == 0 &&
+            memcmp(slot->tail, rule->tail, BPF_BASENAME_MAX_STR) == 0) {
+            slot->allow_mask |= rule->allow_mask;
+            goto do_update;
+        }
+    }
+
+    // Otherwise insert into an empty slot
+    for (int i = 0; i < BPF_BASENAME_RULE_MAX; i++) {
+        struct bpf_basename_rule* slot = &value.rules[i];
+        if (slot->type == BPF_BASENAME_RULE_EMPTY) {
+            *slot = *rule;
+            goto do_update;
+        }
+    }
+
+    errno = ENOSPC;
+    return -1;
+
+do_update:
+    memset(&attr, 0, sizeof(attr));
+    attr.map_fd = context->basename_map_fd;
+    attr.key = (uintptr_t)&key;
+    attr.value = (uintptr_t)&value;
+    attr.flags = BPF_ANY;
     return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
 }
 

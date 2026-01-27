@@ -39,6 +39,7 @@
 #include "../policies/private.h"
 
 #ifdef __linux__
+#include <ftw.h>
 #include <linux/bpf.h>
 #include <sys/sysmacros.h>
 #include <sys/time.h>
@@ -55,6 +56,7 @@
 #define BPF_PIN_PATH "/sys/fs/bpf/cvd"
 #define POLICY_MAP_PIN_PATH BPF_PIN_PATH "/policy_map"
 #define DIR_POLICY_MAP_PIN_PATH BPF_PIN_PATH "/dir_policy_map"
+#define BASENAME_POLICY_MAP_PIN_PATH BPF_PIN_PATH "/basename_policy_map"
 #define POLICY_LINK_PIN_PATH BPF_PIN_PATH "/fs_lsm_link"
 #define EXEC_LINK_PIN_PATH BPF_PIN_PATH "/fs_lsm_exec_link"
 #define MAX_TRACKED_ENTRIES 10240
@@ -69,6 +71,9 @@ struct container_entry_tracker {
     struct bpf_policy_key* dir_keys;
     int dir_key_count;
     int dir_key_capacity;
+    struct bpf_policy_key* basename_keys;
+    int basename_key_count;
+    int basename_key_capacity;
     unsigned long long populate_time_us;  // Time taken to populate policy
     unsigned long long cleanup_time_us;   // Time taken to cleanup policy
     struct container_entry_tracker* next;
@@ -87,6 +92,7 @@ static struct {
     int available;
     int policy_map_fd;
     int dir_policy_map_fd;
+    int basename_policy_map_fd;
 #ifdef HAVE_BPF_SKELETON
     struct fs_lsm_bpf* skel;
 #endif
@@ -96,6 +102,7 @@ static struct {
     .available = 0,
     .policy_map_fd = -1,
     .dir_policy_map_fd = -1,
+    .basename_policy_map_fd = -1,
 #ifdef HAVE_BPF_SKELETON
     .skel = NULL,
 #endif
@@ -150,9 +157,20 @@ static struct container_entry_tracker* __create_tracker(const char* container_id
         free(tracker);
         return NULL;
     }
+
+    tracker->basename_key_capacity = 32;
+    tracker->basename_keys = malloc(sizeof(struct bpf_policy_key) * tracker->basename_key_capacity);
+    if (!tracker->basename_keys) {
+        free(tracker->dir_keys);
+        free(tracker->file_keys);
+        free(tracker->container_id);
+        free(tracker);
+        return NULL;
+    }
     
     tracker->file_key_count = 0;
     tracker->dir_key_count = 0;
+    tracker->basename_key_count = 0;
     tracker->next = g_bpf_manager.trackers;
     g_bpf_manager.trackers = tracker;
     
@@ -227,6 +245,39 @@ static int __add_tracked_dir_entry(struct container_entry_tracker* tracker,
     return 0;
 }
 
+static int __add_tracked_basename_entry(struct container_entry_tracker* tracker,
+                                        unsigned long long cgroup_id,
+                                        dev_t dev,
+                                        ino_t ino)
+{
+    struct bpf_policy_key* key;
+
+    if (!tracker) {
+        return -1;
+    }
+
+    // Avoid duplicates (we delete per-dir key as a whole)
+    for (int i = 0; i < tracker->basename_key_count; i++) {
+        if (tracker->basename_keys[i].cgroup_id == cgroup_id &&
+            tracker->basename_keys[i].dev == (unsigned long long)dev &&
+            tracker->basename_keys[i].ino == (unsigned long long)ino) {
+            return 0;
+        }
+    }
+
+    if (__ensure_capacity(&tracker->basename_keys, &tracker->basename_key_count, &tracker->basename_key_capacity) < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked basename key capacity\n");
+        return -1;
+    }
+
+    key = &tracker->basename_keys[tracker->basename_key_count];
+    key->cgroup_id = cgroup_id;
+    key->dev = (unsigned long long)dev;
+    key->ino = (unsigned long long)ino;
+    tracker->basename_key_count++;
+    return 0;
+}
+
 static void __remove_tracker(const char* container_id)
 {
     struct container_entry_tracker* tracker = g_bpf_manager.trackers;
@@ -245,6 +296,7 @@ static void __remove_tracker(const char* container_id)
             free(tracker->container_id);
             free(tracker->file_keys);
             free(tracker->dir_keys);
+            free(tracker->basename_keys);
             free(tracker);
             return;
         }
@@ -261,6 +313,7 @@ static void __cleanup_all_trackers(void)
         free(tracker->container_id);
         free(tracker->file_keys);
         free(tracker->dir_keys);
+        free(tracker->basename_keys);
         free(tracker);
         tracker = next;
     }
@@ -283,6 +336,7 @@ static int __count_total_entries(void)
     while (tracker) {
         total += tracker->file_key_count;
         total += tracker->dir_key_count;
+        total += tracker->basename_key_count;
         tracker = tracker->next;
     }
     return total;
@@ -313,6 +367,126 @@ static int __has_glob_chars(const char* s)
         }
     }
     return 0;
+}
+
+static int __has_glob_chars_range(const char* s, size_t n)
+{
+    if (!s) {
+        return 0;
+    }
+    for (size_t i = 0; i < n && s[i]; i++) {
+        char c = s[i];
+        if (c == '*' || c == '?' || c == '[' || c == '+') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int __has_disallowed_basename_chars_range(const char* s, size_t n)
+{
+    if (!s) {
+        return 0;
+    }
+    for (size_t i = 0; i < n && s[i]; i++) {
+        char c = s[i];
+        // '?' is supported by basename matcher; everything else is disallowed in prefix/tail fragments
+        if (c == '*' || c == '[' || c == '+') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int __parse_basename_rule(const char* pattern, unsigned int allow_mask, struct bpf_basename_rule* out)
+{
+    if (!pattern || !out) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->allow_mask = allow_mask;
+
+    size_t plen = strlen(pattern);
+    if (plen == 0 || plen >= BPF_BASENAME_MAX_STR) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    // exact (supports '?' wildcards)
+    if (strchr(pattern, '*') == NULL && strchr(pattern, '[') == NULL && strchr(pattern, '+') == NULL) {
+        out->type = BPF_BASENAME_RULE_EXACT;
+        out->prefix_len = (unsigned char)plen;
+        memcpy(out->prefix, pattern, plen);
+        out->prefix[plen] = 0;
+        return 0;
+    }
+
+    // prefix* (supports '?' wildcards in the prefix)
+    if (pattern[plen - 1] == '*' && !__has_disallowed_basename_chars_range(pattern, plen - 1)) {
+        size_t pre = plen - 1;
+        if (pre == 0 || pre >= BPF_BASENAME_MAX_STR) {
+            errno = EINVAL;
+            return -1;
+        }
+        out->type = BPF_BASENAME_RULE_PREFIX;
+        out->prefix_len = (unsigned char)pre;
+        memcpy(out->prefix, pattern, pre);
+        out->prefix[pre] = 0;
+        return 0;
+    }
+
+    // prefix[0-9](+)?tail(*)?
+    const char* digits = strstr(pattern, "[0-9]");
+    if (digits) {
+        size_t pre = (size_t)(digits - pattern);
+        const char* after = digits + strlen("[0-9]");
+        unsigned char digits_max = 1;
+        if (*after == '+') {
+            digits_max = 0;
+            after++;
+        }
+
+        size_t tail_len = strlen(after);
+        unsigned char tail_wildcard = 0;
+        if (tail_len > 0 && after[tail_len - 1] == '*') {
+            tail_wildcard = 1;
+            tail_len--;
+        }
+
+        if (__has_disallowed_basename_chars_range(pattern, pre)) {
+            errno = EINVAL;
+            return -1;
+        }
+        if (__has_disallowed_basename_chars_range(after, tail_len)) {
+            errno = EINVAL;
+            return -1;
+        }
+        if (pre >= BPF_BASENAME_MAX_STR || tail_len >= BPF_BASENAME_MAX_STR) {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+
+        out->type = BPF_BASENAME_RULE_DIGITS;
+        out->digits_max = digits_max;
+        out->prefix_len = (unsigned char)pre;
+        out->tail_len = (unsigned char)tail_len;
+        out->tail_wildcard = tail_wildcard;
+
+        if (pre > 0) {
+            memcpy(out->prefix, pattern, pre);
+        }
+        out->prefix[pre] = 0;
+        if (tail_len > 0) {
+            memcpy(out->tail, after, tail_len);
+        }
+        out->tail[tail_len] = 0;
+        return 0;
+    }
+
+    errno = ENOTSUP;
+    return -1;
 }
 
 static void __glob_translate_plus(const char* in, char* out, size_t outSize)
@@ -390,6 +564,184 @@ static int __create_bpf_pin_directory(void)
     }
     
     return 0;
+}
+
+
+struct __path_walk_ctx {
+    struct bpf_policy_context* bpf_ctx;
+    unsigned int              allowMask;
+};
+
+static struct __path_walk_ctx* __g_walk_ctx;
+
+static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, struct FTW* ftwbuf)
+{
+    struct __path_walk_ctx* ctx = __g_walk_ctx;
+    struct stat             st;
+    int                     status;
+
+    (void)sb;
+    (void)typeflag;
+    (void)ftwbuf;
+
+    if (!ctx || !ctx->bpf_ctx) {
+        return 1;
+    }
+
+    status = stat(fpath, &st);
+    if (status < 0) {
+        return 0;
+    }
+
+    status = bpf_policy_map_allow_inode(ctx->bpf_ctx, st.st_dev, st.st_ino, ctx->allowMask);
+    if (status < 0) {
+        if (errno == ENOSPC) {
+            VLOG_ERROR("containerv", "policy_ebpf: BPF policy map full while allowing path '%s'\n", fpath);
+            return 1; // Stop walking
+        }
+        VLOG_ERROR("containerv", "policy_ebpf: failed to allow path '%s'\n", fpath);
+        return 0;
+    }
+    return 0;
+}
+
+static int __allow_path_recursive(
+    struct bpf_policy_context* bpf_ctx,
+    const char*               rootPath,
+    unsigned int              allowMask)
+{
+    struct __path_walk_ctx ctx = {
+        .bpf_ctx   = bpf_ctx,
+        .allowMask = allowMask,
+    };
+
+    __g_walk_ctx = &ctx;
+    int status = nftw(rootPath, __walk_cb, 16, FTW_PHYS | FTW_MOUNT);
+    __g_walk_ctx = NULL;
+    return status;
+}
+
+static int __allow_single_path(
+    struct bpf_policy_context* bpf_ctx,
+    const char*               path,
+    unsigned int              allowMask,
+    unsigned int              dirFlags)
+{
+    struct stat st;
+    int status;
+
+    status = stat(path, &st);
+    if (status < 0) {
+        return status;
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+        if (bpf_ctx->dir_map_fd < 0) {
+            errno = ENOTSUP;
+            return -1;
+        }
+        return bpf_dir_policy_map_allow_dir(bpf_ctx, st.st_dev, st.st_ino, allowMask, dirFlags);
+    }
+    return bpf_policy_map_allow_inode(bpf_ctx, st.st_dev, st.st_ino, allowMask);
+}
+
+static int __allow_path_or_tree(
+    struct bpf_policy_context* bpf_ctx,
+    const char*               path,
+    unsigned int              allowMask)
+{
+    struct stat st;
+    int status;
+
+    status = stat(path, &st);
+    if (status < 0) {
+        return status;
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+        // Prefer scalable directory rules when available
+        status = __allow_single_path(bpf_ctx, path, allowMask, BPF_DIR_RULE_RECURSIVE);
+        if (status == 0) {
+            return 0;
+        }
+        // Fallback for older kernels/programs: enumerate all inodes
+        return __allow_path_recursive(bpf_ctx, path, allowMask);
+    }
+
+    return __allow_single_path(bpf_ctx, path, allowMask, 0);
+}
+
+int bpf_manager_add_allow_pattern(
+    struct bpf_policy_context* bpf_ctx,
+    const char*                pattern,
+    unsigned int               allowMask)
+{
+    size_t plen;
+    char base[PATH_MAX];
+    char glob_pattern[PATH_MAX];
+    glob_t g;
+    int status;
+
+    // Handle special scalable forms: /dir/* and /dir/**
+    plen = strlen(pattern);
+    if (__ends_with(pattern, "/**") && plen >= 3) {
+        snprintf(base, sizeof(base), "%.*s", (int)(plen - 3), pattern);
+        return __allow_single_path(bpf_ctx, base, allowMask, BPF_DIR_RULE_RECURSIVE);
+    }
+    if (__ends_with(pattern, "/*") && plen >= 2) {
+        snprintf(base, sizeof(base), "%.*s", (int)(plen - 2), pattern);
+        return __allow_single_path(bpf_ctx, base, allowMask, BPF_DIR_RULE_CHILDREN_ONLY);
+    }
+
+    // Basename-only globbing: allow pattern under parent directory inode, without requiring files to exist.
+    // Only applies when the parent path has no glob chars.
+    if (bpf_ctx->basename_map_fd >= 0 && __has_glob_chars_range(pattern, strlen(pattern))) {
+        const char* last = strrchr(pattern, '/');
+        if (last && last[1] != 0) {
+            size_t parent_len = (size_t)(last - pattern);
+            if (!__has_glob_chars_range(pattern, parent_len)) {
+                char parent_path[PATH_MAX];
+                char base_pat[PATH_MAX];
+                struct stat st;
+
+                if (parent_len == 0) {
+                    snprintf(parent_path, sizeof(parent_path), "/");
+                } else {
+                    snprintf(parent_path, sizeof(parent_path), "%.*s", (int)parent_len, pattern);
+                }
+                snprintf(base_pat, sizeof(base_pat), "%s", last + 1);
+
+                if (strcmp(base_pat, "*") == 0) {
+                    // equivalent to children-only dir rule
+                    return __allow_single_path(bpf_ctx, parent_path, allowMask, BPF_DIR_RULE_CHILDREN_ONLY);
+                }
+
+                struct bpf_basename_rule rule = {};
+                if (__parse_basename_rule(base_pat, allowMask, &rule) == 0) {
+                    if (stat(parent_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+                        if (bpf_basename_policy_map_allow_rule(bpf_ctx, st.st_dev, st.st_ino, &rule) == 0) {
+                            return 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    memset(&g, 0, sizeof(g));
+    __glob_translate_plus(pattern, glob_pattern, sizeof(glob_pattern));
+    status = glob(glob_pattern, GLOB_NOSORT, NULL, &g);
+    if (status == 0) {
+        for (size_t i = 0; i < g.gl_pathc; i++) {
+            (void)__allow_path_or_tree(bpf_ctx, g.gl_pathv[i], allowMask);
+        }
+        globfree(&g);
+        return 0;
+    }
+
+    globfree(&g);
+    /* If no glob matches, treat it as a literal path */
+    return __allow_path_or_tree(bpf_ctx, pattern, allowMask);
 }
 
 #endif // __linux__
@@ -474,6 +826,17 @@ int containerv_bpf_manager_initialize(void)
         g_bpf_manager.policy_map_fd = -1;
         return -1;
     }
+
+    // Get basename policy map FD
+    g_bpf_manager.basename_policy_map_fd = bpf_map__fd(g_bpf_manager.skel->maps.basename_policy_map);
+    if (g_bpf_manager.basename_policy_map_fd < 0) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to get basename_policy_map FD\n");
+        fs_lsm_bpf__destroy(g_bpf_manager.skel);
+        g_bpf_manager.skel = NULL;
+        g_bpf_manager.policy_map_fd = -1;
+        g_bpf_manager.dir_policy_map_fd = -1;
+        return -1;
+    }
     
     // Pin the policy map for persistence and sharing
     (void)unlink(POLICY_MAP_PIN_PATH);
@@ -494,6 +857,16 @@ int containerv_bpf_manager_initialize(void)
                     DIR_POLICY_MAP_PIN_PATH, strerror(errno));
     } else {
         VLOG_DEBUG("cvd", "bpf_manager: dir policy map pinned to %s\n", DIR_POLICY_MAP_PIN_PATH);
+    }
+
+    // Pin the basename policy map for persistence and sharing
+    (void)unlink(BASENAME_POLICY_MAP_PIN_PATH);
+    status = bpf_obj_pin(g_bpf_manager.basename_policy_map_fd, BASENAME_POLICY_MAP_PIN_PATH);
+    if (status < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to pin basename policy map to %s: %s\n",
+                    BASENAME_POLICY_MAP_PIN_PATH, strerror(errno));
+    } else {
+        VLOG_DEBUG("cvd", "bpf_manager: basename policy map pinned to %s\n", BASENAME_POLICY_MAP_PIN_PATH);
     }
 
     // Pin the LSM link so other processes can verify enforcement is active.
@@ -556,6 +929,11 @@ void containerv_bpf_manager_shutdown(void)
                      strerror(errno));
     }
 
+    if (unlink(BASENAME_POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin basename policy map: %s\n",
+                     strerror(errno));
+    }
+
     // Unpin link (best-effort)
     if (unlink(POLICY_LINK_PIN_PATH) < 0 && errno != ENOENT) {
         VLOG_WARNING("cvd", "bpf_manager: failed to unpin enforcement link: %s\n",
@@ -575,6 +953,7 @@ void containerv_bpf_manager_shutdown(void)
     
     g_bpf_manager.policy_map_fd = -1;
     g_bpf_manager.dir_policy_map_fd = -1;
+    g_bpf_manager.basename_policy_map_fd = -1;
     g_bpf_manager.available = 0;
     
     VLOG_TRACE("cvd", "bpf_manager: shutdown complete\n");
@@ -661,6 +1040,7 @@ int containerv_bpf_manager_populate_policy(
     struct bpf_policy_context bpf_ctx = {
         .map_fd = g_bpf_manager.policy_map_fd,
         .dir_map_fd = g_bpf_manager.dir_policy_map_fd,
+        .basename_map_fd = g_bpf_manager.basename_policy_map_fd,
         .cgroup_id = cgroup_id,
     };
 
@@ -716,6 +1096,46 @@ int containerv_bpf_manager_populate_policy(
         // Any globbing chars: expand to concrete paths; for dirs use recursive dir rules
         snprintf(full_path, sizeof(full_path), "%s%s", rootfs_path, path);
         if (__has_glob_chars(path)) {
+            // If globbing only affects the basename, install a basename rule under the parent dir inode
+            const char* last = strrchr(path, '/');
+            if (last && last[1] != 0) {
+                size_t parent_len = (size_t)(last - path);
+                if (!__has_glob_chars_range(path, parent_len)) {
+                    char parent_rel[PATH_MAX];
+                    char parent_abs[PATH_MAX];
+                    char base_pat[PATH_MAX];
+                    struct stat st;
+
+                    if (parent_len == 0) {
+                        snprintf(parent_rel, sizeof(parent_rel), "/");
+                    } else {
+                        snprintf(parent_rel, sizeof(parent_rel), "%.*s", (int)parent_len, path);
+                    }
+                    snprintf(base_pat, sizeof(base_pat), "%s", last + 1);
+
+                    // "*" is equivalent to children-only directory rule
+                    if (strcmp(base_pat, "*") == 0) {
+                        snprintf(parent_abs, sizeof(parent_abs), "%s%s", rootfs_path, parent_rel);
+                        if (__apply_single_path(&bpf_ctx, tracker, cgroup_id, parent_abs, allow_mask, BPF_DIR_RULE_CHILDREN_ONLY) == 0) {
+                            entries_added++;
+                            continue;
+                        }
+                    } else {
+                        struct bpf_basename_rule rule = {};
+                        if (__parse_basename_rule(base_pat, allow_mask, &rule) == 0) {
+                            snprintf(parent_abs, sizeof(parent_abs), "%s%s", rootfs_path, parent_rel);
+                            if (stat(parent_abs, &st) == 0 && S_ISDIR(st.st_mode)) {
+                                if (bpf_basename_policy_map_allow_rule(&bpf_ctx, st.st_dev, st.st_ino, &rule) == 0) {
+                                    (void)__add_tracked_basename_entry(tracker, cgroup_id, st.st_dev, st.st_ino);
+                                    entries_added++;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             char glob_path[PATH_MAX];
             __glob_translate_plus(full_path, glob_path, sizeof(glob_path));
             glob_t g;
@@ -804,7 +1224,7 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
         return 0;
     }
     
-    if (tracker->file_key_count == 0 && tracker->dir_key_count == 0) {
+    if (tracker->file_key_count == 0 && tracker->dir_key_count == 0 && tracker->basename_key_count == 0) {
         VLOG_DEBUG("cvd", "bpf_manager: no entries to clean up for container %s\n", container_id);
         __remove_tracker(container_id);
         return 0;
@@ -813,11 +1233,19 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
     struct bpf_policy_context delete_files_ctx = {
         .map_fd = g_bpf_manager.policy_map_fd,
         .dir_map_fd = g_bpf_manager.dir_policy_map_fd,
+        .basename_map_fd = g_bpf_manager.basename_policy_map_fd,
         .cgroup_id = tracker->cgroup_id,
     };
     struct bpf_policy_context delete_dirs_ctx = {
         .map_fd = g_bpf_manager.dir_policy_map_fd,
         .dir_map_fd = g_bpf_manager.dir_policy_map_fd,
+        .basename_map_fd = g_bpf_manager.basename_policy_map_fd,
+        .cgroup_id = tracker->cgroup_id,
+    };
+    struct bpf_policy_context delete_basename_ctx = {
+        .map_fd = g_bpf_manager.basename_policy_map_fd,
+        .dir_map_fd = g_bpf_manager.dir_policy_map_fd,
+        .basename_map_fd = g_bpf_manager.basename_policy_map_fd,
         .cgroup_id = tracker->cgroup_id,
     };
 
@@ -844,6 +1272,19 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
             return -1;
         }
         deleted_count += deleted_dirs;
+    }
+
+    if (tracker->basename_key_count > 0) {
+        VLOG_DEBUG("cvd", "bpf_manager: deleting %d basename entries (cgroup_id=%llu)\n",
+                   tracker->basename_key_count, tracker->cgroup_id);
+        int deleted_base = bpf_policy_map_delete_batch(&delete_basename_ctx, tracker->basename_keys, tracker->basename_key_count);
+        if (deleted_base < 0) {
+            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (basename map) for container %s\n", container_id);
+            g_bpf_manager.metrics.failed_cleanup_ops++;
+            __remove_tracker(container_id);
+            return -1;
+        }
+        deleted_count += deleted_base;
     }
     
     // End timing and update metrics

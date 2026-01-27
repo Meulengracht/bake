@@ -53,9 +53,37 @@ struct bpf_dir_policy_value {
     unsigned int flags;
 };
 
+/* Basename matcher support (must match BPF program) */
+#define BPF_BASENAME_RULE_MAX 8
+#define BPF_BASENAME_MAX_STR  32
+
+enum bpf_basename_rule_type {
+    BPF_BASENAME_RULE_EMPTY  = 0,
+    BPF_BASENAME_RULE_EXACT  = 1,
+    BPF_BASENAME_RULE_PREFIX = 2,
+    BPF_BASENAME_RULE_DIGITS = 3,
+};
+
+struct bpf_basename_rule {
+    unsigned int allow_mask;
+    unsigned char type;
+    unsigned char digits_max;    /* 1 = exactly one digit, 0 = one-or-more digits */
+    unsigned char prefix_len;
+    unsigned char tail_len;
+    unsigned char tail_wildcard;
+    unsigned char _pad[3];
+    char prefix[BPF_BASENAME_MAX_STR];
+    char tail[BPF_BASENAME_MAX_STR];
+};
+
+struct bpf_basename_policy_value {
+    struct bpf_basename_rule rules[BPF_BASENAME_RULE_MAX];
+};
+
 struct bpf_policy_context {
     int                map_fd;
     int                dir_map_fd;
+    int                basename_map_fd;
     unsigned long long cgroup_id;
 };
 
@@ -117,6 +145,21 @@ extern int bpf_dir_policy_map_allow_dir(
     ino_t                      ino,
     unsigned int               allow_mask,
     unsigned int               flags
+);
+
+/**
+ * @brief Allow a basename pattern under a directory inode
+ * @param context BPF policy context
+ * @param dev Directory device number
+ * @param ino Directory inode number
+ * @param rule Basename rule to add (type/prefix/tail)
+ * @return 0 on success, -1 on error
+ */
+extern int bpf_basename_policy_map_allow_rule(
+    struct bpf_policy_context*     context,
+    dev_t                          dev,
+    ino_t                          ino,
+    const struct bpf_basename_rule* rule
 );
 
 /**

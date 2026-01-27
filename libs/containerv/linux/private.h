@@ -30,7 +30,6 @@
 
 #define __CONTAINER_MAX_FD_COUNT 16
 
-
 enum containerv_namespace_type {
     CV_NS_CGROUP = 0,
     CV_NS_IPC,
@@ -188,6 +187,14 @@ extern int __containerv_kill(struct containerv_container* container, pid_t proce
 extern void __containerv_destroy(struct containerv_container* container);
 
 extern int policy_seccomp_apply(struct containerv_policy* policy);
+
+// imported from ebpf/private.h
+struct bpf_policy_context;
+
+extern int bpf_manager_add_allow_pattern(
+    struct bpf_policy_context* bpf_ctx,
+    const char*                pattern,
+    unsigned int               allowMask);
 
 /**
  * @brief Load and attach eBPF programs for the given policy
