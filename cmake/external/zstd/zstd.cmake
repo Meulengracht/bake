@@ -52,8 +52,10 @@ ExternalProject_Add(bundled_zstd
     -DCMAKE_OSX_SYSROOT=${CMAKE_OSX_SYSROOT}
   BUILD_BYPRODUCTS
     <INSTALL_DIR>/lib/${CMAKE_STATIC_LIBRARY_PREFIX}zstd${CMAKE_STATIC_LIBRARY_SUFFIX}
+  BUILD_COMMAND
+    ${CMAKE_COMMAND} --build . $<$<CONFIG:Debug>:--config Debug>$<$<CONFIG:Release>:--config Release>$<$<CONFIG:RelWithDebInfo>:--config RelWithDebInfo>$<$<CONFIG:MinSizeRel>:--config MinSizeRel>
   INSTALL_COMMAND
-    ${CMAKE_COMMAND} --build . --target install --config ${CMAKE_BUILD_TYPE}
+    ${CMAKE_COMMAND} --build . --target install $<$<CONFIG:Debug>:--config Debug>$<$<CONFIG:Release>:--config Release>$<$<CONFIG:RelWithDebInfo>:--config RelWithDebInfo>$<$<CONFIG:MinSizeRel>:--config MinSizeRel>
 )
 add_dependencies(zstd bundled_zstd)
 ExternalProject_Get_Property(bundled_zstd INSTALL_DIR)
