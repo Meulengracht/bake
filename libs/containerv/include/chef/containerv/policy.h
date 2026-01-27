@@ -46,6 +46,8 @@ enum containerv_fs_access {
     CV_FS_ALL = (CV_FS_READ | CV_FS_WRITE | CV_FS_EXEC)
 };
 
+extern struct containerv_policy* containerv_policy_from_strings(const char* profiles);
+
 /**
  * @brief Create a new security policy
  * @param plugins List of base policy plugins to start with

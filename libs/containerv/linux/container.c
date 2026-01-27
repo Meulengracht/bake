@@ -187,6 +187,7 @@ enum containerv_event_type {
     CV_CONTAINER_WAITING_FOR_NS_SETUP,
     CV_CONTAINER_WAITING_FOR_CGROUPS_SETUP,
     CV_CONTAINER_WAITING_FOR_NETWORK_SETUP,
+    CV_CONTAINER_WAITING_FOR_POLICY_SETUP,
     CV_CONTAINER_UP,
     CV_CONTAINER_DOWN
 };
@@ -901,11 +902,30 @@ static int __container_run(
 
     // Apply eBPF policy (needs caps, so do it before dropping)
     if (options->policy != NULL) {
+        struct containerv_event event;
         VLOG_DEBUG("containerv[child]", "__container_run: applying security policy\n");
 
+        // load eBPF program
         status = policy_ebpf_load(container, options->policy);
         if (status != 0) {
             VLOG_WARNING("containerv[child]", "__container_run: eBPF policy enforcement not available\n");
+        }
+
+        // notify the host that we need policy setup
+        VLOG_DEBUG("containerv[child]", "notifying host that we need external assistance\n");
+        __send_container_event(container->child, CV_CONTAINER_WAITING_FOR_POLICY_SETUP, 0);
+
+        // wait for ack
+        status = __wait_for_container_event(container->host, &event);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to receive ack from policy setup\n");
+            return status;
+        }
+
+        // check status
+        if (event.status) {
+            VLOG_ERROR("containerv[child]", "__container_run: host failed to setup policy, aborting\n");
+            return event.status;
         }
     } else {
         VLOG_DEBUG("containerv[child]", "__container_run: no security policy configured\n");
@@ -1107,6 +1127,20 @@ int containerv_create(
                     }
                     
                     __send_container_event(container->host, CV_CONTAINER_WAITING_FOR_NETWORK_SETUP, status);
+                } break;
+
+                case CV_CONTAINER_WAITING_FOR_POLICY_SETUP: {
+                    // Populate BPF policy if BPF manager is available
+                    if (containerv_bpf_manager_is_available() && options->policy != NULL) {
+                        const char* rootfs = containerv_layers_get_rootfs(options->layers);
+                        VLOG_DEBUG("containerv[host]", "populating BPF policy for container %s\n", container->id);
+                        status = containerv_bpf_manager_populate_policy(container->id, rootfs, options->policy);
+                        if (status < 0) {
+                            VLOG_ERROR("containerv[host]", "failed to populate BPF policy for %s\n", container->id);
+                        }
+                    }
+
+                    __send_container_event(container->host, CV_CONTAINER_WAITING_FOR_POLICY_SETUP, status);
                 } break;
 
                 case CV_CONTAINER_DOWN: {

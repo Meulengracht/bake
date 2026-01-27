@@ -40,88 +40,6 @@ struct __container {
     struct containerv_layer_context* layer_context;  // Layer composition context
 };
 
-static void __free_policy_plugin(void* item)
-{
-    free(item);
-}
-
-static struct containerv_policy* __create_policy_from_config(const char* profiles)
-{
-    struct list plugins;
-    struct containerv_policy* policy;
-    int want_build = 0;
-    int want_network = 0;
-
-    list_init(&plugins);
-
-    // Always include minimal base policy.
-    {
-        struct containerv_policy_plugin* plugin = calloc(1, sizeof(*plugin));
-        if (!plugin) {
-            return NULL;
-        }
-        plugin->name = "minimal";
-        list_add(&plugins, &plugin->header);
-    }
-
-    // Parse optional profiles: "build", "network" (comma-separated)
-    if (profiles != NULL && profiles[0] != '\0') {
-        char* copy = strdup(profiles);
-        if (!copy) {
-            list_destroy(&plugins, __free_policy_plugin);
-            return NULL;
-        }
-
-        char* saveptr = NULL;
-        for (char* tok = strtok_r(copy, ",", &saveptr); tok != NULL; tok = strtok_r(NULL, ",", &saveptr)) {
-            while (*tok == ' ' || *tok == '\t' || *tok == '\n' || *tok == '\r') {
-                tok++;
-            }
-            char* end = tok + strlen(tok);
-            while (end > tok && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\n' || end[-1] == '\r')) {
-                end[-1] = '\0';
-                end--;
-            }
-
-            if (tok[0] == '\0') {
-                continue;
-            }
-            if (strcmp(tok, "build") == 0) {
-                want_build = 1;
-            } else if (strcmp(tok, "network") == 0) {
-                want_network = 1;
-            } else {
-                VLOG_WARNING("cvd", "cvd_create: unknown policy profile '%s' (ignoring)\n", tok);
-            }
-        }
-        free(copy);
-    }
-
-    if (want_build) {
-        struct containerv_policy_plugin* plugin = calloc(1, sizeof(*plugin));
-        if (!plugin) {
-            list_destroy(&plugins, __free_policy_plugin);
-            return NULL;
-        }
-        plugin->name = "build";
-        list_add(&plugins, &plugin->header);
-    }
-
-    if (want_network) {
-        struct containerv_policy_plugin* plugin = calloc(1, sizeof(*plugin));
-        if (!plugin) {
-            list_destroy(&plugins, __free_policy_plugin);
-            return NULL;
-        }
-        plugin->name = "network";
-        list_add(&plugins, &plugin->header);
-    }
-
-    policy = containerv_policy_new(&plugins);
-    list_destroy(&plugins, __free_policy_plugin);
-    return policy;
-}
-
 static struct __container* __container_new(struct containerv_container* handle, struct containerv_layer_context* layerContext)
 {
     struct __container* container = calloc(1, sizeof(struct __container));
@@ -216,6 +134,7 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     struct containerv_container*     cvContainer;
     struct __container*              _container;
     struct containerv_layer_context* layerContext = NULL;
+    struct containerv_policy*        policy;
     struct containerv_layer*         cvLayers = NULL;
     const char*                      cvdID;
     char                             cvdIDBuffer[17];
@@ -262,6 +181,10 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
 
     containerv_options_set_layers(opts, layerContext);
 
+    // setup policy
+    policy = containerv_policy_from_strings(params->policy.profiles);
+    containterv_options_set_policy(opts, policy);
+
     // setup other config
     containerv_options_set_caps(opts, 
         CV_CAP_FILESYSTEM |
@@ -292,30 +215,6 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
 
     // Store the layer context for cleanup later
     _container->layer_context = layerContext;
-    
-    // Populate BPF policy if BPF manager is available
-    if (containerv_bpf_manager_is_available()) {
-        const char* rootfs = containerv_layers_get_rootfs(layerContext);
-        
-        // Create policy from configuration and/or per-container specification
-        struct containerv_policy* policy = __create_policy_from_config(params->policy.profiles);
-        if (policy != NULL) {
-            VLOG_DEBUG("cvd", "cvd_create: populating BPF policy for container %s\n", cvdID);
-            status = containerv_bpf_manager_populate_policy(cvdID, rootfs, policy);
-            if (status < 0) {
-                VLOG_WARNING("cvd", "cvd_create: failed to populate BPF policy for %s\n", cvdID);
-            } else {
-                // Log container-specific metrics after successful population
-                struct containerv_bpf_container_metrics c_metrics;
-                if (containerv_bpf_manager_get_container_metrics(cvdID, &c_metrics) == 0) {
-                    VLOG_DEBUG("cvd", "cvd_create: BPF policy for %s - entries: %d, populate_time: %llu us\n",
-                              cvdID, c_metrics.policy_entry_count, c_metrics.populate_time_us);
-                }
-            }
-            
-            containerv_policy_delete(policy);
-        }
-    }
     
     list_add(&g_server.containers, &_container->item_header);
     *id = _container->id;
