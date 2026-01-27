@@ -34,6 +34,18 @@ struct containerv_policy_path {
     enum containerv_fs_access access;
 };
 
+/* Internal structure to track loaded eBPF programs */
+struct policy_ebpf_context {
+    int policy_map_fd;
+    unsigned long long cgroup_id;
+
+#ifdef HAVE_BPF_SKELETON
+    struct fs_lsm_bpf* skel;
+#endif
+
+    unsigned int map_entries;
+};
+
 struct containerv_policy {
     void* backend_context;
 

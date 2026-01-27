@@ -6,9 +6,9 @@ add_library(containerv-linux STATIC
     container-options.c
     container.c
     control-socket.c
+    ebpf.c
     layers.c
     network.c
-    policy-ebpf.c
     seccomp.c
     user.c
     utils.c

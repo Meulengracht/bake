@@ -41,7 +41,6 @@
 #include "cgroups.h"
 #include "network.h"
 #include "policy-ebpf.h"
-#include "policy-seccomp.h"
 #include <vlog.h>
 
 #define __FD_READ  0

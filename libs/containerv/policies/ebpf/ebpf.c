@@ -36,6 +36,9 @@
 
 #include "../private.h"
 
+// import ebpf private header
+#include "../../ebpf/private.h"
+
 // Add default system paths (always needed for basic functionality)
 static const struct containerv_policy_path g_basePolicyPaths[] = {
     { "/lib", CV_FS_READ | CV_FS_EXEC },

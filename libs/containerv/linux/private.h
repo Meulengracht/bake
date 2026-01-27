@@ -187,4 +187,23 @@ extern int __containerv_spawn(struct containerv_container* container, struct __c
 extern int __containerv_kill(struct containerv_container* container, pid_t processId);
 extern void __containerv_destroy(struct containerv_container* container);
 
+extern int policy_seccomp_apply(struct containerv_policy* policy);
+
+/**
+ * @brief Load and attach eBPF programs for the given policy
+ * @param container The container to apply the policy to
+ * @param policy The security policy to enforce
+ * @return 0 on success, -1 on error
+ */
+extern int policy_ebpf_load(
+    struct containerv_container*  container,
+    struct containerv_policy*     policy
+);
+
+/**
+ * @brief Unload and detach eBPF programs for the container
+ * @param container The container to remove policy from
+ */
+extern void policy_ebpf_unload(struct containerv_container* container);
+
 #endif //!__PRIVATE_H__
