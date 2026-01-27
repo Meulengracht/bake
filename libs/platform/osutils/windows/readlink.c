@@ -29,6 +29,10 @@
 #define IO_REPARSE_TAG_SYMLINK 0xA000000C
 #endif
 
+#ifndef FSCTL_GET_REPARSE_POINT
+#define FSCTL_GET_REPARSE_POINT 0x000900A8
+#endif
+
 // Define the reparse data buffer structure if not available
 #ifndef REPARSE_DATA_BUFFER_HEADER_SIZE
 typedef struct _REPARSE_DATA_BUFFER {

@@ -17,6 +17,13 @@
  */
 
 #include <chef/platform.h>
+#include <stdio.h>
+#include <string.h>
+
+// For older MSVC versions that don't have snprintf
+#if defined(_MSC_VER) && _MSC_VER < 1900
+#define snprintf _snprintf
+#endif
 
 
 int platform_rmdir(const char *path) 
