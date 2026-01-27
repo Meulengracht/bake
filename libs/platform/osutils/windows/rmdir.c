@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
-// For older MSVC versions that don't have snprintf
+// For Visual Studio 2013 and earlier that don't have snprintf
 #if defined(_MSC_VER) && _MSC_VER < 1900
 #define snprintf _snprintf
 #endif
