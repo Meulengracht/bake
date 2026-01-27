@@ -40,7 +40,6 @@
 #include "private.h"
 #include "cgroups.h"
 #include "network.h"
-#include "policy-ebpf.h"
 #include <vlog.h>
 
 #define __FD_READ  0
