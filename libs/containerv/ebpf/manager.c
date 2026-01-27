@@ -398,6 +398,60 @@ static int __has_disallowed_basename_chars_range(const char* s, size_t n)
     return 0;
 }
 
+static int __basename_push_literal(
+    struct bpf_basename_rule* out,
+    const char*               s,
+    size_t                    n)
+{
+    if (!out || !s) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (n == 0) {
+        return 0;
+    }
+    if (n >= BPF_BASENAME_MAX_STR) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    if (__has_disallowed_basename_chars_range(s, n)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (out->token_count >= BPF_BASENAME_TOKEN_MAX) {
+        errno = ENOSPC;
+        return -1;
+    }
+
+    unsigned char idx = out->token_count;
+    out->token_type[idx] = BPF_BASENAME_TOKEN_LITERAL;
+    out->token_len[idx] = (unsigned char)n;
+    memcpy(out->token[idx], s, n);
+    out->token[idx][n] = 0;
+    out->token_count++;
+    return 0;
+}
+
+static int __basename_push_digit(struct bpf_basename_rule* out, int one_or_more)
+{
+    if (!out) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (out->token_count >= BPF_BASENAME_TOKEN_MAX) {
+        errno = ENOSPC;
+        return -1;
+    }
+
+    unsigned char idx = out->token_count;
+    out->token_type[idx] = one_or_more ? BPF_BASENAME_TOKEN_DIGITSPLUS : BPF_BASENAME_TOKEN_DIGIT1;
+    out->token_len[idx] = 0;
+    out->token[idx][0] = 0;
+    out->token_count++;
+    return 0;
+}
+
 static int __parse_basename_rule(const char* pattern, unsigned int allow_mask, struct bpf_basename_rule* out)
 {
     if (!pattern || !out) {
@@ -409,84 +463,85 @@ static int __parse_basename_rule(const char* pattern, unsigned int allow_mask, s
     out->allow_mask = allow_mask;
 
     size_t plen = strlen(pattern);
-    if (plen == 0 || plen >= BPF_BASENAME_MAX_STR) {
-        errno = ENAMETOOLONG;
+    if (plen == 0) {
+        errno = EINVAL;
         return -1;
     }
 
-    // exact (supports '?' wildcards)
-    if (strchr(pattern, '*') == NULL && strchr(pattern, '[') == NULL && strchr(pattern, '+') == NULL) {
-        out->type = BPF_BASENAME_RULE_EXACT;
-        out->prefix_len = (unsigned char)plen;
-        memcpy(out->prefix, pattern, plen);
-        out->prefix[plen] = 0;
-        return 0;
-    }
-
-    // prefix* (supports '?' wildcards in the prefix)
-    if (pattern[plen - 1] == '*' && !__has_disallowed_basename_chars_range(pattern, plen - 1)) {
-        size_t pre = plen - 1;
-        if (pre == 0 || pre >= BPF_BASENAME_MAX_STR) {
+    // Only a trailing '*' is supported (tail wildcard).
+    size_t n = plen;
+    if (n > 0 && pattern[n - 1] == '*') {
+        out->tail_wildcard = 1;
+        n--;
+        if (n == 0) {
             errno = EINVAL;
             return -1;
         }
-        out->type = BPF_BASENAME_RULE_PREFIX;
-        out->prefix_len = (unsigned char)pre;
-        memcpy(out->prefix, pattern, pre);
-        out->prefix[pre] = 0;
-        return 0;
     }
 
-    // prefix[0-9](+)?tail(*)?
-    const char* digits = strstr(pattern, "[0-9]");
-    if (digits) {
-        size_t pre = (size_t)(digits - pattern);
-        const char* after = digits + strlen("[0-9]");
-        unsigned char digits_max = 1;
-        if (*after == '+') {
-            digits_max = 0;
-            after++;
-        }
-
-        size_t tail_len = strlen(after);
-        unsigned char tail_wildcard = 0;
-        if (tail_len > 0 && after[tail_len - 1] == '*') {
-            tail_wildcard = 1;
-            tail_len--;
-        }
-
-        if (__has_disallowed_basename_chars_range(pattern, pre)) {
+    // Tokenize into literals and digit segments. Supported segments:
+    //   [0-9]   -> exactly one digit
+    //   [0-9]+  -> one-or-more digits
+    const char* lit_start = pattern;
+    size_t i = 0;
+    while (i < n) {
+        if (pattern[i] == '*') {
+            // internal '*' is not supported
             errno = EINVAL;
             return -1;
         }
-        if (__has_disallowed_basename_chars_range(after, tail_len)) {
+        if (pattern[i] == '+') {
+            // '+' is only supported as part of "[0-9]+"
             errno = EINVAL;
             return -1;
         }
-        if (pre >= BPF_BASENAME_MAX_STR || tail_len >= BPF_BASENAME_MAX_STR) {
-            errno = ENAMETOOLONG;
+        if (pattern[i] == '[') {
+            if (i + strlen("[0-9]") <= n && memcmp(&pattern[i], "[0-9]", strlen("[0-9]")) == 0) {
+                // push preceding literal
+                size_t lit_len = (size_t)(&pattern[i] - lit_start);
+                if (__basename_push_literal(out, lit_start, lit_len) < 0) {
+                    return -1;
+                }
+                i += strlen("[0-9]");
+
+                int one_or_more = 0;
+                if (i < n && pattern[i] == '+') {
+                    one_or_more = 1;
+                    i++;
+                }
+                if (__basename_push_digit(out, one_or_more) < 0) {
+                    return -1;
+                }
+                lit_start = &pattern[i];
+                continue;
+            }
+
+            // Any other bracket expression isn't supported in basename rules
+            errno = ENOTSUP;
             return -1;
         }
-
-        out->type = BPF_BASENAME_RULE_DIGITS;
-        out->digits_max = digits_max;
-        out->prefix_len = (unsigned char)pre;
-        out->tail_len = (unsigned char)tail_len;
-        out->tail_wildcard = tail_wildcard;
-
-        if (pre > 0) {
-            memcpy(out->prefix, pattern, pre);
-        }
-        out->prefix[pre] = 0;
-        if (tail_len > 0) {
-            memcpy(out->tail, after, tail_len);
-        }
-        out->tail[tail_len] = 0;
-        return 0;
+        i++;
     }
 
-    errno = ENOTSUP;
-    return -1;
+    // push final literal
+    if (__basename_push_literal(out, lit_start, (size_t)(&pattern[n] - lit_start)) < 0) {
+        return -1;
+    }
+
+    if (out->token_count == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (out->tail_wildcard) {
+        unsigned char last = (unsigned char)(out->token_count - 1);
+        if (out->token_type[last] != BPF_BASENAME_TOKEN_LITERAL || out->token_len[last] == 0) {
+            // BPF matcher only treats a trailing wildcard as "last literal is prefix".
+            errno = EINVAL;
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 static void __glob_translate_plus(const char* in, char* out, size_t outSize)

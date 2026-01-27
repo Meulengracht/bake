@@ -57,23 +57,23 @@ struct bpf_dir_policy_value {
 #define BPF_BASENAME_RULE_MAX 8
 #define BPF_BASENAME_MAX_STR  32
 
-enum bpf_basename_rule_type {
-    BPF_BASENAME_RULE_EMPTY  = 0,
-    BPF_BASENAME_RULE_EXACT  = 1,
-    BPF_BASENAME_RULE_PREFIX = 2,
-    BPF_BASENAME_RULE_DIGITS = 3,
+#define BPF_BASENAME_TOKEN_MAX 6
+
+enum bpf_basename_token_type {
+    BPF_BASENAME_TOKEN_EMPTY      = 0,
+    BPF_BASENAME_TOKEN_LITERAL    = 1,
+    BPF_BASENAME_TOKEN_DIGIT1     = 2,
+    BPF_BASENAME_TOKEN_DIGITSPLUS = 3,
 };
 
 struct bpf_basename_rule {
     unsigned int allow_mask;
-    unsigned char type;
-    unsigned char digits_max;    /* 1 = exactly one digit, 0 = one-or-more digits */
-    unsigned char prefix_len;
-    unsigned char tail_len;
+    unsigned char token_count;
     unsigned char tail_wildcard;
-    unsigned char _pad[3];
-    char prefix[BPF_BASENAME_MAX_STR];
-    char tail[BPF_BASENAME_MAX_STR];
+    unsigned char _pad[2];
+    unsigned char token_type[BPF_BASENAME_TOKEN_MAX];
+    unsigned char token_len[BPF_BASENAME_TOKEN_MAX];
+    char token[BPF_BASENAME_TOKEN_MAX][BPF_BASENAME_MAX_STR];
 };
 
 struct bpf_basename_policy_value {

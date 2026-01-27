@@ -256,7 +256,7 @@ int bpf_basename_policy_map_allow_rule(
         return -1;
     }
 
-    if (rule->type == BPF_BASENAME_RULE_EMPTY) {
+    if (rule->token_count == 0) {
         errno = EINVAL;
         return -1;
     }
@@ -281,13 +281,11 @@ int bpf_basename_policy_map_allow_rule(
     // If an identical rule exists, merge allow_mask
     for (int i = 0; i < BPF_BASENAME_RULE_MAX; i++) {
         struct bpf_basename_rule* slot = &value.rules[i];
-        if (slot->type == rule->type &&
-            slot->digits_max == rule->digits_max &&
-            slot->prefix_len == rule->prefix_len &&
-            slot->tail_len == rule->tail_len &&
+        if (slot->token_count == rule->token_count &&
             slot->tail_wildcard == rule->tail_wildcard &&
-            memcmp(slot->prefix, rule->prefix, BPF_BASENAME_MAX_STR) == 0 &&
-            memcmp(slot->tail, rule->tail, BPF_BASENAME_MAX_STR) == 0) {
+            memcmp(slot->token_type, rule->token_type, sizeof(rule->token_type)) == 0 &&
+            memcmp(slot->token_len, rule->token_len, sizeof(rule->token_len)) == 0 &&
+            memcmp(slot->token, rule->token, sizeof(rule->token)) == 0) {
             slot->allow_mask |= rule->allow_mask;
             goto do_update;
         }
@@ -296,7 +294,7 @@ int bpf_basename_policy_map_allow_rule(
     // Otherwise insert into an empty slot
     for (int i = 0; i < BPF_BASENAME_RULE_MAX; i++) {
         struct bpf_basename_rule* slot = &value.rules[i];
-        if (slot->type == BPF_BASENAME_RULE_EMPTY) {
+        if (slot->token_count == 0) {
             *slot = *rule;
             goto do_update;
         }

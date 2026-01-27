@@ -66,26 +66,26 @@ struct dir_policy_value {
 #define BASENAME_RULE_MAX 8
 #define BASENAME_MAX_STR  32
 
-// Exact: foo
-// Prefix: foo*
-// Digits: loop[0-9]+, nvme[0-9]p* (single digit if no +, one-or-more digits if +)
-enum basename_rule_type {
-    BASENAME_RULE_EMPTY  = 0,
-    BASENAME_RULE_EXACT  = 1,
-    BASENAME_RULE_PREFIX = 2,
-    BASENAME_RULE_DIGITS = 3,
+/* Max tokens in a basename pattern. Example supported:
+ *   nvme[0-9]+n[0-9]+p[0-9]+     -> LIT, DIGITS+, LIT, DIGITS+, LIT, DIGITS+
+ */
+#define BASENAME_TOKEN_MAX 6
+
+enum basename_token_type {
+    BASENAME_TOKEN_EMPTY      = 0,
+    BASENAME_TOKEN_LITERAL    = 1,
+    BASENAME_TOKEN_DIGIT1     = 2,
+    BASENAME_TOKEN_DIGITSPLUS = 3,
 };
 
 struct basename_rule {
     __u32 allow_mask;
-    __u8  type;
-    __u8  digits_max;      /* 1 = exactly one digit, 0 = one-or-more digits */
-    __u8  prefix_len;
-    __u8  tail_len;
-    __u8  tail_wildcard;   /* if set, tail only needs to be a prefix */
-    __u8  _pad[3];
-    char  prefix[BASENAME_MAX_STR];
-    char  tail[BASENAME_MAX_STR];
+    __u8  token_count;
+    __u8  tail_wildcard;   /* if set, the last literal token only needs to match as a prefix */
+    __u8  _pad[2];
+    __u8  token_type[BASENAME_TOKEN_MAX];
+    __u8  token_len[BASENAME_TOKEN_MAX];
+    char  token[BASENAME_TOKEN_MAX][BASENAME_MAX_STR];
 };
 
 struct basename_policy_value {
@@ -232,13 +232,13 @@ static __always_inline int __read_dentry_name(struct dentry* dentry, char out[BA
 
 static __always_inline int __match_qmark_bounded(const char* pattern, const char* s, __u32 n)
 {
-#pragma unroll
     for (int i = 0; i < BASENAME_MAX_STR; i++) {
-        if ((__u32)i < n) {
-            char pc = pattern[i];
-            if (pc != '?' && pc != s[i]) {
-                return 1;
-            }
+        if ((__u32)i >= n) {
+            break;
+        }
+        char pc = pattern[i];
+        if (pc != '?' && pc != s[i]) {
+            return 1;
         }
     }
     return 0;
@@ -246,81 +246,86 @@ static __always_inline int __match_qmark_bounded(const char* pattern, const char
 
 static __always_inline int __match_basename_rule(const struct basename_rule* rule, const char name[BASENAME_MAX_STR], __u32 name_len)
 {
-    if (!rule || rule->type == BASENAME_RULE_EMPTY) {
+    if (!rule || rule->token_count == 0) {
         return 0;
     }
 
-    if (rule->prefix_len >= BASENAME_MAX_STR || rule->tail_len >= BASENAME_MAX_STR) {
-        return 0;
-    }
-
-    if (name_len < rule->prefix_len) {
-        return 0;
-    }
-
-    if (__match_qmark_bounded(rule->prefix, name, rule->prefix_len) != 0) {
-        return 0;
-    }
-
-    if (rule->type == BASENAME_RULE_EXACT) {
-        return name_len == rule->prefix_len;
-    }
-
-    if (rule->type == BASENAME_RULE_PREFIX) {
-        return 1;
-    }
-
-    if (rule->type == BASENAME_RULE_DIGITS) {
-        __u32 pos = rule->prefix_len;
-        __u32 digit_count = 0;
+    __u32 pos = 0;
 
 #pragma unroll
-        for (int i = 0; i < 64; i++) {
-            __u32 idx = pos + (__u32)i;
-            if (idx >= name_len) {
-                break;
-            }
-            char c = name[idx];
-            if (c >= '0' && c <= '9') {
-                digit_count++;
-                continue;
-            }
-            break;
+    for (int t = 0; t < BASENAME_TOKEN_MAX; t++) {
+        if ((__u32)t >= rule->token_count) {
+            continue;
         }
 
-        if (rule->digits_max == 1) {
-            if (digit_count != 1) {
+        __u8 tt = rule->token_type[t];
+        if (tt == BASENAME_TOKEN_LITERAL) {
+            __u32 len = (__u32)rule->token_len[t];
+            if (len >= BASENAME_MAX_STR) {
                 return 0;
             }
-        } else {
+
+            if (pos + len > name_len) {
+                return 0;
+            }
+
+            // If this is the final token and tail_wildcard is set, allow extra suffix.
+            if (rule->tail_wildcard && ((__u32)t + 1U == rule->token_count)) {
+                if (__match_qmark_bounded(rule->token[t], &name[pos], len) != 0) {
+                    return 0;
+                }
+                return 1;
+            }
+
+            if (__match_qmark_bounded(rule->token[t], &name[pos], len) != 0) {
+                return 0;
+            }
+            pos += len;
+            continue;
+        }
+
+        if (tt == BASENAME_TOKEN_DIGIT1) {
+            if (pos >= name_len) {
+                return 0;
+            }
+            char c = name[pos];
+            if (c < '0' || c > '9') {
+                return 0;
+            }
+            pos += 1;
+            continue;
+        }
+
+        if (tt == BASENAME_TOKEN_DIGITSPLUS) {
+            if (pos >= name_len) {
+                return 0;
+            }
+            if (name[pos] < '0' || name[pos] > '9') {
+                return 0;
+            }
+
+            __u32 digit_count = 0;
+            for (int i = 0; i < 32; i++) {
+                __u32 idx = pos + (__u32)i;
+                if (idx >= name_len) {
+                    break;
+                }
+                char dc = name[idx];
+                if (dc >= '0' && dc <= '9') {
+                    digit_count++;
+                    continue;
+                }
+                break;
+            }
             if (digit_count < 1) {
                 return 0;
             }
+            pos += digit_count;
+            continue;
         }
-
-        __u32 tail_start = pos + digit_count;
-        if (tail_start > name_len) {
-            return 0;
-        }
-
-        __u32 remaining = name_len - tail_start;
-        if (rule->tail_len > remaining) {
-            return 0;
-        }
-
-        if (rule->tail_len > 0) {
-            if (__match_qmark_bounded(rule->tail, &name[tail_start], rule->tail_len) != 0) {
-                return 0;
-            }
-        }
-
-        if (rule->tail_wildcard) {
-            return 1;
-        }
-        return remaining == rule->tail_len;
     }
 
-    return 0;
+    return pos == name_len;
 }
 
 static __always_inline int __check_access(struct file* file, __u32 required)
@@ -369,7 +374,7 @@ static __always_inline int __check_access(struct file* file, __u32 required)
 #pragma unroll
                 for (int i = 0; i < BASENAME_RULE_MAX; i++) {
                     const struct basename_rule* rule = &bval->rules[i];
-                    if (rule->type == BASENAME_RULE_EMPTY) {
+                    if (rule->token_count == 0) {
                         continue;
                     }
                     if (__match_basename_rule(rule, name, name_len)) {
