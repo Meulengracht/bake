@@ -139,4 +139,19 @@ extern int containerv_bpf_manager_get_container_metrics(
     struct containerv_bpf_container_metrics* metrics
 );
 
+/**
+ * @brief Sanity check pinned BPF enforcement artifacts
+ *
+ * Validates that both the pinned policy map and the pinned enforcement link
+ * exist under /sys/fs/bpf/cvd. A pinned map alone can be stale (e.g., daemon
+ * crash/restart after pinning), so callers should use this to confirm that
+ * enforcement is actually active.
+ *
+ * On non-Linux builds or when BPF skeleton support is not compiled in, this
+ * is a no-op and returns success.
+ *
+ * @return 0 if both are present (or not applicable), -1 if missing
+ */
+extern int containerv_bpf_manager_sanity_check_pins(void);
+
 #endif //!__CONTAINERV_BPF_MANAGER_H__

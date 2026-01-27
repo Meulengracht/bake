@@ -45,6 +45,9 @@
 // import the private.h from the policies dir
 #include "../policies/private.h"
 
+// eBPF helper APIs (policy map updates, cgroup id lookup)
+#include "../ebpf/private.h"
+
 struct __path_walk_ctx {
     struct containerv_policy* policy;
     unsigned int              allowMask;
@@ -73,7 +76,7 @@ static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, str
 
     status = bpf_policy_map_allow_inode(ctx->policy->backend_context, st.st_dev, st.st_ino, ctx->allowMask);
     if (status < 0) {
-        if (errno == ENOBUFS) {
+        if (errno == ENOSPC) {
             VLOG_ERROR("containerv", "policy_ebpf: BPF policy map full while allowing path '%s'\n", fpath);
             return 1; // Stop walking
         }
@@ -114,7 +117,7 @@ static int __allow_path_or_tree(
 
     status = bpf_policy_map_allow_inode(policy->backend_context, st.st_dev, st.st_ino, allowMask);
     if (status < 0) {
-        if (errno == ENOBUFS) {
+        if (errno == ENOSPC) {
             VLOG_ERROR("containerv", "__allow_path_or_tree: BPF policy map full while allowing path '%s'\n", path);
         }
         VLOG_ERROR("containerv", "__allow_path_or_tree: failed to allow path '%s'\n", path);
@@ -185,17 +188,20 @@ int policy_ebpf_load(
         return 0;
     }
 
-    // Check if BPF programs are already loaded globally (by cvd daemon)
-    // by checking if the policy map is already pinned
+    // Check if BPF programs are already loaded globally (by cvd daemon).
+    // We require both a pinned policy map and a pinned enforcement link.
+    // A pinned map alone can be stale (e.g., daemon crash/restart).
     int pinned_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/policy_map");
-    if (pinned_map_fd >= 0) {
-        VLOG_DEBUG("containerv", "policy_ebpf: using globally pinned BPF programs from cvd daemon\n");
+    int pinned_link_fd = bpf_obj_get("/sys/fs/bpf/cvd/fs_lsm_link");
+    if (pinned_map_fd >= 0 && pinned_link_fd >= 0) {
+        VLOG_DEBUG("containerv", "policy_ebpf: using globally pinned BPF enforcement from cvd daemon\n");
         
         // cvd daemon is managing BPF programs centrally, we just need to
         // track the map FD for potential use
         ctx = calloc(1, sizeof(*ctx));
         if (!ctx) {
             close(pinned_map_fd);
+            close(pinned_link_fd);
             return -1;
         }
         
@@ -207,9 +213,14 @@ int policy_ebpf_load(
             VLOG_WARNING("containerv", "policy_ebpf: failed to get cgroup_id for container '%s'\n", 
                         container->hostname);
             close(pinned_map_fd);
+            close(pinned_link_fd);
             free(ctx);
             return -1;
         }
+
+        // We only need the link as a liveness/enforcement check.
+        // Close it after validation.
+        close(pinned_link_fd);
         
         // Note: Policy population is handled by cvd daemon, not here
         // We just store the context for cleanup
@@ -217,6 +228,13 @@ int policy_ebpf_load(
         
         VLOG_DEBUG("containerv", "policy_ebpf: attached to global BPF LSM enforcement\n");
         return 0;
+    }
+
+    if (pinned_map_fd >= 0) {
+        close(pinned_map_fd);
+    }
+    if (pinned_link_fd >= 0) {
+        close(pinned_link_fd);
     }
     
     // Fallback: Load BPF programs locally if not managed by cvd daemon

@@ -53,6 +53,7 @@
 
 #define BPF_PIN_PATH "/sys/fs/bpf/cvd"
 #define POLICY_MAP_PIN_PATH BPF_PIN_PATH "/policy_map"
+#define POLICY_LINK_PIN_PATH BPF_PIN_PATH "/fs_lsm_link"
 #define MAX_TRACKED_ENTRIES 10240
 
 /* Per-container entry tracking for efficient cleanup */
@@ -349,13 +350,30 @@ int containerv_bpf_manager_initialize(void)
     }
     
     // Pin the policy map for persistence and sharing
+    (void)unlink(POLICY_MAP_PIN_PATH);
     status = bpf_obj_pin(g_bpf_manager.policy_map_fd, POLICY_MAP_PIN_PATH);
-    if (status < 0 && errno != EEXIST) {
+    if (status < 0) {
         VLOG_WARNING("cvd", "bpf_manager: failed to pin policy map to %s: %s\n",
                     POLICY_MAP_PIN_PATH, strerror(errno));
         // Continue anyway - map is still usable via FD
     } else {
         VLOG_DEBUG("cvd", "bpf_manager: policy map pinned to %s\n", POLICY_MAP_PIN_PATH);
+    }
+
+    // Pin the LSM link so other processes can verify enforcement is active.
+    // Without this, a stale pinned map could exist without any program attached.
+    if (g_bpf_manager.skel->links.file_open_restrict != NULL) {
+        (void)unlink(POLICY_LINK_PIN_PATH);
+        status = bpf_link__pin(g_bpf_manager.skel->links.file_open_restrict, POLICY_LINK_PIN_PATH);
+    }
+
+    if (g_bpf_manager.skel->links.file_open_restrict == NULL) {
+        VLOG_WARNING("cvd", "bpf_manager: no BPF link for file_open_restrict; cannot pin enforcement link\n");
+    } else if (status < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to pin enforcement link to %s: %s\n",
+                     POLICY_LINK_PIN_PATH, strerror(errno));
+    } else {
+        VLOG_DEBUG("cvd", "bpf_manager: enforcement link pinned to %s\n", POLICY_LINK_PIN_PATH);
     }
     
     g_bpf_manager.available = 1;
@@ -383,6 +401,12 @@ void containerv_bpf_manager_shutdown(void)
     if (unlink(POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
         VLOG_WARNING("cvd", "bpf_manager: failed to unpin policy map: %s\n", 
                     strerror(errno));
+    }
+
+    // Unpin link (best-effort)
+    if (unlink(POLICY_LINK_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin enforcement link: %s\n",
+                     strerror(errno));
     }
     
     // Destroy skeleton (this detaches programs)
@@ -605,11 +629,11 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
                tracker->key_count, tracker->cgroup_id);
     
     // Use batch deletion to efficiently remove all entries
-    deleted_count = bpf_policy_map_delete_batch(
-        g_bpf_manager.policy_map_fd,
-        tracker->keys,
-        tracker->key_count
-    );
+    struct bpf_policy_context delete_ctx = {
+        .map_fd = g_bpf_manager.policy_map_fd,
+        .cgroup_id = tracker->cgroup_id,
+    };
+    deleted_count = bpf_policy_map_delete_batch(&delete_ctx, tracker->keys, tracker->key_count);
     
     // End timing and update metrics
     end_time = __get_time_microseconds();

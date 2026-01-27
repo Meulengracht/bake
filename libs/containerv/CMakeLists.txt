@@ -6,7 +6,7 @@ if (UNIX)
     add_subdirectory(linux)
     add_subdirectory(policies)
     
-    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-linux containerv-ebpf)
+    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-linux containerv-ebpf containerv-policy)
     
     # Propagate BPF variables from linux subdirectory to parent scope
     if(BPF_PROGRAMS_AVAILABLE)

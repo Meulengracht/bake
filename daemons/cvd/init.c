@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 #include <vlog.h>
 
 #include "private.h"
@@ -186,12 +187,15 @@ static void __initialize_bpf(void)
     }
 
     if (!containerv_bpf_manager_is_available()) {
-        VLOG_INFO("cvd", "BPF LSM is not available on this system, containers will use seccomp fallback\n");
+        VLOG_DEBUG("cvd", "BPF LSM is not available on this system, containers will use seccomp fallback\n");
         return;
     }
 
     
     VLOG_TRACE("cvd", "BPF LSM enforcement is active\n");
+
+    // Sanity-check that global enforcement is actually pinned.
+    (void)containerv_bpf_manager_sanity_check_pins();
 
     if (containerv_bpf_manager_get_metrics(&metrics) == 0) {
         VLOG_DEBUG("cvd", 

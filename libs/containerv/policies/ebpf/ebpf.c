@@ -102,7 +102,7 @@ static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, str
 
     status = bpf_policy_map_allow_inode(ctx->policy->backend_context, st.st_dev, st.st_ino, ctx->allowMask);
     if (status < 0) {
-        if (errno == ENOBUFS) {
+        if (errno == ENOSPC) {
             VLOG_ERROR("containerv", "policy_ebpf: BPF policy map full while allowing path '%s'\n", fpath);
             return 1; // Stop walking
         }
@@ -143,7 +143,7 @@ static int __allow_path_or_tree(
 
     status = bpf_policy_map_allow_inode(policy->backend_context, st.st_dev, st.st_ino, allowMask);
     if (status < 0) {
-        if (errno == ENOBUFS) {
+        if (errno == ENOSPC) {
             VLOG_ERROR("containerv", "__allow_path_or_tree: BPF policy map full while allowing path '%s'\n", path);
         }
         VLOG_ERROR("containerv", "__allow_path_or_tree: failed to allow path '%s'\n", path);

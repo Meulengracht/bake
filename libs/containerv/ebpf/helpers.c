@@ -33,6 +33,10 @@
 
 #ifdef __linux__
 #include <linux/bpf.h>
+
+#ifdef HAVE_BPF_SKELETON
+#include <bpf/bpf.h>
+#endif
 #endif
 
 #ifdef __linux__
@@ -162,6 +166,36 @@ int bpf_bump_memlock_rlimit(void)
     return setrlimit(RLIMIT_MEMLOCK, &rlim);
 }
 
+int containerv_bpf_manager_sanity_check_pins(void)
+{
+#if !defined(__linux__) || !defined(HAVE_BPF_SKELETON)
+    return 0;
+#else
+    int map_fd = bpf_obj_get("/sys/fs/bpf/cvd/policy_map");
+    int link_fd = bpf_obj_get("/sys/fs/bpf/cvd/fs_lsm_link");
+
+    if (map_fd >= 0) {
+        close(map_fd);
+    }
+    if (link_fd >= 0) {
+        close(link_fd);
+    }
+
+    if (map_fd < 0 || link_fd < 0) {
+        VLOG_WARNING("cvd",
+                     "BPF LSM sanity check failed (pinned map=%s, pinned link=%s). "
+                     "Enforcement may be misconfigured or stale pins exist.\n",
+                     (map_fd >= 0) ? "ok" : "missing",
+                     (link_fd >= 0) ? "ok" : "missing");
+        errno = ENOENT;
+        return -1;
+    }
+
+    VLOG_DEBUG("cvd", "BPF LSM sanity check ok (pinned map + link present)\n");
+    return 0;
+#endif
+}
+
 int bpf_policy_map_allow_inode(
     struct bpf_policy_context* context,
     dev_t                      dev,
@@ -171,8 +205,6 @@ int bpf_policy_map_allow_inode(
     struct bpf_policy_key   key = {};
     struct bpf_policy_value value = {};
     union bpf_attr          attr = {};
-
-    // TODO: return ENOBUFS if map is full
 
     key.cgroup_id = context->cgroup_id;
     key.dev = (unsigned long long)dev;
