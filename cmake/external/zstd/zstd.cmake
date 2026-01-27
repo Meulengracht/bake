@@ -45,7 +45,6 @@ ExternalProject_Add(bundled_zstd
     -DZSTD_BUILD_STATIC=ON
     -DZSTD_BUILD_SHARED=OFF
     -DZSTD_BUILD_PROGRAMS=OFF
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
 
     -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
     -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
@@ -53,9 +52,9 @@ ExternalProject_Add(bundled_zstd
   BUILD_BYPRODUCTS
     <INSTALL_DIR>/lib/${CMAKE_STATIC_LIBRARY_PREFIX}zstd${CMAKE_STATIC_LIBRARY_SUFFIX}
   BUILD_COMMAND
-    ${CMAKE_COMMAND} --build . $<$<CONFIG:Debug>:--config Debug>$<$<CONFIG:Release>:--config Release>$<$<CONFIG:RelWithDebInfo>:--config RelWithDebInfo>$<$<CONFIG:MinSizeRel>:--config MinSizeRel>
+    ${CMAKE_COMMAND} --build . --config $<CONFIG>
   INSTALL_COMMAND
-    ${CMAKE_COMMAND} --build . --target install $<$<CONFIG:Debug>:--config Debug>$<$<CONFIG:Release>:--config Release>$<$<CONFIG:RelWithDebInfo>:--config RelWithDebInfo>$<$<CONFIG:MinSizeRel>:--config MinSizeRel>
+    ${CMAKE_COMMAND} --build . --target install --config $<CONFIG>
 )
 add_dependencies(zstd bundled_zstd)
 ExternalProject_Get_Property(bundled_zstd INSTALL_DIR)
