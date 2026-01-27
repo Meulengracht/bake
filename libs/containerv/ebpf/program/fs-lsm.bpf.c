@@ -53,6 +53,15 @@ struct policy_value {
     __u32 allow_mask;  /* Bitmask of allowed permissions */
 };
 
+/* Directory policy flags (must match userspace) */
+#define DIR_RULE_CHILDREN_ONLY 0x1
+#define DIR_RULE_RECURSIVE     0x2
+
+struct dir_policy_value {
+    __u32 allow_mask;
+    __u32 flags;
+};
+
 /* BPF map: policy enforcement map */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -60,6 +69,14 @@ struct {
     __type(value, struct policy_value);
     __uint(max_entries, 10240);
 } policy_map SEC(".maps");
+
+/* Directory policy map: rules keyed by directory inode (dev,ino) + cgroup */
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, struct policy_key);
+    __type(value, struct dir_policy_value);
+    __uint(max_entries, 10240);
+} dir_policy_map SEC(".maps");
 
 static __always_inline __u64 get_current_cgroup_id(void)
 {
@@ -110,6 +127,109 @@ static __always_inline int __populate_key(struct policy_key* key, struct file *f
     return 0;
 }
 
+static __always_inline int __populate_key_from_dentry(struct policy_key* key, struct dentry* dentry, __u64 cgroupId)
+{
+    struct inode* inode = NULL;
+    struct super_block* sb = NULL;
+    __u64 dev;
+    __u64 ino;
+
+    if (!dentry) {
+        return -EACCES;
+    }
+
+    CORE_READ_INTO(&inode, dentry, d_inode);
+    if (!inode) {
+        return -EACCES;
+    }
+
+    CORE_READ_INTO(&sb, inode, i_sb);
+    if (!sb) {
+        return -EACCES;
+    }
+
+    {
+        dev_t devt = 0;
+        unsigned long inode_no = 0;
+        CORE_READ_INTO(&devt, sb, s_dev);
+        CORE_READ_INTO(&inode_no, inode, i_ino);
+        dev = (__u64)devt;
+        ino = (__u64)inode_no;
+    }
+
+    key->cgroup_id = cgroupId;
+    key->dev = dev;
+    key->ino = ino;
+    return 0;
+}
+
+static __always_inline int __check_access(struct file* file, __u32 required)
+{
+    __u64 cgroup_id;
+    struct policy_key key = {};
+    struct policy_value* policy;
+
+    cgroup_id = get_current_cgroup_id();
+    if (cgroup_id == 0) {
+        return 0;
+    }
+
+    if (__populate_key(&key, file, cgroup_id)) {
+        return -EACCES;
+    }
+
+    // Fast path: exact inode allow
+    policy = bpf_map_lookup_elem(&policy_map, &key);
+    if (policy) {
+        if (required & ~policy->allow_mask) {
+            return -EACCES;
+        }
+        return 0;
+    }
+
+    // Directory rules: check parent (children-only) and bounded ancestor walk (recursive)
+    struct dentry* dentry = NULL;
+    struct dentry* parent = NULL;
+    CORE_READ_INTO(&dentry, file, f_path.dentry);
+    if (!dentry) {
+        return -EACCES;
+    }
+    CORE_READ_INTO(&parent, dentry, d_parent);
+    if (!parent) {
+        return -EACCES;
+    }
+
+    struct dentry* cur = parent;
+    #pragma unroll
+    for (int depth = 0; depth < 32; depth++) {
+        struct dir_policy_value* dir_policy;
+        if (__populate_key_from_dentry(&key, cur, cgroup_id)) {
+            return -EACCES;
+        }
+
+        dir_policy = bpf_map_lookup_elem(&dir_policy_map, &key);
+        if (dir_policy) {
+            __u32 flags = dir_policy->flags;
+            if (depth == 0 || (flags & DIR_RULE_RECURSIVE)) {
+                if (required & ~dir_policy->allow_mask) {
+                    return -EACCES;
+                }
+                return 0;
+            }
+        }
+
+        // Move to next ancestor
+        struct dentry* next = NULL;
+        CORE_READ_INTO(&next, cur, d_parent);
+        if (!next || next == cur) {
+            break;
+        }
+        cur = next;
+    }
+
+    return -EACCES;
+}
+
 /**
  * LSM hook for file_open
  * 
@@ -124,9 +244,6 @@ static __always_inline int __populate_key(struct policy_key* key, struct file *f
 SEC("lsm/file_open")
 int BPF_PROG(file_open_restrict, struct file *file, int ret)
 {
-    __u64 cgroup_id;
-    struct policy_key key = {};
-    struct policy_value *policy;
     __u64 flags64;
     __u32 accmode;
     __u32 required = 0;
@@ -136,24 +253,6 @@ int BPF_PROG(file_open_restrict, struct file *file, int ret)
         return ret;
     }
     
-    // If we are not in a cgroup, then let us allow
-    cgroup_id = get_current_cgroup_id();
-    if (cgroup_id == 0) {
-        return 0;
-    }
-
-    // Populate file information in the key
-    if (__populate_key(&key, file, cgroup_id) != 0) {
-        return -EACCES;
-    }
-
-    // If we do not have an entry for this element, we deny
-    // by default
-    policy = bpf_map_lookup_elem(&policy_map, &key);
-    if (!policy) {
-        return -EACCES;
-    }
-
     // Determine required permissions from open flags
     flags64 = 0;
     CORE_READ_INTO(&flags64, file, f_flags);
@@ -167,12 +266,24 @@ int BPF_PROG(file_open_restrict, struct file *file, int ret)
         required = PERM_READ;
     }
 
-    // Deny if any required permission is not allowed
-    if (required & ~policy->allow_mask) {
+    return __check_access(file, required);
+}
+
+SEC("lsm/bprm_check_security")
+int BPF_PROG(bprm_check_security_restrict, struct linux_binprm *bprm, int ret)
+{
+    struct file* file = NULL;
+
+    if (ret) {
+        return ret;
+    }
+
+    CORE_READ_INTO(&file, bprm, file);
+    if (!file) {
         return -EACCES;
     }
 
-    return 0;
+    return __check_access(file, PERM_EXEC);
 }
 
 char LICENSE[] SEC("license") = "GPL";

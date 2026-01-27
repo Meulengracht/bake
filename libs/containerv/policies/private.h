@@ -37,6 +37,7 @@ struct containerv_policy_path {
 /* Internal structure to track loaded eBPF programs */
 struct policy_ebpf_context {
     int policy_map_fd;
+    int dir_policy_map_fd;
     unsigned long long cgroup_id;
 
 #ifdef HAVE_BPF_SKELETON

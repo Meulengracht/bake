@@ -19,25 +19,11 @@
 #define _GNU_SOURCE
 
 #include <errno.h>
-#include <fcntl.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/syscall.h>
-#include <sys/sysmacros.h>
-#include <linux/bpf.h>
-#include <stdint.h>
-#include <glob.h>
-#include <ftw.h>
 #include <vlog.h>
 
 #include "../private.h"
-
-// import ebpf private header
-#include "../../ebpf/private.h"
 
 // Add default system paths (always needed for basic functionality)
 static const struct containerv_policy_path g_basePolicyPaths[] = {
@@ -74,123 +60,34 @@ static const struct containerv_policy_path g_networkPolicyPaths[] = {
     { NULL, 0 }
 };
 
-struct __path_walk_ctx {
-    struct containerv_policy* policy;
-    unsigned int              allowMask;
-};
-
-static struct __path_walk_ctx* __g_walk_ctx;
-
-static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, struct FTW* ftwbuf)
+static int __policy_add_path(struct containerv_policy* policy, const char* path, enum containerv_fs_access access)
 {
-    struct __path_walk_ctx* ctx = __g_walk_ctx;
-    struct stat             st;
-    int                     status;
-
-    (void)sb;
-    (void)typeflag;
-    (void)ftwbuf;
-
-    if (!ctx || !ctx->policy) {
-        return 1;
+    if (policy == NULL || path == NULL) {
+        errno = EINVAL;
+        return -1;
     }
 
-    status = stat(fpath, &st);
-    if (status < 0) {
-        return 0;
+    if (policy->path_count >= MAX_PATHS) {
+        VLOG_ERROR("containerv", "policy_ebpf: too many paths\n");
+        errno = ENOMEM;
+        return -1;
     }
 
-    status = bpf_policy_map_allow_inode(ctx->policy->backend_context, st.st_dev, st.st_ino, ctx->allowMask);
-    if (status < 0) {
-        if (errno == ENOSPC) {
-            VLOG_ERROR("containerv", "policy_ebpf: BPF policy map full while allowing path '%s'\n", fpath);
-            return 1; // Stop walking
-        }
-        VLOG_ERROR("containerv", "policy_ebpf: failed to allow path '%s'\n", fpath);
-        return 0;
+    policy->paths[policy->path_count].path = strdup(path);
+    if (policy->paths[policy->path_count].path == NULL) {
+        return -1;
     }
+    policy->paths[policy->path_count].access = access;
+    policy->path_count++;
     return 0;
 }
 
-static int __allow_path_recursive(
-    struct containerv_policy* policy,
-    const char*               rootPath,
-    unsigned int              allowMask)
+static int __policy_add_paths(struct containerv_policy* policy, const struct containerv_policy_path* paths)
 {
-    struct __path_walk_ctx ctx = {
-        .policy    = policy,
-        .allowMask = allowMask,
-    };
-
-    __g_walk_ctx = &ctx;
-    int status = nftw(rootPath, __walk_cb, 16, FTW_PHYS | FTW_MOUNT);
-    __g_walk_ctx = NULL;
-    return status;
-}
-
-static int __allow_path_or_tree(
-    struct containerv_policy* policy,
-    const char*               path,
-    unsigned int              allowMask)
-{
-    struct stat st;
-    int status;
-
-    status = stat(path, &st);
-    if (status < 0) {
-        return status;
-    }
-
-    status = bpf_policy_map_allow_inode(policy->backend_context, st.st_dev, st.st_ino, allowMask);
-    if (status < 0) {
-        if (errno == ENOSPC) {
-            VLOG_ERROR("containerv", "__allow_path_or_tree: BPF policy map full while allowing path '%s'\n", path);
-        }
-        VLOG_ERROR("containerv", "__allow_path_or_tree: failed to allow path '%s'\n", path);
-        return status;
-    }
-    
-    if (S_ISDIR(st.st_mode)) {
-        return __allow_path_recursive(policy, path, allowMask);
-    }
-    return 0;
-}
-
-static int __allow_pattern(
-    struct containerv_policy* policy,
-    const char*               pattern,
-    unsigned int              allowMask)
-{
-    glob_t g;
-    int status;
-
-    memset(&g, 0, sizeof(g));
-    status = glob(pattern, GLOB_NOSORT, NULL, &g);
-    if (status == 0) {
-        for (size_t i = 0; i < g.gl_pathc; i++) {
-            (void)__allow_path_or_tree(policy, g.gl_pathv[i], allowMask);
-        }
-        globfree(&g);
-        return 0;
-    }
-
-    globfree(&g);
-
-    /* If no glob matches, treat it as a literal path */
-    return __allow_path_or_tree(policy, pattern, allowMask);
-}
-
-static int add_paths_to_policy(
-    struct containerv_policy*            policy,
-    const struct containerv_policy_path* paths)
-{
-    int status;
-
     for (size_t i = 0; paths[i].path != NULL; i++) {
-        status = __allow_pattern(policy, paths[i].path, (unsigned int)paths[i].access);
-        if (status) {
-            VLOG_ERROR("containerv", "policy_ebpf: failed to allow path '%s'\n", paths[i].path);
-            return status;
+        if (__policy_add_path(policy, paths[i].path, paths[i].access) != 0) {
+            VLOG_ERROR("containerv", "policy_ebpf: failed to add path '%s'\n", paths[i].path);
+            return -1;
         }
     }
     return 0;
@@ -204,11 +101,11 @@ int policy_ebpf_build(struct containerv_policy* policy, struct containerv_policy
     }
     
     if (strcmp(plugin->name, "minimal") == 0) {
-        return add_paths_to_policy(policy, &g_basePolicyPaths[0]);
+        return __policy_add_paths(policy, &g_basePolicyPaths[0]);
     } else if (strcmp(plugin->name, "build") == 0) {
-        return add_paths_to_policy(policy, &g_buildPolicyPaths[0]);
+        return __policy_add_paths(policy, &g_buildPolicyPaths[0]);
     } else if (strcmp(plugin->name, "network") == 0) {
-        return add_paths_to_policy(policy, &g_networkPolicyPaths[0]);
+        return __policy_add_paths(policy, &g_networkPolicyPaths[0]);
     } else {
         VLOG_ERROR("containerv", "policy_ebpf: unknown plugin '%s'\n", plugin->name);
         errno = EINVAL;

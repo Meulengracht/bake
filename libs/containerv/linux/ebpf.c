@@ -21,6 +21,7 @@
 #include "private.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +50,7 @@
 #include "../ebpf/private.h"
 
 struct __path_walk_ctx {
-    struct containerv_policy* policy;
+    struct bpf_policy_context* bpf_ctx;
     unsigned int              allowMask;
 };
 
@@ -65,7 +66,7 @@ static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, str
     (void)typeflag;
     (void)ftwbuf;
 
-    if (!ctx || !ctx->policy) {
+    if (!ctx || !ctx->bpf_ctx) {
         return 1;
     }
 
@@ -74,7 +75,7 @@ static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, str
         return 0;
     }
 
-    status = bpf_policy_map_allow_inode(ctx->policy->backend_context, st.st_dev, st.st_ino, ctx->allowMask);
+    status = bpf_policy_map_allow_inode(ctx->bpf_ctx, st.st_dev, st.st_ino, ctx->allowMask);
     if (status < 0) {
         if (errno == ENOSPC) {
             VLOG_ERROR("containerv", "policy_ebpf: BPF policy map full while allowing path '%s'\n", fpath);
@@ -87,12 +88,12 @@ static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, str
 }
 
 static int __allow_path_recursive(
-    struct containerv_policy* policy,
+    struct bpf_policy_context* bpf_ctx,
     const char*               rootPath,
     unsigned int              allowMask)
 {
     struct __path_walk_ctx ctx = {
-        .policy    = policy,
+        .bpf_ctx   = bpf_ctx,
         .allowMask = allowMask,
     };
 
@@ -102,8 +103,66 @@ static int __allow_path_recursive(
     return status;
 }
 
+static int __ends_with(const char* s, const char* suffix)
+{
+    size_t slen;
+    size_t suflen;
+
+    if (!s || !suffix) {
+        return 0;
+    }
+    slen = strlen(s);
+    suflen = strlen(suffix);
+    if (slen < suflen) {
+        return 0;
+    }
+    return memcmp(s + (slen - suflen), suffix, suflen) == 0;
+}
+
+static void __glob_translate_plus(const char* in, char* out, size_t outSize)
+{
+    size_t i = 0;
+
+    if (!out || outSize == 0) {
+        return;
+    }
+    if (!in) {
+        out[0] = 0;
+        return;
+    }
+
+    for (; in[i] && i + 1 < outSize; i++) {
+        out[i] = (in[i] == '+') ? '*' : in[i];
+    }
+    out[i] = 0;
+}
+
+static int __allow_single_path(
+    struct bpf_policy_context* bpf_ctx,
+    const char*               path,
+    unsigned int              allowMask,
+    unsigned int              dirFlags)
+{
+    struct stat st;
+    int status;
+
+    status = stat(path, &st);
+    if (status < 0) {
+        return status;
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+        if (bpf_ctx->dir_map_fd < 0) {
+            errno = ENOTSUP;
+            return -1;
+        }
+        return bpf_dir_policy_map_allow_dir(bpf_ctx, st.st_dev, st.st_ino, allowMask, dirFlags);
+    }
+    return bpf_policy_map_allow_inode(bpf_ctx, st.st_dev, st.st_ino, allowMask);
+}
+
 static int __allow_path_or_tree(
-    struct containerv_policy* policy,
+    struct bpf_policy_context* bpf_ctx,
     const char*               path,
     unsigned int              allowMask)
 {
@@ -115,34 +174,47 @@ static int __allow_path_or_tree(
         return status;
     }
 
-    status = bpf_policy_map_allow_inode(policy->backend_context, st.st_dev, st.st_ino, allowMask);
-    if (status < 0) {
-        if (errno == ENOSPC) {
-            VLOG_ERROR("containerv", "__allow_path_or_tree: BPF policy map full while allowing path '%s'\n", path);
-        }
-        VLOG_ERROR("containerv", "__allow_path_or_tree: failed to allow path '%s'\n", path);
-        return status;
-    }
-    
     if (S_ISDIR(st.st_mode)) {
-        return __allow_path_recursive(policy, path, allowMask);
+        // Prefer scalable directory rules when available
+        status = __allow_single_path(bpf_ctx, path, allowMask, BPF_DIR_RULE_RECURSIVE);
+        if (status == 0) {
+            return 0;
+        }
+        // Fallback for older kernels/programs: enumerate all inodes
+        return __allow_path_recursive(bpf_ctx, path, allowMask);
     }
-    return 0;
+
+    return __allow_single_path(bpf_ctx, path, allowMask, 0);
 }
 
 static int __allow_pattern(
-    struct containerv_policy* policy,
+    struct bpf_policy_context* bpf_ctx,
     const char*               pattern,
     unsigned int              allowMask)
 {
+    size_t plen;
+    char base[PATH_MAX];
+    char glob_pattern[PATH_MAX];
     glob_t g;
     int status;
 
+    // Handle special scalable forms: /dir/* and /dir/**
+    plen = strlen(pattern);
+    if (__ends_with(pattern, "/**") && plen >= 3) {
+        snprintf(base, sizeof(base), "%.*s", (int)(plen - 3), pattern);
+        return __allow_single_path(bpf_ctx, base, allowMask, BPF_DIR_RULE_RECURSIVE);
+    }
+    if (__ends_with(pattern, "/*") && plen >= 2) {
+        snprintf(base, sizeof(base), "%.*s", (int)(plen - 2), pattern);
+        return __allow_single_path(bpf_ctx, base, allowMask, BPF_DIR_RULE_CHILDREN_ONLY);
+    }
+
     memset(&g, 0, sizeof(g));
-    status = glob(pattern, GLOB_NOSORT, NULL, &g);
+    __glob_translate_plus(pattern, glob_pattern, sizeof(glob_pattern));
+    status = glob(glob_pattern, GLOB_NOSORT, NULL, &g);
     if (status == 0) {
         for (size_t i = 0; i < g.gl_pathc; i++) {
-            (void)__allow_path_or_tree(policy, g.gl_pathv[i], allowMask);
+            (void)__allow_path_or_tree(bpf_ctx, g.gl_pathv[i], allowMask);
         }
         globfree(&g);
         return 0;
@@ -150,7 +222,7 @@ static int __allow_pattern(
 
     globfree(&g);
     /* If no glob matches, treat it as a literal path */
-    return __allow_path_or_tree(policy, pattern, allowMask);
+    return __allow_path_or_tree(bpf_ctx, pattern, allowMask);
 }
 
 int policy_ebpf_load(
@@ -286,6 +358,17 @@ int policy_ebpf_load(
         return -1;
     }
 
+    ctx->dir_policy_map_fd = bpf_map__fd(ctx->skel->maps.dir_policy_map);
+    if (ctx->dir_policy_map_fd < 0) {
+        VLOG_WARNING("containerv", "policy_ebpf: failed to get dir_policy_map FD; directory rules disabled\n");
+    }
+
+    struct bpf_policy_context bpf_ctx = {
+        .map_fd = ctx->policy_map_fd,
+        .dir_map_fd = ctx->dir_policy_map_fd,
+        .cgroup_id = ctx->cgroup_id,
+    };
+
     for (int i = 0; i < policy->path_count; i++) {
         const char* path = policy->paths[i].path;
         unsigned int allowMask = (unsigned int)policy->paths[i].access & (BPF_PERM_READ | BPF_PERM_WRITE | BPF_PERM_EXEC);
@@ -294,7 +377,7 @@ int policy_ebpf_load(
             continue;
         }
 
-        status = __allow_pattern(policy, path, allowMask);
+        status = __allow_pattern(&bpf_ctx, path, allowMask);
         if (status < 0) {
             VLOG_WARNING("containerv", "policy_ebpf: failed to apply allow rule for %s: %s\n", path, strerror(errno));
         }

@@ -43,8 +43,19 @@ struct bpf_policy_value {
     unsigned int allow_mask;
 };
 
+/* Directory policy flags */
+#define BPF_DIR_RULE_CHILDREN_ONLY 0x1
+#define BPF_DIR_RULE_RECURSIVE     0x2
+
+/* Directory policy value */
+struct bpf_dir_policy_value {
+    unsigned int allow_mask;
+    unsigned int flags;
+};
+
 struct bpf_policy_context {
     int                map_fd;
+    int                dir_map_fd;
     unsigned long long cgroup_id;
 };
 
@@ -89,6 +100,23 @@ extern int bpf_policy_map_allow_inode(
     dev_t                      dev,
     ino_t                      ino,
     unsigned int               allow_mask
+);
+
+/**
+ * @brief Allow a directory via the directory policy map
+ * @param context BPF policy context
+ * @param dev Device number of the directory inode
+ * @param ino Inode number of the directory inode
+ * @param allow_mask Permission mask
+ * @param flags Directory rule flags (BPF_DIR_RULE_*)
+ * @return 0 on success, -1 on error
+ */
+extern int bpf_dir_policy_map_allow_dir(
+    struct bpf_policy_context* context,
+    dev_t                      dev,
+    ino_t                      ino,
+    unsigned int               allow_mask,
+    unsigned int               flags
 );
 
 /**

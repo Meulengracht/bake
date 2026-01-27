@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <glob.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -53,16 +54,21 @@
 
 #define BPF_PIN_PATH "/sys/fs/bpf/cvd"
 #define POLICY_MAP_PIN_PATH BPF_PIN_PATH "/policy_map"
+#define DIR_POLICY_MAP_PIN_PATH BPF_PIN_PATH "/dir_policy_map"
 #define POLICY_LINK_PIN_PATH BPF_PIN_PATH "/fs_lsm_link"
+#define EXEC_LINK_PIN_PATH BPF_PIN_PATH "/fs_lsm_exec_link"
 #define MAX_TRACKED_ENTRIES 10240
 
 /* Per-container entry tracking for efficient cleanup */
 struct container_entry_tracker {
     char* container_id;
     unsigned long long cgroup_id;
-    struct bpf_policy_key* keys;
-    int key_count;
-    int key_capacity;
+    struct bpf_policy_key* file_keys;
+    int file_key_count;
+    int file_key_capacity;
+    struct bpf_policy_key* dir_keys;
+    int dir_key_count;
+    int dir_key_capacity;
     unsigned long long populate_time_us;  // Time taken to populate policy
     unsigned long long cleanup_time_us;   // Time taken to cleanup policy
     struct container_entry_tracker* next;
@@ -80,6 +86,7 @@ struct bpf_manager_metrics {
 static struct {
     int available;
     int policy_map_fd;
+    int dir_policy_map_fd;
 #ifdef HAVE_BPF_SKELETON
     struct fs_lsm_bpf* skel;
 #endif
@@ -88,6 +95,7 @@ static struct {
 } g_bpf_manager = {
     .available = 0,
     .policy_map_fd = -1,
+    .dir_policy_map_fd = -1,
 #ifdef HAVE_BPF_SKELETON
     .skel = NULL,
 #endif
@@ -126,25 +134,53 @@ static struct container_entry_tracker* __create_tracker(const char* container_id
     }
     
     tracker->cgroup_id = cgroup_id;
-    tracker->key_capacity = 256; // Initial capacity
-    tracker->keys = malloc(sizeof(struct bpf_policy_key) * tracker->key_capacity);
-    if (!tracker->keys) {
+    tracker->file_key_capacity = 256; // Initial capacity
+    tracker->file_keys = malloc(sizeof(struct bpf_policy_key) * tracker->file_key_capacity);
+    if (!tracker->file_keys) {
+        free(tracker->container_id);
+        free(tracker);
+        return NULL;
+    }
+
+    tracker->dir_key_capacity = 64;
+    tracker->dir_keys = malloc(sizeof(struct bpf_policy_key) * tracker->dir_key_capacity);
+    if (!tracker->dir_keys) {
+        free(tracker->file_keys);
         free(tracker->container_id);
         free(tracker);
         return NULL;
     }
     
-    tracker->key_count = 0;
+    tracker->file_key_count = 0;
+    tracker->dir_key_count = 0;
     tracker->next = g_bpf_manager.trackers;
     g_bpf_manager.trackers = tracker;
     
     return tracker;
 }
 
-static int __add_tracked_entry(struct container_entry_tracker* tracker, 
-                               unsigned long long cgroup_id,
-                               dev_t dev, 
-                               ino_t ino)
+static int __ensure_capacity(struct bpf_policy_key** keys, int* count, int* capacity)
+{
+    if (*count < *capacity) {
+        return 0;
+    }
+    if (*capacity >= MAX_TRACKED_ENTRIES) {
+        return -1;
+    }
+    int new_capacity = (*capacity * 2 < MAX_TRACKED_ENTRIES) ? (*capacity * 2) : MAX_TRACKED_ENTRIES;
+    struct bpf_policy_key* new_keys = realloc(*keys, sizeof(struct bpf_policy_key) * new_capacity);
+    if (!new_keys) {
+        return -1;
+    }
+    *keys = new_keys;
+    *capacity = new_capacity;
+    return 0;
+}
+
+static int __add_tracked_file_entry(struct container_entry_tracker* tracker,
+                                    unsigned long long cgroup_id,
+                                    dev_t dev,
+                                    ino_t ino)
 {
     struct bpf_policy_key* key;
     
@@ -152,38 +188,42 @@ static int __add_tracked_entry(struct container_entry_tracker* tracker,
         return -1;
     }
     
-    // Check capacity and expand if needed
-    if (tracker->key_count >= tracker->key_capacity) {
-        // Check if we're already at maximum
-        if (tracker->key_capacity >= MAX_TRACKED_ENTRIES) {
-            VLOG_WARNING("cvd", "bpf_manager: max tracked entries (%d) reached for container\n", 
-                        MAX_TRACKED_ENTRIES);
-            return -1;
-        }
-        
-        // Calculate new capacity, capping at maximum
-        int new_capacity = (tracker->key_capacity * 2 < MAX_TRACKED_ENTRIES) 
-                          ? tracker->key_capacity * 2 
-                          : MAX_TRACKED_ENTRIES;
-        
-        struct bpf_policy_key* new_keys = realloc(tracker->keys, 
-                                                   sizeof(struct bpf_policy_key) * new_capacity);
-        if (!new_keys) {
-            VLOG_ERROR("cvd", "bpf_manager: failed to expand tracker capacity\n");
-            return -1;
-        }
-        
-        tracker->keys = new_keys;
-        tracker->key_capacity = new_capacity;
+    if (__ensure_capacity(&tracker->file_keys, &tracker->file_key_count, &tracker->file_key_capacity) < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked file key capacity\n");
+        return -1;
     }
     
     // Add the key
-    key = &tracker->keys[tracker->key_count];
+    key = &tracker->file_keys[tracker->file_key_count];
     key->cgroup_id = cgroup_id;
     key->dev = (unsigned long long)dev;
     key->ino = (unsigned long long)ino;
-    tracker->key_count++;
+    tracker->file_key_count++;
     
+    return 0;
+}
+
+static int __add_tracked_dir_entry(struct container_entry_tracker* tracker,
+                                   unsigned long long cgroup_id,
+                                   dev_t dev,
+                                   ino_t ino)
+{
+    struct bpf_policy_key* key;
+
+    if (!tracker) {
+        return -1;
+    }
+
+    if (__ensure_capacity(&tracker->dir_keys, &tracker->dir_key_count, &tracker->dir_key_capacity) < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked dir key capacity\n");
+        return -1;
+    }
+
+    key = &tracker->dir_keys[tracker->dir_key_count];
+    key->cgroup_id = cgroup_id;
+    key->dev = (unsigned long long)dev;
+    key->ino = (unsigned long long)ino;
+    tracker->dir_key_count++;
     return 0;
 }
 
@@ -203,7 +243,8 @@ static void __remove_tracker(const char* container_id)
             
             // Free resources
             free(tracker->container_id);
-            free(tracker->keys);
+            free(tracker->file_keys);
+            free(tracker->dir_keys);
             free(tracker);
             return;
         }
@@ -218,7 +259,8 @@ static void __cleanup_all_trackers(void)
     while (tracker) {
         struct container_entry_tracker* next = tracker->next;
         free(tracker->container_id);
-        free(tracker->keys);
+        free(tracker->file_keys);
+        free(tracker->dir_keys);
         free(tracker);
         tracker = next;
     }
@@ -239,10 +281,84 @@ static int __count_total_entries(void)
     int total = 0;
     struct container_entry_tracker* tracker = g_bpf_manager.trackers;
     while (tracker) {
-        total += tracker->key_count;
+        total += tracker->file_key_count;
+        total += tracker->dir_key_count;
         tracker = tracker->next;
     }
     return total;
+}
+
+static int __ends_with(const char* s, const char* suffix)
+{
+    size_t slen, suflen;
+    if (!s || !suffix) {
+        return 0;
+    }
+    slen = strlen(s);
+    suflen = strlen(suffix);
+    if (slen < suflen) {
+        return 0;
+    }
+    return memcmp(s + (slen - suflen), suffix, suflen) == 0;
+}
+
+static int __has_glob_chars(const char* s)
+{
+    if (!s) {
+        return 0;
+    }
+    for (const char* p = s; *p; p++) {
+        if (*p == '*' || *p == '?' || *p == '[' || *p == '+') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void __glob_translate_plus(const char* in, char* out, size_t outSize)
+{
+    size_t i = 0;
+
+    if (!out || outSize == 0) {
+        return;
+    }
+    if (!in) {
+        out[0] = 0;
+        return;
+    }
+
+    for (; in[i] && i + 1 < outSize; i++) {
+        out[i] = (in[i] == '+') ? '*' : in[i];
+    }
+    out[i] = 0;
+}
+
+static int __apply_single_path(
+    struct bpf_policy_context* ctx,
+    struct container_entry_tracker* tracker,
+    unsigned long long cgroup_id,
+    const char* resolved_path,
+    unsigned int allow_mask,
+    unsigned int dir_flags)
+{
+    struct stat st;
+    if (stat(resolved_path, &st) < 0) {
+        return -1;
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+        if (bpf_dir_policy_map_allow_dir(ctx, st.st_dev, st.st_ino, allow_mask, dir_flags) < 0) {
+            return -1;
+        }
+        (void)__add_tracked_dir_entry(tracker, cgroup_id, st.st_dev, st.st_ino);
+        return 0;
+    }
+
+    if (bpf_policy_map_allow_inode(ctx, st.st_dev, st.st_ino, allow_mask) < 0) {
+        return -1;
+    }
+    (void)__add_tracked_file_entry(tracker, cgroup_id, st.st_dev, st.st_ino);
+    return 0;
 }
 
 static int __count_containers(void)
@@ -348,6 +464,16 @@ int containerv_bpf_manager_initialize(void)
         g_bpf_manager.skel = NULL;
         return -1;
     }
+
+    // Get directory policy map FD
+    g_bpf_manager.dir_policy_map_fd = bpf_map__fd(g_bpf_manager.skel->maps.dir_policy_map);
+    if (g_bpf_manager.dir_policy_map_fd < 0) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to get dir_policy_map FD\n");
+        fs_lsm_bpf__destroy(g_bpf_manager.skel);
+        g_bpf_manager.skel = NULL;
+        g_bpf_manager.policy_map_fd = -1;
+        return -1;
+    }
     
     // Pin the policy map for persistence and sharing
     (void)unlink(POLICY_MAP_PIN_PATH);
@@ -358,6 +484,16 @@ int containerv_bpf_manager_initialize(void)
         // Continue anyway - map is still usable via FD
     } else {
         VLOG_DEBUG("cvd", "bpf_manager: policy map pinned to %s\n", POLICY_MAP_PIN_PATH);
+    }
+
+    // Pin the directory policy map for persistence and sharing
+    (void)unlink(DIR_POLICY_MAP_PIN_PATH);
+    status = bpf_obj_pin(g_bpf_manager.dir_policy_map_fd, DIR_POLICY_MAP_PIN_PATH);
+    if (status < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to pin dir policy map to %s: %s\n",
+                    DIR_POLICY_MAP_PIN_PATH, strerror(errno));
+    } else {
+        VLOG_DEBUG("cvd", "bpf_manager: dir policy map pinned to %s\n", DIR_POLICY_MAP_PIN_PATH);
     }
 
     // Pin the LSM link so other processes can verify enforcement is active.
@@ -374,6 +510,18 @@ int containerv_bpf_manager_initialize(void)
                      POLICY_LINK_PIN_PATH, strerror(errno));
     } else {
         VLOG_DEBUG("cvd", "bpf_manager: enforcement link pinned to %s\n", POLICY_LINK_PIN_PATH);
+    }
+
+    // Pin exec enforcement link if available (best-effort)
+    if (g_bpf_manager.skel->links.bprm_check_security_restrict != NULL) {
+        (void)unlink(EXEC_LINK_PIN_PATH);
+        status = bpf_link__pin(g_bpf_manager.skel->links.bprm_check_security_restrict, EXEC_LINK_PIN_PATH);
+        if (status < 0) {
+            VLOG_WARNING("cvd", "bpf_manager: failed to pin exec enforcement link to %s: %s\n",
+                         EXEC_LINK_PIN_PATH, strerror(errno));
+        } else {
+            VLOG_DEBUG("cvd", "bpf_manager: exec enforcement link pinned to %s\n", EXEC_LINK_PIN_PATH);
+        }
     }
     
     g_bpf_manager.available = 1;
@@ -403,9 +551,19 @@ void containerv_bpf_manager_shutdown(void)
                     strerror(errno));
     }
 
+    if (unlink(DIR_POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin dir policy map: %s\n",
+                     strerror(errno));
+    }
+
     // Unpin link (best-effort)
     if (unlink(POLICY_LINK_PIN_PATH) < 0 && errno != ENOENT) {
         VLOG_WARNING("cvd", "bpf_manager: failed to unpin enforcement link: %s\n",
+                     strerror(errno));
+    }
+
+    if (unlink(EXEC_LINK_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin exec enforcement link: %s\n",
                      strerror(errno));
     }
     
@@ -416,6 +574,7 @@ void containerv_bpf_manager_shutdown(void)
     }
     
     g_bpf_manager.policy_map_fd = -1;
+    g_bpf_manager.dir_policy_map_fd = -1;
     g_bpf_manager.available = 0;
     
     VLOG_TRACE("cvd", "bpf_manager: shutdown complete\n");
@@ -499,62 +658,88 @@ int containerv_bpf_manager_populate_policy(
         }
     }
     
+    struct bpf_policy_context bpf_ctx = {
+        .map_fd = g_bpf_manager.policy_map_fd,
+        .dir_map_fd = g_bpf_manager.dir_policy_map_fd,
+        .cgroup_id = cgroup_id,
+    };
+
     // Populate policy entries for each configured path
     for (int i = 0; i < policy->path_count; i++) {
         const char* path = policy->paths[i].path;
-        unsigned int allow_mask = (unsigned int)policy->paths[i].access & 
+        unsigned int allow_mask = (unsigned int)policy->paths[i].access &
                                   (BPF_PERM_READ | BPF_PERM_WRITE | BPF_PERM_EXEC);
         char full_path[PATH_MAX];
-        struct stat st;
-        int status;
         size_t root_len, path_len;
-        
+        int status;
+
         if (!path) {
             continue;
         }
-        
-        // Check for path length overflow before concatenation
+
         root_len = strlen(rootfs_path);
         path_len = strlen(path);
-        
         if (root_len + path_len >= sizeof(full_path)) {
             VLOG_WARNING("cvd",
-                         "bpf_manager: combined rootfs path and policy path too long, "
-                         "skipping entry (rootfs=\"%s\", path=\"%s\")\n",
+                         "bpf_manager: combined rootfs path and policy path too long, skipping (rootfs=\"%s\", path=\"%s\")\n",
                          rootfs_path, path);
             continue;
         }
-        
-        // Resolve path within container's rootfs
-        snprintf(full_path, sizeof(full_path), "%s%s", rootfs_path, path);
-        
-        // Get inode info
-        status = stat(full_path, &st);
-        if (status < 0) {
-            VLOG_WARNING("cvd", "bpf_manager: failed to stat %s: %s\n", 
-                        full_path, strerror(errno));
+
+        // Special scalable forms: /dir/* and /dir/**
+        if (__ends_with(path, "/**")) {
+            char base[PATH_MAX];
+            snprintf(base, sizeof(base), "%.*s", (int)(path_len - 3), path);
+            snprintf(full_path, sizeof(full_path), "%s%s", rootfs_path, base);
+            status = __apply_single_path(&bpf_ctx, tracker, cgroup_id, full_path, allow_mask, BPF_DIR_RULE_RECURSIVE);
+            if (status == 0) {
+                entries_added++;
+            } else {
+                VLOG_WARNING("cvd", "bpf_manager: failed to apply dir recursive rule for %s: %s\n", path, strerror(errno));
+            }
             continue;
         }
-        
-        // Add policy entry
-        status = bpf_policy_map_allow_inode(
-            policy->backend_context,
-            st.st_dev,
-            st.st_ino,
-            allow_mask
-        );
-        
-        if (status < 0) {
-            VLOG_WARNING("cvd", "bpf_manager: failed to add policy for %s: %s\n",
-                        path, strerror(errno));
-        } else {
-            // Track this entry for efficient cleanup later
-            if (__add_tracked_entry(tracker, cgroup_id, st.st_dev, st.st_ino) < 0) {
-                VLOG_WARNING("cvd", "bpf_manager: failed to track entry for %s\n", path);
+
+        if (__ends_with(path, "/*")) {
+            char base[PATH_MAX];
+            snprintf(base, sizeof(base), "%.*s", (int)(path_len - 2), path);
+            snprintf(full_path, sizeof(full_path), "%s%s", rootfs_path, base);
+            status = __apply_single_path(&bpf_ctx, tracker, cgroup_id, full_path, allow_mask, BPF_DIR_RULE_CHILDREN_ONLY);
+            if (status == 0) {
+                entries_added++;
+            } else {
+                VLOG_WARNING("cvd", "bpf_manager: failed to apply dir children rule for %s: %s\n", path, strerror(errno));
             }
+            continue;
+        }
+
+        // Any globbing chars: expand to concrete paths; for dirs use recursive dir rules
+        snprintf(full_path, sizeof(full_path), "%s%s", rootfs_path, path);
+        if (__has_glob_chars(path)) {
+            char glob_path[PATH_MAX];
+            __glob_translate_plus(full_path, glob_path, sizeof(glob_path));
+            glob_t g;
+            memset(&g, 0, sizeof(g));
+            int gstatus = glob(glob_path, GLOB_NOSORT, NULL, &g);
+            if (gstatus == 0) {
+                for (size_t j = 0; j < g.gl_pathc; j++) {
+                    if (__apply_single_path(&bpf_ctx, tracker, cgroup_id, g.gl_pathv[j], allow_mask, BPF_DIR_RULE_RECURSIVE) == 0) {
+                        entries_added++;
+                    }
+                }
+                globfree(&g);
+                continue;
+            }
+            globfree(&g);
+            // No matches -> treat as literal
+        }
+
+        // Literal path: if directory, allow subtree; else allow inode
+        status = __apply_single_path(&bpf_ctx, tracker, cgroup_id, full_path, allow_mask, BPF_DIR_RULE_RECURSIVE);
+        if (status == 0) {
             entries_added++;
-            VLOG_TRACE("cvd", "bpf_manager: added policy for %s (dev=%lu, ino=%lu, mask=0x%x)\n",
-                      path, (unsigned long)st.st_dev, (unsigned long)st.st_ino, allow_mask);
+        } else {
+            VLOG_WARNING("cvd", "bpf_manager: failed to apply rule for %s: %s\n", path, strerror(errno));
         }
     }
     
@@ -619,33 +804,51 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
         return 0;
     }
     
-    if (tracker->key_count == 0) {
+    if (tracker->file_key_count == 0 && tracker->dir_key_count == 0) {
         VLOG_DEBUG("cvd", "bpf_manager: no entries to clean up for container %s\n", container_id);
         __remove_tracker(container_id);
         return 0;
     }
     
-    VLOG_DEBUG("cvd", "bpf_manager: using batch deletion for %d entries (cgroup_id=%llu)\n",
-               tracker->key_count, tracker->cgroup_id);
-    
-    // Use batch deletion to efficiently remove all entries
-    struct bpf_policy_context delete_ctx = {
+    struct bpf_policy_context delete_files_ctx = {
         .map_fd = g_bpf_manager.policy_map_fd,
+        .dir_map_fd = g_bpf_manager.dir_policy_map_fd,
         .cgroup_id = tracker->cgroup_id,
     };
-    deleted_count = bpf_policy_map_delete_batch(&delete_ctx, tracker->keys, tracker->key_count);
+    struct bpf_policy_context delete_dirs_ctx = {
+        .map_fd = g_bpf_manager.dir_policy_map_fd,
+        .dir_map_fd = g_bpf_manager.dir_policy_map_fd,
+        .cgroup_id = tracker->cgroup_id,
+    };
+
+    if (tracker->file_key_count > 0) {
+        VLOG_DEBUG("cvd", "bpf_manager: deleting %d file entries (cgroup_id=%llu)\n",
+                   tracker->file_key_count, tracker->cgroup_id);
+        deleted_count = bpf_policy_map_delete_batch(&delete_files_ctx, tracker->file_keys, tracker->file_key_count);
+        if (deleted_count < 0) {
+            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (file map) for container %s\n", container_id);
+            g_bpf_manager.metrics.failed_cleanup_ops++;
+            __remove_tracker(container_id);
+            return -1;
+        }
+    }
+
+    if (tracker->dir_key_count > 0) {
+        VLOG_DEBUG("cvd", "bpf_manager: deleting %d dir entries (cgroup_id=%llu)\n",
+                   tracker->dir_key_count, tracker->cgroup_id);
+        int deleted_dirs = bpf_policy_map_delete_batch(&delete_dirs_ctx, tracker->dir_keys, tracker->dir_key_count);
+        if (deleted_dirs < 0) {
+            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (dir map) for container %s\n", container_id);
+            g_bpf_manager.metrics.failed_cleanup_ops++;
+            __remove_tracker(container_id);
+            return -1;
+        }
+        deleted_count += deleted_dirs;
+    }
     
     // End timing and update metrics
     end_time = __get_time_microseconds();
     tracker->cleanup_time_us = end_time - start_time;
-    
-    if (deleted_count < 0) {
-        VLOG_ERROR("cvd", "bpf_manager: batch deletion failed for container %s\n", container_id);
-        g_bpf_manager.metrics.failed_cleanup_ops++;
-        // Clean up tracker anyway
-        __remove_tracker(container_id);
-        return -1;
-    }
     
     VLOG_DEBUG("cvd", "bpf_manager: deleted %d policy entries for container %s in %llu us\n",
                deleted_count, container_id, tracker->cleanup_time_us);
@@ -715,7 +918,7 @@ int containerv_bpf_manager_get_container_metrics(
     
     // Fill in metrics
     metrics->cgroup_id = tracker->cgroup_id;
-    metrics->policy_entry_count = tracker->key_count;
+    metrics->policy_entry_count = tracker->file_key_count + tracker->dir_key_count;
     metrics->populate_time_us = tracker->populate_time_us;
     metrics->cleanup_time_us = tracker->cleanup_time_us;
     

@@ -172,20 +172,29 @@ int containerv_bpf_manager_sanity_check_pins(void)
     return 0;
 #else
     int map_fd = bpf_obj_get("/sys/fs/bpf/cvd/policy_map");
+    int dir_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/dir_policy_map");
     int link_fd = bpf_obj_get("/sys/fs/bpf/cvd/fs_lsm_link");
+    int exec_link_fd = bpf_obj_get("/sys/fs/bpf/cvd/fs_lsm_exec_link");
 
     if (map_fd >= 0) {
         close(map_fd);
     }
+    if (dir_map_fd >= 0) {
+        close(dir_map_fd);
+    }
     if (link_fd >= 0) {
         close(link_fd);
     }
+    if (exec_link_fd >= 0) {
+        close(exec_link_fd);
+    }
 
-    if (map_fd < 0 || link_fd < 0) {
+    if (map_fd < 0 || dir_map_fd < 0 || link_fd < 0) {
         VLOG_WARNING("cvd",
-                     "BPF LSM sanity check failed (pinned map=%s, pinned link=%s). "
+                     "BPF LSM sanity check failed (pinned map=%s, pinned dir_map=%s, pinned link=%s). "
                      "Enforcement may be misconfigured or stale pins exist.\n",
                      (map_fd >= 0) ? "ok" : "missing",
+                     (dir_map_fd >= 0) ? "ok" : "missing",
                      (link_fd >= 0) ? "ok" : "missing");
         errno = ENOENT;
         return -1;
@@ -194,6 +203,37 @@ int containerv_bpf_manager_sanity_check_pins(void)
     VLOG_DEBUG("cvd", "BPF LSM sanity check ok (pinned map + link present)\n");
     return 0;
 #endif
+}
+
+int bpf_dir_policy_map_allow_dir(
+    struct bpf_policy_context* context,
+    dev_t                      dev,
+    ino_t                      ino,
+    unsigned int               allow_mask,
+    unsigned int               flags)
+{
+    struct bpf_policy_key      key = {};
+    struct bpf_dir_policy_value value = {};
+    union bpf_attr             attr = {};
+
+    if (context == NULL || context->dir_map_fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    key.cgroup_id = context->cgroup_id;
+    key.dev = (unsigned long long)dev;
+    key.ino = (unsigned long long)ino;
+
+    value.allow_mask = allow_mask;
+    value.flags = flags;
+
+    attr.map_fd = context->dir_map_fd;
+    attr.key = (uintptr_t)&key;
+    attr.value = (uintptr_t)&value;
+    attr.flags = BPF_ANY;
+
+    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
 }
 
 int bpf_policy_map_allow_inode(
