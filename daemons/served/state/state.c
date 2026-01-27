@@ -132,7 +132,11 @@ static const char* g_transactionLogsTableSQL =
 // to ensure resilience against crashes and restarts
 
 #include <errno.h>
+#if defined(__linux__)
 #include <linux/limits.h>
+#else
+#include <limits.h>
+#endif
 #include <chef/platform.h>
 #include <chef/package.h>
 #include <chef/list.h>
