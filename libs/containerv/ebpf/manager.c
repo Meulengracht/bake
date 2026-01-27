@@ -112,6 +112,88 @@ static struct {
 
 #ifdef __linux__
 
+#ifdef HAVE_BPF_SKELETON
+static int __reuse_pinned_map_or_unpin(
+    struct bpf_map* map,
+    const char*     pin_path,
+    __u32           expected_type,
+    __u32           expected_key_size,
+    __u32           expected_value_size)
+{
+    int fd;
+    struct bpf_map_info info = {};
+    __u32 info_len = sizeof(info);
+
+    if (!map || !pin_path) {
+        return 0;
+    }
+
+    fd = bpf_obj_get(pin_path);
+    if (fd < 0) {
+        if (errno != ENOENT) {
+            VLOG_WARNING("cvd", "bpf_manager: failed to open pinned map %s: %s\n", pin_path, strerror(errno));
+        }
+        return 0;
+    }
+
+    if (bpf_obj_get_info_by_fd(fd, &info, &info_len) < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to read pinned map info %s: %s\n", pin_path, strerror(errno));
+        close(fd);
+        return 0;
+    }
+
+    if (info.type != expected_type ||
+        info.key_size != expected_key_size ||
+        info.value_size != expected_value_size) {
+        VLOG_WARNING(
+            "cvd",
+            "bpf_manager: pinned map ABI mismatch for %s (type=%u key=%u val=%u, expected type=%u key=%u val=%u); unpinning\n",
+            pin_path,
+            info.type,
+            info.key_size,
+            info.value_size,
+            expected_type,
+            expected_key_size,
+            expected_value_size);
+        close(fd);
+        (void)unlink(pin_path);
+        return 0;
+    }
+
+    if (bpf_map__reuse_fd(map, fd) < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to reuse pinned map %s: %s\n", pin_path, strerror(errno));
+        close(fd);
+        (void)unlink(pin_path);
+        return 0;
+    }
+
+    VLOG_DEBUG("cvd", "bpf_manager: reusing pinned map %s\n", pin_path);
+    // fd is now owned by libbpf object/map
+    return 1;
+}
+
+static int __pin_map_best_effort(int map_fd, const char* pin_path, int was_reused)
+{
+    int status;
+    if (!pin_path || map_fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    // If we didn't reuse an existing pinned map, remove any stale pin first.
+    if (!was_reused) {
+        (void)unlink(pin_path);
+    }
+
+    status = bpf_obj_pin(map_fd, pin_path);
+    if (status < 0 && errno == EEXIST) {
+        // Expected when reusing an already-pinned map.
+        return 0;
+    }
+    return status;
+}
+#endif
+
 /* Helper functions for entry tracking */
 static struct container_entry_tracker* __find_tracker(const char* container_id)
 {
@@ -840,6 +922,26 @@ int containerv_bpf_manager_initialize(void)
     }
     
     VLOG_DEBUG("cvd", "bpf_manager: BPF skeleton opened\n");
+
+    // Reuse pinned maps when ABI matches; if ABI mismatches, auto-unpin to avoid upgrade wedging.
+    int reused_policy = __reuse_pinned_map_or_unpin(
+        g_bpf_manager.skel->maps.policy_map,
+        POLICY_MAP_PIN_PATH,
+        BPF_MAP_TYPE_HASH,
+        sizeof(struct bpf_policy_key),
+        sizeof(struct bpf_policy_value));
+    int reused_dir = __reuse_pinned_map_or_unpin(
+        g_bpf_manager.skel->maps.dir_policy_map,
+        DIR_POLICY_MAP_PIN_PATH,
+        BPF_MAP_TYPE_HASH,
+        sizeof(struct bpf_policy_key),
+        sizeof(struct bpf_dir_policy_value));
+    int reused_basename = __reuse_pinned_map_or_unpin(
+        g_bpf_manager.skel->maps.basename_policy_map,
+        BASENAME_POLICY_MAP_PIN_PATH,
+        BPF_MAP_TYPE_HASH,
+        sizeof(struct bpf_policy_key),
+        sizeof(struct bpf_basename_policy_value));
     
     // Load BPF programs
     status = fs_lsm_bpf__load(g_bpf_manager.skel);
@@ -894,8 +996,7 @@ int containerv_bpf_manager_initialize(void)
     }
     
     // Pin the policy map for persistence and sharing
-    (void)unlink(POLICY_MAP_PIN_PATH);
-    status = bpf_obj_pin(g_bpf_manager.policy_map_fd, POLICY_MAP_PIN_PATH);
+    status = __pin_map_best_effort(g_bpf_manager.policy_map_fd, POLICY_MAP_PIN_PATH, reused_policy);
     if (status < 0) {
         VLOG_WARNING("cvd", "bpf_manager: failed to pin policy map to %s: %s\n",
                     POLICY_MAP_PIN_PATH, strerror(errno));
@@ -905,8 +1006,7 @@ int containerv_bpf_manager_initialize(void)
     }
 
     // Pin the directory policy map for persistence and sharing
-    (void)unlink(DIR_POLICY_MAP_PIN_PATH);
-    status = bpf_obj_pin(g_bpf_manager.dir_policy_map_fd, DIR_POLICY_MAP_PIN_PATH);
+    status = __pin_map_best_effort(g_bpf_manager.dir_policy_map_fd, DIR_POLICY_MAP_PIN_PATH, reused_dir);
     if (status < 0) {
         VLOG_WARNING("cvd", "bpf_manager: failed to pin dir policy map to %s: %s\n",
                     DIR_POLICY_MAP_PIN_PATH, strerror(errno));
@@ -915,8 +1015,7 @@ int containerv_bpf_manager_initialize(void)
     }
 
     // Pin the basename policy map for persistence and sharing
-    (void)unlink(BASENAME_POLICY_MAP_PIN_PATH);
-    status = bpf_obj_pin(g_bpf_manager.basename_policy_map_fd, BASENAME_POLICY_MAP_PIN_PATH);
+    status = __pin_map_best_effort(g_bpf_manager.basename_policy_map_fd, BASENAME_POLICY_MAP_PIN_PATH, reused_basename);
     if (status < 0) {
         VLOG_WARNING("cvd", "bpf_manager: failed to pin basename policy map to %s: %s\n",
                     BASENAME_POLICY_MAP_PIN_PATH, strerror(errno));

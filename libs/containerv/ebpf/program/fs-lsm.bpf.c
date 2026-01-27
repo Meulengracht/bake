@@ -66,7 +66,9 @@ struct dir_policy_value {
 #define BASENAME_RULE_MAX 8
 #define BASENAME_MAX_STR  32
 
-/* Max tokens in a basename pattern. Example supported:
+/**
+ * @brief Max tokens in a basename pattern.
+ * Example supported:
  *   nvme[0-9]+n[0-9]+p[0-9]+     -> LIT, DIGITS+, LIT, DIGITS+, LIT, DIGITS+
  */
 #define BASENAME_TOKEN_MAX 6
@@ -92,7 +94,10 @@ struct basename_policy_value {
     struct basename_rule rules[BASENAME_RULE_MAX];
 };
 
-/* BPF map: policy enforcement map */
+/**
+ * @brief BPF map: policy enforcement map
+ * The key is (cgroup_id, dev, ino) identifying a file/inode within a container.
+ */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __type(key, struct policy_key);
@@ -100,7 +105,12 @@ struct {
     __uint(max_entries, 10240);
 } policy_map SEC(".maps");
 
-/* Directory policy map: rules keyed by directory inode (dev,ino) + cgroup */
+/** 
+ * @brief  Directory policy map: rules keyed by directory inode (dev,ino) + cgroup 
+ * Examples:
+ *  - allow all files under /var/log (recursive)
+ *  - allow children of /tmp only
+ */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __type(key, struct policy_key);
@@ -108,7 +118,12 @@ struct {
     __uint(max_entries, 10240);
 } dir_policy_map SEC(".maps");
 
-/* Basename policy map: rules keyed by parent directory inode (dev,ino) + cgroup */
+/**
+ * @brief Basename policy map: rules keyed by parent directory inode (dev,ino) + cgroup 
+ * Examples include
+ *   /var/log/app-*.log
+ *   /dev/nvme[0-9]+n[0-9]+p[0-9]+
+ */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __type(key, struct policy_key);
