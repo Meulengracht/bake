@@ -17,6 +17,7 @@
  */
 
 #include <chef/platform.h>
+#include <io.h>
 
 int platform_chmod(const char* path, uint32_t permissions)
 {

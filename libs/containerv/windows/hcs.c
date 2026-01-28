@@ -25,6 +25,16 @@
 
 #include "private.h"
 
+// Some Windows SDKs don't expose these HCS_* HRESULTs unless additional headers are used.
+// They are only used for improved error messages, so provide reasonable fallbacks.
+#ifndef HCS_E_OPERATION_NOT_SUPPORTED
+#define HCS_E_OPERATION_NOT_SUPPORTED HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)
+#endif
+
+#ifndef HCS_E_SERVICE_NOT_AVAILABLE
+#define HCS_E_SERVICE_NOT_AVAILABLE HRESULT_FROM_WIN32(ERROR_SERVICE_NOT_ACTIVE)
+#endif
+
 // Global HCS API structure
 struct hcs_api g_hcs = { 0 };
 

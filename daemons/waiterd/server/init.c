@@ -64,6 +64,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 }
 #elif defined(_WIN32)
 #include <windows.h>
+#include <ws2ipdef.h>
 
 // Windows 10 Insider build 17063 ++ 
 #include <afunix.h>
@@ -77,11 +78,11 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
 
     // ensure it doesn't exist
-    if (unlink(address) && errno != ENOENT) {
+    if (_unlink(address) && errno != ENOENT) {
         return -1;
     }
 
-    local->sun_family = AF_LOCAL;
+    local->sun_family = AF_UNIX;
     strncpy(local->sun_path, address, sizeof(local->sun_path));
     return 0;
 }

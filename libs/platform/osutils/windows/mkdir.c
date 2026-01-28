@@ -17,6 +17,7 @@
  */
 
 #include <chef/platform.h>
+#include <direct.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -26,7 +27,7 @@
 static wchar_t* __mbtowc(const char* path) 
 {
     size_t   pathLength = strlen(path);
-    wchar_t* wpath = (wchar_t*)calloc(sizeof(wchar_t), pathLength + 10);
+    wchar_t* wpath = (wchar_t*)calloc(pathLength + 10, sizeof(wchar_t));
     if (wpath != NULL) {
         mbstowcs(wpath, path, pathLength);
     }

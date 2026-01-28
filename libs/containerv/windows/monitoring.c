@@ -15,6 +15,11 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+// windows.h must come first for WINAPI and friends.
+#include <windows.h>
+
+#include "private.h"
+
 #include <vlog.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,8 +29,6 @@
 #include <iphlpapi.h>
 
 #pragma comment(lib, "pdh.lib")
-
-#include "private.h"
 
 /**
  * @brief Get current timestamp in nanoseconds
