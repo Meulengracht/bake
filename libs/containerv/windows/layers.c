@@ -18,6 +18,8 @@
 
 #include <chef/containerv/layers.h>
 #include <chef/containerv.h>
+#include <chef/platform.h>
+#include <windows.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +34,119 @@ struct containerv_layer_context {
     int                      layer_count;
     // TODO: Windows HCI layer handles
 };
+
+static void __spawn_output_handler(const char* line, enum platform_spawn_output_type type)
+{
+    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
+        VLOG_DEBUG("containerv[layers]", line);
+    } else {
+        VLOG_ERROR("containerv[layers]", line);
+    }
+}
+
+static char* __create_windows_layers_rootfs_dir(const char* container_id)
+{
+    char tempPath[MAX_PATH];
+    DWORD written = GetTempPathA(MAX_PATH, tempPath);
+    if (written == 0 || written >= MAX_PATH) {
+        return NULL;
+    }
+
+    // %TEMP%\chef-layers\<id>\rootfs
+    char root[MAX_PATH];
+    int rc = snprintf(root, sizeof(root), "%s\\chef-layers\\%s\\rootfs", tempPath,
+                      container_id ? container_id : "unknown");
+    if (rc < 0 || (size_t)rc >= sizeof(root)) {
+        return NULL;
+    }
+
+    // Best-effort create all directories.
+    char base[MAX_PATH];
+    rc = snprintf(base, sizeof(base), "%s\\chef-layers", tempPath);
+    if (rc < 0 || (size_t)rc >= sizeof(base)) {
+        return NULL;
+    }
+    CreateDirectoryA(base, NULL);
+
+    char idDir[MAX_PATH];
+    rc = snprintf(idDir, sizeof(idDir), "%s\\%s", base, container_id ? container_id : "unknown");
+    if (rc < 0 || (size_t)rc >= sizeof(idDir)) {
+        return NULL;
+    }
+    CreateDirectoryA(idDir, NULL);
+
+    CreateDirectoryA(root, NULL);
+    return _strdup(root);
+}
+
+static int __copy_tree_recursive(const char* srcDir, const char* dstDir)
+{
+    if (srcDir == NULL || dstDir == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    // Ensure destination exists
+    CreateDirectoryA(dstDir, NULL);
+
+    char search[MAX_PATH];
+    int rc = snprintf(search, sizeof(search), "%s\\*", srcDir);
+    if (rc < 0 || (size_t)rc >= sizeof(search)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    WIN32_FIND_DATAA ffd;
+    HANDLE hFind = FindFirstFileA(search, &ffd);
+    if (hFind == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        if (err == ERROR_FILE_NOT_FOUND) {
+            return 0; // empty dir
+        }
+        errno = EIO;
+        return -1;
+    }
+
+    do {
+        const char* name = ffd.cFileName;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+            continue;
+        }
+
+        char srcPath[MAX_PATH];
+        char dstPath[MAX_PATH];
+        rc = snprintf(srcPath, sizeof(srcPath), "%s\\%s", srcDir, name);
+        if (rc < 0 || (size_t)rc >= sizeof(srcPath)) {
+            FindClose(hFind);
+            errno = EINVAL;
+            return -1;
+        }
+        rc = snprintf(dstPath, sizeof(dstPath), "%s\\%s", dstDir, name);
+        if (rc < 0 || (size_t)rc >= sizeof(dstPath)) {
+            FindClose(hFind);
+            errno = EINVAL;
+            return -1;
+        }
+
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (__copy_tree_recursive(srcPath, dstPath) != 0) {
+                FindClose(hFind);
+                return -1;
+            }
+            continue;
+        }
+
+        // Best-effort: copy file. If it already exists, overwrite.
+        if (!CopyFileA(srcPath, dstPath, FALSE)) {
+            FindClose(hFind);
+            errno = EIO;
+            return -1;
+        }
+    } while (FindNextFileA(hFind, &ffd) != 0);
+
+    FindClose(hFind);
+    return 0;
+}
 
 static void __free_layer_copy(struct containerv_layer* layers, int layer_count)
 {
@@ -52,24 +167,26 @@ int containerv_layers_compose(
     const char*                       container_id,
     struct containerv_layer_context** context_out)
 {
-    (void)container_id;
-
     if (context_out == NULL || layers == NULL || layer_count <= 0) {
         errno = EINVAL;
         return -1;
     }
 
     int saw_overlay = 0;
-    int saw_vafs = 0;
     int base_rootfs_count = 0;
+    int vafs_count = 0;
+    const char* base_rootfs = NULL;
 
     for (int i = 0; i < layer_count; ++i) {
         switch (layers[i].type) {
             case CONTAINERV_LAYER_BASE_ROOTFS:
                 base_rootfs_count++;
+                if (base_rootfs == NULL) {
+                    base_rootfs = layers[i].source;
+                }
                 break;
             case CONTAINERV_LAYER_VAFS_PACKAGE:
-                saw_vafs = 1;
+                vafs_count++;
                 break;
             case CONTAINERV_LAYER_OVERLAY:
                 saw_overlay = 1;
@@ -80,15 +197,18 @@ int containerv_layers_compose(
         }
     }
 
-    if (base_rootfs_count != 1) {
-        VLOG_ERROR("containerv", "containerv_layers_compose: expected exactly one BASE_ROOTFS layer, got %d\n", base_rootfs_count);
-        errno = EINVAL;
+    // Windows backend supports:
+    // - Exactly one BASE_ROOTFS, plus optional VAFS_PACKAGE layers applied on top by materialization, OR
+    // - One or more VAFS_PACKAGE layers materialized into a directory (no BASE_ROOTFS).
+    // OVERLAY layers are ignored (no overlayfs).
+    if (base_rootfs_count > 1) {
+        VLOG_ERROR("containerv", "containerv_layers_compose: multiple BASE_ROOTFS layers are not supported on Windows\n");
+        errno = ENOTSUP;
         return -1;
     }
-
-    if (saw_vafs) {
-        VLOG_ERROR("containerv", "containerv_layers_compose: VAFS package layers are not supported on Windows\n");
-        errno = ENOTSUP;
+    if (base_rootfs_count == 0 && vafs_count == 0) {
+        VLOG_ERROR("containerv", "containerv_layers_compose: missing rootfs layer (BASE_ROOTFS or VAFS_PACKAGE)\n");
+        errno = EINVAL;
         return -1;
     }
 
@@ -103,36 +223,101 @@ int containerv_layers_compose(
     }
 
     context->layers = calloc((size_t)layer_count, sizeof(struct containerv_layer));
-    if (context->layers == NULL) {
-        free(context);
-        errno = ENOMEM;
-        return -1;
-    }
-
-    context->layer_count = layer_count;
-
-    for (int i = 0; i < layer_count; ++i) {
-        context->layers[i].type = layers[i].type;
-        context->layers[i].readonly = layers[i].readonly;
-        context->layers[i].source = layers[i].source ? _strdup(layers[i].source) : NULL;
-        context->layers[i].target = layers[i].target ? _strdup(layers[i].target) : NULL;
-
-        if ((layers[i].source && context->layers[i].source == NULL) ||
-            (layers[i].target && context->layers[i].target == NULL)) {
-            __free_layer_copy(context->layers, context->layer_count);
-            free(context);
+    // If no VAFS layers are present, we can use BASE_ROOTFS directly.
+    // If VAFS layers are present (with or without BASE_ROOTFS), we materialize into a directory.
+    if (vafs_count == 0 && base_rootfs_count == 1) {
+        context->composed_rootfs = base_rootfs ? _strdup(base_rootfs) : NULL;
+    } else {
+        char* outDir = __create_windows_layers_rootfs_dir(container_id);
+        if (outDir == NULL) {
+            VLOG_ERROR("containerv", "containerv_layers_compose: failed to create layers directory\n");
+            containerv_layers_destroy(context);
             errno = ENOMEM;
             return -1;
         }
-    }
 
-    // Minimal Windows implementation: pick BASE_ROOTFS as the composed rootfs.
-    // OVERLAY is treated as a no-op; VAFS_PACKAGE is rejected above.
-    for (int i = 0; i < layer_count; ++i) {
-        if (layers[i].type == CONTAINERV_LAYER_BASE_ROOTFS && layers[i].source) {
-            context->composed_rootfs = _strdup(layers[i].source);
-            break;
+        // If we have a BASE_ROOTFS, copy it into the materialized directory first.
+        if (base_rootfs_count == 1) {
+            if (base_rootfs == NULL || base_rootfs[0] == '\0') {
+                VLOG_ERROR("containerv", "containerv_layers_compose: BASE_ROOTFS layer missing source path\n");
+                free(outDir);
+                containerv_layers_destroy(context);
+                errno = EINVAL;
+                return -1;
+            }
+            if (__copy_tree_recursive(base_rootfs, outDir) != 0) {
+                VLOG_ERROR("containerv", "containerv_layers_compose: failed to materialize BASE_ROOTFS into %s\n", outDir);
+                free(outDir);
+                containerv_layers_destroy(context);
+                return -1;
+            }
         }
+
+        // Apply VAFS layers in order on top.
+        for (int i = 0; i < layer_count; ++i) {
+            if (layers[i].type != CONTAINERV_LAYER_VAFS_PACKAGE) {
+                continue;
+            }
+
+            if (layers[i].source == NULL || layers[i].source[0] == '\0') {
+                VLOG_ERROR("containerv", "containerv_layers_compose: VAFS layer missing source path\n");
+                free(outDir);
+                containerv_layers_destroy(context);
+                errno = EINVAL;
+                return -1;
+            }
+
+            char args[4096];
+            int rc = snprintf(args, sizeof(args), "--no-progress --out \"%s\" \"%s\"", outDir, layers[i].source);
+            if (rc < 0 || (size_t)rc >= sizeof(args)) {
+                free(outDir);
+                containerv_layers_destroy(context);
+                errno = EINVAL;
+                return -1;
+            }
+
+            int status = platform_spawn(
+                "unmkvafs",
+                args,
+                NULL,
+                &(struct platform_spawn_options) {
+                    .output_handler = __spawn_output_handler,
+                }
+            );
+
+            if (status != 0) {
+                VLOG_ERROR("containerv", "containerv_layers_compose: unmkvafs failed (%d) for %s\n", status, layers[i].source);
+                free(outDir);
+                containerv_layers_destroy(context);
+                errno = EIO;
+                return -1;
+            }
+        }
+
+        context->composed_rootfs = outDir;
+    }
+                return -1;
+            }
+
+            int status = platform_spawn(
+                "unmkvafs",
+                args,
+                NULL,
+                &(struct platform_spawn_options) {
+                    .output_handler = __spawn_output_handler,
+                }
+            );
+
+            if (status != 0) {
+                VLOG_ERROR("containerv", "containerv_layers_compose: unmkvafs failed (%d) for %s\n", status, layers[i].source);
+                free(outDir);
+                containerv_layers_destroy(context);
+                errno = EIO;
+                return -1;
+            }
+        }
+
+        context->composed_rootfs = outDir;
     }
 
     if (context->composed_rootfs == NULL) {
