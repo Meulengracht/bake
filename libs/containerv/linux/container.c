@@ -20,6 +20,7 @@
 
 #include <chef/platform.h>
 #include <chef/containerv.h>
+#include <chef/containerv/bpf-manager.h>
 #include <dirent.h>
 #include <sched.h>
 #include <stdio.h>
@@ -151,11 +152,6 @@ static struct containerv_container* __container_new(const char* containerId)
 static void __container_delete(struct containerv_container* container)
 {
     struct list_item* i;
-
-    // unload any eBPF policy, this is safe to call even if no policy is loaded,
-    // as __container_delete is called from both the host and child sides. Only
-    // the child-side will load any policy.
-    policy_ebpf_unload(container);
 
     for (i = container->processes.head; i != NULL;) {
         struct containerv_container_process* proc = (struct containerv_container_process*)i;
@@ -905,12 +901,6 @@ static int __container_run(
         struct containerv_event event;
         VLOG_DEBUG("containerv[child]", "__container_run: applying security policy\n");
 
-        // load eBPF program
-        status = policy_ebpf_load(container, options->policy);
-        if (status != 0) {
-            VLOG_WARNING("containerv[child]", "__container_run: eBPF policy enforcement not available\n");
-        }
-
         // notify the host that we need policy setup
         VLOG_DEBUG("containerv[child]", "notifying host that we need external assistance\n");
         __send_container_event(container->child, CV_CONTAINER_WAITING_FOR_POLICY_SETUP, 0);
@@ -926,13 +916,6 @@ static int __container_run(
         if (event.status) {
             VLOG_ERROR("containerv[child]", "__container_run: host failed to setup policy, aborting\n");
             return event.status;
-        }
-
-        // Apply seccomp-bpf for syscall filtering
-        status = policy_seccomp_apply(options->policy);
-        if (status) {
-            VLOG_ERROR("containerv[child]", "__container_run: failed to apply seccomp policy\n");
-            return status;
         }
     } else {
         VLOG_DEBUG("containerv[child]", "__container_run: no security policy configured\n");
@@ -951,6 +934,17 @@ static int __container_run(
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_run: failed to assume the PID of 1\n");
         return status;
+    }
+
+    // Apply seccomp-bpf for syscall filtering.
+    // This must happen after capability dropping and other prctl-based setup,
+    // otherwise the filter can block those operations and break container bring-up.
+    if (options->policy != NULL) {
+        status = policy_seccomp_apply(options->policy);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to apply seccomp policy\n");
+            return status;
+        }
     }
 
     // Container is now up and running
@@ -1143,6 +1137,11 @@ int containerv_create(
 
                 case CV_CONTAINER_DOWN: {
                     VLOG_ERROR("containerv[host]", "containerv_create: child reported error: %i\n", event.status);
+                    // Best-effort cleanup of any BPF policy entries that may have been populated.
+                    // This ensures containerv does not rely on external callers to clean per-container policy state.
+                    if (containerv_bpf_manager_is_available()) {
+                        (void)containerv_bpf_manager_cleanup_policy(container->id);
+                    }
                     __container_delete(container);
                     return event.status;
                 } break;
@@ -1358,7 +1357,6 @@ int containerv_destroy(struct containerv_container* container)
         return status;
     }
 
-
     VLOG_DEBUG("containerv[host]", "waiting for log monitor...\n");
     if (container->log_running) {
         // do not wait more than 2s, otherwise just shutdown
@@ -1367,6 +1365,15 @@ int containerv_destroy(struct containerv_container* container)
         while (container->log_running && maxWaiting > 0) {
             platform_sleep(100);
             maxWaiting -= 100;
+        }
+    }
+
+    // Best-effort cleanup of any BPF policy entries for this container.
+    // Policy is keyed by cgroup id; cleaning it up avoids long-lived pinned-map growth.
+    if (containerv_bpf_manager_is_available()) {
+        int bpf_status = containerv_bpf_manager_cleanup_policy(container->id);
+        if (bpf_status < 0) {
+            VLOG_WARNING("containerv[host]", "failed to cleanup BPF policy for %s\n", container->id);
         }
     }
 

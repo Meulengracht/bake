@@ -1513,7 +1513,7 @@ int containerv_bpf_manager_get_container_metrics(
     
     // Fill in metrics
     metrics->cgroup_id = tracker->cgroup_id;
-    metrics->policy_entry_count = tracker->file_key_count + tracker->dir_key_count;
+    metrics->policy_entry_count = tracker->file_key_count + tracker->dir_key_count + tracker->basename_key_count;
     metrics->populate_time_us = tracker->populate_time_us;
     metrics->cleanup_time_us = tracker->cleanup_time_us;
     

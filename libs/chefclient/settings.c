@@ -70,7 +70,6 @@ static int __parse_pack_settings(const char* response, struct chef_package_setti
     struct chef_package_settings* settings;
     json_error_t                  error;
     json_t*                       root;
-    json_t*                       name;
     json_t*                       discoverable;
 
     root = json_loads(response, 0, &error);

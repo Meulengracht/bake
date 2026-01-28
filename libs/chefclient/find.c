@@ -50,7 +50,6 @@ static int __get_find_url(struct chef_find_params* params, char* urlBuffer, size
 static int __parse_package(json_t* root, struct chef_find_result** packageOut)
 {
     struct chef_find_result* result;
-    json_t*                  platforms;
 
     // allocate memory for the package
     result = (struct chef_find_result*)malloc(sizeof(struct chef_find_result));

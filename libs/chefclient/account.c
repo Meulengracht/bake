@@ -502,7 +502,6 @@ static int __parse_publisher_response(const char* response, struct chef_publishe
     struct chef_publisher* publisher;
     json_error_t           error;
     json_t*                root;
-    json_t*                member;
 
     root = json_loads(response, 0, &error);
     if (!root) {

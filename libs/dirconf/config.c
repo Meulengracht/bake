@@ -149,9 +149,9 @@ static int __initialize_config(struct chef_config* config)
     config->cvd.type = platform_strdup("local");
     config->cvd.address = platform_strdup("@/chef/cvd/api");
 #elif CHEF_ON_WINDOWS
-    config->api.type = platform_strdup("inet4");
-    config->api.address = platform_strdup("127.0.0.1");
-    config->api.port = 51003;
+    config->cvd.type = platform_strdup("inet4");
+    config->cvd.address = platform_strdup("127.0.0.1");
+    config->cvd.port = 51003;
 #endif
     config->root_object = json_object();
     return 0;

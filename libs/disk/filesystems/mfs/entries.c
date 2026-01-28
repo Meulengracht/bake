@@ -69,6 +69,7 @@ static int __fill_bucket_chain(struct mfs* mfs, uint32_t bucket, uint32_t bucket
         // Get length of new bucket
         (void)mfs_bucket_map_bucket_info(mfs->map, bucketPtr, &bucketLengthItr);
     }
+    return 0;
 }
 
 static uint8_t* __read_sector(struct mfs* mfs, uint64_t sector, uint32_t count)

@@ -22,6 +22,7 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -50,28 +51,35 @@ static int __find_in_file(FILE* fp, const char* target)
 {
     char  buffer[1024];
     char* ptr = &buffer[0];
+    size_t target_len;
     
     if (fgets(buffer, sizeof(buffer), fp) == NULL) {
         return 0;
     }
 
-    // Look for "bpf" as a complete word (not substring)
+    if (target == NULL || target[0] == 0) {
+        return 0;
+    }
+    target_len = strlen(target);
+
+    // Look for the target as a complete token (not substring)
     while (ptr) {
-        // Find next occurrence of "bpf"
-        ptr = strstr(ptr, "bpf");
+        // Find next occurrence of the target
+        ptr = strstr(ptr, target);
         if (!ptr) {
             break;
         }
         
-        // Check if it's a complete word (surrounded by comma, newline, or string boundaries)
-        int isStart = (ptr == &buffer[0] || ptr[-1] == ',');
-        int isEnd = (ptr[3] == '\0' || ptr[3] == ',' || ptr[3] == '\n');
+        // Check if it's a complete token (surrounded by comma/whitespace/newline/boundaries)
+        int isStart = (ptr == &buffer[0] || ptr[-1] == ',' || ptr[-1] == ' ' || ptr[-1] == '\t');
+        int isEnd = (ptr[target_len] == '\0' || ptr[target_len] == ',' || ptr[target_len] == '\n' ||
+                     ptr[target_len] == ' ' || ptr[target_len] == '\t');
         if (isStart && isEnd) {
             return 1;
         }
         
-        // Move past "bpf" to continue searching
-        ptr += 3;
+        // Move past match to continue searching
+        ptr += target_len;
     }
     return 0;
 }
@@ -84,7 +92,7 @@ int bpf_check_lsm_available(void)
     // Check /sys/kernel/security/lsm for "bpf"
     fp = fopen("/sys/kernel/security/lsm", "r");
     if (!fp) {
-        VLOG_DEBUG("cvd", "bpf_helpers: cannot read LSM list: %s\n", strerror(errno));
+        VLOG_DEBUG("containerv", "bpf_helpers: cannot read LSM list: %s\n", strerror(errno));
         return 0;
     }
     
@@ -92,7 +100,7 @@ int bpf_check_lsm_available(void)
     fclose(fp);
     
     if (!available) {
-        VLOG_DEBUG("cvd", "bpf_helpers: BPF LSM not enabled in kernel (add 'bpf' to LSM list)\n");
+        VLOG_DEBUG("containerv", "bpf_helpers: BPF LSM not enabled in kernel (add 'bpf' to LSM list)\n");
     }
     
     return available;
@@ -117,7 +125,7 @@ unsigned long long bpf_get_cgroup_id(const char* hostname)
               (*c >= 'A' && *c <= 'Z') ||
               (*c >= '0' && *c <= '9') ||
               *c == '-' || *c == '_' || *c == '.')) {
-            VLOG_ERROR("cvd", "bpf_helpers: invalid hostname: %s\n", hostname);
+            VLOG_ERROR("containerv", "bpf_helpers: invalid hostname: %s\n", hostname);
             errno = EINVAL;
             return 0;
         }
@@ -125,7 +133,7 @@ unsigned long long bpf_get_cgroup_id(const char* hostname)
     
     // Ensure hostname doesn't start with .
     if (hostname[0] == '.') {
-        VLOG_ERROR("cvd", "bpf_helpers: invalid hostname starts with dot: %s\n", hostname);
+        VLOG_ERROR("containerv", "bpf_helpers: invalid hostname starts with dot: %s\n", hostname);
         errno = EINVAL;
         return 0;
     }
@@ -136,14 +144,14 @@ unsigned long long bpf_get_cgroup_id(const char* hostname)
     // Open cgroup directory
     fd = open(cgroupPath, O_RDONLY | O_DIRECTORY);
     if (fd < 0) {
-        VLOG_ERROR("cvd", "bpf_helpers: failed to open cgroup %s: %s\n", 
+        VLOG_ERROR("containerv", "bpf_helpers: failed to open cgroup %s: %s\n", 
                    cgroupPath, strerror(errno));
         return 0;
     }
     
     // Get inode number which serves as cgroup ID
     if (fstat(fd, &st) < 0) {
-        VLOG_ERROR("cvd", "bpf_helpers: failed to stat cgroup: %s\n", strerror(errno));
+        VLOG_ERROR("containerv", "bpf_helpers: failed to stat cgroup: %s\n", strerror(errno));
         close(fd);
         return 0;
     }
@@ -151,7 +159,7 @@ unsigned long long bpf_get_cgroup_id(const char* hostname)
     cgroupID = st.st_ino;
     close(fd);
     
-    VLOG_DEBUG("cvd", "bpf_helpers: cgroup %s has ID %llu\n", hostname, cgroupID);
+    VLOG_DEBUG("containerv", "bpf_helpers: cgroup %s has ID %llu\n", hostname, cgroupID);
     
     return cgroupID;
 }
@@ -194,7 +202,7 @@ int containerv_bpf_manager_sanity_check_pins(void)
     }
 
     if (map_fd < 0 || dir_map_fd < 0 || link_fd < 0) {
-        VLOG_WARNING("cvd",
+        VLOG_WARNING("containerv",
                      "BPF LSM sanity check failed (pinned map=%s, pinned dir_map=%s, pinned link=%s, pinned basename_map=%s). "
                      "Enforcement may be misconfigured or stale pins exist.\n",
                      (map_fd >= 0) ? "ok" : "missing",
@@ -205,7 +213,7 @@ int containerv_bpf_manager_sanity_check_pins(void)
         return -1;
     }
 
-    VLOG_DEBUG("cvd", "BPF LSM sanity check ok (pinned map + link present)\n");
+    VLOG_DEBUG("containerv", "BPF LSM sanity check ok (pinned map + link present)\n");
     return 0;
 #endif
 }
@@ -389,7 +397,7 @@ int bpf_policy_map_delete_batch(
     // If batch delete is not supported or fails, fall back to individual deletions
     // Check for common error codes indicating lack of support
     if (saved_errno == EINVAL || saved_errno == ENOTSUP || saved_errno == ENOSYS) {
-        VLOG_DEBUG("cvd", "bpf_helpers: BPF_MAP_DELETE_BATCH not supported (errno=%d), falling back to individual deletions\n", saved_errno);
+        VLOG_DEBUG("containerv", "bpf_helpers: BPF_MAP_DELETE_BATCH not supported (errno=%d), falling back to individual deletions\n", saved_errno);
         
         for (int i = 0; i < count; i++) {
             memset(&attr, 0, sizeof(attr));
@@ -400,7 +408,7 @@ int bpf_policy_map_delete_batch(
                 deleted++;
             } else if (errno != ENOENT) {
                 // Ignore ENOENT (entry doesn't exist), but log other errors
-                VLOG_TRACE("cvd", "bpf_helpers: failed to delete entry %d: %s\n", i, strerror(errno));
+                VLOG_TRACE("containerv", "bpf_helpers: failed to delete entry %d: %s\n", i, strerror(errno));
             }
         }
         return deleted;
@@ -408,7 +416,7 @@ int bpf_policy_map_delete_batch(
     
     // Some other error occurred, restore errno for caller
     errno = saved_errno;
-    VLOG_ERROR("cvd", "bpf_helpers: batch delete failed: %s\n", strerror(errno));
+    VLOG_ERROR("containerv", "bpf_helpers: batch delete failed: %s\n", strerror(errno));
     return -1;
 }
 
