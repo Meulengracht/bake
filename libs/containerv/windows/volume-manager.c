@@ -289,7 +289,7 @@ int __windows_setup_volumes(
         .status = 0,
     };
 
-    int status = containerv_layers_iterate_host_directories(
+    int status = containerv_layers_iterate(
         options->layers,
         CONTAINERV_LAYER_HOST_DIRECTORY,
         __windows_layers_hostdir_cb,

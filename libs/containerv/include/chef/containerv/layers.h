@@ -117,15 +117,19 @@ extern void containerv_layers_destroy(
 );
 
 /**
- * @brief Iterate over layers.
+ * @brief Iterate over layers of a specific type.
  *
- * This provides a mount-like view (host path -> container path) derived from the
- * layer system, so platform backends can configure bind/shared folder mappings
- * without requiring a separate mounts API.
+ * For `CONTAINERV_LAYER_HOST_DIRECTORY` layers, this provides a mount-like view
+ * (host path -> container path) derived from the layer system, so platform
+ * backends can configure bind/shared folder mappings without requiring a
+ * separate mounts API.
+ *
+ * For other layer types, callback arguments are not guaranteed to be meaningful
+ * and iteration is primarily intended for internal/back-end use.
  *
  * @return 0 on success, -1 on error.
  */
-extern int containerv_layers_iterate_host_directories(
+extern int containerv_layers_iterate(
     struct containerv_layer_context* context,
     enum containerv_layer_type       layerType,
     containerv_layers_iterate_cb     cb,

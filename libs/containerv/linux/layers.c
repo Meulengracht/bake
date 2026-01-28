@@ -721,7 +721,7 @@ const char* containerv_layers_get_rootfs(struct containerv_layer_context* contex
     return context->composed_rootfs;
 }
 
-int containerv_layers_iterate_host_directories(
+int containerv_layers_iterate(
     struct containerv_layer_context* context,
     enum containerv_layer_type       layerType,
     containerv_layers_iterate_cb     cb,

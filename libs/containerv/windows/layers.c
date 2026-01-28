@@ -59,6 +59,43 @@ int containerv_layers_compose(
         return -1;
     }
 
+    int saw_overlay = 0;
+    int saw_vafs = 0;
+    int base_rootfs_count = 0;
+
+    for (int i = 0; i < layer_count; ++i) {
+        switch (layers[i].type) {
+            case CONTAINERV_LAYER_BASE_ROOTFS:
+                base_rootfs_count++;
+                break;
+            case CONTAINERV_LAYER_VAFS_PACKAGE:
+                saw_vafs = 1;
+                break;
+            case CONTAINERV_LAYER_OVERLAY:
+                saw_overlay = 1;
+                break;
+            case CONTAINERV_LAYER_HOST_DIRECTORY:
+            default:
+                break;
+        }
+    }
+
+    if (base_rootfs_count != 1) {
+        VLOG_ERROR("containerv", "containerv_layers_compose: expected exactly one BASE_ROOTFS layer, got %d\n", base_rootfs_count);
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (saw_vafs) {
+        VLOG_ERROR("containerv", "containerv_layers_compose: VAFS package layers are not supported on Windows\n");
+        errno = ENOTSUP;
+        return -1;
+    }
+
+    if (saw_overlay) {
+        VLOG_WARNING("containerv", "containerv_layers_compose: OVERLAY layers are ignored on Windows (no overlayfs)\n");
+    }
+
     struct containerv_layer_context* context = calloc(1, sizeof(*context));
     if (context == NULL) {
         errno = ENOMEM;
@@ -90,7 +127,7 @@ int containerv_layers_compose(
     }
 
     // Minimal Windows implementation: pick BASE_ROOTFS as the composed rootfs.
-    // Future: support VAFS/OVERLAY and native Windows layers.
+    // OVERLAY is treated as a no-op; VAFS_PACKAGE is rejected above.
     for (int i = 0; i < layer_count; ++i) {
         if (layers[i].type == CONTAINERV_LAYER_BASE_ROOTFS && layers[i].source) {
             context->composed_rootfs = _strdup(layers[i].source);
@@ -136,7 +173,7 @@ void containerv_layers_destroy(struct containerv_layer_context* context)
     free(context);
 }
 
-int containerv_layers_iterate_host_directories(
+int containerv_layers_iterate(
     struct containerv_layer_context* context,
     enum containerv_layer_type       layerType,
     containerv_layers_iterate_cb     cb,
