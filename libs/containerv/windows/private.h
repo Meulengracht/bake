@@ -19,6 +19,12 @@
 #ifndef __CONTAINERV_WINDOWS_PRIVATE_H__
 #define __CONTAINERV_WINDOWS_PRIVATE_H__
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <stddef.h>
 #include <stdint.h>

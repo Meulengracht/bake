@@ -290,3 +290,82 @@ int containerv_get_stats(struct containerv_container* container, struct containe
 
     return 0;
 }
+
+int containerv_get_processes(
+    struct containerv_container*    container,
+    struct containerv_process_info* processes,
+    int                             maxProcesses)
+{
+    char path[PATH_MAX];
+    FILE* file;
+    char line[32];
+    int count = 0;
+    
+    if (!container || !processes || maxProcesses <= 0) {
+        return -1;
+    }
+    
+    if (!container->hostname) {
+        return 0; // No cgroup tracking
+    }
+    
+    snprintf(path, sizeof(path), "/sys/fs/cgroup/%s/cgroup.procs", container->hostname);
+    
+    file = fopen(path, "r");
+    if (!file) {
+        return -1;
+    }
+    
+    while (fgets(line, sizeof(line), file) && count < maxProcesses) {
+        pid_t pid = atoi(line);
+        if (pid > 0) {
+            processes[count].pid = pid;
+            
+            // Get process name from /proc/PID/comm
+            char comm_path[64];
+            FILE* comm_file;
+            
+            snprintf(comm_path, sizeof(comm_path), "/proc/%d/comm", pid);
+            comm_file = fopen(comm_path, "r");
+            if (comm_file) {
+                if (fgets(processes[count].name, sizeof(processes[count].name), comm_file)) {
+                    // Remove trailing newline
+                    size_t len = strlen(processes[count].name);
+                    if (len > 0 && processes[count].name[len-1] == '\n') {
+                        processes[count].name[len-1] = '\0';
+                    }
+                }
+                fclose(comm_file);
+            } else {
+                strcpy(processes[count].name, "unknown");
+            }
+            
+            // Get memory usage from /proc/PID/status
+            char status_path[64];
+            FILE* status_file;
+            
+            snprintf(status_path, sizeof(status_path), "/proc/%d/status", pid);
+            status_file = fopen(status_path, "r");
+            if (status_file) {
+                char status_line[256];
+                while (fgets(status_line, sizeof(status_line), status_file)) {
+                    if (strncmp(status_line, "VmRSS:", 6) == 0) {
+                        int kb;
+                        if (sscanf(status_line + 6, "%d", &kb) == 1) {
+                            processes[count].memory_kb = kb;
+                        }
+                        break;
+                    }
+                }
+                fclose(status_file);
+            }
+            
+            count++;
+        }
+    }
+    
+    fclose(file);
+    
+    VLOG_DEBUG("containerv", "found %d processes in container %s\n", count, container->id);
+    return count;
+}

@@ -162,17 +162,10 @@ HANDLE __windows_create_job_object(
         }
     }
     
-    // Configure CPU limits
+    // Configure CPU limits (applied after ExtendedLimitInformation)
+    DWORD cpu_percent = 0;
     if (limits && limits->cpu_percent) {
-        DWORD cpu_percent = __parse_cpu_limit(limits->cpu_percent);
-        
-        // CPU rate control (Windows 8+)
-        job_info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_CPU_RATE_CONTROL;
-        
-        // Set CPU rate as weight (0-10000, where 10000 = 100%)
-        job_info.CpuRateControlLimit = cpu_percent * 100;
-        job_info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_JOB_TIME;
-        
+        cpu_percent = __parse_cpu_limit(limits->cpu_percent);
         VLOG_DEBUG("containerv[windows]", "set CPU limit to %lu%%\n", cpu_percent);
     }
     
@@ -206,6 +199,21 @@ HANDLE __windows_create_job_object(
         CloseHandle(job);
         return NULL;
     }
+
+    // Apply CPU rate control separately (not part of JOBOBJECT_EXTENDED_LIMIT_INFORMATION)
+    if (cpu_percent > 0) {
+        JOBOBJECT_CPU_RATE_CONTROL_INFORMATION cpu_info;
+        memset(&cpu_info, 0, sizeof(cpu_info));
+
+        // CpuRate is 1/100th of a percent. 100% == 10000.
+        cpu_info.ControlFlags = JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
+        cpu_info.CpuRate = cpu_percent * 100;
+
+        if (!SetInformationJobObject(job, JobObjectCpuRateControlInformation, &cpu_info, sizeof(cpu_info))) {
+            // Not fatal on older OS / restricted environments.
+            VLOG_WARNING("containerv[windows]", "failed to set CPU rate control: %lu\n", GetLastError());
+        }
+    }
     
     // Apply UI restrictions
     if (!SetInformationJobObject(job, JobObjectBasicUIRestrictions,
@@ -228,7 +236,7 @@ int __windows_apply_job_to_processes(
     struct containerv_container* container,
     HANDLE job_handle)
 {
-    struct containerv_container_process* process;
+    struct list_item* item;
     int applied_count = 0;
     
     if (!job_handle) {
@@ -238,7 +246,8 @@ int __windows_apply_job_to_processes(
     VLOG_DEBUG("containerv[windows]", "applying job limits to container processes\n");
     
     // Apply to all container processes
-    list_foreach(&container->processes, process) {
+    list_foreach(&container->processes, item) {
+        struct containerv_container_process* process = (struct containerv_container_process*)item;
         if (process->handle && process->handle != INVALID_HANDLE_VALUE) {
             if (AssignProcessToJobObject(job_handle, process->handle)) {
                 applied_count++;

@@ -225,9 +225,9 @@ int bpf_dir_policy_map_allow_dir(
     unsigned int               allow_mask,
     unsigned int               flags)
 {
-    struct bpf_policy_key      key = {};
+    struct bpf_policy_key       key = {};
     struct bpf_dir_policy_value value = {};
-    union bpf_attr             attr = {};
+    union bpf_attr              attr = {};
 
     if (context == NULL || context->dir_map_fd < 0) {
         errno = EINVAL;

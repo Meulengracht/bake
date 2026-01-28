@@ -250,7 +250,7 @@ wchar_t* __hcs_create_vm_config(
                         L"\"Attachments\":{"
                             L"\"0\":{"
                                 L"\"Type\":\"VirtualDisk\","
-                                L"\"Path\":\"%s\\\\container.vhdx\","
+                                L"\"Path\":\"%hs\\\\container.vhdx\","
                                 L"\"ReadOnly\":false"
                             L"}"
                         L"}"

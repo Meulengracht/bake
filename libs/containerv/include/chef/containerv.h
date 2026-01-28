@@ -65,6 +65,13 @@ struct containerv_stats {
     uint32_t total_processes;        // Total processes created (lifetime)
 };
 
+struct containerv_process_info {
+    process_handle_t pid;            // Process ID or handle
+    char             name[64];       // Process name
+    uint64_t         memory_kb;      // Memory usage in KB
+    double           cpu_percent;    // CPU usage percentage
+};
+
 enum containerv_capabilities {
     CV_CAP_NETWORK = 0x1,
     CV_CAP_PROCESS_CONTROL = 0x2,
@@ -237,6 +244,15 @@ extern int containerv_destroy(struct containerv_container* container);
  * @return 0 on success, -1 on error.
  */
 extern int containerv_get_stats(struct containerv_container* container, struct containerv_stats* stats);
+
+/**
+ * @brief Get list of processes running in container
+ * @param container Container to get processes for
+ * @param processes Output array of process information
+ * @param maxProcesses Maximum number of processes to return
+ * @return Number of processes returned, or -1 on error
+ */
+extern int containerv_get_processes(struct containerv_container* container, struct containerv_process_info* processes, int maxProcesses);
 
 extern int containerv_join(const char* containerId);
 
