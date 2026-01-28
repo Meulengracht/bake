@@ -142,7 +142,6 @@ static int __handle_list(const char* package)
     struct chef_package_settings* settings;
     struct chef_settings_params   params = { 0 };
     int                           status;
-    const char*                   value;
 
     if (package == NULL) {
         return __handle_list_packages();

@@ -128,21 +128,66 @@ static int __read_recipe(char* path, void** bufferOut, size_t* lengthOut)
 
 int __debug_log_new(const char* command)
 {
-    char        buffer[128];
     FILE*       stream;
+    char*       tmpdir;
+    char        name[128];
     char*       path;
     const char* ext = "log";
 
-    snprintf(&buffer[0], sizeof(buffer), "/chef/bakectl-%s-XXXXXX.%s", command, ext);
-    if (mkstemps(&buffer[0], strlen(ext) + 1) < 0) {
-        VLOG_ERROR("dirs", "failed to get a temporary filename for log: %i\n", errno);
+    tmpdir = platform_tmpdir();
+    if (tmpdir == NULL) {
         return -1;
     }
-    
-    path = platform_strdup(&buffer[0]);
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+    // _mktemp_s requires the template to end with at least 6 X's.
+    snprintf(&name[0], sizeof(name), "bakectl-%s-XXXXXX", command);
+    path = strpathjoin(tmpdir, name, NULL);
+    free(tmpdir);
     if (path == NULL) {
         return -1;
     }
+
+#if defined(_MSC_VER)
+    if (_mktemp_s(path, strlen(path) + 1) != 0) {
+        VLOG_ERROR("dirs", "failed to get a temporary filename for log\n");
+        free(path);
+        return -1;
+    }
+#else
+    if (_mktemp(path) == NULL) {
+        VLOG_ERROR("dirs", "failed to get a temporary filename for log\n");
+        free(path);
+        return -1;
+    }
+#endif
+
+    // Append extension after making the base name unique.
+    {
+        size_t needed = strlen(path) + 1 + strlen(ext) + 1;
+        char* with_ext = malloc(needed);
+        if (with_ext == NULL) {
+            free(path);
+            return -1;
+        }
+        snprintf(with_ext, needed, "%s.%s", path, ext);
+        free(path);
+        path = with_ext;
+    }
+#else
+    snprintf(&name[0], sizeof(name), "bakectl-%s-XXXXXX.%s", command, ext);
+    path = strpathjoin(tmpdir, name, NULL);
+    free(tmpdir);
+    if (path == NULL) {
+        return -1;
+    }
+
+    if (mkstemps(path, strlen(ext) + 1) < 0) {
+        VLOG_ERROR("dirs", "failed to get a temporary filename for log: %i\n", errno);
+        free(path);
+        return -1;
+    }
+#endif
 
     stream = fopen(path, "w+");
     if (stream == NULL) {

@@ -55,7 +55,6 @@ enum sm_action_result served_handle_state_start_services(void* context)
 {
     struct served_transaction* transaction = context;
     struct state_transaction*  state;
-    struct state_application*  application;
 
     served_state_lock();
     state = served_state_transaction(transaction->id);

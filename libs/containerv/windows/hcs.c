@@ -600,7 +600,7 @@ int __hcs_create_process(
             &json_len,
             "{"
             "\"CommandLine\":\"%s\","
-            "\"WorkingDirectory\":\"C:\\\\","
+            "\"WorkingDirectory\":\"C:\\\","
             "\"Environment\":%s,"
             "\"EmulateConsole\":true,"
             "\"CreateStdInPipe\":true,"

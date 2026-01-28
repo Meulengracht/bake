@@ -25,6 +25,12 @@
 #include <chef/containerv/policy.h>
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 typedef HANDLE process_handle_t;
 #elif defined(__linux__) || defined(__unix__)

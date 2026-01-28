@@ -91,7 +91,6 @@ static int __build_step(const char* partName, struct list* steps, const char* st
 {
     struct list_item* item;
     int               status;
-    char              buffer[512];
     VLOG_DEBUG("bakectl", "__build_step(part=%s, step=%s)\n", partName, stepName);
     
     list_foreach(steps, item) {
