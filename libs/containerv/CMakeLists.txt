@@ -1,12 +1,15 @@
 project (containerv C)
 
+# Add PID1 service subdirectory
+add_subdirectory(pid1)
+
 set(ADDITIONAL_LIBS)
 if (UNIX)
     add_subdirectory(ebpf)
     add_subdirectory(linux)
     add_subdirectory(policies)
     
-    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-linux containerv-ebpf containerv-policy)
+    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-linux containerv-ebpf containerv-policy containerv-pid1)
     
     # Propagate BPF variables from linux subdirectory to parent scope
     if(BPF_PROGRAMS_AVAILABLE)
@@ -16,7 +19,7 @@ if (UNIX)
 elseif(WIN32)
     add_subdirectory(windows)
     add_subdirectory(policies)
-    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-windows containerv-policy)
+    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-windows containerv-policy containerv-pid1)
 endif()
 
 add_library(containerv STATIC
