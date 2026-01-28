@@ -39,3 +39,6 @@ elseif(WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/windows
     )
 endif()
+
+# Optionally build example program
+add_subdirectory(examples)
