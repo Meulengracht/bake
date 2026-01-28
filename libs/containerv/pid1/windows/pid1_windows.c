@@ -3,7 +3,7 @@
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation ? , either version 3 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
@@ -122,22 +122,23 @@ static void __remove_process(HANDLE handle)
  */
 static wchar_t* __build_command_line(const pid1_process_options_t* options)
 {
-    size_t total_length = 0;
+    size_t total_wchars = 0;
     size_t i;
     wchar_t* cmd_line;
     wchar_t* pos;
 
-    // Calculate total length needed (including quotes and spaces)
+    // Calculate total length needed in wide characters
     for (i = 0; options->args[i] != NULL; i++) {
-        // Add length for the argument + quotes + space
-        total_length += strlen(options->args[i]) + 3; // "arg" + space
+        int needed = MultiByteToWideChar(CP_UTF8, 0, options->args[i], -1, NULL, 0);
+        if (needed <= 0) {
+            return NULL;
+        }
+        // Add space for quotes (if needed), space separator, and the converted string
+        total_wchars += needed + 3; // worst case: " arg" or "arg "
     }
-    total_length++; // Null terminator
+    total_wchars++; // Null terminator
 
-    // Convert to wide characters (UTF-16)
-    total_length *= 2;
-
-    cmd_line = calloc(total_length, sizeof(wchar_t));
+    cmd_line = calloc(total_wchars, sizeof(wchar_t));
     if (cmd_line == NULL) {
         return NULL;
     }
@@ -151,7 +152,7 @@ static wchar_t* __build_command_line(const pid1_process_options_t* options)
             *pos++ = L' ';
         }
 
-        // Check if argument needs quoting
+        // Check if argument needs quoting (contains spaces or special chars)
         if (strchr(options->args[i], ' ') != NULL) {
             *pos++ = L'"';
         }
@@ -280,6 +281,10 @@ int pid1_windows_spawn(const pid1_process_options_t* options, HANDLE* handle_out
     wchar_t* working_dir = NULL;
     int result = -1;
 
+    // Initialize structures to zero
+    memset(&si, 0, sizeof(si));
+    memset(&pi, 0, sizeof(pi));
+
     // Validate options using common validation
     if (pid1_validate_spawn(options) != 0) {
         return -1;
@@ -302,13 +307,17 @@ int pid1_windows_spawn(const pid1_process_options_t* options, HANDLE* handle_out
         if (needed > 0) {
             working_dir = calloc(needed, sizeof(wchar_t));
             if (working_dir != NULL) {
-                MultiByteToWideChar(CP_UTF8, 0, options->working_directory, -1, working_dir, needed);
+                int converted = MultiByteToWideChar(CP_UTF8, 0, options->working_directory, -1, working_dir, needed);
+                if (converted <= 0) {
+                    PID1_ERROR("Failed to convert working directory to wide string");
+                    free(working_dir);
+                    working_dir = NULL;
+                }
             }
         }
     }
 
     // Set up STARTUPINFO
-    memset(&si, 0, sizeof(si));
     si.cb = sizeof(si);
 
     // Create the process

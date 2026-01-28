@@ -3,7 +3,7 @@
  *
  * This program is free software : you can redistribute it and / or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation ? , either version 3 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
@@ -88,6 +88,9 @@ int pid1_log_init(const char* log_path, pid1_log_level_t level)
         g_log_file = fopen(log_path, "a");
         if (g_log_file == NULL) {
             fprintf(stderr, "pid1_log_init: failed to open log file: %s\n", log_path);
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+            DeleteCriticalSection(&g_log_lock);
+#endif
             return -1;
         }
         // Enable line buffering for better real-time visibility
