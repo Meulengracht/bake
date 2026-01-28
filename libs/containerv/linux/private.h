@@ -196,21 +196,4 @@ extern int bpf_manager_add_allow_pattern(
     const char*                pattern,
     unsigned int               allowMask);
 
-/**
- * @brief Load and attach eBPF programs for the given policy
- * @param container The container to apply the policy to
- * @param policy The security policy to enforce
- * @return 0 on success, -1 on error
- */
-extern int policy_ebpf_load(
-    struct containerv_container*  container,
-    struct containerv_policy*     policy
-);
-
-/**
- * @brief Unload and detach eBPF programs for the container
- * @param container The container to remove policy from
- */
-extern void policy_ebpf_unload(struct containerv_container* container);
-
 #endif //!__PRIVATE_H__

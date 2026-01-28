@@ -63,10 +63,15 @@ void chef_served_install_invocation(struct gracht_message* message, const struct
     char         descriptionBuffer[512];
     VLOG_DEBUG("api", "chef_served_install_invocation(publisher=%s, path=%s)\n", options->package, options->path);
 
+    served_state_lock();
+
+    // TODO: Detect if this is an update instead of a fresh install
+
+
     snprintf(nameBuffer, sizeof(nameBuffer), "Install via API (%s)", options->package);
     snprintf(descriptionBuffer, sizeof(descriptionBuffer), "Installation of package from publisher '%s' requested via served API", options->package);
 
-    served_state_lock();
+
     transactionId = served_state_transaction_new(&(struct served_transaction_options){
         .name = &nameBuffer[0],
         .description = &descriptionBuffer[0],

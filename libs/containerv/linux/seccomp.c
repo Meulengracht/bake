@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <seccomp.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <vlog.h>
 
 // import the policy structure details
@@ -64,9 +65,16 @@ int policy_seccomp_apply(struct containerv_policy* policy)
             goto cleanup;
         }
     }
-    
-    // Disable NO_NEW_PRIVS requirement (we handle privileges separately)
-    if (seccomp_attr_set(ctx, SCMP_FLTATR_CTL_NNP, 0) != 0) {
+
+    // Enable no_new_privs so we can load seccomp without CAP_SYS_ADMIN.
+    // This also prevents future privilege escalation after the filter is active.
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        VLOG_ERROR("containerv", "policy_seccomp: failed to set no_new_privs: %s\n", strerror(errno));
+        goto cleanup;
+    }
+
+    // Ask libseccomp to keep NNP enabled (belt-and-suspenders).
+    if (seccomp_attr_set(ctx, SCMP_FLTATR_CTL_NNP, 1) != 0) {
         VLOG_ERROR("containerv", "policy_seccomp: failed to set NNP attribute\n");
         goto cleanup;
     }
