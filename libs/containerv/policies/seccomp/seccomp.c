@@ -71,6 +71,9 @@ static const char* g_baseSyscalls[] = {
     // I/O multiplexing (needed for many CLI tools)
     "select", "pselect6", "poll", "ppoll",
     "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", "epoll_pwait",
+
+    // Unix-domain control socket IPC (containerv PID1 <-> manager)
+    "sendmsg", "recvmsg",
     
     // Terminal I/O
     "ioctl",
