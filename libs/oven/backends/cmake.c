@@ -227,8 +227,6 @@ static char* __extract_cmake_option_value(const char* startOfOption)
 {
     char* startOfValue;
     char* endOfValue;
-    char* oldValue;
-    char* newValue;
 
     startOfValue = strchr(startOfOption, '=') + 1;
     endOfValue   = strchr(startOfValue, ' ');
@@ -316,7 +314,6 @@ static char* __replace_or_add_cmake_prefixes(const char* platform, const char* a
         char* exists = strstr(newArguments, prefixes[i].prefix);
         char* oldValue;
         char* newValue;
-        int   status;
 
         // The value did not exist, let us add it
         if (!exists) {

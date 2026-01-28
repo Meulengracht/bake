@@ -370,7 +370,6 @@ int chefclient_pack_publish(struct chef_publish_params* params, const char* path
 {
     struct __initiate_response context = { NULL, 0 };
     json_t*                    request;
-    int                        uploadCount;
     int                        status;
 
     request = __create_publish_request(params);
