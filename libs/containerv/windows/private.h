@@ -20,6 +20,8 @@
 #define __CONTAINERV_WINDOWS_PRIVATE_H__
 
 #include <windows.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <chef/containerv.h>
 #include <chef/list.h>
 
@@ -98,7 +100,8 @@ struct containerv_resource_stats {
 struct containerv_options {
     enum containerv_capabilities     capabilities;
     struct containerv_layer_context* layers;
-    
+    struct containerv_policy*        policy;
+
     struct containerv_options_network        network;
     struct containerv_options_vm             vm;
     struct containerv_options_rootfs         rootfs;

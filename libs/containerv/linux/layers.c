@@ -53,6 +53,7 @@ struct __mounted_layer {
     enum containerv_layer_type type;
     char*                      mount_point;   // Where layer is mounted
     char*                      source_path;   // Original source
+    int                        readonly;      // For HOST_DIRECTORY layers
     void*                      handle;        // Mount handle (e.g., __vafs_mount*)
 };
 
@@ -634,6 +635,7 @@ static int __process_context_layers(struct containerv_layer_context* context, st
                 mounted_layer->type = layers[i].type;
                 mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
                 mounted_layer->mount_point = layers[i].target ? strdup(layers[i].target) : NULL;
+                mounted_layer->readonly = layers[i].readonly;
                 break;
 
             case CONTAINERV_LAYER_OVERLAY:
@@ -717,6 +719,37 @@ const char* containerv_layers_get_rootfs(struct containerv_layer_context* contex
         return NULL;
     }
     return context->composed_rootfs;
+}
+
+int containerv_layers_iterate_host_directories(
+    struct containerv_layer_context* context,
+    enum containerv_layer_type       layerType,
+    containerv_layers_iterate_cb     cb,
+    void*                            userContext)
+{
+    if (context == NULL || cb == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    for (int i = 0; i < context->layer_count; ++i) {
+        struct __mounted_layer* ml = &context->layers[i];
+        if (ml->type != layerType) {
+            continue;
+        }
+
+        if (ml->source_path == NULL || ml->mount_point == NULL) {
+            errno = EINVAL;
+            return -1;
+        }
+
+        int status = cb(ml->source_path, ml->mount_point, ml->readonly, userContext);
+        if (status != 0) {
+            return status;
+        }
+    }
+
+    return 0;
 }
 
 void containerv_layers_destroy(struct containerv_layer_context* context)

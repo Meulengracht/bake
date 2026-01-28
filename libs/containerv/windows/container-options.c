@@ -44,8 +44,8 @@ struct containerv_options* containerv_options_new(void)
 void containerv_options_delete(struct containerv_options* options)
 {
     if (options) {
-        if (options->mounts) {
-            free(options->mounts);
+        if (options->policy) {
+            containerv_policy_delete(options->policy);
         }
         free(options);
     }
@@ -55,6 +55,13 @@ void containerv_options_set_caps(struct containerv_options* options, enum contai
 {
     if (options) {
         options->capabilities = caps;
+    }
+}
+
+void containerv_options_set_policy(struct containerv_options* options, struct containerv_policy* policy)
+{
+    if (options) {
+        options->policy = policy;
     }
 }
 

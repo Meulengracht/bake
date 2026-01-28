@@ -18,6 +18,7 @@
 
 #include <windows.h>
 #include <wincrypt.h>
+#include <objbase.h>
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <chef/platform.h>

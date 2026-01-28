@@ -19,6 +19,8 @@
 #ifndef __CONTAINERV_H__
 #define __CONTAINERV_H__
 
+#include <stdint.h>
+
 #include <chef/containerv/layers.h>
 #include <chef/containerv/policy.h>
 
@@ -64,6 +66,24 @@ enum containerv_mount_flags {
 };
 
 extern void containerv_options_set_layers(struct containerv_options* options, struct containerv_layer_context* layers);
+
+/**
+ * @brief Configure network isolation for the container
+ *
+ * On Linux this configures a virtual ethernet pair/bridge setup.
+ * On Windows this configures the equivalent container/VM networking.
+ *
+ * @param options The container options to configure
+ * @param container_ip IP address for the container interface (e.g., "10.0.0.2")
+ * @param container_netmask Netmask for the container (e.g., "255.255.255.0")
+ * @param host_ip IP address for the host-side interface (e.g., "10.0.0.1")
+ */
+extern void containerv_options_set_network(
+    struct containerv_options* options,
+    const char*                container_ip,
+    const char*                container_netmask,
+    const char*                host_ip
+);
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 
@@ -126,19 +146,6 @@ extern void containerv_options_set_cgroup_limits(
     const char*                pids_max
 );
 
-/**
- * @brief Configure network isolation for the container with a virtual ethernet bridge
- * @param options The container options to configure
- * @param container_ip IP address for the container interface (e.g., "10.0.0.2")
- * @param container_netmask Netmask for the container (e.g., "255.255.255.0")
- * @param host_ip IP address for the host-side veth interface (e.g., "10.0.0.1")
- */
-extern void containerv_options_set_network(
-    struct containerv_options* options,
-    const char*                container_ip,
-    const char*                container_netmask,
-    const char*                host_ip
-);
 #endif
 
 /**
