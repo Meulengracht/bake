@@ -15,7 +15,8 @@ if (UNIX)
     endif()
 elseif(WIN32)
     add_subdirectory(windows)
-    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-windows)
+    add_subdirectory(policies)
+    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-windows containerv-policy)
 endif()
 
 add_library(containerv STATIC

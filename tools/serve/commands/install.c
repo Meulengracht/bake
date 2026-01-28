@@ -132,8 +132,6 @@ static int __verify_package(const char* path, const char* proof)
         status = __ask_yes_no_question("continue?");
         if (!status) {
             fprintf(stderr, "aborting\n");
-            chef_package_free(package);
-            chef_version_free(version);
             return -1;
         }
     }

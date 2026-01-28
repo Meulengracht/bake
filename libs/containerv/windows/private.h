@@ -210,6 +210,9 @@ struct containerv_container {
     // Resource management
     HANDLE                               job_object;         // Job Object for resource limits
     struct containerv_resource_limits    resource_limits;    // Current limits configuration
+
+    // Security policy (owned by container once created)
+    struct containerv_policy*            policy;
     
     // VM state
     int          vm_started;
@@ -217,6 +220,16 @@ struct containerv_container {
     // Runtime flags
     int          network_configured;
 };
+
+// Windows security helpers
+extern int windows_apply_job_security(HANDLE job_handle, const struct containerv_policy* policy);
+extern int windows_create_secure_process_ex(
+    const struct containerv_policy* policy,
+    wchar_t*                        command_line,
+    const wchar_t*                  current_directory,
+    void*                           environment,
+    PROCESS_INFORMATION*            process_info
+);
 
 /**
  * @brief Generate a unique container ID

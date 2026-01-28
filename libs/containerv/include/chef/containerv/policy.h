@@ -31,6 +31,17 @@
 
 struct containerv_policy;
 
+/**
+ * @brief Generic security strength levels.
+ *
+ * This is a cross-platform concept. Not all backends enforce all levels.
+ */
+enum containerv_security_level {
+    CV_SECURITY_DEFAULT = 0,
+    CV_SECURITY_RESTRICTED = 1,
+    CV_SECURITY_STRICT = 2
+};
+
 struct containerv_policy_plugin {
     struct list_item header;
     const char*      name;
@@ -47,6 +58,33 @@ enum containerv_fs_access {
 };
 
 extern struct containerv_policy* containerv_policy_from_strings(const char* profiles);
+
+/**
+ * @brief Set/get the generic security level for a policy.
+ */
+extern int containerv_policy_set_security_level(struct containerv_policy* policy, enum containerv_security_level level);
+extern enum containerv_security_level containerv_policy_get_security_level(const struct containerv_policy* policy);
+
+/**
+ * @brief Configure Windows-specific isolation parameters.
+ *
+ * On non-Windows platforms this is a no-op.
+ */
+extern int containerv_policy_set_windows_isolation(
+    struct containerv_policy* policy,
+    int                       use_app_container,
+    const char*               integrity_level,
+    const char* const*        capability_sids,
+    int                       capability_sid_count
+);
+
+extern int containerv_policy_get_windows_isolation(
+    const struct containerv_policy* policy,
+    int*                            use_app_container,
+    const char**                    integrity_level,
+    const char* const**             capability_sids,
+    int*                            capability_sid_count
+);
 
 /**
  * @brief Create a new security policy
