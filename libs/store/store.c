@@ -166,7 +166,6 @@ static int __find_package_in_inventory(struct store_package* package, struct sto
         &pack
     );
 
-cleanup:
     strsplit_free(names);
     return status;
 }

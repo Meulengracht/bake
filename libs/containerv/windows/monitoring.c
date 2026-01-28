@@ -16,6 +16,14 @@
  */
 
 // windows.h must come first for WINAPI and friends.
+// We need Vista+ IP Helper APIs (GetIfTable2/MIB_IF_TABLE2).
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0600
+#endif
+#ifndef WINVER
+#define WINVER _WIN32_WINNT
+#endif
+
 #include <windows.h>
 
 #include "private.h"
@@ -26,9 +34,11 @@
 #include <psapi.h>
 #include <pdh.h>
 #include <winperf.h>
+#include <netioapi.h>
 #include <iphlpapi.h>
 
 #pragma comment(lib, "pdh.lib")
+#pragma comment(lib, "iphlpapi.lib")
 
 /**
  * @brief Get current timestamp in nanoseconds
@@ -176,11 +186,7 @@ int containerv_get_stats(struct containerv_container* container,
         if (time_delta > 0) {
             // CPU percentage = (cpu_time_used / real_time_elapsed) * 100
             stats->cpu_percent = (double)(cpu_delta * 100) / (double)time_delta;
-            
-            // Cap at 100% (can exceed due to multiple cores)
-            if (stats->cpu_percent > 100.0) {
-                stats->cpu_percent = 100.0;
-            }
+            // Note: May exceed 100% on multi-core systems.
         }
     }
     

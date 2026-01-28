@@ -927,7 +927,6 @@ int bake_pack(struct __pack_options* options)
     struct VaFsConfiguration    configuration;
     struct VaFs*                vafs     = NULL;
     struct list                 files    = { 0 };
-    struct list_item*           item;
     struct progress_context     progressContext = { 0 };
     int                         status;
     char*                       name;

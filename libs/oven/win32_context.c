@@ -17,13 +17,14 @@
  */
 
 #include <errno.h>
+#include <stddef.h>
 
 struct __bakelib_context* __bakelib_context_new(
     struct recipe*     recipe,
     const char*        recipe_path,
     const char* const* envp)
 {
-
+    return NULL;
 }
 
 void __bakelib_context_delete(struct __bakelib_context* context)

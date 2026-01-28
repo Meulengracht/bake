@@ -80,6 +80,10 @@ struct containerv_container {
     volatile int log_running;
     char*        hostname;        // hostname for cgroups/network
 
+    // stats (host)
+    uint64_t last_stats_timestamp_ns;
+    uint64_t last_stats_cpu_time_ns;
+
     // child
     char*       rootfs;
     int         socket_fd;

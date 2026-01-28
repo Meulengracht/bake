@@ -36,6 +36,29 @@ struct containerv_options;
 struct containerv_container;
 struct containerv_user;
 
+/**
+ * @brief Container resource usage snapshot.
+ *
+ * Timestamp is a monotonic clock value in nanoseconds.
+ */
+struct containerv_stats {
+    uint64_t timestamp;              // Timestamp in nanoseconds since epoch
+    uint64_t memory_usage;           // Current memory usage in bytes
+    uint64_t memory_peak;            // Peak memory usage in bytes
+    uint64_t cpu_time_ns;            // Total CPU time in nanoseconds
+    double   cpu_percent;            // Current CPU usage percentage
+    uint64_t read_bytes;             // Total bytes read from storage
+    uint64_t write_bytes;            // Total bytes written to storage
+    uint64_t read_ops;               // Total read I/O operations
+    uint64_t write_ops;              // Total write I/O operations
+    uint64_t network_rx_bytes;       // Network bytes received
+    uint64_t network_tx_bytes;       // Network bytes transmitted
+    uint64_t network_rx_packets;     // Network packets received
+    uint64_t network_tx_packets;     // Network packets transmitted
+    uint32_t active_processes;       // Number of active processes
+    uint32_t total_processes;        // Total processes created (lifetime)
+};
+
 enum containerv_capabilities {
     CV_CAP_NETWORK = 0x1,
     CV_CAP_PROCESS_CONTROL = 0x2,
@@ -199,6 +222,15 @@ extern int containerv_upload(struct containerv_container* container, const char*
 extern int containerv_download(struct containerv_container* container, const char* const* containerPaths, const char* const* hostPaths, int count);
 
 extern int containerv_destroy(struct containerv_container* container);
+
+/**
+ * @brief Query a best-effort resource usage snapshot for a running container.
+ *
+ * @param container The container to query.
+ * @param stats Output stats.
+ * @return 0 on success, -1 on error.
+ */
+extern int containerv_get_stats(struct containerv_container* container, struct containerv_stats* stats);
 
 extern int containerv_join(const char* containerId);
 

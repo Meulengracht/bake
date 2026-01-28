@@ -28,7 +28,6 @@
 
 int bake_step_clean(struct __bake_build_context* bctx, struct __build_clean_options* options)
 {
-    struct list_item* item;
     int               status;
     char              buffer[PATH_MAX];
     unsigned int      pid;
