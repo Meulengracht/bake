@@ -167,6 +167,7 @@ extern void containerv_socket_client_close(struct containerv_socket_client* clie
 extern int containerv_socket_client_spawn(struct containerv_socket_client* client, const char* path, struct containerv_spawn_options* options, process_handle_t* pidOut);
 extern int containerv_socket_client_script(struct containerv_socket_client* client, const char* script);
 extern int containerv_socket_client_kill(struct containerv_socket_client* client, pid_t processId);
+extern int containerv_socket_client_wait(struct containerv_socket_client* client, pid_t processId, int* exit_code_out);
 extern int containerv_socket_client_get_root(struct containerv_socket_client* client, char* buffer, size_t length);
 extern int containerv_socket_client_get_nss(struct containerv_socket_client* client, struct containerv_ns_fd fds[CV_NS_COUNT], int* count);
 extern int containerv_socket_client_send_files(struct containerv_socket_client* client, int* fds, const char* const* filepaths, int* statuses, int count);

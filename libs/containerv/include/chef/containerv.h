@@ -181,6 +181,19 @@ extern int containerv_spawn(
 
 extern int containerv_kill(struct containerv_container* container, process_handle_t pid);
 
+/**
+ * @brief Wait for a previously spawned process to exit and retrieve its exit code.
+ *
+ * On Linux, the wait is performed inside the container via the control socket.
+ * On Windows, the wait uses the process/HCS handle returned from containerv_spawn.
+ *
+ * @param container The container that owns the process.
+ * @param pid The process handle (Windows) or process id (Linux) returned from containerv_spawn.
+ * @param exit_code_out Optional pointer to receive the process exit code.
+ * @return 0 on success, -1 on error.
+ */
+extern int containerv_wait(struct containerv_container* container, process_handle_t pid, int* exit_code_out);
+
 extern int containerv_upload(struct containerv_container* container, const char* const* hostPaths, const char* const* containerPaths, int count);
 
 extern int containerv_download(struct containerv_container* container, const char* const* containerPaths, const char* const* hostPaths, int count);

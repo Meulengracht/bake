@@ -17,6 +17,7 @@
  */
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
@@ -26,6 +27,104 @@
 
 // Global HCS API structure
 struct hcs_api g_hcs = { 0 };
+
+static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
+{
+    if (buf == NULL || cap == NULL || len == NULL || fmt == NULL) {
+        return -1;
+    }
+
+    va_list args;
+    va_start(args, fmt);
+
+    for (;;) {
+        if (*buf == NULL) {
+            *cap = 4096;
+            *len = 0;
+            *buf = calloc(*cap, 1);
+            if (*buf == NULL) {
+                va_end(args);
+                return -1;
+            }
+        }
+
+        va_list args2;
+        va_copy(args2, args);
+        int n = vsnprintf(*buf + *len, *cap - *len, fmt, args2);
+        va_end(args2);
+
+        if (n < 0) {
+            va_end(args);
+            return -1;
+        }
+
+        if (*len + (size_t)n < *cap) {
+            *len += (size_t)n;
+            va_end(args);
+            return 0;
+        }
+
+        // Need more space
+        size_t new_cap = *cap * 2;
+        while (*len + (size_t)n >= new_cap) {
+            new_cap *= 2;
+        }
+        char* tmp = realloc(*buf, new_cap);
+        if (tmp == NULL) {
+            va_end(args);
+            return -1;
+        }
+        *buf = tmp;
+        memset(*buf + *cap, 0, new_cap - *cap);
+        *cap = new_cap;
+    }
+}
+
+static char* __json_escape_utf8(const char* s)
+{
+    if (s == NULL) {
+        return _strdup("");
+    }
+
+    size_t in_len = strlen(s);
+    // Worst-case expand ~6x for \u00XX
+    size_t cap = (in_len * 6) + 1;
+    char* out = calloc(cap, 1);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    size_t j = 0;
+    for (size_t i = 0; i < in_len; ++i) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '"' || c == '\\') {
+            out[j++] = '\\';
+            out[j++] = (char)c;
+        } else if (c == '\b') {
+            out[j++] = '\\'; out[j++] = 'b';
+        } else if (c == '\f') {
+            out[j++] = '\\'; out[j++] = 'f';
+        } else if (c == '\n') {
+            out[j++] = '\\'; out[j++] = 'n';
+        } else if (c == '\r') {
+            out[j++] = '\\'; out[j++] = 'r';
+        } else if (c == '\t') {
+            out[j++] = '\\'; out[j++] = 't';
+        } else if (c < 0x20) {
+            // control chars as \u00XX
+            int n = snprintf(out + j, cap - j, "\\u%04x", (unsigned int)c);
+            if (n < 0) {
+                free(out);
+                return NULL;
+            }
+            j += (size_t)n;
+        } else {
+            out[j++] = (char)c;
+        }
+    }
+    out[j] = '\0';
+    return out;
+}
 
 // HCS operation callback (stub for now)
 static void CALLBACK __hcs_operation_callback(HCS_OPERATION operation, void* context)
@@ -317,12 +416,12 @@ int __hcs_create_process(
 {
     HCS_OPERATION operation = NULL;
     wchar_t* process_config = NULL;
-    wchar_t* wide_path = NULL;
     HCS_PROCESS process = NULL;
     HRESULT hr;
     int status = -1;
-    size_t config_size = 2048;
-    int written;
+    char* json_utf8 = NULL;
+    size_t json_cap = 0;
+    size_t json_len = 0;
 
     if (!container || !container->hcs_system || !options || !options->path) {
         return -1;
@@ -330,15 +429,150 @@ int __hcs_create_process(
 
     VLOG_DEBUG("containerv[hcs]", "creating process in VM: %s\n", options->path);
 
-    // Convert path to wide string
-    size_t path_len = strlen(options->path);
-    wide_path = calloc(path_len + 1, sizeof(wchar_t));
-    if (!wide_path) {
-        return -1;
+    // Build command line: path + optional argv (quoted conservatively)
+    char* cmd_utf8 = NULL;
+    size_t cmd_cap = 0;
+    size_t cmd_len = 0;
+    if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "%s", options->path) != 0) {
+        goto cleanup;
     }
-    
-    if (MultiByteToWideChar(CP_UTF8, 0, options->path, -1, wide_path, (int)path_len + 1) == 0) {
-        VLOG_ERROR("containerv[hcs]", "failed to convert path to wide string\n");
+
+    if (options->argv != NULL) {
+        for (int i = 1; options->argv[i] != NULL; ++i) {
+            const char* arg = options->argv[i];
+            if (arg == NULL) {
+                continue;
+            }
+
+            int needs_quotes = 0;
+            for (const char* p = arg; *p; ++p) {
+                if (*p == ' ' || *p == '\t' || *p == '"') {
+                    needs_quotes = 1;
+                    break;
+                }
+            }
+
+            if (!needs_quotes) {
+                if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, " %s", arg) != 0) {
+                    goto cleanup;
+                }
+                continue;
+            }
+
+            // Quote and escape quotes.
+            if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, " \"") != 0) {
+                goto cleanup;
+            }
+            for (const char* p = arg; *p; ++p) {
+                if (*p == '"') {
+                    if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "\\\"") != 0) {
+                        goto cleanup;
+                    }
+                } else {
+                    if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "%c", *p) != 0) {
+                        goto cleanup;
+                    }
+                }
+            }
+            if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "\"") != 0) {
+                goto cleanup;
+            }
+        }
+    }
+
+    char* esc_cmd = __json_escape_utf8(cmd_utf8);
+    free(cmd_utf8);
+    if (esc_cmd == NULL) {
+        goto cleanup;
+    }
+
+    // Build environment object. Always include a default PATH if not provided.
+    int has_path = 0;
+    if (options->envv != NULL) {
+        for (int i = 0; options->envv[i] != NULL; ++i) {
+            if (_strnicmp(options->envv[i], "PATH=", 5) == 0) {
+                has_path = 1;
+                break;
+            }
+        }
+    }
+
+    char* env_utf8 = NULL;
+    size_t env_cap = 0;
+    size_t env_len = 0;
+    if (__appendf(&env_utf8, &env_cap, &env_len, "{") != 0) {
+        free(esc_cmd);
+        goto cleanup;
+    }
+
+    int first = 1;
+    if (!has_path) {
+        char* esc_key = __json_escape_utf8("PATH");
+        char* esc_val = __json_escape_utf8("C:\\Windows\\System32;C:\\Windows");
+        if (esc_key == NULL || esc_val == NULL) {
+            free(esc_key);
+            free(esc_val);
+            free(env_utf8);
+            free(esc_cmd);
+            goto cleanup;
+        }
+        if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
+            free(esc_key);
+            free(esc_val);
+            free(env_utf8);
+            free(esc_cmd);
+            goto cleanup;
+        }
+        free(esc_key);
+        free(esc_val);
+        first = 0;
+    }
+
+    if (options->envv != NULL) {
+        for (int i = 0; options->envv[i] != NULL; ++i) {
+            const char* kv = options->envv[i];
+            const char* eq = strchr(kv, '=');
+            if (eq == NULL || eq == kv) {
+                continue;
+            }
+            size_t key_len = (size_t)(eq - kv);
+            char* key = calloc(key_len + 1, 1);
+            if (key == NULL) {
+                free(env_utf8);
+                free(esc_cmd);
+                goto cleanup;
+            }
+            memcpy(key, kv, key_len);
+            key[key_len] = '\0';
+            const char* val = eq + 1;
+
+            char* esc_key = __json_escape_utf8(key);
+            char* esc_val = __json_escape_utf8(val);
+            free(key);
+            if (esc_key == NULL || esc_val == NULL) {
+                free(esc_key);
+                free(esc_val);
+                free(env_utf8);
+                free(esc_cmd);
+                goto cleanup;
+            }
+
+            if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
+                free(esc_key);
+                free(esc_val);
+                free(env_utf8);
+                free(esc_cmd);
+                goto cleanup;
+            }
+            free(esc_key);
+            free(esc_val);
+            first = 0;
+        }
+    }
+
+    if (__appendf(&env_utf8, &env_cap, &env_len, "}") != 0) {
+        free(env_utf8);
+        free(esc_cmd);
         goto cleanup;
     }
 
@@ -349,30 +583,42 @@ int __hcs_create_process(
         goto cleanup;
     }
 
-    // Create process configuration JSON
-    process_config = calloc(config_size, sizeof(wchar_t));
+    // Build process configuration JSON (UTF-8) then convert to wide.
+    if (__appendf(
+            &json_utf8,
+            &json_cap,
+            &json_len,
+            "{"
+            "\"CommandLine\":\"%s\","
+            "\"WorkingDirectory\":\"C:\\\\","
+            "\"Environment\":%s,"
+            "\"EmulateConsole\":true,"
+            "\"CreateStdInPipe\":true,"
+            "\"CreateStdOutPipe\":true,"
+            "\"CreateStdErrPipe\":true"
+            "}",
+            esc_cmd,
+            env_utf8) != 0) {
+        free(env_utf8);
+        free(esc_cmd);
+        goto cleanup;
+    }
+    free(env_utf8);
+    free(esc_cmd);
+
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, json_utf8, -1, NULL, 0);
+    if (wlen <= 0) {
+        VLOG_ERROR("containerv[hcs]", "failed to size wide process config\n");
+        goto cleanup;
+    }
+
+    process_config = calloc((size_t)wlen, sizeof(wchar_t));
     if (!process_config) {
         goto cleanup;
     }
 
-    // Enhanced process configuration with better I/O handling
-    written = swprintf(process_config, config_size,
-        L"{"
-        L"\"CommandLine\":\"%s\","
-        L"\"WorkingDirectory\":\"C:\\\\\","
-        L"\"Environment\":{"
-            L"\"PATH\":\"C:\\\\Windows\\\\System32;C:\\\\Windows\""
-        L"},"
-        L"\"EmulateConsole\":true,"
-        L"\"CreateStdInPipe\":true,"   // Enable stdin for interactive processes
-        L"\"CreateStdOutPipe\":true,"  // Enable stdout capture
-        L"\"CreateStdErrPipe\":true"   // Enable stderr capture
-        L"}",
-        wide_path
-    );
-
-    if (written < 0 || written >= (int)config_size) {
-        VLOG_ERROR("containerv[hcs]", "process config too large for buffer\n");
+    if (MultiByteToWideChar(CP_UTF8, 0, json_utf8, -1, process_config, wlen) == 0) {
+        VLOG_ERROR("containerv[hcs]", "failed to convert process config to wide string\n");
         goto cleanup;
     }
 
@@ -398,9 +644,7 @@ int __hcs_create_process(
     VLOG_DEBUG("containerv[hcs]", "successfully created process in VM\n");
 
 cleanup:
-    if (wide_path) {
-        free(wide_path);
-    }
+    free(json_utf8);
     if (process_config) {
         free(process_config);
     }
@@ -416,24 +660,26 @@ cleanup:
  */
 int __hcs_wait_process(HCS_PROCESS process, unsigned int timeout_ms)
 {
-    // TODO: In a full implementation, this would use HCS APIs to:
-    // 1. Query process state via HcsGetProcessInfo
-    // 2. Wait for process completion events
-    // 3. Return exit code
-    // For now, this is a placeholder that simulates waiting
-    
     if (!process) {
         return -1;
     }
     
-    VLOG_DEBUG("containerv[hcs]", "waiting for process completion (timeout: %u ms)\n", timeout_ms);
-    
-    // Placeholder: In reality we'd use HCS process monitoring APIs
-    // that are part of the extended HCS API set
-    Sleep(timeout_ms > 10000 ? 10000 : timeout_ms);  // Cap at 10 seconds for placeholder
-    
-    VLOG_DEBUG("containerv[hcs]", "process wait completed (simulated)\n");
-    return 0;  // Assume success for now
+    DWORD wait_ms = (DWORD)timeout_ms;
+    VLOG_DEBUG("containerv[hcs]", "waiting for process completion (timeout: %lu ms)\n", (unsigned long)wait_ms);
+
+    DWORD wr = WaitForSingleObject((HANDLE)process, wait_ms);
+    if (wr == WAIT_OBJECT_0) {
+        VLOG_DEBUG("containerv[hcs]", "process wait completed\n");
+        return 0;
+    }
+    if (wr == WAIT_TIMEOUT) {
+        errno = ETIMEDOUT;
+        return -1;
+    }
+
+    VLOG_ERROR("containerv[hcs]", "WaitForSingleObject failed: %lu\n", GetLastError());
+    errno = EIO;
+    return -1;
 }
 
 /**
@@ -441,13 +687,17 @@ int __hcs_wait_process(HCS_PROCESS process, unsigned int timeout_ms)
  */
 int __hcs_get_process_exit_code(HCS_PROCESS process, unsigned long* exit_code)
 {
-    // TODO: Implement using HcsGetProcessInfo or similar HCS API
-    // For now, return a default success code
-    
     if (!process || !exit_code) {
         return -1;
     }
-    
-    *exit_code = 0;  // Assume success
+
+    DWORD code = 0;
+    if (!GetExitCodeProcess((HANDLE)process, &code)) {
+        VLOG_ERROR("containerv[hcs]", "GetExitCodeProcess failed: %lu\n", GetLastError());
+        errno = EIO;
+        return -1;
+    }
+
+    *exit_code = (unsigned long)code;
     return 0;
 }

@@ -1221,6 +1221,28 @@ int containerv_kill(struct containerv_container* container, pid_t pid)
     return status;
 }
 
+int containerv_wait(struct containerv_container* container, pid_t pid, int* exit_code_out)
+{
+    struct containerv_socket_client* client;
+    int                              status = -1;
+    VLOG_DEBUG("containerv[host]", "containerv_wait()\n");
+
+    VLOG_DEBUG("containerv[host]", "connecting to %s\n", container->id);
+    client = containerv_socket_client_open(container->id);
+    if (client == NULL) {
+        VLOG_ERROR("containerv[host]", "containerv_wait: failed to connect to server\n");
+        return status;
+    }
+
+    status = containerv_socket_client_wait(client, pid, exit_code_out);
+    if (status) {
+        VLOG_ERROR("containerv[host]", "containerv_wait: wait failed (%i)\n", status);
+    }
+
+    containerv_socket_client_close(client);
+    return status;
+}
+
 int containerv_upload(struct containerv_container* container, const char* const* hostPaths, const char* const* containerPaths, int count)
 {
     int                              fds[__CONTAINER_MAX_FD_COUNT] = { -1 };

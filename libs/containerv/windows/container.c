@@ -33,6 +33,33 @@
 
 #define MIN_REMAINING_PATH_LENGTH 20  // Minimum space needed for "containerv-XXXXXX" + null
 
+static char* __build_environment_block(const char* const* envv)
+{
+    if (envv == NULL) {
+        return NULL;
+    }
+
+    size_t total = 1; // final terminator
+    for (int i = 0; envv[i] != NULL; ++i) {
+        total += strlen(envv[i]) + 1;
+    }
+
+    char* block = calloc(total, 1);
+    if (block == NULL) {
+        return NULL;
+    }
+
+    size_t at = 0;
+    for (int i = 0; envv[i] != NULL; ++i) {
+        size_t n = strlen(envv[i]);
+        memcpy(block + at, envv[i], n);
+        at += n;
+        block[at++] = '\0';
+    }
+    block[at++] = '\0';
+    return block;
+}
+
 static char* __container_create_runtime_dir(void)
 {
     char template[MAX_PATH];
@@ -372,12 +399,11 @@ int __containerv_spawn(
 
         // Configure container networking on first process spawn
         // This is similar to Linux where network is configured after container start
-        static int network_configured = 0;  // TODO: Make this per-container
-        if (!network_configured) {
+        if (!container->network_configured) {
             // We would need to pass options here, but they're not available in spawn
             // In a real implementation, this would be done during container startup
             // __windows_configure_container_network(container, options);
-            network_configured = 1;
+            container->network_configured = 1;
             VLOG_DEBUG("containerv", "__containerv_spawn: network setup deferred (would configure here)\n");
         }
 
@@ -416,6 +442,8 @@ int __containerv_spawn(
     } else {
         // Fallback to host process creation (for testing/debugging)
         VLOG_WARNING("containerv", "__containerv_spawn: no HyperV VM, creating host process as fallback\n");
+
+        char* env_block = __build_environment_block(options->envv);
         
         result = CreateProcessA(
             NULL,           // Application name
@@ -424,11 +452,13 @@ int __containerv_spawn(
             NULL,           // Thread security attributes
             FALSE,          // Inherit handles
             0,              // Creation flags
-            NULL,           // Environment
+            env_block,      // Environment (NULL = inherit)
             container->rootfs, // Current directory
             &si,            // Startup info
             &pi             // Process information
         );
+
+        free(env_block);
 
         if (!result) {
             VLOG_ERROR("containerv", "__containerv_spawn: CreateProcess failed: %lu\n", GetLastError());
@@ -482,6 +512,8 @@ int containerv_spawn(
     struct __containerv_spawn_options spawn_opts = {0};
     HANDLE handle;
     int status;
+    char* args_copy = NULL;
+    char** argv = NULL;
     
     if (!container || !path) {
         return -1;
@@ -497,24 +529,34 @@ int containerv_spawn(
     spawn_opts.path = path;
     if (options) {
         spawn_opts.flags = options->flags;
-        
-        // TODO: Parse arguments string into argv array
-        // For now, arguments are not fully supported
-        if (options->arguments && strlen(options->arguments) > 0) {
-            VLOG_WARNING("containerv", "containerv_spawn: argument parsing not yet implemented\n");
+
+        // Parse arguments string into argv.
+        // Matches Linux semantics where `arguments` is a whitespace-delimited string supporting quotes.
+        if (options->arguments && options->arguments[0] != '\0') {
+            args_copy = _strdup(options->arguments);
+            if (args_copy == NULL) {
+                return -1;
+            }
         }
-        
-        // TODO: Parse environment array
-        if (options->environment) {
-            VLOG_WARNING("containerv", "containerv_spawn: environment setup not yet implemented\n");
+
+        argv = strargv(args_copy, path, NULL);
+        if (argv == NULL) {
+            free(args_copy);
+            return -1;
         }
+        spawn_opts.argv = (const char* const*)argv;
+
+        // Environment is a NULL-terminated array of KEY=VALUE strings.
+        spawn_opts.envv = options->environment;
     }
-    
+
     status = __containerv_spawn(container, &spawn_opts, &handle);
     if (status == 0 && pidOut) {
         *pidOut = handle;
     }
-    
+
+    strargv_free(argv);
+    free(args_copy);
     return status;
 }
 
@@ -552,6 +594,48 @@ int __containerv_kill(struct containerv_container* container, HANDLE handle)
 int containerv_kill(struct containerv_container* container, process_handle_t pid)
 {
     return __containerv_kill(container, pid);
+}
+
+int containerv_wait(struct containerv_container* container, process_handle_t pid, int* exit_code_out)
+{
+    if (container == NULL || pid == NULL) {
+        return -1;
+    }
+
+    // HCS_PROCESS and normal process handles are both waitable HANDLEs.
+    DWORD wr = WaitForSingleObject((HANDLE)pid, INFINITE);
+    if (wr != WAIT_OBJECT_0) {
+        VLOG_ERROR("containerv", "containerv_wait: WaitForSingleObject failed: %lu\n", GetLastError());
+        return -1;
+    }
+
+    unsigned long exit_code = 0;
+    if (__hcs_get_process_exit_code((HCS_PROCESS)pid, &exit_code) != 0) {
+        VLOG_ERROR("containerv", "containerv_wait: failed to get process exit code\n");
+        return -1;
+    }
+
+    if (exit_code_out != NULL) {
+        *exit_code_out = (int)exit_code;
+    }
+
+    // Remove from process list and close.
+    struct list_item* i;
+    for (i = container->processes.head; i != NULL; i = i->next) {
+        struct containerv_container_process* proc = (struct containerv_container_process*)i;
+        if (proc->handle == (HANDLE)pid) {
+            list_remove(&container->processes, i);
+            if (container->hcs_system != NULL && g_hcs.HcsCloseProcess) {
+                g_hcs.HcsCloseProcess((HCS_PROCESS)pid);
+            } else {
+                CloseHandle((HANDLE)pid);
+            }
+            free(proc);
+            break;
+        }
+    }
+
+    return 0;
 }
 
 int containerv_upload(

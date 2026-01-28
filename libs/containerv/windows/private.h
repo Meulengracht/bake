@@ -207,6 +207,9 @@ struct containerv_container {
     
     // VM state
     int          vm_started;
+
+    // Runtime flags
+    int          network_configured;
 };
 
 /**
