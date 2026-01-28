@@ -58,12 +58,9 @@ void containerv_options_set_caps(struct containerv_options* options, enum contai
     }
 }
 
-void containerv_options_set_mounts(struct containerv_options* options, struct containerv_mount* mounts, int count)
+void containerv_options_set_layers(struct containerv_options* options, struct containerv_layer_context* layers)
 {
-    if (options) {
-        options->mounts = mounts;
-        options->mounts_count = count;
-    }
+    options->layers = layers;
 }
 
 void containerv_options_set_network(
@@ -154,9 +151,4 @@ void containerv_options_set_rootfs_updates(
     if (options) {
         options->rootfs.enable_updates = enable_updates;
     }
-}
-
-void containerv_options_set_layers(struct containerv_options* options, struct containerv_layer_context* layers)
-{
-    options->layers = layers;
 }

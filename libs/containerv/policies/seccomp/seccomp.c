@@ -29,6 +29,12 @@
 static const char* g_baseSyscalls[] = {
     // Process management
     "exit", "exit_group",
+
+    // Process creation / execution (PID1 needs this to spawn workloads)
+    // Note: libc may use clone/vfork under the hood.
+    "fork", "vfork", "clone", "clone3",
+    "execve", "execveat",
+    "wait4", "waitid",
     
     // File I/O
     "read", "write", "open", "openat", "close",

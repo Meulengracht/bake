@@ -66,7 +66,47 @@ enum containerv_mount_flags {
 extern void containerv_options_set_layers(struct containerv_options* options, struct containerv_layer_context* layers);
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-// Windows-specific configuration functions can go here in the future
+
+// Windows privileges (subset of most critical ones)
+enum containerv_windows_privilege {
+    CV_PRIV_DEBUG = 0,              // Debug programs
+    CV_PRIV_BACKUP = 1,             // Back up files and directories
+    CV_PRIV_RESTORE = 2,            // Restore files and directories
+    CV_PRIV_SHUTDOWN = 3,           // Shut down the system
+    CV_PRIV_LOAD_DRIVER = 4,        // Load and unload device drivers
+    CV_PRIV_SYSTEM_TIME = 5,        // Change the system time
+    CV_PRIV_TAKE_OWNERSHIP = 6,     // Take ownership of files or other objects
+    CV_PRIV_TCB = 7,                // Act as part of the operating system
+    CV_PRIV_SECURITY = 8,           // Manage auditing and security log
+    CV_PRIV_INCREASE_QUOTA = 9      // Adjust memory quotas for a process
+};
+
+/**
+ * @brief Configure resource limits for the Windows container using Job Objects
+ * @param options The container options to configure
+ * @param memory_max Maximum memory (e.g., "1G", "512M", "max" for no limit), or NULL for default (1G)
+ * @param cpu_percent CPU percentage (1-100), or NULL for default (50)
+ * @param process_count Maximum number of processes (e.g., "256", "max"), or NULL for default (256)
+ */
+extern void containerv_options_set_resource_limits(
+    struct containerv_options* options,
+    const char*                memory_max,
+    const char*                cpu_percent,
+    const char*                process_count
+);
+
+/**
+ * @brief Create a named persistent volume (Windows VHD-based)
+ * @param name Volume name (must be unique)
+ * @param size_mb Size in megabytes (minimum 1MB)
+ * @param filesystem Filesystem type ("NTFS", "ReFS", or NULL for NTFS)
+ * @return 0 on success, -1 on failure
+ */
+extern int containerv_volume_create(
+    const char* name,
+    uint64_t    size_mb,
+    const char* filesystem
+);
 
 #elif defined(__linux__) || defined(__unix__)
 extern void containerv_options_set_users(struct containerv_options* options, uid_t hostUidStart, uid_t childUidStart, int count);
