@@ -439,6 +439,22 @@ int __hcs_create_process(
 
     VLOG_DEBUG("containerv[hcs]", "creating process in VM: %s\n", options->path);
 
+    const struct containerv_policy* policy = container->policy;
+    enum containerv_security_level security_level = CV_SECURITY_DEFAULT;
+    int win_use_app_container = 0;
+    const char* win_integrity_level = NULL;
+    const char* const* win_capability_sids = NULL;
+    int win_capability_sid_count = 0;
+    if (policy != NULL) {
+        security_level = containerv_policy_get_security_level(policy);
+        (void)containerv_policy_get_windows_isolation(
+            policy,
+            &win_use_app_container,
+            &win_integrity_level,
+            &win_capability_sids,
+            &win_capability_sid_count);
+    }
+
     // Build command line: path + optional argv (quoted conservatively)
     char* cmd_utf8 = NULL;
     size_t cmd_cap = 0;
@@ -498,11 +514,31 @@ int __hcs_create_process(
 
     // Build environment object. Always include a default PATH if not provided.
     int has_path = 0;
+    int has_policy_level = 0;
+    int has_policy_appc = 0;
+    int has_policy_integrity = 0;
+    int has_policy_caps = 0;
     if (options->envv != NULL) {
         for (int i = 0; options->envv[i] != NULL; ++i) {
             if (_strnicmp(options->envv[i], "PATH=", 5) == 0) {
                 has_path = 1;
-                break;
+                continue;
+            }
+            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_SECURITY_LEVEL=", 30) == 0) {
+                has_policy_level = 1;
+                continue;
+            }
+            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_WIN_USE_APPCONTAINER=", 38) == 0) {
+                has_policy_appc = 1;
+                continue;
+            }
+            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_WIN_INTEGRITY_LEVEL=", 36) == 0) {
+                has_policy_integrity = 1;
+                continue;
+            }
+            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_WIN_CAPABILITY_SIDS=", 39) == 0) {
+                has_policy_caps = 1;
+                continue;
             }
         }
     }
@@ -580,81 +616,233 @@ int __hcs_create_process(
         }
     }
 
+    // Inject policy metadata for in-VM agents/workloads (best-effort).
+    if (policy != NULL) {
+        if (!has_policy_level) {
+            const char* lvl = "default";
+            if (security_level >= CV_SECURITY_STRICT) {
+                lvl = "strict";
+            } else if (security_level >= CV_SECURITY_RESTRICTED) {
+                lvl = "restricted";
+            }
+            char* esc_key = __json_escape_utf8("CHEF_CONTAINERV_SECURITY_LEVEL");
+            char* esc_val = __json_escape_utf8(lvl);
+            if (esc_key == NULL || esc_val == NULL) {
+                free(esc_key);
+                free(esc_val);
+                free(env_utf8);
+                free(esc_cmd);
+                goto cleanup;
+            }
+            if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
+                free(esc_key);
+                free(esc_val);
+                free(env_utf8);
+                free(esc_cmd);
+                goto cleanup;
+            }
+            free(esc_key);
+            free(esc_val);
+            first = 0;
+        }
+
+        if (!has_policy_appc) {
+            char* esc_key = __json_escape_utf8("CHEF_CONTAINERV_WIN_USE_APPCONTAINER");
+            char* esc_val = __json_escape_utf8(win_use_app_container ? "1" : "0");
+            if (esc_key == NULL || esc_val == NULL) {
+                free(esc_key);
+                free(esc_val);
+                free(env_utf8);
+                free(esc_cmd);
+                goto cleanup;
+            }
+            if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
+                free(esc_key);
+                free(esc_val);
+                free(env_utf8);
+                free(esc_cmd);
+                goto cleanup;
+            }
+            free(esc_key);
+            free(esc_val);
+            first = 0;
+        }
+
+        if (!has_policy_integrity && win_integrity_level != NULL && win_integrity_level[0] != '\0') {
+            char* esc_key = __json_escape_utf8("CHEF_CONTAINERV_WIN_INTEGRITY_LEVEL");
+            char* esc_val = __json_escape_utf8(win_integrity_level);
+            if (esc_key == NULL || esc_val == NULL) {
+                free(esc_key);
+                free(esc_val);
+                free(env_utf8);
+                free(esc_cmd);
+                goto cleanup;
+            }
+            if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
+                free(esc_key);
+                free(esc_val);
+                free(env_utf8);
+                free(esc_cmd);
+                goto cleanup;
+            }
+            free(esc_key);
+            free(esc_val);
+            first = 0;
+        }
+
+        if (!has_policy_caps && win_capability_sids != NULL && win_capability_sid_count > 0) {
+            // Comma-separated list.
+            char* caps = NULL;
+            size_t caps_cap = 0;
+            size_t caps_len = 0;
+            for (int i = 0; i < win_capability_sid_count; i++) {
+                if (win_capability_sids[i] == NULL) {
+                    continue;
+                }
+                if (__appendf(&caps, &caps_cap, &caps_len, "%s%s", (caps_len == 0) ? "" : ",", win_capability_sids[i]) != 0) {
+                    free(caps);
+                    free(env_utf8);
+                    free(esc_cmd);
+                    goto cleanup;
+                }
+            }
+            if (caps != NULL && caps[0] != '\0') {
+                char* esc_key = __json_escape_utf8("CHEF_CONTAINERV_WIN_CAPABILITY_SIDS");
+                char* esc_val = __json_escape_utf8(caps);
+                free(caps);
+                if (esc_key == NULL || esc_val == NULL) {
+                    free(esc_key);
+                    free(esc_val);
+                    free(env_utf8);
+                    free(esc_cmd);
+                    goto cleanup;
+                }
+                if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
+                    free(esc_key);
+                    free(esc_val);
+                    free(env_utf8);
+                    free(esc_cmd);
+                    goto cleanup;
+                }
+                free(esc_key);
+                free(esc_val);
+                first = 0;
+            } else {
+                free(caps);
+            }
+        }
+    }
+
     if (__appendf(&env_utf8, &env_cap, &env_len, "}") != 0) {
         free(env_utf8);
         free(esc_cmd);
         goto cleanup;
     }
 
-    // Create operation handle
-    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-    if (FAILED(hr)) {
-        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation: 0x%lx\n", hr);
-        goto cleanup;
+    int try_security_fields = 0;
+    if (policy != NULL) {
+        if (security_level >= CV_SECURITY_RESTRICTED || win_use_app_container || (win_integrity_level != NULL && win_integrity_level[0] != '\0')) {
+            try_security_fields = 1;
+        }
     }
 
-    // Build process configuration JSON (UTF-8) then convert to wide.
-    if (__appendf(
-            &json_utf8,
-            &json_cap,
-            &json_len,
-            "{"
-            "\"CommandLine\":\"%s\","
-            "\"WorkingDirectory\":\"C:\\\","
-            "\"Environment\":%s,"
-            "\"EmulateConsole\":true,"
-            "\"CreateStdInPipe\":true,"
-            "\"CreateStdOutPipe\":true,"
-            "\"CreateStdErrPipe\":true"
-            "}",
-            esc_cmd,
-            env_utf8) != 0) {
-        free(env_utf8);
-        free(esc_cmd);
-        goto cleanup;
-    }
-    free(env_utf8);
-    free(esc_cmd);
+    for (int attempt = 0; attempt < 2; attempt++) {
+        int include_security = (attempt == 0) && try_security_fields;
 
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, json_utf8, -1, NULL, 0);
-    if (wlen <= 0) {
-        VLOG_ERROR("containerv[hcs]", "failed to size wide process config\n");
-        goto cleanup;
-    }
+        // (Re)create operation handle
+        if (operation != NULL) {
+            g_hcs.HcsCloseOperation(operation);
+            operation = NULL;
+        }
+        hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
+        if (FAILED(hr)) {
+            VLOG_ERROR("containerv[hcs]", "failed to create HCS operation: 0x%lx\n", hr);
+            goto cleanup;
+        }
 
-    process_config = calloc((size_t)wlen, sizeof(wchar_t));
-    if (!process_config) {
-        goto cleanup;
-    }
+        free(json_utf8);
+        json_utf8 = NULL;
+        json_cap = 0;
+        json_len = 0;
 
-    if (MultiByteToWideChar(CP_UTF8, 0, json_utf8, -1, process_config, wlen) == 0) {
-        VLOG_ERROR("containerv[hcs]", "failed to convert process config to wide string\n");
-        goto cleanup;
-    }
+        // Build process configuration JSON (UTF-8) then convert to wide.
+        if (__appendf(
+                &json_utf8,
+                &json_cap,
+                &json_len,
+                "{"
+                "\"CommandLine\":\"%s\","
+                "\"WorkingDirectory\":\"C:\\\\","
+                "%s"
+                "\"Environment\":%s,"
+                "\"EmulateConsole\":true,"
+                "\"CreateStdInPipe\":true,"
+                "\"CreateStdOutPipe\":true,"
+                "\"CreateStdErrPipe\":true"
+                "}",
+                esc_cmd,
+                include_security ? "\"User\":\"ContainerUser\"," : "",
+                env_utf8) != 0) {
+            goto cleanup;
+        }
 
-    // Create the process in the VM
-    hr = g_hcs.HcsCreateProcess(
-        container->hcs_system,
-        process_config,
-        operation,
-        NULL,  // Security descriptor
-        &process
-    );
+        if (process_config) {
+            free(process_config);
+            process_config = NULL;
+        }
 
-    if (FAILED(hr)) {
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, json_utf8, -1, NULL, 0);
+        if (wlen <= 0) {
+            VLOG_ERROR("containerv[hcs]", "failed to size wide process config\n");
+            goto cleanup;
+        }
+
+        process_config = calloc((size_t)wlen, sizeof(wchar_t));
+        if (!process_config) {
+            goto cleanup;
+        }
+
+        if (MultiByteToWideChar(CP_UTF8, 0, json_utf8, -1, process_config, wlen) == 0) {
+            VLOG_ERROR("containerv[hcs]", "failed to convert process config to wide string\n");
+            goto cleanup;
+        }
+
+        // Create the process in the VM
+        hr = g_hcs.HcsCreateProcess(
+            container->hcs_system,
+            process_config,
+            operation,
+            NULL,  // Security descriptor
+            &process
+        );
+
+        if (SUCCEEDED(hr)) {
+            if (processOut) {
+                *processOut = process;
+            }
+            status = 0;
+            VLOG_DEBUG("containerv[hcs]", "successfully created process in VM\n");
+            break;
+        }
+
+        if (include_security) {
+            VLOG_WARNING("containerv[hcs]", "process create rejected security fields (hr=0x%lx); retrying without them\n", hr);
+            continue;
+        }
+
         VLOG_ERROR("containerv[hcs]", "failed to create process in VM: 0x%lx\n", hr);
-        goto cleanup;
+        break;
     }
 
-    if (processOut) {
-        *processOut = process;
-    }
-
-    status = 0;
-    VLOG_DEBUG("containerv[hcs]", "successfully created process in VM\n");
+    free(env_utf8);
+    env_utf8 = NULL;
+    free(esc_cmd);
+    esc_cmd = NULL;
 
 cleanup:
     free(json_utf8);
+    free(env_utf8);
+    free(esc_cmd);
     if (process_config) {
         free(process_config);
     }
