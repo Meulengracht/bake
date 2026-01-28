@@ -61,49 +61,66 @@ static const wchar_t* get_privilege_name(enum containerv_windows_privilege priv)
 
 /**
  * @brief Create an AppContainer for container isolation
- * @param profile Security profile
+ * @param policy Security policy
  * @param appcontainer_sid Output pointer for AppContainer SID
  * @return 0 on success, -1 on failure
  */
-int windows_create_appcontainer(const struct containerv_security_profile* profile,
+int windows_create_appcontainer(const struct containerv_policy* policy,
                                PSID* appcontainer_sid) {
-    if (!profile || !appcontainer_sid) {
+    if (!policy || !appcontainer_sid) {
         return -1;
     }
-    
-    if (!profile->use_app_container) {
+
+    int use_app_container = 0;
+    const char* integrity_level = NULL;
+    const char* const* capability_sids = NULL;
+    int capability_sid_count = 0;
+    (void)integrity_level;
+    if (containerv_policy_get_windows_isolation(
+            policy,
+            &use_app_container,
+            &integrity_level,
+            &capability_sids,
+            &capability_sid_count) != 0) {
+        return -1;
+    }
+
+    if (!use_app_container) {
         *appcontainer_sid = NULL;
         return 0;
     }
-    
-    // Convert profile name to wide string
+
+    // Use a stable AppContainer name. Callers that need per-container isolation should
+    // integrate container IDs into this name.
+    const char* app_container_name_utf8 = "chef.container";
+    const char* display_name_utf8 = "Chef Container";
+
     wchar_t app_container_name[256];
-    if (MultiByteToWideChar(CP_UTF8, 0, profile->name, -1, 
-                           app_container_name, sizeof(app_container_name) / sizeof(wchar_t)) == 0) {
+    if (MultiByteToWideChar(CP_UTF8, 0, app_container_name_utf8, -1,
+                            app_container_name, sizeof(app_container_name) / sizeof(wchar_t)) == 0) {
         return -1;
     }
-    
+
     wchar_t display_name[512];
-    if (profile->description) {
-        MultiByteToWideChar(CP_UTF8, 0, profile->description, -1,
-                           display_name, sizeof(display_name) / sizeof(wchar_t));
-    } else {
-        wcscpy_s(display_name, sizeof(display_name) / sizeof(wchar_t), L"Chef Container");
+
+    if (MultiByteToWideChar(CP_UTF8, 0, display_name_utf8, -1,
+                            display_name, sizeof(display_name) / sizeof(wchar_t)) == 0) {
+        return -1;
     }
     
     // Create capability array if specified
     PSID_AND_ATTRIBUTES capabilities = NULL;
     DWORD capability_count = 0;
     
-    if (profile->capability_sids && profile->win_cap_count > 0) {
-        capabilities = calloc(profile->win_cap_count, sizeof(SID_AND_ATTRIBUTES));
+    if (capability_sids && capability_sid_count > 0) {
+        capabilities = calloc((size_t)capability_sid_count, sizeof(SID_AND_ATTRIBUTES));
         if (!capabilities) {
             return -1;
         }
-        
-        capability_count = profile->win_cap_count;
-        for (int i = 0; i < profile->win_cap_count; i++) {
-            if (ConvertStringSidToSidA(profile->capability_sids[i], &capabilities[i].Sid)) {
+
+        capability_count = (DWORD)capability_sid_count;
+        for (int i = 0; i < capability_sid_count; i++) {
+            if (capability_sids[i] != NULL && ConvertStringSidToSidA(capability_sids[i], &capabilities[i].Sid)) {
                 capabilities[i].Attributes = SE_GROUP_ENABLED;
             } else {
                 // Cleanup on failure
@@ -140,13 +157,13 @@ int windows_create_appcontainer(const struct containerv_security_profile* profil
 
 /**
  * @brief Create a restricted token with limited privileges
- * @param profile Security profile
+ * @param policy Security policy
  * @param restricted_token Output handle to restricted token
  * @return 0 on success, -1 on failure
  */
-int windows_create_restricted_token(const struct containerv_security_profile* profile,
+int windows_create_restricted_token(const struct containerv_policy* policy,
                                    HANDLE* restricted_token) {
-    if (!profile || !restricted_token) {
+    if (!policy || !restricted_token) {
         return -1;
     }
     
@@ -155,8 +172,10 @@ int windows_create_restricted_token(const struct containerv_security_profile* pr
         return -1;
     }
     
+    enum containerv_security_level level = containerv_policy_get_security_level(policy);
+
     // For high security levels, create a very restricted token
-    if (profile->level >= CV_SECURITY_STRICT) {
+    if (level >= CV_SECURITY_STRICT) {
         // Remove most privileges
         TOKEN_PRIVILEGES token_privs;
         token_privs.PrivilegeCount = 0;
@@ -188,8 +207,14 @@ int windows_create_restricted_token(const struct containerv_security_profile* pr
         
         if (admin_sid) FreeSid(admin_sid);
     } else {
-        // For lower security levels, just duplicate the token
-        if (!DuplicateToken(current_token, SecurityImpersonation, restricted_token)) {
+        // For lower security levels, duplicate as a PRIMARY token for CreateProcessAsUser.
+        if (!DuplicateTokenEx(
+                current_token,
+                TOKEN_ALL_ACCESS,
+                NULL,
+                SecurityImpersonation,
+                TokenPrimary,
+                restricted_token)) {
             CloseHandle(current_token);
             return -1;
         }
@@ -197,6 +222,174 @@ int windows_create_restricted_token(const struct containerv_security_profile* pr
     
     CloseHandle(current_token);
     return 0;
+}
+
+int windows_create_secure_process_ex(
+    const struct containerv_policy* policy,
+    wchar_t*                        command_line,
+    const wchar_t*                  current_directory,
+    void*                           environment,
+    PROCESS_INFORMATION*            process_info)
+{
+    if (!policy || !command_line || !process_info) {
+        return -1;
+    }
+
+    HANDLE restricted_token = NULL;
+    PSID appcontainer_sid = NULL;
+
+    int use_app_container = 0;
+    const char* integrity_level = NULL;
+    const char* const* capability_sids = NULL;
+    int capability_sid_count = 0;
+    if (containerv_policy_get_windows_isolation(
+            policy,
+            &use_app_container,
+            &integrity_level,
+            &capability_sids,
+            &capability_sid_count) != 0) {
+        return -1;
+    }
+
+    if (windows_apply_security_profile(policy, &restricted_token, &appcontainer_sid) != 0) {
+        return -1;
+    }
+
+    STARTUPINFOEXW startup_info;
+    ZeroMemory(&startup_info, sizeof(startup_info));
+    startup_info.StartupInfo.cb = sizeof(startup_info);
+
+    DWORD creation_flags = CREATE_SUSPENDED;
+    if (environment != NULL) {
+        creation_flags |= CREATE_UNICODE_ENVIRONMENT;
+    }
+
+    // Build SECURITY_CAPABILITIES when AppContainer isolation is enabled.
+    SECURITY_CAPABILITIES sec_caps;
+    ZeroMemory(&sec_caps, sizeof(sec_caps));
+    sec_caps.AppContainerSid = appcontainer_sid;
+
+    SID_AND_ATTRIBUTES* cap_attrs = NULL;
+    DWORD cap_attr_count = 0;
+    if (use_app_container && capability_sids && capability_sid_count > 0) {
+        cap_attrs = calloc((size_t)capability_sid_count, sizeof(SID_AND_ATTRIBUTES));
+        if (!cap_attrs) {
+            CloseHandle(restricted_token);
+            if (appcontainer_sid) LocalFree(appcontainer_sid);
+            return -1;
+        }
+
+        cap_attr_count = (DWORD)capability_sid_count;
+        for (int i = 0; i < capability_sid_count; i++) {
+            PSID sid = NULL;
+            if (capability_sids[i] == NULL || !ConvertStringSidToSidA(capability_sids[i], &sid)) {
+                for (int j = 0; j < i; j++) {
+                    if (cap_attrs[j].Sid) {
+                        LocalFree(cap_attrs[j].Sid);
+                    }
+                }
+                free(cap_attrs);
+                CloseHandle(restricted_token);
+                if (appcontainer_sid) LocalFree(appcontainer_sid);
+                return -1;
+            }
+            cap_attrs[i].Sid = sid;
+            cap_attrs[i].Attributes = SE_GROUP_ENABLED;
+        }
+    }
+
+    if (use_app_container) {
+        sec_caps.Capabilities = cap_attrs;
+        sec_caps.CapabilityCount = cap_attr_count;
+        sec_caps.Reserved = 0;
+    }
+
+    SIZE_T attr_size = 0;
+    if (use_app_container && appcontainer_sid) {
+        creation_flags |= EXTENDED_STARTUPINFO_PRESENT;
+        InitializeProcThreadAttributeList(NULL, 1, 0, &attr_size);
+        startup_info.lpAttributeList = malloc(attr_size);
+        if (!startup_info.lpAttributeList) {
+            if (cap_attrs) {
+                for (DWORD i = 0; i < cap_attr_count; i++) {
+                    if (cap_attrs[i].Sid) LocalFree(cap_attrs[i].Sid);
+                }
+                free(cap_attrs);
+            }
+            CloseHandle(restricted_token);
+            if (appcontainer_sid) LocalFree(appcontainer_sid);
+            return -1;
+        }
+
+        if (!InitializeProcThreadAttributeList(startup_info.lpAttributeList, 1, 0, &attr_size)) {
+            free(startup_info.lpAttributeList);
+            startup_info.lpAttributeList = NULL;
+            if (cap_attrs) {
+                for (DWORD i = 0; i < cap_attr_count; i++) {
+                    if (cap_attrs[i].Sid) LocalFree(cap_attrs[i].Sid);
+                }
+                free(cap_attrs);
+            }
+            CloseHandle(restricted_token);
+            if (appcontainer_sid) LocalFree(appcontainer_sid);
+            return -1;
+        }
+
+        if (!UpdateProcThreadAttribute(
+                startup_info.lpAttributeList,
+                0,
+                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+                &sec_caps,
+                sizeof(sec_caps),
+                NULL,
+                NULL)) {
+            DeleteProcThreadAttributeList(startup_info.lpAttributeList);
+            free(startup_info.lpAttributeList);
+            startup_info.lpAttributeList = NULL;
+            if (cap_attrs) {
+                for (DWORD i = 0; i < cap_attr_count; i++) {
+                    if (cap_attrs[i].Sid) LocalFree(cap_attrs[i].Sid);
+                }
+                free(cap_attrs);
+            }
+            CloseHandle(restricted_token);
+            if (appcontainer_sid) LocalFree(appcontainer_sid);
+            return -1;
+        }
+    }
+
+    BOOL ok = CreateProcessAsUserW(
+        restricted_token,
+        NULL,
+        command_line,
+        NULL,
+        NULL,
+        FALSE,
+        creation_flags,
+        environment,
+        current_directory,
+        &startup_info.StartupInfo,
+        process_info);
+
+    if (startup_info.lpAttributeList) {
+        DeleteProcThreadAttributeList(startup_info.lpAttributeList);
+        free(startup_info.lpAttributeList);
+        startup_info.lpAttributeList = NULL;
+    }
+
+    if (cap_attrs) {
+        for (DWORD i = 0; i < cap_attr_count; i++) {
+            if (cap_attrs[i].Sid) {
+                LocalFree(cap_attrs[i].Sid);
+            }
+        }
+        free(cap_attrs);
+    }
+
+    if (restricted_token) CloseHandle(restricted_token);
+    if (appcontainer_sid) LocalFree(appcontainer_sid);
+
+    return ok ? 0 : -1;
 }
 
 /**
@@ -295,18 +488,20 @@ int windows_add_privilege(HANDLE token, enum containerv_windows_privilege privil
 /**
  * @brief Apply job object security restrictions
  * @param job_handle Job object handle
- * @param profile Security profile
+ * @param policy Security policy
  * @return 0 on success, -1 on failure
  */
-int windows_apply_job_security(HANDLE job_handle, const struct containerv_security_profile* profile) {
-    if (!job_handle || !profile) {
+int windows_apply_job_security(HANDLE job_handle, const struct containerv_policy* policy) {
+    if (!job_handle || !policy) {
         return -1;
     }
+
+    enum containerv_security_level level = containerv_policy_get_security_level(policy);
     
     // Set basic UI restrictions for security
     JOBOBJECT_BASIC_UI_RESTRICTIONS ui_restrictions = {0};
     
-    if (profile->level >= CV_SECURITY_RESTRICTED) {
+    if (level >= CV_SECURITY_RESTRICTED) {
         ui_restrictions.UIRestrictionsClass = 
             JOB_OBJECT_UILIMIT_DESKTOP |         // Prevent desktop access
             JOB_OBJECT_UILIMIT_DISPLAYSETTINGS | // Prevent display changes
@@ -317,7 +512,7 @@ int windows_apply_job_security(HANDLE job_handle, const struct containerv_securi
             JOB_OBJECT_UILIMIT_WRITECLIPBOARD;    // Prevent clipboard write
     }
     
-    if (profile->level >= CV_SECURITY_STRICT) {
+    if (level >= CV_SECURITY_STRICT) {
         ui_restrictions.UIRestrictionsClass |=
             JOB_OBJECT_UILIMIT_EXITWINDOWS;      // Prevent system shutdown
     }
@@ -331,7 +526,7 @@ int windows_apply_job_security(HANDLE job_handle, const struct containerv_securi
     JOBOBJECT_SECURITY_LIMIT_INFORMATION security_limits = {0};
     security_limits.SecurityLimitFlags = JOB_OBJECT_SECURITY_NO_ADMIN;
     
-    if (profile->level >= CV_SECURITY_STRICT) {
+    if (level >= CV_SECURITY_STRICT) {
         security_limits.SecurityLimitFlags |= 
             JOB_OBJECT_SECURITY_RESTRICTED_TOKEN; // Use restricted token
     }
@@ -345,26 +540,32 @@ int windows_apply_job_security(HANDLE job_handle, const struct containerv_securi
 }
 
 /**
- * @brief Apply comprehensive Windows security profile
- * @param profile Security profile to apply
+ * @brief Apply Windows security policy
+ * @param policy Security policy to apply
  * @param process_token Output handle to restricted process token
  * @param appcontainer_sid Output AppContainer SID
  * @return 0 on success, -1 on failure
  */
-int windows_apply_security_profile(const struct containerv_security_profile* profile,
+int windows_apply_security_profile(const struct containerv_policy* policy,
                                   HANDLE* process_token,
                                   PSID* appcontainer_sid) {
-    if (!profile) return -1;
+    if (!policy) return -1;
+
+    int use_app_container = 0;
+    const char* integrity_level = NULL;
+    if (containerv_policy_get_windows_isolation(policy, &use_app_container, &integrity_level, NULL, NULL) != 0) {
+        return -1;
+    }
     
     // 1. Create restricted token
     HANDLE restricted_token;
-    if (windows_create_restricted_token(profile, &restricted_token) != 0) {
+    if (windows_create_restricted_token(policy, &restricted_token) != 0) {
         return -1;
     }
     
     // 2. Set integrity level
-    if (profile->integrity_level) {
-        if (windows_set_integrity_level(restricted_token, profile->integrity_level) != 0) {
+    if (integrity_level) {
+        if (windows_set_integrity_level(restricted_token, integrity_level) != 0) {
             CloseHandle(restricted_token);
             return -1;
         }
@@ -383,8 +584,8 @@ int windows_apply_security_profile(const struct containerv_security_profile* pro
     
     // 4. Create AppContainer if requested
     PSID app_sid = NULL;
-    if (profile->use_app_container) {
-        if (windows_create_appcontainer(profile, &app_sid) != 0) {
+    if (use_app_container) {
+        if (windows_create_appcontainer(policy, &app_sid) != 0) {
             CloseHandle(restricted_token);
             return -1;
         }
@@ -407,11 +608,16 @@ int windows_apply_security_profile(const struct containerv_security_profile* pro
 
 /**
  * @brief Verify that current process has expected security restrictions
- * @param profile Expected security profile
+ * @param policy Expected security policy
  * @return 0 if compliant, -1 if not
  */
-int windows_verify_security_profile(const struct containerv_security_profile* profile) {
-    if (!profile) return -1;
+int windows_verify_security_profile(const struct containerv_policy* policy) {
+    if (!policy) return -1;
+
+    const char* integrity_level = NULL;
+    if (containerv_policy_get_windows_isolation(policy, NULL, &integrity_level, NULL, NULL) != 0) {
+        return -1;
+    }
     
     HANDLE current_token;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &current_token)) {
@@ -419,7 +625,7 @@ int windows_verify_security_profile(const struct containerv_security_profile* pr
     }
     
     // Check integrity level
-    if (profile->integrity_level) {
+    if (integrity_level) {
         DWORD length = 0;
         GetTokenInformation(current_token, TokenIntegrityLevel, NULL, 0, &length);
         
@@ -432,11 +638,11 @@ int windows_verify_security_profile(const struct containerv_security_profile* pr
                                                    *GetSidSubAuthorityCount(label->Label.Sid) - 1);
                 
                 DWORD expected_rid;
-                if (strcmp(profile->integrity_level, "low") == 0) {
+                if (strcmp(integrity_level, "low") == 0) {
                     expected_rid = SECURITY_MANDATORY_LOW_RID;
-                } else if (strcmp(profile->integrity_level, "medium") == 0) {
+                } else if (strcmp(integrity_level, "medium") == 0) {
                     expected_rid = SECURITY_MANDATORY_MEDIUM_RID;
-                } else if (strcmp(profile->integrity_level, "high") == 0) {
+                } else if (strcmp(integrity_level, "high") == 0) {
                     expected_rid = SECURITY_MANDATORY_HIGH_RID;
                 } else {
                     expected_rid = SECURITY_MANDATORY_MEDIUM_RID; // Default
@@ -457,16 +663,16 @@ int windows_verify_security_profile(const struct containerv_security_profile* pr
 }
 
 /**
- * @brief Create process with security profile applied
- * @param profile Security profile
+ * @brief Create process with security policy applied
+ * @param policy Security policy
  * @param command_line Command to execute
  * @param process_info Output process information
  * @return 0 on success, -1 on failure
  */
-int windows_create_secure_process(const struct containerv_security_profile* profile,
+int windows_create_secure_process(const struct containerv_policy* policy,
                                  wchar_t* command_line,
                                  PROCESS_INFORMATION* process_info) {
-    if (!profile || !command_line || !process_info) {
+    if (!policy || !command_line || !process_info) {
         return -1;
     }
     
@@ -474,7 +680,7 @@ int windows_create_secure_process(const struct containerv_security_profile* prof
     PSID appcontainer_sid = NULL;
     
     // Apply security profile to get restricted token and AppContainer
-    if (windows_apply_security_profile(profile, &restricted_token, &appcontainer_sid) != 0) {
+    if (windows_apply_security_profile(policy, &restricted_token, &appcontainer_sid) != 0) {
         return -1;
     }
     

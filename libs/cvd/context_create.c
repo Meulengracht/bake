@@ -53,8 +53,18 @@ static int __construct_paths(struct __bake_build_context* bctx) {
 
 #else
 static char* __get_username(void) {
+    // Windows stub - return a fixed username
     return platform_strdup("none");
 }
+
+static int __construct_paths(struct __bake_build_context* bctx) {
+    // TODO: Make sure that paths are constructed properly on Windows
+    // We want something like:
+    // C:\ProgramData\Chef\layers\<cache-uuid>\contents\chef\install\<platform>\<architecture>\
+
+    return 0;
+}
+
 #endif
 
 static char* __fmt_env_option(const char* name, const char* value)

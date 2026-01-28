@@ -40,7 +40,7 @@ int __initialize_oven_options(struct oven_initialize_options* options, struct __
     snprintf(&buff[0], sizeof(buff), "/chef/build/%s/%s",
         options->target_platform, options->target_architecture
     );
-    options->paths.build_root = strdup(&buff[0]);
+    options->paths.build_root = platform_strdup(&buff[0]);
     if (options->paths.build_root == NULL) {
         return -1;
     }
@@ -48,7 +48,7 @@ int __initialize_oven_options(struct oven_initialize_options* options, struct __
     snprintf(&buff[0], sizeof(buff), "/chef/ingredients/%s/%s",
         options->target_platform, options->target_architecture
     );
-    options->paths.build_ingredients_root = strdup(&buff[0]);
+    options->paths.build_ingredients_root = platform_strdup(&buff[0]);
     if (options->paths.build_ingredients_root == NULL) {
         return -1;
     }
@@ -56,7 +56,7 @@ int __initialize_oven_options(struct oven_initialize_options* options, struct __
     snprintf(&buff[0], sizeof(buff), "/chef/install/%s/%s",
         options->target_platform, options->target_architecture
     );
-    options->paths.install_root = strdup(&buff[0]);
+    options->paths.install_root = platform_strdup(&buff[0]);
     if (options->paths.install_root == NULL) {
         return -1;
     }

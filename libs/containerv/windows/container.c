@@ -18,6 +18,7 @@
 
 #include <windows.h>
 #include <wincrypt.h>
+#include <objbase.h>
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <chef/platform.h>
@@ -31,6 +32,87 @@
 #include "private.h"
 
 #define MIN_REMAINING_PATH_LENGTH 20  // Minimum space needed for "containerv-XXXXXX" + null
+
+static char* __build_environment_block(const char* const* envv)
+{
+    if (envv == NULL) {
+        return NULL;
+    }
+
+    size_t total = 1; // final terminator
+    for (int i = 0; envv[i] != NULL; ++i) {
+        total += strlen(envv[i]) + 1;
+    }
+
+    char* block = calloc(total, 1);
+    if (block == NULL) {
+        return NULL;
+    }
+
+    size_t at = 0;
+    for (int i = 0; envv[i] != NULL; ++i) {
+        size_t n = strlen(envv[i]);
+        memcpy(block + at, envv[i], n);
+        at += n;
+        block[at++] = '\0';
+    }
+    block[at++] = '\0';
+    return block;
+}
+
+static wchar_t* __utf8_to_wide_alloc(const char* s)
+{
+    if (s == NULL) {
+        return NULL;
+    }
+    int needed = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
+    if (needed <= 0) {
+        return NULL;
+    }
+    wchar_t* out = calloc((size_t)needed, sizeof(wchar_t));
+    if (out == NULL) {
+        return NULL;
+    }
+    if (MultiByteToWideChar(CP_UTF8, 0, s, -1, out, needed) == 0) {
+        free(out);
+        return NULL;
+    }
+    return out;
+}
+
+static wchar_t* __build_environment_block_wide(const char* const* envv)
+{
+    if (envv == NULL) {
+        return NULL;
+    }
+
+    size_t total_wchars = 1; // final terminator
+    for (int i = 0; envv[i] != NULL; ++i) {
+        int n = MultiByteToWideChar(CP_UTF8, 0, envv[i], -1, NULL, 0);
+        if (n <= 0) {
+            return NULL;
+        }
+        // n already includes null terminator for that string.
+        total_wchars += (size_t)n;
+    }
+
+    wchar_t* block = calloc(total_wchars, sizeof(wchar_t));
+    if (block == NULL) {
+        return NULL;
+    }
+
+    size_t at = 0;
+    for (int i = 0; envv[i] != NULL; ++i) {
+        int n = MultiByteToWideChar(CP_UTF8, 0, envv[i], -1, block + at, (int)(total_wchars - at));
+        if (n <= 0) {
+            free(block);
+            return NULL;
+        }
+        at += (size_t)n;
+    }
+    block[at++] = L'\0';
+    return block;
+}
 
 static char* __container_create_runtime_dir(void)
 {
@@ -164,6 +246,7 @@ static struct containerv_container* __container_new(void)
     container->child_pipe = INVALID_HANDLE_VALUE;
     container->vm_started = 0;
     list_init(&container->processes);
+    container->policy = NULL;
 
     return container;
 }
@@ -203,6 +286,11 @@ static void __container_delete(struct containerv_container* container)
     free(container->hostname);
     free(container->runtime_dir);
     free(container->rootfs);
+
+    if (container->policy != NULL) {
+        containerv_policy_delete(container->policy);
+        container->policy = NULL;
+    }
     free(container);
 }
 
@@ -274,20 +362,48 @@ int containerv_create(
         __container_delete(container);
         return -1;
     }
+
+    // Take ownership of the policy (options may be deleted after create)
+    if (options && options->policy) {
+        container->policy = options->policy;
+        options->policy = NULL;
+    }
     
     // Setup resource limits using Job Objects
-    if (options && (options->capabilities & CV_CAP_CGROUPS)) {
-        // Copy limits configuration to container
-        if (options->limits.memory_max || options->limits.cpu_percent || options->limits.process_count) {
-            container->resource_limits = options->limits;
-            
-            // Create job object for resource limits
-            container->job_object = __windows_create_job_object(container, &options->limits);
+    // Setup resource limits and/or security restrictions using Job Objects
+    {
+        int want_job = 0;
+        if (options && (options->capabilities & CV_CAP_CGROUPS)) {
+            if (options->limits.memory_max || options->limits.cpu_percent || options->limits.process_count) {
+                want_job = 1;
+            }
+        }
+        if (container->policy) {
+            enum containerv_security_level level = containerv_policy_get_security_level(container->policy);
+            if (level >= CV_SECURITY_RESTRICTED) {
+                want_job = 1;
+            }
+        }
+
+        if (want_job) {
+            if (options) {
+                container->resource_limits = options->limits;
+            }
+            container->job_object = __windows_create_job_object(
+                container,
+                (options && (options->limits.memory_max || options->limits.cpu_percent || options->limits.process_count))
+                    ? &options->limits
+                    : NULL);
+
             if (!container->job_object) {
-                VLOG_WARNING("containerv", "containerv_create: failed to create job object for resource limits\n");
-                // Continue anyway, container will work without limits
+                VLOG_WARNING("containerv", "containerv_create: failed to create job object\n");
             } else {
-                VLOG_DEBUG("containerv", "containerv_create: created job object for resource limits\n");
+                VLOG_DEBUG("containerv", "containerv_create: created job object\n");
+                if (container->policy) {
+                    if (windows_apply_job_security(container->job_object, container->policy) != 0) {
+                        VLOG_WARNING("containerv", "containerv_create: failed to apply job security\n");
+                    }
+                }
             }
         }
     }
@@ -371,12 +487,11 @@ int __containerv_spawn(
 
         // Configure container networking on first process spawn
         // This is similar to Linux where network is configured after container start
-        static int network_configured = 0;  // TODO: Make this per-container
-        if (!network_configured) {
+        if (!container->network_configured) {
             // We would need to pass options here, but they're not available in spawn
             // In a real implementation, this would be done during container startup
             // __windows_configure_container_network(container, options);
-            network_configured = 1;
+            container->network_configured = 1;
             VLOG_DEBUG("containerv", "__containerv_spawn: network setup deferred (would configure here)\n");
         }
 
@@ -415,23 +530,72 @@ int __containerv_spawn(
     } else {
         // Fallback to host process creation (for testing/debugging)
         VLOG_WARNING("containerv", "__containerv_spawn: no HyperV VM, creating host process as fallback\n");
-        
-        result = CreateProcessA(
-            NULL,           // Application name
-            cmdline,        // Command line
-            NULL,           // Process security attributes
-            NULL,           // Thread security attributes
-            FALSE,          // Inherit handles
-            0,              // Creation flags
-            NULL,           // Environment
-            container->rootfs, // Current directory
-            &si,            // Startup info
-            &pi             // Process information
-        );
 
-        if (!result) {
-            VLOG_ERROR("containerv", "__containerv_spawn: CreateProcess failed: %lu\n", GetLastError());
-            return -1;
+        int did_secure = 0;
+        if (container->policy) {
+            enum containerv_security_level level = containerv_policy_get_security_level(container->policy);
+            int use_app_container = 0;
+            const char* integrity_level = NULL;
+            const char* const* capability_sids = NULL;
+            int capability_sid_count = 0;
+
+            if (containerv_policy_get_windows_isolation(
+                    container->policy,
+                    &use_app_container,
+                    &integrity_level,
+                    &capability_sids,
+                    &capability_sid_count) == 0) {
+                if (level != CV_SECURITY_DEFAULT || use_app_container || integrity_level || (capability_sids && capability_sid_count > 0)) {
+                    wchar_t* cmdline_w = __utf8_to_wide_alloc(cmdline);
+                    wchar_t* cwd_w = __utf8_to_wide_alloc(container->rootfs);
+                    wchar_t* env_w = __build_environment_block_wide(options->envv);
+
+                    if (cmdline_w != NULL) {
+                        if (windows_create_secure_process_ex(
+                                container->policy,
+                                cmdline_w,
+                                cwd_w,
+                                env_w,
+                                &pi) == 0) {
+                            did_secure = 1;
+                            // Resume and close thread handle (CreateProcessAsUserW used CREATE_SUSPENDED)
+                            ResumeThread(pi.hThread);
+                            CloseHandle(pi.hThread);
+                        }
+                    }
+
+                    free(cmdline_w);
+                    free(cwd_w);
+                    free(env_w);
+                }
+            }
+        }
+
+        if (!did_secure) {
+            char* env_block = __build_environment_block(options->envv);
+
+            result = CreateProcessA(
+                NULL,           // Application name
+                cmdline,        // Command line
+                NULL,           // Process security attributes
+                NULL,           // Thread security attributes
+                FALSE,          // Inherit handles
+                0,              // Creation flags
+                env_block,      // Environment (NULL = inherit)
+                container->rootfs, // Current directory
+                &si,            // Startup info
+                &pi             // Process information
+            );
+
+            free(env_block);
+
+            if (!result) {
+                VLOG_ERROR("containerv", "__containerv_spawn: CreateProcess failed: %lu\n", GetLastError());
+                return -1;
+            }
+
+            // Close thread handle, we don't need it
+            CloseHandle(pi.hThread);
         }
 
         // Close thread handle, we don't need it
@@ -481,6 +645,8 @@ int containerv_spawn(
     struct __containerv_spawn_options spawn_opts = {0};
     HANDLE handle;
     int status;
+    char* args_copy = NULL;
+    char** argv = NULL;
     
     if (!container || !path) {
         return -1;
@@ -496,24 +662,34 @@ int containerv_spawn(
     spawn_opts.path = path;
     if (options) {
         spawn_opts.flags = options->flags;
-        
-        // TODO: Parse arguments string into argv array
-        // For now, arguments are not fully supported
-        if (options->arguments && strlen(options->arguments) > 0) {
-            VLOG_WARNING("containerv", "containerv_spawn: argument parsing not yet implemented\n");
+
+        // Parse arguments string into argv.
+        // Matches Linux semantics where `arguments` is a whitespace-delimited string supporting quotes.
+        if (options->arguments && options->arguments[0] != '\0') {
+            args_copy = _strdup(options->arguments);
+            if (args_copy == NULL) {
+                return -1;
+            }
         }
-        
-        // TODO: Parse environment array
-        if (options->environment) {
-            VLOG_WARNING("containerv", "containerv_spawn: environment setup not yet implemented\n");
+
+        argv = strargv(args_copy, path, NULL);
+        if (argv == NULL) {
+            free(args_copy);
+            return -1;
         }
+        spawn_opts.argv = (const char* const*)argv;
+
+        // Environment is a NULL-terminated array of KEY=VALUE strings.
+        spawn_opts.envv = options->environment;
     }
-    
+
     status = __containerv_spawn(container, &spawn_opts, &handle);
     if (status == 0 && pidOut) {
         *pidOut = handle;
     }
-    
+
+    strargv_free(argv);
+    free(args_copy);
     return status;
 }
 
@@ -551,6 +727,48 @@ int __containerv_kill(struct containerv_container* container, HANDLE handle)
 int containerv_kill(struct containerv_container* container, process_handle_t pid)
 {
     return __containerv_kill(container, pid);
+}
+
+int containerv_wait(struct containerv_container* container, process_handle_t pid, int* exit_code_out)
+{
+    if (container == NULL || pid == NULL) {
+        return -1;
+    }
+
+    // HCS_PROCESS and normal process handles are both waitable HANDLEs.
+    DWORD wr = WaitForSingleObject((HANDLE)pid, INFINITE);
+    if (wr != WAIT_OBJECT_0) {
+        VLOG_ERROR("containerv", "containerv_wait: WaitForSingleObject failed: %lu\n", GetLastError());
+        return -1;
+    }
+
+    unsigned long exit_code = 0;
+    if (__hcs_get_process_exit_code((HCS_PROCESS)pid, &exit_code) != 0) {
+        VLOG_ERROR("containerv", "containerv_wait: failed to get process exit code\n");
+        return -1;
+    }
+
+    if (exit_code_out != NULL) {
+        *exit_code_out = (int)exit_code;
+    }
+
+    // Remove from process list and close.
+    struct list_item* i;
+    for (i = container->processes.head; i != NULL; i = i->next) {
+        struct containerv_container_process* proc = (struct containerv_container_process*)i;
+        if (proc->handle == (HANDLE)pid) {
+            list_remove(&container->processes, i);
+            if (container->hcs_system != NULL && g_hcs.HcsCloseProcess) {
+                g_hcs.HcsCloseProcess((HCS_PROCESS)pid);
+            } else {
+                CloseHandle((HANDLE)pid);
+            }
+            free(proc);
+            break;
+        }
+    }
+
+    return 0;
 }
 
 int containerv_upload(

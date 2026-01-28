@@ -7,6 +7,7 @@ add_library(containerv-linux STATIC
     container.c
     control-socket.c
     layers.c
+    monitoring.c
     network.c
     seccomp.c
     user.c

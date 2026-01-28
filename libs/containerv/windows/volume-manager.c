@@ -21,6 +21,20 @@
 #include <shlwapi.h>
 #include <virtdisk.h>
 
+// Some SDKs don't define the *_PARAMETERS_DEFAULT_VERSION helpers.
+#ifndef CREATE_VIRTUAL_DISK_VERSION_1
+#define CREATE_VIRTUAL_DISK_VERSION_1 1
+#endif
+#ifndef ATTACH_VIRTUAL_DISK_VERSION_1
+#define ATTACH_VIRTUAL_DISK_VERSION_1 1
+#endif
+#ifndef CREATE_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION
+#define CREATE_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION CREATE_VIRTUAL_DISK_VERSION_1
+#endif
+#ifndef ATTACH_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION
+#define ATTACH_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION ATTACH_VIRTUAL_DISK_VERSION_1
+#endif
+
 #pragma comment(lib, "virtdisk.lib")
 
 #include "private.h"
@@ -206,48 +220,18 @@ static int __windows_attach_vhd(HANDLE vhd_handle, int read_only)
 }
 
 /**
- * @brief Parse mount type from mount configuration
- * @param mount Mount configuration
- * @return Windows volume type
- */
-static enum windows_volume_type __parse_mount_type(const struct containerv_mount* mount)
-{
-    // Determine volume type based on source path and flags
-    if (mount->flags & CV_MOUNT_BIND) {
-        return WINDOWS_VOLUME_HOST_BIND;
-    }
-    
-    if (mount->fstype && strcmp(mount->fstype, "tmpfs") == 0) {
-        return WINDOWS_VOLUME_TMPFS;
-    }
-    
-    // Check if source is a UNC path (SMB share)
-    if (mount->what && strlen(mount->what) > 2 && 
-        mount->what[0] == '\\' && mount->what[1] == '\\') {
-        return WINDOWS_VOLUME_SMB_SHARE;
-    }
-    
-    // Check if source ends with .vhd or .vhdx
-    if (mount->what) {
-        const char* ext = strrchr(mount->what, '.');
-        if (ext && (strcmp(ext, ".vhd") == 0 || strcmp(ext, ".vhdx") == 0)) {
-            return WINDOWS_VOLUME_VHD;
-        }
-    }
-    
-    // Default to host bind for directories
-    return WINDOWS_VOLUME_HOST_BIND;
-}
-
-/**
  * @brief Configure HyperV shared folder for host bind mount
  * @param container Container to configure
- * @param mount Mount configuration
+ * @param host_path Host path to share
+ * @param container_path Path inside the container/VM
+ * @param readonly Read-only flag
  * @return 0 on success, -1 on failure
  */
 static int __windows_configure_shared_folder(
     struct containerv_container* container,
-    const struct containerv_mount* mount)
+    const char* host_path,
+    const char* container_path,
+    int         readonly)
 {
     // For now, this is a placeholder for HyperV shared folder configuration
     // In a full implementation, this would:
@@ -255,8 +239,8 @@ static int __windows_configure_shared_folder(
     // 2. Set up Plan9 filesystem sharing
     // 3. Add shared folder to HCS VM configuration
     
-    VLOG_DEBUG("containerv[windows]", "configuring shared folder: %s -> %s\n", 
-              mount->what, mount->where);
+    VLOG_DEBUG("containerv[windows]", "configuring shared folder: %s -> %s (ro=%d)\n",
+              host_path, container_path, readonly);
     
     // TODO: Implement HyperV shared folder configuration
     // This requires modifying the HCS VM configuration JSON to include:
@@ -265,40 +249,28 @@ static int __windows_configure_shared_folder(
     return 0;
 }
 
-/**
- * @brief Create and configure a temporary filesystem (RAM disk)
- * @param container Container to configure
- * @param mount Mount configuration
- * @return 0 on success, -1 on failure
- */
-static int __windows_configure_tmpfs(
-    struct containerv_container* container,
-    const struct containerv_mount* mount)
+struct __windows_volume_iter_ctx {
+    struct containerv_container* container;
+    int                          status;
+};
+
+static int __windows_layers_hostdir_cb(
+    const char* host_path,
+    const char* container_path,
+    int         readonly,
+    void*       user)
 {
-    char vhd_path[MAX_PATH];
-    HANDLE vhd_handle;
-    uint64_t size_mb = WINDOWS_DEFAULT_VHD_SIZE_MB;
-    
-    VLOG_DEBUG("containerv[windows]", "configuring tmpfs: %s (%llu MB)\n", 
-              mount->where, size_mb);
-    
-    // Create temporary VHD for tmpfs
-    snprintf(vhd_path, sizeof(vhd_path), "%s\\tmpfs_%s_%s.vhdx",
-             g_volume_manager.volumes_directory, container->id, 
-             strrchr(mount->where, '\\') ? strrchr(mount->where, '\\') + 1 : mount->where);
-    
-    vhd_handle = __windows_create_vhd_file(vhd_path, size_mb, "NTFS");
-    if (vhd_handle == INVALID_HANDLE_VALUE) {
+    struct __windows_volume_iter_ctx* ctx = (struct __windows_volume_iter_ctx*)user;
+    if (ctx == NULL || ctx->container == NULL) {
         return -1;
     }
-    
-    if (__windows_attach_vhd(vhd_handle, mount->flags & CV_MOUNT_READONLY) != 0) {
-        CloseHandle(vhd_handle);
-        return -1;
+
+    int rc = __windows_configure_shared_folder(ctx->container, host_path, container_path, readonly);
+    if (rc != 0) {
+        ctx->status = rc;
+        return rc;
     }
-    
-    // TODO: Add VHD to HCS VM configuration for mounting at specified path
-    
+
     return 0;
 }
 
@@ -312,15 +284,12 @@ int __windows_setup_volumes(
     struct containerv_container* container,
     const struct containerv_options* options)
 {
-    int status = 0;
-    
-    if (!options || !options->mounts || options->mounts_count == 0) {
-        VLOG_DEBUG("containerv[windows]", "no volumes to configure\n");
+    if (!options || !options->layers) {
+        VLOG_DEBUG("containerv[windows]", "no layers/volumes to configure\n");
         return 0;
     }
-    
-    VLOG_DEBUG("containerv[windows]", "setting up %d volumes for container %s\n", 
-              options->mounts_count, container->id);
+
+    VLOG_DEBUG("containerv[windows]", "setting up volumes for container %s from layers\n", container->id);
     
     // Initialize volume manager if needed
     if (!g_volume_manager.initialized) {
@@ -329,52 +298,24 @@ int __windows_setup_volumes(
         }
     }
     
-    // Process each mount
-    for (int i = 0; i < options->mounts_count; i++) {
-        struct containerv_mount* mount = &options->mounts[i];
-        enum windows_volume_type volume_type = __parse_mount_type(mount);
-        
-        VLOG_DEBUG("containerv[windows]", "processing volume %d: %s -> %s (type=%d)\n",
-                  i, mount->what ? mount->what : "none", mount->where, volume_type);
-        
-        switch (volume_type) {
-            case WINDOWS_VOLUME_HOST_BIND:
-                status = __windows_configure_shared_folder(container, mount);
-                break;
-                
-            case WINDOWS_VOLUME_TMPFS:
-                status = __windows_configure_tmpfs(container, mount);
-                break;
-                
-            case WINDOWS_VOLUME_VHD:
-                // TODO: Implement VHD volume attachment
-                VLOG_WARNING("containerv[windows]", "VHD volumes not yet implemented\n");
-                status = 0; // Don't fail for now
-                break;
-                
-            case WINDOWS_VOLUME_SMB_SHARE:
-                // TODO: Implement SMB share mounting
-                VLOG_WARNING("containerv[windows]", "SMB share volumes not yet implemented\n");
-                status = 0; // Don't fail for now
-                break;
-                
-            default:
-                VLOG_ERROR("containerv[windows]", "unknown volume type: %d\n", volume_type);
-                status = -1;
-                break;
-        }
-        
-        if (status != 0) {
-            VLOG_ERROR("containerv[windows]", "failed to configure volume %d\n", i);
-            break;
-        }
+    struct __windows_volume_iter_ctx ctx = {
+        .container = container,
+        .status = 0,
+    };
+
+    int status = containerv_layers_iterate(
+        options->layers,
+        CONTAINERV_LAYER_HOST_DIRECTORY,
+        __windows_layers_hostdir_cb,
+        &ctx);
+
+    if (status != 0) {
+        VLOG_ERROR("containerv[windows]", "failed to configure one or more host-directory layers\n");
+        return -1;
     }
-    
-    if (status == 0) {
-        VLOG_DEBUG("containerv[windows]", "all volumes configured successfully\n");
-    }
-    
-    return status;
+
+    VLOG_DEBUG("containerv[windows]", "volume setup from layers completed\n");
+    return 0;
 }
 
 /**

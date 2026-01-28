@@ -51,6 +51,17 @@ struct policy_ebpf_context {
 struct containerv_policy {
     void* backend_context;
 
+    // Generic security level (best-effort; backend-dependent)
+    enum containerv_security_level security_level;
+
+#ifdef _WIN32
+    // Windows isolation settings (optional)
+    int   win_use_app_container;
+    char* win_integrity_level;
+    char** win_capability_sids;
+    int   win_capability_sid_count;
+#endif
+
     // Syscall whitelist
     struct containerv_syscall_entry syscalls[MAX_SYSCALLS];
     int                             syscall_count;
@@ -68,10 +79,16 @@ struct containerv_policy_handler {
 extern int policy_seccomp_build(struct containerv_policy* policy, struct containerv_policy_plugin* plugin);
 extern int policy_ebpf_build(struct containerv_policy* policy, struct containerv_policy_plugin* plugin);
 
+#if defined(__linux__) || defined(__unix__)
 static const struct containerv_policy_handler g_policy_handlers[] = {
     { "seccomp", policy_seccomp_build },
     { "ebpf",    policy_ebpf_build },
     { NULL,      NULL }
 };
+#else
+static const struct containerv_policy_handler g_policy_handlers[] = {
+    { NULL, NULL }
+};
+#endif
 
 #endif //!__POLICY_INTERNAL_H__

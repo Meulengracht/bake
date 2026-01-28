@@ -248,7 +248,7 @@ static int __add_maybe_package(struct recipe* recipe, const char* package)
         return -1;
     }
     
-    pkg->value = strdup(package);
+    pkg->value = platform_strdup(package);
     if (pkg->value == NULL) {
         free(pkg);
         return -1;

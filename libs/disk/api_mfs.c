@@ -250,7 +250,6 @@ static int __fs_finish(struct chef_disk_filesystem* fs)
 struct chef_disk_filesystem* chef_filesystem_mfs_new(struct chef_disk_partition* partition, struct chef_disk_filesystem_params* params)
 {
     struct __mfs_filesystem* cfs;
-    int                      status;
     VLOG_DEBUG("mfs", "chef_filesystem_mfs_new(partition=%s)\n", partition->name);
 
     cfs = calloc(1, sizeof(struct __mfs_filesystem));

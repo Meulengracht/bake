@@ -81,9 +81,14 @@ static int __configure_local_bind(struct gracht_link_socket* link)
 }
 #elif defined(_WIN32)
 #include <windows.h>
+#include <ws2ipdef.h>
 
 // Windows 10 Insider build 17063 ++ 
 #include <afunix.h>
+
+static int __abstract_socket_size(const char* address) {
+    return offsetof(struct sockaddr_un, sun_path) + strlen(address);
+}
 
 static int __local_size(const char* address) {
     return sizeof(struct sockaddr_un);
@@ -93,12 +98,23 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 {
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
 
-    local->sun_family = AF_LOCAL;
+    local->sun_family = AF_UNIX;
     strncpy(local->sun_path, address, sizeof(local->sun_path));
 }
 
-static int __configure_local_bind(struct gracht_link_socket*)
+static int __configure_local_bind(struct gracht_link_socket* link)
 {
+    struct sockaddr_storage storage = { 0 };
+    struct sockaddr_un*     address = (struct sockaddr_un*)&storage;
+
+    address->sun_family = AF_UNIX;
+    snprintf(&address->sun_path[1],
+        sizeof(address->sun_path) - 2,
+        "/chef/waiterd/clients/%u",
+        getpid()
+    );
+
+    gracht_link_socket_set_bind_address(link, &storage, __abstract_socket_size(&address->sun_path[1]));
     return 0;
 }
 #endif

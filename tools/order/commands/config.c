@@ -132,7 +132,6 @@ int config_main(int argc, char** argv)
 {
     const char* option = NULL;
     const char* value  = NULL;
-    int         status;
 
     if (argc > 2) {
         for (int i = 2; i < argc; i++) {

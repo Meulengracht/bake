@@ -27,6 +27,12 @@
 #include <threads.h>
 #include <vlog.h>
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#include <io.h>
+#define isatty _isatty
+#define fileno _fileno
+#endif
+
 #define __VLOG_RESET_CURSOR "\r"
 #define __VLOG_CLEAR_LINE "\x1b[2K"
 #define __VLOG_CLEAR_TOCURSOR "\x1b[0J"
@@ -491,8 +497,6 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
         // if the output is a tty we handle it differently, unless vlog_start
         // was not configured
         if (g_vlog.view_enabled && isatty(fileno(output->handle))) {
-            char* nl;
-
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
             // update column count on output to stdout if on windows, we can
             // only poll

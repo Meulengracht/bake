@@ -19,10 +19,18 @@
 #ifndef __CONTAINERV_H__
 #define __CONTAINERV_H__
 
+#include <stdint.h>
+
 #include <chef/containerv/layers.h>
 #include <chef/containerv/policy.h>
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 typedef HANDLE process_handle_t;
 #elif defined(__linux__) || defined(__unix__)
@@ -33,6 +41,36 @@ typedef pid_t process_handle_t;
 struct containerv_options;
 struct containerv_container;
 struct containerv_user;
+
+/**
+ * @brief Container resource usage snapshot.
+ *
+ * Timestamp is a monotonic clock value in nanoseconds.
+ */
+struct containerv_stats {
+    uint64_t timestamp;              // Timestamp in nanoseconds since epoch
+    uint64_t memory_usage;           // Current memory usage in bytes
+    uint64_t memory_peak;            // Peak memory usage in bytes
+    uint64_t cpu_time_ns;            // Total CPU time in nanoseconds
+    double   cpu_percent;            // Current CPU usage percentage
+    uint64_t read_bytes;             // Total bytes read from storage
+    uint64_t write_bytes;            // Total bytes written to storage
+    uint64_t read_ops;               // Total read I/O operations
+    uint64_t write_ops;              // Total write I/O operations
+    uint64_t network_rx_bytes;       // Network bytes received
+    uint64_t network_tx_bytes;       // Network bytes transmitted
+    uint64_t network_rx_packets;     // Network packets received
+    uint64_t network_tx_packets;     // Network packets transmitted
+    uint32_t active_processes;       // Number of active processes
+    uint32_t total_processes;        // Total processes created (lifetime)
+};
+
+struct containerv_process_info {
+    process_handle_t pid;            // Process ID or handle
+    char             name[64];       // Process name
+    uint64_t         memory_kb;      // Memory usage in KB
+    double           cpu_percent;    // CPU usage percentage
+};
 
 enum containerv_capabilities {
     CV_CAP_NETWORK = 0x1,
@@ -64,6 +102,24 @@ enum containerv_mount_flags {
 };
 
 extern void containerv_options_set_layers(struct containerv_options* options, struct containerv_layer_context* layers);
+
+/**
+ * @brief Configure network isolation for the container
+ *
+ * On Linux this configures a virtual ethernet pair/bridge setup.
+ * On Windows this configures the equivalent container/VM networking.
+ *
+ * @param options The container options to configure
+ * @param container_ip IP address for the container interface (e.g., "10.0.0.2")
+ * @param container_netmask Netmask for the container (e.g., "255.255.255.0")
+ * @param host_ip IP address for the host-side interface (e.g., "10.0.0.1")
+ */
+extern void containerv_options_set_network(
+    struct containerv_options* options,
+    const char*                container_ip,
+    const char*                container_netmask,
+    const char*                host_ip
+);
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 
@@ -126,19 +182,6 @@ extern void containerv_options_set_cgroup_limits(
     const char*                pids_max
 );
 
-/**
- * @brief Configure network isolation for the container with a virtual ethernet bridge
- * @param options The container options to configure
- * @param container_ip IP address for the container interface (e.g., "10.0.0.2")
- * @param container_netmask Netmask for the container (e.g., "255.255.255.0")
- * @param host_ip IP address for the host-side veth interface (e.g., "10.0.0.1")
- */
-extern void containerv_options_set_network(
-    struct containerv_options* options,
-    const char*                container_ip,
-    const char*                container_netmask,
-    const char*                host_ip
-);
 #endif
 
 /**
@@ -174,11 +217,42 @@ extern int containerv_spawn(
 
 extern int containerv_kill(struct containerv_container* container, process_handle_t pid);
 
+/**
+ * @brief Wait for a previously spawned process to exit and retrieve its exit code.
+ *
+ * On Linux, the wait is performed inside the container via the control socket.
+ * On Windows, the wait uses the process/HCS handle returned from containerv_spawn.
+ *
+ * @param container The container that owns the process.
+ * @param pid The process handle (Windows) or process id (Linux) returned from containerv_spawn.
+ * @param exit_code_out Optional pointer to receive the process exit code.
+ * @return 0 on success, -1 on error.
+ */
+extern int containerv_wait(struct containerv_container* container, process_handle_t pid, int* exit_code_out);
+
 extern int containerv_upload(struct containerv_container* container, const char* const* hostPaths, const char* const* containerPaths, int count);
 
 extern int containerv_download(struct containerv_container* container, const char* const* containerPaths, const char* const* hostPaths, int count);
 
 extern int containerv_destroy(struct containerv_container* container);
+
+/**
+ * @brief Query a best-effort resource usage snapshot for a running container.
+ *
+ * @param container The container to query.
+ * @param stats Output stats.
+ * @return 0 on success, -1 on error.
+ */
+extern int containerv_get_stats(struct containerv_container* container, struct containerv_stats* stats);
+
+/**
+ * @brief Get list of processes running in container
+ * @param container Container to get processes for
+ * @param processes Output array of process information
+ * @param maxProcesses Maximum number of processes to return
+ * @return Number of processes returned, or -1 on error
+ */
+extern int containerv_get_processes(struct containerv_container* container, struct containerv_process_info* processes, int maxProcesses);
 
 extern int containerv_join(const char* containerId);
 

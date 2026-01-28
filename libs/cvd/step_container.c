@@ -24,6 +24,41 @@
 #include <stdlib.h>
 #include <vlog.h>
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+static int __find_bakectl(char** resolvedOut)
+{
+    char   buffer[PATH_MAX] = { 0 };
+    char*  resolved = NULL;
+    char*  p;
+    size_t index;
+    
+    VLOG_DEBUG("bake", "__find_bakectl()\n");
+
+    if (GetModuleFileNameA(NULL, &buffer[0], PATH_MAX) == 0) {
+        VLOG_ERROR("bake", "__install_bakectl: failed to get module filename\n");
+        return -1;
+    }
+
+    p = strrchr(&buffer[0], CHEF_PATH_SEPARATOR);
+    if (p == NULL) {
+        VLOG_ERROR("bake", "__install_bakectl: could not find separator in %s\n", &buffer[0]);
+        return -1;
+    }
+    
+    index = (p + 1) - (&buffer[0]);
+    strncpy(&buffer[index], "bakectl.exe", PATH_MAX - index);
+    
+    resolved = _fullpath(NULL, &buffer[0], PATH_MAX);
+    if (resolved == NULL) {
+        VLOG_ERROR("bake", "__install_bakectl: failed to resolve bakectl path from %s\n", &buffer[0]);
+        return -1;
+    }
+
+    *resolvedOut = resolved;
+    return 0;
+}
+
+#elif defined(__linux__) || defined(__unix__)
 const char* g_possibleBakeCtlPaths[] = {
     // relative path from the executable
     "../libexec/chef/bakectl",
@@ -89,6 +124,7 @@ static int __find_bakectl(char** resolvedOut)
     *resolvedOut = resolved;
     return 0;
 }
+#endif
 
 int bake_build_setup(struct __bake_build_context* bctx)
 {

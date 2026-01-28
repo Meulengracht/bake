@@ -168,7 +168,6 @@ static int __parse_token_response(const char* responseBuffer, struct token_conte
     json_error_t error;
     json_t*      root;
     json_t*      refreshToken;
-    int          status;
 
     root = json_loads(responseBuffer, 0, &error);
     if (!root) {
@@ -194,7 +193,6 @@ static void __parse_token_error_response(const char* responseBuffer)
 {
     json_error_t error;
     json_t*      root;
-    int          status;
     const char*  statusText;
 
     root = json_loads(responseBuffer, 0, &error);

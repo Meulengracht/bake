@@ -15,17 +15,37 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+// winsock2.h must be included before windows.h to avoid winsock.h conflicts.
+// We need Vista+ IP Helper APIs (GetIfTable2/MIB_IF_TABLE2).
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0600
+#endif
+#ifndef WINVER
+#define WINVER _WIN32_WINNT
+#endif
+
+#include <winsock2.h>
+#include <windows.h>
+
+#include "private.h"
+
 #include <vlog.h>
 #include <stdio.h>
 #include <string.h>
 #include <psapi.h>
 #include <pdh.h>
 #include <winperf.h>
+#include <netioapi.h>
 #include <iphlpapi.h>
 
 #pragma comment(lib, "pdh.lib")
-
-#include "private.h"
+#pragma comment(lib, "iphlpapi.lib")
 
 /**
  * @brief Get current timestamp in nanoseconds
@@ -173,11 +193,7 @@ int containerv_get_stats(struct containerv_container* container,
         if (time_delta > 0) {
             // CPU percentage = (cpu_time_used / real_time_elapsed) * 100
             stats->cpu_percent = (double)(cpu_delta * 100) / (double)time_delta;
-            
-            // Cap at 100% (can exceed due to multiple cores)
-            if (stats->cpu_percent > 100.0) {
-                stats->cpu_percent = 100.0;
-            }
+            // Note: May exceed 100% on multi-core systems.
         }
     }
     
@@ -190,20 +206,14 @@ int containerv_get_stats(struct containerv_container* container,
     return 0;
 }
 
-/**
- * @brief Get process list for Windows container
- * @param container Container to get processes for
- * @param processes Output array of process information
- * @param max_processes Maximum number of processes to return
- * @return Number of processes returned, or -1 on error
- */
-int containerv_get_processes(struct containerv_container* container,
-                           struct containerv_process_info* processes,
-                           int max_processes)
+int containerv_get_processes(
+    struct containerv_container*    container,
+    struct containerv_process_info* processes,
+    int                             maxProcesses)
 {
     int count = 0;
     
-    if (!container || !processes || max_processes <= 0) {
+    if (!container || !processes || maxProcesses <= 0) {
         return -1;
     }
     
@@ -216,8 +226,8 @@ int containerv_get_processes(struct containerv_container* container,
                                      process_ids, sizeof(process_ids), &returned_size)) {
             
             DWORD process_count = returned_size / sizeof(DWORD);
-            if (process_count > (DWORD)max_processes) {
-                process_count = max_processes;
+            if (process_count > (DWORD)maxProcesses) {
+                process_count = (DWORD)maxProcesses;
             }
             
             for (DWORD i = 0; i < process_count; i++) {
@@ -261,7 +271,7 @@ int containerv_get_processes(struct containerv_container* container,
         struct list_item* item;
         
         list_foreach(&container->processes, item) {
-            if (count >= max_processes) {
+            if (count >= maxProcesses) {
                 break;
             }
             

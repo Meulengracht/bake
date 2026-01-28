@@ -16,11 +16,14 @@
  * 
  */
 
+#include <convert.h>
 #include <server.h>
+
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <vlog.h>
+
 #include "chef_waiterd_service.h"
 
 static char g_templateGuid[] = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
@@ -271,9 +274,9 @@ int waiterd_server_agents_list(enum waiterd_architecture arch_filter, struct che
             char name_buffer[64];
             __generate_agent_name(cook->client, name_buffer, sizeof(name_buffer));
             
-            agents[idx].name = strdup(name_buffer);
+            agents[idx].name = platform_strdup(name_buffer);
             agents[idx].online = cook->ready;
-            agents[idx].architectures = cook->architectures;
+            agents[idx].architectures = chef_build_architecture(cook->architectures);
             agents[idx].queue_size = __count_requests_for_cook(cook->client);
             idx++;
         }
@@ -293,9 +296,9 @@ int waiterd_server_agent_info(const char* name, struct chef_waiter_agent_info* i
         __generate_agent_name(cook->client, name_buffer, sizeof(name_buffer));
         
         if (strcmp(name_buffer, name) == 0) {
-            info->name = strdup(name_buffer);
+            info->name = platform_strdup(name_buffer);
             info->online = cook->ready;
-            info->architectures = cook->architectures;
+            info->architectures = chef_build_architecture(cook->architectures);
             info->queue_size = __count_requests_for_cook(cook->client);
             return 0;
         }

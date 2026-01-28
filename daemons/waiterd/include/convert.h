@@ -54,6 +54,7 @@ static enum chef_build_architecture chef_build_architecture(enum waiterd_archite
         case WAITERD_ARCHITECTURE_ARM64: return CHEF_BUILD_ARCHITECTURE_ARM64;
         case WAITERD_ARCHITECTURE_RISCV64: return CHEF_BUILD_ARCHITECTURE_RISCV64;
     }
+    return 0;
 }
 
 static enum waiterd_build_status waiterd_build_status(enum chef_build_status status)
@@ -67,6 +68,7 @@ static enum waiterd_build_status waiterd_build_status(enum chef_build_status sta
         case CHEF_BUILD_STATUS_DONE: return WAITERD_BUILD_STATUS_DONE;
         case CHEF_BUILD_STATUS_FAILED: return WAITERD_BUILD_STATUS_FAILED;
     }
+    return WAITERD_BUILD_STATUS_UNKNOWN;
 }
 
 #endif //!__API_CONVERT_H__

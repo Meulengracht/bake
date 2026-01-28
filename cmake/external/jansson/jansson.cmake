@@ -57,7 +57,9 @@ ExternalProject_Add(bundled_jansson
   BUILD_BYPRODUCTS
     <INSTALL_DIR>/lib/${CMAKE_STATIC_LIBRARY_PREFIX}jansson${CMAKE_STATIC_LIBRARY_SUFFIX}
 )
+
 add_dependencies(jansson bundled_jansson)
 ExternalProject_Get_Property(bundled_jansson INSTALL_DIR)
+
 target_include_directories(jansson INTERFACE "${INSTALL_DIR}/include")
 target_link_libraries(jansson INTERFACE "${INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}jansson${CMAKE_STATIC_LIBRARY_SUFFIX}")

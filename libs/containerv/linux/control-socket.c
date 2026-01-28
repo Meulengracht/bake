@@ -36,6 +36,7 @@
 enum __socket_command_type {
     __SOCKET_COMMAND_SPAWN,
     __SOCKET_COMMAND_KILL,
+    __SOCKET_COMMAND_WAIT,
     __SOCKET_COMMAND_GETROOT,
     __SOCKET_COMMAND_GETFDS,
     __SOCKET_COMMAND_SENDFILES,
@@ -68,6 +69,15 @@ struct __socket_command_kill {
     pid_t process_id;
 };
 
+struct __socket_command_wait {
+    pid_t process_id;
+};
+
+struct __socket_response_wait {
+    int status;
+    int exit_code;
+};
+
 struct __socket_command_xfiles {
     size_t paths_length;
 };
@@ -81,6 +91,7 @@ struct __socket_command {
     union {
         struct __socket_command_spawn  spawn;
         struct __socket_command_kill   kill;
+        struct __socket_command_wait   wait;
         struct __socket_command_xfiles xfer;
     } data;
 };
@@ -89,11 +100,47 @@ struct __socket_response {
     enum __socket_command_type type;
     union {
         struct __socket_response_spawn  spawn;
+        struct __socket_response_wait   wait;
         struct __socket_response_getfds getfds;
         struct __socket_response_xfiles xfer;
         int                             status;
     } data;
 };
+
+static int __send_command_maybe_fds(int socket, struct sockaddr_un* to, int* fdset, int count, void* payload, size_t payloadLength);
+
+static void __handle_wait_command(struct containerv_container* container, pid_t processId, struct sockaddr_un* from)
+{
+    struct __socket_response response = {
+        .type = __SOCKET_COMMAND_WAIT,
+        .data.wait = { 0 }
+    };
+
+    int wstatus = 0;
+    pid_t waited;
+    VLOG_DEBUG("containerv[child]", "__handle_wait_command(processId=%d)\n", processId);
+
+    waited = waitpid(processId, &wstatus, 0);
+    if (waited < 0) {
+        response.data.wait.status = -1;
+        response.data.wait.exit_code = -1;
+        goto respond;
+    }
+
+    response.data.wait.status = 0;
+    if (WIFEXITED(wstatus)) {
+        response.data.wait.exit_code = WEXITSTATUS(wstatus);
+    } else if (WIFSIGNALED(wstatus)) {
+        response.data.wait.exit_code = 128 + WTERMSIG(wstatus);
+    } else {
+        response.data.wait.exit_code = -1;
+    }
+
+respond:
+    if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, &response, sizeof(struct __socket_response))) {
+        VLOG_ERROR("containerv[child]", "__handle_wait_command: failed to send response\n");
+    }
+}
 
 int containerv_open_socket(struct containerv_container* container)
 {
@@ -495,6 +542,9 @@ int containerv_socket_event(struct containerv_container* container)
         case __SOCKET_COMMAND_KILL: {
             __handle_kill_command(container, command.data.kill.process_id, &from);
         } break;
+        case __SOCKET_COMMAND_WAIT: {
+            __handle_wait_command(container, command.data.wait.process_id, &from);
+        } break;
         case __SOCKET_COMMAND_GETROOT: {
             __handle_getroot_command(container, &from);
         } break;
@@ -723,6 +773,32 @@ int containerv_socket_client_kill(struct containerv_socket_client* client, pid_t
         return status;
     }
     return rsp.data.status;
+}
+
+int containerv_socket_client_wait(struct containerv_socket_client* client, pid_t processId, int* exit_code_out)
+{
+    struct __socket_command  cmd;
+    struct __socket_response rsp;
+    int                      status;
+    VLOG_DEBUG("containerv", "containerv_socket_client_wait()\n");
+
+    cmd.type = __SOCKET_COMMAND_WAIT;
+    cmd.data.wait.process_id = processId;
+
+    status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, &cmd, sizeof(struct __socket_command));
+    if (status < 0) {
+        return status;
+    }
+
+    status = __receive_command_maybe_fds(client->socket_fd, NULL, NULL, &rsp, sizeof(struct __socket_response));
+    if (status < 0) {
+        return status;
+    }
+
+    if (exit_code_out != NULL) {
+        *exit_code_out = rsp.data.wait.exit_code;
+    }
+    return rsp.data.wait.status;
 }
 
 int containerv_socket_client_destroy(struct containerv_socket_client* client)

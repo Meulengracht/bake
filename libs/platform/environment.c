@@ -36,7 +36,7 @@ static char* __fmt_env_kv(const char* key, const char* value)
 {
     char  tmp[512];
     snprintf(&tmp[0], sizeof(tmp), "%s%s", key, value);
-    return strdup(&tmp[0]);
+    return platform_strdup(&tmp[0]);
 }
 
 int environment_append_keyv(char** envp, char* key, char** values, char* sep)

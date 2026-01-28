@@ -61,6 +61,13 @@ struct containerv_layer {
  */
 struct containerv_layer_context;
 
+typedef int (*containerv_layers_iterate_cb)(
+    const char* host_path,
+    const char* container_path,
+    int         readonly,
+    void*       user_context
+);
+
 /**
  * @brief Compose multiple layers into a unified rootfs
  * 
@@ -107,6 +114,26 @@ extern const char* containerv_layers_get_rootfs(
  */
 extern void containerv_layers_destroy(
     struct containerv_layer_context* context
+);
+
+/**
+ * @brief Iterate over layers of a specific type.
+ *
+ * For `CONTAINERV_LAYER_HOST_DIRECTORY` layers, this provides a mount-like view
+ * (host path -> container path) derived from the layer system, so platform
+ * backends can configure bind/shared folder mappings without requiring a
+ * separate mounts API.
+ *
+ * For other layer types, callback arguments are not guaranteed to be meaningful
+ * and iteration is primarily intended for internal/back-end use.
+ *
+ * @return 0 on success, -1 on error.
+ */
+extern int containerv_layers_iterate(
+    struct containerv_layer_context* context,
+    enum containerv_layer_type       layerType,
+    containerv_layers_iterate_cb     cb,
+    void*                            userContext
 );
 
 #endif //!__CONTAINERV_LAYERS_H__

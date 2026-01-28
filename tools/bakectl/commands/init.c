@@ -100,10 +100,9 @@ static int __ensure_chef_directories(void)
 
 static char* __join_packages(struct recipe_cache_package_change* changes, int count, enum recipe_cache_change_type changeType)
 {
-    struct list_item* i;
-    char*             buffer;
-    size_t            bufferLength = 64 * 1024; // 64KB buffer for packages
-    size_t            length = 0;
+    char*  buffer;
+    size_t bufferLength = 64 * 1024; // 64KB buffer for packages
+    size_t length = 0;
 
     if (changes == NULL || count == 0) {
         return NULL;
@@ -398,7 +397,6 @@ static int __run_setup_hook(struct __bakelib_context* context)
 {
     int          status;
     char         buffer[512] = { 0 };
-    unsigned int pid;
 
     if (context->recipe->environment.hooks.setup == NULL) {
         return 0;
@@ -436,7 +434,6 @@ static int __update_packages(struct __bakelib_context* context)
     int                                 count = 0;
     int                                 status;
     char                                buffer[512] = { 0 };
-    unsigned int                        pid;
     VLOG_DEBUG("bakectl",  "__update_packages()\n");
 
     // this function is kinda unique, to avoid dublicating stuff the API is complex in the

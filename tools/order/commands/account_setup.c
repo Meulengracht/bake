@@ -182,7 +182,7 @@ int account_login_setup(void)
             fprintf(stderr, "order: configured public key file was invalid, reconfigure required.\n");
             okay = -1;
         }
-        if (platform_stat(privateKeyPath, &st) | st.type != PLATFORM_FILETYPE_FILE) {
+        if (platform_stat(privateKeyPath, &st) || st.type != PLATFORM_FILETYPE_FILE) {
             fprintf(stderr, "order: configured private key file was invalid, reconfigure required.\n");
             okay = -1;
         }
