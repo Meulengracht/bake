@@ -29,9 +29,45 @@
 #include <wchar.h>
 #include <vlog.h>
 
+#include <pid1_windows.h>
+
 #include "private.h"
 
 #define MIN_REMAINING_PATH_LENGTH 20  // Minimum space needed for "containerv-XXXXXX" + null
+
+// PID1 is currently implemented as a process-global service. We reference count
+// active containers so we can init/cleanup once.
+static volatile LONG g_pid1_container_refcount = 0;
+static volatile LONG g_pid1_ready = 0;
+
+static int __pid1_acquire_for_container(struct containerv_container* container)
+{
+    if (container == NULL) {
+        return -1;
+    }
+
+    LONG after = InterlockedIncrement(&g_pid1_container_refcount);
+    if (after == 1) {
+        if (pid1_init() != 0) {
+            InterlockedDecrement(&g_pid1_container_refcount);
+            return -1;
+        }
+        InterlockedExchange(&g_pid1_ready, 1);
+    }
+
+    container->pid1_acquired = 1;
+    return 0;
+}
+
+static void __pid1_release_for_container(void)
+{
+    LONG after = InterlockedDecrement(&g_pid1_container_refcount);
+    if (after == 0) {
+        if (InterlockedExchange(&g_pid1_ready, 0) == 1) {
+            (void)pid1_cleanup();
+        }
+    }
+}
 
 static char* __build_environment_block(const char* const* envv)
 {
@@ -254,10 +290,13 @@ static struct containerv_container* __container_new(void)
 static void __container_delete(struct containerv_container* container)
 {
     struct list_item* i;
+    int pid1_acquired;
     
     if (!container) {
         return;
     }
+
+    pid1_acquired = container->pid1_acquired;
     
     // Clean up processes
     for (i = container->processes.head; i != NULL;) {
@@ -265,6 +304,9 @@ static void __container_delete(struct containerv_container* container)
         i = i->next;
         
         if (proc->handle != NULL) {
+            if (container->hcs_system == NULL && g_pid1_ready) {
+                pid1_windows_untrack(proc->handle);
+            }
             CloseHandle(proc->handle);
         }
         free(proc);
@@ -272,6 +314,12 @@ static void __container_delete(struct containerv_container* container)
 
     if (container->hcs_system != NULL) {
         __hcs_destroy_vm(container);
+    }
+
+    // Closing the job object triggers JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
+    if (container->job_object != NULL) {
+        CloseHandle(container->job_object);
+        container->job_object = NULL;
     }
     
     if (container->host_pipe != INVALID_HANDLE_VALUE) {
@@ -292,13 +340,17 @@ static void __container_delete(struct containerv_container* container)
         container->policy = NULL;
     }
     free(container);
+
+    // Release PID1 service reference (kills remaining managed host processes on last container).
+    if (pid1_acquired) {
+        __pid1_release_for_container();
+    }
 }
 
 int containerv_create(
     const char*                   containerId,
     struct containerv_options*    options,
-    struct containerv_container** containerOut
-)
+    struct containerv_container** containerOut)
 {
     struct containerv_container* container;
     const char*                  rootFs;
@@ -363,16 +415,25 @@ int containerv_create(
         return -1;
     }
 
+    // Initialize PID1 service (used for host process lifecycle management; VM processes
+    // are managed through HCS). Reference-counted across containers.
+    if (__pid1_acquire_for_container(container) != 0) {
+        VLOG_ERROR("containerv", "containerv_create: failed to initialize PID1 service\n");
+        __container_delete(container);
+        return -1;
+    }
+
     // Take ownership of the policy (options may be deleted after create)
     if (options && options->policy) {
         container->policy = options->policy;
         options->policy = NULL;
     }
     
-    // Setup resource limits using Job Objects
     // Setup resource limits and/or security restrictions using Job Objects
     {
-        int want_job = 0;
+        // Always create a job object so host-spawned processes are terminated when the
+        // container is destroyed (PID1-like behavior). Limits and security are layered on.
+        int want_job = 1;
         if (options && (options->capabilities & CV_CAP_CGROUPS)) {
             if (options->limits.memory_max || options->limits.cpu_percent || options->limits.process_count) {
                 want_job = 1;
@@ -431,10 +492,9 @@ int containerv_create(
 }
 
 int __containerv_spawn(
-    struct containerv_container*     container,
+    struct containerv_container*       container,
     struct __containerv_spawn_options* options,
-    HANDLE*                          handleOut
-)
+    HANDLE*                            handleOut)
 {
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -561,6 +621,7 @@ int __containerv_spawn(
                             // Resume and close thread handle (CreateProcessAsUserW used CREATE_SUSPENDED)
                             ResumeThread(pi.hThread);
                             CloseHandle(pi.hThread);
+                            pi.hThread = NULL;
                         }
                     }
 
@@ -572,34 +633,66 @@ int __containerv_spawn(
         }
 
         if (!did_secure) {
-            char* env_block = __build_environment_block(options->envv);
+            // Prefer PID1 abstraction for host processes: it assigns processes to a Job Object
+            // for kill-on-close and maintains internal tracking.
+            if (g_pid1_ready) {
+                if (container->job_object != NULL) {
+                    (void)pid1_windows_set_job_object_borrowed(container->job_object);
+                }
 
-            result = CreateProcessA(
-                NULL,           // Application name
-                cmdline,        // Command line
-                NULL,           // Process security attributes
-                NULL,           // Thread security attributes
-                FALSE,          // Inherit handles
-                0,              // Creation flags
-                env_block,      // Environment (NULL = inherit)
-                container->rootfs, // Current directory
-                &si,            // Startup info
-                &pi             // Process information
-            );
+                pid1_process_options_t popts = {0};
+                popts.command = options->path;
+                popts.args = options->argv;
+                popts.environment = options->envv;
+                popts.working_directory = container->rootfs;
+                popts.log_path = NULL;
+                popts.memory_limit_bytes = 0;
+                popts.cpu_percent = 0;
+                popts.process_limit = 0;
+                popts.uid = 0;
+                popts.gid = 0;
+                popts.wait_for_exit = (options->flags & CV_SPAWN_WAIT) ? 1 : 0;
+                popts.forward_signals = 1;
 
-            free(env_block);
+                if (pid1_spawn_process(&popts, &pi.hProcess) != 0) {
+                    VLOG_ERROR("containerv", "__containerv_spawn: pid1_spawn_process failed\n");
+                    return -1;
+                }
 
-            if (!result) {
-                VLOG_ERROR("containerv", "__containerv_spawn: CreateProcess failed: %lu\n", GetLastError());
-                return -1;
+                // We don't have a Windows PID value here (pid1 returns a HANDLE).
+                pi.dwProcessId = 0;
+                pi.hThread = NULL;
+            } else {
+                char* env_block = __build_environment_block(options->envv);
+
+                result = CreateProcessA(
+                    NULL,           // Application name
+                    cmdline,        // Command line
+                    NULL,           // Process security attributes
+                    NULL,           // Thread security attributes
+                    FALSE,          // Inherit handles
+                    0,              // Creation flags
+                    env_block,      // Environment (NULL = inherit)
+                    container->rootfs, // Current directory
+                    &si,            // Startup info
+                    &pi             // Process information
+                );
+
+                free(env_block);
+
+                if (!result) {
+                    VLOG_ERROR("containerv", "__containerv_spawn: CreateProcess failed: %lu\n", GetLastError());
+                    return -1;
+                }
+
+                // Close thread handle, we don't need it
+                CloseHandle(pi.hThread);
             }
-
-            // Close thread handle, we don't need it
-            CloseHandle(pi.hThread);
         }
 
-        // Close thread handle, we don't need it
-        CloseHandle(pi.hThread);
+        if (pi.hThread != NULL) {
+            CloseHandle(pi.hThread);
+        }
 
         // Add process to container's process list
         proc = calloc(1, sizeof(struct containerv_container_process));
@@ -639,8 +732,7 @@ int containerv_spawn(
     struct containerv_container*     container,
     const char*                      path,
     struct containerv_spawn_options* options,
-    process_handle_t*                pidOut
-)
+    process_handle_t*                pidOut)
 {
     struct __containerv_spawn_options spawn_opts = {0};
     HANDLE handle;
@@ -703,10 +795,17 @@ int __containerv_kill(struct containerv_container* container, HANDLE handle)
     
     VLOG_DEBUG("containerv", "__containerv_kill(handle=%p)\n", handle);
     
-    result = TerminateProcess(handle, 1);
-    if (!result) {
-        VLOG_ERROR("containerv", "__containerv_kill: TerminateProcess failed: %lu\n", GetLastError());
-        return -1;
+    if (container->hcs_system == NULL && g_pid1_ready) {
+        if (pid1_kill_process(handle) != 0) {
+            VLOG_ERROR("containerv", "__containerv_kill: pid1_kill_process failed\n");
+            return -1;
+        }
+    } else {
+        result = TerminateProcess(handle, 1);
+        if (!result) {
+            VLOG_ERROR("containerv", "__containerv_kill: TerminateProcess failed: %lu\n", GetLastError());
+            return -1;
+        }
     }
     
     // Remove from process list
@@ -735,21 +834,43 @@ int containerv_wait(struct containerv_container* container, process_handle_t pid
         return -1;
     }
 
-    // HCS_PROCESS and normal process handles are both waitable HANDLEs.
-    DWORD wr = WaitForSingleObject((HANDLE)pid, INFINITE);
-    if (wr != WAIT_OBJECT_0) {
-        VLOG_ERROR("containerv", "containerv_wait: WaitForSingleObject failed: %lu\n", GetLastError());
-        return -1;
-    }
+    // If PID1 is enabled for host processes, let it own the wait+tracking.
+    // For VM/HCS processes we still do the direct wait path.
+    if (container->hcs_system == NULL && g_pid1_ready) {
+        int ec = 0;
+        if (pid1_wait_process((HANDLE)pid, &ec) != 0) {
+            VLOG_ERROR("containerv", "containerv_wait: pid1_wait_process failed\n");
+            return -1;
+        }
+        if (exit_code_out != NULL) {
+            *exit_code_out = ec;
+        }
+    } else {
+        // HCS_PROCESS and normal process handles are both waitable HANDLEs.
+        DWORD wr = WaitForSingleObject((HANDLE)pid, INFINITE);
+        if (wr != WAIT_OBJECT_0) {
+            VLOG_ERROR("containerv", "containerv_wait: WaitForSingleObject failed: %lu\n", GetLastError());
+            return -1;
+        }
 
-    unsigned long exit_code = 0;
-    if (__hcs_get_process_exit_code((HCS_PROCESS)pid, &exit_code) != 0) {
-        VLOG_ERROR("containerv", "containerv_wait: failed to get process exit code\n");
-        return -1;
-    }
+        unsigned long exit_code = 0;
+        if (container->hcs_system != NULL) {
+            if (__hcs_get_process_exit_code((HCS_PROCESS)pid, &exit_code) != 0) {
+                VLOG_ERROR("containerv", "containerv_wait: failed to get process exit code\n");
+                return -1;
+            }
+        } else {
+            DWORD ec = 0;
+            if (!GetExitCodeProcess((HANDLE)pid, &ec)) {
+                VLOG_ERROR("containerv", "containerv_wait: GetExitCodeProcess failed: %lu\n", GetLastError());
+                return -1;
+            }
+            exit_code = (unsigned long)ec;
+        }
 
-    if (exit_code_out != NULL) {
-        *exit_code_out = (int)exit_code;
+        if (exit_code_out != NULL) {
+            *exit_code_out = (int)exit_code;
+        }
     }
 
     // Remove from process list and close.

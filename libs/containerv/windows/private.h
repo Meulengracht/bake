@@ -219,6 +219,9 @@ struct containerv_container {
 
     // Runtime flags
     int          network_configured;
+
+    // PID1 integration
+    int          pid1_acquired;
 };
 
 // Windows security helpers
