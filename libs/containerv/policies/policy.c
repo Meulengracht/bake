@@ -239,8 +239,7 @@ struct containerv_policy* containerv_policy_from_strings(const char* profiles)
             return NULL;
         }
 
-        char* saveptr = NULL;
-        for (char* tok = strtok_r(copy, ",", &saveptr); tok != NULL; tok = strtok_r(NULL, ",", &saveptr)) {
+        for (char* tok = strtok(copy, ","); tok != NULL; tok = strtok(NULL, ",")) {
             while (*tok == ' ' || *tok == '\t' || *tok == '\n' || *tok == '\r') {
                 tok++;
             }

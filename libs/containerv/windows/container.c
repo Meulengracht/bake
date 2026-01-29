@@ -910,6 +910,14 @@ int containerv_create(
         }
     }
 
+    // Ensure we have a VM disk image available for the HCS VM.
+    // For Windows guests, this supports the B1 strategy where a bootable container.vhdx is shipped in a VAFS layer.
+    if (__windows_prepare_vm_disk(container, options) != 0) {
+        VLOG_ERROR("containerv", "containerv_create: failed to prepare VM disk image\n");
+        __container_delete(container);
+        return -1;
+    }
+
     // Create HyperV VM using Windows HCS (Host Compute Service) API
     if (__hcs_create_vm(container, options) != 0) {
         VLOG_ERROR("containerv", "containerv_create: failed to create HyperV VM\n");

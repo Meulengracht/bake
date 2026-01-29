@@ -397,6 +397,17 @@ extern int __windows_cleanup_network(
 );
 
 /**
+ * @brief Ensure %runtime_dir%\container.vhdx exists for the VM.
+ *
+ * If the composed rootfs contains a prebuilt container.vhdx (B1), it is copied into place.
+ * Otherwise, a new VHDX is created and populated from the composed rootfs directory.
+ */
+extern int __windows_prepare_vm_disk(
+    struct containerv_container* container,
+    const struct containerv_options* options
+);
+
+/**
  * @brief Windows rootfs management functions
  */
 extern int __windows_setup_rootfs(

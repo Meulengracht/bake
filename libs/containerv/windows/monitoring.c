@@ -32,17 +32,18 @@
 
 #include <winsock2.h>
 #include <windows.h>
+#include <ws2ipdef.h>
+#include <iphlpapi.h>
+#include <netioapi.h>
+#include <psapi.h>
+#include <pdh.h>
+#include <winperf.h>
 
 #include "private.h"
 
 #include <vlog.h>
 #include <stdio.h>
 #include <string.h>
-#include <psapi.h>
-#include <pdh.h>
-#include <winperf.h>
-#include <netioapi.h>
-#include <iphlpapi.h>
 
 #pragma comment(lib, "pdh.lib")
 #pragma comment(lib, "iphlpapi.lib")
