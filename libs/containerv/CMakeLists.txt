@@ -3,6 +3,9 @@ project (containerv C)
 # Add PID1 service subdirectory
 add_subdirectory(pid1)
 
+# Guest-side PID1 daemon (used inside VMs/guests)
+add_subdirectory(pid1d)
+
 set(ADDITIONAL_LIBS)
 if (UNIX)
     add_subdirectory(ebpf)
