@@ -121,6 +121,27 @@ extern void containerv_options_set_network(
     const char*                host_ip
 );
 
+/**
+ * @brief Configure network isolation for the container (extended)
+ *
+ * Adds optional gateway and DNS configuration.
+ *
+ * @param options The container options to configure
+ * @param container_ip IP address for the container interface (e.g., "10.0.0.2")
+ * @param container_netmask Netmask for the container (e.g., "255.255.255.0" or "24")
+ * @param host_ip IP address for the host-side interface (e.g., "10.0.0.1")
+ * @param gateway_ip Default gateway for the container/guest (optional; may be NULL)
+ * @param dns Space/comma/semicolon separated DNS servers (optional; may be NULL)
+ */
+extern void containerv_options_set_network_ex(
+    struct containerv_options* options,
+    const char*                container_ip,
+    const char*                container_netmask,
+    const char*                host_ip,
+    const char*                gateway_ip,
+    const char*                dns
+);
+
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 
 // Windows privileges (subset of most critical ones)

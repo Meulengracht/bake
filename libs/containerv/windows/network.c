@@ -216,6 +216,8 @@ int __windows_configure_container_network(
     struct __containerv_spawn_options spawn_opts = {0};
     int status;
     int exit_code = 0;
+    const char* gateway_ip;
+    const char* dns;
 
     if (!container || !options || !options->network.enable) {
         return 0;
@@ -226,6 +228,9 @@ int __windows_configure_container_network(
         return -1;
     }
 
+    gateway_ip = options->network.gateway_ip ? options->network.gateway_ip : options->network.host_ip;
+    dns = options->network.dns;
+
     VLOG_DEBUG("containerv[net]", "configuring network inside VM for container %s\n", container->id);
     VLOG_DEBUG("containerv[net]", "container IP: %s, netmask: %s\n", 
                options->network.container_ip, options->network.container_netmask);
@@ -233,12 +238,27 @@ int __windows_configure_container_network(
     // Execute inside the guest via pid1d.
     if (container->guest_is_windows) {
         char ps[1024];
+        const char* gw = gateway_ip ? gateway_ip : "";
+        const char* dns_s = dns ? dns : "";
+
         snprintf(
             ps,
             sizeof(ps),
             "$if = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -notlike '*Loopback*' } | Select-Object -First 1).Name; "
             "if (-not $if) { $if = 'Ethernet' }; "
-            "netsh interface ip set address name=\"$if\" static %s %s;",
+            "$gw = '%s'; $dns = '%s'; $ip = '%s'; $mask = '%s'; "
+            "if ($gw -and $gw.Length -gt 0) { "
+            "  netsh interface ip set address name=\"$if\" static $ip $mask $gw 1; "
+            "} else { "
+            "  netsh interface ip set address name=\"$if\" static $ip $mask none; "
+            "}; "
+            "$servers = $dns.Split(' ',',',';') | Where-Object { $_ -and $_.Length -gt 0 }; "
+            "if ($servers.Count -gt 0) { "
+            "  netsh interface ip set dns name=\"$if\" static $servers[0]; "
+            "  for ($i = 1; $i -lt $servers.Count; $i++) { netsh interface ip add dns name=\"$if\" addr=$servers[$i] index=($i+1) } "
+            "};",
+            gw,
+            dns_s,
             options->network.container_ip,
             options->network.container_netmask);
 
@@ -278,15 +298,28 @@ int __windows_configure_container_network(
             sh,
             sizeof(sh),
             "set -e; "
+            "IP='%s'; PREFIX='%d'; NETMASK='%s'; GW='%s'; DNS='%s'; "
             "IF=; "
-            "for c in eth0 ens3 ens4 enp0s3 enp1s0; do ip link show \"$c\" >/dev/null 2>&1 && IF=\"$c\" && break; done; "
-            "if [ -z \"$IF\" ]; then IF=$(ip -o link show | awk -F': ' '$2!=\"lo\"{print $2; exit}'); fi; "
+            "for d in /sys/class/net/*; do n=${d##*/}; [ \"$n\" = lo ] && continue; IF=\"$n\"; break; done; "
             "[ -n \"$IF\" ]; "
-            "ip link set dev \"$IF\" up; "
-            "ip addr flush dev \"$IF\" 2>/dev/null || true; "
-            "ip addr add %s/%d dev \"$IF\";",
+            "if command -v ip >/dev/null 2>&1; then "
+            "  ip link set dev \"$IF\" up 2>/dev/null || true; "
+            "  ip addr flush dev \"$IF\" 2>/dev/null || true; "
+            "  ip addr add \"$IP\"/\"$PREFIX\" dev \"$IF\"; "
+            "  if [ -n \"$GW\" ]; then ip route replace default via \"$GW\" dev \"$IF\" 2>/dev/null || true; fi; "
+            "else "
+            "  ifconfig \"$IF\" \"$IP\" netmask \"$NETMASK\" up; "
+            "  if [ -n \"$GW\" ] && command -v route >/dev/null 2>&1; then route add default gw \"$GW\" \"$IF\" 2>/dev/null || true; fi; "
+            "fi; "
+            "if [ -n \"$DNS\" ]; then "
+            "  rm -f /etc/resolv.conf; "
+            "  for s in $DNS; do echo \"nameserver $s\" >> /etc/resolv.conf; done; "
+            "fi;",
             options->network.container_ip,
-            prefix);
+            prefix,
+            options->network.container_netmask,
+            gateway_ip ? gateway_ip : "",
+            dns ? dns : "");
 
         const char* const argv[] = { "/bin/sh", "-c", sh, NULL };
         spawn_opts.path = "/bin/sh";
@@ -318,6 +351,7 @@ int __windows_configure_host_network(
 {
     char command[PS_CMD_BUFFER_SIZE];
     const char* switch_name;
+    int host_prefix = 24;
 
     if (!container || !options || !options->network.enable) {
         return 0;
@@ -330,6 +364,10 @@ int __windows_configure_host_network(
 
     switch_name = options->network.switch_name ? options->network.switch_name : "containerv-switch";
 
+    if (options->network.container_netmask != NULL) {
+        (void)__ipv4_netmask_to_prefix(options->network.container_netmask, &host_prefix);
+    }
+
     VLOG_DEBUG("containerv[net]", "configuring host network interface for switch %s\n", switch_name);
 
     // Configure the host-side virtual adapter IP
@@ -337,12 +375,12 @@ int __windows_configure_host_network(
     snprintf(command, sizeof(command),
         "$adapter = Get-NetAdapter | Where-Object {$_.Name -like '*%s*'} | Select-Object -First 1; "
         "if ($adapter) { "
-            "New-NetIPAddress -InterfaceAlias $adapter.Name -IPAddress %s -PrefixLength 24 -ErrorAction SilentlyContinue; "
+            "New-NetIPAddress -InterfaceAlias $adapter.Name -IPAddress %s -PrefixLength %d -ErrorAction SilentlyContinue; "
             "Write-Host 'Host IP configured' "
         "} else { "
             "Write-Warning 'No adapter found for switch' "
         "}",
-        switch_name, options->network.host_ip);
+        switch_name, options->network.host_ip, host_prefix);
 
     int result = __execute_powershell_command(command);
     if (result != 0) {

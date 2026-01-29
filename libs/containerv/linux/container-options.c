@@ -84,8 +84,25 @@ void containerv_options_set_network(
     const char*                container_netmask,
     const char*                host_ip)
 {
+    containerv_options_set_network_ex(options, container_ip, container_netmask, host_ip, NULL, NULL);
+}
+
+void containerv_options_set_network_ex(
+    struct containerv_options* options,
+    const char*                container_ip,
+    const char*                container_netmask,
+    const char*                host_ip,
+    const char*                gateway_ip,
+    const char*                dns)
+{
+    if (options == NULL) {
+        return;
+    }
+
     options->network.enable = 1;
     options->network.container_ip = container_ip;
     options->network.container_netmask = container_netmask;
     options->network.host_ip = host_ip;
+    options->network.gateway_ip = gateway_ip;
+    options->network.dns = dns;
 }

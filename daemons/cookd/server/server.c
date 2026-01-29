@@ -194,8 +194,6 @@ static struct __cookd_server* __cookd_server_new(gracht_client_t* client)
 
 static void __cookd_server_delete(struct __cookd_server* server)
 {
-    struct list_item* li;
-
     if (server == NULL) {
         return;
     }
@@ -400,8 +398,7 @@ static int __prep_ingredient_list(struct list* list, const char* platform, const
 
 static int __ensure_ingredients(struct recipe* recipe, const char* platform, const char* arch)
 {
-    struct list_item* item;
-    int               status;
+    int status;
 
     if (recipe->platforms.count > 0) {
         VLOG_TRACE("cookd", "preparing %i platforms\n", recipe->platforms.count);
@@ -553,7 +550,6 @@ cleanup:
 static FILE* __cookd_build_log_new(const char* id, const char* root, char** logPathOut)
 {
     char* logPath;
-    int   status;
     FILE* log;
     VLOG_DEBUG("cookd", "__cookd_build_log_new(id=%s)\n", id);
 
