@@ -545,6 +545,10 @@ int __hcs_create_process(
     size_t json_cap = 0;
     size_t json_len = 0;
 
+    char* args_json_utf8 = NULL;
+    size_t args_cap = 0;
+    size_t args_len = 0;
+
     if (!container || !container->hcs_system || !options || !options->path) {
         return -1;
     }
@@ -569,61 +573,102 @@ int __hcs_create_process(
             &win_capability_sid_count);
     }
 
-    // Build command line: path + optional argv (quoted conservatively)
-    char* cmd_utf8 = NULL;
-    size_t cmd_cap = 0;
-    size_t cmd_len = 0;
-    if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "%s", options->path) != 0) {
-        goto cleanup;
-    }
+    // Build command representation.
+    // - Windows GCS uses CommandLine (string).
+    // - Linux GCS supports CommandArgs (array) and treats it as an alternative to CommandLine.
+    char* esc_cmd = NULL;
+    if (guest_is_windows) {
+        // Build command line: path + optional argv (quoted conservatively)
+        char* cmd_utf8 = NULL;
+        size_t cmd_cap = 0;
+        size_t cmd_len = 0;
+        if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "%s", options->path) != 0) {
+            goto cleanup;
+        }
 
-    if (options->argv != NULL) {
-        for (int i = 1; options->argv[i] != NULL; ++i) {
-            const char* arg = options->argv[i];
-            if (arg == NULL) {
-                continue;
-            }
-
-            int needs_quotes = 0;
-            for (const char* p = arg; *p; ++p) {
-                if (*p == ' ' || *p == '\t' || *p == '"') {
-                    needs_quotes = 1;
-                    break;
+        if (options->argv != NULL) {
+            for (int i = 1; options->argv[i] != NULL; ++i) {
+                const char* arg = options->argv[i];
+                if (arg == NULL) {
+                    continue;
                 }
-            }
 
-            if (!needs_quotes) {
-                if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, " %s", arg) != 0) {
+                int needs_quotes = 0;
+                for (const char* p = arg; *p; ++p) {
+                    if (*p == ' ' || *p == '\t' || *p == '"') {
+                        needs_quotes = 1;
+                        break;
+                    }
+                }
+
+                if (!needs_quotes) {
+                    if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, " %s", arg) != 0) {
+                        free(cmd_utf8);
+                        goto cleanup;
+                    }
+                    continue;
+                }
+
+                // Quote and escape quotes.
+                if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, " \"") != 0) {
+                    free(cmd_utf8);
                     goto cleanup;
                 }
-                continue;
-            }
-
-            // Quote and escape quotes.
-            if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, " \"") != 0) {
-                goto cleanup;
-            }
-            for (const char* p = arg; *p; ++p) {
-                if (*p == '"') {
-                    if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "\\\"") != 0) {
-                        goto cleanup;
-                    }
-                } else {
-                    if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "%c", *p) != 0) {
-                        goto cleanup;
+                for (const char* p = arg; *p; ++p) {
+                    if (*p == '"') {
+                        if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "\\\"") != 0) {
+                            free(cmd_utf8);
+                            goto cleanup;
+                        }
+                    } else {
+                        if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "%c", *p) != 0) {
+                            free(cmd_utf8);
+                            goto cleanup;
+                        }
                     }
                 }
-            }
-            if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "\"") != 0) {
-                goto cleanup;
+                if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "\"") != 0) {
+                    free(cmd_utf8);
+                    goto cleanup;
+                }
             }
         }
-    }
 
-    char* esc_cmd = __json_escape_utf8(cmd_utf8);
-    free(cmd_utf8);
-    if (esc_cmd == NULL) {
-        goto cleanup;
+        esc_cmd = __json_escape_utf8(cmd_utf8);
+        free(cmd_utf8);
+        if (esc_cmd == NULL) {
+            goto cleanup;
+        }
+    } else {
+        const char* const* argv = options->argv;
+        const char* default_argv_buf[2] = { 0 };
+        if (argv == NULL) {
+            default_argv_buf[0] = options->path;
+            default_argv_buf[1] = NULL;
+            argv = default_argv_buf;
+        }
+
+        if (__appendf(&args_json_utf8, &args_cap, &args_len, "[") != 0) {
+            goto cleanup;
+        }
+
+        int first_arg = 1;
+        for (int i = 0; argv[i] != NULL; ++i) {
+            char* esc = __json_escape_utf8(argv[i]);
+            if (esc == NULL) {
+                goto cleanup;
+            }
+            if (__appendf(&args_json_utf8, &args_cap, &args_len, "%s\"%s\"", first_arg ? "" : ",", esc) != 0) {
+                free(esc);
+                goto cleanup;
+            }
+            free(esc);
+            first_arg = 0;
+        }
+
+        if (__appendf(&args_json_utf8, &args_cap, &args_len, "]") != 0) {
+            goto cleanup;
+        }
     }
 
     // Build environment object. Always include a default PATH if not provided.
@@ -886,29 +931,55 @@ int __hcs_create_process(
         // Build process configuration JSON (UTF-8) then convert to wide.
         const char* working_dir = guest_is_windows ? "C:\\\\" : "/";
         const char* emulate_console = guest_is_windows ? "true" : "false";
-        if (__appendf(
-                &json_utf8,
-                &json_cap,
-                &json_len,
-                "{"
-                "\"CommandLine\":\"%s\","
-                "\"WorkingDirectory\":\"%s\","
-                "%s"
-                "\"Environment\":%s,"
-                "\"EmulateConsole\":%s,"
-            "\"CreateStdInPipe\":%s,"
-            "\"CreateStdOutPipe\":%s,"
-            "\"CreateStdErrPipe\":%s"
-                "}",
-                esc_cmd,
-                working_dir,
-                (guest_is_windows && include_security) ? "\"User\":\"ContainerUser\"," : "",
-            env_utf8,
-            emulate_console,
-            options->create_stdio_pipes ? "true" : "false",
-            options->create_stdio_pipes ? "true" : "false",
-            options->create_stdio_pipes ? "true" : "false") != 0) {
-            goto cleanup;
+        if (guest_is_windows) {
+            if (__appendf(
+                    &json_utf8,
+                    &json_cap,
+                    &json_len,
+                    "{"
+                    "\"CommandLine\":\"%s\"," 
+                    "\"WorkingDirectory\":\"%s\"," 
+                    "%s"
+                    "\"Environment\":%s,"
+                    "\"EmulateConsole\":%s,"
+                "\"CreateStdInPipe\":%s,"
+                "\"CreateStdOutPipe\":%s,"
+                "\"CreateStdErrPipe\":%s"
+                    "}",
+                    esc_cmd,
+                    working_dir,
+                    (guest_is_windows && include_security) ? "\"User\":\"ContainerUser\"," : "",
+                env_utf8,
+                emulate_console,
+                options->create_stdio_pipes ? "true" : "false",
+                options->create_stdio_pipes ? "true" : "false",
+                options->create_stdio_pipes ? "true" : "false") != 0) {
+                goto cleanup;
+            }
+        } else {
+            // Linux guest: prefer CommandArgs (supported by Linux GCS).
+            if (__appendf(
+                    &json_utf8,
+                    &json_cap,
+                    &json_len,
+                    "{"
+                    "\"CommandArgs\":%s,"
+                    "\"WorkingDirectory\":\"%s\"," 
+                    "\"Environment\":%s,"
+                    "\"EmulateConsole\":%s,"
+                "\"CreateStdInPipe\":%s,"
+                "\"CreateStdOutPipe\":%s,"
+                "\"CreateStdErrPipe\":%s"
+                    "}",
+                    (args_json_utf8 != NULL) ? args_json_utf8 : "[]",
+                    working_dir,
+                env_utf8,
+                emulate_console,
+                options->create_stdio_pipes ? "true" : "false",
+                options->create_stdio_pipes ? "true" : "false",
+                options->create_stdio_pipes ? "true" : "false") != 0) {
+                goto cleanup;
+            }
         }
 
         if (process_config) {
@@ -1020,6 +1091,7 @@ cleanup:
     free(json_utf8);
     free(env_utf8);
     free(esc_cmd);
+    free(args_json_utf8);
     if (process_config) {
         free(process_config);
     }
