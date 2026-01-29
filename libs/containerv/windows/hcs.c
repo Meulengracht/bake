@@ -551,6 +551,8 @@ int __hcs_create_process(
 
     VLOG_DEBUG("containerv[hcs]", "creating process in VM: %s\n", options->path);
 
+    const int guest_is_windows = (container->guest_is_windows != 0);
+
     const struct containerv_policy* policy = container->policy;
     enum containerv_security_level security_level = CV_SECURITY_DEFAULT;
     int win_use_app_container = 0;
@@ -666,7 +668,10 @@ int __hcs_create_process(
     int first = 1;
     if (!has_path) {
         char* esc_key = __json_escape_utf8("PATH");
-        char* esc_val = __json_escape_utf8("C:\\Windows\\System32;C:\\Windows");
+        const char* default_path = guest_is_windows
+            ? "C:\\Windows\\System32;C:\\Windows"
+            : "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+        char* esc_val = __json_escape_utf8(default_path);
         if (esc_key == NULL || esc_val == NULL) {
             free(esc_key);
             free(esc_val);
@@ -758,7 +763,8 @@ int __hcs_create_process(
             first = 0;
         }
 
-        if (!has_policy_appc) {
+        // Windows-specific policy metadata only applies to Windows guests.
+        if (guest_is_windows && !has_policy_appc) {
             char* esc_key = __json_escape_utf8("CHEF_CONTAINERV_WIN_USE_APPCONTAINER");
             char* esc_val = __json_escape_utf8(win_use_app_container ? "1" : "0");
             if (esc_key == NULL || esc_val == NULL) {
@@ -780,7 +786,7 @@ int __hcs_create_process(
             first = 0;
         }
 
-        if (!has_policy_integrity && win_integrity_level != NULL && win_integrity_level[0] != '\0') {
+        if (guest_is_windows && !has_policy_integrity && win_integrity_level != NULL && win_integrity_level[0] != '\0') {
             char* esc_key = __json_escape_utf8("CHEF_CONTAINERV_WIN_INTEGRITY_LEVEL");
             char* esc_val = __json_escape_utf8(win_integrity_level);
             if (esc_key == NULL || esc_val == NULL) {
@@ -802,7 +808,7 @@ int __hcs_create_process(
             first = 0;
         }
 
-        if (!has_policy_caps && win_capability_sids != NULL && win_capability_sid_count > 0) {
+        if (guest_is_windows && !has_policy_caps && win_capability_sids != NULL && win_capability_sid_count > 0) {
             // Comma-separated list.
             char* caps = NULL;
             size_t caps_cap = 0;
@@ -852,7 +858,7 @@ int __hcs_create_process(
     }
 
     int try_security_fields = 0;
-    if (policy != NULL) {
+    if (guest_is_windows && policy != NULL) {
         if (security_level >= CV_SECURITY_RESTRICTED || win_use_app_container || (win_integrity_level != NULL && win_integrity_level[0] != '\0')) {
             try_security_fields = 1;
         }
@@ -878,23 +884,27 @@ int __hcs_create_process(
         json_len = 0;
 
         // Build process configuration JSON (UTF-8) then convert to wide.
+        const char* working_dir = guest_is_windows ? "C:\\\\" : "/";
+        const char* emulate_console = guest_is_windows ? "true" : "false";
         if (__appendf(
                 &json_utf8,
                 &json_cap,
                 &json_len,
                 "{"
                 "\"CommandLine\":\"%s\","
-                "\"WorkingDirectory\":\"C:\\\","
+                "\"WorkingDirectory\":\"%s\","
                 "%s"
                 "\"Environment\":%s,"
-                "\"EmulateConsole\":true,"
+                "\"EmulateConsole\":%s,"
             "\"CreateStdInPipe\":%s,"
             "\"CreateStdOutPipe\":%s,"
             "\"CreateStdErrPipe\":%s"
                 "}",
                 esc_cmd,
-                include_security ? "\"User\":\"ContainerUser\"," : "",
+                working_dir,
+                (guest_is_windows && include_security) ? "\"User\":\"ContainerUser\"," : "",
             env_utf8,
+            emulate_console,
             options->create_stdio_pipes ? "true" : "false",
             options->create_stdio_pipes ? "true" : "false",
             options->create_stdio_pipes ? "true" : "false") != 0) {
