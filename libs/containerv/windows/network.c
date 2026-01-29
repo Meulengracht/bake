@@ -32,6 +32,55 @@
 // PowerShell command buffer size
 #define PS_CMD_BUFFER_SIZE 2048
 
+static int __ipv4_netmask_to_prefix(const char* netmask, int* prefix_out)
+{
+    if (netmask == NULL || prefix_out == NULL) {
+        return -1;
+    }
+
+    // If the caller already passed a prefix length, accept it.
+    int all_digits = 1;
+    for (const char* p = netmask; *p; ++p) {
+        if (*p < '0' || *p > '9') {
+            all_digits = 0;
+            break;
+        }
+    }
+    if (all_digits) {
+        int v = atoi(netmask);
+        if (v < 0 || v > 32) {
+            return -1;
+        }
+        *prefix_out = v;
+        return 0;
+    }
+
+    unsigned int a = 0, b = 0, c = 0, d = 0;
+    if (sscanf(netmask, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) {
+        return -1;
+    }
+    if (a > 255 || b > 255 || c > 255 || d > 255) {
+        return -1;
+    }
+
+    uint32_t m = ((uint32_t)a << 24) | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d;
+
+    // Count leading ones; require a contiguous prefix.
+    int prefix = 0;
+    uint32_t bit = 0x80000000u;
+    while (bit != 0 && (m & bit) != 0) {
+        prefix++;
+        bit >>= 1;
+    }
+    // Remaining bits must be zero.
+    if (bit != 0 && (m & (bit - 1)) != 0) {
+        return -1;
+    }
+
+    *prefix_out = prefix;
+    return 0;
+}
+
 /**
  * @brief Execute PowerShell command for network management
  * Windows HyperV networking is primarily managed via PowerShell cmdlets
@@ -164,10 +213,9 @@ int __windows_configure_container_network(
     struct containerv_container* container,
     struct containerv_options* options)
 {
-    HCS_PROCESS config_process;
     struct __containerv_spawn_options spawn_opts = {0};
-    char netsh_command[512];
     int status;
+    int exit_code = 0;
 
     if (!container || !options || !options->network.enable) {
         return 0;
@@ -182,31 +230,79 @@ int __windows_configure_container_network(
     VLOG_DEBUG("containerv[net]", "container IP: %s, netmask: %s\n", 
                options->network.container_ip, options->network.container_netmask);
 
-    // Use netsh to configure IP address inside the VM
-    // This is equivalent to Linux 'ip addr add' command
-    snprintf(netsh_command, sizeof(netsh_command),
-        "netsh interface ip set address \"Ethernet\" static %s %s",
-        options->network.container_ip, options->network.container_netmask);
+    // Execute inside the guest via pid1d.
+    if (container->guest_is_windows) {
+        char ps[1024];
+        snprintf(
+            ps,
+            sizeof(ps),
+            "$if = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -notlike '*Loopback*' } | Select-Object -First 1).Name; "
+            "if (-not $if) { $if = 'Ethernet' }; "
+            "netsh interface ip set address name=\"$if\" static %s %s;",
+            options->network.container_ip,
+            options->network.container_netmask);
 
-    spawn_opts.path = "cmd.exe";
-    spawn_opts.argv = NULL;  // Arguments are embedded in path for simplicity
-    spawn_opts.flags = CV_SPAWN_WAIT;
+        const char* const argv[] = {
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            ps,
+            NULL
+        };
 
-    // Create a process inside the VM to configure networking
-    status = __hcs_create_process(container, &spawn_opts, &config_process, NULL);
-    if (status != 0) {
-        VLOG_ERROR("containerv[net]", "failed to create network configuration process in VM\n");
-        return -1;
-    }
+        spawn_opts.path = "powershell.exe";
+        spawn_opts.argv = argv;
+        spawn_opts.envv = NULL;
+        spawn_opts.flags = CV_SPAWN_WAIT;
 
-    // TODO: In a full implementation, we would:
-    // 1. Pass the netsh command as arguments properly
-    // 2. Monitor the process completion
-    // 3. Handle any network configuration errors
-    // For now, this sets up the framework
+        status = __windows_exec_in_vm_via_pid1d(container, &spawn_opts, &exit_code);
+        if (status != 0) {
+            VLOG_ERROR("containerv[net]", "pid1d guest network config failed (Windows guest)\n");
+            return -1;
+        }
+        if (exit_code != 0) {
+            VLOG_ERROR("containerv[net]", "guest network config exited with %d (Windows guest)\n", exit_code);
+            return -1;
+        }
+    } else {
+        int prefix = 0;
+        if (__ipv4_netmask_to_prefix(options->network.container_netmask, &prefix) != 0) {
+            VLOG_ERROR("containerv[net]", "invalid netmask/prefix: %s\n", options->network.container_netmask);
+            return -1;
+        }
 
-    if (g_hcs.HcsCloseProcess && config_process) {
-        g_hcs.HcsCloseProcess(config_process);
+        char sh[1024];
+        snprintf(
+            sh,
+            sizeof(sh),
+            "set -e; "
+            "IF=; "
+            "for c in eth0 ens3 ens4 enp0s3 enp1s0; do ip link show \"$c\" >/dev/null 2>&1 && IF=\"$c\" && break; done; "
+            "if [ -z \"$IF\" ]; then IF=$(ip -o link show | awk -F': ' '$2!=\"lo\"{print $2; exit}'); fi; "
+            "[ -n \"$IF\" ]; "
+            "ip link set dev \"$IF\" up; "
+            "ip addr flush dev \"$IF\" 2>/dev/null || true; "
+            "ip addr add %s/%d dev \"$IF\";",
+            options->network.container_ip,
+            prefix);
+
+        const char* const argv[] = { "/bin/sh", "-c", sh, NULL };
+        spawn_opts.path = "/bin/sh";
+        spawn_opts.argv = argv;
+        spawn_opts.envv = NULL;
+        spawn_opts.flags = CV_SPAWN_WAIT;
+
+        status = __windows_exec_in_vm_via_pid1d(container, &spawn_opts, &exit_code);
+        if (status != 0) {
+            VLOG_ERROR("containerv[net]", "pid1d guest network config failed (Linux guest)\n");
+            return -1;
+        }
+        if (exit_code != 0) {
+            VLOG_ERROR("containerv[net]", "guest network config exited with %d (Linux guest)\n", exit_code);
+            return -1;
+        }
     }
 
     VLOG_DEBUG("containerv[net]", "network configuration completed for container %s\n", container->id);

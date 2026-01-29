@@ -534,6 +534,30 @@ static int __pid1d_kill_reap(struct containerv_container* container, uint64_t id
     return 0;
 }
 
+int __windows_exec_in_vm_via_pid1d(
+    struct containerv_container* container,
+    struct __containerv_spawn_options* options,
+    int* exit_code_out)
+{
+    if (container == NULL || options == NULL || options->path == NULL) {
+        return -1;
+    }
+
+    uint64_t id = 0;
+    if (__pid1d_spawn(container, options, &id) != 0) {
+        return -1;
+    }
+
+    if ((options->flags & CV_SPAWN_WAIT) != 0) {
+        return __pid1d_wait(container, id, exit_code_out);
+    }
+
+    if (exit_code_out != NULL) {
+        *exit_code_out = 0;
+    }
+    return 0;
+}
+
 static char* __build_environment_block(const char* const* envv)
 {
     if (envv == NULL) {
@@ -992,6 +1016,11 @@ int containerv_create(
         if (__windows_configure_host_network(container, options) != 0) {
             VLOG_WARNING("containerv", "containerv_create: host network setup encountered issues\n");
             // Continue anyway, VM networking might still work
+        }
+
+        if (__windows_configure_container_network(container, options) != 0) {
+            VLOG_WARNING("containerv", "containerv_create: guest network setup encountered issues\n");
+            // Continue anyway; networking is best-effort for now.
         }
     }
     

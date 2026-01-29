@@ -408,6 +408,17 @@ extern int __windows_prepare_vm_disk(
 );
 
 /**
+ * @brief Execute a command inside a VM guest via pid1d (VM containers only).
+ *
+ * This is a thin internal wrapper used by subsystems like networking.
+ */
+extern int __windows_exec_in_vm_via_pid1d(
+    struct containerv_container*       container,
+    struct __containerv_spawn_options* options,
+    int*                               exit_code_out
+);
+
+/**
  * @brief Windows rootfs management functions
  */
 extern int __windows_setup_rootfs(
