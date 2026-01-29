@@ -319,6 +319,8 @@ static int __handle_kill(json_t* req)
         return __respond_err("missing id");
     }
 
+    int reap = __json_get_bool(req, "reap", 0);
+
     uint64_t id = (uint64_t)json_integer_value(idv);
     proc_entry_t* e = __procs_find(id);
     if (e == NULL) {
@@ -330,7 +332,12 @@ static int __handle_kill(json_t* req)
         return __respond_err("kill failed");
     }
 
-    // Caller may still want to wait; keep it tracked.
+    if (reap) {
+        (void)pid1_wait_process(e->handle, NULL);
+        __procs_remove(id);
+    }
+
+    // Caller may still want to wait; keep it tracked unless reaped.
     return __respond_ok(NULL);
 }
 

@@ -193,7 +193,7 @@ int __windows_configure_container_network(
     spawn_opts.flags = CV_SPAWN_WAIT;
 
     // Create a process inside the VM to configure networking
-    status = __hcs_create_process(container, &spawn_opts, &config_process);
+    status = __hcs_create_process(container, &spawn_opts, &config_process, NULL);
     if (status != 0) {
         VLOG_ERROR("containerv[net]", "failed to create network configuration process in VM\n");
         return -1;

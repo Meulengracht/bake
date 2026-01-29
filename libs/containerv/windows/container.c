@@ -24,6 +24,7 @@
 #include <chef/platform.h>
 #include <chef/containerv.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
@@ -67,6 +68,470 @@ static void __pid1_release_for_container(void)
             (void)pid1_cleanup();
         }
     }
+}
+
+static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
+{
+    if (buf == NULL || cap == NULL || len == NULL || fmt == NULL) {
+        return -1;
+    }
+
+    va_list ap;
+    va_start(ap, fmt);
+    int needed = _vscprintf(fmt, ap);
+    va_end(ap);
+    if (needed < 0) {
+        return -1;
+    }
+
+    size_t required = *len + (size_t)needed + 1;
+    if (*buf == NULL || *cap < required) {
+        size_t new_cap = (*cap == 0) ? 256 : *cap;
+        while (new_cap < required) {
+            new_cap *= 2;
+        }
+        char* nb = realloc(*buf, new_cap);
+        if (nb == NULL) {
+            return -1;
+        }
+        *buf = nb;
+        *cap = new_cap;
+    }
+
+    va_start(ap, fmt);
+    int written = vsnprintf(*buf + *len, *cap - *len, fmt, ap);
+    va_end(ap);
+    if (written < 0) {
+        return -1;
+    }
+    *len += (size_t)written;
+    return 0;
+}
+
+static char* __json_escape_utf8_simple(const char* s)
+{
+    if (s == NULL) {
+        return NULL;
+    }
+
+    char* out = NULL;
+    size_t cap = 0;
+    size_t len = 0;
+
+    for (const unsigned char* p = (const unsigned char*)s; *p; ++p) {
+        unsigned char c = *p;
+        switch (c) {
+            case '"':
+                if (__appendf(&out, &cap, &len, "\\\"") != 0) {
+                    free(out);
+                    return NULL;
+                }
+                break;
+            case '\\':
+                if (__appendf(&out, &cap, &len, "\\\\") != 0) {
+                    free(out);
+                    return NULL;
+                }
+                break;
+            case '\b':
+                if (__appendf(&out, &cap, &len, "\\b") != 0) {
+                    free(out);
+                    return NULL;
+                }
+                break;
+            case '\f':
+                if (__appendf(&out, &cap, &len, "\\f") != 0) {
+                    free(out);
+                    return NULL;
+                }
+                break;
+            case '\n':
+                if (__appendf(&out, &cap, &len, "\\n") != 0) {
+                    free(out);
+                    return NULL;
+                }
+                break;
+            case '\r':
+                if (__appendf(&out, &cap, &len, "\\r") != 0) {
+                    free(out);
+                    return NULL;
+                }
+                break;
+            case '\t':
+                if (__appendf(&out, &cap, &len, "\\t") != 0) {
+                    free(out);
+                    return NULL;
+                }
+                break;
+            default:
+                if (c < 0x20) {
+                    if (__appendf(&out, &cap, &len, "\\u%04x", (unsigned int)c) != 0) {
+                        free(out);
+                        return NULL;
+                    }
+                } else {
+                    if (__appendf(&out, &cap, &len, "%c", (char)c) != 0) {
+                        free(out);
+                        return NULL;
+                    }
+                }
+                break;
+        }
+    }
+
+    if (out == NULL) {
+        out = _strdup("");
+    }
+    return out;
+}
+
+static int __pid1d_write_all(HANDLE h, const char* data, size_t len)
+{
+    if (h == NULL || data == NULL) {
+        return -1;
+    }
+
+    size_t written_total = 0;
+    while (written_total < len) {
+        DWORD written = 0;
+        BOOL ok = WriteFile(h, data + written_total, (DWORD)(len - written_total), &written, NULL);
+        if (!ok) {
+            return -1;
+        }
+        written_total += (size_t)written;
+    }
+    return 0;
+}
+
+static int __pid1d_read_line(HANDLE h, char* out, size_t out_cap)
+{
+    if (h == NULL || out == NULL || out_cap == 0) {
+        return -1;
+    }
+
+    size_t n = 0;
+    for (;;) {
+        char ch = 0;
+        DWORD read = 0;
+        BOOL ok = ReadFile(h, &ch, 1, &read, NULL);
+        if (!ok || read == 0) {
+            return -1;
+        }
+
+        if (ch == '\n') {
+            break;
+        }
+        if (ch == '\r') {
+            continue;
+        }
+
+        if (n + 1 >= out_cap) {
+            return -1;
+        }
+        out[n++] = ch;
+    }
+
+    out[n] = '\0';
+    return 0;
+}
+
+static int __pid1d_resp_ok(const char* resp)
+{
+    if (resp == NULL) {
+        return 0;
+    }
+    return strstr(resp, "\"ok\":true") != NULL;
+}
+
+static int __pid1d_parse_uint64_field(const char* resp, const char* key, uint64_t* out)
+{
+    if (resp == NULL || key == NULL || out == NULL) {
+        return -1;
+    }
+
+    char needle[64];
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
+    const char* p = strstr(resp, needle);
+    if (p == NULL) {
+        return -1;
+    }
+    p += strlen(needle);
+
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+
+    char* endp = NULL;
+    unsigned long long v = strtoull(p, &endp, 10);
+    if (endp == p) {
+        return -1;
+    }
+    *out = (uint64_t)v;
+    return 0;
+}
+
+static int __pid1d_parse_int_field(const char* resp, const char* key, int* out)
+{
+    uint64_t v = 0;
+    if (__pid1d_parse_uint64_field(resp, key, &v) != 0) {
+        return -1;
+    }
+    *out = (int)v;
+    return 0;
+}
+
+static int __pid1d_rpc(struct containerv_container* container, const char* req_line, char* resp, size_t resp_cap)
+{
+    if (container == NULL || req_line == NULL || resp == NULL) {
+        return -1;
+    }
+    if (container->pid1d_stdin == NULL || container->pid1d_stdout == NULL) {
+        return -1;
+    }
+
+    size_t req_len = strlen(req_line);
+    if (__pid1d_write_all(container->pid1d_stdin, req_line, req_len) != 0) {
+        return -1;
+    }
+    if (__pid1d_write_all(container->pid1d_stdin, "\n", 1) != 0) {
+        return -1;
+    }
+    if (__pid1d_read_line(container->pid1d_stdout, resp, resp_cap) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static void __pid1d_close_session(struct containerv_container* container)
+{
+    if (container == NULL) {
+        return;
+    }
+
+    if (container->pid1d_stdin != NULL) {
+        CloseHandle(container->pid1d_stdin);
+        container->pid1d_stdin = NULL;
+    }
+    if (container->pid1d_stdout != NULL) {
+        CloseHandle(container->pid1d_stdout);
+        container->pid1d_stdout = NULL;
+    }
+    if (container->pid1d_stderr != NULL) {
+        CloseHandle(container->pid1d_stderr);
+        container->pid1d_stderr = NULL;
+    }
+
+    if (container->pid1d_process != NULL) {
+        if (g_hcs.HcsCloseProcess != NULL) {
+            g_hcs.HcsCloseProcess(container->pid1d_process);
+        } else {
+            CloseHandle((HANDLE)container->pid1d_process);
+        }
+        container->pid1d_process = NULL;
+    }
+
+    container->pid1d_started = 0;
+}
+
+static int __pid1d_ensure(struct containerv_container* container)
+{
+    if (container == NULL || container->hcs_system == NULL) {
+        return -1;
+    }
+    if (container->pid1d_started) {
+        return 0;
+    }
+
+    const char* pid1d_path = container->guest_is_windows ? "C:\\pid1d.exe" : "/usr/bin/pid1d";
+    const char* const argv[] = { pid1d_path, NULL };
+
+    struct __containerv_spawn_options opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.path = pid1d_path;
+    opts.argv = argv;
+    opts.flags = 0;
+    opts.create_stdio_pipes = 1;
+
+    HCS_PROCESS proc = NULL;
+    HCS_PROCESS_INFORMATION info;
+    memset(&info, 0, sizeof(info));
+
+    int status = __hcs_create_process(container, &opts, &proc, &info);
+    if (status != 0) {
+        VLOG_ERROR("containerv", "pid1d: failed to start in VM\n");
+        return -1;
+    }
+
+    if (info.StdInput == NULL || info.StdOutput == NULL) {
+        VLOG_ERROR("containerv", "pid1d: missing stdio pipes (ComputeCore wait API unavailable?)\n");
+        if (g_hcs.HcsCloseProcess != NULL && proc != NULL) {
+            g_hcs.HcsCloseProcess(proc);
+        }
+        return -1;
+    }
+
+    container->pid1d_process = proc;
+    container->pid1d_stdin = info.StdInput;
+    container->pid1d_stdout = info.StdOutput;
+    container->pid1d_stderr = info.StdError;
+    container->pid1d_started = 1;
+
+    char resp[8192];
+    if (__pid1d_rpc(container, "{\"op\":\"ping\"}", resp, sizeof(resp)) != 0 || !__pid1d_resp_ok(resp)) {
+        VLOG_ERROR("containerv", "pid1d: ping failed: %s\n", resp);
+        __pid1d_close_session(container);
+        return -1;
+    }
+
+    VLOG_DEBUG("containerv", "pid1d: session established\n");
+    return 0;
+}
+
+static int __pid1d_spawn(struct containerv_container* container, struct __containerv_spawn_options* options, uint64_t* id_out)
+{
+    if (container == NULL || options == NULL || options->path == NULL || id_out == NULL) {
+        return -1;
+    }
+    if (__pid1d_ensure(container) != 0) {
+        return -1;
+    }
+
+    char* req = NULL;
+    size_t cap = 0;
+    size_t len = 0;
+
+    char* esc_cmd = __json_escape_utf8_simple(options->path);
+    if (esc_cmd == NULL) {
+        return -1;
+    }
+
+    if (__appendf(&req, &cap, &len, "{\"op\":\"spawn\",\"command\":\"%s\"", esc_cmd) != 0) {
+        free(esc_cmd);
+        free(req);
+        return -1;
+    }
+    free(esc_cmd);
+
+    if (__appendf(&req, &cap, &len, ",\"wait\":%s", (options->flags & CV_SPAWN_WAIT) ? "true" : "false") != 0) {
+        free(req);
+        return -1;
+    }
+
+    if (options->argv != NULL) {
+        if (__appendf(&req, &cap, &len, ",\"args\":[") != 0) {
+            free(req);
+            return -1;
+        }
+        int first = 1;
+        for (int i = 0; options->argv[i] != NULL; ++i) {
+            char* esc = __json_escape_utf8_simple(options->argv[i]);
+            if (esc == NULL) {
+                free(req);
+                return -1;
+            }
+            if (__appendf(&req, &cap, &len, "%s\"%s\"", first ? "" : ",", esc) != 0) {
+                free(esc);
+                free(req);
+                return -1;
+            }
+            free(esc);
+            first = 0;
+        }
+        if (__appendf(&req, &cap, &len, "]") != 0) {
+            free(req);
+            return -1;
+        }
+    }
+
+    if (options->envv != NULL) {
+        if (__appendf(&req, &cap, &len, ",\"env\":[") != 0) {
+            free(req);
+            return -1;
+        }
+        int first = 1;
+        for (int i = 0; options->envv[i] != NULL; ++i) {
+            char* esc = __json_escape_utf8_simple(options->envv[i]);
+            if (esc == NULL) {
+                free(req);
+                return -1;
+            }
+            if (__appendf(&req, &cap, &len, "%s\"%s\"", first ? "" : ",", esc) != 0) {
+                free(esc);
+                free(req);
+                return -1;
+            }
+            free(esc);
+            first = 0;
+        }
+        if (__appendf(&req, &cap, &len, "]") != 0) {
+            free(req);
+            return -1;
+        }
+    }
+
+    if (__appendf(&req, &cap, &len, "}") != 0) {
+        free(req);
+        return -1;
+    }
+
+    char resp[8192];
+    int rc = __pid1d_rpc(container, req, resp, sizeof(resp));
+    free(req);
+    if (rc != 0 || !__pid1d_resp_ok(resp)) {
+        VLOG_ERROR("containerv", "pid1d: spawn failed: %s\n", resp);
+        return -1;
+    }
+
+    if (__pid1d_parse_uint64_field(resp, "id", id_out) != 0) {
+        VLOG_ERROR("containerv", "pid1d: spawn missing id: %s\n", resp);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int __pid1d_wait(struct containerv_container* container, uint64_t id, int* exit_code_out)
+{
+    if (container == NULL) {
+        return -1;
+    }
+    if (__pid1d_ensure(container) != 0) {
+        return -1;
+    }
+
+    char req[256];
+    snprintf(req, sizeof(req), "{\"op\":\"wait\",\"id\":%llu}", (unsigned long long)id);
+    char resp[8192];
+    if (__pid1d_rpc(container, req, resp, sizeof(resp)) != 0 || !__pid1d_resp_ok(resp)) {
+        VLOG_ERROR("containerv", "pid1d: wait failed: %s\n", resp);
+        return -1;
+    }
+
+    int ec = 0;
+    (void)__pid1d_parse_int_field(resp, "exit_code", &ec);
+    if (exit_code_out != NULL) {
+        *exit_code_out = ec;
+    }
+    return 0;
+}
+
+static int __pid1d_kill_reap(struct containerv_container* container, uint64_t id)
+{
+    if (container == NULL) {
+        return -1;
+    }
+    if (__pid1d_ensure(container) != 0) {
+        return -1;
+    }
+
+    char req[256];
+    snprintf(req, sizeof(req), "{\"op\":\"kill\",\"id\":%llu,\"reap\":true}", (unsigned long long)id);
+    char resp[8192];
+    if (__pid1d_rpc(container, req, resp, sizeof(resp)) != 0 || !__pid1d_resp_ok(resp)) {
+        VLOG_ERROR("containerv", "pid1d: kill failed: %s\n", resp);
+        return -1;
+    }
+    return 0;
 }
 
 static char* __build_environment_block(const char* const* envv)
@@ -284,6 +749,14 @@ static struct containerv_container* __container_new(void)
     list_init(&container->processes);
     container->policy = NULL;
 
+    container->guest_is_windows = 1;
+    container->pid1d_process = NULL;
+    container->pid1d_stdin = NULL;
+    container->pid1d_stdout = NULL;
+    container->pid1d_stderr = NULL;
+    container->pid1d_started = 0;
+    container->pid1_acquired = 0;
+
     return container;
 }
 
@@ -304,15 +777,28 @@ static void __container_delete(struct containerv_container* container)
         i = i->next;
         
         if (proc->handle != NULL) {
-            if (container->hcs_system == NULL && g_pid1_ready) {
-                pid1_windows_untrack(proc->handle);
+            if (container->hcs_system != NULL) {
+                if (proc->is_guest) {
+                    free(proc->handle);
+                } else {
+                    if (g_hcs.HcsCloseProcess != NULL) {
+                        g_hcs.HcsCloseProcess((HCS_PROCESS)proc->handle);
+                    } else {
+                        CloseHandle(proc->handle);
+                    }
+                }
+            } else {
+                if (g_pid1_ready) {
+                    pid1_windows_untrack(proc->handle);
+                }
+                CloseHandle(proc->handle);
             }
-            CloseHandle(proc->handle);
         }
         free(proc);
     }
 
     if (container->hcs_system != NULL) {
+        __pid1d_close_session(container);
         __hcs_destroy_vm(container);
     }
 
@@ -373,6 +859,22 @@ int containerv_create(
     if (container->rootfs == NULL) {
         __container_delete(container);
         return -1;
+    }
+
+    // Track whether the guest rootfs is expected to be Windows or Linux.
+    // WSL rootfs types are Linux guests; native Windows rootfs types are Windows guests.
+    container->guest_is_windows = 1;
+    if (options != NULL) {
+        switch (options->rootfs.type) {
+            case WINDOWS_ROOTFS_WSL_UBUNTU:
+            case WINDOWS_ROOTFS_WSL_DEBIAN:
+            case WINDOWS_ROOTFS_WSL_ALPINE:
+                container->guest_is_windows = 0;
+                break;
+            default:
+                container->guest_is_windows = 1;
+                break;
+        }
     }
 
     // Set up rootfs if it doesn't exist or if specific rootfs type is requested
@@ -536,56 +1038,43 @@ int __containerv_spawn(
     
     // Check if we have a HyperV VM to run the process in
     if (container->hcs_system != NULL) {
-        // Use HCS to execute process inside the HyperV VM
-        HCS_PROCESS hcs_process = NULL;
-        int status = __hcs_create_process(container, options, &hcs_process);
-        
-        if (status != 0) {
-            VLOG_ERROR("containerv", "__containerv_spawn: failed to create process in VM\n");
+        uint64_t guest_id = 0;
+        if (__pid1d_spawn(container, options, &guest_id) != 0) {
+            VLOG_ERROR("containerv", "__containerv_spawn: pid1d spawn failed\n");
             return -1;
         }
 
         // Configure container networking on first process spawn
-        // This is similar to Linux where network is configured after container start
         if (!container->network_configured) {
-            // We would need to pass options here, but they're not available in spawn
-            // In a real implementation, this would be done during container startup
-            // __windows_configure_container_network(container, options);
             container->network_configured = 1;
             VLOG_DEBUG("containerv", "__containerv_spawn: network setup deferred (would configure here)\n");
         }
 
-        // Add process to container's process list
+        // Add guest process token to container's process list
         proc = calloc(1, sizeof(struct containerv_container_process));
-        if (proc) {
-            proc->handle = (HANDLE)hcs_process;  // Store HCS_PROCESS as HANDLE
-            proc->pid = 0; // HCS processes don't have traditional PIDs
-            list_add(&container->processes, &proc->list_header);
-        } else {
-            if (g_hcs.HcsCloseProcess) {
-                g_hcs.HcsCloseProcess(hcs_process);
-            }
+        if (proc == NULL) {
+            (void)__pid1d_kill_reap(container, guest_id);
             return -1;
         }
 
-        if (options->flags & CV_SPAWN_WAIT) {
-            VLOG_DEBUG("containerv", "__containerv_spawn: waiting for HCS process completion\n");
-            int wait_status = __hcs_wait_process(hcs_process, INFINITE);
-            if (wait_status != 0) {
-                VLOG_WARNING("containerv", "__containerv_spawn: process wait failed: %i\n", wait_status);
-            }
-            
-            unsigned long exit_code = 0;
-            if (__hcs_get_process_exit_code(hcs_process, &exit_code) == 0) {
-                VLOG_DEBUG("containerv", "__containerv_spawn: process completed with exit code: %lu\n", exit_code);
-            }
+        void* token = malloc(1);
+        if (token == NULL) {
+            free(proc);
+            (void)__pid1d_kill_reap(container, guest_id);
+            return -1;
         }
+
+        proc->handle = (HANDLE)token;
+        proc->pid = 0;
+        proc->is_guest = 1;
+        proc->guest_id = guest_id;
+        list_add(&container->processes, &proc->list_header);
 
         if (handleOut) {
-            *handleOut = (HANDLE)hcs_process;
+            *handleOut = proc->handle;
         }
 
-        VLOG_DEBUG("containerv", "__containerv_spawn: spawned HCS process in VM\n");
+        VLOG_DEBUG("containerv", "__containerv_spawn: spawned guest process via pid1d (id=%llu)\n", (unsigned long long)guest_id);
         return 0;
     } else {
         // Fallback to host process creation (for testing/debugging)
@@ -794,6 +1283,28 @@ int __containerv_kill(struct containerv_container* container, HANDLE handle)
     }
     
     VLOG_DEBUG("containerv", "__containerv_kill(handle=%p)\n", handle);
+
+    // Find the tracked process entry first so we can interpret opaque guest tokens safely.
+    struct list_item* i;
+    struct containerv_container_process* found = NULL;
+    for (i = container->processes.head; i != NULL; i = i->next) {
+        struct containerv_container_process* proc = (struct containerv_container_process*)i;
+        if (proc->handle == handle) {
+            found = proc;
+            break;
+        }
+    }
+
+    if (container->hcs_system != NULL && found != NULL && found->is_guest) {
+        if (__pid1d_kill_reap(container, found->guest_id) != 0) {
+            return -1;
+        }
+
+        list_remove(&container->processes, &found->list_header);
+        free(found->handle);
+        free(found);
+        return 0;
+    }
     
     if (container->hcs_system == NULL && g_pid1_ready) {
         if (pid1_kill_process(handle) != 0) {
@@ -809,12 +1320,22 @@ int __containerv_kill(struct containerv_container* container, HANDLE handle)
     }
     
     // Remove from process list
-    struct list_item* i;
     for (i = container->processes.head; i != NULL; i = i->next) {
         struct containerv_container_process* proc = (struct containerv_container_process*)i;
         if (proc->handle == handle) {
             list_remove(&container->processes, i);
-            CloseHandle(proc->handle);
+            if (container->hcs_system != NULL) {
+                if (g_hcs.HcsCloseProcess != NULL) {
+                    g_hcs.HcsCloseProcess((HCS_PROCESS)proc->handle);
+                } else {
+                    CloseHandle(proc->handle);
+                }
+            } else {
+                if (g_pid1_ready) {
+                    pid1_windows_untrack(proc->handle);
+                }
+                CloseHandle(proc->handle);
+            }
             free(proc);
             break;
         }
@@ -832,6 +1353,28 @@ int containerv_wait(struct containerv_container* container, process_handle_t pid
 {
     if (container == NULL || pid == NULL) {
         return -1;
+    }
+
+    // If this is a VM container and the pid is one of our opaque guest tokens, wait via pid1d.
+    if (container->hcs_system != NULL) {
+        struct list_item* it;
+        for (it = container->processes.head; it != NULL; it = it->next) {
+            struct containerv_container_process* proc = (struct containerv_container_process*)it;
+            if (proc->handle == (HANDLE)pid && proc->is_guest) {
+                int ec = 0;
+                if (__pid1d_wait(container, proc->guest_id, &ec) != 0) {
+                    return -1;
+                }
+                if (exit_code_out != NULL) {
+                    *exit_code_out = ec;
+                }
+
+                list_remove(&container->processes, it);
+                free(proc->handle);
+                free(proc);
+                return 0;
+            }
+        }
     }
 
     // If PID1 is enabled for host processes, let it own the wait+tracking.
@@ -879,9 +1422,16 @@ int containerv_wait(struct containerv_container* container, process_handle_t pid
         struct containerv_container_process* proc = (struct containerv_container_process*)i;
         if (proc->handle == (HANDLE)pid) {
             list_remove(&container->processes, i);
-            if (container->hcs_system != NULL && g_hcs.HcsCloseProcess) {
-                g_hcs.HcsCloseProcess((HCS_PROCESS)pid);
+            if (container->hcs_system != NULL) {
+                if (g_hcs.HcsCloseProcess != NULL) {
+                    g_hcs.HcsCloseProcess((HCS_PROCESS)pid);
+                } else {
+                    CloseHandle((HANDLE)pid);
+                }
             } else {
+                if (g_pid1_ready) {
+                    pid1_windows_untrack((HANDLE)pid);
+                }
                 CloseHandle((HANDLE)pid);
             }
             free(proc);

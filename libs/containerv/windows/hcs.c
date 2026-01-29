@@ -38,6 +38,36 @@
 // Global HCS API structure
 struct hcs_api g_hcs = { 0 };
 
+static FARPROC __get_proc_any(const char* name)
+{
+    if (name == NULL) {
+        return NULL;
+    }
+
+    FARPROC p = NULL;
+    if (g_hcs.hComputeCore != NULL) {
+        p = GetProcAddress(g_hcs.hComputeCore, name);
+        if (p != NULL) {
+            return p;
+        }
+    }
+
+    if (g_hcs.hVmCompute != NULL) {
+        p = GetProcAddress(g_hcs.hVmCompute, name);
+        if (p != NULL) {
+            return p;
+        }
+    }
+    return NULL;
+}
+
+static void __hcs_localfree_wstr(PWSTR s)
+{
+    if (s != NULL) {
+        LocalFree(s);
+    }
+}
+
 static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
 {
     if (buf == NULL || cap == NULL || len == NULL || fmt == NULL) {
@@ -185,6 +215,12 @@ int __hcs_initialize(void)
     g_hcs.HcsCloseProcess = (HcsCloseProcess_t)
         GetProcAddress(g_hcs.hVmCompute, "HcsCloseProcess");
 
+    // Load ComputeCore.dll for synchronous wait helpers (Win10 1809+).
+    // Some installations may still export these from vmcompute.dll, so we resolve from either.
+    g_hcs.hComputeCore = LoadLibraryA("computecore.dll");
+    g_hcs.HcsWaitForOperationResult = (HcsWaitForOperationResult_t)__get_proc_any("HcsWaitForOperationResult");
+    g_hcs.HcsWaitForOperationResultAndProcessInfo = (HcsWaitForOperationResultAndProcessInfo_t)__get_proc_any("HcsWaitForOperationResultAndProcessInfo");
+
     // Check that we got all required functions
     if (!g_hcs.HcsCreateComputeSystem || !g_hcs.HcsStartComputeSystem ||
         !g_hcs.HcsShutdownComputeSystem || !g_hcs.HcsTerminateComputeSystem ||
@@ -193,6 +229,9 @@ int __hcs_initialize(void)
         !g_hcs.HcsCloseProcess) {
         
         VLOG_ERROR("containerv[hcs]", "failed to load required HCS functions\n");
+        if (g_hcs.hComputeCore != NULL) {
+            FreeLibrary(g_hcs.hComputeCore);
+        }
         FreeLibrary(g_hcs.hVmCompute);
         memset(&g_hcs, 0, sizeof(g_hcs));
         return -1;
@@ -206,6 +245,9 @@ void __hcs_cleanup(void)
 {
     if (g_hcs.hVmCompute != NULL) {
         VLOG_DEBUG("containerv[hcs]", "cleaning up HCS API\n");
+        if (g_hcs.hComputeCore != NULL) {
+            FreeLibrary(g_hcs.hComputeCore);
+        }
         FreeLibrary(g_hcs.hVmCompute);
         memset(&g_hcs, 0, sizeof(g_hcs));
     }
@@ -304,19 +346,18 @@ int __hcs_create_vm(
         return -1;
     }
 
-    // Create operation handle
-    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-    if (FAILED(hr)) {
-        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation: 0x%lx\n", hr);
-        return -1;
-    }
-
     // Generate VM configuration
     config = __hcs_create_vm_config(container, options);
     if (!config) {
         VLOG_ERROR("containerv[hcs]", "failed to create VM configuration\n");
-        g_hcs.HcsCloseOperation(operation);
         return -1;
+    }
+
+    // Create operation handle
+    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation: 0x%lx\n", hr);
+        goto cleanup;
     }
 
     // Create the compute system (VM)
@@ -341,6 +382,31 @@ int __hcs_create_vm(
         goto cleanup;
     }
 
+    if (g_hcs.HcsWaitForOperationResult != NULL) {
+        PWSTR resultDoc = NULL;
+        hr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
+        __hcs_localfree_wstr(resultDoc);
+        if (FAILED(hr)) {
+            VLOG_ERROR("containerv[hcs]", "compute system create wait failed: 0x%lx\n", hr);
+            g_hcs.HcsCloseComputeSystem(container->hcs_system);
+            container->hcs_system = NULL;
+            goto cleanup;
+        }
+    } else {
+        VLOG_WARNING("containerv[hcs]", "HcsWaitForOperationResult not available; VM start may be unreliable\n");
+    }
+
+    g_hcs.HcsCloseOperation(operation);
+    operation = NULL;
+
+    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation for start: 0x%lx\n", hr);
+        g_hcs.HcsCloseComputeSystem(container->hcs_system);
+        container->hcs_system = NULL;
+        goto cleanup;
+    }
+
     // Start the VM
     hr = g_hcs.HcsStartComputeSystem(container->hcs_system, operation, NULL);
     if (FAILED(hr)) {
@@ -348,6 +414,18 @@ int __hcs_create_vm(
         g_hcs.HcsCloseComputeSystem(container->hcs_system);
         container->hcs_system = NULL;
         goto cleanup;
+    }
+
+    if (g_hcs.HcsWaitForOperationResult != NULL) {
+        PWSTR resultDoc = NULL;
+        hr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
+        __hcs_localfree_wstr(resultDoc);
+        if (FAILED(hr)) {
+            VLOG_ERROR("containerv[hcs]", "compute system start wait failed: 0x%lx\n", hr);
+            g_hcs.HcsCloseComputeSystem(container->hcs_system);
+            container->hcs_system = NULL;
+            goto cleanup;
+        }
     }
 
     container->vm_started = 1;
@@ -379,26 +457,59 @@ int __hcs_destroy_vm(struct containerv_container* container)
 
     VLOG_DEBUG("containerv[hcs]", "destroying HyperV VM for container %s\n", container->id);
 
-    // Create operation handle
-    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-    if (FAILED(hr)) {
-        VLOG_WARNING("containerv[hcs]", "failed to create operation for VM destroy: 0x%lx\n", hr);
-        // Continue without operation handle
-    }
-
     if (container->vm_started) {
         // Try graceful shutdown first
+        hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
+        if (FAILED(hr)) {
+            VLOG_WARNING("containerv[hcs]", "failed to create operation for shutdown: 0x%lx\n", hr);
+            operation = NULL;
+        }
+
         hr = g_hcs.HcsShutdownComputeSystem(container->hcs_system, operation, NULL);
+        if (SUCCEEDED(hr) && g_hcs.HcsWaitForOperationResult != NULL && operation != NULL) {
+            PWSTR resultDoc = NULL;
+            HRESULT whr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
+            __hcs_localfree_wstr(resultDoc);
+            if (FAILED(whr)) {
+                hr = whr;
+            }
+        }
+
+        if (operation != NULL) {
+            g_hcs.HcsCloseOperation(operation);
+            operation = NULL;
+        }
+
         if (FAILED(hr)) {
             VLOG_WARNING("containerv[hcs]", "graceful shutdown failed, forcing termination: 0x%lx\n", hr);
-            
-            // Force termination
+
+            hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
+            if (FAILED(hr)) {
+                VLOG_WARNING("containerv[hcs]", "failed to create operation for terminate: 0x%lx\n", hr);
+                operation = NULL;
+            }
+
             hr = g_hcs.HcsTerminateComputeSystem(container->hcs_system, operation, NULL);
+            if (SUCCEEDED(hr) && g_hcs.HcsWaitForOperationResult != NULL && operation != NULL) {
+                PWSTR resultDoc = NULL;
+                HRESULT whr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
+                __hcs_localfree_wstr(resultDoc);
+                if (FAILED(whr)) {
+                    hr = whr;
+                }
+            }
+
             if (FAILED(hr)) {
                 VLOG_ERROR("containerv[hcs]", "failed to terminate compute system: 0x%lx\n", hr);
                 status = -1;
             }
+
+            if (operation != NULL) {
+                g_hcs.HcsCloseOperation(operation);
+                operation = NULL;
+            }
         }
+
         container->vm_started = 0;
     }
 
@@ -422,7 +533,8 @@ int __hcs_destroy_vm(struct containerv_container* container)
 int __hcs_create_process(
     struct containerv_container* container,
     struct __containerv_spawn_options* options,
-    HCS_PROCESS* processOut)
+    HCS_PROCESS* processOut,
+    HCS_PROCESS_INFORMATION* processInfoOut)
 {
     HCS_OPERATION operation = NULL;
     wchar_t* process_config = NULL;
@@ -776,13 +888,16 @@ int __hcs_create_process(
                 "%s"
                 "\"Environment\":%s,"
                 "\"EmulateConsole\":true,"
-                "\"CreateStdInPipe\":true,"
-                "\"CreateStdOutPipe\":true,"
-                "\"CreateStdErrPipe\":true"
+            "\"CreateStdInPipe\":%s,"
+            "\"CreateStdOutPipe\":%s,"
+            "\"CreateStdErrPipe\":%s"
                 "}",
                 esc_cmd,
                 include_security ? "\"User\":\"ContainerUser\"," : "",
-                env_utf8) != 0) {
+            env_utf8,
+            options->create_stdio_pipes ? "true" : "false",
+            options->create_stdio_pipes ? "true" : "false",
+            options->create_stdio_pipes ? "true" : "false") != 0) {
             goto cleanup;
         }
 
@@ -817,9 +932,61 @@ int __hcs_create_process(
         );
 
         if (SUCCEEDED(hr)) {
+            // Wait for completion and optionally fetch stdio handles.
+            PWSTR resultDoc = NULL;
+            HCS_PROCESS_INFORMATION pi;
+            memset(&pi, 0, sizeof(pi));
+
+            HRESULT whr = S_OK;
+            if (g_hcs.HcsWaitForOperationResultAndProcessInfo != NULL) {
+                HCS_PROCESS_INFORMATION* piPtr = NULL;
+                if (options->create_stdio_pipes) {
+                    piPtr = &pi;
+                }
+                whr = g_hcs.HcsWaitForOperationResultAndProcessInfo(operation, INFINITE, piPtr, &resultDoc);
+            } else if (g_hcs.HcsWaitForOperationResult != NULL) {
+                whr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
+            } else {
+                VLOG_WARNING("containerv[hcs]", "no operation wait API available; process creation may be unreliable\n");
+            }
+
+            __hcs_localfree_wstr(resultDoc);
+
+            if (FAILED(whr)) {
+                if (g_hcs.HcsCloseProcess) {
+                    g_hcs.HcsCloseProcess(process);
+                }
+                process = NULL;
+
+                if (include_security) {
+                    VLOG_WARNING("containerv[hcs]", "process create wait rejected security fields (hr=0x%lx); retrying without them\n", whr);
+                    continue;
+                }
+
+                VLOG_ERROR("containerv[hcs]", "failed to wait for process creation: 0x%lx\n", whr);
+                break;
+            }
+
             if (processOut) {
                 *processOut = process;
             }
+
+            if (options->create_stdio_pipes) {
+                if (processInfoOut != NULL) {
+                    *processInfoOut = pi;
+                } else {
+                    if (pi.StdInput != NULL) {
+                        CloseHandle(pi.StdInput);
+                    }
+                    if (pi.StdOutput != NULL) {
+                        CloseHandle(pi.StdOutput);
+                    }
+                    if (pi.StdError != NULL) {
+                        CloseHandle(pi.StdError);
+                    }
+                }
+            }
+
             status = 0;
             VLOG_DEBUG("containerv[hcs]", "successfully created process in VM\n");
             break;

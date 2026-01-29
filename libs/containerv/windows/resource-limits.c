@@ -248,6 +248,9 @@ int __windows_apply_job_to_processes(
     // Apply to all container processes
     list_foreach(&container->processes, item) {
         struct containerv_container_process* process = (struct containerv_container_process*)item;
+        if (process->is_guest) {
+            continue;
+        }
         if (process->handle && process->handle != INVALID_HANDLE_VALUE) {
             if (AssignProcessToJobObject(job_handle, process->handle)) {
                 applied_count++;

@@ -158,6 +158,10 @@ int containerv_get_stats(struct containerv_container* container,
         list_foreach(&container->processes, item) {
             struct containerv_container_process* proc = 
                 (struct containerv_container_process*)item;
+
+            if (proc->is_guest) {
+                continue;
+            }
             
             if (proc->handle != INVALID_HANDLE_VALUE) {
                 PROCESS_MEMORY_COUNTERS pmc;
@@ -277,6 +281,10 @@ int containerv_get_processes(
             
             struct containerv_container_process* proc = 
                 (struct containerv_container_process*)item;
+
+            if (proc->is_guest) {
+                continue;
+            }
             
             if (proc->handle != INVALID_HANDLE_VALUE) {
                 processes[count].pid = (process_handle_t)proc->pid;

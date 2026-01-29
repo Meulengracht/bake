@@ -118,12 +118,28 @@ struct containerv_container_process {
     struct list_item list_header;
     HANDLE           handle;
     DWORD            pid;
+
+    // VM guest process representation when using pid1d.
+    // `handle` is an opaque token owned by containerv; it is not a Win32 process handle.
+    int              is_guest;
+    uint64_t         guest_id;
 };
 
 // Forward declarations for HCS types
 typedef HANDLE HCS_SYSTEM;
 typedef HANDLE HCS_PROCESS;
 typedef HANDLE HCS_OPERATION;
+
+// Process info returned from HcsWaitForOperationResultAndProcessInfo.
+// Defined here to avoid depending on a specific Windows SDK version.
+typedef struct
+{
+    DWORD ProcessId;
+    DWORD Reserved;
+    HANDLE StdInput;
+    HANDLE StdOutput;
+    HANDLE StdError;
+} HCS_PROCESS_INFORMATION;
 
 // HCS callback type
 typedef void (CALLBACK *HCS_OPERATION_COMPLETION)(HCS_OPERATION operation, void* context);
@@ -169,6 +185,20 @@ typedef HRESULT (WINAPI *HcsCreateOperation_t)(
     HCS_OPERATION* Operation
 );
 
+// ComputeCore.dll helpers for synchronous waits
+typedef HRESULT (WINAPI *HcsWaitForOperationResult_t)(
+    HCS_OPERATION Operation,
+    DWORD timeoutMs,
+    PWSTR* resultDocument
+);
+
+typedef HRESULT (WINAPI *HcsWaitForOperationResultAndProcessInfo_t)(
+    HCS_OPERATION Operation,
+    DWORD timeoutMs,
+    HCS_PROCESS_INFORMATION* processInformation,
+    PWSTR* resultDocument
+);
+
 typedef HRESULT (WINAPI *HcsCloseOperation_t)(HCS_OPERATION Operation);
 typedef HRESULT (WINAPI *HcsCloseComputeSystem_t)(HCS_SYSTEM ComputeSystem);
 typedef HRESULT (WINAPI *HcsCloseProcess_t)(HCS_PROCESS Process);
@@ -176,6 +206,7 @@ typedef HRESULT (WINAPI *HcsCloseProcess_t)(HCS_PROCESS Process);
 // HCS function pointers (loaded at runtime)
 struct hcs_api {
     HMODULE hVmCompute;
+    HMODULE hComputeCore;
     HcsCreateComputeSystem_t    HcsCreateComputeSystem;
     HcsStartComputeSystem_t     HcsStartComputeSystem;
     HcsShutdownComputeSystem_t  HcsShutdownComputeSystem;
@@ -185,6 +216,9 @@ struct hcs_api {
     HcsCloseOperation_t         HcsCloseOperation;
     HcsCloseComputeSystem_t     HcsCloseComputeSystem;
     HcsCloseProcess_t           HcsCloseProcess;
+
+    HcsWaitForOperationResult_t                HcsWaitForOperationResult;
+    HcsWaitForOperationResultAndProcessInfo_t  HcsWaitForOperationResultAndProcessInfo;
 };
 
 extern struct hcs_api g_hcs;
@@ -220,6 +254,16 @@ struct containerv_container {
     // Runtime flags
     int          network_configured;
 
+    // Guest OS selection (used for in-VM helpers like pid1d)
+    int          guest_is_windows;
+
+    // pid1d session (VM containers only)
+    HCS_PROCESS  pid1d_process;
+    HANDLE       pid1d_stdin;
+    HANDLE       pid1d_stdout;
+    HANDLE       pid1d_stderr;
+    int          pid1d_started;
+
     // PID1 integration
     int          pid1_acquired;
 };
@@ -252,6 +296,9 @@ struct __containerv_spawn_options {
     const char* const*         argv;
     const char* const*         envv;
     enum container_spawn_flags flags;
+
+    // When true, request HCS stdio pipe handles for this process (VM path only).
+    int                        create_stdio_pipes;
 };
 
 extern int __containerv_spawn(struct containerv_container* container, struct __containerv_spawn_options* options, HANDLE* handleOut);
@@ -295,7 +342,8 @@ extern int __hcs_destroy_vm(struct containerv_container* container);
 extern int __hcs_create_process(
     struct containerv_container* container,
     struct __containerv_spawn_options* options,
-    HCS_PROCESS* processOut
+    HCS_PROCESS* processOut,
+    HCS_PROCESS_INFORMATION* processInfoOut
 );
 
 /**
