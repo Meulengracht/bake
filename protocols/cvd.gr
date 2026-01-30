@@ -52,17 +52,31 @@ enum status {
     INVALID_CONTAINER_ID,
 }
 
+struct policy_plugin {
+    // Examples: "build", "network"
+    string name;
+}
+
 struct policy_spec {
-    // Comma-separated list of policy features to apply on top of minimal base policy
-    // Examples: "build", "network", "build,network"
-    // If empty, only minimal policy is used
-    string profiles;
+    // If no plugins are set, then it uses the minimal
+    policy_plugin[] plugins;
+}
+
+// Optional network configuration.
+// Any empty/omitted field means "not specified".
+struct network_options {
+    string container_ip;
+    string container_netmask;
+    string host_ip;
+    string gateway_ip;
+    string dns;
 }
 
 struct create_parameters {
     string             id;
     layer_descriptor[] layers;
     policy_spec        policy;
+    network_options    network;
 }
 
 struct user_descriptor {

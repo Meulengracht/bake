@@ -229,9 +229,32 @@ int __windows_prepare_vm_disk(struct containerv_container* container, const stru
         return 0;
     }
 
+    // Linux guest path: WSL2 import stores the guest filesystem as ext4.vhdx in the rootfs directory.
+    // Prefer copying that instead of generating an NTFS VHDX (many Linux init setups will not boot from NTFS-root).
+    if (container->guest_is_windows == 0) {
+        char wsl_ext4[MAX_PATH];
+        rc = snprintf(wsl_ext4, sizeof(wsl_ext4), "%s\\ext4.vhdx", src_root);
+        if (rc > 0 && (size_t)rc < sizeof(wsl_ext4) && PathFileExistsA(wsl_ext4)) {
+            VLOG_DEBUG("containerv[vhdx]", "using WSL ext4.vhdx as guest disk from %s\n", wsl_ext4);
+            if (platform_copyfile(wsl_ext4, dst_vhdx) != 0) {
+                VLOG_ERROR("containerv[vhdx]", "failed to copy ext4.vhdx to %s\n", dst_vhdx);
+                errno = EIO;
+                return -1;
+            }
+            return 0;
+        }
+
+        VLOG_ERROR(
+            "containerv[vhdx]",
+            "Linux guest requires a bootable disk; expected %s\\container.vhdx (prebuilt) or %s\\ext4.vhdx (WSL2 import)\n",
+            src_root,
+            src_root
+        );
+        errno = ENOENT;
+        return -1;
+    }
+
     // Otherwise: create a simple NTFS VHDX and copy the materialized rootfs tree into it.
-    // NOTE: For Linux guests this implies your init/boot must support mounting an NTFS root.
-    // If/when we standardize on ext4, this should be replaced with a WSL-backed ext4 format path.
     uint64_t size_mb = WINDOWS_DEFAULT_VM_DISK_MB;
     (void)options;
 

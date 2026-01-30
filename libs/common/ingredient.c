@@ -188,7 +188,12 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
         return status;
     }
 
-    status = chef_package_load_vafs(vafsHandle, &ingredient->package, &ingredient->version, NULL, NULL);
+    status = chef_package_load_vafs(
+        vafsHandle,
+        &ingredient->package,
+        &ingredient->version,
+        NULL, NULL, NULL
+    );
     if (status) {
         fprintf(stderr, "ingredient_open: cannot open vafs image: %s\n", path);
         free(ingredient);

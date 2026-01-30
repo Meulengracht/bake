@@ -6,6 +6,7 @@ set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 add_library(serve-commands STATIC
     ${GENERATED_SRCS}
     client.c
+    config.c
     install.c
     list.c
     remove.c
@@ -13,4 +14,4 @@ add_library(serve-commands STATIC
 )
 add_dependencies(serve-commands service_client)
 target_include_directories(serve-commands PUBLIC ${CMAKE_BINARY_DIR}/protocols)
-target_link_libraries(serve-commands PUBLIC chef-client gracht OpenSSL::SSL)
+target_link_libraries(serve-commands PUBLIC chef-client dirconf gracht OpenSSL::SSL)

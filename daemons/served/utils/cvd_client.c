@@ -18,11 +18,15 @@
 
 #include <chef/bits/package.h>
 #include <chef/config.h>
+#include <chef/dirs.h>
 #include <chef/environment.h>
 #include <chef/platform.h>
+#include <chef/utils_vafs.h>
 #include <errno.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
+#include <stdlib.h>
+#include <vafs/vafs.h>
 #include <vlog.h>
 
 #include <utils.h>
@@ -30,6 +34,8 @@
 #include "chef_cvd_service_client.h"
 
 static gracht_client_t* g_containerClient = NULL;
+static struct chef_config* g_servedConfig = NULL;
+static void*               g_packNetworkSection = NULL;
 
 #if defined(__linux__)
 #include <arpa/inet.h>
@@ -88,9 +94,14 @@ static int __configure_local_bind(struct gracht_link_socket* link)
 #elif defined(_WIN32)
 #include <windows.h>
 #include <ws2ipdef.h>
+#include <process.h>
 
 // Windows 10 Insider build 17063 ++ 
 #include <afunix.h>
+
+static int __abstract_socket_size(const char* address) {
+    return offsetof(struct sockaddr_un, sun_path) + strlen(address);
+}
 
 static int __local_size(const char* address) {
     return sizeof(struct sockaddr_un);
@@ -114,7 +125,7 @@ static int __configure_local_bind(struct gracht_link_socket* link)
     snprintf(&address->sun_path[1],
         sizeof(address->sun_path) - 2,
         "/chef/cvd/clients/%u",
-        getpid()
+        _getpid()
     );
 
     gracht_link_socket_set_bind_address(link, &storage, __abstract_socket_size(&address->sun_path[1]));
@@ -151,7 +162,7 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
             VLOG_ERROR("served", "init_link_config failed to configure local link\n");
             return status;
         }
-        domain = AF_LOCAL;
+        domain = addr_storage.ss_family;
         size = __local_size(config->address);
 
         VLOG_DEBUG("served", "connecting to %s\n", config->address);
@@ -246,9 +257,82 @@ static int __to_errno_code(enum chef_status status)
     }
 }
 
+static void __ensure_config_loaded(void)
+{
+    if (g_servedConfig != NULL) {
+        return;
+    }
+
+    // served initializes chef dirs at startup, so this should be safe.
+    g_servedConfig = chef_config_load(chef_dirs_config());
+    if (g_servedConfig != NULL) {
+        // Note: chef_config_section() creates the section if it does not exist.
+        // We keep this to a single section to avoid creating many objects during lookups.
+        g_packNetworkSection = chef_config_section(g_servedConfig, "pack-network");
+    }
+}
+
+static char* __dup_pack_network_config_value(const char* pack_id, const char* suffix)
+{
+    char key[CHEF_PACKAGE_ID_LENGTH_MAX + 64];
+    const char* value;
+
+    if (pack_id == NULL || suffix == NULL) {
+        return NULL;
+    }
+
+    __ensure_config_loaded();
+    if (g_servedConfig == NULL || g_packNetworkSection == NULL) {
+        return NULL;
+    }
+
+    snprintf(&key[0], sizeof(key), "%s.%s", pack_id, suffix);
+    value = chef_config_get_string(g_servedConfig, g_packNetworkSection, &key[0]);
+    if (value == NULL || value[0] == '\0') {
+        return NULL;
+    }
+    return platform_strdup(value);
+}
+
+static int __load_pack_network_defaults(const char* packPath, char** gatewayOut, char** dnsOut)
+{
+    struct VaFs* vafs = NULL;
+    struct chef_vafs_feature_package_network* header = NULL;
+    struct VaFsGuid guid = CHEF_PACKAGE_NETWORK_GUID;
+    int status;
+
+    if (packPath == NULL) {
+        return 0;
+    }
+
+    status = vafs_open_file(packPath, &vafs);
+    if (status != 0) {
+        return 0;
+    }
+
+    status = vafs_feature_query(vafs, &guid, (struct VaFsFeatureHeader**)&header);
+    if (status != 0) {
+        vafs_close(vafs);
+        return 0;
+    }
+
+    char* data = (char*)header + sizeof(struct chef_vafs_feature_package_network);
+    if (gatewayOut && *gatewayOut == NULL && header->gateway_length > 0) {
+        *gatewayOut = platform_strndup(data, header->gateway_length);
+    }
+    data += header->gateway_length;
+    if (dnsOut && *dnsOut == NULL && header->dns_length > 0) {
+        *dnsOut = platform_strndup(data, header->dns_length);
+    }
+
+    vafs_close(vafs);
+    return 0;
+}
+
 static enum chef_status __create_container(
     gracht_client_t* client,
     const char*      id,
+    const char*      pack_id,
     const char*      rootfs,
     const char*      package)
 {
@@ -262,6 +346,29 @@ static enum chef_status __create_container(
 
     chef_create_parameters_init(&params);
     params.id = (char*)id;
+
+    // Optional network settings.
+    // Precedence:
+    // - served per-pack override (bake.json section "pack-network")
+    // - package defaults (from CHEF_PACKAGE_NETWORK_GUID)
+    //
+    // Keys are stored per pack identifier (<publisher>/<package>) as strings:
+    //   <publisher>/<package>.gateway
+    //   <publisher>/<package>.dns
+    // Optional (if you want to fully specify network):
+    //   <publisher>/<package>.container-ip
+    //   <publisher>/<package>.container-netmask
+    //   <publisher>/<package>.host-ip
+    params.network.container_ip = __dup_pack_network_config_value(pack_id, "container-ip");
+    params.network.container_netmask = __dup_pack_network_config_value(pack_id, "container-netmask");
+    params.network.host_ip = __dup_pack_network_config_value(pack_id, "host-ip");
+
+    params.network.gateway_ip = __dup_pack_network_config_value(pack_id, "gateway");
+    params.network.dns = __dup_pack_network_config_value(pack_id, "dns");
+    if (params.network.gateway_ip == NULL || params.network.dns == NULL) {
+        (void)__load_pack_network_defaults(package, &params.network.gateway_ip, &params.network.dns);
+        (void)__load_pack_network_defaults(rootfs, &params.network.gateway_ip, &params.network.dns);
+    }
 
     chef_create_parameters_layers_add(&params, 3);
     
@@ -304,6 +411,7 @@ int container_client_create_container(struct container_options* options)
     return __to_errno_code(__create_container(
         g_containerClient,
         options->id,
+        options->pack_id,
         options->rootfs,
         options->package
     ));

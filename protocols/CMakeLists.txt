@@ -39,7 +39,7 @@ add_custom_command(
     COMMAND python3 ${CMAKE_SOURCE_DIR}/libs/gracht/generator/parser.py --service ${CMAKE_CURRENT_SOURCE_DIR}/cvd.gr --out ${CMAKE_CURRENT_BINARY_DIR} --lang-c --client --server
     COMMAND python3 ${CMAKE_SOURCE_DIR}/libs/gracht/generator/parser.py --service ${CMAKE_CURRENT_SOURCE_DIR}/served.gr --out ${CMAKE_CURRENT_BINARY_DIR} --lang-c --client --server
     COMMAND python3 ${CMAKE_SOURCE_DIR}/libs/gracht/generator/parser.py --service ${CMAKE_CURRENT_SOURCE_DIR}/waiterd.gr --out ${CMAKE_CURRENT_BINARY_DIR} --lang-c --client --server
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/served.gr ${CMAKE_CURRENT_SOURCE_DIR}/waiterd.gr
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/cvd.gr ${CMAKE_CURRENT_SOURCE_DIR}/served.gr ${CMAKE_CURRENT_SOURCE_DIR}/waiterd.gr
 )
 
 add_custom_target(

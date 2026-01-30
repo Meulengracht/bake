@@ -31,6 +31,7 @@
 #define CHEF_PACKAGE_ICON_GUID            { 0xDB6981BF, 0xC344, 0x47F5, { 0xB6, 0xE1, 0x5C, 0x3C, 0x76, 0xF5, 0x6F, 0xFF } }
 #define CHEF_PACKAGE_APPS_GUID            { 0xBE0B9C0E, 0x78D0, 0x45B9, { 0xBA, 0xF9, 0x51, 0xC8, 0x0B, 0x8D, 0x46, 0xC9 } }
 #define CHEF_PACKAGE_INGREDIENT_OPTS_GUID { 0xACB75CCE, 0x1A4C, 0x4830, { 0xA2, 0x54, 0x85, 0x2E, 0x9C, 0x03, 0xF5, 0xBA } }
+#define CHEF_PACKAGE_NETWORK_GUID         { 0x2E8B3C5D, 0xA8A0, 0x4A62, { 0xB4, 0xD8, 0x11, 0x2C, 0xEE, 0x41, 0x2A, 0x19 } }
 
 struct chef_vafs_feature_package_header {
     struct VaFsFeatureHeader header;
@@ -89,6 +90,14 @@ struct chef_vafs_feature_ingredient_opts {
     uint32_t                 lib_dirs_length;
     uint32_t                 compiler_flags_length;
     uint32_t                 linker_flags_length;
+};
+
+// Optional application runtime network defaults.
+// Strings are not zero terminated and must be duplicated when loaded.
+struct chef_vafs_feature_package_network {
+    struct VaFsFeatureHeader header;
+    uint32_t                 gateway_length;
+    uint32_t                 dns_length;
 };
 
 #endif //!__PLATFORM_UTILS_VAFS_H__

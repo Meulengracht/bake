@@ -134,16 +134,22 @@ struct recipe_pack_command {
     struct list            arguments; // list<list_item_string>
 };
 
+struct recipe_pack_application_options {
+    const char* gateway;
+    const char* dns;
+};
+
 struct recipe_pack {
-    struct list_item                      list_header;
-    const char*                           name;
-    const char*                           summary;
-    const char*                           description;
-    const char*                           icon;
-    enum chef_package_type                type;
-    struct recipe_pack_ingredient_options options;
-    struct list                           filters;  // list<list_item_string>
-    struct list                           commands; // list<recipe_pack_command>
+    struct list_item                       list_header;
+    const char*                            name;
+    const char*                            summary;
+    const char*                            description;
+    const char*                            icon;
+    enum chef_package_type                 type;
+    struct recipe_pack_application_options app_options;
+    struct recipe_pack_ingredient_options  options;
+    struct list                            filters;  // list<list_item_string>
+    struct list                            commands; // list<recipe_pack_command>
 };
 
 struct recipe_host_environment {

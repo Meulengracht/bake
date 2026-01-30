@@ -79,6 +79,21 @@ static enum chef_status __chef_status_from_errno(void) {
     }
 }
 
+static int __is_nonempty(const char* s)
+{
+    return (s != NULL && s[0] != '\0');
+}
+
+static int __spec_contains_plugin(const struct chef_policy_spec* spec, const char* needle)
+{
+    for (uint32_t i = 0; i < spec->plugins_count; i++) {
+        if (strcmp(spec->plugins[i].name, needle) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static enum containerv_mount_flags __to_cv_mount_flags(enum chef_mount_options opts)
 {
     enum containerv_mount_flags flags = CV_MOUNT_BIND | CV_MOUNT_CREATE;
@@ -126,6 +141,57 @@ static struct containerv_layer* __to_cv_layers(struct chef_layer_descriptor* pro
     
     return cvLayers;
 }
+
+static struct containerv_policy_plugin* __to_policy_plugin(struct chef_policy_plugin* protocolPlugin)
+{
+    struct containerv_policy_plugin* plugin = calloc(1, sizeof(*plugin));
+    if (plugin == NULL) {
+        return NULL;
+    }
+    
+    plugin->name = protocolPlugin->name;
+    return plugin;
+}
+
+static void __free_policy_plugin(void* item)
+{
+    free(item);
+}
+
+struct containerv_policy* __policy_from_spec(const struct chef_policy_spec* spec)
+{
+    struct list               plugins;
+    struct containerv_policy* policy;
+
+    list_init(&plugins);
+
+    // Always include minimal base policy.
+    {
+        struct containerv_policy_plugin* plugin = calloc(1, sizeof(*plugin));
+        if (!plugin) {
+            return NULL;
+        }
+        plugin->name = "minimal";
+        list_add(&plugins, &plugin->header);
+    }
+
+    // Parse optional profiles: "build", "network" (comma-separated)
+    if (spec->plugins_count) {
+        for (uint32_t i = 0; i < spec->plugins_count; i++) {
+            struct containerv_policy_plugin* plugin = 
+                __to_policy_plugin(&spec->plugins[i]);
+            if (plugin == NULL) {
+                list_destroy(&plugins, __free_policy_plugin);
+            }
+            list_add(&plugins, &plugin->header);
+        }
+    }
+
+    policy = containerv_policy_new(&plugins);
+    list_destroy(&plugins, __free_policy_plugin);
+    return policy;
+}
+
 
 enum chef_status cvd_create(const struct chef_create_parameters* params, const char** id)
 {
@@ -181,18 +247,37 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     containerv_options_set_layers(opts, layerContext);
 
     // setup policy
-    policy = containerv_policy_from_strings(params->policy.profiles);
+    policy = __policy_from_spec(&params->policy);
     if (policy != NULL) {
-        VLOG_DEBUG("cvd", "cvd_create: applying security policy profiles: %s\n", params->policy.profiles);
+        VLOG_DEBUG("cvd", "cvd_create: applying security policy profiles\n");
         containerv_options_set_policy(opts, policy);
     }
 
+    // Optional network configuration
+    if (__is_nonempty(params->network.container_ip) && __is_nonempty(params->network.container_netmask)) {
+        containerv_options_set_network_ex(
+            opts,
+            params->network.container_ip,
+            params->network.container_netmask,
+            __is_nonempty(params->network.host_ip) ? params->network.host_ip : NULL,
+            __is_nonempty(params->network.gateway_ip) ? params->network.gateway_ip : NULL,
+            __is_nonempty(params->network.dns) ? params->network.dns : NULL
+        );
+    }
+
     // setup other config
-    containerv_options_set_caps(opts, 
+    enum containerv_capabilities caps =
         CV_CAP_FILESYSTEM |
         CV_CAP_PROCESS_CONTROL |
-        CV_CAP_IPC
-    );
+        CV_CAP_IPC;
+
+    // Enable network capability if requested by policy profile or network configuration.
+    if (__spec_contains_plugin(&params->policy, "network") ||
+        (__is_nonempty(params->network.container_ip) && __is_nonempty(params->network.container_netmask))) {
+        caps |= CV_CAP_NETWORK;
+    }
+
+    containerv_options_set_caps(opts, caps);
 
     // create the container
     status = containerv_create(cvdID, opts, &cvContainer);

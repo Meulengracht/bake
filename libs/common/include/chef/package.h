@@ -36,7 +36,7 @@ struct VaFs;
  * @return int 
  */
 extern int chef_package_load(
-    const char* path,
+    const char*           path,
     struct chef_package** packageOut,
     struct chef_version** versionOut,
     struct chef_command** commandsOut,
@@ -53,11 +53,12 @@ extern int chef_package_load(
  * @return int 
  */
 extern int chef_package_load_vafs(
-    struct VaFs*          vafs,
-    struct chef_package** packageOut,
-    struct chef_version** versionOut,
-    struct chef_command** commandsOut,
-    int*                  commandCountOut);
+    struct VaFs*                             vafs,
+    struct chef_package**                    packageOut,
+    struct chef_version**                    versionOut,
+    struct chef_command**                    commandsOut,
+    int*                                     commandCountOut,
+    struct chef_package_application_config** appConfigOut);
 
 /**
  * @brief Cleans up any resources allocated by the package.
@@ -83,6 +84,11 @@ extern void chef_version_free(struct chef_version* version);
  * @param[In] count    The size of the array passed.
  */
 extern void chef_commands_free(struct chef_command* commands, int count);
+
+/**
+ * @brief Cleans up any resources allocated by chef_package_load
+ */
+extern void chef_package_application_config_free(struct chef_package_application_config* appConfig);
 
 /**
  * @brief Parses a string containing a chef version.

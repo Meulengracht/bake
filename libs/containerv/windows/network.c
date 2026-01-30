@@ -182,7 +182,6 @@ int __windows_configure_vm_network(
     struct containerv_container* container,
     struct containerv_options* options)
 {
-    char command[PS_CMD_BUFFER_SIZE];
     const char* switch_name;
 
     if (!container || !options || !options->network.enable) {

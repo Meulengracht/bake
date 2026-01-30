@@ -22,10 +22,12 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vafs/vafs.h>
 
 static struct VaFsGuid g_headerGuid   = CHEF_PACKAGE_HEADER_GUID;
 static struct VaFsGuid g_versionGuid  = CHEF_PACKAGE_VERSION_GUID;
 static struct VaFsGuid g_commandsGuid = CHEF_PACKAGE_APPS_GUID;
+static struct VaFsGuid g_networkGuid  = CHEF_PACKAGE_NETWORK_GUID;
 
 static int __load_package_header(struct VaFs* vafs, struct chef_package** packageOut)
 {
@@ -161,16 +163,42 @@ static int __load_package_commands(struct VaFs* vafs, struct chef_command** comm
     return 0;
 }
 
+static int __load_package_network(struct VaFs* vafs, struct chef_package_application_config* appConfig)
+{
+    struct chef_vafs_feature_package_network* header;
+    int                                       status;
+    char*                                     data;
+
+    // optional feature
+    status = vafs_feature_query(vafs, &g_networkGuid, (struct VaFsFeatureHeader**)&header);
+    if (status != 0) {
+        return 0;
+    }
+
+    data = (char*)header + sizeof(struct chef_vafs_feature_package_network);
+    if (header->gateway_length > 0) {
+        appConfig->network_gateway = platform_strndup(data, header->gateway_length);
+        data += header->gateway_length;
+    }
+
+    if (header->dns_length > 0) {
+        appConfig->network_dns = platform_strndup(data, header->dns_length);
+        data += header->dns_length;
+    }
+    return 0;
+}
+
 int chef_package_load_vafs(
-    struct VaFs*          vafs,
-    struct chef_package** packageOut,
-    struct chef_version** versionOut,
-    struct chef_command** commandsOut,
-    int*                  commandCountOut)
+    struct VaFs*                             vafs,
+    struct chef_package**                    packageOut,
+    struct chef_version**                    versionOut,
+    struct chef_command**                    commandsOut,
+    int*                                     commandCountOut,
+    struct chef_package_application_config** appConfigOut)
 {
     int status = 0;
 
-    if (packageOut) {
+    if (packageOut != NULL) {
         status = __load_package_header(vafs, packageOut);
         if (status != 0) {
             vafs_close(vafs);
@@ -178,12 +206,12 @@ int chef_package_load_vafs(
         }
     }
 
-    if (versionOut) {
+    if (versionOut != NULL) {
         status = __load_package_version(vafs, versionOut);
         if (status != 0) {
             // This is a required header, so something is definitely off
             // lets cleanup
-            if (packageOut) {
+            if (packageOut != NULL) {
                 chef_package_free(*packageOut);
             }
             vafs_close(vafs);
@@ -191,7 +219,7 @@ int chef_package_load_vafs(
         }
     }
 
-    if (commandsOut && commandCountOut) {
+    if (commandsOut != NULL && commandCountOut) {
         // This header is optional, which means we won't ever fail on it. If
         // the loader/locate returns error, we zero the out values
         status = __load_package_commands(vafs, commandsOut, commandCountOut);
@@ -200,6 +228,16 @@ int chef_package_load_vafs(
             *commandCountOut = 0;
         }
     }
+
+    if (appConfigOut != NULL) {
+        // This header is optional, which means we won't ever fail on it. If
+        // the loader/locate returns error, we zero the out values
+        status = __load_package_network(vafs, *appConfigOut);
+        if (status != 0) {
+            *appConfigOut = NULL;
+        }
+    }
+
     return status;
 }
 
@@ -228,7 +266,8 @@ int chef_package_load(
         packageOut,
         versionOut,
         commandsOut,
-        commandCountOut
+        commandCountOut,
+        NULL
     );
     vafs_close(vafs);
     return status;
@@ -295,6 +334,16 @@ void chef_commands_free(struct chef_command* commands, int count)
         free((void*)commands[i].icon_buffer);
     }
     free(commands);
+}
+
+void chef_package_application_config_free(struct chef_package_application_config* appConfig)
+{
+    if (appConfig == NULL) {
+        return;
+    }
+
+    free((void*)appConfig->network_gateway);
+    free((void*)appConfig->network_dns);
 }
 
 int chef_version_from_string(const char* string, struct chef_version* version)

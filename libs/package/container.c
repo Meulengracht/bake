@@ -58,6 +58,7 @@ static struct VaFsGuid g_versionGuid   = CHEF_PACKAGE_VERSION_GUID;
 static struct VaFsGuid g_iconGuid      = CHEF_PACKAGE_ICON_GUID;
 static struct VaFsGuid g_commandsGuid  = CHEF_PACKAGE_APPS_GUID;
 static struct VaFsGuid g_optionsGuid   = CHEF_PACKAGE_INGREDIENT_OPTS_GUID;
+static struct VaFsGuid g_networkGuid   = CHEF_PACKAGE_NETWORK_GUID;
 
 /**
  * ZSTD Compression
@@ -796,11 +797,11 @@ static int __write_ingredient_options_metadata(struct VaFs* vafs, struct __pack_
         return 0;
     }
     
-    bins = __write_list_as_string(options->bin_dirs);
-    incs = __write_list_as_string(options->inc_dirs);
-    libs = __write_list_as_string(options->lib_dirs);
-    compiler_flags = __write_list_as_string(options->compiler_flags);
-    linker_flags = __write_list_as_string(options->linker_flags);
+    bins = __write_list_as_string(options->ingredient_config.bin_dirs);
+    incs = __write_list_as_string(options->ingredient_config.inc_dirs);
+    libs = __write_list_as_string(options->ingredient_config.lib_dirs);
+    compiler_flags = __write_list_as_string(options->ingredient_config.compiler_flags);
+    linker_flags = __write_list_as_string(options->ingredient_config.linker_flags);
     
     bins_len = __safe_strlen(bins);
     incs_len = __safe_strlen(incs);
@@ -839,6 +840,52 @@ static int __write_ingredient_options_metadata(struct VaFs* vafs, struct __pack_
     return status;
 }
 
+static int __write_network_metadata(struct VaFs* vafs, struct __pack_options* options)
+{
+    size_t gateway_len;
+    size_t dns_len;
+    size_t totalSize;
+    struct chef_vafs_feature_package_network* network;
+    char* data;
+
+    if (options->type != CHEF_PACKAGE_TYPE_APPLICATION) {
+        return 0;
+    }
+    
+    gateway_len = (size_t)__safe_strlen(options->app_config.network_gateway);
+    dns_len     = (size_t)__safe_strlen(options->app_config.network_dns);
+
+    if (gateway_len == 0 && dns_len == 0) {
+        return 0;
+    }
+
+    totalSize = sizeof(struct chef_vafs_feature_package_network) + gateway_len + dns_len;
+    network = malloc(totalSize);
+    if (network == NULL) {
+        VLOG_ERROR("bake", "failed to allocate %zu bytes for network metadata\n", totalSize);
+        return -1;
+    }
+
+    data = (char*)network + sizeof(struct chef_vafs_feature_package_network);
+    if (gateway_len) {
+        memcpy(data, options->app_config.network_gateway, gateway_len);
+        data += gateway_len;
+    }
+    if (dns_len) {
+        memcpy(data, options->app_config.network_dns, dns_len);
+        data += dns_len;
+    }
+
+    memcpy(&network->header.Guid, &g_networkGuid, sizeof(struct VaFsGuid));
+    network->header.Length  = totalSize;
+    network->gateway_length = gateway_len;
+    network->dns_length     = dns_len;
+
+    int status = vafs_feature_add(vafs, &network->header);
+    free(network);
+    return status;
+}
+
 static int __write_package_metadata(struct VaFs* vafs, const char* name, struct __pack_options* options)
 {
     int status;
@@ -864,6 +911,12 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
     status = __write_ingredient_options_metadata(vafs, options);
     if (status) {
         VLOG_ERROR("bake", "failed to write package ingredient options\n");
+        return -1;
+    }
+
+    status = __write_network_metadata(vafs, options);
+    if (status) {
+        VLOG_ERROR("bake", "failed to write package network defaults\n");
         return -1;
     }
 

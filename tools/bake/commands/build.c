@@ -116,8 +116,7 @@ static int __ensure_ingredient_list(struct list* list, const char* platform, con
 
 static int __ensure_ingredients(struct recipe* recipe, const char* platform, const char* arch)
 {
-    struct list_item* item;
-    int               status;
+    int status;
 
     if (recipe->platforms.count > 0) {
         VLOG_TRACE("bake", "preparing %i platforms\n", recipe->platforms.count);

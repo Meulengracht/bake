@@ -23,6 +23,7 @@
 #include <shlwapi.h>
 #include <chef/platform.h>
 #include <chef/containerv.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -280,6 +281,140 @@ static int __pid1d_parse_int_field(const char* resp, const char* key, int* out)
     return 0;
 }
 
+static int __pid1d_parse_bool_field(const char* resp, const char* key, int* out)
+{
+    if (resp == NULL || key == NULL || out == NULL) {
+        return -1;
+    }
+
+    char needle[64];
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
+    const char* p = strstr(resp, needle);
+    if (p == NULL) {
+        return -1;
+    }
+    p += strlen(needle);
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    if (strncmp(p, "true", 4) == 0) {
+        *out = 1;
+        return 0;
+    }
+    if (strncmp(p, "false", 5) == 0) {
+        *out = 0;
+        return 0;
+    }
+    return -1;
+}
+
+static char* __pid1d_parse_string_field_alloc(const char* resp, const char* key)
+{
+    if (resp == NULL || key == NULL) {
+        return NULL;
+    }
+
+    char needle[80];
+    snprintf(needle, sizeof(needle), "\"%s\":\"", key);
+    const char* p = strstr(resp, needle);
+    if (p == NULL) {
+        return NULL;
+    }
+    p += strlen(needle);
+
+    // We expect base64 here (no escapes), so copy until next quote.
+    const char* end = strchr(p, '"');
+    if (end == NULL || end < p) {
+        return NULL;
+    }
+    size_t n = (size_t)(end - p);
+    char* out = calloc(n + 1, 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    memcpy(out, p, n);
+    out[n] = '\0';
+    return out;
+}
+
+static char* __base64_encode_alloc(const unsigned char* data, size_t len)
+{
+    if (data == NULL && len != 0) {
+        return NULL;
+    }
+
+    DWORD out_len = 0;
+    if (!CryptBinaryToStringA((const BYTE*)data, (DWORD)len, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &out_len)) {
+        return NULL;
+    }
+
+    char* out = calloc(out_len + 1, 1);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    if (!CryptBinaryToStringA((const BYTE*)data, (DWORD)len, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, out, &out_len)) {
+        free(out);
+        return NULL;
+    }
+    out[out_len] = 0;
+    return out;
+}
+
+static unsigned char* __base64_decode_alloc(const char* b64, size_t* out_len)
+{
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (b64 == NULL) {
+        return NULL;
+    }
+
+    DWORD bin_len = 0;
+    if (!CryptStringToBinaryA(b64, 0, CRYPT_STRING_BASE64, NULL, &bin_len, NULL, NULL)) {
+        return NULL;
+    }
+
+    unsigned char* out = malloc((size_t)bin_len);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    if (!CryptStringToBinaryA(b64, 0, CRYPT_STRING_BASE64, (BYTE*)out, &bin_len, NULL, NULL)) {
+        free(out);
+        return NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = (size_t)bin_len;
+    }
+    return out;
+}
+
+static int __ensure_parent_dir_hostpath(const char* host_path)
+{
+    if (host_path == NULL) {
+        return -1;
+    }
+    char tmp[MAX_PATH];
+    strncpy_s(tmp, sizeof(tmp), host_path, _TRUNCATE);
+
+    char* last_slash = strrchr(tmp, '\\');
+    char* last_fslash = strrchr(tmp, '/');
+    char* sep = last_slash;
+    if (last_fslash != NULL && (sep == NULL || last_fslash > sep)) {
+        sep = last_fslash;
+    }
+    if (sep == NULL) {
+        return 0;
+    }
+    *sep = 0;
+    if (tmp[0] == 0) {
+        return 0;
+    }
+    (void)SHCreateDirectoryExA(NULL, tmp, NULL);
+    return 0;
+}
+
 static int __pid1d_rpc(struct containerv_container* container, const char* req_line, char* resp, size_t resp_cap)
 {
     if (container == NULL || req_line == NULL || resp == NULL) {
@@ -299,6 +434,145 @@ static int __pid1d_rpc(struct containerv_container* container, const char* req_l
     if (__pid1d_read_line(container->pid1d_stdout, resp, resp_cap) != 0) {
         return -1;
     }
+    return 0;
+}
+
+static int __pid1d_file_write_b64(
+    struct containerv_container* container,
+    const char*                  path,
+    const unsigned char*         data,
+    size_t                       len,
+    int                          append,
+    int                          mkdirs)
+{
+    if (container == NULL || path == NULL) {
+        return -1;
+    }
+    if (__pid1d_ensure(container) != 0) {
+        return -1;
+    }
+
+    char* b64 = __base64_encode_alloc(data, len);
+    if (b64 == NULL) {
+        return -1;
+    }
+    char* esc_path = __json_escape_utf8_simple(path);
+    if (esc_path == NULL) {
+        free(b64);
+        return -1;
+    }
+
+    char* req = NULL;
+    size_t cap = 0;
+    size_t rlen = 0;
+
+    int rc = __appendf(
+        &req,
+        &cap,
+        &rlen,
+        "{\"op\":\"file_write_b64\",\"path\":\"%s\",\"data\":\"%s\",\"append\":%s,\"mkdirs\":%s}",
+        esc_path,
+        b64,
+        append ? "true" : "false",
+        mkdirs ? "true" : "false");
+
+    free(b64);
+    free(esc_path);
+
+    if (rc != 0) {
+        free(req);
+        return -1;
+    }
+
+    char resp[8192];
+    if (__pid1d_rpc(container, req, resp, sizeof(resp)) != 0) {
+        free(req);
+        return -1;
+    }
+    free(req);
+
+    if (!__pid1d_resp_ok(resp)) {
+        VLOG_ERROR("containerv", "pid1d file_write_b64 failed: %s\n", resp);
+        return -1;
+    }
+    return 0;
+}
+
+static int __pid1d_file_read_b64(
+    struct containerv_container* container,
+    const char*                  path,
+    uint64_t                     offset,
+    uint64_t                     max_bytes,
+    char**                       b64_out,
+    uint64_t*                    bytes_out,
+    int*                         eof_out)
+{
+    if (container == NULL || path == NULL || b64_out == NULL || bytes_out == NULL || eof_out == NULL) {
+        return -1;
+    }
+    *b64_out = NULL;
+    *bytes_out = 0;
+    *eof_out = 0;
+
+    if (__pid1d_ensure(container) != 0) {
+        return -1;
+    }
+
+    char* esc_path = __json_escape_utf8_simple(path);
+    if (esc_path == NULL) {
+        return -1;
+    }
+
+    char* req = NULL;
+    size_t cap = 0;
+    size_t rlen = 0;
+    int rc = __appendf(
+        &req,
+        &cap,
+        &rlen,
+        "{\"op\":\"file_read_b64\",\"path\":\"%s\",\"offset\":%" PRIu64 ",\"max_bytes\":%" PRIu64 "}",
+        esc_path,
+        offset,
+        max_bytes);
+    free(esc_path);
+    if (rc != 0) {
+        free(req);
+        return -1;
+    }
+
+    char resp[8192];
+    if (__pid1d_rpc(container, req, resp, sizeof(resp)) != 0) {
+        free(req);
+        return -1;
+    }
+    free(req);
+
+    if (!__pid1d_resp_ok(resp)) {
+        VLOG_ERROR("containerv", "pid1d file_read_b64 failed: %s\n", resp);
+        return -1;
+    }
+
+    uint64_t bytes = 0;
+    int eof = 0;
+    if (__pid1d_parse_uint64_field(resp, "bytes", &bytes) != 0) {
+        return -1;
+    }
+    if (__pid1d_parse_bool_field(resp, "eof", &eof) != 0) {
+        eof = 0;
+    }
+
+    char* b64 = __pid1d_parse_string_field_alloc(resp, "data");
+    if (b64 == NULL) {
+        // For zero-byte reads, pid1d should still return "data":"".
+        b64 = _strdup("");
+        if (b64 == NULL) {
+            return -1;
+        }
+    }
+
+    *b64_out = b64;
+    *bytes_out = bytes;
+    *eof_out = eof;
     return 0;
 }
 
@@ -1497,33 +1771,38 @@ int containerv_upload(
         VLOG_DEBUG("containerv", "uploading: %s -> %s\n", hostPaths[i], containerPaths[i]);
         
         if (container->hcs_system) {
-            // VM-based container: use HCS to copy files into VM
-            // TODO: In a full implementation, this would:
-            // 1. Use PowerShell Direct to copy files into running VM
-            // 2. Or use HCS file system operations if available
-            // 3. Handle VM filesystem paths correctly
-            
-            // For now, copy to staging area that can be mounted in VM
-            char stagingPath[MAX_PATH];
-            sprintf_s(stagingPath, sizeof(stagingPath), "%s\\staging\\%s", 
-                     container->runtime_dir, containerPaths[i]);
-            
-            // Create directory structure if needed
-            char* lastSlash = strrchr(stagingPath, '\\');
-            if (lastSlash) {
-                *lastSlash = '\0';
-                SHCreateDirectoryExA(NULL, stagingPath, NULL);
-                *lastSlash = '\\';
-            }
-            
-            if (!CopyFileA(hostPaths[i], stagingPath, FALSE)) {
-                VLOG_ERROR("containerv", "containerv_upload: failed to stage file %s: %lu\n",
-                          hostPaths[i], GetLastError());
+            // VM-based container: stream file contents into guest via pid1d.
+            FILE* f = NULL;
+            if (fopen_s(&f, hostPaths[i], "rb") != 0 || f == NULL) {
+                VLOG_ERROR("containerv", "containerv_upload: failed to open %s\n", hostPaths[i]);
                 return -1;
             }
-            
-            VLOG_DEBUG("containerv", "staged file to: %s\n", stagingPath);
-            
+
+            const size_t chunk = 2048;
+            unsigned char buf[2048];
+            size_t nread = 0;
+            int first = 1;
+            while ((nread = fread(buf, 1, chunk, f)) > 0) {
+                if (__pid1d_file_write_b64(container, containerPaths[i], buf, nread, first ? 0 : 1, first ? 1 : 0) != 0) {
+                    fclose(f);
+                    return -1;
+                }
+                first = 0;
+            }
+
+            if (ferror(f)) {
+                VLOG_ERROR("containerv", "containerv_upload: read error on %s\n", hostPaths[i]);
+                fclose(f);
+                return -1;
+            }
+            fclose(f);
+
+            // Ensure empty files still create/truncate destination.
+            if (first) {
+                if (__pid1d_file_write_b64(container, containerPaths[i], (const unsigned char*)"", 0, 0, 1) != 0) {
+                    return -1;
+                }
+            }
         } else {
             // Host process container: direct file copy
             char destPath[MAX_PATH];
@@ -1566,25 +1845,56 @@ int containerv_download(
         VLOG_DEBUG("containerv", "downloading: %s -> %s\n", containerPaths[i], hostPaths[i]);
         
         if (container->hcs_system) {
-            // VM-based container: retrieve files from VM
-            // TODO: In a full implementation, this would:
-            // 1. Use PowerShell Direct to copy files out of VM
-            // 2. Or use HCS file system operations if available
-            // 3. Handle VM filesystem paths correctly
-            
-            // For now, copy from staging area
-            char stagingPath[MAX_PATH];
-            sprintf_s(stagingPath, sizeof(stagingPath), "%s\\staging\\%s", 
-                     container->runtime_dir, containerPaths[i]);
-            
-            if (!CopyFileA(stagingPath, hostPaths[i], FALSE)) {
-                VLOG_ERROR("containerv", "containerv_download: failed to retrieve file %s: %lu\n",
-                          stagingPath, GetLastError());
+            // VM-based container: stream file contents out of guest via pid1d.
+            (void)__ensure_parent_dir_hostpath(hostPaths[i]);
+
+            FILE* f = NULL;
+            if (fopen_s(&f, hostPaths[i], "wb") != 0 || f == NULL) {
+                VLOG_ERROR("containerv", "containerv_download: failed to open %s\n", hostPaths[i]);
                 return -1;
             }
-            
-            VLOG_DEBUG("containerv", "retrieved file from: %s\n", stagingPath);
-            
+
+            uint64_t offset = 0;
+            const uint64_t chunk = 2048;
+            for (;;) {
+                char* b64 = NULL;
+                uint64_t bytes = 0;
+                int eof = 0;
+                if (__pid1d_file_read_b64(container, containerPaths[i], offset, chunk, &b64, &bytes, &eof) != 0) {
+                    fclose(f);
+                    free(b64);
+                    return -1;
+                }
+
+                size_t decoded_len = 0;
+                unsigned char* decoded = __base64_decode_alloc(b64, &decoded_len);
+                free(b64);
+                if (decoded == NULL) {
+                    fclose(f);
+                    return -1;
+                }
+
+                if (decoded_len > 0) {
+                    if (fwrite(decoded, 1, decoded_len, f) != decoded_len) {
+                        free(decoded);
+                        fclose(f);
+                        return -1;
+                    }
+                }
+                free(decoded);
+
+                offset += bytes;
+
+                if (eof) {
+                    break;
+                }
+                if (bytes == 0) {
+                    // avoid infinite loop on unexpected response
+                    fclose(f);
+                    return -1;
+                }
+            }
+            fclose(f);
         } else {
             // Host process container: direct file copy
             char srcPath[MAX_PATH];
