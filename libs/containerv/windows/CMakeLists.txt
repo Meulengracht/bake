@@ -1,5 +1,4 @@
 add_library(containerv-windows STATIC
-    rootfs/debootstrap.c
     container-options.c
     container.c
     hcs.c

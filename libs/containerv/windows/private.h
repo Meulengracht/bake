@@ -402,7 +402,13 @@ extern int __windows_cleanup_network(
  * @brief Ensure %runtime_dir%\container.vhdx exists for the VM.
  *
  * If the composed rootfs contains a prebuilt container.vhdx (B1), it is copied into place.
- * Otherwise, a new VHDX is created and populated from the composed rootfs directory.
+ *
+ * Linux guests:
+ * - Prefer <rootfs>\container.vhdx.
+ * - Otherwise accept <rootfs>\ext4.vhdx (WSL2 import disk) and copy it into place.
+ *
+ * Windows guests:
+ * - If no prebuilt disk is present, a new VHDX is created and populated from the composed rootfs directory.
  */
 extern int __windows_prepare_vm_disk(
     struct containerv_container* container,

@@ -22,6 +22,29 @@ Uses Windows HyperV technology:
 
 See [windows/](windows/) for implementation details.
 
+## VM Disk Contract (Windows Host)
+
+When running VM-backed containers on a Windows host, containerv attaches a single virtual disk to the VM at runtime: `%runtime_dir%\container.vhdx`.
+
+The *composed rootfs directory* (from layers) is used as the source material to produce that disk. The expected contract differs by guest OS:
+
+- **Linux guests (WSL-based rootfs)**
+   - Preferred: a prebuilt bootable disk at `<rootfs>\container.vhdx`.
+   - Supported: a WSL2 import disk at `<rootfs>\ext4.vhdx` (will be copied into `%runtime_dir%\container.vhdx`).
+   - Note: containerv does not currently generate an ext4 boot disk from a directory tree on Windows.
+
+- **Windows guests (native rootfs)**
+   - Supported: a directory tree containing a Windows filesystem (e.g., extracted from a Windows container base image).
+   - Optional: a prebuilt bootable disk at `<rootfs>\container.vhdx` (fast-path).
+
+### pid1d placement
+
+containerv expects to start `pid1d` inside the guest as the initial supervisor for guest actions:
+- Windows guest: `C:\pid1d.exe`
+- Linux guest: `/usr/bin/pid1d`
+
+Your base/rootfs pack should ensure the correct binary exists at those paths.
+
 ## Features
 
 - **Container Lifecycle Management**: Create, start, stop, destroy containers

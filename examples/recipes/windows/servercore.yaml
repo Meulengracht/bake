@@ -1,8 +1,12 @@
 project: 
-  summary: The linux OS base
+  summary: Windows Server Core base (guest rootfs)
   description: |
-    This is the base OS linux ingredient, which is used as the base for all
-    other chef packages built for linux.
+    Builds a Windows Server Core filesystem tree suitable for containerv VM guests on a Windows host.
+    The produced pack is a *filesystem tree*, not a bootable VHDX.
+
+    Current containerv Windows-host contract:
+    - Windows guests: the composed rootfs directory is copied into an NTFS VHDX at runtime.
+    - pid1d must be present at C:\pid1d.exe inside the guest; in the pack root this is `pid1d.exe`.
   author: Philip Meulengracht
   email: the_meulengracht@hotmail.com
   version: 1.0.0
@@ -15,12 +19,35 @@ recipes:
     - name: construct
       type: script
       script: |
-        # Pull and extract Windows container images
-        docker pull mcr.microsoft.com/windows/servercore:ltsc2022
-        docker create --name temp-rootfs $image
-        docker export temp-rootfs | tar -xf - -C /path/rootfs
-        docker rm temp-rootfs
+        local root = build.paths.install()
+        local image = 'mcr.microsoft.com/windows/servercore:ltsc2022'
+
+        -- Ensure rootfs directory exists
+        build.shell('powershell.exe', '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' ..
+          "$ErrorActionPreference='Stop'; " ..
+          "$root='" .. root .. "'; " ..
+          "New-Item -ItemType Directory -Path $root -Force | Out-Null;" ..
+        '"')
+
+        -- Pull + export the container filesystem into the rootfs.
+        build.shell('powershell.exe', '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' ..
+          "$ErrorActionPreference='Stop'; " ..
+          "docker --version | Out-Null; tar --version | Out-Null; " ..
+          "docker pull " .. image .. "; " ..
+          "$name=('chef-rootfs-' + [guid]::NewGuid().ToString('N').Substring(0,8)); " ..
+          "docker create --name $name " .. image .. " | Out-Null; " ..
+          "docker export $name | tar -xf - -C '" .. root .. "'; " ..
+          "docker rm -f $name | Out-Null;" ..
+        '"')
+
+        -- Install pid1d.exe into the guest root (C:\pid1d.exe).
+        build.shell('powershell.exe', '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' ..
+          "$ErrorActionPreference='Stop'; " ..
+          "$src=Join-Path '" .. root .. "' '..\\..\\..\\bin\\pid1d.exe'; " ..
+          "$dst=Join-Path '" .. root .. "' 'pid1d.exe'; " ..
+          "if (Test-Path $src) { Copy-Item -Force $src $dst } else { Write-Warning ('pid1d.exe not found at ' + $src) };" ..
+        '"')
 
 packs:
-- name: windows-base
+- name: windows-servercore
   type: ingredient
