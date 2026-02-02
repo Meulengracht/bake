@@ -1,17 +1,14 @@
 #include "oci-spec.h"
 
+#include "standard-mounts.h"
+
+#include <chef/platform.h>
 #include <ctype.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef _WIN32
-#define CV_STRDUP _strdup
-#else
-#define CV_STRDUP strdup
-#endif
 
 static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
 {
@@ -69,7 +66,7 @@ static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
 static char* __json_escape_utf8(const char* s)
 {
     if (s == NULL) {
-        return CV_STRDUP("");
+        return platform_strdup("");
     }
 
     size_t in_len = strlen(s);
@@ -151,6 +148,48 @@ static int __env_has_key_case_insensitive(const char* const* envv, const char* k
     }
 
     return 0;
+}
+
+struct __oci_mount_json_spec {
+    const char* destination;
+    const char* json;
+};
+
+static const struct __oci_mount_json_spec __g_oci_mount_specs[] = {
+    {
+        .destination = "/proc",
+        .json = "{\"destination\":\"/proc\",\"type\":\"proc\",\"source\":\"proc\",\"options\":[\"nosuid\",\"noexec\",\"nodev\"]}",
+    },
+    {
+        .destination = "/dev",
+        .json = "{\"destination\":\"/dev\",\"type\":\"tmpfs\",\"source\":\"tmpfs\",\"options\":[\"nosuid\",\"strictatime\",\"mode=755\",\"size=65536k\"]}",
+    },
+    {
+        .destination = "/dev/pts",
+        .json = "{\"destination\":\"/dev/pts\",\"type\":\"devpts\",\"source\":\"devpts\",\"options\":[\"nosuid\",\"noexec\",\"newinstance\",\"ptmxmode=0666\",\"mode=0620\",\"gid=5\"]}",
+    },
+    {
+        .destination = "/dev/shm",
+        .json = "{\"destination\":\"/dev/shm\",\"type\":\"tmpfs\",\"source\":\"shm\",\"options\":[\"nosuid\",\"noexec\",\"nodev\",\"mode=1777\",\"size=65536k\"]}",
+    },
+    {
+        .destination = "/sys",
+        .json = "{\"destination\":\"/sys\",\"type\":\"sysfs\",\"source\":\"sysfs\",\"options\":[\"nosuid\",\"noexec\",\"nodev\",\"ro\"]}",
+    },
+};
+
+static const char* __find_oci_mount_json(const char* destination)
+{
+    if (destination == NULL) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < (sizeof(__g_oci_mount_specs) / sizeof(__g_oci_mount_specs[0])); ++i) {
+        if (strcmp(__g_oci_mount_specs[i].destination, destination) == 0) {
+            return __g_oci_mount_specs[i].json;
+        }
+    }
+    return NULL;
 }
 
 int containerv_oci_build_linux_spec_json(
@@ -248,6 +287,45 @@ int containerv_oci_build_linux_spec_json(
         return -1;
     }
 
+    // Compose mounts array from shared standard list.
+    char* mounts = NULL;
+    size_t mounts_cap = 0;
+    size_t mounts_len = 0;
+    if (__appendf(&mounts, &mounts_cap, &mounts_len, "[") != 0) {
+        free(esc_root);
+        free(esc_cwd);
+        free(esc_hostname);
+        free(env_arr);
+        free(mounts);
+        return -1;
+    }
+
+    int first_mount = 1;
+    for (const char* const* mp = containerv_standard_linux_mountpoints(); mp != NULL && *mp != NULL; ++mp) {
+        const char* obj = __find_oci_mount_json(*mp);
+        if (obj == NULL || obj[0] == '\0') {
+            continue;
+        }
+        if (__appendf(&mounts, &mounts_cap, &mounts_len, "%s%s", first_mount ? "" : ",", obj) != 0) {
+            free(esc_root);
+            free(esc_cwd);
+            free(esc_hostname);
+            free(env_arr);
+            free(mounts);
+            return -1;
+        }
+        first_mount = 0;
+    }
+
+    if (__appendf(&mounts, &mounts_cap, &mounts_len, "]") != 0) {
+        free(esc_root);
+        free(esc_cwd);
+        free(esc_hostname);
+        free(env_arr);
+        free(mounts);
+        return -1;
+    }
+
     // Compose spec
     char* spec = NULL;
     size_t spec_cap = 0;
@@ -262,13 +340,7 @@ int containerv_oci_build_linux_spec_json(
             ",\"process\":{\"terminal\":false,\"cwd\":\"%s\",\"args\":%s,\"env\":%s,\"user\":{\"uid\":0,\"gid\":0}}"
             ",\"root\":{\"path\":\"%s\",\"readonly\":false}"
             "%s"
-            ",\"mounts\":["
-            "{\"destination\":\"/proc\",\"type\":\"proc\",\"source\":\"proc\",\"options\":[\"nosuid\",\"noexec\",\"nodev\"]},"
-            "{\"destination\":\"/dev\",\"type\":\"tmpfs\",\"source\":\"tmpfs\",\"options\":[\"nosuid\",\"strictatime\",\"mode=755\",\"size=65536k\"]},"
-            "{\"destination\":\"/dev/pts\",\"type\":\"devpts\",\"source\":\"devpts\",\"options\":[\"nosuid\",\"noexec\",\"newinstance\",\"ptmxmode=0666\",\"mode=0620\",\"gid=5\"]},"
-            "{\"destination\":\"/dev/shm\",\"type\":\"tmpfs\",\"source\":\"shm\",\"options\":[\"nosuid\",\"noexec\",\"nodev\",\"mode=1777\",\"size=65536k\"]},"
-            "{\"destination\":\"/sys\",\"type\":\"sysfs\",\"source\":\"sysfs\",\"options\":[\"nosuid\",\"noexec\",\"nodev\",\"ro\"]}"
-            "]"
+            ",\"mounts\":%s"
             ",\"linux\":{\"namespaces\":[{\"type\":\"pid\"},{\"type\":\"ipc\"},{\"type\":\"uts\"},{\"type\":\"mount\"},{\"type\":\"network\"}]}"
             "}",
             esc_cwd,
@@ -276,11 +348,13 @@ int containerv_oci_build_linux_spec_json(
             env_arr,
             esc_root,
             (esc_hostname != NULL) ? ",\"hostname\":\"" : "",
-            (esc_hostname != NULL) ? esc_hostname : "") != 0) {
+            (esc_hostname != NULL) ? esc_hostname : "",
+            mounts) != 0) {
         free(esc_root);
         free(esc_cwd);
         free(esc_hostname);
         free(env_arr);
+        free(mounts);
         free(spec);
         return -1;
     }
@@ -300,6 +374,7 @@ int containerv_oci_build_linux_spec_json(
     free(esc_cwd);
     free(esc_hostname);
     free(env_arr);
+    free(mounts);
 
     *out_json_utf8 = spec;
     return 0;

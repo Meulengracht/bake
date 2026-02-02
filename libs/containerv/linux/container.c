@@ -39,6 +39,8 @@
 
 #include <unistd.h>
 #include "private.h"
+
+#include "standard-mounts.h"
 #include "cgroups.h"
 #include "network.h"
 #include <vlog.h>
@@ -51,11 +53,39 @@
 #define __CONTAINER_VETH_CONT_OFFSET 4    // Use partial ID for container-side veth
 
 struct __child_mount {
-    char*                       what;
-    char*                       where;
-    char*                       fstype;
+    const char*                 what;
+    const char*                 where;
+    const char*                 fstype;
     enum containerv_mount_flags flags;
 };
+
+struct __std_mount_spec {
+    const char* what;
+    const char* where;
+    const char* fstype;
+    enum containerv_mount_flags flags;
+};
+
+static const struct __std_mount_spec __g_standard_mount_specs[] = {
+    { .what = "sysfs",  .where = "/sys",     .fstype = "sysfs",  .flags = CV_MOUNT_CREATE | CV_MOUNT_READONLY },
+    { .what = "proc",   .where = "/proc",    .fstype = "proc",   .flags = CV_MOUNT_CREATE },
+    { .what = "tmpfs",  .where = "/dev",     .fstype = "tmpfs",  .flags = CV_MOUNT_CREATE },
+    { .what = "devpts", .where = "/dev/pts", .fstype = "devpts", .flags = CV_MOUNT_CREATE },
+    { .what = "tmpfs",  .where = "/dev/shm", .fstype = "tmpfs",  .flags = CV_MOUNT_CREATE },
+};
+
+static const struct __std_mount_spec* __find_standard_mount_spec(const char* where)
+{
+    if (where == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < (sizeof(__g_standard_mount_specs) / sizeof(__g_standard_mount_specs[0])); ++i) {
+        if (strcmp(__g_standard_mount_specs[i].where, where) == 0) {
+            return &__g_standard_mount_specs[i];
+        }
+    }
+    return NULL;
+}
 
 struct containerv_container_process {
     struct list_item list_header;
@@ -455,7 +485,7 @@ static int __convert_cv_mount_flags(enum containerv_mount_flags cvFlags)
 // __container_map_mounts maps any outside paths into the container
 static int __container_map_mounts(
         const char*           root,
-        struct __child_mount* mounts,
+    const struct __child_mount* mounts,
         int                   mountsCount)
 {
     int status = 0;
@@ -491,6 +521,40 @@ static int __container_map_mounts(
         }
     }
     return status;
+}
+
+static int __container_map_standard_filesystem_mounts(void)
+{
+    struct __child_mount mnts[16];
+    int count = 0;
+
+    for (const char* const* mp = containerv_standard_linux_mountpoints(); mp != NULL && *mp != NULL; ++mp) {
+        const struct __std_mount_spec* s = __find_standard_mount_spec(*mp);
+        if (s == NULL) {
+            continue;
+        }
+        if (count >= (int)(sizeof(mnts) / sizeof(mnts[0])) - 1) {
+            break;
+        }
+        mnts[count++] = (struct __child_mount){
+            .what = s->what,
+            .where = s->where,
+            .fstype = s->fstype,
+            .flags = s->flags,
+        };
+    }
+
+    // /tmp is not part of the standard list, but is part of our baseline expectations.
+    if (count < (int)(sizeof(mnts) / sizeof(mnts[0]))) {
+        mnts[count++] = (struct __child_mount){
+            .what = "tmpfs",
+            .where = "/tmp",
+            .fstype = "tmpfs",
+            .flags = CV_MOUNT_CREATE,
+        };
+    }
+
+    return __container_map_mounts("", &mnts[0], count);
 }
 
 static int __write_user_namespace_maps(
@@ -800,35 +864,7 @@ static int __container_run(
 
     // After the chroot we can do now do special mounts
     if (options->capabilities & CV_CAP_FILESYSTEM) {
-        static const int postmountsCount = 4;
-        struct __child_mount mnts[] = {
-            {
-                .what = "sysfs",
-                .where = "/sys",
-                .fstype = "sysfs",
-                .flags = CV_MOUNT_CREATE
-            },
-            {
-                .what = "proc",
-                .where = "/proc",
-                .fstype = "proc",
-                .flags = CV_MOUNT_CREATE
-            },
-            {
-                .what = "tmpfs",
-                .where = "/tmp",
-                .fstype = "tmpfs",
-                .flags = CV_MOUNT_CREATE
-            },
-            {
-                .what = "tmpfs",
-                .where = "/dev",
-                .fstype = "tmpfs",
-                .flags = CV_MOUNT_CREATE
-            },
-        };
-        
-        status = __container_map_mounts("", &mnts[0], postmountsCount);
+        status = __container_map_standard_filesystem_mounts();
         if (status) {
             VLOG_ERROR("containerv[child]", "__container_run: failed to map system mounts\n");
             return status;

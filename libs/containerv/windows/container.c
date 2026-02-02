@@ -37,6 +37,8 @@
 
 #include "private.h"
 
+#include "standard-mounts.h"
+
 #define MIN_REMAINING_PATH_LENGTH 20  // Minimum space needed for "containerv-XXXXXX" + null
 
 // PID1 is currently implemented as a process-global service. We reference count
@@ -1088,28 +1090,39 @@ static void __ensure_lcow_rootfs_mountpoint_dirs(const char* rootfs_host_path)
 
     char chef_dir[MAX_PATH];
     char staging_dir[MAX_PATH];
-    char proc_dir[MAX_PATH];
-    char sys_dir[MAX_PATH];
-    char dev_dir[MAX_PATH];
-    char dev_pts_dir[MAX_PATH];
-    char dev_shm_dir[MAX_PATH];
 
     snprintf(chef_dir, sizeof(chef_dir), "%s\\chef", rootfs_host_path);
     snprintf(staging_dir, sizeof(staging_dir), "%s\\chef\\staging", rootfs_host_path);
-    snprintf(proc_dir, sizeof(proc_dir), "%s\\proc", rootfs_host_path);
-    snprintf(sys_dir, sizeof(sys_dir), "%s\\sys", rootfs_host_path);
-    snprintf(dev_dir, sizeof(dev_dir), "%s\\dev", rootfs_host_path);
-    snprintf(dev_pts_dir, sizeof(dev_pts_dir), "%s\\dev\\pts", rootfs_host_path);
-    snprintf(dev_shm_dir, sizeof(dev_shm_dir), "%s\\dev\\shm", rootfs_host_path);
 
     // Best-effort: these are only mountpoints for bind mounts.
     CreateDirectoryA(chef_dir, NULL);
     CreateDirectoryA(staging_dir, NULL);
-    CreateDirectoryA(proc_dir, NULL);
-    CreateDirectoryA(sys_dir, NULL);
-    CreateDirectoryA(dev_dir, NULL);
-    CreateDirectoryA(dev_pts_dir, NULL);
-    CreateDirectoryA(dev_shm_dir, NULL);
+
+    // Standard Linux mountpoints (stored as Linux-style absolute paths).
+    for (const char* const* mp = containerv_standard_linux_mountpoints(); mp != NULL && *mp != NULL; ++mp) {
+        const char* s = *mp;
+        if (s == NULL || s[0] == '\0') {
+            continue;
+        }
+
+        // Convert "/dev/pts" -> "dev\\pts" and join under rootfs_host_path.
+        char rel[MAX_PATH];
+        size_t j = 0;
+        while (*s == '/') {
+            s++;
+        }
+        for (; *s && j + 1 < sizeof(rel); ++s) {
+            rel[j++] = (*s == '/') ? '\\' : *s;
+        }
+        rel[j] = '\0';
+        if (rel[0] == '\0') {
+            continue;
+        }
+
+        char full[MAX_PATH];
+        snprintf(full, sizeof(full), "%s\\%s", rootfs_host_path, rel);
+        CreateDirectoryA(full, NULL);
+    }
 }
 
 static int __read_layerchain_json(const char* layer_folder_path, char*** paths_out, int* count_out)
