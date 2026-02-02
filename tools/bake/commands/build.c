@@ -186,7 +186,7 @@ static void __cleanup_systems(int sig)
 static char* __add_build_log(void)
 {
     char* path;
-    FILE* stream = chef_dirs_contemporary_file("bake-build", "log", &path);
+    FILE* stream = chef_dirs_open_temp_file("bake-build", "log", &path);
     if (stream == NULL) {
         return NULL;
     }

@@ -20,7 +20,9 @@
 #include <chef/containerv.h>
 #include <chef/containerv/layers.h>
 #include <chef/containerv/policy.h>
+#include <chef/containerv/disk/winvm.h>
 #include <chef/dirs.h>
+#include <chef/package.h>
 #include <chef/platform.h>
 #include <chef/environment.h>
 #include <errno.h>
@@ -204,6 +206,13 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     const char*                      cvdID;
     char                             cvdIDBuffer[17];
     int                              status;
+    int                              cvLayerCount;
+   
+#ifdef CHEF_ON_WINDOWS
+    struct containerv_disk_winvm_prepare_result winvmPrep = {0};
+    int                              winvmAppliedOffline = 0;
+#endif
+
     VLOG_DEBUG("cvd", "cvd_create()\n");
 
     if (params->layers_count == 0) {
@@ -235,9 +244,33 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
         return CHEF_STATUS_INTERNAL_ERROR;
     }
 
+    cvLayerCount = (int)params->layers_count;
+
+#ifdef CHEF_ON_WINDOWS
+    // Windows-host VM-backed containers boot from container.vhdx.
+    // If BASE_ROOTFS points at a VHDX (or directory containing container.vhdx),
+    // build a differencing chain (base cache + optional app layer + per-container writable)
+    // and filter out VAFS layers because they are applied offline into the VHD.
+    status = containerv_disk_winvm_prepare_layers(cvdID, &cvLayers, &cvLayerCount, &winvmPrep);
+    if (status != 0) {
+        VLOG_ERROR("cvd", "cvd_create: Windows VM disk preparation failed\n");
+        free(cvLayers);
+        containerv_options_delete(opts);
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+    }
+#endif
+
     // Compose layers into final rootfs
-    status = containerv_layers_compose(cvLayers, (int)params->layers_count, cvdID, &layerContext);
+    status = containerv_layers_compose(cvLayers, cvLayerCount, cvdID, &layerContext);
     free(cvLayers);
+
+#ifdef CHEF_ON_WINDOWS
+    // Preserve the flag before destroying the staging dir bookkeeping.
+    winvmAppliedOffline = winvmPrep.applied_packages;
+    // The staging rootfs only exists to be copied into the composed rootfs.
+    containerv_disk_winvm_prepare_result_destroy(&winvmPrep);
+#endif
+
     if (status != 0) {
         VLOG_ERROR("cvd", "cvd_create: failed to compose layers\n");
         containerv_options_delete(opts);
@@ -289,6 +322,20 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
         VLOG_ERROR("cvd", "failed to start the container\n");
         return __chef_status_from_errno();
     }
+
+#if defined(CHEF_ON_WINDOWS)
+    // For Windows-host VM-backed containers, install any VAFS packages into the guest.
+    // This is a first step towards the desired base-disk + package layers model.
+    // If we already applied packages offline into the VHD chain, skip.
+    if (!winvmAppliedOffline && containerv_disk_winvm_provision(cvContainer, params) != 0) {
+        VLOG_ERROR("cvd", "cvd_create: guest provisioning failed\n");
+        containerv_destroy(cvContainer);
+        if (layerContext) {
+            containerv_layers_destroy(layerContext);
+        }
+        return CHEF_STATUS_INTERNAL_ERROR;
+    }
+#endif
 
     _container = __container_new(cvContainer, layerContext);
     if (_container == NULL) {

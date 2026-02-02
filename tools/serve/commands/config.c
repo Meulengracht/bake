@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <chef/config.h>
 #include <chef/dirs.h>
+#include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,7 +57,7 @@ static int __build_pack_network_key(const char* option, char** keyOut)
             fprintf(stderr, "serve: missing pack-network key\n");
             return -1;
         }
-        *keyOut = strdup(key);
+        *keyOut = platform_strdup(key);
         return *keyOut != NULL ? 0 : -1;
     }
 

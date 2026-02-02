@@ -80,7 +80,7 @@ int main(int argc, char** argv)
     }
 
     // add log file to vlog
-    debuglog = chef_dirs_contemporary_file("cookd", "log", NULL);
+    debuglog = chef_dirs_open_temp_file("cookd", "log", NULL);
     if (debuglog == NULL) {
         VLOG_ERROR("cookd", "failed to open log file\n");
         return -1;

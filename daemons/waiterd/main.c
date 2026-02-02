@@ -88,7 +88,7 @@ int main(int argc, char** argv)
     }
 
     // add log file to vlog
-    debuglog = chef_dirs_contemporary_file("waiterd", "log", &debuglogPath);
+    debuglog = chef_dirs_open_temp_file("waiterd", "log", &debuglogPath);
     if (debuglog == NULL) {
         fprintf(stderr, "waiterd: failed to open log file\n");
         return -1;

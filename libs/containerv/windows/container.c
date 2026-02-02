@@ -1919,6 +1919,25 @@ int containerv_download(
     return 0;
 }
 
+int containerv_is_vm(struct containerv_container* container)
+{
+    if (container == NULL) {
+        return 0;
+    }
+    return (container->hcs_system != NULL);
+}
+
+int containerv_guest_is_windows(struct containerv_container* container)
+{
+    if (container == NULL) {
+        return 0;
+    }
+    if (container->hcs_system == NULL) {
+        return 0;
+    }
+    return (container->guest_is_windows != 0);
+}
+
 void __containerv_destroy(struct containerv_container* container)
 {
     if (!container) {

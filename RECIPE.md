@@ -222,22 +222,22 @@ recipes:
       ###########################
       # script - Required for script
       # 
-      # Shell script that should be executed. The working directory of the script
-      # will be the build directory for this recipe. The project directory and install
-      # directories can be refered to through $[[ PROJECT_PATH ]] and $[[ INSTALL_PREFIX ]].
-      # On linux, this will be run as a shell script, while on windows it will run as a 
-      # powershell script
+      # A Lua script snippet that will be executed by the oven runtime.
+      # The working directory of the script will be the build directory for this recipe.
+      # Use the `build.*` APIs to run external tools and resolve paths:
+      # - `build.shell(<exe>, <args>)`
+      # - `build.paths.project()` (project root)
+      # - `build.paths.install()` (install/output root)
+      # The snippet can call platform-native tools (e.g. `sh`/`bash` on Linux, `powershell.exe` on Windows).
       script: |
-        valid=true
-        count=1
-        while [ $valid ]
-        do
-          echo $count
-          if [ $count -eq 5 ];
-          then
-            break
-          fi
-          ((count++))
+        local project_root = build.paths.project()
+        local install_root = build.paths.install()
+
+        -- Example: run a host tool and write into the install root.
+        build.shell('powershell.exe', '-NoProfile -NonInteractive -Command "' ..
+          "Write-Host 'project='" .. project_root .. "'; " ..
+          "Write-Host 'install='" .. install_root .. "'" ..
+        '"')
         done
 
       ###########################

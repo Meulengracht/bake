@@ -355,14 +355,44 @@ const char* chef_dirs_cache(void)
 
 const char* chef_dirs_rootfs(const char* uuid)
 {
+    static char combined[PATH_MAX];
+
     if (g_dirs.kitchen == NULL) {
         VLOG_ERROR("dirs", "chef_dirs_rootfs() is not available\n");
         return NULL;
     }
-    if (uuid != NULL) {
-        return strpathcombine(g_dirs.kitchen, uuid);
+
+    if (uuid == NULL || uuid[0] == 0) {
+        return g_dirs.kitchen;
     }
-    return g_dirs.kitchen;
+
+    {
+        size_t len = strlen(g_dirs.kitchen);
+        int    n;
+        if (len > 0 && g_dirs.kitchen[len - 1] == CHEF_PATH_SEPARATOR) {
+            n = snprintf(combined, sizeof(combined), "%s%s", g_dirs.kitchen, uuid);
+        } else {
+            n = snprintf(combined, sizeof(combined), "%s" CHEF_PATH_SEPARATOR_S "%s", g_dirs.kitchen, uuid);
+        }
+        if (n < 0 || (size_t)n >= sizeof(combined)) {
+            errno = ENAMETOOLONG;
+            return NULL;
+        }
+    }
+
+    return combined;
+}
+
+char* chef_dirs_rootfs_alloc(const char* uuid)
+{
+    if (g_dirs.kitchen == NULL) {
+        VLOG_ERROR("dirs", "chef_dirs_rootfs_alloc() is not available\n");
+        return NULL;
+    }
+    if (uuid == NULL || uuid[0] == 0) {
+        return platform_strdup(g_dirs.kitchen);
+    }
+    return strpathcombine(g_dirs.kitchen, uuid);
 }
 
 char* chef_dirs_rootfs_new(const char* uuid)
@@ -403,7 +433,7 @@ const char* chef_dirs_config(void)
     return g_dirs.config;
 }
 
-FILE* chef_dirs_contemporary_file(const char* name, const char* ext, char** rpath)
+FILE* chef_dirs_open_temp_file(const char* name, const char* ext, char** rpath)
 {
     char  buffer[128];
     FILE* stream;

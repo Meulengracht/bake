@@ -258,6 +258,18 @@ extern int containerv_download(struct containerv_container* container, const cha
 extern int containerv_destroy(struct containerv_container* container);
 
 /**
+ * @brief Returns non-zero if this container is VM-backed (Hyper-V on Windows).
+ */
+extern int containerv_is_vm(struct containerv_container* container);
+
+/**
+ * @brief Returns non-zero if the VM guest OS is Windows.
+ *
+ * For non-VM containers this will return 0.
+ */
+extern int containerv_guest_is_windows(struct containerv_container* container);
+
+/**
  * @brief Query a best-effort resource usage snapshot for a running container.
  *
  * @param container The container to query.

@@ -408,7 +408,8 @@ extern int __windows_cleanup_network(
  * - Otherwise accept <rootfs>\ext4.vhdx (WSL2 import disk) and copy it into place.
  *
  * Windows guests:
- * - If no prebuilt disk is present, a new VHDX is created and populated from the composed rootfs directory.
+ * - Windows guests require a bootable OS disk image (container.vhdx). A plain NTFS data volume populated
+ *   from a directory tree is not sufficient for UEFI boot.
  */
 extern int __windows_prepare_vm_disk(
     struct containerv_container* container,

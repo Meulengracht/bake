@@ -26,16 +26,18 @@ See [windows/](windows/) for implementation details.
 
 When running VM-backed containers on a Windows host, containerv attaches a single virtual disk to the VM at runtime: `%runtime_dir%\container.vhdx`.
 
+This disk contract applies only to **Windows-hosted Hyper-V (VM-backed)** containers. On **Linux hosts**, containerv uses native Linux container mechanisms and expects a normal root filesystem directory tree (not a virtual disk image).
+
 The *composed rootfs directory* (from layers) is used as the source material to produce that disk. The expected contract differs by guest OS:
 
 - **Linux guests (WSL-based rootfs)**
    - Preferred: a prebuilt bootable disk at `<rootfs>\container.vhdx`.
-   - Supported: a WSL2 import disk at `<rootfs>\ext4.vhdx` (will be copied into `%runtime_dir%\container.vhdx`).
+   - Supported: an ext4 rootfs disk at `<rootfs>\ext4.vhdx` (e.g. from WSL2 import or built on Linux; will be copied into `%runtime_dir%\container.vhdx`).
    - Note: containerv does not currently generate an ext4 boot disk from a directory tree on Windows.
 
 - **Windows guests (native rootfs)**
-   - Supported: a directory tree containing a Windows filesystem (e.g., extracted from a Windows container base image).
-   - Optional: a prebuilt bootable disk at `<rootfs>\container.vhdx` (fast-path).
+   - Required: a prebuilt bootable disk at `<rootfs>\container.vhdx`.
+   - Note: a directory tree populated into a single NTFS partition is not sufficient for UEFI boot (no ESP/BCD).
 
 ### pid1d placement
 

@@ -1415,6 +1415,18 @@ int containerv_destroy(struct containerv_container* container)
     return 0;
 }
 
+int containerv_is_vm(struct containerv_container* container)
+{
+    (void)container;
+    return 0;
+}
+
+int containerv_guest_is_windows(struct containerv_container* container)
+{
+    (void)container;
+    return 0;
+}
+
 int containerv_join(const char* containerId)
 {
     struct containerv_ns_fd          fds[CV_NS_COUNT] = { 0 };
