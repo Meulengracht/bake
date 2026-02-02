@@ -24,4 +24,4 @@ endif()
 
 add_library(containerv-disk STATIC ${SRCS})
 target_include_directories(containerv-disk PUBLIC include)
-target_link_libraries(containerv-disk PUBLIC dirconf platform vlog)
+target_link_libraries(containerv-disk PUBLIC common dirconf platform vlog)

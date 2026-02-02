@@ -477,24 +477,24 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct _
     }
 
     memcpy(&packageHeader->header.Guid, &g_headerGuid, sizeof(struct VaFsGuid));
-    packageHeader->header.Length = featureSize;
+    packageHeader->header.Length = (uint32_t)featureSize;
 
     // fill in info
     packageHeader->version = CHEF_PACKAGE_VERSION;
     packageHeader->type    = options->type;
 
     // fill in lengths
-    packageHeader->platform_length         = strlen(options->platform);
-    packageHeader->arch_length             = strlen(options->architecture);
-    packageHeader->package_length          = strlen(name);
-    packageHeader->base_length             = strlen(options->base);
-    packageHeader->summary_length          = strlen(options->summary);
+    packageHeader->platform_length         = (uint32_t)strlen(options->platform);
+    packageHeader->arch_length             = (uint32_t)strlen(options->architecture);
+    packageHeader->package_length          = (uint32_t)strlen(name);
+    packageHeader->base_length             = (uint32_t)strlen(options->base);
+    packageHeader->summary_length          = (uint32_t)strlen(options->summary);
     packageHeader->description_length      = (uint32_t)__safe_strlen(options->description);
     packageHeader->license_length          = (uint32_t)__safe_strlen(options->license);
     packageHeader->eula_length             = (uint32_t)__safe_strlen(options->eula);
     packageHeader->homepage_length         = (uint32_t)__safe_strlen(options->homepage);
-    packageHeader->maintainer_length       = strlen(options->maintainer);
-    packageHeader->maintainer_email_length = strlen(options->maintainer_email);
+    packageHeader->maintainer_length       = (uint32_t)strlen(options->maintainer);
+    packageHeader->maintainer_email_length = (uint32_t)strlen(options->maintainer_email);
 
     // fill in data ptrs
     dataPointer = (char*)packageHeader + sizeof(struct chef_vafs_feature_package_header);
@@ -561,7 +561,7 @@ static int __write_version_metadata(struct VaFs* vafs, const char* version)
         return -1;
     }
 
-    packageVersion->tag_length = __safe_strlen(tagPointer);
+    packageVersion->tag_length = (uint32_t)__safe_strlen(tagPointer);
 
     // fill in data ptrs
     if (tagPointer != NULL) {
@@ -674,12 +674,12 @@ static size_t __serialize_command(struct recipe_pack_command* command, char* buf
     struct chef_vafs_package_app* app = (struct chef_vafs_package_app*)buffer;
     const char*                   args = chef_process_argument_list(&command->arguments, __resolve_variable, options);
 
-    app->name_length        = strlen(command->name);
-    app->description_length = __safe_strlen(command->description);
-    app->arguments_length   = __safe_strlen(args);
+    app->name_length        = (uint32_t)strlen(command->name);
+    app->description_length = (uint32_t)__safe_strlen(command->description);
+    app->arguments_length   = (uint32_t)__safe_strlen(args);
     app->type               = (int)command->type;
-    app->path_length        = strlen(command->path);
-    app->icon_length        = __file_size(command->icon);
+    app->path_length        = (uint32_t)strlen(command->path);
+    app->icon_length        = (uint32_t)__file_size(command->icon);
 
     // move the buffer pointer and write in the data
     buffer += sizeof(struct chef_vafs_package_app);
@@ -748,8 +748,8 @@ static int __write_commands_metadata(struct VaFs* vafs, struct list* commands, s
 
     packageApps = (struct chef_vafs_feature_package_apps*)buffer;
     memcpy(&packageApps->header.Guid, &g_commandsGuid, sizeof(struct VaFsGuid));
-    packageApps->header.Length = totalSize;
-    packageApps->apps_count = commands->count;
+    packageApps->header.Length = (uint32_t)totalSize;
+    packageApps->apps_count = (int)commands->count;
 
     buffer += sizeof(struct chef_vafs_feature_package_apps);
     list_foreach(commands, item) {

@@ -3,6 +3,9 @@ project (containerv C)
 # Add PID1 service subdirectory
 add_subdirectory(pid1)
 
+# Internal shared helpers (not part of public API)
+add_subdirectory(common)
+
 # Guest-side PID1 daemon (used inside VMs/guests)
 add_subdirectory(pid1d)
 

@@ -13,6 +13,7 @@ add_library(containerv-windows STATIC
 )
 target_include_directories(containerv-windows PRIVATE ../include)
 target_link_libraries(containerv-windows PUBLIC platform vlog)
+target_link_libraries(containerv-windows PRIVATE containerv-common)
 # PID1 abstraction library (used by Windows backend for process lifecycle management)
 target_link_libraries(containerv-windows PRIVATE containerv-pid1)
 target_link_libraries(containerv-windows PRIVATE jansson)

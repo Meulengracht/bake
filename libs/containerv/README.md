@@ -46,7 +46,11 @@ In `cvd` (Windows host), these are currently wired via environment variables:
 - `CHEF_LCOW_INITRD_FILE` (optional; file name under `CHEF_LCOW_UVM_IMAGE_PATH`)
 - `CHEF_LCOW_BOOT_PARAMETERS` (optional)
 
-Current status: LCOW compute-system bring-up is present; OCI-spec/rootfs plumbing is the next step.
+Current status: LCOW compute-system bring-up is present and containerv will emit a minimal OCI spec for LCOW processes; rootfs mapping and full OCI bundle semantics are still evolving.
+
+Notes:
+- If a host rootfs directory is provided, it is mapped into the LCOW UVM at `/chef/rootfs`.
+- When that rootfs mapping is present, all bind mounts (including Chef staging) are rebased under `/chef/rootfs` so they remain visible after the OCI process pivots into the container root.
 
 ### VM-backed mode (legacy)
 

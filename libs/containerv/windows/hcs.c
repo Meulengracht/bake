@@ -25,6 +25,8 @@
 
 #include <chef/containerv/layers.h>
 
+#include "oci-spec.h"
+
 #include "private.h"
 
 // Some Windows SDKs don't expose these HCS_* HRESULTs unless additional headers are used.
@@ -270,7 +272,85 @@ struct __mapped_dir_build_ctx {
     size_t* len;
     int     emitted;
     int     linux_container;
+    const char* linux_container_prefix;
 };
+
+static int __starts_with_path_prefix(const char* s, const char* prefix)
+{
+    if (s == NULL || prefix == NULL) {
+        return 0;
+    }
+    size_t ps = strlen(prefix);
+    if (ps == 0) {
+        return 1;
+    }
+    if (strncmp(s, prefix, ps) != 0) {
+        return 0;
+    }
+    // Exact match or prefix followed by '/'
+    return (s[ps] == '\0' || s[ps] == '/');
+}
+
+static char* __join_linux_prefix_alloc(const char* prefix, const char* container_path)
+{
+    char* norm = __normalize_container_path_linux_alloc(container_path);
+    if (norm == NULL) {
+        return NULL;
+    }
+
+    if (prefix == NULL || prefix[0] == '\0') {
+        return norm;
+    }
+
+    // Normalize prefix: ensure leading '/', no trailing '/'.
+    const char* pfx = prefix;
+    char* pfx_norm = NULL;
+    if (pfx[0] != '/') {
+        size_t n = strlen(pfx);
+        pfx_norm = calloc(n + 2, 1);
+        if (pfx_norm == NULL) {
+            free(norm);
+            return NULL;
+        }
+        pfx_norm[0] = '/';
+        memcpy(pfx_norm + 1, pfx, n + 1);
+        pfx = pfx_norm;
+    }
+
+    size_t pfx_len = strlen(pfx);
+    while (pfx_len > 1 && pfx[pfx_len - 1] == '/') {
+        pfx_len--;
+    }
+
+    if (__starts_with_path_prefix(norm, pfx)) {
+        free(pfx_norm);
+        return norm;
+    }
+
+    // Join pfx + norm (drop leading '/' from norm).
+    const char* rel = norm;
+    while (*rel == '/') {
+        rel++;
+    }
+
+    size_t rel_len = strlen(rel);
+    size_t out_len = pfx_len + 1 + rel_len + 1;
+    char* out = calloc(out_len, 1);
+    if (out == NULL) {
+        free(pfx_norm);
+        free(norm);
+        return NULL;
+    }
+
+    memcpy(out, pfx, pfx_len);
+    out[pfx_len] = '/';
+    memcpy(out + pfx_len + 1, rel, rel_len);
+    out[pfx_len + 1 + rel_len] = '\0';
+
+    free(pfx_norm);
+    free(norm);
+    return out;
+}
 
 static char* __normalize_container_path_linux_alloc(const char* p)
 {
@@ -310,9 +390,12 @@ static int __append_mapped_dir_entry(
     }
 
     char* esc_host = __json_escape_utf8(host_path);
-    char* norm_container = ctx->linux_container
-        ? __normalize_container_path_linux_alloc(container_path)
-        : __normalize_container_path_win_alloc(container_path);
+    char* norm_container = NULL;
+    if (ctx->linux_container) {
+        norm_container = __join_linux_prefix_alloc(ctx->linux_container_prefix, container_path);
+    } else {
+        norm_container = __normalize_container_path_win_alloc(container_path);
+    }
     if (esc_host == NULL || norm_container == NULL) {
         free(esc_host);
         free(norm_container);
@@ -453,7 +536,31 @@ static wchar_t* __hcs_create_container_config_schema1(
     // Mapped directories: always mount a staging folder for file transfers, plus any HOST_DIRECTORY layers.
     if (__appendf(&json, &cap, &len, ",\"MappedDirectories\":[") != 0) goto fail;
     {
-        struct __mapped_dir_build_ctx mctx = { .json = &json, .cap = &cap, .len = &len, .emitted = 0, .linux_container = linux_container };
+        // LCOW: when we map a host rootfs folder, we treat that mapping as the OCI root and
+        // rebase *all other mounts* under it so they survive pivot_root.
+        const int lcow_has_rootfs = (linux_container && layer_folder_path != NULL && layer_folder_path[0] != '\0');
+
+        // Map rootfs itself first without prefixing.
+        if (lcow_has_rootfs) {
+            struct __mapped_dir_build_ctx rootctx = {
+                .json = &json,
+                .cap = &cap,
+                .len = &len,
+                .emitted = 0,
+                .linux_container = linux_container,
+                .linux_container_prefix = NULL,
+            };
+            if (__append_mapped_dir_entry(&rootctx, layer_folder_path, "/chef/rootfs", 0) != 0) goto fail;
+        }
+
+        struct __mapped_dir_build_ctx mctx = {
+            .json = &json,
+            .cap = &cap,
+            .len = &len,
+            .emitted = lcow_has_rootfs ? 1 : 0,
+            .linux_container = linux_container,
+            .linux_container_prefix = lcow_has_rootfs ? "/chef/rootfs" : NULL,
+        };
 
         // Built-in staging mount
         char stage_host[MAX_PATH];
@@ -1108,11 +1215,16 @@ int __hcs_create_process(
     size_t args_cap = 0;
     size_t args_len = 0;
 
+    // LCOW: optional OCI spec JSON (raw) used by Linux GCS.
+    char* oci_spec_utf8 = NULL;
+    size_t oci_cap = 0;
+    size_t oci_len = 0;
+
     if (!container || !container->hcs_system || !options || !options->path) {
         return -1;
     }
 
-    VLOG_DEBUG("containerv[hcs]", "creating process in VM: %s\n", options->path);
+    VLOG_DEBUG("containerv[hcs]", "creating process in compute system: %s\n", options->path);
 
     const int guest_is_windows = (container->guest_is_windows != 0);
 
@@ -1226,6 +1338,22 @@ int __hcs_create_process(
         }
 
         if (__appendf(&args_json_utf8, &args_cap, &args_len, "]") != 0) {
+            goto cleanup;
+        }
+    }
+
+    // If we're running a Linux container compute system (LCOW), prefer OCISpecification.
+    // Rootfs is expected to be mapped into the container at /chef/rootfs.
+    if (!guest_is_windows && container->hcs_is_vm == 0) {
+        struct containerv_oci_linux_spec_params p = {
+            .args_json = (args_json_utf8 != NULL) ? args_json_utf8 : "[]",
+            .envv = (const char* const*)options->envv,
+            .root_path = "/chef/rootfs",
+            .cwd = "/",
+            .hostname = "chef",
+        };
+
+        if (containerv_oci_build_linux_spec_json(&p, &oci_spec_utf8) != 0) {
             goto cleanup;
         }
     }
@@ -1490,7 +1618,7 @@ int __hcs_create_process(
         // Build process configuration JSON (UTF-8) then convert to wide.
         const char* working_dir = guest_is_windows ? "C:\\\\" : "/";
         const char* emulate_console = guest_is_windows ? "true" : "false";
-        const char* create_in_uvm = (!guest_is_windows && container->hcs_is_vm == 0) ? "true" : "false";
+        const char* create_in_uvm = (!guest_is_windows && container->hcs_is_vm == 0 && oci_spec_utf8 == NULL) ? "true" : "false";
         if (guest_is_windows) {
             if (__appendf(
                     &json_utf8,
@@ -1517,7 +1645,7 @@ int __hcs_create_process(
                 goto cleanup;
             }
         } else {
-            // Linux guest: prefer CommandArgs (supported by Linux GCS).
+            // Linux guest: prefer CommandArgs, and include OCISpecification for LCOW when available.
             if (__appendf(
                     &json_utf8,
                     &json_cap,
@@ -1541,6 +1669,40 @@ int __hcs_create_process(
                 options->create_stdio_pipes ? "true" : "false",
                 options->create_stdio_pipes ? "true" : "false") != 0) {
                 goto cleanup;
+            }
+
+            // If we emitted the OCISpecification key, rebuild with the raw JSON value.
+            if (oci_spec_utf8 != NULL) {
+                free(json_utf8);
+                json_utf8 = NULL;
+                json_cap = 0;
+                json_len = 0;
+
+                if (__appendf(
+                        &json_utf8,
+                        &json_cap,
+                        &json_len,
+                        "{"
+                        "\"CommandArgs\":%s,"
+                        "\"WorkingDirectory\":\"%s\"," 
+                        "\"CreateInUtilityVm\":false,"
+                        "\"OCISpecification\":%s,"
+                        "\"Environment\":%s,"
+                        "\"EmulateConsole\":%s,"
+                        "\"CreateStdInPipe\":%s,"
+                        "\"CreateStdOutPipe\":%s,"
+                        "\"CreateStdErrPipe\":%s"
+                        "}",
+                        (args_json_utf8 != NULL) ? args_json_utf8 : "[]",
+                        working_dir,
+                        oci_spec_utf8,
+                        env_utf8,
+                        emulate_console,
+                        options->create_stdio_pipes ? "true" : "false",
+                        options->create_stdio_pipes ? "true" : "false",
+                        options->create_stdio_pipes ? "true" : "false") != 0) {
+                    goto cleanup;
+                }
             }
         }
 
@@ -1654,6 +1816,7 @@ cleanup:
     free(env_utf8);
     free(esc_cmd);
     free(args_json_utf8);
+    free(oci_spec_utf8);
     if (process_config) {
         free(process_config);
     }

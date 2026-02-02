@@ -1080,6 +1080,38 @@ static int __is_hcs_lcow_mode(const struct containerv_options* options)
            (options->windows_container_type == WINDOWS_CONTAINER_TYPE_LINUX);
 }
 
+static void __ensure_lcow_rootfs_mountpoint_dirs(const char* rootfs_host_path)
+{
+    if (rootfs_host_path == NULL || rootfs_host_path[0] == '\0') {
+        return;
+    }
+
+    char chef_dir[MAX_PATH];
+    char staging_dir[MAX_PATH];
+    char proc_dir[MAX_PATH];
+    char sys_dir[MAX_PATH];
+    char dev_dir[MAX_PATH];
+    char dev_pts_dir[MAX_PATH];
+    char dev_shm_dir[MAX_PATH];
+
+    snprintf(chef_dir, sizeof(chef_dir), "%s\\chef", rootfs_host_path);
+    snprintf(staging_dir, sizeof(staging_dir), "%s\\chef\\staging", rootfs_host_path);
+    snprintf(proc_dir, sizeof(proc_dir), "%s\\proc", rootfs_host_path);
+    snprintf(sys_dir, sizeof(sys_dir), "%s\\sys", rootfs_host_path);
+    snprintf(dev_dir, sizeof(dev_dir), "%s\\dev", rootfs_host_path);
+    snprintf(dev_pts_dir, sizeof(dev_pts_dir), "%s\\dev\\pts", rootfs_host_path);
+    snprintf(dev_shm_dir, sizeof(dev_shm_dir), "%s\\dev\\shm", rootfs_host_path);
+
+    // Best-effort: these are only mountpoints for bind mounts.
+    CreateDirectoryA(chef_dir, NULL);
+    CreateDirectoryA(staging_dir, NULL);
+    CreateDirectoryA(proc_dir, NULL);
+    CreateDirectoryA(sys_dir, NULL);
+    CreateDirectoryA(dev_dir, NULL);
+    CreateDirectoryA(dev_pts_dir, NULL);
+    CreateDirectoryA(dev_shm_dir, NULL);
+}
+
 static int __read_layerchain_json(const char* layer_folder_path, char*** paths_out, int* count_out)
 {
     if (paths_out == NULL || count_out == NULL || layer_folder_path == NULL || layer_folder_path[0] == '\0') {
@@ -1333,6 +1365,9 @@ int containerv_create(
                 return -1;
             }
         }
+        if (__is_hcs_lcow_mode(options) && rootfs_exists) {
+            __ensure_lcow_rootfs_mountpoint_dirs(rootFs);
+        }
         if (!container->guest_is_windows) {
             // LCOW bring-up path (OCI-in-UVM will be added in later steps).
         }
@@ -1444,7 +1479,8 @@ int containerv_create(
                 return -1;
             }
 
-            if (__hcs_create_container_system(container, options, NULL, NULL, 0, image_path, 1) != 0) {
+            const char* lcow_rootfs_host = rootfs_exists ? rootFs : NULL;
+            if (__hcs_create_container_system(container, options, lcow_rootfs_host, NULL, 0, image_path, 1) != 0) {
                 VLOG_ERROR("containerv", "containerv_create: failed to create LCOW HCS container compute system\n");
                 __container_delete(container);
                 return -1;
