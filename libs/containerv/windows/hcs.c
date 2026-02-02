@@ -23,6 +23,8 @@
 #include <wchar.h>
 #include <vlog.h>
 
+#include <chef/containerv/layers.h>
+
 #include "private.h"
 
 // Some Windows SDKs don't expose these HCS_* HRESULTs unless additional headers are used.
@@ -164,6 +166,563 @@ static char* __json_escape_utf8(const char* s)
     }
     out[j] = '\0';
     return out;
+}
+
+static wchar_t* __utf8_to_wide_alloc(const char* s)
+{
+    if (s == NULL) {
+        return NULL;
+    }
+
+    int needed = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
+    if (needed <= 0) {
+        return NULL;
+    }
+
+    wchar_t* out = calloc((size_t)needed, sizeof(wchar_t));
+    if (out == NULL) {
+        return NULL;
+    }
+
+    if (MultiByteToWideChar(CP_UTF8, 0, s, -1, out, needed) == 0) {
+        free(out);
+        return NULL;
+    }
+    return out;
+}
+
+static int __looks_like_guid(const char* s)
+{
+    if (s == NULL) {
+        return 0;
+    }
+    // Expected: 8-4-4-4-12 (36 chars)
+    if (strlen(s) != 36) {
+        return 0;
+    }
+    const int dash_pos[] = {8, 13, 18, 23};
+    for (int i = 0; i < 4; i++) {
+        if (s[dash_pos[i]] != '-') {
+            return 0;
+        }
+    }
+    for (int i = 0; i < 36; i++) {
+        if (s[i] == '-') {
+            continue;
+        }
+        char c = s[i];
+        int is_hex = ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'));
+        if (!is_hex) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static char* __normalize_container_path_win_alloc(const char* p)
+{
+    if (p == NULL) {
+        return NULL;
+    }
+    if (p[0] == '\\' || (strlen(p) >= 2 && p[1] == ':')) {
+        return _strdup(p);
+    }
+    if (p[0] == '/') {
+        // Map POSIX-ish paths to C:\<path> for convenience.
+        size_t n = strlen(p);
+        // Worst case: same length + "C:" prefix
+        char* out = calloc(n + 3, 1);
+        if (out == NULL) {
+            return NULL;
+        }
+        out[0] = 'C';
+        out[1] = ':';
+        size_t j = 2;
+        for (size_t i = 0; i < n; i++) {
+            char c = p[i];
+            if (c == '/') {
+                out[j++] = '\\';
+            } else {
+                out[j++] = c;
+            }
+        }
+        out[j] = 0;
+        return out;
+    }
+    // Relative-ish: treat as C:\<p>
+    size_t n = strlen(p);
+    char* out = calloc(n + 4, 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    snprintf(out, n + 4, "C:\\%s", p);
+    for (char* q = out; *q; ++q) {
+        if (*q == '/') {
+            *q = '\\';
+        }
+    }
+    return out;
+}
+
+struct __mapped_dir_build_ctx {
+    char**  json;
+    size_t* cap;
+    size_t* len;
+    int     emitted;
+    int     linux_container;
+};
+
+static char* __normalize_container_path_linux_alloc(const char* p)
+{
+    if (p == NULL || p[0] == '\0') {
+        return _strdup("/");
+    }
+
+    // Replace backslashes with forward slashes and ensure leading '/'.
+    const char* s = p;
+    size_t n = strlen(s);
+    int need_leading = (s[0] != '/');
+    char* out = calloc(n + (need_leading ? 2 : 1), 1);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    size_t j = 0;
+    if (need_leading) {
+        out[j++] = '/';
+    }
+    for (size_t i = 0; i < n; i++) {
+        char c = s[i];
+        out[j++] = (c == '\\') ? '/' : c;
+    }
+    out[j] = '\0';
+    return out;
+}
+
+static int __append_mapped_dir_entry(
+    struct __mapped_dir_build_ctx* ctx,
+    const char* host_path,
+    const char* container_path,
+    int readonly)
+{
+    if (ctx == NULL || ctx->json == NULL || ctx->cap == NULL || ctx->len == NULL) {
+        return -1;
+    }
+
+    char* esc_host = __json_escape_utf8(host_path);
+    char* norm_container = ctx->linux_container
+        ? __normalize_container_path_linux_alloc(container_path)
+        : __normalize_container_path_win_alloc(container_path);
+    if (esc_host == NULL || norm_container == NULL) {
+        free(esc_host);
+        free(norm_container);
+        return -1;
+    }
+    char* esc_container = __json_escape_utf8(norm_container);
+    free(norm_container);
+    if (esc_container == NULL) {
+        free(esc_host);
+        return -1;
+    }
+
+    int rc = __appendf(
+        ctx->json,
+        ctx->cap,
+        ctx->len,
+        "%s{\"HostPath\":\"%s\",\"ContainerPath\":\"%s\",\"ReadOnly\":%s%s}",
+        ctx->emitted == 0 ? "" : ",",
+        esc_host,
+        esc_container,
+        readonly ? "true" : "false",
+        ctx->linux_container ? ",\"LinuxMetadata\":true" : "");
+    free(esc_host);
+    free(esc_container);
+    if (rc != 0) {
+        return -1;
+    }
+    ctx->emitted++;
+    return 0;
+}
+
+static int __mapped_dir_cb(const char* host_path, const char* container_path, int readonly, void* user_context)
+{
+    struct __mapped_dir_build_ctx* ctx = (struct __mapped_dir_build_ctx*)user_context;
+    return __append_mapped_dir_entry(ctx, host_path, container_path, readonly);
+}
+
+static void __derive_layer_id_from_path(const char* path, char out36[37])
+{
+    // Prefer basename if it looks like a GUID (common for windowsfilter layer folders).
+    const char* base = path;
+    if (path != NULL) {
+        const char* s1 = strrchr(path, '\\');
+        const char* s2 = strrchr(path, '/');
+        base = s1;
+        if (s2 != NULL && (base == NULL || s2 > base)) {
+            base = s2;
+        }
+        if (base != NULL) {
+            base++;
+        } else {
+            base = path;
+        }
+    }
+
+    if (__looks_like_guid(base)) {
+        strncpy(out36, base, 36);
+        out36[36] = 0;
+        return;
+    }
+
+    // Fallback: stable pseudo-GUID derived from FNV1a of the path.
+    uint64_t h1 = 1469598103934665603ull;
+    uint64_t h2 = 1099511628211ull;
+    if (path != NULL) {
+        for (const unsigned char* p = (const unsigned char*)path; *p; ++p) {
+            h1 ^= (uint64_t)(*p);
+            h1 *= 1099511628211ull;
+        }
+        for (const unsigned char* p = (const unsigned char*)path; *p; ++p) {
+            h2 ^= (uint64_t)(*p);
+            h2 *= 1469598103934665603ull;
+        }
+    }
+
+    unsigned int a = (unsigned int)(h1 & 0xffffffffu);
+    unsigned short b = (unsigned short)((h1 >> 32) & 0xffffu);
+    unsigned short c = (unsigned short)((h1 >> 48) & 0xffffu);
+    unsigned short d = (unsigned short)(h2 & 0xffffu);
+    unsigned long long e = (unsigned long long)((h2 >> 16) & 0xffffffffffffull);
+    (void)snprintf(out36, 37, "%08x-%04x-%04x-%04x-%012llx", a, b, c, d, e);
+    out36[36] = 0;
+}
+
+static wchar_t* __hcs_create_container_config_schema1(
+    struct containerv_container* container,
+    struct containerv_options* options,
+    const char* layer_folder_path,
+    const char* const* parent_layers,
+    int parent_layer_count,
+    const char* utilityvm_path,
+    int linux_container)
+{
+    if (container == NULL || parent_layer_count < 0) {
+        return NULL;
+    }
+
+    // Build UTF-8 JSON and convert to wide.
+    char* json = NULL;
+    size_t cap = 0;
+    size_t len = 0;
+
+    char* esc_name = __json_escape_utf8(container->id);
+    char* esc_owner = __json_escape_utf8("chef");
+    char* esc_layer_folder = (layer_folder_path != NULL) ? __json_escape_utf8(layer_folder_path) : _strdup("");
+    char* esc_hostname = __json_escape_utf8(container->hostname ? container->hostname : container->id);
+    if (esc_name == NULL || esc_owner == NULL || esc_layer_folder == NULL || esc_hostname == NULL) {
+        free(esc_name);
+        free(esc_owner);
+        free(esc_layer_folder);
+        free(esc_hostname);
+        free(json);
+        return NULL;
+    }
+
+    int hv = 0;
+    if (linux_container) {
+        hv = 1; // LCOW always uses a utility VM.
+    } else if (options != NULL && options->windows_container.isolation == WINDOWS_CONTAINER_ISOLATION_HYPERV) {
+        hv = 1;
+    }
+
+    if (__appendf(&json, &cap, &len, "{") != 0) goto fail;
+    if (__appendf(&json, &cap, &len, "\"SystemType\":\"Container\"") != 0) goto fail;
+    if (__appendf(&json, &cap, &len, ",\"Name\":\"%s\"", esc_name) != 0) goto fail;
+    if (__appendf(&json, &cap, &len, ",\"Owner\":\"%s\"", esc_owner) != 0) goto fail;
+    if (__appendf(&json, &cap, &len, ",\"HostName\":\"%s\"", esc_hostname) != 0) goto fail;
+
+    // Windows containers: HCS expects a writable layer folder plus parent layers.
+    // LCOW: LayerFolderPath/Layers are not required for UVM bring-up.
+    if (!linux_container) {
+        if (layer_folder_path == NULL || layer_folder_path[0] == '\0' || parent_layers == NULL) {
+            goto fail;
+        }
+        if (__appendf(&json, &cap, &len, ",\"LayerFolderPath\":\"%s\"", esc_layer_folder) != 0) goto fail;
+    }
+
+    // Mapped directories: always mount a staging folder for file transfers, plus any HOST_DIRECTORY layers.
+    if (__appendf(&json, &cap, &len, ",\"MappedDirectories\":[") != 0) goto fail;
+    {
+        struct __mapped_dir_build_ctx mctx = { .json = &json, .cap = &cap, .len = &len, .emitted = 0, .linux_container = linux_container };
+
+        // Built-in staging mount
+        char stage_host[MAX_PATH];
+        snprintf(stage_host, sizeof(stage_host), "%s\\staging", container->runtime_dir);
+        if (__append_mapped_dir_entry(&mctx, stage_host, linux_container ? "/chef/staging" : "C:\\chef\\staging", 0) != 0) goto fail;
+
+        // Host-directory layers
+        if (options != NULL && options->layers != NULL) {
+            if (containerv_layers_iterate(options->layers, CONTAINERV_LAYER_HOST_DIRECTORY, __mapped_dir_cb, &mctx) != 0) {
+                // If iteration fails, be conservative.
+                goto fail;
+            }
+        }
+    }
+    if (__appendf(&json, &cap, &len, "]") != 0) goto fail;
+
+    if (linux_container) {
+        if (__appendf(&json, &cap, &len, ",\"ContainerType\":\"Linux\"") != 0) goto fail;
+    }
+
+    if (!linux_container) {
+        if (__appendf(&json, &cap, &len, ",\"Layers\":[") != 0) goto fail;
+        int emitted = 0;
+        for (int i = 0; i < parent_layer_count; i++) {
+            if (parent_layers[i] == NULL || parent_layers[i][0] == '\0') {
+                continue;
+            }
+
+            char idbuf[37];
+            __derive_layer_id_from_path(parent_layers[i], idbuf);
+
+            char* esc_layer_path = __json_escape_utf8(parent_layers[i]);
+            if (esc_layer_path == NULL) {
+                goto fail;
+            }
+
+            if (__appendf(&json, &cap, &len, "%s{\"ID\":\"%s\",\"Path\":\"%s\"}", emitted == 0 ? "" : ",", idbuf, esc_layer_path) != 0) {
+                free(esc_layer_path);
+                goto fail;
+            }
+            free(esc_layer_path);
+            emitted++;
+        }
+        if (__appendf(&json, &cap, &len, "]") != 0) goto fail;
+    } else {
+        // LCOW: no windowsfilter parent layers required for UVM bring-up.
+        if (__appendf(&json, &cap, &len, ",\"Layers\":[ ]") != 0) goto fail;
+    }
+
+    // Hyper-V isolation (schema1)
+    if (hv) {
+        if (__appendf(&json, &cap, &len, ",\"HvPartition\":true") != 0) goto fail;
+        if (utilityvm_path != NULL && utilityvm_path[0] != '\0') {
+            char* esc_uvm = __json_escape_utf8(utilityvm_path);
+            if (esc_uvm == NULL) {
+                goto fail;
+            }
+
+            if (!linux_container) {
+                if (__appendf(&json, &cap, &len, ",\"HvRuntime\":{\"ImagePath\":\"%s\"}", esc_uvm) != 0) {
+                    free(esc_uvm);
+                    goto fail;
+                }
+                free(esc_uvm);
+            } else {
+                // LCOW: include optional kernel/initrd/boot params under HvRuntime.
+                const char* kf = (options && options->windows_lcow.kernel_file) ? options->windows_lcow.kernel_file : NULL;
+                const char* ir = (options && options->windows_lcow.initrd_file) ? options->windows_lcow.initrd_file : NULL;
+                const char* bp = (options && options->windows_lcow.boot_parameters) ? options->windows_lcow.boot_parameters : NULL;
+
+                char* esc_kf = (kf && kf[0]) ? __json_escape_utf8(kf) : NULL;
+                char* esc_ir = (ir && ir[0]) ? __json_escape_utf8(ir) : NULL;
+                char* esc_bp = (bp && bp[0]) ? __json_escape_utf8(bp) : NULL;
+
+                if ((kf && kf[0] && esc_kf == NULL) || (ir && ir[0] && esc_ir == NULL) || (bp && bp[0] && esc_bp == NULL)) {
+                    free(esc_uvm);
+                    free(esc_kf);
+                    free(esc_ir);
+                    free(esc_bp);
+                    goto fail;
+                }
+
+                if (__appendf(&json, &cap, &len, ",\"HvRuntime\":{\"ImagePath\":\"%s\"", esc_uvm) != 0) {
+                    free(esc_uvm);
+                    free(esc_kf);
+                    free(esc_ir);
+                    free(esc_bp);
+                    goto fail;
+                }
+
+                if (esc_kf != NULL) {
+                    if (__appendf(&json, &cap, &len, ",\"LinuxKernelFile\":\"%s\"", esc_kf) != 0) {
+                        free(esc_uvm);
+                        free(esc_kf);
+                        free(esc_ir);
+                        free(esc_bp);
+                        goto fail;
+                    }
+                }
+
+                if (esc_ir != NULL) {
+                    if (__appendf(&json, &cap, &len, ",\"LinuxInitrdFile\":\"%s\"", esc_ir) != 0) {
+                        free(esc_uvm);
+                        free(esc_kf);
+                        free(esc_ir);
+                        free(esc_bp);
+                        goto fail;
+                    }
+                }
+
+                if (esc_bp != NULL) {
+                    if (__appendf(&json, &cap, &len, ",\"LinuxBootParameters\":\"%s\"", esc_bp) != 0) {
+                        free(esc_uvm);
+                        free(esc_kf);
+                        free(esc_ir);
+                        free(esc_bp);
+                        goto fail;
+                    }
+                }
+
+                if (__appendf(&json, &cap, &len, "}") != 0) {
+                    free(esc_uvm);
+                    free(esc_kf);
+                    free(esc_ir);
+                    free(esc_bp);
+                    goto fail;
+                }
+
+                free(esc_uvm);
+                free(esc_kf);
+                free(esc_ir);
+                free(esc_bp);
+            }
+        }
+    } else {
+        if (__appendf(&json, &cap, &len, ",\"HvPartition\":false") != 0) goto fail;
+    }
+
+    // Termination behavior
+    if (__appendf(&json, &cap, &len, ",\"TerminateOnLastHandleClosed\":true") != 0) goto fail;
+
+    if (__appendf(&json, &cap, &len, "}") != 0) goto fail;
+
+    {
+        wchar_t* w = __utf8_to_wide_alloc(json);
+        free(esc_name);
+        free(esc_owner);
+        free(esc_layer_folder);
+        free(esc_hostname);
+        free(json);
+        return w;
+    }
+
+fail:
+    free(esc_name);
+    free(esc_owner);
+    free(esc_layer_folder);
+    free(esc_hostname);
+    free(json);
+    return NULL;
+}
+
+int __hcs_create_container_system(
+    struct containerv_container* container,
+    struct containerv_options* options,
+    const char* layer_folder_path,
+    const char* const* parent_layers,
+    int parent_layer_count,
+    const char* utilityvm_path,
+    int linux_container)
+{
+    HCS_OPERATION operation = NULL;
+    wchar_t* config = NULL;
+    HRESULT hr;
+    int status = -1;
+
+    if (!container || !container->vm_id) {
+        return -1;
+    }
+
+    VLOG_DEBUG("containerv[hcs]", "creating HCS container compute system for %s\n", container->id);
+
+    if (__hcs_initialize() != 0) {
+        return -1;
+    }
+
+    config = __hcs_create_container_config_schema1(
+        container,
+        options,
+        layer_folder_path,
+        parent_layers,
+        parent_layer_count,
+        utilityvm_path,
+        linux_container);
+    if (config == NULL) {
+        VLOG_ERROR("containerv[hcs]", "failed to create container configuration\n");
+        return -1;
+    }
+
+    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation: 0x%lx\n", hr);
+        goto cleanup;
+    }
+
+    hr = g_hcs.HcsCreateComputeSystem(
+        container->vm_id,
+        config,
+        operation,
+        NULL,
+        &container->hcs_system);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv[hcs]", "failed to create container compute system: 0x%lx\n", hr);
+        goto cleanup;
+    }
+
+    if (g_hcs.HcsWaitForOperationResult != NULL) {
+        PWSTR resultDoc = NULL;
+        hr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
+        __hcs_localfree_wstr(resultDoc);
+        if (FAILED(hr)) {
+            VLOG_ERROR("containerv[hcs]", "container create wait failed: 0x%lx\n", hr);
+            g_hcs.HcsCloseComputeSystem(container->hcs_system);
+            container->hcs_system = NULL;
+            goto cleanup;
+        }
+    }
+
+    g_hcs.HcsCloseOperation(operation);
+    operation = NULL;
+    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation for start: 0x%lx\n", hr);
+        g_hcs.HcsCloseComputeSystem(container->hcs_system);
+        container->hcs_system = NULL;
+        goto cleanup;
+    }
+
+    hr = g_hcs.HcsStartComputeSystem(container->hcs_system, operation, NULL);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv[hcs]", "failed to start container compute system: 0x%lx\n", hr);
+        g_hcs.HcsCloseComputeSystem(container->hcs_system);
+        container->hcs_system = NULL;
+        goto cleanup;
+    }
+
+    if (g_hcs.HcsWaitForOperationResult != NULL) {
+        PWSTR resultDoc = NULL;
+        hr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
+        __hcs_localfree_wstr(resultDoc);
+        if (FAILED(hr)) {
+            VLOG_ERROR("containerv[hcs]", "container start wait failed: 0x%lx\n", hr);
+            g_hcs.HcsCloseComputeSystem(container->hcs_system);
+            container->hcs_system = NULL;
+            goto cleanup;
+        }
+    }
+
+    container->vm_started = 1;
+    status = 0;
+
+cleanup:
+    if (config) {
+        free(config);
+    }
+    if (operation) {
+        g_hcs.HcsCloseOperation(operation);
+    }
+    return status;
 }
 
 // HCS operation callback (stub for now)
@@ -931,6 +1490,7 @@ int __hcs_create_process(
         // Build process configuration JSON (UTF-8) then convert to wide.
         const char* working_dir = guest_is_windows ? "C:\\\\" : "/";
         const char* emulate_console = guest_is_windows ? "true" : "false";
+        const char* create_in_uvm = (!guest_is_windows && container->hcs_is_vm == 0) ? "true" : "false";
         if (guest_is_windows) {
             if (__appendf(
                     &json_utf8,
@@ -965,6 +1525,7 @@ int __hcs_create_process(
                     "{"
                     "\"CommandArgs\":%s,"
                     "\"WorkingDirectory\":\"%s\"," 
+                    "\"CreateInUtilityVm\":%s,"
                     "\"Environment\":%s,"
                     "\"EmulateConsole\":%s,"
                 "\"CreateStdInPipe\":%s,"
@@ -973,6 +1534,7 @@ int __hcs_create_process(
                     "}",
                     (args_json_utf8 != NULL) ? args_json_utf8 : "[]",
                     working_dir,
+                create_in_uvm,
                 env_utf8,
                 emulate_console,
                 options->create_stdio_pipes ? "true" : "false",

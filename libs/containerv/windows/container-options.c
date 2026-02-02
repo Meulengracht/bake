@@ -37,6 +37,20 @@ struct containerv_options* containerv_options_new(void)
     options->rootfs.type = WINDOWS_ROOTFS_WSL_UBUNTU;
     options->rootfs.version = "22.04";     // Ubuntu 22.04 LTS
     options->rootfs.enable_updates = 1;    // Enable updates by default
+
+    // Default to legacy VM-backed mode for compatibility.
+    options->windows_runtime = WINDOWS_RUNTIME_MODE_VM;
+    options->windows_container.isolation = WINDOWS_CONTAINER_ISOLATION_PROCESS;
+    options->windows_container.utilityvm_path = NULL;
+
+    // Default to WCOW when using HCS container mode.
+    options->windows_container_type = WINDOWS_CONTAINER_TYPE_WINDOWS;
+
+    // LCOW defaults: unset (caller must configure).
+    options->windows_lcow.image_path = NULL;
+    options->windows_lcow.kernel_file = NULL;
+    options->windows_lcow.initrd_file = NULL;
+    options->windows_lcow.boot_parameters = NULL;
     
     return options;
 }
@@ -165,6 +179,94 @@ void containerv_options_set_resource_limits(
     options->limits.cpu_percent = cpu_percent;
     options->limits.process_count = process_count;
     options->limits.io_bandwidth = NULL; // Not implemented yet
+}
+
+void containerv_options_set_windows_runtime_mode(
+    struct containerv_options*            options,
+    enum containerv_windows_runtime_mode  mode)
+{
+    if (options == NULL) {
+        return;
+    }
+
+    switch (mode) {
+        case CV_WIN_RUNTIME_VM:
+            options->windows_runtime = WINDOWS_RUNTIME_MODE_VM;
+            break;
+        case CV_WIN_RUNTIME_HCS_CONTAINER:
+            options->windows_runtime = WINDOWS_RUNTIME_MODE_HCS_CONTAINER;
+            break;
+        default:
+            // Ignore unknown values
+            break;
+    }
+}
+
+void containerv_options_set_windows_container_isolation(
+    struct containerv_options*                    options,
+    enum containerv_windows_container_isolation   isolation)
+{
+    if (options == NULL) {
+        return;
+    }
+
+    switch (isolation) {
+        case CV_WIN_CONTAINER_ISOLATION_PROCESS:
+            options->windows_container.isolation = WINDOWS_CONTAINER_ISOLATION_PROCESS;
+            break;
+        case CV_WIN_CONTAINER_ISOLATION_HYPERV:
+            options->windows_container.isolation = WINDOWS_CONTAINER_ISOLATION_HYPERV;
+            break;
+        default:
+            break;
+    }
+}
+
+void containerv_options_set_windows_container_utilityvm_path(
+    struct containerv_options* options,
+    const char*                utilityvm_path)
+{
+    if (options == NULL) {
+        return;
+    }
+    options->windows_container.utilityvm_path = utilityvm_path;
+}
+
+void containerv_options_set_windows_container_type(
+    struct containerv_options*              options,
+    enum containerv_windows_container_type  type)
+{
+    if (options == NULL) {
+        return;
+    }
+
+    switch (type) {
+        case CV_WIN_CONTAINER_TYPE_WINDOWS:
+            options->windows_container_type = WINDOWS_CONTAINER_TYPE_WINDOWS;
+            break;
+        case CV_WIN_CONTAINER_TYPE_LINUX:
+            options->windows_container_type = WINDOWS_CONTAINER_TYPE_LINUX;
+            break;
+        default:
+            break;
+    }
+}
+
+void containerv_options_set_windows_lcow_hvruntime(
+    struct containerv_options* options,
+    const char*                uvm_image_path,
+    const char*                kernel_file,
+    const char*                initrd_file,
+    const char*                boot_parameters)
+{
+    if (options == NULL) {
+        return;
+    }
+
+    options->windows_lcow.image_path = uvm_image_path;
+    options->windows_lcow.kernel_file = kernel_file;
+    options->windows_lcow.initrd_file = initrd_file;
+    options->windows_lcow.boot_parameters = boot_parameters;
 }
 
 void containerv_options_set_rootfs_updates(

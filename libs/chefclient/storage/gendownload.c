@@ -51,13 +51,13 @@ static const char* g_download0 = "downloading [";
 
 static void __update_progress(struct download_context* downloadContext)
 {
-    char progressBuffer[32];
-    char totalSizeBuffer[32];
-    char buffer[64] = { 0 };
-    int  index = 0;
-    int  percent;
+    char   progressBuffer[32];
+    char   totalSizeBuffer[32];
+    char   buffer[64] = { 0 };
+    size_t index = 0;
+    int    percent;
 
-    percent = (downloadContext->bytes_downloaded * 100) / downloadContext->bytes_total;
+    percent = (int)((downloadContext->bytes_downloaded * 100) / downloadContext->bytes_total);
     
     // print a fancy progress bar with percentage, download progress and a moving
     // bar being filled    

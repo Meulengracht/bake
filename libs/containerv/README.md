@@ -14,19 +14,47 @@ Uses native Linux container technologies:
 See [linux/](linux/) for implementation details.
 
 ### Windows
-Uses Windows HyperV technology:
-- **HyperV VMs**: Lightweight virtual machines for isolation
-- **Process Isolation**: Windows process isolation within VMs
-- **Filesystem Isolation**: Isolated rootfs per container
-- **Network Isolation**: VM-level network stack isolation
+Windows support now has two distinct backends:
+
+- **HCS containers (true Windows containers)**: Uses HCS "Container" compute systems (process isolation or Hyper-V isolation).
+- **VM-backed (legacy)**: Uses an HCS "VirtualMachine" compute system (one VM per container) and boots a VHDX.
 
 See [windows/](windows/) for implementation details.
 
-## VM Disk Contract (Windows Host)
+## Windows Rootfs Contracts
+
+### HCS container mode (true containers)
+
+When using the HCS container backend, `BASE_ROOTFS` is expected to point at a pre-prepared **windowsfilter container folder** (i.e., a writable layer folder that contains `layerchain.json` describing its parent layers).
+
+- Hyper-V isolation additionally requires a UtilityVM image (typically `...\<base-layer>\UtilityVM`).
+- This backend uses HCS mapped directories for host bind mounts and a built-in staging folder.
+
+#### LCOW (Linux containers on Windows)
+
+LCOW support is being implemented using the standard **OCI-in-UVM** approach:
+
+- Container type selection: use the HCS container backend and set container type to Linux.
+- Requires a Linux utility VM (UVM) image directory plus (optionally) kernel/initrd/boot parameters.
+
+In `cvd` (Windows host), these are currently wired via environment variables:
+
+- `CHEF_WINDOWS_RUNTIME=container` (default)
+- `CHEF_WINDOWS_CONTAINER_TYPE=linux`
+- `CHEF_LCOW_UVM_IMAGE_PATH` (required)
+- `CHEF_LCOW_KERNEL_FILE` (optional; file name under `CHEF_LCOW_UVM_IMAGE_PATH`)
+- `CHEF_LCOW_INITRD_FILE` (optional; file name under `CHEF_LCOW_UVM_IMAGE_PATH`)
+- `CHEF_LCOW_BOOT_PARAMETERS` (optional)
+
+Current status: LCOW compute-system bring-up is present; OCI-spec/rootfs plumbing is the next step.
+
+### VM-backed mode (legacy)
+
+## VM Disk Contract (Windows Host, VM-backed legacy)
 
 When running VM-backed containers on a Windows host, containerv attaches a single virtual disk to the VM at runtime: `%runtime_dir%\container.vhdx`.
 
-This disk contract applies only to **Windows-hosted Hyper-V (VM-backed)** containers. On **Linux hosts**, containerv uses native Linux container mechanisms and expects a normal root filesystem directory tree (not a virtual disk image).
+This disk contract applies only to **Windows VM-backed** containers. On **Linux hosts**, containerv uses native Linux container mechanisms and expects a normal root filesystem directory tree (not a virtual disk image).
 
 The *composed rootfs directory* (from layers) is used as the source material to produce that disk. The expected contract differs by guest OS:
 

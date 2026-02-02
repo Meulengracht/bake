@@ -202,7 +202,7 @@ static char* __record_name(const uint8_t* buffer, int offset)
     return platform_strdup(&buffer[offset + 64]);
 }
 
-static struct mfs_record* __parse_record(const uint8_t* buffer, int offset, uint32_t directoryBucket, uint32_t directoryBucketLength)
+static struct mfs_record* __parse_record(const uint8_t* buffer, uint32_t offset, uint32_t directoryBucket, uint32_t directoryBucketLength)
 {
     struct mfs_record* record;
 
@@ -220,11 +220,11 @@ static struct mfs_record* __parse_record(const uint8_t* buffer, int offset, uint
 
     record->directory_bucket = directoryBucket;
     record->directory_length = directoryBucketLength;
-    record->directory_index = (uint32_t)(offset / MFS_RECORDSIZE);
+    record->directory_index = (uint32_t)(offset / (uint32_t)MFS_RECORDSIZE);
     return record;
 }
 
-static void __write_record(uint8_t* buffer, int offset, struct mfs_record* record)
+static void __write_record(uint8_t* buffer, uint32_t offset, struct mfs_record* record)
 {
     // copy name + terminating null
     memcpy(&buffer[offset + 68], record->name, strlen(record->name) + 1);
@@ -313,9 +313,9 @@ static void __update_record(struct mfs* mfs, struct mfs_record* record)
         mfs->bucket_size * record->directory_length
     );
     uint8_t* buffer = __read_sector(mfs, __BUCKET_SECTOR(record->directory_bucket), mfs->bucket_size * record->directory_length);
-    uint32_t offset = record->directory_index * MFS_RECORDSIZE;
+    uint32_t offset = record->directory_index * (uint32_t)MFS_RECORDSIZE;
     VLOG_DEBUG("mfs", "__update_record: record offset at %u\n", offset);
-    __write_record(buffer, (int)offset, record);
+    __write_record(buffer, offset, record);
     if (mfs->ops.write(__BUCKET_SECTOR(record->directory_bucket), buffer, mfs->bucket_size * record->directory_length, mfs->ops.op_context)) {
         VLOG_FATAL("mfs", "__update_record: failed to update record bucket\n");
     }
@@ -330,22 +330,22 @@ static struct mfs_record* __create_record(struct mfs* mfs, uint32_t directoryBuc
     VLOG_DEBUG("mfs", "__create_record(%u, %s)\n", directoryBucket, recordName);
     
     for (;;) {
-        VLOG_DEBUG("mfs", "__create_record: retrieving link and length of bucket {currentBucket}");
+        VLOG_DEBUG("mfs", "__create_record: retrieving link and length of bucket %u", currentBucket);
         uint32_t bucketLink = mfs_bucket_map_bucket_info(mfs->map, currentBucket, &bucketLength);
-        VLOG_DEBUG("mfs", "__create_record: reading sector {__BUCKET_SECTOR(currentBucket)}, count {mfs->bucket_size * bucketLength}");
+        VLOG_DEBUG("mfs", "__create_record: reading sector %llu, count %u", __BUCKET_SECTOR(currentBucket), mfs->bucket_size * bucketLength);
         uint8_t* bucketBuffer = __read_sector(mfs, __BUCKET_SECTOR(currentBucket), mfs->bucket_size * bucketLength);
 
         uint32_t bytesToIterate = mfs->bucket_size * bucketLength * mfs->bytes_per_sector;
-        for (int i = 0; i < bytesToIterate; i += MFS_RECORDSIZE) {
+        for (uint32_t i = 0; i < bytesToIterate; i += MFS_RECORDSIZE) {
             struct mfs_record* record;
-            VLOG_DEBUG("mfs", "__create_record: parsing record %i\n", i);
+            VLOG_DEBUG("mfs", "__create_record: parsing record %u\n", i);
             
             record = __parse_record(bucketBuffer, i, currentBucket, bucketLength);
             if (__is_record_used(record)) {
                 continue;
             }
 
-            VLOG_DEBUG("mfs", "__create_record: record %i was available\n", i);
+            VLOG_DEBUG("mfs", "__create_record: record %u was available\n", i);
             record->name = recordName;
             record->flags = flags | MFS_RECORD_FLAG_INUSE;
             record->bucket = MFS_ENDOFCHAIN;

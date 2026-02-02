@@ -236,6 +236,41 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
         return __chef_status_from_errno();
     }
 
+#ifdef CHEF_ON_WINDOWS
+    // Direction B: prefer true Windows containers via HCS container compute systems.
+    // Override with `CHEF_WINDOWS_RUNTIME=vm` to keep legacy VM-backed mode.
+    const char* win_runtime = getenv("CHEF_WINDOWS_RUNTIME");
+    if (win_runtime == NULL || strcmp(win_runtime, "container") == 0 || strcmp(win_runtime, "hcs-container") == 0) {
+        containerv_options_set_windows_runtime_mode(opts, CV_WIN_RUNTIME_HCS_CONTAINER);
+
+        // WCOW vs LCOW selection for the HCS container backend.
+        // Default: WCOW. Set `CHEF_WINDOWS_CONTAINER_TYPE=linux` for LCOW.
+        const char* win_ct = getenv("CHEF_WINDOWS_CONTAINER_TYPE");
+        const int is_lcow = (win_ct != NULL && strcmp(win_ct, "linux") == 0);
+        containerv_options_set_windows_container_type(
+            opts,
+            is_lcow ? CV_WIN_CONTAINER_TYPE_LINUX : CV_WIN_CONTAINER_TYPE_WINDOWS);
+
+        // Default to Hyper-V isolation (true Hyper-V containers). Override with `CHEF_WINDOWS_ISOLATION=process`.
+        const char* win_iso = getenv("CHEF_WINDOWS_ISOLATION");
+        if (win_iso != NULL && strcmp(win_iso, "process") == 0) {
+            containerv_options_set_windows_container_isolation(opts, CV_WIN_CONTAINER_ISOLATION_PROCESS);
+        } else {
+            containerv_options_set_windows_container_isolation(opts, CV_WIN_CONTAINER_ISOLATION_HYPERV);
+        }
+
+        if (is_lcow) {
+            // LCOW requires HvRuntime settings for the Linux utility VM.
+            // These values are passed through to schema1 HvRuntime.
+            const char* uvm_image = getenv("CHEF_LCOW_UVM_IMAGE_PATH");
+            const char* kernel = getenv("CHEF_LCOW_KERNEL_FILE");
+            const char* initrd = getenv("CHEF_LCOW_INITRD_FILE");
+            const char* boot = getenv("CHEF_LCOW_BOOT_PARAMETERS");
+            containerv_options_set_windows_lcow_hvruntime(opts, uvm_image, kernel, initrd, boot);
+        }
+    }
+#endif
+
     VLOG_DEBUG("cvd", "cvd_create: using layer-based approach with %d layers\n", params->layers_count);
     cvLayers = __to_cv_layers(params->layers, params->layers_count);
     if (cvLayers == NULL) {
@@ -247,16 +282,18 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     cvLayerCount = (int)params->layers_count;
 
 #ifdef CHEF_ON_WINDOWS
-    // Windows-host VM-backed containers boot from container.vhdx.
-    // If BASE_ROOTFS points at a VHDX (or directory containing container.vhdx),
-    // build a differencing chain (base cache + optional app layer + per-container writable)
-    // and filter out VAFS layers because they are applied offline into the VHD.
-    status = containerv_disk_winvm_prepare_layers(cvdID, &cvLayers, &cvLayerCount, &winvmPrep);
-    if (status != 0) {
-        VLOG_ERROR("cvd", "cvd_create: Windows VM disk preparation failed\n");
-        free(cvLayers);
-        containerv_options_delete(opts);
-        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+    // Legacy VM-backed path: optional offline disk preparation.
+    // In true HCS container mode, rootfs is expected to be a windowsfilter container folder.
+    const char* win_runtime2 = getenv("CHEF_WINDOWS_RUNTIME");
+    const int is_vm_mode = (win_runtime2 != NULL && strcmp(win_runtime2, "vm") == 0);
+    if (is_vm_mode) {
+        status = containerv_disk_winvm_prepare_layers(cvdID, &cvLayers, &cvLayerCount, &winvmPrep);
+        if (status != 0) {
+            VLOG_ERROR("cvd", "cvd_create: Windows VM disk preparation failed\n");
+            free(cvLayers);
+            containerv_options_delete(opts);
+            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+        }
     }
 #endif
 
@@ -265,10 +302,15 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     free(cvLayers);
 
 #ifdef CHEF_ON_WINDOWS
-    // Preserve the flag before destroying the staging dir bookkeeping.
-    winvmAppliedOffline = winvmPrep.applied_packages;
-    // The staging rootfs only exists to be copied into the composed rootfs.
-    containerv_disk_winvm_prepare_result_destroy(&winvmPrep);
+    {
+        const char* win_runtime3 = getenv("CHEF_WINDOWS_RUNTIME");
+        const int is_vm_mode3 = (win_runtime3 != NULL && strcmp(win_runtime3, "vm") == 0);
+        if (is_vm_mode3) {
+            // Preserve the flag before destroying the staging dir bookkeeping.
+            winvmAppliedOffline = winvmPrep.applied_packages;
+            containerv_disk_winvm_prepare_result_destroy(&winvmPrep);
+        }
+    }
 #endif
 
     if (status != 0) {
@@ -324,16 +366,21 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     }
 
 #if defined(CHEF_ON_WINDOWS)
-    // For Windows-host VM-backed containers, install any VAFS packages into the guest.
-    // This is a first step towards the desired base-disk + package layers model.
-    // If we already applied packages offline into the VHD chain, skip.
-    if (!winvmAppliedOffline && containerv_disk_winvm_provision(cvContainer, params) != 0) {
-        VLOG_ERROR("cvd", "cvd_create: guest provisioning failed\n");
-        containerv_destroy(cvContainer);
-        if (layerContext) {
-            containerv_layers_destroy(layerContext);
+    {
+        const char* win_runtime4 = getenv("CHEF_WINDOWS_RUNTIME");
+        const int is_vm_mode4 = (win_runtime4 != NULL && strcmp(win_runtime4, "vm") == 0);
+        if (is_vm_mode4) {
+            // For Windows-host VM-backed containers, install any VAFS packages into the guest.
+            // If we already applied packages offline into the VHD chain, skip.
+            if (!winvmAppliedOffline && containerv_disk_winvm_provision(cvContainer, params) != 0) {
+                VLOG_ERROR("cvd", "cvd_create: guest provisioning failed\n");
+                containerv_destroy(cvContainer);
+                if (layerContext) {
+                    containerv_layers_destroy(layerContext);
+                }
+                return CHEF_STATUS_INTERNAL_ERROR;
+            }
         }
-        return CHEF_STATUS_INTERNAL_ERROR;
     }
 #endif
 

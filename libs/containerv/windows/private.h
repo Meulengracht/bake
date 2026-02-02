@@ -63,6 +63,40 @@ struct containerv_options_vm {
     unsigned int memory_mb;         // Memory allocation in MB (default: 1024)
     unsigned int cpu_count;         // Number of vCPUs (default: 2)
     const char*  vm_generation;     // VM generation ("1" or "2", default: "2")
+
+// Windows backend runtime selection
+enum windows_runtime_mode {
+    WINDOWS_RUNTIME_MODE_VM = 0,
+    WINDOWS_RUNTIME_MODE_HCS_CONTAINER = 1
+};
+
+// Windows container isolation selection (HCS container compute system)
+enum windows_container_isolation {
+    WINDOWS_CONTAINER_ISOLATION_PROCESS = 0,
+    WINDOWS_CONTAINER_ISOLATION_HYPERV = 1
+};
+
+// Windows container type selection (HCS container compute system)
+enum windows_container_type {
+    WINDOWS_CONTAINER_TYPE_WINDOWS = 0,
+    WINDOWS_CONTAINER_TYPE_LINUX = 1
+};
+
+struct containerv_options_windows_container {
+    enum windows_container_isolation isolation;
+    // Utility VM image path for Hyper-V isolated containers (schema1 HvRuntime.ImagePath).
+    // If NULL, containerv may try to derive it from the base layer path.
+    const char* utilityvm_path;
+};
+
+// LCOW (Linux Containers on Windows) HvRuntime configuration.
+// The file fields are expected to be file names under `image_path`.
+struct containerv_options_windows_lcow {
+    const char* image_path;
+    const char* kernel_file;
+    const char* initrd_file;
+    const char* boot_parameters;
+};
 };
 
 // Windows rootfs types - direct choice, no fallback
@@ -114,6 +148,11 @@ struct containerv_options {
     struct containerv_options_vm             vm;
     struct containerv_options_rootfs         rootfs;
     struct containerv_resource_limits        limits;          // Resource limits
+
+        enum windows_runtime_mode                windows_runtime;
+        struct containerv_options_windows_container windows_container;
+        enum windows_container_type              windows_container_type;
+        struct containerv_options_windows_lcow   windows_lcow;
 };
 
 struct containerv_container_process {
@@ -268,6 +307,10 @@ struct containerv_container {
 
     // PID1 integration
     int          pid1_acquired;
+
+        // Distinguish VM-backed compute systems from true container compute systems.
+        // VM-backed mode relies on pid1d inside the guest for file operations.
+        int          hcs_is_vm;
 };
 
 // Windows security helpers
@@ -331,6 +374,24 @@ extern wchar_t* __hcs_create_vm_config(
 extern int __hcs_create_vm(
     struct containerv_container* container,
     struct containerv_options* options
+);
+
+/**
+ * @brief Create and start an HCS container compute system (schema1 container config).
+ *
+ * @param layer_folder_path Path to the container's writable layer folder (windowsfilter container folder).
+ * @param parent_layers Array of parent layer folder paths (as found in layerchain.json).
+ * @param utilityvm_path UtilityVM image path (required for Hyper-V isolation).
+ * @param linux_container Non-zero for Linux containers on Windows (LCOW). Not fully supported yet.
+ */
+extern int __hcs_create_container_system(
+    struct containerv_container* container,
+    struct containerv_options* options,
+    const char* layer_folder_path,
+    const char* const* parent_layers,
+    int parent_layer_count,
+    const char* utilityvm_path,
+    int linux_container
 );
 
 /**

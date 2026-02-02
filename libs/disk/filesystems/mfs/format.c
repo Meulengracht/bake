@@ -306,7 +306,7 @@ static int __build_vbr(struct mfs* mfs)
 int mfs_format(struct mfs* mfs)
 {
     uint64_t partitionSize;
-    uint32_t masterBucketSector, mirrorMasterBucketSector;
+    uint64_t masterBucketSector, mirrorMasterBucketSector;
     uint32_t initialBucketSize;
     uint32_t rootIndex, journalIndex, badBucketIndex;
     uint8_t* buffer;
@@ -332,7 +332,7 @@ int mfs_format(struct mfs* mfs)
     mfs->map = mfs_bucket_new(
         &mfs->ops,
         mfs->reserved_sector_count,
-        mfs->sector_count - mfs->reserved_sector_count,
+        (uint32_t)(mfs->sector_count - mfs->reserved_sector_count),
         mfs->bucket_size
     );
     if (mfs->map == NULL) {

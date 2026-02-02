@@ -158,6 +158,80 @@ enum containerv_windows_privilege {
     CV_PRIV_INCREASE_QUOTA = 9      // Adjust memory quotas for a process
 };
 
+// Windows runtime mode selection
+enum containerv_windows_runtime_mode {
+    // Legacy/VM-backed mode (one Hyper-V VM per container; boots a VHDX)
+    CV_WIN_RUNTIME_VM = 0,
+    // True Windows containers via HCS container compute systems
+    CV_WIN_RUNTIME_HCS_CONTAINER = 1
+};
+
+// Windows container isolation mode (only meaningful for CV_WIN_RUNTIME_HCS_CONTAINER)
+enum containerv_windows_container_isolation {
+    // Windows Server container / process isolation
+    CV_WIN_CONTAINER_ISOLATION_PROCESS = 0,
+    // Hyper-V isolated container
+    CV_WIN_CONTAINER_ISOLATION_HYPERV = 1
+};
+
+// Windows container type (only meaningful for CV_WIN_RUNTIME_HCS_CONTAINER)
+enum containerv_windows_container_type {
+    // Windows container on Windows (WCOW)
+    CV_WIN_CONTAINER_TYPE_WINDOWS = 0,
+    // Linux container on Windows (LCOW)
+    CV_WIN_CONTAINER_TYPE_LINUX = 1
+};
+
+/**
+ * @brief Select the Windows backend runtime mode.
+ */
+extern void containerv_options_set_windows_runtime_mode(
+    struct containerv_options*            options,
+    enum containerv_windows_runtime_mode  mode
+);
+
+/**
+ * @brief Select the Windows container isolation mode (process vs Hyper-V).
+ */
+extern void containerv_options_set_windows_container_isolation(
+    struct containerv_options*                    options,
+    enum containerv_windows_container_isolation   isolation
+);
+
+/**
+ * @brief Set the UtilityVM image path for Hyper-V isolated Windows containers.
+ *
+ * This should typically point at a base image's `UtilityVM` directory.
+ */
+extern void containerv_options_set_windows_container_utilityvm_path(
+    struct containerv_options* options,
+    const char*                utilityvm_path
+);
+
+/**
+ * @brief Select container type for the HCS container backend (WCOW vs LCOW).
+ */
+extern void containerv_options_set_windows_container_type(
+    struct containerv_options*              options,
+    enum containerv_windows_container_type  type
+);
+
+/**
+ * @brief Configure Linux Containers on Windows (LCOW) Hyper-V runtime settings.
+ *
+ * These paths are interpreted as:
+ * - `uvm_image_path`: host directory that contains the UVM assets.
+ * - `kernel_file`/`initrd_file`: file names under `uvm_image_path`.
+ * - `boot_parameters`: additional kernel cmdline parameters.
+ */
+extern void containerv_options_set_windows_lcow_hvruntime(
+    struct containerv_options* options,
+    const char*                uvm_image_path,
+    const char*                kernel_file,
+    const char*                initrd_file,
+    const char*                boot_parameters
+);
+
 /**
  * @brief Configure resource limits for the Windows container using Job Objects
  * @param options The container options to configure

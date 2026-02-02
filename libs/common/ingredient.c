@@ -251,9 +251,9 @@ static int __extract_file(
     struct VaFsFileHandle* fileHandle,
     const char*            path)
 {
-    FILE* file;
-    long  fileSize;
-    void* fileBuffer;
+    FILE*  file;
+    size_t fileSize;
+    void*  fileBuffer;
 
     if ((file = fopen(path, "wb+")) == NULL) {
         fprintf(stderr, "__extract_file: unable to open file %s\n", path);

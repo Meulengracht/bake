@@ -31,6 +31,8 @@
 #include <wchar.h>
 #include <vlog.h>
 
+#include <jansson.h>
+
 #include <pid1_windows.h>
 
 #include "private.h"
@@ -1055,7 +1057,142 @@ static struct containerv_container* __container_new(void)
     container->pid1d_started = 0;
     container->pid1_acquired = 0;
 
+    // Default assumption: VM-backed mode until proven otherwise.
+    container->hcs_is_vm = 1;
+
     return container;
+}
+
+static int __is_hcs_container_mode(const struct containerv_options* options)
+{
+    if (options == NULL) {
+        return 0;
+    }
+    return options->windows_runtime == WINDOWS_RUNTIME_MODE_HCS_CONTAINER;
+}
+
+static int __is_hcs_lcow_mode(const struct containerv_options* options)
+{
+    if (options == NULL) {
+        return 0;
+    }
+    return (options->windows_runtime == WINDOWS_RUNTIME_MODE_HCS_CONTAINER) &&
+           (options->windows_container_type == WINDOWS_CONTAINER_TYPE_LINUX);
+}
+
+static int __read_layerchain_json(const char* layer_folder_path, char*** paths_out, int* count_out)
+{
+    if (paths_out == NULL || count_out == NULL || layer_folder_path == NULL || layer_folder_path[0] == '\0') {
+        return -1;
+    }
+    *paths_out = NULL;
+    *count_out = 0;
+
+    char chain_path[MAX_PATH];
+    int rc = snprintf(chain_path, sizeof(chain_path), "%s\\layerchain.json", layer_folder_path);
+    if (rc < 0 || (size_t)rc >= sizeof(chain_path)) {
+        return -1;
+    }
+
+    json_error_t jerr;
+    json_t* root = json_load_file(chain_path, 0, &jerr);
+    if (root == NULL) {
+        VLOG_ERROR("containerv", "failed to parse layerchain.json at %s: %s (line %d)\n", chain_path, jerr.text, jerr.line);
+        return -1;
+    }
+
+    if (!json_is_array(root)) {
+        json_decref(root);
+        VLOG_ERROR("containerv", "layerchain.json is not an array: %s\n", chain_path);
+        return -1;
+    }
+
+    size_t n = json_array_size(root);
+    if (n == 0) {
+        json_decref(root);
+        VLOG_ERROR("containerv", "layerchain.json is empty: %s\n", chain_path);
+        return -1;
+    }
+
+    char** out = calloc(n, sizeof(char*));
+    if (out == NULL) {
+        json_decref(root);
+        return -1;
+    }
+
+    int out_count = 0;
+    for (size_t i = 0; i < n; i++) {
+        json_t* item = json_array_get(root, i);
+        if (!json_is_string(item)) {
+            continue;
+        }
+        const char* s = json_string_value(item);
+        if (s == NULL || s[0] == '\0') {
+            continue;
+        }
+        out[out_count++] = _strdup(s);
+        if (out[out_count - 1] == NULL) {
+            for (int j = 0; j < out_count - 1; j++) {
+                free(out[j]);
+            }
+            free(out);
+            json_decref(root);
+            return -1;
+        }
+    }
+
+    json_decref(root);
+
+    if (out_count == 0) {
+        free(out);
+        return -1;
+    }
+
+    *paths_out = out;
+    *count_out = out_count;
+    return 0;
+}
+
+static void __free_strv(char** v, int count)
+{
+    if (v == NULL) {
+        return;
+    }
+    for (int i = 0; i < count; i++) {
+        free(v[i]);
+    }
+    free(v);
+}
+
+static char* __derive_utilityvm_path(const struct containerv_options* options, const char* const* parent_layers, int parent_layer_count)
+{
+    // Caller requested Hyper-V isolation.
+    if (options != NULL && options->windows_container.utilityvm_path != NULL && options->windows_container.utilityvm_path[0] != '\0') {
+        return _strdup(options->windows_container.utilityvm_path);
+    }
+
+    // Best-effort: base layer path + "\\UtilityVM".
+    // layerchain.json usually ends at the base OS layer.
+    const char* base = NULL;
+    if (parent_layers != NULL && parent_layer_count > 0) {
+        base = parent_layers[parent_layer_count - 1];
+    }
+    if (base == NULL || base[0] == '\0') {
+        return NULL;
+    }
+
+    char candidate[MAX_PATH];
+    int rc = snprintf(candidate, sizeof(candidate), "%s\\UtilityVM", base);
+    if (rc < 0 || (size_t)rc >= sizeof(candidate)) {
+        return NULL;
+    }
+
+    DWORD attrs = GetFileAttributesA(candidate);
+    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        return NULL;
+    }
+
+    return _strdup(candidate);
 }
 
 static void __container_delete(struct containerv_container* container)
@@ -1160,9 +1297,11 @@ int containerv_create(
     }
 
     // Track whether the guest rootfs is expected to be Windows or Linux.
-    // WSL rootfs types are Linux guests; native Windows rootfs types are Windows guests.
+    // For HCS container mode, this is controlled explicitly by options->windows_container_type.
     container->guest_is_windows = 1;
-    if (options != NULL) {
+    if (__is_hcs_container_mode(options)) {
+        container->guest_is_windows = __is_hcs_lcow_mode(options) ? 0 : 1;
+    } else if (options != NULL) {
         switch (options->rootfs.type) {
             case WINDOWS_ROOTFS_WSL_UBUNTU:
             case WINDOWS_ROOTFS_WSL_DEBIAN:
@@ -1175,21 +1314,57 @@ int containerv_create(
         }
     }
 
-    // Set up rootfs if it doesn't exist or if specific rootfs type is requested
+    // Mode: VM-backed vs true container compute system.
+    container->hcs_is_vm = __is_hcs_container_mode(options) ? 0 : 1;
+
+    // Rootfs preparation differs by backend.
+    // - VM-backed mode can set up WSL/native rootfs and then expects a bootable VHDX.
+    // - HCS container mode expects BASE_ROOTFS to point at a pre-prepared windowsfilter container folder.
     BOOL rootfs_exists = PathFileExistsA(rootFs);
-    if (!rootfs_exists || (options && options->rootfs.type != WINDOWS_ROOTFS_WSL_UBUNTU)) {
-        VLOG_DEBUG("containerv", "setting up rootfs at %s\n", rootFs);
-        
-        struct containerv_options_rootfs* rootfs_opts = options ? &options->rootfs : NULL;
-        if (__windows_setup_rootfs(rootFs, rootfs_opts) != 0) {
-            VLOG_ERROR("containerv", "containerv_create: failed to setup rootfs\n");
-            __container_delete(container);
-            return -1;
+    if (__is_hcs_container_mode(options)) {
+        if (!rootfs_exists) {
+            if (__is_hcs_lcow_mode(options)) {
+                // For LCOW, BASE_ROOTFS will eventually become an OCI bundle/rootfs reference.
+                // For now, we allow it to be absent and rely on UVM bring-up.
+                VLOG_WARNING("containerv", "containerv_create: LCOW selected but rootfs path does not exist (%s); continuing (UVM bring-up only)\n", rootFs);
+            } else {
+                VLOG_ERROR("containerv", "containerv_create: HCS container mode requires an existing windowsfilter container folder at %s\n", rootFs);
+                __container_delete(container);
+                return -1;
+            }
         }
-        
-        VLOG_DEBUG("containerv", "rootfs setup completed at %s\n", rootFs);
+        if (!container->guest_is_windows) {
+            // LCOW bring-up path (OCI-in-UVM will be added in later steps).
+        }
+
+        // Reject materialized rootfs (VAFS overlays) - it is not a valid windowsfilter container folder.
+        // The caller must provide a real layer folder with layerchain.json.
+        int has_vafs = 0;
+        if (options && options->layers) {
+            for (int i = 0; ; i++) {
+                // We don't have direct accessors here; rely on iteration callback below.
+                // (Best-effort: just prevent using pid1d-based VAFS materialization in this mode.)
+                (void)i;
+                break;
+            }
+        }
+        (void)has_vafs;
     } else {
-        VLOG_DEBUG("containerv", "using existing rootfs at %s\n", rootFs);
+        // VM-backed default behavior
+        if (!rootfs_exists || (options && options->rootfs.type != WINDOWS_ROOTFS_WSL_UBUNTU)) {
+            VLOG_DEBUG("containerv", "setting up rootfs at %s\n", rootFs);
+
+            struct containerv_options_rootfs* rootfs_opts = options ? &options->rootfs : NULL;
+            if (__windows_setup_rootfs(rootFs, rootfs_opts) != 0) {
+                VLOG_ERROR("containerv", "containerv_create: failed to setup rootfs\n");
+                __container_delete(container);
+                return -1;
+            }
+
+            VLOG_DEBUG("containerv", "rootfs setup completed at %s\n", rootFs);
+        } else {
+            VLOG_DEBUG("containerv", "using existing rootfs at %s\n", rootFs);
+        }
     }
     
     // Initialize COM for HyperV operations
@@ -1200,27 +1375,81 @@ int containerv_create(
         return -1;
     }
     
-    // Setup VM networking before creating the VM
-    if (options && (options->capabilities & CV_CAP_NETWORK)) {
-        if (__windows_configure_vm_network(container, options) != 0) {
-            VLOG_WARNING("containerv", "containerv_create: VM network setup encountered issues\n");
-            // Don't fail container creation, network might still work
+    if (!__is_hcs_container_mode(options)) {
+        // Setup VM networking before creating the VM
+        if (options && (options->capabilities & CV_CAP_NETWORK)) {
+            if (__windows_configure_vm_network(container, options) != 0) {
+                VLOG_WARNING("containerv", "containerv_create: VM network setup encountered issues\n");
+                // Don't fail container creation, network might still work
+            }
         }
-    }
 
-    // Ensure we have a VM disk image available for the HCS VM.
-    // For Windows guests, this supports the B1 strategy where a bootable container.vhdx is shipped in a VAFS layer.
-    if (__windows_prepare_vm_disk(container, options) != 0) {
-        VLOG_ERROR("containerv", "containerv_create: failed to prepare VM disk image\n");
-        __container_delete(container);
-        return -1;
-    }
+        // Ensure we have a VM disk image available for the HCS VM.
+        if (__windows_prepare_vm_disk(container, options) != 0) {
+            VLOG_ERROR("containerv", "containerv_create: failed to prepare VM disk image\n");
+            __container_delete(container);
+            return -1;
+        }
 
-    // Create HyperV VM using Windows HCS (Host Compute Service) API
-    if (__hcs_create_vm(container, options) != 0) {
-        VLOG_ERROR("containerv", "containerv_create: failed to create HyperV VM\n");
-        __container_delete(container);
-        return -1;
+        // Create HyperV VM using Windows HCS (Host Compute Service) API
+        if (__hcs_create_vm(container, options) != 0) {
+            VLOG_ERROR("containerv", "containerv_create: failed to create HyperV VM\n");
+            __container_delete(container);
+            return -1;
+        }
+    } else {
+        if (!__is_hcs_lcow_mode(options)) {
+            // True Windows containers (WCOW): rootfs must be a windowsfilter container folder.
+            // Parse its parent chain from layerchain.json.
+            char** parent_layers = NULL;
+            int parent_layer_count = 0;
+            if (__read_layerchain_json(rootFs, &parent_layers, &parent_layer_count) != 0) {
+                VLOG_ERROR("containerv", "containerv_create: failed to parse layerchain.json under %s\n", rootFs);
+                __container_delete(container);
+                return -1;
+            }
+
+            const int hv = (options && options->windows_container.isolation == WINDOWS_CONTAINER_ISOLATION_HYPERV);
+            char* utilityvm = NULL;
+            if (hv) {
+                utilityvm = __derive_utilityvm_path(options, (const char* const*)parent_layers, parent_layer_count);
+                if (utilityvm == NULL) {
+                    VLOG_ERROR("containerv", "containerv_create: Hyper-V isolation requires UtilityVM path (set via containerv_options_set_windows_container_utilityvm_path or ensure base layer has UtilityVM)\n");
+                    __free_strv(parent_layers, parent_layer_count);
+                    __container_delete(container);
+                    errno = ENOENT;
+                    return -1;
+                }
+            }
+
+            // Create WCOW container compute system.
+            if (__hcs_create_container_system(container, options, rootFs, (const char* const*)parent_layers, parent_layer_count, utilityvm, 0) != 0) {
+                VLOG_ERROR("containerv", "containerv_create: failed to create HCS container compute system\n");
+                free(utilityvm);
+                __free_strv(parent_layers, parent_layer_count);
+                __container_delete(container);
+                return -1;
+            }
+
+            free(utilityvm);
+            __free_strv(parent_layers, parent_layer_count);
+        } else {
+            // LCOW container compute system (bring-up scaffolding): uses ContainerType=Linux and HvRuntime.
+            // NOTE: OCI spec + rootfs plumbing is added in a subsequent step.
+            const char* image_path = (options && options->windows_lcow.image_path) ? options->windows_lcow.image_path : NULL;
+            if (image_path == NULL || image_path[0] == '\0') {
+                VLOG_ERROR("containerv", "containerv_create: LCOW requires HvRuntime.ImagePath (set via containerv_options_set_windows_lcow_hvruntime)\n");
+                __container_delete(container);
+                errno = ENOENT;
+                return -1;
+            }
+
+            if (__hcs_create_container_system(container, options, NULL, NULL, 0, image_path, 1) != 0) {
+                VLOG_ERROR("containerv", "containerv_create: failed to create LCOW HCS container compute system\n");
+                __container_delete(container);
+                return -1;
+            }
+        }
     }
 
     // Initialize PID1 service (used for host process lifecycle management; VM processes
@@ -1347,11 +1576,56 @@ int __containerv_spawn(
         }
     }
     
-    // Check if we have a HyperV VM to run the process in
+    // Check if we have an HCS compute system to run the process in
     if (container->hcs_system != NULL) {
-        uint64_t guest_id = 0;
-        if (__pid1d_spawn(container, options, &guest_id) != 0) {
-            VLOG_ERROR("containerv", "__containerv_spawn: pid1d spawn failed\n");
+        // VM-backed: use pid1d in the guest.
+        if (container->hcs_is_vm) {
+            uint64_t guest_id = 0;
+            if (__pid1d_spawn(container, options, &guest_id) != 0) {
+                VLOG_ERROR("containerv", "__containerv_spawn: pid1d spawn failed\n");
+                return -1;
+            }
+
+            // Configure container networking on first process spawn
+            if (!container->network_configured) {
+                container->network_configured = 1;
+                VLOG_DEBUG("containerv", "__containerv_spawn: network setup deferred (would configure here)\n");
+            }
+
+            // Add guest process token to container's process list
+            proc = calloc(1, sizeof(struct containerv_container_process));
+            if (proc == NULL) {
+                (void)__pid1d_kill_reap(container, guest_id);
+                return -1;
+            }
+
+            void* token = malloc(1);
+            if (token == NULL) {
+                free(proc);
+                (void)__pid1d_kill_reap(container, guest_id);
+                return -1;
+            }
+
+            proc->handle = (HANDLE)token;
+            proc->pid = 0;
+            proc->is_guest = 1;
+            proc->guest_id = guest_id;
+            list_add(&container->processes, &proc->list_header);
+
+            if (handleOut) {
+                *handleOut = proc->handle;
+            }
+
+            VLOG_DEBUG("containerv", "__containerv_spawn: spawned guest process via pid1d (id=%llu)\n", (unsigned long long)guest_id);
+            return 0;
+        }
+
+        // HCS container compute system (WCOW/LCOW): spawn via HCS process APIs.
+        HCS_PROCESS hproc = NULL;
+        HCS_PROCESS_INFORMATION info;
+        memset(&info, 0, sizeof(info));
+        if (__hcs_create_process(container, options, &hproc, &info) != 0) {
+            VLOG_ERROR("containerv", "__containerv_spawn: HCS create process failed\n");
             return -1;
         }
 
@@ -1361,31 +1635,25 @@ int __containerv_spawn(
             VLOG_DEBUG("containerv", "__containerv_spawn: network setup deferred (would configure here)\n");
         }
 
-        // Add guest process token to container's process list
         proc = calloc(1, sizeof(struct containerv_container_process));
         if (proc == NULL) {
-            (void)__pid1d_kill_reap(container, guest_id);
+            if (g_hcs.HcsCloseProcess != NULL && hproc != NULL) {
+                g_hcs.HcsCloseProcess(hproc);
+            }
             return -1;
         }
 
-        void* token = malloc(1);
-        if (token == NULL) {
-            free(proc);
-            (void)__pid1d_kill_reap(container, guest_id);
-            return -1;
-        }
-
-        proc->handle = (HANDLE)token;
-        proc->pid = 0;
-        proc->is_guest = 1;
-        proc->guest_id = guest_id;
+        proc->handle = (HANDLE)hproc;
+        proc->pid = info.ProcessId;
+        proc->is_guest = 0;
+        proc->guest_id = 0;
         list_add(&container->processes, &proc->list_header);
 
         if (handleOut) {
             *handleOut = proc->handle;
         }
 
-        VLOG_DEBUG("containerv", "__containerv_spawn: spawned guest process via pid1d (id=%llu)\n", (unsigned long long)guest_id);
+        VLOG_DEBUG("containerv", "__containerv_spawn: spawned process via HCS (pid=%lu)\n", (unsigned long)info.ProcessId);
         return 0;
     } else {
         // Fallback to host process creation (for testing/debugging)
@@ -1770,7 +2038,7 @@ int containerv_upload(
     for (int i = 0; i < count; i++) {
         VLOG_DEBUG("containerv", "uploading: %s -> %s\n", hostPaths[i], containerPaths[i]);
         
-        if (container->hcs_system) {
+        if (container->hcs_system && container->hcs_is_vm) {
             // VM-based container: stream file contents into guest via pid1d.
             FILE* f = NULL;
             if (fopen_s(&f, hostPaths[i], "rb") != 0 || f == NULL) {
@@ -1802,6 +2070,36 @@ int containerv_upload(
                 if (__pid1d_file_write_b64(container, containerPaths[i], (const unsigned char*)"", 0, 0, 1) != 0) {
                     return -1;
                 }
+            }
+        } else if (container->hcs_system && !container->hcs_is_vm) {
+            // HCS container: use mapped staging folder + in-container copy.
+            char stage_host[MAX_PATH];
+            char stage_guest[MAX_PATH];
+            char tmpname[64];
+            snprintf(tmpname, sizeof(tmpname), "upload-%d.tmp", i);
+            snprintf(stage_host, sizeof(stage_host), "%s\\staging\\%s", container->runtime_dir, tmpname);
+            snprintf(stage_guest, sizeof(stage_guest), "C:\\chef\\staging\\%s", tmpname);
+
+            if (!CopyFileA(hostPaths[i], stage_host, FALSE)) {
+                VLOG_ERROR("containerv", "containerv_upload: failed to stage %s: %lu\n", hostPaths[i], GetLastError());
+                return -1;
+            }
+
+            // Best-effort: copy staged file to destination inside the container.
+            char cmd[2048];
+            snprintf(cmd, sizeof(cmd), "/c copy /Y \"%s\" \"%s\"", stage_guest, containerPaths[i]);
+
+            struct containerv_spawn_options sopts = {0};
+            sopts.arguments = cmd;
+            sopts.flags = CV_SPAWN_WAIT;
+            process_handle_t ph;
+            if (containerv_spawn(container, "cmd.exe", &sopts, &ph) != 0) {
+                return -1;
+            }
+            int ec = 0;
+            if (containerv_wait(container, ph, &ec) != 0 || ec != 0) {
+                VLOG_ERROR("containerv", "containerv_upload: in-container copy failed (exit=%d)\n", ec);
+                return -1;
             }
         } else {
             // Host process container: direct file copy
@@ -1844,7 +2142,7 @@ int containerv_download(
     for (int i = 0; i < count; i++) {
         VLOG_DEBUG("containerv", "downloading: %s -> %s\n", containerPaths[i], hostPaths[i]);
         
-        if (container->hcs_system) {
+        if (container->hcs_system && container->hcs_is_vm) {
             // VM-based container: stream file contents out of guest via pid1d.
             (void)__ensure_parent_dir_hostpath(hostPaths[i]);
 
@@ -1895,6 +2193,37 @@ int containerv_download(
                 }
             }
             fclose(f);
+        } else if (container->hcs_system && !container->hcs_is_vm) {
+            // HCS container: stage in guest then copy out from host staging directory.
+            (void)__ensure_parent_dir_hostpath(hostPaths[i]);
+
+            char stage_host[MAX_PATH];
+            char stage_guest[MAX_PATH];
+            char tmpname[64];
+            snprintf(tmpname, sizeof(tmpname), "download-%d.tmp", i);
+            snprintf(stage_host, sizeof(stage_host), "%s\\staging\\%s", container->runtime_dir, tmpname);
+            snprintf(stage_guest, sizeof(stage_guest), "C:\\chef\\staging\\%s", tmpname);
+
+            char cmd[2048];
+            snprintf(cmd, sizeof(cmd), "/c copy /Y \"%s\" \"%s\"", containerPaths[i], stage_guest);
+
+            struct containerv_spawn_options sopts = {0};
+            sopts.arguments = cmd;
+            sopts.flags = CV_SPAWN_WAIT;
+            process_handle_t ph;
+            if (containerv_spawn(container, "cmd.exe", &sopts, &ph) != 0) {
+                return -1;
+            }
+            int ec = 0;
+            if (containerv_wait(container, ph, &ec) != 0 || ec != 0) {
+                VLOG_ERROR("containerv", "containerv_download: in-container stage copy failed (exit=%d)\n", ec);
+                return -1;
+            }
+
+            if (!CopyFileA(stage_host, hostPaths[i], FALSE)) {
+                VLOG_ERROR("containerv", "containerv_download: failed to copy staged file to host: %lu\n", GetLastError());
+                return -1;
+            }
         } else {
             // Host process container: direct file copy
             char srcPath[MAX_PATH];

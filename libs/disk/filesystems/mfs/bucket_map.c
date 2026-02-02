@@ -84,7 +84,7 @@ void mfs_bucket_initialize(struct mfs_bucket_map* map)
     // MasterBucket | Data | MasterBucketMirror | Map
     uint64_t maxMapSize = mfs_bucket_map_size(map); // Bytes
     uint64_t mapSectorCount = (maxMapSize + (map->bytes_per_sector - 1)) / map->bytes_per_sector; // Sectors
-    uint32_t mapBucketCount = (map->sector_count - mapSectorCount) / map->sectors_per_bucket; // Upper bound of the map
+    uint32_t mapBucketCount = (uint32_t)((map->sector_count - mapSectorCount) / map->sectors_per_bucket); // Upper bound of the map
     VLOG_DEBUG("mfs-bucket-map", "mfs_bucket_initialize()\n");
 
     map->map_sector = (map->sector + map->sector_count - 1) - mapSectorCount;

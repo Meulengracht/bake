@@ -23,7 +23,9 @@
 #ifndef __CONTAINERV_DISK_WINVM_H__
 #define __CONTAINERV_DISK_WINVM_H__
 
-#include <chef/containerv/layers.h>
+// avoid including containerv headers here
+struct containerv_container;
+struct containerv_layer;
 
 // Prototype for now, but we want to avoid including chef_cvd_service.h here.
 // TODO: Create a new structure that mirrors the needed fields.

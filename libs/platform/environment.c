@@ -136,7 +136,7 @@ char* environment_flatten(const char* const* environment, size_t* lengthOut)
 {
     char*  flatEnvironment;
     size_t flatLength = 1; // second nil
-    int    i = 0, j = 0;
+    size_t i = 0, j = 0;
 
     while (environment[i]) {
         flatLength += strlen(environment[i++]) + 1;

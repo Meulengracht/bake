@@ -59,7 +59,7 @@ static void __update_progress(struct download_context* downloadContext)
     char totalSizeBuffer[32];
     int  percent;
 
-    percent = (downloadContext->bytes_downloaded * 100) / downloadContext->bytes_total;
+    percent = (int)((downloadContext->bytes_downloaded * 100) / downloadContext->bytes_total);
     
     // print a fancy progress bar with percentage, upload progress and a moving
     // bar being filled

@@ -194,7 +194,7 @@ static int __file_upload_context_init(struct file_upload_context* context, const
 
 static void __update_progress(struct file_upload_context* context)
 {
-    int percent = (context->uploaded * 100) / context->length;
+    int percent = (int)((context->uploaded * 100) / context->length);
     
     // print a fancy progress bar with percentage, upload progress and a moving
     // bar being filled

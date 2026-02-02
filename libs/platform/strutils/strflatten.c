@@ -40,7 +40,7 @@ char* strflatten(const char* const* values, char* sep, size_t* lengthOut)
         return NULL;
     }
 
-    for (int i = 0, j = 0; values[i] != NULL; i++) {
+    for (size_t i = 0, j = 0; values[i] != NULL; i++) {
         size_t len = strlen(values[i]);
         
         memcpy(&flat[j], values[i], len);

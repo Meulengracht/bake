@@ -21,7 +21,7 @@
 
 int platform_getcwd(char* buffer, size_t length)
 {
-    char* result = _getcwd(buffer, length);
+    char* result = _getcwd(buffer, (int)length);
     if (result == NULL) {
         return -1;
     }
