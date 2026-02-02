@@ -1,5 +1,6 @@
 add_library(containerv-common STATIC
     oci-spec.c
+    standard-mounts.c
 )
 
 target_include_directories(containerv-common PUBLIC ${CMAKE_CURRENT_LIST_DIR})

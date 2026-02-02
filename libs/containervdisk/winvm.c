@@ -20,12 +20,14 @@
  * no-ops and return success.
  */
 
-#include <chef/containerv/disk/winvm.h>
-
 #include <chef/dirs.h>
 #include <chef/package.h>
 #include <chef/platform.h>
 #include <chef/ingredient.h>
+
+#include <chef/containerv/disk/winvm.h>
+#include <chef/containerv.h>
+#include <chef/package.h>
 
 #include <errno.h>
 #include <stdlib.h>
@@ -170,7 +172,7 @@ static char* __cache_dir(void)
         return NULL;
     }
     // Under cache/cvd/winvm
-    char* c1 = strpathjoin(base, "cvd", "winvm");
+    char* c1 = strpathjoin(base, "containerv", "winvm");
     if (c1 == NULL) {
         return NULL;
     }
@@ -815,7 +817,7 @@ static int __apply_vafs_layers_to_mounted_os_disk(
         struct chef_package* pkg = NULL;
         struct chef_version* ver = NULL;
         if (chef_package_load(layers[i].source, &pkg, &ver, NULL, NULL) != 0 || pkg == NULL) {
-            VLOG_ERROR("cvd", "winvm: failed to load package metadata for %s\n", layers[i].source);
+            VLOG_ERROR("containerv", "winvm: failed to load package metadata for %s\n", layers[i].source);
             chef_package_free(pkg);
             chef_version_free(ver);
             return -1;
@@ -879,7 +881,7 @@ static int __apply_vafs_layers_to_mounted_os_disk(
 
         // Extract pack contents.
         if (__unmkvafs_to_path(layers[i].source, host_root) != 0) {
-            VLOG_ERROR("cvd", "winvm: unmkvafs failed for %s\n", layers[i].source);
+            VLOG_ERROR("containerv", "winvm: unmkvafs failed for %s\n", layers[i].source);
             free(host_root);
             chef_package_free(pkg);
             chef_version_free(ver);
@@ -1074,9 +1076,9 @@ int containerv_disk_winvm_prepare_layers(
     }
 
     if (!__path_exists_file(base_cached)) {
-        VLOG_INFO("cvd", "winvm: caching base disk to %s\n", base_cached);
+        VLOG_TRACE("containerv", "winvm: caching base disk to %s\n", base_cached);
         if (platform_copyfile(base_vhd, base_cached) != 0) {
-            VLOG_WARNING("cvd", "winvm: failed to cache base disk, using source path directly\n");
+            VLOG_WARNING("containerv", "winvm: failed to cache base disk, using source path directly\n");
             free(base_cached);
             base_cached = platform_strdup(base_vhd);
             if (base_cached == NULL) {
@@ -1143,9 +1145,9 @@ int containerv_disk_winvm_prepare_layers(
         }
 
         if (!__path_exists_file(app_cached)) {
-            VLOG_INFO("cvd", "winvm: building cached app layer %s\n", app_cached);
+            VLOG_TRACE("containerv", "winvm: building cached app layer %s\n", app_cached);
             if (__create_differencing_vhdx(app_cached, base_cached) != 0) {
-                VLOG_ERROR("cvd", "winvm: failed to create app differencing disk\n");
+                VLOG_ERROR("containerv", "winvm: failed to create app differencing disk\n");
                 free(app_cached);
                 free(cache);
                 free(base_vhd);
@@ -1157,7 +1159,7 @@ int containerv_disk_winvm_prepare_layers(
 
             char* drive = __mount_vhd_get_drive_root(app_cached);
             if (drive == NULL) {
-                VLOG_ERROR("cvd", "winvm: failed to mount app disk\n");
+                VLOG_ERROR("containerv", "winvm: failed to mount app disk\n");
                 (void)__dismount_vhd(app_cached);
                 free(app_cached);
                 free(cache);
@@ -1174,7 +1176,7 @@ int containerv_disk_winvm_prepare_layers(
             snprintf(out_dir, sizeof(out_dir), "%schef\\app\\%s\\%s", drive, pub_ptr, name_ptr);
             (void)__mkdir_cmd(out_dir);
             if (__unmkvafs_to_path(app_pack_path, out_dir) != 0) {
-                VLOG_ERROR("cvd", "winvm: unmkvafs failed while building app disk\n");
+                VLOG_ERROR("containerv", "winvm: unmkvafs failed while building app disk\n");
                 free(drive);
                 (void)__dismount_vhd(app_cached);
                 free(app_cached);
@@ -1196,7 +1198,7 @@ int containerv_disk_winvm_prepare_layers(
 
             free(drive);
             if (__dismount_vhd(app_cached) != 0) {
-                VLOG_WARNING("cvd", "winvm: failed to dismount app disk (continuing)\n");
+                VLOG_WARNING("containerv", "winvm: failed to dismount app disk (continuing)\n");
             }
         }
 
@@ -1240,7 +1242,7 @@ int containerv_disk_winvm_prepare_layers(
         return -1;
     }
     if (__create_differencing_vhdx(writable, parent_for_writable) != 0) {
-        VLOG_ERROR("cvd", "winvm: failed to create per-container writable disk\n");
+        VLOG_ERROR("containerv", "winvm: failed to create per-container writable disk\n");
         free(writable);
         platform_rmdir(staging);
         free(staging);
@@ -1272,7 +1274,7 @@ int containerv_disk_winvm_prepare_layers(
 
         char* drive = __mount_vhd_get_drive_root(writable_path);
         if (drive == NULL) {
-            VLOG_ERROR("cvd", "winvm: failed to mount per-container writable disk\n");
+            VLOG_ERROR("containerv", "winvm: failed to mount per-container writable disk\n");
             free(writable_path);
             platform_rmdir(staging);
             free(staging);
@@ -1307,7 +1309,7 @@ int containerv_disk_winvm_prepare_layers(
 
         free(drive);
         if (__dismount_vhd(writable_path) != 0) {
-            VLOG_WARNING("cvd", "winvm: failed to dismount per-container writable disk (continuing)\n");
+            VLOG_WARNING("containerv", "winvm: failed to dismount per-container writable disk (continuing)\n");
         }
         free(writable_path);
     }
@@ -1674,7 +1676,7 @@ static int containerv_disk_winvm_provision(struct containerv_container* containe
 
         struct chef_package* pkg = NULL;
         if (chef_package_load(layer->source, &pkg, NULL, NULL, NULL) != 0 || pkg == NULL) {
-            VLOG_ERROR("cvd", "cvd_create: failed to read package metadata for %s\n", layer->source);
+            VLOG_ERROR("containerv", "cvd_create: failed to read package metadata for %s\n", layer->source);
             free(activate);
             return -1;
         }
@@ -1715,7 +1717,7 @@ static int containerv_disk_winvm_provision(struct containerv_container* containe
         }
 
         if (__unmkvafs_to_dir(layer->source, tmp) != 0) {
-            VLOG_ERROR("cvd", "cvd_create: unmkvafs failed for %s\n", layer->source);
+            VLOG_ERROR("containerv", "cvd_create: unmkvafs failed for %s\n", layer->source);
             platform_rmdir(tmp);
             free(tmp);
             free(guestRoot);
@@ -1726,7 +1728,7 @@ static int containerv_disk_winvm_provision(struct containerv_container* containe
 
         // Upload extracted content to guestRoot.
         if (__upload_tree_to_guest(container, tmp, guestRoot) != 0) {
-            VLOG_ERROR("cvd", "cvd_create: failed to upload VAFS content into guest\n");
+            VLOG_ERROR("containerv", "cvd_create: failed to upload VAFS content into guest\n");
             platform_rmdir(tmp);
             free(tmp);
             free(guestRoot);
@@ -1738,7 +1740,7 @@ static int containerv_disk_winvm_provision(struct containerv_container* containe
         // If this is an application package, set the `current` junction.
         if (pkg->type == CHEF_PACKAGE_TYPE_APPLICATION) {
             if (__guest_set_current_app_junction(container, guestRoot) != 0) {
-                VLOG_WARNING("cvd", "cvd_create: failed to set C:\\chef\\app\\current junction\n");
+                VLOG_WARNING("containerv", "cvd_create: failed to set C:\\chef\\app\\current junction\n");
             }
         } else {
             // Extend activation script.

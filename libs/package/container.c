@@ -766,7 +766,7 @@ static char* __write_list_as_string(struct list* list)
 {
     struct list_item* i;
     char*             buffer;
-    int               index = 0;
+    size_t            index = 0;
 
     if (list == NULL || list->count == 0) {
         return NULL;
