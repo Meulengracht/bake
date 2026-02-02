@@ -9,13 +9,16 @@ add_subdirectory(common)
 # Guest-side PID1 daemon (used inside VMs/guests)
 add_subdirectory(pid1d)
 
-set(ADDITIONAL_LIBS)
+# Add rootfs and disk utilities
+add_subdirectory(disk)
+
+set(ADDITIONAL_LIBS containerv-disk containerv-pid1)
 if (UNIX)
     add_subdirectory(ebpf)
     add_subdirectory(linux)
     add_subdirectory(policies)
     
-    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-linux containerv-ebpf containerv-policy containerv-pid1)
+    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-linux containerv-ebpf containerv-policy )
     
     # Propagate BPF variables from linux subdirectory to parent scope
     if(BPF_PROGRAMS_AVAILABLE)
@@ -25,7 +28,7 @@ if (UNIX)
 elseif(WIN32)
     add_subdirectory(windows)
     add_subdirectory(policies)
-    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-windows containerv-policy containerv-pid1)
+    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-windows containerv-policy)
 endif()
 
 add_library(containerv STATIC

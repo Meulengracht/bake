@@ -26,6 +26,7 @@
 #include <chef/containerv/layers.h>
 
 #include "oci-spec.h"
+#include "oci-bundle.h"
 
 #include "private.h"
 
@@ -1355,6 +1356,16 @@ int __hcs_create_process(
 
         if (containerv_oci_build_linux_spec_json(&p, &oci_spec_utf8) != 0) {
             goto cleanup;
+        }
+
+        // Best-effort: also write config.json into the per-container OCI bundle for inspection.
+        {
+            struct containerv_oci_bundle_paths bundle;
+            memset(&bundle, 0, sizeof(bundle));
+            if (containerv_oci_bundle_get_paths(container->runtime_dir, &bundle) == 0) {
+                (void)containerv_oci_bundle_write_config(&bundle, oci_spec_utf8);
+                containerv_oci_bundle_paths_destroy(&bundle);
+            }
         }
     }
 

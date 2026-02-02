@@ -38,6 +38,7 @@
 #include "private.h"
 
 #include "standard-mounts.h"
+#include "oci-bundle.h"
 
 #define MIN_REMAINING_PATH_LENGTH 20  // Minimum space needed for "containerv-XXXXXX" + null
 
@@ -1053,6 +1054,8 @@ static struct containerv_container* __container_new(void)
 
     container->guest_is_windows = 1;
     container->pid1d_process = NULL;
+
+    container->hns_endpoint_id = NULL;
     container->pid1d_stdin = NULL;
     container->pid1d_stdout = NULL;
     container->pid1d_stderr = NULL;
@@ -1492,12 +1495,36 @@ int containerv_create(
                 return -1;
             }
 
-            const char* lcow_rootfs_host = rootfs_exists ? rootFs : NULL;
+            // If a host rootfs was provided, prepare a per-container OCI bundle under runtime_dir.
+            // This gives us a stable rootfs directory for mapping into the UVM.
+            struct containerv_oci_bundle_paths bundle_paths;
+            memset(&bundle_paths, 0, sizeof(bundle_paths));
+
+            const char* lcow_rootfs_host = NULL;
+            if (rootfs_exists) {
+                if (containerv_oci_bundle_get_paths(container->runtime_dir, &bundle_paths) != 0) {
+                    VLOG_ERROR("containerv", "containerv_create: failed to compute OCI bundle paths\n");
+                    __container_delete(container);
+                    return -1;
+                }
+                if (containerv_oci_bundle_prepare_rootfs(&bundle_paths, rootFs) != 0) {
+                    VLOG_ERROR("containerv", "containerv_create: failed to prepare OCI bundle rootfs\n");
+                    containerv_oci_bundle_paths_destroy(&bundle_paths);
+                    __container_delete(container);
+                    return -1;
+                }
+                (void)containerv_oci_bundle_prepare_rootfs_mountpoints(&bundle_paths);
+                lcow_rootfs_host = bundle_paths.rootfs_dir;
+            }
+
             if (__hcs_create_container_system(container, options, lcow_rootfs_host, NULL, 0, image_path, 1) != 0) {
                 VLOG_ERROR("containerv", "containerv_create: failed to create LCOW HCS container compute system\n");
+                containerv_oci_bundle_paths_destroy(&bundle_paths);
                 __container_delete(container);
                 return -1;
             }
+
+            containerv_oci_bundle_paths_destroy(&bundle_paths);
         }
     }
 
@@ -1565,14 +1592,22 @@ int containerv_create(
     
     // Configure host-side networking after VM is created
     if (options && (options->capabilities & CV_CAP_NETWORK)) {
-        if (__windows_configure_host_network(container, options) != 0) {
-            VLOG_WARNING("containerv", "containerv_create: host network setup encountered issues\n");
-            // Continue anyway, VM networking might still work
-        }
+        if (container->hcs_system != NULL && container->hcs_is_vm == 0) {
+            // True container compute system (WCOW/LCOW): attach HNS endpoint on the host.
+            if (__windows_configure_hcs_container_network(container, options) != 0) {
+                VLOG_WARNING("containerv", "containerv_create: HCS container network setup encountered issues\n");
+            }
+        } else {
+            // VM-backed: configure host and guest network via pid1d.
+            if (__windows_configure_host_network(container, options) != 0) {
+                VLOG_WARNING("containerv", "containerv_create: host network setup encountered issues\n");
+                // Continue anyway, VM networking might still work
+            }
 
-        if (__windows_configure_container_network(container, options) != 0) {
-            VLOG_WARNING("containerv", "containerv_create: guest network setup encountered issues\n");
-            // Continue anyway; networking is best-effort for now.
+            if (__windows_configure_container_network(container, options) != 0) {
+                VLOG_WARNING("containerv", "containerv_create: guest network setup encountered issues\n");
+                // Continue anyway; networking is best-effort for now.
+            }
         }
     }
     
@@ -2355,23 +2390,16 @@ void __containerv_destroy(struct containerv_container* container)
     
     // Clean up rootfs (optional - may want to preserve for reuse)
     // Note: In production, you might want to make this configurable
-    if (container->rootfs) {
+    // For HCS container compute systems (WCOW/LCOW), the rootfs path is user-provided and should not be removed.
+    if (container->rootfs && (container->hcs_system == NULL || container->hcs_is_vm)) {
         VLOG_DEBUG("containerv", "cleaning up rootfs at %s\n", container->rootfs);
         __windows_cleanup_rootfs(container->rootfs, NULL);
     }
     
     // Remove runtime directory (recursively if needed)
     if (container->runtime_dir) {
-        // RemoveDirectoryA only works on empty directories
-        // For a complete implementation, we should recursively delete contents first
-        // or use SHFileOperationA for recursive deletion
-        if (!RemoveDirectoryA(container->runtime_dir)) {
-            DWORD error = GetLastError();
-            if (error != ERROR_DIR_NOT_EMPTY) {
-                VLOG_WARNING("containerv", "__containerv_destroy: failed to remove runtime dir: %lu\n", error);
-            } else {
-                VLOG_DEBUG("containerv", "__containerv_destroy: runtime dir not empty, may need manual cleanup\n");
-            }
+        if (platform_rmdir(container->runtime_dir) != 0) {
+            VLOG_WARNING("containerv", "__containerv_destroy: failed to remove runtime dir: %s\n", strerror(errno));
         }
     }
 }

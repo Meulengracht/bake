@@ -22,6 +22,8 @@
 #include <wchar.h>
 #include <vlog.h>
 
+#include <chef/platform.h>
+
 // Windows Networking API includes
 #include <winsock2.h>
 #include <iphlpapi.h>
@@ -147,6 +149,226 @@ static int __execute_powershell_command(const char* command)
     CloseHandle(pi.hThread);
 
     return result;
+}
+
+static char* __powershell_exec_stdout(const char* command)
+{
+    char ps_command[PS_CMD_BUFFER_SIZE];
+
+    if (command == NULL) {
+        return NULL;
+    }
+
+    snprintf(
+        ps_command,
+        sizeof(ps_command),
+        "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command \"%s\"",
+        command);
+
+    return platform_exec(ps_command);
+}
+
+static void __trim_whitespace_inplace(char* s)
+{
+    if (s == NULL) {
+        return;
+    }
+
+    // Trim leading
+    size_t start = 0;
+    while (s[start] == ' ' || s[start] == '\t' || s[start] == '\r' || s[start] == '\n') {
+        start++;
+    }
+    if (start != 0) {
+        memmove(s, s + start, strlen(s + start) + 1);
+    }
+
+    // Trim trailing
+    size_t len = strlen(s);
+    while (len > 0) {
+        char c = s[len - 1];
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+            s[len - 1] = '\0';
+            len--;
+            continue;
+        }
+        break;
+    }
+}
+
+static char* __windows_hns_create_and_attach_endpoint(
+    const char* container_id,
+    const char* switch_name)
+{
+    // NOTE:
+    // - This is best-effort and relies on HNS PowerShell helpers (commonly present on Windows).
+    // - We currently rely on DHCP; static IP policies can be added later.
+    char script[PS_CMD_BUFFER_SIZE];
+
+    if (container_id == NULL || container_id[0] == '\0') {
+        return NULL;
+    }
+
+    if (switch_name == NULL || switch_name[0] == '\0') {
+        switch_name = "Default Switch";
+    }
+
+    snprintf(
+        script,
+        sizeof(script),
+        "$ErrorActionPreference='Stop'; "
+        "Import-Module HNS -ErrorAction SilentlyContinue | Out-Null; "
+        "$sw='%s'; $cid='%s'; "
+        "$net = Get-HnsNetwork | Where-Object { $_.Name -eq $sw -or $_.SwitchName -eq $sw } | Select-Object -First 1; "
+        "if (-not $net) { $net = Get-HnsNetwork | Select-Object -First 1 }; "
+        "if (-not $net) { throw 'No HNS networks found' }; "
+        "$epName=('chef-' + $cid); "
+        "$ep = New-HnsEndpoint -NetworkId $net.Id -Name $epName; "
+        "Attach-HnsEndpoint -EndpointId $ep.Id -ContainerId $cid; "
+        "Write-Output $ep.Id;",
+        switch_name,
+        container_id);
+
+    char* out = __powershell_exec_stdout(script);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    __trim_whitespace_inplace(out);
+    if (out[0] == '\0') {
+        free(out);
+        return NULL;
+    }
+
+    return out;
+}
+
+static int __windows_configure_container_network_in_hcs_container(
+    struct containerv_container* container,
+    struct containerv_options* options)
+{
+    if (!container || !options || !options->network.enable) {
+        return 0;
+    }
+
+    // If the caller didn't request any in-container configuration, skip.
+    if (options->network.container_ip == NULL && options->network.dns == NULL) {
+        return 0;
+    }
+
+    // DNS-only is allowed. Static IP requires at least IP + netmask.
+    if (options->network.container_ip != NULL && options->network.container_netmask == NULL) {
+        VLOG_WARNING("containerv[net]", "container_ip provided without container_netmask; skipping static IP configuration\n");
+        return 0;
+    }
+
+    int ec = 0;
+    process_handle_t ph = NULL;
+
+    if (container->guest_is_windows) {
+        const char* gateway_ip = options->network.gateway_ip ? options->network.gateway_ip : options->network.host_ip;
+        const char* gw = gateway_ip ? gateway_ip : "";
+        const char* dns = options->network.dns ? options->network.dns : "";
+        const char* ip = options->network.container_ip ? options->network.container_ip : "";
+        const char* mask = options->network.container_netmask ? options->network.container_netmask : "";
+
+        // Use netsh for broad compatibility.
+        char ps[1024];
+        snprintf(
+            ps,
+            sizeof(ps),
+            "$if = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -notlike '*Loopback*' } | Select-Object -First 1).Name; "
+            "if (-not $if) { $if = 'Ethernet' }; "
+            "$gw = '%s'; $dns = '%s'; $ip = '%s'; $mask = '%s'; "
+            "if ($ip -and $ip.Length -gt 0 -and $mask -and $mask.Length -gt 0) { "
+            "  if ($gw -and $gw.Length -gt 0) { "
+            "    netsh interface ip set address name=\"$if\" static $ip $mask $gw 1; "
+            "  } else { "
+            "    netsh interface ip set address name=\"$if\" static $ip $mask none; "
+            "  }; "
+            "}; "
+            "$servers = $dns.Split(' ',',',';') | Where-Object { $_ -and $_.Length -gt 0 }; "
+            "if ($servers.Count -gt 0) { "
+            "  netsh interface ip set dns name=\"$if\" static $servers[0]; "
+            "  for ($i = 1; $i -lt $servers.Count; $i++) { netsh interface ip add dns name=\"$if\" addr=$servers[$i] index=($i+1) } "
+            "};",
+            gw,
+            dns,
+            ip,
+            mask);
+
+        struct containerv_spawn_options sopts = {0};
+        sopts.flags = CV_SPAWN_NONE;
+        sopts.arguments = "-NoProfile -ExecutionPolicy Bypass";
+        // We need -Command <script> as a single argv item; keep quoting in arguments.
+        // Append the script using a second spawn to avoid oversize? Keep it simple here.
+        char args[1400];
+        snprintf(args, sizeof(args), "-NoProfile -ExecutionPolicy Bypass -Command \"%s\"", ps);
+        sopts.arguments = args;
+
+        if (containerv_spawn(container, "powershell.exe", &sopts, &ph) != 0) {
+            VLOG_WARNING("containerv[net]", "failed to spawn in-container network configuration (Windows container)\n");
+            return -1;
+        }
+
+        if (containerv_wait(container, ph, &ec) != 0 || ec != 0) {
+            VLOG_WARNING("containerv[net]", "in-container network configuration failed (Windows container), exit=%d\n", ec);
+            return -1;
+        }
+
+        return 0;
+    }
+
+    // Linux container (LCOW): configure via /bin/sh.
+    const char* gateway_ip = options->network.gateway_ip ? options->network.gateway_ip : options->network.host_ip;
+    int prefix = 0;
+    if (options->network.container_ip != NULL) {
+        if (__ipv4_netmask_to_prefix(options->network.container_netmask, &prefix) != 0) {
+            VLOG_WARNING("containerv[net]", "invalid netmask/prefix: %s\n", options->network.container_netmask);
+            return -1;
+        }
+    }
+
+    char sh[1024];
+    snprintf(
+        sh,
+        sizeof(sh),
+        "set -e; "
+        "IP='%s'; PREFIX='%d'; NETMASK='%s'; GW='%s'; DNS='%s'; "
+        "IF=; for d in /sys/class/net/*; do n=${d##*/}; [ \"$n\" = lo ] && continue; IF=\"$n\"; break; done; "
+        "[ -n \"$IF\" ]; "
+        "if command -v ip >/dev/null 2>&1; then "
+        "  ip link set dev \"$IF\" up 2>/dev/null || true; "
+        "  if [ -n \"$IP\" ]; then ip addr flush dev \"$IF\" 2>/dev/null || true; ip addr add \"$IP\"/\"$PREFIX\" dev \"$IF\"; fi; "
+        "  if [ -n \"$GW\" ]; then ip route replace default via \"$GW\" dev \"$IF\" 2>/dev/null || true; fi; "
+        "else "
+        "  if [ -n \"$IP\" ]; then ifconfig \"$IF\" \"$IP\" netmask \"$NETMASK\" up; fi; "
+        "  if [ -n \"$GW\" ] && command -v route >/dev/null 2>&1; then route add default gw \"$GW\" \"$IF\" 2>/dev/null || true; fi; "
+        "fi; "
+        "if [ -n \"$DNS\" ]; then rm -f /etc/resolv.conf; for s in $DNS; do echo \"nameserver $s\" >> /etc/resolv.conf; done; fi;",
+        options->network.container_ip ? options->network.container_ip : "",
+        prefix,
+        options->network.container_netmask ? options->network.container_netmask : "",
+        gateway_ip ? gateway_ip : "",
+        options->network.dns ? options->network.dns : "");
+
+    struct containerv_spawn_options sopts = {0};
+    sopts.flags = CV_SPAWN_NONE;
+    char args[1200];
+    snprintf(args, sizeof(args), "-c \"%s\"", sh);
+    sopts.arguments = args;
+
+    if (containerv_spawn(container, "/bin/sh", &sopts, &ph) != 0) {
+        VLOG_WARNING("containerv[net]", "failed to spawn in-container network configuration (Linux container)\n");
+        return -1;
+    }
+
+    if (containerv_wait(container, ph, &ec) != 0 || ec != 0) {
+        VLOG_WARNING("containerv[net]", "in-container network configuration failed (Linux container), exit=%d\n", ec);
+        return -1;
+    }
+
+    return 0;
 }
 
 /**
@@ -399,6 +621,28 @@ int __windows_cleanup_network(
     struct containerv_container* container,
     struct containerv_options* options)
 {
+    (void)options;
+
+    // Clean up any HCS container-mode endpoint we created.
+    if (container && container->hns_endpoint_id && container->hns_endpoint_id[0] != '\0') {
+        char script[PS_CMD_BUFFER_SIZE];
+        snprintf(
+            script,
+            sizeof(script),
+            "$ErrorActionPreference='SilentlyContinue'; "
+            "Import-Module HNS -ErrorAction SilentlyContinue | Out-Null; "
+            "$id='%s'; $cid='%s'; "
+            "try { Detach-HnsEndpoint -EndpointId $id -ContainerId $cid | Out-Null } catch {} ; "
+            "try { Remove-HnsEndpoint -Id $id | Out-Null } catch {} ;",
+            container->hns_endpoint_id,
+            container->id);
+
+        (void)__execute_powershell_command(script);
+
+        free(container->hns_endpoint_id);
+        container->hns_endpoint_id = NULL;
+    }
+
     // For now, we don't actively clean up the virtual switch
     // as it might be used by other containers
     // In a production implementation, we might:
@@ -409,5 +653,46 @@ int __windows_cleanup_network(
     VLOG_DEBUG("containerv[net]", "network cleanup for container %s (minimal implementation)\n", 
                container ? container->id : "unknown");
     
+    return 0;
+}
+
+int __windows_configure_hcs_container_network(
+    struct containerv_container* container,
+    struct containerv_options* options)
+{
+    if (!container || !options || !options->network.enable) {
+        return 0;
+    }
+
+    // Only valid for true container compute systems.
+    if (container->hcs_system == NULL || container->hcs_is_vm) {
+        return 0;
+    }
+
+    if (container->network_configured) {
+        return 0;
+    }
+
+    const char* switch_name = options->network.switch_name ? options->network.switch_name : "Default Switch";
+
+    VLOG_DEBUG("containerv[net]", "creating/attaching HNS endpoint for compute system %s on switch %s\n", container->id, switch_name);
+
+    char* endpoint_id = __windows_hns_create_and_attach_endpoint(container->id, switch_name);
+    if (endpoint_id == NULL) {
+        VLOG_WARNING("containerv[net]", "failed to create/attach HNS endpoint; container may have no network\n");
+        return -1;
+    }
+
+    container->hns_endpoint_id = endpoint_id;
+
+    VLOG_DEBUG("containerv[net]", "attached HNS endpoint %s\n", container->hns_endpoint_id);
+
+    // Optional: configure static IP/DNS inside the container (best-effort).
+    if (__windows_configure_container_network_in_hcs_container(container, options) != 0) {
+        // Keep endpoint attached; allow caller to proceed.
+        VLOG_WARNING("containerv[net]", "container networking may be incomplete (static IP/DNS setup failed)\n");
+    }
+
+    container->network_configured = 1;
     return 0;
 }

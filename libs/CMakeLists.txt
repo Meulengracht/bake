@@ -5,7 +5,6 @@ add_subdirectory(vlog)
 add_subdirectory(dirconf)
 add_subdirectory(common)
 add_subdirectory(containerv)
-add_subdirectory(containervdisk)
 
 # Build utility libraries before the system libraries
 add_subdirectory(vafs)

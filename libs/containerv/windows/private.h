@@ -295,6 +295,10 @@ struct containerv_container {
     // Runtime flags
     int          network_configured;
 
+    // HCS container-mode networking (HNS endpoint attached to this compute system).
+    // Only used when hcs_is_vm == 0.
+    char*        hns_endpoint_id;
+
     // Guest OS selection (used for in-VM helpers like pid1d)
     int          guest_is_windows;
 
@@ -445,6 +449,13 @@ extern int __windows_configure_vm_network(
 );
 
 extern int __windows_configure_container_network(
+    struct containerv_container* container,
+    struct containerv_options* options
+);
+
+// HCS container compute system (WCOW/LCOW) networking.
+// Best-effort: creates and attaches an HNS endpoint (typically DHCP on the selected switch).
+extern int __windows_configure_hcs_container_network(
     struct containerv_container* container,
     struct containerv_options* options
 );

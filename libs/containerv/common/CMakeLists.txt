@@ -1,4 +1,5 @@
 add_library(containerv-common STATIC
+    oci-bundle.c
     oci-spec.c
     standard-mounts.c
 )
