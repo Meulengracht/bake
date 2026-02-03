@@ -81,7 +81,7 @@ dump_seccomp_logs() {
         # Split "YYYY-MM-DD HH:MM:SS" into separate date and time arguments
         local search_date="${build_start_time% *}"  # Everything before the last space (date)
         local search_time="${build_start_time#* }"  # Everything after the first space (time)
-        audit_output="$(sudo -n ausearch -m SECCOMP -ts $search_date $search_time 2>/dev/null || true)"
+        audit_output="$(sudo -n ausearch -m SECCOMP -ts "$search_date" "$search_time" 2>/dev/null || true)"
 
         if [[ -n "$audit_output" ]]; then
             echo "Seccomp denials found in audit log:"
