@@ -73,7 +73,39 @@ dump_seccomp_logs() {
 
     if [[ "$found_any" -eq 0 ]]; then
         echo "No seccomp denials found in any available logs since '$build_start_time'"
-        echo "Note: Build failed but no seccomp events detected. The failure may be unrelated to seccomp."
+        echo ""
+        echo "Possible reasons:"
+        echo "  1. Build failure unrelated to seccomp"
+        echo "  2. Seccomp logging not enabled (check: sysctl kernel.seccomp.actions_logged)"
+        echo "  3. Audit subsystem not running (check: systemctl status auditd)"
+        echo "  4. Insufficient permissions to read logs"
+        echo "  5. Logs rotated/cleared between build start and this check"
+        echo ""
+        echo "Diagnostic info:"
+        
+        # Check which tools are available
+        echo -n "  Available log tools: "
+        local tools=""
+        command -v ausearch >/dev/null 2>&1 && tools="${tools}ausearch "
+        command -v journalctl >/dev/null 2>&1 && tools="${tools}journalctl "
+        command -v dmesg >/dev/null 2>&1 && tools="${tools}dmesg "
+        echo "${tools:-none}"
+        
+        # Check if seccomp is enabled in kernel
+        if grep -q "CONFIG_SECCOMP=y" /boot/config-"$(uname -r)" 2>/dev/null; then
+            echo "  Kernel seccomp support: enabled"
+        else
+            echo "  Kernel seccomp support: unknown (cannot verify)"
+        fi
+        
+        # Check audit status
+        if command -v systemctl >/dev/null 2>&1; then
+            if systemctl is-active auditd >/dev/null 2>&1; then
+                echo "  Audit daemon: running"
+            else
+                echo "  Audit daemon: not running (seccomp audit events won't be logged)"
+            fi
+        fi
     fi
 
     echo "=== End of seccomp log check ==="
