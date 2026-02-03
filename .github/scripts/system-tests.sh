@@ -57,8 +57,8 @@ dump_seccomp_logs() {
     fi
 
     echo ""
-    echo "=== Checking for seccomp denials since build start ==="
-    echo "Start time: $build_start_time"
+    echo "=== Checking for seccomp denials (all available logs) ==="
+    echo "Note: Timestamp filter removed for debugging - showing all violations"
     
     # Always log seccomp logging status first
     echo "Seccomp logging status:"
@@ -82,11 +82,8 @@ dump_seccomp_logs() {
     # Try ausearch first (most detailed, structured output for audit events)
     if command -v ausearch >/dev/null 2>&1; then
         local audit_output
-        # ausearch requires date and time as separate arguments (not a single quoted string)
-        # Split "YYYY-MM-DD HH:MM:SS" into separate date and time arguments
-        local search_date="${build_start_time% *}"  # Everything before the last space (date)
-        local search_time="${build_start_time#* }"  # Everything after the first space (time)
-        audit_output="$(sudo -n ausearch -m SECCOMP -ts "$search_date" "$search_time" 2>/dev/null || true)"
+        # Search for all SECCOMP audit events (no timestamp filter for debugging)
+        audit_output="$(sudo -n ausearch -m SECCOMP 2>/dev/null || true)"
 
         if [[ -n "$audit_output" ]]; then
             echo "Seccomp denials found in audit log:"
@@ -100,8 +97,8 @@ dump_seccomp_logs() {
     # Also check journalctl (kernel logs with reliable timestamps)
     if command -v journalctl >/dev/null 2>&1; then
         local journal_output
-        # Match actual seccomp violations (audit type=1326 only)
-        journal_output="$(sudo -n journalctl -k --since "$build_start_time" 2>/dev/null | grep 'type=1326' || true)"
+        # Match actual seccomp violations (audit type=1326 only, no timestamp filter for debugging)
+        journal_output="$(sudo -n journalctl -k 2>/dev/null | grep 'type=1326' || true)"
 
         if [[ -n "$journal_output" ]]; then
             echo "Seccomp denials found in kernel log:"
@@ -113,8 +110,8 @@ dump_seccomp_logs() {
     # Also check dmesg as additional fallback
     if command -v dmesg >/dev/null 2>&1; then
         local dmesg_output
-        # Match actual seccomp violations (audit type=1326 only)
-        dmesg_output="$(sudo -n dmesg -T 2>/dev/null | grep 'type=1326' || true)"
+        # Match actual seccomp violations (audit type=1326 only, no timestamp filter for debugging)
+        dmesg_output="$(sudo -n dmesg 2>/dev/null | grep 'type=1326' || true)"
 
         if [[ -n "$dmesg_output" ]]; then
             echo "Seccomp denials found in dmesg:"
@@ -124,16 +121,18 @@ dump_seccomp_logs() {
     fi
 
     if [[ "$found_any" -eq 0 ]]; then
-        echo "No seccomp denials found in any available logs since '$build_start_time'"
+        echo "No seccomp denials found in any available logs (checked all history)"
         echo ""
         if [[ "${CONTAINERV_SECCOMP_LOG:-0}" == "1" ]]; then
             echo "Note: SCMP_ACT_LOG mode allows all syscalls (permissive logging mode)."
-            echo "      No violations means the policy would work correctly in enforcement mode."
+            echo "      No violations means either:"
+            echo "      1. The policy allows all needed syscalls (would work in enforcement mode)"
+            echo "      2. Audit logging is not capturing SCMP_ACT_LOG events on this system"
         else
             echo "This could mean:"
             echo "  1. The seccomp policy allows all syscalls the container needs (good!)"
             echo "  2. Violations occurred but weren't logged (check auditd configuration)"
-            echo "  3. Violations occurred outside the timestamp window"
+            echo "  3. Kernel may not be logging SCMP_ACT_ERRNO events (check kernel.seccomp.actions_logged)"
         fi
     fi
 
