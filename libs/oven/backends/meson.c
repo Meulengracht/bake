@@ -31,14 +31,25 @@ extern char* oven_preprocess_text(const char* original);
 
 static char* __processed_path(struct oven_backend_data* data)
 {
+    VLOG_DEBUG("meson", "__processed_path(build=%s)\n", 
+        data && data->paths.build ? data->paths.build : "(null)"
+    );
     return strpathcombine(data->paths.build, "cross-file.txt");
 }
 
 static int __read_file(const char* path, char** bufferOut)
 {
-    FILE* file;
-    long  size;
-    char* buffer;
+    FILE*  file;
+    long   size;
+    char*  buffer;
+    size_t read;
+    VLOG_DEBUG("meson", "__read_file(path=%s)\n", path ? path : "(null)");
+
+    if (bufferOut == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    *bufferOut = NULL;
 
     file = fopen(path, "rb");
     if (file == NULL) {
@@ -50,21 +61,37 @@ static int __read_file(const char* path, char** bufferOut)
     size = ftell(file);
     rewind(file);
 
-    buffer = malloc(size);
+    if (size < 0) {
+        fprintf(stderr, "Failed to read %s: %s\n", path, strerror(errno));
+        fclose(file);
+        return -1;
+    }
+
+    buffer = malloc((size_t)size + 1);
     if (buffer == NULL) {
         fprintf(stderr, "Failed to read %s: %s\n", path, strerror(errno));
         fclose(file);
         return -1;
     }
 
-    fread(buffer, 1, size, file);
+    read = fread(buffer, 1, (size_t)size, file);
+    if (read != (size_t)size) {
+        fprintf(stderr, "Failed to read %s: %s\n", path, strerror(errno));
+        free(buffer);
+        fclose(file);
+        return -1;
+    }
+    buffer[size] = '\0';
     fclose(file);
+
+    *bufferOut = buffer;
     return 0;
 }
 
 static int __write_file(const char* path, const char* buffer)
 {
     FILE* file;
+    VLOG_DEBUG("meson", "__write_file(path=%s)\n", path ? path : "(null)");
 
     file = fopen(path, "w");
     if (file == NULL) {
@@ -79,15 +106,11 @@ static int __write_file(const char* path, const char* buffer)
 
 static char* __compute_arguments(struct oven_backend_data* data, union chef_backend_options* options)
 {
-    size_t length;
-    char*  args;
-    int    status;
-    FILE*  stream;
-
-    stream = open_memstream(&args, &length);
-    if (stream == NULL) {
-        return NULL;
-    }
+    int   status;
+    char* args = NULL;
+    VLOG_DEBUG("meson", "__compute_arguments(cross_file=%s)\n",
+        (options && options->meson.cross_file) ? options->meson.cross_file : "(null)"
+    );
 
     if (options->meson.cross_file != NULL) {
         char* original, *processed, *path;
@@ -122,13 +145,18 @@ static char* __compute_arguments(struct oven_backend_data* data, union chef_back
             free(path);
             return NULL;
         }
-        fprintf(stream, "--cross-file %s", path);
+
+        args = malloc(strlen("--cross-file ") + strlen(path) + 1);
+        if (args == NULL) {
+            free(path);
+            return NULL;
+        }
+
+        sprintf(args, "--cross-file %s", path);
         free(path);
     }
 
     // --force-fallback-for=llvm
-
-    fclose(stream);
     return args;
 }
 
@@ -148,6 +176,10 @@ int meson_config_main(struct oven_backend_data* data, union chef_backend_options
     char*  args           = NULL;
     int    status         = -1;
     size_t length;
+    VLOG_DEBUG("meson", "meson_config_main(project=%s, build=%s)\n",
+        data && data->paths.project ? data->paths.project : "(null)",
+        data && data->paths.build ? data->paths.build : "(null)"
+    );
 
     environment = environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
@@ -196,6 +228,10 @@ int meson_build_main(struct oven_backend_data* data, union chef_backend_options*
     char** environment  = NULL;
     int    status = -1;
     size_t length;
+    VLOG_DEBUG("meson", "meson_build_main(project=%s, build=%s)\n",
+        data && data->paths.project ? data->paths.project : "(null)",
+        data && data->paths.build ? data->paths.build : "(null)"
+    );
 
     environment = environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
@@ -234,6 +270,10 @@ int meson_clean_main(struct oven_backend_data* data, union chef_backend_options*
     char** environment  = NULL;
     int    status = -1;
     size_t length;
+    VLOG_DEBUG("meson", "meson_clean_main(project=%s, build=%s)\n",
+        data && data->paths.project ? data->paths.project : "(null)",
+        data && data->paths.build ? data->paths.build : "(null)"
+    );
 
     environment = environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
