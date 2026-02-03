@@ -32,22 +32,28 @@ if [[ "${CONTAINERV_SECCOMP_LOG:-0}" == "1" ]]; then
     echo "      Denied syscalls will be logged to audit/kernel logs instead of just returning EPERM"
 fi
 
-# Helper to dump seccomp denial logs on build failure
+# Helper to dump seccomp denial logs
 dump_seccomp_logs() {
-    if [[ "$build_failed" -eq 0 || -z "$build_start_time" ]]; then
+    # Skip if logging is not enabled or no start time recorded
+    if [[ -z "$build_start_time" ]]; then
+        return 0
+    fi
+    
+    # Check if seccomp logging was enabled
+    if [[ "${CONTAINERV_SECCOMP_LOG:-0}" != "1" ]]; then
+        # Only show this message if build failed
+        if [[ "$build_failed" -eq 1 ]]; then
+            echo ""
+            echo "=== Seccomp logging disabled ==="
+            echo "NOTE: Seccomp logging is disabled. Set CONTAINERV_SECCOMP_LOG=1 to enable."
+            echo "      Without logging enabled, seccomp violations return EPERM silently."
+            echo ""
+        fi
         return 0
     fi
 
     echo ""
     echo "=== Checking for seccomp denials since build start ==="
-    
-    # Check if seccomp logging was enabled
-    if [[ "${CONTAINERV_SECCOMP_LOG:-0}" != "1" ]]; then
-        echo "NOTE: Seccomp logging is disabled. Set CONTAINERV_SECCOMP_LOG=1 to enable."
-        echo "      Without logging enabled, seccomp violations return EPERM silently."
-        echo ""
-        return 0
-    fi
     
     # Always log seccomp logging status first
     echo "Seccomp logging status:"
@@ -131,7 +137,7 @@ else
 fi
 
 cleanup() {
-    # Dump seccomp logs if build failed
+    # Check for seccomp violations (if logging enabled)
     dump_seccomp_logs
 
     if [[ -n "${cvd_pid:-}" ]]; then
