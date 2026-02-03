@@ -19,7 +19,6 @@ target_link_libraries(containerv-windows PUBLIC advapi32 ole32)
 
 # Link Windows HCS/HyperV libraries
 target_link_libraries(containerv-windows PUBLIC 
-    vmcompute      # Host Compute Service
     onecore        # Core Windows APIs 
     kernel32       # Windows kernel APIs
     ws2_32         # Winsock2 for networking
