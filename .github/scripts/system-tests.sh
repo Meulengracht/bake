@@ -33,6 +33,8 @@ dump_seccomp_logs() {
     echo ""
     echo "=== Checking for seccomp denials since build start ==="
 
+    local found_any=0
+
     # Try ausearch first (most detailed, structured output for audit events)
     if command -v ausearch >/dev/null 2>&1; then
         local audit_output
@@ -41,34 +43,39 @@ dump_seccomp_logs() {
         if [[ -n "$audit_output" ]]; then
             echo "Seccomp denials found in audit log:"
             echo "$audit_output"
-        else
-            echo "No seccomp denials found in audit log since '$build_start_time'"
+            found_any=1
         fi
-    # Try journalctl (preferred for kernel logs, reliable timestamps)
-    elif command -v journalctl >/dev/null 2>&1; then
+    fi
+
+    # Also check journalctl (kernel logs with reliable timestamps)
+    if command -v journalctl >/dev/null 2>&1; then
         local journal_output
         journal_output="$(sudo -n journalctl -k --since "$build_start_time" 2>/dev/null | grep -i seccomp || true)"
 
         if [[ -n "$journal_output" ]]; then
             echo "Seccomp denials found in kernel log:"
             echo "$journal_output"
-        else
-            echo "No seccomp denials found in kernel log since '$build_start_time'"
+            found_any=1
         fi
-    # Fall back to dmesg -T if journalctl is not available
-    elif command -v dmesg >/dev/null 2>&1; then
+    fi
+
+    # Also check dmesg as additional fallback
+    if command -v dmesg >/dev/null 2>&1; then
         local dmesg_output
         dmesg_output="$(sudo -n dmesg -T 2>/dev/null | grep -i seccomp || true)"
 
         if [[ -n "$dmesg_output" ]]; then
-            echo "Seccomp denials found in dmesg (filtered, check timestamps manually):"
+            echo "Seccomp denials found in dmesg:"
             echo "$dmesg_output"
-        else
-            echo "No seccomp denials found in dmesg"
+            found_any=1
         fi
-    else
-        echo "No log tools available for seccomp log check"
     fi
+
+    if [[ "$found_any" -eq 0 ]]; then
+        echo "No seccomp denials found in any available logs since '$build_start_time'"
+        echo "Note: Build failed but no seccomp events detected. The failure may be unrelated to seccomp."
+    fi
+
     echo "=== End of seccomp log check ==="
 }
 
