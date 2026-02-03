@@ -122,7 +122,8 @@ else
     fi
 
     # Capture the real cvd PID from the privileged shell.
-    cvd_pid="$(sudo -n bash -c "\"$cvd_bin\" -vv >\"$cvd_log\" 2>&1 & echo \$!")" || {
+    # Pass through CONTAINERV_SECCOMP_LOG if set for debugging
+    cvd_pid="$(sudo -n bash -c "CONTAINERV_SECCOMP_LOG=${CONTAINERV_SECCOMP_LOG:-0} \"$cvd_bin\" -vv >\"$cvd_log\" 2>&1 & echo \$!")" || {
         echo "ERROR: failed to start cvd via sudo (is passwordless sudo available in CI?)" >&2
         exit 1
     }
