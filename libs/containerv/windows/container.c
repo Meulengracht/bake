@@ -914,6 +914,7 @@ static struct containerv_container* __container_new(void)
     container->hcs_system = NULL;
     container->host_pipe = INVALID_HANDLE_VALUE;
     container->child_pipe = INVALID_HANDLE_VALUE;
+    container->vm_started = 0;
     list_init(&container->processes);
     container->policy = NULL;
 

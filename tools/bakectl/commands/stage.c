@@ -59,6 +59,7 @@ struct __pack_resolve_commands_options {
     const char* ingredients_root;
     const char* platform;
     const char* architecture;
+    const char* base;
     int         cross_compiling;
 };
 
@@ -66,13 +67,42 @@ struct __resolve_options {
     const char* sysroot;
     const char* install_root;
     const char* ingredients_root;
+    const char* platform;
+    const char* base;
     int         cross_compiling;
 };
+
+static int __ascii_equals_ignore_case(const char* a, const char* b)
+{
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
+    while (*a && *b) {
+        unsigned char ca = (unsigned char)*a++;
+        unsigned char cb = (unsigned char)*b++;
+        if (tolower(ca) != tolower(cb)) {
+            return 0;
+        }
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+static int __dependency_name_equals(const char* platform, const char* a, const char* b)
+{
+    if (platform && strcmp(platform, "windows") == 0) {
+        return __ascii_equals_ignore_case(a, b);
+    }
+    return a && b && strcmp(a, b) == 0;
+}
 
 static int __verify_commands(struct list* commands, const char* root)
 {
     struct list_item* item;
     struct platform_stat stats;
+    VLOG_DEBUG("commands", "__verify_commands(root=%s, count=%d)\n",
+        root ? root : "(null)",
+        commands ? (int)commands->count : -1
+    );
 
     if (commands->count == 0) {
         return 0;
@@ -109,6 +139,12 @@ static int __resolve_dependency_path(struct bake_resolve* resolve, struct bake_r
     struct list       files = { 0 };
     struct list_item* item;
     int               status;
+    VLOG_DEBUG("commands", "__resolve_dependency_path(dep=%s, platform=%s, base=%s, cross=%d)\n",
+        dependency && dependency->name ? dependency->name : "(null)",
+        options && options->platform ? options->platform : "(null)",
+        options && options->base ? options->base : "(null)",
+        options ? options->cross_compiling : -1
+    );
 
     // priority 1 - check in install path
     status = platform_getfiles(options->install_root, 1, &files);
@@ -119,7 +155,7 @@ static int __resolve_dependency_path(struct bake_resolve* resolve, struct bake_r
 
     list_foreach(&files, item) {
         struct platform_file_entry* file = (struct platform_file_entry*)item;
-        if (!strcmp(file->name, dependency->name)) {
+        if (__dependency_name_equals(options->platform, file->name, dependency->name)) {
             dependency->path = platform_strdup(file->path);
             dependency->sub_path = platform_strdup(file->sub_path);
             platform_getfiles_destroy(&files);
@@ -137,7 +173,7 @@ static int __resolve_dependency_path(struct bake_resolve* resolve, struct bake_r
 
     list_foreach(&files, item) {
         struct platform_file_entry* file = (struct platform_file_entry*)item;
-        if (!strcmp(file->name, dependency->name)) {
+        if (__dependency_name_equals(options->platform, file->name, dependency->name)) {
             dependency->path = platform_strdup(file->path);
             dependency->sub_path = platform_strdup(file->sub_path);
             platform_getfiles_destroy(&files);
@@ -152,13 +188,13 @@ static int __resolve_dependency_path(struct bake_resolve* resolve, struct bake_r
     if (!options->cross_compiling) {
         const char* path;
 
-        if (resolve_is_system_library("ubuntu-24", dependency->name)) {
+        if (resolve_is_system_library(options->base, dependency->name)) {
             // okay library is carried by the system, we can safely ignore it
             dependency->ignored = 1;
             return 0;
         }
 
-        path = resolve_platform_dependency(options->sysroot, resolve, dependency->name);
+        path = resolve_platform_dependency(options->sysroot, options->platform, resolve, dependency->name);
         if (path) {
             dependency->path = path;
             dependency->system_library = 1;
@@ -171,6 +207,9 @@ static int __resolve_dependency_path(struct bake_resolve* resolve, struct bake_r
 
 static int __resolve_elf_dependencies(struct bake_resolve* resolve, struct __resolve_options* options)
 {
+    VLOG_DEBUG("commands", "__resolve_elf_dependencies(binary=%s)\n", 
+        resolve && resolve->path ? resolve->path : "(null)"
+    );
     while (1) {
         struct list_item* item;
         int               resolved = 0;
@@ -209,6 +248,9 @@ static int __resolve_elf_dependencies(struct bake_resolve* resolve, struct __res
 
 static int __resolve_pe_dependencies(struct bake_resolve* resolve, struct __resolve_options* options)
 {
+    VLOG_DEBUG("commands", "__resolve_pe_dependencies(binary=%s)\n", 
+        resolve && resolve->path ? resolve->path : "(null)"
+    );
     while (1) {
         struct list_item* item;
         int               resolved = 0;
@@ -226,7 +268,7 @@ static int __resolve_pe_dependencies(struct bake_resolve* resolve, struct __reso
                 }
 
                 // now we resolve the dependencies of this binary
-                if (dependency->ignored) {
+                if (!dependency->ignored) {
                     status = pe_resolve_dependencies(dependency->path, &resolve->dependencies);
                     if (status != 0) {
                         VLOG_ERROR("commands", "failed to resolve dependencies for %s\n", dependency->name);
@@ -248,8 +290,14 @@ static int __resolve_pe_dependencies(struct bake_resolve* resolve, struct __reso
 static int __resolve_command(struct recipe_pack_command* command, struct list* resolves, struct __pack_resolve_commands_options* options)
 {
     struct bake_resolve* resolve;
-    const char*             path;
-    int                     status;
+    const char*          path;
+    int                  status;
+    VLOG_DEBUG("commands", "__resolve_command(name=%s, path=%s, platform=%s, base=%s)\n",
+        command && command->name ? command->name : "(null)",
+        command && command->path ? command->path : "(null)",
+        options && options->platform ? options->platform : "(null)",
+        options && options->base ? options->base : "(null)"
+    );
 
     // verify the command points to something correct
     path = strpathcombine(options->install_root, command->path);
@@ -268,6 +316,8 @@ static int __resolve_command(struct recipe_pack_command* command, struct list* r
                 .sysroot = options->sysroot,
                 .install_root = options->install_root,
                 .ingredients_root = options->ingredients_root,
+                .platform = options->platform,
+                .base = options->base,
                 .cross_compiling = options->cross_compiling
             });
         }
@@ -278,6 +328,8 @@ static int __resolve_command(struct recipe_pack_command* command, struct list* r
                 .sysroot = options->sysroot,
                 .install_root = options->install_root,
                 .ingredients_root = options->ingredients_root,
+                .platform = options->platform,
+                .base = options->base,
                 .cross_compiling = options->cross_compiling
             });
         }
@@ -299,6 +351,9 @@ static int __resolve_commands(struct list* commands, struct list* resolves, stru
 {
     struct list_item* item;
     int               status;
+    VLOG_DEBUG("commands", "__resolve_commands(count=%d)\n", 
+        commands ? (int)commands->count : -1
+    );
 
     if (commands->count == 0) {
         return 0;
@@ -318,6 +373,11 @@ static int __resolve_commands(struct list* commands, struct list* resolves, stru
 int pack_resolve_commands(struct list* commands, struct list* resolves, struct __pack_resolve_commands_options* options)
 {
     int status;
+    VLOG_DEBUG("commands", "pack_resolve_commands(platform=%s, base=%s, cross=%d)\n",
+        options && options->platform ? options->platform : "(null)",
+        options && options->base ? options->base : "(null)",
+        options ? options->cross_compiling : -1
+    );
 
     status = __verify_commands(commands, options->install_root);
     if (status) {
@@ -364,6 +424,10 @@ void pack_resolve_destroy(struct list* resolves)
 static int __matches_filters(const char* path, struct list* filters)
 {
     struct list_item* item;
+    VLOG_DEBUG("bakectl", "__matches_filters(path=%s, count=%d)\n",
+        path ? path : "(null)",
+        filters ? (int)filters->count : -1
+    );
 
     if (filters->count == 0) {
         return 0; // YES! no filters means everything matches
@@ -387,6 +451,11 @@ static int __copy_files_with_filters(const char* sourceRoot, const char* path, s
     DIR*           dir;
     const char*    finalSource;
     const char*    finalDestination = NULL;
+    VLOG_DEBUG("bakectl", "__copy_files_with_filters(sourceRoot=%s, path=%s, destinationRoot=%s)\n",
+        sourceRoot ? sourceRoot : "(null)",
+        path ? path : "(null)",
+        destinationRoot ? destinationRoot : "(null)"
+    );
     
     finalSource = strpathcombine(sourceRoot, path);
     if (!finalSource) {
@@ -410,6 +479,8 @@ static int __copy_files_with_filters(const char* sourceRoot, const char* path, s
 
     while ((entry = readdir(dir)) != NULL) {
         const char* combinedSubPath;
+        struct platform_stat st;
+        char* sourceCandidate;
 
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
@@ -426,25 +497,37 @@ static int __copy_files_with_filters(const char* sourceRoot, const char* path, s
             continue;
         }
 
+        sourceCandidate = strpathcombine(finalSource, entry->d_name);
+        if (!sourceCandidate) {
+            free((void*)combinedSubPath);
+            goto cleanup;
+        }
+
+        if (platform_stat(sourceCandidate, &st)) {
+            free((void*)combinedSubPath);
+            free(sourceCandidate);
+            goto cleanup;
+        }
+
         // oh ok, is it a directory?
-        if (entry->d_type == DT_DIR) {
+        if (st.type == PLATFORM_FILETYPE_DIRECTORY) {
             status = __copy_files_with_filters(sourceRoot, combinedSubPath, filters, destinationRoot);
             free((void*)combinedSubPath);
+            free(sourceCandidate);
             if (status) {
                 goto cleanup;
             }
         } else {
             // ok, it's a file, copy it
-            char* sourceFile      = strpathcombine(finalSource, entry->d_name);
             char* destinationFile = strpathcombine(finalDestination, entry->d_name);
             free((void*)combinedSubPath);
-            if (!sourceFile || !destinationFile) {
-                free((void*)sourceFile);
+            if (!destinationFile) {
+                free(sourceCandidate);
                 goto cleanup;
             }
 
-            status = platform_copyfile(sourceFile, destinationFile);
-            free((void*)sourceFile);
+            status = platform_copyfile(sourceCandidate, destinationFile);
+            free(sourceCandidate);
             free((void*)destinationFile);
             if (status) {
                 goto cleanup;
@@ -472,6 +555,10 @@ static int __install_dependencies(struct list* files, const char* installRoot)
 {
     struct list_item* item;
     int               status;
+    VLOG_DEBUG("bakectl", "__install_dependencies(installRoot=%s, count=%d)\n",
+        installRoot ? installRoot : "(null)",
+        files ? (int)files->count : -1
+    );
 
     list_foreach(files, item) {
         struct bake_resolve_dependency* dependency = (struct bake_resolve_dependency*)item;
@@ -481,6 +568,7 @@ static int __install_dependencies(struct list* files, const char* installRoot)
 
         if (dependency->system_library) {
             // skip?
+            status = 0;
         } else {
             status = platform_copyfile(dependency->path, strpathcombine(installRoot, dependency->sub_path));
         }
@@ -498,6 +586,11 @@ int stage_main(int argc, char** argv, struct __bakelib_context* context, struct 
     int               status;
     struct list       resolves = { 0 };
     struct list_item* item;
+    VLOG_DEBUG("bakectl", "stage_main(argc=%d, platform=%s, arch=%s)\n",
+        argc,
+        context && context->build_platform ? context->build_platform : "(null)",
+        context && context->build_architecture ? context->build_architecture : "(null)"
+    );
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -531,11 +624,12 @@ int stage_main(int argc, char** argv, struct __bakelib_context* context, struct 
         struct recipe_pack* pack = (struct recipe_pack*)item;
         
         status = pack_resolve_commands(&pack->commands, &resolves, &(struct __pack_resolve_commands_options) {
-            .sysroot = "",
+            .sysroot = "/",
             .install_root = context->install_directory,
             .ingredients_root = context->build_ingredients_directory,
             .platform = context->build_platform,
             .architecture = context->build_architecture,
+            .base = recipe_platform_base(context->recipe, context->build_platform),
             .cross_compiling = __is_cross_compiling(context->build_platform)
         });
         if (status) {

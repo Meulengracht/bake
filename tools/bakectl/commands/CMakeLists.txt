@@ -15,6 +15,9 @@ add_sources(
     resolvers/common.c
     resolvers/elf.c
     resolvers/pe.c
+    resolvers/resolver_platform.c
+    resolvers/resolver_linux.c
+    resolvers/resolver_windows.c
     
     build.c
     clean.c
@@ -23,10 +26,6 @@ add_sources(
     source.c
     stage.c
 )
-
-if (UNIX)
-    add_sources(resolvers/resolver_linux.c)
-endif()
 
 add_library(bakectl-commands STATIC ${CMD_SRCS})
 

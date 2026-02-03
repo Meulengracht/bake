@@ -275,6 +275,9 @@ struct containerv_container {
     // Security policy (owned by container once created)
     struct containerv_policy*            policy;
     
+    // VM state
+    int          vm_started;
+
     // Runtime flags
     int          network_configured;
 
