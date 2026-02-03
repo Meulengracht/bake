@@ -20,7 +20,6 @@
 #include <chef/containerv.h>
 #include <chef/containerv/layers.h>
 #include <chef/containerv/policy.h>
-#include <chef/containerv/disk/winvm.h>
 #include <chef/dirs.h>
 #include <chef/package.h>
 #include <chef/platform.h>
@@ -214,7 +213,7 @@ struct containerv_policy* __policy_from_spec(const struct chef_policy_spec* spec
     return policy;
 }
 
-static struct __create_container_params {
+struct __create_container_params {
     const char*                      id; // do not cleanup
     struct containerv_options*       opts; // cleaned up
     struct containerv_container*     container; // cleanup on failures
@@ -307,60 +306,37 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
     int                              status;
     char**                           wcow_parent_layers = NULL;
     int                              wcow_parent_layer_count = 0;
-    struct containerv_disk_winvm_prepare_result winvmPrep = {0};
-    int                              winvmAppliedOffline = 0;
     VLOG_DEBUG("cvd", "__create_hyperv_container()\n");
     
-    // Prefer true Windows containers via HCS container compute systems.
-    // Override with `CHEF_WINDOWS_RUNTIME=vm` to keep legacy VM-backed mode.
-    const char* win_runtime = getenv("CHEF_WINDOWS_RUNTIME");
-    if (win_runtime == NULL || strcmp(win_runtime, "container") == 0 || strcmp(win_runtime, "hcs-container") == 0) {
-        containerv_options_set_windows_runtime_mode(containerParams->opts, CV_WIN_RUNTIME_HCS_CONTAINER);
-
-        if (__windows_hcs_has_disallowed_layers(params)) {
-            VLOG_ERROR("cvd", "cvd_create: HCS container mode does not support OVERLAY layers on Windows. Remove overlays or set CHEF_WINDOWS_RUNTIME=vm.\n");
-            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-        }
-
-        // WCOW vs LCOW selection for the HCS container backend.
-        // Default: WCOW. Set `CHEF_WINDOWS_CONTAINER_TYPE=linux` for LCOW.
-        const char* win_ct = getenv("CHEF_WINDOWS_CONTAINER_TYPE");
-        const int is_lcow = (win_ct != NULL && strcmp(win_ct, "linux") == 0);
-        containerv_options_set_windows_container_type(
-            containerParams->opts,
-            is_lcow ? CV_WIN_CONTAINER_TYPE_LINUX : CV_WIN_CONTAINER_TYPE_WINDOWS);
-
-        // Default to Hyper-V isolation (true Hyper-V containers). Override with `CHEF_WINDOWS_ISOLATION=process`.
-        const char* win_iso = getenv("CHEF_WINDOWS_ISOLATION");
-        if (win_iso != NULL && strcmp(win_iso, "process") == 0) {
-            containerv_options_set_windows_container_isolation(containerParams->opts, CV_WIN_CONTAINER_ISOLATION_PROCESS);
-        } else {
-            containerv_options_set_windows_container_isolation(containerParams->opts, CV_WIN_CONTAINER_ISOLATION_HYPERV);
-        }
-
-        if (is_lcow) {
-            // LCOW requires HvRuntime settings for the Linux utility VM.
-            // These values are passed through to schema1 HvRuntime.
-            const char* uvm_image = getenv("CHEF_LCOW_UVM_IMAGE_PATH");
-            const char* kernel = getenv("CHEF_LCOW_KERNEL_FILE");
-            const char* initrd = getenv("CHEF_LCOW_INITRD_FILE");
-            const char* boot = getenv("CHEF_LCOW_BOOT_PARAMETERS");
-            containerv_options_set_windows_lcow_hvruntime(containerParams->opts, uvm_image, kernel, initrd, boot);
-        }
+    if (__windows_hcs_has_disallowed_layers(params)) {
+        VLOG_ERROR("cvd", "cvd_create: HCS container mode does not support OVERLAY layers on Windows. Remove overlays.\n");
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
 
-    // Legacy VM-backed path: optional offline disk preparation.
-    // In true HCS container mode, rootfs is expected to be a windowsfilter container folder.
-    const char* win_runtime2 = getenv("CHEF_WINDOWS_RUNTIME");
-    const int is_vm_mode = (win_runtime2 != NULL && strcmp(win_runtime2, "vm") == 0);
-    if (is_vm_mode) {
-        status = containerv_disk_winvm_prepare_layers(containerParams->id, &cvLayers, &cvLayerCount, &winvmPrep);
-        if (status != 0) {
-            VLOG_ERROR("cvd", "cvd_create: Windows VM disk preparation failed\n");
-            free(cvLayers);
-            containerv_options_delete(containerParams->opts);
-            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-        }
+    // WCOW vs LCOW selection for the HCS container backend.
+    // Default: WCOW. Set `CHEF_WINDOWS_CONTAINER_TYPE=linux` for LCOW.
+    const char* win_ct = getenv("CHEF_WINDOWS_CONTAINER_TYPE");
+    const int is_lcow = (win_ct != NULL && strcmp(win_ct, "linux") == 0);
+    containerv_options_set_windows_container_type(
+        containerParams->opts,
+        is_lcow ? CV_WIN_CONTAINER_TYPE_LINUX : CV_WIN_CONTAINER_TYPE_WINDOWS);
+
+    // Default to Hyper-V isolation (true Hyper-V containers). Override with `CHEF_WINDOWS_ISOLATION=process`.
+    const char* win_iso = getenv("CHEF_WINDOWS_ISOLATION");
+    if (win_iso != NULL && strcmp(win_iso, "process") == 0) {
+        containerv_options_set_windows_container_isolation(containerParams->opts, CV_WIN_CONTAINER_ISOLATION_PROCESS);
+    } else {
+        containerv_options_set_windows_container_isolation(containerParams->opts, CV_WIN_CONTAINER_ISOLATION_HYPERV);
+    }
+
+    if (is_lcow) {
+        // LCOW requires HvRuntime settings for the Linux utility VM.
+        // These values are passed through to schema1 HvRuntime.
+        const char* uvm_image = getenv("CHEF_LCOW_UVM_IMAGE_PATH");
+        const char* kernel = getenv("CHEF_LCOW_KERNEL_FILE");
+        const char* initrd = getenv("CHEF_LCOW_INITRD_FILE");
+        const char* boot = getenv("CHEF_LCOW_BOOT_PARAMETERS");
+        containerv_options_set_windows_lcow_hvruntime(containerParams->opts, uvm_image, kernel, initrd, boot);
     }
     
     // Optional WCOW parent layers (flattened list).
@@ -385,16 +361,6 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
     status = containerv_layers_compose_with_options(cvLayers, cvLayerCount, cvdID, opts, &layerContext);
     free(cvLayers);
 
-    {
-        const char* win_runtime3 = getenv("CHEF_WINDOWS_RUNTIME");
-        const int is_vm_mode3 = (win_runtime3 != NULL && strcmp(win_runtime3, "vm") == 0);
-        if (is_vm_mode3) {
-            // Preserve the flag before destroying the staging dir bookkeeping.
-            winvmAppliedOffline = winvmPrep.applied_packages;
-            containerv_disk_winvm_prepare_result_destroy(&winvmPrep);
-        }
-    }
-    
     if (status != 0) {
         VLOG_ERROR("cvd", "cvd_create: failed to compose layers\n");
         environment_destroy(wcow_parent_layers);
@@ -448,22 +414,9 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
         VLOG_ERROR("cvd", "failed to start the container\n");
         return __chef_status_from_errno();
     }
-
-    {
-        const char* win_runtime4 = getenv("CHEF_WINDOWS_RUNTIME");
-        const int is_vm_mode4 = (win_runtime4 != NULL && strcmp(win_runtime4, "vm") == 0);
-        if (is_vm_mode4) {
-            // For Windows-host VM-backed containers, install any VAFS packages into the guest.
-            // If we already applied packages offline into the VHD chain, skip.
-            if (!winvmAppliedOffline && containerv_disk_winvm_provision(cvContainer, params) != 0) {
-                VLOG_ERROR("cvd", "cvd_create: guest provisioning failed\n");
-                return CHEF_STATUS_INTERNAL_ERROR;
-            }
-        }
-    }
+    return CHEF_STATUS_SUCCESS;
 }
 #endif
-
 
 enum chef_status cvd_create(const struct chef_create_parameters* params, const char** id)
 {
