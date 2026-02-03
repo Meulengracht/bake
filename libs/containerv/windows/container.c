@@ -49,6 +49,9 @@
 static volatile LONG g_pid1_container_refcount = 0;
 static volatile LONG g_pid1_ready = 0;
 
+static int __pid1d_rpc(struct containerv_container* container, const char* req_line, char* resp, size_t resp_cap);
+static int __pid1d_ensure(struct containerv_container* container);
+
 static int __pid1_acquire_for_container(struct containerv_container* container)
 {
     if (container == NULL) {

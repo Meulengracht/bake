@@ -28,11 +28,6 @@ struct containerv_options* containerv_options_new(void)
         return NULL;
     }
     
-    // Set Windows-specific defaults
-    options->vm.memory_mb = 1024;          // 1GB default memory
-    options->vm.cpu_count = 2;             // 2 vCPUs default
-    options->vm.vm_generation = "2";       // Generation 2 VM (UEFI)
-
     // Default rootfs: WSL Ubuntu (legacy VM path; retained for compatibility)
     options->rootfs.type = WINDOWS_ROOTFS_WSL_UBUNTU;
     options->rootfs.version = "22.04";     // Ubuntu 22.04 LTS

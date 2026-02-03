@@ -230,6 +230,9 @@ struct __mapped_dir_build_ctx {
     const char* linux_container_prefix;
 };
 
+static char* __normalize_container_path_linux_alloc(const char* p);
+static void CALLBACK __hcs_operation_callback(HCS_OPERATION operation, void* context);
+
 static int __starts_with_path_prefix(const char* s, const char* prefix)
 {
     if (s == NULL || prefix == NULL) {

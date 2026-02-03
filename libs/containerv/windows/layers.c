@@ -628,7 +628,7 @@ int containerv_layers_compose_ex(
         context->materialized_container_dir = containerDir;
         context->composed_rootfs_is_materialized = 1;
         context->composed_rootfs = outDir;
-        
+
         const char* source_rootfs = NULL;
         int owned_rootfs_dir = 0;
 
@@ -696,52 +696,42 @@ int containerv_layers_compose_ex(
             }
             source_rootfs = base_rootfs;
         }
-
-        if (prefer_hcs) {
-            if (source_rootfs == NULL) {
-                VLOG_ERROR("containerv", "containerv_layers_compose: missing rootfs content for windowsfilter import\n");
-                containerv_layers_destroy(context);
-                errno = EINVAL;
-                return -1;
-            }
-
-            char wcow_dir[MAX_PATH];
-            int rc = snprintf(wcow_dir, sizeof(wcow_dir), "%s\\windowsfilter", context->materialized_container_dir);
-            if (rc < 0 || (size_t)rc >= sizeof(wcow_dir)) {
-                containerv_layers_destroy(context);
-                errno = EINVAL;
-                return -1;
-            }
-
-            char** parent_layers = NULL;
-            int parent_layer_count = 0;
-            if (__copy_parent_layers(parents, parent_count, &parent_layers, &parent_layer_count) != 0) {
-                containerv_layers_destroy(context);
-                errno = EINVAL;
-                return -1;
-            }
-
-            if (__windowsfilter_import_from_dir(wcow_dir, source_rootfs, (const char* const*)parent_layers, parent_layer_count) != 0) {
-                __free_parent_layers(parent_layers, parent_layer_count);
-                VLOG_ERROR("containerv", "containerv_layers_compose: failed to import windowsfilter layer from %s\n", source_rootfs);
-                containerv_layers_destroy(context);
-                return -1;
-            }
-
-            __free_parent_layers(parent_layers, parent_layer_count);
-
-            context->windowsfilter_dir = _strdup(wcow_dir);
-            free(context->composed_rootfs);
-            context->composed_rootfs = _strdup(wcow_dir);
-        } else {
-            // Non-HCS mode: keep the materialized directory or base rootfs.
-            if (owned_rootfs_dir) {
-                context->composed_rootfs = outDir;
-            } else if (source_rootfs != NULL) {
-                free(context->composed_rootfs);
-                context->composed_rootfs = _strdup(source_rootfs);
-            }
+        
+        if (source_rootfs == NULL) {
+            VLOG_ERROR("containerv", "containerv_layers_compose: missing rootfs content for windowsfilter import\n");
+            containerv_layers_destroy(context);
+            errno = EINVAL;
+            return -1;
         }
+
+        char wcow_dir[MAX_PATH];
+        int rc = snprintf(wcow_dir, sizeof(wcow_dir), "%s\\windowsfilter", context->materialized_container_dir);
+        if (rc < 0 || (size_t)rc >= sizeof(wcow_dir)) {
+            containerv_layers_destroy(context);
+            errno = EINVAL;
+            return -1;
+        }
+
+        char** parent_layers = NULL;
+        int parent_layer_count = 0;
+        if (__copy_parent_layers(parents, parent_count, &parent_layers, &parent_layer_count) != 0) {
+            containerv_layers_destroy(context);
+            errno = EINVAL;
+            return -1;
+        }
+
+        if (__windowsfilter_import_from_dir(wcow_dir, source_rootfs, (const char* const*)parent_layers, parent_layer_count) != 0) {
+            __free_parent_layers(parent_layers, parent_layer_count);
+            VLOG_ERROR("containerv", "containerv_layers_compose: failed to import windowsfilter layer from %s\n", source_rootfs);
+            containerv_layers_destroy(context);
+            return -1;
+        }
+
+        __free_parent_layers(parent_layers, parent_layer_count);
+
+        context->windowsfilter_dir = _strdup(wcow_dir);
+        free(context->composed_rootfs);
+        context->composed_rootfs = _strdup(wcow_dir);
     }
 
     if (context->composed_rootfs == NULL) {

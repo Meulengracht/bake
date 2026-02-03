@@ -288,28 +288,18 @@ int __windows_get_job_statistics(
     memset(stats, 0, sizeof(*stats));
     
     // Get basic job statistics
-    if (QueryInformationJobObject(job_handle, JobObjectBasicAccountingInformation,
-                                 &basic_info, sizeof(basic_info), NULL)) {
-        stats->cpu_time_ns = basic_info.TotalUserTime.QuadPart * 100; // Convert to nanoseconds
-    // Configure UI restrictions only for restrictive policies.
-    // Default containers should not be unexpectedly constrained.
-    if (container->policy != NULL) {
-        enum containerv_security_level level = containerv_policy_get_security_level(container->policy);
-        if (level >= CV_SECURITY_RESTRICTED) {
-            ui_restrictions.UIRestrictionsClass =
-                JOB_OBJECT_UILIMIT_DESKTOP |           // Can't create desktop
-                JOB_OBJECT_UILIMIT_DISPLAYSETTINGS |   // Can't change display
-                JOB_OBJECT_UILIMIT_EXITWINDOWS |       // Can't shutdown system
-                JOB_OBJECT_UILIMIT_READCLIPBOARD |     // Can't read clipboard
-                JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS |  // Can't change system params
-                JOB_OBJECT_UILIMIT_WRITECLIPBOARD;     // Can't write clipboard
+        if (QueryInformationJobObject(job_handle, JobObjectBasicAccountingInformation,
+                                     &basic_info, sizeof(basic_info), NULL)) {
+            stats->cpu_time_ns = basic_info.TotalUserTime.QuadPart * 100; // Convert to nanoseconds
         }
-    }
-        stats->read_bytes = io_info.IoInfo.ReadTransferCount;
-        stats->write_bytes = io_info.IoInfo.WriteTransferCount;
-        stats->read_ops = io_info.IoInfo.ReadOperationCount;
-        stats->write_ops = io_info.IoInfo.WriteOperationCount;
-    }
+
+        if (QueryInformationJobObject(job_handle, JobObjectBasicAndIoAccountingInformation,
+                                     &io_info, sizeof(io_info), NULL)) {
+            stats->read_bytes = io_info.IoInfo.ReadTransferCount;
+            stats->write_bytes = io_info.IoInfo.WriteTransferCount;
+            stats->read_ops = io_info.IoInfo.ReadOperationCount;
+            stats->write_ops = io_info.IoInfo.WriteOperationCount;
+        }
     
     // Memory usage requires per-process enumeration
     // For now, we'll get approximate usage from the first process

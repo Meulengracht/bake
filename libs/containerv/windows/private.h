@@ -85,7 +85,6 @@ struct containerv_options_windows_lcow {
     const char* initrd_file;
     const char* boot_parameters;
 };
-};
 
 // Windows rootfs types - direct choice, no fallback
 enum windows_rootfs_type {

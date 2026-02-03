@@ -359,7 +359,7 @@ static char* __windows_hns_create_and_attach_endpoint(
         "  foreach($e in $entries) { "
         "    $e = $e.Trim(); if (-not $e) { continue }; "
         "    $proto = 'tcp'; "
-        "    if ($e -match '^(\d+):(\d+)(/(tcp|udp))?$') { "
+        "    if ($e -match '^(\\d+):(\\d+)(/(tcp|udp))?$') { "
         "      $hp = [int]$matches[1]; $cp = [int]$matches[2]; if ($matches[4]) { $proto = $matches[4].ToLower() }; "
         "      if ($proto -ne 'tcp') { continue }; "
         "      if ($isV6) { netsh interface portproxy add v6tov6 listenaddress=:: listenport=$hp connectaddress=$ip connectport=$cp | Out-Null; } "
@@ -473,7 +473,7 @@ static int __windows_configure_container_network_in_hcs_container(
             mask);
 
         struct containerv_spawn_options sopts = {0};
-        sopts.flags = CV_SPAWN_NONE;
+        sopts.flags = 0;
         sopts.arguments = "-NoProfile -ExecutionPolicy Bypass";
         // We need -Command <script> as a single argv item; keep quoting in arguments.
         // Append the script using a second spawn to avoid oversize? Keep it simple here.
@@ -535,7 +535,7 @@ static int __windows_configure_container_network_in_hcs_container(
         options->network.dns ? options->network.dns : "");
 
     struct containerv_spawn_options sopts = {0};
-    sopts.flags = CV_SPAWN_NONE;
+    sopts.flags = 0;
     char args[1200];
     snprintf(args, sizeof(args), "-c \"%s\"", sh);
     sopts.arguments = args;
