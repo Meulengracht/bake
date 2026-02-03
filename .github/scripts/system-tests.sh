@@ -93,8 +93,8 @@ dump_seccomp_logs() {
     # Also check journalctl (kernel logs with reliable timestamps)
     if command -v journalctl >/dev/null 2>&1; then
         local journal_output
-        # Match actual seccomp violations (audit type=1326), not just any line containing "seccomp"
-        journal_output="$(sudo -n journalctl -k --since "$build_start_time" 2>/dev/null | grep -E 'type=1326|audit.*seccomp' || true)"
+        # Match actual seccomp violations (audit type=1326 only)
+        journal_output="$(sudo -n journalctl -k --since "$build_start_time" 2>/dev/null | grep 'type=1326' || true)"
 
         if [[ -n "$journal_output" ]]; then
             echo "Seccomp denials found in kernel log:"
@@ -106,8 +106,8 @@ dump_seccomp_logs() {
     # Also check dmesg as additional fallback
     if command -v dmesg >/dev/null 2>&1; then
         local dmesg_output
-        # Match actual seccomp violations (audit type=1326), not just any line containing "seccomp"
-        dmesg_output="$(sudo -n dmesg -T 2>/dev/null | grep -E 'type=1326|audit.*seccomp' || true)"
+        # Match actual seccomp violations (audit type=1326 only)
+        dmesg_output="$(sudo -n dmesg -T 2>/dev/null | grep 'type=1326' || true)"
 
         if [[ -n "$dmesg_output" ]]; then
             echo "Seccomp denials found in dmesg:"
