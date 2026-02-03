@@ -24,6 +24,14 @@ cvd_via_sudo=0
 build_start_time=""
 build_failed=0
 
+# Enable seccomp logging if requested for debugging
+# This can be set to "1" when investigating seccomp-related build failures
+# export CONTAINERV_SECCOMP_LOG=1
+if [[ "${CONTAINERV_SECCOMP_LOG:-}" == "1" ]]; then
+    echo "NOTE: Seccomp logging is enabled (CONTAINERV_SECCOMP_LOG=1)"
+    echo "      Denied syscalls will be logged to audit/kernel logs instead of just returning EPERM"
+fi
+
 # Helper to dump seccomp denial logs on build failure
 dump_seccomp_logs() {
     if [[ "$build_failed" -eq 0 || -z "$build_start_time" ]]; then
@@ -32,6 +40,14 @@ dump_seccomp_logs() {
 
     echo ""
     echo "=== Checking for seccomp denials since build start ==="
+    
+    # Check if seccomp logging was enabled
+    if [[ "${CONTAINERV_SECCOMP_LOG:-0}" != "1" ]]; then
+        echo "NOTE: Seccomp logging is disabled. Set CONTAINERV_SECCOMP_LOG=1 to enable."
+        echo "      Without logging enabled, seccomp violations return EPERM silently."
+        echo ""
+        return 0
+    fi
     
     # Always log seccomp logging status first
     echo "Seccomp logging status:"

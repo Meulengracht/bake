@@ -20,6 +20,7 @@
 
 #include <errno.h>
 #include <seccomp.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
 #include <vlog.h>
@@ -31,6 +32,8 @@ int policy_seccomp_apply(struct containerv_policy* policy)
 {
     scmp_filter_ctx ctx = NULL;
     int status = -1;
+    uint32_t default_action;
+    const char* log_mode;
     
     if (policy == NULL) {
         errno = EINVAL;
@@ -40,8 +43,19 @@ int policy_seccomp_apply(struct containerv_policy* policy)
     VLOG_TRACE("containerv", "policy_seccomp: applying policy with %d allowed syscalls\n",
               policy->syscall_count);
     
-    // Create a seccomp filter with default deny
-    ctx = seccomp_init(SCMP_ACT_ERRNO(EPERM));
+    // Check if seccomp logging is enabled via environment variable
+    // CONTAINERV_SECCOMP_LOG=1 enables SCMP_ACT_LOG for debugging
+    log_mode = getenv("CONTAINERV_SECCOMP_LOG");
+    if (log_mode != NULL && strcmp(log_mode, "1") == 0) {
+        default_action = SCMP_ACT_LOG;
+        VLOG_DEBUG("containerv", "policy_seccomp: logging mode enabled (SCMP_ACT_LOG)\n");
+    } else {
+        default_action = SCMP_ACT_ERRNO(EPERM);
+        VLOG_DEBUG("containerv", "policy_seccomp: errno mode (SCMP_ACT_ERRNO). Set CONTAINERV_SECCOMP_LOG=1 to enable logging\n");
+    }
+    
+    // Create a seccomp filter with default deny action
+    ctx = seccomp_init(default_action);
     if (ctx == NULL) {
         VLOG_ERROR("containerv", "policy_seccomp: failed to initialize seccomp context\n");
         return -1;
