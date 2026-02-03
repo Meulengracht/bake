@@ -6,7 +6,6 @@ add_library(containerv-windows STATIC
     monitoring.c
     network.c
     resource-limits.c
-    rootfs.c
     security.c
     volume-manager.c
 )

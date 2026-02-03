@@ -914,7 +914,6 @@ static struct containerv_container* __container_new(void)
     container->hcs_system = NULL;
     container->host_pipe = INVALID_HANDLE_VALUE;
     container->child_pipe = INVALID_HANDLE_VALUE;
-    container->vm_started = 0;
     list_init(&container->processes);
     container->policy = NULL;
 
@@ -2367,14 +2366,6 @@ void __containerv_destroy(struct containerv_container* container)
     // Shut down and delete the HCS compute system
     if (container->hcs_system) {
         __hcs_destroy_compute_system(container);
-    }
-    
-    // Clean up rootfs (optional - may want to preserve for reuse)
-    // Note: In production, you might want to make this configurable
-    // For HCS container compute systems (WCOW/LCOW), the rootfs path is user-provided and should not be removed.
-    if (container->rootfs && container->hcs_system == NULL) {
-        VLOG_DEBUG("containerv", "cleaning up rootfs at %s\n", container->rootfs);
-        __windows_cleanup_rootfs(container->rootfs, NULL);
     }
     
     // Remove runtime directory (recursively if needed)

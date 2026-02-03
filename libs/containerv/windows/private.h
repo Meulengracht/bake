@@ -132,7 +132,6 @@ struct containerv_options {
     struct containerv_policy*        policy;
 
     struct containerv_options_network        network;
-    struct containerv_options_rootfs         rootfs;
     struct containerv_resource_limits        limits;          // Resource limits
 
     struct containerv_options_windows_container windows_container;
@@ -276,9 +275,6 @@ struct containerv_container {
     // Security policy (owned by container once created)
     struct containerv_policy*            policy;
     
-    // VM state
-    int          vm_started;
-
     // Runtime flags
     int          network_configured;
 
@@ -436,47 +432,6 @@ extern int __windows_exec_in_vm_via_pid1d(
     struct containerv_container*       container,
     struct __containerv_spawn_options* options,
     int*                               exit_code_out
-);
-
-/**
- * @brief Windows rootfs management functions
- */
-extern int __windows_setup_rootfs(
-    const char* rootfs_path,
-    struct containerv_options_rootfs* options
-);
-
-extern int __windows_setup_wsl_rootfs(
-    const char* rootfs_path,
-    enum windows_rootfs_type type,
-    const char* version
-);
-
-extern int __windows_setup_native_rootfs(
-    const char* rootfs_path,
-    enum windows_rootfs_type type,
-    const char* version
-);
-
-extern int __windows_cleanup_rootfs(
-    const char* rootfs_path,
-    struct containerv_options_rootfs* options
-);
-
-extern int __windows_is_wsl_available(void);
-
-/**
- * @brief Windows rootfs configuration API
- */
-extern void containerv_options_set_rootfs_type(
-    struct containerv_options* options,
-    enum windows_rootfs_type type,
-    const char* version
-);
-
-extern void containerv_options_set_custom_rootfs(
-    struct containerv_options* options,
-    const char* image_url
 );
 
 /**

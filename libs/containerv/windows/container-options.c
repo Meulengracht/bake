@@ -28,11 +28,6 @@ struct containerv_options* containerv_options_new(void)
         return NULL;
     }
     
-    // Default rootfs: WSL Ubuntu (legacy VM path; retained for compatibility)
-    options->rootfs.type = WINDOWS_ROOTFS_WSL_UBUNTU;
-    options->rootfs.version = "22.04";     // Ubuntu 22.04 LTS
-    options->rootfs.enable_updates = 1;    // Enable updates by default
-
     // Default to true HCS container compute systems.
     options->windows_container.isolation = WINDOWS_CONTAINER_ISOLATION_HYPERV;
     options->windows_container.utilityvm_path = NULL;
@@ -119,31 +114,6 @@ void containerv_options_set_vm_switch(
 {
     if (options && switch_name) {
         options->network.switch_name = switch_name;
-    }
-}
-
-void containerv_options_set_rootfs_type(
-    struct containerv_options* options,
-    enum windows_rootfs_type   type,
-    const char*                version)
-{
-    if (options) {
-        options->rootfs.type = type;
-        if (version) {
-            options->rootfs.version = version;
-        }
-        // Clear custom URL when setting standard type
-        options->rootfs.custom_image_url = NULL;
-    }
-}
-
-void containerv_options_set_custom_rootfs(
-    struct containerv_options* options,
-    const char*                image_url)
-{
-    if (options && image_url) {
-        options->rootfs.type = WINDOWS_ROOTFS_CUSTOM;
-        options->rootfs.custom_image_url = image_url;
     }
 }
 
@@ -240,13 +210,4 @@ void containerv_options_set_windows_wcow_parent_layers(
     }
     options->windows_wcow_parent_layers = parent_layers;
     options->windows_wcow_parent_layer_count = parent_layer_count;
-}
-
-void containerv_options_set_rootfs_updates(
-    struct containerv_options* options,
-    int                        enable_updates)
-{
-    if (options) {
-        options->rootfs.enable_updates = enable_updates;
-    }
 }

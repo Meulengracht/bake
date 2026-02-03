@@ -795,7 +795,6 @@ int __hcs_create_container_system(
         }
     }
 
-    container->vm_started = 1;
     status = 0;
 
 cleanup:
