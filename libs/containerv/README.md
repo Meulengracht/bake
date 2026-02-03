@@ -14,10 +14,7 @@ Uses native Linux container technologies:
 See [linux/](linux/) for implementation details.
 
 ### Windows
-Windows support now has two distinct backends:
-
-- **HCS containers (true Windows containers)**: Uses HCS "Container" compute systems (process isolation or Hyper-V isolation).
-- **VM-backed (legacy)**: Uses an HCS "VirtualMachine" compute system (one VM per container) and boots a VHDX.
+Windows support uses **HCS containers (true Windows containers)** with HCS "Container" compute systems (process isolation or Hyper-V isolation).
 
 See [windows/](windows/) for implementation details.
 
@@ -38,8 +35,6 @@ LCOW support is being implemented using the standard **OCI-in-UVM** approach:
 - Requires a Linux utility VM (UVM) image directory plus (optionally) kernel/initrd/boot parameters.
 
 In `cvd` (Windows host), these are currently wired via environment variables:
-
-- `CHEF_WINDOWS_RUNTIME=container` (default)
 - `CHEF_WINDOWS_CONTAINER_TYPE=linux`
 - `CHEF_LCOW_UVM_IMAGE_PATH` (required)
 - `CHEF_LCOW_KERNEL_FILE` (optional; file name under `CHEF_LCOW_UVM_IMAGE_PATH`)
@@ -74,30 +69,7 @@ If `container_ip/netmask/gateway/dns` are provided, containerv will first attemp
 
 ### VM-backed mode (legacy)
 
-## VM Disk Contract (Windows Host, VM-backed legacy)
-
-When running VM-backed containers on a Windows host, containerv attaches a single virtual disk to the VM at runtime: `%runtime_dir%\container.vhdx`.
-
-This disk contract applies only to **Windows VM-backed** containers. On **Linux hosts**, containerv uses native Linux container mechanisms and expects a normal root filesystem directory tree (not a virtual disk image).
-
-The *composed rootfs directory* (from layers) is used as the source material to produce that disk. The expected contract differs by guest OS:
-
-- **Linux guests (WSL-based rootfs)**
-   - Preferred: a prebuilt bootable disk at `<rootfs>\container.vhdx`.
-   - Supported: an ext4 rootfs disk at `<rootfs>\ext4.vhdx` (e.g. from WSL2 import or built on Linux; will be copied into `%runtime_dir%\container.vhdx`).
-   - Note: containerv does not currently generate an ext4 boot disk from a directory tree on Windows.
-
-- **Windows guests (native rootfs)**
-   - Required: a prebuilt bootable disk at `<rootfs>\container.vhdx`.
-   - Note: a directory tree populated into a single NTFS partition is not sufficient for UEFI boot (no ESP/BCD).
-
-### pid1d placement
-
-containerv expects to start `pid1d` inside the guest as the initial supervisor for guest actions:
-- Windows guest: `C:\pid1d.exe`
-- Linux guest: `/usr/bin/pid1d`
-
-Your base/rootfs pack should ensure the correct binary exists at those paths.
+VM-backed containers are no longer supported in containerv. Only HCS container compute systems are supported on Windows.
 
 ## Features
 
@@ -213,10 +185,10 @@ The containerv library is used by:
 
 | Feature | Linux | Windows |
 |---------|-------|---------|
-| Isolation Mechanism | Namespaces | HyperV VMs |
-| Resource Limits | Cgroups | VM Configuration |
-| Filesystem | OverlayFS | VM Disk |
-| Network | Veth pairs | VM Network |
+| Isolation Mechanism | Namespaces | HCS Containers |
+| Resource Limits | Cgroups | Job Objects / HCS |
+| Filesystem | OverlayFS | windowsfilter layers |
+| Network | Veth pairs | HNS |
 | Performance | Native | Near-native |
 | Setup | Kernel features | HyperV feature |
 

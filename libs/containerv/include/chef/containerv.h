@@ -107,7 +107,7 @@ extern void containerv_options_set_layers(struct containerv_options* options, st
  * @brief Configure network isolation for the container
  *
  * On Linux this configures a virtual ethernet pair/bridge setup.
- * On Windows this configures the equivalent container/VM networking.
+ * On Windows this configures the equivalent container networking.
  *
  * @param options The container options to configure
  * @param container_ip IP address for the container interface (e.g., "10.0.0.2")
@@ -158,14 +158,6 @@ enum containerv_windows_privilege {
     CV_PRIV_INCREASE_QUOTA = 9      // Adjust memory quotas for a process
 };
 
-// Windows runtime mode selection
-enum containerv_windows_runtime_mode {
-    // Legacy/VM-backed mode (one Hyper-V VM per container; boots a VHDX)
-    CV_WIN_RUNTIME_VM = 0,
-    // True Windows containers via HCS container compute systems
-    CV_WIN_RUNTIME_HCS_CONTAINER = 1
-};
-
 // Windows container isolation mode (only meaningful for CV_WIN_RUNTIME_HCS_CONTAINER)
 enum containerv_windows_container_isolation {
     // Windows Server container / process isolation
@@ -181,14 +173,6 @@ enum containerv_windows_container_type {
     // Linux container on Windows (LCOW)
     CV_WIN_CONTAINER_TYPE_LINUX = 1
 };
-
-/**
- * @brief Select the Windows backend runtime mode.
- */
-extern void containerv_options_set_windows_runtime_mode(
-    struct containerv_options*            options,
-    enum containerv_windows_runtime_mode  mode
-);
 
 /**
  * @brief Select the Windows container isolation mode (process vs Hyper-V).
@@ -339,11 +323,6 @@ extern int containerv_upload(struct containerv_container* container, const char*
 extern int containerv_download(struct containerv_container* container, const char* const* containerPaths, const char* const* hostPaths, int count);
 
 extern int containerv_destroy(struct containerv_container* container);
-
-/**
- * @brief Returns non-zero if this container is VM-backed (Hyper-V on Windows).
- */
-extern int containerv_is_vm(struct containerv_container* container);
 
 /**
  * @brief Returns non-zero if the VM guest OS is Windows.

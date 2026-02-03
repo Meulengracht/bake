@@ -30,17 +30,16 @@ struct containerv_options* containerv_options_new(void)
     
     // Set Windows-specific defaults
     options->vm.memory_mb = 1024;          // 1GB default memory
-    options->vm.cpu_count = 2;             // 2 vCPUs default  
+    options->vm.cpu_count = 2;             // 2 vCPUs default
     options->vm.vm_generation = "2";       // Generation 2 VM (UEFI)
-    
-    // Default rootfs: WSL Ubuntu (cross-platform compatible)
+
+    // Default rootfs: WSL Ubuntu (legacy VM path; retained for compatibility)
     options->rootfs.type = WINDOWS_ROOTFS_WSL_UBUNTU;
     options->rootfs.version = "22.04";     // Ubuntu 22.04 LTS
     options->rootfs.enable_updates = 1;    // Enable updates by default
 
-    // Default to legacy VM-backed mode for compatibility.
-    options->windows_runtime = WINDOWS_RUNTIME_MODE_VM;
-    options->windows_container.isolation = WINDOWS_CONTAINER_ISOLATION_PROCESS;
+    // Default to true HCS container compute systems.
+    options->windows_container.isolation = WINDOWS_CONTAINER_ISOLATION_HYPERV;
     options->windows_container.utilityvm_path = NULL;
 
     // Default to WCOW when using HCS container mode.
@@ -119,21 +118,6 @@ void containerv_options_set_network_ex(
     }
 }
 
-void containerv_options_set_vm_resources(
-    struct containerv_options* options,
-    unsigned int               memory_mb,
-    unsigned int               cpu_count)
-{
-    if (options) {
-        if (memory_mb > 0) {
-            options->vm.memory_mb = memory_mb;
-        }
-        if (cpu_count > 0) {
-            options->vm.cpu_count = cpu_count;
-        }
-    }
-}
-
 void containerv_options_set_vm_switch(
     struct containerv_options* options,
     const char*                switch_name)
@@ -182,27 +166,6 @@ void containerv_options_set_resource_limits(
     options->limits.cpu_percent = cpu_percent;
     options->limits.process_count = process_count;
     options->limits.io_bandwidth = NULL; // Not implemented yet
-}
-
-void containerv_options_set_windows_runtime_mode(
-    struct containerv_options*            options,
-    enum containerv_windows_runtime_mode  mode)
-{
-    if (options == NULL) {
-        return;
-    }
-
-    switch (mode) {
-        case CV_WIN_RUNTIME_VM:
-            options->windows_runtime = WINDOWS_RUNTIME_MODE_VM;
-            break;
-        case CV_WIN_RUNTIME_HCS_CONTAINER:
-            options->windows_runtime = WINDOWS_RUNTIME_MODE_HCS_CONTAINER;
-            break;
-        default:
-            // Ignore unknown values
-            break;
-    }
 }
 
 void containerv_options_set_windows_container_isolation(

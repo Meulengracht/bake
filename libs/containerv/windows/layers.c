@@ -101,15 +101,6 @@ static int __dir_exists(const char* path)
     return (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY));
 }
 
-static int __windows_runtime_prefers_hcs(void)
-{
-    const char* runtime = getenv("CHEF_WINDOWS_RUNTIME");
-    if (runtime != NULL && strcmp(runtime, "vm") == 0) {
-        return 0;
-    }
-    return 1;
-}
-
 static int __windowsfilter_has_layerchain(const char* layer_dir)
 {
     if (layer_dir == NULL || layer_dir[0] == '\0') {
@@ -611,7 +602,7 @@ int containerv_layers_compose_ex(
             return -1;
         }
     }
-    const int prefer_hcs = __windows_runtime_prefers_hcs();
+    
     const char* const* parents = NULL;
     int parent_count = 0;
     if (compose_options != NULL) {
@@ -621,25 +612,23 @@ int containerv_layers_compose_ex(
 
     // If HCS mode is preferred and the base rootfs is already a windowsfilter layer, use it directly
     // (only valid when no VAFS layers need applying).
-    if (prefer_hcs && vafs_count == 0 && base_rootfs_count == 1 && base_rootfs != NULL &&
+    if (vafs_count == 0 && base_rootfs_count == 1 && base_rootfs != NULL &&
         __windowsfilter_has_layerchain(base_rootfs)) {
         context->composed_rootfs = _strdup(base_rootfs);
     } else {
         char* outDir = NULL;
         char* containerDir = NULL;
 
-        if (vafs_count > 0 || prefer_hcs) {
-            if (__create_windows_layers_dirs(container_id, &containerDir, &outDir) != 0) {
-                VLOG_ERROR("containerv", "containerv_layers_compose: failed to create layers directory\n");
-                containerv_layers_destroy(context);
-                return -1;
-            }
-
-            context->materialized_container_dir = containerDir;
-            context->composed_rootfs_is_materialized = 1;
-            context->composed_rootfs = outDir;
+        if (__create_windows_layers_dirs(container_id, &containerDir, &outDir) != 0) {
+            VLOG_ERROR("containerv", "containerv_layers_compose: failed to create layers directory\n");
+            containerv_layers_destroy(context);
+            return -1;
         }
 
+        context->materialized_container_dir = containerDir;
+        context->composed_rootfs_is_materialized = 1;
+        context->composed_rootfs = outDir;
+        
         const char* source_rootfs = NULL;
         int owned_rootfs_dir = 0;
 

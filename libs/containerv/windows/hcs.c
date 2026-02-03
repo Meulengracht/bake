@@ -892,308 +892,7 @@ void __hcs_cleanup(void)
     }
 }
 
-wchar_t* __hcs_create_vm_config(
-    struct containerv_container* container,
-    struct containerv_options* options)
-{
-    if (!container) {
-        return NULL;
-    }
-
-    // Build the VM configuration JSON using Jansson.
-    unsigned int memory_mb = options ? options->vm.memory_mb : 1024;
-    unsigned int cpu_count = options ? options->vm.cpu_count : 2;
-    int with_network = (options && options->network.enable);
-
-    char vhdx_path[1024];
-    vhdx_path[0] = 0;
-    if (container->runtime_dir == NULL || container->runtime_dir[0] == '\0') {
-        return NULL;
-    }
-    snprintf(vhdx_path, sizeof(vhdx_path), "%s\\container.vhdx", container->runtime_dir);
-
-    json_t* root = json_object();
-    json_t* schema = json_object();
-    json_t* vm = json_object();
-    json_t* chipset = json_object();
-    json_t* uefi = json_object();
-    json_t* topo = json_object();
-    json_t* mem = json_object();
-    json_t* proc = json_object();
-    json_t* devices = json_object();
-    json_t* scsi = json_object();
-    json_t* scsi0 = json_object();
-    json_t* attachments = json_object();
-    json_t* disk0 = json_object();
-    if (root == NULL || schema == NULL || vm == NULL || chipset == NULL || uefi == NULL || topo == NULL || mem == NULL || proc == NULL ||
-        devices == NULL || scsi == NULL || scsi0 == NULL || attachments == NULL || disk0 == NULL) {
-        json_decref(root);
-        json_decref(schema);
-        json_decref(vm);
-        json_decref(chipset);
-        json_decref(uefi);
-        json_decref(topo);
-        json_decref(mem);
-        json_decref(proc);
-        json_decref(devices);
-        json_decref(scsi);
-        json_decref(scsi0);
-        json_decref(attachments);
-        json_decref(disk0);
-        return NULL;
-    }
-
-    if (containerv_json_object_set_int(schema, "Major", 2) != 0 ||
-        containerv_json_object_set_int(schema, "Minor", 1) != 0 ||
-        json_object_set_new(root, "SchemaVersion", schema) != 0) {
-        json_decref(root);
-        json_decref(schema);
-        json_decref(vm);
-        json_decref(chipset);
-        json_decref(uefi);
-        json_decref(topo);
-        json_decref(mem);
-        json_decref(proc);
-        json_decref(devices);
-        json_decref(scsi);
-        json_decref(scsi0);
-        json_decref(attachments);
-        json_decref(disk0);
-        return NULL;
-    }
-
-    if (containerv_json_object_set_bool(vm, "StopOnReset", 1) != 0) {
-        json_decref(root);
-        json_decref(vm);
-        json_decref(chipset);
-        json_decref(uefi);
-        json_decref(topo);
-        json_decref(mem);
-        json_decref(proc);
-        json_decref(devices);
-        json_decref(scsi);
-        json_decref(scsi0);
-        json_decref(attachments);
-        json_decref(disk0);
-        return NULL;
-    }
-
-    if (containerv_json_object_set_bool(uefi, "BootThis", 1) != 0 ||
-        json_object_set_new(chipset, "Uefi", uefi) != 0 ||
-        json_object_set_new(vm, "Chipset", chipset) != 0) {
-        json_decref(root);
-        json_decref(vm);
-        json_decref(chipset);
-        json_decref(uefi);
-        json_decref(topo);
-        json_decref(mem);
-        json_decref(proc);
-        json_decref(devices);
-        json_decref(scsi);
-        json_decref(scsi0);
-        json_decref(attachments);
-        json_decref(disk0);
-        return NULL;
-    }
-
-    if (containerv_json_object_set_int(mem, "SizeInMB", (json_int_t)memory_mb) != 0 ||
-        containerv_json_object_set_int(proc, "Count", (json_int_t)cpu_count) != 0 ||
-        json_object_set_new(topo, "Memory", mem) != 0 ||
-        json_object_set_new(topo, "Processor", proc) != 0 ||
-        json_object_set_new(vm, "ComputeTopology", topo) != 0) {
-        json_decref(root);
-        json_decref(vm);
-        json_decref(topo);
-        json_decref(mem);
-        json_decref(proc);
-        json_decref(devices);
-        json_decref(scsi);
-        json_decref(scsi0);
-        json_decref(attachments);
-        json_decref(disk0);
-        return NULL;
-    }
-
-    if (containerv_json_object_set_string(disk0, "Type", "VirtualDisk") != 0 ||
-        containerv_json_object_set_string(disk0, "Path", vhdx_path) != 0 ||
-        containerv_json_object_set_bool(disk0, "ReadOnly", 0) != 0 ||
-        json_object_set_new(attachments, "0", disk0) != 0 ||
-        json_object_set_new(scsi0, "Attachments", attachments) != 0 ||
-        json_object_set_new(scsi, "scsi0", scsi0) != 0 ||
-        json_object_set_new(devices, "Scsi", scsi) != 0) {
-        json_decref(root);
-        json_decref(vm);
-        json_decref(devices);
-        json_decref(scsi);
-        json_decref(scsi0);
-        json_decref(attachments);
-        json_decref(disk0);
-        return NULL;
-    }
-
-    if (with_network) {
-        json_t* nics = json_object();
-        json_t* net0 = json_object();
-        if (nics == NULL || net0 == NULL ||
-            containerv_json_object_set_string(net0, "EndpointId", "") != 0 ||
-            containerv_json_object_set_string(net0, "MacAddress", "") != 0 ||
-            json_object_set_new(nics, "net0", net0) != 0 ||
-            json_object_set_new(devices, "NetworkAdapters", nics) != 0) {
-            json_decref(nics);
-            json_decref(net0);
-            json_decref(root);
-            json_decref(vm);
-            json_decref(devices);
-            return NULL;
-        }
-    }
-
-    if (json_object_set_new(vm, "Devices", devices) != 0 ||
-        json_object_set_new(root, "VirtualMachine", vm) != 0 ||
-        containerv_json_object_set_bool(root, "ShouldTerminateOnLastHandleClosed", 1) != 0) {
-        json_decref(root);
-        json_decref(vm);
-        json_decref(devices);
-        return NULL;
-    }
-
-    char* json_utf8 = NULL;
-    if (containerv_json_dumps_compact(root, &json_utf8) != 0) {
-        json_decref(root);
-        return NULL;
-    }
-
-    wchar_t* config = __utf8_to_wide_alloc(json_utf8);
-    free(json_utf8);
-    json_decref(root);
-    if (config == NULL) {
-        return NULL;
-    }
-
-    VLOG_DEBUG("containerv[hcs]", "created HCS VM config for container %s\n", container->id);
-    return config;
-}
-
-int __hcs_create_vm(
-    struct containerv_container* container,
-    struct containerv_options* options)
-{
-    HCS_OPERATION operation = NULL;
-    wchar_t* config = NULL;
-    HRESULT hr;
-    int status = -1;
-
-    if (!container || !container->vm_id) {
-        return -1;
-    }
-
-    VLOG_DEBUG("containerv[hcs]", "creating HyperV VM for container %s\n", container->id);
-
-    // Ensure HCS API is initialized
-    if (__hcs_initialize() != 0) {
-        return -1;
-    }
-
-    // Generate VM configuration
-    config = __hcs_create_vm_config(container, options);
-    if (!config) {
-        VLOG_ERROR("containerv[hcs]", "failed to create VM configuration\n");
-        return -1;
-    }
-
-    // Create operation handle
-    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-    if (FAILED(hr)) {
-        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation: 0x%lx\n", hr);
-        goto cleanup;
-    }
-
-    // Create the compute system (VM)
-    hr = g_hcs.HcsCreateComputeSystem(
-        container->vm_id,
-        config,
-        operation,
-        NULL,  // Security descriptor
-        &container->hcs_system
-    );
-
-    if (FAILED(hr)) {
-        VLOG_ERROR("containerv[hcs]", "failed to create compute system: 0x%lx\n", hr);
-        
-        // Provide more specific error information
-        if (hr == HCS_E_SERVICE_NOT_AVAILABLE) {
-            VLOG_ERROR("containerv[hcs]", "HCS service not available - ensure HyperV is enabled\n");
-        } else if (hr == HCS_E_OPERATION_NOT_SUPPORTED) {
-            VLOG_ERROR("containerv[hcs]", "HCS operation not supported on this Windows version\n");
-        }
-        
-        goto cleanup;
-    }
-
-    if (g_hcs.HcsWaitForOperationResult != NULL) {
-        PWSTR resultDoc = NULL;
-        hr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
-        __hcs_localfree_wstr(resultDoc);
-        if (FAILED(hr)) {
-            VLOG_ERROR("containerv[hcs]", "compute system create wait failed: 0x%lx\n", hr);
-            g_hcs.HcsCloseComputeSystem(container->hcs_system);
-            container->hcs_system = NULL;
-            goto cleanup;
-        }
-    } else {
-        VLOG_WARNING("containerv[hcs]", "HcsWaitForOperationResult not available; VM start may be unreliable\n");
-    }
-
-    g_hcs.HcsCloseOperation(operation);
-    operation = NULL;
-
-    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-    if (FAILED(hr)) {
-        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation for start: 0x%lx\n", hr);
-        g_hcs.HcsCloseComputeSystem(container->hcs_system);
-        container->hcs_system = NULL;
-        goto cleanup;
-    }
-
-    // Start the VM
-    hr = g_hcs.HcsStartComputeSystem(container->hcs_system, operation, NULL);
-    if (FAILED(hr)) {
-        VLOG_ERROR("containerv[hcs]", "failed to start compute system: 0x%lx\n", hr);
-        g_hcs.HcsCloseComputeSystem(container->hcs_system);
-        container->hcs_system = NULL;
-        goto cleanup;
-    }
-
-    if (g_hcs.HcsWaitForOperationResult != NULL) {
-        PWSTR resultDoc = NULL;
-        hr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
-        __hcs_localfree_wstr(resultDoc);
-        if (FAILED(hr)) {
-            VLOG_ERROR("containerv[hcs]", "compute system start wait failed: 0x%lx\n", hr);
-            g_hcs.HcsCloseComputeSystem(container->hcs_system);
-            container->hcs_system = NULL;
-            goto cleanup;
-        }
-    }
-
-    container->vm_started = 1;
-    status = 0;
-
-    VLOG_DEBUG("containerv[hcs]", "successfully created and started VM for container %s\n", 
-               container->id);
-
-cleanup:
-    if (config) {
-        free(config);
-    }
-    if (operation) {
-        g_hcs.HcsCloseOperation(operation);
-    }
-
-    return status;
-}
-
-int __hcs_destroy_vm(struct containerv_container* container)
+int __hcs_destroy_compute_system(struct containerv_container* container)
 {
     HCS_OPERATION operation = NULL;
     HRESULT hr;
@@ -1203,7 +902,7 @@ int __hcs_destroy_vm(struct containerv_container* container)
         return 0;  // Nothing to destroy
     }
 
-    VLOG_DEBUG("containerv[hcs]", "destroying HyperV VM for container %s\n", container->id);
+    VLOG_DEBUG("containerv[hcs]", "destroying HCS compute system for container %s\n", container->id);
 
     if (container->vm_started) {
         // Try graceful shutdown first
@@ -1274,7 +973,7 @@ int __hcs_destroy_vm(struct containerv_container* container)
         g_hcs.HcsCloseOperation(operation);
     }
 
-    VLOG_DEBUG("containerv[hcs]", "destroyed VM for container %s\n", container->id);
+    VLOG_DEBUG("containerv[hcs]", "destroyed compute system for container %s\n", container->id);
     return status;
 }
 
@@ -1420,7 +1119,7 @@ int __hcs_create_process(
 
     // If we're running a Linux container compute system (LCOW), prefer OCISpecification.
     // Rootfs is expected to be mapped into the container at /chef/rootfs.
-    if (!guest_is_windows && container->hcs_is_vm == 0) {
+    if (!guest_is_windows) {
         struct containerv_oci_linux_spec_params p = {
             .args_json = (args_json_utf8 != NULL) ? args_json_utf8 : "[]",
             .envv = (const char* const*)options->envv,
@@ -1593,9 +1292,9 @@ int __hcs_create_process(
 
         const char* working_dir = guest_is_windows ? "C:\\\\" : "/";
         const int emulate_console = guest_is_windows ? 1 : 0;
-        const int lcow_use_oci = (!guest_is_windows && container->hcs_is_vm == 0 && oci_spec_utf8 != NULL && !lcow_fallback);
+        const int lcow_use_oci = (!guest_is_windows && oci_spec_utf8 != NULL && !lcow_fallback);
         const int lcow_use_command_args = (!guest_is_windows && !lcow_fallback);
-        const int create_in_uvm = (!guest_is_windows && container->hcs_is_vm == 0 && !lcow_use_oci) ? 1 : 0;
+        const int create_in_uvm = (!guest_is_windows && !lcow_use_oci) ? 1 : 0;
 
         json_t* proc_cfg = json_object();
         if (proc_cfg == NULL) {

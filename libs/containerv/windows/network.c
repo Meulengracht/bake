@@ -853,7 +853,7 @@ int __windows_configure_hcs_container_network(
     }
 
     // Only valid for true container compute systems.
-    if (container->hcs_system == NULL || container->hcs_is_vm) {
+    if (container->hcs_system == NULL) {
         return 0;
     }
 

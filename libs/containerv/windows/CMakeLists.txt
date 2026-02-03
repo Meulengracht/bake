@@ -8,7 +8,6 @@ add_library(containerv-windows STATIC
     resource-limits.c
     rootfs.c
     security.c
-    vm-disk.c
     volume-manager.c
 )
 target_include_directories(containerv-windows PRIVATE ../include)
