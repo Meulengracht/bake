@@ -27,7 +27,7 @@ build_failed=0
 # Enable seccomp logging if requested for debugging
 # This can be set to "1" when investigating seccomp-related build failures
 # export CONTAINERV_SECCOMP_LOG=1
-if [[ "${CONTAINERV_SECCOMP_LOG:-}" == "1" ]]; then
+if [[ "${CONTAINERV_SECCOMP_LOG:-0}" == "1" ]]; then
     echo "NOTE: Seccomp logging is enabled (CONTAINERV_SECCOMP_LOG=1)"
     echo "      Denied syscalls will be logged to audit/kernel logs instead of just returning EPERM"
 fi
