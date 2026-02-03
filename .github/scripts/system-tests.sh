@@ -36,12 +36,7 @@ dump_seccomp_logs() {
     # Try journalctl first (preferred, more reliable timestamps)
     if command -v journalctl >/dev/null 2>&1; then
         local journal_output
-        if [[ "$(id -u)" -eq 0 ]]; then
-            journal_output="$(journalctl -k --since "$build_start_time" 2>/dev/null | grep -i seccomp || true)"
-        else
-            # Use sudo -n for non-root access (same pattern as cvd startup)
-            journal_output="$(sudo -n journalctl -k --since "$build_start_time" 2>/dev/null | grep -i seccomp || true)"
-        fi
+        journal_output="$(sudo -n journalctl -k --since "$build_start_time" 2>/dev/null | grep -i seccomp || true)"
 
         if [[ -n "$journal_output" ]]; then
             echo "Seccomp denials found in kernel log:"
@@ -52,11 +47,7 @@ dump_seccomp_logs() {
     # Fall back to dmesg -T if journalctl is not available
     elif command -v dmesg >/dev/null 2>&1; then
         local dmesg_output
-        if [[ "$(id -u)" -eq 0 ]]; then
-            dmesg_output="$(dmesg -T 2>/dev/null | grep -i seccomp || true)"
-        else
-            dmesg_output="$(sudo -n dmesg -T 2>/dev/null | grep -i seccomp || true)"
-        fi
+        dmesg_output="$(sudo -n dmesg -T 2>/dev/null | grep -i seccomp || true)"
 
         if [[ -n "$dmesg_output" ]]; then
             echo "Seccomp denials found in dmesg (filtered, check timestamps manually):"
