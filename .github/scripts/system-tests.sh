@@ -21,6 +21,54 @@ cvd_log="$log_dir/cvd-ci.log"
 
 cvd_pid=""
 cvd_via_sudo=0
+build_start_time=""
+build_failed=0
+
+# Helper to dump seccomp denial logs on build failure
+dump_seccomp_logs() {
+    if [[ "$build_failed" -eq 0 || -z "$build_start_time" ]]; then
+        return 0
+    fi
+
+    echo ""
+    echo "=== Checking for seccomp denials since build start ==="
+    
+    # Try journalctl first (preferred, more reliable timestamps)
+    if command -v journalctl >/dev/null 2>&1; then
+        local journal_output
+        if [[ "$(id -u)" -eq 0 ]]; then
+            journal_output="$(journalctl -k --since "$build_start_time" 2>/dev/null | grep -i seccomp || true)"
+        else
+            # Use sudo -n for non-root access (same pattern as cvd startup)
+            journal_output="$(sudo -n journalctl -k --since "$build_start_time" 2>/dev/null | grep -i seccomp || true)"
+        fi
+        
+        if [[ -n "$journal_output" ]]; then
+            echo "Seccomp denials found in kernel log:"
+            echo "$journal_output"
+        else
+            echo "No seccomp denials found in kernel log since $build_start_time"
+        fi
+    # Fall back to dmesg -T if journalctl is not available
+    elif command -v dmesg >/dev/null 2>&1; then
+        local dmesg_output
+        if [[ "$(id -u)" -eq 0 ]]; then
+            dmesg_output="$(dmesg -T 2>/dev/null | grep -i seccomp || true)"
+        else
+            dmesg_output="$(sudo -n dmesg -T 2>/dev/null | grep -i seccomp || true)"
+        fi
+        
+        if [[ -n "$dmesg_output" ]]; then
+            echo "Seccomp denials found in dmesg (filtered, check timestamps manually):"
+            echo "$dmesg_output"
+        else
+            echo "No seccomp denials found in dmesg"
+        fi
+    else
+        echo "Neither journalctl nor dmesg available for seccomp log check"
+    fi
+    echo "=== End of seccomp log check ==="
+}
 
 # cvd currently requires root on Linux. Start it via sudo when not root.
 if [[ "$(id -u)" -eq 0 ]]; then
@@ -41,6 +89,9 @@ else
 fi
 
 cleanup() {
+    # Dump seccomp logs if build failed
+    dump_seccomp_logs
+    
     if [[ -n "${cvd_pid:-}" ]]; then
         if [[ "$cvd_via_sudo" -eq 1 ]]; then
             sudo -n kill "$cvd_pid" >/dev/null 2>&1 || true
@@ -84,12 +135,21 @@ cp -a "$root_dir/examples/recipes/hello-world" "$work_dir/hello-world"
 
 pushd "$work_dir" >/dev/null
 
+# Capture timestamp before build for seccomp log filtering
+build_start_time="$(date '+%Y-%m-%d %H:%M:%S')"
+
 # Must run from the recipe directory so relative paths resolve.
 # Also keep a timeout to avoid wedging CI if a container backend hangs.
 if command -v timeout >/dev/null 2>&1; then
-    timeout 20m "$bake_bin" build hello.yaml -v
+    if ! timeout 20m "$bake_bin" build hello.yaml -v; then
+        build_failed=1
+        exit 1
+    fi
 else
-    "$bake_bin" build hello.yaml -v
+    if ! "$bake_bin" build hello.yaml -v; then
+        build_failed=1
+        exit 1
+    fi
 fi
 
 # Verify artifact was created
@@ -99,12 +159,14 @@ shopt -u nullglob
 
 if (( ${#pack_files[@]} == 0 )); then
     echo "ERROR: system test succeeded but no .pack file was produced" >&2
+    build_failed=1
     exit 1
 fi
 
 for f in "${pack_files[@]}"; do
     if [[ ! -s "$f" ]]; then
         echo "ERROR: produced .pack file is empty: $f" >&2
+        build_failed=1
         exit 1
     fi
 done
