@@ -43,17 +43,15 @@ struct __gpt_header {
     uint32_t partition_array_crc32;
 };
 
-enum __gpt_entry_attributes {
-    __GPT_ENTRY_ATTRIB_PLATFORM_REQUIRED    = (1ULL << 0),
-    __GPT_ENTRY_ATTRIB_IGNORE               = (1ULL << 1),
-    __GPT_ENTRY_ATTRIB_LEGACY_BIOS_BOOTABLE = (1ULL << 2),
+#define __GPT_ENTRY_ATTRIB_PLATFORM_REQUIRED    (1ULL << 0)
+#define __GPT_ENTRY_ATTRIB_IGNORE               (1ULL << 1)
+#define __GPT_ENTRY_ATTRIB_LEGACY_BIOS_BOOTABLE (1ULL << 2)
 
+#define __GPT_ENTRY_ATTRIB_READONLY             (1ULL << 60)
+#define __GPT_ENTRY_ATTRIB_SHADOW_COPY          (1ULL << 61)
+#define __GPT_ENTRY_ATTRIB_HIDDEN               (1ULL << 62)
+#define __GPT_ENTRY_ATTRIB_NO_AUTOMOUNT         (1ULL << 63)
 
-    __GPT_ENTRY_ATTRIB_READONLY             = (1ULL << 60),
-    __GPT_ENTRY_ATTRIB_SHADOW_COPY          = (1ULL << 61),
-    __GPT_ENTRY_ATTRIB_HIDDEN               = (1ULL << 62),
-    __GPT_ENTRY_ATTRIB_NO_AUTOMOUNT         = (1ULL << 63)
-};
 
 struct __gpt_entry {
     uint8_t  type_guid[16];

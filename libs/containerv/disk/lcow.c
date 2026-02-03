@@ -116,7 +116,7 @@ static int __download_and_extract_zip(const char* url, const char* dest_dir, con
     free(url_q);
     free(dest_q);
     free(zip_q);
-    if (rc < 0 || (size_t)rc >= sizeof(cmd)) {
+    if (rc < 0 || (size_t)rc >= sizeof(script)) {
         return -1;
     }
 

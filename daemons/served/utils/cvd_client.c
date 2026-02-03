@@ -100,7 +100,7 @@ static int __configure_local_bind(struct gracht_link_socket* link)
 #include <afunix.h>
 
 static int __abstract_socket_size(const char* address) {
-    return offsetof(struct sockaddr_un, sun_path) + strlen(address);
+    return (int)(offsetof(struct sockaddr_un, sun_path) + strlen(address));
 }
 
 static int __local_size(const char* address) {
@@ -447,7 +447,7 @@ static enum chef_status __container_spawn(
             .command = (char*)command,
             .options = options,
             .environment = flatenv,
-            .environment_count = flatenvLength
+            .environment_count = (uint32_t)flatenvLength
             /* .user = */
         }
     );
