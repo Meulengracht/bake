@@ -98,7 +98,7 @@ static int __parse_packs(struct store_inventory* inventory, json_t* packs)
     if (inventory->packs == NULL) {
         return -1;
     }
-    inventory->packs_count = count;
+    inventory->packs_count = (int)count;
     
     for (size_t i = 0; i < count; i++) {
         json_t* pack = json_array_get(packs, i);
@@ -116,7 +116,7 @@ static int __parse_packs(struct store_inventory* inventory, json_t* packs)
         inventory->packs[i].platform = platform_strdup(json_string_value(platform));
         inventory->packs[i].arch = platform_strdup(json_string_value(architecture));
         inventory->packs[i].channel = platform_strdup(json_string_value(channel));
-        inventory->packs[i].revision = json_integer_value(revision);
+        inventory->packs[i].revision = (int)json_integer_value(revision);
     }
     return 0;
 }
@@ -183,7 +183,7 @@ static int __parse_proofs(struct store_inventory* inventory, json_t* proofs)
         VLOG_ERROR("inventory", "__parse_proofs: failed to allocate memory for proofs\n");
         return -1;
     }
-    inventory->proofs_count = count;
+    inventory->proofs_count = (int)count;
     
     for (size_t i = 0; i < count; i++) {
         json_t* proof = json_array_get(proofs, i);

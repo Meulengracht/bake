@@ -54,6 +54,8 @@ struct containerv_options_network {
     const char* container_ip;       // IP for container interface (e.g., "10.0.0.2")
     const char* container_netmask;  // Netmask (e.g., "255.255.255.0")
     const char* host_ip;            // IP for host-side veth interface (e.g., "10.0.0.1")
+    const char* gateway_ip;         // Optional default gateway
+    const char* dns;                // Optional DNS servers (space/comma/semicolon separated)
 };
 
 struct containerv_options_cgroup {

@@ -148,7 +148,7 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
 
     // make sure we get the stream position
     offset = sector * cfs->bytes_per_sector;
-    status = fseek(cfs->stream, offset, SEEK_SET);
+    status = fseek(cfs->stream, (long)offset, SEEK_SET);
 
     // if the sector is 0, then let us modify the boot sector with the
     // MBR provided by content
@@ -197,7 +197,7 @@ static int __fs_format(struct chef_disk_filesystem* fs)
             strcpy(&tmp[0], cfs->options.reserved_image);
         }
         if (!platform_stat(&tmp[0], &stats)) {
-            cfs->fs->reserved_sectors = (stats.size / cfs->bytes_per_sector) + 1;
+            cfs->fs->reserved_sectors = (uint16_t)((stats.size / cfs->bytes_per_sector) + 1);
         }
     }
     // fat library will always return 1 for success, 0 for failure
@@ -222,8 +222,8 @@ static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs
         return -1;
     }
 
-    written = fl_fwrite(cfs->fs, params->buffer, 1, params->size, stream);
-    if (written != params->size) {
+    written = fl_fwrite(cfs->fs, params->buffer, 1, (uint32_t)params->size, stream);
+    if (written != (int)params->size) {
         fl_fclose(cfs->fs, stream);
         return -1;
     }
@@ -239,7 +239,12 @@ static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_w
     int     status;
 
     if (params->sector != 0) {
-        return __partition_write((uint32_t)params->sector, (uint8_t*)params->buffer, params->size / cfs->bytes_per_sector, cfs) == 1 ? 0 : -1;
+        return __partition_write(
+            (uint32_t)params->sector,
+            (uint8_t*)params->buffer,
+            (uint32_t)(params->size / cfs->bytes_per_sector),
+            cfs
+        ) == 1 ? 0 : -1;
     }
 
     // we are writing MBR, fix it up
@@ -276,7 +281,6 @@ static int __fs_finish(struct chef_disk_filesystem* fs)
 struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_partition* partition, struct chef_disk_filesystem_params* params)
 {
     struct __fat_filesystem* cfs;
-    int                      status;
     VLOG_DEBUG("fat", "chef_filesystem_fat32_new(partition=%s)\n", partition->name);
 
     cfs = calloc(1, sizeof(struct __fat_filesystem));

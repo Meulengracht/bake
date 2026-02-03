@@ -14,10 +14,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
+ * Rootfs helpers for Ubuntu-based container disks.
  */
 
-#ifndef __UBUNTU_H__
-#define __UBUNTU_H__
+#ifndef __CONTAINERV_DISK_UBUNTU_H__
+#define __CONTAINERV_DISK_UBUNTU_H__
 
 #include <chef/platform.h>
 #include <stdlib.h>
@@ -29,7 +30,6 @@
 
 #define UBUNTU_22_LTS_VERSION "22.04"
 #define UBUNTU_22_LTS_RELEASE "5"
-
 
 // helper to get the base image number from a string like "ubuntu:24"
 static int __ubuntu_get_base_number(const char* base) {
@@ -101,4 +101,12 @@ static char* __ubuntu_get_base_image_url(const char* base) {
     return platform_strdup(&tmp[0]);
 }
 
-#endif // !__UBUNTU_H__
+/**
+ * @brief Download the Ubuntu base image to the specified cache directory.
+ * @param path The directory to construct the rootfs into.
+ * @param base The base image string, e.g., "ubuntu:24".
+ * @return 0 on success, non-zero on failure.
+ */
+extern int containerv_disk_setup_ubuntu_rootfs(const char* path, const char* base);
+
+#endif // !__CONTAINERV_DISK_UBUNTU_H__

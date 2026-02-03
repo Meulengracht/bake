@@ -1,0 +1,33 @@
+project:
+  name: lcow-uvm
+  summary: LCOW utility VM assets
+  description: |
+    Builds an LCOW UVM bundle (uvm.vhdx + optional kernel/initrd/boot params)
+    using hcsshim + LinuxKit. The output is a directory suitable for
+    CHEF_LCOW_UVM_IMAGE_PATH.
+  author: Philip Meulengracht
+  email: the_meulengracht@hotmail.com
+  version: 1.0.0
+  license: MIT
+
+environment:
+  host:
+    packages:
+      - git
+      - linuxkit
+
+recipes:
+  - name: uvm
+    source:
+      type: path
+      path: ./
+      script: |
+        if build.subsystem.platform_host() == "linux" then
+          args = build.paths.install()
+          args = args .. " " .. build.subsystem.arch_target()
+          build.shell("construct-lcow-uvm.sh", args)
+        end
+
+packs:
+- name: lcow-uvm
+  type: os

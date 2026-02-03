@@ -117,6 +117,17 @@ static void __remove_process(HANDLE handle)
     LeaveCriticalSection(&g_process_lock);
 }
 
+void pid1_windows_untrack(HANDLE handle)
+{
+    if (handle == NULL) {
+        return;
+    }
+    if (!pid1_is_initialized()) {
+        return;
+    }
+    __remove_process(handle);
+}
+
 /**
  * @brief Build a command line from arguments
  */
@@ -529,6 +540,24 @@ int pid1_windows_set_job_object(HANDLE job_handle)
     g_job_object_owned = 1;
 
     PID1_INFO("Using provided Job Object (handle %p)", g_job_object);
+    return 0;
+}
+
+int pid1_windows_set_job_object_borrowed(HANDLE job_handle)
+{
+    if (job_handle == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    // Close existing Job Object if we own it.
+    if (g_job_object != NULL && g_job_object_owned) {
+        CloseHandle(g_job_object);
+    }
+
+    g_job_object = job_handle;
+    g_job_object_owned = 0;
+    PID1_INFO("Using borrowed Job Object (handle %p)", g_job_object);
     return 0;
 }
 

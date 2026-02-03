@@ -36,16 +36,16 @@ static const struct {
     const wchar_t* name;
     const char* description;
 } privilege_map[] = {
-    {CV_PRIV_DEBUG, SE_DEBUG_NAME, "Debug programs"},
-    {CV_PRIV_BACKUP, SE_BACKUP_NAME, "Back up files and directories"},
-    {CV_PRIV_RESTORE, SE_RESTORE_NAME, "Restore files and directories"},
-    {CV_PRIV_SHUTDOWN, SE_SHUTDOWN_NAME, "Shut down the system"},
-    {CV_PRIV_LOAD_DRIVER, SE_LOAD_DRIVER_NAME, "Load and unload device drivers"},
-    {CV_PRIV_SYSTEM_TIME, SE_SYSTEMTIME_NAME, "Change the system time"},
-    {CV_PRIV_TAKE_OWNERSHIP, SE_TAKE_OWNERSHIP_NAME, "Take ownership of files or other objects"},
-    {CV_PRIV_TCB, SE_TCB_NAME, "Act as part of the operating system"},
-    {CV_PRIV_SECURITY, SE_SECURITY_NAME, "Manage auditing and security log"},
-    {CV_PRIV_INCREASE_QUOTA, SE_INCREASE_QUOTA_NAME, "Adjust memory quotas for a process"}
+    {CV_PRIV_DEBUG, L"SeDebugPrivilege", "Debug programs"},
+    {CV_PRIV_BACKUP, L"SeBackupPrivilege", "Back up files and directories"},
+    {CV_PRIV_RESTORE, L"SeRestorePrivilege", "Restore files and directories"},
+    {CV_PRIV_SHUTDOWN, L"SeShutdownPrivilege", "Shut down the system"},
+    {CV_PRIV_LOAD_DRIVER, L"SeLoadDriverPrivilege", "Load and unload device drivers"},
+    {CV_PRIV_SYSTEM_TIME, L"SeSystemtimePrivilege", "Change the system time"},
+    {CV_PRIV_TAKE_OWNERSHIP, L"SeTakeOwnershipPrivilege", "Take ownership of files or other objects"},
+    {CV_PRIV_TCB, L"SeTcbPrivilege", "Act as part of the operating system"},
+    {CV_PRIV_SECURITY, L"SeSecurityPrivilege", "Manage auditing and security log"},
+    {CV_PRIV_INCREASE_QUOTA, L"SeIncreaseQuotaPrivilege", "Adjust memory quotas for a process"}
 };
 
 static const size_t privilege_map_size = sizeof(privilege_map) / sizeof(privilege_map[0]);
@@ -58,6 +58,10 @@ static const wchar_t* get_privilege_name(enum containerv_windows_privilege priv)
     }
     return NULL;
 }
+
+int windows_apply_security_profile(const struct containerv_policy* policy,
+                                  HANDLE* process_token,
+                                  PSID* appcontainer_sid);
 
 /**
  * @brief Create an AppContainer for container isolation

@@ -49,10 +49,10 @@ static int __get_info_url(struct chef_info_params* params, char* urlBuffer, size
 
 static int __parse_version(json_t* root, struct chef_version* version)
 {
-    version->revision = json_integer_value(json_object_get(root, "revision"));
-    version->major = json_integer_value(json_object_get(root, "major"));
-    version->minor = json_integer_value(json_object_get(root, "minor"));
-    version->patch = json_integer_value(json_object_get(root, "patch"));
+    version->revision = (int)json_integer_value(json_object_get(root, "revision"));
+    version->major = (int)json_integer_value(json_object_get(root, "major"));
+    version->minor = (int)json_integer_value(json_object_get(root, "minor"));
+    version->patch = (int)json_integer_value(json_object_get(root, "patch"));
     version->tag = __get_json_string_safe(root, "tag");
     return 0;
 }

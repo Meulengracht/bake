@@ -36,6 +36,11 @@ extern char** environment_create(const char* const* parent, struct list* additon
 extern int environment_append_keyv(char** envp, char* key, char** values, char* sep);
 
 /**
+ * @brief 
+ */
+extern int environment_contains_key_insensitive(const char* const* environment, const char* key);
+
+/**
  * @brief
  */
 extern char* environment_flatten(const char* const* environment, size_t* lengthOut);

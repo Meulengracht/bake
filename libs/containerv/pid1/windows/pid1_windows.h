@@ -101,10 +101,28 @@ extern int pid1_windows_get_process_count(void);
 extern int pid1_windows_set_job_object(HANDLE job_handle);
 
 /**
+ * @brief Set the Job Object handle without duplicating it
+ *
+ * This is intended for integrations that want the job lifetime to be
+ * controlled externally (e.g. per-container job objects that must trigger
+ * JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE when the container is destroyed).
+ *
+ * The PID1 layer will not close this handle.
+ */
+extern int pid1_windows_set_job_object_borrowed(HANDLE job_handle);
+
+/**
  * @brief Get the Job Object used for process management
  * 
  * @return Job Object handle, or NULL if not initialized
  */
 extern HANDLE pid1_windows_get_job_object(void);
+
+/**
+ * @brief Remove a process handle from PID1 tracking (no wait, no close).
+ *
+ * Intended for integrations that manage handle lifetime externally.
+ */
+extern void pid1_windows_untrack(HANDLE handle);
 
 #endif //!__PID1_WINDOWS_H__

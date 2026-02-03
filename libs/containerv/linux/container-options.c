@@ -27,12 +27,12 @@ struct containerv_options* containerv_options_new(void)
 
 void containerv_options_delete(struct containerv_options* options)
 {
-    if (options != NULL) {
-        if (options->policy != NULL) {
-            containerv_policy_delete(options->policy);
-        }
-        free(options);
+    if (options == NULL) {
+        return;
     }
+
+    containerv_policy_delete(options->policy);
+    free(options);
 }
 
 void containerv_options_set_caps(struct containerv_options* options, enum containerv_capabilities caps)
@@ -84,8 +84,35 @@ void containerv_options_set_network(
     const char*                container_netmask,
     const char*                host_ip)
 {
+    containerv_options_set_network_ex(options, container_ip, container_netmask, host_ip, NULL, NULL);
+}
+
+void containerv_options_set_windows_wcow_parent_layers(
+    struct containerv_options* options,
+    const char* const*         parent_layers,
+    int                        parent_layer_count)
+{
+    (void)options;
+    (void)parent_layers;
+    (void)parent_layer_count;
+}
+
+void containerv_options_set_network_ex(
+    struct containerv_options* options,
+    const char*                container_ip,
+    const char*                container_netmask,
+    const char*                host_ip,
+    const char*                gateway_ip,
+    const char*                dns)
+{
+    if (options == NULL) {
+        return;
+    }
+
     options->network.enable = 1;
     options->network.container_ip = container_ip;
     options->network.container_netmask = container_netmask;
     options->network.host_ip = host_ip;
+    options->network.gateway_ip = gateway_ip;
+    options->network.dns = dns;
 }

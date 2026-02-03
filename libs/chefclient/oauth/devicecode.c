@@ -99,8 +99,8 @@ static int __parse_challenge_response(const char* responseBuffer, struct devicec
     context->user_code = platform_strdup(json_string_value(json_object_get(root, "user_code")));
     context->device_code = platform_strdup(json_string_value(json_object_get(root, "device_code")));
     context->verification_uri = platform_strdup(json_string_value(json_object_get(root, "verification_uri")));
-    context->expires_in = json_integer_value(json_object_get(root, "expires_in"));
-    context->interval = json_integer_value(json_object_get(root, "interval"));
+    context->expires_in = (int)json_integer_value(json_object_get(root, "expires_in"));
+    context->interval = (int)json_integer_value(json_object_get(root, "interval"));
 
     json_decref(root);
     return 0;
@@ -175,7 +175,7 @@ static int __parse_token_response(const char* responseBuffer, struct token_conte
         return -1;
     }
 
-    context->expires_in = json_integer_value(json_object_get(root, "expires_in"));
+    context->expires_in = (int)json_integer_value(json_object_get(root, "expires_in"));
     context->access_token = platform_strdup(json_string_value(json_object_get(root, "access_token")));
     context->id_token = platform_strdup(json_string_value(json_object_get(root, "id_token")));
     

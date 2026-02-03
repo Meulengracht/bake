@@ -38,7 +38,7 @@ int remote_pack(const char* path, const char* const* envp, char** imagePath)
     FILE* fp;
 
     // create temporary file path
-    fp = chef_dirs_contemporary_file("bake-src", "vafs", imagePath);
+    fp = chef_dirs_open_temp_file("bake-src", "vafs", imagePath);
     if (fp == NULL) {
         VLOG_ERROR("remote", "failed to get a temporary path for source archive\n");
         return -1;

@@ -32,6 +32,15 @@ endif ()
 message(STATUS "Building zstd from source")
 include(ExternalProject)
 
+# zstd's CMake exports the static library under different basenames depending
+# on platform/toolchain. On Windows the installed static library is typically
+# named "zstd_static.lib", while on Unix it is usually "libzstd.a".
+if (WIN32)
+  set(ZSTD_BUNDLED_LIB_BASENAME zstd_static)
+else ()
+  set(ZSTD_BUNDLED_LIB_BASENAME zstd)
+endif ()
+
 ExternalProject_Add(bundled_zstd
   URL
     https://github.com/facebook/zstd/archive/refs/tags/v1.5.7.tar.gz
@@ -50,7 +59,7 @@ ExternalProject_Add(bundled_zstd
     -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
     -DCMAKE_OSX_SYSROOT=${CMAKE_OSX_SYSROOT}
   BUILD_BYPRODUCTS
-    <INSTALL_DIR>/lib/${CMAKE_STATIC_LIBRARY_PREFIX}zstd${CMAKE_STATIC_LIBRARY_SUFFIX}
+    <INSTALL_DIR>/lib/${CMAKE_STATIC_LIBRARY_PREFIX}${ZSTD_BUNDLED_LIB_BASENAME}${CMAKE_STATIC_LIBRARY_SUFFIX}
   BUILD_COMMAND
     ${CMAKE_COMMAND} --build . --config $<CONFIG>
   INSTALL_COMMAND
@@ -59,4 +68,4 @@ ExternalProject_Add(bundled_zstd
 add_dependencies(zstd bundled_zstd)
 ExternalProject_Get_Property(bundled_zstd INSTALL_DIR)
 target_include_directories(zstd INTERFACE "${INSTALL_DIR}/include")
-target_link_libraries(zstd INTERFACE "${INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}zstd${CMAKE_STATIC_LIBRARY_SUFFIX}")
+target_link_libraries(zstd INTERFACE "${INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}${ZSTD_BUNDLED_LIB_BASENAME}${CMAKE_STATIC_LIBRARY_SUFFIX}")

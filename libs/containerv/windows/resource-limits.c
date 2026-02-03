@@ -248,6 +248,9 @@ int __windows_apply_job_to_processes(
     // Apply to all container processes
     list_foreach(&container->processes, item) {
         struct containerv_container_process* process = (struct containerv_container_process*)item;
+        if (process->is_guest) {
+            continue;
+        }
         if (process->handle && process->handle != INVALID_HANDLE_VALUE) {
             if (AssignProcessToJobObject(job_handle, process->handle)) {
                 applied_count++;
@@ -285,21 +288,18 @@ int __windows_get_job_statistics(
     memset(stats, 0, sizeof(*stats));
     
     // Get basic job statistics
-    if (QueryInformationJobObject(job_handle, JobObjectBasicAccountingInformation,
-                                 &basic_info, sizeof(basic_info), NULL)) {
-        stats->cpu_time_ns = basic_info.TotalUserTime.QuadPart * 100; // Convert to nanoseconds
-        stats->active_processes = basic_info.ActiveProcesses;
-        stats->total_processes = basic_info.TotalProcesses;
-    }
-    
-    // Get I/O statistics
-    if (QueryInformationJobObject(job_handle, JobObjectBasicAndIoAccountingInformation,
-                                 &io_info, sizeof(io_info), NULL)) {
-        stats->read_bytes = io_info.IoInfo.ReadTransferCount;
-        stats->write_bytes = io_info.IoInfo.WriteTransferCount;
-        stats->read_ops = io_info.IoInfo.ReadOperationCount;
-        stats->write_ops = io_info.IoInfo.WriteOperationCount;
-    }
+        if (QueryInformationJobObject(job_handle, JobObjectBasicAccountingInformation,
+                                     &basic_info, sizeof(basic_info), NULL)) {
+            stats->cpu_time_ns = basic_info.TotalUserTime.QuadPart * 100; // Convert to nanoseconds
+        }
+
+        if (QueryInformationJobObject(job_handle, JobObjectBasicAndIoAccountingInformation,
+                                     &io_info, sizeof(io_info), NULL)) {
+            stats->read_bytes = io_info.IoInfo.ReadTransferCount;
+            stats->write_bytes = io_info.IoInfo.WriteTransferCount;
+            stats->read_ops = io_info.IoInfo.ReadOperationCount;
+            stats->write_ops = io_info.IoInfo.WriteOperationCount;
+        }
     
     // Memory usage requires per-process enumeration
     // For now, we'll get approximate usage from the first process

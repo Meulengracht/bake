@@ -103,7 +103,7 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
             VLOG_ERROR("cookd", "init_link_config failed to configure local link\n");
             return status;
         }
-        domain = AF_LOCAL;
+        domain = addr_storage.ss_family;
         size = __local_size(config->address);
 
         VLOG_TRACE("cookd", "connecting to %s\n", config->address);

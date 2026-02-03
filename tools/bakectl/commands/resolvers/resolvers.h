@@ -87,7 +87,7 @@ extern int pe_resolve_dependencies(const char* path, struct list* dependencies);
  * @param[In] dependency The dependency to resolve
  * @return const char*   The full path of the resolved dependency
  */
-extern const char* resolve_platform_dependency(const char* sysroot, struct bake_resolve* resolve, const char* dependency);
+extern const char* resolve_platform_dependency(const char* sysroot, const char* platform, struct bake_resolve* resolve, const char* dependency);
 
 /**
  * @brief Determines whether the library is marked as a system library

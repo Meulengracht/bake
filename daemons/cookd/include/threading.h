@@ -106,6 +106,12 @@ static inline int cnd_signal(cnd_t* cnd)
     return thrd_success;
 }
 
+static inline int cnd_broadcast(cnd_t* cnd)
+{
+    WakeAllConditionVariable(cnd);
+    return thrd_success;
+}
+
 static inline int cnd_wait(cnd_t* cnd, mtx_t* mtx)
 {
     BOOL status = SleepConditionVariableCS(cnd, mtx, INFINITE);

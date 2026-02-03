@@ -107,7 +107,7 @@ extern void containerv_options_set_layers(struct containerv_options* options, st
  * @brief Configure network isolation for the container
  *
  * On Linux this configures a virtual ethernet pair/bridge setup.
- * On Windows this configures the equivalent container/VM networking.
+ * On Windows this configures the equivalent container networking.
  *
  * @param options The container options to configure
  * @param container_ip IP address for the container interface (e.g., "10.0.0.2")
@@ -119,6 +119,27 @@ extern void containerv_options_set_network(
     const char*                container_ip,
     const char*                container_netmask,
     const char*                host_ip
+);
+
+/**
+ * @brief Configure network isolation for the container (extended)
+ *
+ * Adds optional gateway and DNS configuration.
+ *
+ * @param options The container options to configure
+ * @param container_ip IP address for the container interface (e.g., "10.0.0.2")
+ * @param container_netmask Netmask for the container (e.g., "255.255.255.0" or "24")
+ * @param host_ip IP address for the host-side interface (e.g., "10.0.0.1")
+ * @param gateway_ip Default gateway for the container/guest (optional; may be NULL)
+ * @param dns Space/comma/semicolon separated DNS servers (optional; may be NULL)
+ */
+extern void containerv_options_set_network_ex(
+    struct containerv_options* options,
+    const char*                container_ip,
+    const char*                container_netmask,
+    const char*                host_ip,
+    const char*                gateway_ip,
+    const char*                dns
 );
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
@@ -136,6 +157,73 @@ enum containerv_windows_privilege {
     CV_PRIV_SECURITY = 8,           // Manage auditing and security log
     CV_PRIV_INCREASE_QUOTA = 9      // Adjust memory quotas for a process
 };
+
+// Windows container isolation mode (only meaningful for CV_WIN_RUNTIME_HCS_CONTAINER)
+enum containerv_windows_container_isolation {
+    // Windows Server container / process isolation
+    CV_WIN_CONTAINER_ISOLATION_PROCESS = 0,
+    // Hyper-V isolated container
+    CV_WIN_CONTAINER_ISOLATION_HYPERV = 1
+};
+
+// Windows container type (only meaningful for CV_WIN_RUNTIME_HCS_CONTAINER)
+enum containerv_windows_container_type {
+    // Windows container on Windows (WCOW)
+    CV_WIN_CONTAINER_TYPE_WINDOWS = 0,
+    // Linux container on Windows (LCOW)
+    CV_WIN_CONTAINER_TYPE_LINUX = 1
+};
+
+/**
+ * @brief Select the Windows container isolation mode (process vs Hyper-V).
+ */
+extern void containerv_options_set_windows_container_isolation(
+    struct containerv_options*                    options,
+    enum containerv_windows_container_isolation   isolation
+);
+
+/**
+ * @brief Set the UtilityVM image path for Hyper-V isolated Windows containers.
+ *
+ * This should typically point at a base image's `UtilityVM` directory.
+ */
+extern void containerv_options_set_windows_container_utilityvm_path(
+    struct containerv_options* options,
+    const char*                utilityvm_path
+);
+
+/**
+ * @brief Select container type for the HCS container backend (WCOW vs LCOW).
+ */
+extern void containerv_options_set_windows_container_type(
+    struct containerv_options*              options,
+    enum containerv_windows_container_type  type
+);
+
+/**
+ * @brief Configure Linux Containers on Windows (LCOW) Hyper-V runtime settings.
+ *
+ * These paths are interpreted as:
+ * - `uvm_image_path`: host directory that contains the UVM assets.
+ * - `kernel_file`/`initrd_file`: file names under `uvm_image_path`.
+ * - `boot_parameters`: additional kernel cmdline parameters.
+ */
+extern void containerv_options_set_windows_lcow_hvruntime(
+    struct containerv_options* options,
+    const char*                uvm_image_path,
+    const char*                kernel_file,
+    const char*                initrd_file,
+    const char*                boot_parameters
+);
+
+/**
+ * @brief Configure WCOW parent layers (windowsfilter folders) for HCS container mode.
+ */
+extern void containerv_options_set_windows_wcow_parent_layers(
+    struct containerv_options* options,
+    const char* const*         parent_layers,
+    int                        parent_layer_count
+);
 
 /**
  * @brief Configure resource limits for the Windows container using Job Objects
@@ -235,6 +323,13 @@ extern int containerv_upload(struct containerv_container* container, const char*
 extern int containerv_download(struct containerv_container* container, const char* const* containerPaths, const char* const* hostPaths, int count);
 
 extern int containerv_destroy(struct containerv_container* container);
+
+/**
+ * @brief Returns non-zero if the VM guest OS is Windows.
+ *
+ * For non-VM containers this will return 0.
+ */
+extern int containerv_guest_is_windows(struct containerv_container* container);
 
 /**
  * @brief Query a best-effort resource usage snapshot for a running container.

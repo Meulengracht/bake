@@ -151,9 +151,9 @@ static char** __word_wrap(const char* text, const char* prefix, const char* padd
         // correct lineLength, for the first line we use prefix and for the
         // remaining lines we use padding
         if (i == 0) {
-            lineLength -= prefixLength;
+            lineLength -= (int)prefixLength;
         } else {
-            lineLength -= paddingLength;
+            lineLength -= (int)paddingLength;
         }
         
         // keep skipping words while we are under limit

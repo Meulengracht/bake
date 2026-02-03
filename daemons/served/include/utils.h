@@ -71,6 +71,9 @@ extern char* utils_path_command_wrapper(const char* name);
 
 struct container_options {
     const char* id;
+    // Package identifier in the format "publisher/package".
+    // Used for per-package configuration overrides.
+    const char* pack_id;
     const char* rootfs;
     const char* package;
 };

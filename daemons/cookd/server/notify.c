@@ -49,6 +49,7 @@ enum chef_artifact_type __to_protocol_atype(enum cookd_notify_artifact_type ctyp
         case COOKD_ARTIFACT_TYPE_LOG: return CHEF_ARTIFACT_TYPE_LOG;
         case COOKD_ARTIFACT_TYPE_PACKAGE: return CHEF_ARTIFACT_TYPE_PACKAGE;
     }
+    return CHEF_ARTIFACT_TYPE_LOG;
 }
 
 int cookd_notify_artifact_ready(gracht_client_t* client, const char* id, enum cookd_notify_artifact_type type, const char* uri)

@@ -131,7 +131,7 @@ static int __partition_read(uint64_t sector, uint8_t *buffer, uint32_t sector_co
     // make sure we get the stream position
     offset = sector * cfs->bytes_per_sector;
 
-    status = fseek(cfs->stream, offset, SEEK_SET);
+    status = fseek(cfs->stream, (long)offset, SEEK_SET);
 
     fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
     return 0;
@@ -145,7 +145,7 @@ static int __partition_write(uint64_t sector, uint8_t *buffer, uint32_t sector_c
 
     // make sure we get the stream position
     offset = sector * cfs->bytes_per_sector;
-    status = fseek(cfs->stream, offset, SEEK_SET);
+    status = fseek(cfs->stream, (long)offset, SEEK_SET);
 
     // if the sector is 0, then let us modify the boot sector with the
     // MBR provided by content
@@ -188,7 +188,10 @@ static int __fs_format(struct chef_disk_filesystem* fs)
             cfs->content
         );
         if (!platform_stat(&tmp[0], &stats)) {
-            mfs_set_reserved_sectors(cfs->fs, ((stats.size + (cfs->bytes_per_sector - 1)) / cfs->bytes_per_sector) + 1 /* 1 for VBR */);
+            mfs_set_reserved_sectors(
+                cfs->fs, 
+                (uint16_t)(((stats.size + (cfs->bytes_per_sector - 1)) / cfs->bytes_per_sector) + 1) /* 1 for VBR */
+            );
         }
     }
     return mfs_format(cfs->fs);
@@ -235,7 +238,12 @@ static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_w
         mbr[511] = 0xAA;
         return __partition_write(params->sector, &mbr[0], 1, cfs);
     } else {
-        return __partition_write(params->sector, (uint8_t*)params->buffer, params->size / cfs->bytes_per_sector, cfs);
+        return __partition_write(
+            params->sector,
+            (uint8_t*)params->buffer,
+            (uint32_t)(params->size / cfs->bytes_per_sector),
+            cfs
+        );
     }
 }
 

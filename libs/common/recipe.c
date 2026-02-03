@@ -110,9 +110,13 @@ enum state {
     STATE_PACK_DESCRIPTION,
     STATE_PACK_ICON,
     STATE_PACK_TYPE,
+    STATE_PACK_NETWORK,
     STATE_PACK_INGREDIENT_OPTIONS,
     STATE_PACK_FILTER_LIST,
     STATE_PACK_COMMANDS_LIST,
+    
+    STATE_PACK_NETWORK_GATEWAY,
+    STATE_PACK_NETWORK_DNS,
 
     STATE_PACK_INGREDIENT_OPTIONS_BIN_PATHS_LIST,
     STATE_PACK_INGREDIENT_OPTIONS_INC_PATHS_LIST,
@@ -1237,6 +1241,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_PACK_ICON);
                     } else if (strcmp(value, "type") == 0) {
                         __parser_push_state(s, STATE_PACK_TYPE);
+                    } else if (strcmp(value, "network") == 0) {
+                        __parser_push_state(s, STATE_PACK_NETWORK);
                     } else if (strcmp(value, "ingredient-options") == 0) {
                         __parser_push_state(s, STATE_PACK_INGREDIENT_OPTIONS);
                     } else if (strcmp(value, "filters") == 0) {
@@ -1259,6 +1265,34 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_PACK_DESCRIPTION, pack.description, __parse_string)
         __consume_scalar_fn(STATE_PACK_ICON, pack.icon, __parse_string)
         __consume_scalar_fn(STATE_PACK_TYPE, pack.type, __parse_pack_type)
+
+        case STATE_PACK_NETWORK:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __parser_pop_state(s);
+                    break;
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "gateway") == 0) {
+                        __parser_push_state(s, STATE_PACK_NETWORK_GATEWAY);
+                    } else if (strcmp(value, "dns") == 0) {
+                        __parser_push_state(s, STATE_PACK_NETWORK_DNS);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_PACK_NETWORK) unexpected scalar: %s.\n", value);
+                        return -1;
+                    }
+                    break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_PACK_NETWORK_GATEWAY, pack.app_options.gateway, __parse_string)
+        __consume_scalar_fn(STATE_PACK_NETWORK_DNS, pack.app_options.dns, __parse_string)
+
         __consume_sequence_unmapped(STATE_PACK_FILTER_LIST, __add_pack_filters)
         __consume_sequence_mapped(STATE_PACK_COMMANDS_LIST, STATE_COMMAND)
 
@@ -1498,6 +1532,10 @@ static void __destroy_pack(struct recipe_pack* pack)
     __destroy_pack_ingredient_options(&pack->options);
     __destroy_list(command, pack->commands.head, struct recipe_pack_command);
     __destroy_list(string, pack->filters.head, struct list_item_string);
+
+    free((void*)pack->app_options.gateway);
+    free((void*)pack->app_options.dns);
+
     free((void*)pack->name);
     free((void*)pack->summary);
     free((void*)pack->description);

@@ -663,12 +663,14 @@ static int __process_context_layers(struct containerv_layer_context* context, st
     return status;
 }
 
-int containerv_layers_compose(
+int containerv_layers_compose_ex(
     struct containerv_layer*          layers,
     int                               layerCount,
     const char*                       containerID,
+    const struct containerv_layers_compose_options* compose_options,
     struct containerv_layer_context** contextOut)
 {
+    (void)compose_options;
     struct containerv_layer_context* context;
     int                              status = 0;
     
@@ -711,6 +713,26 @@ int containerv_layers_compose(
     
     *contextOut = context;
     return 0;
+}
+
+int containerv_layers_compose(
+    struct containerv_layer*          layers,
+    int                               layer_count,
+    const char*                       container_id,
+    struct containerv_layer_context** context_out)
+{
+    return containerv_layers_compose_ex(layers, layer_count, container_id, NULL, context_out);
+}
+
+int containerv_layers_compose_with_options(
+    struct containerv_layer*          layers,
+    int                               layer_count,
+    const char*                       container_id,
+    const struct containerv_options*  options,
+    struct containerv_layer_context** context_out)
+{
+    (void)options;
+    return containerv_layers_compose_ex(layers, layer_count, container_id, NULL, context_out);
 }
 
 const char* containerv_layers_get_rootfs(struct containerv_layer_context* context)

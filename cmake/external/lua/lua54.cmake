@@ -1,7 +1,12 @@
 # original credits to the files in this folder
 # https://gitea.osmocom.org/osmocom/wireshark/commit/687b24d5b3d3a386591040e5fda5f2e659f95e99
 
-find_program(MAKE_EXE NAMES gmake nmake make)
+if(MSVC)
+	# Prefer nmake in MSVC environments to avoid accidentally picking up MSYS/MinGW gmake.
+	find_program(MAKE_EXE NAMES nmake)
+else()
+	find_program(MAKE_EXE NAMES gmake make nmake)
+endif()
 include(ExternalProject)
 
 set(_staging_dir "${CMAKE_BINARY_DIR}/staging")
@@ -23,7 +28,11 @@ else()
 	set(_mycflags "")
 endif()
 
-set(_lib_name "liblua.a")
+if(MSVC)
+	set(_lib_name "lua54.lib")
+else()
+	set(_lib_name "liblua.a")
+endif()
 
 set(HAVE_LUA TRUE)
 set(LUA_INCLUDE_DIRS "${_staging_dir}/include")
@@ -35,23 +44,29 @@ set(LUA_FOUND TRUE CACHE INTERNAL "")
 # external projects to a staging directory first, and the normal install target
 # does not work with MinGW.
 #
+
 if(MSVC)
-	# For MSVC, apply additional patch to remove GCC-specific flags
+	# MSVC must not build Lua via gmake/gcc, otherwise we get MinGW runtime symbols
+	# like __mingw_fprintf inside liblua.a which MSVC cannot resolve.
+	# Build Lua with cl/lib via a tiny CMake wrapper.
+	set(_lua_msvc_build_dir "${CMAKE_BINARY_DIR}/lua54-msvc-build")
 	ExternalProject_Add(lua54
 		URL
 		  https://www.lua.org/ftp/lua-5.4.7.tar.gz
+		# No patching needed; wrapper compiles sources directly.
 		PATCH_COMMAND
-		  patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/0001-install-static-target.patch
-		CONFIGURE_COMMAND
 		  ""
+		CONFIGURE_COMMAND
+		  ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_LIST_DIR}/msvc-cmake -B ${_lua_msvc_build_dir}
+		    -DLUA_SOURCE_DIR=<SOURCE_DIR>/src
+		    -DCMAKE_INSTALL_PREFIX=${_staging_dir}
+		    -DCMAKE_BUILD_TYPE=$<IF:$<BOOL:${CMAKE_BUILD_TYPE}>,${CMAKE_BUILD_TYPE},Release>
 		BUILD_COMMAND
-		  ${MAKE_EXE} ${_target}
-		BUILD_IN_SOURCE
-		  True
+		  ${CMAKE_COMMAND} --build ${_lua_msvc_build_dir} --config $<IF:$<BOOL:${CMAKE_BUILD_TYPE}>,${CMAKE_BUILD_TYPE},Release>
 		BUILD_BYPRODUCTS
 		  ${LUA_LIBRARIES}
 		INSTALL_COMMAND
-		  ${MAKE_EXE} INSTALL_TOP=${_staging_dir} install-static
+		  ${CMAKE_COMMAND} --install ${_lua_msvc_build_dir} --config $<IF:$<BOOL:${CMAKE_BUILD_TYPE}>,${CMAKE_BUILD_TYPE},Release>
 	)
 else()
 	ExternalProject_Add(lua54

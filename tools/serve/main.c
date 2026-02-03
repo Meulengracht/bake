@@ -24,6 +24,7 @@ extern int install_main(int argc, char** argv);
 extern int remove_main(int argc, char** argv);
 extern int update_main(int argc, char** argv);
 extern int list_main(int argc, char** argv);
+extern int config_main(int argc, char** argv);
 
 struct command_handler {
     char* name;
@@ -34,7 +35,8 @@ static struct command_handler g_commands[] = {
     { "install", install_main },
     { "remove",  remove_main },
     { "update",  update_main },
-    { "list",    list_main }
+    { "list",    list_main },
+    { "config",  config_main }
 };
 
 static void __print_help(void)
@@ -46,12 +48,13 @@ static void __print_help(void)
     printf("  remove      remove a previously installed package\n");
     printf("  update      update an installed package or do a full update\n");
     printf("  list        list all installed packages\n");
+    printf("  config      view or change served configuration values\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
     printf("  -v, --version\n");
-    printf("      Print the version of order\n");
+    printf("      Print the version of serve\n");
 }
 
 static struct command_handler* __get_command(const char* command)

@@ -58,6 +58,7 @@ static struct VaFsGuid g_versionGuid   = CHEF_PACKAGE_VERSION_GUID;
 static struct VaFsGuid g_iconGuid      = CHEF_PACKAGE_ICON_GUID;
 static struct VaFsGuid g_commandsGuid  = CHEF_PACKAGE_APPS_GUID;
 static struct VaFsGuid g_optionsGuid   = CHEF_PACKAGE_INGREDIENT_OPTS_GUID;
+static struct VaFsGuid g_networkGuid   = CHEF_PACKAGE_NETWORK_GUID;
 
 /**
  * ZSTD Compression
@@ -182,6 +183,9 @@ static int __write_file(
     fseek(file, 0, SEEK_END);
     fileSize = ftell(file);
     if (fileSize) {
+        size_t writeFailed;
+        
+        
         fileBuffer = malloc(fileSize);
         rewind(file);
         bytesRead = fread(fileBuffer, 1, fileSize, file);
@@ -189,8 +193,12 @@ static int __write_file(
             VLOG_ERROR("bake", "only partial read %s\n", path);
         }
         
-        // write the file to the VaFS file
-        status = vafs_file_write(fileHandle, fileBuffer, fileSize);
+        // write the file to the VaFS file, stupid API i made
+        // returns 0 on success, and non-zero on failure
+        writeFailed = vafs_file_write(fileHandle, fileBuffer, fileSize);
+        if (writeFailed) {
+            status = -1;
+        }
         free(fileBuffer);
     }
     fclose(file);
@@ -340,7 +348,7 @@ static int __zstd_encode(void* Input, uint32_t InputLength, void** Output, uint3
     }
 
     *Output       = compressedData;
-    *OutputLength = checkSize;
+    *OutputLength = (uint32_t)checkSize;
     return 0;
 }
 
@@ -433,7 +441,7 @@ static int __parse_version_string(const char* string, struct chef_vafs_feature_p
     return 0;
 }
 
-static int __safe_strlen(const char* string)
+static size_t __safe_strlen(const char* string)
 {
     if (string == NULL) {
         return 0;
@@ -469,24 +477,24 @@ static int __write_header_metadata(struct VaFs* vafs, const char* name, struct _
     }
 
     memcpy(&packageHeader->header.Guid, &g_headerGuid, sizeof(struct VaFsGuid));
-    packageHeader->header.Length = featureSize;
+    packageHeader->header.Length = (uint32_t)featureSize;
 
     // fill in info
     packageHeader->version = CHEF_PACKAGE_VERSION;
     packageHeader->type    = options->type;
 
     // fill in lengths
-    packageHeader->platform_length         = strlen(options->platform);
-    packageHeader->arch_length             = strlen(options->architecture);
-    packageHeader->package_length          = strlen(name);
-    packageHeader->base_length             = strlen(options->base);
-    packageHeader->summary_length          = strlen(options->summary);
-    packageHeader->description_length      = options->description == NULL ? 0 : strlen(options->description);
-    packageHeader->license_length          = options->license == NULL ? 0 : strlen(options->license);
-    packageHeader->eula_length             = options->eula == NULL ? 0 : strlen(options->eula);
-    packageHeader->homepage_length         = options->homepage == NULL ? 0 : strlen(options->homepage);
-    packageHeader->maintainer_length       = strlen(options->maintainer);
-    packageHeader->maintainer_email_length = strlen(options->maintainer_email);
+    packageHeader->platform_length         = (uint32_t)strlen(options->platform);
+    packageHeader->arch_length             = (uint32_t)strlen(options->architecture);
+    packageHeader->package_length          = (uint32_t)strlen(name);
+    packageHeader->base_length             = (uint32_t)strlen(options->base);
+    packageHeader->summary_length          = (uint32_t)strlen(options->summary);
+    packageHeader->description_length      = (uint32_t)__safe_strlen(options->description);
+    packageHeader->license_length          = (uint32_t)__safe_strlen(options->license);
+    packageHeader->eula_length             = (uint32_t)__safe_strlen(options->eula);
+    packageHeader->homepage_length         = (uint32_t)__safe_strlen(options->homepage);
+    packageHeader->maintainer_length       = (uint32_t)strlen(options->maintainer);
+    packageHeader->maintainer_email_length = (uint32_t)strlen(options->maintainer_email);
 
     // fill in data ptrs
     dataPointer = (char*)packageHeader + sizeof(struct chef_vafs_feature_package_header);
@@ -534,11 +542,10 @@ static int __write_version_metadata(struct VaFs* vafs, const char* version)
     int                                       status;
 
     featureSize = sizeof(struct chef_vafs_feature_package_version);
+    
     tagPointer = strchr(version, '+');
-    if (tagPointer != NULL) {
-        featureSize += strlen(tagPointer);
-    }
-
+    featureSize += __safe_strlen(tagPointer);
+    
     packageVersion = malloc(featureSize);
     if (!packageVersion) {
         VLOG_ERROR("bake", "failed to allocate package version\n");
@@ -546,7 +553,7 @@ static int __write_version_metadata(struct VaFs* vafs, const char* version)
     }
 
     memcpy(&packageVersion->header.Guid, &g_versionGuid, sizeof(struct VaFsGuid));
-    packageVersion->header.Length = featureSize;
+    packageVersion->header.Length = (uint32_t)featureSize;
 
     status = __parse_version_string(version, packageVersion);
     if (status) {
@@ -554,7 +561,7 @@ static int __write_version_metadata(struct VaFs* vafs, const char* version)
         return -1;
     }
 
-    packageVersion->tag_length = tagPointer != NULL ? strlen(tagPointer) : 0;
+    packageVersion->tag_length = (uint32_t)__safe_strlen(tagPointer);
 
     // fill in data ptrs
     if (tagPointer != NULL) {
@@ -667,12 +674,12 @@ static size_t __serialize_command(struct recipe_pack_command* command, char* buf
     struct chef_vafs_package_app* app = (struct chef_vafs_package_app*)buffer;
     const char*                   args = chef_process_argument_list(&command->arguments, __resolve_variable, options);
 
-    app->name_length        = strlen(command->name);
-    app->description_length = __safe_strlen(command->description);
-    app->arguments_length   = __safe_strlen(args);
+    app->name_length        = (uint32_t)strlen(command->name);
+    app->description_length = (uint32_t)__safe_strlen(command->description);
+    app->arguments_length   = (uint32_t)__safe_strlen(args);
     app->type               = (int)command->type;
-    app->path_length        = strlen(command->path);
-    app->icon_length        = __file_size(command->icon);
+    app->path_length        = (uint32_t)strlen(command->path);
+    app->icon_length        = (uint32_t)__file_size(command->icon);
 
     // move the buffer pointer and write in the data
     buffer += sizeof(struct chef_vafs_package_app);
@@ -741,8 +748,8 @@ static int __write_commands_metadata(struct VaFs* vafs, struct list* commands, s
 
     packageApps = (struct chef_vafs_feature_package_apps*)buffer;
     memcpy(&packageApps->header.Guid, &g_commandsGuid, sizeof(struct VaFsGuid));
-    packageApps->header.Length = totalSize;
-    packageApps->apps_count = commands->count;
+    packageApps->header.Length = (uint32_t)totalSize;
+    packageApps->apps_count = (int)commands->count;
 
     buffer += sizeof(struct chef_vafs_feature_package_apps);
     list_foreach(commands, item) {
@@ -759,7 +766,7 @@ static char* __write_list_as_string(struct list* list)
 {
     struct list_item* i;
     char*             buffer;
-    int               index = 0;
+    size_t            index = 0;
 
     if (list == NULL || list->count == 0) {
         return NULL;
@@ -796,11 +803,11 @@ static int __write_ingredient_options_metadata(struct VaFs* vafs, struct __pack_
         return 0;
     }
     
-    bins = __write_list_as_string(options->bin_dirs);
-    incs = __write_list_as_string(options->inc_dirs);
-    libs = __write_list_as_string(options->lib_dirs);
-    compiler_flags = __write_list_as_string(options->compiler_flags);
-    linker_flags = __write_list_as_string(options->linker_flags);
+    bins = __write_list_as_string(options->ingredient_config.bin_dirs);
+    incs = __write_list_as_string(options->ingredient_config.inc_dirs);
+    libs = __write_list_as_string(options->ingredient_config.lib_dirs);
+    compiler_flags = __write_list_as_string(options->ingredient_config.compiler_flags);
+    linker_flags = __write_list_as_string(options->ingredient_config.linker_flags);
     
     bins_len = __safe_strlen(bins);
     incs_len = __safe_strlen(incs);
@@ -827,15 +834,61 @@ static int __write_ingredient_options_metadata(struct VaFs* vafs, struct __pack_
 
 #undef WRITE_IF_PRESENT
     memcpy(&ingOptions->header.Guid, &g_optionsGuid, sizeof(struct VaFsGuid));
-    ingOptions->header.Length = totalSize;
-    ingOptions->bin_dirs_length = bins_len;
-    ingOptions->inc_dirs_length = incs_len;
-    ingOptions->lib_dirs_length = libs_len;
-    ingOptions->compiler_flags_length = compiler_flags_len;
-    ingOptions->linker_flags_length = linker_flags_len;
+    ingOptions->header.Length = (uint32_t)totalSize;
+    ingOptions->bin_dirs_length = (uint32_t)bins_len;
+    ingOptions->inc_dirs_length = (uint32_t)incs_len;
+    ingOptions->lib_dirs_length = (uint32_t)libs_len;
+    ingOptions->compiler_flags_length = (uint32_t)compiler_flags_len;
+    ingOptions->linker_flags_length = (uint32_t)linker_flags_len;
 
     status = vafs_feature_add(vafs, &ingOptions->header);
     free(ingOptions);
+    return status;
+}
+
+static int __write_network_metadata(struct VaFs* vafs, struct __pack_options* options)
+{
+    size_t gatewayLength;
+    size_t dnsLength;
+    size_t totalSize;
+    struct chef_vafs_feature_package_network* network;
+    char* data;
+
+    if (options->type != CHEF_PACKAGE_TYPE_APPLICATION) {
+        return 0;
+    }
+    
+    gatewayLength = __safe_strlen(options->app_config.network_gateway);
+    dnsLength     = __safe_strlen(options->app_config.network_dns);
+
+    if (gatewayLength == 0 && dnsLength == 0) {
+        return 0;
+    }
+
+    totalSize = sizeof(struct chef_vafs_feature_package_network) + gatewayLength + dnsLength;
+    network = malloc(totalSize);
+    if (network == NULL) {
+        VLOG_ERROR("bake", "failed to allocate %zu bytes for network metadata\n", totalSize);
+        return -1;
+    }
+
+    data = (char*)network + sizeof(struct chef_vafs_feature_package_network);
+    if (gatewayLength) {
+        memcpy(data, options->app_config.network_gateway, gatewayLength);
+        data += gatewayLength;
+    }
+    if (dnsLength) {
+        memcpy(data, options->app_config.network_dns, dnsLength);
+        data += dnsLength;
+    }
+
+    memcpy(&network->header.Guid, &g_networkGuid, sizeof(struct VaFsGuid));
+    network->header.Length  = (uint32_t)totalSize;
+    network->gateway_length = (uint32_t)gatewayLength;
+    network->dns_length     = (uint32_t)dnsLength;
+
+    int status = vafs_feature_add(vafs, &network->header);
+    free(network);
     return status;
 }
 
@@ -864,6 +917,12 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
     status = __write_ingredient_options_metadata(vafs, options);
     if (status) {
         VLOG_ERROR("bake", "failed to write package ingredient options\n");
+        return -1;
+    }
+
+    status = __write_network_metadata(vafs, options);
+    if (status) {
+        VLOG_ERROR("bake", "failed to write package network defaults\n");
         return -1;
     }
 

@@ -82,6 +82,7 @@ static int __configure_local_bind(struct gracht_link_socket* link)
 #elif defined(_WIN32)
 #include <windows.h>
 #include <ws2ipdef.h>
+#include <process.h>
 
 // Windows 10 Insider build 17063 ++ 
 #include <afunix.h>
@@ -111,7 +112,7 @@ static int __configure_local_bind(struct gracht_link_socket* link)
     snprintf(&address->sun_path[1],
         sizeof(address->sun_path) - 2,
         "/chef/waiterd/clients/%u",
-        getpid()
+        _getpid()
     );
 
     gracht_link_socket_set_bind_address(link, &storage, __abstract_socket_size(&address->sun_path[1]));
@@ -150,7 +151,7 @@ static int __init_link_config(struct gracht_link_socket* link, enum gracht_link_
             return status;
         }
         size = __local_size(config->address);
-        domain = AF_LOCAL;
+        domain = addr.ss_family;
     } else if (!strcmp(config->type, "inet4")) {
         __configure_inet4(&addr, config);
         domain = AF_INET;

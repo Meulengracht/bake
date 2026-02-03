@@ -50,13 +50,16 @@ static void __initialize_pack_options(
     options->homepage         = bctx->recipe->project.url;
     options->filters          = &pack->filters;
     options->commands         = &pack->commands;
-    
-    if (pack->type == CHEF_PACKAGE_TYPE_INGREDIENT) {
-        options->bin_dirs = &pack->options.bin_dirs;
-        options->inc_dirs = &pack->options.inc_dirs;
-        options->lib_dirs = &pack->options.lib_dirs;
-        options->compiler_flags = &pack->options.compiler_flags;
-        options->linker_flags = &pack->options.linker_flags;
+
+    if (pack->type == CHEF_PACKAGE_TYPE_APPLICATION) {
+        options->app_config.network_dns = pack->app_options.dns;
+        options->app_config.network_gateway = pack->app_options.gateway;
+    } else if (pack->type == CHEF_PACKAGE_TYPE_INGREDIENT) {
+        options->ingredient_config.bin_dirs = &pack->options.bin_dirs;
+        options->ingredient_config.inc_dirs = &pack->options.inc_dirs;
+        options->ingredient_config.lib_dirs = &pack->options.lib_dirs;
+        options->ingredient_config.compiler_flags = &pack->options.compiler_flags;
+        options->ingredient_config.linker_flags = &pack->options.linker_flags;
     }
 }
 

@@ -116,8 +116,7 @@ static int __ensure_ingredient_list(struct list* list, const char* platform, con
 
 static int __ensure_ingredients(struct recipe* recipe, const char* platform, const char* arch)
 {
-    struct list_item* item;
-    int               status;
+    int status;
 
     if (recipe->platforms.count > 0) {
         VLOG_TRACE("bake", "preparing %i platforms\n", recipe->platforms.count);
@@ -187,7 +186,7 @@ static void __cleanup_systems(int sig)
 static char* __add_build_log(void)
 {
     char* path;
-    FILE* stream = chef_dirs_contemporary_file("bake-build", "log", &path);
+    FILE* stream = chef_dirs_open_temp_file("bake-build", "log", &path);
     if (stream == NULL) {
         return NULL;
     }

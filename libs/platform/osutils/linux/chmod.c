@@ -22,5 +22,8 @@
 
 int platform_chmod(const char* path, uint32_t permissions)
 {
+    if (path == NULL || path[0] == '\0') {
+        return -1;
+    }
 	return chmod(path, permissions);
 }

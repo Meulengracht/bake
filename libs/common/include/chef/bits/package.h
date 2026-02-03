@@ -70,6 +70,13 @@ struct chef_command {
     const void*            icon_buffer;
 };
 
+struct chef_package_application_config {
+    // Optional package-provided runtime network defaults.
+    // These are advisory and may be overridden by runtime policy.
+    const char* network_gateway;
+    const char* network_dns;
+};
+
 struct chef_package {
     const char* platform;
     const char* arch;
@@ -83,7 +90,7 @@ struct chef_package {
     const char* eula;
     const char* maintainer;
     const char* maintainer_email;
-    
+
     enum chef_package_type type;
 
     struct chef_revision*  revisions;

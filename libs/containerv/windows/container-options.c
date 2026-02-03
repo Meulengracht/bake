@@ -28,27 +28,33 @@ struct containerv_options* containerv_options_new(void)
         return NULL;
     }
     
-    // Set Windows-specific defaults
-    options->vm.memory_mb = 1024;          // 1GB default memory
-    options->vm.cpu_count = 2;             // 2 vCPUs default  
-    options->vm.vm_generation = "2";       // Generation 2 VM (UEFI)
-    
-    // Default rootfs: WSL Ubuntu (cross-platform compatible)
-    options->rootfs.type = WINDOWS_ROOTFS_WSL_UBUNTU;
-    options->rootfs.version = "22.04";     // Ubuntu 22.04 LTS
-    options->rootfs.enable_updates = 1;    // Enable updates by default
+    // Default to true HCS container compute systems.
+    options->windows_container.isolation = WINDOWS_CONTAINER_ISOLATION_HYPERV;
+    options->windows_container.utilityvm_path = NULL;
+
+    // Default to WCOW when using HCS container mode.
+    options->windows_container_type = WINDOWS_CONTAINER_TYPE_WINDOWS;
+
+    // LCOW defaults: unset (caller must configure).
+    options->windows_lcow.image_path = NULL;
+    options->windows_lcow.kernel_file = NULL;
+    options->windows_lcow.initrd_file = NULL;
+    options->windows_lcow.boot_parameters = NULL;
+
+    options->windows_wcow_parent_layers = NULL;
+    options->windows_wcow_parent_layer_count = 0;
     
     return options;
 }
 
 void containerv_options_delete(struct containerv_options* options)
 {
-    if (options) {
-        if (options->policy) {
-            containerv_policy_delete(options->policy);
-        }
-        free(options);
+    if (options == NULL) {
+        return;
     }
+
+    containerv_policy_delete(options->policy);
+    free(options);
 }
 
 void containerv_options_set_caps(struct containerv_options* options, enum containerv_capabilities caps)
@@ -76,27 +82,28 @@ void containerv_options_set_network(
     const char*                container_netmask,
     const char*                host_ip)
 {
+    containerv_options_set_network_ex(options, container_ip, container_netmask, host_ip, NULL, NULL);
+}
+
+void containerv_options_set_network_ex(
+    struct containerv_options* options,
+    const char*                container_ip,
+    const char*                container_netmask,
+    const char*                host_ip,
+    const char*                gateway_ip,
+    const char*                dns)
+{
     if (options) {
         options->network.enable = 1;
         options->network.container_ip = container_ip;
         options->network.container_netmask = container_netmask;
         options->network.host_ip = host_ip;
-        // Use default internal switch for HyperV, can be customized later
-        options->network.switch_name = "Default Switch";
-    }
-}
+        options->network.gateway_ip = gateway_ip;
+        options->network.dns = dns;
 
-void containerv_options_set_vm_resources(
-    struct containerv_options* options,
-    unsigned int               memory_mb,
-    unsigned int               cpu_count)
-{
-    if (options) {
-        if (memory_mb > 0) {
-            options->vm.memory_mb = memory_mb;
-        }
-        if (cpu_count > 0) {
-            options->vm.cpu_count = cpu_count;
+        // Use default internal switch for HyperV, can be customized later
+        if (options->network.switch_name == NULL) {
+            options->network.switch_name = "Default Switch";
         }
     }
 }
@@ -107,31 +114,6 @@ void containerv_options_set_vm_switch(
 {
     if (options && switch_name) {
         options->network.switch_name = switch_name;
-    }
-}
-
-void containerv_options_set_rootfs_type(
-    struct containerv_options* options,
-    enum windows_rootfs_type   type,
-    const char*                version)
-{
-    if (options) {
-        options->rootfs.type = type;
-        if (version) {
-            options->rootfs.version = version;
-        }
-        // Clear custom URL when setting standard type
-        options->rootfs.custom_image_url = NULL;
-    }
-}
-
-void containerv_options_set_custom_rootfs(
-    struct containerv_options* options,
-    const char*                image_url)
-{
-    if (options && image_url) {
-        options->rootfs.type = WINDOWS_ROOTFS_CUSTOM;
-        options->rootfs.custom_image_url = image_url;
     }
 }
 
@@ -151,11 +133,81 @@ void containerv_options_set_resource_limits(
     options->limits.io_bandwidth = NULL; // Not implemented yet
 }
 
-void containerv_options_set_rootfs_updates(
-    struct containerv_options* options,
-    int                        enable_updates)
+void containerv_options_set_windows_container_isolation(
+    struct containerv_options*                    options,
+    enum containerv_windows_container_isolation   isolation)
 {
-    if (options) {
-        options->rootfs.enable_updates = enable_updates;
+    if (options == NULL) {
+        return;
     }
+
+    switch (isolation) {
+        case CV_WIN_CONTAINER_ISOLATION_PROCESS:
+            options->windows_container.isolation = WINDOWS_CONTAINER_ISOLATION_PROCESS;
+            break;
+        case CV_WIN_CONTAINER_ISOLATION_HYPERV:
+            options->windows_container.isolation = WINDOWS_CONTAINER_ISOLATION_HYPERV;
+            break;
+        default:
+            break;
+    }
+}
+
+void containerv_options_set_windows_container_utilityvm_path(
+    struct containerv_options* options,
+    const char*                utilityvm_path)
+{
+    if (options == NULL) {
+        return;
+    }
+    options->windows_container.utilityvm_path = utilityvm_path;
+}
+
+void containerv_options_set_windows_container_type(
+    struct containerv_options*              options,
+    enum containerv_windows_container_type  type)
+{
+    if (options == NULL) {
+        return;
+    }
+
+    switch (type) {
+        case CV_WIN_CONTAINER_TYPE_WINDOWS:
+            options->windows_container_type = WINDOWS_CONTAINER_TYPE_WINDOWS;
+            break;
+        case CV_WIN_CONTAINER_TYPE_LINUX:
+            options->windows_container_type = WINDOWS_CONTAINER_TYPE_LINUX;
+            break;
+        default:
+            break;
+    }
+}
+
+void containerv_options_set_windows_lcow_hvruntime(
+    struct containerv_options* options,
+    const char*                uvm_image_path,
+    const char*                kernel_file,
+    const char*                initrd_file,
+    const char*                boot_parameters)
+{
+    if (options == NULL) {
+        return;
+    }
+
+    options->windows_lcow.image_path = uvm_image_path;
+    options->windows_lcow.kernel_file = kernel_file;
+    options->windows_lcow.initrd_file = initrd_file;
+    options->windows_lcow.boot_parameters = boot_parameters;
+}
+
+void containerv_options_set_windows_wcow_parent_layers(
+    struct containerv_options* options,
+    const char* const*         parent_layers,
+    int                        parent_layer_count)
+{
+    if (options == NULL) {
+        return;
+    }
+    options->windows_wcow_parent_layers = parent_layers;
+    options->windows_wcow_parent_layer_count = parent_layer_count;
 }

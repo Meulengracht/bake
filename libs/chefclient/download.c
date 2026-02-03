@@ -80,7 +80,7 @@ static int __parse_revision_response(const char* response, int* latestRevision)
         return -1;
     }
 
-    *latestRevision = json_integer_value(json_object_get(root, "revision"));
+    *latestRevision = (int)json_integer_value(json_object_get(root, "revision"));
     json_decref(root);
 
     return 0;

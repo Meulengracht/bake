@@ -1,8 +1,10 @@
 project: 
-  summary: The linux OS base
+  name: windows-servercore-base
+  summary: Windows Server Core base (guest rootfs)
   description: |
-    This is the base OS linux ingredient, which is used as the base for all
-    other chef packages built for linux.
+    Builds a Windows Server Core base pack for HCS containers on a Windows host.
+    The produced pack ships a windowsfilter layer folder + layerchain.json
+    and a UtilityVM payload (Files and/or UtilityVM.vhdx).
   author: Philip Meulengracht
   email: the_meulengracht@hotmail.com
   version: 1.0.0
@@ -15,12 +17,36 @@ recipes:
     - name: construct
       type: script
       script: |
-        # Pull and extract Windows container images
-        docker pull mcr.microsoft.com/windows/servercore:ltsc2022
-        docker create --name temp-rootfs $image
-        docker export temp-rootfs | tar -xf - -C /path/rootfs
-        docker rm temp-rootfs
+        local root = build.paths.install()
+        local image = 'mcr.microsoft.com/windows/servercore:ltsc2022'
+
+        build.shell('powershell.exe', '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' ..
+          "$ErrorActionPreference='Stop'; " ..
+          "$root='" .. root .. "'; " ..
+          "New-Item -ItemType Directory -Path $root -Force | Out-Null; " ..
+          "$wf=Join-Path $root 'windowsfilter'; " ..
+          "$uvm=Join-Path $root 'UtilityVM'; " ..
+          "New-Item -ItemType Directory -Path $wf -Force | Out-Null; " ..
+          "New-Item -ItemType Directory -Path $uvm -Force | Out-Null; " ..
+          "docker --version | Out-Null; " ..
+          "docker pull " .. image .. "; " ..
+          "$c=('chef-rootfs-' + [guid]::NewGuid().ToString('N').Substring(0,8)); " ..
+          "docker create --name $c " .. image .. " | Out-Null; " ..
+          "$gd=(docker inspect $c | ConvertFrom-Json)[0].GraphDriver.Data; " ..
+          "$layer=$gd.Dir; if (-not $layer) { $layer=$gd.dir }; if (-not $layer) { $layer=$gd.UpperDir }; " ..
+          "if (-not $layer) { throw 'Unable to locate windowsfilter layer directory' }; " ..
+          "$rc=robocopy $layer $wf /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP; if ($LASTEXITCODE -gt 7) { throw ('robocopy failed ' + $LASTEXITCODE) }; " ..
+          "$chain=Join-Path $layer 'layerchain.json'; " ..
+          "$parents=@(); if (Test-Path $chain) { $parents = (Get-Content $chain | ConvertFrom-Json) } ; " ..
+          "$parentsDir=Join-Path $wf 'parents'; New-Item -ItemType Directory -Path $parentsDir -Force | Out-Null; " ..
+          "$rewritten=@(); foreach($p in $parents) { if (-not $p) { continue }; $name=Split-Path $p -Leaf; if (-not $name) { continue }; $dst=Join-Path $parentsDir $name; if (-not (Test-Path $dst)) { $rc=robocopy $p $dst /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP; if ($LASTEXITCODE -gt 7) { throw ('robocopy failed ' + $LASTEXITCODE) }; }; $rewritten += ('parents\\' + $name) }; " ..
+          "$layerchainOut=Join-Path $wf 'layerchain.json'; if ($rewritten.Count -gt 0) { $rewritten | ConvertTo-Json | Set-Content -Encoding ASCII $layerchainOut } elseif (Test-Path $chain) { Copy-Item -Force $chain $layerchainOut } ; " ..
+          "$uvmSrc=Join-Path $layer 'UtilityVM'; " ..
+          "if (-not (Test-Path $uvmSrc)) { foreach($p in $parents) { $cand=Join-Path $p 'UtilityVM'; if (Test-Path $cand) { $uvmSrc=$cand; break } } }; " ..
+          "if (Test-Path $uvmSrc) { $rc=robocopy $uvmSrc $uvm /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP; if ($LASTEXITCODE -gt 7) { throw ('robocopy failed ' + $LASTEXITCODE) }; } else { Write-Warning 'UtilityVM not found in layerchain' }; " ..
+          "docker rm -f $c | Out-Null; " ..
+        '"')
 
 packs:
-- name: windows-base
+- name: windows-servercore
   type: ingredient

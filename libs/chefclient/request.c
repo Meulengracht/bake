@@ -25,7 +25,7 @@
 
 #define DEFAULT_RESPONSE_SIZE 4096
 
-static int __response_writer(char *data, size_t size, size_t nmemb, struct chef_request* request)
+static size_t __response_writer(char *data, size_t size, size_t nmemb, struct chef_request* request)
 {
     size_t length = size * nmemb;
 

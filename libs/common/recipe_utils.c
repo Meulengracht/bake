@@ -214,11 +214,11 @@ static const char* __platform_base_for(struct recipe* recipe, const char* platfo
         return __default_platform_base(platform);
     }
 
-    // iterate and find the one matching the host platform
+    // iterate and find the one matching the requested platform
     list_foreach(&recipe->platforms, i) {
-        struct recipe_platform* platform = (struct recipe_platform*)i;
-        if (strcmp(platform->name, CHEF_PLATFORM_STR) == 0) {
-            return platform->base;
+        struct recipe_platform* recipe_platform = (struct recipe_platform*)i;
+        if (strcmp(recipe_platform->name, platform) == 0) {
+            return recipe_platform->base;
         }
     }
     return __default_platform_base(platform);

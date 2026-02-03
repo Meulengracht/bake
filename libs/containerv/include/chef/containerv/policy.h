@@ -57,8 +57,6 @@ enum containerv_fs_access {
     CV_FS_ALL = (CV_FS_READ | CV_FS_WRITE | CV_FS_EXEC)
 };
 
-extern struct containerv_policy* containerv_policy_from_strings(const char* profiles);
-
 /**
  * @brief Set/get the generic security level for a policy.
  */

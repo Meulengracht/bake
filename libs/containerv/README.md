@@ -14,13 +14,62 @@ Uses native Linux container technologies:
 See [linux/](linux/) for implementation details.
 
 ### Windows
-Uses Windows HyperV technology:
-- **HyperV VMs**: Lightweight virtual machines for isolation
-- **Process Isolation**: Windows process isolation within VMs
-- **Filesystem Isolation**: Isolated rootfs per container
-- **Network Isolation**: VM-level network stack isolation
+Windows support uses **HCS containers (true Windows containers)** with HCS "Container" compute systems (process isolation or Hyper-V isolation).
 
 See [windows/](windows/) for implementation details.
+
+## Windows Rootfs Contracts
+
+### HCS container mode (true containers)
+
+When using the HCS container backend, `BASE_ROOTFS` is expected to point at a pre-prepared **windowsfilter container folder** (i.e., a writable layer folder that contains `layerchain.json` describing its parent layers).
+
+- Hyper-V isolation additionally requires a UtilityVM image (typically `...\<base-layer>\UtilityVM`).
+- This backend uses HCS mapped directories for host bind mounts and a built-in staging folder.
+
+#### LCOW (Linux containers on Windows)
+
+LCOW support is being implemented using the standard **OCI-in-UVM** approach:
+
+- Container type selection: use the HCS container backend and set container type to Linux.
+- Requires a Linux utility VM (UVM) image directory plus (optionally) kernel/initrd/boot parameters.
+
+In `cvd` (Windows host), these are currently wired via environment variables:
+- `CHEF_WINDOWS_CONTAINER_TYPE=linux`
+- `CHEF_LCOW_UVM_IMAGE_PATH` (required)
+- `CHEF_LCOW_KERNEL_FILE` (optional; file name under `CHEF_LCOW_UVM_IMAGE_PATH`)
+- `CHEF_LCOW_INITRD_FILE` (optional; file name under `CHEF_LCOW_UVM_IMAGE_PATH`)
+- `CHEF_LCOW_BOOT_PARAMETERS` (optional)
+
+Current status: LCOW compute-system bring-up is present and containerv will emit a minimal OCI spec for LCOW processes; rootfs mapping and full OCI bundle semantics are still evolving.
+
+Notes:
+- If a host rootfs directory is provided, it is mapped into the LCOW UVM at `/chef/rootfs`.
+- When that rootfs mapping is present, all bind mounts (including Chef staging) are rebased under `/chef/rootfs` so they remain visible after the OCI process pivots into the container root.
+
+## Windows Networking (HCS container mode)
+
+For **true Windows containers** (WCOW/LCOW) using the HCS container backend, networking is managed via the Windows Host Networking Service (HNS): containerv creates an HNS endpoint on the host and attaches it to the container compute system.
+
+### Selecting the HNS network
+
+When `options->network.enable` is set (e.g. via `containerv_options_set_network[_ex]()`), containerv selects an HNS network primarily based on `options->network.switch_name` (set via `containerv_options_set_vm_switch()`). The selection is deterministic and uses this priority:
+
+- Highest priority: `HnsNetwork.SwitchName == switch_name` (exact match)
+- Next: `HnsNetwork.Name == switch_name` (exact match)
+- Next: partial match on either `SwitchName` or `Name` (`*switch_name*`)
+- Tie-break preference: networks with `Type == NAT` are preferred, then `Type == ICS`
+- Final fallback: if nothing matches, the highest-scoring network is used; if there are no HNS networks at all, container networking cannot be configured
+
+Recommendation: set `switch_name` explicitly if your host has multiple HNS networks (common on developer machines with WSL/Default Switch/NAT networks) to ensure containers attach to the intended network.
+
+### Static IP / DNS
+
+If `container_ip/netmask/gateway/dns` are provided, containerv will first attempt to apply these at the HNS endpoint layer (when supported by the installed `New-HnsEndpoint` cmdlets on the host). If endpoint policies are not supported/available, containerv falls back to a best-effort in-container configuration step.
+
+### VM-backed mode (legacy)
+
+VM-backed containers are no longer supported in containerv. Only HCS container compute systems are supported on Windows.
 
 ## Features
 
@@ -136,10 +185,10 @@ The containerv library is used by:
 
 | Feature | Linux | Windows |
 |---------|-------|---------|
-| Isolation Mechanism | Namespaces | HyperV VMs |
-| Resource Limits | Cgroups | VM Configuration |
-| Filesystem | OverlayFS | VM Disk |
-| Network | Veth pairs | VM Network |
+| Isolation Mechanism | Namespaces | HCS Containers |
+| Resource Limits | Cgroups | Job Objects / HCS |
+| Filesystem | OverlayFS | windowsfilter layers |
+| Network | Veth pairs | HNS |
 | Performance | Native | Near-native |
 | Setup | Kernel features | HyperV feature |
 

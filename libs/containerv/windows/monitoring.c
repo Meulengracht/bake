@@ -32,17 +32,18 @@
 
 #include <winsock2.h>
 #include <windows.h>
+#include <ws2ipdef.h>
+#include <iphlpapi.h>
+#include <netioapi.h>
+#include <psapi.h>
+#include <pdh.h>
+#include <winperf.h>
 
 #include "private.h"
 
 #include <vlog.h>
 #include <stdio.h>
 #include <string.h>
-#include <psapi.h>
-#include <pdh.h>
-#include <winperf.h>
-#include <netioapi.h>
-#include <iphlpapi.h>
 
 #pragma comment(lib, "pdh.lib")
 #pragma comment(lib, "iphlpapi.lib")
@@ -158,6 +159,10 @@ int containerv_get_stats(struct containerv_container* container,
         list_foreach(&container->processes, item) {
             struct containerv_container_process* proc = 
                 (struct containerv_container_process*)item;
+
+            if (proc->is_guest) {
+                continue;
+            }
             
             if (proc->handle != INVALID_HANDLE_VALUE) {
                 PROCESS_MEMORY_COUNTERS pmc;
@@ -277,6 +282,10 @@ int containerv_get_processes(
             
             struct containerv_container_process* proc = 
                 (struct containerv_container_process*)item;
+
+            if (proc->is_guest) {
+                continue;
+            }
             
             if (proc->handle != INVALID_HANDLE_VALUE) {
                 processes[count].pid = (process_handle_t)proc->pid;

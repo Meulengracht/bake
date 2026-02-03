@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int __expand_variable(char** at, char** buffer, int* index, size_t* maxLength, const char* (*resolve)(const char*, void*), void* context)
+static int __expand_variable(char** at, char** buffer, size_t* index, size_t* maxLength, const char* (*resolve)(const char*, void*), void* context)
 {
     const char* start = *at;
     char*       end   = strchr(start, ']');
@@ -74,7 +74,7 @@ static int __expand_variable(char** at, char** buffer, int* index, size_t* maxLe
     return -1;
 }
 
-static int __expand_environment_variable(char** at, char** buffer, int* index, size_t* maxLength)
+static int __expand_environment_variable(char** at, char** buffer, size_t* index, size_t* maxLength)
 {
     const char* start = *at;
     char*       end   = strchr(start, '}');
@@ -143,7 +143,7 @@ char* chef_preprocess_text(const char* original, const char* (*resolve)(const ch
     char*       result;
     char*       buffer;
     size_t      bufferSize = 4096;
-    int         index;
+    size_t      index;
 
     if (original == NULL) {
         return NULL;

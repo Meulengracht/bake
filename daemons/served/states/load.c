@@ -55,6 +55,7 @@ static int __load_application(const char* name)
 
     status = container_client_create_container(&(struct container_options){
         .id = &containerId[0],
+        .pack_id = name,
         .rootfs = application->base,
         .package = package,
     });

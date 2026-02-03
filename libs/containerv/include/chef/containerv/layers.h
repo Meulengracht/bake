@@ -60,6 +60,19 @@ struct containerv_layer {
  * @brief Opaque context for layer composition
  */
 struct containerv_layer_context;
+struct containerv_options;
+
+/**
+ * @brief Optional compose-time configuration (platform-specific).
+ */
+struct containerv_layers_compose_options {
+    /**
+     * Windows (WCOW): optional parent layer folders (windowsfilter layers).
+     * Provide an ordered list from topmost parent down to base.
+     */
+    const char* const* windows_wcow_parent_layers;
+    int                windows_wcow_parent_layer_count;
+};
 
 typedef int (*containerv_layers_iterate_cb)(
     const char* host_path,
@@ -87,6 +100,28 @@ extern int containerv_layers_compose(
     struct containerv_layer*          layers,
     int                               layer_count,
     const char*                       container_id,
+    struct containerv_layer_context** context_out
+);
+
+/**
+ * @brief Compose layers with explicit compose options.
+ */
+extern int containerv_layers_compose_ex(
+    struct containerv_layer*                   layers,
+    int                                        layer_count,
+    const char*                                container_id,
+    const struct containerv_layers_compose_options* options,
+    struct containerv_layer_context**          context_out
+);
+
+/**
+ * @brief Compose layers using containerv options (if available).
+ */
+extern int containerv_layers_compose_with_options(
+    struct containerv_layer*          layers,
+    int                               layer_count,
+    const char*                       container_id,
+    const struct containerv_options*  options,
     struct containerv_layer_context** context_out
 );
 

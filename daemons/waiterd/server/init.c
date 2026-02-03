@@ -110,7 +110,7 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
             fprintf(stderr, "init_link_config failed to configure local link\n");
             return status;
         }
-        domain = AF_LOCAL;
+        domain = addr_storage.ss_family;
         size = __local_size(config->address);
 
         printf("listening at %s\n", config->address);

@@ -29,6 +29,11 @@
 #include "mbr.h"
 #include "gpt.h"
 
+// redefine fileno for cross-platform compatibility
+#ifdef _WIN32
+#define fileno _fileno
+#endif
+
 // import assets
 extern const unsigned char g_mbrSector[512];
 extern const unsigned char g_mbrGptSector[512];
@@ -274,7 +279,8 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
     // seek to the correct space in the file
     fseek(
         builder->image_stream, 
-        builder->disk_geometry.bytes_per_sector * builder->disk_geometry.sector_count - (1 + sectorsForTable),
+        (long)(builder->disk_geometry.bytes_per_sector 
+            * builder->disk_geometry.sector_count - (1 + sectorsForTable)),
         SEEK_SET
     );
 
@@ -416,7 +422,7 @@ static int __write_partition(struct chef_disk_partition* p, unsigned int sectorS
     VLOG_DEBUG("disk", "__write_partition(name=%s)\n", p->name);
 
     // seek to first sector
-    fseek(stream, p->sector_start * sectorSize, SEEK_SET);
+    fseek(stream, (long)(p->sector_start * sectorSize), SEEK_SET);
     fseek(p->stream, 0, SEEK_SET);
 
     // allocate a 4mb block for transfers
@@ -446,7 +452,7 @@ static int __write_partition(struct chef_disk_partition* p, unsigned int sectorS
     free(block);
 
     fclose(p->stream);
-    p->stream == NULL;
+    p->stream = NULL;
     return 0;
 }
 

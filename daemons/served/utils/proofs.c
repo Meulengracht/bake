@@ -83,7 +83,7 @@ static int __verify_signature_against_cert(struct store_proof_publisher* proof)
     EVP_PKEY* pubkey;
     int       status;
 
-    keybio = BIO_new_mem_buf(g_certAuthority, strlen(g_certAuthority));
+    keybio = BIO_new_mem_buf(g_certAuthority, (int)strlen(g_certAuthority));
     if (keybio == NULL) {
         VLOG_ERROR("served", "__verify_signature_against_cert: failed to create memory reader\n");
         return -1;

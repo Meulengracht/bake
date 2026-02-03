@@ -53,14 +53,37 @@ struct containerv_options_network {
     const char* container_ip;       // IP for container interface (e.g., "10.0.0.2")
     const char* container_netmask;  // Netmask (e.g., "255.255.255.0")
     const char* host_ip;            // IP for host-side interface (e.g., "10.0.0.1")
+    const char* gateway_ip;         // Optional default gateway
+    const char* dns;                // Optional DNS servers (space/comma/semicolon separated)
     const char* switch_name;        // HyperV switch name (Windows-specific)
 };
 
-// Windows VM resource configuration
-struct containerv_options_vm {
-    unsigned int memory_mb;         // Memory allocation in MB (default: 1024)
-    unsigned int cpu_count;         // Number of vCPUs (default: 2)
-    const char*  vm_generation;     // VM generation ("1" or "2", default: "2")
+// Windows container isolation selection (HCS container compute system)
+enum windows_container_isolation {
+    WINDOWS_CONTAINER_ISOLATION_PROCESS = 0,
+    WINDOWS_CONTAINER_ISOLATION_HYPERV = 1
+};
+
+// Windows container type selection (HCS container compute system)
+enum windows_container_type {
+    WINDOWS_CONTAINER_TYPE_WINDOWS = 0,
+    WINDOWS_CONTAINER_TYPE_LINUX = 1
+};
+
+struct containerv_options_windows_container {
+    enum windows_container_isolation isolation;
+    // Utility VM image path for Hyper-V isolated containers (schema1 HvRuntime.ImagePath).
+    // If NULL, containerv may try to derive it from the base layer path.
+    const char* utilityvm_path;
+};
+
+// LCOW (Linux Containers on Windows) HvRuntime configuration.
+// The file fields are expected to be file names under `image_path`.
+struct containerv_options_windows_lcow {
+    const char* image_path;
+    const char* kernel_file;
+    const char* initrd_file;
+    const char* boot_parameters;
 };
 
 // Windows rootfs types - direct choice, no fallback
@@ -109,21 +132,41 @@ struct containerv_options {
     struct containerv_policy*        policy;
 
     struct containerv_options_network        network;
-    struct containerv_options_vm             vm;
-    struct containerv_options_rootfs         rootfs;
     struct containerv_resource_limits        limits;          // Resource limits
+
+    struct containerv_options_windows_container windows_container;
+    enum windows_container_type              windows_container_type;
+    struct containerv_options_windows_lcow   windows_lcow;
+    const char* const*                       windows_wcow_parent_layers;
+    int                                      windows_wcow_parent_layer_count;
 };
 
 struct containerv_container_process {
     struct list_item list_header;
     HANDLE           handle;
     DWORD            pid;
+
+    // VM guest process representation when using pid1d.
+    // `handle` is an opaque token owned by containerv; it is not a Win32 process handle.
+    int              is_guest;
+    uint64_t         guest_id;
 };
 
 // Forward declarations for HCS types
 typedef HANDLE HCS_SYSTEM;
 typedef HANDLE HCS_PROCESS;
 typedef HANDLE HCS_OPERATION;
+
+// Process info returned from HcsWaitForOperationResultAndProcessInfo.
+// Defined here to avoid depending on a specific Windows SDK version.
+typedef struct
+{
+    DWORD ProcessId;
+    DWORD Reserved;
+    HANDLE StdInput;
+    HANDLE StdOutput;
+    HANDLE StdError;
+} HCS_PROCESS_INFORMATION;
 
 // HCS callback type
 typedef void (CALLBACK *HCS_OPERATION_COMPLETION)(HCS_OPERATION operation, void* context);
@@ -169,6 +212,20 @@ typedef HRESULT (WINAPI *HcsCreateOperation_t)(
     HCS_OPERATION* Operation
 );
 
+// ComputeCore.dll helpers for synchronous waits
+typedef HRESULT (WINAPI *HcsWaitForOperationResult_t)(
+    HCS_OPERATION Operation,
+    DWORD timeoutMs,
+    PWSTR* resultDocument
+);
+
+typedef HRESULT (WINAPI *HcsWaitForOperationResultAndProcessInfo_t)(
+    HCS_OPERATION Operation,
+    DWORD timeoutMs,
+    HCS_PROCESS_INFORMATION* processInformation,
+    PWSTR* resultDocument
+);
+
 typedef HRESULT (WINAPI *HcsCloseOperation_t)(HCS_OPERATION Operation);
 typedef HRESULT (WINAPI *HcsCloseComputeSystem_t)(HCS_SYSTEM ComputeSystem);
 typedef HRESULT (WINAPI *HcsCloseProcess_t)(HCS_PROCESS Process);
@@ -176,6 +233,7 @@ typedef HRESULT (WINAPI *HcsCloseProcess_t)(HCS_PROCESS Process);
 // HCS function pointers (loaded at runtime)
 struct hcs_api {
     HMODULE hVmCompute;
+    HMODULE hComputeCore;
     HcsCreateComputeSystem_t    HcsCreateComputeSystem;
     HcsStartComputeSystem_t     HcsStartComputeSystem;
     HcsShutdownComputeSystem_t  HcsShutdownComputeSystem;
@@ -185,12 +243,15 @@ struct hcs_api {
     HcsCloseOperation_t         HcsCloseOperation;
     HcsCloseComputeSystem_t     HcsCloseComputeSystem;
     HcsCloseProcess_t           HcsCloseProcess;
+
+    HcsWaitForOperationResult_t                HcsWaitForOperationResult;
+    HcsWaitForOperationResultAndProcessInfo_t  HcsWaitForOperationResultAndProcessInfo;
 };
 
 extern struct hcs_api g_hcs;
 
 struct containerv_container {
-    // HyperV VM handle and configuration
+    // HCS compute system handle and configuration
     HCS_SYSTEM   hcs_system;
     wchar_t*     vm_id;           // Wide char container ID for HCS
     char*        rootfs;
@@ -219,6 +280,22 @@ struct containerv_container {
 
     // Runtime flags
     int          network_configured;
+
+    // HCS container-mode networking (HNS endpoint attached to this compute system).
+    char*        hns_endpoint_id;
+
+    // Guest OS selection (used for in-VM helpers like pid1d)
+    int          guest_is_windows;
+
+    // pid1d session (legacy VM containers only)
+    HCS_PROCESS  pid1d_process;
+    HANDLE       pid1d_stdin;
+    HANDLE       pid1d_stdout;
+    HANDLE       pid1d_stderr;
+    int          pid1d_started;
+
+    // PID1 integration
+    int          pid1_acquired;
 };
 
 // Windows security helpers
@@ -237,11 +314,6 @@ extern int windows_create_secure_process_ex(
 extern void containerv_generate_id(char* buffer, size_t length);
 
 /**
- * @brief Create runtime directory for container
- */
-extern char* containerv_create_runtime_dir(void);
-
-/**
  * @brief Internal spawn implementation
  */
 struct __containerv_spawn_options {
@@ -249,6 +321,9 @@ struct __containerv_spawn_options {
     const char* const*         argv;
     const char* const*         envv;
     enum container_spawn_flags flags;
+
+    // When true, request HCS stdio pipe handles for this process (VM path only).
+    int                        create_stdio_pipes;
 };
 
 extern int __containerv_spawn(struct containerv_container* container, struct __containerv_spawn_options* options, HANDLE* handleOut);
@@ -266,33 +341,36 @@ extern int __hcs_initialize(void);
 extern void __hcs_cleanup(void);
 
 /**
- * @brief Create HyperV VM configuration JSON
+ * @brief Create and start an HCS container compute system (schema1 container config).
+ *
+ * @param layer_folder_path Path to the container's writable layer folder (windowsfilter container folder).
+ * @param parent_layers Array of parent layer folder paths (as found in layerchain.json).
+ * @param utilityvm_path UtilityVM image path (required for Hyper-V isolation).
+ * @param linux_container Non-zero for Linux containers on Windows (LCOW). Not fully supported yet.
  */
-extern wchar_t* __hcs_create_vm_config(
+extern int __hcs_create_container_system(
     struct containerv_container* container,
-    struct containerv_options* options
+    struct containerv_options* options,
+    const char* layer_folder_path,
+    const char* const* parent_layers,
+    int parent_layer_count,
+    const char* utilityvm_path,
+    int linux_container
 );
 
 /**
- * @brief Create and start HyperV VM using HCS
+ * @brief Stop and destroy Hyper-V VM (legacy VM-backed mode)
  */
-extern int __hcs_create_vm(
-    struct containerv_container* container,
-    struct containerv_options* options
-);
+extern int __hcs_destroy_compute_system(struct containerv_container* container);
 
 /**
- * @brief Stop and destroy HyperV VM
- */
-extern int __hcs_destroy_vm(struct containerv_container* container);
-
-/**
- * @brief Execute process inside HyperV VM
+ * @brief Execute process inside an HCS compute system
  */
 extern int __hcs_create_process(
     struct containerv_container* container,
     struct __containerv_spawn_options* options,
-    HCS_PROCESS* processOut
+    HCS_PROCESS* processOut,
+    HCS_PROCESS_INFORMATION* processInfoOut
 );
 
 /**
@@ -304,15 +382,6 @@ extern int __hcs_wait_process(HCS_PROCESS process, unsigned int timeout_ms);
  * @brief Get HCS process exit code
  */
 extern int __hcs_get_process_exit_code(HCS_PROCESS process, unsigned long* exit_code);
-
-/**
- * @brief Windows-specific VM resource configuration
- */
-extern void containerv_options_set_vm_resources(
-    struct containerv_options* options,
-    unsigned int               memory_mb,
-    unsigned int               cpu_count
-);
 
 /**
  * @brief Windows-specific HyperV switch configuration
@@ -335,6 +404,13 @@ extern int __windows_configure_container_network(
     struct containerv_options* options
 );
 
+// HCS container compute system (WCOW/LCOW) networking.
+// Best-effort: creates and attaches an HNS endpoint (typically DHCP on the selected switch).
+extern int __windows_configure_hcs_container_network(
+    struct containerv_container* container,
+    struct containerv_options* options
+);
+
 extern int __windows_configure_host_network(
     struct containerv_container* container,
     struct containerv_options* options
@@ -346,44 +422,14 @@ extern int __windows_cleanup_network(
 );
 
 /**
- * @brief Windows rootfs management functions
+ * @brief Execute a command inside a VM guest via pid1d (legacy VM containers only).
+ *
+ * This is a thin internal wrapper used by subsystems like networking.
  */
-extern int __windows_setup_rootfs(
-    const char* rootfs_path,
-    struct containerv_options_rootfs* options
-);
-
-extern int __windows_setup_wsl_rootfs(
-    const char* rootfs_path,
-    enum windows_rootfs_type type,
-    const char* version
-);
-
-extern int __windows_setup_native_rootfs(
-    const char* rootfs_path,
-    enum windows_rootfs_type type,
-    const char* version
-);
-
-extern int __windows_cleanup_rootfs(
-    const char* rootfs_path,
-    struct containerv_options_rootfs* options
-);
-
-extern int __windows_is_wsl_available(void);
-
-/**
- * @brief Windows rootfs configuration API
- */
-extern void containerv_options_set_rootfs_type(
-    struct containerv_options* options,
-    enum windows_rootfs_type type,
-    const char* version
-);
-
-extern void containerv_options_set_custom_rootfs(
-    struct containerv_options* options,
-    const char* image_url
+extern int __windows_exec_in_vm_via_pid1d(
+    struct containerv_container*       container,
+    struct __containerv_spawn_options* options,
+    int*                               exit_code_out
 );
 
 /**

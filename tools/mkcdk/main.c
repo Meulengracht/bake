@@ -151,7 +151,7 @@ static void __update_progress(unsigned long long bytesCurrent, unsigned long lon
     struct __package_info* pi = context;
     char                   progressBuffer[32];
     char                   totalSizeBuffer[32];
-    int                    percent = (bytesCurrent * 100) / bytesTotal;
+    int                    percent = (int)((bytesCurrent * 100) / bytesTotal);
     
     // print a fancy progress bar with percentage, upload progress and a moving
     // bar being filled
@@ -520,7 +520,7 @@ static int __write_raw(struct chef_disk_filesystem* fs, const char* source, cons
             params.sector = strtoull(p + 7, NULL, 10);
         } else if (strncmp(options[i], "offset=", 7) == 0) {
             char* p = options[i];
-            params.offset = strtoull(p + 7, NULL, 10);
+            params.offset = strtoul(p + 7, NULL, 10);
         } else {
             VLOG_ERROR("mkcdk", "__write_raw: unrecognized option: %s\n", options[i]);
             strsplit_free(options);
@@ -657,11 +657,11 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
 
         if (strcmp(pi->fstype, "fat32") == 0) {
             fs = chef_filesystem_fat32_new(pd, &(struct chef_disk_filesystem_params) {
-                .sector_size = options->sector_size
+                .sector_size = (unsigned int)options->sector_size
             });
         } else if (strcmp(pi->fstype, "mfs") == 0) {
             fs = chef_filesystem_mfs_new(pd, &(struct chef_disk_filesystem_params) {
-                .sector_size = options->sector_size
+                .sector_size = (unsigned int)options->sector_size
             });
         } else {
             VLOG_ERROR("mkcdk", "__build_image: unsupported filesystem: %s\n", pi->fstype);
@@ -845,7 +845,7 @@ int main(int argc, char** argv, char** envp)
     // check against recipe
     if (imagePath == NULL) {
         fprintf(stderr, "mkcdk: image yaml definition must be provided\n");
-        return status;
+        return -1;
     }
 
     // initialize the logging system

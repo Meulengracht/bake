@@ -22,6 +22,21 @@
 
 #include <chef/package.h>
 
+struct __application_configuration_options {
+    // Optional runtime network defaults for applications.
+    // These are embedded into the package metadata and can be overridden by the runtime.
+    const char* network_gateway;
+    const char* network_dns;
+};
+
+struct __ingredient_configuration_options {
+    struct list* bin_dirs; // list<list_item_string>
+    struct list* inc_dirs; // list<list_item_string>
+    struct list* lib_dirs; // list<list_item_string>
+    struct list* compiler_flags; // list<list_item_string>
+    struct list* linker_flags; // list<list_item_string>
+};
+
 struct __pack_options {
     const char*            name;
     const char*            output_dir;
@@ -41,14 +56,14 @@ struct __pack_options {
     const char*            maintainer_email;
     const char*            homepage;
 
-    struct list*           bin_dirs; // list<list_item_string>
-    struct list*           inc_dirs; // list<list_item_string>
-    struct list*           lib_dirs; // list<list_item_string>
-    struct list*           compiler_flags; // list<list_item_string>
-    struct list*           linker_flags; // list<list_item_string>
-
     struct list*           filters;  // list<list_item_string>
     struct list*           commands; // list<recipe_pack_command>
+
+    // Ingredient configuration options
+    struct __ingredient_configuration_options ingredient_config;
+
+    // Package configuration options
+    struct __application_configuration_options app_config;
 };
 
 /**

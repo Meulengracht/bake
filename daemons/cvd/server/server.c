@@ -20,7 +20,9 @@
 #include <chef/containerv.h>
 #include <chef/containerv/layers.h>
 #include <chef/containerv/policy.h>
+#include <chef/containerv/disk/lcow.h>
 #include <chef/dirs.h>
+#include <chef/package.h>
 #include <chef/platform.h>
 #include <chef/environment.h>
 #include <errno.h>
@@ -79,6 +81,21 @@ static enum chef_status __chef_status_from_errno(void) {
     }
 }
 
+static int __is_nonempty(const char* s)
+{
+    return (s != NULL && s[0] != '\0');
+}
+
+static int __spec_contains_plugin(const struct chef_policy_spec* spec, const char* needle)
+{
+    for (uint32_t i = 0; i < spec->plugins_count; i++) {
+        if (strcmp(spec->plugins[i].name, needle) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static enum containerv_mount_flags __to_cv_mount_flags(enum chef_mount_options opts)
 {
     enum containerv_mount_flags flags = CV_MOUNT_BIND | CV_MOUNT_CREATE;
@@ -104,6 +121,26 @@ static enum containerv_layer_type __to_cv_layer_type(enum chef_layer_type type)
     }
 }
 
+#ifdef CHEF_ON_WINDOWS
+static int __windows_hcs_has_disallowed_layers(const struct chef_create_parameters* params)
+{
+    if (params == NULL || params->layers == NULL || params->layers_count == 0) {
+        return 0;
+    }
+
+    for (uint32_t i = 0; i < params->layers_count; i++) {
+        switch (params->layers[i].type) {
+            case CHEF_LAYER_TYPE_OVERLAY:
+                return 1;
+            default:
+                break;
+        }
+    }
+
+    return 0;
+}
+#endif
+
 static struct containerv_layer* __to_cv_layers(struct chef_layer_descriptor* protoLayers, uint32_t count)
 {
     struct containerv_layer* cvLayers;
@@ -127,17 +164,293 @@ static struct containerv_layer* __to_cv_layers(struct chef_layer_descriptor* pro
     return cvLayers;
 }
 
+static struct containerv_policy_plugin* __to_policy_plugin(struct chef_policy_plugin* protocolPlugin)
+{
+    struct containerv_policy_plugin* plugin = calloc(1, sizeof(*plugin));
+    if (plugin == NULL) {
+        return NULL;
+    }
+    
+    plugin->name = protocolPlugin->name;
+    return plugin;
+}
+
+static void __free_policy_plugin(void* item)
+{
+    free(item);
+}
+
+struct containerv_policy* __policy_from_spec(const struct chef_policy_spec* spec)
+{
+    struct list               plugins;
+    struct containerv_policy* policy;
+
+    list_init(&plugins);
+
+    // Always include minimal base policy.
+    {
+        struct containerv_policy_plugin* plugin = calloc(1, sizeof(*plugin));
+        if (!plugin) {
+            return NULL;
+        }
+        plugin->name = "minimal";
+        list_add(&plugins, &plugin->header);
+    }
+
+    // Parse optional profiles: "build", "network" (comma-separated)
+    if (spec->plugins_count) {
+        for (uint32_t i = 0; i < spec->plugins_count; i++) {
+            struct containerv_policy_plugin* plugin = 
+                __to_policy_plugin(&spec->plugins[i]);
+            if (plugin == NULL) {
+                list_destroy(&plugins, __free_policy_plugin);
+            }
+            list_add(&plugins, &plugin->header);
+        }
+    }
+
+    policy = containerv_policy_new(&plugins);
+    list_destroy(&plugins, __free_policy_plugin);
+    return policy;
+}
+
+struct __create_container_params {
+    const char*                      id; // do not cleanup
+    struct containerv_options*       opts; // cleaned up
+    struct containerv_container*     container; // cleanup on failures
+    struct containerv_layer*         layers; // cleanup
+    int                              layers_count;
+    struct containerv_layer_context* layer_context; // cleanup on failures
+};
+
+static void __create_container_params_cleanup(struct __create_container_params* params)
+{
+    if (params == NULL) {
+        return;
+    }
+
+    containerv_options_delete(params->opts);
+    free(params->layers);
+}
+
+#ifdef CHEF_ON_LINUX
+static enum chef_status __create_linux_container(const struct chef_create_parameters* params, struct __create_container_params* containerParams)
+{
+    struct containerv_policy* policy;
+    int                       status;
+
+    status = containerv_layers_compose(
+        containerParams->layers,
+        containerParams->layers_count,
+        containerParams->id,
+        &containerParams->layer_context
+    );
+    if (status) {
+        VLOG_ERROR("cvd", "cvd_create: failed to compose layers\n");
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+    }
+
+    containerv_options_set_layers(
+        containerParams->opts,
+        containerParams->layer_context
+    );
+
+    // setup policy
+    policy = __policy_from_spec(&params->policy);
+    if (policy != NULL) {
+        VLOG_DEBUG("cvd", "cvd_create: applying security policy profiles\n");
+        containerv_options_set_policy(containerParams->opts, policy);
+    }
+
+    // Optional network configuration
+    if (__is_nonempty(params->network.container_ip) 
+            && __is_nonempty(params->network.container_netmask)) {
+        containerv_options_set_network_ex(
+            containerParams->opts,
+            params->network.container_ip,
+            params->network.container_netmask,
+            __is_nonempty(params->network.host_ip) ? params->network.host_ip : NULL,
+            __is_nonempty(params->network.gateway_ip) ? params->network.gateway_ip : NULL,
+            __is_nonempty(params->network.dns) ? params->network.dns : NULL
+        );
+    }
+
+    // setup other config
+    enum containerv_capabilities caps =
+        CV_CAP_FILESYSTEM |
+        CV_CAP_PROCESS_CONTROL |
+        CV_CAP_IPC;
+
+    // Enable network capability if requested by policy profile or network configuration.
+    if (__spec_contains_plugin(&params->policy, "network") ||
+        (__is_nonempty(params->network.container_ip) 
+            && __is_nonempty(params->network.container_netmask))) {
+        caps |= CV_CAP_NETWORK;
+    }
+
+    containerv_options_set_caps(containerParams->opts, caps);
+    
+    status = containerv_create(
+        containerParams->id,
+        containerParams->opts,
+        &containerParams->container
+    );
+    if (status) {
+        VLOG_ERROR("cvd", "failed to start the container\n");
+        return __chef_status_from_errno();
+    }
+    return CHEF_STATUS_SUCCESS;
+}
+#elif CHEF_ON_WINDOWS
+static enum chef_status __create_hyperv_container(const struct chef_create_parameters* params, struct __create_container_params* containerParams)
+{
+    int                              status;
+    char**                           wcow_parent_layers = NULL;
+    int                              wcow_parent_layer_count = 0;
+    char*                            lcow_uvm_resolved = NULL;
+    VLOG_DEBUG("cvd", "__create_hyperv_container()\n");
+    
+    if (__windows_hcs_has_disallowed_layers(params)) {
+        VLOG_ERROR("cvd", "cvd_create: HCS container mode does not support OVERLAY layers on Windows. Remove overlays.\n");
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+    }
+
+    // WCOW vs LCOW selection for the HCS container backend.
+    const int is_lcow = params->gtype == CHEF_GUEST_TYPE_LINUX;
+    containerv_options_set_windows_container_type(
+        containerParams->opts,
+        is_lcow ? CV_WIN_CONTAINER_TYPE_LINUX 
+                    : CV_WIN_CONTAINER_TYPE_WINDOWS
+    );
+
+    // Default to Hyper-V isolation (true Hyper-V containers).
+    containerv_options_set_windows_container_isolation(
+        containerParams->opts, 
+        CV_WIN_CONTAINER_ISOLATION_HYPERV
+    );
+
+    if (is_lcow) {
+        // LCOW requires HvRuntime settings for the Linux utility VM.
+        // These values are passed through to schema1 HvRuntime.
+        const char* uvm_image = params->guest_windows.lcow_uvm_image_path;
+        const char* uvm_url = params->guest_windows.lcow_uvm_url;
+        const char* kernel = params->guest_windows.lcow_kernel_file;
+        const char* initrd = params->guest_windows.lcow_initrd_file;
+        const char* boot = params->guest_windows.lcow_boot_parameters;
+
+        if ((uvm_image == NULL || uvm_image[0] == '\0') && uvm_url != NULL && uvm_url[0] != '\0') {
+            struct containerv_disk_lcow_uvm_config cfg = { .uvm_url = uvm_url };
+            if (containerv_disk_lcow_resolve_uvm(&cfg, &lcow_uvm_resolved) != 0) {
+                VLOG_ERROR("cvd", "cvd_create: failed to resolve LCOW UVM assets\n");
+                free(lcow_uvm_resolved);
+                return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+            }
+            uvm_image = lcow_uvm_resolved;
+        }
+
+        if (uvm_image == NULL || uvm_image[0] == '\0') {
+            VLOG_ERROR("cvd", "cvd_create: LCOW requires UVM image path or URL in guest_windows options\n");
+            free(lcow_uvm_resolved);
+            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+        }
+        containerv_options_set_windows_lcow_hvruntime(containerParams->opts, uvm_image, kernel, initrd, boot);
+    }
+    
+    // Optional WCOW parent layers (flattened list).
+    if (params->wcow_parent_layers_count != 0 && params->wcow_parent_layers != NULL) {
+        wcow_parent_layers = environment_unflatten((const char*)params->wcow_parent_layers);
+        if (wcow_parent_layers == NULL) {
+            VLOG_ERROR("cvd", "cvd_create: failed to parse wcow_parent_layers\n");
+            free(lcow_uvm_resolved);
+            return CHEF_STATUS_INTERNAL_ERROR;
+        }
+
+        for (int i = 0; wcow_parent_layers[i] != NULL; ++i) {
+            wcow_parent_layer_count++;
+        }
+
+        containerv_options_set_windows_wcow_parent_layers(
+            containerParams->opts,
+            (const char* const*)wcow_parent_layers,
+            wcow_parent_layer_count);
+    }
+    
+    // Compose layers into final rootfs
+    status = containerv_layers_compose_with_options(
+        cvLayers,
+        cvLayerCount,
+        cvdID,
+        containerParams->opts,
+        &layerContext
+    );
+    free(cvLayers);
+
+    if (status != 0) {
+        VLOG_ERROR("cvd", "cvd_create: failed to compose layers\n");
+        environment_destroy(wcow_parent_layers);
+        free(lcow_uvm_resolved);
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+    }
+
+    // Parent layers are only needed during compose.
+    if (wcow_parent_layers != NULL) {
+        environment_destroy(wcow_parent_layers);
+        containerv_options_set_windows_wcow_parent_layers(opts, NULL, 0);
+    }
+
+    containerv_options_set_layers(opts, layerContext);
+
+    // setup policy
+    policy = __policy_from_spec(&params->policy);
+    if (policy != NULL) {
+        VLOG_DEBUG("cvd", "cvd_create: applying security policy profiles\n");
+        containerv_options_set_policy(opts, policy);
+    }
+
+    // Optional network configuration
+    if (__is_nonempty(params->network.container_ip) && __is_nonempty(params->network.container_netmask)) {
+        containerv_options_set_network_ex(
+            opts,
+            params->network.container_ip,
+            params->network.container_netmask,
+            __is_nonempty(params->network.host_ip) ? params->network.host_ip : NULL,
+            __is_nonempty(params->network.gateway_ip) ? params->network.gateway_ip : NULL,
+            __is_nonempty(params->network.dns) ? params->network.dns : NULL
+        );
+    }
+
+    // setup other config
+    enum containerv_capabilities caps =
+        CV_CAP_FILESYSTEM |
+        CV_CAP_PROCESS_CONTROL |
+        CV_CAP_IPC;
+
+    // Enable network capability if requested by policy profile or network configuration.
+    if (__spec_contains_plugin(&params->policy, "network") ||
+        (__is_nonempty(params->network.container_ip) && __is_nonempty(params->network.container_netmask))) {
+        caps |= CV_CAP_NETWORK;
+    }
+
+    containerv_options_set_caps(opts, caps);
+
+    // create the container
+    status = containerv_create(cvdID, opts, &cvContainer);
+    if (status) {
+        VLOG_ERROR("cvd", "failed to start the container\n");
+        free(lcow_uvm_resolved);
+        return __chef_status_from_errno();
+    }
+    free(lcow_uvm_resolved);
+    return CHEF_STATUS_SUCCESS;
+}
+#endif
+
 enum chef_status cvd_create(const struct chef_create_parameters* params, const char** id)
 {
-    struct containerv_options*       opts;
-    struct containerv_container*     cvContainer;
+    struct __create_container_params containerParams = { 0 };
     struct __container*              _container;
-    struct containerv_layer_context* layerContext = NULL;
-    struct containerv_policy*        policy;
-    struct containerv_layer*         cvLayers = NULL;
-    const char*                      cvdID;
     char                             cvdIDBuffer[17];
-    int                              status;
+    enum chef_status                 status;
     VLOG_DEBUG("cvd", "cvd_create()\n");
 
     if (params->layers_count == 0) {
@@ -148,75 +461,57 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     if (params->id == NULL || strlen(params->id) == 0) {
         platform_secure_random_string(&cvdIDBuffer[0], sizeof(cvdIDBuffer) - 1);
         cvdIDBuffer[sizeof(cvdIDBuffer) - 1] = '\0';
-        cvdID = &cvdIDBuffer[0];
-        
-        VLOG_TRACE("cvd", "cvd_create: generated container ID %s\n", cvdID);
+        containerParams.id = &cvdIDBuffer[0];
     } else {
-        cvdID = params->id;
+        containerParams.id = params->id;
     }
+    VLOG_TRACE("cvd", "cvd_create: container ID %s\n", containerParams.id);
 
-    opts = containerv_options_new();
-    if (opts == NULL) {
+    containerParams.opts = containerv_options_new();
+    if (containerParams.opts == NULL) {
         VLOG_ERROR("cvd", "failed to allocate memory for container options\n");
         return __chef_status_from_errno();
     }
 
     VLOG_DEBUG("cvd", "cvd_create: using layer-based approach with %d layers\n", params->layers_count);
-    cvLayers = __to_cv_layers(params->layers, params->layers_count);
-    if (cvLayers == NULL) {
+    containerParams.layers = __to_cv_layers(params->layers, params->layers_count);
+    if (containerParams.layers == NULL) {
         VLOG_ERROR("cvd", "cvd_create: failed to convert layers\n");
-        containerv_options_delete(opts);
+        containerv_options_delete(containerParams.opts);
         return CHEF_STATUS_INTERNAL_ERROR;
     }
 
-    // Compose layers into final rootfs
-    status = containerv_layers_compose(cvLayers, (int)params->layers_count, cvdID, &layerContext);
-    free(cvLayers);
-    if (status != 0) {
-        VLOG_ERROR("cvd", "cvd_create: failed to compose layers\n");
-        containerv_options_delete(opts);
-        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-    }
+    containerParams.layers_count = (int)params->layers_count;
 
-    containerv_options_set_layers(opts, layerContext);
-
-    // setup policy
-    policy = containerv_policy_from_strings(params->policy.profiles);
-    if (policy != NULL) {
-        VLOG_DEBUG("cvd", "cvd_create: applying security policy profiles: %s\n", params->policy.profiles);
-        containerv_options_set_policy(opts, policy);
-    }
-
-    // setup other config
-    containerv_options_set_caps(opts, 
-        CV_CAP_FILESYSTEM |
-        CV_CAP_PROCESS_CONTROL |
-        CV_CAP_IPC
-    );
-
-    // create the container
-    status = containerv_create(cvdID, opts, &cvContainer);
-    containerv_options_delete(opts);
-    if (status) {
-        if (layerContext) {
-            containerv_layers_destroy(layerContext);
+#ifdef CHEF_ON_LINUX
+    status = __create_linux_container(params, &containerParams);
+#elif CHEF_ON_WINDOWS
+    status = __create_hyperv_container(params, &containerParams);
+#endif
+    
+    // this will free all non-essential members of containerParams
+    __create_container_params_cleanup(&containerParams);
+    if (status != CHEF_STATUS_SUCCESS) {
+        VLOG_ERROR("cvd", "cvd_create: failed to setup & create container\n");
+        if (containerParams.container != NULL) {
+            containerv_destroy(containerParams.container);
         }
-        VLOG_ERROR("cvd", "failed to start the container\n");
-        return __chef_status_from_errno();
+        containerv_layers_destroy(containerParams.layer_context);
+        return status;
     }
 
-    _container = __container_new(cvContainer, layerContext);
+    _container = __container_new(containerParams.container, containerParams.layer_context);
     if (_container == NULL) {
-        if (layerContext) {
-            containerv_layers_destroy(layerContext);
-        }
         VLOG_ERROR("cvd", "failed to allocate memory for the container structure\n");
-        __container_delete(_container);
+        if (containerParams.container != NULL) {
+            containerv_destroy(containerParams.container);
+        }
+        containerv_layers_destroy(containerParams.layer_context);
         return __chef_status_from_errno();
     }
 
     // Store the layer context for cleanup later
-    _container->layer_context = layerContext;
+    _container->layer_context = containerParams.layer_context;
     
     list_add(&g_server.containers, &_container->item_header);
     *id = _container->id;

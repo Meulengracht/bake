@@ -24,8 +24,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
-
-#ifdef CHEF_ON_LINUX
  
 struct __path_entry {
     struct list_item list_header;
@@ -48,7 +46,7 @@ static int __get_ld_conf_paths(const char* path, struct list* paths)
     FILE* file;
     char  buffer[1024];
     int   result = 0;
-    VLOG_DEBUG("resolve", "reading ld.conf from %s\n", path);
+    VLOG_DEBUG("resolve", "__get_ld_conf_paths(path=%s)\n", path ? path : "(null)");
     
     file = fopen(path, "r");
     if (file == NULL) {
@@ -92,6 +90,7 @@ static int __get_ld_conf_paths(const char* path, struct list* paths)
 
 static const char* __get_platform(struct bake_resolve* resolve)
 {
+    VLOG_DEBUG("resolve", "__get_platform(arch=%d)\n", resolve ? (int)resolve->arch : -1);
     switch (resolve->arch) {
         case BAKE_RESOLVE_ARCH_X86_64:
             return "x86_64-linux-gnu";
@@ -124,6 +123,7 @@ static int __load_ld_so_conf_for_platform(const char* sysroot, struct bake_resol
 {
     char* path;
     int   status = 0;
+    VLOG_DEBUG("resolve", "__load_ld_so_conf_for_platform(sysroot=%s)\n", sysroot ? sysroot : "(null)");
 
     path = malloc(PATH_MAX);
     if (path == NULL) {
@@ -144,13 +144,17 @@ static int __load_ld_so_conf_for_platform(const char* sysroot, struct bake_resol
     return status;
 }
 
-const char* resolve_platform_dependency(const char* sysroot, struct bake_resolve* resolve, const char* dependency)
+const char* resolve_platform_dependency_linux(const char* sysroot, struct bake_resolve* resolve, const char* dependency)
 {
     struct list          libraryPaths = { 0 };
     struct list_item*    item;
     struct platform_stat stats;
     int                  status;
     char*                path;
+    VLOG_DEBUG("resolve", "resolve_platform_dependency_linux(sysroot=%s, dep=%s)\n",
+        sysroot ? sysroot : "",
+        dependency ? dependency : "(null)"
+    );
 
     path = malloc(PATH_MAX);
     if (path == NULL) {
@@ -206,12 +210,15 @@ static const struct __system_libraries g_ubuntu24_libraries[] = {
     NULL
 };
 
-int resolve_is_system_library(const char* base, const char* dependency)
+int resolve_is_system_library_linux(const char* base, const char* dependency)
 {
     const struct __system_libraries* libraries = NULL;
-    VLOG_DEBUG("resolver", "resolve_is_system_library(base=%s, dep=%s)\n", base, dependency);
+    VLOG_DEBUG("resolver", "resolve_is_system_library_linux(base=%s, dep=%s)\n",
+        base ? base : "(null)",
+        dependency ? dependency : "(null)"
+    );
 
-    if (strcmp(base, "ubuntu-24") == 0) {
+    if (strcmp(base, "ubuntu-24") == 0 || strcmp(base, "ubuntu:24") == 0) {
         libraries = g_ubuntu24_libraries;
     } else {
         VLOG_WARNING("resolver", "no library resolver for: %s\n", base);
@@ -225,5 +232,3 @@ int resolve_is_system_library(const char* base, const char* dependency)
     }
     return 0;
 }
-
-#endif //CHEF_ON_LINUX
