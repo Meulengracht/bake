@@ -52,6 +52,26 @@ Notes:
 - If a host rootfs directory is provided, it is mapped into the LCOW UVM at `/chef/rootfs`.
 - When that rootfs mapping is present, all bind mounts (including Chef staging) are rebased under `/chef/rootfs` so they remain visible after the OCI process pivots into the container root.
 
+## Windows Networking (HCS container mode)
+
+For **true Windows containers** (WCOW/LCOW) using the HCS container backend, networking is managed via the Windows Host Networking Service (HNS): containerv creates an HNS endpoint on the host and attaches it to the container compute system.
+
+### Selecting the HNS network
+
+When `options->network.enable` is set (e.g. via `containerv_options_set_network[_ex]()`), containerv selects an HNS network primarily based on `options->network.switch_name` (set via `containerv_options_set_vm_switch()`). The selection is deterministic and uses this priority:
+
+- Highest priority: `HnsNetwork.SwitchName == switch_name` (exact match)
+- Next: `HnsNetwork.Name == switch_name` (exact match)
+- Next: partial match on either `SwitchName` or `Name` (`*switch_name*`)
+- Tie-break preference: networks with `Type == NAT` are preferred, then `Type == ICS`
+- Final fallback: if nothing matches, the highest-scoring network is used; if there are no HNS networks at all, container networking cannot be configured
+
+Recommendation: set `switch_name` explicitly if your host has multiple HNS networks (common on developer machines with WSL/Default Switch/NAT networks) to ensure containers attach to the intended network.
+
+### Static IP / DNS
+
+If `container_ip/netmask/gateway/dns` are provided, containerv will first attempt to apply these at the HNS endpoint layer (when supported by the installed `New-HnsEndpoint` cmdlets on the host). If endpoint policies are not supported/available, containerv falls back to a best-effort in-container configuration step.
+
 ### VM-backed mode (legacy)
 
 ## VM Disk Contract (Windows Host, VM-backed legacy)

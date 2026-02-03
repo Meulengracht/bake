@@ -153,6 +153,8 @@ struct containerv_options {
         struct containerv_options_windows_container windows_container;
         enum windows_container_type              windows_container_type;
         struct containerv_options_windows_lcow   windows_lcow;
+        const char* const*                       windows_wcow_parent_layers;
+        int                                      windows_wcow_parent_layer_count;
 };
 
 struct containerv_container_process {

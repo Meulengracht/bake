@@ -16,14 +16,32 @@
  * 
  */
 
-#include <chef/platform.h>
 #include <errno.h>
-#include <sys/stat.h>
+#include <chef/platform.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-int platform_chmod(const char* path, uint32_t permissions)
+int platform_writetextfile(const char* path, const char* text)
 {
-    if (path == NULL || path[0] == '\0') {
+    FILE*  fp;
+    size_t written, textLength;
+
+    if (path == NULL || text == NULL) {
+        errno = EINVAL;
         return -1;
     }
-	return chmod(path, permissions);
+
+    fp = fopen(path, "w");
+    if (fp == NULL) {
+        return -1;
+    }
+
+    textLength = strlen(text);
+    written = fwrite(text, 1, textLength, fp);
+    if (written != textLength) {
+        (void)fclose(fp);
+        return -1;
+    }
+    return fclose(fp);
 }

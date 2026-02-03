@@ -77,6 +77,8 @@ struct create_parameters {
     layer_descriptor[] layers;
     policy_spec        policy;
     network_options    network;
+    // Flattened list of WCOW parent layer paths (double-NUL terminated).
+    uint8[]            wcow_parent_layers;
 }
 
 struct user_descriptor {

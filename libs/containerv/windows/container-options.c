@@ -51,18 +51,21 @@ struct containerv_options* containerv_options_new(void)
     options->windows_lcow.kernel_file = NULL;
     options->windows_lcow.initrd_file = NULL;
     options->windows_lcow.boot_parameters = NULL;
+
+    options->windows_wcow_parent_layers = NULL;
+    options->windows_wcow_parent_layer_count = 0;
     
     return options;
 }
 
 void containerv_options_delete(struct containerv_options* options)
 {
-    if (options) {
-        if (options->policy) {
-            containerv_policy_delete(options->policy);
-        }
-        free(options);
+    if (options == NULL) {
+        return;
     }
+
+    containerv_policy_delete(options->policy);
+    free(options);
 }
 
 void containerv_options_set_caps(struct containerv_options* options, enum containerv_capabilities caps)
@@ -267,6 +270,18 @@ void containerv_options_set_windows_lcow_hvruntime(
     options->windows_lcow.kernel_file = kernel_file;
     options->windows_lcow.initrd_file = initrd_file;
     options->windows_lcow.boot_parameters = boot_parameters;
+}
+
+void containerv_options_set_windows_wcow_parent_layers(
+    struct containerv_options* options,
+    const char* const*         parent_layers,
+    int                        parent_layer_count)
+{
+    if (options == NULL) {
+        return;
+    }
+    options->windows_wcow_parent_layers = parent_layers;
+    options->windows_wcow_parent_layer_count = parent_layer_count;
 }
 
 void containerv_options_set_rootfs_updates(

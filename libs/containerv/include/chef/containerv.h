@@ -233,6 +233,15 @@ extern void containerv_options_set_windows_lcow_hvruntime(
 );
 
 /**
+ * @brief Configure WCOW parent layers (windowsfilter folders) for HCS container mode.
+ */
+extern void containerv_options_set_windows_wcow_parent_layers(
+    struct containerv_options* options,
+    const char* const*         parent_layers,
+    int                        parent_layer_count
+);
+
+/**
  * @brief Configure resource limits for the Windows container using Job Objects
  * @param options The container options to configure
  * @param memory_max Maximum memory (e.g., "1G", "512M", "max" for no limit), or NULL for default (1G)

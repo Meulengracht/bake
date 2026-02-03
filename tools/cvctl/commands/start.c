@@ -49,7 +49,10 @@ static void __cleanup_systems(int sig)
     _Exit(0);
 }
 
-static struct containerv_layer_context* __build_layer_context(const char* id, const char* rootfs)
+static struct containerv_layer_context* __build_layer_context(
+    const char* id,
+    const char* rootfs,
+    struct containerv_options* options)
 {
     struct containerv_layer_context* layerContext;
     int                              status;
@@ -59,9 +62,7 @@ static struct containerv_layer_context* __build_layer_context(const char* id, co
     baseLayer.source = (char*)rootfs;
 
     // Compose layers into final rootfs
-    status = containerv_layers_compose(
-        &baseLayer, 1, id, &layerContext
-    );
+    status = containerv_layers_compose_with_options(&baseLayer, 1, id, options, &layerContext);
     
     if (status != 0) {
         VLOG_ERROR("cvctl", "__build_layer_context: failed to compose layers\n");
@@ -114,7 +115,7 @@ int start_main(int argc, char** argv, char** envp, struct cvctl_command_options*
         return -1;
     }
 
-    layerContext = __build_layer_context("cvctl-container", abspath);
+    layerContext = __build_layer_context("cvctl-container", abspath, cvopts);
     if (layerContext == NULL) {
         result = -1;
         goto cleanup;

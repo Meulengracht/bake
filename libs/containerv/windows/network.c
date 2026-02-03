@@ -83,6 +83,46 @@ static int __ipv4_netmask_to_prefix(const char* netmask, int* prefix_out)
     return 0;
 }
 
+static int __is_ipv6_addr(const char* s)
+{
+    if (s == NULL || s[0] == '\0') {
+        return 0;
+    }
+    return strchr(s, ':') != NULL;
+}
+
+static int __parse_prefix_any(const char* netmask, int* prefix_out)
+{
+    if (prefix_out == NULL) {
+        return -1;
+    }
+    if (netmask == NULL || netmask[0] == '\0') {
+        return -1;
+    }
+
+    int all_digits = 1;
+    for (const char* p = netmask; *p; ++p) {
+        if (*p < '0' || *p > '9') {
+            all_digits = 0;
+            break;
+        }
+    }
+    if (all_digits) {
+        int v = atoi(netmask);
+        if (v < 0 || v > 128) {
+            return -1;
+        }
+        *prefix_out = v;
+        return 0;
+    }
+
+    if (strchr(netmask, '.') != NULL) {
+        return __ipv4_netmask_to_prefix(netmask, prefix_out);
+    }
+
+    return -1;
+}
+
 /**
  * @brief Execute PowerShell command for network management
  * Windows HyperV networking is primarily managed via PowerShell cmdlets
@@ -196,13 +236,51 @@ static void __trim_whitespace_inplace(char* s)
     }
 }
 
+static char* __ps_escape_single_quoted(const char* s)
+{
+    if (s == NULL) {
+        return platform_strdup("");
+    }
+
+    // In PowerShell single-quoted strings, escape ' by doubling it.
+    size_t in_len = strlen(s);
+    size_t extra = 0;
+    for (size_t i = 0; i < in_len; ++i) {
+        if (s[i] == '\'') {
+            extra++;
+        }
+    }
+
+    char* out = (char*)calloc(in_len + extra + 1, 1);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    size_t j = 0;
+    for (size_t i = 0; i < in_len; ++i) {
+        if (s[i] == '\'') {
+            out[j++] = '\'';
+            out[j++] = '\'';
+        } else {
+            out[j++] = s[i];
+        }
+    }
+    out[j] = '\0';
+    return out;
+}
+
 static char* __windows_hns_create_and_attach_endpoint(
     const char* container_id,
-    const char* switch_name)
+    const char* switch_name,
+    const char* container_ip,
+    int container_prefix,
+    const char* gateway_ip,
+    const char* dns,
+    int* policies_applied_out)
 {
     // NOTE:
     // - This is best-effort and relies on HNS PowerShell helpers (commonly present on Windows).
-    // - We currently rely on DHCP; static IP policies can be added later.
+    // - When supported by New-HnsEndpoint, we apply static IP/DNS as endpoint parameters.
     char script[PS_CMD_BUFFER_SIZE];
 
     if (container_id == NULL || container_id[0] == '\0') {
@@ -213,21 +291,95 @@ static char* __windows_hns_create_and_attach_endpoint(
         switch_name = "Default Switch";
     }
 
+    if (policies_applied_out) {
+        *policies_applied_out = 0;
+    }
+
+    char* esc_sw = __ps_escape_single_quoted(switch_name);
+    char* esc_cid = __ps_escape_single_quoted(container_id);
+    char* esc_ip = __ps_escape_single_quoted(container_ip ? container_ip : "");
+    char* esc_gw = __ps_escape_single_quoted(gateway_ip ? gateway_ip : "");
+    char* esc_dns = __ps_escape_single_quoted(dns ? dns : "");
+    if (esc_sw == NULL || esc_cid == NULL || esc_ip == NULL || esc_gw == NULL || esc_dns == NULL) {
+        free(esc_sw);
+        free(esc_cid);
+        free(esc_ip);
+        free(esc_gw);
+        free(esc_dns);
+        return NULL;
+    }
+
     snprintf(
         script,
         sizeof(script),
         "$ErrorActionPreference='Stop'; "
         "Import-Module HNS -ErrorAction SilentlyContinue | Out-Null; "
-        "$sw='%s'; $cid='%s'; "
-        "$net = Get-HnsNetwork | Where-Object { $_.Name -eq $sw -or $_.SwitchName -eq $sw } | Select-Object -First 1; "
-        "if (-not $net) { $net = Get-HnsNetwork | Select-Object -First 1 }; "
-        "if (-not $net) { throw 'No HNS networks found' }; "
+        "$sw='%s'; $cid='%s'; $ip='%s'; $gw='%s'; $dns='%s'; $prefix=%d; "
+        "$isV6=($ip -like '*:*'); "
+        "$nets=Get-HnsNetwork; "
+        "if (-not $nets) { throw 'No HNS networks found' }; "
+        "$best=$null; $bestS=-1; "
+        "foreach($n in $nets){ "
+        "  $s=0; "
+        "  if($n.SwitchName -eq $sw){$s=100} elseif($n.Name -eq $sw){$s=90} elseif(($n.SwitchName -like ('*'+$sw+'*')) -or ($n.Name -like ('*'+$sw+'*'))){$s=50}; "
+        "  if($n.Type -eq 'NAT'){$s+=20} elseif($n.Type -eq 'ICS'){$s+=15}; "
+        "  if($s -gt $bestS){$best=$n; $bestS=$s} "
+        "}; "
+        "$net=$best; if (-not $net) { throw 'No HNS networks found' }; "
         "$epName=('chef-' + $cid); "
-        "$ep = New-HnsEndpoint -NetworkId $net.Id -Name $epName; "
+        "$cmd = Get-Command New-HnsEndpoint; "
+        "$keys = $cmd.Parameters.Keys; "
+        "$hasIp = ($keys -contains 'IpAddress') -or ($keys -contains 'IPAddress'); "
+        "$hasPrefix = ($keys -contains 'PrefixLength'); "
+        "$hasGw = ($keys -contains 'GatewayAddress') -or ($keys -contains 'Gateway') -or ($keys -contains 'DefaultGateway'); "
+        "$hasDns = ($keys -contains 'DnsServerList') -or ($keys -contains 'DNSServerList') -or ($keys -contains 'DnsServers') -or ($keys -contains 'DNSServers'); "
+        "$applied = $false; "
+        "$p = @{ NetworkId = $net.Id; Name = $epName }; "
+        "if ($ip -and $ip.Length -gt 0 -and $hasIp) { $p['IpAddress'] = $ip; $applied = $true }; "
+        "if ($prefix -ge 0 -and $hasPrefix) { $p['PrefixLength'] = [int]$prefix; $applied = $true }; "
+        "if ($gw -and $gw.Length -gt 0 -and $hasGw) { $p['GatewayAddress'] = $gw; $applied = $true }; "
+        "if ($dns -and $dns.Length -gt 0 -and $hasDns) { $p['DnsServerList'] = ($dns -split '[ ,;]+' | Where-Object { $_ -and $_.Length -gt 0 }); $applied = $true }; "
+        "$ep = New-HnsEndpoint @p; "
+        // If New-HnsEndpoint didn't accept policy fields, attempt to set them post-create.
+        "if (-not $applied) { "
+        "  $setCmd = Get-Command Set-HnsEndpoint -ErrorAction SilentlyContinue; "
+        "  if ($setCmd) { "
+        "    $epObj = Get-HnsEndpoint -Id $ep.Id; "
+        "    if ($ip -and $ip.Length -gt 0) { $epObj.IpAddress = $ip; $applied = $true }; "
+        "    if ($prefix -ge 0) { $epObj.PrefixLength = [int]$prefix; $applied = $true }; "
+        "    if ($gw -and $gw.Length -gt 0) { $epObj.GatewayAddress = $gw; $applied = $true }; "
+        "    if ($dns -and $dns.Length -gt 0) { $epObj.DnsServerList = ($dns -split '[ ,;]+' | Where-Object { $_ -and $_.Length -gt 0 }); $applied = $true }; "
+        "    if ($applied) { Set-HnsEndpoint -InputObject $epObj | Out-Null }; "
+        "  } "
+        "}; "
         "Attach-HnsEndpoint -EndpointId $ep.Id -ContainerId $cid; "
-        "Write-Output $ep.Id;",
-        switch_name,
-        container_id);
+        "$pp = $env:CHEF_PORTPROXY_PORTS; "
+        "if ($pp -and $ip -and $ip.Length -gt 0) { "
+        "  $entries = $pp -split ','; "
+        "  foreach($e in $entries) { "
+        "    $e = $e.Trim(); if (-not $e) { continue }; "
+        "    $proto = 'tcp'; "
+        "    if ($e -match '^(\d+):(\d+)(/(tcp|udp))?$') { "
+        "      $hp = [int]$matches[1]; $cp = [int]$matches[2]; if ($matches[4]) { $proto = $matches[4].ToLower() }; "
+        "      if ($proto -ne 'tcp') { continue }; "
+        "      if ($isV6) { netsh interface portproxy add v6tov6 listenaddress=:: listenport=$hp connectaddress=$ip connectport=$cp | Out-Null; } "
+        "      else { netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$hp connectaddress=$ip connectport=$cp | Out-Null; } "
+        "    } "
+        "  } "
+        "}; "
+        "Write-Output ($ep.Id + '|' + ([int]$applied));",
+        esc_sw,
+        esc_cid,
+        esc_ip,
+        esc_gw,
+        esc_dns,
+        container_prefix);
+
+    free(esc_sw);
+    free(esc_cid);
+    free(esc_ip);
+    free(esc_gw);
+    free(esc_dns);
 
     char* out = __powershell_exec_stdout(script);
     if (out == NULL) {
@@ -238,6 +390,18 @@ static char* __windows_hns_create_and_attach_endpoint(
     if (out[0] == '\0') {
         free(out);
         return NULL;
+    }
+
+    // Parse "<endpointId>|<applied>".
+    char* bar = strchr(out, '|');
+    if (bar != NULL) {
+        *bar = '\0';
+        __trim_whitespace_inplace(out);
+        char* applied_s = bar + 1;
+        __trim_whitespace_inplace(applied_s);
+        if (policies_applied_out) {
+            *policies_applied_out = atoi(applied_s) ? 1 : 0;
+        }
     }
 
     return out;
@@ -256,7 +420,7 @@ static int __windows_configure_container_network_in_hcs_container(
         return 0;
     }
 
-    // DNS-only is allowed. Static IP requires at least IP + netmask.
+    // DNS-only is allowed. Static IP requires at least IP + netmask/prefix.
     if (options->network.container_ip != NULL && options->network.container_netmask == NULL) {
         VLOG_WARNING("containerv[net]", "container_ip provided without container_netmask; skipping static IP configuration\n");
         return 0;
@@ -271,6 +435,7 @@ static int __windows_configure_container_network_in_hcs_container(
         const char* dns = options->network.dns ? options->network.dns : "";
         const char* ip = options->network.container_ip ? options->network.container_ip : "";
         const char* mask = options->network.container_netmask ? options->network.container_netmask : "";
+        const int is_v6 = __is_ipv6_addr(ip);
 
         // Use netsh for broad compatibility.
         char ps[1024];
@@ -281,16 +446,26 @@ static int __windows_configure_container_network_in_hcs_container(
             "if (-not $if) { $if = 'Ethernet' }; "
             "$gw = '%s'; $dns = '%s'; $ip = '%s'; $mask = '%s'; "
             "if ($ip -and $ip.Length -gt 0 -and $mask -and $mask.Length -gt 0) { "
-            "  if ($gw -and $gw.Length -gt 0) { "
-            "    netsh interface ip set address name=\"$if\" static $ip $mask $gw 1; "
+            "  if ($ip -like '*:*') { "
+            "    netsh interface ipv6 add address interface=\"$if\" address=$ip; "
+            "    if ($gw -and $gw.Length -gt 0) { netsh interface ipv6 add route ::/0 \"$if\" $gw; }; "
             "  } else { "
-            "    netsh interface ip set address name=\"$if\" static $ip $mask none; "
-            "  }; "
+            "    if ($gw -and $gw.Length -gt 0) { "
+            "      netsh interface ip set address name=\"$if\" static $ip $mask $gw 1; "
+            "    } else { "
+            "      netsh interface ip set address name=\"$if\" static $ip $mask none; "
+            "    }; "
+            "  } "
             "}; "
             "$servers = $dns.Split(' ',',',';') | Where-Object { $_ -and $_.Length -gt 0 }; "
             "if ($servers.Count -gt 0) { "
-            "  netsh interface ip set dns name=\"$if\" static $servers[0]; "
-            "  for ($i = 1; $i -lt $servers.Count; $i++) { netsh interface ip add dns name=\"$if\" addr=$servers[$i] index=($i+1) } "
+            "  if ($ip -like '*:*') { "
+            "    netsh interface ipv6 add dnsserver interface=\"$if\" address=$servers[0] index=1; "
+            "    for ($i = 1; $i -lt $servers.Count; $i++) { netsh interface ipv6 add dnsserver interface=\"$if\" address=$servers[$i] index=($i+1) } "
+            "  } else { "
+            "    netsh interface ip set dns name=\"$if\" static $servers[0]; "
+            "    for ($i = 1; $i -lt $servers.Count; $i++) { netsh interface ip add dns name=\"$if\" addr=$servers[$i] index=($i+1) } "
+            "  } "
             "};",
             gw,
             dns,
@@ -323,7 +498,7 @@ static int __windows_configure_container_network_in_hcs_container(
     const char* gateway_ip = options->network.gateway_ip ? options->network.gateway_ip : options->network.host_ip;
     int prefix = 0;
     if (options->network.container_ip != NULL) {
-        if (__ipv4_netmask_to_prefix(options->network.container_netmask, &prefix) != 0) {
+        if (__parse_prefix_any(options->network.container_netmask, &prefix) != 0) {
             VLOG_WARNING("containerv[net]", "invalid netmask/prefix: %s\n", options->network.container_netmask);
             return -1;
         }
@@ -339,8 +514,15 @@ static int __windows_configure_container_network_in_hcs_container(
         "[ -n \"$IF\" ]; "
         "if command -v ip >/dev/null 2>&1; then "
         "  ip link set dev \"$IF\" up 2>/dev/null || true; "
-        "  if [ -n \"$IP\" ]; then ip addr flush dev \"$IF\" 2>/dev/null || true; ip addr add \"$IP\"/\"$PREFIX\" dev \"$IF\"; fi; "
-        "  if [ -n \"$GW\" ]; then ip route replace default via \"$GW\" dev \"$IF\" 2>/dev/null || true; fi; "
+        "  if [ -n \"$IP\" ]; then "
+        "    if echo \"$IP\" | grep -q ':'; then "
+        "      ip -6 addr flush dev \"$IF\" 2>/dev/null || true; ip -6 addr add \"$IP\"/\"$PREFIX\" dev \"$IF\"; "
+        "      if [ -n \"$GW\" ]; then ip -6 route replace default via \"$GW\" dev \"$IF\" 2>/dev/null || true; fi; "
+        "    else "
+        "      ip addr flush dev \"$IF\" 2>/dev/null || true; ip addr add \"$IP\"/\"$PREFIX\" dev \"$IF\"; "
+        "      if [ -n \"$GW\" ]; then ip route replace default via \"$GW\" dev \"$IF\" 2>/dev/null || true; fi; "
+        "    fi; "
+        "  fi; "
         "else "
         "  if [ -n \"$IP\" ]; then ifconfig \"$IF\" \"$IP\" netmask \"$NETMASK\" up; fi; "
         "  if [ -n \"$GW\" ] && command -v route >/dev/null 2>&1; then route add default gw \"$GW\" \"$IF\" 2>/dev/null || true; fi; "
@@ -509,7 +691,7 @@ int __windows_configure_container_network(
         }
     } else {
         int prefix = 0;
-        if (__ipv4_netmask_to_prefix(options->network.container_netmask, &prefix) != 0) {
+        if (__parse_prefix_any(options->network.container_netmask, &prefix) != 0) {
             VLOG_ERROR("containerv[net]", "invalid netmask/prefix: %s\n", options->network.container_netmask);
             return -1;
         }
@@ -525,9 +707,15 @@ int __windows_configure_container_network(
             "[ -n \"$IF\" ]; "
             "if command -v ip >/dev/null 2>&1; then "
             "  ip link set dev \"$IF\" up 2>/dev/null || true; "
-            "  ip addr flush dev \"$IF\" 2>/dev/null || true; "
-            "  ip addr add \"$IP\"/\"$PREFIX\" dev \"$IF\"; "
-            "  if [ -n \"$GW\" ]; then ip route replace default via \"$GW\" dev \"$IF\" 2>/dev/null || true; fi; "
+            "  if echo \"$IP\" | grep -q ':'; then "
+            "    ip -6 addr flush dev \"$IF\" 2>/dev/null || true; "
+            "    ip -6 addr add \"$IP\"/\"$PREFIX\" dev \"$IF\"; "
+            "    if [ -n \"$GW\" ]; then ip -6 route replace default via \"$GW\" dev \"$IF\" 2>/dev/null || true; fi; "
+            "  else "
+            "    ip addr flush dev \"$IF\" 2>/dev/null || true; "
+            "    ip addr add \"$IP\"/\"$PREFIX\" dev \"$IF\"; "
+            "    if [ -n \"$GW\" ]; then ip route replace default via \"$GW\" dev \"$IF\" 2>/dev/null || true; fi; "
+            "  fi; "
             "else "
             "  ifconfig \"$IF\" \"$IP\" netmask \"$NETMASK\" up; "
             "  if [ -n \"$GW\" ] && command -v route >/dev/null 2>&1; then route add default gw \"$GW\" \"$IF\" 2>/dev/null || true; fi; "
@@ -675,9 +863,26 @@ int __windows_configure_hcs_container_network(
 
     const char* switch_name = options->network.switch_name ? options->network.switch_name : "Default Switch";
 
+    int prefix = -1;
+    if (options->network.container_ip != NULL && options->network.container_netmask != NULL) {
+        if (__ipv4_netmask_to_prefix(options->network.container_netmask, &prefix) != 0) {
+            prefix = -1;
+        }
+    }
+
+    const char* gw = options->network.gateway_ip ? options->network.gateway_ip : options->network.host_ip;
+
     VLOG_DEBUG("containerv[net]", "creating/attaching HNS endpoint for compute system %s on switch %s\n", container->id, switch_name);
 
-    char* endpoint_id = __windows_hns_create_and_attach_endpoint(container->id, switch_name);
+    int policies_applied = 0;
+    char* endpoint_id = __windows_hns_create_and_attach_endpoint(
+        container->id,
+        switch_name,
+        options->network.container_ip,
+        prefix,
+        gw,
+        options->network.dns,
+        &policies_applied);
     if (endpoint_id == NULL) {
         VLOG_WARNING("containerv[net]", "failed to create/attach HNS endpoint; container may have no network\n");
         return -1;
@@ -687,10 +892,14 @@ int __windows_configure_hcs_container_network(
 
     VLOG_DEBUG("containerv[net]", "attached HNS endpoint %s\n", container->hns_endpoint_id);
 
-    // Optional: configure static IP/DNS inside the container (best-effort).
-    if (__windows_configure_container_network_in_hcs_container(container, options) != 0) {
-        // Keep endpoint attached; allow caller to proceed.
-        VLOG_WARNING("containerv[net]", "container networking may be incomplete (static IP/DNS setup failed)\n");
+    if (!policies_applied) {
+        // Fallback: configure static IP/DNS inside the container (best-effort).
+        if (__windows_configure_container_network_in_hcs_container(container, options) != 0) {
+            // Keep endpoint attached; allow caller to proceed.
+            VLOG_WARNING("containerv[net]", "container networking may be incomplete (HNS policy unsupported; in-container setup failed)\n");
+        }
+    } else {
+        VLOG_DEBUG("containerv[net]", "HNS endpoint policies applied; skipping in-container network configuration\n");
     }
 
     container->network_configured = 1;

@@ -33,6 +33,8 @@
 
 #include <jansson.h>
 
+#include "json-util.h"
+
 #include <pid1_windows.h>
 
 #include "private.h"
@@ -76,119 +78,20 @@ static void __pid1_release_for_container(void)
     }
 }
 
-static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
+static int __pid1d_rpc_json(struct containerv_container* container, json_t* req, char* resp, size_t resp_cap)
 {
-    if (buf == NULL || cap == NULL || len == NULL || fmt == NULL) {
+    if (container == NULL || req == NULL || resp == NULL || resp_cap == 0) {
         return -1;
     }
 
-    va_list ap;
-    va_start(ap, fmt);
-    int needed = _vscprintf(fmt, ap);
-    va_end(ap);
-    if (needed < 0) {
+    char* req_utf8 = NULL;
+    if (containerv_json_dumps_compact(req, &req_utf8) != 0) {
         return -1;
     }
 
-    size_t required = *len + (size_t)needed + 1;
-    if (*buf == NULL || *cap < required) {
-        size_t new_cap = (*cap == 0) ? 256 : *cap;
-        while (new_cap < required) {
-            new_cap *= 2;
-        }
-        char* nb = realloc(*buf, new_cap);
-        if (nb == NULL) {
-            return -1;
-        }
-        *buf = nb;
-        *cap = new_cap;
-    }
-
-    va_start(ap, fmt);
-    int written = vsnprintf(*buf + *len, *cap - *len, fmt, ap);
-    va_end(ap);
-    if (written < 0) {
-        return -1;
-    }
-    *len += (size_t)written;
-    return 0;
-}
-
-static char* __json_escape_utf8_simple(const char* s)
-{
-    if (s == NULL) {
-        return NULL;
-    }
-
-    char* out = NULL;
-    size_t cap = 0;
-    size_t len = 0;
-
-    for (const unsigned char* p = (const unsigned char*)s; *p; ++p) {
-        unsigned char c = *p;
-        switch (c) {
-            case '"':
-                if (__appendf(&out, &cap, &len, "\\\"") != 0) {
-                    free(out);
-                    return NULL;
-                }
-                break;
-            case '\\':
-                if (__appendf(&out, &cap, &len, "\\\\") != 0) {
-                    free(out);
-                    return NULL;
-                }
-                break;
-            case '\b':
-                if (__appendf(&out, &cap, &len, "\\b") != 0) {
-                    free(out);
-                    return NULL;
-                }
-                break;
-            case '\f':
-                if (__appendf(&out, &cap, &len, "\\f") != 0) {
-                    free(out);
-                    return NULL;
-                }
-                break;
-            case '\n':
-                if (__appendf(&out, &cap, &len, "\\n") != 0) {
-                    free(out);
-                    return NULL;
-                }
-                break;
-            case '\r':
-                if (__appendf(&out, &cap, &len, "\\r") != 0) {
-                    free(out);
-                    return NULL;
-                }
-                break;
-            case '\t':
-                if (__appendf(&out, &cap, &len, "\\t") != 0) {
-                    free(out);
-                    return NULL;
-                }
-                break;
-            default:
-                if (c < 0x20) {
-                    if (__appendf(&out, &cap, &len, "\\u%04x", (unsigned int)c) != 0) {
-                        free(out);
-                        return NULL;
-                    }
-                } else {
-                    if (__appendf(&out, &cap, &len, "%c", (char)c) != 0) {
-                        free(out);
-                        return NULL;
-                    }
-                }
-                break;
-        }
-    }
-
-    if (out == NULL) {
-        out = _strdup("");
-    }
-    return out;
+    int rc = __pid1d_rpc(container, req_utf8, resp, resp_cap);
+    free(req_utf8);
+    return rc;
 }
 
 static int __pid1d_write_all(HANDLE h, const char* data, size_t len)
@@ -461,40 +364,26 @@ static int __pid1d_file_write_b64(
     if (b64 == NULL) {
         return -1;
     }
-    char* esc_path = __json_escape_utf8_simple(path);
-    if (esc_path == NULL) {
+
+    json_t* req = json_object();
+    if (req == NULL ||
+        containerv_json_object_set_string(req, "op", "file_write_b64") != 0 ||
+        containerv_json_object_set_string(req, "path", path) != 0 ||
+        containerv_json_object_set_string(req, "data", b64) != 0 ||
+        containerv_json_object_set_bool(req, "append", append) != 0 ||
+        containerv_json_object_set_bool(req, "mkdirs", mkdirs) != 0) {
+        json_decref(req);
         free(b64);
         return -1;
     }
-
-    char* req = NULL;
-    size_t cap = 0;
-    size_t rlen = 0;
-
-    int rc = __appendf(
-        &req,
-        &cap,
-        &rlen,
-        "{\"op\":\"file_write_b64\",\"path\":\"%s\",\"data\":\"%s\",\"append\":%s,\"mkdirs\":%s}",
-        esc_path,
-        b64,
-        append ? "true" : "false",
-        mkdirs ? "true" : "false");
-
     free(b64);
-    free(esc_path);
-
-    if (rc != 0) {
-        free(req);
-        return -1;
-    }
 
     char resp[8192];
-    if (__pid1d_rpc(container, req, resp, sizeof(resp)) != 0) {
-        free(req);
+    if (__pid1d_rpc_json(container, req, resp, sizeof(resp)) != 0) {
+        json_decref(req);
         return -1;
     }
-    free(req);
+    json_decref(req);
 
     if (!__pid1d_resp_ok(resp)) {
         VLOG_ERROR("containerv", "pid1d file_write_b64 failed: %s\n", resp);
@@ -523,34 +412,23 @@ static int __pid1d_file_read_b64(
         return -1;
     }
 
-    char* esc_path = __json_escape_utf8_simple(path);
-    if (esc_path == NULL) {
-        return -1;
-    }
 
-    char* req = NULL;
-    size_t cap = 0;
-    size_t rlen = 0;
-    int rc = __appendf(
-        &req,
-        &cap,
-        &rlen,
-        "{\"op\":\"file_read_b64\",\"path\":\"%s\",\"offset\":%" PRIu64 ",\"max_bytes\":%" PRIu64 "}",
-        esc_path,
-        offset,
-        max_bytes);
-    free(esc_path);
-    if (rc != 0) {
-        free(req);
+    json_t* req = json_object();
+    if (req == NULL ||
+        containerv_json_object_set_string(req, "op", "file_read_b64") != 0 ||
+        containerv_json_object_set_string(req, "path", path) != 0 ||
+        containerv_json_object_set_uint64(req, "offset", offset) != 0 ||
+        containerv_json_object_set_uint64(req, "max_bytes", max_bytes) != 0) {
+        json_decref(req);
         return -1;
     }
 
     char resp[8192];
-    if (__pid1d_rpc(container, req, resp, sizeof(resp)) != 0) {
-        free(req);
+    if (__pid1d_rpc_json(container, req, resp, sizeof(resp)) != 0) {
+        json_decref(req);
         return -1;
     }
-    free(req);
+    json_decref(req);
 
     if (!__pid1d_resp_ok(resp)) {
         VLOG_ERROR("containerv", "pid1d file_read_b64 failed: %s\n", resp);
@@ -656,7 +534,16 @@ static int __pid1d_ensure(struct containerv_container* container)
     container->pid1d_started = 1;
 
     char resp[8192];
-    if (__pid1d_rpc(container, "{\"op\":\"ping\"}", resp, sizeof(resp)) != 0 || !__pid1d_resp_ok(resp)) {
+    json_t* req = json_object();
+    if (req == NULL || containerv_json_object_set_string(req, "op", "ping") != 0) {
+        json_decref(req);
+        __pid1d_close_session(container);
+        return -1;
+    }
+
+    int ping_rc = __pid1d_rpc_json(container, req, resp, sizeof(resp));
+    json_decref(req);
+    if (ping_rc != 0 || !__pid1d_resp_ok(resp)) {
         VLOG_ERROR("containerv", "pid1d: ping failed: %s\n", resp);
         __pid1d_close_session(container);
         return -1;
@@ -675,87 +562,48 @@ static int __pid1d_spawn(struct containerv_container* container, struct __contai
         return -1;
     }
 
-    char* req = NULL;
-    size_t cap = 0;
-    size_t len = 0;
-
-    char* esc_cmd = __json_escape_utf8_simple(options->path);
-    if (esc_cmd == NULL) {
-        return -1;
-    }
-
-    if (__appendf(&req, &cap, &len, "{\"op\":\"spawn\",\"command\":\"%s\"", esc_cmd) != 0) {
-        free(esc_cmd);
-        free(req);
-        return -1;
-    }
-    free(esc_cmd);
-
-    if (__appendf(&req, &cap, &len, ",\"wait\":%s", (options->flags & CV_SPAWN_WAIT) ? "true" : "false") != 0) {
-        free(req);
+    json_t* req = json_object();
+    if (req == NULL ||
+        containerv_json_object_set_string(req, "op", "spawn") != 0 ||
+        containerv_json_object_set_string(req, "command", options->path) != 0 ||
+        containerv_json_object_set_bool(req, "wait", (options->flags & CV_SPAWN_WAIT) != 0) != 0) {
+        json_decref(req);
         return -1;
     }
 
     if (options->argv != NULL) {
-        if (__appendf(&req, &cap, &len, ",\"args\":[") != 0) {
-            free(req);
+        json_t* args = json_array();
+        if (args == NULL || json_object_set_new(req, "args", args) != 0) {
+            json_decref(args);
+            json_decref(req);
             return -1;
         }
-        int first = 1;
         for (int i = 0; options->argv[i] != NULL; ++i) {
-            char* esc = __json_escape_utf8_simple(options->argv[i]);
-            if (esc == NULL) {
-                free(req);
+            if (containerv_json_array_append_string(args, options->argv[i]) != 0) {
+                json_decref(req);
                 return -1;
             }
-            if (__appendf(&req, &cap, &len, "%s\"%s\"", first ? "" : ",", esc) != 0) {
-                free(esc);
-                free(req);
-                return -1;
-            }
-            free(esc);
-            first = 0;
-        }
-        if (__appendf(&req, &cap, &len, "]") != 0) {
-            free(req);
-            return -1;
         }
     }
 
     if (options->envv != NULL) {
-        if (__appendf(&req, &cap, &len, ",\"env\":[") != 0) {
-            free(req);
+        json_t* env = json_array();
+        if (env == NULL || json_object_set_new(req, "env", env) != 0) {
+            json_decref(env);
+            json_decref(req);
             return -1;
         }
-        int first = 1;
         for (int i = 0; options->envv[i] != NULL; ++i) {
-            char* esc = __json_escape_utf8_simple(options->envv[i]);
-            if (esc == NULL) {
-                free(req);
+            if (containerv_json_array_append_string(env, options->envv[i]) != 0) {
+                json_decref(req);
                 return -1;
             }
-            if (__appendf(&req, &cap, &len, "%s\"%s\"", first ? "" : ",", esc) != 0) {
-                free(esc);
-                free(req);
-                return -1;
-            }
-            free(esc);
-            first = 0;
         }
-        if (__appendf(&req, &cap, &len, "]") != 0) {
-            free(req);
-            return -1;
-        }
-    }
-
-    if (__appendf(&req, &cap, &len, "}") != 0) {
-        free(req);
-        return -1;
     }
 
     char resp[8192];
-    int rc = __pid1d_rpc(container, req, resp, sizeof(resp));
-    free(req);
+    int rc = __pid1d_rpc_json(container, req, resp, sizeof(resp));
+    json_decref(req);
     if (rc != 0 || !__pid1d_resp_ok(resp)) {
         VLOG_ERROR("containerv", "pid1d: spawn failed: %s\n", resp);
         return -1;
@@ -778,13 +626,20 @@ static int __pid1d_wait(struct containerv_container* container, uint64_t id, int
         return -1;
     }
 
-    char req[256];
-    snprintf(req, sizeof(req), "{\"op\":\"wait\",\"id\":%llu}", (unsigned long long)id);
+    json_t* req = json_object();
+    if (req == NULL ||
+        containerv_json_object_set_string(req, "op", "wait") != 0 ||
+        containerv_json_object_set_uint64(req, "id", id) != 0) {
+        json_decref(req);
+        return -1;
+    }
     char resp[8192];
-    if (__pid1d_rpc(container, req, resp, sizeof(resp)) != 0 || !__pid1d_resp_ok(resp)) {
+    if (__pid1d_rpc_json(container, req, resp, sizeof(resp)) != 0 || !__pid1d_resp_ok(resp)) {
+        json_decref(req);
         VLOG_ERROR("containerv", "pid1d: wait failed: %s\n", resp);
         return -1;
     }
+    json_decref(req);
 
     int ec = 0;
     (void)__pid1d_parse_int_field(resp, "exit_code", &ec);
@@ -803,13 +658,21 @@ static int __pid1d_kill_reap(struct containerv_container* container, uint64_t id
         return -1;
     }
 
-    char req[256];
-    snprintf(req, sizeof(req), "{\"op\":\"kill\",\"id\":%llu,\"reap\":true}", (unsigned long long)id);
+    json_t* req = json_object();
+    if (req == NULL ||
+        containerv_json_object_set_string(req, "op", "kill") != 0 ||
+        containerv_json_object_set_uint64(req, "id", id) != 0 ||
+        containerv_json_object_set_bool(req, "reap", 1) != 0) {
+        json_decref(req);
+        return -1;
+    }
     char resp[8192];
-    if (__pid1d_rpc(container, req, resp, sizeof(resp)) != 0 || !__pid1d_resp_ok(resp)) {
+    if (__pid1d_rpc_json(container, req, resp, sizeof(resp)) != 0 || !__pid1d_resp_ok(resp)) {
+        json_decref(req);
         VLOG_ERROR("containerv", "pid1d: kill failed: %s\n", resp);
         return -1;
     }
+    json_decref(req);
     return 0;
 }
 
@@ -1128,6 +991,107 @@ static void __ensure_lcow_rootfs_mountpoint_dirs(const char* rootfs_host_path)
     }
 }
 
+struct __lcow_bind_dir_ctx {
+    const struct containerv_oci_bundle_paths* paths;
+};
+
+static int __lcow_prepare_bind_dir_cb(
+    const char* host_path,
+    const char* container_path,
+    int readonly,
+    void* user_context)
+{
+    struct __lcow_bind_dir_ctx* ctx = (struct __lcow_bind_dir_ctx*)user_context;
+    (void)host_path;
+    (void)readonly;
+
+    if (ctx == NULL || ctx->paths == NULL) {
+        return -1;
+    }
+    if (container_path == NULL || container_path[0] == '\0') {
+        return 0;
+    }
+
+    if (containerv_oci_bundle_prepare_rootfs_dir(ctx->paths, container_path, 0755) != 0) {
+        VLOG_WARNING("containerv", "LCOW: failed to prepare bind mount target %s\n", container_path);
+        return -1;
+    }
+
+    return 0;
+}
+
+static char* __escape_sh_single_quotes_alloc(const char* s)
+{
+    if (s == NULL) {
+        return _strdup("");
+    }
+
+    size_t len = strlen(s);
+    size_t extra = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] == '\'') {
+            extra += 3; // ' -> '\'' (4 chars instead of 1)
+        }
+    }
+
+    char* out = calloc(len + extra + 1, 1);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    size_t j = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] == '\'') {
+            out[j++] = '\'';
+            out[j++] = '\\';
+            out[j++] = '\'';
+            out[j++] = '\'';
+        } else {
+            out[j++] = s[i];
+        }
+    }
+    out[j] = '\0';
+    return out;
+}
+
+static int __write_layerchain_json(const char* layer_folder_path, char* const* paths, int count)
+{
+    if (layer_folder_path == NULL || layer_folder_path[0] == '\0' || paths == NULL || count <= 0) {
+        return -1;
+    }
+
+    char chain_path[MAX_PATH];
+    int rc = snprintf(chain_path, sizeof(chain_path), "%s\\layerchain.json", layer_folder_path);
+    if (rc < 0 || (size_t)rc >= sizeof(chain_path)) {
+        return -1;
+    }
+
+    json_t* root = json_array();
+    if (root == NULL) {
+        return -1;
+    }
+
+    for (int i = 0; i < count; i++) {
+        if (paths[i] == NULL || paths[i][0] == '\0') {
+            continue;
+        }
+        json_t* s = json_string(paths[i]);
+        if (s == NULL) {
+            json_decref(root);
+            return -1;
+        }
+        json_array_append_new(root, s);
+    }
+
+    if (json_dump_file(root, chain_path, JSON_INDENT(2)) != 0) {
+        json_decref(root);
+        return -1;
+    }
+
+    json_decref(root);
+    return 0;
+}
+
 static int __read_layerchain_json(const char* layer_folder_path, char*** paths_out, int* count_out)
 {
     if (paths_out == NULL || count_out == NULL || layer_folder_path == NULL || layer_folder_path[0] == '\0') {
@@ -1196,9 +1160,95 @@ static int __read_layerchain_json(const char* layer_folder_path, char*** paths_o
         return -1;
     }
 
+    int changed = 0;
+    for (int i = 0; i < out_count; i++) {
+        const char* s = out[i];
+        if (s == NULL || s[0] == '\0') {
+            continue;
+        }
+        if (PathFileExistsA(s)) {
+            continue;
+        }
+
+        char resolved[MAX_PATH];
+        resolved[0] = '\0';
+
+        if (PathIsRelativeA(s)) {
+            int rr = snprintf(resolved, sizeof(resolved), "%s\\%s", layer_folder_path, s);
+            if (rr > 0 && (size_t)rr < sizeof(resolved) && PathFileExistsA(resolved)) {
+                // resolved relative path
+            } else {
+                resolved[0] = '\0';
+            }
+        }
+
+        if (resolved[0] == '\0') {
+            const char* base = strrchr(s, '\\');
+            if (base == NULL) {
+                base = strrchr(s, '/');
+            }
+            if (base != NULL) {
+                base++;
+            } else {
+                base = s;
+            }
+            int rr = snprintf(resolved, sizeof(resolved), "%s\\parents\\%s", layer_folder_path, base);
+            if (rr > 0 && (size_t)rr < sizeof(resolved) && PathFileExistsA(resolved)) {
+                // resolved parents path
+            } else {
+                resolved[0] = '\0';
+            }
+        }
+
+        if (resolved[0] == '\0') {
+            VLOG_ERROR(
+                "containerv",
+                "layerchain.json entry does not exist and could not be resolved: %s (base %s)\n",
+                s,
+                layer_folder_path);
+            for (int j = 0; j < out_count; j++) {
+                free(out[j]);
+            }
+            free(out);
+            return -1;
+        }
+
+        free(out[i]);
+        out[i] = _strdup(resolved);
+        if (out[i] == NULL) {
+            for (int j = 0; j < out_count; j++) {
+                free(out[j]);
+            }
+            free(out);
+            return -1;
+        }
+        changed = 1;
+    }
+
+    if (changed) {
+        if (__write_layerchain_json(layer_folder_path, out, out_count) != 0) {
+            VLOG_WARNING("containerv", "failed to rewrite layerchain.json with resolved paths under %s\n", layer_folder_path);
+        }
+    }
+
     *paths_out = out;
     *count_out = out_count;
     return 0;
+}
+
+static int __windowsfilter_layerchain_exists(const char* layer_folder_path)
+{
+    if (layer_folder_path == NULL || layer_folder_path[0] == '\0') {
+        return 0;
+    }
+
+    char chain_path[MAX_PATH];
+    int rc = snprintf(chain_path, sizeof(chain_path), "%s\\layerchain.json", layer_folder_path);
+    if (rc < 0 || (size_t)rc >= sizeof(chain_path)) {
+        return 0;
+    }
+
+    return PathFileExistsA(chain_path) ? 1 : 0;
 }
 
 static void __free_strv(char** v, int count)
@@ -1237,6 +1287,65 @@ static char* __derive_utilityvm_path(const struct containerv_options* options, c
 
     DWORD attrs = GetFileAttributesA(candidate);
     if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        return NULL;
+    }
+
+    return _strdup(candidate);
+}
+
+static int __validate_utilityvm_path(const char* path, char* reason, size_t reason_cap)
+{
+    if (reason && reason_cap > 0) {
+        reason[0] = '\0';
+    }
+
+    if (path == NULL || path[0] == '\0') {
+        if (reason && reason_cap > 0) {
+            snprintf(reason, reason_cap, "UtilityVM path is empty");
+        }
+        return 0;
+    }
+
+    DWORD attrs = GetFileAttributesA(path);
+    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        if (reason && reason_cap > 0) {
+            snprintf(reason, reason_cap, "UtilityVM path is not a directory");
+        }
+        return 0;
+    }
+
+    char vhdx[MAX_PATH];
+    char files_dir[MAX_PATH];
+    int rv = snprintf(vhdx, sizeof(vhdx), "%s\\UtilityVM.vhdx", path);
+    int rf = snprintf(files_dir, sizeof(files_dir), "%s\\Files", path);
+    if (rv < 0 || (size_t)rv >= sizeof(vhdx) || rf < 0 || (size_t)rf >= sizeof(files_dir)) {
+        if (reason && reason_cap > 0) {
+            snprintf(reason, reason_cap, "UtilityVM path is too long");
+        }
+        return 0;
+    }
+
+    const int vhdx_exists = PathFileExistsA(vhdx) ? 1 : 0;
+    const int files_exists = (GetFileAttributesA(files_dir) != INVALID_FILE_ATTRIBUTES) ? 1 : 0;
+    if (!vhdx_exists && !files_exists) {
+        if (reason && reason_cap > 0) {
+            snprintf(reason, reason_cap, "UtilityVM missing UtilityVM.vhdx and Files directory");
+        }
+        return 0;
+    }
+
+    return 1;
+}
+
+static char* __format_utilityvm_candidate(const char* base)
+{
+    if (base == NULL || base[0] == '\0') {
+        return NULL;
+    }
+
+    char candidate[MAX_PATH];
+    int rc = snprintf(candidate, sizeof(candidate), "%s\\UtilityVM", base);
+    if (rc < 0 || (size_t)rc >= sizeof(candidate)) {
         return NULL;
     }
 
@@ -1450,6 +1559,15 @@ int containerv_create(
         }
     } else {
         if (!__is_hcs_lcow_mode(options)) {
+            if (!__windowsfilter_layerchain_exists(rootFs)) {
+                VLOG_ERROR(
+                    "containerv",
+                    "containerv_create: HCS container mode requires a windowsfilter folder with layerchain.json at %s (VAFS/overlay materialization is not supported)\n",
+                    rootFs);
+                __container_delete(container);
+                return -1;
+            }
+
             // True Windows containers (WCOW): rootfs must be a windowsfilter container folder.
             // Parse its parent chain from layerchain.json.
             char** parent_layers = NULL;
@@ -1465,7 +1583,31 @@ int containerv_create(
             if (hv) {
                 utilityvm = __derive_utilityvm_path(options, (const char* const*)parent_layers, parent_layer_count);
                 if (utilityvm == NULL) {
-                    VLOG_ERROR("containerv", "containerv_create: Hyper-V isolation requires UtilityVM path (set via containerv_options_set_windows_container_utilityvm_path or ensure base layer has UtilityVM)\n");
+                    const char* base = (parent_layers != NULL && parent_layer_count > 0) ? parent_layers[parent_layer_count - 1] : NULL;
+                    char* candidate = __format_utilityvm_candidate(base);
+                    if (candidate != NULL) {
+                        VLOG_ERROR(
+                            "containerv",
+                            "containerv_create: Hyper-V isolation requires UtilityVM path (set via containerv_options_set_windows_container_utilityvm_path or ensure base layer has UtilityVM at %s)\n",
+                            candidate);
+                    } else {
+                        VLOG_ERROR("containerv", "containerv_create: Hyper-V isolation requires UtilityVM path (set via containerv_options_set_windows_container_utilityvm_path or ensure base layer has UtilityVM)\n");
+                    }
+                    free(candidate);
+                    __free_strv(parent_layers, parent_layer_count);
+                    __container_delete(container);
+                    errno = ENOENT;
+                    return -1;
+                }
+
+                char reason[256];
+                if (!__validate_utilityvm_path(utilityvm, reason, sizeof(reason))) {
+                    VLOG_ERROR(
+                        "containerv",
+                        "containerv_create: UtilityVM validation failed for %s (%s)\n",
+                        utilityvm,
+                        reason[0] ? reason : "invalid UtilityVM path");
+                    free(utilityvm);
                     __free_strv(parent_layers, parent_layer_count);
                     __container_delete(container);
                     errno = ENOENT;
@@ -1509,22 +1651,37 @@ int containerv_create(
                 }
                 if (containerv_oci_bundle_prepare_rootfs(&bundle_paths, rootFs) != 0) {
                     VLOG_ERROR("containerv", "containerv_create: failed to prepare OCI bundle rootfs\n");
-                    containerv_oci_bundle_paths_destroy(&bundle_paths);
+                    containerv_oci_bundle_paths_delete(&bundle_paths);
                     __container_delete(container);
                     return -1;
                 }
                 (void)containerv_oci_bundle_prepare_rootfs_mountpoints(&bundle_paths);
+                (void)containerv_oci_bundle_prepare_rootfs_standard_files(
+                    &bundle_paths,
+                    container->hostname,
+                    (options && options->network.dns) ? options->network.dns : NULL);
+                (void)containerv_oci_bundle_prepare_rootfs_dir(&bundle_paths, "/chef", 0755);
+                (void)containerv_oci_bundle_prepare_rootfs_dir(&bundle_paths, "/chef/staging", 0755);
+
+                if (options != NULL && options->layers != NULL) {
+                    struct __lcow_bind_dir_ctx bctx = {.paths = &bundle_paths};
+                    (void)containerv_layers_iterate(
+                        options->layers,
+                        CONTAINERV_LAYER_HOST_DIRECTORY,
+                        __lcow_prepare_bind_dir_cb,
+                        &bctx);
+                }
                 lcow_rootfs_host = bundle_paths.rootfs_dir;
             }
 
             if (__hcs_create_container_system(container, options, lcow_rootfs_host, NULL, 0, image_path, 1) != 0) {
                 VLOG_ERROR("containerv", "containerv_create: failed to create LCOW HCS container compute system\n");
-                containerv_oci_bundle_paths_destroy(&bundle_paths);
+                containerv_oci_bundle_paths_delete(&bundle_paths);
                 __container_delete(container);
                 return -1;
             }
 
-            containerv_oci_bundle_paths_destroy(&bundle_paths);
+            containerv_oci_bundle_paths_delete(&bundle_paths);
         }
     }
 
@@ -2162,7 +2319,11 @@ int containerv_upload(
             char tmpname[64];
             snprintf(tmpname, sizeof(tmpname), "upload-%d.tmp", i);
             snprintf(stage_host, sizeof(stage_host), "%s\\staging\\%s", container->runtime_dir, tmpname);
-            snprintf(stage_guest, sizeof(stage_guest), "C:\\chef\\staging\\%s", tmpname);
+            if (container->guest_is_windows) {
+                snprintf(stage_guest, sizeof(stage_guest), "C:\\chef\\staging\\%s", tmpname);
+            } else {
+                snprintf(stage_guest, sizeof(stage_guest), "/chef/staging/%s", tmpname);
+            }
 
             if (!CopyFileA(hostPaths[i], stage_host, FALSE)) {
                 VLOG_ERROR("containerv", "containerv_upload: failed to stage %s: %lu\n", hostPaths[i], GetLastError());
@@ -2171,15 +2332,34 @@ int containerv_upload(
 
             // Best-effort: copy staged file to destination inside the container.
             char cmd[2048];
-            snprintf(cmd, sizeof(cmd), "/c copy /Y \"%s\" \"%s\"", stage_guest, containerPaths[i]);
-
             struct containerv_spawn_options sopts = {0};
-            sopts.arguments = cmd;
             sopts.flags = CV_SPAWN_WAIT;
             process_handle_t ph;
-            if (containerv_spawn(container, "cmd.exe", &sopts, &ph) != 0) {
-                return -1;
+
+            if (container->guest_is_windows) {
+                snprintf(cmd, sizeof(cmd), "/c copy /Y \"%s\" \"%s\"", stage_guest, containerPaths[i]);
+                sopts.arguments = cmd;
+                if (containerv_spawn(container, "cmd.exe", &sopts, &ph) != 0) {
+                    return -1;
+                }
+            } else {
+                char* src_esc = __escape_sh_single_quotes_alloc(stage_guest);
+                char* dst_esc = __escape_sh_single_quotes_alloc(containerPaths[i]);
+                if (src_esc == NULL || dst_esc == NULL) {
+                    free(src_esc);
+                    free(dst_esc);
+                    return -1;
+                }
+                snprintf(cmd, sizeof(cmd), "-c \"cp -f -- '%s' '%s'\"", src_esc, dst_esc);
+                free(src_esc);
+                free(dst_esc);
+
+                sopts.arguments = cmd;
+                if (containerv_spawn(container, "/bin/sh", &sopts, &ph) != 0) {
+                    return -1;
+                }
             }
+
             int ec = 0;
             if (containerv_wait(container, ph, &ec) != 0 || ec != 0) {
                 VLOG_ERROR("containerv", "containerv_upload: in-container copy failed (exit=%d)\n", ec);
@@ -2286,18 +2466,41 @@ int containerv_download(
             char tmpname[64];
             snprintf(tmpname, sizeof(tmpname), "download-%d.tmp", i);
             snprintf(stage_host, sizeof(stage_host), "%s\\staging\\%s", container->runtime_dir, tmpname);
-            snprintf(stage_guest, sizeof(stage_guest), "C:\\chef\\staging\\%s", tmpname);
+            if (container->guest_is_windows) {
+                snprintf(stage_guest, sizeof(stage_guest), "C:\\chef\\staging\\%s", tmpname);
+            } else {
+                snprintf(stage_guest, sizeof(stage_guest), "/chef/staging/%s", tmpname);
+            }
 
             char cmd[2048];
-            snprintf(cmd, sizeof(cmd), "/c copy /Y \"%s\" \"%s\"", containerPaths[i], stage_guest);
-
             struct containerv_spawn_options sopts = {0};
-            sopts.arguments = cmd;
             sopts.flags = CV_SPAWN_WAIT;
             process_handle_t ph;
-            if (containerv_spawn(container, "cmd.exe", &sopts, &ph) != 0) {
-                return -1;
+
+            if (container->guest_is_windows) {
+                snprintf(cmd, sizeof(cmd), "/c copy /Y \"%s\" \"%s\"", containerPaths[i], stage_guest);
+                sopts.arguments = cmd;
+                if (containerv_spawn(container, "cmd.exe", &sopts, &ph) != 0) {
+                    return -1;
+                }
+            } else {
+                char* src_esc = __escape_sh_single_quotes_alloc(containerPaths[i]);
+                char* dst_esc = __escape_sh_single_quotes_alloc(stage_guest);
+                if (src_esc == NULL || dst_esc == NULL) {
+                    free(src_esc);
+                    free(dst_esc);
+                    return -1;
+                }
+                snprintf(cmd, sizeof(cmd), "-c \"cp -f -- '%s' '%s'\"", src_esc, dst_esc);
+                free(src_esc);
+                free(dst_esc);
+
+                sopts.arguments = cmd;
+                if (containerv_spawn(container, "/bin/sh", &sopts, &ph) != 0) {
+                    return -1;
+                }
             }
+
             int ec = 0;
             if (containerv_wait(container, ph, &ec) != 0 || ec != 0) {
                 VLOG_ERROR("containerv", "containerv_download: in-container stage copy failed (exit=%d)\n", ec);

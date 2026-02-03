@@ -18,6 +18,7 @@
 
 #include <chef/environment.h>
 #include <chef/platform.h>
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -130,6 +131,44 @@ char** environment_create(const char* const* parent, struct list* additional)
     }
     
     return environment;
+}
+
+int environment_contains_key_insensitive(const char* const* environment, const char* key)
+{
+    size_t keyLength;
+
+    if (environment == NULL || key == NULL || key[0] == '\0') {
+        return 0;
+    }
+
+    keyLength = strlen(key);
+    for (int i = 0; environment[i] != NULL; i++) {
+        const char* kv = environment[i];
+        if (kv == NULL) {
+            continue;
+        }
+        
+        // Compare KEY + '=' case-insensitively.
+        for (size_t j = 0; j < keyLength; ++j) {
+            char a = kv[j];
+            char b = key[j];
+            if (a == '\0') {
+                goto next;
+            }
+            if (tolower(a) != tolower(b)) {
+                goto next;
+            }
+        }
+
+        if (kv[keyLength] == '=') {
+            return 1;
+        }
+
+    next:
+        (void)0;
+    }
+
+    return 0;
 }
 
 char* environment_flatten(const char* const* environment, size_t* lengthOut)

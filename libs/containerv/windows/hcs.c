@@ -21,7 +21,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+#include <shlobj.h>
 #include <vlog.h>
+
+#include "json-util.h"
 
 #include <chef/containerv/layers.h>
 
@@ -125,52 +128,6 @@ static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
     }
 }
 
-static char* __json_escape_utf8(const char* s)
-{
-    if (s == NULL) {
-        return _strdup("");
-    }
-
-    size_t in_len = strlen(s);
-    // Worst-case expand ~6x for \u00XX
-    size_t cap = (in_len * 6) + 1;
-    char* out = calloc(cap, 1);
-    if (out == NULL) {
-        return NULL;
-    }
-
-    size_t j = 0;
-    for (size_t i = 0; i < in_len; ++i) {
-        unsigned char c = (unsigned char)s[i];
-        if (c == '"' || c == '\\') {
-            out[j++] = '\\';
-            out[j++] = (char)c;
-        } else if (c == '\b') {
-            out[j++] = '\\'; out[j++] = 'b';
-        } else if (c == '\f') {
-            out[j++] = '\\'; out[j++] = 'f';
-        } else if (c == '\n') {
-            out[j++] = '\\'; out[j++] = 'n';
-        } else if (c == '\r') {
-            out[j++] = '\\'; out[j++] = 'r';
-        } else if (c == '\t') {
-            out[j++] = '\\'; out[j++] = 't';
-        } else if (c < 0x20) {
-            // control chars as \u00XX
-            int n = snprintf(out + j, cap - j, "\\u%04x", (unsigned int)c);
-            if (n < 0) {
-                free(out);
-                return NULL;
-            }
-            j += (size_t)n;
-        } else {
-            out[j++] = (char)c;
-        }
-    }
-    out[j] = '\0';
-    return out;
-}
-
 static wchar_t* __utf8_to_wide_alloc(const char* s)
 {
     if (s == NULL) {
@@ -268,10 +225,7 @@ static char* __normalize_container_path_win_alloc(const char* p)
 }
 
 struct __mapped_dir_build_ctx {
-    char**  json;
-    size_t* cap;
-    size_t* len;
-    int     emitted;
+    json_t* arr;
     int     linux_container;
     const char* linux_container_prefix;
 };
@@ -386,45 +340,75 @@ static int __append_mapped_dir_entry(
     const char* container_path,
     int readonly)
 {
-    if (ctx == NULL || ctx->json == NULL || ctx->cap == NULL || ctx->len == NULL) {
+    if (ctx == NULL || ctx->arr == NULL || !json_is_array(ctx->arr)) {
         return -1;
     }
 
-    char* esc_host = __json_escape_utf8(host_path);
+    if (host_path == NULL || host_path[0] == '\0' || container_path == NULL) {
+        return -1;
+    }
+
+    DWORD attrs = GetFileAttributesA(host_path);
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        if (readonly) {
+            VLOG_ERROR("containerv[hcs]", "mapped dir missing (readonly): %s\n", host_path);
+            return -1;
+        }
+        // Best-effort create for writable mounts.
+        int mk = SHCreateDirectoryExA(NULL, host_path, NULL);
+        if (mk != ERROR_SUCCESS && mk != ERROR_ALREADY_EXISTS) {
+            VLOG_ERROR("containerv[hcs]", "failed to create mapped dir %s (err=%d)\n", host_path, mk);
+            return -1;
+        }
+    } else if ((attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        VLOG_ERROR("containerv[hcs]", "mapped dir host path is not a directory: %s\n", host_path);
+        return -1;
+    }
+
     char* norm_container = NULL;
     if (ctx->linux_container) {
         norm_container = __join_linux_prefix_alloc(ctx->linux_container_prefix, container_path);
     } else {
         norm_container = __normalize_container_path_win_alloc(container_path);
     }
-    if (esc_host == NULL || norm_container == NULL) {
-        free(esc_host);
+    if (norm_container == NULL) {
         free(norm_container);
         return -1;
     }
-    char* esc_container = __json_escape_utf8(norm_container);
-    free(norm_container);
-    if (esc_container == NULL) {
-        free(esc_host);
+
+    json_t* obj = json_object();
+    if (obj == NULL ||
+        containerv_json_object_set_string(obj, "HostPath", host_path) != 0 ||
+        containerv_json_object_set_string(obj, "ContainerPath", norm_container) != 0 ||
+        containerv_json_object_set_bool(obj, "ReadOnly", readonly != 0) != 0) {
+        free(norm_container);
+        json_decref(obj);
         return -1;
+    }
+    free(norm_container);
+
+    if (ctx->linux_container) {
+        const int mode = readonly ? 0555 : 0755;
+        json_t* meta = json_object();
+        if (meta == NULL ||
+            containerv_json_object_set_int(meta, "UID", 0) != 0 ||
+            containerv_json_object_set_int(meta, "GID", 0) != 0 ||
+            containerv_json_object_set_int(meta, "Mode", mode) != 0) {
+            json_decref(meta);
+            json_decref(obj);
+            return -1;
+        }
+        if (json_object_set_new(obj, "LinuxMetadata", meta) != 0) {
+            json_decref(meta);
+            json_decref(obj);
+            return -1;
+        }
     }
 
-    int rc = __appendf(
-        ctx->json,
-        ctx->cap,
-        ctx->len,
-        "%s{\"HostPath\":\"%s\",\"ContainerPath\":\"%s\",\"ReadOnly\":%s%s}",
-        ctx->emitted == 0 ? "" : ",",
-        esc_host,
-        esc_container,
-        readonly ? "true" : "false",
-        ctx->linux_container ? ",\"LinuxMetadata\":true" : "");
-    free(esc_host);
-    free(esc_container);
-    if (rc != 0) {
+    if (json_array_append_new(ctx->arr, obj) != 0) {
+        json_decref(obj);
         return -1;
     }
-    ctx->emitted++;
     return 0;
 }
 
@@ -494,97 +478,111 @@ static wchar_t* __hcs_create_container_config_schema1(
         return NULL;
     }
 
-    // Build UTF-8 JSON and convert to wide.
-    char* json = NULL;
-    size_t cap = 0;
-    size_t len = 0;
-
-    char* esc_name = __json_escape_utf8(container->id);
-    char* esc_owner = __json_escape_utf8("chef");
-    char* esc_layer_folder = (layer_folder_path != NULL) ? __json_escape_utf8(layer_folder_path) : _strdup("");
-    char* esc_hostname = __json_escape_utf8(container->hostname ? container->hostname : container->id);
-    if (esc_name == NULL || esc_owner == NULL || esc_layer_folder == NULL || esc_hostname == NULL) {
-        free(esc_name);
-        free(esc_owner);
-        free(esc_layer_folder);
-        free(esc_hostname);
-        free(json);
-        return NULL;
-    }
-
     int hv = 0;
     if (linux_container) {
-        hv = 1; // LCOW always uses a utility VM.
+        hv = 1;
     } else if (options != NULL && options->windows_container.isolation == WINDOWS_CONTAINER_ISOLATION_HYPERV) {
         hv = 1;
     }
 
-    if (__appendf(&json, &cap, &len, "{") != 0) goto fail;
-    if (__appendf(&json, &cap, &len, "\"SystemType\":\"Container\"") != 0) goto fail;
-    if (__appendf(&json, &cap, &len, ",\"Name\":\"%s\"", esc_name) != 0) goto fail;
-    if (__appendf(&json, &cap, &len, ",\"Owner\":\"%s\"", esc_owner) != 0) goto fail;
-    if (__appendf(&json, &cap, &len, ",\"HostName\":\"%s\"", esc_hostname) != 0) goto fail;
-
-    // Windows containers: HCS expects a writable layer folder plus parent layers.
-    // LCOW: LayerFolderPath/Layers are not required for UVM bring-up.
-    if (!linux_container) {
-        if (layer_folder_path == NULL || layer_folder_path[0] == '\0' || parent_layers == NULL) {
-            goto fail;
-        }
-        if (__appendf(&json, &cap, &len, ",\"LayerFolderPath\":\"%s\"", esc_layer_folder) != 0) goto fail;
+    json_t* cfg = json_object();
+    json_t* mapped = json_array();
+    json_t* layers = json_array();
+    if (cfg == NULL || mapped == NULL || layers == NULL) {
+        json_decref(cfg);
+        json_decref(mapped);
+        json_decref(layers);
+        return NULL;
     }
 
-    // Mapped directories: always mount a staging folder for file transfers, plus any HOST_DIRECTORY layers.
-    if (__appendf(&json, &cap, &len, ",\"MappedDirectories\":[") != 0) goto fail;
+    const char* hostname = (container->hostname && container->hostname[0] != '\0') ? container->hostname : container->id;
+
+    if (containerv_json_object_set_string(cfg, "SystemType", "Container") != 0 ||
+        containerv_json_object_set_string(cfg, "Name", container->id) != 0 ||
+        containerv_json_object_set_string(cfg, "Owner", "chef") != 0 ||
+        containerv_json_object_set_string(cfg, "HostName", hostname) != 0) {
+        json_decref(cfg);
+        json_decref(mapped);
+        json_decref(layers);
+        return NULL;
+    }
+
+    if (!linux_container) {
+        if (layer_folder_path == NULL || layer_folder_path[0] == '\0' || parent_layers == NULL) {
+            json_decref(cfg);
+            json_decref(mapped);
+            json_decref(layers);
+            return NULL;
+        }
+        if (containerv_json_object_set_string(cfg, "LayerFolderPath", layer_folder_path) != 0) {
+            json_decref(cfg);
+            json_decref(mapped);
+            json_decref(layers);
+            return NULL;
+        }
+    }
+
+    // Mapped directories
     {
-        // LCOW: when we map a host rootfs folder, we treat that mapping as the OCI root and
-        // rebase *all other mounts* under it so they survive pivot_root.
         const int lcow_has_rootfs = (linux_container && layer_folder_path != NULL && layer_folder_path[0] != '\0');
 
-        // Map rootfs itself first without prefixing.
         if (lcow_has_rootfs) {
             struct __mapped_dir_build_ctx rootctx = {
-                .json = &json,
-                .cap = &cap,
-                .len = &len,
-                .emitted = 0,
+                .arr = mapped,
                 .linux_container = linux_container,
                 .linux_container_prefix = NULL,
             };
-            if (__append_mapped_dir_entry(&rootctx, layer_folder_path, "/chef/rootfs", 0) != 0) goto fail;
+            if (__append_mapped_dir_entry(&rootctx, layer_folder_path, "/chef/rootfs", 0) != 0) {
+                json_decref(cfg);
+                json_decref(mapped);
+                json_decref(layers);
+                return NULL;
+            }
         }
 
         struct __mapped_dir_build_ctx mctx = {
-            .json = &json,
-            .cap = &cap,
-            .len = &len,
-            .emitted = lcow_has_rootfs ? 1 : 0,
+            .arr = mapped,
             .linux_container = linux_container,
             .linux_container_prefix = lcow_has_rootfs ? "/chef/rootfs" : NULL,
         };
 
-        // Built-in staging mount
         char stage_host[MAX_PATH];
         snprintf(stage_host, sizeof(stage_host), "%s\\staging", container->runtime_dir);
-        if (__append_mapped_dir_entry(&mctx, stage_host, linux_container ? "/chef/staging" : "C:\\chef\\staging", 0) != 0) goto fail;
+        if (__append_mapped_dir_entry(&mctx, stage_host, linux_container ? "/chef/staging" : "C:\\chef\\staging", 0) != 0) {
+            json_decref(cfg);
+            json_decref(mapped);
+            json_decref(layers);
+            return NULL;
+        }
 
-        // Host-directory layers
         if (options != NULL && options->layers != NULL) {
             if (containerv_layers_iterate(options->layers, CONTAINERV_LAYER_HOST_DIRECTORY, __mapped_dir_cb, &mctx) != 0) {
-                // If iteration fails, be conservative.
-                goto fail;
+                json_decref(cfg);
+                json_decref(mapped);
+                json_decref(layers);
+                return NULL;
             }
         }
     }
-    if (__appendf(&json, &cap, &len, "]") != 0) goto fail;
 
-    if (linux_container) {
-        if (__appendf(&json, &cap, &len, ",\"ContainerType\":\"Linux\"") != 0) goto fail;
+    if (json_object_set(cfg, "MappedDirectories", mapped) != 0) {
+        json_decref(cfg);
+        json_decref(mapped);
+        json_decref(layers);
+        return NULL;
     }
 
+    if (linux_container) {
+        if (containerv_json_object_set_string(cfg, "ContainerType", "Linux") != 0) {
+            json_decref(cfg);
+            json_decref(mapped);
+            json_decref(layers);
+            return NULL;
+        }
+    }
+
+    // Layers
     if (!linux_container) {
-        if (__appendf(&json, &cap, &len, ",\"Layers\":[") != 0) goto fail;
-        int emitted = 0;
         for (int i = 0; i < parent_layer_count; i++) {
             if (parent_layers[i] == NULL || parent_layers[i][0] == '\0') {
                 continue;
@@ -593,135 +591,109 @@ static wchar_t* __hcs_create_container_config_schema1(
             char idbuf[37];
             __derive_layer_id_from_path(parent_layers[i], idbuf);
 
-            char* esc_layer_path = __json_escape_utf8(parent_layers[i]);
-            if (esc_layer_path == NULL) {
-                goto fail;
+            json_t* lo = json_object();
+            if (lo == NULL ||
+                containerv_json_object_set_string(lo, "ID", idbuf) != 0 ||
+                containerv_json_object_set_string(lo, "Path", parent_layers[i]) != 0) {
+                json_decref(lo);
+                json_decref(cfg);
+                json_decref(mapped);
+                json_decref(layers);
+                return NULL;
             }
-
-            if (__appendf(&json, &cap, &len, "%s{\"ID\":\"%s\",\"Path\":\"%s\"}", emitted == 0 ? "" : ",", idbuf, esc_layer_path) != 0) {
-                free(esc_layer_path);
-                goto fail;
+            if (json_array_append_new(layers, lo) != 0) {
+                json_decref(lo);
+                json_decref(cfg);
+                json_decref(mapped);
+                json_decref(layers);
+                return NULL;
             }
-            free(esc_layer_path);
-            emitted++;
         }
-        if (__appendf(&json, &cap, &len, "]") != 0) goto fail;
-    } else {
-        // LCOW: no windowsfilter parent layers required for UVM bring-up.
-        if (__appendf(&json, &cap, &len, ",\"Layers\":[ ]") != 0) goto fail;
+    }
+
+    if (json_object_set(cfg, "Layers", layers) != 0) {
+        json_decref(cfg);
+        json_decref(mapped);
+        json_decref(layers);
+        return NULL;
     }
 
     // Hyper-V isolation (schema1)
-    if (hv) {
-        if (__appendf(&json, &cap, &len, ",\"HvPartition\":true") != 0) goto fail;
-        if (utilityvm_path != NULL && utilityvm_path[0] != '\0') {
-            char* esc_uvm = __json_escape_utf8(utilityvm_path);
-            if (esc_uvm == NULL) {
-                goto fail;
+    if (containerv_json_object_set_bool(cfg, "HvPartition", hv) != 0) {
+        json_decref(cfg);
+        json_decref(mapped);
+        json_decref(layers);
+        return NULL;
+    }
+
+    if (hv && utilityvm_path != NULL && utilityvm_path[0] != '\0') {
+        json_t* hvrt = json_object();
+        if (hvrt == NULL || containerv_json_object_set_string(hvrt, "ImagePath", utilityvm_path) != 0) {
+            json_decref(hvrt);
+            json_decref(cfg);
+            json_decref(mapped);
+            json_decref(layers);
+            return NULL;
+        }
+
+        if (linux_container) {
+            const char* kf = (options && options->windows_lcow.kernel_file) ? options->windows_lcow.kernel_file : NULL;
+            const char* ir = (options && options->windows_lcow.initrd_file) ? options->windows_lcow.initrd_file : NULL;
+            const char* bp = (options && options->windows_lcow.boot_parameters) ? options->windows_lcow.boot_parameters : NULL;
+
+            if (kf && kf[0] && containerv_json_object_set_string(hvrt, "LinuxKernelFile", kf) != 0) {
+                json_decref(hvrt);
+                json_decref(cfg);
+                json_decref(mapped);
+                json_decref(layers);
+                return NULL;
             }
-
-            if (!linux_container) {
-                if (__appendf(&json, &cap, &len, ",\"HvRuntime\":{\"ImagePath\":\"%s\"}", esc_uvm) != 0) {
-                    free(esc_uvm);
-                    goto fail;
-                }
-                free(esc_uvm);
-            } else {
-                // LCOW: include optional kernel/initrd/boot params under HvRuntime.
-                const char* kf = (options && options->windows_lcow.kernel_file) ? options->windows_lcow.kernel_file : NULL;
-                const char* ir = (options && options->windows_lcow.initrd_file) ? options->windows_lcow.initrd_file : NULL;
-                const char* bp = (options && options->windows_lcow.boot_parameters) ? options->windows_lcow.boot_parameters : NULL;
-
-                char* esc_kf = (kf && kf[0]) ? __json_escape_utf8(kf) : NULL;
-                char* esc_ir = (ir && ir[0]) ? __json_escape_utf8(ir) : NULL;
-                char* esc_bp = (bp && bp[0]) ? __json_escape_utf8(bp) : NULL;
-
-                if ((kf && kf[0] && esc_kf == NULL) || (ir && ir[0] && esc_ir == NULL) || (bp && bp[0] && esc_bp == NULL)) {
-                    free(esc_uvm);
-                    free(esc_kf);
-                    free(esc_ir);
-                    free(esc_bp);
-                    goto fail;
-                }
-
-                if (__appendf(&json, &cap, &len, ",\"HvRuntime\":{\"ImagePath\":\"%s\"", esc_uvm) != 0) {
-                    free(esc_uvm);
-                    free(esc_kf);
-                    free(esc_ir);
-                    free(esc_bp);
-                    goto fail;
-                }
-
-                if (esc_kf != NULL) {
-                    if (__appendf(&json, &cap, &len, ",\"LinuxKernelFile\":\"%s\"", esc_kf) != 0) {
-                        free(esc_uvm);
-                        free(esc_kf);
-                        free(esc_ir);
-                        free(esc_bp);
-                        goto fail;
-                    }
-                }
-
-                if (esc_ir != NULL) {
-                    if (__appendf(&json, &cap, &len, ",\"LinuxInitrdFile\":\"%s\"", esc_ir) != 0) {
-                        free(esc_uvm);
-                        free(esc_kf);
-                        free(esc_ir);
-                        free(esc_bp);
-                        goto fail;
-                    }
-                }
-
-                if (esc_bp != NULL) {
-                    if (__appendf(&json, &cap, &len, ",\"LinuxBootParameters\":\"%s\"", esc_bp) != 0) {
-                        free(esc_uvm);
-                        free(esc_kf);
-                        free(esc_ir);
-                        free(esc_bp);
-                        goto fail;
-                    }
-                }
-
-                if (__appendf(&json, &cap, &len, "}") != 0) {
-                    free(esc_uvm);
-                    free(esc_kf);
-                    free(esc_ir);
-                    free(esc_bp);
-                    goto fail;
-                }
-
-                free(esc_uvm);
-                free(esc_kf);
-                free(esc_ir);
-                free(esc_bp);
+            if (ir && ir[0] && containerv_json_object_set_string(hvrt, "LinuxInitrdFile", ir) != 0) {
+                json_decref(hvrt);
+                json_decref(cfg);
+                json_decref(mapped);
+                json_decref(layers);
+                return NULL;
+            }
+            if (bp && bp[0] && containerv_json_object_set_string(hvrt, "LinuxBootParameters", bp) != 0) {
+                json_decref(hvrt);
+                json_decref(cfg);
+                json_decref(mapped);
+                json_decref(layers);
+                return NULL;
             }
         }
-    } else {
-        if (__appendf(&json, &cap, &len, ",\"HvPartition\":false") != 0) goto fail;
+
+        if (json_object_set_new(cfg, "HvRuntime", hvrt) != 0) {
+            json_decref(hvrt);
+            json_decref(cfg);
+            json_decref(mapped);
+            json_decref(layers);
+            return NULL;
+        }
     }
 
-    // Termination behavior
-    if (__appendf(&json, &cap, &len, ",\"TerminateOnLastHandleClosed\":true") != 0) goto fail;
-
-    if (__appendf(&json, &cap, &len, "}") != 0) goto fail;
-
-    {
-        wchar_t* w = __utf8_to_wide_alloc(json);
-        free(esc_name);
-        free(esc_owner);
-        free(esc_layer_folder);
-        free(esc_hostname);
-        free(json);
-        return w;
+    if (containerv_json_object_set_bool(cfg, "TerminateOnLastHandleClosed", 1) != 0) {
+        json_decref(cfg);
+        json_decref(mapped);
+        json_decref(layers);
+        return NULL;
     }
 
-fail:
-    free(esc_name);
-    free(esc_owner);
-    free(esc_layer_folder);
-    free(esc_hostname);
-    free(json);
-    return NULL;
+    char* json_utf8 = NULL;
+    if (containerv_json_dumps_compact(cfg, &json_utf8) != 0) {
+        json_decref(cfg);
+        json_decref(mapped);
+        json_decref(layers);
+        return NULL;
+    }
+
+    wchar_t* w = __utf8_to_wide_alloc(json_utf8);
+    free(json_utf8);
+    json_decref(cfg);
+    json_decref(mapped);
+    json_decref(layers);
+    return w;
 }
 
 int __hcs_create_container_system(
@@ -924,68 +896,177 @@ wchar_t* __hcs_create_vm_config(
     struct containerv_container* container,
     struct containerv_options* options)
 {
-    wchar_t* config;
-    size_t config_size = 4096;  // Start with 4KB, expand if needed
-    int written;
-
     if (!container) {
         return NULL;
     }
 
-    config = calloc(config_size, sizeof(wchar_t));
-    if (!config) {
+    // Build the VM configuration JSON using Jansson.
+    unsigned int memory_mb = options ? options->vm.memory_mb : 1024;
+    unsigned int cpu_count = options ? options->vm.cpu_count : 2;
+    int with_network = (options && options->network.enable);
+
+    char vhdx_path[1024];
+    vhdx_path[0] = 0;
+    if (container->runtime_dir == NULL || container->runtime_dir[0] == '\0') {
+        return NULL;
+    }
+    snprintf(vhdx_path, sizeof(vhdx_path), "%s\\container.vhdx", container->runtime_dir);
+
+    json_t* root = json_object();
+    json_t* schema = json_object();
+    json_t* vm = json_object();
+    json_t* chipset = json_object();
+    json_t* uefi = json_object();
+    json_t* topo = json_object();
+    json_t* mem = json_object();
+    json_t* proc = json_object();
+    json_t* devices = json_object();
+    json_t* scsi = json_object();
+    json_t* scsi0 = json_object();
+    json_t* attachments = json_object();
+    json_t* disk0 = json_object();
+    if (root == NULL || schema == NULL || vm == NULL || chipset == NULL || uefi == NULL || topo == NULL || mem == NULL || proc == NULL ||
+        devices == NULL || scsi == NULL || scsi0 == NULL || attachments == NULL || disk0 == NULL) {
+        json_decref(root);
+        json_decref(schema);
+        json_decref(vm);
+        json_decref(chipset);
+        json_decref(uefi);
+        json_decref(topo);
+        json_decref(mem);
+        json_decref(proc);
+        json_decref(devices);
+        json_decref(scsi);
+        json_decref(scsi0);
+        json_decref(attachments);
+        json_decref(disk0);
         return NULL;
     }
 
-    // Create HCS configuration JSON with configurable options
-    // Use options from containerv_options for VM resources and networking
-    unsigned int memory_mb = options ? options->vm.memory_mb : 1024;
-    unsigned int cpu_count = options ? options->vm.cpu_count : 2;
-    const char* switch_name = (options && options->network.enable) ? options->network.switch_name : "";
-    
-    written = swprintf(config, config_size,
-        L"{"
-        L"\"SchemaVersion\":{\"Major\":2,\"Minor\":1},"
-        L"\"VirtualMachine\":{"
-            L"\"StopOnReset\":true,"
-            L"\"Chipset\":{\"Uefi\":{\"BootThis\":true}},"
-            L"\"ComputeTopology\":{"
-                L"\"Memory\":{\"SizeInMB\":%u},"
-                L"\"Processor\":{\"Count\":%u}"
-            L"},"
-            L"\"Devices\":{"
-                L"\"Scsi\":{"
-                    L"\"scsi0\":{"
-                        L"\"Attachments\":{"
-                            L"\"0\":{"
-                                L"\"Type\":\"VirtualDisk\","
-                                L"\"Path\":\"%hs\\\\container.vhdx\","
-                                L"\"ReadOnly\":false"
-                            L"}"
-                        L"}"
-                    L"}"
-                L"}"
-                // Network configuration added conditionally
-                L"%s"  // Network adapter JSON inserted here
-            L"}"
-        L"},"
-        L"\"ShouldTerminateOnLastHandleClosed\":true"
-        L"}",
-        memory_mb,
-        cpu_count,
-        container->runtime_dir,
-        (options && options->network.enable) ? 
-            L",\"NetworkAdapters\":{"
-                L"\"net0\":{"
-                    L"\"EndpointId\":\"\","
-                    L"\"MacAddress\":\"\""
-                L"}"
-            L"}" : L""
-    );
+    if (containerv_json_object_set_int(schema, "Major", 2) != 0 ||
+        containerv_json_object_set_int(schema, "Minor", 1) != 0 ||
+        json_object_set_new(root, "SchemaVersion", schema) != 0) {
+        json_decref(root);
+        json_decref(schema);
+        json_decref(vm);
+        json_decref(chipset);
+        json_decref(uefi);
+        json_decref(topo);
+        json_decref(mem);
+        json_decref(proc);
+        json_decref(devices);
+        json_decref(scsi);
+        json_decref(scsi0);
+        json_decref(attachments);
+        json_decref(disk0);
+        return NULL;
+    }
 
-    if (written < 0 || written >= (int)config_size) {
-        VLOG_ERROR("containerv[hcs]", "HCS config too large for buffer\n");
-        free(config);
+    if (containerv_json_object_set_bool(vm, "StopOnReset", 1) != 0) {
+        json_decref(root);
+        json_decref(vm);
+        json_decref(chipset);
+        json_decref(uefi);
+        json_decref(topo);
+        json_decref(mem);
+        json_decref(proc);
+        json_decref(devices);
+        json_decref(scsi);
+        json_decref(scsi0);
+        json_decref(attachments);
+        json_decref(disk0);
+        return NULL;
+    }
+
+    if (containerv_json_object_set_bool(uefi, "BootThis", 1) != 0 ||
+        json_object_set_new(chipset, "Uefi", uefi) != 0 ||
+        json_object_set_new(vm, "Chipset", chipset) != 0) {
+        json_decref(root);
+        json_decref(vm);
+        json_decref(chipset);
+        json_decref(uefi);
+        json_decref(topo);
+        json_decref(mem);
+        json_decref(proc);
+        json_decref(devices);
+        json_decref(scsi);
+        json_decref(scsi0);
+        json_decref(attachments);
+        json_decref(disk0);
+        return NULL;
+    }
+
+    if (containerv_json_object_set_int(mem, "SizeInMB", (json_int_t)memory_mb) != 0 ||
+        containerv_json_object_set_int(proc, "Count", (json_int_t)cpu_count) != 0 ||
+        json_object_set_new(topo, "Memory", mem) != 0 ||
+        json_object_set_new(topo, "Processor", proc) != 0 ||
+        json_object_set_new(vm, "ComputeTopology", topo) != 0) {
+        json_decref(root);
+        json_decref(vm);
+        json_decref(topo);
+        json_decref(mem);
+        json_decref(proc);
+        json_decref(devices);
+        json_decref(scsi);
+        json_decref(scsi0);
+        json_decref(attachments);
+        json_decref(disk0);
+        return NULL;
+    }
+
+    if (containerv_json_object_set_string(disk0, "Type", "VirtualDisk") != 0 ||
+        containerv_json_object_set_string(disk0, "Path", vhdx_path) != 0 ||
+        containerv_json_object_set_bool(disk0, "ReadOnly", 0) != 0 ||
+        json_object_set_new(attachments, "0", disk0) != 0 ||
+        json_object_set_new(scsi0, "Attachments", attachments) != 0 ||
+        json_object_set_new(scsi, "scsi0", scsi0) != 0 ||
+        json_object_set_new(devices, "Scsi", scsi) != 0) {
+        json_decref(root);
+        json_decref(vm);
+        json_decref(devices);
+        json_decref(scsi);
+        json_decref(scsi0);
+        json_decref(attachments);
+        json_decref(disk0);
+        return NULL;
+    }
+
+    if (with_network) {
+        json_t* nics = json_object();
+        json_t* net0 = json_object();
+        if (nics == NULL || net0 == NULL ||
+            containerv_json_object_set_string(net0, "EndpointId", "") != 0 ||
+            containerv_json_object_set_string(net0, "MacAddress", "") != 0 ||
+            json_object_set_new(nics, "net0", net0) != 0 ||
+            json_object_set_new(devices, "NetworkAdapters", nics) != 0) {
+            json_decref(nics);
+            json_decref(net0);
+            json_decref(root);
+            json_decref(vm);
+            json_decref(devices);
+            return NULL;
+        }
+    }
+
+    if (json_object_set_new(vm, "Devices", devices) != 0 ||
+        json_object_set_new(root, "VirtualMachine", vm) != 0 ||
+        containerv_json_object_set_bool(root, "ShouldTerminateOnLastHandleClosed", 1) != 0) {
+        json_decref(root);
+        json_decref(vm);
+        json_decref(devices);
+        return NULL;
+    }
+
+    char* json_utf8 = NULL;
+    if (containerv_json_dumps_compact(root, &json_utf8) != 0) {
+        json_decref(root);
+        return NULL;
+    }
+
+    wchar_t* config = __utf8_to_wide_alloc(json_utf8);
+    free(json_utf8);
+    json_decref(root);
+    if (config == NULL) {
         return NULL;
     }
 
@@ -1209,17 +1290,20 @@ int __hcs_create_process(
     HRESULT hr;
     int status = -1;
     char* json_utf8 = NULL;
-    size_t json_cap = 0;
-    size_t json_len = 0;
 
+    // Linux guests: argv array in JSON form (compact string) for OCI builder.
     char* args_json_utf8 = NULL;
-    size_t args_cap = 0;
-    size_t args_len = 0;
 
     // LCOW: optional OCI spec JSON (raw) used by Linux GCS.
     char* oci_spec_utf8 = NULL;
-    size_t oci_cap = 0;
-    size_t oci_len = 0;
+
+    // Command representations.
+    char* cmdline_utf8 = NULL;
+    char* linux_cmdline_utf8 = NULL;
+    json_t* cmd_args = NULL;
+
+    // Environment object for the guest.
+    json_t* env_obj = NULL;
 
     if (!container || !container->hcs_system || !options || !options->path) {
         return -1;
@@ -1248,13 +1332,11 @@ int __hcs_create_process(
     // Build command representation.
     // - Windows GCS uses CommandLine (string).
     // - Linux GCS supports CommandArgs (array) and treats it as an alternative to CommandLine.
-    char* esc_cmd = NULL;
     if (guest_is_windows) {
         // Build command line: path + optional argv (quoted conservatively)
-        char* cmd_utf8 = NULL;
         size_t cmd_cap = 0;
         size_t cmd_len = 0;
-        if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "%s", options->path) != 0) {
+        if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, "%s", options->path) != 0) {
             goto cleanup;
         }
 
@@ -1274,42 +1356,31 @@ int __hcs_create_process(
                 }
 
                 if (!needs_quotes) {
-                    if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, " %s", arg) != 0) {
-                        free(cmd_utf8);
+                    if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, " %s", arg) != 0) {
                         goto cleanup;
                     }
                     continue;
                 }
 
                 // Quote and escape quotes.
-                if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, " \"") != 0) {
-                    free(cmd_utf8);
+                if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, " \"") != 0) {
                     goto cleanup;
                 }
                 for (const char* p = arg; *p; ++p) {
                     if (*p == '"') {
-                        if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "\\\"") != 0) {
-                            free(cmd_utf8);
+                        if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, "\\\"") != 0) {
                             goto cleanup;
                         }
                     } else {
-                        if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "%c", *p) != 0) {
-                            free(cmd_utf8);
+                        if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, "%c", *p) != 0) {
                             goto cleanup;
                         }
                     }
                 }
-                if (__appendf(&cmd_utf8, &cmd_cap, &cmd_len, "\"") != 0) {
-                    free(cmd_utf8);
+                if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, "\"") != 0) {
                     goto cleanup;
                 }
             }
-        }
-
-        esc_cmd = __json_escape_utf8(cmd_utf8);
-        free(cmd_utf8);
-        if (esc_cmd == NULL) {
-            goto cleanup;
         }
     } else {
         const char* const* argv = options->argv;
@@ -1320,25 +1391,29 @@ int __hcs_create_process(
             argv = default_argv_buf;
         }
 
-        if (__appendf(&args_json_utf8, &args_cap, &args_len, "[") != 0) {
+        // Build a conservative CommandLine for LCOW fallback compatibility.
+        size_t cmd_cap = 0;
+        size_t cmd_len = 0;
+        if (__appendf(&linux_cmdline_utf8, &cmd_cap, &cmd_len, "%s", argv[0]) != 0) {
             goto cleanup;
         }
-
-        int first_arg = 1;
-        for (int i = 0; argv[i] != NULL; ++i) {
-            char* esc = __json_escape_utf8(argv[i]);
-            if (esc == NULL) {
+        for (int i = 1; argv[i] != NULL; ++i) {
+            if (__appendf(&linux_cmdline_utf8, &cmd_cap, &cmd_len, " %s", argv[i]) != 0) {
                 goto cleanup;
             }
-            if (__appendf(&args_json_utf8, &args_cap, &args_len, "%s\"%s\"", first_arg ? "" : ",", esc) != 0) {
-                free(esc);
-                goto cleanup;
-            }
-            free(esc);
-            first_arg = 0;
         }
 
-        if (__appendf(&args_json_utf8, &args_cap, &args_len, "]") != 0) {
+        cmd_args = json_array();
+        if (cmd_args == NULL) {
+            goto cleanup;
+        }
+        for (int i = 0; argv[i] != NULL; ++i) {
+            if (containerv_json_array_append_string(cmd_args, argv[i]) != 0) {
+                goto cleanup;
+            }
+        }
+
+        if (containerv_json_dumps_compact(cmd_args, &args_json_utf8) != 0) {
             goto cleanup;
         }
     }
@@ -1364,7 +1439,7 @@ int __hcs_create_process(
             memset(&bundle, 0, sizeof(bundle));
             if (containerv_oci_bundle_get_paths(container->runtime_dir, &bundle) == 0) {
                 (void)containerv_oci_bundle_write_config(&bundle, oci_spec_utf8);
-                containerv_oci_bundle_paths_destroy(&bundle);
+                containerv_oci_bundle_paths_delete(&bundle);
             }
         }
     }
@@ -1400,38 +1475,18 @@ int __hcs_create_process(
         }
     }
 
-    char* env_utf8 = NULL;
-    size_t env_cap = 0;
-    size_t env_len = 0;
-    if (__appendf(&env_utf8, &env_cap, &env_len, "{") != 0) {
-        free(esc_cmd);
+    env_obj = json_object();
+    if (env_obj == NULL) {
         goto cleanup;
     }
 
-    int first = 1;
     if (!has_path) {
-        char* esc_key = __json_escape_utf8("PATH");
         const char* default_path = guest_is_windows
             ? "C:\\Windows\\System32;C:\\Windows"
             : "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
-        char* esc_val = __json_escape_utf8(default_path);
-        if (esc_key == NULL || esc_val == NULL) {
-            free(esc_key);
-            free(esc_val);
-            free(env_utf8);
-            free(esc_cmd);
+        if (containerv_json_object_set_string(env_obj, "PATH", default_path) != 0) {
             goto cleanup;
         }
-        if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
-            free(esc_key);
-            free(esc_val);
-            free(env_utf8);
-            free(esc_cmd);
-            goto cleanup;
-        }
-        free(esc_key);
-        free(esc_val);
-        first = 0;
     }
 
     if (options->envv != NULL) {
@@ -1444,35 +1499,17 @@ int __hcs_create_process(
             size_t key_len = (size_t)(eq - kv);
             char* key = calloc(key_len + 1, 1);
             if (key == NULL) {
-                free(env_utf8);
-                free(esc_cmd);
                 goto cleanup;
             }
             memcpy(key, kv, key_len);
             key[key_len] = '\0';
             const char* val = eq + 1;
 
-            char* esc_key = __json_escape_utf8(key);
-            char* esc_val = __json_escape_utf8(val);
+            int set_rc = containerv_json_object_set_string(env_obj, key, val);
             free(key);
-            if (esc_key == NULL || esc_val == NULL) {
-                free(esc_key);
-                free(esc_val);
-                free(env_utf8);
-                free(esc_cmd);
+            if (set_rc != 0) {
                 goto cleanup;
             }
-
-            if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
-                free(esc_key);
-                free(esc_val);
-                free(env_utf8);
-                free(esc_cmd);
-                goto cleanup;
-            }
-            free(esc_key);
-            free(esc_val);
-            first = 0;
         }
     }
 
@@ -1485,70 +1522,22 @@ int __hcs_create_process(
             } else if (security_level >= CV_SECURITY_RESTRICTED) {
                 lvl = "restricted";
             }
-            char* esc_key = __json_escape_utf8("CHEF_CONTAINERV_SECURITY_LEVEL");
-            char* esc_val = __json_escape_utf8(lvl);
-            if (esc_key == NULL || esc_val == NULL) {
-                free(esc_key);
-                free(esc_val);
-                free(env_utf8);
-                free(esc_cmd);
+            if (containerv_json_object_set_string(env_obj, "CHEF_CONTAINERV_SECURITY_LEVEL", lvl) != 0) {
                 goto cleanup;
             }
-            if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
-                free(esc_key);
-                free(esc_val);
-                free(env_utf8);
-                free(esc_cmd);
-                goto cleanup;
-            }
-            free(esc_key);
-            free(esc_val);
-            first = 0;
         }
 
         // Windows-specific policy metadata only applies to Windows guests.
         if (guest_is_windows && !has_policy_appc) {
-            char* esc_key = __json_escape_utf8("CHEF_CONTAINERV_WIN_USE_APPCONTAINER");
-            char* esc_val = __json_escape_utf8(win_use_app_container ? "1" : "0");
-            if (esc_key == NULL || esc_val == NULL) {
-                free(esc_key);
-                free(esc_val);
-                free(env_utf8);
-                free(esc_cmd);
+            if (containerv_json_object_set_string(env_obj, "CHEF_CONTAINERV_WIN_USE_APPCONTAINER", win_use_app_container ? "1" : "0") != 0) {
                 goto cleanup;
             }
-            if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
-                free(esc_key);
-                free(esc_val);
-                free(env_utf8);
-                free(esc_cmd);
-                goto cleanup;
-            }
-            free(esc_key);
-            free(esc_val);
-            first = 0;
         }
 
         if (guest_is_windows && !has_policy_integrity && win_integrity_level != NULL && win_integrity_level[0] != '\0') {
-            char* esc_key = __json_escape_utf8("CHEF_CONTAINERV_WIN_INTEGRITY_LEVEL");
-            char* esc_val = __json_escape_utf8(win_integrity_level);
-            if (esc_key == NULL || esc_val == NULL) {
-                free(esc_key);
-                free(esc_val);
-                free(env_utf8);
-                free(esc_cmd);
+            if (containerv_json_object_set_string(env_obj, "CHEF_CONTAINERV_WIN_INTEGRITY_LEVEL", win_integrity_level) != 0) {
                 goto cleanup;
             }
-            if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
-                free(esc_key);
-                free(esc_val);
-                free(env_utf8);
-                free(esc_cmd);
-                goto cleanup;
-            }
-            free(esc_key);
-            free(esc_val);
-            first = 0;
         }
 
         if (guest_is_windows && !has_policy_caps && win_capability_sids != NULL && win_capability_sid_count > 0) {
@@ -1562,42 +1551,19 @@ int __hcs_create_process(
                 }
                 if (__appendf(&caps, &caps_cap, &caps_len, "%s%s", (caps_len == 0) ? "" : ",", win_capability_sids[i]) != 0) {
                     free(caps);
-                    free(env_utf8);
-                    free(esc_cmd);
                     goto cleanup;
                 }
             }
             if (caps != NULL && caps[0] != '\0') {
-                char* esc_key = __json_escape_utf8("CHEF_CONTAINERV_WIN_CAPABILITY_SIDS");
-                char* esc_val = __json_escape_utf8(caps);
+                int set_rc = containerv_json_object_set_string(env_obj, "CHEF_CONTAINERV_WIN_CAPABILITY_SIDS", caps);
                 free(caps);
-                if (esc_key == NULL || esc_val == NULL) {
-                    free(esc_key);
-                    free(esc_val);
-                    free(env_utf8);
-                    free(esc_cmd);
+                if (set_rc != 0) {
                     goto cleanup;
                 }
-                if (__appendf(&env_utf8, &env_cap, &env_len, "%s\"%s\":\"%s\"", first ? "" : ",", esc_key, esc_val) != 0) {
-                    free(esc_key);
-                    free(esc_val);
-                    free(env_utf8);
-                    free(esc_cmd);
-                    goto cleanup;
-                }
-                free(esc_key);
-                free(esc_val);
-                first = 0;
             } else {
                 free(caps);
             }
         }
-    }
-
-    if (__appendf(&env_utf8, &env_cap, &env_len, "}") != 0) {
-        free(env_utf8);
-        free(esc_cmd);
-        goto cleanup;
     }
 
     int try_security_fields = 0;
@@ -1607,7 +1573,8 @@ int __hcs_create_process(
         }
     }
 
-    for (int attempt = 0; attempt < 2; attempt++) {
+    int lcow_fallback = 0;
+    for (int attempt = 0; attempt < 3; attempt++) {
         int include_security = (attempt == 0) && try_security_fields;
 
         // (Re)create operation handle
@@ -1623,99 +1590,83 @@ int __hcs_create_process(
 
         free(json_utf8);
         json_utf8 = NULL;
-        json_cap = 0;
-        json_len = 0;
 
-        // Build process configuration JSON (UTF-8) then convert to wide.
         const char* working_dir = guest_is_windows ? "C:\\\\" : "/";
-        const char* emulate_console = guest_is_windows ? "true" : "false";
-        const char* create_in_uvm = (!guest_is_windows && container->hcs_is_vm == 0 && oci_spec_utf8 == NULL) ? "true" : "false";
+        const int emulate_console = guest_is_windows ? 1 : 0;
+        const int lcow_use_oci = (!guest_is_windows && container->hcs_is_vm == 0 && oci_spec_utf8 != NULL && !lcow_fallback);
+        const int lcow_use_command_args = (!guest_is_windows && !lcow_fallback);
+        const int create_in_uvm = (!guest_is_windows && container->hcs_is_vm == 0 && !lcow_use_oci) ? 1 : 0;
+
+        json_t* proc_cfg = json_object();
+        if (proc_cfg == NULL) {
+            goto cleanup;
+        }
+
         if (guest_is_windows) {
-            if (__appendf(
-                    &json_utf8,
-                    &json_cap,
-                    &json_len,
-                    "{"
-                    "\"CommandLine\":\"%s\"," 
-                    "\"WorkingDirectory\":\"%s\"," 
-                    "%s"
-                    "\"Environment\":%s,"
-                    "\"EmulateConsole\":%s,"
-                "\"CreateStdInPipe\":%s,"
-                "\"CreateStdOutPipe\":%s,"
-                "\"CreateStdErrPipe\":%s"
-                    "}",
-                    esc_cmd,
-                    working_dir,
-                    (guest_is_windows && include_security) ? "\"User\":\"ContainerUser\"," : "",
-                env_utf8,
-                emulate_console,
-                options->create_stdio_pipes ? "true" : "false",
-                options->create_stdio_pipes ? "true" : "false",
-                options->create_stdio_pipes ? "true" : "false") != 0) {
+            if (cmdline_utf8 == NULL) {
+                json_decref(proc_cfg);
                 goto cleanup;
+            }
+            if (containerv_json_object_set_string(proc_cfg, "CommandLine", cmdline_utf8) != 0 ||
+                containerv_json_object_set_string(proc_cfg, "WorkingDirectory", working_dir) != 0 ||
+                json_object_set(proc_cfg, "Environment", env_obj) != 0 ||
+                containerv_json_object_set_bool(proc_cfg, "EmulateConsole", emulate_console) != 0 ||
+                containerv_json_object_set_bool(proc_cfg, "CreateStdInPipe", options->create_stdio_pipes != 0) != 0 ||
+                containerv_json_object_set_bool(proc_cfg, "CreateStdOutPipe", options->create_stdio_pipes != 0) != 0 ||
+                containerv_json_object_set_bool(proc_cfg, "CreateStdErrPipe", options->create_stdio_pipes != 0) != 0) {
+                json_decref(proc_cfg);
+                goto cleanup;
+            }
+            if (include_security) {
+                if (containerv_json_object_set_string(proc_cfg, "User", "ContainerUser") != 0) {
+                    json_decref(proc_cfg);
+                    goto cleanup;
+                }
             }
         } else {
-            // Linux guest: prefer CommandArgs, and include OCISpecification for LCOW when available.
-            if (__appendf(
-                    &json_utf8,
-                    &json_cap,
-                    &json_len,
-                    "{"
-                    "\"CommandArgs\":%s,"
-                    "\"WorkingDirectory\":\"%s\"," 
-                    "\"CreateInUtilityVm\":%s,"
-                    "\"Environment\":%s,"
-                    "\"EmulateConsole\":%s,"
-                "\"CreateStdInPipe\":%s,"
-                "\"CreateStdOutPipe\":%s,"
-                "\"CreateStdErrPipe\":%s"
-                    "}",
-                    (args_json_utf8 != NULL) ? args_json_utf8 : "[]",
-                    working_dir,
-                create_in_uvm,
-                env_utf8,
-                emulate_console,
-                options->create_stdio_pipes ? "true" : "false",
-                options->create_stdio_pipes ? "true" : "false",
-                options->create_stdio_pipes ? "true" : "false") != 0) {
+            if (lcow_use_command_args && cmd_args == NULL) {
+                json_decref(proc_cfg);
                 goto cleanup;
             }
 
-            // If we emitted the OCISpecification key, rebuild with the raw JSON value.
-            if (oci_spec_utf8 != NULL) {
-                free(json_utf8);
-                json_utf8 = NULL;
-                json_cap = 0;
-                json_len = 0;
+            if ((lcow_use_command_args && json_object_set(proc_cfg, "CommandArgs", cmd_args) != 0) ||
+                (!lcow_use_command_args && linux_cmdline_utf8 && containerv_json_object_set_string(proc_cfg, "CommandLine", linux_cmdline_utf8) != 0) ||
+                containerv_json_object_set_string(proc_cfg, "WorkingDirectory", working_dir) != 0 ||
+                containerv_json_object_set_bool(proc_cfg, "CreateInUtilityVm", create_in_uvm) != 0 ||
+                json_object_set(proc_cfg, "Environment", env_obj) != 0 ||
+                containerv_json_object_set_bool(proc_cfg, "EmulateConsole", emulate_console) != 0 ||
+                containerv_json_object_set_bool(proc_cfg, "CreateStdInPipe", options->create_stdio_pipes != 0) != 0 ||
+                containerv_json_object_set_bool(proc_cfg, "CreateStdOutPipe", options->create_stdio_pipes != 0) != 0 ||
+                containerv_json_object_set_bool(proc_cfg, "CreateStdErrPipe", options->create_stdio_pipes != 0) != 0) {
+                json_decref(proc_cfg);
+                goto cleanup;
+            }
 
-                if (__appendf(
-                        &json_utf8,
-                        &json_cap,
-                        &json_len,
-                        "{"
-                        "\"CommandArgs\":%s,"
-                        "\"WorkingDirectory\":\"%s\"," 
-                        "\"CreateInUtilityVm\":false,"
-                        "\"OCISpecification\":%s,"
-                        "\"Environment\":%s,"
-                        "\"EmulateConsole\":%s,"
-                        "\"CreateStdInPipe\":%s,"
-                        "\"CreateStdOutPipe\":%s,"
-                        "\"CreateStdErrPipe\":%s"
-                        "}",
-                        (args_json_utf8 != NULL) ? args_json_utf8 : "[]",
-                        working_dir,
-                        oci_spec_utf8,
-                        env_utf8,
-                        emulate_console,
-                        options->create_stdio_pipes ? "true" : "false",
-                        options->create_stdio_pipes ? "true" : "false",
-                        options->create_stdio_pipes ? "true" : "false") != 0) {
+            if (lcow_use_oci) {
+                json_error_t jerr;
+                json_t* oci = json_loads(oci_spec_utf8, 0, &jerr);
+                if (oci == NULL) {
+                    json_decref(proc_cfg);
+                    goto cleanup;
+                }
+                if (json_object_set_new(proc_cfg, "OCISpecification", oci) != 0) {
+                    json_decref(oci);
+                    json_decref(proc_cfg);
+                    goto cleanup;
+                }
+                if (containerv_json_object_set_bool(proc_cfg, "CreateInUtilityVm", 0) != 0) {
+                    json_decref(proc_cfg);
                     goto cleanup;
                 }
             }
         }
+
+        if (containerv_json_dumps_compact(proc_cfg, &json_utf8) != 0) {
+            json_decref(proc_cfg);
+            goto cleanup;
+        }
+
+        json_decref(proc_cfg);
 
         if (process_config) {
             free(process_config);
@@ -1774,6 +1725,12 @@ int __hcs_create_process(
                 }
                 process = NULL;
 
+                if (!guest_is_windows && oci_spec_utf8 != NULL && !lcow_fallback) {
+                    VLOG_WARNING("containerv[hcs]", "LCOW process create rejected OCISpecification (hr=0x%lx); retrying without it\n", whr);
+                    lcow_fallback = 1;
+                    continue;
+                }
+
                 if (include_security) {
                     VLOG_WARNING("containerv[hcs]", "process create wait rejected security fields (hr=0x%lx); retrying without them\n", whr);
                     continue;
@@ -1817,17 +1774,18 @@ int __hcs_create_process(
         break;
     }
 
-    free(env_utf8);
-    env_utf8 = NULL;
-    free(esc_cmd);
-    esc_cmd = NULL;
-
 cleanup:
     free(json_utf8);
-    free(env_utf8);
-    free(esc_cmd);
     free(args_json_utf8);
     free(oci_spec_utf8);
+    free(cmdline_utf8);
+    free(linux_cmdline_utf8);
+    if (cmd_args) {
+        json_decref(cmd_args);
+    }
+    if (env_obj) {
+        json_decref(env_obj);
+    }
     if (process_config) {
         free(process_config);
     }
