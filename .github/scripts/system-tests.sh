@@ -47,7 +47,7 @@ dump_seccomp_logs() {
             echo "Seccomp denials found in kernel log:"
             echo "$journal_output"
         else
-            echo "No seccomp denials found in kernel log since $build_start_time"
+            echo "No seccomp denials found in kernel log since '$build_start_time'"
         fi
     # Fall back to dmesg -T if journalctl is not available
     elif command -v dmesg >/dev/null 2>&1; then
