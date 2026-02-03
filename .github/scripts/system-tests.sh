@@ -32,6 +32,10 @@ if [[ "${CONTAINERV_SECCOMP_LOG:-0}" == "1" ]]; then
     echo "      Denied syscalls will be logged to audit/kernel logs instead of just returning EPERM"
 fi
 
+# Capture timestamp BEFORE starting cvd to catch all seccomp events
+# This ensures we capture violations that occur during container initialization
+build_start_time="$(date '+%Y-%m-%d %H:%M:%S')"
+
 # Helper to dump seccomp denial logs
 dump_seccomp_logs() {
     # Skip if logging is not enabled or no start time recorded
@@ -54,6 +58,7 @@ dump_seccomp_logs() {
 
     echo ""
     echo "=== Checking for seccomp denials since build start ==="
+    echo "Start time: $build_start_time"
     
     # Always log seccomp logging status first
     echo "Seccomp logging status:"
@@ -121,10 +126,15 @@ dump_seccomp_logs() {
     if [[ "$found_any" -eq 0 ]]; then
         echo "No seccomp denials found in any available logs since '$build_start_time'"
         echo ""
-        echo "This is expected if:"
-        echo "  1. The seccomp policy allows all syscalls the container needs"
-        echo "  2. SCMP_ACT_LOG is working correctly (logs denials but allows them)"
-        echo "  3. The build completed successfully without syscall violations"
+        if [[ "${CONTAINERV_SECCOMP_LOG:-0}" == "1" ]]; then
+            echo "Note: SCMP_ACT_LOG mode allows all syscalls (permissive logging mode)."
+            echo "      No violations means the policy would work correctly in enforcement mode."
+        else
+            echo "This could mean:"
+            echo "  1. The seccomp policy allows all syscalls the container needs (good!)"
+            echo "  2. Violations occurred but weren't logged (check auditd configuration)"
+            echo "  3. Violations occurred outside the timestamp window"
+        fi
     fi
 
     echo "=== End of seccomp log check ==="
@@ -195,9 +205,6 @@ cp -a "$root_dir/examples/recipes/hello.yaml" "$work_dir/hello.yaml"
 cp -a "$root_dir/examples/recipes/hello-world" "$work_dir/hello-world"
 
 pushd "$work_dir" >/dev/null
-
-# Capture timestamp before build for seccomp log filtering
-build_start_time="$(date '+%Y-%m-%d %H:%M:%S')"
 
 # Must run from the recipe directory so relative paths resolve.
 # Also keep a timeout to avoid wedging CI if a container backend hangs.
