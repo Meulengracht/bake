@@ -14,7 +14,7 @@ endmacro()
 
 if (WIN32)
     add_sources(
-        empty.c
+        lcow.c
     )
 elseif(UNIX)
     add_sources(

@@ -1,0 +1,40 @@
+project: 
+  name: linux-base
+  summary: The linux OS base
+  description: |
+    This is the base OS linux ingredient, which is used as the base for all
+    other chef packages built for linux.
+
+    Note for Windows/LCOW:
+    - This recipe produces a Linux rootfs directory for LCOW rootfs mapping.
+    - LCOW UVM assets (CHEF_LCOW_UVM_IMAGE_PATH + optional kernel/initrd/boot params)
+      are separate artifacts and are not produced here.
+  author: Philip Meulengracht
+  email: the_meulengracht@hotmail.com
+  version: 1.0.0
+  license: MIT
+
+environment:
+  host:
+    packages:
+      - ca-certificates
+      - wget
+      - tar
+      - e2fsprogs
+      - qemu-utils
+
+recipes:
+  - name: base
+    source:
+      type: path
+      path: ./
+      script: |
+        if build.subsystem.platform_host() == "linux" then
+          args = build.paths.install()
+          args = args .. " " .. build.subsystem.arch_target()
+          build.shell("construct.sh", args)
+        end
+
+packs:
+- name: linux-base
+  type: os

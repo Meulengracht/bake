@@ -52,6 +52,12 @@ enum status {
     INVALID_CONTAINER_ID,
 }
 
+enum guest_type {
+    // On linux, this is the only valid type
+    LINUX,
+    WINDOWS
+}
+
 struct policy_plugin {
     // Examples: "build", "network"
     string name;
@@ -72,13 +78,26 @@ struct network_options {
     string dns;
 }
 
-struct create_parameters {
-    string             id;
-    layer_descriptor[] layers;
-    policy_spec        policy;
-    network_options    network;
+struct windows_guest_options {
     // Flattened list of WCOW parent layer paths (double-NUL terminated).
-    uint8[]            wcow_parent_layers;
+    uint8[] wcow_parent_layers;
+
+    // LCOW UVM asset retrieval/configuration.
+    // Provide either a pre-extracted directory path or a URL to an archive.
+    string lcow_uvm_image_path;
+    string lcow_uvm_url;
+    string lcow_kernel_file;
+    string lcow_initrd_file;
+    string lcow_boot_parameters;
+}
+
+struct create_parameters {
+    string                id;
+    guest_type            gtype;
+    layer_descriptor[]    layers;
+    policy_spec           policy;
+    network_options       network;
+    windows_guest_options guest_windows;
 }
 
 struct user_descriptor {

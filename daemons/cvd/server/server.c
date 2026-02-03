@@ -20,6 +20,7 @@
 #include <chef/containerv.h>
 #include <chef/containerv/layers.h>
 #include <chef/containerv/policy.h>
+#include <chef/containerv/disk/lcow.h>
 #include <chef/dirs.h>
 #include <chef/package.h>
 #include <chef/platform.h>
@@ -306,6 +307,7 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
     int                              status;
     char**                           wcow_parent_layers = NULL;
     int                              wcow_parent_layer_count = 0;
+    char*                            lcow_uvm_resolved = NULL;
     VLOG_DEBUG("cvd", "__create_hyperv_container()\n");
     
     if (__windows_hcs_has_disallowed_layers(params)) {
@@ -314,28 +316,43 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
     }
 
     // WCOW vs LCOW selection for the HCS container backend.
-    // Default: WCOW. Set `CHEF_WINDOWS_CONTAINER_TYPE=linux` for LCOW.
-    const char* win_ct = getenv("CHEF_WINDOWS_CONTAINER_TYPE");
-    const int is_lcow = (win_ct != NULL && strcmp(win_ct, "linux") == 0);
+    const int is_lcow = params->gtype == CHEF_GUEST_TYPE_LINUX;
     containerv_options_set_windows_container_type(
         containerParams->opts,
-        is_lcow ? CV_WIN_CONTAINER_TYPE_LINUX : CV_WIN_CONTAINER_TYPE_WINDOWS);
+        is_lcow ? CV_WIN_CONTAINER_TYPE_LINUX 
+                    : CV_WIN_CONTAINER_TYPE_WINDOWS
+    );
 
-    // Default to Hyper-V isolation (true Hyper-V containers). Override with `CHEF_WINDOWS_ISOLATION=process`.
-    const char* win_iso = getenv("CHEF_WINDOWS_ISOLATION");
-    if (win_iso != NULL && strcmp(win_iso, "process") == 0) {
-        containerv_options_set_windows_container_isolation(containerParams->opts, CV_WIN_CONTAINER_ISOLATION_PROCESS);
-    } else {
-        containerv_options_set_windows_container_isolation(containerParams->opts, CV_WIN_CONTAINER_ISOLATION_HYPERV);
-    }
+    // Default to Hyper-V isolation (true Hyper-V containers).
+    containerv_options_set_windows_container_isolation(
+        containerParams->opts, 
+        CV_WIN_CONTAINER_ISOLATION_HYPERV
+    );
 
     if (is_lcow) {
         // LCOW requires HvRuntime settings for the Linux utility VM.
         // These values are passed through to schema1 HvRuntime.
-        const char* uvm_image = getenv("CHEF_LCOW_UVM_IMAGE_PATH");
-        const char* kernel = getenv("CHEF_LCOW_KERNEL_FILE");
-        const char* initrd = getenv("CHEF_LCOW_INITRD_FILE");
-        const char* boot = getenv("CHEF_LCOW_BOOT_PARAMETERS");
+        const char* uvm_image = params->guest_windows.lcow_uvm_image_path;
+        const char* uvm_url = params->guest_windows.lcow_uvm_url;
+        const char* kernel = params->guest_windows.lcow_kernel_file;
+        const char* initrd = params->guest_windows.lcow_initrd_file;
+        const char* boot = params->guest_windows.lcow_boot_parameters;
+
+        if ((uvm_image == NULL || uvm_image[0] == '\0') && uvm_url != NULL && uvm_url[0] != '\0') {
+            struct containerv_disk_lcow_uvm_config cfg = { .uvm_url = uvm_url };
+            if (containerv_disk_lcow_resolve_uvm(&cfg, &lcow_uvm_resolved) != 0) {
+                VLOG_ERROR("cvd", "cvd_create: failed to resolve LCOW UVM assets\n");
+                free(lcow_uvm_resolved);
+                return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+            }
+            uvm_image = lcow_uvm_resolved;
+        }
+
+        if (uvm_image == NULL || uvm_image[0] == '\0') {
+            VLOG_ERROR("cvd", "cvd_create: LCOW requires UVM image path or URL in guest_windows options\n");
+            free(lcow_uvm_resolved);
+            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+        }
         containerv_options_set_windows_lcow_hvruntime(containerParams->opts, uvm_image, kernel, initrd, boot);
     }
     
@@ -344,6 +361,7 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
         wcow_parent_layers = environment_unflatten((const char*)params->wcow_parent_layers);
         if (wcow_parent_layers == NULL) {
             VLOG_ERROR("cvd", "cvd_create: failed to parse wcow_parent_layers\n");
+            free(lcow_uvm_resolved);
             return CHEF_STATUS_INTERNAL_ERROR;
         }
 
@@ -352,18 +370,25 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
         }
 
         containerv_options_set_windows_wcow_parent_layers(
-            opts,
+            containerParams->opts,
             (const char* const*)wcow_parent_layers,
             wcow_parent_layer_count);
     }
     
     // Compose layers into final rootfs
-    status = containerv_layers_compose_with_options(cvLayers, cvLayerCount, cvdID, opts, &layerContext);
+    status = containerv_layers_compose_with_options(
+        cvLayers,
+        cvLayerCount,
+        cvdID,
+        containerParams->opts,
+        &layerContext
+    );
     free(cvLayers);
 
     if (status != 0) {
         VLOG_ERROR("cvd", "cvd_create: failed to compose layers\n");
         environment_destroy(wcow_parent_layers);
+        free(lcow_uvm_resolved);
         return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
 
@@ -412,8 +437,10 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
     status = containerv_create(cvdID, opts, &cvContainer);
     if (status) {
         VLOG_ERROR("cvd", "failed to start the container\n");
+        free(lcow_uvm_resolved);
         return __chef_status_from_errno();
     }
+    free(lcow_uvm_resolved);
     return CHEF_STATUS_SUCCESS;
 }
 #endif
