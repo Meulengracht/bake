@@ -311,11 +311,6 @@ extern int windows_create_secure_process_ex(
 extern void containerv_generate_id(char* buffer, size_t length);
 
 /**
- * @brief Create runtime directory for container
- */
-extern char* containerv_create_runtime_dir(void);
-
-/**
  * @brief Internal spawn implementation
  */
 struct __containerv_spawn_options {
