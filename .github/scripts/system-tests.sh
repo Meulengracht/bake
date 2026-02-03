@@ -111,7 +111,8 @@ dump_seccomp_logs() {
     if command -v dmesg >/dev/null 2>&1; then
         local dmesg_output
         # Match actual seccomp violations (audit type=1326 only, no timestamp filter for debugging)
-        dmesg_output="$(sudo -n dmesg 2>/dev/null | grep 'type=1326' || true)"
+        # Keep -T for human-readable timestamps
+        dmesg_output="$(sudo -n dmesg -T 2>/dev/null | grep 'type=1326' || true)"
 
         if [[ -n "$dmesg_output" ]]; then
             echo "Seccomp denials found in dmesg:"
