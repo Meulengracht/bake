@@ -33,8 +33,19 @@ dump_seccomp_logs() {
     echo ""
     echo "=== Checking for seccomp denials since build start ==="
 
-    # Try journalctl first (preferred, more reliable timestamps)
-    if command -v journalctl >/dev/null 2>&1; then
+    # Try ausearch first (most detailed, structured output for audit events)
+    if command -v ausearch >/dev/null 2>&1; then
+        local audit_output
+        audit_output="$(sudo -n ausearch -m SECCOMP -ts "$build_start_time" 2>/dev/null || true)"
+
+        if [[ -n "$audit_output" ]]; then
+            echo "Seccomp denials found in audit log:"
+            echo "$audit_output"
+        else
+            echo "No seccomp denials found in audit log since '$build_start_time'"
+        fi
+    # Try journalctl (preferred for kernel logs, reliable timestamps)
+    elif command -v journalctl >/dev/null 2>&1; then
         local journal_output
         journal_output="$(sudo -n journalctl -k --since "$build_start_time" 2>/dev/null | grep -i seccomp || true)"
 
@@ -56,7 +67,7 @@ dump_seccomp_logs() {
             echo "No seccomp denials found in dmesg"
         fi
     else
-        echo "Neither journalctl nor dmesg available for seccomp log check"
+        echo "No log tools available for seccomp log check"
     fi
     echo "=== End of seccomp log check ==="
 }
