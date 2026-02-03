@@ -88,6 +88,8 @@ dump_seccomp_logs() {
             echo "$audit_output"
             found_any=1
         fi
+    else
+        echo "Note: ausearch not available (auditd package may need to be installed)"
     fi
 
     # Also check journalctl (kernel logs with reliable timestamps)
@@ -118,6 +120,11 @@ dump_seccomp_logs() {
 
     if [[ "$found_any" -eq 0 ]]; then
         echo "No seccomp denials found in any available logs since '$build_start_time'"
+        echo ""
+        echo "This is expected if:"
+        echo "  1. The seccomp policy allows all syscalls the container needs"
+        echo "  2. SCMP_ACT_LOG is working correctly (logs denials but allows them)"
+        echo "  3. The build completed successfully without syscall violations"
     fi
 
     echo "=== End of seccomp log check ==="
