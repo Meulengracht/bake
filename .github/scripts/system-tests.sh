@@ -77,7 +77,11 @@ dump_seccomp_logs() {
     # Try ausearch first (most detailed, structured output for audit events)
     if command -v ausearch >/dev/null 2>&1; then
         local audit_output
-        audit_output="$(sudo -n ausearch -m SECCOMP -ts "$build_start_time" 2>/dev/null || true)"
+        # ausearch requires date and time as separate arguments (not a single quoted string)
+        # Split "YYYY-MM-DD HH:MM:SS" into separate date and time arguments
+        local search_date="${build_start_time% *}"  # Everything before the last space (date)
+        local search_time="${build_start_time#* }"  # Everything after the first space (time)
+        audit_output="$(sudo -n ausearch -m SECCOMP -ts $search_date $search_time 2>/dev/null || true)"
 
         if [[ -n "$audit_output" ]]; then
             echo "Seccomp denials found in audit log:"
