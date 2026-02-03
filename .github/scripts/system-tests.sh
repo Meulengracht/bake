@@ -32,7 +32,7 @@ dump_seccomp_logs() {
 
     echo ""
     echo "=== Checking for seccomp denials since build start ==="
-    
+
     # Try journalctl first (preferred, more reliable timestamps)
     if command -v journalctl >/dev/null 2>&1; then
         local journal_output
@@ -42,7 +42,7 @@ dump_seccomp_logs() {
             # Use sudo -n for non-root access (same pattern as cvd startup)
             journal_output="$(sudo -n journalctl -k --since "$build_start_time" 2>/dev/null | grep -i seccomp || true)"
         fi
-        
+
         if [[ -n "$journal_output" ]]; then
             echo "Seccomp denials found in kernel log:"
             echo "$journal_output"
@@ -57,7 +57,7 @@ dump_seccomp_logs() {
         else
             dmesg_output="$(sudo -n dmesg -T 2>/dev/null | grep -i seccomp || true)"
         fi
-        
+
         if [[ -n "$dmesg_output" ]]; then
             echo "Seccomp denials found in dmesg (filtered, check timestamps manually):"
             echo "$dmesg_output"
@@ -91,7 +91,7 @@ fi
 cleanup() {
     # Dump seccomp logs if build failed
     dump_seccomp_logs
-    
+
     if [[ -n "${cvd_pid:-}" ]]; then
         if [[ "$cvd_via_sudo" -eq 1 ]]; then
             sudo -n kill "$cvd_pid" >/dev/null 2>&1 || true
