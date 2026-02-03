@@ -133,6 +133,35 @@ The policy system uses:
 
 This provides strong security boundaries without the complexity of traditional mandatory access control systems like SELinux or AppArmor.
 
+### Seccomp Logging and Debugging
+
+By default, the seccomp filter uses `SCMP_ACT_ERRNO(EPERM)`, which silently denies unauthorized syscalls by returning an error code. This is the most secure option for production environments as it doesn't generate audit logs or kernel messages that could reveal information about attempted syscalls.
+
+For debugging and troubleshooting seccomp-related issues, you can enable logging mode by setting the `CONTAINERV_SECCOMP_LOG` environment variable:
+
+```bash
+# Enable seccomp logging (for debugging only)
+export CONTAINERV_SECCOMP_LOG=1
+
+# Start cvd or run bake
+cvd -vv
+```
+
+When logging is enabled:
+- The seccomp filter uses `SCMP_ACT_LOG` instead of `SCMP_ACT_ERRNO`
+- Denied syscalls are logged to the kernel audit system (if auditd is running) or kernel log
+- Logs can be viewed with:
+  - `ausearch -m SECCOMP` (if auditd is running)
+  - `journalctl -k | grep seccomp`
+  - `dmesg | grep seccomp`
+
+**Important**: Seccomp logging should only be enabled for debugging purposes, as it can:
+- Generate significant log volume in production environments
+- Potentially leak information about application behavior
+- Impact performance slightly due to logging overhead
+
+**Note**: The `SCMP_ACT_LOG` mode allows all syscalls to proceed normally after logging violations. This means syscalls that would normally be blocked are allowed to execute, making this mode unsuitable for security enforcement. Use logging mode only in development/debugging environments to discover which syscalls your application needs, then disable it for production use.
+
 ## API Overview
 
 The API is platform-agnostic and works consistently across Linux and Windows:

@@ -24,9 +24,31 @@ cvd_via_sudo=0
 build_start_time=""
 build_failed=0
 
-# Helper to dump seccomp denial logs on build failure
+# Enable seccomp logging if requested for debugging
+# This can be set to "1" when investigating seccomp-related build failures
+# export CONTAINERV_SECCOMP_LOG=1
+if [[ "${CONTAINERV_SECCOMP_LOG:-0}" == "1" ]]; then
+    echo "NOTE: Seccomp logging is enabled (CONTAINERV_SECCOMP_LOG=1)"
+    echo "      Denied syscalls will be logged to audit/kernel logs instead of just returning EPERM"
+fi
+
+# Helper to dump seccomp denial logs
 dump_seccomp_logs() {
-    if [[ "$build_failed" -eq 0 || -z "$build_start_time" ]]; then
+    # Skip if logging is not enabled or no start time recorded
+    if [[ -z "$build_start_time" ]]; then
+        return 0
+    fi
+    
+    # Check if seccomp logging was enabled
+    if [[ "${CONTAINERV_SECCOMP_LOG:-0}" != "1" ]]; then
+        # Only show this message if build failed
+        if [[ "$build_failed" -eq 1 ]]; then
+            echo ""
+            echo "=== Seccomp logging disabled ==="
+            echo "NOTE: Seccomp logging is disabled. Set CONTAINERV_SECCOMP_LOG=1 to enable."
+            echo "      Without logging enabled, seccomp violations return EPERM silently."
+            echo ""
+        fi
         return 0
     fi
 
@@ -106,7 +128,8 @@ else
     fi
 
     # Capture the real cvd PID from the privileged shell.
-    cvd_pid="$(sudo -n bash -c "\"$cvd_bin\" -vv >\"$cvd_log\" 2>&1 & echo \$!")" || {
+    # Pass through CONTAINERV_SECCOMP_LOG if set for debugging
+    cvd_pid="$(sudo -n bash -c "CONTAINERV_SECCOMP_LOG=${CONTAINERV_SECCOMP_LOG:-0} \"$cvd_bin\" -vv >\"$cvd_log\" 2>&1 & echo \$!")" || {
         echo "ERROR: failed to start cvd via sudo (is passwordless sudo available in CI?)" >&2
         exit 1
     }
@@ -114,7 +137,7 @@ else
 fi
 
 cleanup() {
-    # Dump seccomp logs if build failed
+    # Check for seccomp violations (if logging enabled)
     dump_seccomp_logs
 
     if [[ -n "${cvd_pid:-}" ]]; then

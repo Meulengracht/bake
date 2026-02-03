@@ -61,6 +61,8 @@ jobs:
 
     - name: System tests (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
+      env:
+        CONTAINERV_SECCOMP_LOG: 1
       run: bash .github/scripts/system-tests.sh
 
     - name: System tests (Windows)
