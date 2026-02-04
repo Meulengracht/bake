@@ -17,6 +17,7 @@
  */
 
 #include <chef/dirs.h>
+#include <chef/platform.h>
 #include <errno.h>
 #include <gracht/link/socket.h>
 #include <gracht/server.h>
@@ -41,7 +42,7 @@ static gracht_server_t* g_server       = NULL;
 #include <afunix.h>
 
 #define AF_LOCAL AF_UNIX
-#else
+#elif defined(CHEF_ON_LINUX)
 #include <sys/un.h>
 #endif
 
