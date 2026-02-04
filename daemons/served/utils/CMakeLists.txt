@@ -25,4 +25,4 @@ add_library(served-utils STATIC
 )
 add_dependencies(served-utils service_client)
 target_include_directories(served-utils PRIVATE ../include ${CMAKE_BINARY_DIR}/protocols)
-target_link_libraries(served-utils PRIVATE vafs store zstd gracht dirconf platform vlog OpenSSL::SSL)
+target_link_libraries(served-utils PRIVATE containerv vafs store zstd gracht dirconf platform vlog OpenSSL::SSL)

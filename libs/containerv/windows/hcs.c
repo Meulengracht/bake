@@ -22,6 +22,7 @@
 #include <string.h>
 #include <wchar.h>
 #include <shlobj.h>
+#include <shlwapi.h>
 #include <vlog.h>
 
 #include "json-util.h"
@@ -145,6 +146,29 @@ static wchar_t* __utf8_to_wide_alloc(const char* s)
     }
 
     if (MultiByteToWideChar(CP_UTF8, 0, s, -1, out, needed) == 0) {
+        free(out);
+        return NULL;
+    }
+    return out;
+}
+
+static char* __wide_to_utf8_alloc(const wchar_t* s)
+{
+    if (s == NULL) {
+        return NULL;
+    }
+
+    int needed = WideCharToMultiByte(CP_UTF8, 0, s, -1, NULL, 0, NULL, NULL);
+    if (needed <= 0) {
+        return NULL;
+    }
+
+    char* out = calloc((size_t)needed, 1);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    if (WideCharToMultiByte(CP_UTF8, 0, s, -1, out, needed, NULL, NULL) == 0) {
         free(out);
         return NULL;
     }
@@ -378,6 +402,9 @@ static int __build_linux_cmdline_and_args(
 }
 
 // Build an OCI spec JSON for LCOW and persist it for inspection.
+static char* __normalize_container_path_linux_alloc(const char* p);
+static char* __join_linux_prefix_alloc(const char* prefix, const char* container_path);
+
 struct __lcow_mount_ctx {
     struct containerv_oci_mount_entry* mounts;
     size_t                             count;
@@ -481,8 +508,23 @@ static int __build_oci_spec_if_needed(
     }
 
     rootfs_host = NULL;
-    if (container != NULL && container->rootfs != NULL && PathFileExistsA(container->rootfs)) {
-        rootfs_host = container->rootfs;
+    if (container != NULL && container->runtime_dir != NULL) {
+        struct containerv_oci_bundle_paths bundlePaths;
+        memset(&bundlePaths, 0, sizeof(bundlePaths));
+        if (containerv_oci_bundle_get_paths(container->runtime_dir, &bundlePaths) == 0) {
+            if (bundlePaths.rootfs_dir != NULL && PathFileExistsA(bundlePaths.rootfs_dir)) {
+                rootfs_host = bundlePaths.rootfs_dir;
+            }
+            containerv_oci_bundle_paths_delete(&bundlePaths);
+        }
+    }
+
+    if (rootfs_host == NULL && container != NULL && container->rootfs != NULL && PathFileExistsA(container->rootfs)) {
+        // LCOW rootfs must be the prepared OCI bundle rootfs. Falling back to the original
+        // host rootfs path can desync bind mounts and pivot semantics inside the UVM.
+        VLOG_ERROR("containerv[hcs]", "LCOW OCI spec requires OCI bundle rootfs, but it is missing for container %s\n",
+                   container->id);
+        return -1;
     }
 
     // If we don't have a rootfs mapped, fail LCOW process creation.
@@ -510,8 +552,8 @@ static int __build_oci_spec_if_needed(
         free(stage_dst);
     }
 
-    if (options != NULL && options->layers != NULL) {
-        if (containerv_layers_iterate(options->layers, CONTAINERV_LAYER_HOST_DIRECTORY, __lcow_collect_mount_cb, &mountCtx) != 0) {
+    if (container != NULL && container->layers != NULL) {
+        if (containerv_layers_iterate(container->layers, CONTAINERV_LAYER_HOST_DIRECTORY, __lcow_collect_mount_cb, &mountCtx) != 0) {
             __lcow_mounts_free(&mountCtx);
             return -1;
         }
@@ -1025,50 +1067,6 @@ static int __mapped_dir_cb(const char* host_path, const char* container_path, in
     return __append_mapped_dir_entry(ctx, host_path, container_path, readonly);
 }
 
-struct __plan9_share_ctx {
-    json_t* shares;
-    int     index;
-};
-
-static int __append_plan9_share(json_t* shares, const char* name, const char* path, int readonly)
-{
-    json_t* obj;
-
-    if (shares == NULL || name == NULL || path == NULL) {
-        return -1;
-    }
-
-    obj = json_object();
-    if (obj == NULL ||
-        containerv_json_object_set_string(obj, "Name", name) != 0 ||
-        containerv_json_object_set_string(obj, "Path", path) != 0 ||
-        containerv_json_object_set_bool(obj, "ReadOnly", readonly != 0) != 0) {
-        json_decref(obj);
-        return -1;
-    }
-
-    if (json_array_append_new(shares, obj) != 0) {
-        json_decref(obj);
-        return -1;
-    }
-
-    return 0;
-}
-
-static int __plan9_share_cb(const char* host_path, const char* container_path, int readonly, void* user_context)
-{
-    struct __plan9_share_ctx* ctx = (struct __plan9_share_ctx*)user_context;
-    char name[64];
-
-    (void)container_path;
-
-    if (ctx == NULL || ctx->shares == NULL || host_path == NULL || host_path[0] == '\0') {
-        return 0;
-    }
-
-    snprintf(name, sizeof(name), "chefshare-%d", ctx->index++);
-    return __append_plan9_share(ctx->shares, name, host_path, readonly);
-}
 
 static void __derive_layer_id_from_path(const char* path, char out36[37])
 {
@@ -1216,38 +1214,6 @@ static wchar_t* __hcs_create_container_config_schema1(
             }
         }
 
-        // Plan9 shares for Hyper-V isolation (best-effort).
-        if (hv) {
-            json_t* shares = json_array();
-            if (shares != NULL) {
-                struct __plan9_share_ctx pctx = { .shares = shares, .index = 0 };
-                (void)__append_plan9_share(shares, "chef-staging", stage_host, 0);
-                if (options != NULL && options->layers != NULL) {
-                    (void)containerv_layers_iterate(options->layers, CONTAINERV_LAYER_HOST_DIRECTORY, __plan9_share_cb, &pctx);
-                }
-
-                if (json_array_size(shares) > 0) {
-                    json_t* plan9 = json_object();
-                    if (plan9 == NULL || json_object_set_new(plan9, "Shares", shares) != 0) {
-                        json_decref(plan9);
-                        json_decref(shares);
-                        json_decref(cfg);
-                        json_decref(mapped);
-                        json_decref(layers);
-                        return NULL;
-                    }
-                    if (json_object_set_new(cfg, "Plan9", plan9) != 0) {
-                        json_decref(plan9);
-                        json_decref(cfg);
-                        json_decref(mapped);
-                        json_decref(layers);
-                        return NULL;
-                    }
-                } else {
-                    json_decref(shares);
-                }
-            }
-        }
     }
 
     if (json_object_set(cfg, "MappedDirectories", mapped) != 0) {
@@ -1498,6 +1464,113 @@ static void CALLBACK __hcs_operation_callback(HCS_OPERATION operation, void* con
     VLOG_DEBUG("containerv[hcs]", "__hcs_operation_callback called\n");
 }
 
+static int __hcs_modify_compute_system(struct containerv_container* container, const char* settings_json_utf8)
+{
+    HCS_OPERATION operation = NULL;
+    wchar_t*      settings_w = NULL;
+    HRESULT       hr;
+    int           status = -1;
+
+    if (container == NULL || container->hcs_system == NULL || settings_json_utf8 == NULL) {
+        return -1;
+    }
+
+    if (g_hcs.HcsModifyComputeSystem == NULL) {
+        VLOG_ERROR("containerv[hcs]", "HcsModifyComputeSystem not available\n");
+        return -1;
+    }
+
+    settings_w = __utf8_to_wide_alloc(settings_json_utf8);
+    if (settings_w == NULL) {
+        return -1;
+    }
+
+    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation: 0x%lx\n", hr);
+        goto cleanup;
+    }
+
+    hr = g_hcs.HcsModifyComputeSystem(container->hcs_system, operation, settings_w);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv[hcs]", "failed to modify compute system: 0x%lx\n", hr);
+        goto cleanup;
+    }
+
+    if (g_hcs.HcsWaitForOperationResult != NULL) {
+        PWSTR resultDoc = NULL;
+        hr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
+        if (FAILED(hr)) {
+            char* detail = __wide_to_utf8_alloc(resultDoc);
+            VLOG_ERROR("containerv[hcs]", "modify compute system wait failed: 0x%lx (%s)\n", hr, detail ? detail : "no details");
+            free(detail);
+            __hcs_localfree_wstr(resultDoc);
+            goto cleanup;
+        }
+        __hcs_localfree_wstr(resultDoc);
+    }
+
+    status = 0;
+
+cleanup:
+    if (operation != NULL) {
+        g_hcs.HcsCloseOperation(operation);
+    }
+    free(settings_w);
+    return status;
+}
+
+int __hcs_plan9_share_add(
+    struct containerv_container* container,
+    const char*                  name,
+    const char*                  host_path,
+    int                          readonly)
+{
+    json_t* root = NULL;
+    json_t* settings = NULL;
+    char*   json_utf8 = NULL;
+    int     status = -1;
+
+    if (container == NULL || name == NULL || host_path == NULL) {
+        return -1;
+    }
+
+    root = json_object();
+    settings = json_object();
+    if (root == NULL || settings == NULL) {
+        goto cleanup;
+    }
+
+    if (containerv_json_object_set_string(root, "ResourceType", "Plan9Share") != 0 ||
+        containerv_json_object_set_string(root, "RequestType", "Add") != 0 ||
+        containerv_json_object_set_string(settings, "Name", name) != 0 ||
+        containerv_json_object_set_string(settings, "Path", host_path) != 0 ||
+        containerv_json_object_set_bool(settings, "ReadOnly", readonly != 0) != 0) {
+        goto cleanup;
+    }
+
+    if (json_object_set_new(root, "Settings", settings) != 0) {
+        settings = NULL;
+        goto cleanup;
+    }
+    settings = NULL;
+
+    if (containerv_json_dumps_compact(root, &json_utf8) != 0) {
+        goto cleanup;
+    }
+
+    status = __hcs_modify_compute_system(container, json_utf8);
+    if (status != 0) {
+        VLOG_ERROR("containerv[hcs]", "failed to add Plan9 share %s (%s)\n", name, host_path);
+    }
+
+cleanup:
+    json_decref(settings);
+    json_decref(root);
+    free(json_utf8);
+    return status;
+}
+
 int __hcs_initialize(void)
 {
     if (g_hcs.hVmCompute != NULL) {
@@ -1530,6 +1603,8 @@ int __hcs_initialize(void)
         GetProcAddress(g_hcs.hVmCompute, "HcsTerminateComputeSystem");
     g_hcs.HcsCreateProcess = (HcsCreateProcess_t)
         GetProcAddress(g_hcs.hVmCompute, "HcsCreateProcess");
+    g_hcs.HcsModifyComputeSystem = (HcsModifyComputeSystem_t)
+        GetProcAddress(g_hcs.hVmCompute, "HcsModifyComputeSystem");
     g_hcs.HcsCreateOperation = (HcsCreateOperation_t)
         GetProcAddress(g_hcs.hVmCompute, "HcsCreateOperation");
     g_hcs.HcsCloseOperation = (HcsCloseOperation_t)
@@ -1548,7 +1623,7 @@ int __hcs_initialize(void)
     // Check that we got all required functions
     if (!g_hcs.HcsCreateComputeSystem || !g_hcs.HcsStartComputeSystem ||
         !g_hcs.HcsShutdownComputeSystem || !g_hcs.HcsTerminateComputeSystem ||
-        !g_hcs.HcsCreateProcess || !g_hcs.HcsCreateOperation ||
+        !g_hcs.HcsCreateProcess || !g_hcs.HcsModifyComputeSystem || !g_hcs.HcsCreateOperation ||
         !g_hcs.HcsCloseOperation || !g_hcs.HcsCloseComputeSystem ||
         !g_hcs.HcsCloseProcess) {
         

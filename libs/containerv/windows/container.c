@@ -1042,6 +1042,7 @@ static struct containerv_container* __container_new(void)
     container->host_pipe = INVALID_HANDLE_VALUE;
     container->child_pipe = INVALID_HANDLE_VALUE;
     container->vm_started = 0;
+    container->layers = NULL;
     list_init(&container->processes);
     container->policy = NULL;
 
@@ -1823,6 +1824,10 @@ int containerv_create(
     if (options && options->policy) {
         container->policy = options->policy;
         options->policy = NULL;
+    }
+
+    if (options && options->layers) {
+        container->layers = options->layers;
     }
     
     // Setup resource limits and/or security restrictions using Job Objects

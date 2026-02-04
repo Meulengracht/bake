@@ -18,6 +18,7 @@
 #include <vlog.h>
 #include <stdio.h>
 #include <string.h>
+#include <shlobj.h>
 #include <shlwapi.h>
 #include <virtdisk.h>
 
@@ -253,25 +254,55 @@ static int __windows_configure_shared_folder(
     const char* container_path,
     int         readonly)
 {
-    // For now, this is a placeholder for HyperV shared folder configuration
-    // In a full implementation, this would:
-    // 1. Configure HyperV Enhanced Session Mode
-    // 2. Set up Plan9 filesystem sharing
-    // 3. Add shared folder to HCS VM configuration
-    
-    VLOG_DEBUG("containerv[windows]", "configuring shared folder: %s -> %s (ro=%d)\n",
-              host_path, container_path, readonly);
-    
-    // TODO: Implement HyperV shared folder configuration
-    // This requires modifying the HCS VM configuration JSON to include:
-    // "Plan9": { "Shares": [{"Name": "share_name", "Path": "host_path", "ReadOnly": false}] }
-    
+    char  name[64];
+    DWORD attrs;
+    unsigned long long hash = 1469598103934665603ull;
+
+    (void)container_path;
+
+    if (container == NULL || host_path == NULL || host_path[0] == '\0') {
+        return -1;
+    }
+
+    VLOG_DEBUG("containerv[windows]", "configuring shared folder: %s (ro=%d)\n",
+              host_path, readonly);
+
+    attrs = GetFileAttributesA(host_path);
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        if (readonly) {
+            VLOG_ERROR("containerv[windows]", "shared folder missing (readonly): %s\n", host_path);
+            return -1;
+        }
+        if (SHCreateDirectoryExA(NULL, host_path, NULL) != ERROR_SUCCESS) {
+            VLOG_ERROR("containerv[windows]", "failed to create shared folder path %s\n", host_path);
+            return -1;
+        }
+    } else if ((attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+        VLOG_ERROR("containerv[windows]", "shared folder host path is not a directory: %s\n", host_path);
+        return -1;
+    }
+
+    for (const unsigned char* p = (const unsigned char*)host_path; *p; ++p) {
+        hash ^= (unsigned long long)(*p);
+        hash *= 1099511628211ull;
+    }
+
+    snprintf(name, sizeof(name), "chefshare-%08llx", (unsigned long long)(hash & 0xffffffffu));
+
+    if (container->hcs_system != NULL) {
+        if (__hcs_plan9_share_add(container, name, host_path, readonly) != 0) {
+            VLOG_ERROR("containerv[windows]", "failed to add Plan9 share %s for %s\n", name, host_path);
+            return -1;
+        }
+    }
+
     return 0;
 }
 
 struct __windows_volume_iter_ctx {
     struct containerv_container* container;
     int                          status;
+    int                          enable_plan9;
 };
 
 static int __windows_layers_hostdir_cb(
@@ -285,8 +316,14 @@ static int __windows_layers_hostdir_cb(
         return -1;
     }
 
+    if (!ctx->enable_plan9) {
+        return 0;
+    }
+
     int rc = __windows_configure_shared_folder(ctx->container, host_path, container_path, readonly);
     if (rc != 0) {
+        VLOG_WARNING("containerv[windows]", "failed to share host directory %s (ro=%d)\n",
+                     host_path, readonly);
         ctx->status = rc;
         return rc;
     }
@@ -321,7 +358,22 @@ int __windows_setup_volumes(
     struct __windows_volume_iter_ctx ctx = {
         .container = container,
         .status = 0,
+        .enable_plan9 = 0,
     };
+
+    if (options->windows_container_type == WINDOWS_CONTAINER_TYPE_LINUX ||
+        options->windows_container.isolation == WINDOWS_CONTAINER_ISOLATION_HYPERV) {
+        ctx.enable_plan9 = 1;
+    }
+
+    // Always share staging directory for Hyper-V containers (Plan9).
+    if (ctx.enable_plan9 && container->runtime_dir != NULL) {
+        char stage_host[MAX_PATH];
+        snprintf(stage_host, sizeof(stage_host), "%s\\staging", container->runtime_dir);
+        if (__windows_configure_shared_folder(container, stage_host, NULL, 0) != 0) {
+            VLOG_WARNING("containerv[windows]", "failed to share staging directory %s\n", stage_host);
+        }
+    }
 
     int status = containerv_layers_iterate(
         options->layers,
