@@ -1593,6 +1593,8 @@ int __hcs_initialize(void)
     }
 
     // Load HCS function pointers
+    g_hcs.HcsOpenComputeSystem = (HcsOpenComputeSystem_t)
+        GetProcAddress(g_hcs.hVmCompute, "HcsOpenComputeSystem");
     g_hcs.HcsCreateComputeSystem = (HcsCreateComputeSystem_t)
         GetProcAddress(g_hcs.hVmCompute, "HcsCreateComputeSystem");
     g_hcs.HcsStartComputeSystem = (HcsStartComputeSystem_t)
@@ -1621,7 +1623,7 @@ int __hcs_initialize(void)
     g_hcs.HcsWaitForOperationResultAndProcessInfo = (HcsWaitForOperationResultAndProcessInfo_t)__get_proc_any("HcsWaitForOperationResultAndProcessInfo");
 
     // Check that we got all required functions
-    if (!g_hcs.HcsCreateComputeSystem || !g_hcs.HcsStartComputeSystem ||
+    if (!g_hcs.HcsOpenComputeSystem || !g_hcs.HcsCreateComputeSystem || !g_hcs.HcsStartComputeSystem ||
         !g_hcs.HcsShutdownComputeSystem || !g_hcs.HcsTerminateComputeSystem ||
         !g_hcs.HcsCreateProcess || !g_hcs.HcsModifyComputeSystem || !g_hcs.HcsCreateOperation ||
         !g_hcs.HcsCloseOperation || !g_hcs.HcsCloseComputeSystem ||

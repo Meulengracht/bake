@@ -351,6 +351,29 @@ extern int containerv_get_processes(struct containerv_container* container, stru
 
 extern int containerv_join(const char* containerId);
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+/**
+ * @brief Execute a process in an existing Windows container by ID
+ * 
+ * This is a Windows-specific helper for serve-exec that spawns a process
+ * in an existing HCS container and waits for it to complete.
+ * 
+ * @param containerId Container ID to execute in
+ * @param commandPath Path to command inside container
+ * @param workingDirectory Working directory for command
+ * @param argv Command arguments (NULL-terminated)
+ * @param envp Environment variables (NULL-terminated)
+ * @return Exit code of the process, or -1 on error
+ */
+extern int containerv_spawn_in_container(
+    const char* containerId,
+    const char* commandPath,
+    const char* workingDirectory,
+    char* const* argv,
+    char* const* envp
+);
+#endif
+
 /**
  * @brief Returns the container ID of the given container.
  * @param container The container to get the ID from.
