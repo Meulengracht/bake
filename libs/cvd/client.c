@@ -18,6 +18,7 @@
 
 #include <chef/environment.h>
 #include <chef/cvd.h>
+#include <chef/containerv/disk/ubuntu.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
 #include <gracht/link/socket.h>
@@ -92,7 +93,7 @@ static int __configure_local_bind(struct gracht_link_socket* link)
 #include <afunix.h>
 
 static int __abstract_socket_size(const char* address) {
-    return offsetof(struct sockaddr_un, sun_path) + strlen(address);
+    return (int)(offsetof(struct sockaddr_un, sun_path) + strlen(address));
 }
 
 static int __local_size(const char* address) {
@@ -257,9 +258,6 @@ static void __initialize_overlays(struct chef_create_parameters* params, const c
     layer->type = CHEF_LAYER_TYPE_OVERLAY;
 }
 
-#ifdef CHEF_ON_LINUX
-#include <chef/containerv/disk/ubuntu.h>
-
 // Initialize the base rootfs for the build container if, and only if, it's not already
 // initialized. We use the build cache, and check key "rootfs-initialized" to see if we've
 // already done this.
@@ -300,24 +298,26 @@ static char* __initialize_maybe_rootfs(struct recipe* recipe, struct build_cache
     build_cache_transaction_commit(cache);
     return rootfs;
 }
-#else
+
+#ifdef CHEF_ON_WINDOWS
 #include <chef/containerv/disk/lcow.h>
 
-static char* __initialize_maybe_rootfs(struct recipe* recipe, struct build_cache* cache)
+static int __initialize_maybe_lcow_uvm(struct chef_create_parameters* params)
 {
-    struct containerv_disk_lcow_uvm_config cfg = { 
-        .uvm_url = "" 
-    };
-    char* lcow_uvm_resolved = NULL;
-    
+    struct chef_windows_guest_options*     guest = &params->guest_windows;
+    struct containerv_disk_lcow_uvm_config cfg = { 0 };
+    char*                                  lcow_uvm_resolved = NULL;
+
+    cfg.uvm_image_path = guest->lcow_uvm_image_path;
+    cfg.uvm_url = guest->lcow_uvm_url;
+
     if (containerv_disk_lcow_resolve_uvm(&cfg, &lcow_uvm_resolved)) {
         VLOG_ERROR("cvd", "cvd_create: failed to resolve LCOW UVM assets\n");
-        return NULL;
+        return -1;
     }
 
-    VLOG_DEBUG("bake", "__initialize_maybe_rootfs() - non-Linux implementation\n");
-    free(lcow_uvm_resolved);
-    return platform_strdup("");
+    guest->lcow_uvm_image_path = lcow_uvm_resolved;
+    return 0;
 }
 #endif
 
@@ -331,15 +331,32 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
     char                          cvdid[64];
     VLOG_DEBUG("bake", "bake_client_create_container()\n");
     
-    rootfs = __initialize_maybe_rootfs(bctx->recipe, bctx->build_cache);
-    if (rootfs == NULL) {
-        VLOG_ERROR("bake", "bake_client_create_container: failed to allocate memory for rootfs\n");
-        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+    chef_create_parameters_init(&params);
+    
+    params.id = platform_strdup(build_cache_uuid(bctx->build_cache));
+    params.gtype = CHEF_GUEST_TYPE_LINUX; // For now, let this be configurable
+
+    // On windows, linux containers require special UVM setup in addition
+    // to the rootfs overlay. The UVM setup is done here.
+#ifdef CHEF_ON_WINDOWS
+    if (params->gtype != CHEF_GUEST_TYPE_LINUX) {
+        if (__initialize_maybe_lcow_uvm(&params) != 0) {
+            chef_create_parameters_destroy(&params);
+            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+        }
+    }
+#endif
+    
+    // Linux rootfs setup is only needed for Linux containers.
+    if (params.gtype != CHEF_GUEST_TYPE_LINUX) {
+        rootfs = __initialize_maybe_rootfs(bctx->recipe, bctx->build_cache);
+        if (rootfs == NULL) {
+            chef_create_parameters_destroy(&params);
+            VLOG_ERROR("bake", "bake_client_create_container: failed to allocate memory for rootfs\n");
+            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+        }
     }
 
-    chef_create_parameters_init(&params);
-    params.id = platform_strdup(build_cache_uuid(bctx->build_cache));
-    
     __initialize_overlays(&params, rootfs, bctx);
     
     status = chef_cvd_create(bctx->cvd_client, &context, &params);

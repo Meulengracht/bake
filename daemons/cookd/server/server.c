@@ -250,7 +250,7 @@ static void __cookd_server_stop(struct __cookd_server* server)
         list_foreach(&server->builders, li) {
             struct __cookd_builder* builder = (struct __cookd_builder*)li;
             if (builder->state != __COOKD_BUILDER_STATE_DONE) {
-                VLOG_DEBUG("cookd", "waiting for builder %i to shut down...\n", (int)builder->builder_id);
+                VLOG_DEBUG("cookd", "waiting for builder %zu to shut down...\n", (size_t)builder->builder_id);
                 waiting = 1;
                 break;
             }

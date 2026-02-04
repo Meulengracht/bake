@@ -43,6 +43,16 @@
 #define WINDOWS_DEFAULT_VHD_SIZE_MB 1024    // 1GB default VHD size
 #define WINDOWS_VOLUMES_DIR "containerv-volumes"
 
+// Some SDKs expose VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT as an extern symbol
+// provided by virtdisk.lib. To avoid a hard link dependency for static libraries,
+// use a local GUID constant instead.
+static const GUID g_virtualStorageTypeVendorMicrosoft = {
+    0xec984aec,
+    0xa0f9,
+    0x47e9,
+    {0x90, 0x1f, 0x71, 0x41, 0x5a, 0x66, 0x34, 0x5b}
+};
+
 /**
  * @brief Windows volume types for containers
  */
@@ -158,7 +168,7 @@ static HANDLE __windows_create_vhd_file(const char* vhdPath, uint64_t sizeMb, co
     
     // Set virtual storage type for VHDx
     storageType.DeviceId = VIRTUAL_STORAGE_TYPE_DEVICE_VHDX;
-    storageType.VendorId = VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT;
+    storageType.VendorId = g_virtualStorageTypeVendorMicrosoft;
     
     // Configure creation parameters
     createParams.Version = CREATE_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION;

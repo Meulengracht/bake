@@ -88,7 +88,7 @@ static int __configure_local_bind(struct gracht_link_socket* link)
 #include <afunix.h>
 
 static int __abstract_socket_size(const char* address) {
-    return offsetof(struct sockaddr_un, sun_path) + strlen(address);
+    return (int)(offsetof(struct sockaddr_un, sun_path) + strlen(address));
 }
 
 static int __local_size(const char* address) {
@@ -101,6 +101,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
 
     local->sun_family = AF_UNIX;
     strncpy(local->sun_path, address, sizeof(local->sun_path));
+    return 0;
 }
 
 static int __configure_local_bind(struct gracht_link_socket* link)
