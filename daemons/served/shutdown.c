@@ -26,8 +26,7 @@
 
 void served_shutdown(void)
 {
-    unsigned int transactionId;
-    int          status;
+    int status;
     VLOG_TRACE("shutdown", "served_shutdown()\n");
 
     if (!served_runner_is_running()) {

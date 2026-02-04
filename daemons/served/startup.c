@@ -78,7 +78,7 @@ static int __write_profile_d_script(void)
     }
 
     // change permissions to executable
-    status = chmod(profileScriptPath, 0755);
+    status = platform_chmod(profileScriptPath, 0755);
     free(profileScriptPath);
     fclose(file);
     return status;

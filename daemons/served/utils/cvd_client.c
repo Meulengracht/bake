@@ -167,9 +167,9 @@ static int __configure_windows_guest_options(struct chef_create_parameters* para
     const char* boot = getenv("CHEF_LCOW_BOOT_PARAMETERS");
 
     if (container_type != NULL && container_type[0] != '\0') {
-        if (__equals_ignore_case(container_type, "linux") || __equals_ignore_case(container_type, "lcow")) {
+        if (strcmp(container_type, "linux") == 0 || strcmp(container_type, "lcow") == 0) {
             params->gtype = CHEF_GUEST_TYPE_LINUX;
-        } else if (__equals_ignore_case(container_type, "windows") || __equals_ignore_case(container_type, "wcow")) {
+        } else if (strcmp(container_type, "windows") == 0 || strcmp(container_type, "wcow") == 0) {
             params->gtype = CHEF_GUEST_TYPE_WINDOWS;
         }
     }

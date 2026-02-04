@@ -24,7 +24,6 @@
 #include <utils.h>
 #include <signal.h>
 #include <stdio.h>
-#include <sys/un.h>
 #include <vlog.h>
 
 // server protocol
@@ -33,6 +32,18 @@
 
 static const char*      g_servedUnPath = "/tmp/served";
 static gracht_server_t* g_server       = NULL;
+
+#ifdef CHEF_ON_WINDOWS
+#include <windows.h>
+#include <ws2ipdef.h>
+
+// Windows 10 Insider build 17063 ++ 
+#include <afunix.h>
+
+#define AF_LOCAL AF_UNIX
+#else
+#include <sys/un.h>
+#endif
 
 static void init_link_config(struct gracht_link_socket* link)
 {

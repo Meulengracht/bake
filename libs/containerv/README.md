@@ -263,8 +263,11 @@ When contributing platform-specific features:
 
 GNU General Public License v3.0 - See LICENSE file for details
 
+## TODO
+
 serve-exec on Windows
-Implement Windows execution path in main.c (currently Linux only).
+Implement Windows execution version of main.c as main_win32.c (currently Linux only).
+Rename main.c to main_linux.c
 Ensure it can join container (HCS) and spawn inside LCOW/WCOW, or switch to using cvd spawn for Windows.
 
 Windows wrapper execution flow
@@ -282,4 +285,3 @@ Touch points: layers.c:520-760, container.c:1672-1748.
 Windows networking validation
 Confirm HNS endpoint policies are applied for LCOW and WCOW, and verify fallback behavior for static IP/DNS.
 Touch points: network.c.
-If you want, I can start with item 1 (Plan9 share provisioning) next.
