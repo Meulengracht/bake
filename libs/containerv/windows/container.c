@@ -2708,7 +2708,7 @@ int containerv_spawn_in_container(
     
     // Build command line string from argv with proper Windows quoting
     // Calculate required size first
-    size_t cmdlineLen = strlen(commandPath) + 1; // path + null terminator
+    size_t cmdlineLen = strlen(commandPath); // path without null terminator initially
     if (argv != NULL) {
         for (int i = 1; argv[i] != NULL; i++) {
             const char* arg = argv[i];
@@ -2735,7 +2735,7 @@ int containerv_spawn_in_container(
         }
     }
     
-    char* cmdline = (char*)calloc(cmdlineLen + 1, 1);
+    char* cmdline = (char*)calloc(cmdlineLen + 1, 1); // +1 for null terminator
     if (cmdline == NULL) {
         VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to allocate command line\n");
         goto cleanup;
