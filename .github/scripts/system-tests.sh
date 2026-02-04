@@ -1,28 +1,35 @@
 #!/usr/bin/env bash
+
 set -euo pipefail
 
-root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# use non-interactive sudo
+SUDO="sudo -n"
 
-bake_bin="$root_dir/build/bin/bake"
-cvd_bin="$root_dir/build/daemons/cvd/cvd"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+LOG_DIR="${RUNNER_TEMP:-/tmp}"
 
-if [[ ! -x "$bake_bin" ]]; then
-    echo "ERROR: bake binary not found/executable at $bake_bin" >&2
+CMD_BAKE="$ROOT_DIR/build/bin/bake"
+CMD_CVD="$ROOT_DIR/build/daemons/cvd/cvd"
+
+CVD_LOG="$LOG_DIR/cvd-ci.log"
+
+# track build status
+BUILD_FAILED=0
+
+if ! command -v sudo >/dev/null 2>&1; then
+    echo "ERROR: sudo is not available" >&2
     exit 1
 fi
 
-if [[ ! -x "$cvd_bin" ]]; then
-    echo "ERROR: cvd binary not found/executable at $cvd_bin" >&2
+if [[ ! -x "$CMD_BAKE" ]]; then
+    echo "ERROR: bake binary not found/executable at $CMD_BAKE" >&2
     exit 1
 fi
 
-log_dir="${RUNNER_TEMP:-/tmp}"
-cvd_log="$log_dir/cvd-ci.log"
-
-cvd_pid=""
-cvd_via_sudo=0
-build_start_time=""
-build_failed=0
+if [[ ! -x "$CMD_CVD" ]]; then
+    echo "ERROR: cvd binary not found/executable at $CMD_CVD" >&2
+    exit 1
+fi
 
 # Enable seccomp logging if requested for debugging
 # This can be set to "1" when investigating seccomp-related build failures
@@ -30,19 +37,25 @@ build_failed=0
 if [[ "${CONTAINERV_SECCOMP_LOG:-0}" == "1" ]]; then
     echo "NOTE: Seccomp logging is enabled (CONTAINERV_SECCOMP_LOG=1)"
     echo "      Denied syscalls will be logged to audit/kernel logs instead of just returning EPERM"
+
+    # Debug whether ausearch is available at either
+    # /usr/sbin/ausearch or /usr/bin/ausearch
+    if [[ -x "/usr/sbin/ausearch" ]]; then
+        echo "      ausearch found at /usr/sbin/ausearch"
+    elif [[ -x "/usr/bin/ausearch" ]]; then
+        echo "      ausearch found at /usr/bin/ausearch"
+    else
+        echo "      WARNING: ausearch not found in /usr/sbin or /usr/bin"
+        echo "               Seccomp denials may not be logged properly without it"
+    fi
 fi
 
 # Helper to dump seccomp denial logs
-dump_seccomp_logs() {
-    # Skip if logging is not enabled or no start time recorded
-    if [[ -z "$build_start_time" ]]; then
-        return 0
-    fi
-    
+dump_seccomp_logs() {    
     # Check if seccomp logging was enabled
     if [[ "${CONTAINERV_SECCOMP_LOG:-0}" != "1" ]]; then
         # Only show this message if build failed
-        if [[ "$build_failed" -eq 1 ]]; then
+        if [[ "$BUILD_FAILED" -eq 1 ]]; then
             echo ""
             echo "=== Seccomp logging disabled ==="
             echo "NOTE: Seccomp logging is disabled. Set CONTAINERV_SECCOMP_LOG=1 to enable."
@@ -72,84 +85,81 @@ dump_seccomp_logs() {
     fi
     echo ""
 
-    local found_any=0
+    local FOUND_LOGS=0
 
     # Try ausearch first (most detailed, structured output for audit events)
     if command -v ausearch >/dev/null 2>&1; then
-        local audit_output
-        audit_output="$(sudo -n ausearch -m SECCOMP -ts "$build_start_time" 2>/dev/null || true)"
+        local AUDIT_LOGS
+        AUDIT_LOGS="$($SUDO ausearch -m SECCOMP)"
 
-        if [[ -n "$audit_output" ]]; then
+        if [[ -n "$AUDIT_LOGS" ]]; then
             echo "Seccomp denials found in audit log:"
-            echo "$audit_output"
-            found_any=1
+            echo "$AUDIT_LOGS"
+            FOUND_LOGS=1
         fi
     fi
 
     # Also check journalctl (kernel logs with reliable timestamps)
     if command -v journalctl >/dev/null 2>&1; then
-        local journal_output
-        journal_output="$(sudo -n journalctl -k --since "$build_start_time" 2>/dev/null | grep -i seccomp || true)"
+        local JOURNAL_LOGS
+        JOURNAL_LOGS="$($SUDO journalctl -b -k | grep -i seccomp)"
 
-        if [[ -n "$journal_output" ]]; then
+        if [[ -n "$JOURNAL_LOGS" ]]; then
             echo "Seccomp denials found in kernel log:"
-            echo "$journal_output"
-            found_any=1
+            echo "$JOURNAL_LOGS"
+            FOUND_LOGS=1
         fi
     fi
 
     # Also check dmesg as additional fallback
     if command -v dmesg >/dev/null 2>&1; then
-        local dmesg_output
-        dmesg_output="$(sudo -n dmesg -T 2>/dev/null | grep -i seccomp || true)"
+        local DMESG_LOGS
+        DMESG_LOGS="$($SUDO dmesg | grep -i seccomp)"
 
-        if [[ -n "$dmesg_output" ]]; then
+        if [[ -n "$DMESG_LOGS" ]]; then
             echo "Seccomp denials found in dmesg:"
-            echo "$dmesg_output"
-            found_any=1
+            echo "$DMESG_LOGS"
+            FOUND_LOGS=1
         fi
     fi
 
-    if [[ "$found_any" -eq 0 ]]; then
-        echo "No seccomp denials found in any available logs since '$build_start_time'"
+    if [[ "$FOUND_LOGS" -eq 0 ]]; then
+        echo "No seccomp denials found in any available logs"
     fi
 
     echo "=== End of seccomp log check ==="
 }
 
 # cvd currently requires root on Linux. Start it via sudo when not root.
+CVD_PID=""
+CVD_VIA_SUDO=0
 if [[ "$(id -u)" -eq 0 ]]; then
-    "$cvd_bin" -vv >"$cvd_log" 2>&1 &
-    cvd_pid=$!
+    "$CMD_CVD" -vv >"$CVD_LOG" 2>&1 &
+    CVD_PID=$!
 else
-    if ! command -v sudo >/dev/null 2>&1; then
-        echo "ERROR: cvd must run as root, but sudo is not available" >&2
-        exit 1
-    fi
-
     # Capture the real cvd PID from the privileged shell.
     # Pass through CONTAINERV_SECCOMP_LOG if set for debugging
-    cvd_pid="$(sudo -n bash -c "CONTAINERV_SECCOMP_LOG=${CONTAINERV_SECCOMP_LOG:-0} \"$cvd_bin\" -vv >\"$cvd_log\" 2>&1 & echo \$!")" || {
+    CVD_PID="$($SUDO bash -c "CONTAINERV_SECCOMP_LOG=${CONTAINERV_SECCOMP_LOG:-0} \"$CMD_CVD\" -vv >\"$CVD_LOG\" 2>&1 & echo \$!")" || {
         echo "ERROR: failed to start cvd via sudo (is passwordless sudo available in CI?)" >&2
         exit 1
     }
-    cvd_via_sudo=1
+    CVD_VIA_SUDO=1
 fi
 
 cleanup() {
     # Check for seccomp violations (if logging enabled)
     dump_seccomp_logs
 
-    if [[ -n "${cvd_pid:-}" ]]; then
-        if [[ "$cvd_via_sudo" -eq 1 ]]; then
-            sudo -n kill "$cvd_pid" >/dev/null 2>&1 || true
+    if [[ -n "${CVD_PID:-}" ]]; then
+        if [[ "$CVD_VIA_SUDO" -eq 1 ]]; then
+            $SUDO kill "$CVD_PID" >/dev/null 2>&1 || true
         else
-            kill "$cvd_pid" >/dev/null 2>&1 || true
-            wait "$cvd_pid" >/dev/null 2>&1 || true
+            kill "$CVD_PID" >/dev/null 2>&1 || true
+            wait "$CVD_PID" >/dev/null 2>&1 || true
         fi
 
         echo "cvd log output (last 1000 lines):"
-        tail -n 1000 "$cvd_log" || true
+        tail -n 1000 "$CVD_LOG" || true
     fi
 
     if [[ -n "${work_dir:-}" && -d "${work_dir:-}" ]]; then
@@ -160,15 +170,15 @@ trap cleanup EXIT
 
 # Give cvd a moment to start listening on @/chef/cvd/api
 for _ in {1..20}; do
-    if [[ "$cvd_via_sudo" -eq 1 ]]; then
-        sudo -n kill -0 "$cvd_pid" >/dev/null 2>&1 || {
+    if [[ "$CVD_VIA_SUDO" -eq 1 ]]; then
+        $SUDO kill -0 "$CVD_PID" >/dev/null 2>&1 || {
             echo "ERROR: cvd exited early. Log:" >&2
-            tail -n 200 "$cvd_log" >&2 || true
+            tail -n 200 "$CVD_LOG" >&2 || true
             exit 1
         }
-    elif ! kill -0 "$cvd_pid" >/dev/null 2>&1; then
+    elif ! kill -0 "$CVD_PID" >/dev/null 2>&1; then
         echo "ERROR: cvd exited early. Log:" >&2
-        tail -n 200 "$cvd_log" >&2 || true
+        tail -n 200 "$CVD_LOG" >&2 || true
         exit 1
     fi
     sleep 0.25
@@ -178,24 +188,21 @@ work_dir="$(mktemp -d)"
 
 # Run from a folder that contains hello.yaml so relative paths line up,
 # but keep outputs (like *.pack files) isolated from the git checkout.
-cp -a "$root_dir/examples/recipes/hello.yaml" "$work_dir/hello.yaml"
-cp -a "$root_dir/examples/recipes/hello-world" "$work_dir/hello-world"
+cp -a "$ROOT_DIR/examples/recipes/hello.yaml" "$work_dir/hello.yaml"
+cp -a "$ROOT_DIR/examples/recipes/hello-world" "$work_dir/hello-world"
 
 pushd "$work_dir" >/dev/null
-
-# Capture timestamp before build for seccomp log filtering
-build_start_time="$(date '+%Y-%m-%d %H:%M:%S')"
 
 # Must run from the recipe directory so relative paths resolve.
 # Also keep a timeout to avoid wedging CI if a container backend hangs.
 if command -v timeout >/dev/null 2>&1; then
-    if ! timeout 20m "$bake_bin" build hello.yaml -v; then
-        build_failed=1
+    if ! timeout 20m "$CMD_BAKE" build hello.yaml -v; then
+        BUILD_FAILED=1
         exit 1
     fi
 else
-    if ! "$bake_bin" build hello.yaml -v; then
-        build_failed=1
+    if ! "$CMD_BAKE" build hello.yaml -v; then
+        BUILD_FAILED=1
         exit 1
     fi
 fi
@@ -207,14 +214,14 @@ shopt -u nullglob
 
 if (( ${#pack_files[@]} == 0 )); then
     echo "ERROR: system test succeeded but no .pack file was produced" >&2
-    build_failed=1
+    BUILD_FAILED=1
     exit 1
 fi
 
 for f in "${pack_files[@]}"; do
     if [[ ! -s "$f" ]]; then
         echo "ERROR: produced .pack file is empty: $f" >&2
-        build_failed=1
+        BUILD_FAILED=1
         exit 1
     fi
 done
