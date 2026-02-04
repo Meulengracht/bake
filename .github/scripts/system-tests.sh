@@ -87,6 +87,8 @@ dump_seccomp_logs() {
 
     local FOUND_LOGS=0
 
+    $SUDO cat /var/log/audit/audit.log | grep type=SECCOMP >/dev/null 2>&1 && FOUND_LOGS=1
+
     # Try ausearch first (most detailed, structured output for audit events)
     if command -v ausearch >/dev/null 2>&1; then
         local AUDIT_LOGS
