@@ -1657,9 +1657,10 @@ int containerv_create(
     rootfsExists = PathFileExistsA(rootFs);
     if (!rootfsExists) {
         if (__is_hcs_lcow_mode(options)) {
-            // For LCOW, BASE_ROOTFS will eventually become an OCI bundle/rootfs reference.
-            // For now, we allow it to be absent and rely on UVM bring-up.
-            VLOG_WARNING("containerv", "containerv_create: LCOW selected but rootfs path does not exist (%s); continuing (UVM bring-up only)\n", rootFs);
+            VLOG_ERROR("containerv", "containerv_create: LCOW requires an existing rootfs path at %s\n", rootFs);
+            __container_delete(container);
+            errno = ENOENT;
+            return -1;
         } else {
             VLOG_ERROR("containerv", "containerv_create: HCS container mode requires an existing windowsfilter container folder at %s\n", rootFs);
             __container_delete(container);
@@ -1798,6 +1799,12 @@ int containerv_create(
                 containerv_oci_bundle_paths_delete(&bundlePaths);
                 __container_delete(container);
                 return -1;
+            }
+
+            if (lcowRootfsHost == NULL || lcowRootfsHost[0] == '\0') {
+                VLOG_WARNING("containerv", "containerv_create: LCOW compute system started without a mapped rootfs; OCI process spec will be limited\n");
+            } else {
+                VLOG_DEBUG("containerv", "containerv_create: LCOW rootfs mapped at %s\n", lcowRootfsHost);
             }
 
             containerv_oci_bundle_paths_delete(&bundlePaths);

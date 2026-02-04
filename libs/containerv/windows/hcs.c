@@ -378,6 +378,87 @@ static int __build_linux_cmdline_and_args(
 }
 
 // Build an OCI spec JSON for LCOW and persist it for inspection.
+struct __lcow_mount_ctx {
+    struct containerv_oci_mount_entry* mounts;
+    size_t                             count;
+    size_t                             cap;
+    const char*                        root_prefix;
+};
+
+static void __lcow_mounts_free(struct __lcow_mount_ctx* ctx)
+{
+    if (ctx == NULL || ctx->mounts == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < ctx->count; ++i) {
+        free((void*)ctx->mounts[i].source);
+        free((void*)ctx->mounts[i].destination);
+    }
+    free(ctx->mounts);
+    ctx->mounts = NULL;
+    ctx->count = 0;
+    ctx->cap = 0;
+}
+
+static int __lcow_mounts_append(struct __lcow_mount_ctx* ctx, const char* source, const char* destination, int readonly)
+{
+    if (ctx == NULL || source == NULL || destination == NULL) {
+        return -1;
+    }
+
+    if (ctx->count == ctx->cap) {
+        size_t newCap = ctx->cap == 0 ? 4 : ctx->cap * 2;
+        struct containerv_oci_mount_entry* newMounts = realloc(ctx->mounts, newCap * sizeof(*newMounts));
+        if (newMounts == NULL) {
+            return -1;
+        }
+        ctx->mounts = newMounts;
+        ctx->cap = newCap;
+    }
+
+    ctx->mounts[ctx->count].source = _strdup(source);
+    ctx->mounts[ctx->count].destination = _strdup(destination);
+    ctx->mounts[ctx->count].readonly = readonly;
+    if (ctx->mounts[ctx->count].source == NULL || ctx->mounts[ctx->count].destination == NULL) {
+        free((void*)ctx->mounts[ctx->count].source);
+        free((void*)ctx->mounts[ctx->count].destination);
+        return -1;
+    }
+    ctx->count++;
+    return 0;
+}
+
+static int __lcow_collect_mount_cb(const char* host_path, const char* container_path, int readonly, void* user_context)
+{
+    struct __lcow_mount_ctx* ctx = (struct __lcow_mount_ctx*)user_context;
+    char* src;
+    char* dst;
+
+    (void)host_path;
+
+    if (ctx == NULL || container_path == NULL || container_path[0] == '\0') {
+        return 0;
+    }
+
+    dst = __normalize_container_path_linux_alloc(container_path);
+    src = __join_linux_prefix_alloc(ctx->root_prefix, container_path);
+    if (dst == NULL || src == NULL) {
+        free(dst);
+        free(src);
+        return -1;
+    }
+
+    if (__lcow_mounts_append(ctx, src, dst, readonly) != 0) {
+        free(dst);
+        free(src);
+        return -1;
+    }
+
+    free(dst);
+    free(src);
+    return 0;
+}
+
 static int __build_oci_spec_if_needed(
     struct containerv_container*            container,
     const struct __containerv_spawn_options* options,
@@ -386,6 +467,8 @@ static int __build_oci_spec_if_needed(
     char**                                  oci_spec_out)
 {
     struct containerv_oci_linux_spec_params params;
+    struct __lcow_mount_ctx                 mountCtx;
+    const char*                             rootfs_host;
     char*                                   ociSpec;
 
     if (oci_spec_out == NULL) {
@@ -397,14 +480,54 @@ static int __build_oci_spec_if_needed(
         return 0;
     }
 
+    rootfs_host = NULL;
+    if (container != NULL && container->rootfs != NULL && PathFileExistsA(container->rootfs)) {
+        rootfs_host = container->rootfs;
+    }
+
+    // If we don't have a rootfs mapped, fail LCOW process creation.
+    if (rootfs_host == NULL || rootfs_host[0] == '\0') {
+        VLOG_ERROR("containerv[hcs]", "LCOW OCI spec failed: rootfs not mapped for container %s\n",
+                   container ? container->id : "<unknown>");
+        return -1;
+    }
+
+    memset(&mountCtx, 0, sizeof(mountCtx));
+    mountCtx.root_prefix = "/chef/rootfs";
+
+    // Always mount the staging directory when using OCI-in-UVM.
+    {
+        char* stage_src = __join_linux_prefix_alloc(mountCtx.root_prefix, "/chef/staging");
+        char* stage_dst = __normalize_container_path_linux_alloc("/chef/staging");
+        if (stage_src == NULL || stage_dst == NULL ||
+            __lcow_mounts_append(&mountCtx, stage_src, stage_dst, 0) != 0) {
+            free(stage_src);
+            free(stage_dst);
+            __lcow_mounts_free(&mountCtx);
+            return -1;
+        }
+        free(stage_src);
+        free(stage_dst);
+    }
+
+    if (options != NULL && options->layers != NULL) {
+        if (containerv_layers_iterate(options->layers, CONTAINERV_LAYER_HOST_DIRECTORY, __lcow_collect_mount_cb, &mountCtx) != 0) {
+            __lcow_mounts_free(&mountCtx);
+            return -1;
+        }
+    }
+
     params.args_json = (args_json_utf8 != NULL) ? args_json_utf8 : "[]";
     params.envv = (const char* const*)options->envv;
     params.root_path = "/chef/rootfs";
     params.cwd = "/";
     params.hostname = "chef";
+    params.mounts = mountCtx.mounts;
+    params.mounts_count = mountCtx.count;
 
     ociSpec = NULL;
     if (containerv_oci_build_linux_spec_json(&params, &ociSpec) != 0) {
+        __lcow_mounts_free(&mountCtx);
         return -1;
     }
 
@@ -418,6 +541,7 @@ static int __build_oci_spec_if_needed(
     }
 
     *oci_spec_out = ociSpec;
+    __lcow_mounts_free(&mountCtx);
     return 0;
 }
 
@@ -901,6 +1025,51 @@ static int __mapped_dir_cb(const char* host_path, const char* container_path, in
     return __append_mapped_dir_entry(ctx, host_path, container_path, readonly);
 }
 
+struct __plan9_share_ctx {
+    json_t* shares;
+    int     index;
+};
+
+static int __append_plan9_share(json_t* shares, const char* name, const char* path, int readonly)
+{
+    json_t* obj;
+
+    if (shares == NULL || name == NULL || path == NULL) {
+        return -1;
+    }
+
+    obj = json_object();
+    if (obj == NULL ||
+        containerv_json_object_set_string(obj, "Name", name) != 0 ||
+        containerv_json_object_set_string(obj, "Path", path) != 0 ||
+        containerv_json_object_set_bool(obj, "ReadOnly", readonly != 0) != 0) {
+        json_decref(obj);
+        return -1;
+    }
+
+    if (json_array_append_new(shares, obj) != 0) {
+        json_decref(obj);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int __plan9_share_cb(const char* host_path, const char* container_path, int readonly, void* user_context)
+{
+    struct __plan9_share_ctx* ctx = (struct __plan9_share_ctx*)user_context;
+    char name[64];
+
+    (void)container_path;
+
+    if (ctx == NULL || ctx->shares == NULL || host_path == NULL || host_path[0] == '\0') {
+        return 0;
+    }
+
+    snprintf(name, sizeof(name), "chefshare-%d", ctx->index++);
+    return __append_plan9_share(ctx->shares, name, host_path, readonly);
+}
+
 static void __derive_layer_id_from_path(const char* path, char out36[37])
 {
     // Prefer basename if it looks like a GUID (common for windowsfilter layer folders).
@@ -1044,6 +1213,39 @@ static wchar_t* __hcs_create_container_config_schema1(
                 json_decref(mapped);
                 json_decref(layers);
                 return NULL;
+            }
+        }
+
+        // Plan9 shares for Hyper-V isolation (best-effort).
+        if (hv) {
+            json_t* shares = json_array();
+            if (shares != NULL) {
+                struct __plan9_share_ctx pctx = { .shares = shares, .index = 0 };
+                (void)__append_plan9_share(shares, "chef-staging", stage_host, 0);
+                if (options != NULL && options->layers != NULL) {
+                    (void)containerv_layers_iterate(options->layers, CONTAINERV_LAYER_HOST_DIRECTORY, __plan9_share_cb, &pctx);
+                }
+
+                if (json_array_size(shares) > 0) {
+                    json_t* plan9 = json_object();
+                    if (plan9 == NULL || json_object_set_new(plan9, "Shares", shares) != 0) {
+                        json_decref(plan9);
+                        json_decref(shares);
+                        json_decref(cfg);
+                        json_decref(mapped);
+                        json_decref(layers);
+                        return NULL;
+                    }
+                    if (json_object_set_new(cfg, "Plan9", plan9) != 0) {
+                        json_decref(plan9);
+                        json_decref(cfg);
+                        json_decref(mapped);
+                        json_decref(layers);
+                        return NULL;
+                    }
+                } else {
+                    json_decref(shares);
+                }
             }
         }
     }

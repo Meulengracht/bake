@@ -91,6 +91,12 @@ int main(int argc, char** argv)
 {
     int status;
 
+#ifdef CHEF_ON_WINDOWS
+    utils_path_set_root("C:\\");
+#elif defined(CHEF_ON_LINUX)
+    utils_path_set_root("/");
+#endif
+
     // parse for --root option, and set the utils_path_set_root
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--root") == 0 && i + 1 < argc) {

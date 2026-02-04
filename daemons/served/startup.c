@@ -94,10 +94,9 @@ static int __ensure_chef_paths(void)
     // /chef
     // /chef/bin
     // /var/chef
-    // /var/chef/mnt
     // /var/chef/packs
 
-    path = served_paths_path("/chef/bin");
+    path = utils_path_binary_path();
     if (platform_mkdir(path) != 0) {
         VLOG_ERROR("startup", "failed to create path %s\n", path);
         free(path);
@@ -105,7 +104,7 @@ static int __ensure_chef_paths(void)
     }
     free(path);
 
-    path = served_paths_path("/var/chef/packs");
+    path = utils_path_packs_root();
     if (platform_mkdir(path) != 0) {
         VLOG_ERROR("startup", "failed to create path %s\n", path);
         free(path);
@@ -113,7 +112,7 @@ static int __ensure_chef_paths(void)
     }
     free(path);
 
-    path = served_paths_path("/var/chef/mnt");
+    path = utils_path_data_root();
     if (platform_mkdir(path) != 0) {
         VLOG_ERROR("startup", "failed to create path %s\n", path);
         free(path);
@@ -129,7 +128,7 @@ int served_startup(void)
     int          status;
     VLOG_DEBUG("startup", "served_startup()\n");
 
-#ifndef CHEF_AS_SNAP
+#if !defined(CHEF_AS_SNAP) && !defined(_WIN32)
     status = __write_profile_d_script();
     if (status != 0) {
         VLOG_ERROR("startup", "failed to write profile script\n");

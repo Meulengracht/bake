@@ -19,14 +19,7 @@
 #include <utils.h>
 #include <chef/platform.h>
 #include <errno.h>
-#ifdef _WIN32
-#include <windows.h>
-#ifndef PATH_MAX
-#define PATH_MAX MAX_PATH
-#endif
-#else
 #include <linux/limits.h>
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,73 +49,72 @@ char* served_paths_path(const char* path)
 char* utils_path_pack(const char* publisher, const char* package)
 {
     char buffer[PATH_MAX];
-#ifdef _WIN32
     snprintf(
         &buffer[0], sizeof(buffer),
-        "C:\\chef\\packs\\%s-%s.pack",
+        "var/chef/packs/%s-%s.pack",
         publisher, package
     );
-#else
-    snprintf(
-        &buffer[0], sizeof(buffer),
-        "/var/chef/packs/%s-%s.pack",
-        publisher, package
-    );
-#endif
     return served_paths_path(&buffer[0]);
 }
 
 char* utils_path_data(const char* publisher, const char* package, int revision)
 {
     char buffer[PATH_MAX];
-#ifdef _WIN32
     snprintf(
         &buffer[0], sizeof(buffer), 
-        "C:\\chef\\data\\%s-%s\\%i", 
+        "usr/share/chef/%s-%s/%i", 
         publisher, package, revision
     );
-#else
-    snprintf(
-        &buffer[0], sizeof(buffer), 
-        "/usr/share/chef/%s-%s/%i", 
-        publisher, package, revision
-    );
-#endif
     return served_paths_path(&buffer[0]);
 }
 
 char* utils_path_command_wrapper(const char* name)
 {
     char buffer[PATH_MAX];
-#ifdef _WIN32
     snprintf(
         &buffer[0], sizeof(buffer), 
-        "C:\\chef\\bin\\%s.cmd",
+        "chef/bin/%s", 
         name
     );
-#else
-    snprintf(
-        &buffer[0], sizeof(buffer), 
-        "/chef/bin/%s", 
-        name
-    );
-#endif
     return served_paths_path(&buffer[0]);
 }
 
 char* utils_path_state_db(void)
 {
     char buffer[PATH_MAX];
-#ifdef _WIN32
     snprintf(
         &buffer[0], sizeof(buffer),
-        "C:\\chef\\state.db"
+        "var/chef/state.db"
     );
-#else
+    return served_paths_path(&buffer[0]);
+}
+
+char* utils_path_binary_path(void)
+{
+    char buffer[PATH_MAX];
     snprintf(
         &buffer[0], sizeof(buffer),
-        "/var/chef/state.db"
+        "chef/bin"
     );
-#endif
+    return served_paths_path(&buffer[0]);
+}
+
+char* utils_path_packs_root(void)
+{
+    char buffer[PATH_MAX];
+    snprintf(
+        &buffer[0], sizeof(buffer),
+        "var/chef/packs"
+    );
+    return served_paths_path(&buffer[0]);
+}
+
+char* utils_path_data_root(void)
+{
+    char buffer[PATH_MAX];
+    snprintf(
+        &buffer[0], sizeof(buffer),
+        "usr/share/chef"
+    );
     return served_paths_path(&buffer[0]);
 }

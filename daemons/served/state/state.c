@@ -351,12 +351,6 @@ static void __state_destroy(struct __state* state)
     free((void*)state);
 }
 
-
-static const char* __get_state_path(void)
-{
-    return served_paths_path("/var/chef/state.db");
-}
-
 static int __create_database_schema(sqlite3* db)
 {
     char* errMsg = NULL;
@@ -949,7 +943,7 @@ static int __initialize_transaction_id_counter(struct __state* state)
 int served_state_load(void)
 {
     int         status;
-    const char* path = __get_state_path();
+    const char* path = utils_path_state_db();
     VLOG_DEBUG("served", "served_state_load(path=%s)\n", path);
 
     g_state = __state_new();
