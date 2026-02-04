@@ -58,8 +58,6 @@ static struct __container* __container_new(struct containerv_container* handle, 
 
 static void __container_delete(struct __container* container)
 {
-    int status;
-
     if (container == NULL) {
         return;
     }
@@ -303,9 +301,10 @@ static enum chef_status __create_linux_container(const struct chef_create_parame
 #elif CHEF_ON_WINDOWS
 static enum chef_status __create_hyperv_container(const struct chef_create_parameters* params, struct __create_container_params* containerParams)
 {
-    int    status;
-    char** wcow_parent_layers = NULL;
-    int    wcow_parent_layer_count = 0;
+    struct containerv_policy* policy;
+    char**                    wcow_parent_layers = NULL;
+    int                       wcow_parent_layer_count = 0;
+    int                       status;
     VLOG_DEBUG("cvd", "__create_hyperv_container()\n");
     
     if (__windows_hcs_has_disallowed_layers(params)) {
@@ -343,8 +342,8 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
     }
     
     // Optional WCOW parent layers (flattened list).
-    if (params->wcow_parent_layers_count != 0 && params->wcow_parent_layers != NULL) {
-        wcow_parent_layers = environment_unflatten((const char*)params->wcow_parent_layers);
+    if (params->guest_windows.wcow_parent_layers_count != 0 && params->guest_windows.wcow_parent_layers != NULL) {
+        wcow_parent_layers = environment_unflatten((const char*)params->guest_windows.wcow_parent_layers);
         if (wcow_parent_layers == NULL) {
             VLOG_ERROR("cvd", "cvd_create: failed to parse wcow_parent_layers\n");
             return CHEF_STATUS_INTERNAL_ERROR;

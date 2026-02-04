@@ -50,8 +50,12 @@ static const struct {
 
 static const size_t privilege_map_size = sizeof(privilege_map) / sizeof(privilege_map[0]);
 
-static const wchar_t* get_privilege_name(enum containerv_windows_privilege priv) {
-    for (size_t i = 0; i < privilege_map_size; i++) {
+// Map containerv privilege enum to Windows privilege name.
+static const wchar_t* get_privilege_name(enum containerv_windows_privilege priv)
+{
+    size_t i;
+
+    for (i = 0; i < privilege_map_size; i++) {
         if (privilege_map[i].cv_priv == priv) {
             return privilege_map[i].name;
         }
@@ -69,66 +73,86 @@ int windows_apply_security_profile(const struct containerv_policy* policy,
  * @param appcontainer_sid Output pointer for AppContainer SID
  * @return 0 on success, -1 on failure
  */
-int windows_create_appcontainer(const struct containerv_policy* policy,
-                               PSID* appcontainer_sid) {
-    if (!policy || !appcontainer_sid) {
+int windows_create_appcontainer(
+    const struct containerv_policy* policy,
+    PSID*                           appcontainerSid)
+{
+    int         useAppContainer;
+    const char* integrityLevel;
+    const char* const* capabilitySids;
+    int         capabilitySidCount;
+    const char* appContainerNameUtf8;
+    const char* displayNameUtf8;
+    wchar_t     appContainerName[256];
+    wchar_t     displayName[512];
+    PSID_AND_ATTRIBUTES capabilities;
+    DWORD       capabilityCount;
+    int         i;
+    int         j;
+    HRESULT     hr;
+
+    if (!policy || !appcontainerSid) {
         return -1;
     }
 
-    int use_app_container = 0;
-    const char* integrity_level = NULL;
-    const char* const* capability_sids = NULL;
-    int capability_sid_count = 0;
-    (void)integrity_level;
+    useAppContainer = 0;
+    integrityLevel = NULL;
+    capabilitySids = NULL;
+    capabilitySidCount = 0;
+    appContainerNameUtf8 = NULL;
+    displayNameUtf8 = NULL;
+    memset(appContainerName, 0, sizeof(appContainerName));
+    memset(displayName, 0, sizeof(displayName));
+    capabilities = NULL;
+    capabilityCount = 0;
+    i = 0;
+    j = 0;
+    hr = S_OK;
+
+    (void)integrityLevel;
     if (containerv_policy_get_windows_isolation(
             policy,
-            &use_app_container,
-            &integrity_level,
-            &capability_sids,
-            &capability_sid_count) != 0) {
+            &useAppContainer,
+            &integrityLevel,
+            &capabilitySids,
+            &capabilitySidCount) != 0) {
         return -1;
     }
 
-    if (!use_app_container) {
-        *appcontainer_sid = NULL;
+    if (!useAppContainer) {
+        *appcontainerSid = NULL;
         return 0;
     }
 
     // Use a stable AppContainer name. Callers that need per-container isolation should
     // integrate container IDs into this name.
-    const char* app_container_name_utf8 = "chef.container";
-    const char* display_name_utf8 = "Chef Container";
+    appContainerNameUtf8 = "chef.container";
+    displayNameUtf8 = "Chef Container";
 
-    wchar_t app_container_name[256];
-    if (MultiByteToWideChar(CP_UTF8, 0, app_container_name_utf8, -1,
-                            app_container_name, sizeof(app_container_name) / sizeof(wchar_t)) == 0) {
+    if (MultiByteToWideChar(CP_UTF8, 0, appContainerNameUtf8, -1,
+                            appContainerName, sizeof(appContainerName) / sizeof(wchar_t)) == 0) {
         return -1;
     }
 
-    wchar_t display_name[512];
-
-    if (MultiByteToWideChar(CP_UTF8, 0, display_name_utf8, -1,
-                            display_name, sizeof(display_name) / sizeof(wchar_t)) == 0) {
+    if (MultiByteToWideChar(CP_UTF8, 0, displayNameUtf8, -1,
+                            displayName, sizeof(displayName) / sizeof(wchar_t)) == 0) {
         return -1;
     }
     
     // Create capability array if specified
-    PSID_AND_ATTRIBUTES capabilities = NULL;
-    DWORD capability_count = 0;
-    
-    if (capability_sids && capability_sid_count > 0) {
-        capabilities = calloc((size_t)capability_sid_count, sizeof(SID_AND_ATTRIBUTES));
+    if (capabilitySids && capabilitySidCount > 0) {
+        capabilities = calloc((size_t)capabilitySidCount, sizeof(SID_AND_ATTRIBUTES));
         if (!capabilities) {
             return -1;
         }
 
-        capability_count = (DWORD)capability_sid_count;
-        for (int i = 0; i < capability_sid_count; i++) {
-            if (capability_sids[i] != NULL && ConvertStringSidToSidA(capability_sids[i], &capabilities[i].Sid)) {
+        capabilityCount = (DWORD)capabilitySidCount;
+        for (i = 0; i < capabilitySidCount; i++) {
+            if (capabilitySids[i] != NULL && ConvertStringSidToSidA(capabilitySids[i], &capabilities[i].Sid)) {
                 capabilities[i].Attributes = SE_GROUP_ENABLED;
             } else {
                 // Cleanup on failure
-                for (int j = 0; j < i; j++) {
+                for (j = 0; j < i; j++) {
                     LocalFree(capabilities[j].Sid);
                 }
                 free(capabilities);
@@ -138,12 +162,12 @@ int windows_create_appcontainer(const struct containerv_policy* policy,
     }
     
     // Create the AppContainer
-    HRESULT hr = CreateAppContainerProfile(app_container_name, display_name, display_name,
-                                          capabilities, capability_count, appcontainer_sid);
+    hr = CreateAppContainerProfile(appContainerName, displayName, displayName,
+                                  capabilities, capabilityCount, appcontainerSid);
     
     // Cleanup capabilities
     if (capabilities) {
-        for (DWORD i = 0; i < capability_count; i++) {
+        for (i = 0; i < (int)capabilityCount; i++) {
             LocalFree(capabilities[i].Sid);
         }
         free(capabilities);
@@ -153,7 +177,7 @@ int windows_create_appcontainer(const struct containerv_policy* policy,
         return 0;
     } else if (hr == HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)) {
         // AppContainer already exists, derive SID
-        return DeriveAppContainerSidFromAppContainerName(app_container_name, appcontainer_sid) == S_OK ? 0 : -1;
+        return DeriveAppContainerSidFromAppContainerName(appContainerName, appcontainerSid) == S_OK ? 0 : -1;
     } else {
         return -1;
     }

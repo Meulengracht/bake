@@ -134,8 +134,8 @@ void containerv_options_set_resource_limits(
 }
 
 void containerv_options_set_windows_container_isolation(
-    struct containerv_options*                    options,
-    enum containerv_windows_container_isolation   isolation)
+    struct containerv_options*                  options,
+    enum containerv_windows_container_isolation isolation)
 {
     if (options == NULL) {
         return;

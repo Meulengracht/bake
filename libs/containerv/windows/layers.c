@@ -55,6 +55,7 @@ struct wclayer_api {
 
 static struct wclayer_api g_wclayer = {0};
 
+// Initialize wclayer.dll bindings.
 static int __wclayer_initialize(void)
 {
     if (g_wclayer.module != NULL) {
@@ -76,60 +77,76 @@ static int __wclayer_initialize(void)
     return 0;
 }
 
-static int __utf8_to_wide_buf(const char* s, wchar_t* out, size_t cap)
+// Convert UTF-8 string to a wide buffer.
+static int __utf8_to_wide_buf(const char* src, wchar_t* outBuf, size_t cap)
 {
-    if (s == NULL || out == NULL || cap == 0) {
+    int charsWritten;
+
+    if (src == NULL || outBuf == NULL || cap == 0) {
         return -1;
     }
 
-    int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, out, (int)cap);
-    if (n <= 0) {
+    charsWritten = MultiByteToWideChar(CP_UTF8, 0, src, -1, outBuf, (int)cap);
+    if (charsWritten <= 0) {
         return -1;
     }
     return 0;
 }
 
+// Return non-zero if the path is an existing file.
 static int __file_exists(const char* path)
 {
-    DWORD attrs = GetFileAttributesA(path);
+    DWORD attrs;
+
+    attrs = GetFileAttributesA(path);
     return (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY));
 }
 
+// Return non-zero if the path is an existing directory.
 static int __dir_exists(const char* path)
 {
-    DWORD attrs = GetFileAttributesA(path);
+    DWORD attrs;
+
+    attrs = GetFileAttributesA(path);
     return (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY));
 }
 
+// Return non-zero if a Windows filter layerchain.json exists.
 static int __windowsfilter_has_layerchain(const char* layer_dir)
 {
+    char chainPath[MAX_PATH];
+    int  rc;
+
     if (layer_dir == NULL || layer_dir[0] == '\0') {
         return 0;
     }
 
-    char chain_path[MAX_PATH];
-    int rc = snprintf(chain_path, sizeof(chain_path), "%s\\layerchain.json", layer_dir);
-    if (rc < 0 || (size_t)rc >= sizeof(chain_path)) {
+    rc = snprintf(chainPath, sizeof(chainPath), "%s\\layerchain.json", layer_dir);
+    if (rc < 0 || (size_t)rc >= sizeof(chainPath)) {
         return 0;
     }
 
-    return __file_exists(chain_path);
+    return __file_exists(chainPath);
 }
 
+// Write an empty layerchain.json file.
 static int __write_empty_layerchain(const char* layer_dir)
 {
+    char  chainPath[MAX_PATH];
+    int   rc;
+    FILE* f;
+
     if (layer_dir == NULL || layer_dir[0] == '\0') {
         return -1;
     }
 
-    char chain_path[MAX_PATH];
-    int rc = snprintf(chain_path, sizeof(chain_path), "%s\\layerchain.json", layer_dir);
-    if (rc < 0 || (size_t)rc >= sizeof(chain_path)) {
+    rc = snprintf(chainPath, sizeof(chainPath), "%s\\layerchain.json", layer_dir);
+    if (rc < 0 || (size_t)rc >= sizeof(chainPath)) {
         return -1;
     }
 
-    FILE* f = NULL;
-    if (fopen_s(&f, chain_path, "wb") != 0 || f == NULL) {
+    f = NULL;
+    if (fopen_s(&f, chainPath, "wb") != 0 || f == NULL) {
         return -1;
     }
     fwrite("[]", 1, 2, f);
@@ -137,24 +154,30 @@ static int __write_empty_layerchain(const char* layer_dir)
     return 0;
 }
 
+// Write layerchain.json with parent layers.
 static int __write_layerchain(const char* layer_dir, const char* const* parents, int parent_count)
 {
+    char  chainPath[MAX_PATH];
+    int   rc;
+    json_t* arr;
+    int   i;
+    int   dumpRc;
+
     if (layer_dir == NULL || layer_dir[0] == '\0') {
         return -1;
     }
 
-    char chain_path[MAX_PATH];
-    int rc = snprintf(chain_path, sizeof(chain_path), "%s\\layerchain.json", layer_dir);
-    if (rc < 0 || (size_t)rc >= sizeof(chain_path)) {
+    rc = snprintf(chainPath, sizeof(chainPath), "%s\\layerchain.json", layer_dir);
+    if (rc < 0 || (size_t)rc >= sizeof(chainPath)) {
         return -1;
     }
 
-    json_t* arr = json_array();
+    arr = json_array();
     if (arr == NULL) {
         return -1;
     }
 
-    for (int i = 0; i < parent_count; i++) {
+    for (i = 0; i < parent_count; i++) {
         if (parents[i] == NULL || parents[i][0] == '\0') {
             continue;
         }
@@ -164,17 +187,23 @@ static int __write_layerchain(const char* layer_dir, const char* const* parents,
         }
     }
 
-    int dump_rc = json_dump_file(arr, chain_path, JSON_COMPACT);
+    dumpRc = json_dump_file(arr, chainPath, JSON_COMPACT);
     json_decref(arr);
-    return dump_rc == 0 ? 0 : -1;
+    return dumpRc == 0 ? 0 : -1;
 }
 
+// Duplicate the parent layer path list.
 static int __copy_parent_layers(
     const char* const* parents_in,
-    int parent_count_in,
-    char*** parents_out,
-    int* parent_count_out)
+    int                parent_count_in,
+    char***            parents_out,
+    int*               parent_count_out)
 {
+    char** out;
+    int    idx;
+    int    i;
+    int    j;
+
     if (parents_out == NULL || parent_count_out == NULL) {
         return -1;
     }
@@ -186,19 +215,19 @@ static int __copy_parent_layers(
         return 0;
     }
 
-    char** out = calloc((size_t)parent_count_in, sizeof(char*));
+    out = calloc((size_t)parent_count_in, sizeof(char*));
     if (out == NULL) {
         return -1;
     }
 
-    int idx = 0;
-    for (int i = 0; i < parent_count_in; i++) {
+    idx = 0;
+    for (i = 0; i < parent_count_in; i++) {
         if (parents_in[i] == NULL || parents_in[i][0] == '\0') {
             continue;
         }
         out[idx++] = _strdup(parents_in[i]);
         if (out[idx - 1] == NULL) {
-            for (int j = 0; j < idx - 1; j++) {
+            for (j = 0; j < idx - 1; j++) {
                 free(out[j]);
             }
             free(out);
@@ -216,12 +245,15 @@ static int __copy_parent_layers(
     return 0;
 }
 
+// Free a duplicated parent layer list.
 static void __free_parent_layers(char** parents, int parent_count)
 {
+    int i;
+
     if (parents == NULL) {
         return;
     }
-    for (int i = 0; i < parent_count; i++) {
+    for (i = 0; i < parent_count; i++) {
         free(parents[i]);
     }
     free(parents);

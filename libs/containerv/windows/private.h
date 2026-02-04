@@ -152,6 +152,8 @@ struct containerv_container_process {
     uint64_t         guest_id;
 };
 
+struct containerv_layer_context;
+
 // Forward declarations for HCS types
 typedef HANDLE HCS_SYSTEM;
 typedef HANDLE HCS_PROCESS;
@@ -206,6 +208,12 @@ typedef HRESULT (WINAPI *HcsCreateProcess_t)(
     HCS_PROCESS* Process
 );
 
+typedef HRESULT (WINAPI *HcsModifyComputeSystem_t)(
+    HCS_SYSTEM ComputeSystem,
+    HCS_OPERATION Operation,
+    PCWSTR Settings
+);
+
 typedef HRESULT (WINAPI *HcsCreateOperation_t)(
     void* Context,
     HCS_OPERATION_COMPLETION CompletionCallback,
@@ -239,6 +247,7 @@ struct hcs_api {
     HcsShutdownComputeSystem_t  HcsShutdownComputeSystem;
     HcsTerminateComputeSystem_t HcsTerminateComputeSystem;
     HcsCreateProcess_t          HcsCreateProcess;
+    HcsModifyComputeSystem_t    HcsModifyComputeSystem;
     HcsCreateOperation_t        HcsCreateOperation;
     HcsCloseOperation_t         HcsCloseOperation;
     HcsCloseComputeSystem_t     HcsCloseComputeSystem;
@@ -263,6 +272,7 @@ struct containerv_container {
     // Container identification
     char         id[__CONTAINER_ID_LENGTH + 1];
     char*        runtime_dir;
+    struct containerv_layer_context* layers;
     
     // Communication pipes
     HANDLE       host_pipe;
@@ -339,6 +349,14 @@ extern int __hcs_initialize(void);
  * @brief Clean up HCS API resources
  */
 extern void __hcs_cleanup(void);
+
+// Add a Plan9 share to an existing HCS compute system (Hyper-V isolation).
+extern int __hcs_plan9_share_add(
+    struct containerv_container* container,
+    const char*                  name,
+    const char*                  host_path,
+    int                          readonly
+);
 
 /**
  * @brief Create and start an HCS container compute system (schema1 container config).
@@ -429,7 +447,7 @@ extern int __windows_cleanup_network(
 extern int __windows_exec_in_vm_via_pid1d(
     struct containerv_container*       container,
     struct __containerv_spawn_options* options,
-    int*                               exit_code_out
+    int*                               exitCodeOut
 );
 
 /**

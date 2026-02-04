@@ -22,6 +22,8 @@
 // Internal helper for generating OCI runtime-spec JSON used by LCOW (OCI-in-UVM).
 // Not part of the public API.
 
+struct containerv_oci_mount_entry;
+
 struct containerv_oci_linux_spec_params {
     // JSON array string of args, e.g. ["/bin/sh","-lc","echo hi"].
     const char* args_json;
@@ -37,6 +39,16 @@ struct containerv_oci_linux_spec_params {
 
     // hostname (optional).
     const char* hostname;
+
+    // Optional bind mounts to append to the OCI spec.
+    const struct containerv_oci_mount_entry* mounts;
+    size_t                                   mounts_count;
+};
+
+struct containerv_oci_mount_entry {
+    const char* source;
+    const char* destination;
+    int         readonly;
 };
 
 int containerv_oci_build_linux_spec_json(

@@ -22,10 +22,15 @@
 #include <chef/environment.h>
 #include <chef/platform.h>
 #include <chef/utils_vafs.h>
+#include <chef/package.h>
 #include <errno.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
 #include <stdlib.h>
+#include <string.h>
+#ifndef _WIN32
+#include <strings.h>
+#endif
 #include <vafs/vafs.h>
 #include <vlog.h>
 
@@ -95,6 +100,7 @@ static int __configure_local_bind(struct gracht_link_socket* link)
 #include <windows.h>
 #include <ws2ipdef.h>
 #include <process.h>
+#include <chef/containerv/disk/lcow.h>
 
 // Windows 10 Insider build 17063 ++ 
 #include <afunix.h>
@@ -129,6 +135,73 @@ static int __configure_local_bind(struct gracht_link_socket* link)
     );
 
     gracht_link_socket_set_bind_address(link, &storage, __abstract_socket_size(&address->sun_path[1]));
+    return 0;
+}
+#endif
+
+// The format of the base can be either of 
+// ubuntu:24
+// windows:servercore-ltsc2022
+// windows:nanoserver-ltsc2022
+// windows:ltsc2022
+// From this, derive the guest type
+static enum chef_guest_type __guest_type_from_base(const char* platform)
+{
+    if (strncmp(platform, "windows:", 8) == 0 || strncmp(platform, "windows", 7) == 0) {
+        return CHEF_GUEST_TYPE_WINDOWS;
+    }
+    return CHEF_GUEST_TYPE_LINUX;
+}
+
+#ifdef _WIN32
+// TODO: We need a shared implementation that can be used here
+// and with cvd/client.c. They both need this kind of setup, and we
+// need to make a system that can be shared between the two.,
+static int __configure_windows_guest_options(struct chef_create_parameters* params)
+{
+    const char* container_type = getenv("CHEF_WINDOWS_CONTAINER_TYPE");
+    const char* uvm_image_path = getenv("CHEF_LCOW_UVM_IMAGE_PATH");
+    const char* uvm_url = getenv("CHEF_LCOW_UVM_URL");
+    const char* kernel = getenv("CHEF_LCOW_KERNEL_FILE");
+    const char* initrd = getenv("CHEF_LCOW_INITRD_FILE");
+    const char* boot = getenv("CHEF_LCOW_BOOT_PARAMETERS");
+
+    if (container_type != NULL && container_type[0] != '\0') {
+        if (strcmp(container_type, "linux") == 0 || strcmp(container_type, "lcow") == 0) {
+            params->gtype = CHEF_GUEST_TYPE_LINUX;
+        } else if (strcmp(container_type, "windows") == 0 || strcmp(container_type, "wcow") == 0) {
+            params->gtype = CHEF_GUEST_TYPE_WINDOWS;
+        }
+    }
+
+    if (params->gtype != CHEF_GUEST_TYPE_LINUX) {
+        return 0;
+    }
+
+    if (uvm_image_path != NULL && uvm_image_path[0] != '\0') {
+        params->guest_windows.lcow_uvm_image_path = platform_strdup(uvm_image_path);
+    } else if (uvm_url != NULL && uvm_url[0] != '\0') {
+        struct containerv_disk_lcow_uvm_config cfg = { 0 };
+        char* resolved = NULL;
+
+        cfg.uvm_url = uvm_url;
+        if (containerv_disk_lcow_resolve_uvm(&cfg, &resolved) != 0) {
+            VLOG_ERROR("served", "failed to resolve LCOW UVM assets from %s\n", uvm_url);
+            return -1;
+        }
+        params->guest_windows.lcow_uvm_image_path = resolved;
+    }
+
+    if (kernel != NULL && kernel[0] != '\0') {
+        params->guest_windows.lcow_kernel_file = platform_strdup(kernel);
+    }
+    if (initrd != NULL && initrd[0] != '\0') {
+        params->guest_windows.lcow_initrd_file = platform_strdup(initrd);
+    }
+    if (boot != NULL && boot[0] != '\0') {
+        params->guest_windows.lcow_boot_parameters = platform_strdup(boot);
+    }
+
     return 0;
 }
 #endif
@@ -345,7 +418,16 @@ static enum chef_status __create_container(
     VLOG_DEBUG("served", "__create_container(id=%s)\n", id);
 
     chef_create_parameters_init(&params);
+    
     params.id = (char*)id;
+    params.gtype = __guest_type_from_base(rootfs);
+
+#ifdef _WIN32
+    if (__configure_windows_guest_options(&params) != 0) {
+        chef_create_parameters_destroy(&params);
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+    }
+#endif
 
     // Optional network settings.
     // Precedence:
@@ -370,7 +452,12 @@ static enum chef_status __create_container(
         (void)__load_pack_network_defaults(rootfs, &params.network.gateway_ip, &params.network.dns);
     }
 
+    // On Windows HCS containers, OVERLAY layers are not supported.
+#ifdef _WIN32
+    chef_create_parameters_layers_add(&params, 2);
+#else
     chef_create_parameters_layers_add(&params, 3);
+#endif
     
     // initialize the base rootfs layer, this is a layer from
     // the base package
@@ -388,10 +475,12 @@ static enum chef_status __create_container(
     layer->target = platform_strdup("/");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
 
+#ifndef _WIN32
     // initialize the overlay layer, this is an writable layer
     // on top of the base and application layers
     layer = chef_create_parameters_layers_get(&params, 2);
     layer->type = CHEF_LAYER_TYPE_OVERLAY;
+#endif
     
     status = chef_cvd_create(client, &context, &params);
     if (status) {

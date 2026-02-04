@@ -207,7 +207,6 @@ void chef_served_listcount_invocation(struct gracht_message* message)
 {
     struct state_application* applications;
     int                       count = 0;
-    int                       status;
     VLOG_DEBUG("api", "chef_served_listcount_invocation()\n");
 
     served_state_lock();

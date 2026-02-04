@@ -60,9 +60,13 @@ extern char* served_paths_path(const char* path);
 // The following functions return paths already adjusted by served_paths_path
 extern void  utils_path_set_root(const char* root);
 extern char* utils_path_pack(const char* publisher, const char* package);
-extern char* utils_path_mount(const char* publisher, const char* package);
 extern char* utils_path_data(const char* publisher, const char* package, int revision);
 extern char* utils_path_command_wrapper(const char* name);
+extern char* utils_path_state_db(void);
+
+extern char* utils_path_binary_path(void);
+extern char* utils_path_packs_root(void);
+extern char* utils_path_data_root(void);
 
 
 /**

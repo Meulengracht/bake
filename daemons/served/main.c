@@ -17,6 +17,7 @@
  */
 
 #include <chef/dirs.h>
+#include <chef/platform.h>
 #include <errno.h>
 #include <gracht/link/socket.h>
 #include <gracht/server.h>
@@ -24,7 +25,6 @@
 #include <utils.h>
 #include <signal.h>
 #include <stdio.h>
-#include <sys/un.h>
 #include <vlog.h>
 
 // server protocol
@@ -33,6 +33,18 @@
 
 static const char*      g_servedUnPath = "/tmp/served";
 static gracht_server_t* g_server       = NULL;
+
+#ifdef CHEF_ON_WINDOWS
+#include <windows.h>
+#include <ws2ipdef.h>
+
+// Windows 10 Insider build 17063 ++ 
+#include <afunix.h>
+
+#define AF_LOCAL AF_UNIX
+#elif defined(CHEF_ON_LINUX)
+#include <sys/un.h>
+#endif
 
 static void init_link_config(struct gracht_link_socket* link)
 {
@@ -90,6 +102,12 @@ static void __cleanup_systems(int sig)
 int main(int argc, char** argv)
 {
     int status;
+
+#ifdef CHEF_ON_WINDOWS
+    utils_path_set_root("C:\\");
+#elif defined(CHEF_ON_LINUX)
+    utils_path_set_root("/");
+#endif
 
     // parse for --root option, and set the utils_path_set_root
     for (int i = 1; i < argc; i++) {

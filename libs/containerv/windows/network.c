@@ -34,30 +34,45 @@
 // PowerShell command buffer size
 #define PS_CMD_BUFFER_SIZE 2048
 
-static int __ipv4_netmask_to_prefix(const char* netmask, int* prefix_out)
+// Convert an IPv4 netmask string to a prefix length.
+static int __ipv4_netmask_to_prefix(const char* netmask, int* prefixOut)
 {
-    if (netmask == NULL || prefix_out == NULL) {
+    int          allDigits;
+    const char*  p;
+    int          v;
+    unsigned int a;
+    unsigned int b;
+    unsigned int c;
+    unsigned int d;
+    uint32_t     mask;
+    int          prefix;
+    uint32_t     bit;
+
+    if (netmask == NULL || prefixOut == NULL) {
         return -1;
     }
 
     // If the caller already passed a prefix length, accept it.
-    int all_digits = 1;
-    for (const char* p = netmask; *p; ++p) {
+    allDigits = 1;
+    for (p = netmask; *p; ++p) {
         if (*p < '0' || *p > '9') {
-            all_digits = 0;
+            allDigits = 0;
             break;
         }
     }
-    if (all_digits) {
-        int v = atoi(netmask);
+    if (allDigits) {
+        v = atoi(netmask);
         if (v < 0 || v > 32) {
             return -1;
         }
-        *prefix_out = v;
+        *prefixOut = v;
         return 0;
     }
 
-    unsigned int a = 0, b = 0, c = 0, d = 0;
+    a = 0;
+    b = 0;
+    c = 0;
+    d = 0;
     if (sscanf(netmask, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) {
         return -1;
     }
@@ -65,78 +80,81 @@ static int __ipv4_netmask_to_prefix(const char* netmask, int* prefix_out)
         return -1;
     }
 
-    uint32_t m = ((uint32_t)a << 24) | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d;
+    mask = ((uint32_t)a << 24) | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d;
 
     // Count leading ones; require a contiguous prefix.
-    int prefix = 0;
-    uint32_t bit = 0x80000000u;
-    while (bit != 0 && (m & bit) != 0) {
+    prefix = 0;
+    bit = 0x80000000u;
+    while (bit != 0 && (mask & bit) != 0) {
         prefix++;
         bit >>= 1;
     }
     // Remaining bits must be zero.
-    if (bit != 0 && (m & (bit - 1)) != 0) {
+    if (bit != 0 && (mask & (bit - 1)) != 0) {
         return -1;
     }
 
-    *prefix_out = prefix;
+    *prefixOut = prefix;
     return 0;
 }
 
-static int __is_ipv6_addr(const char* s)
+// Return non-zero if the address string looks like IPv6.
+static int __is_ipv6_addr(const char* addr)
 {
-    if (s == NULL || s[0] == '\0') {
+    if (addr == NULL || addr[0] == '\0') {
         return 0;
     }
-    return strchr(s, ':') != NULL;
+    return strchr(addr, ':') != NULL;
 }
 
-static int __parse_prefix_any(const char* netmask, int* prefix_out)
+// Parse an IPv4 netmask or numeric prefix into a prefix length.
+static int __parse_prefix_any(const char* netmask, int* prefixOut)
 {
-    if (prefix_out == NULL) {
+    int         allDigits;
+    const char* p;
+    int         v;
+
+    if (prefixOut == NULL) {
         return -1;
     }
     if (netmask == NULL || netmask[0] == '\0') {
         return -1;
     }
 
-    int all_digits = 1;
-    for (const char* p = netmask; *p; ++p) {
+    allDigits = 1;
+    for (p = netmask; *p; ++p) {
         if (*p < '0' || *p > '9') {
-            all_digits = 0;
+            allDigits = 0;
             break;
         }
     }
-    if (all_digits) {
-        int v = atoi(netmask);
+    if (allDigits) {
+        v = atoi(netmask);
         if (v < 0 || v > 128) {
             return -1;
         }
-        *prefix_out = v;
+        *prefixOut = v;
         return 0;
     }
 
     if (strchr(netmask, '.') != NULL) {
-        return __ipv4_netmask_to_prefix(netmask, prefix_out);
+        return __ipv4_netmask_to_prefix(netmask, prefixOut);
     }
 
     return -1;
 }
 
-/**
- * @brief Execute PowerShell command for network management
- * Windows HyperV networking is primarily managed via PowerShell cmdlets
- */
+// Execute a PowerShell command for network management.
 static int __execute_powershell_command(const char* command)
 {
-    char ps_command[PS_CMD_BUFFER_SIZE];
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    DWORD exit_code;
-    int result;
+    char                 psCommand[PS_CMD_BUFFER_SIZE];
+    STARTUPINFOA         si;
+    PROCESS_INFORMATION  pi;
+    DWORD                exitCode;
+    int                  result;
 
     // Build PowerShell command with error handling
-    snprintf(ps_command, sizeof(ps_command), 
+    snprintf(psCommand, sizeof(psCommand), 
         "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command \""
         "try { %s } catch { Write-Error $_.Exception.Message; exit 1 }\""
         , command);
@@ -147,12 +165,12 @@ static int __execute_powershell_command(const char* command)
     si.wShowWindow = SW_HIDE;  // Hide PowerShell window
     ZeroMemory(&pi, sizeof(pi));
 
-    VLOG_DEBUG("containerv[net]", "executing: %s\n", ps_command);
+    VLOG_DEBUG("containerv[net]", "executing: %s\n", psCommand);
 
     // Execute PowerShell command
     result = CreateProcessA(
         NULL,           // Application name
-        ps_command,     // Command line
+        psCommand,      // Command line
         NULL,           // Process security attributes
         NULL,           // Thread security attributes
         FALSE,          // Inherit handles
@@ -172,9 +190,9 @@ static int __execute_powershell_command(const char* command)
     WaitForSingleObject(pi.hProcess, 30000);  // 30 second timeout
 
     // Get exit code
-    if (GetExitCodeProcess(pi.hProcess, &exit_code)) {
-        if (exit_code != 0) {
-            VLOG_ERROR("containerv[net]", "PowerShell command failed with exit code: %lu\n", exit_code);
+    if (GetExitCodeProcess(pi.hProcess, &exitCode)) {
+        if (exitCode != 0) {
+            VLOG_ERROR("containerv[net]", "PowerShell command failed with exit code: %lu\n", exitCode);
             result = -1;
         } else {
             result = 0;
@@ -191,44 +209,50 @@ static int __execute_powershell_command(const char* command)
     return result;
 }
 
+// Execute a PowerShell command and return stdout as a string.
 static char* __powershell_exec_stdout(const char* command)
 {
-    char ps_command[PS_CMD_BUFFER_SIZE];
+    char psCommand[PS_CMD_BUFFER_SIZE];
 
     if (command == NULL) {
         return NULL;
     }
 
     snprintf(
-        ps_command,
-        sizeof(ps_command),
+        psCommand,
+        sizeof(psCommand),
         "powershell.exe -ExecutionPolicy Bypass -NoProfile -Command \"%s\"",
         command);
 
-    return platform_exec(ps_command);
+    return platform_exec(psCommand);
 }
 
-static void __trim_whitespace_inplace(char* s)
+// Trim leading/trailing whitespace from the string in place.
+static void __trim_whitespace_inplace(char* text)
 {
-    if (s == NULL) {
+    size_t start;
+    size_t len;
+    char   c;
+
+    if (text == NULL) {
         return;
     }
 
     // Trim leading
-    size_t start = 0;
-    while (s[start] == ' ' || s[start] == '\t' || s[start] == '\r' || s[start] == '\n') {
+    start = 0;
+    while (text[start] == ' ' || text[start] == '\t' || text[start] == '\r' || text[start] == '\n') {
         start++;
     }
     if (start != 0) {
-        memmove(s, s + start, strlen(s + start) + 1);
+        memmove(text, text + start, strlen(text + start) + 1);
     }
 
     // Trim trailing
-    size_t len = strlen(s);
+    len = strlen(text);
     while (len > 0) {
-        char c = s[len - 1];
+        c = text[len - 1];
         if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
-            s[len - 1] = '\0';
+            text[len - 1] = '\0';
             len--;
             continue;
         }

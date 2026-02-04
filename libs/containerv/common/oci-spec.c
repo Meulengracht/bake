@@ -293,6 +293,86 @@ static int __build_mounts(json_t* spec)
     return 0;
 }
 
+static int __append_bind_mount(json_t* mounts, const char* source, const char* destination, int readonly)
+{
+    json_t* obj = NULL;
+    json_t* opts = NULL;
+
+    if (mounts == NULL || source == NULL || destination == NULL) {
+        return -1;
+    }
+
+    obj = json_object();
+    opts = json_array();
+    if (obj == NULL || opts == NULL) {
+        json_decref(obj);
+        json_decref(opts);
+        return -1;
+    }
+
+    if (containerv_json_object_set_string(obj, "destination", destination) != 0 ||
+        containerv_json_object_set_string(obj, "type", "bind") != 0 ||
+        containerv_json_object_set_string(obj, "source", source) != 0) {
+        json_decref(obj);
+        json_decref(opts);
+        return -1;
+    }
+
+    if (containerv_json_array_append_string(opts, "rbind") != 0 ||
+        containerv_json_array_append_string(opts, "rprivate") != 0 ||
+        containerv_json_array_append_string(opts, readonly ? "ro" : "rw") != 0) {
+        json_decref(obj);
+        json_decref(opts);
+        return -1;
+    }
+
+    if (json_object_set_new(obj, "options", opts) != 0) {
+        json_decref(obj);
+        json_decref(opts);
+        return -1;
+    }
+
+    if (json_array_append_new(mounts, obj) != 0) {
+        json_decref(obj);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int __append_custom_mounts(json_t* spec, const struct containerv_oci_linux_spec_params* params)
+{
+    json_t* mounts;
+
+    if (spec == NULL || params == NULL || params->mounts == NULL || params->mounts_count == 0) {
+        return 0;
+    }
+
+    mounts = json_object_get(spec, "mounts");
+    if (mounts == NULL || !json_is_array(mounts)) {
+        mounts = json_array();
+        if (mounts == NULL) {
+            return -1;
+        }
+        if (json_object_set_new(spec, "mounts", mounts) != 0) {
+            json_decref(mounts);
+            return -1;
+        }
+    }
+
+    for (size_t i = 0; i < params->mounts_count; ++i) {
+        const struct containerv_oci_mount_entry* m = &params->mounts[i];
+        if (m->source == NULL || m->source[0] == '\0' || m->destination == NULL || m->destination[0] == '\0') {
+            continue;
+        }
+        if (__append_bind_mount(mounts, m->source, m->destination, m->readonly) != 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 static int __build_namespaces(json_t* linuxObj)
 {
     json_t* namespaces = json_array();
@@ -531,6 +611,11 @@ int containerv_oci_build_linux_spec_json(
     status = __build_mounts(spec);
     if (status) {
         goto cleanup;
+    }
+
+    if (__append_custom_mounts(spec, params) != 0) {
+        json_decref(spec);
+        return -1;
     }
 
     status = __build_namespaces(linuxObj);

@@ -177,29 +177,46 @@ serve remove package              # Remove package
 
 ### General Guidelines
 - **Language**: Pure C for maximum portability
-- **Headers**: Use include guards or `#pragma once`
+- **Headers**: Use include guards for all C headers, include copyright notice as well
 - **Formatting**: Follow existing style (4-space indentation)
 - **Error Handling**: Always check return values
 - **Memory Management**: No leaks - free all allocated memory
 - **Cross-platform**: Use platform abstraction layer (libs/platform)
+- **Reusability**: Reusing code across the project is a priority, whenever possible
+  - Functions that provide basic functionality, for instance, path manipulation or file manipulation might be candidates for the platform library
+  - Functions only relevant for a library should stay there, but may be moved to helper files to be reused
+  inside that library
 - **Logging**: Use vlog library for consistent logging
+  - All functions start with a VLOG_DEBUG trace, with basic parameters logged
+  - All error paths must contain a VLOG_ERROR message
+  - Decisions and/or interesting variables should be logged with VLOG_DEBUG
+  - Only messages meant for the user should be logged with VLOG_TRACE
 
 ### Naming Conventions
 - **Functions**: 
   - Public functions: lowercase with underscores (`parse_recipe`, `build_package`)
   - Static (file-local) functions: prefix with `__` and use snake_case (`__apply_policy_feature`, `__create_policy_from_config`)
 - **Variables and Parameters**: camelCase (`policyProfiles`, `customPaths`, `featureName`)
+  - Variables should be block-aligned
+  - Multiline parameters should be block-aligned
 - **Structure Members**: snake_case (`custom_paths`, `layer_context`, `default_policy`)
 - **Types**: lowercase with underscores, may use typedefs
 - **Constants/Macros**: UPPERCASE with underscores
-- **Global variables**: prefix with `g_`
+- **Global variables**: prefix with `g_` and use camelCase for the remaining name
 
 ### Code Organization
 - **Small Functions**: Favor small, focused functions over large ones
   - Extract nested for-loops into their own functions
   - Each function should have a single, clear purpose
   - Keep functions under ~50 lines when possible
+  - Prefer early returns instead of deep nesting when possible
+  - goto patterns are okay when used for cleanup to keep functions simple
+  - Clear comments above helper functions explaining their purpose
+  - If there are more than 3 parameters for functions, consider using a structure instead
 - **Static Functions**: File-local functions must be `static` and prefixed with `__`
+- **Helper Comments**: Add a brief purpose comment above helper/static functions
+- **Local Variables**: Declare locals at the start of functions with block-aligned formatting, then initialize/assign close to first use
+- **Multiline Parameters**: Align parameter names in multiline function signatures
 
 ### File Organization
 - Header files in `include/` directories or alongside implementation
@@ -210,9 +227,16 @@ serve remove package              # Remove package
 ```c
 // Error handling pattern
 int result = function_call();
-if (result != 0) {
-    VLOG_ERROR("operation", "failed: %d\n", result);
+if (result) {
+    VLOG_ERROR("scope", "failed: %d\n", result);
     return result;
+}
+
+// Explicit NULL checks
+void* mem = malloc(512);
+if (mem == NULL) {
+    VLOG_ERROR("scope", "failed to allocate memory\n");
+    return NULL;
 }
 
 // Platform abstraction
@@ -323,7 +347,7 @@ When making changes:
 
 ### Container Support
 - Linux: Uses namespaces, cgroups, overlayfs
-- Windows: HCI layer (planned)
+- Windows: HCI layer using HyperV HCS with both windows and linux guests
 - Provides isolated build environments
 
 ## Tips for Contributors

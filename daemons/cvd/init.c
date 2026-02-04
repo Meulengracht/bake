@@ -24,7 +24,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h>
 #include <vlog.h>
 
 #include "private.h"
@@ -32,6 +31,7 @@
 #if defined(__linux__)
 #include <arpa/inet.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 static int __local_size(const char* address) {
     // If the address starts with '@', it is an abstract socket path.
@@ -116,24 +116,23 @@ static int init_link_config(struct gracht_link_socket* link, enum gracht_link_ty
             fprintf(stderr, "init_link_config failed to configure local link\n");
             return status;
         }
-        domain = AF_LOCAL;
         size = __local_size(config->address);
 
         printf("listening at %s\n", config->address);
     } else if (!strcmp(config->type, "inet4")) {
         __configure_inet4(&addr_storage, config);
-        domain = AF_INET;
         size = sizeof(struct sockaddr_in);
         
         printf("listening on %s:%u\n", config->address, config->port);
     } else if (!strcmp(config->type, "inet6")) {
         // TODO
-        domain = AF_INET6;
         size = sizeof(struct sockaddr_in6);
     } else {
         fprintf(stderr, "init_link_config invalid link type %s\n", config->type);
         return -1;
     }
+    
+    domain = addr_storage.ss_family;
 
     gracht_link_socket_set_type(link, type);
     gracht_link_socket_set_bind_address(link, (const struct sockaddr_storage*)&addr_storage, size);
