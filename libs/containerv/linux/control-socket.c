@@ -29,7 +29,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/wait.h>
+#include <pid1_common.h>
 #include <unistd.h>
 #include <vlog.h>
 
@@ -116,25 +116,17 @@ static void __handle_wait_command(struct containerv_container* container, pid_t 
         .data.wait = { 0 }
     };
 
-    int wstatus = 0;
-    pid_t waited;
+    int exit_code = -1;
     VLOG_DEBUG("containerv[child]", "__handle_wait_command(processId=%d)\n", processId);
 
-    waited = waitpid(processId, &wstatus, 0);
-    if (waited < 0) {
+    if (pid1_wait_process(processId, &exit_code) != 0) {
         response.data.wait.status = -1;
         response.data.wait.exit_code = -1;
         goto respond;
     }
 
     response.data.wait.status = 0;
-    if (WIFEXITED(wstatus)) {
-        response.data.wait.exit_code = WEXITSTATUS(wstatus);
-    } else if (WIFSIGNALED(wstatus)) {
-        response.data.wait.exit_code = 128 + WTERMSIG(wstatus);
-    } else {
-        response.data.wait.exit_code = -1;
-    }
+    response.data.wait.exit_code = exit_code;
 
 respond:
     if (__send_command_maybe_fds(container->socket_fd, from, NULL, 0, &response, sizeof(struct __socket_response))) {

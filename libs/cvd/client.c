@@ -30,7 +30,6 @@
 #include "chef_cvd_service_client.h"
 
 #if defined(__linux__)
-#include <chef/containerv/disk/ubuntu.h>
 #include <arpa/inet.h>
 #include <sys/un.h>
 
@@ -259,6 +258,8 @@ static void __initialize_overlays(struct chef_create_parameters* params, const c
 }
 
 #ifdef CHEF_ON_LINUX
+#include <chef/containerv/disk/ubuntu.h>
+
 // Initialize the base rootfs for the build container if, and only if, it's not already
 // initialized. We use the build cache, and check key "rootfs-initialized" to see if we've
 // already done this.
@@ -300,9 +301,22 @@ static char* __initialize_maybe_rootfs(struct recipe* recipe, struct build_cache
     return rootfs;
 }
 #else
+#include <chef/containerv/disk/lcow.h>
+
 static char* __initialize_maybe_rootfs(struct recipe* recipe, struct build_cache* cache)
 {
+    struct containerv_disk_lcow_uvm_config cfg = { 
+        .uvm_url = "" 
+    };
+    char* lcow_uvm_resolved = NULL;
+    
+    if (containerv_disk_lcow_resolve_uvm(&cfg, &lcow_uvm_resolved)) {
+        VLOG_ERROR("cvd", "cvd_create: failed to resolve LCOW UVM assets\n");
+        return NULL;
+    }
+
     VLOG_DEBUG("bake", "__initialize_maybe_rootfs() - non-Linux implementation\n");
+    free(lcow_uvm_resolved);
     return platform_strdup("");
 }
 #endif

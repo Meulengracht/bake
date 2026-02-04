@@ -22,6 +22,7 @@
 #include <chef/containerv.h>
 #include <chef/containerv/bpf-manager.h>
 #include <dirent.h>
+#include <errno.h>
 #include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,6 +39,7 @@
 #include <sys/sysmacros.h> // makedev
 
 #include <unistd.h>
+#include <pid1_common.h>
 #include "private.h"
 
 #include "standard-mounts.h"
@@ -245,44 +247,6 @@ static int __wait_for_container_event(int fds[2], struct containerv_event* event
     return 0;
 }
 
-static pid_t __exec(struct __containerv_spawn_options* options)
-{
-    pid_t processId;
-    int   status;
-
-    // fork a new child, all daemons/root programs are spawned from this code
-    processId = fork();
-    if (processId != (pid_t)0) {
-        return processId;
-    }
-
-    if (options->uid != (gid_t)-1) {
-        VLOG_DEBUG("containerv[child]", "switching user (%i)\n", options->uid);
-        status = setuid(options->uid);
-        if (status) {
-            VLOG_ERROR("containerv[child]", "failed to switch user: %i (uid=%i)\n", status, options->uid);
-            _Exit(-EPERM);
-        }
-    }
-
-    if (options->gid != (gid_t)-1) {
-        VLOG_DEBUG("containerv[child]", "switching group (%i)\n", options->gid);
-        status = setgid(options->gid);
-        if (status) {
-            VLOG_ERROR("containerv[child]", "failed to switch group: %i (gid=%i)\n", status, options->gid);
-            _Exit(-EPERM);
-        }
-    }
-
-    status = execve(options->path, (char* const*)options->argv, (char* const*)options->envv);
-    if (status) {
-        fprintf(stderr, "[%s]: failed to execute: %i\n", options->path, status);
-    }
-
-    _Exit(status);
-    return 0; // never reached
-}
-
 static void __print(const char* line, int error) {
     if (error) {
         VLOG_ERROR("containerv[child]", line);
@@ -365,11 +329,34 @@ int __containerv_spawn(struct containerv_container* container, struct __containe
     struct containerv_container_process* proc;
     pid_t                                processId;
     int                                  status;
+    const char*                          argv_fallback[] = { NULL, NULL };
+    const char* const*                   argv;
+    pid1_process_options_t               pid1_opts;
     VLOG_DEBUG("containerv[child]", "__containerv_spawn(path=%s)\n", options->path);
 
-    processId = __exec(options);
-    if (processId == (pid_t)-1) {
-        VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to exec %s\n", options->path);
+    argv = options->argv;
+    if (argv == NULL || argv[0] == NULL) {
+        argv_fallback[0] = options->path;
+        argv = argv_fallback;
+    }
+
+    memset(&pid1_opts, 0, sizeof(pid1_opts));
+    pid1_opts.command = options->path;
+    pid1_opts.args = argv;
+    pid1_opts.environment = options->envv;
+    pid1_opts.working_directory = NULL;
+    pid1_opts.log_path = NULL;
+    pid1_opts.memory_limit_bytes = 0;
+    pid1_opts.cpu_percent = 0;
+    pid1_opts.process_limit = 0;
+    pid1_opts.uid = (options->uid == (uid_t)-1) ? 0 : (uint32_t)options->uid;
+    pid1_opts.gid = (options->gid == (gid_t)-1) ? 0 : (uint32_t)options->gid;
+    pid1_opts.wait_for_exit = (options->flags & CV_SPAWN_WAIT) ? 1 : 0;
+    pid1_opts.forward_signals = 1;
+
+    status = pid1_spawn_process(&pid1_opts, &processId);
+    if (status != 0) {
+        VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to spawn %s\n", options->path);
         return -1;
     }
 
@@ -379,9 +366,14 @@ int __containerv_spawn(struct containerv_container* container, struct __containe
     }
 
     if (options->flags & CV_SPAWN_WAIT) {
-        if (waitpid(processId, &status, 0) != processId) {
+        int exit_code = 0;
+        if (pid1_wait_process(processId, &exit_code) != 0) {
             VLOG_ERROR("containerv[child]", "__containerv_spawn: failed to wait for pid %u\n", processId);
             return -1;
+        }
+        if (proc) {
+            list_remove(&container->processes, &proc->list_header);
+            containerv_container_process_delete(proc);
         }
     }
 
@@ -396,7 +388,7 @@ int __containerv_kill(struct containerv_container* container, pid_t processId)
     list_foreach (&container->processes, i) {
         struct containerv_container_process* proc = (struct containerv_container_process*)i;
         if (proc->pid == processId) {
-            kill(processId, SIGTERM);
+            (void)pid1_kill_process(processId);
             list_remove(&container->processes, i);
             containerv_container_process_delete(proc);
             return 0;
@@ -407,14 +399,9 @@ int __containerv_kill(struct containerv_container* container, pid_t processId)
 
 void __containerv_destroy(struct containerv_container* container)
 {
-    struct list_item* i;
     VLOG_DEBUG("containerv[child]", "__destroy_container()\n");
 
-    // kill processes
-    list_foreach (&container->processes, i) {
-        struct containerv_container_process* proc = (struct containerv_container_process*)i;
-        kill(proc->pid, SIGTERM);
-    }
+    (void)pid1_cleanup();
 
     // send event
     if (container->child[__FD_WRITE] != -1) {
@@ -454,6 +441,10 @@ static int __container_idle_loop(struct containerv_container* container)
     for (;;) {
         status = poll(fds, 1, -1);
         if (status <= 0) {
+            if (status < 0 && errno == EINTR) {
+                (void)pid1_reap_zombies();
+                continue;
+            }
             return -1;
         }
         
@@ -969,6 +960,13 @@ static int __container_run(
     status = containerv_set_init_process();
     if (status) {
         VLOG_ERROR("containerv[child]", "__container_run: failed to assume the PID of 1\n");
+        return status;
+    }
+
+    // Initialize shared PID1 service for process lifecycle management
+    status = pid1_init();
+    if (status) {
+        VLOG_ERROR("containerv[child]", "__container_run: failed to initialize PID1 service\n");
         return status;
     }
 

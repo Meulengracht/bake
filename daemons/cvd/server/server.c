@@ -20,7 +20,6 @@
 #include <chef/containerv.h>
 #include <chef/containerv/layers.h>
 #include <chef/containerv/policy.h>
-#include <chef/containerv/disk/lcow.h>
 #include <chef/dirs.h>
 #include <chef/package.h>
 #include <chef/platform.h>
@@ -304,10 +303,9 @@ static enum chef_status __create_linux_container(const struct chef_create_parame
 #elif CHEF_ON_WINDOWS
 static enum chef_status __create_hyperv_container(const struct chef_create_parameters* params, struct __create_container_params* containerParams)
 {
-    int                              status;
-    char**                           wcow_parent_layers = NULL;
-    int                              wcow_parent_layer_count = 0;
-    char*                            lcow_uvm_resolved = NULL;
+    int    status;
+    char** wcow_parent_layers = NULL;
+    int    wcow_parent_layer_count = 0;
     VLOG_DEBUG("cvd", "__create_hyperv_container()\n");
     
     if (__windows_hcs_has_disallowed_layers(params)) {
@@ -333,24 +331,12 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
         // LCOW requires HvRuntime settings for the Linux utility VM.
         // These values are passed through to schema1 HvRuntime.
         const char* uvm_image = params->guest_windows.lcow_uvm_image_path;
-        const char* uvm_url = params->guest_windows.lcow_uvm_url;
         const char* kernel = params->guest_windows.lcow_kernel_file;
         const char* initrd = params->guest_windows.lcow_initrd_file;
         const char* boot = params->guest_windows.lcow_boot_parameters;
 
-        if ((uvm_image == NULL || uvm_image[0] == '\0') && uvm_url != NULL && uvm_url[0] != '\0') {
-            struct containerv_disk_lcow_uvm_config cfg = { .uvm_url = uvm_url };
-            if (containerv_disk_lcow_resolve_uvm(&cfg, &lcow_uvm_resolved) != 0) {
-                VLOG_ERROR("cvd", "cvd_create: failed to resolve LCOW UVM assets\n");
-                free(lcow_uvm_resolved);
-                return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-            }
-            uvm_image = lcow_uvm_resolved;
-        }
-
         if (uvm_image == NULL || uvm_image[0] == '\0') {
             VLOG_ERROR("cvd", "cvd_create: LCOW requires UVM image path or URL in guest_windows options\n");
-            free(lcow_uvm_resolved);
             return CHEF_STATUS_FAILED_ROOTFS_SETUP;
         }
         containerv_options_set_windows_lcow_hvruntime(containerParams->opts, uvm_image, kernel, initrd, boot);
@@ -361,7 +347,6 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
         wcow_parent_layers = environment_unflatten((const char*)params->wcow_parent_layers);
         if (wcow_parent_layers == NULL) {
             VLOG_ERROR("cvd", "cvd_create: failed to parse wcow_parent_layers\n");
-            free(lcow_uvm_resolved);
             return CHEF_STATUS_INTERNAL_ERROR;
         }
 
@@ -377,40 +362,38 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
     
     // Compose layers into final rootfs
     status = containerv_layers_compose_with_options(
-        cvLayers,
-        cvLayerCount,
-        cvdID,
+        containerParams->layers,
+        containerParams->layers_count,
+        containerParams->id,
         containerParams->opts,
-        &layerContext
+        &containerParams->layer_context
     );
-    free(cvLayers);
 
     if (status != 0) {
         VLOG_ERROR("cvd", "cvd_create: failed to compose layers\n");
         environment_destroy(wcow_parent_layers);
-        free(lcow_uvm_resolved);
         return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
 
     // Parent layers are only needed during compose.
     if (wcow_parent_layers != NULL) {
         environment_destroy(wcow_parent_layers);
-        containerv_options_set_windows_wcow_parent_layers(opts, NULL, 0);
+        containerv_options_set_windows_wcow_parent_layers(containerParams->opts, NULL, 0);
     }
 
-    containerv_options_set_layers(opts, layerContext);
+    containerv_options_set_layers(containerParams->opts, containerParams->layer_context);
 
     // setup policy
     policy = __policy_from_spec(&params->policy);
     if (policy != NULL) {
         VLOG_DEBUG("cvd", "cvd_create: applying security policy profiles\n");
-        containerv_options_set_policy(opts, policy);
+        containerv_options_set_policy(containerParams->opts, policy);
     }
 
     // Optional network configuration
     if (__is_nonempty(params->network.container_ip) && __is_nonempty(params->network.container_netmask)) {
         containerv_options_set_network_ex(
-            opts,
+            containerParams->opts,
             params->network.container_ip,
             params->network.container_netmask,
             __is_nonempty(params->network.host_ip) ? params->network.host_ip : NULL,
@@ -427,20 +410,23 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
 
     // Enable network capability if requested by policy profile or network configuration.
     if (__spec_contains_plugin(&params->policy, "network") ||
-        (__is_nonempty(params->network.container_ip) && __is_nonempty(params->network.container_netmask))) {
+        (__is_nonempty(params->network.container_ip) 
+            && __is_nonempty(params->network.container_netmask))) {
         caps |= CV_CAP_NETWORK;
     }
 
-    containerv_options_set_caps(opts, caps);
+    containerv_options_set_caps(containerParams->opts, caps);
 
     // create the container
-    status = containerv_create(cvdID, opts, &cvContainer);
+    status = containerv_create(
+        containerParams->id,
+        containerParams->opts,
+        &containerParams->container
+    );
     if (status) {
         VLOG_ERROR("cvd", "failed to start the container\n");
-        free(lcow_uvm_resolved);
         return __chef_status_from_errno();
     }
-    free(lcow_uvm_resolved);
     return CHEF_STATUS_SUCCESS;
 }
 #endif

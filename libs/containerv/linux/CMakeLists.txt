@@ -16,4 +16,4 @@ add_library(containerv-linux STATIC
 target_include_directories(containerv-linux PRIVATE ../include)
 target_link_libraries(containerv-linux PUBLIC platform vlog vafs ${FUSE_LIBRARIES})
 target_link_libraries(containerv-linux PUBLIC cap seccomp)
-target_link_libraries(containerv-linux PRIVATE containerv-common)
+target_link_libraries(containerv-linux PRIVATE containerv-common containerv-pid1)

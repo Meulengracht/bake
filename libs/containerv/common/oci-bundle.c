@@ -195,8 +195,8 @@ static int __ensure_parent_dirs(const char* root, const char* sub_path)
 
 static int __copytree_best_effort(const char* source_root, const char* dest_root)
 {
-    struct list files;
     struct list_item* item;
+    struct list       files;
 
     if (!source_root || !dest_root) {
         errno = EINVAL;
@@ -235,8 +235,7 @@ static int __copytree_best_effort(const char* source_root, const char* dest_root
                 (void)platform_symlink(link_target, dest_path, 0);
                 free(link_target);
             }
-        }
-        else if (entry->type == PLATFORM_FILETYPE_FILE || entry->type == PLATFORM_FILETYPE_UNKNOWN) {
+        } else if (entry->type == PLATFORM_FILETYPE_FILE || entry->type == PLATFORM_FILETYPE_UNKNOWN) {
             if (platform_copyfile(entry->path, dest_path) != 0) {
                 free(dest_path);
                 platform_getfiles_destroy(&files);
