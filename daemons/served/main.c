@@ -50,7 +50,7 @@ static void init_link_config(struct gracht_link_socket* link)
 {
     struct sockaddr_un addr = { 0 };
     
-    unlink(g_servedUnPath);
+    platform_unlink(g_servedUnPath);
     addr.sun_family = AF_LOCAL;
     strncpy(addr.sun_path, g_servedUnPath, sizeof(addr.sun_path));
     addr.sun_path[sizeof(addr.sun_path) - 1] = '\0';

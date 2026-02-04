@@ -308,7 +308,6 @@ static int __initialize_maybe_lcow_uvm(struct chef_create_parameters* params)
     struct containerv_disk_lcow_uvm_config cfg = { 0 };
     char*                                  lcow_uvm_resolved = NULL;
 
-    cfg.uvm_image_path = guest->lcow_uvm_image_path;
     cfg.uvm_url = guest->lcow_uvm_url;
 
     if (containerv_disk_lcow_resolve_uvm(&cfg, &lcow_uvm_resolved)) {
