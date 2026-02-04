@@ -2706,34 +2706,72 @@ int containerv_spawn_in_container(
         goto cleanup;
     }
     
-    // Build command line string from argv
-    size_t cmdlineLen = 0;
+    // Build command line string from argv with proper Windows quoting
+    // Calculate required size first
+    size_t cmdlineLen = strlen(commandPath) + 1; // path + null terminator
     if (argv != NULL) {
-        for (int i = 0; argv[i] != NULL; i++) {
-            cmdlineLen += strlen(argv[i]) + 3; // Space + potential quotes + arg
+        for (int i = 1; argv[i] != NULL; i++) {
+            const char* arg = argv[i];
+            int needsQuotes = 0;
+            
+            // Check if argument needs quoting
+            for (const char* p = arg; *p; ++p) {
+                if (*p == ' ' || *p == '\t' || *p == '"') {
+                    needsQuotes = 1;
+                    break;
+                }
+            }
+            
+            cmdlineLen += 1; // space before argument
+            if (needsQuotes) {
+                cmdlineLen += 2; // opening and closing quotes
+                // Account for escaped quotes
+                for (const char* p = arg; *p; ++p) {
+                    cmdlineLen += (*p == '"') ? 2 : 1; // \" for quotes, 1 for others
+                }
+            } else {
+                cmdlineLen += strlen(arg);
+            }
         }
     }
-    if (cmdlineLen == 0) {
-        cmdlineLen = strlen(commandPath) + 1;
-    }
     
-    char* cmdline = (char*)calloc(cmdlineLen + strlen(commandPath) + 10, 1);
+    char* cmdline = (char*)calloc(cmdlineLen + 1, 1);
     if (cmdline == NULL) {
         VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to allocate command line\n");
         goto cleanup;
     }
     
+    // Build the command line
     strcpy(cmdline, commandPath);
     if (argv != NULL) {
         for (int i = 1; argv[i] != NULL; i++) {
+            const char* arg = argv[i];
             strcat(cmdline, " ");
-            // Simple quoting - add quotes if arg contains spaces
-            if (strchr(argv[i], ' ') != NULL) {
-                strcat(cmdline, "\"");
-                strcat(cmdline, argv[i]);
-                strcat(cmdline, "\"");
+            
+            // Check if argument needs quoting
+            int needsQuotes = 0;
+            for (const char* p = arg; *p; ++p) {
+                if (*p == ' ' || *p == '\t' || *p == '"') {
+                    needsQuotes = 1;
+                    break;
+                }
+            }
+            
+            if (!needsQuotes) {
+                strcat(cmdline, arg);
             } else {
-                strcat(cmdline, argv[i]);
+                strcat(cmdline, "\"");
+                // Add argument with escaped quotes
+                for (const char* p = arg; *p; ++p) {
+                    if (*p == '"') {
+                        strcat(cmdline, "\\\"");
+                    } else {
+                        size_t len = strlen(cmdline);
+                        cmdline[len] = *p;
+                        cmdline[len + 1] = '\0';
+                    }
+                }
+                strcat(cmdline, "\"");
             }
         }
     }
@@ -2822,8 +2860,8 @@ int containerv_spawn_in_container(
         exitCode = (int)exitCodeUl;
         VLOG_DEBUG("containerv", "containerv_spawn_in_container: process exited with code %d\n", exitCode);
     } else {
-        VLOG_WARNING("containerv", "containerv_spawn_in_container: failed to get exit code\n");
-        exitCode = 0; // Assume success if we can't get the exit code
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to get exit code\n");
+        exitCode = -1; // Error - could not determine exit code
     }
     
 cleanup:
