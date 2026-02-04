@@ -37,17 +37,6 @@ fi
 if [[ "${CONTAINERV_SECCOMP_LOG:-0}" == "1" ]]; then
     echo "NOTE: Seccomp logging is enabled (CONTAINERV_SECCOMP_LOG=1)"
     echo "      Denied syscalls will be logged to audit/kernel logs instead of just returning EPERM"
-
-    # Debug whether ausearch is available at either
-    # /usr/sbin/ausearch or /usr/bin/ausearch
-    if [[ -x "/usr/sbin/ausearch" ]]; then
-        echo "      ausearch found at /usr/sbin/ausearch"
-    elif [[ -x "/usr/bin/ausearch" ]]; then
-        echo "      ausearch found at /usr/bin/ausearch"
-    else
-        echo "      WARNING: ausearch not found in /usr/sbin or /usr/bin"
-        echo "               Seccomp denials may not be logged properly without it"
-    fi
 fi
 
 # Helper to dump seccomp denial logs
@@ -97,7 +86,9 @@ dump_seccomp_logs() {
             echo "$AUDIT_LOGS"
             FOUND_LOGS=1
         fi
-    elif command -v journalctl >/dev/null 2>&1; then
+    fi
+    
+    if [[ "$FOUND_LOGS" -eq 0 ]] && command -v journalctl >/dev/null 2>&1; then
         local JOURNAL_LOGS
         JOURNAL_LOGS="$($SUDO journalctl -b -k 2>/dev/null | grep -i seccomp || true)"
 
@@ -106,7 +97,9 @@ dump_seccomp_logs() {
             echo "$JOURNAL_LOGS"
             FOUND_LOGS=1
         fi
-    elif command -v dmesg >/dev/null 2>&1; then
+    fi
+    
+    if [[ "$FOUND_LOGS" -eq 0 ]] && command -v dmesg >/dev/null 2>&1; then
         local DMESG_LOGS
         DMESG_LOGS="$($SUDO dmesg 2>/dev/null | grep -i seccomp || true)"
 
