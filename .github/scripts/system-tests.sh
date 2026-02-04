@@ -87,8 +87,6 @@ dump_seccomp_logs() {
 
     local FOUND_LOGS=0
 
-    $SUDO cat /var/log/audit/audit.log | grep type=SECCOMP >/dev/null 2>&1 && FOUND_LOGS=1
-
     # Try ausearch first (most detailed, structured output for audit events)
     if command -v ausearch >/dev/null 2>&1; then
         local AUDIT_LOGS
@@ -99,10 +97,7 @@ dump_seccomp_logs() {
             echo "$AUDIT_LOGS"
             FOUND_LOGS=1
         fi
-    fi
-
-    # Also check journalctl (kernel logs with reliable timestamps)
-    if command -v journalctl >/dev/null 2>&1; then
+    elif command -v journalctl >/dev/null 2>&1; then
         local JOURNAL_LOGS
         JOURNAL_LOGS="$($SUDO journalctl -b -k 2>/dev/null | grep -i seccomp || true)"
 
@@ -111,10 +106,7 @@ dump_seccomp_logs() {
             echo "$JOURNAL_LOGS"
             FOUND_LOGS=1
         fi
-    fi
-
-    # Also check dmesg as additional fallback
-    if command -v dmesg >/dev/null 2>&1; then
+    elif command -v dmesg >/dev/null 2>&1; then
         local DMESG_LOGS
         DMESG_LOGS="$($SUDO dmesg 2>/dev/null | grep -i seccomp || true)"
 
