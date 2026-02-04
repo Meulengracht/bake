@@ -1889,6 +1889,7 @@ int __containerv_spawn(
 {
     STARTUPINFOA                    startupInfo;
     PROCESS_INFORMATION             processInfo;
+    HCS_PROCESS_INFORMATION         hcsProcessInfo;
     BOOL                            result;
     struct containerv_container_process* proc;
     char                            cmdline[4096];
@@ -1933,8 +1934,8 @@ int __containerv_spawn(
     if (container->hcs_system != NULL) {
         // HCS container compute system (WCOW/LCOW): spawn via HCS process APIs.
         hcsProcess = NULL;
-        memset(&processInfo, 0, sizeof(processInfo));
-        if (__hcs_create_process(container, options, &hcsProcess, &processInfo) != 0) {
+        memset(&hcsProcessInfo, 0, sizeof(hcsProcessInfo));
+        if (__hcs_create_process(container, options, &hcsProcess, &hcsProcessInfo) != 0) {
             VLOG_ERROR("containerv", "__containerv_spawn: HCS create process failed\n");
             return -1;
         }
@@ -1954,7 +1955,7 @@ int __containerv_spawn(
         }
 
         proc->handle = (HANDLE)hcsProcess;
-        proc->pid = processInfo.ProcessId;
+        proc->pid = hcsProcessInfo.ProcessId;
         proc->is_guest = 0;
         proc->guest_id = 0;
         list_add(&container->processes, &proc->list_header);
@@ -1963,7 +1964,7 @@ int __containerv_spawn(
             *handleOut = proc->handle;
         }
 
-        VLOG_DEBUG("containerv", "__containerv_spawn: spawned process via HCS (pid=%lu)\n", (unsigned long)processInfo.ProcessId);
+        VLOG_DEBUG("containerv", "__containerv_spawn: spawned process via HCS (pid=%lu)\n", (unsigned long)hcsProcessInfo.ProcessId);
         return 0;
     } else {
         // Fallback to host process creation (for testing/debugging)

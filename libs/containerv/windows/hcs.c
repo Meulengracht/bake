@@ -280,7 +280,7 @@ static int __build_windows_cmdline(const struct __containerv_spawn_options* opti
                 continue;
             }
 
-            if (__appendf(&cmdline, &cmdCap, &cmdLen, " \") != 0) {
+            if (__appendf(&cmdline, &cmdCap, &cmdLen, " \"") != 0) {
                 free(cmdline);
                 return -1;
             }
