@@ -11,7 +11,7 @@ set (SRCS
 
 if (WIN32)
     list(APPEND SRCS
-        paths_windows.c
+        paths_win32.c
     )
 else()
     list(APPEND SRCS
