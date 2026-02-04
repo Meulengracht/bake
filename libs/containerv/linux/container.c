@@ -1455,7 +1455,10 @@ int containerv_guest_is_windows(struct containerv_container* container)
     return 0;
 }
 
-int containerv_join(const char* containerId)
+int containerv_join(
+    const char*                     containerId,
+    const char*                     commandPath,
+    struct containerv_join_options* options)
 {
     struct containerv_ns_fd          fds[CV_NS_COUNT] = { 0 };
     struct containerv_socket_client* client;
@@ -1524,6 +1527,17 @@ int containerv_join(const char* containerId)
         return status;
     }
     VLOG_DEBUG("containerv[child]", "successfully joined container\n");
+
+    status = chdir(options->cwd);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "containerv_join: failed to change directory to %s\n", options->cwd);
+        return status;
+    }
+
+    status = execve(commandPath, (char* const*)options->argv, (char* const*)options->envp);
+    if (status) {
+        VLOG_ERROR("containerv[child]", "containerv_join: failed to execute %s\n", commandPath);
+    }
     return 0;
 }
 

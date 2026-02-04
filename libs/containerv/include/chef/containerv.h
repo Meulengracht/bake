@@ -349,30 +349,36 @@ extern int containerv_get_stats(struct containerv_container* container, struct c
  */
 extern int containerv_get_processes(struct containerv_container* container, struct containerv_process_info* processes, int maxProcesses);
 
-extern int containerv_join(const char* containerId);
-
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 /**
- * @brief Execute a process in an existing Windows container by ID
- * 
- * This is a Windows-specific helper for serve-exec that spawns a process
- * in an existing HCS container and waits for it to complete.
- * 
- * @param containerId Container ID to execute in
- * @param commandPath Path to command inside container
- * @param workingDirectory Working directory for command
- * @param argv Command arguments (NULL-terminated)
- * @param envp Environment variables (NULL-terminated)
- * @return Exit code of the process, or -1 on error
+ * @brief Options for joining an existing container to run a command.
+ *
+ * `argv` and `envp` follow execve semantics:
+ * - `argv` must be NULL-terminated and include the command name at argv[0].
+ * - `envp` must be NULL-terminated; pass NULL to inherit default environment.
+ * - `cwd` is the working directory inside the container; pass NULL to use the
+ *   container default.
  */
-extern int containerv_spawn_in_container(
-    const char* containerId,
-    const char* commandPath,
-    const char* workingDirectory,
-    char* const* argv,
-    char* const* envp
-);
-#endif
+struct containerv_join_options {
+    const char*  cwd;   // Working directory inside the container
+    char* const* argv;  // NULL-terminated argument vector
+    char* const* envp;  // NULL-terminated environment vector
+};
+
+/**
+ * @brief Join an existing container and execute a command within it.
+ *
+ * This attaches to the container identified by `containerId` and runs
+ * `commandPath` with the provided options.
+ *
+ * @param containerId The unique identifier of the container to join.
+ * @param commandPath Absolute or container-relative path to the executable.
+ * @param options Optional join options (may be NULL for defaults).
+ * @return 0 on success, -1 on error. Errno will be set accordingly.
+ */
+extern int containerv_join(
+    const char*                     containerId,
+    const char*                     commandPath,
+    struct containerv_join_options* options);
 
 /**
  * @brief Returns the container ID of the given container.

@@ -65,30 +65,21 @@ static int __spawn_command(int argc, char** argv, char** envp, const char* conta
         return -1;
     }
 
-    status = containerv_join(containerName);
-    if (status) {
-        fprintf(stderr, "serve-exec: failed to prepare environment\n");
-        free(rebuildArgv);
-        return status;
-    }
+    status = containerv_join(containerName, commandPath, 
+        &(struct containerv_join_options){
+            .cwd  = workingDirectory,
+            .argv = rebuildArgv,
+            .envp = envp
+        }
+    );
 
 #if defined(_WIN32) || defined(_WIN64)
-    // On Windows, use HCS to spawn process in the container
-    status = containerv_spawn_in_container(containerName, commandPath, workingDirectory, rebuildArgv, envp);
-    if (status < 0) {
-        fprintf(stderr, "serve-exec: failed to execute %s in container\n", commandPath);
+    if (status) {
+        fprintf(stderr, "serve-exec: %s: failed with exit-code %i\n", commandPath, status);
     }
 #elif __linux__
-    status = chdir(workingDirectory);
     if (status) {
-        fprintf(stderr, "serve-exec: failed to change directory to %s\n", workingDirectory);
-        free(rebuildArgv);
-        return status;
-    }
-
-    status = execve(commandPath, (char* const*)rebuildArgv, (char* const*)envp);
-    if (status) {
-        fprintf(stderr, "serve-exec: failed to execute %s\n", commandPath);
+        fprintf(stderr, "serve-exec: %s: failed to executes: %i\n", commandPath, status);
     }
 #else
     fprintf(stderr, "serve-exec: unsupported platform\n");
