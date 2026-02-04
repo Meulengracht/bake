@@ -2608,12 +2608,286 @@ int containerv_destroy(struct containerv_container* container)
 
 int containerv_join(const char* containerId)
 {
+    wchar_t* containerIdW = NULL;
+    HCS_SYSTEM hcsSystem = NULL;
+    HRESULT hr;
+    
     VLOG_DEBUG("containerv", "containerv_join(id=%s)\n", containerId);
     
-    // TODO: Implement joining an existing container
-    // This would attach to an existing HCS compute system
+    if (containerId == NULL) {
+        VLOG_ERROR("containerv", "containerv_join: containerId is NULL\n");
+        return -1;
+    }
     
-    return -1; // Not implemented
+    // Initialize HCS API if not already done
+    if (__hcs_initialize() != 0) {
+        VLOG_ERROR("containerv", "containerv_join: failed to initialize HCS API\n");
+        return -1;
+    }
+    
+    // Convert container ID to wide string
+    containerIdW = __utf8_to_wide_alloc(containerId);
+    if (containerIdW == NULL) {
+        VLOG_ERROR("containerv", "containerv_join: failed to convert container ID to wide string\n");
+        return -1;
+    }
+    
+    // Open the existing compute system (container)
+    // GENERIC_ALL is required for the requestedAccess parameter
+    hr = g_hcs.HcsOpenComputeSystem(containerIdW, GENERIC_ALL, &hcsSystem);
+    free(containerIdW);
+    
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv", "containerv_join: failed to open compute system '%s': 0x%lx\n", containerId, hr);
+        return -1;
+    }
+    
+    // Close the handle immediately - we only needed to verify the container exists
+    // The actual process will be spawned by serve-exec using containerv_spawn_in_container
+    if (hcsSystem != NULL) {
+        g_hcs.HcsCloseComputeSystem(hcsSystem);
+    }
+    
+    VLOG_DEBUG("containerv", "containerv_join: successfully verified container %s exists\n", containerId);
+    return 0;
+}
+
+int containerv_spawn_in_container(
+    const char* containerId,
+    const char* commandPath,
+    const char* workingDirectory,
+    char* const* argv,
+    char* const* envp)
+{
+    wchar_t* containerIdW = NULL;
+    wchar_t* processConfigW = NULL;
+    HCS_SYSTEM hcsSystem = NULL;
+    HCS_OPERATION operation = NULL;
+    HCS_PROCESS process = NULL;
+    HRESULT hr;
+    int exitCode = -1;
+    json_t* root = NULL;
+    json_t* argsArray = NULL;
+    json_t* envObj = NULL;
+    char* jsonUtf8 = NULL;
+    PWSTR resultDoc = NULL;
+    
+    VLOG_DEBUG("containerv", "containerv_spawn_in_container(id=%s, path=%s)\n", containerId, commandPath);
+    
+    if (containerId == NULL || commandPath == NULL) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: invalid arguments\n");
+        return -1;
+    }
+    
+    // Initialize HCS API
+    if (__hcs_initialize() != 0) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to initialize HCS API\n");
+        return -1;
+    }
+    
+    // Convert container ID to wide string
+    containerIdW = __utf8_to_wide_alloc(containerId);
+    if (containerIdW == NULL) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to convert container ID\n");
+        goto cleanup;
+    }
+    
+    // Open the compute system
+    hr = g_hcs.HcsOpenComputeSystem(containerIdW, GENERIC_ALL, &hcsSystem);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to open compute system: 0x%lx\n", hr);
+        goto cleanup;
+    }
+    
+    // Build process configuration JSON
+    root = json_object();
+    if (root == NULL) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to create JSON object\n");
+        goto cleanup;
+    }
+    
+    // Build command line string from argv with proper Windows quoting
+    // Calculate required size first
+    size_t cmdlineLen = strlen(commandPath); // path without null terminator initially
+    if (argv != NULL) {
+        for (int i = 1; argv[i] != NULL; i++) {
+            const char* arg = argv[i];
+            int needsQuotes = 0;
+            
+            // Check if argument needs quoting
+            for (const char* p = arg; *p; ++p) {
+                if (*p == ' ' || *p == '\t' || *p == '"') {
+                    needsQuotes = 1;
+                    break;
+                }
+            }
+            
+            cmdlineLen += 1; // space before argument
+            if (needsQuotes) {
+                cmdlineLen += 2; // opening and closing quotes
+                // Account for escaped quotes
+                for (const char* p = arg; *p; ++p) {
+                    cmdlineLen += (*p == '"') ? 2 : 1; // \" for quotes, 1 for others
+                }
+            } else {
+                cmdlineLen += strlen(arg);
+            }
+        }
+    }
+    
+    char* cmdline = (char*)calloc(cmdlineLen + 1, 1); // +1 for null terminator
+    if (cmdline == NULL) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to allocate command line\n");
+        goto cleanup;
+    }
+    
+    // Build the command line
+    strcpy(cmdline, commandPath);
+    if (argv != NULL) {
+        for (int i = 1; argv[i] != NULL; i++) {
+            const char* arg = argv[i];
+            strcat(cmdline, " ");
+            
+            // Check if argument needs quoting
+            int needsQuotes = 0;
+            for (const char* p = arg; *p; ++p) {
+                if (*p == ' ' || *p == '\t' || *p == '"') {
+                    needsQuotes = 1;
+                    break;
+                }
+            }
+            
+            if (!needsQuotes) {
+                strcat(cmdline, arg);
+            } else {
+                strcat(cmdline, "\"");
+                // Add argument with escaped quotes
+                for (const char* p = arg; *p; ++p) {
+                    if (*p == '"') {
+                        strcat(cmdline, "\\\"");
+                    } else {
+                        size_t len = strlen(cmdline);
+                        cmdline[len] = *p;
+                        cmdline[len + 1] = '\0';
+                    }
+                }
+                strcat(cmdline, "\"");
+            }
+        }
+    }
+    
+    json_object_set_new(root, "CommandLine", json_string(cmdline));
+    free(cmdline);
+    
+    // Set working directory
+    if (workingDirectory != NULL && strlen(workingDirectory) > 0) {
+        json_object_set_new(root, "WorkingDirectory", json_string(workingDirectory));
+    }
+    
+    // Add environment variables
+    if (envp != NULL) {
+        envObj = json_object();
+        if (envObj != NULL) {
+            for (int i = 0; envp[i] != NULL; i++) {
+                // Parse "KEY=VALUE" format
+                const char* eq = strchr(envp[i], '=');
+                if (eq != NULL) {
+                    size_t keyLen = eq - envp[i];
+                    char* key = (char*)malloc(keyLen + 1);
+                    if (key != NULL) {
+                        memcpy(key, envp[i], keyLen);
+                        key[keyLen] = '\0';
+                        json_object_set_new(envObj, key, json_string(eq + 1));
+                        free(key);
+                    }
+                }
+            }
+            json_object_set_new(root, "Environment", envObj);
+        }
+    }
+    
+    // Convert JSON to string
+    if (containerv_json_dumps_compact(root, &jsonUtf8) != 0) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to serialize JSON\n");
+        goto cleanup;
+    }
+    
+    VLOG_DEBUG("containerv", "Process config JSON: %s\n", jsonUtf8);
+    
+    // Convert to wide string
+    processConfigW = __utf8_to_wide_alloc(jsonUtf8);
+    if (processConfigW == NULL) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to convert process config\n");
+        goto cleanup;
+    }
+    
+    // Create operation
+    hr = g_hcs.HcsCreateOperation(NULL, NULL, &operation);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to create operation: 0x%lx\n", hr);
+        goto cleanup;
+    }
+    
+    // Create process in container
+    hr = g_hcs.HcsCreateProcess(hcsSystem, processConfigW, operation, NULL, &process);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to create process: 0x%lx\n", hr);
+        goto cleanup;
+    }
+    
+    // Wait for process creation to complete
+    if (g_hcs.HcsWaitForOperationResult != NULL) {
+        hr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
+        if (resultDoc != NULL) {
+            LocalFree(resultDoc);
+            resultDoc = NULL;
+        }
+        if (FAILED(hr)) {
+            VLOG_ERROR("containerv", "containerv_spawn_in_container: process creation failed: 0x%lx\n", hr);
+            goto cleanup;
+        }
+    }
+    
+    // Wait for process to complete
+    if (__hcs_wait_process(process, INFINITE) != 0) {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to wait for process\n");
+        goto cleanup;
+    }
+    
+    // Get exit code
+    unsigned long exitCodeUl = 0;
+    if (__hcs_get_process_exit_code(process, &exitCodeUl) == 0) {
+        exitCode = (int)exitCodeUl;
+        VLOG_DEBUG("containerv", "containerv_spawn_in_container: process exited with code %d\n", exitCode);
+    } else {
+        VLOG_ERROR("containerv", "containerv_spawn_in_container: failed to get exit code\n");
+        exitCode = -1; // Error - could not determine exit code
+    }
+    
+cleanup:
+    if (process != NULL) {
+        g_hcs.HcsCloseProcess(process);
+    }
+    if (operation != NULL) {
+        g_hcs.HcsCloseOperation(operation);
+    }
+    if (hcsSystem != NULL) {
+        g_hcs.HcsCloseComputeSystem(hcsSystem);
+    }
+    if (containerIdW != NULL) {
+        free(containerIdW);
+    }
+    if (processConfigW != NULL) {
+        free(processConfigW);
+    }
+    if (jsonUtf8 != NULL) {
+        free(jsonUtf8);
+    }
+    if (root != NULL) {
+        json_decref(root);
+    }
+    
+    return exitCode;
 }
 
 const char* containerv_id(struct containerv_container* container)

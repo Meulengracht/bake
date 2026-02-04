@@ -174,6 +174,12 @@ typedef struct
 typedef void (CALLBACK *HCS_OPERATION_COMPLETION)(HCS_OPERATION operation, void* context);
 
 // HCS function pointer types (dynamically loaded)
+typedef HRESULT (WINAPI *HcsOpenComputeSystem_t)(
+    PCWSTR Id,
+    DWORD RequestedAccess,
+    HCS_SYSTEM* ComputeSystem
+);
+
 typedef HRESULT (WINAPI *HcsCreateComputeSystem_t)(
     PCWSTR Id,
     PCWSTR Configuration, 
@@ -242,6 +248,7 @@ typedef HRESULT (WINAPI *HcsCloseProcess_t)(HCS_PROCESS Process);
 struct hcs_api {
     HMODULE hVmCompute;
     HMODULE hComputeCore;
+    HcsOpenComputeSystem_t      HcsOpenComputeSystem;
     HcsCreateComputeSystem_t    HcsCreateComputeSystem;
     HcsStartComputeSystem_t     HcsStartComputeSystem;
     HcsShutdownComputeSystem_t  HcsShutdownComputeSystem;
@@ -389,6 +396,23 @@ extern int __hcs_create_process(
     struct __containerv_spawn_options* options,
     HCS_PROCESS* processOut,
     HCS_PROCESS_INFORMATION* processInfoOut
+);
+
+/**
+ * @brief Execute process in an existing container by ID (for serve-exec)
+ * @param containerId Container ID to execute in
+ * @param commandPath Path to command inside container
+ * @param workingDirectory Working directory for command
+ * @param argv Command arguments (NULL-terminated)
+ * @param envp Environment variables (NULL-terminated)
+ * @return Exit code of the process, or -1 on error
+ */
+extern int containerv_spawn_in_container(
+    const char* containerId,
+    const char* commandPath,
+    const char* workingDirectory,
+    char* const* argv,
+    char* const* envp
 );
 
 /**
