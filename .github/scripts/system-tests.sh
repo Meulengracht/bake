@@ -90,7 +90,7 @@ dump_seccomp_logs() {
     # Try ausearch first (most detailed, structured output for audit events)
     if command -v ausearch >/dev/null 2>&1; then
         local AUDIT_LOGS
-        AUDIT_LOGS="$($SUDO ausearch -m SECCOMP)"
+        AUDIT_LOGS="$($SUDO ausearch -m SECCOMP 2>/dev/null || true)"
 
         if [[ -n "$AUDIT_LOGS" ]]; then
             echo "Seccomp denials found in audit log:"
@@ -102,7 +102,7 @@ dump_seccomp_logs() {
     # Also check journalctl (kernel logs with reliable timestamps)
     if command -v journalctl >/dev/null 2>&1; then
         local JOURNAL_LOGS
-        JOURNAL_LOGS="$($SUDO journalctl -b -k | grep -i seccomp)"
+        JOURNAL_LOGS="$($SUDO journalctl -b -k 2>/dev/null | grep -i seccomp || true)"
 
         if [[ -n "$JOURNAL_LOGS" ]]; then
             echo "Seccomp denials found in kernel log:"
@@ -114,7 +114,7 @@ dump_seccomp_logs() {
     # Also check dmesg as additional fallback
     if command -v dmesg >/dev/null 2>&1; then
         local DMESG_LOGS
-        DMESG_LOGS="$($SUDO dmesg | grep -i seccomp)"
+        DMESG_LOGS="$($SUDO dmesg 2>/dev/null | grep -i seccomp || true)"
 
         if [[ -n "$DMESG_LOGS" ]]; then
             echo "Seccomp denials found in dmesg:"
