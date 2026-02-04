@@ -429,7 +429,7 @@ extern int __windows_cleanup_network(
 extern int __windows_exec_in_vm_via_pid1d(
     struct containerv_container*       container,
     struct __containerv_spawn_options* options,
-    int*                               exit_code_out
+    int*                               exitCodeOut
 );
 
 /**

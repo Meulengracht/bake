@@ -233,6 +233,486 @@ struct __mapped_dir_build_ctx {
 static char* __normalize_container_path_linux_alloc(const char* p);
 static void CALLBACK __hcs_operation_callback(HCS_OPERATION operation, void* context);
 
+// Build a Windows-compatible command line from spawn options.
+static int __build_windows_cmdline(const struct __containerv_spawn_options* options, char** cmdline_out)
+{
+    size_t     cmdCap;
+    size_t     cmdLen;
+    char*      cmdline;
+    int        i;
+    int        needsQuotes;
+    const char* arg;
+    const char* p;
+
+    if (options == NULL || options->path == NULL || cmdline_out == NULL) {
+        return -1;
+    }
+
+    cmdCap = 0;
+    cmdLen = 0;
+    cmdline = NULL;
+
+    if (__appendf(&cmdline, &cmdCap, &cmdLen, "%s", options->path) != 0) {
+        free(cmdline);
+        return -1;
+    }
+
+    if (options->argv != NULL) {
+        for (i = 1; options->argv[i] != NULL; ++i) {
+            arg = options->argv[i];
+            if (arg == NULL) {
+                continue;
+            }
+
+            needsQuotes = 0;
+            for (p = arg; *p; ++p) {
+                if (*p == ' ' || *p == '\t' || *p == '"') {
+                    needsQuotes = 1;
+                    break;
+                }
+            }
+
+            if (!needsQuotes) {
+                if (__appendf(&cmdline, &cmdCap, &cmdLen, " %s", arg) != 0) {
+                    free(cmdline);
+                    return -1;
+                }
+                continue;
+            }
+
+            if (__appendf(&cmdline, &cmdCap, &cmdLen, " \") != 0) {
+                free(cmdline);
+                return -1;
+            }
+            for (p = arg; *p; ++p) {
+                if (*p == '"') {
+                    if (__appendf(&cmdline, &cmdCap, &cmdLen, "\\\"") != 0) {
+                        free(cmdline);
+                        return -1;
+                    }
+                } else {
+                    if (__appendf(&cmdline, &cmdCap, &cmdLen, "%c", *p) != 0) {
+                        free(cmdline);
+                        return -1;
+                    }
+                }
+            }
+            if (__appendf(&cmdline, &cmdCap, &cmdLen, "\"") != 0) {
+                free(cmdline);
+                return -1;
+            }
+        }
+    }
+
+    *cmdline_out = cmdline;
+    return 0;
+}
+
+// Build a Linux command line and argv array JSON from spawn options.
+static int __build_linux_cmdline_and_args(
+    const struct __containerv_spawn_options* options,
+    char**                                  cmdline_out,
+    json_t**                                cmd_args_out,
+    char**                                  args_json_out)
+{
+    const char* const* argv;
+    const char*        defaultArgvBuf[2];
+    size_t             cmdCap;
+    size_t             cmdLen;
+    char*              cmdline;
+    json_t*            cmdArgs;
+    char*              argsJson;
+    int                i;
+
+    if (options == NULL || options->path == NULL || cmdline_out == NULL || cmd_args_out == NULL || args_json_out == NULL) {
+        return -1;
+    }
+
+    argv = options->argv;
+    defaultArgvBuf[0] = NULL;
+    defaultArgvBuf[1] = NULL;
+    if (argv == NULL) {
+        defaultArgvBuf[0] = options->path;
+        defaultArgvBuf[1] = NULL;
+        argv = defaultArgvBuf;
+    }
+
+    cmdCap = 0;
+    cmdLen = 0;
+    cmdline = NULL;
+    if (__appendf(&cmdline, &cmdCap, &cmdLen, "%s", argv[0]) != 0) {
+        free(cmdline);
+        return -1;
+    }
+    for (i = 1; argv[i] != NULL; ++i) {
+        if (__appendf(&cmdline, &cmdCap, &cmdLen, " %s", argv[i]) != 0) {
+            free(cmdline);
+            return -1;
+        }
+    }
+
+    cmdArgs = json_array();
+    if (cmdArgs == NULL) {
+        free(cmdline);
+        return -1;
+    }
+    for (i = 0; argv[i] != NULL; ++i) {
+        if (containerv_json_array_append_string(cmdArgs, argv[i]) != 0) {
+            json_decref(cmdArgs);
+            free(cmdline);
+            return -1;
+        }
+    }
+
+    argsJson = NULL;
+    if (containerv_json_dumps_compact(cmdArgs, &argsJson) != 0) {
+        json_decref(cmdArgs);
+        free(cmdline);
+        return -1;
+    }
+
+    *cmdline_out = cmdline;
+    *cmd_args_out = cmdArgs;
+    *args_json_out = argsJson;
+    return 0;
+}
+
+// Build an OCI spec JSON for LCOW and persist it for inspection.
+static int __build_oci_spec_if_needed(
+    struct containerv_container*            container,
+    const struct __containerv_spawn_options* options,
+    const char*                             args_json_utf8,
+    int                                     guest_is_windows,
+    char**                                  oci_spec_out)
+{
+    struct containerv_oci_linux_spec_params params;
+    char*                                   ociSpec;
+
+    if (oci_spec_out == NULL) {
+        return -1;
+    }
+    *oci_spec_out = NULL;
+
+    if (guest_is_windows) {
+        return 0;
+    }
+
+    params.args_json = (args_json_utf8 != NULL) ? args_json_utf8 : "[]";
+    params.envv = (const char* const*)options->envv;
+    params.root_path = "/chef/rootfs";
+    params.cwd = "/";
+    params.hostname = "chef";
+
+    ociSpec = NULL;
+    if (containerv_oci_build_linux_spec_json(&params, &ociSpec) != 0) {
+        return -1;
+    }
+
+    if (container != NULL) {
+        struct containerv_oci_bundle_paths bundle;
+        memset(&bundle, 0, sizeof(bundle));
+        if (containerv_oci_bundle_get_paths(container->runtime_dir, &bundle) == 0) {
+            (void)containerv_oci_bundle_write_config(&bundle, ociSpec);
+            containerv_oci_bundle_paths_delete(&bundle);
+        }
+    }
+
+    *oci_spec_out = ociSpec;
+    return 0;
+}
+
+// Build environment JSON and compute whether to include security fields.
+static int __build_env_object(
+    const struct __containerv_spawn_options* options,
+    int                                     guest_is_windows,
+    const struct containerv_policy*         policy,
+    enum containerv_security_level          security_level,
+    int                                     win_use_app_container,
+    const char*                             win_integrity_level,
+    const char* const*                      win_capability_sids,
+    int                                     win_capability_sid_count,
+    json_t**                                env_obj_out,
+    int*                                    try_security_fields_out)
+{
+    json_t*     envObj;
+    const char* kv;
+    const char* eq;
+    const char* val;
+    char*       key;
+    size_t      keyLen;
+    int         setRc;
+    int         i;
+    int         hasPath;
+    int         hasPolicyLevel;
+    int         hasPolicyAppc;
+    int         hasPolicyIntegrity;
+    int         hasPolicyCaps;
+    const char* defaultPath;
+    const char* lvl;
+    char*       caps;
+    size_t      capsCap;
+    size_t      capsLen;
+
+    if (env_obj_out == NULL || try_security_fields_out == NULL) {
+        return -1;
+    }
+    *env_obj_out = NULL;
+    *try_security_fields_out = 0;
+
+    envObj = NULL;
+    kv = NULL;
+    eq = NULL;
+    val = NULL;
+    key = NULL;
+    keyLen = 0;
+    setRc = 0;
+    i = 0;
+    hasPath = 0;
+    hasPolicyLevel = 0;
+    hasPolicyAppc = 0;
+    hasPolicyIntegrity = 0;
+    hasPolicyCaps = 0;
+    defaultPath = NULL;
+    lvl = NULL;
+    caps = NULL;
+    capsCap = 0;
+    capsLen = 0;
+
+    if (options->envv != NULL) {
+        for (i = 0; options->envv[i] != NULL; ++i) {
+            if (_strnicmp(options->envv[i], "PATH=", 5) == 0) {
+                hasPath = 1;
+                continue;
+            }
+            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_SECURITY_LEVEL=", 30) == 0) {
+                hasPolicyLevel = 1;
+                continue;
+            }
+            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_WIN_USE_APPCONTAINER=", 38) == 0) {
+                hasPolicyAppc = 1;
+                continue;
+            }
+            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_WIN_INTEGRITY_LEVEL=", 36) == 0) {
+                hasPolicyIntegrity = 1;
+                continue;
+            }
+            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_WIN_CAPABILITY_SIDS=", 39) == 0) {
+                hasPolicyCaps = 1;
+                continue;
+            }
+        }
+    }
+
+    envObj = json_object();
+    if (envObj == NULL) {
+        return -1;
+    }
+
+    if (!hasPath) {
+        defaultPath = guest_is_windows
+            ? "C:\\Windows\\System32;C:\\Windows"
+            : "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+        if (containerv_json_object_set_string(envObj, "PATH", defaultPath) != 0) {
+            json_decref(envObj);
+            return -1;
+        }
+    }
+
+    if (options->envv != NULL) {
+        for (i = 0; options->envv[i] != NULL; ++i) {
+            kv = options->envv[i];
+            eq = strchr(kv, '=');
+            if (eq == NULL || eq == kv) {
+                continue;
+            }
+            keyLen = (size_t)(eq - kv);
+            key = calloc(keyLen + 1, 1);
+            if (key == NULL) {
+                json_decref(envObj);
+                return -1;
+            }
+            memcpy(key, kv, keyLen);
+            key[keyLen] = '\0';
+            val = eq + 1;
+
+            setRc = containerv_json_object_set_string(envObj, key, val);
+            free(key);
+            if (setRc != 0) {
+                json_decref(envObj);
+                return -1;
+            }
+        }
+    }
+
+    if (policy != NULL) {
+        if (!hasPolicyLevel) {
+            lvl = "default";
+            if (security_level >= CV_SECURITY_STRICT) {
+                lvl = "strict";
+            } else if (security_level >= CV_SECURITY_RESTRICTED) {
+                lvl = "restricted";
+            }
+            if (containerv_json_object_set_string(envObj, "CHEF_CONTAINERV_SECURITY_LEVEL", lvl) != 0) {
+                json_decref(envObj);
+                return -1;
+            }
+        }
+
+        if (guest_is_windows && !hasPolicyAppc) {
+            if (containerv_json_object_set_string(envObj, "CHEF_CONTAINERV_WIN_USE_APPCONTAINER", win_use_app_container ? "1" : "0") != 0) {
+                json_decref(envObj);
+                return -1;
+            }
+        }
+
+        if (guest_is_windows && !hasPolicyIntegrity && win_integrity_level != NULL && win_integrity_level[0] != '\0') {
+            if (containerv_json_object_set_string(envObj, "CHEF_CONTAINERV_WIN_INTEGRITY_LEVEL", win_integrity_level) != 0) {
+                json_decref(envObj);
+                return -1;
+            }
+        }
+
+        if (guest_is_windows && !hasPolicyCaps && win_capability_sids != NULL && win_capability_sid_count > 0) {
+            caps = NULL;
+            capsCap = 0;
+            capsLen = 0;
+            for (i = 0; i < win_capability_sid_count; i++) {
+                if (win_capability_sids[i] == NULL) {
+                    continue;
+                }
+                if (__appendf(&caps, &capsCap, &capsLen, "%s%s", (capsLen == 0) ? "" : ",", win_capability_sids[i]) != 0) {
+                    free(caps);
+                    json_decref(envObj);
+                    return -1;
+                }
+            }
+            if (caps != NULL && caps[0] != '\0') {
+                setRc = containerv_json_object_set_string(envObj, "CHEF_CONTAINERV_WIN_CAPABILITY_SIDS", caps);
+                free(caps);
+                if (setRc != 0) {
+                    json_decref(envObj);
+                    return -1;
+                }
+            } else {
+                free(caps);
+            }
+        }
+    }
+
+    if (guest_is_windows && policy != NULL) {
+        if (security_level >= CV_SECURITY_RESTRICTED || win_use_app_container || (win_integrity_level != NULL && win_integrity_level[0] != '\0')) {
+            *try_security_fields_out = 1;
+        }
+    }
+
+    *env_obj_out = envObj;
+    return 0;
+}
+
+// Build HCS process JSON configuration for Windows or LCOW.
+static int __build_process_config_json(
+    int                                     guest_is_windows,
+    const struct __containerv_spawn_options* options,
+    json_t*                                 env_obj,
+    const char*                             cmdline_utf8,
+    json_t*                                 cmd_args,
+    const char*                             linux_cmdline_utf8,
+    const char*                             oci_spec_utf8,
+    int                                     include_security,
+    int                                     lcow_use_oci,
+    int                                     lcow_use_command_args,
+    int                                     create_in_uvm,
+    char**                                  json_utf8_out)
+{
+    const char* workingDir;
+    int         emulateConsole;
+    json_t*     procCfg;
+    json_error_t jerr;
+    json_t*     oci;
+    char*       jsonUtf8;
+
+    if (json_utf8_out == NULL) {
+        return -1;
+    }
+    *json_utf8_out = NULL;
+
+    workingDir = guest_is_windows ? "C:\\\\" : "/";
+    emulateConsole = guest_is_windows ? 1 : 0;
+    procCfg = json_object();
+    if (procCfg == NULL) {
+        return -1;
+    }
+
+    if (guest_is_windows) {
+        if (cmdline_utf8 == NULL) {
+            json_decref(procCfg);
+            return -1;
+        }
+        if (containerv_json_object_set_string(procCfg, "CommandLine", cmdline_utf8) != 0 ||
+            containerv_json_object_set_string(procCfg, "WorkingDirectory", workingDir) != 0 ||
+            json_object_set(procCfg, "Environment", env_obj) != 0 ||
+            containerv_json_object_set_bool(procCfg, "EmulateConsole", emulateConsole) != 0 ||
+            containerv_json_object_set_bool(procCfg, "CreateStdInPipe", options->create_stdio_pipes != 0) != 0 ||
+            containerv_json_object_set_bool(procCfg, "CreateStdOutPipe", options->create_stdio_pipes != 0) != 0 ||
+            containerv_json_object_set_bool(procCfg, "CreateStdErrPipe", options->create_stdio_pipes != 0) != 0) {
+            json_decref(procCfg);
+            return -1;
+        }
+        if (include_security) {
+            if (containerv_json_object_set_string(procCfg, "User", "ContainerUser") != 0) {
+                json_decref(procCfg);
+                return -1;
+            }
+        }
+    } else {
+        if (lcow_use_command_args && cmd_args == NULL) {
+            json_decref(procCfg);
+            return -1;
+        }
+
+        if ((lcow_use_command_args && json_object_set(procCfg, "CommandArgs", cmd_args) != 0) ||
+            (!lcow_use_command_args && linux_cmdline_utf8 && containerv_json_object_set_string(procCfg, "CommandLine", linux_cmdline_utf8) != 0) ||
+            containerv_json_object_set_string(procCfg, "WorkingDirectory", workingDir) != 0 ||
+            containerv_json_object_set_bool(procCfg, "CreateInUtilityVm", create_in_uvm) != 0 ||
+            json_object_set(procCfg, "Environment", env_obj) != 0 ||
+            containerv_json_object_set_bool(procCfg, "EmulateConsole", emulateConsole) != 0 ||
+            containerv_json_object_set_bool(procCfg, "CreateStdInPipe", options->create_stdio_pipes != 0) != 0 ||
+            containerv_json_object_set_bool(procCfg, "CreateStdOutPipe", options->create_stdio_pipes != 0) != 0 ||
+            containerv_json_object_set_bool(procCfg, "CreateStdErrPipe", options->create_stdio_pipes != 0) != 0) {
+            json_decref(procCfg);
+            return -1;
+        }
+
+        if (lcow_use_oci) {
+            memset(&jerr, 0, sizeof(jerr));
+            oci = json_loads(oci_spec_utf8, 0, &jerr);
+            if (oci == NULL) {
+                json_decref(procCfg);
+                return -1;
+            }
+            if (json_object_set_new(procCfg, "OCISpecification", oci) != 0) {
+                json_decref(oci);
+                json_decref(procCfg);
+                return -1;
+            }
+            if (containerv_json_object_set_bool(procCfg, "CreateInUtilityVm", 0) != 0) {
+                json_decref(procCfg);
+                return -1;
+            }
+        }
+    }
+
+    jsonUtf8 = NULL;
+    if (containerv_json_dumps_compact(procCfg, &jsonUtf8) != 0) {
+        json_decref(procCfg);
+        return -1;
+    }
+
+    json_decref(procCfg);
+    *json_utf8_out = jsonUtf8;
+    return 0;
+}
+
 static int __starts_with_path_prefix(const char* s, const char* prefix)
 {
     if (s == NULL || prefix == NULL) {
@@ -1035,244 +1515,35 @@ int __hcs_create_process(
     // - Windows GCS uses CommandLine (string).
     // - Linux GCS supports CommandArgs (array) and treats it as an alternative to CommandLine.
     if (guest_is_windows) {
-        // Build command line: path + optional argv (quoted conservatively)
-        size_t cmd_cap = 0;
-        size_t cmd_len = 0;
-        if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, "%s", options->path) != 0) {
+        if (__build_windows_cmdline(options, &cmdline_utf8) != 0) {
             goto cleanup;
-        }
-
-        if (options->argv != NULL) {
-            for (int i = 1; options->argv[i] != NULL; ++i) {
-                const char* arg = options->argv[i];
-                if (arg == NULL) {
-                    continue;
-                }
-
-                int needs_quotes = 0;
-                for (const char* p = arg; *p; ++p) {
-                    if (*p == ' ' || *p == '\t' || *p == '"') {
-                        needs_quotes = 1;
-                        break;
-                    }
-                }
-
-                if (!needs_quotes) {
-                    if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, " %s", arg) != 0) {
-                        goto cleanup;
-                    }
-                    continue;
-                }
-
-                // Quote and escape quotes.
-                if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, " \"") != 0) {
-                    goto cleanup;
-                }
-                for (const char* p = arg; *p; ++p) {
-                    if (*p == '"') {
-                        if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, "\\\"") != 0) {
-                            goto cleanup;
-                        }
-                    } else {
-                        if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, "%c", *p) != 0) {
-                            goto cleanup;
-                        }
-                    }
-                }
-                if (__appendf(&cmdline_utf8, &cmd_cap, &cmd_len, "\"") != 0) {
-                    goto cleanup;
-                }
-            }
         }
     } else {
-        const char* const* argv = options->argv;
-        const char* default_argv_buf[2] = { 0 };
-        if (argv == NULL) {
-            default_argv_buf[0] = options->path;
-            default_argv_buf[1] = NULL;
-            argv = default_argv_buf;
-        }
-
-        // Build a conservative CommandLine for LCOW fallback compatibility.
-        size_t cmd_cap = 0;
-        size_t cmd_len = 0;
-        if (__appendf(&linux_cmdline_utf8, &cmd_cap, &cmd_len, "%s", argv[0]) != 0) {
-            goto cleanup;
-        }
-        for (int i = 1; argv[i] != NULL; ++i) {
-            if (__appendf(&linux_cmdline_utf8, &cmd_cap, &cmd_len, " %s", argv[i]) != 0) {
-                goto cleanup;
-            }
-        }
-
-        cmd_args = json_array();
-        if (cmd_args == NULL) {
-            goto cleanup;
-        }
-        for (int i = 0; argv[i] != NULL; ++i) {
-            if (containerv_json_array_append_string(cmd_args, argv[i]) != 0) {
-                goto cleanup;
-            }
-        }
-
-        if (containerv_json_dumps_compact(cmd_args, &args_json_utf8) != 0) {
+        if (__build_linux_cmdline_and_args(options, &linux_cmdline_utf8, &cmd_args, &args_json_utf8) != 0) {
             goto cleanup;
         }
     }
 
     // If we're running a Linux container compute system (LCOW), prefer OCISpecification.
     // Rootfs is expected to be mapped into the container at /chef/rootfs.
-    if (!guest_is_windows) {
-        struct containerv_oci_linux_spec_params p = {
-            .args_json = (args_json_utf8 != NULL) ? args_json_utf8 : "[]",
-            .envv = (const char* const*)options->envv,
-            .root_path = "/chef/rootfs",
-            .cwd = "/",
-            .hostname = "chef",
-        };
-
-        if (containerv_oci_build_linux_spec_json(&p, &oci_spec_utf8) != 0) {
-            goto cleanup;
-        }
-
-        // Best-effort: also write config.json into the per-container OCI bundle for inspection.
-        {
-            struct containerv_oci_bundle_paths bundle;
-            memset(&bundle, 0, sizeof(bundle));
-            if (containerv_oci_bundle_get_paths(container->runtime_dir, &bundle) == 0) {
-                (void)containerv_oci_bundle_write_config(&bundle, oci_spec_utf8);
-                containerv_oci_bundle_paths_delete(&bundle);
-            }
-        }
-    }
-
-    // Build environment object. Always include a default PATH if not provided.
-    int has_path = 0;
-    int has_policy_level = 0;
-    int has_policy_appc = 0;
-    int has_policy_integrity = 0;
-    int has_policy_caps = 0;
-    if (options->envv != NULL) {
-        for (int i = 0; options->envv[i] != NULL; ++i) {
-            if (_strnicmp(options->envv[i], "PATH=", 5) == 0) {
-                has_path = 1;
-                continue;
-            }
-            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_SECURITY_LEVEL=", 30) == 0) {
-                has_policy_level = 1;
-                continue;
-            }
-            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_WIN_USE_APPCONTAINER=", 38) == 0) {
-                has_policy_appc = 1;
-                continue;
-            }
-            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_WIN_INTEGRITY_LEVEL=", 36) == 0) {
-                has_policy_integrity = 1;
-                continue;
-            }
-            if (_strnicmp(options->envv[i], "CHEF_CONTAINERV_WIN_CAPABILITY_SIDS=", 39) == 0) {
-                has_policy_caps = 1;
-                continue;
-            }
-        }
-    }
-
-    env_obj = json_object();
-    if (env_obj == NULL) {
+    if (__build_oci_spec_if_needed(container, options, args_json_utf8, guest_is_windows, &oci_spec_utf8) != 0) {
         goto cleanup;
     }
 
-    if (!has_path) {
-        const char* default_path = guest_is_windows
-            ? "C:\\Windows\\System32;C:\\Windows"
-            : "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
-        if (containerv_json_object_set_string(env_obj, "PATH", default_path) != 0) {
-            goto cleanup;
-        }
-    }
-
-    if (options->envv != NULL) {
-        for (int i = 0; options->envv[i] != NULL; ++i) {
-            const char* kv = options->envv[i];
-            const char* eq = strchr(kv, '=');
-            if (eq == NULL || eq == kv) {
-                continue;
-            }
-            size_t key_len = (size_t)(eq - kv);
-            char* key = calloc(key_len + 1, 1);
-            if (key == NULL) {
-                goto cleanup;
-            }
-            memcpy(key, kv, key_len);
-            key[key_len] = '\0';
-            const char* val = eq + 1;
-
-            int set_rc = containerv_json_object_set_string(env_obj, key, val);
-            free(key);
-            if (set_rc != 0) {
-                goto cleanup;
-            }
-        }
-    }
-
-    // Inject policy metadata for in-VM agents/workloads (best-effort).
-    if (policy != NULL) {
-        if (!has_policy_level) {
-            const char* lvl = "default";
-            if (security_level >= CV_SECURITY_STRICT) {
-                lvl = "strict";
-            } else if (security_level >= CV_SECURITY_RESTRICTED) {
-                lvl = "restricted";
-            }
-            if (containerv_json_object_set_string(env_obj, "CHEF_CONTAINERV_SECURITY_LEVEL", lvl) != 0) {
-                goto cleanup;
-            }
-        }
-
-        // Windows-specific policy metadata only applies to Windows guests.
-        if (guest_is_windows && !has_policy_appc) {
-            if (containerv_json_object_set_string(env_obj, "CHEF_CONTAINERV_WIN_USE_APPCONTAINER", win_use_app_container ? "1" : "0") != 0) {
-                goto cleanup;
-            }
-        }
-
-        if (guest_is_windows && !has_policy_integrity && win_integrity_level != NULL && win_integrity_level[0] != '\0') {
-            if (containerv_json_object_set_string(env_obj, "CHEF_CONTAINERV_WIN_INTEGRITY_LEVEL", win_integrity_level) != 0) {
-                goto cleanup;
-            }
-        }
-
-        if (guest_is_windows && !has_policy_caps && win_capability_sids != NULL && win_capability_sid_count > 0) {
-            // Comma-separated list.
-            char* caps = NULL;
-            size_t caps_cap = 0;
-            size_t caps_len = 0;
-            for (int i = 0; i < win_capability_sid_count; i++) {
-                if (win_capability_sids[i] == NULL) {
-                    continue;
-                }
-                if (__appendf(&caps, &caps_cap, &caps_len, "%s%s", (caps_len == 0) ? "" : ",", win_capability_sids[i]) != 0) {
-                    free(caps);
-                    goto cleanup;
-                }
-            }
-            if (caps != NULL && caps[0] != '\0') {
-                int set_rc = containerv_json_object_set_string(env_obj, "CHEF_CONTAINERV_WIN_CAPABILITY_SIDS", caps);
-                free(caps);
-                if (set_rc != 0) {
-                    goto cleanup;
-                }
-            } else {
-                free(caps);
-            }
-        }
-    }
-
+    // Build environment object. Always include a default PATH if not provided.
     int try_security_fields = 0;
-    if (guest_is_windows && policy != NULL) {
-        if (security_level >= CV_SECURITY_RESTRICTED || win_use_app_container || (win_integrity_level != NULL && win_integrity_level[0] != '\0')) {
-            try_security_fields = 1;
-        }
+    if (__build_env_object(
+        options,
+        guest_is_windows,
+        policy,
+        security_level,
+        win_use_app_container,
+        win_integrity_level,
+        win_capability_sids,
+        win_capability_sid_count,
+        &env_obj,
+        &try_security_fields) != 0) {
+        goto cleanup;
     }
 
     int lcow_fallback = 0;
@@ -1293,100 +1564,33 @@ int __hcs_create_process(
         free(json_utf8);
         json_utf8 = NULL;
 
-        const char* working_dir = guest_is_windows ? "C:\\\\" : "/";
-        const int emulate_console = guest_is_windows ? 1 : 0;
         const int lcow_use_oci = (!guest_is_windows && oci_spec_utf8 != NULL && !lcow_fallback);
         const int lcow_use_command_args = (!guest_is_windows && !lcow_fallback);
         const int create_in_uvm = (!guest_is_windows && !lcow_use_oci) ? 1 : 0;
 
-        json_t* proc_cfg = json_object();
-        if (proc_cfg == NULL) {
+        if (__build_process_config_json(
+            guest_is_windows,
+            options,
+            env_obj,
+            cmdline_utf8,
+            cmd_args,
+            linux_cmdline_utf8,
+            oci_spec_utf8,
+            include_security,
+            lcow_use_oci,
+            lcow_use_command_args,
+            create_in_uvm,
+            &json_utf8) != 0) {
             goto cleanup;
         }
-
-        if (guest_is_windows) {
-            if (cmdline_utf8 == NULL) {
-                json_decref(proc_cfg);
-                goto cleanup;
-            }
-            if (containerv_json_object_set_string(proc_cfg, "CommandLine", cmdline_utf8) != 0 ||
-                containerv_json_object_set_string(proc_cfg, "WorkingDirectory", working_dir) != 0 ||
-                json_object_set(proc_cfg, "Environment", env_obj) != 0 ||
-                containerv_json_object_set_bool(proc_cfg, "EmulateConsole", emulate_console) != 0 ||
-                containerv_json_object_set_bool(proc_cfg, "CreateStdInPipe", options->create_stdio_pipes != 0) != 0 ||
-                containerv_json_object_set_bool(proc_cfg, "CreateStdOutPipe", options->create_stdio_pipes != 0) != 0 ||
-                containerv_json_object_set_bool(proc_cfg, "CreateStdErrPipe", options->create_stdio_pipes != 0) != 0) {
-                json_decref(proc_cfg);
-                goto cleanup;
-            }
-            if (include_security) {
-                if (containerv_json_object_set_string(proc_cfg, "User", "ContainerUser") != 0) {
-                    json_decref(proc_cfg);
-                    goto cleanup;
-                }
-            }
-        } else {
-            if (lcow_use_command_args && cmd_args == NULL) {
-                json_decref(proc_cfg);
-                goto cleanup;
-            }
-
-            if ((lcow_use_command_args && json_object_set(proc_cfg, "CommandArgs", cmd_args) != 0) ||
-                (!lcow_use_command_args && linux_cmdline_utf8 && containerv_json_object_set_string(proc_cfg, "CommandLine", linux_cmdline_utf8) != 0) ||
-                containerv_json_object_set_string(proc_cfg, "WorkingDirectory", working_dir) != 0 ||
-                containerv_json_object_set_bool(proc_cfg, "CreateInUtilityVm", create_in_uvm) != 0 ||
-                json_object_set(proc_cfg, "Environment", env_obj) != 0 ||
-                containerv_json_object_set_bool(proc_cfg, "EmulateConsole", emulate_console) != 0 ||
-                containerv_json_object_set_bool(proc_cfg, "CreateStdInPipe", options->create_stdio_pipes != 0) != 0 ||
-                containerv_json_object_set_bool(proc_cfg, "CreateStdOutPipe", options->create_stdio_pipes != 0) != 0 ||
-                containerv_json_object_set_bool(proc_cfg, "CreateStdErrPipe", options->create_stdio_pipes != 0) != 0) {
-                json_decref(proc_cfg);
-                goto cleanup;
-            }
-
-            if (lcow_use_oci) {
-                json_error_t jerr;
-                json_t* oci = json_loads(oci_spec_utf8, 0, &jerr);
-                if (oci == NULL) {
-                    json_decref(proc_cfg);
-                    goto cleanup;
-                }
-                if (json_object_set_new(proc_cfg, "OCISpecification", oci) != 0) {
-                    json_decref(oci);
-                    json_decref(proc_cfg);
-                    goto cleanup;
-                }
-                if (containerv_json_object_set_bool(proc_cfg, "CreateInUtilityVm", 0) != 0) {
-                    json_decref(proc_cfg);
-                    goto cleanup;
-                }
-            }
-        }
-
-        if (containerv_json_dumps_compact(proc_cfg, &json_utf8) != 0) {
-            json_decref(proc_cfg);
-            goto cleanup;
-        }
-
-        json_decref(proc_cfg);
 
         if (process_config) {
             free(process_config);
             process_config = NULL;
         }
 
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, json_utf8, -1, NULL, 0);
-        if (wlen <= 0) {
-            VLOG_ERROR("containerv[hcs]", "failed to size wide process config\n");
-            goto cleanup;
-        }
-
-        process_config = calloc((size_t)wlen, sizeof(wchar_t));
-        if (!process_config) {
-            goto cleanup;
-        }
-
-        if (MultiByteToWideChar(CP_UTF8, 0, json_utf8, -1, process_config, wlen) == 0) {
+        process_config = __utf8_to_wide_alloc(json_utf8);
+        if (process_config == NULL) {
             VLOG_ERROR("containerv[hcs]", "failed to convert process config to wide string\n");
             goto cleanup;
         }
