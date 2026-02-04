@@ -339,7 +339,7 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
     // On windows, linux containers require special UVM setup in addition
     // to the rootfs overlay. The UVM setup is done here.
 #ifdef CHEF_ON_WINDOWS
-    if (params->gtype != CHEF_GUEST_TYPE_LINUX) {
+    if (params.gtype == CHEF_GUEST_TYPE_LINUX) {
         if (__initialize_maybe_lcow_uvm(&params) != 0) {
             chef_create_parameters_destroy(&params);
             return CHEF_STATUS_FAILED_ROOTFS_SETUP;
@@ -348,7 +348,7 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
 #endif
     
     // Linux rootfs setup is only needed for Linux containers.
-    if (params.gtype != CHEF_GUEST_TYPE_LINUX) {
+    if (params.gtype == CHEF_GUEST_TYPE_LINUX) {
         rootfs = __initialize_maybe_rootfs(bctx->recipe, bctx->build_cache);
         if (rootfs == NULL) {
             chef_create_parameters_destroy(&params);
