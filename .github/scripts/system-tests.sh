@@ -99,17 +99,6 @@ dump_seccomp_logs() {
         fi
     fi
     
-    if [[ "$FOUND_LOGS" -eq 0 ]] && command -v dmesg >/dev/null 2>&1; then
-        local DMESG_LOGS
-        DMESG_LOGS="$($SUDO dmesg 2>/dev/null | grep -i seccomp || true)"
-
-        if [[ -n "$DMESG_LOGS" ]]; then
-            echo "Seccomp denials found in dmesg:"
-            echo "$DMESG_LOGS"
-            FOUND_LOGS=1
-        fi
-    fi
-    
     if [[ "$FOUND_LOGS" -eq 0 ]] && [[ -f /var/log/syslog ]]; then
         local SYSLOG_LOGS
         SYSLOG_LOGS="$($SUDO grep -i audit /var/log/syslog 2>/dev/null | grep -i seccomp || true)"
@@ -117,6 +106,17 @@ dump_seccomp_logs() {
         if [[ -n "$SYSLOG_LOGS" ]]; then
             echo "Seccomp denials found in syslog:"
             echo "$SYSLOG_LOGS"
+            FOUND_LOGS=1
+        fi
+    fi
+    
+    if [[ "$FOUND_LOGS" -eq 0 ]] && command -v dmesg >/dev/null 2>&1; then
+        local DMESG_LOGS
+        DMESG_LOGS="$($SUDO dmesg 2>/dev/null | grep -i seccomp || true)"
+
+        if [[ -n "$DMESG_LOGS" ]]; then
+            echo "Seccomp denials found in dmesg:"
+            echo "$DMESG_LOGS"
             FOUND_LOGS=1
         fi
     fi
