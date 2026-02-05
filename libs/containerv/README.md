@@ -265,10 +265,6 @@ GNU General Public License v3.0 - See LICENSE file for details
 
 ## TODO
 
-WCOW parent layer handling
-Ensure parent layer chain is fully validated and propagated for WCOW packages (including windowsfilter import + UtilityVM discovery).
-Touch points: layers.c:520-760, container.c:1672-1748.
-
 Windows networking validation
 Confirm HNS endpoint policies are applied for LCOW and WCOW, and verify fallback behavior for static IP/DNS.
 Touch points: network.c.

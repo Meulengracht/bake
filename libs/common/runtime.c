@@ -102,7 +102,6 @@ static int __normalize_to_linux_path(const char* path, const char* prefix, char*
 {
     const char* s = path;
     const char* pf = prefix;
-    size_t      len;
     char*       norm;
     
     // If converting from a windows path, 
@@ -139,7 +138,6 @@ static int __normalize_to_windows_path(const char* path, const char* prefix, cha
 {
     const char* s = path;
     char*       norm;
-    size_t      len;
     
     // If it has a drive letter, then we assume it's already normalized
     // as a Windows path and just return it.

@@ -404,7 +404,7 @@ enum chef_status bake_client_spawn(
             .command = (char*)command,
             .options = options,
             .environment = flatenv,
-            .environment_count = flatenvLength
+            .environment_count = (uint32_t)flatenvLength
             /* .user = */
         }
     );

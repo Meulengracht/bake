@@ -12,13 +12,13 @@ macro (add_sources)
     endforeach()
 endmacro()
 
+add_sources(
+    ubuntu.c
+)
+
 if (WIN32)
     add_sources(
         lcow.c
-    )
-elseif(UNIX)
-    add_sources(
-        ubuntu.c
     )
 endif()
 
