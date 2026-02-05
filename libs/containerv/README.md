@@ -262,9 +262,3 @@ When contributing platform-specific features:
 ## License
 
 GNU General Public License v3.0 - See LICENSE file for details
-
-## TODO
-
-Windows networking validation
-Confirm HNS endpoint policies are applied for LCOW and WCOW, and verify fallback behavior for static IP/DNS.
-Touch points: network.c.
