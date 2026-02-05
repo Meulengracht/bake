@@ -21,32 +21,47 @@
 #include <state.h>
 #include <utils.h>
 
-#ifndef _WIN32
-// chmod
-#include <sys/stat.h>
-#else
-#include <windows.h>
-#endif
-
 #include <chef/platform.h>
+#include <chef/runtime.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
-static const char* g_wrapperTemplate = 
-"#!/bin/sh\n"
-"%s --container %s --path %s --wdir %s %s\n";
+#if defined(CHEF_ON_WINDOWS)
+#include <windows.h>
 
-#ifdef _WIN32
-static const char* g_wrapperTemplateWindows =
+static const char* g_wrapperTemplate =
 "@echo off\r\n"
-"\"%s\" --container \"%s\" --path \"%s\" --wdir \"%s\" %s %%%%*\r\n";
-#endif
+"\"%s\" --container \"%s\" --path \"%s\" --wdir \"%s\" %s %%*\r\n";
+
+char* __path_in_container(const char* path, struct chef_runtime_info* runtimeInfo)
+{
+    const char* prefix;
+    char*       result;
+    int         status;
+
+    if (path == NULL) {
+        return NULL;
+    }
+
+    if (runtimeInfo->runtime == CHEF_RUNTIME_LINUX) {
+        prefix = "/chef/rootfs/";
+    } else if (runtimeInfo->runtime == CHEF_RUNTIME_WINDOWS) {
+        prefix = "C:\\";
+    } else {
+        return NULL;
+    }
+    
+    status = chef_runtime_normalize_path(path, prefix, runtimeInfo, &result);
+    if (status) {
+        return NULL;
+    }
+    return result;
+}
 
 static char* __serve_exec_path(void)
 {
-#ifdef _WIN32
     char buffer[MAX_PATH] = { 0 };
     char dirnm[MAX_PATH] = { 0 };
     char* p;
@@ -69,7 +84,23 @@ static char* __serve_exec_path(void)
     strncpy(&dirnm[0], &buffer[0], index);
     snprintf(&buffer[0], sizeof(buffer), "%sserve-exec.exe", &dirnm[0]);
     return platform_strdup(&buffer[0]);
-#else
+}
+
+static int __set_wrapper_permissions(const char* wrapperPath)
+{
+    (void)wrapperPath;
+    return 0;
+}
+
+#elif defined(CHEF_ON_LINUX)
+#include <sys/stat.h>
+
+static const char* g_wrapperTemplate = 
+"#!/bin/sh\n"
+"%s --container %s --path %s --wdir %s %s\n";
+
+static char* __serve_exec_path(void)
+{
     char   buffer[PATH_MAX] = { 0 };
     char   dirnm[PATH_MAX] = { 0 };
     size_t index;
@@ -93,15 +124,10 @@ static char* __serve_exec_path(void)
     strncpy(&dirnm[0], &buffer[0], index);
     snprintf(&buffer[0], sizeof(buffer), "%sserve-exec", &dirnm[0]);
     return platform_strdup(&buffer[0]);
-#endif
 }
 
 static int __set_wrapper_permissions(const char* wrapperPath)
 {
-#ifdef _WIN32
-    (void)wrapperPath;
-    return 0;
-#else
     int status;
 
     // wrapper should be executable by all
@@ -111,8 +137,8 @@ static int __set_wrapper_permissions(const char* wrapperPath)
         return -1;
     }
     return 0;
-#endif
 }
+#endif
 
 static int __write_wrapper(
     const char* wrapperPath,
@@ -130,11 +156,7 @@ static int __write_wrapper(
         return -1;
     }
 
-#ifdef _WIN32
-    fprintf(wrapper, g_wrapperTemplateWindows, sexecPath, container, path, workingDirectory, args);
-#else
     fprintf(wrapper, g_wrapperTemplate, sexecPath, container, path, workingDirectory, args);
-#endif
     fclose(wrapper);
     return __set_wrapper_permissions(wrapperPath);
 }
@@ -159,6 +181,11 @@ static int __generate_wrappers(const char* appName)
     char*                     sexecPath = __serve_exec_path();
     char                      name[CHEF_PACKAGE_ID_LENGTH_MAX];
 
+    if (sexecPath == NULL) {
+        VLOG_ERROR("generate-wrappers", "%s: failed to determine serve-exec path\n", appName);
+        return -1;
+    }
+
     application = served_state_application(appName);
     if (application == NULL) {
         goto cleanup;
@@ -181,14 +208,38 @@ static int __generate_wrappers(const char* appName)
             continue;
         }
 
+#if defined(CHEF_ON_WINDOWS)
+        struct chef_runtime_info* runtimeInfo;
+        char*                     containerPath;
+        char*                     workingDir;
+        
+        runtimeInfo = chef_runtime_info_parse(application->base);
+        if (runtimeInfo == NULL) {
+            VLOG_ERROR("generate-wrappers", "%s.%s: failed to parse runtime info from base %s\n", appName, application->commands[i].name, application->base);
+            free(wrapperPath);
+            continue;
+        }
+
+        containerPath = __path_in_container(application->commands[i].path, runtimeInfo);
+        workingDir = __path_in_container("/", runtimeInfo);
+        
+        if (containerPath == NULL || workingDir == NULL) {
+            VLOG_ERROR("generate-wrappers", "%s.%s: failed to map container path\n", appName, application->commands[i].name);
+            free(containerPath);
+            free(workingDir);
+            free(wrapperPath);
+            continue;
+        }
+#endif
         status = __write_wrapper(
             wrapperPath,
             sexecPath,
             &name[0],
+#if defined(CHEF_ON_WINDOWS)
+            containerPath,
+            workingDir,
+#elif defined(CHEF_ON_LINUX)
             application->commands[i].path,
-#ifdef _WIN32
-            "C:\\",  // working directory
-#else
             "/",  // working directory
 #endif
             application->commands[i].arguments
@@ -197,6 +248,10 @@ static int __generate_wrappers(const char* appName)
             VLOG_ERROR("generate-wrappers", "%s.%s: failed to write wrapper to %s\n", wrapperPath);
             // fall-through
         }
+#if defined(CHEF_ON_WINDOWS)
+        free(containerPath);
+        free(workingDir);
+#endif
         free(wrapperPath);
     }
 

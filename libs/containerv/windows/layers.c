@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <vlog.h>
 #include <jansson.h>
 
@@ -127,6 +128,301 @@ static int __windowsfilter_has_layerchain(const char* layer_dir)
     }
 
     return __file_exists(chainPath);
+}
+
+static int __is_abs_windows_path(const char* p)
+{
+    if (p == NULL || p[0] == '\0') {
+        return 0;
+    }
+
+    // Drive path: C:\...
+    if (isalpha((unsigned char)p[0]) && p[1] == ':' && (p[2] == '\\' || p[2] == '/')) {
+        return 1;
+    }
+
+    // UNC: \\server\share\...
+    if (p[0] == '\\' && p[1] == '\\') {
+        return 1;
+    }
+
+    return 0;
+}
+
+static char* __path_basename_alloc(const char* path)
+{
+    const char* base;
+    size_t len;
+
+    if (path == NULL) {
+        return NULL;
+    }
+
+    base = strrchr(path, '\\');
+    if (base == NULL) {
+        base = strrchr(path, '/');
+    }
+    base = (base != NULL) ? base + 1 : path;
+
+    len = strlen(base);
+    if (len == 0) {
+        return NULL;
+    }
+
+    char* out = calloc(len + 1, 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    memcpy(out, base, len);
+    out[len] = '\0';
+    return out;
+}
+
+static int __read_layerchain_json_optional(const char* layer_dir, char*** out_paths, int* out_count)
+{
+    char chainPath[MAX_PATH];
+    int rc;
+    json_error_t jerr;
+    json_t* root;
+    size_t n;
+    char** out;
+    int outCount;
+    size_t i;
+    json_t* item;
+    const char* valueStr;
+
+    if (out_paths == NULL || out_count == NULL) {
+        return -1;
+    }
+    *out_paths = NULL;
+    *out_count = 0;
+
+    if (layer_dir == NULL || layer_dir[0] == '\0') {
+        return 0;
+    }
+
+    rc = snprintf(chainPath, sizeof(chainPath), "%s\\layerchain.json", layer_dir);
+    if (rc < 0 || (size_t)rc >= sizeof(chainPath)) {
+        return -1;
+    }
+
+    if (!__file_exists(chainPath)) {
+        return 0;
+    }
+
+    memset(&jerr, 0, sizeof(jerr));
+    root = json_load_file(chainPath, 0, &jerr);
+    if (root == NULL) {
+        VLOG_ERROR("containerv[layers]", "failed to parse layerchain.json at %s: %s (line %d)\n", chainPath, jerr.text, jerr.line);
+        return -1;
+    }
+    if (!json_is_array(root)) {
+        json_decref(root);
+        VLOG_ERROR("containerv[layers]", "layerchain.json is not an array: %s\n", chainPath);
+        return -1;
+    }
+
+    n = json_array_size(root);
+    if (n == 0) {
+        // Empty chain is valid for base layers.
+        json_decref(root);
+        return 0;
+    }
+
+    out = calloc(n, sizeof(char*));
+    if (out == NULL) {
+        json_decref(root);
+        return -1;
+    }
+
+    outCount = 0;
+    for (i = 0; i < n; i++) {
+        item = json_array_get(root, i);
+        if (!json_is_string(item)) {
+            continue;
+        }
+        valueStr = json_string_value(item);
+        if (valueStr == NULL || valueStr[0] == '\0') {
+            continue;
+        }
+
+        // Resolve relative entries against the layer directory.
+        char resolved[MAX_PATH];
+        resolved[0] = '\0';
+        if (__dir_exists(valueStr)) {
+            rc = snprintf(resolved, sizeof(resolved), "%s", valueStr);
+        } else if (!__is_abs_windows_path(valueStr)) {
+            rc = snprintf(resolved, sizeof(resolved), "%s\\%s", layer_dir, valueStr);
+        } else {
+            rc = -1;
+        }
+
+        if (rc < 0 || (size_t)rc >= sizeof(resolved) || !__dir_exists(resolved)) {
+            // Best-effort: try Docker-style parents folder resolution: <layer>\parents\<basename>
+            char* base = __path_basename_alloc(valueStr);
+            if (base != NULL) {
+                rc = snprintf(resolved, sizeof(resolved), "%s\\parents\\%s", layer_dir, base);
+            }
+            free(base);
+        }
+
+        if (resolved[0] == '\0' || !__dir_exists(resolved)) {
+            VLOG_ERROR("containerv[layers]", "layerchain.json entry does not exist and could not be resolved: %s (under %s)\n", valueStr, layer_dir);
+            for (int j = 0; j < outCount; j++) {
+                free(out[j]);
+            }
+            free(out);
+            json_decref(root);
+            return -1;
+        }
+
+        out[outCount++] = _strdup(resolved);
+        if (out[outCount - 1] == NULL) {
+            for (int j = 0; j < outCount - 1; j++) {
+                free(out[j]);
+            }
+            free(out);
+            json_decref(root);
+            return -1;
+        }
+    }
+
+    json_decref(root);
+
+    if (outCount == 0) {
+        free(out);
+        return 0;
+    }
+
+    *out_paths = out;
+    *out_count = outCount;
+    return 0;
+}
+
+static void __free_strv_local(char** values, int count)
+{
+    if (values == NULL) {
+        return;
+    }
+    for (int i = 0; i < count; i++) {
+        free(values[i]);
+    }
+    free(values);
+}
+
+static int __strv_contains(const char* const* v, int n, const char* s)
+{
+    if (v == NULL || n <= 0 || s == NULL) {
+        return 0;
+    }
+    for (int i = 0; i < n; i++) {
+        if (v[i] != NULL && strcmp(v[i], s) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int __append_strv_unique(char*** v, int* n, int* cap, const char* s)
+{
+    if (v == NULL || n == NULL || cap == NULL || s == NULL || s[0] == '\0') {
+        return -1;
+    }
+    if (__strv_contains((const char* const*)*v, *n, s)) {
+        VLOG_ERROR("containerv[layers]", "duplicate parent layer in chain: %s\n", s);
+        errno = EINVAL;
+        return -1;
+    }
+    if (!__dir_exists(s)) {
+        VLOG_ERROR("containerv[layers]", "parent layer path is not a directory: %s\n", s);
+        errno = ENOENT;
+        return -1;
+    }
+    if (*n >= *cap) {
+        int newCap = (*cap == 0) ? 8 : (*cap * 2);
+        char** nv = realloc(*v, (size_t)newCap * sizeof(char*));
+        if (nv == NULL) {
+            errno = ENOMEM;
+            return -1;
+        }
+        *v = nv;
+        *cap = newCap;
+    }
+    (*v)[*n] = _strdup(s);
+    if ((*v)[*n] == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+    (*n)++;
+    return 0;
+}
+
+// Expand an initial parent list by reading layerchain.json from each parent (if present).
+// Produces a fully enumerated chain suitable for HCS/wclayer (no duplicates, all dirs exist).
+static int __expand_and_validate_parent_layers(
+    const char* const* parents_in,
+    int parent_count_in,
+    char*** parents_out,
+    int* parent_count_out)
+{
+    char** out;
+    int outCount;
+    int outCap;
+
+    if (parents_out == NULL || parent_count_out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    *parents_out = NULL;
+    *parent_count_out = 0;
+
+    if (parents_in == NULL || parent_count_in <= 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    out = NULL;
+    outCount = 0;
+    outCap = 0;
+
+    for (int i = 0; i < parent_count_in; i++) {
+        if (parents_in[i] == NULL || parents_in[i][0] == '\0') {
+            continue;
+        }
+        if (__append_strv_unique(&out, &outCount, &outCap, parents_in[i]) != 0) {
+            __free_strv_local(out, outCount);
+            return -1;
+        }
+
+        // Attempt to extend the chain using this parent's own layerchain.json.
+        char** extra = NULL;
+        int extraCount = 0;
+        if (__read_layerchain_json_optional(parents_in[i], &extra, &extraCount) != 0) {
+            __free_strv_local(out, outCount);
+            return -1;
+        }
+        for (int j = 0; j < extraCount; j++) {
+            if (extra[j] == NULL || extra[j][0] == '\0') {
+                continue;
+            }
+            if (__append_strv_unique(&out, &outCount, &outCap, extra[j]) != 0) {
+                __free_strv_local(extra, extraCount);
+                __free_strv_local(out, outCount);
+                return -1;
+            }
+        }
+        __free_strv_local(extra, extraCount);
+    }
+
+    if (outCount <= 0) {
+        __free_strv_local(out, outCount);
+        errno = EINVAL;
+        return -1;
+    }
+
+    *parents_out = out;
+    *parent_count_out = outCount;
+    return 0;
 }
 
 // Write an empty layerchain.json file.
@@ -288,45 +584,51 @@ static int __windowsfilter_import_from_dir(
         return -1;
     }
 
-    wchar_t** parent_w = NULL;
-    if (parent_layer_count > 0) {
-        parent_w = calloc((size_t)parent_layer_count, sizeof(wchar_t*));
-        if (parent_w == NULL) {
+    // Expand + validate full WCOW parent chain.
+    char** expanded = NULL;
+    int expandedCount = 0;
+    if (__expand_and_validate_parent_layers(parent_layers, parent_layer_count, &expanded, &expandedCount) != 0) {
+        VLOG_ERROR(
+            "containerv[layers]",
+            "WCOW windowsfilter import requires a valid parent layer chain (set via containerv_options_set_windows_wcow_parent_layers)\n");
+        return -1;
+    }
+
+    wchar_t** parent_w = calloc((size_t)expandedCount, sizeof(wchar_t*));
+    if (parent_w == NULL) {
+        __free_strv_local(expanded, expandedCount);
+        return -1;
+    }
+    for (int i = 0; i < expandedCount; i++) {
+        parent_w[i] = calloc(MAX_PATH, sizeof(wchar_t));
+        if (parent_w[i] == NULL || __utf8_to_wide_buf(expanded[i], parent_w[i], MAX_PATH) != 0) {
+            for (int j = 0; j <= i; j++) {
+                free(parent_w[j]);
+            }
+            free(parent_w);
+            __free_strv_local(expanded, expandedCount);
             return -1;
-        }
-        for (int i = 0; i < parent_layer_count; i++) {
-            if (parent_layers[i] == NULL || parent_layers[i][0] == '\0') {
-                parent_w[i] = NULL;
-                continue;
-            }
-            parent_w[i] = calloc(MAX_PATH, sizeof(wchar_t));
-            if (parent_w[i] == NULL ||
-                __utf8_to_wide_buf(parent_layers[i], parent_w[i], MAX_PATH) != 0) {
-                for (int j = 0; j <= i; j++) {
-                    free(parent_w[j]);
-                }
-                free(parent_w);
-                return -1;
-            }
         }
     }
 
-    HRESULT hr = g_wclayer.ImportLayer(layer_w, source_w, (PCWSTR*)parent_w, (DWORD)parent_layer_count);
-    if (parent_w != NULL) {
-        for (int i = 0; i < parent_layer_count; i++) {
-            free(parent_w[i]);
-        }
-        free(parent_w);
+    HRESULT hr = g_wclayer.ImportLayer(layer_w, source_w, (PCWSTR*)parent_w, (DWORD)expandedCount);
+    for (int i = 0; i < expandedCount; i++) {
+        free(parent_w[i]);
     }
+    free(parent_w);
     if (FAILED(hr)) {
+        __free_strv_local(expanded, expandedCount);
         VLOG_ERROR("containerv[layers]", "wclayer ImportLayer failed: 0x%lx\n", hr);
         return -1;
     }
 
-    if (__write_layerchain(layer_dir, parent_layers, parent_layer_count) != 0) {
+    if (__write_layerchain(layer_dir, (const char* const*)expanded, expandedCount) != 0) {
+        __free_strv_local(expanded, expandedCount);
         VLOG_ERROR("containerv[layers]", "failed to write layerchain.json to %s\n", layer_dir);
         return -1;
     }
+
+    __free_strv_local(expanded, expandedCount);
 
     return 0;
 }

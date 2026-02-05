@@ -308,8 +308,6 @@ static int __initialize_maybe_lcow_uvm(struct chef_create_parameters* params)
     struct containerv_disk_lcow_uvm_config cfg = { 0 };
     char*                                  lcow_uvm_resolved = NULL;
 
-    cfg.uvm_url = guest->lcow_uvm_url;
-
     if (containerv_disk_lcow_resolve_uvm(&cfg, &lcow_uvm_resolved)) {
         VLOG_ERROR("cvd", "cvd_create: failed to resolve LCOW UVM assets\n");
         return -1;
@@ -406,7 +404,7 @@ enum chef_status bake_client_spawn(
             .command = (char*)command,
             .options = options,
             .environment = flatenv,
-            .environment_count = flatenvLength
+            .environment_count = (uint32_t)flatenvLength
             /* .user = */
         }
     );

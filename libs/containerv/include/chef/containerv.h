@@ -360,8 +360,8 @@ extern int containerv_get_processes(struct containerv_container* container, stru
  */
 struct containerv_join_options {
     const char*  cwd;   // Working directory inside the container
-    char* const* argv;  // NULL-terminated argument vector
-    char* const* envp;  // NULL-terminated environment vector
+    const char* const* argv;  // NULL-terminated argument vector
+    const char* const* envp;  // NULL-terminated environment vector
 };
 
 /**

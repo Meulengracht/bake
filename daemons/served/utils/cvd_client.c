@@ -166,14 +166,6 @@ static int __configure_windows_guest_options(struct chef_create_parameters* para
     const char* initrd = getenv("CHEF_LCOW_INITRD_FILE");
     const char* boot = getenv("CHEF_LCOW_BOOT_PARAMETERS");
 
-    if (container_type != NULL && container_type[0] != '\0') {
-        if (strcmp(container_type, "linux") == 0 || strcmp(container_type, "lcow") == 0) {
-            params->gtype = CHEF_GUEST_TYPE_LINUX;
-        } else if (strcmp(container_type, "windows") == 0 || strcmp(container_type, "wcow") == 0) {
-            params->gtype = CHEF_GUEST_TYPE_WINDOWS;
-        }
-    }
-
     if (params->gtype != CHEF_GUEST_TYPE_LINUX) {
         return 0;
     }

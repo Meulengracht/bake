@@ -32,6 +32,7 @@
 #include <vlog.h>
 
 #include <jansson.h>
+#include <ctype.h>
 
 #include "json-util.h"
 
@@ -1422,13 +1423,171 @@ static void __free_strv(char** values, int count)
     free(values);
 }
 
+static int __is_abs_windows_path(const char* p)
+{
+    if (p == NULL || p[0] == '\0') {
+        return 0;
+    }
+
+    if (isalpha((unsigned char)p[0]) && p[1] == ':' && (p[2] == '\\' || p[2] == '/')) {
+        return 1;
+    }
+
+    if (p[0] == '\\' && p[1] == '\\') {
+        return 1;
+    }
+
+    return 0;
+}
+
+static int __strv_contains(const char* const* v, int n, const char* s)
+{
+    if (v == NULL || n <= 0 || s == NULL) {
+        return 0;
+    }
+    for (int i = 0; i < n; i++) {
+        if (v[i] != NULL && strcmp(v[i], s) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int __append_strv_unique(char*** v, int* n, int* cap, const char* s)
+{
+    if (v == NULL || n == NULL || cap == NULL || s == NULL || s[0] == '\0') {
+        return -1;
+    }
+
+    if (__strv_contains((const char* const*)*v, *n, s)) {
+        VLOG_ERROR("containerv", "WCOW: duplicate layer in chain: %s\n", s);
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (!PathFileExistsA(s)) {
+        VLOG_ERROR("containerv", "WCOW: layer path does not exist: %s\n", s);
+        errno = ENOENT;
+        return -1;
+    }
+
+    if (*n >= *cap) {
+        int newCap = (*cap == 0) ? 8 : (*cap * 2);
+        char** nv = realloc(*v, (size_t)newCap * sizeof(char*));
+        if (nv == NULL) {
+            errno = ENOMEM;
+            return -1;
+        }
+        *v = nv;
+        *cap = newCap;
+    }
+
+    (*v)[*n] = _strdup(s);
+    if ((*v)[*n] == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    (*n)++;
+    return 0;
+}
+
+// Expand + validate a parent layerchain by reading each parent's own layerchain.json (if present).
+// This helps when a layerchain.json only enumerates immediate parents rather than the full chain.
+static int __wcow_expand_and_validate_chain(const char* rootFs, char*** parents, int* parentCount)
+{
+    char** in;
+    int inCount;
+    char** out;
+    int outCount;
+    int outCap;
+
+    if (parents == NULL || parentCount == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    in = *parents;
+    inCount = *parentCount;
+    if (in == NULL || inCount <= 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    out = NULL;
+    outCount = 0;
+    outCap = 0;
+
+    for (int i = 0; i < inCount; i++) {
+        if (in[i] == NULL || in[i][0] == '\0') {
+            continue;
+        }
+        if (__append_strv_unique(&out, &outCount, &outCap, in[i]) != 0) {
+            __free_strv(out, outCount);
+            return -1;
+        }
+
+        // If this parent has its own layerchain.json, append it.
+        char chainPath[MAX_PATH];
+        int rc = snprintf(chainPath, sizeof(chainPath), "%s\\layerchain.json", in[i]);
+        if (rc < 0 || (size_t)rc >= sizeof(chainPath)) {
+            __free_strv(out, outCount);
+            errno = EINVAL;
+            return -1;
+        }
+        if (!PathFileExistsA(chainPath)) {
+            continue;
+        }
+
+        char** extra = NULL;
+        int extraCount = 0;
+        if (__read_layerchain_json(in[i], &extra, &extraCount) != 0) {
+            VLOG_ERROR("containerv", "WCOW: failed to parse parent layerchain.json under %s\n", in[i]);
+            __free_strv(out, outCount);
+            return -1;
+        }
+
+        for (int j = 0; j < extraCount; j++) {
+            if (extra[j] == NULL || extra[j][0] == '\0') {
+                continue;
+            }
+
+            // __read_layerchain_json already resolves paths best-effort.
+            if (__append_strv_unique(&out, &outCount, &outCap, extra[j]) != 0) {
+                __free_strv(extra, extraCount);
+                __free_strv(out, outCount);
+                return -1;
+            }
+        }
+
+        __free_strv(extra, extraCount);
+    }
+
+    if (outCount <= 0) {
+        __free_strv(out, outCount);
+        errno = EINVAL;
+        return -1;
+    }
+
+    // If expansion changed the chain length, rewrite rootfs layerchain.json for future runs.
+    if (outCount != inCount) {
+        if (__write_layerchain_json(rootFs, out, outCount) != 0) {
+            VLOG_WARNING("containerv", "WCOW: failed to rewrite layerchain.json with expanded chain under %s\n", rootFs);
+        }
+    }
+
+    __free_strv(in, inCount);
+    *parents = out;
+    *parentCount = outCount;
+    return 0;
+}
+
 // Derive a UtilityVM path from options or parent layers.
 static char* __derive_utilityvm_path(
     const struct containerv_options* options,
     const char* const*               parentLayers,
     int                              parentLayerCount)
 {
-    const char* base;
     char        candidate[MAX_PATH];
     int         rc;
     DWORD       attrs;
@@ -1438,27 +1597,30 @@ static char* __derive_utilityvm_path(
         return _strdup(options->windows_container.utilityvm_path);
     }
 
-    // Best-effort: base layer path + "\\UtilityVM".
-    // layerchain.json usually ends at the base OS layer.
-    base = NULL;
-    if (parentLayers != NULL && parentLayerCount > 0) {
-        base = parentLayers[parentLayerCount - 1];
-    }
-    if (base == NULL || base[0] == '\0') {
+    // Best-effort: scan from base-most to top-most and pick the first existing "UtilityVM".
+    // In practice it's usually on the base OS layer, but this is more robust when chains are incomplete.
+    if (parentLayers == NULL || parentLayerCount <= 0) {
         return NULL;
     }
 
-    rc = snprintf(candidate, sizeof(candidate), "%s\\UtilityVM", base);
-    if (rc < 0 || (size_t)rc >= sizeof(candidate)) {
-        return NULL;
+    for (int i = parentLayerCount - 1; i >= 0; i--) {
+        const char* base = parentLayers[i];
+        if (base == NULL || base[0] == '\0') {
+            continue;
+        }
+
+        rc = snprintf(candidate, sizeof(candidate), "%s\\UtilityVM", base);
+        if (rc < 0 || (size_t)rc >= sizeof(candidate)) {
+            continue;
+        }
+
+        attrs = GetFileAttributesA(candidate);
+        if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+            return _strdup(candidate);
+        }
     }
 
-    attrs = GetFileAttributesA(candidate);
-    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-        return NULL;
-    }
-
-    return _strdup(candidate);
+    return NULL;
 }
 
 // Validate a UtilityVM path and provide a reason on failure.
@@ -1697,6 +1859,14 @@ int containerv_create(
             parentLayerCount = 0;
             if (__read_layerchain_json(rootFs, &parentLayers, &parentLayerCount) != 0) {
                 VLOG_ERROR("containerv", "containerv_create: failed to parse layerchain.json under %s\n", rootFs);
+                __container_delete(container);
+                return -1;
+            }
+
+            // Validate and ensure the chain is fully enumerated.
+            if (__wcow_expand_and_validate_chain(rootFs, &parentLayers, &parentLayerCount) != 0) {
+                VLOG_ERROR("containerv", "containerv_create: WCOW parent layer chain validation/expansion failed for %s\n", rootFs);
+                __free_strv(parentLayers, parentLayerCount);
                 __container_delete(container);
                 return -1;
             }

@@ -71,4 +71,18 @@ static enum waiterd_build_status waiterd_build_status(enum chef_build_status sta
     return WAITERD_BUILD_STATUS_UNKNOWN;
 }
 
+static enum chef_build_status chef_build_status(enum waiterd_build_status status)
+{
+    switch (status) {
+        case WAITERD_BUILD_STATUS_UNKNOWN: return CHEF_BUILD_STATUS_UNKNOWN;
+        case WAITERD_BUILD_STATUS_QUEUED: return CHEF_BUILD_STATUS_QUEUED;
+        case WAITERD_BUILD_STATUS_SOURCING: return CHEF_BUILD_STATUS_SOURCING;
+        case WAITERD_BUILD_STATUS_BUILDING: return CHEF_BUILD_STATUS_BUILDING;
+        case WAITERD_BUILD_STATUS_PACKING: return CHEF_BUILD_STATUS_PACKING;
+        case WAITERD_BUILD_STATUS_DONE: return CHEF_BUILD_STATUS_DONE;
+        case WAITERD_BUILD_STATUS_FAILED: return CHEF_BUILD_STATUS_FAILED;
+    }
+    return CHEF_BUILD_STATUS_UNKNOWN;
+}
+
 #endif //!__API_CONVERT_H__

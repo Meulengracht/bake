@@ -47,7 +47,7 @@ static int __fixup_dns(const char* rootfs)
 
     // the rootfs may come with dns that relies on the host
     // but for these types of rootfs static is fine
-    status = unlink(&tmp[0]);
+    status = platform_unlink(&tmp[0]);
     if (status) {
         VLOG_WARNING("cvd", "__fixup_dns: failed to unlink %s, trying anyway\n", &tmp[0]);
     }

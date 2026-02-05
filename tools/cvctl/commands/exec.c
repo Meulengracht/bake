@@ -94,18 +94,19 @@ int exec_main(int argc, char** argv, char** envp, struct cvctl_command_options* 
     // initialize the logging system
     vlog_initialize(VLOG_LEVEL_DEBUG);
 
-    result = containerv_join(commSocket);
+    result = containerv_join(
+        commSocket,
+        commandArgv[0],
+        &(struct containerv_join_options) {
+            .cwd = "/",
+            .argv = (const char* const*)&commandArgv[1],
+            .envp = (const char* const*)envp
+        }
+    );
     vlog_cleanup();
     if (result) {
         fprintf(stderr, "cvctl: failed to join container at path %s\n", commSocket);
         return -1;
     }
-
-#if __linux__
-    result = execve(commandArgv[0], (char* const*)&commandArgv[1], (char* const*)envp);
-    if (result) {
-        fprintf(stderr, "cvctl: failed to execute %s\n", commandArgv[0]);
-    }
-#endif
     return 0;
 }

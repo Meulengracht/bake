@@ -92,7 +92,7 @@ struct state_application_command {
  */
 struct state_application {
     const char* name;                                   /**< Application name (unique identifier) */
-    const char* base;                                   /**< Base rootfs for the application */
+    const char* base;                                   /**< Base rootfs type for the application */
 
     struct state_application_command*  commands;        /**< Array of available commands */
     int                                commands_count;  /**< Number of commands */

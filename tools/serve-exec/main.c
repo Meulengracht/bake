@@ -68,23 +68,13 @@ static int __spawn_command(int argc, char** argv, char** envp, const char* conta
     status = containerv_join(containerName, commandPath, 
         &(struct containerv_join_options){
             .cwd  = workingDirectory,
-            .argv = rebuildArgv,
-            .envp = envp
+            .argv = (const char* const*)rebuildArgv,
+            .envp = (const char* const*)envp
         }
     );
-
-#if defined(_WIN32) || defined(_WIN64)
     if (status) {
         fprintf(stderr, "serve-exec: %s: failed with exit-code %i\n", commandPath, status);
     }
-#elif __linux__
-    if (status) {
-        fprintf(stderr, "serve-exec: %s: failed to executes: %i\n", commandPath, status);
-    }
-#else
-    fprintf(stderr, "serve-exec: unsupported platform\n");
-    status = -1;
-#endif
     free(rebuildArgv);
     return status;
 }

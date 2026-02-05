@@ -84,7 +84,7 @@ static int __configure_local(struct sockaddr_storage* storage, const char* addre
     struct sockaddr_un* local = (struct sockaddr_un*)storage;
 
     // ensure it doesn't exist
-    if (unlink(address) && errno != ENOENT) {
+    if (platform_unlink(address) && errno != ENOENT) {
         return -1;
     }
 

@@ -962,19 +962,33 @@ static char* __normalize_container_path_linux_alloc(const char* p)
         return _strdup("/");
     }
 
-    // Replace backslashes with forward slashes and ensure leading '/'.
+    // Normalize Windows-ish paths to Linux container paths.
+    // - Strip extended prefix "\\?\\".
+    // - Strip drive letters ("C:").
+    // - Collapse leading slashes/backslashes.
+    // - Replace backslashes with forward slashes.
     const char* s = p;
+
+    if (s[0] == '\\' && s[1] == '\\' && s[2] == '?' && s[3] == '\\') {
+        s += 4;
+    }
+
+    if (((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) && s[1] == ':') {
+        s += 2;
+    }
+
+    while (*s == '/' || *s == '\\') {
+        s++;
+    }
+
     size_t n = strlen(s);
-    int need_leading = (s[0] != '/');
-    char* out = calloc(n + (need_leading ? 2 : 1), 1);
+    char* out = calloc(n + 2, 1); // leading '/' + NUL
     if (out == NULL) {
         return NULL;
     }
 
     size_t j = 0;
-    if (need_leading) {
-        out[j++] = '/';
-    }
+    out[j++] = '/';
     for (size_t i = 0; i < n; i++) {
         char c = s[i];
         out[j++] = (c == '\\') ? '/' : c;
@@ -1774,6 +1788,39 @@ int __hcs_create_process(
 
     const int guest_is_windows = (container->guest_is_windows != 0);
 
+    // Normalize paths for Linux guests (LCOW).
+    // Callers may pass Windows-style paths (C:\\..., backslashes). The Linux GCS expects
+    // POSIX paths, and Chef conventionally rebases into the mapped rootfs at /chef/rootfs.
+    struct __containerv_spawn_options norm_opts = *options;
+    char*                            norm_exec_path = NULL;
+    const char**                     norm_argv = NULL;
+    if (!guest_is_windows) {
+        norm_exec_path = __join_linux_prefix_alloc("/chef/rootfs", options->path);
+        if (norm_exec_path == NULL) {
+            goto cleanup;
+        }
+        norm_opts.path = norm_exec_path;
+
+        if (options->argv != NULL) {
+            size_t argc = 0;
+            while (options->argv[argc] != NULL) {
+                argc++;
+            }
+            norm_argv = calloc(argc + 1, sizeof(*norm_argv));
+            if (norm_argv == NULL) {
+                goto cleanup;
+            }
+            for (size_t i = 0; i < argc; i++) {
+                norm_argv[i] = options->argv[i];
+            }
+            if (argc > 0) {
+                norm_argv[0] = norm_exec_path;
+            }
+            norm_argv[argc] = NULL;
+            norm_opts.argv = (const char* const*)norm_argv;
+        }
+    }
+
     const struct containerv_policy* policy = container->policy;
     enum containerv_security_level security_level = CV_SECURITY_DEFAULT;
     int win_use_app_container = 0;
@@ -1798,21 +1845,21 @@ int __hcs_create_process(
             goto cleanup;
         }
     } else {
-        if (__build_linux_cmdline_and_args(options, &linux_cmdline_utf8, &cmd_args, &args_json_utf8) != 0) {
+        if (__build_linux_cmdline_and_args(&norm_opts, &linux_cmdline_utf8, &cmd_args, &args_json_utf8) != 0) {
             goto cleanup;
         }
     }
 
     // If we're running a Linux container compute system (LCOW), prefer OCISpecification.
     // Rootfs is expected to be mapped into the container at /chef/rootfs.
-    if (__build_oci_spec_if_needed(container, options, args_json_utf8, guest_is_windows, &oci_spec_utf8) != 0) {
+    if (__build_oci_spec_if_needed(container, &norm_opts, args_json_utf8, guest_is_windows, &oci_spec_utf8) != 0) {
         goto cleanup;
     }
 
     // Build environment object. Always include a default PATH if not provided.
     int try_security_fields = 0;
     if (__build_env_object(
-        options,
+        &norm_opts,
         guest_is_windows,
         policy,
         security_level,
@@ -1849,7 +1896,7 @@ int __hcs_create_process(
 
         if (__build_process_config_json(
             guest_is_windows,
-            options,
+            &norm_opts,
             env_obj,
             cmdline_utf8,
             cmd_args,
@@ -1960,6 +2007,8 @@ int __hcs_create_process(
     }
 
 cleanup:
+    free(norm_argv);
+    free(norm_exec_path);
     free(json_utf8);
     free(args_json_utf8);
     free(oci_spec_utf8);
