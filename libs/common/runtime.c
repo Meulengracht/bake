@@ -18,7 +18,9 @@
 
 #include <chef/platform.h>
 #include <chef/runtime.h>
+#include <ctype.h>
 #include <stdlib.h>
+#include <string.h>
 
 // The format of the base can be either of 
 // ubuntu:24
@@ -82,8 +84,8 @@ void chef_runtime_info_delete(struct chef_runtime_info* info)
     if (info == NULL) {
         return;
     }
-    free(info->name);
-    free(info->version);
+    free((char*)info->name);
+    free((char*)info->version);
     free(info);
 }
 
