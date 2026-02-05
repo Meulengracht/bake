@@ -12,6 +12,36 @@ Chef is a cross-platform package management system, specifically built to suppor
 
 The best way to get started is to install the latest version of Chef using the [snap store](https://snapcraft.io/vchef). However not everyone likes or uses snaps, and in this case it's recommended to build chef from source, as chef is not distributed as a debian package yet!
 
+## Feature Overview
+
+As of 1.5, Chef will be feature-complete for the basic use cases. While Chef may evolve as we move on, the 1.5
+release will mark the first initial complete version of Chef. Some highlights of the features that Chef supports
+
+- Chef Container Runtime implemented in `libs/containerv`
+  - Supports both windows containers (Linux+Windows guests).
+  - Supports linux containers on linux.
+  - Provides runtime and build containers.
+- Chef Container Manager `cvd`
+  - Provides a stable API for `bake` and `served`.
+  - Spawns and manages containers on the system.
+- Chef Application Runtime implemented as the `served` daemon
+  - Served is the application manager on the system.
+  - Provides a public API to install, update and remove packages.
+  - Utilizes `cvd` to containerize applications installed.
+- Chef Build Containers `bake`
+  - Builds recipes defined by users.
+  - Remote build orchestration via waiterd/cookd with `bake remote` commands.
+  - Utilizes `cvd` to create build containers for recipes.
+- Chef Disk Imaging Tools
+  - Build disk images using yaml files. (TODO: IMAGE_RECIPE.md)
+  - Supports deploying Chef Packages.
+- Chef Application Store
+  - Create user, register a publisher name and login through `order`.
+  - Upload packages and manage your packages through `order`.
+- Chef Remote Build Tools
+  - Agent orchestrator implemented in `waiterd` daemon.
+  - Build agents implemented in `cookd` daemon.
+
 ## Roadmap
 
 Features that is expected in the upcoming 1.5 release
@@ -30,14 +60,9 @@ Features that is expected in the upcoming 1.5 release
   * Support multi-publisher per account
   * Support per publisher signing
   * Support api-keys
-- [x] Improved windows support
+- [x] Complete windows support
   * Finish the platform layer for windows
   * Fix the configure process on windows
-
-Features that is expected in the planned 1.6 release
-
-- Complete windows support
-  * Fix the build issues
   * Proper support for windows bases
   * Extend containerv to support the windows HCI layer
 
