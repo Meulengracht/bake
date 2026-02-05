@@ -38,7 +38,24 @@ struct __container {
     char*                            id;
     struct containerv_container*     handle;
     struct containerv_layer_context* layer_context;  // Layer composition context
+    struct list                      processes;
+    unsigned int                     next_process_id;
 };
+
+struct __container_process {
+    struct list_item     item_header;
+    unsigned int         public_id;
+    process_handle_t     handle;
+};
+
+static void __container_process_delete(void* item)
+{
+    struct __container_process* proc = (struct __container_process*)item;
+    if (proc == NULL) {
+        return;
+    }
+    free(proc);
+}
 
 static struct __container* __container_new(struct containerv_container* handle, struct containerv_layer_context* layerContext)
 {
@@ -53,6 +70,8 @@ static struct __container* __container_new(struct containerv_container* handle, 
     }
     container->handle = handle;
     container->layer_context = layerContext;
+    list_init(&container->processes);
+    container->next_process_id = 0;
     return container;
 }
 
@@ -62,8 +81,51 @@ static void __container_delete(struct __container* container)
         return;
     }
 
+    list_destroy(&container->processes, __container_process_delete);
     free(container->id);
     free(container);
+}
+
+static unsigned int __container_register_process(struct __container* container, process_handle_t handle)
+{
+    struct __container_process* proc;
+
+    if (container == NULL) {
+        return 0;
+    }
+
+    proc = calloc(1, sizeof(struct __container_process));
+    if (proc == NULL) {
+        return 0;
+    }
+
+    container->next_process_id++;
+    if (container->next_process_id == 0) {
+        container->next_process_id++;
+    }
+
+    proc->public_id = container->next_process_id;
+    proc->handle = handle;
+    list_add(&container->processes, &proc->item_header);
+    return proc->public_id;
+}
+
+static struct __container_process* __container_find_process(struct __container* container, unsigned int public_id)
+{
+    struct list_item* i;
+
+    if (container == NULL || public_id == 0) {
+        return NULL;
+    }
+
+    list_foreach(&container->processes, i) {
+        struct __container_process* proc = (struct __container_process*)i;
+        if (proc->public_id == public_id) {
+            return proc;
+        }
+    }
+
+    return NULL;
 }
 
 static struct {
@@ -117,26 +179,6 @@ static enum containerv_layer_type __to_cv_layer_type(enum chef_layer_type type)
             return CONTAINERV_LAYER_BASE_ROOTFS;
     }
 }
-
-#ifdef CHEF_ON_WINDOWS
-static int __windows_hcs_has_disallowed_layers(const struct chef_create_parameters* params)
-{
-    if (params == NULL || params->layers == NULL || params->layers_count == 0) {
-        return 0;
-    }
-
-    for (uint32_t i = 0; i < params->layers_count; i++) {
-        switch (params->layers[i].type) {
-            case CHEF_LAYER_TYPE_OVERLAY:
-                return 1;
-            default:
-                break;
-        }
-    }
-
-    return 0;
-}
-#endif
 
 static struct containerv_layer* __to_cv_layers(struct chef_layer_descriptor* protoLayers, uint32_t count)
 {
@@ -299,6 +341,24 @@ static enum chef_status __create_linux_container(const struct chef_create_parame
     return CHEF_STATUS_SUCCESS;
 }
 #elif CHEF_ON_WINDOWS
+static int __windows_hcs_has_disallowed_layers(const struct chef_create_parameters* params)
+{
+    if (params == NULL || params->layers == NULL || params->layers_count == 0) {
+        return 0;
+    }
+
+    for (uint32_t i = 0; i < params->layers_count; i++) {
+        switch (params->layers[i].type) {
+            case CHEF_LAYER_TYPE_OVERLAY:
+                return 1;
+            default:
+                break;
+        }
+    }
+
+    return 0;
+}
+
 static enum chef_status __create_hyperv_container(const struct chef_create_parameters* params, struct __create_container_params* containerParams)
 {
     struct containerv_policy* policy;
@@ -553,8 +613,9 @@ static struct __container* __find_container(const char* id)
 enum chef_status cvd_spawn(const struct chef_spawn_parameters* params, unsigned int* pIDOut)
 {
     struct __container*             container;
-    struct containerv_spawn_options opts;
     int                             status;
+    unsigned int                    public_id;
+    process_handle_t                handle = 0;
     char*                           command = NULL;
     char*                           arguments = NULL;
     char**                          environment = NULL;
@@ -590,19 +651,33 @@ enum chef_status cvd_spawn(const struct chef_spawn_parameters* params, unsigned 
     }
 
     VLOG_DEBUG("cvd", "cvd_spawn: spawning command\n");
+    struct containerv_spawn_options opts = {
+        .arguments = arguments,
+        .environment = (const char* const*)environment,
+        .flags = __convert_to_spawn_flags(params->options)
+    };
     status = containerv_spawn(
         container->handle,
         command,
-        &(struct containerv_spawn_options) {
-            .arguments = arguments,
-            .environment = (const char* const*)environment,
-            .flags = __convert_to_spawn_flags(params->options)
-        },
-        pIDOut
+        &opts,
+        &handle
     );
     if (status) {
         VLOG_ERROR("cvd", "cvd_spawn: failed to execute %s\n", command);
         ret = __chef_status_from_errno();
+        goto cleanup;
+    }
+
+    public_id = __container_register_process(container, handle);
+    if (public_id == 0) {
+        VLOG_ERROR("cvd", "cvd_spawn: failed to register process handle\n");
+        containerv_kill(container->handle, handle);
+        ret = CHEF_STATUS_INTERNAL_ERROR;
+        goto cleanup;
+    }
+
+    if (pIDOut != NULL) {
+        *pIDOut = public_id;
     }
 
 cleanup:
@@ -615,6 +690,7 @@ cleanup:
 enum chef_status cvd_kill(const char* containerID, const unsigned int pID)
 {
     struct __container* container;
+    struct __container_process* proc;
     int                 status;
     VLOG_DEBUG("cvd", "cvd_kill(id=%s, pid=%u)\n", containerID, pID);
 
@@ -625,11 +701,20 @@ enum chef_status cvd_kill(const char* containerID, const unsigned int pID)
         return CHEF_STATUS_INVALID_CONTAINER_ID;
     }
 
-    status = containerv_kill(container->handle, pID);
+    proc = __container_find_process(container, pID);
+    if (proc == NULL) {
+        VLOG_ERROR("cvd", "cvd_kill: unknown process id %u\n", pID);
+        return CHEF_STATUS_INTERNAL_ERROR;
+    }
+
+    status = containerv_kill(container->handle, proc->handle);
     if (status) {
         VLOG_ERROR("cvd", "cvd_kill: failed to kill process %u\n", pID);
         return __chef_status_from_errno();
     }
+
+    list_remove(&container->processes, &proc->item_header);
+    __container_process_delete(proc);
     return CHEF_STATUS_SUCCESS;
 }
 
