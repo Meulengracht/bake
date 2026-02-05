@@ -265,15 +265,6 @@ GNU General Public License v3.0 - See LICENSE file for details
 
 ## TODO
 
-serve-exec on Windows
-Implement Windows execution version of main.c as main_win32.c (currently Linux only).
-Rename main.c to main_linux.c
-Ensure it can join container (HCS) and spawn inside LCOW/WCOW, or switch to using cvd spawn for Windows.
-
-Windows wrapper execution flow
-Validate that Windows wrappers (.cmd) invoke serve-exec.exe correctly and pass arguments, and ensure container path mapping is correct for both LCOW (/chef/rootfs) and WCOW (C:).
-Touch points: generate-wrappers.c:20-160, paths.c:40-136.
-
 Windows path normalization for container paths
 Normalize container command paths (C:\ vs /) when passing to serve-exec / spawn, especially for LCOW rootfs path rebasing.
 Touch points: generate-wrappers.c:90-150, hcs.c:360-520.

@@ -38,15 +38,98 @@ static const char* g_wrapperTemplate =
 "#!/bin/sh\n"
 "%s --container %s --path %s --wdir %s %s\n";
 
-#ifdef _WIN32
+#if defined(CHEF_ON_WINDOWS)
 static const char* g_wrapperTemplateWindows =
 "@echo off\r\n"
-"\"%s\" --container \"%s\" --path \"%s\" --wdir \"%s\" %s %%%%*\r\n";
-#endif
+"\"%s\" --container \"%s\" --path \"%s\" --wdir \"%s\" %s %%*\r\n";
+
+static int __path_has_drive_letter(const char* path)
+{
+    return (path != NULL && isalpha((unsigned char)path[0]) && path[1] == ':');
+}
+
+static int __is_lcow_container(void)
+{
+    const char* containerType = getenv("CHEF_WINDOWS_CONTAINER_TYPE");
+    if (containerType == NULL || containerType[0] == '\0') {
+        return 0;
+    }
+    return (strcmp(containerType, "linux") == 0 || strcmp(containerType, "lcow") == 0);
+}
+
+static void __normalize_windows_slashes(char* path)
+{
+    if (path == NULL) {
+        return;
+    }
+    for (char* p = path; *p; ++p) {
+        if (*p == '/') {
+            *p = '\\';
+        }
+    }
+}
+
+char* __path_in_container(const char* path)
+{
+    if (path == NULL) {
+        return NULL;
+    }
+
+    if (__is_lcow_container()) {
+        const char* prefix = "/chef/rootfs";
+        if (strcmp(path, "/") == 0 || strcmp(path, "\\") == 0 || path[0] == '\0') {
+            return platform_strdup(prefix);
+        }
+        if (strncmp(path, prefix, strlen(prefix)) == 0) {
+            return platform_strdup(path);
+        }
+        if (path[0] == '/') {
+            size_t len = strlen(prefix) + strlen(path) + 1;
+            char*  mapped = calloc(len + 1, 1);
+            if (mapped == NULL) {
+                return NULL;
+            }
+            snprintf(mapped, len + 1, "%s%s", prefix, path);
+            return mapped;
+        }
+        if (__path_has_drive_letter(path)) {
+            return platform_strdup(path);
+        }
+        {
+            size_t len = strlen(prefix) + 1 + strlen(path) + 1;
+            char*  mapped = calloc(len, 1);
+            if (mapped == NULL) {
+                return NULL;
+            }
+            snprintf(mapped, len, "%s/%s", prefix, path);
+            return mapped;
+        }
+    }
+
+    if (__path_has_drive_letter(path)) {
+        return platform_strdup(path);
+    }
+
+    {
+        const char* base = "C:\\";
+        const char* trimmed = path;
+        while (*trimmed == '/' || *trimmed == '\\') {
+            trimmed++;
+        }
+        size_t len = strlen(base) + strlen(trimmed) + 1;
+        char*  mapped = calloc(len, 1);
+        if (mapped == NULL) {
+            return NULL;
+        }
+        strcpy(mapped, base);
+        strcat(mapped, trimmed);
+        __normalize_windows_slashes(mapped);
+        return mapped;
+    }
+}
 
 static char* __serve_exec_path(void)
 {
-#ifdef _WIN32
     char buffer[MAX_PATH] = { 0 };
     char dirnm[MAX_PATH] = { 0 };
     char* p;
@@ -69,7 +152,18 @@ static char* __serve_exec_path(void)
     strncpy(&dirnm[0], &buffer[0], index);
     snprintf(&buffer[0], sizeof(buffer), "%sserve-exec.exe", &dirnm[0]);
     return platform_strdup(&buffer[0]);
-#else
+}
+
+static int __set_wrapper_permissions(const char* wrapperPath)
+{
+    (void)wrapperPath;
+    return 0;
+}
+
+#elif defined(CHEF_ON_LINUX)
+
+static char* __serve_exec_path(void)
+{
     char   buffer[PATH_MAX] = { 0 };
     char   dirnm[PATH_MAX] = { 0 };
     size_t index;
@@ -93,15 +187,10 @@ static char* __serve_exec_path(void)
     strncpy(&dirnm[0], &buffer[0], index);
     snprintf(&buffer[0], sizeof(buffer), "%sserve-exec", &dirnm[0]);
     return platform_strdup(&buffer[0]);
-#endif
 }
 
 static int __set_wrapper_permissions(const char* wrapperPath)
 {
-#ifdef _WIN32
-    (void)wrapperPath;
-    return 0;
-#else
     int status;
 
     // wrapper should be executable by all
@@ -111,8 +200,8 @@ static int __set_wrapper_permissions(const char* wrapperPath)
         return -1;
     }
     return 0;
-#endif
 }
+#endif
 
 static int __write_wrapper(
     const char* wrapperPath,
@@ -130,9 +219,9 @@ static int __write_wrapper(
         return -1;
     }
 
-#ifdef _WIN32
+#if defined(CHEF_ON_WINDOWS)
     fprintf(wrapper, g_wrapperTemplateWindows, sexecPath, container, path, workingDirectory, args);
-#else
+#elif defined(CHEF_ON_LINUX)
     fprintf(wrapper, g_wrapperTemplate, sexecPath, container, path, workingDirectory, args);
 #endif
     fclose(wrapper);
@@ -159,6 +248,11 @@ static int __generate_wrappers(const char* appName)
     char*                     sexecPath = __serve_exec_path();
     char                      name[CHEF_PACKAGE_ID_LENGTH_MAX];
 
+    if (sexecPath == NULL) {
+        VLOG_ERROR("generate-wrappers", "%s: failed to determine serve-exec path\n", appName);
+        return -1;
+    }
+
     application = served_state_application(appName);
     if (application == NULL) {
         goto cleanup;
@@ -181,14 +275,26 @@ static int __generate_wrappers(const char* appName)
             continue;
         }
 
+#if defined(CHEF_ON_WINDOWS)
+        char* containerPath = __path_in_container(application->commands[i].path);
+        char* workingDir = __path_in_container("/");
+        if (containerPath == NULL || workingDir == NULL) {
+            VLOG_ERROR("generate-wrappers", "%s.%s: failed to map container path\n", appName, application->commands[i].name);
+            free(containerPath);
+            free(workingDir);
+            free(wrapperPath);
+            continue;
+        }
+#endif
         status = __write_wrapper(
             wrapperPath,
             sexecPath,
             &name[0],
+#if defined(CHEF_ON_WINDOWS)
+            containerPath,
+            workingDir,
+#elif defined(CHEF_ON_LINUX)
             application->commands[i].path,
-#ifdef _WIN32
-            "C:\\",  // working directory
-#else
             "/",  // working directory
 #endif
             application->commands[i].arguments
@@ -197,6 +303,10 @@ static int __generate_wrappers(const char* appName)
             VLOG_ERROR("generate-wrappers", "%s.%s: failed to write wrapper to %s\n", wrapperPath);
             // fall-through
         }
+#if defined(CHEF_ON_WINDOWS)
+        free(containerPath);
+        free(workingDir);
+#endif
         free(wrapperPath);
     }
 
