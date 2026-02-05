@@ -73,7 +73,7 @@ void chef_waiterd_status_invocation(struct gracht_message* message, const char* 
 
     chef_waiterd_status_response(message, &(struct chef_waiter_status_response) {
         .arch = chef_build_architecture(wreq->architecture),
-        .status = wreq->status
+        .status = chef_build_status(wreq->status)
     });
 }
 
