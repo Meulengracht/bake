@@ -109,6 +109,17 @@ dump_seccomp_logs() {
             FOUND_LOGS=1
         fi
     fi
+    
+    if [[ "$FOUND_LOGS" -eq 0 ]] && [[ -f /var/log/syslog ]]; then
+        local SYSLOG_LOGS
+        SYSLOG_LOGS="$($SUDO grep -i audit /var/log/syslog 2>/dev/null | grep -i seccomp || true)"
+
+        if [[ -n "$SYSLOG_LOGS" ]]; then
+            echo "Seccomp denials found in syslog:"
+            echo "$SYSLOG_LOGS"
+            FOUND_LOGS=1
+        fi
+    fi
 
     if [[ "$FOUND_LOGS" -eq 0 ]]; then
         echo "No seccomp denials found in any available logs"
