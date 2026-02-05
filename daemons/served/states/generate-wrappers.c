@@ -21,111 +21,43 @@
 #include <state.h>
 #include <utils.h>
 
-#ifndef _WIN32
-// chmod
-#include <sys/stat.h>
-#else
-#include <windows.h>
-#endif
-
 #include <chef/platform.h>
+#include <chef/runtime.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
-static const char* g_wrapperTemplate = 
-"#!/bin/sh\n"
-"%s --container %s --path %s --wdir %s %s\n";
-
 #if defined(CHEF_ON_WINDOWS)
-static const char* g_wrapperTemplateWindows =
+#include <windows.h>
+
+static const char* g_wrapperTemplate =
 "@echo off\r\n"
 "\"%s\" --container \"%s\" --path \"%s\" --wdir \"%s\" %s %%*\r\n";
 
-static int __path_has_drive_letter(const char* path)
+char* __path_in_container(const char* path, struct chef_runtime_info* runtimeInfo)
 {
-    return (path != NULL && isalpha((unsigned char)path[0]) && path[1] == ':');
-}
+    const char* prefix;
+    char*       result;
+    int         status;
 
-static int __is_lcow_container(void)
-{
-    const char* containerType = getenv("CHEF_WINDOWS_CONTAINER_TYPE");
-    if (containerType == NULL || containerType[0] == '\0') {
-        return 0;
-    }
-    return (strcmp(containerType, "linux") == 0 || strcmp(containerType, "lcow") == 0);
-}
-
-static void __normalize_windows_slashes(char* path)
-{
-    if (path == NULL) {
-        return;
-    }
-    for (char* p = path; *p; ++p) {
-        if (*p == '/') {
-            *p = '\\';
-        }
-    }
-}
-
-char* __path_in_container(const char* path)
-{
     if (path == NULL) {
         return NULL;
     }
 
-    if (__is_lcow_container()) {
-        const char* prefix = "/chef/rootfs";
-        if (strcmp(path, "/") == 0 || strcmp(path, "\\") == 0 || path[0] == '\0') {
-            return platform_strdup(prefix);
-        }
-        if (strncmp(path, prefix, strlen(prefix)) == 0) {
-            return platform_strdup(path);
-        }
-        if (path[0] == '/') {
-            size_t len = strlen(prefix) + strlen(path) + 1;
-            char*  mapped = calloc(len + 1, 1);
-            if (mapped == NULL) {
-                return NULL;
-            }
-            snprintf(mapped, len + 1, "%s%s", prefix, path);
-            return mapped;
-        }
-        if (__path_has_drive_letter(path)) {
-            return platform_strdup(path);
-        }
-        {
-            size_t len = strlen(prefix) + 1 + strlen(path) + 1;
-            char*  mapped = calloc(len, 1);
-            if (mapped == NULL) {
-                return NULL;
-            }
-            snprintf(mapped, len, "%s/%s", prefix, path);
-            return mapped;
-        }
+    if (runtimeInfo->runtime == CHEF_RUNTIME_LINUX) {
+        prefix = "/chef/rootfs/";
+    } else if (runtimeInfo->runtime == CHEF_RUNTIME_WINDOWS) {
+        prefix = "C:\\";
+    } else {
+        return NULL;
     }
-
-    if (__path_has_drive_letter(path)) {
-        return platform_strdup(path);
+    
+    status = chef_runtime_normalize_path(path, prefix, runtimeInfo, &result);
+    if (status) {
+        return NULL;
     }
-
-    {
-        const char* base = "C:\\";
-        const char* trimmed = path;
-        while (*trimmed == '/' || *trimmed == '\\') {
-            trimmed++;
-        }
-        size_t len = strlen(base) + strlen(trimmed) + 1;
-        char*  mapped = calloc(len, 1);
-        if (mapped == NULL) {
-            return NULL;
-        }
-        strcpy(mapped, base);
-        strcat(mapped, trimmed);
-        __normalize_windows_slashes(mapped);
-        return mapped;
-    }
+    return result;
 }
 
 static char* __serve_exec_path(void)
@@ -161,6 +93,11 @@ static int __set_wrapper_permissions(const char* wrapperPath)
 }
 
 #elif defined(CHEF_ON_LINUX)
+#include <sys/stat.h>
+
+static const char* g_wrapperTemplate = 
+"#!/bin/sh\n"
+"%s --container %s --path %s --wdir %s %s\n";
 
 static char* __serve_exec_path(void)
 {
@@ -219,11 +156,7 @@ static int __write_wrapper(
         return -1;
     }
 
-#if defined(CHEF_ON_WINDOWS)
-    fprintf(wrapper, g_wrapperTemplateWindows, sexecPath, container, path, workingDirectory, args);
-#elif defined(CHEF_ON_LINUX)
     fprintf(wrapper, g_wrapperTemplate, sexecPath, container, path, workingDirectory, args);
-#endif
     fclose(wrapper);
     return __set_wrapper_permissions(wrapperPath);
 }
@@ -276,8 +209,20 @@ static int __generate_wrappers(const char* appName)
         }
 
 #if defined(CHEF_ON_WINDOWS)
-        char* containerPath = __path_in_container(application->commands[i].path);
-        char* workingDir = __path_in_container("/");
+        struct chef_runtime_info* runtimeInfo;
+        char*                     containerPath;
+        char*                     workingDir;
+        
+        runtimeInfo = chef_runtime_info_parse(application->base);
+        if (runtimeInfo == NULL) {
+            VLOG_ERROR("generate-wrappers", "%s.%s: failed to parse runtime info from base %s\n", appName, application->commands[i].name, application->base);
+            free(wrapperPath);
+            continue;
+        }
+
+        containerPath = __path_in_container(application->commands[i].path, runtimeInfo);
+        workingDir = __path_in_container("/", runtimeInfo);
+        
         if (containerPath == NULL || workingDir == NULL) {
             VLOG_ERROR("generate-wrappers", "%s.%s: failed to map container path\n", appName, application->commands[i].name);
             free(containerPath);

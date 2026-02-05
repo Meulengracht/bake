@@ -8,6 +8,7 @@ add_library(common STATIC
     preprocessor.c
     recipe_utils.c
     recipe.c
+    runtime.c
 )
 target_include_directories(common PUBLIC include)
 target_link_libraries(common PRIVATE platform)

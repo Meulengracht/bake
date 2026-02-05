@@ -265,10 +265,6 @@ GNU General Public License v3.0 - See LICENSE file for details
 
 ## TODO
 
-Windows path normalization for container paths
-Normalize container command paths (C:\ vs /) when passing to serve-exec / spawn, especially for LCOW rootfs path rebasing.
-Touch points: generate-wrappers.c:90-150, hcs.c:360-520.
-
 WCOW parent layer handling
 Ensure parent layer chain is fully validated and propagated for WCOW packages (including windowsfilter import + UtilityVM discovery).
 Touch points: layers.c:520-760, container.c:1672-1748.

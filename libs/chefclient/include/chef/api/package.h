@@ -45,7 +45,7 @@ struct chef_find_params {
 struct chef_publish_params {
     const char*           publisher;    /**< The publisher/owner of the package */
     const char*           package;      /**< The package name */
-    const char*           platform;     /**< The target platform (e.g., "linux", "windows") */
+    const char*           platform;     /**< The target platform (e.g., "ubuntu", "windows") */
     const char*           architecture; /**< The target architecture (e.g., "amd64", "arm64") */
     const char*           channel;      /**< The release channel (e.g., "stable", "dev") */
     struct chef_version*  version;      /**< The version information for this package */
@@ -58,7 +58,7 @@ struct chef_publish_params {
 struct chef_download_params {
     const char*           publisher;    /**< The publisher/owner of the package */
     const char*           package;      /**< The package name */
-    const char*           platform;     /**< The target platform (e.g., "linux", "windows") */
+    const char*           platform;     /**< The target platform (e.g., "ubuntu", "windows") */
     const char*           arch;         /**< The target architecture (e.g., "amd64", "arm64") */
     const char*           channel;      /**< The release channel (e.g., "stable", "dev") */
     struct chef_observer* observer;     /**< Observer for download progress reporting */

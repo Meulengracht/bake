@@ -962,19 +962,33 @@ static char* __normalize_container_path_linux_alloc(const char* p)
         return _strdup("/");
     }
 
-    // Replace backslashes with forward slashes and ensure leading '/'.
+    // Normalize Windows-ish paths to Linux container paths.
+    // - Strip extended prefix "\\?\\".
+    // - Strip drive letters ("C:").
+    // - Collapse leading slashes/backslashes.
+    // - Replace backslashes with forward slashes.
     const char* s = p;
+
+    if (s[0] == '\\' && s[1] == '\\' && s[2] == '?' && s[3] == '\\') {
+        s += 4;
+    }
+
+    if (((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) && s[1] == ':') {
+        s += 2;
+    }
+
+    while (*s == '/' || *s == '\\') {
+        s++;
+    }
+
     size_t n = strlen(s);
-    int need_leading = (s[0] != '/');
-    char* out = calloc(n + (need_leading ? 2 : 1), 1);
+    char* out = calloc(n + 2, 1); // leading '/' + NUL
     if (out == NULL) {
         return NULL;
     }
 
     size_t j = 0;
-    if (need_leading) {
-        out[j++] = '/';
-    }
+    out[j++] = '/';
     for (size_t i = 0; i < n; i++) {
         char c = s[i];
         out[j++] = (c == '\\') ? '/' : c;
