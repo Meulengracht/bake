@@ -55,6 +55,12 @@ static int __parse_number(
 {
     char*    endptr;
     uint64_t value;
+
+    VLOG_DEBUG(
+        "containerv",
+        "policy_seccomp: parsing number '%s' for syscall '%s'\n",
+        string, syscallName
+    );
     
     value = strtoull(string, &endptr, 10);
     if (*endptr == '\0') {
@@ -80,6 +86,12 @@ static int __parse_masked_equal(
     char** args;
     int    argCount = 0;
     int    status;
+
+    VLOG_DEBUG(
+        "containerv",
+        "policy_seccomp: parsing masked equality '%s' for syscall '%s'\n",
+        string, syscallName
+    );
 
 
 	args = strsplit(string, '|');
@@ -123,6 +135,14 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
     char**               args;
     int                  argCount = 0;
     int                  status;
+    int                  isDeny = 0;
+
+    VLOG_DEBUG(
+        "containerv",
+        "policy_seccomp: parsing entry '%s' args '%s'\n",
+        entry->name,
+        entry->args != NULL ? entry->args : ""
+    );
 
     args = strsplit(entry->args, ' ');
     if (entry->args != NULL && args == NULL) {
@@ -152,7 +172,15 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
 		syscallAction = SCMP_ACT_ERRNO(EACCES);
 		syscallName = &syscallName[1];
 		context = denyContext;
+        isDeny = 1;
 	}
+
+    VLOG_DEBUG(
+        "containerv",
+        "policy_seccomp: syscall '%s' action '%s'\n",
+        syscallName,
+        isDeny ? "deny" : "allow"
+    );
     
     syscallNumber = seccomp_syscall_resolve_name(syscallName);
     if (syscallNumber == __NR_SCMP_ERROR) {
@@ -295,6 +323,7 @@ int policy_seccomp_apply(struct containerv_policy* policy)
     // Add all allowed syscalls from the policy
     for (int i = 0; i < policy->syscall_count; i++) {
         const char* syscall_name = policy->syscalls[i].name;
+        VLOG_DEBUG("containerv", "policy_seccomp: adding rule for '%s'\n", syscall_name);
         status = __parse_entry(allowContext, allowContext, &policy->syscalls[i]);
         if (status) {
             VLOG_ERROR("containerv", "policy_seccomp: failed to parse syscall entry for '%s'\n", syscall_name);
