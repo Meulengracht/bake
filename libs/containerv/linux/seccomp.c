@@ -50,7 +50,6 @@ static uint32_t __determine_default_action(void)
 
 static int __parse_number(
     const char* string,
-    const char* syscallName,
     uint32_t    syscallFlags,
     uint64_t*   valueOut)
 {
@@ -59,8 +58,8 @@ static int __parse_number(
 
     VLOG_DEBUG(
         "containerv",
-        "policy_seccomp: parsing number '%s' for syscall '%s'\n",
-        string, syscallName
+        "policy_seccomp: parsing number '%s'\n",
+        string
     );
     
     errno = 0;
@@ -113,12 +112,12 @@ static int __parse_masked_equal(
         goto cleanup;
     }
 	
-    status = __parse_number(args[0], syscallName, syscallFlags, valueOut);
+    status = __parse_number(args[0], syscallFlags, valueOut);
 	if (status) {
 		goto cleanup;
 	}
 	
-    status = __parse_number(args[1], syscallName, syscallFlags, value2Out);
+    status = __parse_number(args[1], syscallFlags, value2Out);
 
 cleanup:
     strsplit_free(args);
@@ -208,6 +207,11 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
         enum scmp_compare cmpOp;
         uint64_t          value, value2;
         const char*       arg = args[i];
+        VLOG_DEBUG(
+            "containerv",
+            "policy_seccomp: parsing argument '%s' for syscall '%s'\n",
+            arg, syscallName
+        );
 
         if (strcmp(args[i], "-") == 0) {
             continue;
@@ -215,26 +219,26 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
         
 		if (strncmp(arg, ">=", 2) == 0) {
 			cmpOp = SCMP_CMP_GE;
-			status = __parse_number(&arg[2], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[2], entry->flags, &value);
 		} else if (strncmp(arg, "<=", 2) == 0) {
 			cmpOp = SCMP_CMP_LE;
-			status = __parse_number(&arg[2], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[2], entry->flags, &value);
 		} else if (strncmp(arg, "!", 1) == 0) {
 			cmpOp = SCMP_CMP_NE;
-			status = __parse_number(&arg[1], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[1], entry->flags, &value);
 		} else if (strncmp(arg, "<", 1) == 0) {
 			cmpOp = SCMP_CMP_LT;
-			status = __parse_number(&arg[1], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[1], entry->flags, &value);
 		} else if (strncmp(arg, ">", 1) == 0) {
 			cmpOp = SCMP_CMP_GT;
-			status = __parse_number(&arg[1], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[1], entry->flags, &value);
 		} else if (strncmp(arg, "|", 1) == 0) {
 			cmpOp = SCMP_CMP_MASKED_EQ;
-			status = __parse_number(&arg[1], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[1], entry->flags, &value);
 			value2 = value;
 		} else if (strchr(arg, '|') != NULL) {
 			cmpOp = SCMP_CMP_MASKED_EQ;
-			status = __parse_masked_equal(arg, syscallName, entry->flags, &value, &value2);
+			status = __parse_masked_equal(arg, entry->flags, &value, &value2);
 		} else if (strncmp(arg, "u:", 2) == 0) {
 			struct containerv_user* user = containerv_user_lookup(&arg[2]);
 			if (user == NULL) {
@@ -266,7 +270,7 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
             }
 			cmpOp = SCMP_CMP_EQ;
 		} else {
-			status = __parse_number(arg, syscallName, entry->flags, &value);
+			status = __parse_number(arg, entry->flags, &value);
 			cmpOp = SCMP_CMP_EQ;
 		}
         
@@ -294,6 +298,11 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
 			}
 		}
 
+        VLOG_DEBUG(
+            "containerv",
+            "policy_seccomp: adding condition for argument %i of syscall '%s': cmpOp=%d value=%llu value2=%llu\n",
+            i, syscallName, cmpOp, value, value2
+        );
 		if (cmpOp == SCMP_CMP_MASKED_EQ) {
 			struct scmp_arg_cmp scmpCond = SCMP_CMP(i, cmpOp, value, value2);
             memcpy(&scArgs[scArgCount], &scmpCond, sizeof(struct scmp_arg_cmp));
