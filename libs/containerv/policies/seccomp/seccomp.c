@@ -25,6 +25,34 @@
 
 #include "../private.h"
 
+// Only support negative args for syscalls where we understand the glibc/kernel
+// prototypes and behavior. This lists all the syscalls that support negative
+// arguments where we want to ignore the high 32 bits (ie, we'll mask it since
+// the arg is known to be 32 bit (uid_t/gid_t) and the kernel accepts one
+// or both of uint32(-1) and uint64(-1) and does its own masking).
+static const char* g_syscallsWithNegArgsMaskHi32[] = {
+	"chown",
+	"chown32",
+	"fchown",
+	"fchown32",
+	"fchownat",
+	"lchown",
+	"lchown32",
+	"setgid",
+	"setgid32",
+	"setregid",
+	"setregid32",
+	"setresgid",
+	"setresgid32",
+	"setreuid",
+	"setreuid32",
+	"setresuid",
+	"setresuid32",
+	"setuid",
+	"setuid32",
+	"copy_file_range",
+};
+
 // Minimal syscall set for basic CLI applications
 static const char* g_baseSyscalls[] = {
     // Process management

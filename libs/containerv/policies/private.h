@@ -25,8 +25,12 @@
 #define MAX_SYSCALLS 256
 #define MAX_PATHS 256
 
+#define SYSCALL_FLAG_NEGATIVE_ARG 0x1
+
 struct containerv_syscall_entry {
-    char* name;
+    char*    name;
+    char*    args;
+    uint32_t flags;
 };
 
 struct containerv_policy_path {
