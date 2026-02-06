@@ -20,6 +20,7 @@
 #define __POLICY_INTERNAL_H__
 
 #include <chef/containerv/policy.h>
+#include <stdint.h>
 
 // Maximum policy entries
 #define MAX_SYSCALLS 256

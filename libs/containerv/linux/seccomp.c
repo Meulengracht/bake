@@ -82,7 +82,7 @@ static int __parse_masked_equal(
     int    status;
 
 
-	args = strsplit(string, "|");
+	args = strsplit(string, '|');
 	if (args == NULL) {
 		return -1;
 	}
@@ -124,7 +124,7 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
     int                  argCount = 0;
     int                  status;
 
-    args = strsplit(entry->args, " ");
+    args = strsplit(entry->args, ' ');
     if (entry->args != NULL && args == NULL) {
         return -1;
     } else if (args != NULL) {
