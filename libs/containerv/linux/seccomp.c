@@ -79,7 +79,6 @@ static int __parse_number(
 
 static int __parse_masked_equal(
     const char* string,
-    const char* syscallName,
     uint32_t    syscallFlags,
     uint64_t*   valueOut,
     uint64_t*   value2Out)
@@ -90,8 +89,8 @@ static int __parse_masked_equal(
 
     VLOG_DEBUG(
         "containerv",
-        "policy_seccomp: parsing masked equality '%s' for syscall '%s'\n",
-        string, syscallName
+        "policy_seccomp: parsing masked equality '%s'\n",
+        string
     );
 
 
@@ -106,8 +105,8 @@ static int __parse_masked_equal(
     if (argCount != 2) {
         VLOG_ERROR(
             "containerv",
-            "policy_seccomp: invalid masked equality argument '%s' for syscall '%s', expected format 'value|mask'\n",
-            string, syscallName
+            "policy_seccomp: invalid masked equality argument '%s', expected format 'value|mask'\n",
+            string
         );
         goto cleanup;
     }
