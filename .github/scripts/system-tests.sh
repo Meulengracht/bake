@@ -93,17 +93,6 @@ dump_seccomp_logs() {
         fi
     fi
     
-    if [[ "$FOUND_LOGS" -eq 0 ]] && command -v journalctl >/dev/null 2>&1; then
-        local JOURNAL_LOGS
-        JOURNAL_LOGS="$($SUDO journalctl -b -k 2>/dev/null | grep -Ei 'seccomp.*(denied|kill|trap|errno|syscall|audit)|SECCOMP' || true)"
-
-        if [[ -n "$JOURNAL_LOGS" ]]; then
-            echo "Seccomp denials found in kernel log:"
-            echo "$JOURNAL_LOGS"
-            FOUND_LOGS=1
-        fi
-    fi
-    
     if [[ "$FOUND_LOGS" -eq 0 ]] && [[ -f /var/log/syslog ]]; then
         local SYSLOG_LOGS
         SYSLOG_LOGS="$($SUDO grep -i audit /var/log/syslog 2>/dev/null || true)"
@@ -115,9 +104,20 @@ dump_seccomp_logs() {
         fi
     fi
     
+    if [[ "$FOUND_LOGS" -eq 0 ]] && command -v journalctl >/dev/null 2>&1; then
+        local JOURNAL_LOGS
+        JOURNAL_LOGS="$($SUDO journalctl -b -k 2>/dev/null | grep -Ei 'seccomp.*(denied|kill|trap|errno|syscall|audit)|SECCOMP.*(denied|kill|trap|errno|syscall|audit)' || true)"
+
+        if [[ -n "$JOURNAL_LOGS" ]]; then
+            echo "Seccomp denials found in kernel log:"
+            echo "$JOURNAL_LOGS"
+            FOUND_LOGS=1
+        fi
+    fi
+    
     if [[ "$FOUND_LOGS" -eq 0 ]] && command -v dmesg >/dev/null 2>&1; then
         local DMESG_LOGS
-        DMESG_LOGS="$($SUDO dmesg 2>/dev/null | grep -Ei 'seccomp.*(denied|kill|trap|errno|syscall|audit)|SECCOMP' || true)"
+        DMESG_LOGS="$($SUDO dmesg 2>/dev/null | grep -Ei 'seccomp.*(denied|kill|trap|errno|syscall|audit)|SECCOMP.*(denied|kill|trap|errno|syscall|audit)' || true)"
 
         if [[ -n "$DMESG_LOGS" ]]; then
             echo "Seccomp denials found in dmesg:"
