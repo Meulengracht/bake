@@ -334,10 +334,11 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
     params.gtype = CHEF_GUEST_TYPE_LINUX; // For now, let this be configurable
 
     chef_policy_spec_init(&params.policy);
-    chef_policy_spec_plugins_add(&params.policy, 1);
+    chef_policy_spec_plugins_add(&params.policy, 2);
 
     // Setup build container policy plugins
-    chef_policy_spec_plugins_get(&params.policy, 0)->name = platform_strdup("build");
+    chef_policy_spec_plugins_get(&params.policy, 0)->name = platform_strdup("file-control");
+    chef_policy_spec_plugins_get(&params.policy, 1)->name = platform_strdup("package-management");
     
     // On windows, linux containers require special UVM setup in addition
     // to the rootfs overlay. The UVM setup is done here.

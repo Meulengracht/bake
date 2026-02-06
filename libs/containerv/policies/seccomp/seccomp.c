@@ -35,25 +35,6 @@
 // the arg is known to be 32 bit (uid_t/gid_t) and the kernel accepts one
 // or both of uint32(-1) and uint64(-1) and does its own masking).
 static const char* g_syscallsWithNegArgsMaskHi32[] = {
-	"chown",
-	"chown32",
-	"fchown",
-	"fchown32",
-	"fchownat",
-	"lchown",
-	"lchown32",
-	"setgid",
-	"setgid32",
-	"setregid",
-	"setregid32",
-	"setresgid",
-	"setresgid32",
-	"setreuid",
-	"setreuid32",
-	"setresuid",
-	"setresuid32",
-	"setuid",
-	"setuid32",
 	"copy_file_range",
 };
 
@@ -303,10 +284,6 @@ static const struct containerv_syscall_entry g_baseSyscalls[] = {
     __SC_ENTRY_BASIC("eventfd"),
     __SC_ENTRY_BASIC("eventfd2"),
 
-    // Unix-domain control socket IPC (containerv PID1 <-> manager)
-    __SC_ENTRY_BASIC("sendmsg"),
-    __SC_ENTRY_BASIC("recvmsg"),
-    
     // glibc 2.35 unconditionally calls rseq for all threads
     __SC_ENTRY_BASIC("rseq"),
 
@@ -351,11 +328,22 @@ static const struct containerv_syscall_entry g_baseSyscalls[] = {
     __SC_ENTRY_BASIC("llistxattr"),
     __SC_ENTRY_BASIC("flistxattr"),
     
+    // Filesystem information
+    __SC_ENTRY_BASIC("chroot"),
+    __SC_ENTRY_BASIC("sync"),
+    __SC_ENTRY_BASIC("syncfs"),
+    __SC_ENTRY_BASIC("fsync"),
+    __SC_ENTRY_BASIC("fdatasync"),
+    __SC_ENTRY_BASIC("sync_file_range"),
+    __SC_ENTRY_BASIC("sync_file_range2"),
+    __SC_ENTRY_BASIC("arm_sync_file_range"),
+
     // Capabilities
     __SC_ENTRY_BASIC("capget"),
     __SC_ENTRY_BASIC("capset"),
 
     // Socket operations
+    // Unix-domain control socket IPC (containerv PID1 <-> manager)
     __SC_ENTRY_BASIC("socket"),
     __SC_ENTRY_BASIC("connect"),
     __SC_ENTRY_BASIC("getsockname"),
@@ -367,6 +355,8 @@ static const struct containerv_syscall_entry g_baseSyscalls[] = {
     __SC_ENTRY_BASIC("recvfrom"),
     __SC_ENTRY_BASIC("sendmmsg"),
     __SC_ENTRY_BASIC("recvmmsg"),
+    __SC_ENTRY_BASIC("sendmsg"),
+    __SC_ENTRY_BASIC("recvmsg"),
 
     // IPC
     __SC_ENTRY_BASIC("pipe"),
@@ -374,68 +364,65 @@ static const struct containerv_syscall_entry g_baseSyscalls[] = {
     // !pipe2 - |O_NOTIFICATION_PIPE
     __SC_ENTRY_BASIC("socketpair"),
     
-    NULL
-};
-
-// Root and setgid/setuid family
-static const struct containerv_syscall_entry g_syscallsRootSetUidGid[] = {
     // allow use of setgroups(0, ...). Note: while the setgroups() man page states
     // that 'setgroups(0, NULL) should be used to clear all supplementary groups,
     // the kernel will not consult the group list when size is '0', so we allow it
     // to be anything for compatibility with (arguably buggy) programs that expect
     // to clear the groups with 'setgroups(0, <non-null>).
-   __SC_ENTRY_ARGS_FLAGS("setgroups", "0 -", 0),
-    __SC_ENTRY_ARGS_FLAGS("setgroups32", "0 -", 0),
+    __SC_ENTRY_ARGS_FLAGS("setgroups", "0 -", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setgroups32", "0 -", SYSCALL_FLAG_NEGATIVE_ARG),
 
     // allow setgid to root
-    __SC_ENTRY_ARGS_FLAGS("setgid", "g:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setgid32", "g:root", 0),
+    __SC_ENTRY_ARGS_FLAGS("setgid", "g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setgid32", "g:root", SYSCALL_FLAG_NEGATIVE_ARG),
 
     // allow setuid to root
-    __SC_ENTRY_ARGS_FLAGS("setuid", "u:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setuid32", "u:root", 0),
+    __SC_ENTRY_ARGS_FLAGS("setuid", "u:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setuid32", "u:root", SYSCALL_FLAG_NEGATIVE_ARG),
 
     // allow setregid to root
-    __SC_ENTRY_ARGS_FLAGS("setregid", "g:root g:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setregid32", "g:root g:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setregid", "-1 g:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setregid32", "-1 g:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setregid", "g:root -1", 0),
-    __SC_ENTRY_ARGS_FLAGS("setregid32", "g:root -1", 0),
+    __SC_ENTRY_ARGS_FLAGS("setregid", "g:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setregid32", "g:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setregid", "-1 g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setregid32", "-1 g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setregid", "g:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setregid32", "g:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
 
     // allow setresgid to root
     // (permanent drop)
-    __SC_ENTRY_ARGS_FLAGS("setresgid", "g:root g:root g:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setresgid32", "g:root g:root g:root", 0),
+    __SC_ENTRY_ARGS_FLAGS("setresgid", "g:root g:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid32", "g:root g:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
     
     // (setegid)
-    __SC_ENTRY_ARGS_FLAGS("setresgid", "-1 g:root -1", 0),
-    __SC_ENTRY_ARGS_FLAGS("setresgid32", "-1 g:root -1", 0),
+    __SC_ENTRY_ARGS_FLAGS("setresgid", "-1 g:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid32", "-1 g:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
     
     // (setgid equivalent)
-    __SC_ENTRY_ARGS_FLAGS("setresgid", "g:root g:root -1", 0),
-    __SC_ENTRY_ARGS_FLAGS("setresgid32", "g:root g:root -1", 0),
+    __SC_ENTRY_ARGS_FLAGS("setresgid", "g:root g:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid32", "g:root g:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
 
     // allow setreuid to root
-    __SC_ENTRY_ARGS_FLAGS("setreuid", "u:root u:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setreuid32", "u:root u:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setreuid", "-1 u:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setreuid32", "-1 u:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setreuid", "u:root -1", 0),
-    __SC_ENTRY_ARGS_FLAGS("setreuid32", "u:root -1", 0),
+    __SC_ENTRY_ARGS_FLAGS("setreuid", "u:root u:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setreuid32", "u:root u:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setreuid", "-1 u:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setreuid32", "-1 u:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setreuid", "u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setreuid32", "u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
 
     // allow setresuid to root
     // (permanent drop)
-    __SC_ENTRY_ARGS_FLAGS("setresuid", "u:root u:root u:root", 0),
-    __SC_ENTRY_ARGS_FLAGS("setresuid32", "u:root u:root u:root", 0),
+    __SC_ENTRY_ARGS_FLAGS("setresuid", "u:root u:root u:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid32", "u:root u:root u:root", SYSCALL_FLAG_NEGATIVE_ARG),
     
     // (seteuid)
-    __SC_ENTRY_ARGS_FLAGS("setresuid", "-1 u:root -1", 0),
-    __SC_ENTRY_ARGS_FLAGS("setresuid32", "-1 u:root -1", 0),
+    __SC_ENTRY_ARGS_FLAGS("setresuid", "-1 u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid32", "-1 u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
     
     // (setuid equivalent)
-    __SC_ENTRY_ARGS_FLAGS("setresuid", "u:root u:root -1", 0),
-    __SC_ENTRY_ARGS_FLAGS("setresuid32", "u:root u:root -1", 0),
+    __SC_ENTRY_ARGS_FLAGS("setresuid", "u:root u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid32", "u:root u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    
+    NULL
 };
 
 // Additional filesystem calls modifying files
@@ -480,6 +467,71 @@ static const struct containerv_syscall_entry g_fileControlSyscalls[] = {
     __SC_ENTRY_BASIC("lremovexattr"),
     __SC_ENTRY_BASIC("fremovexattr"),
 
+    // We can't effectively block file perms due to open() with O_CREAT
+    __SC_ENTRY_BASIC("chmod"),
+    __SC_ENTRY_BASIC("fchmod"),
+    __SC_ENTRY_BASIC("fchmodat"),
+    __SC_ENTRY_BASIC("fchmodat2"),
+
+    // Daemons typically run as 'root' so allow chown to 'root'. DAC will prevent
+    // non-root from chowning to root.
+    // (chown root:root)
+    __SC_ENTRY_ARGS_FLAGS("chown", "- u:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("chown32", "- u:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("fchown", "- u:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("fchown32", "- u:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("fchownat", "- - u:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("lchown", "- u:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("lchown32", "- u:root g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+
+    // (chown root)
+    __SC_ENTRY_ARGS_FLAGS("chown", "- u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("chown32", "- u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("fchown", "- u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("fchown32", "- u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("fchownat", "- - u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("lchown", "- u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("lchown32", "- u:root -1", SYSCALL_FLAG_NEGATIVE_ARG),
+
+    // (chgrp root)
+    __SC_ENTRY_ARGS_FLAGS("chown", "- -1 g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("chown32", "- -1 g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("fchown", "- -1 g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("fchown32", "- -1 g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("fchownat", "- - -1 g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("lchown", "- -1 g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("lchown32", "- -1 g:root", SYSCALL_FLAG_NEGATIVE_ARG),
+
+    NULL
+};
+
+// Additional syscalls for package management (apt/gpgv drop privileges to _apt/nogroup)
+static const struct containerv_syscall_entry g_packageManagementSyscalls[] = {
+    // setgroups(size, list) with size=1, list pointer ignored
+    __SC_ENTRY_ARGS_FLAGS("setgroups", "1 -", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setgroups32", "1 -", SYSCALL_FLAG_NEGATIVE_ARG),
+
+    // allow setresgid to nogroup
+    __SC_ENTRY_ARGS_FLAGS("setresgid", "g:nogroup g:nogroup g:nogroup", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid32", "g:nogroup g:nogroup g:nogroup", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid", "-1 g:nogroup -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid32", "-1 g:nogroup -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid", "g:nogroup g:nogroup -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid32", "g:nogroup g:nogroup -1", SYSCALL_FLAG_NEGATIVE_ARG),
+
+    // allow setresuid to _apt
+    __SC_ENTRY_ARGS_FLAGS("setresuid", "u:_apt u:_apt u:_apt", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid32", "u:_apt u:_apt u:_apt", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid", "-1 u:_apt -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid32", "-1 u:_apt -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid", "u:_apt u:_apt -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid32", "u:_apt u:_apt -1", SYSCALL_FLAG_NEGATIVE_ARG),
+
+    // Apt tries to bind a socket
+    __SC_ENTRY_BASIC("bind"),
+    __SC_ENTRY_BASIC("listen"),
+    __SC_ENTRY_BASIC("accept"),
+    __SC_ENTRY_BASIC("accept4"),
     NULL
 };
 
@@ -494,22 +546,7 @@ static const struct containerv_syscall_entry g_processControlSyscalls[] = {
     NULL
 };
 
-// Additional syscalls for build operations
-static const struct containerv_syscall_entry g_fileSystemSyscalls[] = {
-    // Filesystem
-    __SC_ENTRY_BASIC("chroot"),
-    __SC_ENTRY_BASIC("sync"),
-    __SC_ENTRY_BASIC("syncfs"),
-    __SC_ENTRY_BASIC("fsync"),
-    __SC_ENTRY_BASIC("fdatasync"),
-    __SC_ENTRY_BASIC("sync_file_range"),
-    __SC_ENTRY_BASIC("sync_file_range2"),
-    __SC_ENTRY_BASIC("arm_sync_file_range"),
-
-    NULL
-};
-
-// Additional syscalls for build operations
+// Additional syscalls for mount operations
 static const struct containerv_syscall_entry g_mountSyscalls[] = {
     __SC_ENTRY_BASIC("mount"),
     __SC_ENTRY_BASIC("umount"),
@@ -537,10 +574,10 @@ static int add_syscalls_to_policy(struct containerv_policy* policy, const struct
             return -1;
         }
         
-        policy->syscalls[policy->syscall_count].name = strdup(syscalls[i].name);
-        if (policy->syscalls[policy->syscall_count].name == NULL) {
-            return -1;
-        }
+        policy->syscalls[policy->syscall_count].name = syscalls[i].name;
+        policy->syscalls[policy->syscall_count].args = syscalls[i].args;
+        policy->syscalls[policy->syscall_count].flags = syscalls[i].flags;
+
         policy->syscall_count++;
     }
     return 0;
@@ -555,12 +592,14 @@ int policy_seccomp_build(struct containerv_policy* policy, struct containerv_pol
     
     if (strcmp(plugin->name, "minimal") == 0) {
         return add_syscalls_to_policy(policy, g_baseSyscalls);
-    } else if (strcmp(plugin->name, "build") == 0) {
-        (void)add_syscalls_to_policy(policy, g_fileControlSyscalls);
-        (void)add_syscalls_to_policy(policy, g_fileSystemSyscalls);
-        return 0;
-    } else if (strcmp(plugin->name, "network") == 0) {
+    } else if (strcmp(plugin->name, "network-bind") == 0) {
         return add_syscalls_to_policy(policy, g_networkSyscalls);
+    } else if (strcmp(plugin->name, "process-control") == 0) {
+        return add_syscalls_to_policy(policy, g_processControlSyscalls);
+    } else if (strcmp(plugin->name, "file-control") == 0) {
+        return add_syscalls_to_policy(policy, g_fileControlSyscalls);
+    } else if (strcmp(plugin->name, "package-management") == 0) {
+        return add_syscalls_to_policy(policy, g_packageManagementSyscalls);
     } else {
         VLOG_ERROR("containerv", "policy_seccomp: unknown plugin '%s'\n", plugin->name);
         errno = EINVAL;

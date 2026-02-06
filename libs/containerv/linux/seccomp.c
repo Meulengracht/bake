@@ -21,6 +21,7 @@
 #define __SC_MAX_ARGS 5
 
 #include <chef/platform.h>
+#include <chef/containerv-user-linux.h>
 #include <errno.h>
 #include <seccomp.h>
 #include <stdlib.h>
@@ -49,36 +50,44 @@ static uint32_t __determine_default_action(void)
 
 static int __parse_number(
     const char* string,
-    const char* syscallName,
     uint32_t    syscallFlags,
     uint64_t*   valueOut)
 {
     char*    endptr;
     uint64_t value;
+    int64_t  signedValue;
 
-    VLOG_DEBUG(
-        "containerv",
-        "policy_seccomp: parsing number '%s' for syscall '%s'\n",
-        string, syscallName
-    );
-    
-    value = strtoull(string, &endptr, 10);
-    if (*endptr == '\0') {
-        *valueOut = value;
-        return 0;
-    }
-
-    // try to parse as a signed number if the flag is set
+    // Try to parse as a signed number if the flag is set.
     if ((syscallFlags & SYSCALL_FLAG_NEGATIVE_ARG)) {
-        *valueOut = (uint64_t)((uint32_t)atoi(string));
-        return 0;
+        errno = 0;
+        signedValue = strtoll(string, &endptr, 10);
+        if (errno != ERANGE && *endptr == '\0') {
+            VLOG_DEBUG(
+                "containerv",
+                "policy_seccomp: parsed signed value '%s' -> %lli\n",
+                string, (long long)signedValue
+            );
+            *valueOut = (uint64_t)signedValue;
+            return 0;
+        }
+    } else {
+        errno = 0;
+        value = strtoull(string, &endptr, 10);
+        if (errno != ERANGE && *endptr == '\0') {
+            VLOG_DEBUG(
+                "containerv",
+                "policy_seccomp: parsed unsigned value '%s' -> %llu\n",
+                string, (unsigned long long)value
+            );
+            *valueOut = value;
+            return 0;
+        }
     }
     return -1;
 }
 
 static int __parse_masked_equal(
     const char* string,
-    const char* syscallName,
     uint32_t    syscallFlags,
     uint64_t*   valueOut,
     uint64_t*   value2Out)
@@ -89,10 +98,9 @@ static int __parse_masked_equal(
 
     VLOG_DEBUG(
         "containerv",
-        "policy_seccomp: parsing masked equality '%s' for syscall '%s'\n",
-        string, syscallName
+        "policy_seccomp: parsing masked equality '%s'\n",
+        string
     );
-
 
 	args = strsplit(string, '|');
 	if (args == NULL) {
@@ -105,18 +113,18 @@ static int __parse_masked_equal(
     if (argCount != 2) {
         VLOG_ERROR(
             "containerv",
-            "policy_seccomp: invalid masked equality argument '%s' for syscall '%s', expected format 'value|mask'\n",
-            string, syscallName
+            "policy_seccomp: invalid masked equality argument '%s', expected format 'value|mask'\n",
+            string
         );
         goto cleanup;
     }
 	
-    status = __parse_number(args[0], syscallName, syscallFlags, valueOut);
+    status = __parse_number(args[0], syscallFlags, valueOut);
 	if (status) {
 		goto cleanup;
 	}
 	
-    status = __parse_number(args[1], syscallName, syscallFlags, value2Out);
+    status = __parse_number(args[1], syscallFlags, value2Out);
 
 cleanup:
     strsplit_free(args);
@@ -206,6 +214,11 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
         enum scmp_compare cmpOp;
         uint64_t          value, value2;
         const char*       arg = args[i];
+        VLOG_DEBUG(
+            "containerv",
+            "policy_seccomp: parsing argument '%s' for syscall '%s'\n",
+            arg, syscallName
+        );
 
         if (strcmp(args[i], "-") == 0) {
             continue;
@@ -213,29 +226,59 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
         
 		if (strncmp(arg, ">=", 2) == 0) {
 			cmpOp = SCMP_CMP_GE;
-			status = __parse_number(&arg[2], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[2], entry->flags, &value);
 		} else if (strncmp(arg, "<=", 2) == 0) {
 			cmpOp = SCMP_CMP_LE;
-			status = __parse_number(&arg[2], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[2], entry->flags, &value);
 		} else if (strncmp(arg, "!", 1) == 0) {
 			cmpOp = SCMP_CMP_NE;
-			status = __parse_number(&arg[1], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[1], entry->flags, &value);
 		} else if (strncmp(arg, "<", 1) == 0) {
 			cmpOp = SCMP_CMP_LT;
-			status = __parse_number(&arg[1], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[1], entry->flags, &value);
 		} else if (strncmp(arg, ">", 1) == 0) {
 			cmpOp = SCMP_CMP_GT;
-			status = __parse_number(&arg[1], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[1], entry->flags, &value);
 		} else if (strncmp(arg, "|", 1) == 0) {
 			cmpOp = SCMP_CMP_MASKED_EQ;
-			status = __parse_number(&arg[1], syscallName, entry->flags, &value);
+			status = __parse_number(&arg[1], entry->flags, &value);
 			value2 = value;
 		} else if (strchr(arg, '|') != NULL) {
 			cmpOp = SCMP_CMP_MASKED_EQ;
-			status = __parse_masked_equal(arg, syscallName, entry->flags, &value, &value2);
-		} else {
+			status = __parse_masked_equal(arg, entry->flags, &value, &value2);
+		} else if (strncmp(arg, "u:", 2) == 0) {
+			struct containerv_user* user = containerv_user_lookup(&arg[2]);
+			if (user == NULL) {
+                VLOG_ERROR(
+                    "containerv",
+                    "policy_seccomp: failed to lookup user '%s' for syscall '%s'\n",
+                    &arg[2], syscallName
+                );
+                status = -1;
+			} else {
+                value = user->uid;
+                status = 0;
+                containerv_user_delete(user);
+            }
 			cmpOp = SCMP_CMP_EQ;
-			status = __parse_number(arg, syscallName, entry->flags, &value);
+		} else if (strncmp(arg, "g:", 2) == 0) {
+			struct containerv_group* group = containerv_group_lookup(&arg[2]);
+			if (group == NULL) {
+                VLOG_ERROR(
+                    "containerv",
+                    "policy_seccomp: failed to lookup group '%s' for syscall '%s'\n",
+                    &arg[2], syscallName
+                );
+                status = -1;
+			} else {
+                value = group->gid;
+                status = 0;
+                containerv_group_delete(group);
+            }
+			cmpOp = SCMP_CMP_EQ;
+		} else {
+			status = __parse_number(arg, entry->flags, &value);
+			cmpOp = SCMP_CMP_EQ;
 		}
         
 		if (status) {
@@ -247,30 +290,20 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
             break;
 		}
 
-		// For now only support EQ with negative args. If changing
-		// this, be sure to adjust readNumber accordingly and use
-		// libseccomp carefully.
-		if (entry->flags & SYSCALL_FLAG_NEGATIVE_ARG) {
-			if (cmpOp != SCMP_CMP_EQ) {
-                VLOG_ERROR(
-                    "containerv",
-                    "policy_seccomp: syscall '%s' with negative arguments only supports equality comparisons\n",
-                    syscallName
-                );
-                status = -1;
-                break;
-			}
-		}
-
+        VLOG_DEBUG(
+            "containerv",
+            "policy_seccomp: adding condition for argument %i of syscall '%s': cmpOp=%d value=%llu value2=%llu\n",
+            i, syscallName, cmpOp, value, value2
+        );
 		if (cmpOp == SCMP_CMP_MASKED_EQ) {
 			struct scmp_arg_cmp scmpCond = SCMP_CMP(i, cmpOp, value, value2);
-            scArgs[scArgCount] = scmpCond;
+            memcpy(&scArgs[scArgCount], &scmpCond, sizeof(struct scmp_arg_cmp));
 		} else if (entry->flags & SYSCALL_FLAG_NEGATIVE_ARG) {
 			struct scmp_arg_cmp scmpCond = SCMP_CMP(i, SCMP_CMP_MASKED_EQ, 0xFFFFFFFF, value);
-            scArgs[scArgCount] = scmpCond;
+            memcpy(&scArgs[scArgCount], &scmpCond, sizeof(struct scmp_arg_cmp));
 		} else {
 			struct scmp_arg_cmp scmpCond = SCMP_CMP(i, cmpOp, value);
-            scArgs[scArgCount] = scmpCond;
+            memcpy(&scArgs[scArgCount], &scmpCond, sizeof(struct scmp_arg_cmp));
 		}
         scArgCount++;
     }
@@ -281,6 +314,11 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
 
 	// Default to adding a precise match if possible. Otherwise
 	// let seccomp figure out the architecture specifics.
+    VLOG_DEBUG(
+        "containerv",
+        "policy_seccomp: adding rule for syscall '%s' with %d conditions\n",
+        syscallName, scArgCount
+    );
     status = seccomp_rule_add_exact_array(context, syscallAction, syscallNumber, scArgCount, scArgs);
     if (status) {
         status = seccomp_rule_add_array(context, syscallAction, syscallNumber, scArgCount, scArgs);
@@ -322,11 +360,13 @@ int policy_seccomp_apply(struct containerv_policy* policy)
     
     // Add all allowed syscalls from the policy
     for (int i = 0; i < policy->syscall_count; i++) {
-        const char* syscall_name = policy->syscalls[i].name;
-        VLOG_DEBUG("containerv", "policy_seccomp: adding rule for '%s'\n", syscall_name);
         status = __parse_entry(allowContext, allowContext, &policy->syscalls[i]);
         if (status) {
-            VLOG_ERROR("containerv", "policy_seccomp: failed to parse syscall entry for '%s'\n", syscall_name);
+            VLOG_ERROR(
+                "containerv",
+                "policy_seccomp: failed to parse syscall entry for '%s'\n", 
+                policy->syscalls[i].name
+            );
             goto cleanup;
         }
     }

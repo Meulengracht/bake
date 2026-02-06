@@ -100,7 +100,7 @@ int policy_ebpf_build(struct containerv_policy* policy, struct containerv_policy
     
     if (strcmp(plugin->name, "minimal") == 0) {
         return __policy_add_paths(policy, &g_basePolicyPaths[0]);
-    } else if (strcmp(plugin->name, "build") == 0) {
+    } else if (strcmp(plugin->name, "file-control") == 0) {
         return __policy_add_paths(policy, &g_buildPolicyPaths[0]);
     } else if (strcmp(plugin->name, "network") == 0) {
         return __policy_add_paths(policy, &g_networkPolicyPaths[0]);
