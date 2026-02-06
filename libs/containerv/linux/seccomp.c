@@ -57,19 +57,6 @@ static int __parse_number(
     uint64_t value;
     int64_t  signedValue;
 
-    VLOG_DEBUG(
-        "containerv",
-        "policy_seccomp: parsing number '%s'\n",
-        string
-    );
-    
-    errno = 0;
-    value = strtoull(string, &endptr, 10);
-    if (errno != ERANGE && *endptr == '\0') {
-        *valueOut = value;
-        return 0;
-    }
-
     // Try to parse as a signed number if the flag is set.
     if ((syscallFlags & SYSCALL_FLAG_NEGATIVE_ARG)) {
         errno = 0;
@@ -77,10 +64,22 @@ static int __parse_number(
         if (errno != ERANGE && *endptr == '\0') {
             VLOG_DEBUG(
                 "containerv",
-                "policy_seccomp: parsed signed value '%s' -> %lld\n",
+                "policy_seccomp: parsed signed value '%s' -> %lli\n",
                 string, (long long)signedValue
             );
             *valueOut = (uint64_t)signedValue;
+            return 0;
+        }
+    } else {
+        errno = 0;
+        value = strtoull(string, &endptr, 10);
+        if (errno != ERANGE && *endptr == '\0') {
+            VLOG_DEBUG(
+                "containerv",
+                "policy_seccomp: parsed unsigned value '%s' -> %llu\n",
+                string, (unsigned long long)value
+            );
+            *valueOut = value;
             return 0;
         }
     }
