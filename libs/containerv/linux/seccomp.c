@@ -243,7 +243,11 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
                     &arg[2], syscallName
                 );
                 status = -1;
-			}
+			} else {
+                value = user->uid;
+                status = 0;
+                containerv_user_delete(user);
+            }
 			cmpOp = SCMP_CMP_EQ;
 		} else if (strncmp(arg, "g:", 2) == 0) {
 			struct containerv_group* group = containerv_group_lookup(&arg[2]);
@@ -254,7 +258,11 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
                     &arg[2], syscallName
                 );
                 status = -1;
-			}
+			} else {
+                value = group->gid;
+                status = 0;
+                containerv_group_delete(group);
+            }
 			cmpOp = SCMP_CMP_EQ;
 		} else {
 			status = __parse_number(arg, syscallName, entry->flags, &value);
