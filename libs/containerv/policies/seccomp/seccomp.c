@@ -505,7 +505,7 @@ static const struct containerv_syscall_entry g_fileControlSyscalls[] = {
     NULL
 };
 
-// Additional syscalls for package management (privilege drop to _apt/nogroup)
+// Additional syscalls for package management (apt/gpgv drop privileges to _apt/nogroup)
 static const struct containerv_syscall_entry g_packageManagementSyscalls[] = {
     // setgroups(size, list) with size=1, list pointer ignored
     __SC_ENTRY_ARGS_FLAGS("setgroups", "1 -", SYSCALL_FLAG_NEGATIVE_ARG),
