@@ -19,6 +19,7 @@
 
 #include <chef/containerv-user-linux.h>
 #include <errno.h>
+#include <grp.h>
 #include <pwd.h>
 #include <sys/types.h>
 #include <stdlib.h>
@@ -64,6 +65,18 @@ struct containerv_user* containerv_user_effective(void)
     return containerv_user_from(effective->pw_name, effective->pw_uid, effective->pw_gid);
 }
 
+struct containerv_user* containerv_user_lookup(const char* name)
+{
+    struct passwd* effective;
+    
+    effective = getpwnam(name);
+    if (effective == NULL) {
+        VLOG_ERROR("containerv", "failed to retrieve current user details: %s\n", strerror(errno));
+        return NULL;
+    }
+    return containerv_user_from(effective->pw_name, effective->pw_uid, effective->pw_gid);
+}
+
 struct containerv_user* containerv_user_from(char* name, uid_t uid, gid_t gid)
 {
     struct containerv_user* user;
@@ -83,4 +96,36 @@ void containerv_user_delete(struct containerv_user* user)
 {
     free(user->name);
     free(user);
+}
+
+struct containerv_group* containerv_group_lookup(const char* name)
+{
+    struct group* group;
+
+    group = getgrnam(name);
+    if (group == NULL) {
+        VLOG_ERROR("containerv", "failed to retrieve group details: %s\n", strerror(errno));
+        return NULL;
+    }
+    return containerv_group_from(group->gr_name, group->gr_gid);
+}
+
+struct containerv_group* containerv_group_from(char* name, gid_t gid)
+{
+    struct containerv_group* group;
+    
+    group = calloc(1, sizeof(struct containerv_group));
+    if (group == NULL) {
+        return NULL;
+    }
+    
+    group->name = strdup(name);
+    group->gid = gid;
+    return group;
+}
+
+void containerv_group_delete(struct containerv_group* group)
+{
+    free(group->name);
+    free(group);
 }

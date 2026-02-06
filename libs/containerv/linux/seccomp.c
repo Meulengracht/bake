@@ -21,6 +21,7 @@
 #define __SC_MAX_ARGS 5
 
 #include <chef/platform.h>
+#include <chef/containerv-user-linux.h>
 #include <errno.h>
 #include <seccomp.h>
 #include <stdlib.h>
@@ -233,9 +234,31 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
 		} else if (strchr(arg, '|') != NULL) {
 			cmpOp = SCMP_CMP_MASKED_EQ;
 			status = __parse_masked_equal(arg, syscallName, entry->flags, &value, &value2);
-		} else {
+		} else if (strncmp(arg, "u:", 2) == 0) {
+			struct containerv_user* user = containerv_user_lookup(&arg[2]);
+			if (user == NULL) {
+                VLOG_ERROR(
+                    "containerv",
+                    "policy_seccomp: failed to lookup user '%s' for syscall '%s'\n",
+                    &arg[2], syscallName
+                );
+                status = -1;
+			}
 			cmpOp = SCMP_CMP_EQ;
+		} else if (strncmp(arg, "g:", 2) == 0) {
+			struct containerv_group* group = containerv_group_lookup(&arg[2]);
+			if (group == NULL) {
+                VLOG_ERROR(
+                    "containerv",
+                    "policy_seccomp: failed to lookup group '%s' for syscall '%s'\n",
+                    &arg[2], syscallName
+                );
+                status = -1;
+			}
+			cmpOp = SCMP_CMP_EQ;
+		} else {
 			status = __parse_number(arg, syscallName, entry->flags, &value);
+			cmpOp = SCMP_CMP_EQ;
 		}
         
 		if (status) {
