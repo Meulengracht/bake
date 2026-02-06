@@ -23,7 +23,7 @@
 #include <stdint.h>
 
 // Maximum policy entries
-#define MAX_SYSCALLS 256
+#define MAX_SYSCALLS 1024
 #define MAX_PATHS 256
 
 #define SYSCALL_FLAG_NEGATIVE_ARG 0x1

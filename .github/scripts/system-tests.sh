@@ -93,17 +93,12 @@ dump_seccomp_logs() {
         fi
     fi
     
-    if [[ "$FOUND_LOGS" -eq 0 ]] && [[ -f /var/log/syslog ]]; then
-        local SYSLOG_LOGS AUDIT_LOGS
+    if [[ "$FOUND_LOGS" -eq 0 ]] && [[ -f /var/log/audit/audit.log ]]; then
+        local AUDIT_LOGS
+        AUDIT_LOGS="$($SUDO grep -i 'type=SECCOMP' /var/log/audit/audit.log || true)"
 
-        SYSLOG_LOGS="$($SUDO grep -i audit /var/log/syslog 2>/dev/null || true)"
-        AUDIT_LOGS="$($SUDO cat /var/log/audit/audit.log || true)"
-
-        if [[ -n "$SYSLOG_LOGS" ]]; then
-            echo "Seccomp denials found in syslog:"
-            echo "$SYSLOG_LOGS"
-            echo ""
-            echo "Related audit log entries:"
+        if [[ -n "$AUDIT_LOGS" ]]; then
+            echo "Seccomp denials found in audit log:"
             echo "$AUDIT_LOGS"
             FOUND_LOGS=1
         fi

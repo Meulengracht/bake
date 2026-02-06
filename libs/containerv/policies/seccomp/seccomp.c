@@ -56,123 +56,261 @@ static const char* g_syscallsWithNegArgsMaskHi32[] = {
 // Minimal syscall set for basic CLI applications
 static const char* g_baseSyscalls[] = {
     // Process management
-    "exit", "exit_group",
+    "exit",
+    "exit_group",
+    "wait4",
+    "waitid",
 
     // Process creation / execution (PID1 needs this to spawn workloads)
     // Note: libc may use clone/vfork under the hood.
-    "fork", "vfork", "clone", "clone3",
-    "execve", "execveat",
-    "wait4", "waitid",
+    "kill",
+    "fork",
+    "vfork",
+    "clone",
+    "clone3",
+    "execve",
+    "execveat",
     
     // File I/O
-    "read", "write", "open", "openat", "close",
-    "lseek", "llseek", "_llseek",
-    "dup", "dup2", "dup3",
+    "read",
+    "write",
+    "open",
+    "openat",
+    "close",
+    "lseek",
+    "llseek",
+    "_llseek",
+    "dup",
+    "dup2",
+    "dup3",
     
     // File information
-    "stat", "fstat", "lstat", "newfstatat", "statx",
-    "access", "faccessat", "faccessat2",
-    "readlink", "readlinkat",
+    "stat",
+    "fstat",
+    "lstat",
+    "newfstatat",
+    "statx",
+    "access",
+    "faccessat",
+    "faccessat2",
+    "readlink",
+    "readlinkat",
     
     // Directory operations
-    "getcwd", "chdir", "fchdir",
-    "getdents", "getdents64",
+    "getcwd",
+    "chdir",
+    "fchdir",
+    "getdents",
+    "getdents64",
     
     // Memory management
-    "brk", "mmap", "mmap2", "munmap", "mremap",
-    "mprotect", "madvise",
+    "brk",
+    "mmap",
+    "mmap2",
+    "munmap",
+    "mremap",
+    "mprotect",
+    "madvise",
     
     // Process information
-    "getpid", "gettid", "getuid", "getgid",
-    "geteuid", "getegid", "getppid",
-    "getpgid", "getpgrp", "getsid",
+    "getpid",
+    "gettid",
+    "getppid",
+    "getpgid",
+    "getpgrp",
+    "getsid",
+    "getitimer",
+    "getpriority",
+    "get_thread_area",
+    "get_mempolicy",
+    "pread",
+    "pread64",
+    "preadv",
     
+    // User and group management
+    "getegid",
+    "getegid32",
+    "geteuid",
+    "geteuid32",
+    "getgid",
+    "getgid32",
+    "getuid",
+    "getuid32",
+    "getgroups",
+    "getgroups32",
+    "getresgid",
+    "getresgid32",
+    "getresuid",
+    "getresuid32",
+
     // Signal handling
-    "rt_sigaction", "rt_sigprocmask", "rt_sigreturn",
+    "rt_sigaction",
+    "rt_sigprocmask",
+    "rt_sigreturn",
     "sigaltstack",
     
     // Time
-    "time", "gettimeofday", "clock_gettime", "clock_nanosleep",
+    "time",
+    "gettimeofday",
+    "clock_gettime",
+    "clock_nanosleep",
     "nanosleep",
     
     // System info
-    "uname", "getrlimit", "prlimit64",
-    "sysinfo", "getrandom",
+    "uname",
+    "getrlimit",
+    "prlimit64",
+    "sysinfo",
+    "getrandom",
+    "getcpu",
+    "getrlimit",
+    "ugetrlimit",
+    "getrusage",
     
     // Architecture-specific
-    "arch_prctl", "set_tid_address", "set_robust_list",
+    "arch_prctl",
+    "set_tid_address",
+    "set_robust_list",
     
     // I/O multiplexing (needed for many CLI tools)
-    "select", "pselect6", "poll", "ppoll",
-    "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", "epoll_pwait",
+    "select",
+    "pselect6",
+    "poll",
+    "ppoll",
+    "epoll_create",
+    "epoll_create1",
+    "epoll_ctl",
+    "epoll_wait",
+    "epoll_pwait",
 
     // Unix-domain control socket IPC (containerv PID1 <-> manager)
-    "sendmsg", "recvmsg",
+    "sendmsg",
+    "recvmsg",
     
+    // glibc 2.35 unconditionally calls rseq for all threads
+    "rseq",
+
     // Terminal I/O
     "ioctl",
     
     // Futex (for threading support in libc)
-    "futex", "get_robust_list",
+    "futex",
+    "futex_requeue",
+    "futex_time64",
+    "futex_wait",
+    "futex_waitv",
+    "futex_wake",
+    "get_robust_list",
     
     // File control
-    "fcntl", "fcntl64",
+    "fcntl",
+    "fcntl64",
+    "flock",
+    "ftime",
+    "umask",
+
+    // Extended attributes
+    "getxattr",
+    "fgetxattr",
+    "lgetxattr",
+    "getxattrat",
+    "listxattr",
+    "llistxattr",
+    "flistxattr",
+    
+    // IPC
+    "pipe",
+    "pipe2",
+    "socketpair",
     
     NULL
 };
 
 // Additional syscalls for build operations
 static const char* g_buildSyscalls[] = {
-    // Process creation
-    "fork", "vfork", "clone", "clone3",
-    "execve", "execveat",
-    "wait4", "waitid",
-    
-    // IPC
-    "pipe", "pipe2",
-    "socketpair",
-    
     // More file operations
-    "rename", "renameat", "renameat2",
-    "unlink", "unlinkat",
-    "mkdir", "mkdirat",
+    "write",
+    "writev",
+    "rename",
+    "renameat",
+    "renameat2",
+    "unlink",
+    "unlinkat",
+    "mkdir",
+    "mkdirat",
     "rmdir",
-    "link", "linkat",
-    "symlink", "symlinkat",
-    "chmod", "fchmod", "fchmodat",
-    "chown", "fchown", "fchownat", "lchown",
-    "truncate", "ftruncate",
-    "utimes", "utimensat", "futimesat",
+    "link",
+    "linkat",
+    "symlink",
+    "symlinkat",
+    "chmod",
+    "fchmod",
+    "fchmodat",
+    "chown",
+    "fchown",
+    "fchownat",
+    "lchown",
+    "truncate",
+    "ftruncate",
+    "utimes",
+    "utimensat",
+    "futimesat",
+
+    // Process management
+    "pwrite",
+    "pwrite64",
+    "pwritev",
+    "pwritev2",
     
     // Extended attributes
-    "getxattr", "lgetxattr", "fgetxattr",
-    "setxattr", "lsetxattr", "fsetxattr",
-    "listxattr", "llistxattr", "flistxattr",
-    "removexattr", "lremovexattr", "fremovexattr",
+    "setxattr",
+    "lsetxattr",
+    "fsetxattr",
+    "removexattr",
+    "lremovexattr",
+    "fremovexattr",
     
     // Capabilities
-    "capget", "capset",
+    "capget",
+    "capset",
     
     // Filesystem
-    "mount", "umount2",
-    "statfs", "fstatfs",
-    "sync", "syncfs", "fsync", "fdatasync",
-    
+    "mount",
+    "umount2",
+    "statfs",
+    "fstatfs",
+    "sync",
+    "syncfs",
+    "fsync",
+    "fdatasync",
+    "sync_file_range",
+    "sync_file_range2",
+    "arm_sync_file_range",
+
     // Advanced memory
-    "msync", "mincore",
-    
+    "msync",
+    "mincore",
+    "madvise",
     NULL
 };
 
 // Additional syscalls for network operations
 static const char* g_networkSyscalls[] = {
     // Socket operations
-    "socket", "socketpair",
-    "bind", "connect", "listen", "accept", "accept4",
-    "getsockname", "getpeername",
-    "sendto", "recvfrom",
-    "sendmsg", "recvmsg", "sendmmsg", "recvmmsg",
-    "setsockopt", "getsockopt",
+    "socket",
+    "bind",
+    "connect",
+    "listen",
+    "accept",
+    "accept4",
+    "getsockname",
+    "getpeername",
+    "sendto",
+    "recvfrom",
+    "sendmmsg",
+    "recvmmsg",
+    "setsockopt",
+    "getsockopt",
     "shutdown",
     
     NULL
