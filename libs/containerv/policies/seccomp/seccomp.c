@@ -369,7 +369,7 @@ static const struct containerv_syscall_entry g_baseSyscalls[] = {
     // the kernel will not consult the group list when size is '0', so we allow it
     // to be anything for compatibility with (arguably buggy) programs that expect
     // to clear the groups with 'setgroups(0, <non-null>).
-   __SC_ENTRY_ARGS_FLAGS("setgroups", "0 -", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setgroups", "0 -", SYSCALL_FLAG_NEGATIVE_ARG),
     __SC_ENTRY_ARGS_FLAGS("setgroups32", "0 -", SYSCALL_FLAG_NEGATIVE_ARG),
 
     // allow setgid to root

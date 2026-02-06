@@ -55,6 +55,7 @@ static int __parse_number(
 {
     char*    endptr;
     uint64_t value;
+    int64_t  signedValue;
 
     VLOG_DEBUG(
         "containerv",
@@ -69,10 +70,19 @@ static int __parse_number(
         return 0;
     }
 
-    // try to parse as a signed number if the flag is set
+    // Try to parse as a signed number if the flag is set.
     if ((syscallFlags & SYSCALL_FLAG_NEGATIVE_ARG)) {
-        *valueOut = (uint64_t)((uint32_t)atoi(string));
-        return 0;
+        errno = 0;
+        signedValue = strtoll(string, &endptr, 10);
+        if (errno != ERANGE && *endptr == '\0') {
+            VLOG_DEBUG(
+                "containerv",
+                "policy_seccomp: parsed signed value '%s' -> %lld\n",
+                string, (long long)signedValue
+            );
+            *valueOut = (uint64_t)signedValue;
+            return 0;
+        }
     }
     return -1;
 }
@@ -280,21 +290,6 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
                 arg, syscallName
             );
             break;
-		}
-
-		// For now only support EQ with negative args. If changing
-		// this, be sure to adjust readNumber accordingly and use
-		// libseccomp carefully.
-		if (entry->flags & SYSCALL_FLAG_NEGATIVE_ARG) {
-			if (cmpOp != SCMP_CMP_EQ) {
-                VLOG_ERROR(
-                    "containerv",
-                    "policy_seccomp: syscall '%s' with negative arguments only supports equality comparisons\n",
-                    syscallName
-                );
-                status = -1;
-                break;
-			}
 		}
 
         VLOG_DEBUG(
