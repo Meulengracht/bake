@@ -505,6 +505,36 @@ static const struct containerv_syscall_entry g_fileControlSyscalls[] = {
     NULL
 };
 
+// Additional syscalls for package management (privilege drop to _apt/nogroup)
+static const struct containerv_syscall_entry g_packageManagementSyscalls[] = {
+    // setgroups(size, list) with size=1, list pointer ignored
+    __SC_ENTRY_ARGS_FLAGS("setgroups", "1 -", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setgroups32", "1 -", SYSCALL_FLAG_NEGATIVE_ARG),
+
+    // allow setresgid to nogroup
+    __SC_ENTRY_ARGS_FLAGS("setresgid", "g:nogroup g:nogroup g:nogroup", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid32", "g:nogroup g:nogroup g:nogroup", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid", "-1 g:nogroup -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid32", "-1 g:nogroup -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid", "g:nogroup g:nogroup -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresgid32", "g:nogroup g:nogroup -1", SYSCALL_FLAG_NEGATIVE_ARG),
+
+    // allow setresuid to _apt
+    __SC_ENTRY_ARGS_FLAGS("setresuid", "u:_apt u:_apt u:_apt", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid32", "u:_apt u:_apt u:_apt", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid", "-1 u:_apt -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid32", "-1 u:_apt -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid", "u:_apt u:_apt -1", SYSCALL_FLAG_NEGATIVE_ARG),
+    __SC_ENTRY_ARGS_FLAGS("setresuid32", "u:_apt u:_apt -1", SYSCALL_FLAG_NEGATIVE_ARG),
+
+    // Apt tries to bind a socket
+    __SC_ENTRY_BASIC("bind"),
+    __SC_ENTRY_BASIC("listen"),
+    __SC_ENTRY_BASIC("accept"),
+    __SC_ENTRY_BASIC("accept4"),
+    NULL
+};
+
 // Additional syscalls for process control
 static const struct containerv_syscall_entry g_processControlSyscalls[] = {
     // Process management
@@ -568,6 +598,8 @@ int policy_seccomp_build(struct containerv_policy* policy, struct containerv_pol
         return add_syscalls_to_policy(policy, g_processControlSyscalls);
     } else if (strcmp(plugin->name, "file-control") == 0) {
         return add_syscalls_to_policy(policy, g_fileControlSyscalls);
+    } else if (strcmp(plugin->name, "package-management") == 0) {
+        return add_syscalls_to_policy(policy, g_packageManagementSyscalls);
     } else {
         VLOG_ERROR("containerv", "policy_seccomp: unknown plugin '%s'\n", plugin->name);
         errno = EINVAL;

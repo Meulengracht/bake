@@ -102,7 +102,6 @@ static int __parse_masked_equal(
         string
     );
 
-
 	args = strsplit(string, '|');
 	if (args == NULL) {
 		return -1;
