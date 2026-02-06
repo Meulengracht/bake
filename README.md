@@ -42,30 +42,6 @@ release will mark the first initial complete version of Chef. Some highlights of
   - Agent orchestrator implemented in `waiterd` daemon.
   - Build agents implemented in `cookd` daemon.
 
-## Roadmap
-
-Features that is expected in the upcoming 1.5 release
-
-- [x] Served initial feature completion
-- [x] Remote management commands
-  * `bake remote list --arch=...`
-  * `bake remote info [agent]`
-- [x] Disk image utility based on yaml descriptions
-  * Support files/directories/chef packages as data sources
-  * Support mfs/fat initially
-  * Support .img outputs
-- [x] Chef Store V2
-  * Move away from Azure, use more generic deployment
-  * New sign-on process, move away from external SSO
-  * Support multi-publisher per account
-  * Support per publisher signing
-  * Support api-keys
-- [x] Complete windows support
-  * Finish the platform layer for windows
-  * Fix the configure process on windows
-  * Proper support for windows bases
-  * Extend containerv to support the windows HCI layer
-
 ## Account Setup
 
 To get started with your account setup, you will need to activate one of the privileged commands provided by 'order'
