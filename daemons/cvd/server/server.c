@@ -236,7 +236,6 @@ struct containerv_policy* __policy_from_spec(const struct chef_policy_spec* spec
         list_add(&plugins, &plugin->header);
     }
 
-    // Parse optional profiles: "build", "network" (comma-separated)
     if (spec->plugins_count) {
         for (uint32_t i = 0; i < spec->plugins_count; i++) {
             struct containerv_policy_plugin* plugin = 

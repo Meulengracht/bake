@@ -48,19 +48,6 @@ extern void cvd_config_destroy(void);
 extern void cvd_config_api_address(struct cvd_config_address* address);
 
 /**
- * @brief Get the default security policy from configuration
- * @return The default policy name (e.g., "minimal", "build", "network") or NULL
- */
-extern const char* cvd_config_security_default_policy(void);
-
-/**
- * @brief Get custom paths from security configuration
- * @param paths Output pointer to custom paths array (can be NULL)
- * @param count Output pointer to number of custom paths (can be NULL)
- */
-extern void cvd_config_security_custom_paths(struct config_custom_path** paths, size_t* count);
-
-/**
  * @brief
  */
 extern int cvd_initialize_server(struct gracht_server_configuration* config, gracht_server_t** serverOut);

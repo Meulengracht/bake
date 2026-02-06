@@ -59,7 +59,6 @@ enum guest_type {
 }
 
 struct policy_plugin {
-    // Examples: "build", "network"
     string name;
 }
 
