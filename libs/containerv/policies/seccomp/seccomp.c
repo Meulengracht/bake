@@ -547,7 +547,7 @@ static int add_syscalls_to_policy(struct containerv_policy* policy, const struct
         policy->syscalls[policy->syscall_count].name = syscalls[i].name;
         policy->syscalls[policy->syscall_count].args = syscalls[i].args;
         policy->syscalls[policy->syscall_count].flags = syscalls[i].flags;
-        
+
         policy->syscall_count++;
     }
     return 0;
@@ -562,9 +562,6 @@ int policy_seccomp_build(struct containerv_policy* policy, struct containerv_pol
     
     if (strcmp(plugin->name, "minimal") == 0) {
         return add_syscalls_to_policy(policy, g_baseSyscalls);
-    } else if (strcmp(plugin->name, "build") == 0) {
-        (void)add_syscalls_to_policy(policy, g_fileControlSyscalls);
-        return 0;
     } else if (strcmp(plugin->name, "network-bind") == 0) {
         return add_syscalls_to_policy(policy, g_networkSyscalls);
     } else if (strcmp(plugin->name, "process-control") == 0) {
