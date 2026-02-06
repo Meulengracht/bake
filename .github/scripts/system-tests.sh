@@ -35,8 +35,29 @@ fi
 # This can be set to "1" when investigating seccomp-related build failures
 # export CONTAINERV_SECCOMP_LOG=1
 if [[ "${CONTAINERV_SECCOMP_LOG:-0}" == "1" ]]; then
+    echo ""
+    echo "=== Configuration of seccomp ==="
     echo "NOTE: Seccomp logging is enabled (CONTAINERV_SECCOMP_LOG=1)"
     echo "      Denied syscalls will be logged to audit/kernel logs instead of just returning EPERM"
+
+    if command -v sysctl >/dev/null 2>&1; then
+        if sysctl kernel.seccomp.actions_logged >/dev/null 2>&1; then
+            $SUDO sysctl -w kernel.seccomp.actions_logged=kill_process,log,errno >/dev/null 2>&1 || true
+        else
+            echo "WARNING: kernel does not support kernel.seccomp.actions_logged, cannot enable seccomp logging"
+        fi
+    else
+        echo "WARNING: sysctl not available, cannot enable seccomp logging via kernel.seccomp.actions_logged"
+    fi
+    
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-active auditd >/dev/null 2>&1; then
+            echo "  Audit daemon: running"
+        else
+            echo "  Audit daemon: not running"
+        fi
+    fi
+    echo "=== End of seccomp configuration ==="
 fi
 
 # Helper to dump seccomp denial logs
@@ -56,22 +77,6 @@ dump_seccomp_logs() {
 
     echo ""
     echo "=== Checking for seccomp denials since build start ==="
-    
-    # Always log seccomp logging status first
-    echo "Seccomp logging status:"
-    if command -v sysctl >/dev/null 2>&1; then
-        sysctl kernel.seccomp.actions_logged 2>/dev/null || echo "  kernel.seccomp.actions_logged: not available"
-    else
-        echo "  sysctl not available"
-    fi
-    
-    if command -v systemctl >/dev/null 2>&1; then
-        if systemctl is-active auditd >/dev/null 2>&1; then
-            echo "  Audit daemon: running"
-        else
-            echo "  Audit daemon: not running"
-        fi
-    fi
     echo ""
 
     local FOUND_LOGS=0
@@ -88,9 +93,20 @@ dump_seccomp_logs() {
         fi
     fi
     
+    if [[ "$FOUND_LOGS" -eq 0 ]] && [[ -f /var/log/audit/audit.log ]]; then
+        local AUDIT_LOGS
+        AUDIT_LOGS="$($SUDO grep -i 'type=SECCOMP' /var/log/audit/audit.log || true)"
+
+        if [[ -n "$AUDIT_LOGS" ]]; then
+            echo "Seccomp denials found in audit log:"
+            echo "$AUDIT_LOGS"
+            FOUND_LOGS=1
+        fi
+    fi
+    
     if [[ "$FOUND_LOGS" -eq 0 ]] && command -v journalctl >/dev/null 2>&1; then
         local JOURNAL_LOGS
-        JOURNAL_LOGS="$($SUDO journalctl -b -k 2>/dev/null | grep -i seccomp || true)"
+        JOURNAL_LOGS="$($SUDO journalctl -b -k 2>/dev/null | grep -Ei 'seccomp.*(denied|kill|trap|errno|syscall|audit)|SECCOMP.*(denied|kill|trap|errno|syscall|audit)' || true)"
 
         if [[ -n "$JOURNAL_LOGS" ]]; then
             echo "Seccomp denials found in kernel log:"
@@ -101,7 +117,7 @@ dump_seccomp_logs() {
     
     if [[ "$FOUND_LOGS" -eq 0 ]] && command -v dmesg >/dev/null 2>&1; then
         local DMESG_LOGS
-        DMESG_LOGS="$($SUDO dmesg 2>/dev/null | grep -i seccomp || true)"
+        DMESG_LOGS="$($SUDO dmesg 2>/dev/null | grep -Ei 'seccomp.*(denied|kill|trap|errno|syscall|audit)|SECCOMP.*(denied|kill|trap|errno|syscall|audit)' || true)"
 
         if [[ -n "$DMESG_LOGS" ]]; then
             echo "Seccomp denials found in dmesg:"
