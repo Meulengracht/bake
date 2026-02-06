@@ -255,7 +255,7 @@ static int __parse_entry(scmp_filter_ctx allowContext, scmp_filter_ctx denyConte
 	// let seccomp figure out the architecture specifics.
     status = seccomp_rule_add_exact_array(context, syscallAction, syscallNumber, scArgCount, scArgs);
     if (status) {
-        status = seccomp_rule_add_array(context, SCMP_ACT_ALLOW, syscallNumber, scArgCount, scArgs);
+        status = seccomp_rule_add_array(context, syscallAction, syscallNumber, scArgCount, scArgs);
         if (status) {
             VLOG_ERROR(
                 "containerv",
