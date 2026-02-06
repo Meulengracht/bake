@@ -183,11 +183,9 @@ void containerv_policy_delete(struct containerv_policy* policy)
     if (policy == NULL) {
         return;
     }
-    
-    // Free syscall names
-    for (int i = 0; i < policy->syscall_count; i++) {
-        free(policy->syscalls[i].name);
-    }
+
+    // The system call entry members are not allocated,
+    // so no cleanup is needed for them.
     
     // Free path strings
     for (int i = 0; i < policy->path_count; i++) {

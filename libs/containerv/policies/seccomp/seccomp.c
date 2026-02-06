@@ -544,10 +544,10 @@ static int add_syscalls_to_policy(struct containerv_policy* policy, const struct
             return -1;
         }
         
-        policy->syscalls[policy->syscall_count].name = strdup(syscalls[i].name);
-        if (policy->syscalls[policy->syscall_count].name == NULL) {
-            return -1;
-        }
+        policy->syscalls[policy->syscall_count].name = syscalls[i].name;
+        policy->syscalls[policy->syscall_count].args = syscalls[i].args;
+        policy->syscalls[policy->syscall_count].flags = syscalls[i].flags;
+        
         policy->syscall_count++;
     }
     return 0;
