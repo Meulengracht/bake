@@ -31,6 +31,14 @@ union bpf_attr;
 #define BPF_PERM_WRITE 0x2
 #define BPF_PERM_EXEC  0x4
 
+/* Network permission bits - matching BPF program definitions */
+#define BPF_NET_CREATE  0x1
+#define BPF_NET_BIND    0x2
+#define BPF_NET_CONNECT 0x4
+#define BPF_NET_LISTEN  0x8
+#define BPF_NET_ACCEPT  0x10
+#define BPF_NET_SEND    0x20
+
 /* Policy key: (cgroup_id, dev, ino) - must match BPF program */
 struct bpf_policy_key {
     unsigned long long cgroup_id;
@@ -78,6 +86,38 @@ struct bpf_basename_rule {
 
 struct bpf_basename_policy_value {
     struct bpf_basename_rule rules[BPF_BASENAME_RULE_MAX];
+};
+
+/* Network policy keys/values (must match BPF program) */
+#define BPF_NET_ADDR_MAX 16
+#define BPF_NET_UNIX_PATH_MAX 108
+
+struct bpf_net_create_key {
+    unsigned long long cgroup_id;
+    unsigned int       family;
+    unsigned int       type;
+    unsigned int       protocol;
+};
+
+struct bpf_net_tuple_key {
+    unsigned long long cgroup_id;
+    unsigned int       family;
+    unsigned int       type;
+    unsigned int       protocol;
+    unsigned short     port;
+    unsigned short     _pad;
+    unsigned char      addr[BPF_NET_ADDR_MAX];
+};
+
+struct bpf_net_unix_key {
+    unsigned long long cgroup_id;
+    unsigned int       type;
+    unsigned int       protocol;
+    char               path[BPF_NET_UNIX_PATH_MAX];
+};
+
+struct bpf_net_policy_value {
+    unsigned int allow_mask;
 };
 
 struct bpf_policy_context {
@@ -212,6 +252,31 @@ extern int bpf_policy_map_delete_batch(
     struct bpf_policy_context* context,
     struct bpf_policy_key*     keys,
     int                        count
+);
+
+extern int bpf_net_create_map_allow(
+    int                         map_fd,
+    const struct bpf_net_create_key* key,
+    unsigned int                allow_mask
+);
+
+extern int bpf_net_tuple_map_allow(
+    int                         map_fd,
+    const struct bpf_net_tuple_key* key,
+    unsigned int                allow_mask
+);
+
+extern int bpf_net_unix_map_allow(
+    int                         map_fd,
+    const struct bpf_net_unix_key* key,
+    unsigned int                allow_mask
+);
+
+extern int bpf_map_delete_batch_by_fd(
+    int     map_fd,
+    void*   keys,
+    int     count,
+    size_t  key_size
 );
 
 #endif // __linux__

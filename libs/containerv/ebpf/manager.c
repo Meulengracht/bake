@@ -42,6 +42,7 @@
 #ifdef __linux__
 #include <ftw.h>
 #include <linux/bpf.h>
+#include <sys/socket.h>
 #include <sys/sysmacros.h>
 #include <sys/time.h>
 #include <time.h>
@@ -75,6 +76,15 @@ struct container_entry_tracker {
     struct bpf_policy_key* basename_keys;
     int basename_key_count;
     int basename_key_capacity;
+    struct bpf_net_create_key* net_create_keys;
+    int net_create_key_count;
+    int net_create_key_capacity;
+    struct bpf_net_tuple_key* net_tuple_keys;
+    int net_tuple_key_count;
+    int net_tuple_key_capacity;
+    struct bpf_net_unix_key* net_unix_keys;
+    int net_unix_key_count;
+    int net_unix_key_capacity;
     unsigned long long populate_time_us;  // Time taken to populate policy
     unsigned long long cleanup_time_us;   // Time taken to cleanup policy
     struct container_entry_tracker* next;
@@ -94,6 +104,9 @@ static struct {
     int policy_map_fd;
     int dir_policy_map_fd;
     int basename_policy_map_fd;
+    int net_create_map_fd;
+    int net_tuple_map_fd;
+    int net_unix_map_fd;
 #ifdef HAVE_BPF_SKELETON
     struct fs_lsm_bpf* skel;
     struct ring_buffer* deny_ring;
@@ -108,6 +121,9 @@ static struct {
     .policy_map_fd = -1,
     .dir_policy_map_fd = -1,
     .basename_policy_map_fd = -1,
+    .net_create_map_fd = -1,
+    .net_tuple_map_fd = -1,
+    .net_unix_map_fd = -1,
 #ifdef HAVE_BPF_SKELETON
     .skel = NULL,
     .deny_ring = NULL,
@@ -315,17 +331,56 @@ static struct container_entry_tracker* __create_tracker(const char* container_id
         free(tracker);
         return NULL;
     }
+
+    tracker->net_create_key_capacity = 16;
+    tracker->net_create_keys = malloc(sizeof(struct bpf_net_create_key) * tracker->net_create_key_capacity);
+    if (!tracker->net_create_keys) {
+        free(tracker->basename_keys);
+        free(tracker->dir_keys);
+        free(tracker->file_keys);
+        free(tracker->container_id);
+        free(tracker);
+        return NULL;
+    }
+
+    tracker->net_tuple_key_capacity = 32;
+    tracker->net_tuple_keys = malloc(sizeof(struct bpf_net_tuple_key) * tracker->net_tuple_key_capacity);
+    if (!tracker->net_tuple_keys) {
+        free(tracker->net_create_keys);
+        free(tracker->basename_keys);
+        free(tracker->dir_keys);
+        free(tracker->file_keys);
+        free(tracker->container_id);
+        free(tracker);
+        return NULL;
+    }
+
+    tracker->net_unix_key_capacity = 16;
+    tracker->net_unix_keys = malloc(sizeof(struct bpf_net_unix_key) * tracker->net_unix_key_capacity);
+    if (!tracker->net_unix_keys) {
+        free(tracker->net_tuple_keys);
+        free(tracker->net_create_keys);
+        free(tracker->basename_keys);
+        free(tracker->dir_keys);
+        free(tracker->file_keys);
+        free(tracker->container_id);
+        free(tracker);
+        return NULL;
+    }
     
     tracker->file_key_count = 0;
     tracker->dir_key_count = 0;
     tracker->basename_key_count = 0;
+    tracker->net_create_key_count = 0;
+    tracker->net_tuple_key_count = 0;
+    tracker->net_unix_key_count = 0;
     tracker->next = g_bpf_manager.trackers;
     g_bpf_manager.trackers = tracker;
     
     return tracker;
 }
 
-static int __ensure_capacity(struct bpf_policy_key** keys, int* count, int* capacity)
+static int __ensure_capacity_sized(void** keys, int* count, int* capacity, size_t elem_size)
 {
     if (*count < *capacity) {
         return 0;
@@ -334,7 +389,7 @@ static int __ensure_capacity(struct bpf_policy_key** keys, int* count, int* capa
         return -1;
     }
     int new_capacity = (*capacity * 2 < MAX_TRACKED_ENTRIES) ? (*capacity * 2) : MAX_TRACKED_ENTRIES;
-    struct bpf_policy_key* new_keys = realloc(*keys, sizeof(struct bpf_policy_key) * new_capacity);
+    void* new_keys = realloc(*keys, elem_size * (size_t)new_capacity);
     if (!new_keys) {
         return -1;
     }
@@ -354,7 +409,8 @@ static int __add_tracked_file_entry(struct container_entry_tracker* tracker,
         return -1;
     }
     
-    if (__ensure_capacity(&tracker->file_keys, &tracker->file_key_count, &tracker->file_key_capacity) < 0) {
+    if (__ensure_capacity_sized((void**)&tracker->file_keys, &tracker->file_key_count, &tracker->file_key_capacity,
+                                sizeof(*tracker->file_keys)) < 0) {
         VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked file key capacity\n");
         return -1;
     }
@@ -380,7 +436,8 @@ static int __add_tracked_dir_entry(struct container_entry_tracker* tracker,
         return -1;
     }
 
-    if (__ensure_capacity(&tracker->dir_keys, &tracker->dir_key_count, &tracker->dir_key_capacity) < 0) {
+    if (__ensure_capacity_sized((void**)&tracker->dir_keys, &tracker->dir_key_count, &tracker->dir_key_capacity,
+                                sizeof(*tracker->dir_keys)) < 0) {
         VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked dir key capacity\n");
         return -1;
     }
@@ -413,7 +470,8 @@ static int __add_tracked_basename_entry(struct container_entry_tracker* tracker,
         }
     }
 
-    if (__ensure_capacity(&tracker->basename_keys, &tracker->basename_key_count, &tracker->basename_key_capacity) < 0) {
+    if (__ensure_capacity_sized((void**)&tracker->basename_keys, &tracker->basename_key_count, &tracker->basename_key_capacity,
+                                sizeof(*tracker->basename_keys)) < 0) {
         VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked basename key capacity\n");
         return -1;
     }
@@ -423,6 +481,63 @@ static int __add_tracked_basename_entry(struct container_entry_tracker* tracker,
     key->dev = (unsigned long long)dev;
     key->ino = (unsigned long long)ino;
     tracker->basename_key_count++;
+    return 0;
+}
+
+static int __add_tracked_net_create_entry(struct container_entry_tracker* tracker,
+                                          const struct bpf_net_create_key* key)
+{
+    if (!tracker || !key) {
+        return -1;
+    }
+
+    if (__ensure_capacity_sized((void**)&tracker->net_create_keys,
+                                &tracker->net_create_key_count,
+                                &tracker->net_create_key_capacity,
+                                sizeof(*tracker->net_create_keys)) < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked net create key capacity\n");
+        return -1;
+    }
+
+    tracker->net_create_keys[tracker->net_create_key_count++] = *key;
+    return 0;
+}
+
+static int __add_tracked_net_tuple_entry(struct container_entry_tracker* tracker,
+                                         const struct bpf_net_tuple_key* key)
+{
+    if (!tracker || !key) {
+        return -1;
+    }
+
+    if (__ensure_capacity_sized((void**)&tracker->net_tuple_keys,
+                                &tracker->net_tuple_key_count,
+                                &tracker->net_tuple_key_capacity,
+                                sizeof(*tracker->net_tuple_keys)) < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked net tuple key capacity\n");
+        return -1;
+    }
+
+    tracker->net_tuple_keys[tracker->net_tuple_key_count++] = *key;
+    return 0;
+}
+
+static int __add_tracked_net_unix_entry(struct container_entry_tracker* tracker,
+                                        const struct bpf_net_unix_key* key)
+{
+    if (!tracker || !key) {
+        return -1;
+    }
+
+    if (__ensure_capacity_sized((void**)&tracker->net_unix_keys,
+                                &tracker->net_unix_key_count,
+                                &tracker->net_unix_key_capacity,
+                                sizeof(*tracker->net_unix_keys)) < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked net unix key capacity\n");
+        return -1;
+    }
+
+    tracker->net_unix_keys[tracker->net_unix_key_count++] = *key;
     return 0;
 }
 
@@ -445,6 +560,9 @@ static void __remove_tracker(const char* container_id)
             free(tracker->file_keys);
             free(tracker->dir_keys);
             free(tracker->basename_keys);
+            free(tracker->net_create_keys);
+            free(tracker->net_tuple_keys);
+            free(tracker->net_unix_keys);
             free(tracker);
             return;
         }
@@ -462,6 +580,9 @@ static void __cleanup_all_trackers(void)
         free(tracker->file_keys);
         free(tracker->dir_keys);
         free(tracker->basename_keys);
+        free(tracker->net_create_keys);
+        free(tracker->net_tuple_keys);
+        free(tracker->net_unix_keys);
         free(tracker);
         tracker = next;
     }
@@ -485,6 +606,9 @@ static int __count_total_entries(void)
         total += tracker->file_key_count;
         total += tracker->dir_key_count;
         total += tracker->basename_key_count;
+        total += tracker->net_create_key_count;
+        total += tracker->net_tuple_key_count;
+        total += tracker->net_unix_key_count;
         tracker = tracker->next;
     }
     return total;
@@ -1060,6 +1184,43 @@ int containerv_bpf_manager_initialize(void)
         g_bpf_manager.dir_policy_map_fd = -1;
         return -1;
     }
+
+    // Get network policy map FDs
+    g_bpf_manager.net_create_map_fd = bpf_map__fd(g_bpf_manager.skel->maps.net_create_map);
+    if (g_bpf_manager.net_create_map_fd < 0) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to get net_create_map FD\n");
+        fs_lsm_bpf__destroy(g_bpf_manager.skel);
+        g_bpf_manager.skel = NULL;
+        g_bpf_manager.policy_map_fd = -1;
+        g_bpf_manager.dir_policy_map_fd = -1;
+        g_bpf_manager.basename_policy_map_fd = -1;
+        return -1;
+    }
+
+    g_bpf_manager.net_tuple_map_fd = bpf_map__fd(g_bpf_manager.skel->maps.net_tuple_map);
+    if (g_bpf_manager.net_tuple_map_fd < 0) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to get net_tuple_map FD\n");
+        fs_lsm_bpf__destroy(g_bpf_manager.skel);
+        g_bpf_manager.skel = NULL;
+        g_bpf_manager.policy_map_fd = -1;
+        g_bpf_manager.dir_policy_map_fd = -1;
+        g_bpf_manager.basename_policy_map_fd = -1;
+        g_bpf_manager.net_create_map_fd = -1;
+        return -1;
+    }
+
+    g_bpf_manager.net_unix_map_fd = bpf_map__fd(g_bpf_manager.skel->maps.net_unix_map);
+    if (g_bpf_manager.net_unix_map_fd < 0) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to get net_unix_map FD\n");
+        fs_lsm_bpf__destroy(g_bpf_manager.skel);
+        g_bpf_manager.skel = NULL;
+        g_bpf_manager.policy_map_fd = -1;
+        g_bpf_manager.dir_policy_map_fd = -1;
+        g_bpf_manager.basename_policy_map_fd = -1;
+        g_bpf_manager.net_create_map_fd = -1;
+        g_bpf_manager.net_tuple_map_fd = -1;
+        return -1;
+    }
     
     // Pin the policy map for persistence and sharing
     status = __pin_map_best_effort(g_bpf_manager.policy_map_fd, POLICY_MAP_PIN_PATH, reused_policy);
@@ -1205,6 +1366,9 @@ void containerv_bpf_manager_shutdown(void)
     g_bpf_manager.policy_map_fd = -1;
     g_bpf_manager.dir_policy_map_fd = -1;
     g_bpf_manager.basename_policy_map_fd = -1;
+    g_bpf_manager.net_create_map_fd = -1;
+    g_bpf_manager.net_tuple_map_fd = -1;
+    g_bpf_manager.net_unix_map_fd = -1;
     g_bpf_manager.available = 0;
     
     VLOG_TRACE("cvd", "bpf_manager: shutdown complete\n");
@@ -1413,6 +1577,88 @@ int containerv_bpf_manager_populate_policy(
             VLOG_WARNING("cvd", "bpf_manager: failed to apply rule for %s: %s\n", path, strerror(errno));
         }
     }
+
+    if (policy->net_rule_count > 0) {
+        if (policy->net_rule_count > MAX_NET_RULES) {
+            VLOG_ERROR("cvd", "bpf_manager: policy net_rule_count (%d) exceeds MAX_NET_RULES (%d)\n",
+                       policy->net_rule_count, MAX_NET_RULES);
+            errno = EINVAL;
+            g_bpf_manager.metrics.failed_populate_ops++;
+            return -1;
+        }
+
+        for (int i = 0; i < policy->net_rule_count; i++) {
+            const struct containerv_policy_net_rule* rule = &policy->net_rules[i];
+            unsigned int create_mask = rule->allow_mask & BPF_NET_CREATE;
+            unsigned int tuple_mask = rule->allow_mask & ~BPF_NET_CREATE;
+
+            if (create_mask) {
+                struct bpf_net_create_key ckey = {
+                    .cgroup_id = cgroup_id,
+                    .family = (unsigned int)rule->family,
+                    .type = (unsigned int)rule->type,
+                    .protocol = (unsigned int)rule->protocol,
+                };
+                if (bpf_net_create_map_allow(g_bpf_manager.net_create_map_fd, &ckey, create_mask) == 0) {
+                    (void)__add_tracked_net_create_entry(tracker, &ckey);
+                    entries_added++;
+                } else {
+                    VLOG_WARNING("cvd", "bpf_manager: failed to apply net create rule (family=%d type=%d proto=%d): %s\n",
+                                 rule->family, rule->type, rule->protocol, strerror(errno));
+                }
+            }
+
+            if (tuple_mask == 0) {
+                continue;
+            }
+
+#ifdef AF_UNIX
+            if (rule->family == AF_UNIX) {
+                struct bpf_net_unix_key ukey = {0};
+                if (rule->unix_path == NULL || rule->unix_path[0] == '\0') {
+                    VLOG_WARNING("cvd", "bpf_manager: net unix rule missing path (family=AF_UNIX)\n");
+                    continue;
+                }
+                ukey.cgroup_id = cgroup_id;
+                ukey.type = (unsigned int)rule->type;
+                ukey.protocol = (unsigned int)rule->protocol;
+                snprintf(ukey.path, sizeof(ukey.path), "%s", rule->unix_path);
+
+                if (bpf_net_unix_map_allow(g_bpf_manager.net_unix_map_fd, &ukey, tuple_mask) == 0) {
+                    (void)__add_tracked_net_unix_entry(tracker, &ukey);
+                    entries_added++;
+                } else {
+                    VLOG_WARNING("cvd", "bpf_manager: failed to apply net unix rule (%s): %s\n",
+                                 rule->unix_path, strerror(errno));
+                }
+                continue;
+            }
+#endif
+
+            if (rule->addr_len > BPF_NET_ADDR_MAX) {
+                VLOG_WARNING("cvd", "bpf_manager: net rule addr_len too large (%u)\n", rule->addr_len);
+                continue;
+            }
+
+            struct bpf_net_tuple_key tkey = {0};
+            tkey.cgroup_id = cgroup_id;
+            tkey.family = (unsigned int)rule->family;
+            tkey.type = (unsigned int)rule->type;
+            tkey.protocol = (unsigned int)rule->protocol;
+            tkey.port = rule->port;
+            if (rule->addr_len > 0) {
+                memcpy(tkey.addr, rule->addr, rule->addr_len);
+            }
+
+            if (bpf_net_tuple_map_allow(g_bpf_manager.net_tuple_map_fd, &tkey, tuple_mask) == 0) {
+                (void)__add_tracked_net_tuple_entry(tracker, &tkey);
+                entries_added++;
+            } else {
+                VLOG_WARNING("cvd", "bpf_manager: failed to apply net tuple rule (family=%d type=%d proto=%d): %s\n",
+                             rule->family, rule->type, rule->protocol, strerror(errno));
+            }
+        }
+    }
     
     // End timing and update metrics
     end_time = __get_time_microseconds();
@@ -1475,7 +1721,12 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
         return 0;
     }
     
-    if (tracker->file_key_count == 0 && tracker->dir_key_count == 0 && tracker->basename_key_count == 0) {
+    if (tracker->file_key_count == 0 &&
+        tracker->dir_key_count == 0 &&
+        tracker->basename_key_count == 0 &&
+        tracker->net_create_key_count == 0 &&
+        tracker->net_tuple_key_count == 0 &&
+        tracker->net_unix_key_count == 0) {
         VLOG_DEBUG("cvd", "bpf_manager: no entries to clean up for container %s\n", container_id);
         __remove_tracker(container_id);
         return 0;
@@ -1536,6 +1787,57 @@ int containerv_bpf_manager_cleanup_policy(const char* container_id)
             return -1;
         }
         deleted_count += deleted_base;
+    }
+
+    if (tracker->net_create_key_count > 0 && g_bpf_manager.net_create_map_fd >= 0) {
+        VLOG_DEBUG("cvd", "bpf_manager: deleting %d net create entries (cgroup_id=%llu)\n",
+                   tracker->net_create_key_count, tracker->cgroup_id);
+        int deleted_net = bpf_map_delete_batch_by_fd(
+            g_bpf_manager.net_create_map_fd,
+            tracker->net_create_keys,
+            tracker->net_create_key_count,
+            sizeof(*tracker->net_create_keys));
+        if (deleted_net < 0) {
+            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (net create map) for container %s\n", container_id);
+            g_bpf_manager.metrics.failed_cleanup_ops++;
+            __remove_tracker(container_id);
+            return -1;
+        }
+        deleted_count += deleted_net;
+    }
+
+    if (tracker->net_tuple_key_count > 0 && g_bpf_manager.net_tuple_map_fd >= 0) {
+        VLOG_DEBUG("cvd", "bpf_manager: deleting %d net tuple entries (cgroup_id=%llu)\n",
+                   tracker->net_tuple_key_count, tracker->cgroup_id);
+        int deleted_net = bpf_map_delete_batch_by_fd(
+            g_bpf_manager.net_tuple_map_fd,
+            tracker->net_tuple_keys,
+            tracker->net_tuple_key_count,
+            sizeof(*tracker->net_tuple_keys));
+        if (deleted_net < 0) {
+            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (net tuple map) for container %s\n", container_id);
+            g_bpf_manager.metrics.failed_cleanup_ops++;
+            __remove_tracker(container_id);
+            return -1;
+        }
+        deleted_count += deleted_net;
+    }
+
+    if (tracker->net_unix_key_count > 0 && g_bpf_manager.net_unix_map_fd >= 0) {
+        VLOG_DEBUG("cvd", "bpf_manager: deleting %d net unix entries (cgroup_id=%llu)\n",
+                   tracker->net_unix_key_count, tracker->cgroup_id);
+        int deleted_net = bpf_map_delete_batch_by_fd(
+            g_bpf_manager.net_unix_map_fd,
+            tracker->net_unix_keys,
+            tracker->net_unix_key_count,
+            sizeof(*tracker->net_unix_keys));
+        if (deleted_net < 0) {
+            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (net unix map) for container %s\n", container_id);
+            g_bpf_manager.metrics.failed_cleanup_ops++;
+            __remove_tracker(container_id);
+            return -1;
+        }
+        deleted_count += deleted_net;
     }
     
     // End timing and update metrics

@@ -420,4 +420,113 @@ int bpf_policy_map_delete_batch(
     return -1;
 }
 
+int bpf_net_create_map_allow(
+    int                         map_fd,
+    const struct bpf_net_create_key* key,
+    unsigned int                allow_mask)
+{
+    struct bpf_net_policy_value value = {};
+    union bpf_attr               attr = {};
+
+    if (map_fd < 0 || key == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    value.allow_mask = allow_mask;
+    attr.map_fd = map_fd;
+    attr.key = (uintptr_t)key;
+    attr.value = (uintptr_t)&value;
+    attr.flags = BPF_ANY;
+    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
+}
+
+int bpf_net_tuple_map_allow(
+    int                         map_fd,
+    const struct bpf_net_tuple_key* key,
+    unsigned int                allow_mask)
+{
+    struct bpf_net_policy_value value = {};
+    union bpf_attr               attr = {};
+
+    if (map_fd < 0 || key == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    value.allow_mask = allow_mask;
+    attr.map_fd = map_fd;
+    attr.key = (uintptr_t)key;
+    attr.value = (uintptr_t)&value;
+    attr.flags = BPF_ANY;
+    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
+}
+
+int bpf_net_unix_map_allow(
+    int                         map_fd,
+    const struct bpf_net_unix_key* key,
+    unsigned int                allow_mask)
+{
+    struct bpf_net_policy_value value = {};
+    union bpf_attr               attr = {};
+
+    if (map_fd < 0 || key == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    value.allow_mask = allow_mask;
+    attr.map_fd = map_fd;
+    attr.key = (uintptr_t)key;
+    attr.value = (uintptr_t)&value;
+    attr.flags = BPF_ANY;
+    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
+}
+
+int bpf_map_delete_batch_by_fd(
+    int     map_fd,
+    void*   keys,
+    int     count,
+    size_t  key_size)
+{
+    union bpf_attr attr = {};
+    int deleted = 0;
+    int saved_errno;
+
+    if (map_fd < 0 || keys == NULL || count <= 0 || key_size == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    memset(&attr, 0, sizeof(attr));
+    attr.batch.map_fd = map_fd;
+    attr.batch.keys = (uintptr_t)keys;
+    attr.batch.count = count;
+    attr.batch.elem_flags = 0;
+
+    int status = bpf_syscall(BPF_MAP_DELETE_BATCH, &attr, sizeof(attr));
+    if (status == 0) {
+        return count;
+    }
+
+    saved_errno = errno;
+    if (saved_errno == EINVAL || saved_errno == ENOTSUP || saved_errno == ENOSYS) {
+        for (int i = 0; i < count; i++) {
+            memset(&attr, 0, sizeof(attr));
+            attr.map_fd = map_fd;
+            attr.key = (uintptr_t)((unsigned char*)keys + (i * key_size));
+            if (bpf_syscall(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr)) == 0) {
+                deleted++;
+            } else if (errno != ENOENT) {
+                VLOG_TRACE("containerv", "bpf_helpers: failed to delete entry %d: %s\n", i, strerror(errno));
+            }
+        }
+        return deleted;
+    }
+
+    errno = saved_errno;
+    VLOG_ERROR("containerv", "bpf_helpers: batch delete failed: %s\n", strerror(errno));
+    return -1;
+}
+
 #endif // __linux__

@@ -58,6 +58,37 @@ enum containerv_fs_access {
 };
 
 /**
+ * @brief Network access modes
+ */
+enum containerv_net_access {
+    CV_NET_CREATE  = 0x1,
+    CV_NET_BIND    = 0x2,
+    CV_NET_CONNECT = 0x4,
+    CV_NET_LISTEN  = 0x8,
+    CV_NET_ACCEPT  = 0x10,
+    CV_NET_SEND    = 0x20,
+    CV_NET_ALL     = (CV_NET_CREATE | CV_NET_BIND | CV_NET_CONNECT | CV_NET_LISTEN | CV_NET_ACCEPT | CV_NET_SEND)
+};
+
+/**
+ * @brief Network allow rule (tuple-based)
+ *
+ * Use AF_* for family, SOCK_* for type, and IPPROTO_* for protocol.
+ * For AF_UNIX, set unix_path. For AF_INET/AF_INET6, set addr/addr_len and port.
+ * For INET, addr is in network byte order; port is in host byte order.
+ */
+struct containerv_net_rule {
+    int                 family;
+    int                 type;
+    int                 protocol;
+    unsigned short      port;
+    const unsigned char* addr;
+    unsigned int        addr_len;
+    const char*         unix_path;
+    unsigned int        allow_mask;
+};
+
+/**
  * @brief Set/get the generic security level for a policy.
  */
 extern int containerv_policy_set_security_level(struct containerv_policy* policy, enum containerv_security_level level);
@@ -96,5 +127,18 @@ extern struct containerv_policy* containerv_policy_new(struct list* plugins);
  * @param policy The policy to delete
  */
 extern void containerv_policy_delete(struct containerv_policy* policy);
+
+/**
+ * @brief Add network allow rules
+ * @param policy The policy to update
+ * @param rules Array of network rules
+ * @param count Number of rules
+ * @return 0 on success, -1 on error
+ */
+extern int containerv_policy_add_net_rules(
+    struct containerv_policy*     policy,
+    const struct containerv_net_rule* rules,
+    int                           count
+);
 
 #endif //!__CONTAINERV_POLICY_H__

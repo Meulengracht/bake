@@ -21,6 +21,10 @@
 #include <string.h>
 #include <vlog.h>
 
+#if defined(__linux__) || defined(__unix__)
+#include <sys/socket.h>
+#endif
+
 #include "private.h"
 
 int containerv_policy_set_security_level(struct containerv_policy* policy, enum containerv_security_level level)
@@ -192,6 +196,10 @@ void containerv_policy_delete(struct containerv_policy* policy)
         free(policy->paths[i].path);
     }
 
+    for (int i = 0; i < policy->net_rule_count; i++) {
+        free(policy->net_rules[i].unix_path);
+    }
+
 #ifdef _WIN32
     free(policy->win_integrity_level);
     if (policy->win_capability_sids != NULL) {
@@ -203,4 +211,62 @@ void containerv_policy_delete(struct containerv_policy* policy)
 #endif
         
     free(policy);
+}
+
+int containerv_policy_add_net_rules(
+    struct containerv_policy*        policy,
+    const struct containerv_net_rule* rules,
+    int                              count)
+{
+    if (policy == NULL || rules == NULL || count < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    for (int i = 0; i < count; i++) {
+        const struct containerv_net_rule* src = &rules[i];
+
+        if (policy->net_rule_count >= MAX_NET_RULES) {
+            errno = ENOMEM;
+            return -1;
+        }
+
+        if (src->addr_len > sizeof(policy->net_rules[0].addr)) {
+            errno = EINVAL;
+            return -1;
+        }
+
+#ifdef AF_UNIX
+        if (src->family == AF_UNIX && (src->unix_path == NULL || src->unix_path[0] == '\0')) {
+            errno = EINVAL;
+            return -1;
+        }
+#endif
+
+        struct containerv_policy_net_rule* dst = &policy->net_rules[policy->net_rule_count];
+        memset(dst, 0, sizeof(*dst));
+
+        dst->family = src->family;
+        dst->type = src->type;
+        dst->protocol = src->protocol;
+        dst->port = src->port;
+        dst->addr_len = src->addr_len;
+        dst->allow_mask = src->allow_mask;
+
+        if (src->addr != NULL && src->addr_len > 0) {
+            memcpy(dst->addr, src->addr, src->addr_len);
+        }
+
+        if (src->unix_path != NULL && src->unix_path[0] != '\0') {
+            dst->unix_path = strdup(src->unix_path);
+            if (dst->unix_path == NULL) {
+                errno = ENOMEM;
+                return -1;
+            }
+        }
+
+        policy->net_rule_count++;
+    }
+
+    return 0;
 }
