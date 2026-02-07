@@ -216,6 +216,7 @@ static __always_inline int __populate_key_from_dentry(struct policy_key* key, st
     return 0;
 }
 
+
 static __always_inline int __read_dentry_name(struct dentry* dentry, char out[BASENAME_MAX_STR], __u32* out_len)
 {
     struct qstr d_name = {};
@@ -434,6 +435,159 @@ static __always_inline int __check_access(struct file* file, __u32 required)
     return -EACCES;
 }
 
+static __always_inline int __check_access_dentry(struct dentry* dentry, __u32 required)
+{
+    __u64 cgroup_id;
+    struct policy_key key = {};
+    struct policy_value* policy;
+
+    cgroup_id = get_current_cgroup_id();
+    if (cgroup_id == 0) {
+        return 0;
+    }
+
+    if (__populate_key_from_dentry(&key, dentry, cgroup_id)) {
+        return -EACCES;
+    }
+
+    policy = bpf_map_lookup_elem(&policy_map, &key);
+    if (policy) {
+        if (required & ~policy->allow_mask) {
+            return -EACCES;
+        }
+        return 0;
+    }
+
+    // Fall back to directory/basename rules using the parent
+    struct dentry* parent = NULL;
+    CORE_READ_INTO(&parent, dentry, d_parent);
+    if (!parent) {
+        return -EACCES;
+    }
+
+    // Basename rules: only check immediate parent directory
+    if (__populate_key_from_dentry(&key, parent, cgroup_id) == 0) {
+        struct basename_policy_value* bval = bpf_map_lookup_elem(&basename_policy_map, &key);
+        if (bval) {
+            char name[BASENAME_MAX_STR] = {};
+            __u32 name_len = 0;
+            if (__read_dentry_name(dentry, name, &name_len) == 0) {
+#pragma unroll
+                for (int i = 0; i < BASENAME_RULE_MAX; i++) {
+                    const struct basename_rule* rule = &bval->rules[i];
+                    if (rule->token_count == 0) {
+                        continue;
+                    }
+                    if (__match_basename_rule(rule, name, name_len)) {
+                        if (required & ~rule->allow_mask) {
+                            return -EACCES;
+                        }
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
+
+    struct dentry* cur = parent;
+#pragma unroll
+    for (int depth = 0; depth < 32; depth++) {
+        struct dir_policy_value* dir_policy;
+        if (__populate_key_from_dentry(&key, cur, cgroup_id)) {
+            return -EACCES;
+        }
+
+        dir_policy = bpf_map_lookup_elem(&dir_policy_map, &key);
+        if (dir_policy) {
+            __u32 flags = dir_policy->flags;
+            if (depth == 0 || (flags & DIR_RULE_RECURSIVE)) {
+                if (required & ~dir_policy->allow_mask) {
+                    return -EACCES;
+                }
+                return 0;
+            }
+        }
+
+        struct dentry* next = NULL;
+        CORE_READ_INTO(&next, cur, d_parent);
+        if (!next || next == cur) {
+            break;
+        }
+        cur = next;
+    }
+
+    return -EACCES;
+}
+
+static __always_inline int __check_access_parent(struct dentry* dentry, __u32 required, int check_basename)
+{
+    __u64 cgroup_id;
+    struct policy_key key = {};
+
+    cgroup_id = get_current_cgroup_id();
+    if (cgroup_id == 0) {
+        return 0;
+    }
+
+    struct dentry* parent = NULL;
+    CORE_READ_INTO(&parent, dentry, d_parent);
+    if (!parent) {
+        return -EACCES;
+    }
+
+    if (check_basename && __populate_key_from_dentry(&key, parent, cgroup_id) == 0) {
+        struct basename_policy_value* bval = bpf_map_lookup_elem(&basename_policy_map, &key);
+        if (bval) {
+            char name[BASENAME_MAX_STR] = {};
+            __u32 name_len = 0;
+            if (__read_dentry_name(dentry, name, &name_len) == 0) {
+#pragma unroll
+                for (int i = 0; i < BASENAME_RULE_MAX; i++) {
+                    const struct basename_rule* rule = &bval->rules[i];
+                    if (rule->token_count == 0) {
+                        continue;
+                    }
+                    if (__match_basename_rule(rule, name, name_len)) {
+                        if (required & ~rule->allow_mask) {
+                            return -EACCES;
+                        }
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
+
+    struct dentry* cur = parent;
+#pragma unroll
+    for (int depth = 0; depth < 32; depth++) {
+        struct dir_policy_value* dir_policy;
+        if (__populate_key_from_dentry(&key, cur, cgroup_id)) {
+            return -EACCES;
+        }
+
+        dir_policy = bpf_map_lookup_elem(&dir_policy_map, &key);
+        if (dir_policy) {
+            __u32 flags = dir_policy->flags;
+            if (depth == 0 || (flags & DIR_RULE_RECURSIVE)) {
+                if (required & ~dir_policy->allow_mask) {
+                    return -EACCES;
+                }
+                return 0;
+            }
+        }
+
+        struct dentry* next = NULL;
+        CORE_READ_INTO(&next, cur, d_parent);
+        if (!next || next == cur) {
+            break;
+        }
+        cur = next;
+    }
+
+    return -EACCES;
+}
+
 /**
  * LSM hook for file_open
  * 
@@ -488,6 +642,156 @@ int BPF_PROG(bprm_check_security_restrict, struct linux_binprm *bprm, int ret)
     }
 
     return __check_access(file, PERM_EXEC);
+}
+
+SEC("lsm/inode_create")
+int BPF_PROG(inode_create_restrict, struct inode *dir, struct dentry *dentry, umode_t mode, int ret)
+{
+    (void)dir;
+    (void)mode;
+    if (ret) {
+        return ret;
+    }
+    if (!dentry) {
+        return -EACCES;
+    }
+    return __check_access_parent(dentry, PERM_WRITE, 1);
+}
+
+SEC("lsm/inode_mkdir")
+int BPF_PROG(inode_mkdir_restrict, struct inode *dir, struct dentry *dentry, umode_t mode, int ret)
+{
+    (void)dir;
+    (void)mode;
+    if (ret) {
+        return ret;
+    }
+    if (!dentry) {
+        return -EACCES;
+    }
+    return __check_access_parent(dentry, PERM_WRITE, 1);
+}
+
+SEC("lsm/inode_mknod")
+int BPF_PROG(inode_mknod_restrict, struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev, int ret)
+{
+    (void)dir;
+    (void)mode;
+    (void)dev;
+    if (ret) {
+        return ret;
+    }
+    if (!dentry) {
+        return -EACCES;
+    }
+    return __check_access_parent(dentry, PERM_WRITE, 1);
+}
+
+SEC("lsm/inode_unlink")
+int BPF_PROG(inode_unlink_restrict, struct inode *dir, struct dentry *dentry, int ret)
+{
+    (void)dir;
+    if (ret) {
+        return ret;
+    }
+    if (!dentry) {
+        return -EACCES;
+    }
+    return __check_access_parent(dentry, PERM_WRITE, 1);
+}
+
+SEC("lsm/inode_rmdir")
+int BPF_PROG(inode_rmdir_restrict, struct inode *dir, struct dentry *dentry, int ret)
+{
+    (void)dir;
+    if (ret) {
+        return ret;
+    }
+    if (!dentry) {
+        return -EACCES;
+    }
+    return __check_access_parent(dentry, PERM_WRITE, 1);
+}
+
+SEC("lsm/inode_rename")
+int BPF_PROG(inode_rename_restrict, struct inode *old_dir, struct dentry *old_dentry,
+             struct inode *new_dir, struct dentry *new_dentry, unsigned int flags, int ret)
+{
+    (void)old_dir;
+    (void)new_dir;
+    (void)flags;
+    if (ret) {
+        return ret;
+    }
+    if (!old_dentry || !new_dentry) {
+        return -EACCES;
+    }
+
+    if (__check_access_parent(old_dentry, PERM_WRITE, 1)) {
+        return -EACCES;
+    }
+    if (__check_access_parent(new_dentry, PERM_WRITE, 1)) {
+        return -EACCES;
+    }
+    return 0;
+}
+
+SEC("lsm/inode_link")
+int BPF_PROG(inode_link_restrict, struct dentry *old_dentry, struct inode *dir, struct dentry *new_dentry, int ret)
+{
+    (void)old_dentry;
+    (void)dir;
+    if (ret) {
+        return ret;
+    }
+    if (!new_dentry) {
+        return -EACCES;
+    }
+    return __check_access_parent(new_dentry, PERM_WRITE, 1);
+}
+
+SEC("lsm/inode_symlink")
+int BPF_PROG(inode_symlink_restrict, struct inode *dir, struct dentry *dentry, const char *old_name, int ret)
+{
+    (void)dir;
+    (void)old_name;
+    if (ret) {
+        return ret;
+    }
+    if (!dentry) {
+        return -EACCES;
+    }
+    return __check_access_parent(dentry, PERM_WRITE, 1);
+}
+
+SEC("lsm/inode_setattr")
+int BPF_PROG(inode_setattr_restrict, struct dentry *dentry, struct iattr *attr, int ret)
+{
+    (void)attr;
+    if (ret) {
+        return ret;
+    }
+    if (!dentry) {
+        return -EACCES;
+    }
+    return __check_access_dentry(dentry, PERM_WRITE);
+}
+
+SEC("lsm/path_truncate")
+int BPF_PROG(path_truncate_restrict, struct path *path, loff_t length, unsigned int time_attrs, int ret)
+{
+    struct dentry* dentry = NULL;
+    (void)length;
+    (void)time_attrs;
+    if (ret) {
+        return ret;
+    }
+
+    CORE_READ_INTO(&dentry, path, dentry);
+    if (!dentry) {
+        return -EACCES;
+    }
+    return __check_access_dentry(dentry, PERM_WRITE);
 }
 
 char LICENSE[] SEC("license") = "GPL";

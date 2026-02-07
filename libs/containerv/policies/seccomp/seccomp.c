@@ -467,7 +467,9 @@ static const struct containerv_syscall_entry g_fileControlSyscalls[] = {
     __SC_ENTRY_BASIC("lremovexattr"),
     __SC_ENTRY_BASIC("fremovexattr"),
 
-    // We can't effectively block file perms due to open() with O_CREAT
+    // We can't effectively block file perms due to open() with O_CREAT, rely
+    // eBPF LSM hooks for that since they have more context (filename, flags, etc) when
+    // eBPF is available.
     __SC_ENTRY_BASIC("chmod"),
     __SC_ENTRY_BASIC("fchmod"),
     __SC_ENTRY_BASIC("fchmodat"),
