@@ -87,6 +87,32 @@ struct bpf_policy_context {
     unsigned long long cgroup_id;
 };
 
+enum bpf_deny_hook_id {
+    BPF_DENY_HOOK_FILE_OPEN = 1,
+    BPF_DENY_HOOK_BPRM_CHECK = 2,
+    BPF_DENY_HOOK_INODE_CREATE = 3,
+    BPF_DENY_HOOK_INODE_MKDIR = 4,
+    BPF_DENY_HOOK_INODE_MKNOD = 5,
+    BPF_DENY_HOOK_INODE_UNLINK = 6,
+    BPF_DENY_HOOK_INODE_RMDIR = 7,
+    BPF_DENY_HOOK_INODE_RENAME = 8,
+    BPF_DENY_HOOK_INODE_LINK = 9,
+    BPF_DENY_HOOK_INODE_SYMLINK = 10,
+    BPF_DENY_HOOK_INODE_SETATTR = 11,
+    BPF_DENY_HOOK_PATH_TRUNCATE = 12,
+};
+
+struct bpf_deny_event {
+    unsigned long long cgroup_id;
+    unsigned long long dev;
+    unsigned long long ino;
+    unsigned int       required_mask;
+    unsigned int       hook_id;
+    unsigned int       name_len;
+    char               comm[16];
+    char               name[BPF_BASENAME_MAX_STR];
+};
+
 /**
  * @brief Wrapper for the BPF system call
  * @param cmd BPF command

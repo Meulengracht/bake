@@ -30,6 +30,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <threads.h>
 #include <unistd.h>
 #include <vlog.h>
 
@@ -95,6 +96,10 @@ static struct {
     int basename_policy_map_fd;
 #ifdef HAVE_BPF_SKELETON
     struct fs_lsm_bpf* skel;
+    struct ring_buffer* deny_ring;
+    thrd_t deny_thread;
+    int deny_thread_running;
+    volatile int deny_thread_stop;
 #endif
     struct container_entry_tracker* trackers;
     struct bpf_manager_metrics metrics;
@@ -105,6 +110,10 @@ static struct {
     .basename_policy_map_fd = -1,
 #ifdef HAVE_BPF_SKELETON
     .skel = NULL,
+    .deny_ring = NULL,
+    .deny_thread = {0},
+    .deny_thread_running = 0,
+    .deny_thread_stop = 0,
 #endif
     .trackers = NULL,
     .metrics = {0},
@@ -113,6 +122,63 @@ static struct {
 #ifdef __linux__
 
 #ifdef HAVE_BPF_SKELETON
+static const char* __deny_hook_name(unsigned int hook_id)
+{
+    switch (hook_id) {
+        case BPF_DENY_HOOK_FILE_OPEN: return "file_open";
+        case BPF_DENY_HOOK_BPRM_CHECK: return "bprm_check_security";
+        case BPF_DENY_HOOK_INODE_CREATE: return "inode_create";
+        case BPF_DENY_HOOK_INODE_MKDIR: return "inode_mkdir";
+        case BPF_DENY_HOOK_INODE_MKNOD: return "inode_mknod";
+        case BPF_DENY_HOOK_INODE_UNLINK: return "inode_unlink";
+        case BPF_DENY_HOOK_INODE_RMDIR: return "inode_rmdir";
+        case BPF_DENY_HOOK_INODE_RENAME: return "inode_rename";
+        case BPF_DENY_HOOK_INODE_LINK: return "inode_link";
+        case BPF_DENY_HOOK_INODE_SYMLINK: return "inode_symlink";
+        case BPF_DENY_HOOK_INODE_SETATTR: return "inode_setattr";
+        case BPF_DENY_HOOK_PATH_TRUNCATE: return "path_truncate";
+        default: return "unknown";
+    }
+}
+
+static int __deny_event_cb(void* ctx, void* data, size_t size)
+{
+    (void)ctx;
+    if (size < sizeof(struct bpf_deny_event)) {
+        return 0;
+    }
+
+    const struct bpf_deny_event* ev = (const struct bpf_deny_event*)data;
+    const char* hook = __deny_hook_name(ev->hook_id);
+
+    VLOG_DEBUG(
+        "cvd",
+        "bpf_manager: deny hook=%s cgroup=%llu dev=%llu ino=%llu mask=0x%x comm=%s name=%.*s\n",
+        hook,
+        ev->cgroup_id,
+        ev->dev,
+        ev->ino,
+        ev->required_mask,
+        ev->comm,
+        (int)ev->name_len,
+        ev->name);
+
+    return 0;
+}
+
+static int __deny_event_thread(void* arg)
+{
+    (void)arg;
+    while (!g_bpf_manager.deny_thread_stop) {
+        int rc = ring_buffer__poll(g_bpf_manager.deny_ring, 1000);
+        if (rc < 0 && rc != -EINTR) {
+            VLOG_WARNING("cvd", "bpf_manager: deny ring poll failed: %d\n", rc);
+            break;
+        }
+    }
+    return 0;
+}
+
 static int __reuse_pinned_map_or_unpin(
     struct bpf_map* map,
     const char*     pin_path,
@@ -1050,6 +1116,27 @@ int containerv_bpf_manager_initialize(void)
             VLOG_DEBUG("cvd", "bpf_manager: exec enforcement link pinned to %s\n", EXEC_LINK_PIN_PATH);
         }
     }
+
+    // Setup deny ring buffer for debug logging (best-effort)
+    if (g_bpf_manager.skel->maps.deny_events != NULL) {
+        int deny_fd = bpf_map__fd(g_bpf_manager.skel->maps.deny_events);
+        if (deny_fd >= 0) {
+            g_bpf_manager.deny_ring = ring_buffer__new(deny_fd, __deny_event_cb, NULL, NULL);
+            if (g_bpf_manager.deny_ring) {
+                g_bpf_manager.deny_thread_stop = 0;
+                if (thrd_create(&g_bpf_manager.deny_thread, __deny_event_thread, NULL) == thrd_success) {
+                    g_bpf_manager.deny_thread_running = 1;
+                    VLOG_DEBUG("cvd", "bpf_manager: deny ring buffer logging enabled\n");
+                } else {
+                    ring_buffer__free(g_bpf_manager.deny_ring);
+                    g_bpf_manager.deny_ring = NULL;
+                    VLOG_WARNING("cvd", "bpf_manager: failed to start deny ring thread\n");
+                }
+            } else {
+                VLOG_WARNING("cvd", "bpf_manager: failed to create deny ring buffer\n");
+            }
+        }
+    }
     
     g_bpf_manager.available = 1;
     VLOG_TRACE("cvd", "bpf_manager: initialization complete, BPF LSM enforcement active\n");
@@ -1099,6 +1186,16 @@ void containerv_bpf_manager_shutdown(void)
                      strerror(errno));
     }
     
+    if (g_bpf_manager.deny_thread_running) {
+        g_bpf_manager.deny_thread_stop = 1;
+        (void)thrd_join(g_bpf_manager.deny_thread, NULL);
+        g_bpf_manager.deny_thread_running = 0;
+    }
+    if (g_bpf_manager.deny_ring) {
+        ring_buffer__free(g_bpf_manager.deny_ring);
+        g_bpf_manager.deny_ring = NULL;
+    }
+
     // Destroy skeleton (this detaches programs)
     if (g_bpf_manager.skel) {
         fs_lsm_bpf__destroy(g_bpf_manager.skel);
