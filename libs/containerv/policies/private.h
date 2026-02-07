@@ -25,6 +25,7 @@
 // Maximum policy entries
 #define MAX_SYSCALLS 1024
 #define MAX_PATHS 256
+#define MAX_NET_RULES 256
 
 #define SYSCALL_FLAG_NEGATIVE_ARG 0x1
 
@@ -37,6 +38,17 @@ struct containerv_syscall_entry {
 struct containerv_policy_path {
     char*                     path;
     enum containerv_fs_access access;
+};
+
+struct containerv_policy_net_rule {
+    int                 family;
+    int                 type;
+    int                 protocol;
+    unsigned short      port;
+    unsigned char       addr[16];
+    unsigned int        addr_len;
+    char*               unix_path;
+    unsigned int        allow_mask;
 };
 
 /* Internal structure to track loaded eBPF programs */
@@ -74,6 +86,10 @@ struct containerv_policy {
     // Filesystem path whitelist
     struct containerv_policy_path paths[MAX_PATHS];
     int                           path_count;
+
+    // Network allow rules
+    struct containerv_policy_net_rule net_rules[MAX_NET_RULES];
+    int                                net_rule_count;
 };
 
 struct containerv_policy_handler {
