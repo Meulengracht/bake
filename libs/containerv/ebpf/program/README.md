@@ -1,14 +1,15 @@
 # BPF LSM Programs for Container Filesystem Enforcement
 
-This directory contains BPF LSM programs for enforcing container-specific filesystem access policies.
+This directory contains BPF LSM programs for enforcing container-specific filesystem and network access policies.
 
 ## Overview
 
-The BPF programs in this directory provide kernel-level enforcement of filesystem access restrictions for containerized processes. They hook into the Linux Security Module (LSM) framework to intercept file operations and enforce per-container policies based on cgroup identity and inode numbers.
+The BPF programs in this directory provide kernel-level enforcement of filesystem and network access restrictions for containerized processes. They hook into the Linux Security Module (LSM) framework to intercept file and socket operations and enforce per-container policies based on cgroup identity and inode numbers.
 
 ## Files
 
-- **fs_lsm.bpf.c**: BPF LSM program that hooks `file_open` to enforce read/write deny rules
+- **fs-lsm.bpf.c**: BPF LSM program that hooks file operations for path mediation
+- **net-lsm.bpf.c**: BPF LSM program that hooks socket operations for tuple-based network mediation
 - **CMakeLists.txt**: Build system for compiling BPF programs and generating skeletons
 
 ## Requirements
