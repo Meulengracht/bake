@@ -28,7 +28,6 @@
  * Without any policy extensions, containers have minimal permissions suitable
  * for basic CLI applications.
  */
-
 struct containerv_policy;
 
 /**

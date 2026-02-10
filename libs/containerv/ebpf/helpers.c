@@ -26,26 +26,13 @@
 #include <string.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 #include <vlog.h>
 
-#include "private.h"
-
-#ifdef __linux__
 #include <linux/bpf.h>
-
-#ifdef HAVE_BPF_SKELETON
 #include <bpf/bpf.h>
-#endif
-#endif
 
-#ifdef __linux__
-
-int bpf_syscall(int cmd, union bpf_attr *attr, unsigned int size)
-{
-    return syscall(__NR_bpf, cmd, attr, size);
-}
+#include "private.h"
 
 static int __find_in_file(FILE* fp, const char* target)
 {
@@ -82,28 +69,6 @@ static int __find_in_file(FILE* fp, const char* target)
         ptr += target_len;
     }
     return 0;
-}
-
-int bpf_check_lsm_available(void)
-{
-    FILE* fp;
-    int   available = 0;
-    
-    // Check /sys/kernel/security/lsm for "bpf"
-    fp = fopen("/sys/kernel/security/lsm", "r");
-    if (!fp) {
-        VLOG_DEBUG("containerv", "bpf_helpers: cannot read LSM list: %s\n", strerror(errno));
-        return 0;
-    }
-    
-    available = __find_in_file(fp, "bpf");
-    fclose(fp);
-    
-    if (!available) {
-        VLOG_DEBUG("containerv", "bpf_helpers: BPF LSM not enabled in kernel (add 'bpf' to LSM list)\n");
-    }
-    
-    return available;
 }
 
 unsigned long long bpf_get_cgroup_id(const char* hostname)
@@ -174,11 +139,30 @@ int bpf_bump_memlock_rlimit(void)
     return setrlimit(RLIMIT_MEMLOCK, &rlim);
 }
 
-int containerv_bpf_manager_sanity_check_pins(void)
+int bpf_check_lsm_available(void)
 {
-#if !defined(__linux__) || !defined(HAVE_BPF_SKELETON)
-    return 0;
-#else
+    FILE* fp;
+    int   available = 0;
+    
+    // Check /sys/kernel/security/lsm for "bpf"
+    fp = fopen("/sys/kernel/security/lsm", "r");
+    if (!fp) {
+        VLOG_DEBUG("containerv", "bpf_helpers: cannot read LSM list: %s\n", strerror(errno));
+        return 0;
+    }
+    
+    available = __find_in_file(fp, "bpf");
+    fclose(fp);
+    
+    if (!available) {
+        VLOG_DEBUG("containerv", "bpf_helpers: BPF LSM not enabled in kernel (add 'bpf' to LSM list)\n");
+    }
+    
+    return available;
+}
+
+int containerv_bpf_sanity_check_pins(void)
+{
     int map_fd = bpf_obj_get("/sys/fs/bpf/cvd/policy_map");
     int dir_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/dir_policy_map");
     int basename_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/basename_policy_map");
@@ -215,318 +199,4 @@ int containerv_bpf_manager_sanity_check_pins(void)
 
     VLOG_DEBUG("containerv", "BPF LSM sanity check ok (pinned map + link present)\n");
     return 0;
-#endif
 }
-
-int bpf_dir_policy_map_allow_dir(
-    struct bpf_policy_context* context,
-    dev_t                      dev,
-    ino_t                      ino,
-    unsigned int               allow_mask,
-    unsigned int               flags)
-{
-    struct bpf_policy_key       key = {};
-    struct bpf_dir_policy_value value = {};
-    union bpf_attr              attr = {};
-
-    if (context == NULL || context->dir_map_fd < 0) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    key.cgroup_id = context->cgroup_id;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    value.allow_mask = allow_mask;
-    value.flags = flags;
-
-    attr.map_fd = context->dir_map_fd;
-    attr.key = (uintptr_t)&key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
-}
-
-int bpf_basename_policy_map_allow_rule(
-    struct bpf_policy_context*      context,
-    dev_t                           dev,
-    ino_t                           ino,
-    const struct bpf_basename_rule* rule)
-{
-    struct bpf_policy_key key = {};
-    struct bpf_basename_policy_value value = {};
-    union bpf_attr attr = {};
-
-    if (context == NULL || context->basename_map_fd < 0 || rule == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (rule->token_count == 0) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    key.cgroup_id = context->cgroup_id;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    // Try lookup existing rule array
-    memset(&attr, 0, sizeof(attr));
-    attr.map_fd = context->basename_map_fd;
-    attr.key = (uintptr_t)&key;
-    attr.value = (uintptr_t)&value;
-    int status = bpf_syscall(BPF_MAP_LOOKUP_ELEM, &attr, sizeof(attr));
-    if (status < 0) {
-        if (errno != ENOENT) {
-            return -1;
-        }
-        memset(&value, 0, sizeof(value));
-    }
-
-    // If an identical rule exists, merge allow_mask
-    for (int i = 0; i < BPF_BASENAME_RULE_MAX; i++) {
-        struct bpf_basename_rule* slot = &value.rules[i];
-        if (slot->token_count == rule->token_count &&
-            slot->tail_wildcard == rule->tail_wildcard &&
-            memcmp(slot->token_type, rule->token_type, sizeof(rule->token_type)) == 0 &&
-            memcmp(slot->token_len, rule->token_len, sizeof(rule->token_len)) == 0 &&
-            memcmp(slot->token, rule->token, sizeof(rule->token)) == 0) {
-            slot->allow_mask |= rule->allow_mask;
-            goto do_update;
-        }
-    }
-
-    // Otherwise insert into an empty slot
-    for (int i = 0; i < BPF_BASENAME_RULE_MAX; i++) {
-        struct bpf_basename_rule* slot = &value.rules[i];
-        if (slot->token_count == 0) {
-            *slot = *rule;
-            goto do_update;
-        }
-    }
-
-    errno = ENOSPC;
-    return -1;
-
-do_update:
-    memset(&attr, 0, sizeof(attr));
-    attr.map_fd = context->basename_map_fd;
-    attr.key = (uintptr_t)&key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
-}
-
-int bpf_policy_map_allow_inode(
-    struct bpf_policy_context* context,
-    dev_t                      dev,
-    ino_t                      ino,
-    unsigned int               allow_mask)
-{
-    struct bpf_policy_key   key = {};
-    struct bpf_policy_value value = {};
-    union bpf_attr          attr = {};
-
-    key.cgroup_id = context->cgroup_id;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    value.allow_mask = allow_mask;
-
-    attr.map_fd = context->map_fd;
-    attr.key = (uintptr_t)&key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
-}
-
-int bpf_policy_map_delete_entry(
-    struct bpf_policy_context* context,
-    dev_t                      dev,
-    ino_t                      ino)
-{
-    struct bpf_policy_key key = {};
-    union bpf_attr        attr = {};
-
-    key.cgroup_id = context->cgroup_id;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    attr.map_fd = context->map_fd;
-    attr.key = (uintptr_t)&key;
-
-    return bpf_syscall(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr));
-}
-
-int bpf_policy_map_delete_batch(
-    struct bpf_policy_context* context,
-    struct bpf_policy_key*     keys,
-    int                        count)
-{
-    union bpf_attr attr = {};
-    int deleted = 0;
-    int saved_errno;
-    
-    if (context->map_fd < 0 || keys == NULL || count <= 0) {
-        errno = EINVAL;
-        return -1;
-    }
-    
-    // Use BPF_MAP_DELETE_BATCH for efficient batch deletion
-    // This requires kernel 5.6+, but we already require 5.7+ for BPF LSM
-    memset(&attr, 0, sizeof(attr));
-    attr.batch.map_fd = context->map_fd;
-    attr.batch.keys = (uintptr_t)keys;
-    attr.batch.count = count;
-    attr.batch.elem_flags = 0;
-    
-    // Try batch deletion first
-    int status = bpf_syscall(BPF_MAP_DELETE_BATCH, &attr, sizeof(attr));
-    if (status == 0) {
-        // Success - all entries deleted
-        return count;
-    }
-    
-    // Save errno for debugging
-    saved_errno = errno;
-    
-    // If batch delete is not supported or fails, fall back to individual deletions
-    // Check for common error codes indicating lack of support
-    if (saved_errno == EINVAL || saved_errno == ENOTSUP || saved_errno == ENOSYS) {
-        VLOG_DEBUG("containerv", "bpf_helpers: BPF_MAP_DELETE_BATCH not supported (errno=%d), falling back to individual deletions\n", saved_errno);
-        
-        for (int i = 0; i < count; i++) {
-            memset(&attr, 0, sizeof(attr));
-            attr.map_fd = context->map_fd;
-            attr.key = (uintptr_t)&keys[i];
-            
-            if (bpf_syscall(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr)) == 0) {
-                deleted++;
-            } else if (errno != ENOENT) {
-                // Ignore ENOENT (entry doesn't exist), but log other errors
-                VLOG_TRACE("containerv", "bpf_helpers: failed to delete entry %d: %s\n", i, strerror(errno));
-            }
-        }
-        return deleted;
-    }
-    
-    // Some other error occurred, restore errno for caller
-    errno = saved_errno;
-    VLOG_ERROR("containerv", "bpf_helpers: batch delete failed: %s\n", strerror(errno));
-    return -1;
-}
-
-int bpf_net_create_map_allow(
-    int                         map_fd,
-    const struct bpf_net_create_key* key,
-    unsigned int                allow_mask)
-{
-    struct bpf_net_policy_value value = {};
-    union bpf_attr               attr = {};
-
-    if (map_fd < 0 || key == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    value.allow_mask = allow_mask;
-    attr.map_fd = map_fd;
-    attr.key = (uintptr_t)key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
-}
-
-int bpf_net_tuple_map_allow(
-    int                         map_fd,
-    const struct bpf_net_tuple_key* key,
-    unsigned int                allow_mask)
-{
-    struct bpf_net_policy_value value = {};
-    union bpf_attr               attr = {};
-
-    if (map_fd < 0 || key == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    value.allow_mask = allow_mask;
-    attr.map_fd = map_fd;
-    attr.key = (uintptr_t)key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
-}
-
-int bpf_net_unix_map_allow(
-    int                         map_fd,
-    const struct bpf_net_unix_key* key,
-    unsigned int                allow_mask)
-{
-    struct bpf_net_policy_value value = {};
-    union bpf_attr               attr = {};
-
-    if (map_fd < 0 || key == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    value.allow_mask = allow_mask;
-    attr.map_fd = map_fd;
-    attr.key = (uintptr_t)key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
-}
-
-int bpf_map_delete_batch_by_fd(
-    int     map_fd,
-    void*   keys,
-    int     count,
-    size_t  key_size)
-{
-    union bpf_attr attr = {};
-    int deleted = 0;
-    int saved_errno;
-
-    if (map_fd < 0 || keys == NULL || count <= 0 || key_size == 0) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    memset(&attr, 0, sizeof(attr));
-    attr.batch.map_fd = map_fd;
-    attr.batch.keys = (uintptr_t)keys;
-    attr.batch.count = count;
-    attr.batch.elem_flags = 0;
-
-    int status = bpf_syscall(BPF_MAP_DELETE_BATCH, &attr, sizeof(attr));
-    if (status == 0) {
-        return count;
-    }
-
-    saved_errno = errno;
-    if (saved_errno == EINVAL || saved_errno == ENOTSUP || saved_errno == ENOSYS) {
-        for (int i = 0; i < count; i++) {
-            memset(&attr, 0, sizeof(attr));
-            attr.map_fd = map_fd;
-            attr.key = (uintptr_t)((unsigned char*)keys + (i * key_size));
-            if (bpf_syscall(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr)) == 0) {
-                deleted++;
-            } else if (errno != ENOENT) {
-                VLOG_TRACE("containerv", "bpf_helpers: failed to delete entry %d: %s\n", i, strerror(errno));
-            }
-        }
-        return deleted;
-    }
-
-    errno = saved_errno;
-    VLOG_ERROR("containerv", "bpf_helpers: batch delete failed: %s\n", strerror(errno));
-    return -1;
-}
-
-#endif // __linux__
