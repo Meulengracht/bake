@@ -80,17 +80,14 @@ extern void bpf_container_context_delete(struct bpf_container_context* context);
 
 extern int bpf_container_context_add_tracked_file_entry(
     struct bpf_container_context* context,
-    unsigned long long            cgroupId,
     dev_t                         dev,
     ino_t                         ino);
 extern int bpf_container_context_add_tracked_dir_entry(
     struct bpf_container_context* context,
-    unsigned long long            cgroupId,
     dev_t                         dev,
     ino_t                         ino);
 extern int bpf_container_context_add_tracked_basename_entry(
     struct bpf_container_context* context,
-    unsigned long long            cgroupId,
     dev_t                         dev,
     ino_t                         ino);
 

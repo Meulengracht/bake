@@ -1157,7 +1157,7 @@ int containerv_create(
 
                 case CV_CONTAINER_WAITING_FOR_POLICY_SETUP: {
                     // Populate BPF policy if BPF manager is available
-                    if (containerv_bpf_is_available() && options->policy != NULL) {
+                    if (containerv_bpf_is_available() == CV_BPF_AVAILABLE && options->policy != NULL) {
                         const char* rootfs = containerv_layers_get_rootfs(options->layers);
                         VLOG_DEBUG("containerv[host]", "populating BPF policy for container %s\n", container->id);
                         status = containerv_bpf_populate_policy(container->id, rootfs, options->policy);
@@ -1173,7 +1173,7 @@ int containerv_create(
                     VLOG_ERROR("containerv[host]", "containerv_create: child reported error: %i\n", event.status);
                     // Best-effort cleanup of any BPF policy entries that may have been populated.
                     // This ensures containerv does not rely on external callers to clean per-container policy state.
-                    if (containerv_bpf_is_available()) {
+                    if (containerv_bpf_is_available() == CV_BPF_AVAILABLE) {
                         (void)containerv_bpf_cleanup_policy(container->id);
                     }
                     __container_delete(container);
@@ -1426,7 +1426,7 @@ int containerv_destroy(struct containerv_container* container)
 
     // Best-effort cleanup of any BPF policy entries for this container.
     // Policy is keyed by cgroup id; cleaning it up avoids long-lived pinned-map growth.
-    if (containerv_bpf_is_available()) {
+    if (containerv_bpf_is_available() == CV_BPF_AVAILABLE) {
         int bpf_status = containerv_bpf_cleanup_policy(container->id);
         if (bpf_status < 0) {
             VLOG_WARNING("containerv[host]", "failed to cleanup BPF policy for %s\n", container->id);

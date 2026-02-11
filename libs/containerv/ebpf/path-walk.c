@@ -37,52 +37,24 @@
 // import the private.h from the policies dir
 #include "../policies/private.h"
 
-struct __path_walk_ctx {
-    struct bpf_map_context* mapContext;
-    unsigned int              allowMask;
+struct __path_walk_context {
+    struct bpf_map_context* map_context;
+    unsigned int            allow_mask;
 };
 
-static struct __path_walk_ctx* __g_walk_ctx;
-
-static int __ends_with(const char* s, const char* suffix)
-{
-    size_t slen, suflen;
-    if (!s || !suffix) {
-        return 0;
-    }
-    slen = strlen(s);
-    suflen = strlen(suffix);
-    if (slen < suflen) {
-        return 0;
-    }
-    return memcmp(s + (slen - suflen), suffix, suflen) == 0;
-}
-
-static int __has_glob_chars_range(const char* s, size_t n)
-{
-    if (!s) {
-        return 0;
-    }
-    for (size_t i = 0; i < n && s[i]; i++) {
-        char c = s[i];
-        if (c == '*' || c == '?' || c == '[' || c == '+') {
-            return 1;
-        }
-    }
-    return 0;
-}
+static struct __path_walk_context* __g_walk_ctx;
 
 static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, struct FTW* ftwbuf)
 {
-    struct __path_walk_ctx* ctx = __g_walk_ctx;
-    struct stat             st;
-    int                     status;
+    struct __path_walk_context* ctx = __g_walk_ctx;
+    struct stat                 st;
+    int                         status;
 
     (void)sb;
     (void)typeflag;
     (void)ftwbuf;
 
-    if (!ctx || !ctx->mapContext) {
+    if (!ctx || !ctx->map_context) {
         return 1;
     }
 
@@ -91,7 +63,7 @@ static int __walk_cb(const char* fpath, const struct stat* sb, int typeflag, str
         return 0;
     }
 
-    status = bpf_policy_map_allow_inode(ctx->mapContext, st.st_dev, st.st_ino, ctx->allowMask);
+    status = bpf_policy_map_allow_inode(ctx->map_context, st.st_dev, st.st_ino, ctx->allow_mask);
     if (status < 0) {
         if (errno == ENOSPC) {
             VLOG_ERROR("containerv", "policy_ebpf: BPF policy map full while allowing path '%s'\n", fpath);
@@ -108,9 +80,9 @@ static int __allow_path_recursive(
     const char*               rootPath,
     unsigned int              allowMask)
 {
-    struct __path_walk_ctx ctx = {
-        .mapContext   = mapContext,
-        .allowMask = allowMask,
+    struct __path_walk_context ctx = {
+        .map_context   = mapContext,
+        .allow_mask = allowMask,
     };
 
     __g_walk_ctx = &ctx;
@@ -167,77 +139,4 @@ static int __allow_path_or_tree(
     }
 
     return __allow_single_path(mapContext, path, allowMask, 0);
-}
-
-int bpf_manager_add_allow_pattern(
-    struct bpf_map_context* mapContext,
-    const char*             pattern,
-    unsigned int            allowMask)
-{
-    size_t plen;
-    char   base[PATH_MAX];
-    char   globBuffer[PATH_MAX];
-    glob_t g;
-    int    status;
-
-    // Handle special scalable forms: /dir/* and /dir/**
-    plen = strlen(pattern);
-    if (__ends_with(pattern, "/**") && plen >= 3) {
-        snprintf(base, sizeof(base), "%.*s", (int)(plen - 3), pattern);
-        return __allow_single_path(mapContext, base, allowMask, BPF_DIR_RULE_RECURSIVE);
-    }
-    if (__ends_with(pattern, "/*") && plen >= 2) {
-        snprintf(base, sizeof(base), "%.*s", (int)(plen - 2), pattern);
-        return __allow_single_path(mapContext, base, allowMask, BPF_DIR_RULE_CHILDREN_ONLY);
-    }
-
-    // Basename-only globbing: allow pattern under parent directory inode, without requiring files to exist.
-    // Only applies when the parent path has no glob chars.
-    if (mapContext->basename_map_fd >= 0 && __has_glob_chars_range(pattern, strlen(pattern))) {
-        const char* last = strrchr(pattern, '/');
-        if (last && last[1] != 0) {
-            size_t parent_len = (size_t)(last - pattern);
-            if (!__has_glob_chars_range(pattern, parent_len)) {
-                char parent_path[PATH_MAX];
-                char base_pat[PATH_MAX];
-                struct stat st;
-
-                if (parent_len == 0) {
-                    snprintf(parent_path, sizeof(parent_path), "/");
-                } else {
-                    snprintf(parent_path, sizeof(parent_path), "%.*s", (int)parent_len, pattern);
-                }
-                snprintf(base_pat, sizeof(base_pat), "%s", last + 1);
-
-                if (strcmp(base_pat, "*") == 0) {
-                    // equivalent to children-only dir rule
-                    return __allow_single_path(mapContext, parent_path, allowMask, BPF_DIR_RULE_CHILDREN_ONLY);
-                }
-
-                struct bpf_basename_rule rule = {};
-                if (__parse_basename_rule(base_pat, allowMask, &rule) == 0) {
-                    if (stat(parent_path, &st) == 0 && S_ISDIR(st.st_mode)) {
-                        if (bpf_basename_policy_map_allow_rule(mapContext, st.st_dev, st.st_ino, &rule) == 0) {
-                            return 0;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    memset(&g, 0, sizeof(g));
-    __glob_translate_plus(pattern, globBuffer, sizeof(globBuffer));
-    status = glob(globBuffer, GLOB_NOSORT, NULL, &g);
-    if (status == 0) {
-        for (size_t i = 0; i < g.gl_pathc; i++) {
-            (void)__allow_path_or_tree(mapContext, g.gl_pathv[i], allowMask);
-        }
-        globfree(&g);
-        return 0;
-    }
-
-    globfree(&g);
-    /* If no glob matches, treat it as a literal path */
-    return __allow_path_or_tree(mapContext, pattern, allowMask);
 }

@@ -186,7 +186,7 @@ static void __initialize_bpf(void)
         return;
     }
 
-    if (!containerv_bpf_is_available()) {
+    if (containerv_bpf_is_available() != CV_BPF_AVAILABLE) {
         VLOG_DEBUG("cvd", "BPF LSM is not available on this system, containers will use seccomp fallback\n");
         return;
     }
@@ -202,8 +202,8 @@ static void __initialize_bpf(void)
     if (containerv_bpf_get_metrics(&metrics) == 0) {
         VLOG_DEBUG("cvd", 
             "BPF Policy Metrics - Containers: %d, Total Entries: %d, Capacity: %d\n",
-            metrics.total_containers,
-            metrics.total_policy_entries,
+            metrics.container_count,
+            metrics.policy_entry_count,
             metrics.max_map_capacity
         );
     }

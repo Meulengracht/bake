@@ -15,16 +15,11 @@ add_subdirectory(pid1d)
 # Add rootfs and disk utilities
 add_subdirectory(disk)
 
-set(CV_SRCS shared.c)
-set(ADDITIONAL_LIBS containerv-disk containerv-pid1)
-if(LIBBPF_INCLUDE_DIR AND LIBBPF_LIBRARY)
-    add_subdirectory(ebpf)
-    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-ebpf)
-else()
-    message(WARNING "libbpf not found. BPF-based features will be disabled.")
-    set(CV_SRCS ${CV_SRCS} bpf-stub.c)
-endif()
+# Add BPF-related sources and libraries
+add_subdirectory(ebpf)
 
+set(CV_SRCS shared.c)
+set(ADDITIONAL_LIBS containerv-ebpf containerv-disk containerv-pid1)
 if (UNIX)
     add_subdirectory(linux)
     add_subdirectory(policies)

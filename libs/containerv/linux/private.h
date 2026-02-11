@@ -195,12 +195,4 @@ extern void __containerv_destroy(struct containerv_container* container);
 
 extern int policy_seccomp_apply(struct containerv_policy* policy);
 
-// imported from ebpf/private.h
-struct bpf_map_context;
-
-extern int bpf_manager_add_allow_pattern(
-    struct bpf_map_context* bpf_ctx,
-    const char*                pattern,
-    unsigned int               allowMask);
-
 #endif //!__PRIVATE_H__

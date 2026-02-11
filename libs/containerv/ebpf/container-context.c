@@ -116,7 +116,6 @@ static int __ensure_capacity_sized(void** keys, int* count, int* capacity, size_
 
 int bpf_container_context_add_tracked_file_entry(
     struct bpf_container_context* context,
-    unsigned long long            cgroupId,
     dev_t                         dev,
     ino_t                         ino)
 {
@@ -134,7 +133,7 @@ int bpf_container_context_add_tracked_file_entry(
     
     // Add the key
     key = &context->file.file_keys[context->file.file_key_count];
-    key->cgroup_id = cgroupId;
+    key->cgroup_id = context->cgroup_id;
     key->dev = (unsigned long long)dev;
     key->ino = (unsigned long long)ino;
     context->file.file_key_count++;
@@ -144,7 +143,6 @@ int bpf_container_context_add_tracked_file_entry(
 
 int bpf_container_context_add_tracked_dir_entry(
     struct bpf_container_context* context,
-    unsigned long long            cgroupId,
     dev_t                         dev,
     ino_t                         ino)
 {
@@ -161,7 +159,7 @@ int bpf_container_context_add_tracked_dir_entry(
     }
 
     key = &context->file.dir_keys[context->file.dir_key_count];
-    key->cgroup_id = cgroupId;
+    key->cgroup_id = context->cgroup_id;
     key->dev = (unsigned long long)dev;
     key->ino = (unsigned long long)ino;
     context->file.dir_key_count++;
@@ -170,7 +168,6 @@ int bpf_container_context_add_tracked_dir_entry(
 
 int bpf_container_context_add_tracked_basename_entry(
     struct bpf_container_context* context,
-    unsigned long long            cgroupId,
     dev_t                         dev,
     ino_t                         ino)
 {
@@ -182,7 +179,7 @@ int bpf_container_context_add_tracked_basename_entry(
 
     // Avoid duplicates (we delete per-dir key as a whole)
     for (int i = 0; i < context->file.basename_key_count; i++) {
-        if (context->file.basename_keys[i].cgroup_id == cgroupId &&
+        if (context->file.basename_keys[i].cgroup_id == context->cgroup_id &&
             context->file.basename_keys[i].dev == (unsigned long long)dev &&
             context->file.basename_keys[i].ino == (unsigned long long)ino) {
             return 0;
@@ -196,7 +193,7 @@ int bpf_container_context_add_tracked_basename_entry(
     }
 
     key = &context->file.basename_keys[context->file.basename_key_count];
-    key->cgroup_id = cgroupId;
+    key->cgroup_id = context->cgroup_id;
     key->dev = (unsigned long long)dev;
     key->ino = (unsigned long long)ino;
     context->file.basename_key_count++;
@@ -486,24 +483,24 @@ static void __glob_translate_plus(const char* in, char* out, size_t outSize)
 static int __apply_single_path(
     struct bpf_map_context*       mapContext,
     struct bpf_container_context* containerContext,
-    const char* resolved_path,
-    unsigned int allow_mask,
-    unsigned int dir_flags)
+    const char*                   resolvedPath,
+    unsigned int                  allowMask,
+    unsigned int                  directoryFlags)
 {
     struct stat st;
-    if (stat(resolved_path, &st) < 0) {
+    if (stat(resolvedPath, &st) < 0) {
         return -1;
     }
 
     if (S_ISDIR(st.st_mode)) {
-        if (bpf_dir_policy_map_allow_dir(mapContext, st.st_dev, st.st_ino, allow_mask, dir_flags) < 0) {
+        if (bpf_dir_policy_map_allow_dir(mapContext, st.st_dev, st.st_ino, allowMask, directoryFlags) < 0) {
             return -1;
         }
         (void)bpf_container_context_add_tracked_dir_entry(containerContext, st.st_dev, st.st_ino);
         return 0;
     }
 
-    if (bpf_policy_map_allow_inode(mapContext, st.st_dev, st.st_ino, allow_mask) < 0) {
+    if (bpf_policy_map_allow_inode(mapContext, st.st_dev, st.st_ino, allowMask) < 0) {
         return -1;
     }
     (void)bpf_container_context_add_tracked_file_entry(containerContext, st.st_dev, st.st_ino);
@@ -517,20 +514,20 @@ void bpf_container_context_apply_paths(
     const char*                   rootfsPath)
 {
     for (int i = 0; i < policy->path_count; i++) {
-        const char* path = policy->paths[i].path;
-        unsigned int allow_mask = (unsigned int)policy->paths[i].access &
+        const char*  path = policy->paths[i].path;
+        unsigned int allowMask = (unsigned int)policy->paths[i].access &
                                     (BPF_PERM_READ | BPF_PERM_WRITE | BPF_PERM_EXEC);
-        char full_path[PATH_MAX];
-        size_t root_len, path_len;
-        int status;
+        char         fullPath[PATH_MAX];
+        size_t       rootLength, pathLength;
+        int          status;
 
         if (!path) {
             continue;
         }
 
-        root_len = strlen(rootfsPath);
-        path_len = strlen(path);
-        if (root_len + path_len >= sizeof(full_path)) {
+        rootLength = strlen(rootfsPath);
+        pathLength = strlen(path);
+        if (rootLength + pathLength >= sizeof(fullPath)) {
             VLOG_WARNING("cvd",
                             "bpf_manager: combined rootfs path and policy path too long, skipping (rootfs=\"%s\", path=\"%s\")\n",
                             rootfsPath, path);
@@ -539,13 +536,13 @@ void bpf_container_context_apply_paths(
 
         if (__ends_with(path, "/**")) {
             char base[PATH_MAX];
-            snprintf(base, sizeof(base), "%.*s", (int)(path_len - 3), path);
-            snprintf(full_path, sizeof(full_path), "%s%s", rootfsPath, base);
+            snprintf(base, sizeof(base), "%.*s", (int)(pathLength - 3), path);
+            snprintf(fullPath, sizeof(fullPath), "%s%s", rootfsPath, base);
             status = __apply_single_path(
                 mapContext,
                 containerContext,
-                full_path,
-                allow_mask,
+                fullPath,
+                allowMask,
                 BPF_DIR_RULE_RECURSIVE
             );
             if (status) {
@@ -556,16 +553,16 @@ void bpf_container_context_apply_paths(
 
         if (__ends_with(path, "/*")) {
             char base[PATH_MAX];
-            snprintf(base, sizeof(base), "%.*s", (int)(path_len - 2), path);
-            snprintf(full_path, sizeof(full_path), "%s%s", rootfsPath, base);
-            status = __apply_single_path(mapContext, containerContext, full_path, allow_mask, BPF_DIR_RULE_CHILDREN_ONLY);
+            snprintf(base, sizeof(base), "%.*s", (int)(pathLength - 2), path);
+            snprintf(fullPath, sizeof(fullPath), "%s%s", rootfsPath, base);
+            status = __apply_single_path(mapContext, containerContext, fullPath, allowMask, BPF_DIR_RULE_CHILDREN_ONLY);
             if (status) {
                 VLOG_WARNING("cvd", "bpf_manager: failed to apply dir children rule for %s: %s\n", path, strerror(errno));
             }
             continue;
         }
 
-        snprintf(full_path, sizeof(full_path), "%s%s", rootfsPath, path);
+        snprintf(fullPath, sizeof(fullPath), "%s%s", rootfsPath, path);
         if (__has_glob_chars(path)) {
             const char* last = strrchr(path, '/');
             if (last && last[1] != 0) {
@@ -585,12 +582,12 @@ void bpf_container_context_apply_paths(
 
                     if (strcmp(base_pat, "*") == 0) {
                         snprintf(parent_abs, sizeof(parent_abs), "%s%s", rootfsPath, parent_rel);
-                        if (__apply_single_path(mapContext, containerContext, parent_abs, allow_mask, BPF_DIR_RULE_CHILDREN_ONLY) == 0) {
+                        if (__apply_single_path(mapContext, containerContext, parent_abs, allowMask, BPF_DIR_RULE_CHILDREN_ONLY) == 0) {
                             continue;
                         }
                     } else {
                         struct bpf_basename_rule rule = {};
-                        if (__parse_basename_rule(base_pat, allow_mask, &rule) == 0) {
+                        if (__parse_basename_rule(base_pat, allowMask, &rule) == 0) {
                             snprintf(parent_abs, sizeof(parent_abs), "%s%s", rootfsPath, parent_rel);
                             if (stat(parent_abs, &st) == 0 && S_ISDIR(st.st_mode)) {
                                 if (bpf_basename_policy_map_allow_rule(mapContext, st.st_dev, st.st_ino, &rule) == 0) {
@@ -604,13 +601,13 @@ void bpf_container_context_apply_paths(
             }
 
             char glob_path[PATH_MAX];
-            __glob_translate_plus(full_path, glob_path, sizeof(glob_path));
+            __glob_translate_plus(fullPath, glob_path, sizeof(glob_path));
             glob_t g;
             memset(&g, 0, sizeof(g));
             int gstatus = glob(glob_path, GLOB_NOSORT, NULL, &g);
             if (gstatus == 0) {
                 for (size_t j = 0; j < g.gl_pathc; j++) {
-                    if (__apply_single_path(mapContext, containerContext, g.gl_pathv[j], allow_mask, BPF_DIR_RULE_RECURSIVE) == 0) {
+                    if (__apply_single_path(mapContext, containerContext, g.gl_pathv[j], allowMask, BPF_DIR_RULE_RECURSIVE) == 0) {
                     }
                 }
                 globfree(&g);
@@ -619,7 +616,7 @@ void bpf_container_context_apply_paths(
             globfree(&g);
         }
 
-        status = __apply_single_path(mapContext, containerContext, full_path, allow_mask, BPF_DIR_RULE_RECURSIVE);
+        status = __apply_single_path(mapContext, containerContext, fullPath, allowMask, BPF_DIR_RULE_RECURSIVE);
         if (status) {
             VLOG_WARNING("cvd", "bpf_manager: failed to apply rule for %s: %s\n", path, strerror(errno));
         }
@@ -667,7 +664,7 @@ void bpf_container_context_apply_net(
             ukey.protocol = (unsigned int)rule->protocol;
             snprintf(ukey.path, sizeof(ukey.path), "%s", rule->unix_path);
 
-            if (bpf_net_unix_map_allow(mapContext->net_unix_map_fd, &ukey, tuple_mask) == 0) {
+            if (bpf_net_unix_map_allow(mapContext, &ukey, tuple_mask) == 0) {
                 (void)bpf_container_context_add_tracked_net_unix_entry(containerContext, &ukey);
             } else {
                 VLOG_WARNING("cvd", "bpf_manager: failed to apply net unix rule (%s): %s\n",
@@ -691,7 +688,7 @@ void bpf_container_context_apply_net(
             memcpy(tkey.addr, rule->addr, rule->addr_len);
         }
 
-        if (bpf_net_tuple_map_allow(mapContext->net_tuple_map_fd, &tkey, tuple_mask) == 0) {
+        if (bpf_net_tuple_map_allow(mapContext, &tkey, tuple_mask) == 0) {
             (void)bpf_container_context_add_tracked_net_tuple_entry(containerContext, &tkey);
         } else {
             VLOG_WARNING("cvd", "bpf_manager: failed to apply net tuple rule (family=%d type=%d proto=%d): %s\n",
