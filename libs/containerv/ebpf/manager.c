@@ -461,31 +461,6 @@ static int __load_fs_program(void)
         VLOG_DEBUG("cvd", "bpf_manager: basename policy map pinned to %s\n", BASENAME_POLICY_MAP_PIN_PATH);
     }
 
-    if (g_bpf.fs_skel->links.file_open_restrict != NULL) {
-        (void)unlink(POLICY_LINK_PIN_PATH);
-        status = bpf_link__pin(g_bpf.fs_skel->links.file_open_restrict, POLICY_LINK_PIN_PATH);
-    }
-
-    if (g_bpf.fs_skel->links.file_open_restrict == NULL) {
-        VLOG_WARNING("cvd", "bpf_manager: no BPF link for file_open_restrict; cannot pin enforcement link\n");
-    } else if (status < 0) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to pin enforcement link to %s: %s\n",
-                        POLICY_LINK_PIN_PATH, strerror(errno));
-    } else {
-        VLOG_DEBUG("cvd", "bpf_manager: enforcement link pinned to %s\n", POLICY_LINK_PIN_PATH);
-    }
-
-    if (g_bpf.fs_skel->links.bprm_check_security_restrict != NULL) {
-        (void)unlink(EXEC_LINK_PIN_PATH);
-        status = bpf_link__pin(g_bpf.fs_skel->links.bprm_check_security_restrict, EXEC_LINK_PIN_PATH);
-        if (status < 0) {
-            VLOG_WARNING("cvd", "bpf_manager: failed to pin exec enforcement link to %s: %s\n",
-                            EXEC_LINK_PIN_PATH, strerror(errno));
-        } else {
-            VLOG_DEBUG("cvd", "bpf_manager: exec enforcement link pinned to %s\n", EXEC_LINK_PIN_PATH);
-        }
-    }
-
     if (g_bpf.fs_skel->maps.deny_events != NULL) {
         int deny_fd = bpf_map__fd(g_bpf.fs_skel->maps.deny_events);
         if (deny_fd >= 0) {
@@ -495,7 +470,7 @@ static int __load_fs_program(void)
             }
         }
     }
-    return status;
+    return 0;
 }
 
 static int __load_net_program(void)
@@ -510,41 +485,78 @@ static int __load_net_program(void)
     
     VLOG_DEBUG("cvd", "bpf_manager: net BPF skeleton opened\n");
 
+    int reused_create = __reuse_pinned_map_or_unpin(
+        g_bpf.net_skel->maps.net_create_map,
+        NET_CREATE_MAP_PIN_PATH,
+        BPF_MAP_TYPE_HASH,
+        sizeof(struct bpf_net_create_key),
+        sizeof(struct bpf_net_policy_value));
+    int reused_tuple = __reuse_pinned_map_or_unpin(
+        g_bpf.net_skel->maps.net_tuple_map,
+        NET_TUPLE_MAP_PIN_PATH,
+        BPF_MAP_TYPE_HASH,
+        sizeof(struct bpf_net_tuple_key),
+        sizeof(struct bpf_net_policy_value));
+    int reused_unix = __reuse_pinned_map_or_unpin(
+        g_bpf.net_skel->maps.net_unix_map,
+        NET_UNIX_MAP_PIN_PATH,
+        BPF_MAP_TYPE_HASH,
+        sizeof(struct bpf_net_unix_key),
+        sizeof(struct bpf_net_policy_value));
+
     status = net_lsm_bpf__load(g_bpf.net_skel);
     if (status) {
         VLOG_ERROR("cvd", "bpf_manager: failed to load net BPF skeleton: %d\n", status);
         net_lsm_bpf__destroy(g_bpf.net_skel);
         g_bpf.net_skel = NULL;
-        if (g_bpf.fs_skel == NULL) {
-            return -1;
-        }
+        return -1;
+    }
+
+    status = net_lsm_bpf__attach(g_bpf.net_skel);
+    if (status) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to attach net BPF LSM program: %d\n", status);
+        net_lsm_bpf__destroy(g_bpf.net_skel);
+        g_bpf.net_skel = NULL;
+        return -1;
+    }
+
+    g_bpf.net_create_map_fd = bpf_map__fd(g_bpf.net_skel->maps.net_create_map);
+    g_bpf.net_tuple_map_fd = bpf_map__fd(g_bpf.net_skel->maps.net_tuple_map);
+    g_bpf.net_unix_map_fd = bpf_map__fd(g_bpf.net_skel->maps.net_unix_map);
+    if (g_bpf.net_create_map_fd < 0 ||
+        g_bpf.net_tuple_map_fd < 0 ||
+        g_bpf.net_unix_map_fd < 0) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to get net policy map fds\n");
+        net_lsm_bpf__destroy(g_bpf.net_skel);
+        g_bpf.net_skel = NULL;
+        g_bpf.net_create_map_fd = -1;
+        g_bpf.net_tuple_map_fd = -1;
+        g_bpf.net_unix_map_fd = -1;
+        return -1;
+    }
+
+    status = __pin_map_best_effort(g_bpf.net_create_map_fd, NET_CREATE_MAP_PIN_PATH, reused_create);
+    if (status < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to pin net create map to %s: %s\n",
+                     NET_CREATE_MAP_PIN_PATH, strerror(errno));
     } else {
-        status = net_lsm_bpf__attach(g_bpf.net_skel);
-        if (status) {
-            VLOG_ERROR("cvd", "bpf_manager: failed to attach net BPF LSM program: %d\n", status);
-            net_lsm_bpf__destroy(g_bpf.net_skel);
-            g_bpf.net_skel = NULL;
-            if (g_bpf.fs_skel == NULL) {
-                return -1;
-            }
-        } else {
-            g_bpf.net_create_map_fd = bpf_map__fd(g_bpf.net_skel->maps.net_create_map);
-            g_bpf.net_tuple_map_fd = bpf_map__fd(g_bpf.net_skel->maps.net_tuple_map);
-            g_bpf.net_unix_map_fd = bpf_map__fd(g_bpf.net_skel->maps.net_unix_map);
-            if (g_bpf.net_create_map_fd < 0 ||
-                g_bpf.net_tuple_map_fd < 0 ||
-                g_bpf.net_unix_map_fd < 0) {
-                VLOG_ERROR("cvd", "bpf_manager: failed to get net policy map fds\n");
-                net_lsm_bpf__destroy(g_bpf.net_skel);
-                g_bpf.net_skel = NULL;
-                g_bpf.net_create_map_fd = -1;
-                g_bpf.net_tuple_map_fd = -1;
-                g_bpf.net_unix_map_fd = -1;
-                if (g_bpf.fs_skel == NULL) {
-                    return -1;
-                }
-            }
-        }
+        VLOG_DEBUG("cvd", "bpf_manager: net create map pinned to %s\n", NET_CREATE_MAP_PIN_PATH);
+    }
+
+    status = __pin_map_best_effort(g_bpf.net_tuple_map_fd, NET_TUPLE_MAP_PIN_PATH, reused_tuple);
+    if (status < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to pin net tuple map to %s: %s\n",
+                     NET_TUPLE_MAP_PIN_PATH, strerror(errno));
+    } else {
+        VLOG_DEBUG("cvd", "bpf_manager: net tuple map pinned to %s\n", NET_TUPLE_MAP_PIN_PATH);
+    }
+
+    status = __pin_map_best_effort(g_bpf.net_unix_map_fd, NET_UNIX_MAP_PIN_PATH, reused_unix);
+    if (status < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to pin net unix map to %s: %s\n",
+                     NET_UNIX_MAP_PIN_PATH, strerror(errno));
+    } else {
+        VLOG_DEBUG("cvd", "bpf_manager: net unix map pinned to %s\n", NET_UNIX_MAP_PIN_PATH);
     }
 
     if (g_bpf.net_skel->maps.deny_events != NULL) {
@@ -556,7 +568,7 @@ static int __load_net_program(void)
             }
         }
     }
-    return status;
+    return 0;
 }
 
 #endif /* HAVE_BPF_SKELETON */
@@ -583,6 +595,52 @@ static void __start_denial_thread(void)
         ring_buffer__free(g_bpf.net_denials);
         g_bpf.net_denials = NULL;
     }
+}
+
+static int __verify_net_map_writable(int map_fd, const void* key, const char* name)
+{
+    struct bpf_net_policy_value value = { .allow_mask = BPF_NET_CREATE };
+
+    if (map_fd < 0 || key == NULL || name == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (bpf_map_update_elem(map_fd, key, &value, BPF_ANY) < 0) {
+        VLOG_ERROR("cvd", "bpf_manager: net map %s not writable: %s\n", name, strerror(errno));
+        return -1;
+    }
+
+    if (bpf_map_delete_elem(map_fd, key) < 0) {
+        VLOG_ERROR("cvd", "bpf_manager: net map %s delete failed: %s\n", name, strerror(errno));
+        return -1;
+    }
+
+    return 0;
+}
+
+static int __verify_net_maps_writable(void)
+{
+    struct bpf_net_create_key create_key = {0};
+    struct bpf_net_tuple_key tuple_key = {0};
+    struct bpf_net_unix_key unix_key = {0};
+
+    create_key.cgroup_id = ~0ULL;
+    tuple_key.cgroup_id = ~0ULL;
+    unix_key.cgroup_id = ~0ULL;
+    snprintf(unix_key.path, sizeof(unix_key.path), "cvd_probe");
+
+    if (__verify_net_map_writable(g_bpf.net_create_map_fd, &create_key, "net_create_map") < 0) {
+        return -1;
+    }
+    if (__verify_net_map_writable(g_bpf.net_tuple_map_fd, &tuple_key, "net_tuple_map") < 0) {
+        return -1;
+    }
+    if (__verify_net_map_writable(g_bpf.net_unix_map_fd, &unix_key, "net_unix_map") < 0) {
+        return -1;
+    }
+
+    return 0;
 }
 
 int containerv_bpf_initialize(void)
@@ -622,6 +680,36 @@ int containerv_bpf_initialize(void)
     status = __load_net_program();
     if (status) {
         VLOG_ERROR("cvd", "bpf_manager: failed to load net BPF program\n");
+        return status;
+    }
+
+    status = __verify_net_maps_writable();
+    if (status) {
+        VLOG_ERROR("cvd", "bpf_manager: net policy maps are not writable\n");
+        __cleanup_fs_program();
+        __cleanup_net_program();
+        if (g_bpf.fs_denials) {
+            ring_buffer__free(g_bpf.fs_denials);
+            g_bpf.fs_denials = NULL;
+        }
+        if (g_bpf.net_denials) {
+            ring_buffer__free(g_bpf.net_denials);
+            g_bpf.net_denials = NULL;
+        }
+        if (g_bpf.fs_skel) {
+            fs_lsm_bpf__destroy(g_bpf.fs_skel);
+            g_bpf.fs_skel = NULL;
+        }
+        if (g_bpf.net_skel) {
+            net_lsm_bpf__destroy(g_bpf.net_skel);
+            g_bpf.net_skel = NULL;
+        }
+        g_bpf.policy_map_fd = -1;
+        g_bpf.dir_policy_map_fd = -1;
+        g_bpf.basename_policy_map_fd = -1;
+        g_bpf.net_create_map_fd = -1;
+        g_bpf.net_tuple_map_fd = -1;
+        g_bpf.net_unix_map_fd = -1;
         return status;
     }
     
@@ -664,22 +752,27 @@ void __cleanup_fs_program(void)
         VLOG_WARNING("cvd", "bpf_manager: failed to unpin basename policy map: %s\n",
                         strerror(errno));
     }
-
-    if (unlink(POLICY_LINK_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin enforcement link: %s\n",
-                        strerror(errno));
-    }
-
-    if (unlink(EXEC_LINK_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin exec enforcement link: %s\n",
-                        strerror(errno));
-    }
 }
 
 void __cleanup_net_program(void)
 {
     if (g_bpf.net_skel == NULL) {
         return;
+    }
+
+    if (unlink(NET_CREATE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net create map: %s\n",
+                     strerror(errno));
+    }
+
+    if (unlink(NET_TUPLE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net tuple map: %s\n",
+                     strerror(errno));
+    }
+
+    if (unlink(NET_UNIX_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net unix map: %s\n",
+                     strerror(errno));
     }
 }
 

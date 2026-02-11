@@ -161,38 +161,43 @@ int bpf_check_lsm_available(void)
     return available;
 }
 
+static int __safe_close(int fd)
+{
+    if (fd >= 0) {
+        return close(fd);
+    }
+    return 0;
+}
+
 int containerv_bpf_sanity_check_pins(void)
 {
     int map_fd = bpf_obj_get("/sys/fs/bpf/cvd/policy_map");
     int dir_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/dir_policy_map");
     int basename_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/basename_policy_map");
-    int link_fd = bpf_obj_get("/sys/fs/bpf/cvd/fs_lsm_link");
-    int exec_link_fd = bpf_obj_get("/sys/fs/bpf/cvd/fs_lsm_exec_link");
+    int net_create_fd = bpf_obj_get("/sys/fs/bpf/cvd/net_create_map");
+    int net_tuple_fd = bpf_obj_get("/sys/fs/bpf/cvd/net_tuple_map");
+    int net_unix_fd = bpf_obj_get("/sys/fs/bpf/cvd/net_unix_map");
 
-    if (map_fd >= 0) {
-        close(map_fd);
-    }
-    if (dir_map_fd >= 0) {
-        close(dir_map_fd);
-    }
-    if (basename_map_fd >= 0) {
-        close(basename_map_fd);
-    }
-    if (link_fd >= 0) {
-        close(link_fd);
-    }
-    if (exec_link_fd >= 0) {
-        close(exec_link_fd);
-    }
+    __safe_close(map_fd);
+    __safe_close(dir_map_fd);
+    __safe_close(basename_map_fd);
+    __safe_close(net_create_fd);
+    __safe_close(net_tuple_fd);
+    __safe_close(net_unix_fd);
 
-    if (map_fd < 0 || dir_map_fd < 0 || link_fd < 0) {
+    if (map_fd < 0 || dir_map_fd < 0 || basename_map_fd < 0 || 
+        net_create_fd < 0 || net_tuple_fd < 0 || net_unix_fd < 0) {
         VLOG_WARNING("containerv",
-                     "BPF LSM sanity check failed (pinned map=%s, pinned dir_map=%s, pinned link=%s, pinned basename_map=%s). "
+                     "BPF LSM sanity check failed (pinned map=%s, pinned dir_map=%s, pinned link=%s, pinned basename_map=%s, "
+                     "pinned net_create=%s, pinned net_tuple=%s, pinned net_unix=%s). "
                      "Enforcement may be misconfigured or stale pins exist.\n",
                      (map_fd >= 0) ? "ok" : "missing",
                      (dir_map_fd >= 0) ? "ok" : "missing",
-                     (link_fd >= 0) ? "ok" : "missing",
-                     (basename_map_fd >= 0) ? "ok" : "missing");
+                     (basename_map_fd >= 0) ? "ok" : "missing",
+                     (basename_map_fd >= 0) ? "ok" : "missing",
+                     (net_create_fd >= 0) ? "ok" : "missing",
+                     (net_tuple_fd >= 0) ? "ok" : "missing",
+                     (net_unix_fd >= 0) ? "ok" : "missing");
         errno = ENOENT;
         return -1;
     }

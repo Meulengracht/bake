@@ -66,8 +66,11 @@ struct bpf_dir_policy_value {
 #define POLICY_MAP_PIN_PATH BPF_PIN_PATH "/policy_map"
 #define DIR_POLICY_MAP_PIN_PATH BPF_PIN_PATH "/dir_policy_map"
 #define BASENAME_POLICY_MAP_PIN_PATH BPF_PIN_PATH "/basename_policy_map"
-#define POLICY_LINK_PIN_PATH BPF_PIN_PATH "/fs_lsm_link"
-#define EXEC_LINK_PIN_PATH BPF_PIN_PATH "/fs_lsm_exec_link"
+
+#define NET_CREATE_MAP_PIN_PATH BPF_PIN_PATH "/net_create_map"
+#define NET_TUPLE_MAP_PIN_PATH BPF_PIN_PATH "/net_tuple_map"
+#define NET_UNIX_MAP_PIN_PATH BPF_PIN_PATH "/net_unix_map"
+
 #define MAX_TRACKED_ENTRIES 10240
 
 enum bpf_basename_token_type {

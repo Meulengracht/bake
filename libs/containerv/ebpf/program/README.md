@@ -1,4 +1,4 @@
-# BPF LSM Programs for Container Filesystem Enforcement
+# BPF LSM Programs for Container Filesystem and Network Enforcement
 
 This directory contains BPF LSM programs for enforcing container-specific filesystem and network access policies.
 
@@ -52,7 +52,7 @@ If clang or bpftool are not found, the build continues without BPF programs (sec
 
 ### Policy Map
 
-The BPF program uses a hash map to store deny rules:
+The BPF program uses a hash map to store allow rules:
 
 ```c
 struct policy_key {
@@ -62,7 +62,7 @@ struct policy_key {
 };
 
 struct policy_value {
-    __u32 deny_mask;  // Bitmask: 0x1=READ, 0x2=WRITE, 0x4=EXEC
+   __u32 allow_mask;  // Bitmask: 0x1=READ, 0x2=WRITE, 0x4=EXEC
 };
 ```
 
@@ -70,9 +70,9 @@ struct policy_value {
 
 1. **Container Creation**:
    - Container is placed in a cgroup (e.g., `/sys/fs/cgroup/container-01`)
-   - Policy deny rules are added for specific paths
+   - Policy allow rules are added for specific paths
    - Paths are resolved to (dev, ino) tuples
-   - Map entries are created: `(cgroup_id, dev, ino) → deny_mask`
+   - Map entries are created: `(cgroup_id, dev, ino) → allow_mask`
 
 2. **File Open**:
    - Process in container opens a file
@@ -81,8 +81,8 @@ struct policy_value {
      - Cgroup ID from calling process
      - Device and inode from file being opened
    - Looks up `(cgroup_id, dev, ino)` in policy map
-   - If found and requested operation is denied: returns -EACCES
-   - Otherwise: allows the operation (default-allow)
+   - If found and requested operation is allowed: returns 0
+   - Otherwise: denies the operation (default-deny)
 
 3. **Container Cleanup**:
    - Map entries for the container are removed
@@ -91,51 +91,25 @@ struct policy_value {
 ## Current Implementation Status
 
 ### Implemented ✅
-- BPF program structure and policy map
-- Build system integration
-- Skeleton generation
-- Policy map key/value definitions
-- Cgroup ID-based isolation
+- BPF LSM program loading/attaching (fs + net)
+- Runtime map population and per-container cleanup
+- Allow-mask enforcement for read/write/exec and network operations
+- Deny event ring buffer logging
 
 ### In Progress 🚧
-- Full vmlinux.h generation for accessing kernel structures
-- Actual enforcement logic in BPF program (currently placeholder)
-- BPF program loading and attaching in policy-ebpf.c
-- Runtime map population
-
-### TODO 📋
-- Complete kernel struct access via vmlinux.h or BTF
-- Implement exec permission enforcement
-- Add audit logging support
-- Performance counters and statistics
-- Dynamic policy updates
+- Audit/telemetry expansion
+- Extended pattern support for basename matching
 
 ## Limitations
 
-### First Slice Limitations
-
-This is the initial implementation focusing on infrastructure:
-
-1. **Placeholder Enforcement**: The BPF program compiles but doesn't yet enforce policies (requires vmlinux.h for accessing `struct file` and `struct inode`)
-
-2. **No Runtime Loading**: The skeleton is generated but not yet used to load/attach programs (coming in next commits)
-
-3. **Read/Write Only**: Exec enforcement will be added in a future update
-
-### Workarounds
-
-The system is designed to gracefully handle missing BPF LSM:
-- Falls back to seccomp for syscall filtering
-- Logs warning when BPF LSM is unavailable
-- No application code changes needed
+- Basename matching supports a restricted pattern subset to stay verifier-friendly.
+- Enforcement requires BPF LSM support; when unavailable, the system falls back to seccomp filtering.
 
 ## Future Enhancements
 
 ### Near Term
-- Complete vmlinux.h generation for CO-RE
-- Wire up BPF program loading in policy-ebpf.c
-- Add per-container map population
-- Test enforcement with real workloads
+- Add policy-driven telemetry and counters
+- Expand test coverage for fs/net enforcement
 
 ### Long Term
 - Exec permission enforcement
