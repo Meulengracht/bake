@@ -4,6 +4,7 @@ add_subdirectory(platform)
 add_subdirectory(vlog)
 add_subdirectory(dirconf)
 add_subdirectory(common)
+add_subdirectory(protecc)
 add_subdirectory(containerv)
 
 # Build utility libraries before the system libraries
