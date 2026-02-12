@@ -6,7 +6,6 @@
 #include <protecc/protecc.h>
 #include <stdio.h>
 #include <string.h>
-#include <assert.h>
 
 #define TEST_ASSERT(cond, msg) \
     do { \

@@ -78,7 +78,11 @@ void protecc_charset_set_range(protecc_charset_t* charset, char start, char end)
     if (!charset) {
         return;
     }
-    for (int c = (unsigned char)start; c <= (unsigned char)end; c++) {
+    // Handle unsigned char properly to avoid overflow at 255
+    unsigned char ustart = (unsigned char)start;
+    unsigned char uend = (unsigned char)end;
+    for (unsigned int c = ustart; c <= uend; c++) {
         protecc_charset_set(charset, (unsigned char)c);
+        if (c == 255) break; // Prevent overflow
     }
 }
