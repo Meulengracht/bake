@@ -22,7 +22,7 @@
 #include <bpf/bpf_helpers.h>
 
 #ifndef LSM_DENY_NAME_MAX
-#define LSM_DENY_NAME_MAX 32
+#define LSM_DENY_NAME_MAX 64
 #endif
 
 enum deny_hook_id {

@@ -643,6 +643,50 @@ static int __verify_net_maps_writable(void)
     return 0;
 }
 
+void __cleanup_fs_program(void)
+{
+    if (g_bpf.fs_skel == NULL) {
+        return;
+    }
+
+    if (unlink(POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin policy map: %s\n",
+                    strerror(errno));
+    }
+
+    if (unlink(DIR_POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin dir policy map: %s\n",
+                        strerror(errno));
+    }
+
+    if (unlink(BASENAME_POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin basename policy map: %s\n",
+                        strerror(errno));
+    }
+}
+
+void __cleanup_net_program(void)
+{
+    if (g_bpf.net_skel == NULL) {
+        return;
+    }
+
+    if (unlink(NET_CREATE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net create map: %s\n",
+                     strerror(errno));
+    }
+
+    if (unlink(NET_TUPLE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net tuple map: %s\n",
+                     strerror(errno));
+    }
+
+    if (unlink(NET_UNIX_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net unix map: %s\n",
+                     strerror(errno));
+    }
+}
+
 int containerv_bpf_initialize(void)
 {
 #ifndef HAVE_BPF_SKELETON
@@ -730,50 +774,6 @@ void __stop_denial_thread(void)
     g_bpf.deny_thread_stop = 1;
     (void)thrd_join(g_bpf.deny_thread, NULL);
     g_bpf.deny_thread_running = 0;
-}
-
-void __cleanup_fs_program(void)
-{
-    if (g_bpf.fs_skel == NULL) {
-        return;
-    }
-
-    if (unlink(POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin policy map: %s\n",
-                    strerror(errno));
-    }
-
-    if (unlink(DIR_POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin dir policy map: %s\n",
-                        strerror(errno));
-    }
-
-    if (unlink(BASENAME_POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin basename policy map: %s\n",
-                        strerror(errno));
-    }
-}
-
-void __cleanup_net_program(void)
-{
-    if (g_bpf.net_skel == NULL) {
-        return;
-    }
-
-    if (unlink(NET_CREATE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net create map: %s\n",
-                     strerror(errno));
-    }
-
-    if (unlink(NET_TUPLE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net tuple map: %s\n",
-                     strerror(errno));
-    }
-
-    if (unlink(NET_UNIX_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net unix map: %s\n",
-                     strerror(errno));
-    }
 }
 
 void containerv_bpf_shutdown(void)

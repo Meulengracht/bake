@@ -73,7 +73,8 @@ enum containerv_net_access {
  * @brief Network allow rule (tuple-based)
  *
  * Use AF_* for family, SOCK_* for type, and IPPROTO_* for protocol.
- * For AF_UNIX, set unix_path. For AF_INET/AF_INET6, set addr/addr_len and port.
+ * For AF_UNIX, set unix_path. Use "@name" for abstract sockets and "/path" for
+ * normal ones. For AF_INET/AF_INET6, set addr/addr_len and port.
  * For INET, addr is in network byte order; port is in host byte order.
  */
 struct containerv_net_rule {

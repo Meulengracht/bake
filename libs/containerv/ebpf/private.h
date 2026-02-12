@@ -58,7 +58,7 @@ struct bpf_dir_policy_value {
 
 /* Basename matcher support (must match BPF program) */
 #define BPF_BASENAME_RULE_MAX 8
-#define BPF_BASENAME_MAX_STR  32
+#define BPF_BASENAME_MAX_STR  64
 
 #define BPF_BASENAME_TOKEN_MAX 6
 
@@ -119,6 +119,9 @@ struct bpf_net_unix_key {
     unsigned long long cgroup_id;
     unsigned int       type;
     unsigned int       protocol;
+    unsigned int       path_len;
+    unsigned char      is_abstract;
+    unsigned char      _pad[3];
     char               path[BPF_NET_UNIX_PATH_MAX];
 };
 

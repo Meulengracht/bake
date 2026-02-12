@@ -18,22 +18,11 @@
 
 #include <vmlinux.h>
 
-#include <bpf/bpf_endian.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-#include "common.h"
+#include "common-net.h"
 #include "tracing.h"
-
-#ifndef AF_UNIX
-#define AF_UNIX 1
-#endif
-#ifndef AF_INET
-#define AF_INET 2
-#endif
-#ifndef AF_INET6
-#define AF_INET6 10
-#endif
 
 /* Network permission bits */
 #define NET_PERM_CREATE  0x1
@@ -43,32 +32,11 @@
 #define NET_PERM_ACCEPT  0x10
 #define NET_PERM_SEND    0x20
 
-/* Network policy keys/values */
-#define NET_ADDR_MAX 16
-#define NET_UNIX_PATH_MAX 108
-
 struct net_create_key {
     __u64 cgroup_id;
     __u32 family;
     __u32 type;
     __u32 protocol;
-};
-
-struct net_tuple_key {
-    __u64 cgroup_id;
-    __u32 family;
-    __u32 type;
-    __u32 protocol;
-    __u16 port;
-    __u16 _pad;
-    __u8  addr[NET_ADDR_MAX];
-};
-
-struct net_unix_key {
-    __u64 cgroup_id;
-    __u32 type;
-    __u32 protocol;
-    char  path[NET_UNIX_PATH_MAX];
 };
 
 struct net_policy_value {
@@ -96,110 +64,6 @@ struct {
     __uint(max_entries, 4096);
 } net_unix_map SEC(".maps");
 
-static __always_inline int __sock_get_meta(struct socket* sock, __u32* family, __u32* type, __u32* protocol)
-{
-    struct sock* sk = NULL;
-    __u16 fam = 0;
-    __u16 proto = 0;
-    __u32 stype = 0;
-
-    if (!sock || !family || !type || !protocol) {
-        return -EACCES;
-    }
-
-    CORE_READ_INTO(&sk, sock, sk);
-    if (!sk) {
-        return -EACCES;
-    }
-
-    CORE_READ_INTO(&fam, sk, __sk_common.skc_family);
-    CORE_READ_INTO(&proto, sk, sk_protocol);
-    CORE_READ_INTO(&stype, sock, type);
-
-    *family = (__u32)fam;
-    *protocol = (__u32)proto;
-    *type = stype;
-    return 0;
-}
-
-static __always_inline int __sockaddr_to_tuple(
-    struct sockaddr* addr,
-    int addrlen,
-    struct net_tuple_key* key)
-{
-    struct sockaddr sa = {};
-    __u16 family = 0;
-
-    if (!addr || !key || addrlen < (int)sizeof(sa)) {
-        return -EACCES;
-    }
-
-    bpf_core_read(&sa, sizeof(sa), addr);
-    family = sa.sa_family;
-    key->family = family;
-
-    if (family == AF_INET) {
-        struct sockaddr_in sin = {};
-        __u32 addr4 = 0;
-        bpf_core_read(&sin, sizeof(sin), addr);
-        addr4 = sin.sin_addr.s_addr;
-        key->port = bpf_ntohs(sin.sin_port);
-        __builtin_memcpy(key->addr, &addr4, sizeof(addr4));
-        return 0;
-    }
-
-    if (family == AF_INET6) {
-        struct sockaddr_in6 sin6 = {};
-        bpf_core_read(&sin6, sizeof(sin6), addr);
-        key->port = bpf_ntohs(sin6.sin6_port);
-        bpf_core_read(&key->addr, sizeof(key->addr), &sin6.sin6_addr);
-        return 0;
-    }
-
-    return -EACCES;
-}
-
-static __always_inline int __sockaddr_to_unix(
-    struct sockaddr* addr,
-    int addrlen,
-    struct net_unix_key* key)
-{
-    struct sockaddr sa = {};
-
-    if (!addr || !key || addrlen < (int)sizeof(sa)) {
-        return -EACCES;
-    }
-
-    bpf_core_read(&sa, sizeof(sa), addr);
-    if (sa.sa_family != AF_UNIX) {
-        return -EACCES;
-    }
-
-    struct sockaddr_un sun = {};
-    bpf_core_read(&sun, sizeof(sun), addr);
-    __u32 max_len = NET_UNIX_PATH_MAX - 1;
-    __u32 copy_len = (__u32)addrlen;
-    if (copy_len > sizeof(sun)) {
-        copy_len = sizeof(sun);
-    }
-
-    if (copy_len > (__builtin_offsetof(struct sockaddr_un, sun_path) + max_len)) {
-        copy_len = __builtin_offsetof(struct sockaddr_un, sun_path) + max_len;
-    }
-
-    if (copy_len > __builtin_offsetof(struct sockaddr_un, sun_path)) {
-        __u32 path_len = copy_len - __builtin_offsetof(struct sockaddr_un, sun_path);
-        if (path_len > max_len) {
-            path_len = max_len;
-        }
-        bpf_core_read(&key->path, path_len, &sun.sun_path);
-        key->path[path_len] = 0;
-    } else {
-        key->path[0] = 0;
-    }
-
-    return 0;
-}
 
 static __always_inline int __net_allow_create(__u32 family, __u32 type, __u32 protocol, __u32 hook_id)
 {
@@ -210,6 +74,10 @@ static __always_inline int __net_allow_create(__u32 family, __u32 type, __u32 pr
     key.family = family;
     key.type = type;
     key.protocol = protocol;
+
+    if (key.cgroup_id == 0) {
+        return 0;
+    }
 
     val = bpf_map_lookup_elem(&net_create_map, &key);
     if (val && (NET_PERM_CREATE & ~val->allow_mask) == 0) {
@@ -228,6 +96,10 @@ static __always_inline int __net_allow_tuple(struct net_tuple_key* key, __u32 re
         return -EACCES;
     }
 
+    if (key->cgroup_id == 0) {
+        return 0;
+    }
+
     val = bpf_map_lookup_elem(&net_tuple_map, key);
     if (val && (required & ~val->allow_mask) == 0) {
         return 0;
@@ -243,6 +115,10 @@ static __always_inline int __net_allow_unix(struct net_unix_key* key, __u32 requ
 
     if (!key) {
         return -EACCES;
+    }
+
+    if (key->cgroup_id == 0) {
+        return 0;
     }
 
     val = bpf_map_lookup_elem(&net_unix_map, key);

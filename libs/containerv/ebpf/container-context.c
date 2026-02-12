@@ -662,7 +662,32 @@ void bpf_container_context_apply_net(
             ukey.cgroup_id = containerContext->cgroup_id;
             ukey.type = (unsigned int)rule->type;
             ukey.protocol = (unsigned int)rule->protocol;
-            snprintf(ukey.path, sizeof(ukey.path), "%s", rule->unix_path);
+
+            if (rule->unix_path[0] == '@') {
+                size_t path_len = strlen(rule->unix_path + 1);
+                size_t max_len = BPF_NET_UNIX_PATH_MAX - 1;
+                if (path_len == 0) {
+                    VLOG_WARNING("cvd", "bpf_manager: net unix rule missing abstract name (family=AF_UNIX)\n");
+                    continue;
+                }
+                if (path_len > max_len) {
+                    VLOG_WARNING("cvd", "bpf_manager: net unix abstract path too long (%zu)\n", path_len);
+                    continue;
+                }
+                ukey.is_abstract = 1;
+                ukey.path_len = (unsigned int)path_len;
+                memcpy(ukey.path, rule->unix_path + 1, path_len);
+            } else {
+                size_t path_len = strlen(rule->unix_path);
+                if (path_len >= BPF_NET_UNIX_PATH_MAX) {
+                    VLOG_WARNING("cvd", "bpf_manager: net unix path too long (%zu)\n", path_len);
+                    continue;
+                }
+                ukey.is_abstract = 0;
+                ukey.path_len = (unsigned int)path_len;
+                memcpy(ukey.path, rule->unix_path, path_len);
+                ukey.path[path_len] = '\0';
+            }
 
             if (bpf_net_unix_map_allow(mapContext, &ukey, tuple_mask) == 0) {
                 (void)bpf_container_context_add_tracked_net_unix_entry(containerContext, &ukey);
