@@ -80,7 +80,7 @@ bool protecc_match(
         path_len = strlen(path);
     }
     
-    return protecc_match_internal(compiled->root, path, path_len, 0);
+    return protecc_match_internal(compiled->root, path, path_len, 0, compiled->flags);
 }
 
 protecc_error_t protecc_get_stats(

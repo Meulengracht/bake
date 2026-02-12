@@ -14,8 +14,10 @@
 static bool char_matches_node(
     const protecc_node_t* node,
     char c,
-    bool case_insensitive
+    uint32_t flags
 ) {
+    bool case_insensitive = (flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
+    
     if (case_insensitive) {
         c = tolower(c);
     }
@@ -51,14 +53,14 @@ static bool match_with_modifier(
     size_t path_len,
     size_t pos,
     const protecc_node_t* next_node,
-    bool case_insensitive
+    uint32_t flags
 ) {
     switch (node->modifier) {
         case MODIFIER_OPTIONAL: // ? - 0 or 1
             // Try matching with the character
-            if (pos < path_len && char_matches_node(node, path[pos], case_insensitive)) {
+            if (pos < path_len && char_matches_node(node, path[pos], flags)) {
                 if (next_node) {
-                    if (protecc_match_internal(next_node, path, path_len, pos + 1)) {
+                    if (protecc_match_internal(next_node, path, path_len, pos + 1, flags)) {
                         return true;
                     }
                 } else if (pos + 1 == path_len) {
@@ -67,13 +69,13 @@ static bool match_with_modifier(
             }
             // Try matching without the character
             if (next_node) {
-                return protecc_match_internal(next_node, path, path_len, pos);
+                return protecc_match_internal(next_node, path, path_len, pos, flags);
             }
             return node->is_terminal && pos == path_len;
         
         case MODIFIER_ONE_OR_MORE: // + - 1 or more
             // Must match at least once
-            if (pos >= path_len || !char_matches_node(node, path[pos], case_insensitive)) {
+            if (pos >= path_len || !char_matches_node(node, path[pos], flags)) {
                 return false;
             }
             pos++;
@@ -81,10 +83,10 @@ static bool match_with_modifier(
         
         case MODIFIER_ZERO_OR_MORE: // * - 0 or more
             // Try matching as many as possible
-            while (pos < path_len && char_matches_node(node, path[pos], case_insensitive)) {
+            while (pos < path_len && char_matches_node(node, path[pos], flags)) {
                 // Try continuing from here
                 if (next_node) {
-                    if (protecc_match_internal(next_node, path, path_len, pos)) {
+                    if (protecc_match_internal(next_node, path, path_len, pos, flags)) {
                         return true;
                     }
                 } else if (node->is_terminal && pos == path_len) {
@@ -94,7 +96,7 @@ static bool match_with_modifier(
             }
             // Try without consuming any more
             if (next_node) {
-                return protecc_match_internal(next_node, path, path_len, pos);
+                return protecc_match_internal(next_node, path, path_len, pos, flags);
             }
             return node->is_terminal && pos == path_len;
         
@@ -108,7 +110,8 @@ bool protecc_match_internal(
     const protecc_node_t* node,
     const char* path,
     size_t path_len,
-    size_t pos
+    size_t pos,
+    uint32_t flags
 ) {
     if (!node) {
         return false;
@@ -131,7 +134,7 @@ bool protecc_match_internal(
         // Handle modifiers
         if (child->modifier != MODIFIER_NONE) {
             protecc_node_t* next = (i + 1 < node->num_children) ? node->children[i + 1] : NULL;
-            if (match_with_modifier(child, path, path_len, pos, next, false)) {
+            if (match_with_modifier(child, path, path_len, pos, next, flags)) {
                 return true;
             }
             continue;
@@ -142,7 +145,7 @@ bool protecc_match_internal(
                 // ** matches anything including /
                 // Try matching from every position
                 for (size_t try_pos = pos; try_pos <= path_len; try_pos++) {
-                    if (protecc_match_internal(child, path, path_len, try_pos)) {
+                    if (protecc_match_internal(child, path, path_len, try_pos, flags)) {
                         return true;
                     }
                 }
@@ -153,7 +156,7 @@ bool protecc_match_internal(
                 // * matches anything except /
                 size_t try_pos = pos;
                 while (try_pos <= path_len) {
-                    if (protecc_match_internal(child, path, path_len, try_pos)) {
+                    if (protecc_match_internal(child, path, path_len, try_pos, flags)) {
                         return true;
                     }
                     if (try_pos < path_len && path[try_pos] == '/') {
@@ -169,8 +172,8 @@ bool protecc_match_internal(
             case NODE_CHARSET:
             case NODE_RANGE: {
                 // Match single character
-                if (pos < path_len && char_matches_node(child, path[pos], false)) {
-                    if (protecc_match_internal(child, path, path_len, pos + 1)) {
+                if (pos < path_len && char_matches_node(child, path[pos], flags)) {
+                    if (protecc_match_internal(child, path, path_len, pos + 1, flags)) {
                         return true;
                     }
                 }

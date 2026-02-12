@@ -129,7 +129,8 @@ bool protecc_match_internal(
     const protecc_node_t* node,
     const char* path,
     size_t path_len,
-    size_t pos
+    size_t pos,
+    uint32_t flags
 );
 
 #endif /* PROTECC_INTERNAL_H */
