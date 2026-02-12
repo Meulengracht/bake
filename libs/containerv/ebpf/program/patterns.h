@@ -59,7 +59,7 @@ static __always_inline int __read_dentry_name(struct dentry* dentry, char out[BA
 {
     struct qstr d_name = {};
     const unsigned char* name_ptr = NULL;
-    __u32 len = 0;
+    int copied = 0;
 
     if (!dentry || !out || !out_len) {
         return -EACCES;
@@ -67,29 +67,27 @@ static __always_inline int __read_dentry_name(struct dentry* dentry, char out[BA
 
     CORE_READ_INTO(&d_name, dentry, d_name);
     CORE_READ_INTO(&name_ptr, &d_name, name);
-    CORE_READ_INTO(&len, &d_name, len);
-
     if (!name_ptr) {
         return -EACCES;
     }
 
-    if (len >= BASENAME_MAX_STR) {
-        len = BASENAME_MAX_STR - 1;
+    copied = bpf_core_read_str(out, BASENAME_MAX_STR, name_ptr);
+    if (copied < 0) {
+        return copied;
     }
-    if (len > 0) {
-        bpf_core_read(out, len, name_ptr);
+
+    if (copied == 0) {
+        *out_len = 0;
+        return 0;
     }
-    out[len] = 0;
-    *out_len = len;
+
+    *out_len = (__u32)(copied - 1);
     return 0;
 }
 
-static __always_inline int __match_qmark_bounded(const char* pattern, const char* s, __u32 n)
+static __always_inline int __match_qmark_bounded(const char pattern[BASENAME_MAX_STR], const char* s, __u32 n)
 {
-    for (int i = 0; i < BASENAME_MAX_STR; i++) {
-        if ((__u32)i >= n) {
-            break;
-        }
+    for (int i = 0; i < n && i < BASENAME_MAX_STR; i++) {
         char pc = pattern[i];
         if (pc != '?' && pc != s[i]) {
             return 1;
@@ -108,9 +106,13 @@ static __always_inline int __match_basename_rule(const struct basename_rule* rul
         return 0;
     }
 
+    __u32 bounded_len = name_len;
     __u32 pos = 0;
 
-#pragma unroll
+    if (bounded_len > BASENAME_MAX_STR) {
+        bounded_len = BASENAME_MAX_STR;
+    }
+
     for (int t = 0; t < BASENAME_TOKEN_MAX; t++) {
         if ((__u32)t >= rule->token_count) {
             continue;
@@ -123,7 +125,7 @@ static __always_inline int __match_basename_rule(const struct basename_rule* rul
                 return 0;
             }
 
-            if (pos + len > name_len) {
+            if (pos + len > bounded_len) {
                 return 0;
             }
 
@@ -143,7 +145,7 @@ static __always_inline int __match_basename_rule(const struct basename_rule* rul
         }
 
         if (tt == BASENAME_TOKEN_DIGIT1) {
-            if (pos >= name_len) {
+            if (pos >= bounded_len) {
                 return 0;
             }
             char c = name[pos];
@@ -155,7 +157,7 @@ static __always_inline int __match_basename_rule(const struct basename_rule* rul
         }
 
         if (tt == BASENAME_TOKEN_DIGITSPLUS) {
-            if (pos >= name_len) {
+            if (pos >= bounded_len) {
                 return 0;
             }
             if (name[pos] < '0' || name[pos] > '9') {
@@ -163,9 +165,9 @@ static __always_inline int __match_basename_rule(const struct basename_rule* rul
             }
 
             __u32 digit_count = 0;
-            for (int i = 0; i < 32; i++) {
+            for (int i = 0; i < BASENAME_MAX_STR; i++) {
                 __u32 idx = pos + (__u32)i;
-                if (idx >= name_len) {
+                if (idx >= bounded_len || idx >= BASENAME_MAX_STR) {
                     break;
                 }
                 char dc = name[idx];
@@ -183,7 +185,7 @@ static __always_inline int __match_basename_rule(const struct basename_rule* rul
         }
     }
 
-    return pos == name_len;
+    return pos == bounded_len;
 }
 
 #endif /* __BPF_PATH_MATCH_H__ */

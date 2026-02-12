@@ -169,7 +169,6 @@ static __always_inline int __check_access(struct file* file, __u32 required, __u
             char name[BASENAME_MAX_STR] = {};
             __u32 name_len = 0;
             if (__read_dentry_name(dentry, name, &name_len) == 0) {
-#pragma unroll
                 for (int i = 0; i < BASENAME_RULE_MAX; i++) {
                     const struct basename_rule* rule = &bval->rules[i];
                     if (rule->token_count == 0) {
@@ -188,7 +187,6 @@ static __always_inline int __check_access(struct file* file, __u32 required, __u
     }
 
     struct dentry* cur = parent;
-    #pragma unroll
     for (int depth = 0; depth < 32; depth++) {
         struct dir_policy_value* dir_policy;
         if (__populate_key_from_dentry(&key, cur, cgroup_id)) {
@@ -259,7 +257,6 @@ static __always_inline int __check_access_dentry(struct dentry* dentry, __u32 re
             char name[BASENAME_MAX_STR] = {};
             __u32 name_len = 0;
             if (__read_dentry_name(dentry, name, &name_len) == 0) {
-#pragma unroll
                 for (int i = 0; i < BASENAME_RULE_MAX; i++) {
                     const struct basename_rule* rule = &bval->rules[i];
                     if (rule->token_count == 0) {
@@ -278,7 +275,6 @@ static __always_inline int __check_access_dentry(struct dentry* dentry, __u32 re
     }
 
     struct dentry* cur = parent;
-#pragma unroll
     for (int depth = 0; depth < 32; depth++) {
         struct dir_policy_value* dir_policy;
         if (__populate_key_from_dentry(&key, cur, cgroup_id)) {
@@ -332,7 +328,6 @@ static __always_inline int __check_access_parent(struct dentry* dentry, __u32 re
             char name[BASENAME_MAX_STR] = {};
             __u32 name_len = 0;
             if (__read_dentry_name(dentry, name, &name_len) == 0) {
-#pragma unroll
                 for (int i = 0; i < BASENAME_RULE_MAX; i++) {
                     const struct basename_rule* rule = &bval->rules[i];
                     if (rule->token_count == 0) {
@@ -351,7 +346,6 @@ static __always_inline int __check_access_parent(struct dentry* dentry, __u32 re
     }
 
     struct dentry* cur = parent;
-#pragma unroll
     for (int depth = 0; depth < 32; depth++) {
         struct dir_policy_value* dir_policy;
         if (__populate_key_from_dentry(&key, cur, cgroup_id)) {
