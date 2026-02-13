@@ -1,6 +1,18 @@
 /**
- * @file protecc.h
- * @brief Path pattern matching library optimized for eBPF evaluation
+ * Copyright, Philip Meulengracht
+ *
+ * This program is free software : you can redistribute it and / or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation ? , either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
  * Protecc compiles path patterns with wildcards and simple regex into an
  * optimized binary format (trie-based) for fast evaluation in eBPF programs.
@@ -22,16 +34,12 @@
  * - /dev/tty[0-9]+ : matches /dev/tty0, /dev/tty1, etc.
  */
 
-#ifndef PROTECC_H
-#define PROTECC_H
+#ifndef __PROTECC_H__
+#define __PROTECC_H__
 
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @brief Opaque handle to a compiled pattern set
@@ -78,25 +86,23 @@ typedef struct {
  * @return PROTECC_OK on success, error code otherwise
  */
 protecc_error_t protecc_compile(
-    const char** patterns,
-    size_t count,
-    uint32_t flags,
-    protecc_compiled_t** compiled
-);
+    const char**         patterns,
+    size_t               count,
+    uint32_t             flags,
+    protecc_compiled_t** compiled);
 
 /**
  * @brief Match a path against the compiled pattern set
  * 
  * @param compiled Compiled pattern set
  * @param path Path to match
- * @param path_len Length of path (or 0 to use strlen)
+ * @param pathLength Length of path (or 0 to use strlen)
  * @return true if path matches any pattern, false otherwise
  */
 bool protecc_match(
     const protecc_compiled_t* compiled,
-    const char* path,
-    size_t path_len
-);
+    const char*               path,
+    size_t                    pathLength);
 
 /**
  * @brief Get statistics about the compiled pattern set
@@ -107,8 +113,7 @@ bool protecc_match(
  */
 protecc_error_t protecc_get_stats(
     const protecc_compiled_t* compiled,
-    protecc_stats_t* stats
-);
+    protecc_stats_t*          stats);
 
 /**
  * @brief Export compiled pattern set to binary format
@@ -118,30 +123,28 @@ protecc_error_t protecc_get_stats(
  * 
  * @param compiled Compiled pattern set
  * @param buffer Output buffer (can be NULL to query size)
- * @param buffer_size Size of output buffer
- * @param bytes_written Output pointer for actual bytes written
+ * @param bufferSize Size of output buffer
+ * @param bytesWritten Output pointer for actual bytes written
  * @return PROTECC_OK on success, error code otherwise
  */
 protecc_error_t protecc_export(
     const protecc_compiled_t* compiled,
-    void* buffer,
-    size_t buffer_size,
-    size_t* bytes_written
-);
+    void*                     buffer,
+    size_t                    bufferSize,
+    size_t*                   bytesWritten);
 
 /**
  * @brief Import compiled pattern set from binary format
  * 
  * @param buffer Binary data
- * @param buffer_size Size of binary data
+ * @param bufferSize Size of binary data
  * @param compiled Output pointer for the compiled pattern set
  * @return PROTECC_OK on success, error code otherwise
  */
 protecc_error_t protecc_import(
-    const void* buffer,
-    size_t buffer_size,
-    protecc_compiled_t** compiled
-);
+    const void*          buffer,
+    size_t               bufferSize,
+    protecc_compiled_t** compiled);
 
 /**
  * @brief Free a compiled pattern set
@@ -166,8 +169,4 @@ protecc_error_t protecc_validate_pattern(const char* pattern);
  */
 const char* protecc_error_string(protecc_error_t error);
 
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* PROTECC_H */
+#endif // !__PROTECC_H__
