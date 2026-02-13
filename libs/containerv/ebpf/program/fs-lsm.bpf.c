@@ -22,8 +22,9 @@
 #include <bpf/bpf_tracing.h>
 
 #include "common-fs.h"
-#include "patterns.h"
 #include "tracing.h"
+
+#include <protecc/bpf.h>
 
 /* Permission bits */
 #define PERM_READ  0x1
@@ -35,345 +36,104 @@
 #define O_WRONLY   00000001
 #define O_RDWR     00000002
 
-/* Policy value: permission mask (bit flags for deny) */
-struct policy_value {
-    __u32 allow_mask;  /* Bitmask of allowed permissions */
+#ifndef PROTECC_PROFILE_MAX_SIZE
+#define PROTECC_PROFILE_MAX_SIZE (65536u - 4u)
+#endif
+
+#ifndef PROTECC_PROFILE_MAP_MAX_ENTRIES
+#define PROTECC_PROFILE_MAP_MAX_ENTRIES 1024u
+#endif
+
+struct profile_value {
+    __u32 size;
+    __u8  data[PROTECC_PROFILE_MAX_SIZE];
 };
 
-/* Directory policy flags (must match userspace) */
-#define DIR_RULE_CHILDREN_ONLY 0x1
-#define DIR_RULE_RECURSIVE     0x2
-
-struct dir_policy_value {
-    __u32 allow_mask;
-    __u32 flags;
-};
-
-
 /**
- * @brief BPF map: policy enforcement map
- * The key is (cgroup_id, dev, ino) identifying a file/inode within a container.
+ * @brief BPF map: protecc profiles per cgroup
+ * The key is cgroup_id, value is a serialized protecc profile blob.
  */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
-    __type(key, struct policy_key);
-    __type(value, struct policy_value);
-    __uint(max_entries, 10240);
-} policy_map SEC(".maps");
+    __type(key, __u64);
+    __type(value, struct profile_value);
+    __uint(max_entries, PROTECC_PROFILE_MAP_MAX_ENTRIES);
+} profile_map SEC(".maps");
 
-/** 
- * @brief  Directory policy map: rules keyed by directory inode (dev,ino) + cgroup 
- * Examples:
- *  - allow all files under /var/log (recursive)
- *  - allow children of /tmp only
- */
-struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __type(key, struct policy_key);
-    __type(value, struct dir_policy_value);
-    __uint(max_entries, 10240);
-} dir_policy_map SEC(".maps");
-
-/**
- * @brief Basename policy map: rules keyed by parent directory inode (dev,ino) + cgroup 
- * Examples include
- *   /var/log/app-*.log
- *   /dev/nvme[0-9]+n[0-9]+p[0-9]+
- */
-struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __type(key, struct policy_key);
-    __type(value, struct basename_policy_value);
-    __uint(max_entries, 10240);
-} basename_policy_map SEC(".maps");
-
-static __always_inline void __emit_deny_event_dentry(struct dentry* dentry, __u32 required, __u32 hook_id)
+static __always_inline void __emit_deny_event_dentry(struct dentry* dentry, __u32 required, __u32 hookId)
 {
     struct deny_event* ev;
-    struct policy_key  key = {};
-    __u32 name_len = 0;
-
-    if (!dentry) {
-        return;
-    }
-
-    if (__populate_key_from_dentry(&key, dentry, get_current_cgroup_id())) {
-        return;
-    }
+    __u32              name_len = 0;
 
     ev = bpf_ringbuf_reserve(&deny_events, sizeof(*ev), 0);
     if (!ev) {
         return;
     }
-
-    ev->cgroup_id = key.cgroup_id;
-    ev->dev = key.dev;
-    ev->ino = key.ino;
+    
+    __populate_event_from_dentry(ev, dentry);
+    ev->cgroup_id = get_current_cgroup_id();
     ev->required_mask = required;
-    ev->hook_id = hook_id;
-    ev->name_len = 0;
+    ev->hook_id = hookId;
     bpf_get_current_comm(&ev->comm, sizeof(ev->comm));
-    if (__read_dentry_name(dentry, ev->name, &name_len) == 0) {
-        ev->name_len = name_len;
-    } else {
-        ev->name[0] = 0;
-    }
-
     bpf_ringbuf_submit(ev, 0);
 }
 
-static __always_inline int __check_access(struct file* file, __u32 required, __u32 hook_id)
+static __always_inline int __check_profile_match(
+    struct dentry* dentry,
+    __u64          cgroupId,
+    __u32          required,
+    __u32          hookId)
 {
-    __u64 cgroup_id;
-    struct policy_key key = {};
-    struct policy_value* policy;
+    struct profile_value* profile = NULL;
+    char                  path[PATH_BUFFER_SIZE];
+    __u32                 pathLength = 0;
+    __u32                 pathStart = 0;
 
-    cgroup_id = get_current_cgroup_id();
-    if (cgroup_id == 0) {
-        return 0;
+    profile = bpf_map_lookup_elem(&profile_map, &cgroupId);
+    if (profile == NULL) {
+        return 1;
     }
 
-    if (__populate_key(&key, file, cgroup_id)) {
+    if (profile->size == 0 || profile->size > PROTECC_PROFILE_MAX_SIZE) {
+        __emit_deny_event_dentry(dentry, required, hookId);
         return -EACCES;
     }
 
-    // Fast path: exact inode allow
-    policy = bpf_map_lookup_elem(&policy_map, &key);
-    if (policy) {
-        if (required & ~policy->allow_mask) {
-            struct dentry* dentry = NULL;
-            CORE_READ_INTO(&dentry, file, f_path.dentry);
-            __emit_deny_event_dentry(dentry, required, hook_id);
-            return -EACCES;
-        }
+    pathLength = __resolve_dentry_path(path, dentry, &pathStart);
+
+    if (protecc_bpf_match(profile->data, path + pathStart, pathLength)) {
         return 0;
     }
+    __emit_deny_event_dentry(dentry, required, hookId);
+    return -EACCES;
+}
 
-    // Directory rules and basename rules
+static __always_inline int __check_access_file(struct file* file, __u32 required, __u32 hookId)
+{
+    __u64          cgroupId;
     struct dentry* dentry = NULL;
-    struct dentry* parent = NULL;
+
+    cgroupId = get_current_cgroup_id();
+    if (cgroupId == 0) {
+        return 0;
+    }
+
     CORE_READ_INTO(&dentry, file, f_path.dentry);
-    if (!dentry) {
+    if (dentry == NULL) {
         return -EACCES;
     }
-    CORE_READ_INTO(&parent, dentry, d_parent);
-    if (!parent) {
-        __emit_deny_event_dentry(dentry, required, hook_id);
-        return -EACCES;
-    }
-
-    // Basename rules: only check immediate parent directory
-    if (__populate_key_from_dentry(&key, parent, cgroup_id) == 0) {
-        struct basename_policy_value* bval = bpf_map_lookup_elem(&basename_policy_map, &key);
-        if (bval) {
-            char name[BASENAME_MAX_STR] = {};
-            __u32 name_len = 0;
-            if (__read_dentry_name(dentry, name, &name_len) == 0) {
-                for (int i = 0; i < BASENAME_RULE_MAX; i++) {
-                    const struct basename_rule* rule = &bval->rules[i];
-                    if (rule->token_count == 0) {
-                        continue;
-                    }
-                    if (__match_basename_rule(rule, name, name_len)) {
-                        if (required & ~rule->allow_mask) {
-                            __emit_deny_event_dentry(dentry, required, hook_id);
-                            return -EACCES;
-                        }
-                        return 0;
-                    }
-                }
-            }
-        }
-    }
-
-    struct dentry* cur = parent;
-    for (int depth = 0; depth < 32; depth++) {
-        struct dir_policy_value* dir_policy;
-        if (__populate_key_from_dentry(&key, cur, cgroup_id)) {
-            return -EACCES;
-        }
-
-        dir_policy = bpf_map_lookup_elem(&dir_policy_map, &key);
-        if (dir_policy) {
-            __u32 flags = dir_policy->flags;
-            if (depth == 0 || (flags & DIR_RULE_RECURSIVE)) {
-                if (required & ~dir_policy->allow_mask) {
-                    __emit_deny_event_dentry(dentry, required, hook_id);
-                    return -EACCES;
-                }
-                return 0;
-            }
-        }
-
-        // Move to next ancestor
-        struct dentry* next = NULL;
-        CORE_READ_INTO(&next, cur, d_parent);
-        if (!next || next == cur) {
-            break;
-        }
-        cur = next;
-    }
-
-    __emit_deny_event_dentry(dentry, required, hook_id);
-    return -EACCES;
+    return __check_profile_match(dentry, cgroupId, required, hookId);
 }
 
-static __always_inline int __check_access_dentry(struct dentry* dentry, __u32 required, __u32 hook_id)
+static __always_inline int __check_access_dentry(struct dentry* dentry, __u32 required, __u32 hookId)
 {
-    __u64 cgroup_id;
-    struct policy_key key = {};
-    struct policy_value* policy;
+    __u64 cgroupId;
 
-    cgroup_id = get_current_cgroup_id();
-    if (cgroup_id == 0) {
+    cgroupId = get_current_cgroup_id();
+    if (cgroupId == 0) {
         return 0;
     }
-
-    if (__populate_key_from_dentry(&key, dentry, cgroup_id)) {
-        return -EACCES;
-    }
-
-    policy = bpf_map_lookup_elem(&policy_map, &key);
-    if (policy) {
-        if (required & ~policy->allow_mask) {
-            __emit_deny_event_dentry(dentry, required, hook_id);
-            return -EACCES;
-        }
-        return 0;
-    }
-
-    // Fall back to directory/basename rules using the parent
-    struct dentry* parent = NULL;
-    CORE_READ_INTO(&parent, dentry, d_parent);
-    if (!parent) {
-        __emit_deny_event_dentry(dentry, required, hook_id);
-        return -EACCES;
-    }
-
-    // Basename rules: only check immediate parent directory
-    if (__populate_key_from_dentry(&key, parent, cgroup_id) == 0) {
-        struct basename_policy_value* bval = bpf_map_lookup_elem(&basename_policy_map, &key);
-        if (bval) {
-            char name[BASENAME_MAX_STR] = {};
-            __u32 name_len = 0;
-            if (__read_dentry_name(dentry, name, &name_len) == 0) {
-                for (int i = 0; i < BASENAME_RULE_MAX; i++) {
-                    const struct basename_rule* rule = &bval->rules[i];
-                    if (rule->token_count == 0) {
-                        continue;
-                    }
-                    if (__match_basename_rule(rule, name, name_len)) {
-                        if (required & ~rule->allow_mask) {
-                            __emit_deny_event_dentry(dentry, required, hook_id);
-                            return -EACCES;
-                        }
-                        return 0;
-                    }
-                }
-            }
-        }
-    }
-
-    struct dentry* cur = parent;
-    for (int depth = 0; depth < 32; depth++) {
-        struct dir_policy_value* dir_policy;
-        if (__populate_key_from_dentry(&key, cur, cgroup_id)) {
-            return -EACCES;
-        }
-
-        dir_policy = bpf_map_lookup_elem(&dir_policy_map, &key);
-        if (dir_policy) {
-            __u32 flags = dir_policy->flags;
-            if (depth == 0 || (flags & DIR_RULE_RECURSIVE)) {
-                if (required & ~dir_policy->allow_mask) {
-                    __emit_deny_event_dentry(dentry, required, hook_id);
-                    return -EACCES;
-                }
-                return 0;
-            }
-        }
-
-        struct dentry* next = NULL;
-        CORE_READ_INTO(&next, cur, d_parent);
-        if (!next || next == cur) {
-            break;
-        }
-        cur = next;
-    }
-
-    __emit_deny_event_dentry(dentry, required, hook_id);
-    return -EACCES;
-}
-
-static __always_inline int __check_access_parent(struct dentry* dentry, __u32 required, __u32 hook_id, int check_basename)
-{
-    __u64 cgroup_id;
-    struct policy_key key = {};
-
-    cgroup_id = get_current_cgroup_id();
-    if (cgroup_id == 0) {
-        return 0;
-    }
-
-    struct dentry* parent = NULL;
-    CORE_READ_INTO(&parent, dentry, d_parent);
-    if (!parent) {
-        __emit_deny_event_dentry(dentry, required, hook_id);
-        return -EACCES;
-    }
-
-    if (check_basename && __populate_key_from_dentry(&key, parent, cgroup_id) == 0) {
-        struct basename_policy_value* bval = bpf_map_lookup_elem(&basename_policy_map, &key);
-        if (bval) {
-            char name[BASENAME_MAX_STR] = {};
-            __u32 name_len = 0;
-            if (__read_dentry_name(dentry, name, &name_len) == 0) {
-                for (int i = 0; i < BASENAME_RULE_MAX; i++) {
-                    const struct basename_rule* rule = &bval->rules[i];
-                    if (rule->token_count == 0) {
-                        continue;
-                    }
-                    if (__match_basename_rule(rule, name, name_len)) {
-                        if (required & ~rule->allow_mask) {
-                            __emit_deny_event_dentry(dentry, required, hook_id);
-                            return -EACCES;
-                        }
-                        return 0;
-                    }
-                }
-            }
-        }
-    }
-
-    struct dentry* cur = parent;
-    for (int depth = 0; depth < 32; depth++) {
-        struct dir_policy_value* dir_policy;
-        if (__populate_key_from_dentry(&key, cur, cgroup_id)) {
-            return -EACCES;
-        }
-
-        dir_policy = bpf_map_lookup_elem(&dir_policy_map, &key);
-        if (dir_policy) {
-            __u32 flags = dir_policy->flags;
-            if (depth == 0 || (flags & DIR_RULE_RECURSIVE)) {
-                if (required & ~dir_policy->allow_mask) {
-                    __emit_deny_event_dentry(dentry, required, hook_id);
-                    return -EACCES;
-                }
-                return 0;
-            }
-        }
-
-        struct dentry* next = NULL;
-        CORE_READ_INTO(&next, cur, d_parent);
-        if (!next || next == cur) {
-            break;
-        }
-        cur = next;
-    }
-
-    __emit_deny_event_dentry(dentry, required, hook_id);
-    return -EACCES;
+    return __check_profile_match(dentry, cgroupId, required, hookId);
 }
 
 /**
@@ -412,7 +172,7 @@ int BPF_PROG(file_open_restrict, struct file *file, int ret)
         required = PERM_READ;
     }
 
-    return __check_access(file, required, DENY_HOOK_FILE_OPEN);
+    return __check_access_file(file, required, DENY_HOOK_FILE_OPEN);
 }
 
 SEC("lsm/bprm_check_security")
@@ -429,7 +189,7 @@ int BPF_PROG(bprm_check_security_restrict, struct linux_binprm *bprm, int ret)
         return -EACCES;
     }
 
-    return __check_access(file, PERM_EXEC, DENY_HOOK_BPRM_CHECK);
+    return __check_access_file(file, PERM_EXEC, DENY_HOOK_BPRM_CHECK);
 }
 
 SEC("lsm/inode_create")
@@ -443,7 +203,7 @@ int BPF_PROG(inode_create_restrict, struct inode *dir, struct dentry *dentry, um
     if (!dentry) {
         return -EACCES;
     }
-    return __check_access_parent(dentry, PERM_WRITE, DENY_HOOK_INODE_CREATE, 1);
+    return __check_access_dentry(dentry, PERM_WRITE, DENY_HOOK_INODE_CREATE);
 }
 
 SEC("lsm/inode_mkdir")
@@ -457,7 +217,7 @@ int BPF_PROG(inode_mkdir_restrict, struct inode *dir, struct dentry *dentry, umo
     if (!dentry) {
         return -EACCES;
     }
-    return __check_access_parent(dentry, PERM_WRITE, DENY_HOOK_INODE_MKDIR, 1);
+    return __check_access_dentry(dentry, PERM_WRITE, DENY_HOOK_INODE_MKDIR);
 }
 
 SEC("lsm/inode_mknod")
@@ -472,7 +232,7 @@ int BPF_PROG(inode_mknod_restrict, struct inode *dir, struct dentry *dentry, umo
     if (!dentry) {
         return -EACCES;
     }
-    return __check_access_parent(dentry, PERM_WRITE, DENY_HOOK_INODE_MKNOD, 1);
+    return __check_access_dentry(dentry, PERM_WRITE, DENY_HOOK_INODE_MKNOD);
 }
 
 SEC("lsm/inode_unlink")
@@ -485,7 +245,7 @@ int BPF_PROG(inode_unlink_restrict, struct inode *dir, struct dentry *dentry, in
     if (!dentry) {
         return -EACCES;
     }
-    return __check_access_parent(dentry, PERM_WRITE, DENY_HOOK_INODE_UNLINK, 1);
+    return __check_access_dentry(dentry, PERM_WRITE, DENY_HOOK_INODE_UNLINK);
 }
 
 SEC("lsm/inode_rmdir")
@@ -498,7 +258,7 @@ int BPF_PROG(inode_rmdir_restrict, struct inode *dir, struct dentry *dentry, int
     if (!dentry) {
         return -EACCES;
     }
-    return __check_access_parent(dentry, PERM_WRITE, DENY_HOOK_INODE_RMDIR, 1);
+    return __check_access_dentry(dentry, PERM_WRITE, DENY_HOOK_INODE_RMDIR);
 }
 
 SEC("lsm/inode_rename")
@@ -515,10 +275,10 @@ int BPF_PROG(inode_rename_restrict, struct inode *old_dir, struct dentry *old_de
         return -EACCES;
     }
 
-    if (__check_access_parent(old_dentry, PERM_WRITE, DENY_HOOK_INODE_RENAME, 1)) {
+    if (__check_access_dentry(old_dentry, PERM_WRITE, DENY_HOOK_INODE_RENAME)) {
         return -EACCES;
     }
-    if (__check_access_parent(new_dentry, PERM_WRITE, DENY_HOOK_INODE_RENAME, 1)) {
+    if (__check_access_dentry(new_dentry, PERM_WRITE, DENY_HOOK_INODE_RENAME)) {
         return -EACCES;
     }
     return 0;
@@ -535,7 +295,7 @@ int BPF_PROG(inode_link_restrict, struct dentry *old_dentry, struct inode *dir, 
     if (!new_dentry) {
         return -EACCES;
     }
-    return __check_access_parent(new_dentry, PERM_WRITE, DENY_HOOK_INODE_LINK, 1);
+    return __check_access_dentry(new_dentry, PERM_WRITE, DENY_HOOK_INODE_LINK);
 }
 
 SEC("lsm/inode_symlink")
@@ -549,7 +309,7 @@ int BPF_PROG(inode_symlink_restrict, struct inode *dir, struct dentry *dentry, c
     if (!dentry) {
         return -EACCES;
     }
-    return __check_access_parent(dentry, PERM_WRITE, DENY_HOOK_INODE_SYMLINK, 1);
+    return __check_access_dentry(dentry, PERM_WRITE, DENY_HOOK_INODE_SYMLINK);
 }
 
 SEC("lsm/inode_setattr")

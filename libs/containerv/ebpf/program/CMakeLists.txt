@@ -64,8 +64,10 @@ if(CLANG AND BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
             COMMAND ${CLANG} -g -O2 -target bpf
                 -D__TARGET_ARCH_${BPF_ARCH}
                 -I${BPF_OUTPUT_DIR}
+                -I${CMAKE_SOURCE_DIR}/libs/protecc/include
                 -I/usr/include
                 -I/usr/include/${CMAKE_LIBRARY_ARCHITECTURE}
+                -mllvm -bpf-stack-size=4096
                 -c ${BPF_SOURCE}
                 -o ${BPF_OBJECT}
             DEPENDS ${BPF_SOURCE} ${VMLINUX_HEADER}

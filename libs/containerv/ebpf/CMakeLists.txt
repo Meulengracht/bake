@@ -7,7 +7,6 @@ if(LIBBPF_INCLUDE_DIR AND LIBBPF_LIBRARY)
         helpers.c
         manager.c
         map-ops.c
-        path-walk.c
     )
 
     # If BPF programs were built, include the skeleton header directory
@@ -32,4 +31,4 @@ else()
 endif()
 
 target_include_directories(containerv-ebpf PRIVATE ../include)
-target_link_libraries(containerv-ebpf PUBLIC platform vlog)
+target_link_libraries(containerv-ebpf PUBLIC protecc platform vlog)

@@ -35,7 +35,7 @@ enum containerv_bpf_status containerv_bpf_is_available(void)
     return CV_BPF_NOT_SUPPORTED;
 }
 
-int containerv_bpf_get_policy_map_fd(void)
+int containerv_bpf_get_profile_map_fd(void)
 {
     return -1;
 }

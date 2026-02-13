@@ -26,20 +26,6 @@
 
 struct bpf_map_context;
 
-struct __bpf_container_file {
-    struct bpf_policy_key* file_keys;
-    int                    file_key_count;
-    int                    file_key_capacity;
-    
-    struct bpf_policy_key* dir_keys;
-    int                    dir_key_count;
-    int                    dir_key_capacity;
-    
-    struct bpf_policy_key* basename_keys;
-    int                    basename_key_count;
-    int                    basename_key_capacity;
-};
-
 struct __bpf_container_net {
     // Creation-based network policies (socket type/protocol based)
     struct bpf_net_create_key* create_keys;
@@ -64,7 +50,6 @@ struct bpf_container_context {
     unsigned long long             cgroup_id;
 
     // policy supported features
-    struct __bpf_container_file    file;
     struct __bpf_container_net     net;
 
     // metrics for this container

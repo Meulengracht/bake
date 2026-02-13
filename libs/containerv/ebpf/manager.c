@@ -64,9 +64,7 @@ static struct {
     enum containerv_bpf_status status;
     
     // Policy map file descriptors
-    int policy_map_fd;
-    int dir_policy_map_fd;
-    int basename_policy_map_fd;
+    int profile_map_fd;
     int net_create_map_fd;
     int net_tuple_map_fd;
     int net_unix_map_fd;
@@ -93,9 +91,7 @@ static struct {
 } g_bpf = {
     .status = CV_BPF_UNINITIALIZED,
     
-    .policy_map_fd = -1,
-    .dir_policy_map_fd = -1,
-    .basename_policy_map_fd = -1,
+    .profile_map_fd = -1,
     .net_create_map_fd = -1,
     .net_tuple_map_fd = -1,
     .net_unix_map_fd = -1,
@@ -388,23 +384,12 @@ static int __load_fs_program(void)
     VLOG_DEBUG("cvd", "bpf_manager: fs BPF skeleton opened\n");
 
     int reused_policy = __reuse_pinned_map_or_unpin(
-        g_bpf.fs_skel->maps.policy_map,
-        POLICY_MAP_PIN_PATH,
+        g_bpf.fs_skel->maps.profile_map,
+        PROFILE_MAP_PIN_PATH,
         BPF_MAP_TYPE_HASH,
-        sizeof(struct bpf_policy_key),
-        sizeof(struct bpf_policy_value));
-    int reused_dir = __reuse_pinned_map_or_unpin(
-        g_bpf.fs_skel->maps.dir_policy_map,
-        DIR_POLICY_MAP_PIN_PATH,
-        BPF_MAP_TYPE_HASH,
-        sizeof(struct bpf_policy_key),
-        sizeof(struct bpf_dir_policy_value));
-    int reused_basename = __reuse_pinned_map_or_unpin(
-        g_bpf.fs_skel->maps.basename_policy_map,
-        BASENAME_POLICY_MAP_PIN_PATH,
-        BPF_MAP_TYPE_HASH,
-        sizeof(struct bpf_policy_key),
-        sizeof(struct bpf_basename_policy_value));
+        sizeof(uint64_t),
+        sizeof(struct bpf_profile_value)
+    );
 
     status = fs_lsm_bpf__load(g_bpf.fs_skel);
     if (status) {
@@ -422,43 +407,21 @@ static int __load_fs_program(void)
         return -1;
     }
 
-    g_bpf.policy_map_fd = bpf_map__fd(g_bpf.fs_skel->maps.policy_map);
-    g_bpf.dir_policy_map_fd = bpf_map__fd(g_bpf.fs_skel->maps.dir_policy_map);
-    g_bpf.basename_policy_map_fd = bpf_map__fd(g_bpf.fs_skel->maps.basename_policy_map);
-    if (g_bpf.policy_map_fd < 0 ||
-        g_bpf.dir_policy_map_fd < 0 ||
-        g_bpf.basename_policy_map_fd < 0) {
+    g_bpf.profile_map_fd = bpf_map__fd(g_bpf.fs_skel->maps.profile_map);
+    if (g_bpf.profile_map_fd < 0) {
         VLOG_ERROR("cvd", "bpf_manager: failed to get fs policy map fds\n");
         fs_lsm_bpf__destroy(g_bpf.fs_skel);
         g_bpf.fs_skel = NULL;
-        g_bpf.policy_map_fd = -1;
-        g_bpf.dir_policy_map_fd = -1;
-        g_bpf.basename_policy_map_fd = -1;
+        g_bpf.profile_map_fd = -1;
         return -1;
     }
 
-    status = __pin_map_best_effort(g_bpf.policy_map_fd, POLICY_MAP_PIN_PATH, reused_policy);
+    status = __pin_map_best_effort(g_bpf.profile_map_fd, PROFILE_MAP_PIN_PATH, reused_policy);
     if (status < 0) {
         VLOG_WARNING("cvd", "bpf_manager: failed to pin policy map to %s: %s\n",
-                    POLICY_MAP_PIN_PATH, strerror(errno));
+                    PROFILE_MAP_PIN_PATH, strerror(errno));
     } else {
-        VLOG_DEBUG("cvd", "bpf_manager: policy map pinned to %s\n", POLICY_MAP_PIN_PATH);
-    }
-
-    status = __pin_map_best_effort(g_bpf.dir_policy_map_fd, DIR_POLICY_MAP_PIN_PATH, reused_dir);
-    if (status < 0) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to pin dir policy map to %s: %s\n",
-                    DIR_POLICY_MAP_PIN_PATH, strerror(errno));
-    } else {
-        VLOG_DEBUG("cvd", "bpf_manager: dir policy map pinned to %s\n", DIR_POLICY_MAP_PIN_PATH);
-    }
-
-    status = __pin_map_best_effort(g_bpf.basename_policy_map_fd, BASENAME_POLICY_MAP_PIN_PATH, reused_basename);
-    if (status < 0) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to pin basename policy map to %s: %s\n",
-                    BASENAME_POLICY_MAP_PIN_PATH, strerror(errno));
-    } else {
-        VLOG_DEBUG("cvd", "bpf_manager: basename policy map pinned to %s\n", BASENAME_POLICY_MAP_PIN_PATH);
+        VLOG_DEBUG("cvd", "bpf_manager: policy map pinned to %s\n", PROFILE_MAP_PIN_PATH);
     }
 
     if (g_bpf.fs_skel->maps.deny_events != NULL) {
@@ -649,19 +612,8 @@ void __cleanup_fs_program(void)
         return;
     }
 
-    if (unlink(POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin policy map: %s\n",
-                    strerror(errno));
-    }
-
-    if (unlink(DIR_POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin dir policy map: %s\n",
-                        strerror(errno));
-    }
-
-    if (unlink(BASENAME_POLICY_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin basename policy map: %s\n",
-                        strerror(errno));
+    if (unlink(PROFILE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin profile map\n");
     }
 }
 
@@ -748,9 +700,7 @@ int containerv_bpf_initialize(void)
             net_lsm_bpf__destroy(g_bpf.net_skel);
             g_bpf.net_skel = NULL;
         }
-        g_bpf.policy_map_fd = -1;
-        g_bpf.dir_policy_map_fd = -1;
-        g_bpf.basename_policy_map_fd = -1;
+        g_bpf.profile_map_fd = -1;
         g_bpf.net_create_map_fd = -1;
         g_bpf.net_tuple_map_fd = -1;
         g_bpf.net_unix_map_fd = -1;
@@ -812,9 +762,7 @@ void containerv_bpf_shutdown(void)
     }
 #endif
     
-    g_bpf.policy_map_fd = -1;
-    g_bpf.dir_policy_map_fd = -1;
-    g_bpf.basename_policy_map_fd = -1;
+    g_bpf.profile_map_fd = -1;
     g_bpf.net_create_map_fd = -1;
     g_bpf.net_tuple_map_fd = -1;
     g_bpf.net_unix_map_fd = -1;
@@ -828,18 +776,16 @@ enum containerv_bpf_status containerv_bpf_is_available(void)
     return g_bpf.status;
 }
 
-int containerv_bpf_get_policy_map_fd(void)
+int containerv_bpf_get_profile_map_fd(void)
 {
-    return g_bpf.policy_map_fd;
+    return g_bpf.profile_map_fd;
 }
 
 static void __map_context_from_container_context(
     struct bpf_container_context* containerContext,
     struct bpf_map_context*       mapContext)
 {
-    mapContext->map_fd = g_bpf.policy_map_fd;
-    mapContext->dir_map_fd = g_bpf.dir_policy_map_fd;
-    mapContext->basename_map_fd = g_bpf.basename_policy_map_fd;
+    mapContext->profile_map_fd = g_bpf.profile_map_fd;
     mapContext->net_create_map_fd = g_bpf.net_create_map_fd;
     mapContext->net_tuple_map_fd = g_bpf.net_tuple_map_fd;
     mapContext->net_unix_map_fd = g_bpf.net_unix_map_fd;
@@ -867,7 +813,7 @@ int containerv_bpf_populate_policy(
         return -1;
     }
     
-    fsEnabled = (g_bpf.policy_map_fd >= 0);
+    fsEnabled = (g_bpf.profile_map_fd >= 0);
     netEnabled = (g_bpf.net_create_map_fd >= 0 ||
                        g_bpf.net_tuple_map_fd >= 0 ||
                        g_bpf.net_unix_map_fd >= 0);
@@ -1020,9 +966,6 @@ static int __count_total_entries(void)
     int               total = 0;
     list_foreach(&g_bpf.trackers, i) {
         struct bpf_container_context* context = (struct bpf_container_context*)i;
-        total += context->file.file_key_count;
-        total += context->file.dir_key_count;
-        total += context->file.basename_key_count;
         total += context->net.create_key_count;
         total += context->net.tuple_key_count;
         total += context->net.unix_key_count;

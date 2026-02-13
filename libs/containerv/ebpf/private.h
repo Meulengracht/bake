@@ -34,65 +34,23 @@
 #define BPF_NET_ACCEPT  0x10
 #define BPF_NET_SEND    0x20
 
-/* Policy key: (cgroup_id, dev, ino) - must match BPF program */
-struct bpf_policy_key {
-    unsigned long long cgroup_id;
-    unsigned long long dev;
-    unsigned long long ino;
+#ifndef PROTECC_PROFILE_MAX_SIZE
+#define PROTECC_PROFILE_MAX_SIZE (65536u - 4u)
+#endif
+
+struct bpf_profile_value {
+    __u32 size;
+    __u8  data[PROTECC_PROFILE_MAX_SIZE];
 };
-
-/* Policy value: permission mask */
-struct bpf_policy_value {
-    unsigned int allow_mask;
-};
-
-/* Directory policy flags */
-#define BPF_DIR_RULE_CHILDREN_ONLY 0x1
-#define BPF_DIR_RULE_RECURSIVE     0x2
-
-/* Directory policy value */
-struct bpf_dir_policy_value {
-    unsigned int allow_mask;
-    unsigned int flags;
-};
-
-/* Basename matcher support (must match BPF program) */
-#define BPF_BASENAME_RULE_MAX 8
-#define BPF_BASENAME_MAX_STR  64
-
-#define BPF_BASENAME_TOKEN_MAX 6
 
 #define BPF_PIN_PATH "/sys/fs/bpf/cvd"
-#define POLICY_MAP_PIN_PATH BPF_PIN_PATH "/policy_map"
-#define DIR_POLICY_MAP_PIN_PATH BPF_PIN_PATH "/dir_policy_map"
-#define BASENAME_POLICY_MAP_PIN_PATH BPF_PIN_PATH "/basename_policy_map"
+#define PROFILE_MAP_PIN_PATH BPF_PIN_PATH "/profile_map"
 
 #define NET_CREATE_MAP_PIN_PATH BPF_PIN_PATH "/net_create_map"
 #define NET_TUPLE_MAP_PIN_PATH BPF_PIN_PATH "/net_tuple_map"
 #define NET_UNIX_MAP_PIN_PATH BPF_PIN_PATH "/net_unix_map"
 
 #define MAX_TRACKED_ENTRIES 10240
-
-enum bpf_basename_token_type {
-    BPF_BASENAME_TOKEN_EMPTY      = 0,
-    BPF_BASENAME_TOKEN_LITERAL    = 1,
-    BPF_BASENAME_TOKEN_DIGIT1     = 2,
-    BPF_BASENAME_TOKEN_DIGITSPLUS = 3,
-};
-
-struct bpf_basename_rule {
-    unsigned int allow_mask;
-    unsigned char token_count;
-    unsigned char tail_wildcard;
-    unsigned char _pad[2];
-    unsigned char token_type[BPF_BASENAME_TOKEN_MAX];
-    unsigned char token_len[BPF_BASENAME_TOKEN_MAX];
-    char token[BPF_BASENAME_TOKEN_MAX][BPF_BASENAME_MAX_STR];
-};
-
-struct bpf_basename_policy_value {
-    struct bpf_basename_rule rules[BPF_BASENAME_RULE_MAX];
-};
 
 /* Network policy keys/values (must match BPF program) */
 #define BPF_NET_ADDR_MAX 16
@@ -158,7 +116,7 @@ struct bpf_deny_event {
     unsigned int       hook_id;
     unsigned int       name_len;
     char               comm[16];
-    char               name[BPF_BASENAME_MAX_STR];
+    char               name[64];
 };
 
 /**

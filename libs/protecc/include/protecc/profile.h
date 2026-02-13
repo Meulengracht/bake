@@ -19,7 +19,9 @@
 #ifndef __PROTECC_PROFILE_H__
 #define __PROTECC_PROFILE_H__
 
+#ifndef __VMLINUX_H__
 #include <stdint.h>
+#endif
 
 /**
  * @brief On-disk format for compiled profiles. This is what the userspace 

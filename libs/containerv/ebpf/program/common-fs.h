@@ -74,40 +74,4 @@ static __always_inline int __populate_key(struct policy_key* key, struct file *f
     return 0;
 }
 
-static __always_inline int __populate_key_from_dentry(struct policy_key* key, struct dentry* dentry, __u64 cgroupId)
-{
-    struct inode* inode = NULL;
-    struct super_block* sb = NULL;
-    __u64 dev;
-    __u64 ino;
-
-    if (!dentry) {
-        return -EACCES;
-    }
-
-    CORE_READ_INTO(&inode, dentry, d_inode);
-    if (!inode) {
-        return -EACCES;
-    }
-
-    CORE_READ_INTO(&sb, inode, i_sb);
-    if (!sb) {
-        return -EACCES;
-    }
-
-    {
-        dev_t devt = 0;
-        unsigned long inode_no = 0;
-        CORE_READ_INTO(&devt, sb, s_dev);
-        CORE_READ_INTO(&inode_no, inode, i_ino);
-        dev = (__u64)devt;
-        ino = (__u64)inode_no;
-    }
-
-    key->cgroup_id = cgroupId;
-    key->dev = dev;
-    key->ino = ino;
-    return 0;
-}
-
 #endif /* __BPF_INODE_KEY_H__ */

@@ -40,30 +40,19 @@ int bpf_syscall(int cmd, union bpf_attr *attr, unsigned int size)
     return syscall(__NR_bpf, cmd, attr, size);
 }
 
-int bpf_dir_policy_map_allow_dir(
+int bpf_profile_map_set_profile(
     struct bpf_map_context* context,
-    dev_t                   dev,
-    ino_t                   ino,
-    unsigned int            allowMask,
-    unsigned int            flags)
+    uint8_t*                profile,
+    size_t                  profileSize)
 {
-    struct bpf_policy_key       key = {};
-    struct bpf_dir_policy_value value = {};
-    union bpf_attr              attr = {};
+    uint64_t                 key = context->cgroup_id;
+    struct bpf_profile_value value = {};
+    union bpf_attr           attr = {};
 
-    if (context == NULL || context->dir_map_fd < 0) {
-        errno = EINVAL;
-        return -1;
-    }
+    memcpy(&value.data[0], profile, profileSize);
+    value.size = (unsigned int)profileSize;
 
-    key.cgroup_id = context->cgroup_id;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    value.allow_mask = allowMask;
-    value.flags = flags;
-
-    attr.map_fd = context->dir_map_fd;
+    attr.map_fd = context->profile_map_fd;
     attr.key = (uintptr_t)&key;
     attr.value = (uintptr_t)&value;
     attr.flags = BPF_ANY;
@@ -71,114 +60,13 @@ int bpf_dir_policy_map_allow_dir(
     return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
 }
 
-int bpf_basename_policy_map_allow_rule(
-    struct bpf_map_context*         context,
-    dev_t                           dev,
-    ino_t                           ino,
-    const struct bpf_basename_rule* rule)
+int bpf_profile_map_clear_profile(
+    struct bpf_map_context* context)
 {
-    struct bpf_policy_key key = {};
-    struct bpf_basename_policy_value value = {};
     union bpf_attr attr = {};
+    uint64_t       key = context->cgroup_id;
 
-    if (context == NULL || context->basename_map_fd < 0 || rule == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (rule->token_count == 0) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    key.cgroup_id = context->cgroup_id;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    // Try lookup existing rule array
-    memset(&attr, 0, sizeof(attr));
-    attr.map_fd = context->basename_map_fd;
-    attr.key = (uintptr_t)&key;
-    attr.value = (uintptr_t)&value;
-    int status = bpf_syscall(BPF_MAP_LOOKUP_ELEM, &attr, sizeof(attr));
-    if (status < 0) {
-        if (errno != ENOENT) {
-            return -1;
-        }
-        memset(&value, 0, sizeof(value));
-    }
-
-    // If an identical rule exists, merge allow_mask
-    for (int i = 0; i < BPF_BASENAME_RULE_MAX; i++) {
-        struct bpf_basename_rule* slot = &value.rules[i];
-        if (slot->token_count == rule->token_count &&
-            slot->tail_wildcard == rule->tail_wildcard &&
-            memcmp(slot->token_type, rule->token_type, sizeof(rule->token_type)) == 0 &&
-            memcmp(slot->token_len, rule->token_len, sizeof(rule->token_len)) == 0 &&
-            memcmp(slot->token, rule->token, sizeof(rule->token)) == 0) {
-            slot->allow_mask |= rule->allow_mask;
-            goto do_update;
-        }
-    }
-
-    // Otherwise insert into an empty slot
-    for (int i = 0; i < BPF_BASENAME_RULE_MAX; i++) {
-        struct bpf_basename_rule* slot = &value.rules[i];
-        if (slot->token_count == 0) {
-            *slot = *rule;
-            goto do_update;
-        }
-    }
-
-    errno = ENOSPC;
-    return -1;
-
-do_update:
-    memset(&attr, 0, sizeof(attr));
-    attr.map_fd = context->basename_map_fd;
-    attr.key = (uintptr_t)&key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
-}
-
-int bpf_policy_map_allow_inode(
-    struct bpf_map_context* context,
-    dev_t                   dev,
-    ino_t                   ino,
-    unsigned int            allowMask)
-{
-    struct bpf_policy_key   key = {};
-    struct bpf_policy_value value = {};
-    union bpf_attr          attr = {};
-
-    key.cgroup_id = context->cgroup_id;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    value.allow_mask = allowMask;
-
-    attr.map_fd = context->map_fd;
-    attr.key = (uintptr_t)&key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
-}
-
-int bpf_policy_map_delete_entry(
-    struct bpf_map_context* context,
-    dev_t                   dev,
-    ino_t                   ino)
-{
-    struct bpf_policy_key key = {};
-    union bpf_attr        attr = {};
-
-    key.cgroup_id = context->cgroup_id;
-    key.dev = (unsigned long long)dev;
-    key.ino = (unsigned long long)ino;
-
-    attr.map_fd = context->map_fd;
+    attr.map_fd = context->profile_map_fd;
     attr.key = (uintptr_t)&key;
 
     return bpf_syscall(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr));

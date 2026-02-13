@@ -19,8 +19,6 @@
 #ifndef __PROTECC_BPF_H__
 #define __PROTECC_BPF_H__
 
-#include <stdint.h>
-
 #include <protecc/profile.h>
 
 // BPF includes
@@ -76,18 +74,6 @@ static __always_inline bool __char_matches(const protecc_profile_node_t* node, u
         default:
             return false;
     }
-}
-
-static __always_inline __u32 __protecc_bpf_path_length(const char* path) {
-    __u32 len = 0;
-    int   i;
-    bpf_for(i, 0, PROTECC_BPF_MAX_PATH) {
-        if (path[i] == '\0') {
-            break;
-        }
-        len++;
-    }
-    return len;
 }
 
 static __always_inline bool __validate_profile(const protecc_profile_header_t* header) {

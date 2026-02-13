@@ -25,73 +25,31 @@
 
 struct bpf_map_context {
     unsigned long long cgroup_id;
-    int                map_fd;
-    int                dir_map_fd;
-    int                basename_map_fd;
+    int                profile_map_fd;
     int                net_create_map_fd;
     int                net_tuple_map_fd;
     int                net_unix_map_fd;
 };
 
 /**
- * @brief Add an inode to the BPF policy map with specified permissions
- * @param context BPF policy context
- * @param dev Device number
- * @param ino Inode number
- * @param allowMask Permission mask
+ * @brief Set's a new protecc profile for the container cgroup
+ * @param context BPF profile context
+ * @param profile Serialized protecc profile blob
+ * @param profileSize Size of the profile blob
  * @return 0 on success, -1 on error
  */
-extern int bpf_policy_map_allow_inode(
+extern int bpf_profile_map_set_profile(
     struct bpf_map_context* context,
-    dev_t                   dev,
-    ino_t                   ino,
-    unsigned int            allowMask
-);
+    uint8_t*                profile,
+    size_t                  profileSize);
 
 /**
- * @brief Allow a directory via the directory policy map
- * @param context BPF policy context
- * @param dev Device number of the directory inode
- * @param ino Inode number of the directory inode
- * @param allowMask Permission mask
- * @param flags Directory rule flags (BPF_DIR_RULE_*)
+ * @brief Deletes the protecc profile associated with the group_id in the context
+ * @param context BPF profile context
  * @return 0 on success, -1 on error
  */
-extern int bpf_dir_policy_map_allow_dir(
-    struct bpf_map_context* context,
-    dev_t                   dev,
-    ino_t                   ino,
-    unsigned int            allowMask,
-    unsigned int            flags
-);
-
-/**
- * @brief Allow a basename pattern under a directory inode
- * @param context BPF policy context
- * @param dev Directory device number
- * @param ino Directory inode number
- * @param rule Basename rule to add (type/prefix/tail)
- * @return 0 on success, -1 on error
- */
-extern int bpf_basename_policy_map_allow_rule(
-    struct bpf_map_context*         context,
-    dev_t                           dev,
-    ino_t                           ino,
-    const struct bpf_basename_rule* rule
-);
-
-/**
- * @brief Delete an entry from the BPF policy map
- * @param context BPF policy context
- * @param dev Device number
- * @param ino Inode number
- * @return 0 on success, -1 on error
- */
-extern int bpf_policy_map_delete_entry(
-    struct bpf_map_context* context,
-    dev_t                   dev,
-    ino_t                   ino
-);
+extern int bpf_profile_map_clear_profile(
+    struct bpf_map_context* context);
 
 extern int bpf_net_create_map_allow(
     struct bpf_map_context*          context,

@@ -102,7 +102,7 @@ extern enum containerv_bpf_status containerv_bpf_is_available(void);
  * 
  * @return Map file descriptor, or -1 if BPF unavailable
  */
-extern int containerv_bpf_get_policy_map_fd(void);
+extern int containerv_bpf_get_profile_map_fd(void);
 
 /**
  * @brief Populate BPF policy for a container

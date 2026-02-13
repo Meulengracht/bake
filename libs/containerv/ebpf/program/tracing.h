@@ -62,6 +62,38 @@ struct {
     __uint(max_entries, 1 << 20);
 } deny_events SEC(".maps");
 
+static __always_inline int __populate_event_from_dentry(struct deny_event* ev, struct dentry* dentry)
+{
+    struct inode*       inode = NULL;
+    struct super_block* sb = NULL;
+    struct qstr         name = {};
+    __u64 dev;
+    __u64 ino;
+
+    if (!dentry) {
+        return -EACCES;
+    }
+
+    CORE_READ_INTO(&inode, dentry, d_inode);
+    CORE_READ_INTO(&sb, inode, i_sb);
+    CORE_READ_INTO(&name, dentry, d_name);
+    
+    ev->name_len = bpf_core_read_str(&ev->name[0], LSM_DENY_NAME_MAX, name.name);
+
+    {
+        dev_t devt = 0;
+        unsigned long inode_no = 0;
+        CORE_READ_INTO(&devt, sb, s_dev);
+        CORE_READ_INTO(&inode_no, inode, i_ino);
+        dev = (__u64)devt;
+        ino = (__u64)inode_no;
+    }
+
+    ev->dev = dev;
+    ev->ino = ino;
+    return 0;
+}
+
 static __always_inline void __emit_deny_event_basic(__u64 cgroup_id, __u32 required, __u32 hook_id)
 {
     struct deny_event* ev;

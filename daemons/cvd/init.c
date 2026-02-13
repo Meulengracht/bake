@@ -195,7 +195,7 @@ static void __initialize_bpf(void)
     VLOG_TRACE("cvd", "BPF LSM enforcement is active\n");
 
     // Sanity-check that filesystem enforcement is actually pinned (if enabled).
-    if (containerv_bpf_get_policy_map_fd() >= 0) {
+    if (containerv_bpf_get_profile_map_fd() >= 0) {
         (void)containerv_bpf_sanity_check_pins();
     }
 
