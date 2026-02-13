@@ -87,15 +87,15 @@ static __always_inline bool __validate_profile(const protecc_profile_header_t* h
 }
 
 static __always_inline bool protecc_bpf_match(
-    const void* profile,
-    const char* path,
-    __u32       pathLength)
+    protecc_bpf_state_t stack[PROTECC_BPF_MAX_STACK],
+    const void*         profile,
+    const char*         path,
+    __u32               pathLength)
 {
     const protecc_profile_header_t* header = (const protecc_profile_header_t*)profile;
     const uint8_t*                  base = (const uint8_t*)profile;
     const protecc_profile_node_t*   nodes;
     const __u32*                    edges;
-    protecc_bpf_state_t             stack[PROTECC_BPF_MAX_STACK];
     __u32                           sp = 0, steps;
 
     if (profile == NULL || path == NULL) {

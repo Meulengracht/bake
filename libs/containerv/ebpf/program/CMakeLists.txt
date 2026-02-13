@@ -67,7 +67,6 @@ if(CLANG AND BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
                 -I${CMAKE_SOURCE_DIR}/libs/protecc/include
                 -I/usr/include
                 -I/usr/include/${CMAKE_LIBRARY_ARCHITECTURE}
-                -mllvm -bpf-stack-size=4096
                 -c ${BPF_SOURCE}
                 -o ${BPF_OBJECT}
             DEPENDS ${BPF_SOURCE} ${VMLINUX_HEADER}

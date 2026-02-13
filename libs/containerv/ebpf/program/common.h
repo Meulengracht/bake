@@ -51,7 +51,7 @@ static __always_inline int __resolve_file_path(struct file *f, char *buf, int le
 }
 
 #define PATH_MAX_DEPTH   32
-#define PATH_BUFFER_SIZE 1024
+#define PATH_BUFFER_SIZE 4096
 #define PATH_NAME_MAX    127
 
 // get_dentry_inode - Returns the inode structure designated by the provided dentry

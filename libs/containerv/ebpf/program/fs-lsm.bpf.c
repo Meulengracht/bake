@@ -49,6 +49,11 @@ struct profile_value {
     __u8  data[PROTECC_PROFILE_MAX_SIZE];
 };
 
+struct per_cpu_data {
+    char                path[PATH_BUFFER_SIZE];
+    protecc_bpf_state_t bpf_stack[PROTECC_BPF_MAX_STACK];
+};
+
 /**
  * @brief BPF map: protecc profiles per cgroup
  * The key is cgroup_id, value is a serialized protecc profile blob.
@@ -59,6 +64,14 @@ struct {
     __type(value, struct profile_value);
     __uint(max_entries, PROTECC_PROFILE_MAP_MAX_ENTRIES);
 } profile_map SEC(".maps");
+
+/* Per-CPU scratch buffer to avoid large stack allocations. */
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __type(key, __u32);
+    __type(value, struct per_cpu_data);
+    __uint(max_entries, 1);
+} per_cpu_data_map SEC(".maps");
 
 static __always_inline void __emit_deny_event_dentry(struct dentry* dentry, __u32 required, __u32 hookId)
 {
@@ -78,6 +91,16 @@ static __always_inline void __emit_deny_event_dentry(struct dentry* dentry, __u3
     bpf_ringbuf_submit(ev, 0);
 }
 
+static __always_inline struct per_cpu_data* __cpu_data(void)
+{
+    __u32                key = 0;
+    struct per_cpu_data* scratch = bpf_map_lookup_elem(&per_cpu_data_map, &key);
+    if (!scratch) {
+        return NULL;
+    }
+    return scratch;
+}
+
 static __always_inline int __check_profile_match(
     struct dentry* dentry,
     __u64          cgroupId,
@@ -85,7 +108,8 @@ static __always_inline int __check_profile_match(
     __u32          hookId)
 {
     struct profile_value* profile = NULL;
-    char                  path[PATH_BUFFER_SIZE];
+    struct per_cpu_data*  scratch = NULL;
+    char*                 path = NULL;
     __u32                 pathLength = 0;
     __u32                 pathStart = 0;
 
@@ -99,9 +123,15 @@ static __always_inline int __check_profile_match(
         return -EACCES;
     }
 
-    pathLength = __resolve_dentry_path(path, dentry, &pathStart);
+    scratch = __cpu_data();
+    if (scratch == NULL) {
+        __emit_deny_event_dentry(dentry, required, hookId);
+        return -EACCES;
+    }
 
-    if (protecc_bpf_match(profile->data, path + pathStart, pathLength)) {
+    pathLength = __resolve_dentry_path(scratch->path, dentry, &pathStart);
+
+    if (protecc_bpf_match(scratch->bpf_stack, profile->data, scratch->path + pathStart, pathLength)) {
         return 0;
     }
     __emit_deny_event_dentry(dentry, required, hookId);
@@ -150,9 +180,9 @@ static __always_inline int __check_access_dentry(struct dentry* dentry, __u32 re
 SEC("lsm/file_open")
 int BPF_PROG(file_open_restrict, struct file *file, int ret)
 {
-    __u64 flags64;
-    __u32 accmode;
+    __u64 flags64 = 0;
     __u32 required = 0;
+    __u32 accmode;
     
     // If previous checks failed, propagate the error
     if (ret != 0) {
@@ -160,7 +190,6 @@ int BPF_PROG(file_open_restrict, struct file *file, int ret)
     }
     
     // Determine required permissions from open flags
-    flags64 = 0;
     CORE_READ_INTO(&flags64, file, f_flags);
     accmode = (__u32)flags64 & 00000003; /* O_ACCMODE */
 
