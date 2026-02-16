@@ -97,7 +97,7 @@ static __always_inline struct per_cpu_data* __cpu_data(void)
     return scratch;
 }
 
-static __always_inline int __check_profile_match(
+static int __check_profile_match(
     struct dentry* dentry,
     __u64          cgroupId,
     __u32          required,
