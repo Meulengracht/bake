@@ -9,6 +9,7 @@
 #include <ctype.h>
 
 #define PROTECC_EXPORT_MAGIC 0x50524F54u
+/* Version 2 uses a flat profile: header + (permissions, pattern_len, pattern bytes) entries. */
 #define PROTECC_EXPORT_VERSION 2u
 
 static protecc_error_t protecc_duplicate_pattern(
@@ -206,8 +207,16 @@ protecc_error_t protecc_export(
 
     size_t required_size = sizeof(uint32_t) * 4;
     for (size_t i = 0; i < compiled->pattern_count; i++) {
+        size_t pattern_len = strlen(compiled->patterns[i]);
+        if (pattern_len > UINT32_MAX) {
+            return PROTECC_ERROR_INVALID_ARGUMENT;
+        }
+        if (required_size > SIZE_MAX - (sizeof(uint32_t) * 2) ||
+            required_size + (sizeof(uint32_t) * 2) > SIZE_MAX - pattern_len) {
+            return PROTECC_ERROR_INVALID_ARGUMENT;
+        }
         required_size += sizeof(uint32_t) * 2;
-        required_size += strlen(compiled->patterns[i]);
+        required_size += pattern_len;
     }
 
     *bytes_written = required_size;
@@ -230,11 +239,7 @@ protecc_error_t protecc_export(
 
     for (size_t i = 0; i < compiled->pattern_count; i++) {
         uint32_t permissions = compiled->permissions[i];
-        size_t raw_pattern_len = strlen(compiled->patterns[i]);
-        if (raw_pattern_len > UINT32_MAX) {
-            return PROTECC_ERROR_INVALID_ARGUMENT;
-        }
-        uint32_t pattern_len = (uint32_t)raw_pattern_len;
+        uint32_t pattern_len = (uint32_t)strlen(compiled->patterns[i]);
         memcpy(out, &permissions, sizeof(uint32_t));
         out += sizeof(uint32_t);
         memcpy(out, &pattern_len, sizeof(uint32_t));
@@ -268,6 +273,7 @@ protecc_error_t protecc_import(
 
     protecc_pattern_t* entries = calloc(count, sizeof(protecc_pattern_t));
     char** allocated_patterns = calloc(count, sizeof(char*));
+    uint32_t allocated_count = 0;
     if (!entries || !allocated_patterns) {
         err = PROTECC_ERROR_OUT_OF_MEMORY;
         goto cleanup;
@@ -306,12 +312,13 @@ protecc_error_t protecc_import(
 
         entries[i].pattern = allocated_patterns[i];
         entries[i].permissions = permissions;
+        allocated_count = i + 1;
     }
 
     err = protecc_compile_with_permissions(entries, count, flags, compiled);
 cleanup:
     if (allocated_patterns) {
-        for (uint32_t i = 0; i < count; i++) {
+        for (uint32_t i = 0; i < allocated_count; i++) {
             free(allocated_patterns[i]);
         }
     }

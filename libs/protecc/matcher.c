@@ -56,10 +56,15 @@ static bool push_state(
     size_t* stack_size,
     size_t* stack_capacity,
     bool* visited,
+    size_t pattern_len,
     size_t path_len,
     size_t pattern_pos,
     size_t path_pos
 ) {
+    if (pattern_pos > pattern_len || path_pos > path_len) {
+        return false;
+    }
+
     size_t cols = path_len + 1;
     size_t index = pattern_pos * cols + path_pos;
     if (visited[index]) {
@@ -99,7 +104,8 @@ bool protecc_match_pattern(
     }
 
     size_t pattern_len = strlen(pattern);
-    if ((path_len + 1) != 0 && (pattern_len + 1) > (SIZE_MAX / (path_len + 1))) {
+    if (path_len == SIZE_MAX || (pattern_len + 1) > (SIZE_MAX / (path_len + 1))) {
+        /* Guard visited_size = (pattern_len + 1) * (path_len + 1) from overflow. */
         return false;
     }
     size_t visited_size = (pattern_len + 1) * (path_len + 1);
@@ -115,7 +121,7 @@ bool protecc_match_pattern(
     bool matched = false;
 
     if (!push_state(
-            &stack, &stack_size, &stack_capacity, visited, path_len, 0, 0)) {
+            &stack, &stack_size, &stack_capacity, visited, pattern_len, path_len, 0, 0)) {
         goto cleanup;
     }
 
@@ -143,6 +149,7 @@ bool protecc_match_pattern(
                         &stack_size,
                         &stack_capacity,
                         visited,
+                        pattern_len,
                         path_len,
                         next,
                         try_pos)) {
@@ -161,6 +168,7 @@ bool protecc_match_pattern(
                         &stack_size,
                         &stack_capacity,
                         visited,
+                        pattern_len,
                         path_len,
                         next,
                         try_pos)) {
@@ -181,6 +189,7 @@ bool protecc_match_pattern(
                         &stack_size,
                         &stack_capacity,
                         visited,
+                        pattern_len,
                         path_len,
                         ppos + 1,
                         spos + 1)) {
@@ -216,6 +225,7 @@ bool protecc_match_pattern(
                             &stack_size,
                             &stack_capacity,
                             visited,
+                            pattern_len,
                             path_len,
                             next,
                             spos + 1)) {
@@ -231,6 +241,7 @@ bool protecc_match_pattern(
                         &stack_size,
                         &stack_capacity,
                         visited,
+                        pattern_len,
                         path_len,
                         next,
                         spos)) {
@@ -243,23 +254,24 @@ bool protecc_match_pattern(
                     continue;
                 }
 
-                size_t consumed = 1;
-                while ((spos + consumed) <= path_len &&
-                       charset_contains(pattern, ppos + 1, close, path[spos + consumed - 1], case_insensitive)) {
+                size_t idx = spos;
+                while (idx < path_len &&
+                       charset_contains(pattern, ppos + 1, close, path[idx], case_insensitive)) {
                     if (!push_state(
                             &stack,
                             &stack_size,
                             &stack_capacity,
                             visited,
+                            pattern_len,
                             path_len,
                             next,
-                            spos + consumed)) {
+                            idx + 1)) {
                         goto cleanup;
                     }
                     if (modifier == '?') {
                         break;
                     }
-                    consumed++;
+                    idx++;
                 }
             }
             continue;
@@ -273,6 +285,7 @@ bool protecc_match_pattern(
                     &stack_size,
                     &stack_capacity,
                     visited,
+                    pattern_len,
                     path_len,
                     ppos + 1,
                     spos + 1)) {
