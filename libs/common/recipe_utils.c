@@ -169,7 +169,7 @@ int recipe_ensure_target(struct recipe* recipe, const char** expectedPlatform, s
 
 int recipe_parse_part_step(const char* str, char** part, char** step)
 {
-    char* split;
+    const char* split;
 
     if (str == NULL) {
         *part = NULL;

@@ -83,7 +83,7 @@ static int __resolve_package_information(const char* str, struct __image_context
 {
     char        path[PATH_MAX];
     const char* s = str;
-    char*       p;
+    const char* p;
 
     // seperate out publisher
     p = strchr(s, '/');

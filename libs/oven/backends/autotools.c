@@ -80,12 +80,12 @@ static char* __add_prefix(const char* platform, const char* arguments, const cha
 
 static char* __replace_or_add_prefix(const char* platform, const char* arguments, const char* installPath, char** prefixPathOut)
 {
-    char* prefix = strstr(arguments, "--prefix=");
-    char* newArguments;
-    char* oldPath;
-    char* newPath;
-    char* startOfValue;
-    char* endOfValue;
+    const char* prefix = strstr(arguments, "--prefix=");
+    char*       newArguments;
+    char*       oldPath;
+    char*       newPath;
+    const char* startOfValue;
+    const char* endOfValue;
 
     if (!prefix) {
         return __add_prefix(platform, arguments, installPath, prefixPathOut);

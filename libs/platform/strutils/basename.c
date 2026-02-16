@@ -23,8 +23,8 @@
 
 void strbasename(const char* path, char* buffer, size_t bufferSize)
 {
-	char* start;
-    int   i;
+	const char* start;
+    int         i;
 
     if (path == NULL || buffer == NULL || bufferSize == 0) {
         errno = EINVAL;

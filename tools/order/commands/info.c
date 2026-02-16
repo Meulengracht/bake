@@ -66,7 +66,7 @@ static void __format_quantity(long long size, char* buffer, size_t bufferSize)
 static void __format_date(const char* dateTime, char* buffer, size_t bufferSize)
 {
     // find the 'T' and strip it
-    char* t = strchr(dateTime, 'T');
+    const char* t = strchr(dateTime, 'T');
 
     memset(buffer, 0, bufferSize);
     if (t == NULL) {

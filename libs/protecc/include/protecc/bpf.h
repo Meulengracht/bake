@@ -24,25 +24,17 @@
 // BPF includes
 #include <bpf/bpf_helpers.h>
 
+#define PROTECC_INVALID_EDGE_INDEX 0xFFFFFFFFu
+
 #ifndef PROTECC_FLAG_CASE_INSENSITIVE
 #define PROTECC_FLAG_CASE_INSENSITIVE (1u << 0)
 #endif
 
-#ifndef PROTECC_BPF_MAX_PATH
-#define PROTECC_BPF_MAX_PATH 256u
-#endif
-
-#ifndef PROTECC_BPF_MAX_STACK
-#define PROTECC_BPF_MAX_STACK 128u
-#endif
-
-#ifndef PROTECC_BPF_MAX_STEPS
-#define PROTECC_BPF_MAX_STEPS 4096u
-#endif
-
-#ifndef PROTECC_BPF_MAX_CHILDREN
-#define PROTECC_BPF_MAX_CHILDREN 32u
-#endif
+#define PROTECC_BPF_MAX_PATH         256u
+#define PROTECC_BPF_MAX_STACK        128u
+#define PROTECC_BPF_MAX_STEPS        4096u
+#define PROTECC_BPF_MAX_CHILDREN     32u
+#define PROTECC_BPF_MAX_PROFILE_SIZE (65536u - 4u)
 
 typedef struct {
     __u32 node_index;
@@ -76,174 +68,255 @@ static __always_inline bool __char_matches(const protecc_profile_node_t* node, u
     }
 }
 
-static __always_inline bool __validate_profile(const protecc_profile_header_t* header) {
+static __always_inline bool __validate_profile_header(const protecc_profile_header_t* header) {
+    if (header == NULL) {
+        return false;
+    }
+    
     if (header->magic != PROTECC_PROFILE_MAGIC || header->version != PROTECC_PROFILE_VERSION) {
         return false;
     }
+    
     if (header->num_nodes == 0 || header->root_index >= header->num_nodes) {
         return false;
     }
+
     return true;
+}
+
+static __always_inline protecc_profile_node_t* __get_node(const __u8 profile[PROTECC_BPF_MAX_PROFILE_SIZE], __u32 nodeIndex) {
+    const protecc_profile_header_t* header = (const protecc_profile_header_t*)profile;
+    protecc_profile_node_t*         node;
+
+    if (nodeIndex >= header->num_nodes) {
+        return NULL;
+    }
+
+    node = (protecc_profile_node_t*)(&profile[sizeof(protecc_profile_header_t) + (nodeIndex * sizeof(protecc_profile_node_t))]);
+    if ((const __u8*)node < (const __u8*)profile || (const __u8*)(node + 1) > ((const __u8*)profile + PROTECC_BPF_MAX_PROFILE_SIZE)) {
+        return NULL;
+    }
+    return node;
+}
+
+static __always_inline __u32 __get_edge_value(
+    const __u8 profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    __u32      edgeIndex) {
+    const protecc_profile_header_t* header = (const protecc_profile_header_t*)profile;
+    const __u32*                    edge;
+
+    if (edgeIndex >= header->num_edges) {
+        return PROTECC_INVALID_EDGE_INDEX;
+    }
+
+    edge = ((const __u32*)(&profile[sizeof(protecc_profile_header_t) + (header->num_nodes * sizeof(protecc_profile_node_t))])) + edgeIndex;
+    if (edge < (const __u32*)profile || (edge + 1) >= (const __u32*)((const __u8*)profile + PROTECC_BPF_MAX_PROFILE_SIZE)) {
+        return PROTECC_INVALID_EDGE_INDEX;
+    }
+    return *edge;
+}
+
+struct __step_context {
+    protecc_bpf_state_t* stack;
+    __u8                 stack_index;
+    const __u8*          profile;
+    const char*          path;
+    __u32                path_length;
+
+    bool                 match;
+};
+
+static long __protecc_step_handler(__u64 index, void *ctx) {
+    struct __step_context*          context = (struct __step_context*)ctx;
+    const protecc_profile_header_t* header = (const protecc_profile_header_t*)context->profile;
+    const protecc_profile_node_t*   node;
+    protecc_bpf_state_t*            state;
+    __u32                           childCount;
+
+    // ensure the stack is valid
+    if (context->stack_index <= 0 || context->stack_index >= PROTECC_BPF_MAX_STACK) {
+        return 1;
+    }
+
+    state = &context->stack[(--context->stack_index) & (PROTECC_BPF_MAX_STACK - 1)];
+    node = __get_node(context->profile, state->node_index);
+    if (node == NULL) {
+        return 0;
+    }
+
+    if (state->pos == context->path_length && node->is_terminal) {
+        context->match = true;
+        return 1;
+    }
+
+    if (node->child_count == 0 || node->child_count > PROTECC_BPF_MAX_CHILDREN) {
+        return 0;
+    }
+
+    __u32 childStart = node->child_start;
+    __u32 i;
+    
+    bpf_for (i, 0, PROTECC_BPF_MAX_CHILDREN) {
+        const protecc_profile_node_t* child;
+        uint8_t                       modifier;
+        __u32                         childIndex;
+
+        if (i >= node->child_count) {
+            break;
+        }
+
+        childIndex = __get_edge_value(context->profile, childStart + i);
+        if (childIndex == PROTECC_INVALID_EDGE_INDEX || childIndex >= header->num_nodes) {
+            continue;
+        }
+
+        child = __get_node(context->profile, childIndex);
+        if (child == NULL) {
+            continue;
+        }
+        
+        modifier = child->modifier;
+        if (modifier != 0) {
+            int   hasNext = (i + 1u) < node->child_count;
+            __u32 nextIndex = hasNext ? __get_edge_value(context->profile, childStart + i + 1u) : 0;
+
+            if (modifier == 1) { /* MODIFIER_OPTIONAL */
+                if (state->pos < context->path_length &&
+                    __char_matches(child, (uint8_t)context->path[state->pos], header->flags)) {
+                    if (hasNext && nextIndex < header->num_nodes && context->stack_index < PROTECC_BPF_MAX_STACK) {
+                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ nextIndex, state->pos + 1u };
+                    } else if (!hasNext && child->is_terminal && state->pos + 1u == context->path_length) {
+                        context->match = true;
+                        return 1;
+                    }
+                }
+                if (hasNext && nextIndex < header->num_nodes && context->stack_index < PROTECC_BPF_MAX_STACK) {
+                    context->stack[context->stack_index++] = (protecc_bpf_state_t){ nextIndex, state->pos };
+                } else if (!hasNext && child->is_terminal && state->pos == context->path_length) {
+                    context->match = true;
+                    return 1;
+                }
+            } else if (modifier == 2 || modifier == 3) { /* + or * */
+                __u32 pos = state->pos;
+                __u32 k;
+                
+                if (modifier == 2) {
+                    if (pos >= context->path_length ||
+                        !__char_matches(child, (uint8_t)context->path[pos], header->flags)) {
+                        continue;
+                    }
+                    pos++;
+                }
+
+                bpf_for (k, 0, PROTECC_BPF_MAX_PATH + 1) {
+                    if (pos > context->path_length) {
+                        break;
+                    }
+                    
+                    if (hasNext && nextIndex < header->num_nodes && context->stack_index < PROTECC_BPF_MAX_STACK) {
+                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ nextIndex, pos };
+                    } else if (!hasNext && child->is_terminal && pos == context->path_length) {
+                        context->match = true;
+                        return 1;
+                    }
+
+                    if (pos >= context->path_length) {
+                        break;
+                    }
+                    if (!__char_matches(child, (uint8_t)context->path[pos], header->flags)) {
+                        break;
+                    }
+                    pos++;
+                }
+            }
+
+            continue;
+        }
+
+        switch (child->type) {
+            case 3: { /* NODE_WILDCARD_RECURSIVE */
+                __u32 tryPos = state->pos;
+                __u32 k;
+                
+                bpf_for (k, 0, PROTECC_BPF_MAX_PATH + 1) {
+                    if (tryPos > context->path_length) {
+                        break;
+                    }
+                    if (context->stack_index < PROTECC_BPF_MAX_STACK) {
+                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ childIndex, tryPos };
+                    }
+                    tryPos++;
+                }
+                break;
+            }
+            case 2: { /* NODE_WILDCARD_MULTI */
+                __u32 tryPos = state->pos;
+                __u32 k;
+                
+                bpf_for (k, 0, PROTECC_BPF_MAX_PATH + 1) {
+                    if (tryPos > context->path_length) {
+                        break;
+                    }
+                    if (context->stack_index < PROTECC_BPF_MAX_STACK) {
+                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ childIndex, tryPos };
+                    }
+                    if (tryPos < context->path_length && context->path[tryPos] == '/') {
+                        break;
+                    }
+                    tryPos++;
+                }
+                break;
+            }
+            case 0: /* NODE_LITERAL */
+            case 1: /* NODE_WILDCARD_SINGLE */
+            case 4: /* NODE_CHARSET */
+            case 5: /* NODE_RANGE */
+                if (state->pos < context->path_length &&
+                    __char_matches(child, (uint8_t)context->path[state->pos], header->flags)) {
+                    if (context->stack_index < PROTECC_BPF_MAX_STACK) {
+                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ childIndex, state->pos + 1u };
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+    }
+    return 0;
 }
 
 static __always_inline bool protecc_bpf_match(
     protecc_bpf_state_t stack[PROTECC_BPF_MAX_STACK],
-    const void*         profile,
+    const __u8          profile[PROTECC_BPF_MAX_PROFILE_SIZE],
     const char*         path,
     __u32               pathLength)
 {
     const protecc_profile_header_t* header = (const protecc_profile_header_t*)profile;
-    const uint8_t*                  base = (const uint8_t*)profile;
-    const protecc_profile_node_t*   nodes;
-    const __u32*                    edges;
-    __u32                           sp = 0, steps;
+    struct __step_context           context;
 
     if (profile == NULL || path == NULL) {
         return false;
     }
 
-    if (__validate_profile(header) == false) {
+    if (__validate_profile_header(header) == false) {
         return false;
     }
 
-    nodes = (const protecc_profile_node_t*)(base + sizeof(protecc_profile_header_t));
-    edges = (const __u32*)(base + sizeof(protecc_profile_header_t)
-                          + (uint64_t)header->num_nodes * sizeof(protecc_profile_node_t));
+    context.profile = profile;
+    context.stack = stack;
+    context.stack_index = 0;
+    context.path = path;
+    context.path_length = pathLength;
+    context.match = false;
 
-    stack[sp++] = (protecc_bpf_state_t){ header->root_index, 0 };
+    // initialize the stack with the root node
+    context.stack[context.stack_index++] = (protecc_bpf_state_t){ header->root_index, 0 };
+    
+    // run the matching loop
+    bpf_loop(PROTECC_BPF_MAX_STEPS, __protecc_step_handler, &context, 0);
 
-    bpf_for (steps, 0, PROTECC_BPF_MAX_STEPS) {
-        if (sp == 0) {
-            break;
-        }
-
-        protecc_bpf_state_t state = stack[--sp];
-        const protecc_profile_node_t* node = &nodes[state.node_index];
-
-        if (state.pos == pathLength && node->is_terminal) {
-            return true;
-        }
-        if (node->child_count == 0 || node->child_count > PROTECC_BPF_MAX_CHILDREN) {
-            continue;
-        }
-
-        __u32 childStart = node->child_start;
-        __u32 i;
-        bpf_for (i, 0, node->child_count) {
-            __u32 childIndex = edges[childStart + i];
-            if (childIndex >= header->num_nodes) {
-                continue;
-            }
-
-            const protecc_profile_node_t* child = &nodes[childIndex];
-            uint8_t modifier = child->modifier;
-
-            if (modifier != 0) {
-                int   hasNext = (i + 1u) < node->child_count;
-                __u32 nextIndex = hasNext ? edges[childStart + i + 1u] : 0;
-
-                if (modifier == 1) { /* MODIFIER_OPTIONAL */
-                    if (state.pos < pathLength &&
-                        __char_matches(child, (uint8_t)path[state.pos], header->flags)) {
-                        if (hasNext && nextIndex < header->num_nodes && sp < PROTECC_BPF_MAX_STACK) {
-                            stack[sp++] = (protecc_bpf_state_t){ nextIndex, state.pos + 1u };
-                        } else if (!hasNext && child->is_terminal && state.pos + 1u == pathLength) {
-                            return true;
-                        }
-                    }
-                    if (hasNext && nextIndex < header->num_nodes && sp < PROTECC_BPF_MAX_STACK) {
-                        stack[sp++] = (protecc_bpf_state_t){ nextIndex, state.pos };
-                    } else if (!hasNext && child->is_terminal && state.pos == pathLength) {
-                        return true;
-                    }
-                } else if (modifier == 2 || modifier == 3) { /* + or * */
-                    __u32 pos = state.pos;
-                    __u32 k;
-                    
-                    if (modifier == 2) {
-                        if (pos >= pathLength ||
-                            !__char_matches(child, (uint8_t)path[pos], header->flags)) {
-                            continue;
-                        }
-                        pos++;
-                    }
-
-                    bpf_for (k, 0, PROTECC_BPF_MAX_PATH + 1) {
-                        if (pos > pathLength) {
-                            break;
-                        }
-                        
-                        if (hasNext && nextIndex < header->num_nodes && sp < PROTECC_BPF_MAX_STACK) {
-                            stack[sp++] = (protecc_bpf_state_t){ nextIndex, pos };
-                        } else if (!hasNext && child->is_terminal && pos == pathLength) {
-                            return true;
-                        }
-
-                        if (pos >= pathLength) {
-                            break;
-                        }
-                        if (!__char_matches(child, (uint8_t)path[pos], header->flags)) {
-                            break;
-                        }
-                        pos++;
-                    }
-                }
-
-                continue;
-            }
-
-            switch (child->type) {
-                case 3: { /* NODE_WILDCARD_RECURSIVE */
-                    __u32 tryPos = state.pos;
-                    __u32 k;
-                    
-                    bpf_for (k, 0, PROTECC_BPF_MAX_PATH + 1) {
-                        if (tryPos > pathLength) {
-                            break;
-                        }
-                        if (sp < PROTECC_BPF_MAX_STACK) {
-                            stack[sp++] = (protecc_bpf_state_t){ childIndex, tryPos };
-                        }
-                        tryPos++;
-                    }
-                    break;
-                }
-                case 2: { /* NODE_WILDCARD_MULTI */
-                    __u32 tryPos = state.pos;
-                    __u32 k;
-                    
-                    bpf_for (k, 0, PROTECC_BPF_MAX_PATH + 1) {
-                        if (tryPos > pathLength) {
-                            break;
-                        }
-                        if (sp < PROTECC_BPF_MAX_STACK) {
-                            stack[sp++] = (protecc_bpf_state_t){ childIndex, tryPos };
-                        }
-                        if (tryPos < pathLength && path[tryPos] == '/') {
-                            break;
-                        }
-                        tryPos++;
-                    }
-                    break;
-                }
-                case 0: /* NODE_LITERAL */
-                case 1: /* NODE_WILDCARD_SINGLE */
-                case 4: /* NODE_CHARSET */
-                case 5: /* NODE_RANGE */
-                    if (state.pos < pathLength &&
-                        __char_matches(child, (uint8_t)path[state.pos], header->flags)) {
-                        if (sp < PROTECC_BPF_MAX_STACK) {
-                            stack[sp++] = (protecc_bpf_state_t){ childIndex, state.pos + 1u };
-                        }
-                    }
-                    break;
-                default:
-                    break;
-            }
-        }
-    }
-
-    return false;
+    // return the result
+    return context.match;
 }
 
 #endif // !__PROTECC_BPF_H__

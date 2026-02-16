@@ -29,8 +29,8 @@ char* __prefix_path(const char* base, const char* path)
 	// 'base' path, but the base path is a file path, so we need to remove the last
 	// component
 	if (path[0] != '/') {
-		char* result = calloc(1, strlen(base) + strlen(path) + 2);
-		char* last;
+		char*       result = calloc(1, strlen(base) + strlen(path) + 2);
+		const char* last;
 		if (result == NULL) {
 			errno = ENOMEM;
 			return NULL;

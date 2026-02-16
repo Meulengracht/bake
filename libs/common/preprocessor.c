@@ -25,12 +25,12 @@
 static int __expand_variable(char** at, char** buffer, size_t* index, size_t* maxLength, const char* (*resolve)(const char*, void*), void* context)
 {
     const char* start = *at;
-    char*       end   = strchr(start, ']');
+    const char* end   = strchr(start, ']');
     if (end && end[1] == ']') {
         char* variable;
 
         // fixup at
-        *at = (end + 2);
+        *at = (char*)(end + 2);
 
         start += 3; // skip $[[
 
@@ -77,12 +77,12 @@ static int __expand_variable(char** at, char** buffer, size_t* index, size_t* ma
 static int __expand_environment_variable(char** at, char** buffer, size_t* index, size_t* maxLength)
 {
     const char* start = *at;
-    char*       end   = strchr(start, '}');
+    const char* end   = strchr(start, '}');
     if (end) {
         char* variable;
         
         // fixup at
-        *at = end + 1;
+        *at = (char*)(end + 1);
 
         start += 2; // skip ${
 

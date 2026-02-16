@@ -36,17 +36,13 @@
 #define O_WRONLY   00000001
 #define O_RDWR     00000002
 
-#ifndef PROTECC_PROFILE_MAX_SIZE
-#define PROTECC_PROFILE_MAX_SIZE (65536u - 4u)
-#endif
-
 #ifndef PROTECC_PROFILE_MAP_MAX_ENTRIES
 #define PROTECC_PROFILE_MAP_MAX_ENTRIES 1024u
 #endif
 
 struct profile_value {
     __u32 size;
-    __u8  data[PROTECC_PROFILE_MAX_SIZE];
+    __u8  data[PROTECC_BPF_MAX_PROFILE_SIZE];
 };
 
 struct per_cpu_data {
@@ -118,7 +114,7 @@ static __always_inline int __check_profile_match(
         return 1;
     }
 
-    if (profile->size == 0 || profile->size > PROTECC_PROFILE_MAX_SIZE) {
+    if (profile->size == 0 || profile->size > PROTECC_BPF_MAX_PROFILE_SIZE) {
         __emit_deny_event_dentry(dentry, required, hookId);
         return -EACCES;
     }
