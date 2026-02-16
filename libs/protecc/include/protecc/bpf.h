@@ -68,6 +68,35 @@ static __always_inline bool __char_matches(const protecc_profile_node_t* node, u
     }
 }
 
+static __always_inline bool __is_end(protecc_bpf_state_t* state, __u32 max) {
+    return state->pos >= max;
+}
+
+static __always_inline __u8 __pop_char(protecc_bpf_state_t* state, const char* path, __u32 max, __u32* pos) {
+    if (state->pos >= max) {
+        return 0;
+    }
+    return state->pos < max ? (uint8_t)path[state->pos++] : 0;
+}
+
+static __always_inline __u8 __peek_char(protecc_bpf_state_t* state, const char* path, __u32 path_length) {
+    if (path_length == 0 || path_length > PROTECC_BPF_MAX_PATH) {
+        return 0;
+    }
+    if (state->pos >= path_length) {
+        return 0;
+    }
+    return (__u8)path[state->pos];
+}
+
+static __always_inline __u8 __char_at(protecc_bpf_state_t* state, const char* path, __u32 offset, __u32 max) {
+    __u32 pos = state->pos + offset;
+    if (pos >= max) {
+        return 0;
+    }
+    return pos < max ? (uint8_t)path[pos] : 0;
+}
+
 static __always_inline bool __validate_profile_header(const protecc_profile_header_t* header) {
     if (header == NULL) {
         return false;
@@ -179,10 +208,10 @@ static long __protecc_step_handler(__u64 index, void *ctx) {
         if (modifier != 0) {
             int   hasNext = (i + 1u) < node->child_count;
             __u32 nextIndex = hasNext ? __get_edge_value(context->profile, childStart + i + 1u) : 0;
+            __u8  c = __peek_char(state, context->path, context->path_length);
 
             if (modifier == 1) { /* MODIFIER_OPTIONAL */
-                if (state->pos < context->path_length &&
-                    __char_matches(child, (uint8_t)context->path[state->pos], header->flags)) {
+                if (c && __char_matches(child, c, header->flags)) {
                     if (hasNext && nextIndex < header->num_nodes && context->stack_index < PROTECC_BPF_MAX_STACK) {
                         context->stack[context->stack_index++] = (protecc_bpf_state_t){ nextIndex, state->pos + 1u };
                     } else if (!hasNext && child->is_terminal && state->pos + 1u == context->path_length) {
@@ -190,43 +219,42 @@ static long __protecc_step_handler(__u64 index, void *ctx) {
                         return 1;
                     }
                 }
+                
                 if (hasNext && nextIndex < header->num_nodes && context->stack_index < PROTECC_BPF_MAX_STACK) {
                     context->stack[context->stack_index++] = (protecc_bpf_state_t){ nextIndex, state->pos };
                 } else if (!hasNext && child->is_terminal && state->pos == context->path_length) {
                     context->match = true;
                     return 1;
                 }
-            } else if (modifier == 2 || modifier == 3) { /* + or * */
+            } else if (modifier == 2 || modifier == 3) { /* MODIFIER_ONE_OR_MORE or MODIFIER_ZERO_OR_MORE */
                 __u32 pos = state->pos;
                 __u32 k;
                 
                 if (modifier == 2) {
-                    if (pos >= context->path_length ||
-                        !__char_matches(child, (uint8_t)context->path[pos], header->flags)) {
+                    if (c && !__char_matches(child, c, header->flags)) {
                         continue;
                     }
                     pos++;
                 }
 
-                bpf_for (k, 0, PROTECC_BPF_MAX_PATH + 1) {
-                    if (pos > context->path_length) {
+                bpf_for (k, pos, PROTECC_BPF_MAX_PATH + 1) {
+                    if (k > context->path_length) {
                         break;
                     }
                     
                     if (hasNext && nextIndex < header->num_nodes && context->stack_index < PROTECC_BPF_MAX_STACK) {
-                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ nextIndex, pos };
-                    } else if (!hasNext && child->is_terminal && pos == context->path_length) {
+                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ nextIndex, k };
+                    } else if (!hasNext && child->is_terminal && k == context->path_length) {
                         context->match = true;
                         return 1;
                     }
 
-                    if (pos >= context->path_length) {
+                    if (k >= context->path_length) {
                         break;
                     }
-                    if (!__char_matches(child, (uint8_t)context->path[pos], header->flags)) {
+                    if (!__char_matches(child, (uint8_t)context->path[k], header->flags)) {
                         break;
                     }
-                    pos++;
                 }
             }
 
@@ -235,35 +263,29 @@ static long __protecc_step_handler(__u64 index, void *ctx) {
 
         switch (child->type) {
             case 3: { /* NODE_WILDCARD_RECURSIVE */
-                __u32 tryPos = state->pos;
                 __u32 k;
-                
-                bpf_for (k, 0, PROTECC_BPF_MAX_PATH + 1) {
-                    if (tryPos > context->path_length) {
+                bpf_for (k, state->pos, PROTECC_BPF_MAX_PATH + 1) {
+                    if (k > context->path_length) {
                         break;
                     }
                     if (context->stack_index < PROTECC_BPF_MAX_STACK) {
-                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ childIndex, tryPos };
+                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ childIndex, k };
                     }
-                    tryPos++;
                 }
                 break;
             }
             case 2: { /* NODE_WILDCARD_MULTI */
-                __u32 tryPos = state->pos;
                 __u32 k;
-                
-                bpf_for (k, 0, PROTECC_BPF_MAX_PATH + 1) {
-                    if (tryPos > context->path_length) {
+                bpf_for (k, state->pos, PROTECC_BPF_MAX_PATH + 1) {
+                    if (k > context->path_length) {
                         break;
                     }
                     if (context->stack_index < PROTECC_BPF_MAX_STACK) {
-                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ childIndex, tryPos };
+                        context->stack[context->stack_index++] = (protecc_bpf_state_t){ childIndex, k };
                     }
-                    if (tryPos < context->path_length && context->path[tryPos] == '/') {
+                    if (k < context->path_length && context->path[k] == '/') {
                         break;
                     }
-                    tryPos++;
                 }
                 break;
             }
