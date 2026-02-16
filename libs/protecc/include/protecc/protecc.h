@@ -48,6 +48,17 @@ typedef enum {
 } protecc_flags_t;
 
 /**
+ * @brief Permission flags for compiled patterns
+ */
+typedef enum {
+    PROTECC_PERM_NONE = 0,
+    PROTECC_PERM_READ = 1 << 0,
+    PROTECC_PERM_WRITE = 1 << 1,
+    PROTECC_PERM_EXECUTE = 1 << 2,
+    PROTECC_PERM_ALL = PROTECC_PERM_READ | PROTECC_PERM_WRITE | PROTECC_PERM_EXECUTE,
+} protecc_permission_t;
+
+/**
  * @brief Error codes
  */
 typedef enum {
@@ -69,6 +80,14 @@ typedef struct {
 } protecc_stats_t;
 
 /**
+ * @brief Pattern entry with explicit permissions
+ */
+typedef struct {
+    const char* pattern;      /**< Pattern string */
+    uint32_t permissions;     /**< OR of protecc_permission_t */
+} protecc_pattern_t;
+
+/**
  * @brief Create a new compiled pattern set
  * 
  * @param patterns Array of pattern strings (NULL-terminated)
@@ -79,6 +98,22 @@ typedef struct {
  */
 protecc_error_t protecc_compile(
     const char** patterns,
+    size_t count,
+    uint32_t flags,
+    protecc_compiled_t** compiled
+);
+
+/**
+ * @brief Create a new compiled pattern set with explicit permissions
+ *
+ * @param patterns Array of pattern entries
+ * @param count Number of patterns in the array
+ * @param flags Compilation flags (OR of protecc_flags_t)
+ * @param compiled Output pointer for the compiled pattern set
+ * @return PROTECC_OK on success, error code otherwise
+ */
+protecc_error_t protecc_compile_with_permissions(
+    const protecc_pattern_t* patterns,
     size_t count,
     uint32_t flags,
     protecc_compiled_t** compiled
@@ -96,6 +131,22 @@ bool protecc_match(
     const protecc_compiled_t* compiled,
     const char* path,
     size_t path_len
+);
+
+/**
+ * @brief Match a path against compiled patterns requiring specific permissions
+ *
+ * @param compiled Compiled pattern set
+ * @param path Path to match
+ * @param path_len Length of path (or 0 to use strlen)
+ * @param required_permissions OR of protecc_permission_t required by caller
+ * @return true if path matches a pattern that grants all required permissions
+ */
+bool protecc_match_with_permissions(
+    const protecc_compiled_t* compiled,
+    const char* path,
+    size_t path_len,
+    uint32_t required_permissions
 );
 
 /**

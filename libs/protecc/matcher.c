@@ -1,189 +1,288 @@
 /**
  * @file matcher.c
- * @brief Pattern matching implementation for protecc library
+ * @brief Iterative pattern matching implementation for protecc library
  */
 
 #include "protecc_internal.h"
+#include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <stdint.h>
 
-/**
- * @brief Check if a character matches a node
- */
-static bool char_matches_node(
-    const protecc_node_t* node,
+typedef struct {
+    size_t pattern_pos;
+    size_t path_pos;
+} match_state_t;
+
+static char normalize_char(char c, bool case_insensitive) {
+    if (!case_insensitive) {
+        return c;
+    }
+    return (char)tolower((unsigned char)c);
+}
+
+static bool charset_contains(
+    const char* pattern,
+    size_t start,
+    size_t end,
     char c,
-    uint32_t flags
+    bool case_insensitive
 ) {
-    bool case_insensitive = (flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
-    
-    if (case_insensitive) {
-        c = tolower(c);
-    }
-    
-    switch (node->type) {
-        case NODE_LITERAL:
-            return c == node->data.literal;
-        
-        case NODE_WILDCARD_SINGLE:
-            return c != '\0';
-        
-        case NODE_CHARSET:
-            return protecc_charset_contains(&node->data.charset, (unsigned char)c);
-        
-        case NODE_RANGE:
-            if (case_insensitive) {
-                return (c >= tolower(node->data.range.start) && 
-                        c <= tolower(node->data.range.end));
+    char value = normalize_char(c, case_insensitive);
+    size_t i = start;
+
+    while (i < end) {
+        if (i + 2 < end && pattern[i + 1] == '-') {
+            char range_start = normalize_char(pattern[i], case_insensitive);
+            char range_end = normalize_char(pattern[i + 2], case_insensitive);
+            if (range_start <= value && value <= range_end) {
+                return true;
             }
-            return (c >= node->data.range.start && c <= node->data.range.end);
-        
-        default:
-            return false;
+            i += 3;
+        } else {
+            if (normalize_char(pattern[i], case_insensitive) == value) {
+                return true;
+            }
+            i++;
+        }
     }
+
+    return false;
 }
 
-/**
- * @brief Match with modifier support
- */
-static bool match_with_modifier(
-    const protecc_node_t* node,
-    const char* path,
+static bool push_state(
+    match_state_t** stack,
+    size_t* stack_size,
+    size_t* stack_capacity,
+    bool* visited,
     size_t path_len,
-    size_t pos,
-    const protecc_node_t* next_node,
-    uint32_t flags
+    size_t pattern_pos,
+    size_t path_pos
 ) {
-    switch (node->modifier) {
-        case MODIFIER_OPTIONAL: // ? - 0 or 1
-            // Try matching with the character
-            if (pos < path_len && char_matches_node(node, path[pos], flags)) {
-                if (next_node) {
-                    if (protecc_match_internal(next_node, path, path_len, pos + 1, flags)) {
-                        return true;
-                    }
-                } else if (pos + 1 == path_len) {
-                    return node->is_terminal;
-                }
-            }
-            // Try matching without the character
-            if (next_node) {
-                return protecc_match_internal(next_node, path, path_len, pos, flags);
-            }
-            return node->is_terminal && pos == path_len;
-        
-        case MODIFIER_ONE_OR_MORE: // + - 1 or more
-            // Must match at least once
-            if (pos >= path_len || !char_matches_node(node, path[pos], flags)) {
-                return false;
-            }
-            pos++;
-            // Fall through to zero-or-more logic
-        
-        case MODIFIER_ZERO_OR_MORE: // * - 0 or more
-            // Try matching as many as possible
-            while (pos < path_len && char_matches_node(node, path[pos], flags)) {
-                // Try continuing from here
-                if (next_node) {
-                    if (protecc_match_internal(next_node, path, path_len, pos, flags)) {
-                        return true;
-                    }
-                } else if (node->is_terminal && pos == path_len) {
-                    return true;
-                }
-                pos++;
-            }
-            // Try without consuming any more
-            if (next_node) {
-                return protecc_match_internal(next_node, path, path_len, pos, flags);
-            }
-            return node->is_terminal && pos == path_len;
-        
-        case MODIFIER_NONE:
-        default:
-            return false; // Should not reach here
-    }
-}
-
-bool protecc_match_internal(
-    const protecc_node_t* node,
-    const char* path,
-    size_t path_len,
-    size_t pos,
-    uint32_t flags
-) {
-    if (!node) {
-        return false;
-    }
-    
-    // If we're at a terminal and consumed all input, match!
-    if (pos == path_len && node->is_terminal) {
+    size_t cols = path_len + 1;
+    size_t index = pattern_pos * cols + path_pos;
+    if (visited[index]) {
         return true;
     }
-    
-    // If we have no more children and no more input, check if terminal
-    if (node->num_children == 0) {
-        return pos == path_len && node->is_terminal;
+    visited[index] = true;
+
+    if (*stack_size >= *stack_capacity) {
+        size_t new_capacity = (*stack_capacity == 0) ? 64 : (*stack_capacity * 2);
+        match_state_t* new_stack = realloc(*stack, new_capacity * sizeof(match_state_t));
+        if (!new_stack) {
+            return false;
+        }
+        *stack = new_stack;
+        *stack_capacity = new_capacity;
     }
-    
-    // Try matching each child
-    for (size_t i = 0; i < node->num_children; i++) {
-        protecc_node_t* child = node->children[i];
-        
-        // Handle modifiers
-        if (child->modifier != MODIFIER_NONE) {
-            protecc_node_t* next = (i + 1 < node->num_children) ? node->children[i + 1] : NULL;
-            if (match_with_modifier(child, path, path_len, pos, next, flags)) {
-                return true;
+
+    (*stack)[*stack_size].pattern_pos = pattern_pos;
+    (*stack)[*stack_size].path_pos = path_pos;
+    (*stack_size)++;
+
+    return true;
+}
+
+bool protecc_match_pattern(
+    const char* pattern,
+    const char* path,
+    size_t path_len,
+    uint32_t flags
+) {
+    if (!pattern || !path) {
+        return false;
+    }
+
+    if (path_len == 0) {
+        path_len = strlen(path);
+    }
+
+    size_t pattern_len = strlen(pattern);
+    if ((path_len + 1) != 0 && (pattern_len + 1) > (SIZE_MAX / (path_len + 1))) {
+        return false;
+    }
+    size_t visited_size = (pattern_len + 1) * (path_len + 1);
+    bool* visited = calloc(visited_size, sizeof(bool));
+    if (!visited) {
+        return false;
+    }
+
+    match_state_t* stack = NULL;
+    size_t stack_size = 0;
+    size_t stack_capacity = 0;
+    bool case_insensitive = (flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
+    bool matched = false;
+
+    if (!push_state(
+            &stack, &stack_size, &stack_capacity, visited, path_len, 0, 0)) {
+        goto cleanup;
+    }
+
+    while (stack_size > 0) {
+        match_state_t state = stack[--stack_size];
+        size_t ppos = state.pattern_pos;
+        size_t spos = state.path_pos;
+
+        if (ppos == pattern_len) {
+            if (spos == path_len) {
+                matched = true;
+                break;
             }
             continue;
         }
-        
-        switch (child->type) {
-            case NODE_WILDCARD_RECURSIVE: {
-                // ** matches anything including /
-                // Try matching from every position
-                for (size_t try_pos = pos; try_pos <= path_len; try_pos++) {
-                    if (protecc_match_internal(child, path, path_len, try_pos, flags)) {
-                        return true;
+
+        if (pattern[ppos] == '*' && (ppos + 1) < pattern_len && pattern[ppos + 1] == '*') {
+            size_t next = ppos + 2;
+            if (next < pattern_len && pattern[next] == '/') {
+                next++;
+            }
+            for (size_t try_pos = spos; try_pos <= path_len; try_pos++) {
+                if (!push_state(
+                        &stack,
+                        &stack_size,
+                        &stack_capacity,
+                        visited,
+                        path_len,
+                        next,
+                        try_pos)) {
+                    goto cleanup;
+                }
+            }
+            continue;
+        }
+
+        if (pattern[ppos] == '*') {
+            size_t next = ppos + 1;
+            size_t try_pos = spos;
+            while (try_pos <= path_len) {
+                if (!push_state(
+                        &stack,
+                        &stack_size,
+                        &stack_capacity,
+                        visited,
+                        path_len,
+                        next,
+                        try_pos)) {
+                    goto cleanup;
+                }
+                if (try_pos < path_len && path[try_pos] == '/') {
+                    break;
+                }
+                try_pos++;
+            }
+            continue;
+        }
+
+        if (pattern[ppos] == '?') {
+            if (spos < path_len) {
+                if (!push_state(
+                        &stack,
+                        &stack_size,
+                        &stack_capacity,
+                        visited,
+                        path_len,
+                        ppos + 1,
+                        spos + 1)) {
+                    goto cleanup;
+                }
+            }
+            continue;
+        }
+
+        if (pattern[ppos] == '[') {
+            size_t close = ppos + 1;
+            while (close < pattern_len && pattern[close] != ']') {
+                close++;
+            }
+            if (close >= pattern_len) {
+                continue;
+            }
+
+            size_t next = close + 1;
+            char modifier = '\0';
+            if (next < pattern_len && (pattern[next] == '?' || pattern[next] == '+' || pattern[next] == '*')) {
+                modifier = pattern[next];
+                next++;
+            }
+
+            bool can_match_current = (spos < path_len) &&
+                charset_contains(pattern, ppos + 1, close, path[spos], case_insensitive);
+
+            if (modifier == '\0') {
+                if (can_match_current) {
+                    if (!push_state(
+                            &stack,
+                            &stack_size,
+                            &stack_capacity,
+                            visited,
+                            path_len,
+                            next,
+                            spos + 1)) {
+                        goto cleanup;
                     }
                 }
-                break;
+                continue;
             }
-            
-            case NODE_WILDCARD_MULTI: {
-                // * matches anything except /
-                size_t try_pos = pos;
-                while (try_pos <= path_len) {
-                    if (protecc_match_internal(child, path, path_len, try_pos, flags)) {
-                        return true;
-                    }
-                    if (try_pos < path_len && path[try_pos] == '/') {
-                        break; // Stop at directory separator
-                    }
-                    try_pos++;
+
+            if (modifier == '?' || modifier == '*') {
+                if (!push_state(
+                        &stack,
+                        &stack_size,
+                        &stack_capacity,
+                        visited,
+                        path_len,
+                        next,
+                        spos)) {
+                    goto cleanup;
                 }
-                break;
             }
-            
-            case NODE_WILDCARD_SINGLE:
-            case NODE_LITERAL:
-            case NODE_CHARSET:
-            case NODE_RANGE: {
-                // Match single character
-                if (pos < path_len && char_matches_node(child, path[pos], flags)) {
-                    if (protecc_match_internal(child, path, path_len, pos + 1, flags)) {
-                        return true;
-                    }
+
+            if (modifier == '+' || modifier == '*' || modifier == '?') {
+                if (!can_match_current) {
+                    continue;
                 }
-                break;
+
+                size_t consumed = 1;
+                while ((spos + consumed) <= path_len &&
+                       charset_contains(pattern, ppos + 1, close, path[spos + consumed - 1], case_insensitive)) {
+                    if (!push_state(
+                            &stack,
+                            &stack_size,
+                            &stack_capacity,
+                            visited,
+                            path_len,
+                            next,
+                            spos + consumed)) {
+                        goto cleanup;
+                    }
+                    if (modifier == '?') {
+                        break;
+                    }
+                    consumed++;
+                }
             }
-            
-            default:
-                break;
+            continue;
+        }
+
+        if (spos < path_len &&
+            normalize_char(pattern[ppos], case_insensitive) ==
+                normalize_char(path[spos], case_insensitive)) {
+            if (!push_state(
+                    &stack,
+                    &stack_size,
+                    &stack_capacity,
+                    visited,
+                    path_len,
+                    ppos + 1,
+                    spos + 1)) {
+                goto cleanup;
+            }
         }
     }
-    
-    return false;
+
+cleanup:
+    free(stack);
+    free(visited);
+    return matched;
 }

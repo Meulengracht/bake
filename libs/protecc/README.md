@@ -154,8 +154,33 @@ bool protecc_match(
 );
 ```
 
+#### `protecc_compile_with_permissions`
+Compile patterns with explicit read/write/execute permissions.
+
+```c
+protecc_pattern_t patterns[] = {
+    {"/etc/**", PROTECC_PERM_READ},
+    {"/tmp/**", PROTECC_PERM_READ | PROTECC_PERM_WRITE},
+};
+protecc_compile_with_permissions(patterns, 2, PROTECC_FLAG_NONE, &compiled);
+```
+
+#### `protecc_match_with_permissions`
+Match a path and require specific permissions.
+
+```c
+bool allowed = protecc_match_with_permissions(
+    compiled,
+    "/tmp/file.txt",
+    0,
+    PROTECC_PERM_WRITE
+);
+```
+
 #### `protecc_export`
-Export compiled patterns to binary format for eBPF.
+Export compiled patterns to a flat binary profile for eBPF:
+- header (`magic`, `version`, `flags`, `pattern_count`)
+- repeated entries (`permissions`, `pattern_len`, raw pattern bytes)
 
 ```c
 protecc_error_t protecc_export(

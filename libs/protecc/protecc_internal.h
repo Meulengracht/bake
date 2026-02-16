@@ -81,6 +81,9 @@ struct protecc_compiled {
     protecc_node_t* root;            /**< Root of the trie */
     uint32_t flags;                  /**< Compilation flags */
     protecc_stats_t stats;           /**< Statistics */
+    char** patterns;                 /**< Flat pattern list for iterative matching */
+    uint32_t* permissions;           /**< Permissions for each flat pattern */
+    size_t pattern_count;            /**< Number of flat patterns */
 };
 
 /**
@@ -123,13 +126,12 @@ bool protecc_charset_contains(const protecc_charset_t* charset, unsigned char c)
 void protecc_charset_set_range(protecc_charset_t* charset, char start, char end);
 
 /**
- * @brief Match path against a trie starting from a specific node
+ * @brief Match path against a single pattern without recursion
  */
-bool protecc_match_internal(
-    const protecc_node_t* node,
+bool protecc_match_pattern(
+    const char* pattern,
     const char* path,
     size_t path_len,
-    size_t pos,
     uint32_t flags
 );
 

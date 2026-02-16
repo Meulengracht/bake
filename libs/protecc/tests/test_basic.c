@@ -5,6 +5,7 @@
 
 #include <protecc/protecc.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define TEST_ASSERT(cond, msg) \
@@ -104,6 +105,51 @@ int test_basic_patterns(void) {
         TEST_ASSERT(err == PROTECC_OK, "Failed to get stats");
         TEST_ASSERT(stats.num_patterns == 2, "Wrong pattern count in stats");
         
+        protecc_free(compiled);
+        compiled = NULL;
+    }
+
+    // Test 7: Permissions and export/import
+    {
+        const protecc_pattern_t patterns[] = {
+            {"/etc/**", PROTECC_PERM_READ},
+            {"/usr/bin/**", PROTECC_PERM_EXECUTE},
+            {"/tmp/**", PROTECC_PERM_READ | PROTECC_PERM_WRITE},
+        };
+        err = protecc_compile_with_permissions(patterns, 3, PROTECC_FLAG_NONE, &compiled);
+        TEST_ASSERT(err == PROTECC_OK, "Failed to compile patterns with permissions");
+
+        TEST_ASSERT(protecc_match_with_permissions(compiled, "/etc/passwd", 0, PROTECC_PERM_READ),
+                   "Should allow read for /etc");
+        TEST_ASSERT(!protecc_match_with_permissions(compiled, "/etc/passwd", 0, PROTECC_PERM_WRITE),
+                   "Should deny write for /etc");
+        TEST_ASSERT(protecc_match_with_permissions(compiled, "/usr/bin/ls", 0, PROTECC_PERM_EXECUTE),
+                   "Should allow execute for /usr/bin");
+        TEST_ASSERT(!protecc_match_with_permissions(compiled, "/usr/bin/ls", 0, PROTECC_PERM_READ),
+                   "Should deny read for /usr/bin");
+        TEST_ASSERT(protecc_match(compiled, "/tmp/file", 0),
+                   "Legacy match should still work without permission filter");
+
+        size_t binary_size = 0;
+        err = protecc_export(compiled, NULL, 0, &binary_size);
+        TEST_ASSERT(err == PROTECC_OK, "Failed to query export size");
+        TEST_ASSERT(binary_size > 0, "Exported size should be non-zero");
+
+        void* binary = malloc(binary_size);
+        TEST_ASSERT(binary != NULL, "Failed to allocate export buffer");
+        err = protecc_export(compiled, binary, binary_size, &binary_size);
+        TEST_ASSERT(err == PROTECC_OK, "Failed to export profile");
+
+        protecc_compiled_t* imported = NULL;
+        err = protecc_import(binary, binary_size, &imported);
+        TEST_ASSERT(err == PROTECC_OK, "Failed to import profile");
+        TEST_ASSERT(protecc_match_with_permissions(imported, "/tmp/file", 0, PROTECC_PERM_WRITE),
+                   "Imported profile should preserve permissions");
+        TEST_ASSERT(!protecc_match_with_permissions(imported, "/tmp/file", 0, PROTECC_PERM_EXECUTE),
+                   "Imported profile should deny missing permissions");
+
+        protecc_free(imported);
+        free(binary);
         protecc_free(compiled);
         compiled = NULL;
     }

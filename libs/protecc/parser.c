@@ -156,7 +156,7 @@ protecc_error_t protecc_parse_pattern(
             }
             
             // Check for modifier after charset
-            if (*p && is_modifier(*p) && *p != '*') {
+            if (*p && is_modifier(*p)) {
                 node->modifier = parse_modifier(&p);
             }
         } else {
