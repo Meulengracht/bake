@@ -175,11 +175,12 @@ void bpf_container_context_apply_paths(
 {
     protecc_compiled_t* profile = NULL;
     protecc_error_t     err;
-    char**              paths = NULL;
+    protecc_compile_config_t compileConfig;
+    protecc_pattern_t*  paths = NULL;
     void*               binaryProfile = NULL;
     size_t              binaryProfileSize;
 
-    paths = calloc(policy->path_count + 1, sizeof(char*));
+    paths = calloc(policy->path_count, sizeof(protecc_pattern_t));
     if (paths == NULL) {
         VLOG_WARNING("cvd", "bpf_manager: failed to allocate paths array for protecc compilation\n");
         return;
@@ -187,11 +188,14 @@ void bpf_container_context_apply_paths(
 
     for (int i = 0; i < policy->path_count; i++) {
         const struct containerv_policy_path* p = &policy->paths[i];
-        paths[i] = strpathcombine(rootfsPath, p->path);
+        paths[i].pattern = strpathcombine(rootfsPath, p->path);
+        paths[i].perms = p->access;
     }
-    paths[policy->path_count] = NULL;
 
-    err = protecc_compile((const char**)paths, policy->path_count, PROTECC_FLAG_OPTIMIZE, &profile);
+    protecc_compile_config_default(&compileConfig);
+    compileConfig.mode = PROTECC_COMPILE_MODE_DFA;
+
+    err = protecc_compile(paths, policy->path_count, PROTECC_FLAG_OPTIMIZE, &compileConfig, &profile);
     if (err != PROTECC_OK) {
         VLOG_WARNING("cvd", "bpf_manager: failed to compile protecc patterns for container %s: %s\n",
                      containerContext->container_id, protecc_error_string(err));
@@ -199,7 +203,7 @@ void bpf_container_context_apply_paths(
     }
     
     err = protecc_export(profile, NULL, 0, &binaryProfileSize);
-    if (err != PROTECC_ERROR_OUT_OF_MEMORY) {
+    if (err != PROTECC_OK) {
         VLOG_WARNING("cvd", "bpf_manager: unexpected error querying protecc export size for container %s: %s\n",
                      containerContext->container_id, protecc_error_string(err));
         goto cleanup;
@@ -228,7 +232,7 @@ cleanup:
     protecc_free(profile);
     if (paths != NULL) {
          for (int i = 0; i < policy->path_count; i++) {
-            free(paths[i]);
+            free((void*)paths[i].pattern);
         }
         free(paths);
     }

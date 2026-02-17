@@ -46,8 +46,7 @@ struct profile_value {
 };
 
 struct per_cpu_data {
-    char                path[PATH_BUFFER_SIZE];
-    protecc_bpf_state_t bpf_stack[PROTECC_BPF_MAX_STACK];
+    char path[PATH_BUFFER_SIZE];
 };
 
 /**
@@ -127,7 +126,7 @@ static int __check_profile_match(
 
     pathLength = __resolve_dentry_path(scratch->path, dentry, &pathStart);
 
-    if (protecc_bpf_match(scratch->bpf_stack, profile->data, scratch->path + pathStart, pathLength)) {
+    if (protecc_bpf_match(profile->data, scratch->path + pathStart, pathLength)) {
         return 0;
     }
     __emit_deny_event_dentry(dentry, required, hookId);

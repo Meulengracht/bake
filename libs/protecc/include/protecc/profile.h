@@ -32,6 +32,13 @@
 #define PROTECC_PROFILE_MAGIC   0x50524F54u // "PROT"
 #define PROTECC_PROFILE_VERSION 0x00010000u
 
+#define PROTECC_PROFILE_FLAG_CASE_INSENSITIVE (1u << 0)
+#define PROTECC_PROFILE_FLAG_OPTIMIZE         (1u << 1)
+#define PROTECC_PROFILE_FLAG_TYPE_TRIE        (1u << 8)
+#define PROTECC_PROFILE_FLAG_TYPE_DFA         (1u << 9)
+
+#define PROTECC_PROFILE_DFA_CLASSMAP_SIZE 256u
+
 typedef struct __attribute__((packed)) {
     uint32_t num_patterns;
     uint32_t binary_size;
@@ -48,6 +55,16 @@ typedef struct __attribute__((packed)) {
     uint32_t root_index;
     protecc_profile_stats_t stats;
 } protecc_profile_header_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t num_states;
+    uint32_t num_classes;
+    uint32_t start_state;
+    uint32_t accept_words;
+    uint32_t classmap_off;
+    uint32_t accept_off;
+    uint32_t transitions_off;
+} protecc_profile_dfa_t;
 
 typedef struct __attribute__((packed)) {
     uint8_t type;

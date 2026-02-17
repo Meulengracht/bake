@@ -22,7 +22,7 @@ Protecc is a C library designed to compile and optimize path patterns with wildc
   - Can be applied to character sets: `[0-9]+`, `[a-z]*`
 
 - **Optimized for eBPF**
-  - Trie-based compilation for fast matching
+  - Mode-selectable compilation (`TRIE` for userspace, `DFA` for verifier-friendly eBPF)
   - Binary export format for loading in constrained environments
   - Minimal memory footprint
   - O(n) matching complexity where n is path length
@@ -42,10 +42,14 @@ const char* patterns[] = {
 };
 
 protecc_compiled_t* compiled;
+protecc_compile_config_t config;
+protecc_compile_config_default(&config);
+
 protecc_error_t err = protecc_compile(
     patterns,
     5,
     PROTECC_FLAG_OPTIMIZE,
+    &config,
     &compiled
 );
 
@@ -131,12 +135,22 @@ Compile an array of pattern strings into an optimized trie structure.
 
 ```c
 protecc_error_t protecc_compile(
-    const char** patterns,      // Array of pattern strings
-    size_t count,               // Number of patterns
-    uint32_t flags,             // Compilation flags
-    protecc_compiled_t** compiled  // Output compiled pattern set
+  const char** patterns,                       // Array of pattern strings
+  size_t count,                                // Number of patterns
+  uint32_t flags,                              // Compilation flags
+  const protecc_compile_config_t* config,      // Limits + backend (NULL = defaults)
+  protecc_compiled_t** compiled                // Output compiled pattern set
 );
 ```
+
+Compiler config defaults:
+- `mode = PROTECC_COMPILE_MODE_TRIE`
+- `max_patterns = 256`
+- `max_pattern_length = 128`
+- `max_states = 2048`
+- `max_classes = 32`
+
+To target eBPF, set `config.mode = PROTECC_COMPILE_MODE_DFA` before calling `protecc_compile(...)`.
 
 Flags:
 - `PROTECC_FLAG_NONE` - No special options
@@ -236,11 +250,11 @@ The library is designed to work with containerv's eBPF security policies:
    - Export to binary format using `protecc_export()`
 
 2. **Loading Phase** (eBPF initialization)
-   - Load binary format into eBPF maps
-   - Use optimized trie structure for fast lookups
+  - Load binary format into eBPF maps
+  - Use optimized DFA tables for verifier-friendly lookups
 
 3. **Evaluation Phase** (eBPF program)
-   - Match paths in O(n) time using pre-compiled trie
+  - Match paths in O(n) time using pre-compiled DFA
    - Minimal memory access patterns
    - Suitable for LSM hooks and syscall filters
 

@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "tests/parity_cases.h"
+
 #define TEST_ASSERT(cond, msg) \
     do { \
         if (!(cond)) { \
@@ -21,8 +23,8 @@ int test_wildcard_patterns(void) {
     
     // Test 1: Single character wildcard (?)
     {
-        const char* patterns[] = {"/tmp/file?"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/file?" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile ? pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/tmp/file1", 0), 
@@ -40,8 +42,8 @@ int test_wildcard_patterns(void) {
     
     // Test 2: Multi-character wildcard (*)
     {
-        const char* patterns[] = {"/tmp/*.txt"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/*.txt" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile * pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/tmp/file.txt", 0), 
@@ -59,8 +61,8 @@ int test_wildcard_patterns(void) {
     
     // Test 3: Recursive wildcard (**)
     {
-        const char* patterns[] = {"/home/**"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/home/**" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile ** pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/home/user/file.txt", 0), 
@@ -78,8 +80,8 @@ int test_wildcard_patterns(void) {
     
     // Test 4: Mixed wildcards
     {
-        const char* patterns[] = {"/var/log/*.log"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/var/log/*.log" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile mixed pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/var/log/system.log", 0), 
@@ -95,8 +97,8 @@ int test_wildcard_patterns(void) {
     
     // Test 5: Multiple wildcards in pattern
     {
-        const char* patterns[] = {"/tmp/*/?.txt"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/*/?.txt" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile multi-wildcard pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/tmp/dir/a.txt", 0), 
@@ -112,8 +114,8 @@ int test_wildcard_patterns(void) {
     
     // Test 6: Wildcard at start and end
     {
-        const char* patterns[] = {"*.log", "/tmp/*"};
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "*.log" }, { "/tmp/*" }};
+        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile start/end wildcard");
         
         TEST_ASSERT(protecc_match(compiled, "app.log", 0), 
@@ -123,6 +125,25 @@ int test_wildcard_patterns(void) {
         TEST_ASSERT(protecc_match(compiled, "/tmp/anything", 0), 
                    "Should match /tmp/*");
         
+        protecc_free(compiled);
+        compiled = NULL;
+    }
+
+    // Test 7: Deep branching stress (wildcards + modifiers)
+    {
+        err = protecc_compile(PROTECC_BRANCHING_PATTERNS,
+                              PROTECC_BRANCHING_PATTERNS_COUNT,
+                              PROTECC_FLAG_NONE,
+                              NULL,
+                              &compiled);
+        TEST_ASSERT(err == PROTECC_OK, "Failed to compile deep branching stress patterns");
+
+        for (size_t i = 0; i < PROTECC_BRANCHING_CASES_COUNT; i++) {
+            bool matched = protecc_match(compiled, PROTECC_BRANCHING_CASES[i].path, 0);
+            TEST_ASSERT((int)matched == PROTECC_BRANCHING_CASES[i].expected_match,
+                       "Branching parity case mismatch in wildcard test");
+        }
+
         protecc_free(compiled);
         compiled = NULL;
     }

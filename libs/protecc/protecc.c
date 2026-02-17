@@ -24,34 +24,12 @@
 
 #include "private.h"
 
-static void protecc_collect_stats(
-    const protecc_node_t* node,
-    size_t depth,
-    size_t* num_nodes,
-    size_t* max_depth,
-    size_t* num_edges
-) {
-    if (!node) {
-        return;
-    }
-
-    (*num_nodes)++;
-    if (depth > *max_depth) {
-        *max_depth = depth;
-    }
-    *num_edges += node->num_children;
-
-    for (size_t i = 0; i < node->num_children; i++) {
-        protecc_collect_stats(node->children[i], depth + 1, num_nodes, max_depth, num_edges);
-    }
-}
-
 static void protecc_collect_nodes(
     const protecc_node_t* node,
     const protecc_node_t** nodes,
     size_t* index
 ) {
-    if (!node) {
+    if (node == NULL) {
         return;
     }
 
@@ -63,9 +41,9 @@ static void protecc_collect_nodes(
 
 static size_t protecc_find_node_index(
     const protecc_node_t* const* nodes,
-    size_t count,
-    const protecc_node_t* target
-) {
+    size_t                       count,
+    const protecc_node_t*        target)
+{
     for (size_t i = 0; i < count; i++) {
         if (nodes[i] == target) {
             return i;
@@ -80,16 +58,63 @@ static size_t protecc_profile_size(uint32_t num_nodes, uint32_t num_edges) {
         + (size_t)num_edges * sizeof(uint32_t);
 }
 
-static protecc_error_t protecc_update_stats(protecc_compiled_t* compiled) {
-    if (!compiled || !compiled->root) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+static size_t protecc_profile_dfa_size(uint32_t num_states, uint32_t num_classes, uint32_t accept_words) {
+    return sizeof(protecc_profile_header_t)
+        + sizeof(protecc_profile_dfa_t)
+        + PROTECC_PROFILE_DFA_CLASSMAP_SIZE
+        + ((size_t)accept_words * sizeof(uint32_t))
+        + ((size_t)num_states * (size_t)num_classes * sizeof(uint32_t));
+}
+
+static bool __match_dfa(const protecc_compiled_t* compiled, const char* path, size_t path_len) {
+    uint32_t state;
+
+    if (!compiled || !compiled->has_dfa || !compiled->dfa_transitions || !compiled->dfa_accept || !path) {
+        return false;
     }
 
+    state = compiled->dfa_start_state;
+    for (size_t i = 0; i < path_len; i++) {
+        uint8_t c = (uint8_t)path[i];
+        uint32_t cls = compiled->dfa_classmap[c];
+        uint64_t index;
+
+        if (cls >= compiled->dfa_num_classes) {
+            return false;
+        }
+
+        index = ((uint64_t)state * (uint64_t)compiled->dfa_num_classes) + (uint64_t)cls;
+        state = compiled->dfa_transitions[index];
+        if (state >= compiled->dfa_num_states) {
+            return false;
+        }
+    }
+
+    return (compiled->dfa_accept[state >> 5] & (1u << (state & 31u))) != 0u;
+}
+
+void protecc_compile_config_default(protecc_compile_config_t* config) {
+    if (!config) {
+        return;
+    }
+
+    config->mode = PROTECC_COMPILE_MODE_TRIE;
+    config->max_patterns = 256;
+    config->max_pattern_length = 128;
+    config->max_states = 2048;
+    config->max_classes = 32;
+}
+
+static protecc_error_t protecc_update_stats(protecc_compiled_t* compiled)
+{
     size_t num_nodes = 0;
     size_t max_depth = 0;
     size_t num_edges = 0;
 
-    protecc_collect_stats(compiled->root, 0, &num_nodes, &max_depth, &num_edges);
+    if (!compiled || !compiled->root) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+    protecc_node_collect_stats(compiled->root, 0, &num_nodes, &max_depth, &num_edges);
 
     if (num_nodes > UINT32_MAX || num_edges > UINT32_MAX) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
@@ -119,44 +144,158 @@ const char* protecc_error_string(protecc_error_t error) {
     }
 }
 
-protecc_error_t protecc_compile(
-    const char** patterns,
-    size_t count,
-    uint32_t flags,
-    protecc_compiled_t** compiled
-) {
-    if (!patterns || !compiled || count == 0) {
+static protecc_error_t __resolve_compile_config(
+    const protecc_compile_config_t* input,
+    protecc_compile_config_t* local,
+    const protecc_compile_config_t** cfg_out)
+{
+    if (!local || !cfg_out) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
-    
-    protecc_compiled_t* comp = calloc(1, sizeof(protecc_compiled_t));
-    if (!comp) {
-        return PROTECC_ERROR_OUT_OF_MEMORY;
+
+    if (input == NULL) {
+        protecc_compile_config_default(local);
+        *cfg_out = local;
+    } else {
+        *cfg_out = input;
     }
-    
+
+    if ((*cfg_out)->mode != PROTECC_COMPILE_MODE_TRIE && (*cfg_out)->mode != PROTECC_COMPILE_MODE_DFA) {
+        return PROTECC_ERROR_COMPILE_FAILED;
+    }
+
+    if ((*cfg_out)->max_patterns == 0 || (*cfg_out)->max_pattern_length == 0 ||
+        (*cfg_out)->max_states == 0 || (*cfg_out)->max_classes == 0) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    return PROTECC_OK;
+}
+
+static protecc_error_t __validate_compile_inputs(
+    const protecc_pattern_t*        patterns,
+    size_t                          count,
+    const protecc_compile_config_t* cfg)
+{
+    if (!patterns || !cfg || count == 0) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (count > cfg->max_patterns) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        size_t pattern_length;
+
+        if (patterns[i].pattern == NULL) {
+            return PROTECC_ERROR_INVALID_ARGUMENT;
+        }
+
+        pattern_length = strlen(patterns[i].pattern);
+        if (pattern_length > cfg->max_pattern_length) {
+            return PROTECC_ERROR_INVALID_ARGUMENT;
+        }
+    }
+
+    return PROTECC_OK;
+}
+
+static protecc_error_t __build_trie_patterns(
+    protecc_compiled_t*             comp,
+    const protecc_pattern_t*        patterns,
+    size_t                          count,
+    uint32_t                        flags)
+{
+    if (!comp || !patterns) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
     comp->root = protecc_node_new(NODE_LITERAL);
     if (!comp->root) {
-        free(comp);
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
-    
-    comp->flags = flags;
-    comp->stats.num_patterns = count;
-    
-    // Parse each pattern and add to trie
+
     for (size_t i = 0; i < count; i++) {
-        protecc_error_t err = protecc_parse_pattern(patterns[i], comp->root, flags);
+        protecc_error_t err = protecc_parse_pattern(patterns[i].pattern, comp->root, flags);
         if (err != PROTECC_OK) {
-            protecc_free(comp);
             return err;
         }
     }
-    
-    // Calculate statistics
-    protecc_error_t stats_err = protecc_update_stats(comp);
+    return PROTECC_OK;
+}
+
+static protecc_error_t __finalize_compilation(protecc_compiled_t* comp) {
+    protecc_error_t stats_err;
+
+    if (!comp) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    stats_err = protecc_update_stats(comp);
     if (stats_err != PROTECC_OK) {
-        protecc_free(comp);
         return stats_err;
+    }
+
+    if (comp->stats.num_nodes > comp->config.max_states) {
+        return PROTECC_ERROR_COMPILE_FAILED;
+    }
+
+    if (comp->config.mode == PROTECC_COMPILE_MODE_DFA) {
+        return protecc_dfa_from_trie(comp);
+    }
+
+    return PROTECC_OK;
+}
+
+protecc_error_t protecc_compile(
+    const protecc_pattern_t*        patterns,
+    size_t                          count,
+    uint32_t                        flags,
+    const protecc_compile_config_t* config,
+    protecc_compiled_t**            compiled
+) {
+    protecc_compile_config_t local_config;
+    const protecc_compile_config_t* cfg;
+    protecc_error_t config_err;
+    protecc_error_t input_err;
+    protecc_error_t build_err;
+    protecc_error_t finalize_err;
+    protecc_compiled_t* comp;
+
+    if (compiled == NULL) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    config_err = __resolve_compile_config(config, &local_config, &cfg);
+    if (config_err != PROTECC_OK) {
+        return config_err;
+    }
+
+    input_err = __validate_compile_inputs(patterns, count, cfg);
+    if (input_err != PROTECC_OK) {
+        return input_err;
+    }
+    
+    comp = calloc(1, sizeof(protecc_compiled_t));
+    if (!comp) {
+        return PROTECC_ERROR_OUT_OF_MEMORY;
+    }
+
+    comp->flags = flags;
+    comp->config = *cfg;
+    comp->stats.num_patterns = count;
+
+    build_err = __build_trie_patterns(comp, patterns, count, flags);
+    if (build_err != PROTECC_OK) {
+        protecc_free(comp);
+        return build_err;
+    }
+
+    finalize_err = __finalize_compilation(comp);
+    if (finalize_err != PROTECC_OK) {
+        protecc_free(comp);
+        return finalize_err;
     }
     
     *compiled = comp;
@@ -168,7 +307,7 @@ bool protecc_match(
     const char* path,
     size_t path_len
 ) {
-    if (!compiled || !compiled->root || !path) {
+    if (!compiled || !path) {
         return false;
     }
     
@@ -176,6 +315,14 @@ bool protecc_match(
         path_len = strlen(path);
     }
     
+    if (compiled->has_dfa) {
+        return __match_dfa(compiled, path, path_len);
+    }
+
+    if (!compiled->root) {
+        return false;
+    }
+
     return protecc_match_internal(compiled->root, path, path_len, 0, compiled->flags);
 }
 
@@ -191,72 +338,267 @@ protecc_error_t protecc_get_stats(
     return PROTECC_OK;
 }
 
-protecc_error_t protecc_export(
-    const protecc_compiled_t* compiled,
-    void* buffer,
+static void __free_import_nodes(protecc_node_t** nodes, uint32_t count) {
+    if (nodes == NULL) {
+        return;
+    }
+
+    for (uint32_t i = 0; i < count; i++) {
+        if (nodes[i]) {
+            free(nodes[i]->children);
+            free(nodes[i]);
+        }
+    }
+    free(nodes);
+}
+
+static protecc_error_t __cleanup_import_trie_failure(
+    protecc_node_t** nodes,
+    uint32_t num_nodes,
+    protecc_compiled_t* comp,
+    protecc_error_t error)
+{
+    __free_import_nodes(nodes, num_nodes);
+    free(comp);
+    return error;
+}
+
+static protecc_error_t __read_and_validate_profile_header(
+    const void* buffer,
     size_t buffer_size,
-    size_t* bytes_written
-) {
-    if (!compiled) {
+    protecc_profile_header_t* header)
+{
+    if (!buffer || !header || buffer_size < sizeof(protecc_profile_header_t)) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    protecc_error_t stats_err = protecc_update_stats((protecc_compiled_t*)compiled);
-    if (stats_err != PROTECC_OK) {
-        return stats_err;
-    }
+    memcpy(header, buffer, sizeof(*header));
 
-    if (compiled->stats.num_patterns > UINT32_MAX) {
+    if (header->magic != PROTECC_PROFILE_MAGIC || header->version != PROTECC_PROFILE_VERSION) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
+
+    if ((header->flags & (PROTECC_PROFILE_FLAG_TYPE_TRIE | PROTECC_PROFILE_FLAG_TYPE_DFA)) == 0) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    return PROTECC_OK;
+}
+
+static protecc_error_t __validate_import_dfa_layout(
+    const protecc_profile_dfa_t* dfa,
+    size_t buffer_size,
+    uint32_t header_binary_size,
+    size_t* transitions_size,
+    size_t* accept_size)
+{
+    size_t transitions_count;
+    size_t required_size;
+
+    if (!dfa || !transitions_size || !accept_size) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (dfa->num_states == 0 || dfa->num_classes == 0 || dfa->num_classes > 256u) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+    if (dfa->start_state >= dfa->num_states) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+    if (dfa->accept_words != ((dfa->num_states + 31u) / 32u)) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    transitions_count = (size_t)dfa->num_states * (size_t)dfa->num_classes;
+    *transitions_size = transitions_count * sizeof(uint32_t);
+    *accept_size = (size_t)dfa->accept_words * sizeof(uint32_t);
+    required_size = protecc_profile_dfa_size(dfa->num_states, dfa->num_classes, dfa->accept_words);
+
+    if (buffer_size < required_size || header_binary_size < required_size) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+    if ((size_t)dfa->classmap_off + PROTECC_PROFILE_DFA_CLASSMAP_SIZE > required_size) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+    if ((dfa->accept_off & 3u) != 0u || (size_t)dfa->accept_off + *accept_size > required_size) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+    if ((dfa->transitions_off & 3u) != 0u || (size_t)dfa->transitions_off + *transitions_size > required_size) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    return PROTECC_OK;
+}
+
+static protecc_error_t __allocate_import_dfa_buffers(
+    size_t accept_size,
+    size_t transitions_size,
+    protecc_compiled_t** compiled_out)
+{
+    protecc_compiled_t* comp;
+
+    if (!compiled_out) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    comp = calloc(1, sizeof(protecc_compiled_t));
+    if (!comp) {
+        return PROTECC_ERROR_OUT_OF_MEMORY;
+    }
+
+    comp->dfa_accept = malloc(accept_size);
+    comp->dfa_transitions = malloc(transitions_size);
+    if (!comp->dfa_accept || !comp->dfa_transitions) {
+        free(comp->dfa_transitions);
+        free(comp->dfa_accept);
+        free(comp);
+        return PROTECC_ERROR_OUT_OF_MEMORY;
+    }
+
+    *compiled_out = comp;
+    return PROTECC_OK;
+}
+
+static protecc_error_t __export_dfa_profile(
+    const protecc_compiled_t* compiled,
+    void*                     buffer,
+    size_t                    buffer_size,
+    size_t*                   bytes_written)
+{
+    size_t required_size;
+    uint8_t* out;
+    protecc_profile_header_t header;
+    protecc_profile_dfa_t dfa;
+    uint32_t classmap_off;
+    uint32_t accept_off;
+    uint32_t transitions_off;
+
+    if (!compiled->has_dfa || !compiled->dfa_transitions || !compiled->dfa_accept) {
+        return PROTECC_ERROR_COMPILE_FAILED;
+    }
+
+    if (compiled->dfa_num_classes != 256u) {
+        return PROTECC_ERROR_COMPILE_FAILED;
+    }
+
+    required_size = protecc_profile_dfa_size(
+        compiled->dfa_num_states,
+        compiled->dfa_num_classes,
+        compiled->dfa_accept_words);
+    if (required_size > UINT32_MAX) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (bytes_written) {
+        *bytes_written = required_size;
+    }
+
+    if (!buffer) {
+        return PROTECC_OK;
+    }
+
+    if (buffer_size < required_size) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    classmap_off = (uint32_t)(sizeof(protecc_profile_header_t) + sizeof(protecc_profile_dfa_t));
+    accept_off = classmap_off + PROTECC_PROFILE_DFA_CLASSMAP_SIZE;
+    transitions_off = accept_off + (uint32_t)(compiled->dfa_accept_words * sizeof(uint32_t));
+
+    memset(&header, 0, sizeof(header));
+    header.magic = PROTECC_PROFILE_MAGIC;
+    header.version = PROTECC_PROFILE_VERSION;
+    header.flags = (compiled->flags & ~(PROTECC_PROFILE_FLAG_TYPE_TRIE | PROTECC_PROFILE_FLAG_TYPE_DFA))
+                 | PROTECC_PROFILE_FLAG_TYPE_DFA;
+    header.num_nodes = 0;
+    header.num_edges = 0;
+    header.root_index = 0;
+    header.stats.num_patterns = (uint32_t)compiled->stats.num_patterns;
+    header.stats.binary_size = (uint32_t)required_size;
+    header.stats.max_depth = (uint32_t)compiled->stats.max_depth;
+    header.stats.num_nodes = (uint32_t)compiled->stats.num_nodes;
+
+    memset(&dfa, 0, sizeof(dfa));
+    dfa.num_states = compiled->dfa_num_states;
+    dfa.num_classes = compiled->dfa_num_classes;
+    dfa.start_state = compiled->dfa_start_state;
+    dfa.accept_words = compiled->dfa_accept_words;
+    dfa.classmap_off = classmap_off;
+    dfa.accept_off = accept_off;
+    dfa.transitions_off = transitions_off;
+
+    out = (uint8_t*)buffer;
+    memcpy(out, &header, sizeof(header));
+    memcpy(out + sizeof(header), &dfa, sizeof(dfa));
+    memcpy(out + classmap_off, compiled->dfa_classmap, PROTECC_PROFILE_DFA_CLASSMAP_SIZE);
+    memcpy(out + accept_off, compiled->dfa_accept, (size_t)compiled->dfa_accept_words * sizeof(uint32_t));
+    memcpy(out + transitions_off,
+           compiled->dfa_transitions,
+           (size_t)compiled->dfa_num_states * (size_t)compiled->dfa_num_classes * sizeof(uint32_t));
+    return PROTECC_OK;
+}
+
+static protecc_error_t __export_trie_profile(
+    const protecc_compiled_t* compiled,
+    void*                     buffer,
+    size_t                    buffer_size,
+    size_t*                   bytes_written)
+{
+    size_t num_edges = 0;
+    size_t num_nodes = 0;
+    size_t max_depth = 0;
+    size_t required_size;
+    const protecc_node_t** nodes;
+    size_t index;
+    uint8_t* out;
+    protecc_profile_header_t header;
+    protecc_profile_node_t* profile_nodes;
+    uint32_t* edges;
+    size_t edge_offset;
 
     if (compiled->stats.num_nodes > UINT32_MAX) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    size_t num_edges = 0;
-    size_t num_nodes = 0;
-    size_t max_depth = 0;
-    protecc_collect_stats(compiled->root, 0, &num_nodes, &max_depth, &num_edges);
+    protecc_node_collect_stats(compiled->root, 0, &num_nodes, &max_depth, &num_edges);
     if (num_edges > UINT32_MAX) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    size_t required_size = protecc_profile_size((uint32_t)num_nodes, (uint32_t)num_edges);
+    required_size = protecc_profile_size((uint32_t)num_nodes, (uint32_t)num_edges);
     if (required_size > UINT32_MAX) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
-    
+
     if (bytes_written) {
         *bytes_written = required_size;
     }
-    
+
     if (!buffer) {
-        // Just querying size
         return PROTECC_OK;
     }
-    
+
     if (buffer_size < required_size) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
-    
-    const protecc_node_t** nodes = calloc(num_nodes, sizeof(*nodes));
-    if (!nodes) {
+
+    nodes = calloc(num_nodes, sizeof(*nodes));
+    if (nodes == NULL) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
-    size_t index = 0;
+    index = 0;
     protecc_collect_nodes(compiled->root, nodes, &index);
     if (index != num_nodes) {
         free(nodes);
         return PROTECC_ERROR_COMPILE_FAILED;
     }
 
-    uint8_t* out = (uint8_t*)buffer;
-    protecc_profile_header_t header;
+    out = (uint8_t*)buffer;
     header.magic = PROTECC_PROFILE_MAGIC;
     header.version = PROTECC_PROFILE_VERSION;
-    header.flags = compiled->flags;
+    header.flags = (compiled->flags & ~(PROTECC_PROFILE_FLAG_TYPE_TRIE | PROTECC_PROFILE_FLAG_TYPE_DFA))
+                 | PROTECC_PROFILE_FLAG_TYPE_TRIE;
     header.num_nodes = (uint32_t)num_nodes;
     header.num_edges = (uint32_t)num_edges;
     header.root_index = 0;
@@ -266,10 +608,10 @@ protecc_error_t protecc_export(
     header.stats.num_nodes = (uint32_t)compiled->stats.num_nodes;
     memcpy(out, &header, sizeof(header));
 
-    protecc_profile_node_t* profile_nodes = (protecc_profile_node_t*)(out + sizeof(header));
-    uint32_t* edges = (uint32_t*)(out + sizeof(header) + num_nodes * sizeof(protecc_profile_node_t));
+    profile_nodes = (protecc_profile_node_t*)(out + sizeof(header));
+    edges = (uint32_t*)(out + sizeof(header) + num_nodes * sizeof(protecc_profile_node_t));
 
-    size_t edge_offset = 0;
+    edge_offset = 0;
     for (size_t i = 0; i < num_nodes; i++) {
         const protecc_node_t* node = nodes[i];
         protecc_profile_node_t profile = {0};
@@ -315,66 +657,98 @@ protecc_error_t protecc_export(
     return PROTECC_OK;
 }
 
-protecc_error_t protecc_import(
-    const void* buffer,
-    size_t buffer_size,
-    protecc_compiled_t** compiled
-) {
-    if (!buffer || !compiled || buffer_size < sizeof(uint32_t) * 3) {
+static protecc_error_t __import_dfa_profile(
+    const uint8_t*                  base,
+    size_t                          buffer_size,
+    const protecc_profile_header_t* header,
+    protecc_compiled_t**            compiled)
+{
+    protecc_profile_dfa_t dfa;
+    protecc_compiled_t* comp;
+    protecc_error_t err;
+    size_t transitions_size;
+    size_t accept_size;
+
+    if (buffer_size < sizeof(protecc_profile_header_t) + sizeof(protecc_profile_dfa_t)) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (buffer_size < sizeof(protecc_profile_header_t)) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    memcpy(&dfa, base + sizeof(protecc_profile_header_t), sizeof(dfa));
+
+    err = __validate_import_dfa_layout(&dfa, buffer_size, header->stats.binary_size,
+                                       &transitions_size, &accept_size);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
-    protecc_profile_header_t header;
-    memcpy(&header, buffer, sizeof(header));
-
-    if (header.magic != PROTECC_PROFILE_MAGIC || header.version != PROTECC_PROFILE_VERSION) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    err = __allocate_import_dfa_buffers(accept_size, transitions_size, &comp);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
-    size_t required_size = protecc_profile_size(header.num_nodes, header.num_edges);
+    memcpy(comp->dfa_classmap, base + dfa.classmap_off, PROTECC_PROFILE_DFA_CLASSMAP_SIZE);
+    memcpy(comp->dfa_accept, base + dfa.accept_off, accept_size);
+    memcpy(comp->dfa_transitions, base + dfa.transitions_off, transitions_size);
+
+    comp->has_dfa = true;
+    comp->dfa_num_states = dfa.num_states;
+    comp->dfa_num_classes = dfa.num_classes;
+    comp->dfa_start_state = dfa.start_state;
+    comp->dfa_accept_words = dfa.accept_words;
+
+    comp->flags = header->flags & ~(PROTECC_PROFILE_FLAG_TYPE_TRIE | PROTECC_PROFILE_FLAG_TYPE_DFA);
+    protecc_compile_config_default(&comp->config);
+    comp->config.mode = PROTECC_COMPILE_MODE_DFA;
+    comp->stats.num_patterns = header->stats.num_patterns;
+    comp->stats.binary_size = header->stats.binary_size;
+    comp->stats.max_depth = header->stats.max_depth;
+    comp->stats.num_nodes = header->stats.num_nodes;
+
+    *compiled = comp;
+    return PROTECC_OK;
+}
+
+static protecc_error_t __import_trie_profile(
+    const uint8_t*                  base,
+    size_t                          buffer_size,
+    const protecc_profile_header_t* header,
+    protecc_compiled_t**            compiled)
+{
+    size_t required_size = protecc_profile_size(header->num_nodes, header->num_edges);
+    const protecc_profile_node_t* profile_nodes;
+    const uint32_t* edges;
+    protecc_compiled_t* comp;
+    protecc_node_t** nodes;
+
     if (buffer_size < required_size) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    const uint8_t* base = (const uint8_t*)buffer;
-    const protecc_profile_node_t* profile_nodes =
-        (const protecc_profile_node_t*)(base + sizeof(protecc_profile_header_t));
-    const uint32_t* edges =
-        (const uint32_t*)(base + sizeof(protecc_profile_header_t)
-                          + (size_t)header.num_nodes * sizeof(protecc_profile_node_t));
+    profile_nodes = (const protecc_profile_node_t*)(base + sizeof(protecc_profile_header_t));
+    edges = (const uint32_t*)(base + sizeof(protecc_profile_header_t)
+                              + (size_t)header->num_nodes * sizeof(protecc_profile_node_t));
 
-    protecc_compiled_t* comp = calloc(1, sizeof(protecc_compiled_t));
+    comp = calloc(1, sizeof(protecc_compiled_t));
     if (!comp) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
-    if (header.root_index >= header.num_nodes) {
+    if (header->root_index >= header->num_nodes) {
         free(comp);
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    protecc_node_t** nodes = calloc(header.num_nodes, sizeof(*nodes));
-    if (!nodes) {
+    nodes = calloc(header->num_nodes, sizeof(*nodes));
+    if (nodes == NULL) {
         free(comp);
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
-    for (uint32_t i = 0; i < header.num_nodes; i++) {
+    for (uint32_t i = 0; i < header->num_nodes; i++) {
         protecc_node_t* node = protecc_node_new((protecc_node_type_t)profile_nodes[i].type);
-        if (!node) {
-            for (uint32_t j = 0; j < header.num_nodes; j++) {
-                if (nodes[j]) {
-                    free(nodes[j]->children);
-                    free(nodes[j]);
-                }
-            }
-            free(nodes);
-            free(comp);
-            return PROTECC_ERROR_OUT_OF_MEMORY;
+        if (node == NULL) {
+            return __cleanup_import_trie_failure(nodes, header->num_nodes, comp,
+                                                 PROTECC_ERROR_OUT_OF_MEMORY);
         }
 
         node->modifier = (protecc_modifier_t)profile_nodes[i].modifier;
@@ -399,7 +773,7 @@ protecc_error_t protecc_import(
         nodes[i] = node;
     }
 
-    for (uint32_t i = 0; i < header.num_nodes; i++) {
+    for (uint32_t i = 0; i < header->num_nodes; i++) {
         protecc_node_t* node = nodes[i];
         uint16_t child_count = profile_nodes[i].child_count;
         uint32_t child_start = profile_nodes[i].child_start;
@@ -408,66 +782,98 @@ protecc_error_t protecc_import(
             continue;
         }
 
-        if ((uint32_t)child_start + child_count > header.num_edges) {
-            for (uint32_t j = 0; j < header.num_nodes; j++) {
-                if (nodes[j]) {
-                    free(nodes[j]->children);
-                    free(nodes[j]);
-                }
-            }
-            free(nodes);
-            free(comp);
-            return PROTECC_ERROR_INVALID_ARGUMENT;
+        if ((uint32_t)child_start + child_count > header->num_edges) {
+            return __cleanup_import_trie_failure(nodes, header->num_nodes, comp,
+                                                 PROTECC_ERROR_INVALID_ARGUMENT);
         }
 
         node->children = calloc(child_count, sizeof(*node->children));
-        if (!node->children) {
-            for (uint32_t j = 0; j < header.num_nodes; j++) {
-                if (nodes[j]) {
-                    free(nodes[j]->children);
-                    free(nodes[j]);
-                }
-            }
-            free(nodes);
-            free(comp);
-            return PROTECC_ERROR_OUT_OF_MEMORY;
+        if (node->children == NULL) {
+            return __cleanup_import_trie_failure(nodes, header->num_nodes, comp,
+                                                 PROTECC_ERROR_OUT_OF_MEMORY);
         }
 
         node->capacity_children = child_count;
         node->num_children = child_count;
         for (uint16_t c = 0; c < child_count; c++) {
             uint32_t child_index = edges[child_start + c];
-            if (child_index >= header.num_nodes) {
-                for (uint32_t j = 0; j < header.num_nodes; j++) {
-                    if (nodes[j]) {
-                        free(nodes[j]->children);
-                        free(nodes[j]);
-                    }
-                }
-                free(nodes);
-                free(comp);
-                return PROTECC_ERROR_INVALID_ARGUMENT;
+            if (child_index >= header->num_nodes) {
+                return __cleanup_import_trie_failure(nodes, header->num_nodes, comp,
+                                                     PROTECC_ERROR_INVALID_ARGUMENT);
             }
             node->children[c] = nodes[child_index];
         }
     }
 
-    comp->root = nodes[header.root_index];
-    comp->flags = header.flags;
-    comp->stats.num_patterns = header.stats.num_patterns;
-    comp->stats.binary_size = header.stats.binary_size;
-    comp->stats.max_depth = header.stats.max_depth;
-    comp->stats.num_nodes = header.stats.num_nodes;
+    comp->root = nodes[header->root_index];
+    comp->flags = header->flags & ~(PROTECC_PROFILE_FLAG_TYPE_TRIE | PROTECC_PROFILE_FLAG_TYPE_DFA);
+    protecc_compile_config_default(&comp->config);
+    comp->stats.num_patterns = header->stats.num_patterns;
+    comp->stats.binary_size = header->stats.binary_size;
+    comp->stats.max_depth = header->stats.max_depth;
+    comp->stats.num_nodes = header->stats.num_nodes;
 
     free(nodes);
     *compiled = comp;
     return PROTECC_OK;
 }
 
+protecc_error_t protecc_export(
+    const protecc_compiled_t* compiled,
+    void* buffer,
+    size_t buffer_size,
+    size_t* bytes_written
+) {
+    if (!compiled) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    protecc_error_t stats_err = protecc_update_stats((protecc_compiled_t*)compiled);
+    if (stats_err != PROTECC_OK) {
+        return stats_err;
+    }
+
+    if (compiled->stats.num_patterns > UINT32_MAX) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (compiled->config.mode == PROTECC_COMPILE_MODE_DFA) {
+        return __export_dfa_profile(compiled, buffer, buffer_size, bytes_written);
+    }
+    return __export_trie_profile(compiled, buffer, buffer_size, bytes_written);
+}
+
+protecc_error_t protecc_import(
+    const void* buffer,
+    size_t buffer_size,
+    protecc_compiled_t** compiled
+) {
+    const uint8_t*           base = (const uint8_t*)buffer;
+    protecc_profile_header_t header;
+    protecc_error_t          header_err;
+
+    if (!compiled || buffer_size < sizeof(uint32_t) * 3) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    header_err = __read_and_validate_profile_header(buffer, buffer_size, &header);
+    if (header_err != PROTECC_OK) {
+        return header_err;
+    }
+
+    if ((header.flags & PROTECC_PROFILE_FLAG_TYPE_DFA) != 0) {
+        return __import_dfa_profile(base, buffer_size, &header, compiled);
+    }
+    return __import_trie_profile(base, buffer_size, &header, compiled);
+}
+
 void protecc_free(protecc_compiled_t* compiled) {
     if (!compiled) {
         return;
     }
+
+    free(compiled->dfa_accept);
+    free(compiled->dfa_transitions);
     
     if (compiled->root) {
         protecc_node_free(compiled->root);

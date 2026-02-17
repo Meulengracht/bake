@@ -36,13 +36,13 @@ int main(void) {
     // Example 1: Simple file access control
     printf("1. Basic file access patterns:\n");
     {
-        const char* patterns[] = {
-            "/etc/passwd",
-            "/etc/group",
-            "/tmp/*",
+        const protecc_pattern_t patterns[] = {
+            { "/etc/passwd" },
+            { "/etc/group" },
+            { "/tmp/*" },
         };
         
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, &compiled);
+        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -60,13 +60,13 @@ int main(void) {
     // Example 2: Wildcard patterns
     printf("2. Wildcard patterns:\n");
     {
-        const char* patterns[] = {
-            "/home/**",           // Recursive match
-            "/var/log/*.log",     // Single directory wildcard
-            "/dev/tty?",          // Single character wildcard
+        const protecc_pattern_t patterns[] = {
+            { "/home/**" },           // Recursive match
+            { "/var/log/*.log" },     // Single directory wildcard
+            { "/dev/tty?" },          // Single character wildcard
         };
         
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, &compiled);
+        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -86,13 +86,13 @@ int main(void) {
     // Example 3: Character ranges and sets
     printf("3. Character ranges and sets:\n");
     {
-        const char* patterns[] = {
-            "/dev/tty[0-9]+",         // TTY devices with numbers
-            "/tmp/[a-z]*",            // Files starting with lowercase
-            "/var/log/app[0-9].log",  // Numbered log files
+        const protecc_pattern_t patterns[] = {
+            { "/dev/tty[0-9]+" },         // TTY devices with numbers
+            { "/tmp/[a-z]*" },            // Files starting with lowercase
+            { "/var/log/app[0-9].log" },  // Numbered log files
         };
         
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, &compiled);
+        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -112,12 +112,12 @@ int main(void) {
     // Example 4: Case-insensitive matching
     printf("4. Case-insensitive matching:\n");
     {
-        const char* patterns[] = {
-            "/Windows/*",
-            "/Program Files/**",
+        const protecc_pattern_t patterns[] = {
+            { "/Windows/*" },
+            { "/Program Files/**" },
         };
         
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_CASE_INSENSITIVE, &compiled);
+        err = protecc_compile(patterns, 2, PROTECC_FLAG_CASE_INSENSITIVE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -135,14 +135,14 @@ int main(void) {
     // Example 5: Statistics
     printf("5. Pattern statistics:\n");
     {
-        const char* patterns[] = {
-            "/etc/*",
-            "/var/**",
-            "/tmp/[a-z]*",
-            "/home/user/*",
+        const protecc_pattern_t patterns[] = {
+            { "/etc/*" },
+            { "/var/**" },
+            { "/tmp/[a-z]*" },
+            { "/home/user/*" },
         };
         
-        err = protecc_compile(patterns, 4, PROTECC_FLAG_OPTIMIZE, &compiled);
+        err = protecc_compile(patterns, 4, PROTECC_FLAG_OPTIMIZE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -163,12 +163,12 @@ int main(void) {
     // Example 6: Binary export/import
     printf("6. Binary export (for eBPF):\n");
     {
-        const char* patterns[] = {
-            "/etc/passwd",
-            "/tmp/*",
+        const protecc_pattern_t patterns[] = {
+            { "/etc/passwd" },
+            { "/tmp/*" },
         };
         
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, &compiled);
+        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;

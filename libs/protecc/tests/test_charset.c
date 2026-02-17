@@ -21,8 +21,8 @@ int test_charset_patterns(void) {
     
     // Test 1: Character ranges [a-z]
     {
-        const char* patterns[] = {"/tmp/file[a-z]"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/file[a-z]" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [a-z] pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/tmp/filea", 0), 
@@ -42,8 +42,8 @@ int test_charset_patterns(void) {
     
     // Test 2: Digit ranges [0-9]
     {
-        const char* patterns[] = {"/dev/tty[0-9]"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/dev/tty[0-9]" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [0-9] pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/dev/tty0", 0), 
@@ -61,8 +61,8 @@ int test_charset_patterns(void) {
     
     // Test 3: Character sets [abc]
     {
-        const char* patterns[] = {"/tmp/file[abc]"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/file[abc]" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [abc] pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/tmp/filea", 0), 
@@ -80,8 +80,8 @@ int test_charset_patterns(void) {
     
     // Test 4: Multiple ranges [a-zA-Z]
     {
-        const char* patterns[] = {"/tmp/[a-zA-Z]"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/[a-zA-Z]" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [a-zA-Z] pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/tmp/a", 0), 
@@ -97,8 +97,8 @@ int test_charset_patterns(void) {
     
     // Test 5: Charset with modifiers [0-9]+
     {
-        const char* patterns[] = {"/dev/tty[0-9]+"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/dev/tty[0-9]+" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [0-9]+ pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/dev/tty1", 0), 
@@ -114,8 +114,8 @@ int test_charset_patterns(void) {
     
     // Test 6: Charset with optional modifier [0-9]?
     {
-        const char* patterns[] = {"/dev/port[0-9]?"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/dev/port[0-9]?" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [0-9]? pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/dev/port", 0), 
@@ -131,8 +131,8 @@ int test_charset_patterns(void) {
     
     // Test 7: Complex pattern with charset and wildcards
     {
-        const char* patterns[] = {"/var/log/[a-z]*.[0-9]+"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/var/log/[a-z]*.[0-9]+" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile complex pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/var/log/app.1", 0), 
@@ -148,8 +148,8 @@ int test_charset_patterns(void) {
     
     // Test 8: Case insensitive flag
     {
-        const char* patterns[] = {"/tmp/File"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_CASE_INSENSITIVE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/File" }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_CASE_INSENSITIVE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile case-insensitive pattern");
         
         TEST_ASSERT(protecc_match(compiled, "/tmp/file", 0), 

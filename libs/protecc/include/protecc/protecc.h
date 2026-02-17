@@ -56,6 +56,33 @@ typedef enum {
 } protecc_flags_t;
 
 /**
+ * @brief Compilation backend mode
+ */
+typedef enum {
+    PROTECC_COMPILE_MODE_TRIE = 0, /**< Compile patterns to trie profile (default backend) */
+    PROTECC_COMPILE_MODE_DFA = 1,  /**< Compile patterns to DFA profile */
+} protecc_compile_mode_t;
+
+/**
+ * @brief Compiler limits and backend selection
+ *
+ * All max_* values are hard upper bounds enforced during compile:
+ * - max_patterns: maximum number of patterns accepted in one compile operation.
+ * - max_pattern_length: maximum length in bytes for any single pattern string (excluding NUL).
+ * - max_states: maximum automaton states allowed for selected backend.
+ *               For trie mode this limits number of trie nodes.
+ * - max_classes: maximum character classes allowed for DFA alphabet compression.
+ *                Unused in trie mode, but still validated (>0) for forward compatibility.
+ */
+typedef struct {
+    uint32_t mode;
+    uint32_t max_patterns;
+    uint32_t max_pattern_length;
+    uint32_t max_states;
+    uint32_t max_classes;
+} protecc_compile_config_t;
+
+/**
  * @brief Error codes
  */
 typedef enum {
@@ -65,6 +92,17 @@ typedef enum {
     PROTECC_ERROR_INVALID_ARGUMENT = -3,
     PROTECC_ERROR_COMPILE_FAILED = -4,
 } protecc_error_t;
+
+/**
+ * @brief Permission flags for compiled patterns
+ */
+typedef enum {
+    PROTECC_PERM_NONE = 0,
+    PROTECC_PERM_READ = 1 << 0,
+    PROTECC_PERM_WRITE = 1 << 1,
+    PROTECC_PERM_EXECUTE = 1 << 2,
+    PROTECC_PERM_ALL = PROTECC_PERM_READ | PROTECC_PERM_WRITE | PROTECC_PERM_EXECUTE,
+} protecc_permission_t;
 
 /**
  * @brief Statistics about compiled patterns
@@ -77,19 +115,40 @@ typedef struct {
 } protecc_stats_t;
 
 /**
+ * @brief Represents a pattern and its associated permissions
+ */
+typedef struct {
+    const char*          pattern;   /**< Original pattern string */
+    protecc_permission_t perms;     /**< Permissions associated with this pattern */
+} protecc_pattern_t;
+
+/**
+ * @brief Initialize compiler config with defaults
+ *
+ * Defaults:
+ * - mode = PROTECC_COMPILE_MODE_TRIE
+ * - max_patterns = 256
+ * - max_pattern_length = 128
+ * - max_states = 2048
+ * - max_classes = 32
+ */
+void protecc_compile_config_default(protecc_compile_config_t* config);
+
+/**
  * @brief Create a new compiled pattern set
  * 
- * @param patterns Array of pattern strings (NULL-terminated)
+ * @param patterns Array of pattern structures (NULL-terminated) ninja -C build protecc_test && ./build/libs/protecc/protecc_test
  * @param count Number of patterns in the array
  * @param flags Compilation flags (OR of protecc_flags_t)
  * @param compiled Output pointer for the compiled pattern set
  * @return PROTECC_OK on success, error code otherwise
  */
 protecc_error_t protecc_compile(
-    const char**         patterns,
-    size_t               count,
-    uint32_t             flags,
-    protecc_compiled_t** compiled);
+    const protecc_pattern_t*        patterns,
+    size_t                          count,
+    uint32_t                        flags,
+    const protecc_compile_config_t* config,
+    protecc_compiled_t**            compiled);
 
 /**
  * @brief Match a path against the compiled pattern set

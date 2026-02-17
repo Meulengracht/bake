@@ -100,3 +100,25 @@ void protecc_charset_set_range(protecc_charset_t* charset, char start, char end)
         if (c == 255) break; // Prevent overflow
     }
 }
+
+void protecc_node_collect_stats(
+    const protecc_node_t* node,
+    size_t                depth,
+    size_t*               num_nodes,
+    size_t*               max_depth,
+    size_t*               num_edges)
+{
+    if (node == NULL) {
+        return;
+    }
+
+    (*num_nodes)++;
+    if (depth > *max_depth) {
+        *max_depth = depth;
+    }
+    *num_edges += node->num_children;
+
+    for (size_t i = 0; i < node->num_children; i++) {
+        protecc_node_collect_stats(node->children[i], depth + 1, num_nodes, max_depth, num_edges);
+    }
+}

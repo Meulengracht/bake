@@ -59,28 +59,37 @@ typedef struct protecc_node protecc_node_t;
  */
 struct protecc_node {
     protecc_node_type_t type;
-    protecc_modifier_t modifier;
+    protecc_modifier_t  modifier;
     
     union {
-        char literal;                /**< For NODE_LITERAL */
-        protecc_range_t range;       /**< For NODE_RANGE */
-        protecc_charset_t charset;   /**< For NODE_CHARSET */
+        char              literal;      /**< For NODE_LITERAL */
+        protecc_range_t   range;        /**< For NODE_RANGE */
+        protecc_charset_t charset;      /**< For NODE_CHARSET */
     } data;
     
-    protecc_node_t** children;       /**< Array of child nodes */
-    size_t num_children;
-    size_t capacity_children;
+    protecc_node_t** children;          /**< Array of child nodes */
+    size_t           num_children;
+    size_t           capacity_children;
     
-    bool is_terminal;                /**< True if this ends a pattern */
+    bool             is_terminal;       /**< True if this ends a pattern */
 };
 
 /**
  * @brief Compiled pattern set structure
  */
 struct protecc_compiled {
-    protecc_node_t* root;            /**< Root of the trie */
-    uint32_t flags;                  /**< Compilation flags */
-    protecc_stats_t stats;           /**< Statistics */
+    protecc_node_t*          root;               /**< Root of the trie */
+    uint32_t                 flags;              /**< Compilation flags */
+    protecc_compile_config_t config;             /**< Compiler configuration */
+    bool                     has_dfa;            /**< True when DFA tables are present */
+    uint32_t                 dfa_num_states;
+    uint32_t                 dfa_num_classes;
+    uint32_t                 dfa_start_state;
+    uint32_t                 dfa_accept_words;
+    uint8_t                  dfa_classmap[256];
+    uint32_t*                dfa_accept;
+    uint32_t*                dfa_transitions;
+    protecc_stats_t          stats;              /**< Statistics */
 };
 
 /**
@@ -99,13 +108,22 @@ void protecc_node_free(protecc_node_t* node);
 protecc_error_t protecc_node_add_child(protecc_node_t* parent, protecc_node_t* child);
 
 /**
+ * @brief Collect statistics about the trie
+ */
+void protecc_node_collect_stats(
+    const protecc_node_t* node,
+    size_t                depth,
+    size_t*               num_nodes,
+    size_t*               max_depth,
+    size_t*               num_edges);
+
+/**
  * @brief Parse a pattern string into a trie
  */
 protecc_error_t protecc_parse_pattern(
-    const char* pattern,
+    const char*     pattern,
     protecc_node_t* root,
-    uint32_t flags
-);
+    uint32_t        flags);
 
 /**
  * @brief Set a character in a charset
@@ -123,14 +141,18 @@ bool protecc_charset_contains(const protecc_charset_t* charset, unsigned char c)
 void protecc_charset_set_range(protecc_charset_t* charset, char start, char end);
 
 /**
+ * @brief Convert the compiled trie to a DFA representation
+ */
+protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp);
+
+/**
  * @brief Match path against a trie starting from a specific node
  */
 bool protecc_match_internal(
     const protecc_node_t* node,
-    const char* path,
-    size_t path_len,
-    size_t pos,
-    uint32_t flags
-);
+    const char*           path,
+    size_t                path_len,
+    size_t                pos,
+    uint32_t              flags);
 
 #endif /* PROTECC_INTERNAL_H */
