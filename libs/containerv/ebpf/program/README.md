@@ -4,12 +4,12 @@ This directory contains BPF LSM programs for enforcing container-specific filesy
 
 ## Overview
 
-The BPF programs in this directory provide kernel-level enforcement of filesystem and network access restrictions for containerized processes. They hook into the Linux Security Module (LSM) framework to intercept file and socket operations and enforce per-container policies based on cgroup identity and inode numbers.
+The BPF programs in this directory provide kernel-level enforcement of filesystem and network access restrictions for containerized processes. They hook into the Linux Security Module (LSM) framework to intercept file and socket operations and enforce per-container policies based on cgroup identity and per-container policy maps.
 
 ## Files
 
-- **fs-lsm.bpf.c**: BPF LSM program that hooks file operations for path mediation
-- **net-lsm.bpf.c**: BPF LSM program that hooks socket operations for tuple-based network mediation
+- **fs-lsm.bpf.c**: BPF LSM program that hooks file operations and evaluates paths against a per-container DFA profile
+- **net-lsm.bpf.c**: BPF LSM program that hooks socket operations and evaluates tuples against per-container network maps
 - **CMakeLists.txt**: Build system for compiling BPF programs and generating skeletons
 
 ## Requirements
@@ -50,19 +50,45 @@ If clang or bpftool are not found, the build continues without BPF programs (sec
 
 ## Architecture
 
-### Policy Map
+### Policy Maps
 
-The BPF program uses a hash map to store allow rules:
+Filesystem enforcement uses a serialized DFA profile per cgroup:
 
 ```c
-struct policy_key {
-    __u64 cgroup_id;  // Container's cgroup inode number
-    __u64 dev;        // Device number of the filesystem
-    __u64 ino;        // Inode number of the file
+struct profile_value {
+   __u32 size;
+   __u8  data[PROTECC_BPF_MAX_PROFILE_SIZE];
+};
+```
+
+Network enforcement uses three maps keyed by cgroup + socket metadata:
+
+```c
+struct net_create_key {
+   __u64 cgroup_id;
+   __u32 family;
+   __u32 type;
+   __u32 protocol;
 };
 
-struct policy_value {
-   __u32 allow_mask;  // Bitmask: 0x1=READ, 0x2=WRITE, 0x4=EXEC
+struct net_tuple_key {
+   __u64 cgroup_id;
+   __u32 family;
+   __u32 type;
+   __u32 protocol;
+   __u16 port;
+   __u8  addr[16];
+};
+
+struct net_unix_key {
+   __u64 cgroup_id;
+   __u32 type;
+   __u32 protocol;
+   char  path[108];
+};
+
+struct net_policy_value {
+   __u32 allow_mask;  // Bitmask: CREATE/BIND/CONNECT/LISTEN/ACCEPT/SEND
 };
 ```
 
@@ -70,39 +96,33 @@ struct policy_value {
 
 1. **Container Creation**:
    - Container is placed in a cgroup (e.g., `/sys/fs/cgroup/container-01`)
-   - Policy allow rules are added for specific paths
-   - Paths are resolved to (dev, ino) tuples
-   - Map entries are created: `(cgroup_id, dev, ino) → allow_mask`
+   - Filesystem policy is compiled into a DFA profile and stored in `profile_map`
+   - Network policy is stored in the net maps using cgroup + tuple keys
 
-2. **File Open**:
-   - Process in container opens a file
-   - BPF LSM `file_open` hook is triggered
-   - Program extracts:
-     - Cgroup ID from calling process
-     - Device and inode from file being opened
-   - Looks up `(cgroup_id, dev, ino)` in policy map
-   - If found and requested operation is allowed: returns 0
-   - Otherwise: denies the operation (default-deny)
+2. **Filesystem Access**:
+   - Process in container performs a file operation
+   - BPF LSM hook resolves a path and evaluates it against the DFA profile
+   - If the DFA indicates a match for the required access: allow
+   - If not: deny and emit a ring buffer event
 
-3. **Container Cleanup**:
+3. **Network Access**:
+   - Process in container performs a socket operation
+   - BPF LSM hook builds a key (create/tuple/unix) and looks up policy
+   - If the allow mask satisfies the required permission: allow
+   - If not: deny and emit a ring buffer event
+
+4. **Container Cleanup**:
    - Map entries for the container are removed
    - BPF programs remain loaded for other containers
 
-## Current Implementation Status
+### Default Behavior
 
-### Implemented ✅
-- BPF LSM program loading/attaching (fs + net)
-- Runtime map population and per-container cleanup
-- Allow-mask enforcement for read/write/exec and network operations
-- Deny event ring buffer logging
-
-### In Progress 🚧
-- Audit/telemetry expansion
-- Extended pattern support for basename matching
+- If a cgroup has no filesystem profile, filesystem access is allowed.
+- If a cgroup has no network policy entry, the operation is allowed.
 
 ## Limitations
 
-- Basename matching supports a restricted pattern subset to stay verifier-friendly.
+- DFA matching uses bounded loops and fixed-size buffers to satisfy verifier constraints.
 - Enforcement requires BPF LSM support; when unavailable, the system falls back to seccomp filtering.
 
 ## Future Enhancements
@@ -132,8 +152,11 @@ cat /sys/kernel/security/lsm
 # List loaded BPF programs
 sudo bpftool prog list
 
-# Dump policy map
-sudo bpftool map dump name policy_map
+# Dump policy maps
+sudo bpftool map dump name profile_map
+sudo bpftool map dump name net_create_map
+sudo bpftool map dump name net_tuple_map
+sudo bpftool map dump name net_unix_map
 ```
 
 ### Enable BPF LSM
