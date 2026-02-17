@@ -129,6 +129,7 @@ static __always_inline bool protecc_bpf_match(
     __u32                           profileSize;
     __u32                           state;
     __u32                           i;
+    __u16                           iterCount;
 
     if (!__validate_profile_dfa(profile, header, &dfa, &profileSize, &transitionsCount)) {
         return false;
@@ -140,15 +141,16 @@ static __always_inline bool protecc_bpf_match(
 
     state = dfa->start_state;
 
-    bpf_for (i, 0, PROTECC_BPF_MAX_PATH) {
+    iterCount = PROTECC_BPF_MAX_PATH;
+    if (iterCount > pathLength) {
+        iterCount = (__u16)pathLength;
+    }
+
+    bpf_for (i, 0, iterCount) {
         __u8  c;
         __u8  cls;
         __u64 transitionIndex;
         __u32 nextState;
-
-        if (i >= pathLength) {
-            break;
-        }
 
         c = (__u8)path[i];
         cls = classmap[c];
