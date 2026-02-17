@@ -135,12 +135,12 @@ static __always_inline bool __dfa_is_match(
     return (accept[wordIndex] & (1u << bitIndex)) != 0u;
 }
 
-static __always_inline bool protecc_bpf_match_perms(
+static __always_inline bool protecc_bpf_match(
     const __u8 profile[PROTECC_BPF_MAX_PROFILE_SIZE],
     const __u8 path[PROTECC_BPF_MAX_PATH],
+    __u32      requiredPerms,
     __u32      pathStart,
-    __u32      pathLength,
-    __u32*     permsOut)
+    __u32      pathLength)
 {
     const protecc_profile_header_t* header = (const protecc_profile_header_t*)profile;
     const protecc_profile_dfa_t*    dfa;
@@ -153,12 +153,6 @@ static __always_inline bool protecc_bpf_match_perms(
     __u32                           state;
     __u32                           i;
     __u16                           iterCount;
-
-    if (!permsOut) {
-        return false;
-    }
-
-    *permsOut = 0;
 
     if (!__validate_profile_dfa(profile, header, &dfa, &profileSize, &transitionsCount)) {
         return false;
@@ -209,6 +203,7 @@ static __always_inline bool protecc_bpf_match_perms(
         }
         state = nextState;
     }
+    
     if (!__dfa_is_match(profile, dfa, state, accept)) {
         return false;
     }
@@ -217,19 +212,12 @@ static __always_inline bool protecc_bpf_match_perms(
         return false;
     }
 
-    *permsOut = perms[state];
+    // Check if the permissions for the matched state include all required permissions
+    // If not, the path does not have sufficient permissions to be considered a match
+    if ((perms[state] & requiredPerms) != requiredPerms) {
+        return false;
+    }
     return true;
-}
-
-static __always_inline bool protecc_bpf_match(
-    const __u8 profile[PROTECC_BPF_MAX_PROFILE_SIZE],
-    const __u8 path[PROTECC_BPF_MAX_PATH],
-    __u32      pathStart,
-    __u32      pathLength)
-{
-    __u32 perms = 0;
-
-    return protecc_bpf_match_perms(profile, path, pathStart, pathLength, &perms);
 }
 
 #endif // !__PROTECC_BPF_H__

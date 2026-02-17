@@ -130,7 +130,6 @@ static int __check_profile_match(
     __u32                 pathLength = 0;
     __u32                 pathStart = 0;
     bool                  match;
-    __u32                 perms = 0;
 
     profile = bpf_map_lookup_elem(&profile_map, &cgroupId);
     if (profile == NULL) {
@@ -148,9 +147,20 @@ static int __check_profile_match(
         return -EACCES;
     }
 
-    pathLength = __resolve_dentry_path(scratch->path, dentry, &pathStart);
-    match = protecc_bpf_match_perms(profile->data, (const __u8*)&scratch->path[0], pathStart, pathLength, &perms);
-    if (!match || (perms & required) != required) {
+    pathLength = __resolve_dentry_path(
+        scratch->path,
+        dentry,
+        &pathStart
+    );
+    
+    match = protecc_bpf_match(
+        profile->data,
+        (const __u8*)&scratch->path[0],
+        required,
+        pathStart,
+        pathLength
+    );
+    if (!match) {
         __emit_deny_event_dentry(dentry, required, hookId);
         return -EACCES;
     }

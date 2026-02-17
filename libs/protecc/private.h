@@ -71,7 +71,7 @@ struct protecc_node {
     size_t           num_children;
     size_t           capacity_children;
     
-    bool             is_terminal;       /**< True if this ends a pattern */
+    bool                 is_terminal;   /**< True if this ends a pattern */
     protecc_permission_t perms;         /**< Permissions for terminal nodes */
 };
 
@@ -123,9 +123,9 @@ void protecc_node_collect_stats(
  * @brief Parse a pattern string into a trie
  */
 protecc_error_t protecc_parse_pattern(
-    const char*     pattern,
-    protecc_node_t* root,
-    uint32_t        flags,
+    const char*      pattern,
+    protecc_node_t*  root,
+    uint32_t         flags,
     protecc_node_t** terminal_out);
 
 /**

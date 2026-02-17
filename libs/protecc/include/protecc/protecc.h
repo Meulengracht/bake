@@ -137,7 +137,7 @@ void protecc_compile_config_default(protecc_compile_config_t* config);
 /**
  * @brief Create a new compiled pattern set
  * 
- * @param patterns Array of pattern structures (NULL-terminated) ninja -C build protecc_test && ./build/libs/protecc/protecc_test
+ * @param patterns Array of pattern structures (NULL-terminated)
  * @param count Number of patterns in the array
  * @param flags Compilation flags (OR of protecc_flags_t)
  * @param compiled Output pointer for the compiled pattern set
@@ -159,14 +159,14 @@ protecc_error_t protecc_compile(
  * @param compiled Compiled pattern set
  * @param path Path to match
  * @param pathLength Length of path (or 0 to use strlen)
- * @param perms_out Output pointer for matched permissions
+ * @param permsOut Output pointer for matched permissions
  * @return true if path matches any pattern, false otherwise
  */
 bool protecc_match(
     const protecc_compiled_t* compiled,
     const char*               path,
-     size_t                    pathLength,
-     protecc_permission_t*     perms_out);
+    size_t                    pathLength,
+    protecc_permission_t*     permsOut);
 
 /**
  * @brief Get statistics about the compiled pattern set

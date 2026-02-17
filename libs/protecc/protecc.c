@@ -324,13 +324,13 @@ bool protecc_match(
     const protecc_compiled_t* compiled,
     const char* path,
     size_t path_len,
-    protecc_permission_t* perms_out
+    protecc_permission_t* permsOut
 ) {
-    if (!perms_out) {
+    if (!permsOut) {
         return false;
     }
 
-    *perms_out = PROTECC_PERM_NONE;
+    *permsOut = PROTECC_PERM_NONE;
 
     if (!compiled || !path) {
         return false;
@@ -341,14 +341,14 @@ bool protecc_match(
     }
     
     if (compiled->has_dfa) {
-        return __match_dfa(compiled, path, path_len, perms_out);
+        return __match_dfa(compiled, path, path_len, permsOut);
     }
 
     if (!compiled->root) {
         return false;
     }
 
-    return protecc_match_internal(compiled->root, path, path_len, 0, compiled->flags, perms_out);
+    return protecc_match_internal(compiled->root, path, path_len, 0, compiled->flags, permsOut);
 }
 
 protecc_error_t protecc_get_stats(

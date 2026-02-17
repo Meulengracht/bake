@@ -77,7 +77,6 @@ struct {
     __uint(max_entries, 4096);
 } net_unix_map SEC(".maps");
 
-
 static __always_inline int __net_allow_create(__u32 family, __u32 type, __u32 protocol, __u32 hook_id)
 {
     struct net_create_key key = {};
