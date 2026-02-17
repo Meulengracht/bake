@@ -1,12 +1,26 @@
 /**
- * @file parser.c
- * @brief Pattern parsing implementation for protecc library
+ * Copyright, Philip Meulengracht
+ *
+ * This program is free software : you can redistribute it and / or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation ? , either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
  */
 
-#include "protecc_internal.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+
+#include "private.h"
 
 /**
  * @brief Parse a character set like [abc] or [a-z]
@@ -104,10 +118,15 @@ static protecc_modifier_t parse_modifier(const char** pattern) {
 protecc_error_t protecc_parse_pattern(
     const char* pattern,
     protecc_node_t* root,
-    uint32_t flags
+    uint32_t flags,
+    protecc_node_t** terminal_out
 ) {
     if (!pattern || !root) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (terminal_out) {
+        *terminal_out = NULL;
     }
     
     const char* p = pattern;
@@ -191,6 +210,9 @@ protecc_error_t protecc_parse_pattern(
     // Mark the last node as terminal
     if (current != root) {
         current->is_terminal = true;
+        if (terminal_out) {
+            *terminal_out = current;
+        }
     }
     
     return PROTECC_OK;

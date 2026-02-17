@@ -106,8 +106,8 @@ static int __parse_response(const char* response, struct upload_context* uploadC
     // 
     // =========================
     //
-    char* needle = strstr(response, "wget");
-    char* end = NULL;
+    const char* needle = strstr(response, "wget");
+    const char* end = NULL;
     if (needle == NULL) {
         VLOG_ERROR("chef-client", "__parse_response: could not find 'wget' in %s\n", response);
         return -1;

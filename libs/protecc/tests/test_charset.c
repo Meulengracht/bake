@@ -15,25 +15,31 @@
         } \
     } while(0)
 
+static bool match_path(const protecc_compiled_t* compiled, const char* path) {
+    protecc_permission_t perms = PROTECC_PERM_NONE;
+
+    return protecc_match(compiled, path, 0, &perms);
+}
+
 int test_charset_patterns(void) {
     protecc_compiled_t* compiled = NULL;
     protecc_error_t err;
     
     // Test 1: Character ranges [a-z]
     {
-        const char* patterns[] = {"/tmp/file[a-z]"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/file[a-z]", PROTECC_PERM_ALL }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [a-z] pattern");
         
-        TEST_ASSERT(protecc_match(compiled, "/tmp/filea", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/filea"), 
                    "Should match [a-z] with 'a'");
-        TEST_ASSERT(protecc_match(compiled, "/tmp/filez", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/filez"), 
                    "Should match [a-z] with 'z'");
-        TEST_ASSERT(protecc_match(compiled, "/tmp/filem", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/filem"), 
                    "Should match [a-z] with 'm'");
-        TEST_ASSERT(!protecc_match(compiled, "/tmp/fileA", 0), 
+        TEST_ASSERT(!match_path(compiled, "/tmp/fileA"), 
                    "Should not match [a-z] with 'A'");
-        TEST_ASSERT(!protecc_match(compiled, "/tmp/file1", 0), 
+        TEST_ASSERT(!match_path(compiled, "/tmp/file1"), 
                    "Should not match [a-z] with digit");
         
         protecc_free(compiled);
@@ -42,17 +48,17 @@ int test_charset_patterns(void) {
     
     // Test 2: Digit ranges [0-9]
     {
-        const char* patterns[] = {"/dev/tty[0-9]"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/dev/tty[0-9]", PROTECC_PERM_ALL }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [0-9] pattern");
         
-        TEST_ASSERT(protecc_match(compiled, "/dev/tty0", 0), 
+        TEST_ASSERT(match_path(compiled, "/dev/tty0"), 
                    "Should match [0-9] with '0'");
-        TEST_ASSERT(protecc_match(compiled, "/dev/tty5", 0), 
+        TEST_ASSERT(match_path(compiled, "/dev/tty5"), 
                    "Should match [0-9] with '5'");
-        TEST_ASSERT(protecc_match(compiled, "/dev/tty9", 0), 
+        TEST_ASSERT(match_path(compiled, "/dev/tty9"), 
                    "Should match [0-9] with '9'");
-        TEST_ASSERT(!protecc_match(compiled, "/dev/ttya", 0), 
+        TEST_ASSERT(!match_path(compiled, "/dev/ttya"), 
                    "Should not match [0-9] with letter");
         
         protecc_free(compiled);
@@ -61,17 +67,17 @@ int test_charset_patterns(void) {
     
     // Test 3: Character sets [abc]
     {
-        const char* patterns[] = {"/tmp/file[abc]"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/file[abc]", PROTECC_PERM_ALL }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [abc] pattern");
         
-        TEST_ASSERT(protecc_match(compiled, "/tmp/filea", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/filea"), 
                    "Should match [abc] with 'a'");
-        TEST_ASSERT(protecc_match(compiled, "/tmp/fileb", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/fileb"), 
                    "Should match [abc] with 'b'");
-        TEST_ASSERT(protecc_match(compiled, "/tmp/filec", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/filec"), 
                    "Should match [abc] with 'c'");
-        TEST_ASSERT(!protecc_match(compiled, "/tmp/filed", 0), 
+        TEST_ASSERT(!match_path(compiled, "/tmp/filed"), 
                    "Should not match [abc] with 'd'");
         
         protecc_free(compiled);
@@ -80,15 +86,15 @@ int test_charset_patterns(void) {
     
     // Test 4: Multiple ranges [a-zA-Z]
     {
-        const char* patterns[] = {"/tmp/[a-zA-Z]"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/[a-zA-Z]", PROTECC_PERM_ALL }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [a-zA-Z] pattern");
         
-        TEST_ASSERT(protecc_match(compiled, "/tmp/a", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/a"), 
                    "Should match [a-zA-Z] with 'a'");
-        TEST_ASSERT(protecc_match(compiled, "/tmp/Z", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/Z"), 
                    "Should match [a-zA-Z] with 'Z'");
-        TEST_ASSERT(!protecc_match(compiled, "/tmp/1", 0), 
+        TEST_ASSERT(!match_path(compiled, "/tmp/1"), 
                    "Should not match [a-zA-Z] with digit");
         
         protecc_free(compiled);
@@ -97,15 +103,15 @@ int test_charset_patterns(void) {
     
     // Test 5: Charset with modifiers [0-9]+
     {
-        const char* patterns[] = {"/dev/tty[0-9]+"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/dev/tty[0-9]+", PROTECC_PERM_ALL }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [0-9]+ pattern");
         
-        TEST_ASSERT(protecc_match(compiled, "/dev/tty1", 0), 
+        TEST_ASSERT(match_path(compiled, "/dev/tty1"), 
                    "Should match [0-9]+ with single digit");
-        TEST_ASSERT(protecc_match(compiled, "/dev/tty123", 0), 
+        TEST_ASSERT(match_path(compiled, "/dev/tty123"), 
                    "Should match [0-9]+ with multiple digits");
-        TEST_ASSERT(!protecc_match(compiled, "/dev/tty", 0), 
+        TEST_ASSERT(!match_path(compiled, "/dev/tty"), 
                    "Should not match [0-9]+ without digits");
         
         protecc_free(compiled);
@@ -114,15 +120,15 @@ int test_charset_patterns(void) {
     
     // Test 6: Charset with optional modifier [0-9]?
     {
-        const char* patterns[] = {"/dev/port[0-9]?"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/dev/port[0-9]?", PROTECC_PERM_ALL }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile [0-9]? pattern");
         
-        TEST_ASSERT(protecc_match(compiled, "/dev/port", 0), 
+        TEST_ASSERT(match_path(compiled, "/dev/port"), 
                    "Should match [0-9]? without digit");
-        TEST_ASSERT(protecc_match(compiled, "/dev/port5", 0), 
+        TEST_ASSERT(match_path(compiled, "/dev/port5"), 
                    "Should match [0-9]? with digit");
-        TEST_ASSERT(!protecc_match(compiled, "/dev/port12", 0), 
+        TEST_ASSERT(!match_path(compiled, "/dev/port12"), 
                    "Should not match [0-9]? with multiple digits");
         
         protecc_free(compiled);
@@ -131,15 +137,15 @@ int test_charset_patterns(void) {
     
     // Test 7: Complex pattern with charset and wildcards
     {
-        const char* patterns[] = {"/var/log/[a-z]*.[0-9]+"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/var/log/[a-z]*.[0-9]+", PROTECC_PERM_ALL }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile complex pattern");
         
-        TEST_ASSERT(protecc_match(compiled, "/var/log/app.1", 0), 
+        TEST_ASSERT(match_path(compiled, "/var/log/app.1"), 
                    "Should match complex pattern");
-        TEST_ASSERT(protecc_match(compiled, "/var/log/system.123", 0), 
+        TEST_ASSERT(match_path(compiled, "/var/log/system.123"), 
                    "Should match complex pattern");
-        TEST_ASSERT(!protecc_match(compiled, "/var/log/1app.1", 0), 
+        TEST_ASSERT(!match_path(compiled, "/var/log/1app.1"), 
                    "Should not match pattern starting with digit");
         
         protecc_free(compiled);
@@ -148,15 +154,15 @@ int test_charset_patterns(void) {
     
     // Test 8: Case insensitive flag
     {
-        const char* patterns[] = {"/tmp/File"};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_CASE_INSENSITIVE, &compiled);
+        const protecc_pattern_t patterns[] = {{ "/tmp/File", PROTECC_PERM_ALL }};
+        err = protecc_compile(patterns, 1, PROTECC_FLAG_CASE_INSENSITIVE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile case-insensitive pattern");
         
-        TEST_ASSERT(protecc_match(compiled, "/tmp/file", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/file"), 
                    "Should match case-insensitive");
-        TEST_ASSERT(protecc_match(compiled, "/tmp/FILE", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/FILE"), 
                    "Should match case-insensitive");
-        TEST_ASSERT(protecc_match(compiled, "/tmp/File", 0), 
+        TEST_ASSERT(match_path(compiled, "/tmp/File"), 
                    "Should match case-insensitive");
         
         protecc_free(compiled);

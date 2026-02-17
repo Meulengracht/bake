@@ -1,14 +1,15 @@
-# BPF LSM Programs for Container Filesystem Enforcement
+# BPF LSM Programs for Container Filesystem and Network Enforcement
 
-This directory contains BPF LSM programs for enforcing container-specific filesystem access policies.
+This directory contains BPF LSM programs for enforcing container-specific filesystem and network access policies.
 
 ## Overview
 
-The BPF programs in this directory provide kernel-level enforcement of filesystem access restrictions for containerized processes. They hook into the Linux Security Module (LSM) framework to intercept file operations and enforce per-container policies based on cgroup identity and inode numbers.
+The BPF programs in this directory provide kernel-level enforcement of filesystem and network access restrictions for containerized processes. They hook into the Linux Security Module (LSM) framework to intercept file and socket operations and enforce per-container policies based on cgroup identity and per-container policy maps.
 
 ## Files
 
-- **fs_lsm.bpf.c**: BPF LSM program that hooks `file_open` to enforce read/write deny rules
+- **fs-lsm.bpf.c**: BPF LSM program that hooks file operations and evaluates paths against a per-container DFA profile
+- **net-lsm.bpf.c**: BPF LSM program that hooks socket operations and evaluates tuples against per-container network maps
 - **CMakeLists.txt**: Build system for compiling BPF programs and generating skeletons
 
 ## Requirements
@@ -49,19 +50,45 @@ If clang or bpftool are not found, the build continues without BPF programs (sec
 
 ## Architecture
 
-### Policy Map
+### Policy Maps
 
-The BPF program uses a hash map to store deny rules:
+Filesystem enforcement uses a serialized DFA profile per cgroup:
 
 ```c
-struct policy_key {
-    __u64 cgroup_id;  // Container's cgroup inode number
-    __u64 dev;        // Device number of the filesystem
-    __u64 ino;        // Inode number of the file
+struct profile_value {
+   __u32 size;
+   __u8  data[PROTECC_BPF_MAX_PROFILE_SIZE];
+};
+```
+
+Network enforcement uses three maps keyed by cgroup + socket metadata:
+
+```c
+struct net_create_key {
+   __u64 cgroup_id;
+   __u32 family;
+   __u32 type;
+   __u32 protocol;
 };
 
-struct policy_value {
-    __u32 deny_mask;  // Bitmask: 0x1=READ, 0x2=WRITE, 0x4=EXEC
+struct net_tuple_key {
+   __u64 cgroup_id;
+   __u32 family;
+   __u32 type;
+   __u32 protocol;
+   __u16 port;
+   __u8  addr[16];
+};
+
+struct net_unix_key {
+   __u64 cgroup_id;
+   __u32 type;
+   __u32 protocol;
+   char  path[108];
+};
+
+struct net_policy_value {
+   __u32 allow_mask;  // Bitmask: CREATE/BIND/CONNECT/LISTEN/ACCEPT/SEND
 };
 ```
 
@@ -69,72 +96,40 @@ struct policy_value {
 
 1. **Container Creation**:
    - Container is placed in a cgroup (e.g., `/sys/fs/cgroup/container-01`)
-   - Policy deny rules are added for specific paths
-   - Paths are resolved to (dev, ino) tuples
-   - Map entries are created: `(cgroup_id, dev, ino) → deny_mask`
+   - Filesystem policy is compiled into a DFA profile and stored in `profile_map`
+   - Network policy is stored in the net maps using cgroup + tuple keys
 
-2. **File Open**:
-   - Process in container opens a file
-   - BPF LSM `file_open` hook is triggered
-   - Program extracts:
-     - Cgroup ID from calling process
-     - Device and inode from file being opened
-   - Looks up `(cgroup_id, dev, ino)` in policy map
-   - If found and requested operation is denied: returns -EACCES
-   - Otherwise: allows the operation (default-allow)
+2. **Filesystem Access**:
+   - Process in container performs a file operation
+   - BPF LSM hook resolves a path and evaluates it against the DFA profile
+   - If the DFA indicates a match for the required access: allow
+   - If not: deny and emit a ring buffer event
 
-3. **Container Cleanup**:
+3. **Network Access**:
+   - Process in container performs a socket operation
+   - BPF LSM hook builds a key (create/tuple/unix) and looks up policy
+   - If the allow mask satisfies the required permission: allow
+   - If not: deny and emit a ring buffer event
+
+4. **Container Cleanup**:
    - Map entries for the container are removed
    - BPF programs remain loaded for other containers
 
-## Current Implementation Status
+### Default Behavior
 
-### Implemented ✅
-- BPF program structure and policy map
-- Build system integration
-- Skeleton generation
-- Policy map key/value definitions
-- Cgroup ID-based isolation
-
-### In Progress 🚧
-- Full vmlinux.h generation for accessing kernel structures
-- Actual enforcement logic in BPF program (currently placeholder)
-- BPF program loading and attaching in policy-ebpf.c
-- Runtime map population
-
-### TODO 📋
-- Complete kernel struct access via vmlinux.h or BTF
-- Implement exec permission enforcement
-- Add audit logging support
-- Performance counters and statistics
-- Dynamic policy updates
+- If a cgroup has no filesystem profile, filesystem access is allowed.
+- If a cgroup has no network policy entry, the operation is allowed.
 
 ## Limitations
 
-### First Slice Limitations
-
-This is the initial implementation focusing on infrastructure:
-
-1. **Placeholder Enforcement**: The BPF program compiles but doesn't yet enforce policies (requires vmlinux.h for accessing `struct file` and `struct inode`)
-
-2. **No Runtime Loading**: The skeleton is generated but not yet used to load/attach programs (coming in next commits)
-
-3. **Read/Write Only**: Exec enforcement will be added in a future update
-
-### Workarounds
-
-The system is designed to gracefully handle missing BPF LSM:
-- Falls back to seccomp for syscall filtering
-- Logs warning when BPF LSM is unavailable
-- No application code changes needed
+- DFA matching uses bounded loops and fixed-size buffers to satisfy verifier constraints.
+- Enforcement requires BPF LSM support; when unavailable, the system falls back to seccomp filtering.
 
 ## Future Enhancements
 
 ### Near Term
-- Complete vmlinux.h generation for CO-RE
-- Wire up BPF program loading in policy-ebpf.c
-- Add per-container map population
-- Test enforcement with real workloads
+- Add policy-driven telemetry and counters
+- Expand test coverage for fs/net enforcement
 
 ### Long Term
 - Exec permission enforcement
@@ -157,8 +152,11 @@ cat /sys/kernel/security/lsm
 # List loaded BPF programs
 sudo bpftool prog list
 
-# Dump policy map
-sudo bpftool map dump name policy_map
+# Dump policy maps
+sudo bpftool map dump name profile_map
+sudo bpftool map dump name net_create_map
+sudo bpftool map dump name net_tuple_map
+sudo bpftool map dump name net_unix_map
 ```
 
 ### Enable BPF LSM

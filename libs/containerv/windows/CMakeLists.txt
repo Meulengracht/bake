@@ -1,7 +1,6 @@
 add_library(containerv-windows STATIC
     container-options.c
     container.c
-    bpf-manager-stub.c
     hcs.c
     layers.c
     monitoring.c

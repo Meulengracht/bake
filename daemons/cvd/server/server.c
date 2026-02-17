@@ -564,8 +564,8 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
 
 static int __split_command(const char* line, char** command, char** arguments)
 {
-    char  buffer[1024] = { 0 };
-    char* p = strchr(line, ' ');
+    char        buffer[1024] = { 0 };
+    const char* p = strchr(line, ' ');
 
     if (p != NULL) {
         strncpy(&buffer[0], line, p - line);

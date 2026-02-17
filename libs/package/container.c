@@ -537,7 +537,7 @@ static int __write_version_metadata(struct VaFs* vafs, const char* version)
 {
     struct chef_vafs_feature_package_version* packageVersion;
     size_t                                    featureSize;
-    char*                                     tagPointer;
+    const char*                               tagPointer;
     char*                                     dataPointer;
     int                                       status;
 

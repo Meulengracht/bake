@@ -268,7 +268,7 @@ static int __parse_guid_and_type(const char* id, char** guid, unsigned char* typ
         return *type != 0 ? 0 : -1;
     }
     
-    p = strchr(id, ',');
+    p = (char*)strchr(id, ',');
     if (p != NULL) {
         // both type and guid, parse type first
         *type = (uint8_t)strtoul(id, &p, 16);

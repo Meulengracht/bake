@@ -13,33 +13,23 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
+ * https://github.com/torvalds/linux/blob/master/include/linux/lsm_hook_defs.h
+ * task_get_uid/gid/pgid/sid/secid
+ * task_set_uid/gid
+ * task_get_nice/ioprio
+ * task_set_nice/ioprio
+ * task_get_rlimit
+ * task_set_rlimit
+ * task_kill : checking permission before sending signal to another process.
+ * task_prctl : prctl syscall
  */
 
-#include <errno.h>
-#include <chef/platform.h>
-#include <stdlib.h>
-#include <string.h>
+#include <vmlinux.h>
 
-void strbasename(const char* path, char* buffer, size_t bufferSize)
-{
-	const char* start;
-    int         i;
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
 
-    if (path == NULL || buffer == NULL || bufferSize == 0) {
-        errno = EINVAL;
-        return;
-    }
-	
-	start = strrchr(path, CHEF_PATH_SEPARATOR);
-	if (start == NULL) {
-		start = (char*)path;
-	} else {
-		start++;
-	}
+#include "common.h"
+#include "tracing.h"
 
-    for (i = 0; start[i] && start[i] != '.' && i < (int)(bufferSize - 1); i++) {
-        buffer[i] = start[i];
-    }
-    buffer[i] = '\0';
-}

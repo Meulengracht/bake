@@ -10,6 +10,7 @@
 extern int test_basic_patterns(void);
 extern int test_wildcard_patterns(void);
 extern int test_charset_patterns(void);
+extern int test_dfa_patterns(void);
 
 typedef struct {
     const char* name;
@@ -20,6 +21,7 @@ static const test_case_t tests[] = {
     {"Basic patterns", test_basic_patterns},
     {"Wildcard patterns", test_wildcard_patterns},
     {"Charset patterns", test_charset_patterns},
+    {"DFA patterns", test_dfa_patterns},
 };
 
 static const size_t num_tests = sizeof(tests) / sizeof(tests[0]);

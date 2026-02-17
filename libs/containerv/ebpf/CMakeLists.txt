@@ -1,18 +1,16 @@
+# Compile eBPF programs
 add_subdirectory(program)
 
-add_library(containerv-ebpf STATIC
-    helpers.c
-    manager.c
-)
-target_include_directories(containerv-ebpf PRIVATE ../include)
-target_link_libraries(containerv-ebpf PUBLIC platform vlog)
+if(LIBBPF_INCLUDE_DIR AND LIBBPF_LIBRARY)
+    add_library(containerv-ebpf STATIC
+        container-context.c
+        helpers.c
+        manager.c
+        map-ops.c
+    )
 
-# If BPF programs were built, include the skeleton header directory
-if(BPF_PROGRAMS_AVAILABLE)
-    find_path(LIBBPF_INCLUDE_DIR NAMES bpf/libbpf.h)
-    find_library(LIBBPF_LIBRARY NAMES bpf libbpf)
-
-    if(LIBBPF_INCLUDE_DIR AND LIBBPF_LIBRARY)
+    # If BPF programs were built, include the skeleton header directory
+    if(BPF_PROGRAMS_AVAILABLE)
         target_include_directories(containerv-ebpf PRIVATE ${BPF_OUTPUT_DIR} ${LIBBPF_INCLUDE_DIR})
         target_link_libraries(containerv-ebpf PUBLIC ${LIBBPF_LIBRARY})
         target_compile_definitions(containerv-ebpf PRIVATE HAVE_BPF_SKELETON)
@@ -25,9 +23,12 @@ if(BPF_PROGRAMS_AVAILABLE)
         set(BPF_PROGRAMS_AVAILABLE TRUE PARENT_SCOPE)
         set(BPF_OUTPUT_DIR ${BPF_OUTPUT_DIR} PARENT_SCOPE)
     else()
-        message(WARNING "BPF programs built but libbpf not found; disabling BPF skeleton loading")
         set(BPF_PROGRAMS_AVAILABLE FALSE PARENT_SCOPE)
     endif()
 else()
-    set(BPF_PROGRAMS_AVAILABLE FALSE PARENT_SCOPE)
+    message(WARNING "libbpf not found. BPF-based features will be disabled.")
+    add_library(containerv-ebpf STATIC stubs.c)
 endif()
+
+target_include_directories(containerv-ebpf PRIVATE ../include)
+target_link_libraries(containerv-ebpf PUBLIC protecc platform vlog)

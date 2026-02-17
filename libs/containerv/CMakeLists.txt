@@ -1,5 +1,8 @@
 project (containerv C)
 
+find_path(LIBBPF_INCLUDE_DIR NAMES bpf/libbpf.h)
+find_library(LIBBPF_LIBRARY NAMES bpf libbpf)
+
 # Add PID1 service subdirectory
 add_subdirectory(pid1)
 
@@ -12,13 +15,16 @@ add_subdirectory(pid1d)
 # Add rootfs and disk utilities
 add_subdirectory(disk)
 
-set(ADDITIONAL_LIBS containerv-disk containerv-pid1)
+# Add BPF-related sources and libraries
+add_subdirectory(ebpf)
+
+set(CV_SRCS shared.c)
+set(ADDITIONAL_LIBS containerv-ebpf containerv-disk containerv-pid1)
 if (UNIX)
-    add_subdirectory(ebpf)
     add_subdirectory(linux)
     add_subdirectory(policies)
     
-    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-linux containerv-ebpf containerv-policy )
+    set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-linux containerv-policy)
     
     # Propagate BPF variables from linux subdirectory to parent scope
     if(BPF_PROGRAMS_AVAILABLE)
@@ -31,8 +37,6 @@ elseif(WIN32)
     set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} containerv-windows containerv-policy)
 endif()
 
-add_library(containerv STATIC
-    shared.c
-)
+add_library(containerv STATIC ${CV_SRCS})
 target_link_libraries(containerv PUBLIC ${ADDITIONAL_LIBS})
 target_include_directories(containerv PUBLIC include)

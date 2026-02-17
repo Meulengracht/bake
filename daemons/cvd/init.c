@@ -17,7 +17,7 @@
  */
 
 #include <chef/platform.h>
-#include <chef/containerv/bpf-manager.h>
+#include <chef/containerv/bpf.h>
 #include <gracht/link/socket.h>
 #include <gracht/server.h>
 #include <server.h>
@@ -178,7 +178,7 @@ static void __initialize_bpf(void)
     int                           status;
     VLOG_TRACE("cvd", "Initializing bpf manager\n");
 
-    status = containerv_bpf_manager_initialize();
+    status = containerv_bpf_initialize();
     if (status) {
         VLOG_WARNING("cvd", "Failed to initialize bpf manager: critical startup error\n");
         VLOG_WARNING("cvd", "BPF LSM may require kernel 5.7+ with CONFIG_BPF_LSM=y and 'bpf' in LSM list\n");
@@ -186,7 +186,7 @@ static void __initialize_bpf(void)
         return;
     }
 
-    if (!containerv_bpf_manager_is_available()) {
+    if (containerv_bpf_is_available() != CV_BPF_AVAILABLE) {
         VLOG_DEBUG("cvd", "BPF LSM is not available on this system, containers will use seccomp fallback\n");
         return;
     }
@@ -194,19 +194,21 @@ static void __initialize_bpf(void)
     
     VLOG_TRACE("cvd", "BPF LSM enforcement is active\n");
 
-    // Sanity-check that global enforcement is actually pinned.
-    (void)containerv_bpf_manager_sanity_check_pins();
+    // Sanity-check that filesystem enforcement is actually pinned (if enabled).
+    if (containerv_bpf_get_profile_map_fd() >= 0) {
+        (void)containerv_bpf_sanity_check_pins();
+    }
 
-    if (containerv_bpf_manager_get_metrics(&metrics) == 0) {
+    if (containerv_bpf_get_metrics(&metrics) == 0) {
         VLOG_DEBUG("cvd", 
             "BPF Policy Metrics - Containers: %d, Total Entries: %d, Capacity: %d\n",
-            metrics.total_containers,
-            metrics.total_policy_entries,
+            metrics.container_count,
+            metrics.policy_entry_count,
             metrics.max_map_capacity
         );
     }
 
-    atexit(containerv_bpf_manager_shutdown);
+    atexit(containerv_bpf_shutdown);
 }
 
 int cvd_initialize_server(struct gracht_server_configuration* config, gracht_server_t** serverOut)

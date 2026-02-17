@@ -16,31 +16,31 @@
  *
  */
 
-#include <chef/containerv/bpf-manager.h>
+#include <chef/containerv/bpf.h>
 #include <vlog.h>
 
-int containerv_bpf_manager_initialize(void)
+int containerv_bpf_initialize(void)
 {
-    VLOG_WARNING("containerv[bpf]", "BPF manager is not available on Windows\n");
+    VLOG_WARNING("containerv[bpf]", "BPF manager is not available\n");
     return 0;
 }
 
-void containerv_bpf_manager_shutdown(void)
+void containerv_bpf_shutdown(void)
 {
     // no-op on Windows
 }
 
-int containerv_bpf_manager_is_available(void)
+enum containerv_bpf_status containerv_bpf_is_available(void)
 {
-    return 0;
+    return CV_BPF_NOT_SUPPORTED;
 }
 
-int containerv_bpf_manager_get_policy_map_fd(void)
+int containerv_bpf_get_profile_map_fd(void)
 {
     return -1;
 }
 
-int containerv_bpf_manager_populate_policy(
+int containerv_bpf_populate_policy(
     const char* container_id,
     const char* rootfs_path,
     struct containerv_policy* policy)
@@ -51,43 +51,28 @@ int containerv_bpf_manager_populate_policy(
     return -1;
 }
 
-int containerv_bpf_manager_cleanup_policy(const char* container_id)
+int containerv_bpf_cleanup_policy(const char* container_id)
 {
     (void)container_id;
     return -1;
 }
 
-int containerv_bpf_manager_get_metrics(struct containerv_bpf_metrics* metrics)
+int containerv_bpf_get_metrics(struct containerv_bpf_metrics* metrics)
 {
-    if (metrics) {
-        metrics->available = 0;
-        metrics->total_containers = 0;
-        metrics->total_policy_entries = 0;
-        metrics->max_map_capacity = 0;
-        metrics->total_populate_ops = 0;
-        metrics->total_cleanup_ops = 0;
-        metrics->failed_populate_ops = 0;
-        metrics->failed_cleanup_ops = 0;
-    }
+    (void)metrics;
     return -1;
 }
 
-int containerv_bpf_manager_get_container_metrics(
+int containerv_bpf_get_container_metrics(
     const char* container_id,
     struct containerv_bpf_container_metrics* metrics)
 {
     (void)container_id;
-    if (metrics) {
-        metrics->container_id[0] = '\0';
-        metrics->cgroup_id = 0;
-        metrics->policy_entry_count = 0;
-        metrics->populate_time_us = 0;
-        metrics->cleanup_time_us = 0;
-    }
+    (void)metrics;
     return -1;
 }
 
-int containerv_bpf_manager_sanity_check_pins(void)
+int containerv_bpf_sanity_check_pins(void)
 {
     return 0;
 }

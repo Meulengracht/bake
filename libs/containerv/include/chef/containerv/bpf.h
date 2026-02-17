@@ -16,8 +16,52 @@
  * 
  */
 
-#ifndef __CONTAINERV_BPF_MANAGER_H__
-#define __CONTAINERV_BPF_MANAGER_H__
+#ifndef __CONTAINERV_BPF_H__
+#define __CONTAINERV_BPF_H__
+
+// Forward declarations
+struct containerv_policy;
+
+enum containerv_bpf_status {
+    CV_BPF_UNINITIALIZED = 0,
+    CV_BPF_AVAILABLE = 1,
+    CV_BPF_NOT_SUPPORTED = 2
+};
+
+struct containerv_bpf_container_time_metrics {
+    // Time taken to populate policy in microseconds
+    unsigned long long policy_population_time_us;
+    // Time taken to cleanup policy in microseconds
+    unsigned long long policy_cleanup_time_us;
+};
+
+/**
+ * @brief Container-specific BPF policy metrics
+ */
+struct containerv_bpf_container_metrics {
+    unsigned long long cgroup_id;
+
+    struct containerv_bpf_container_time_metrics time_metrics;
+};
+
+/**
+ * @brief Global BPF policy enforcement metrics
+ */
+struct containerv_bpf_metrics {
+    enum containerv_bpf_status status;
+    int                        container_count;
+    int                        policy_entry_count;
+    int                        max_map_capacity;
+
+    // Total populate operations performed
+    unsigned long long total_populate_ops;
+    // Total cleanup operations performed
+    unsigned long long total_cleanup_ops;
+    // Failed populate operations
+    unsigned long long failed_populate_ops;
+    // Failed cleanup operations
+    unsigned long long failed_cleanup_ops;
+};
 
 /**
  * @brief Initialize the BPF manager for centralized eBPF enforcement
@@ -31,7 +75,7 @@
  * 
  * @return 0 on success or if BPF LSM unavailable, -1 on critical error
  */
-extern int containerv_bpf_manager_initialize(void);
+extern int containerv_bpf_initialize(void);
 
 /**
  * @brief Shutdown the BPF manager and clean up resources
@@ -39,14 +83,16 @@ extern int containerv_bpf_manager_initialize(void);
  * This function unpins and destroys BPF programs and maps.
  * Should be called during application shutdown.
  */
-extern void containerv_bpf_manager_shutdown(void);
+extern void containerv_bpf_shutdown(void);
 
 /**
  * @brief Check if BPF LSM enforcement is available
  * 
- * @return 1 if BPF LSM is available and loaded, 0 otherwise
+ * Returns whether the BPF manager successfully initialized and is ready to
+ * enforce policies. This is a best-effort check and may return false negatives
+ * in certain environments (e.g., older kernels, missing features).
  */
-extern int containerv_bpf_manager_is_available(void);
+extern enum containerv_bpf_status containerv_bpf_is_available(void);
 
 /**
  * @brief Get the file descriptor for the policy map
@@ -56,7 +102,7 @@ extern int containerv_bpf_manager_is_available(void);
  * 
  * @return Map file descriptor, or -1 if BPF unavailable
  */
-extern int containerv_bpf_manager_get_policy_map_fd(void);
+extern int containerv_bpf_get_profile_map_fd(void);
 
 /**
  * @brief Populate BPF policy for a container
@@ -65,15 +111,14 @@ extern int containerv_bpf_manager_get_policy_map_fd(void);
  * configured allowed paths to (dev, ino) within the container's
  * filesystem view and populates the BPF policy map.
  * 
- * @param container_id Container ID (hostname) - must not be NULL
- * @param rootfs_path Path to the container's rootfs - must not be NULL
- * @param policy Security policy with path rules - must not be NULL
+ * @param containerId Container ID (hostname)
+ * @param rootfsPath Path to the container's rootfs
+ * @param policy Security policy with path rules
  * @return 0 on success, -1 on error
  */
-struct containerv_policy;
-extern int containerv_bpf_manager_populate_policy(
-    const char* container_id,
-    const char* rootfs_path,
+extern int containerv_bpf_populate_policy(
+    const char*               containerId,
+    const char*               rootfsPath,
     struct containerv_policy* policy
 );
 
@@ -83,35 +128,10 @@ extern int containerv_bpf_manager_populate_policy(
  * Cleans up all cgroup-specific data in BPF maps when a container
  * is destroyed.
  * 
- * @param container_id Container ID (hostname) - must not be NULL
+ * @param containerId Container ID (hostname)
  * @return 0 on success, -1 on error
  */
-extern int containerv_bpf_manager_cleanup_policy(const char* container_id);
-
-/**
- * @brief Container-specific BPF policy metrics
- */
-struct containerv_bpf_container_metrics {
-    char container_id[256];           // Container identifier
-    unsigned long long cgroup_id;     // Cgroup ID for this container
-    int policy_entry_count;           // Number of policy entries in map
-    unsigned long long populate_time_us; // Time taken to populate policy (microseconds)
-    unsigned long long cleanup_time_us;  // Time taken to cleanup policy (microseconds)
-};
-
-/**
- * @brief Global BPF policy enforcement metrics
- */
-struct containerv_bpf_metrics {
-    int available;                       // Whether BPF LSM is available
-    int total_containers;                // Total number of containers with policies
-    int total_policy_entries;            // Total policy entries across all containers
-    int max_map_capacity;                // Maximum capacity of policy map
-    unsigned long long total_populate_ops; // Total populate operations performed
-    unsigned long long total_cleanup_ops;  // Total cleanup operations performed
-    unsigned long long failed_populate_ops; // Failed populate operations
-    unsigned long long failed_cleanup_ops;  // Failed cleanup operations
-};
+extern int containerv_bpf_cleanup_policy(const char* containerId);
 
 /**
  * @brief Get global BPF policy enforcement metrics
@@ -122,7 +142,7 @@ struct containerv_bpf_metrics {
  * @param metrics Pointer to metrics structure to fill
  * @return 0 on success, -1 on error
  */
-extern int containerv_bpf_manager_get_metrics(struct containerv_bpf_metrics* metrics);
+extern int containerv_bpf_get_metrics(struct containerv_bpf_metrics* metrics);
 
 /**
  * @brief Get BPF policy metrics for a specific container
@@ -130,12 +150,12 @@ extern int containerv_bpf_manager_get_metrics(struct containerv_bpf_metrics* met
  * Retrieves metrics about policy enforcement for a specific container.
  * Returns error if container not found or has no policy.
  * 
- * @param container_id Container ID (hostname) - must not be NULL
+ * @param containerId Container ID (hostname) - must not be NULL
  * @param metrics Pointer to container metrics structure to fill
  * @return 0 on success, -1 on error (container not found or invalid params)
  */
-extern int containerv_bpf_manager_get_container_metrics(
-    const char* container_id,
+extern int containerv_bpf_get_container_metrics(
+    const char*                              containerId,
     struct containerv_bpf_container_metrics* metrics
 );
 
@@ -152,6 +172,6 @@ extern int containerv_bpf_manager_get_container_metrics(
  *
  * @return 0 if both are present (or not applicable), -1 if missing
  */
-extern int containerv_bpf_manager_sanity_check_pins(void);
+extern int containerv_bpf_sanity_check_pins(void);
 
-#endif //!__CONTAINERV_BPF_MANAGER_H__
+#endif //!__CONTAINERV_BPF_H__

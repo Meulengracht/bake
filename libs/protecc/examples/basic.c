@@ -1,6 +1,18 @@
 /**
- * @file example.c
- * @brief Example usage of the protecc library
+ * Copyright, Philip Meulengracht
+ *
+ * This program is free software : you can redistribute it and / or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation ? , either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  * 
  * This example demonstrates how to use protecc to compile and match
  * path patterns suitable for eBPF-based security policies.
@@ -11,7 +23,8 @@
 #include <stdlib.h>
 
 void print_match_result(const protecc_compiled_t* compiled, const char* path) {
-    bool match = protecc_match(compiled, path, 0);
+    protecc_permission_t perms = PROTECC_PERM_NONE;
+    bool match = protecc_match(compiled, path, 0, &perms);
     printf("  %s: %s\n", path, match ? "ALLOWED" : "DENIED");
 }
 
@@ -24,13 +37,13 @@ int main(void) {
     // Example 1: Simple file access control
     printf("1. Basic file access patterns:\n");
     {
-        const char* patterns[] = {
-            "/etc/passwd",
-            "/etc/group",
-            "/tmp/*",
+        const protecc_pattern_t patterns[] = {
+            { "/etc/passwd", PROTECC_PERM_ALL },
+            { "/etc/group", PROTECC_PERM_ALL },
+            { "/tmp/*", PROTECC_PERM_ALL },
         };
         
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, &compiled);
+        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -48,13 +61,13 @@ int main(void) {
     // Example 2: Wildcard patterns
     printf("2. Wildcard patterns:\n");
     {
-        const char* patterns[] = {
-            "/home/**",           // Recursive match
-            "/var/log/*.log",     // Single directory wildcard
-            "/dev/tty?",          // Single character wildcard
+        const protecc_pattern_t patterns[] = {
+            { "/home/**", PROTECC_PERM_ALL },           // Recursive match
+            { "/var/log/*.log", PROTECC_PERM_ALL },     // Single directory wildcard
+            { "/dev/tty?", PROTECC_PERM_ALL },          // Single character wildcard
         };
         
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, &compiled);
+        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -74,13 +87,13 @@ int main(void) {
     // Example 3: Character ranges and sets
     printf("3. Character ranges and sets:\n");
     {
-        const char* patterns[] = {
-            "/dev/tty[0-9]+",         // TTY devices with numbers
-            "/tmp/[a-z]*",            // Files starting with lowercase
-            "/var/log/app[0-9].log",  // Numbered log files
+        const protecc_pattern_t patterns[] = {
+            { "/dev/tty[0-9]+", PROTECC_PERM_ALL },         // TTY devices with numbers
+            { "/tmp/[a-z]*", PROTECC_PERM_ALL },            // Files starting with lowercase
+            { "/var/log/app[0-9].log", PROTECC_PERM_ALL },  // Numbered log files
         };
         
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, &compiled);
+        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -100,12 +113,12 @@ int main(void) {
     // Example 4: Case-insensitive matching
     printf("4. Case-insensitive matching:\n");
     {
-        const char* patterns[] = {
-            "/Windows/*",
-            "/Program Files/**",
+        const protecc_pattern_t patterns[] = {
+            { "/Windows/*", PROTECC_PERM_ALL },
+            { "/Program Files/**", PROTECC_PERM_ALL },
         };
         
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_CASE_INSENSITIVE, &compiled);
+        err = protecc_compile(patterns, 2, PROTECC_FLAG_CASE_INSENSITIVE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -123,14 +136,14 @@ int main(void) {
     // Example 5: Statistics
     printf("5. Pattern statistics:\n");
     {
-        const char* patterns[] = {
-            "/etc/*",
-            "/var/**",
-            "/tmp/[a-z]*",
-            "/home/user/*",
+        const protecc_pattern_t patterns[] = {
+            { "/etc/*", PROTECC_PERM_ALL },
+            { "/var/**", PROTECC_PERM_ALL },
+            { "/tmp/[a-z]*", PROTECC_PERM_ALL },
+            { "/home/user/*", PROTECC_PERM_ALL },
         };
         
-        err = protecc_compile(patterns, 4, PROTECC_FLAG_OPTIMIZE, &compiled);
+        err = protecc_compile(patterns, 4, PROTECC_FLAG_OPTIMIZE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -151,12 +164,12 @@ int main(void) {
     // Example 6: Binary export/import
     printf("6. Binary export (for eBPF):\n");
     {
-        const char* patterns[] = {
-            "/etc/passwd",
-            "/tmp/*",
+        const protecc_pattern_t patterns[] = {
+            { "/etc/passwd", PROTECC_PERM_ALL },
+            { "/tmp/*", PROTECC_PERM_ALL },
         };
         
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, &compiled);
+        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;

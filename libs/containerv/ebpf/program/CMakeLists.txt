@@ -33,10 +33,11 @@ if(CLANG AND BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
     
     message(STATUS "BPF target architecture: ${BPF_ARCH}")
     
-    # BPF source file
-    set(BPF_SOURCE ${BPF_SOURCE_DIR}/fs-lsm.bpf.c)
-    set(BPF_OBJECT ${BPF_OUTPUT_DIR}/fs-lsm.bpf.o)
-    set(BPF_SKEL ${BPF_OUTPUT_DIR}/fs-lsm.skel.h)
+    # BPF source files
+    set(BPF_SOURCES
+        ${BPF_SOURCE_DIR}/fs-lsm.bpf.c
+        ${BPF_SOURCE_DIR}/net-lsm.bpf.c
+    )
     
     # Generate the vmlinux.h header for BPF
     set(VMLINUX_HEADER ${BPF_OUTPUT_DIR}/vmlinux.h)
@@ -47,38 +48,49 @@ if(CLANG AND BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
         VERBATIM
     )
     
-    # Compile BPF program to object file
-    add_custom_command(
-        OUTPUT ${BPF_OBJECT}
-        COMMAND ${CLANG} -g -O2 -target bpf
-            -D__TARGET_ARCH_${BPF_ARCH}
-            -I${BPF_OUTPUT_DIR}
-            -I/usr/include
-            -I/usr/include/${CMAKE_LIBRARY_ARCHITECTURE}
-            -c ${BPF_SOURCE}
-            -o ${BPF_OBJECT}
-        DEPENDS ${BPF_SOURCE} ${VMLINUX_HEADER}
-        COMMENT "Building BPF object: ${BPF_OBJECT}"
-        VERBATIM
-    )
-    
-    # Generate BPF skeleton header
-    add_custom_command(
-        OUTPUT ${BPF_SKEL}
-        COMMAND ${BPFTOOL} gen skeleton ${BPF_OBJECT} > ${BPF_SKEL}
-        DEPENDS ${BPF_OBJECT}
-        COMMENT "Generating BPF skeleton: ${BPF_SKEL}"
-        VERBATIM
-    )
+    set(BPF_OBJECTS "")
+    set(BPF_SKELETONS "")
+
+    foreach(BPF_SOURCE ${BPF_SOURCES})
+        get_filename_component(BPF_NAME ${BPF_SOURCE} NAME_WE)
+        set(BPF_OBJECT ${BPF_OUTPUT_DIR}/${BPF_NAME}.bpf.o)
+        set(BPF_SKEL ${BPF_OUTPUT_DIR}/${BPF_NAME}.skel.h)
+
+        list(APPEND BPF_OBJECTS ${BPF_OBJECT})
+        list(APPEND BPF_SKELETONS ${BPF_SKEL})
+
+        add_custom_command(
+            OUTPUT ${BPF_OBJECT}
+            COMMAND ${CLANG} -g -O2 -target bpf
+                -D__TARGET_ARCH_${BPF_ARCH}
+                -I${BPF_OUTPUT_DIR}
+                -I${CMAKE_SOURCE_DIR}/libs/protecc/include
+                -I/usr/include
+                -I/usr/include/${CMAKE_LIBRARY_ARCHITECTURE}
+                -c ${BPF_SOURCE}
+                -o ${BPF_OBJECT}
+            DEPENDS ${BPF_SOURCE} ${VMLINUX_HEADER}
+            COMMENT "Building BPF object: ${BPF_OBJECT}"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT ${BPF_SKEL}
+            COMMAND ${BPFTOOL} gen skeleton ${BPF_OBJECT} > ${BPF_SKEL}
+            DEPENDS ${BPF_OBJECT}
+            COMMENT "Generating BPF skeleton: ${BPF_SKEL}"
+            VERBATIM
+        )
+    endforeach()
 
     # Create custom target for BPF programs
     add_custom_target(bpf_programs ALL
-        DEPENDS ${BPF_SKEL}
+        DEPENDS ${BPF_SKELETONS}
     )
     
     # Set property to indicate BPF programs are available
     set(BPF_PROGRAMS_AVAILABLE TRUE PARENT_SCOPE)
-    set(BPF_SKEL_HEADER ${BPF_SKEL} PARENT_SCOPE)
+    set(BPF_SKEL_HEADERS ${BPF_SKELETONS} PARENT_SCOPE)
     set(BPF_OUTPUT_DIR ${BPF_OUTPUT_DIR} PARENT_SCOPE)
     
 else()

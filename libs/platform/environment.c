@@ -80,7 +80,7 @@ static int __contains_envkey(struct list* list, const char* key)
 
     list_foreach(list, item) {
         struct chef_keypair_item* keypair = (struct chef_keypair_item*)item;
-        char*                     end     = strchr(key, '=');
+        const char*               end     = strchr(key, '=');
 
         // we need to make sure lengths are equal as well to avoid false positives
         if (end != NULL && strncmp(keypair->key, key, end - key) == 0 && strlen(keypair->key) == (end - key)) {

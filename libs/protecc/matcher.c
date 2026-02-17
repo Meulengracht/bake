@@ -1,16 +1,27 @@
 /**
- * @file matcher.c
- * @brief Pattern matching implementation for protecc library
+ * Copyright, Philip Meulengracht
+ *
+ * This program is free software : you can redistribute it and / or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation ? , either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
  */
 
-#include "protecc_internal.h"
 #include <string.h>
 #include <ctype.h>
-#include <stdbool.h>
+#include <stdlib.h>
 
-/**
- * @brief Check if a character matches a node
- */
+#include "private.h"
+
 static bool char_matches_node(
     const protecc_node_t* node,
     char c,
@@ -47,62 +58,57 @@ static bool char_matches_node(
 /**
  * @brief Match with modifier support
  */
-static bool match_with_modifier(
+typedef struct {
+    const protecc_node_t* node;
+    size_t                pos;
+    size_t                depth;
+} matcher_frame_t;
+
+static bool matcher_stack_push(
+    matcher_frame_t** stack,
+    size_t*           stack_size,
+    size_t*           stack_capacity,
     const protecc_node_t* node,
-    const char* path,
-    size_t path_len,
-    size_t pos,
-    const protecc_node_t* next_node,
-    uint32_t flags
-) {
-    switch (node->modifier) {
-        case MODIFIER_OPTIONAL: // ? - 0 or 1
-            // Try matching with the character
-            if (pos < path_len && char_matches_node(node, path[pos], flags)) {
-                if (next_node) {
-                    if (protecc_match_internal(next_node, path, path_len, pos + 1, flags)) {
-                        return true;
-                    }
-                } else if (pos + 1 == path_len) {
-                    return node->is_terminal;
-                }
-            }
-            // Try matching without the character
-            if (next_node) {
-                return protecc_match_internal(next_node, path, path_len, pos, flags);
-            }
-            return node->is_terminal && pos == path_len;
-        
-        case MODIFIER_ONE_OR_MORE: // + - 1 or more
-            // Must match at least once
-            if (pos >= path_len || !char_matches_node(node, path[pos], flags)) {
-                return false;
-            }
-            pos++;
-            // Fall through to zero-or-more logic
-        
-        case MODIFIER_ZERO_OR_MORE: // * - 0 or more
-            // Try matching as many as possible
-            while (pos < path_len && char_matches_node(node, path[pos], flags)) {
-                // Try continuing from here
-                if (next_node) {
-                    if (protecc_match_internal(next_node, path, path_len, pos, flags)) {
-                        return true;
-                    }
-                } else if (node->is_terminal && pos == path_len) {
-                    return true;
-                }
-                pos++;
-            }
-            // Try without consuming any more
-            if (next_node) {
-                return protecc_match_internal(next_node, path, path_len, pos, flags);
-            }
-            return node->is_terminal && pos == path_len;
-        
-        case MODIFIER_NONE:
-        default:
-            return false; // Should not reach here
+    size_t            pos,
+    size_t            depth)
+{
+    matcher_frame_t* resized;
+    size_t           new_capacity;
+
+    if (*stack_size >= *stack_capacity) {
+        new_capacity = (*stack_capacity == 0) ? 64 : (*stack_capacity * 2);
+        resized = realloc(*stack, new_capacity * sizeof(matcher_frame_t));
+        if (!resized) {
+            return false;
+        }
+        *stack = resized;
+        *stack_capacity = new_capacity;
+    }
+
+    (*stack)[*stack_size].node = node;
+    (*stack)[*stack_size].pos = pos;
+    (*stack)[*stack_size].depth = depth;
+    (*stack_size)++;
+    return true;
+}
+
+static void update_best_match(
+    bool*                    found,
+    size_t*                  best_depth,
+    protecc_permission_t*    perms_out,
+    size_t                   depth,
+    protecc_permission_t     perms)
+{
+    if (!found || !best_depth || !perms_out) {
+        return;
+    }
+
+    if (!*found || depth > *best_depth) {
+        *best_depth = depth;
+        *perms_out = perms;
+        *found = true;
+    } else if (depth == *best_depth) {
+        *perms_out |= perms;
     }
 }
 
@@ -111,79 +117,146 @@ bool protecc_match_internal(
     const char* path,
     size_t path_len,
     size_t pos,
-    uint32_t flags
+    uint32_t flags,
+    protecc_permission_t* perms_out
 ) {
-    if (!node) {
+    matcher_frame_t* stack = NULL;
+    size_t           stack_size = 0;
+    size_t           stack_capacity = 0;
+    bool             found = false;
+    size_t           best_depth = 0;
+
+    if (!node || !perms_out) {
         return false;
     }
-    
-    // If we're at a terminal and consumed all input, match!
-    if (pos == path_len && node->is_terminal) {
-        return true;
+
+    *perms_out = PROTECC_PERM_NONE;
+
+    if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, node, pos, 0)) {
+        return false;
     }
-    
-    // If we have no more children and no more input, check if terminal
-    if (node->num_children == 0) {
-        return pos == path_len && node->is_terminal;
-    }
-    
-    // Try matching each child
-    for (size_t i = 0; i < node->num_children; i++) {
-        protecc_node_t* child = node->children[i];
-        
-        // Handle modifiers
-        if (child->modifier != MODIFIER_NONE) {
-            protecc_node_t* next = (i + 1 < node->num_children) ? node->children[i + 1] : NULL;
-            if (match_with_modifier(child, path, path_len, pos, next, flags)) {
-                return true;
-            }
+
+    while (stack_size > 0) {
+        matcher_frame_t       frame;
+        const protecc_node_t* current;
+
+        stack_size--;
+        frame = stack[stack_size];
+        current = frame.node;
+
+        if (frame.pos == path_len && current->is_terminal) {
+            update_best_match(&found, &best_depth, perms_out, frame.depth, current->perms);
+        }
+
+        if (current->num_children == 0) {
             continue;
         }
-        
-        switch (child->type) {
-            case NODE_WILDCARD_RECURSIVE: {
-                // ** matches anything including /
-                // Try matching from every position
-                for (size_t try_pos = pos; try_pos <= path_len; try_pos++) {
-                    if (protecc_match_internal(child, path, path_len, try_pos, flags)) {
-                        return true;
+
+        for (size_t i = 0; i < current->num_children; i++) {
+            const protecc_node_t* child = current->children[i];
+            size_t child_depth = frame.depth + 1u;
+
+            if (child->modifier != MODIFIER_NONE) {
+                const protecc_node_t* next = (i + 1 < current->num_children) ? current->children[i + 1] : NULL;
+                size_t next_depth = child_depth;
+
+                if (child->modifier == MODIFIER_OPTIONAL) {
+                    if (next) {
+                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, next, frame.pos, next_depth)) {
+                            free(stack);
+                            return false;
+                        }
+                    } else if (child->is_terminal && frame.pos == path_len) {
+                        update_best_match(&found, &best_depth, perms_out, child_depth, child->perms);
                     }
+
+                    if (frame.pos < path_len && char_matches_node(child, path[frame.pos], flags)) {
+                        if (next) {
+                            if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, next, frame.pos + 1, next_depth)) {
+                                free(stack);
+                                return false;
+                            }
+                        } else if (child->is_terminal && frame.pos + 1 == path_len) {
+                            update_best_match(&found, &best_depth, perms_out, child_depth, child->perms);
+                        }
+                    }
+                    continue;
                 }
-                break;
-            }
-            
-            case NODE_WILDCARD_MULTI: {
-                // * matches anything except /
-                size_t try_pos = pos;
-                while (try_pos <= path_len) {
-                    if (protecc_match_internal(child, path, path_len, try_pos, flags)) {
-                        return true;
+
+                if (child->modifier == MODIFIER_ONE_OR_MORE || child->modifier == MODIFIER_ZERO_OR_MORE) {
+                    size_t k = frame.pos;
+
+                    if (child->modifier == MODIFIER_ONE_OR_MORE) {
+                        if (k >= path_len || !char_matches_node(child, path[k], flags)) {
+                            continue;
+                        }
+                        k++;
                     }
-                    if (try_pos < path_len && path[try_pos] == '/') {
-                        break; // Stop at directory separator
+
+                    while (k <= path_len) {
+                        if (next) {
+                            if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, next, k, next_depth)) {
+                                free(stack);
+                                return false;
+                            }
+                        } else if (child->is_terminal && k == path_len) {
+                            update_best_match(&found, &best_depth, perms_out, child_depth, child->perms);
+                        }
+
+                        if (k >= path_len || !char_matches_node(child, path[k], flags)) {
+                            break;
+                        }
+                        k++;
                     }
-                    try_pos++;
+                    continue;
                 }
-                break;
+
+                continue;
             }
-            
-            case NODE_WILDCARD_SINGLE:
-            case NODE_LITERAL:
-            case NODE_CHARSET:
-            case NODE_RANGE: {
-                // Match single character
-                if (pos < path_len && char_matches_node(child, path[pos], flags)) {
-                    if (protecc_match_internal(child, path, path_len, pos + 1, flags)) {
-                        return true;
+
+            switch (child->type) {
+                case NODE_WILDCARD_RECURSIVE:
+                    for (size_t try_pos = frame.pos; try_pos <= path_len; try_pos++) {
+                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, child, try_pos, child_depth)) {
+                            free(stack);
+                            return false;
+                        }
                     }
+                    break;
+
+                case NODE_WILDCARD_MULTI: {
+                    size_t try_pos = frame.pos;
+                    while (try_pos <= path_len) {
+                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, child, try_pos, child_depth)) {
+                            free(stack);
+                            return false;
+                        }
+                        if (try_pos < path_len && path[try_pos] == '/') {
+                            break;
+                        }
+                        try_pos++;
+                    }
+                    break;
                 }
-                break;
+
+                case NODE_WILDCARD_SINGLE:
+                case NODE_LITERAL:
+                case NODE_CHARSET:
+                case NODE_RANGE:
+                    if (frame.pos < path_len && char_matches_node(child, path[frame.pos], flags)) {
+                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, child, frame.pos + 1, child_depth)) {
+                            free(stack);
+                            return false;
+                        }
+                    }
+                    break;
+
+                default:
+                    break;
             }
-            
-            default:
-                break;
         }
     }
-    
-    return false;
+
+    free(stack);
+    return found;
 }

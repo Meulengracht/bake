@@ -1,11 +1,25 @@
 /**
- * @file node.c
- * @brief Trie node management for protecc library
+ * Copyright, Philip Meulengracht
+ *
+ * This program is free software : you can redistribute it and / or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation ? , either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
  */
 
-#include "protecc_internal.h"
 #include <stdlib.h>
 #include <string.h>
+
+#include "private.h"
 
 protecc_node_t* protecc_node_new(protecc_node_type_t type) {
     protecc_node_t* node = calloc(1, sizeof(protecc_node_t));
@@ -84,5 +98,27 @@ void protecc_charset_set_range(protecc_charset_t* charset, char start, char end)
     for (unsigned int c = ustart; c <= uend; c++) {
         protecc_charset_set(charset, (unsigned char)c);
         if (c == 255) break; // Prevent overflow
+    }
+}
+
+void protecc_node_collect_stats(
+    const protecc_node_t* node,
+    size_t                depth,
+    size_t*               num_nodes,
+    size_t*               max_depth,
+    size_t*               num_edges)
+{
+    if (node == NULL) {
+        return;
+    }
+
+    (*num_nodes)++;
+    if (depth > *max_depth) {
+        *max_depth = depth;
+    }
+    *num_edges += node->num_children;
+
+    for (size_t i = 0; i < node->num_children; i++) {
+        protecc_node_collect_stats(node->children[i], depth + 1, num_nodes, max_depth, num_edges);
     }
 }

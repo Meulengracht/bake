@@ -225,8 +225,8 @@ static char* __replace_path_prefix(const char* previousValue, const char* platfo
 
 static char* __extract_cmake_option_value(const char* startOfOption)
 {
-    char* startOfValue;
-    char* endOfValue;
+    const char* startOfValue;
+    const char* endOfValue;
 
     startOfValue = strchr(startOfOption, '=') + 1;
     endOfValue   = strchr(startOfValue, ' ');
