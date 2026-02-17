@@ -361,7 +361,7 @@ static int __create_bpf_pin_directory(void)
     }
     
     // Create our pin directory
-    if (mkdir(BPF_PIN_PATH, 0755) < 0 && errno != EEXIST) {
+    if (mkdir(BPF_PIN_PATH, 0700) < 0 && errno != EEXIST) {
         VLOG_ERROR("cvd", "bpf_manager: failed to create %s: %s\n", 
                    BPF_PIN_PATH, strerror(errno));
         return -1;

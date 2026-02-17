@@ -80,6 +80,9 @@ static __always_inline int __net_allow_create(__u32 family, __u32 type, __u32 pr
     }
 
     val = bpf_map_lookup_elem(&net_create_map, &key);
+    if (!val) {
+        return 0;
+    }
     if (val && (NET_PERM_CREATE & ~val->allow_mask) == 0) {
         return 0;
     }
@@ -101,6 +104,9 @@ static __always_inline int __net_allow_tuple(struct net_tuple_key* key, __u32 re
     }
 
     val = bpf_map_lookup_elem(&net_tuple_map, key);
+    if (!val) {
+        return 0;
+    }
     if (val && (required & ~val->allow_mask) == 0) {
         return 0;
     }
@@ -122,6 +128,9 @@ static __always_inline int __net_allow_unix(struct net_unix_key* key, __u32 requ
     }
 
     val = bpf_map_lookup_elem(&net_unix_map, key);
+    if (!val) {
+        return 0;
+    }
     if (val && (required & ~val->allow_mask) == 0) {
         return 0;
     }

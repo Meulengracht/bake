@@ -14,6 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
+ * https://github.com/torvalds/linux/blob/master/include/linux/lsm_hook_defs.h
  */
 
 #include <vmlinux.h>
@@ -21,7 +22,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-#include "common-fs.h"
+#include "common.h"
 #include "tracing.h"
 
 #include <protecc/bpf.h>
@@ -104,13 +105,13 @@ static int __check_profile_match(
 {
     struct profile_value* profile = NULL;
     struct per_cpu_data*  scratch = NULL;
-    char*                 path = NULL;
     __u32                 pathLength = 0;
     __u32                 pathStart = 0;
+    bool                  match;
 
     profile = bpf_map_lookup_elem(&profile_map, &cgroupId);
     if (profile == NULL) {
-        return 1;
+        return 0;
     }
 
     if (profile->size == 0 || profile->size > PROTECC_BPF_MAX_PROFILE_SIZE) {
@@ -125,12 +126,12 @@ static int __check_profile_match(
     }
 
     pathLength = __resolve_dentry_path(scratch->path, dentry, &pathStart);
-
-    if (protecc_bpf_match(profile->data, scratch->path + pathStart, pathLength)) {
-        return 0;
+    match = protecc_bpf_match(profile->data, (const __u8*)&scratch->path[0], pathStart, pathLength);
+    if (!match) {
+        __emit_deny_event_dentry(dentry, required, hookId);
+        return -EACCES;
     }
-    __emit_deny_event_dentry(dentry, required, hookId);
-    return -EACCES;
+    return 0;
 }
 
 static __always_inline int __check_access_file(struct file* file, __u32 required, __u32 hookId)
@@ -286,12 +287,13 @@ int BPF_PROG(inode_rmdir_restrict, struct inode *dir, struct dentry *dentry, int
 }
 
 SEC("lsm/inode_rename")
-int BPF_PROG(inode_rename_restrict, struct inode *old_dir, struct dentry *old_dentry,
-             struct inode *new_dir, struct dentry *new_dentry, unsigned int flags, int ret)
+int BPF_PROG(inode_rename_restrict, 
+    struct inode *old_dir, struct dentry *old_dentry,
+    struct inode *new_dir, struct dentry *new_dentry,
+    int ret)
 {
     (void)old_dir;
     (void)new_dir;
-    (void)flags;
     if (ret) {
         return ret;
     }
@@ -337,12 +339,9 @@ int BPF_PROG(inode_symlink_restrict, struct inode *dir, struct dentry *dentry, c
 }
 
 SEC("lsm/inode_setattr")
-int BPF_PROG(inode_setattr_restrict, struct dentry *dentry, struct iattr *attr, int ret)
+int BPF_PROG(inode_setattr_restrict, struct dentry *dentry, struct iattr *attr)
 {
     (void)attr;
-    if (ret) {
-        return ret;
-    }
     if (!dentry) {
         return -EACCES;
     }
@@ -350,11 +349,9 @@ int BPF_PROG(inode_setattr_restrict, struct dentry *dentry, struct iattr *attr, 
 }
 
 SEC("lsm/path_truncate")
-int BPF_PROG(path_truncate_restrict, struct path *path, loff_t length, unsigned int time_attrs, int ret)
+int BPF_PROG(path_truncate_restrict, struct path *path, int ret)
 {
     struct dentry* dentry = NULL;
-    (void)length;
-    (void)time_attrs;
     if (ret) {
         return ret;
     }

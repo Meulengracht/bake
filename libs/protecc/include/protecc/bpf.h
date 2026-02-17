@@ -23,8 +23,15 @@
 
 #include <bpf/bpf_helpers.h>
 
-#define PROTECC_BPF_MAX_PATH         256u
+#define PROTECC_BPF_MAX_PATH         4096u
 #define PROTECC_BPF_MAX_PROFILE_SIZE (65536u - 4u)
+
+#define __VALID_PTR(base, max, ptr, size) \
+    ((const void*)(ptr) >= (const void*)(base) && ((const void*)(ptr) + (size)) <= ((const void*)(base) + (max)))
+#define __VALID_PROFILE_PTR(prof, ptr, size) \
+    __VALID_PTR((prof), PROTECC_BPF_MAX_PROFILE_SIZE, (ptr), (size))
+#define __VALID_PATH_PTR(path, ptr, size) \
+    __VALID_PTR((path), PROTECC_BPF_MAX_PATH, (ptr), (size))
 
 static __always_inline bool __profile_slice_in_bounds(__u32 offset, __u64 size, __u32 total) {
     __u64 end = (__u64)offset + size;
@@ -104,7 +111,11 @@ static __always_inline bool __validate_profile_dfa(
     return true;
 }
 
-static __always_inline bool __dfa_is_match(const protecc_profile_dfa_t* dfa, __u32 state, const __u32* accept)
+static __always_inline bool __dfa_is_match(
+    const __u8                   profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const protecc_profile_dfa_t* dfa,
+    __u32                        state,
+    const __u32*                 accept)
 {
     __u32 wordIndex = state >> 5;
     __u32 bitIndex = state & 31u;
@@ -112,13 +123,17 @@ static __always_inline bool __dfa_is_match(const protecc_profile_dfa_t* dfa, __u
     if (wordIndex >= dfa->accept_words) {
         return false;
     }
+    if (!__VALID_PROFILE_PTR(profile, &accept[wordIndex], sizeof(__u32))) {
+        return false;
+    }
     return (accept[wordIndex] & (1u << bitIndex)) != 0u;
 }
 
 static __always_inline bool protecc_bpf_match(
-    const __u8  profile[PROTECC_BPF_MAX_PROFILE_SIZE],
-    const char* path,
-    __u32       pathLength)
+    const __u8 profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const __u8 path[PROTECC_BPF_MAX_PATH],
+    __u32      pathStart,
+    __u32      pathLength)
 {
     const protecc_profile_header_t* header = (const protecc_profile_header_t*)profile;
     const protecc_profile_dfa_t*    dfa;
@@ -139,20 +154,24 @@ static __always_inline bool protecc_bpf_match(
     accept = (const __u32*)(&profile[dfa->accept_off]);
     transitions = (const __u32*)(&profile[dfa->transitions_off]);
 
-    state = dfa->start_state;
-
     iterCount = PROTECC_BPF_MAX_PATH;
-    if (iterCount > pathLength) {
+    if (pathLength < PROTECC_BPF_MAX_PATH) {
         iterCount = (__u16)pathLength;
     }
 
+    // Ensure that classmap is within the bounds of the profile
+    // to avoid verifier rejections when accessing it in the loop below.
+    if (!__VALID_PROFILE_PTR(profile, classmap, PROTECC_PROFILE_DFA_CLASSMAP_SIZE)) {
+        return false;
+    }
+
+    state = dfa->start_state;
     bpf_for (i, 0, iterCount) {
-        __u8  c;
+        __u8  c = path[(pathStart + i) & (PROTECC_BPF_MAX_PATH - 1)];
         __u8  cls;
         __u64 transitionIndex;
         __u32 nextState;
 
-        c = (__u8)path[i];
         cls = classmap[c];
         if ((__u32)cls >= dfa->num_classes) {
             return false;
@@ -162,6 +181,12 @@ static __always_inline bool protecc_bpf_match(
         if (transitionIndex >= transitionsCount) {
             return false;
         }
+        
+        // ensure the transition pointer is within bounds of the profile before 
+        // we access it, to avoid verifier rejections
+        if (!__VALID_PROFILE_PTR(profile, &transitions[transitionIndex], sizeof(__u32))) {
+            return false;
+        }
 
         nextState = transitions[transitionIndex];
         if (nextState >= dfa->num_states) {
@@ -169,7 +194,7 @@ static __always_inline bool protecc_bpf_match(
         }
         state = nextState;
     }
-    return __dfa_is_match(dfa, state, accept);
+    return __dfa_is_match(profile, dfa, state, accept);
 }
 
 #endif // !__PROTECC_BPF_H__
