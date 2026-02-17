@@ -12,9 +12,9 @@ typedef struct {
 } protecc_parity_case_t;
 
 static const protecc_pattern_t const PROTECC_BRANCHING_PATTERNS[] = {
-    { "/stress/**/system.log", 0 },
-    { "/stress/*/tmp?/file[0-9]*.txt", 0 },
-    { "/stress/[a-z]*/branch/**/end", 0 },
+    { "/stress/**/system.log", PROTECC_PERM_ALL },
+    { "/stress/*/tmp?/file[0-9]*.txt", PROTECC_PERM_ALL },
+    { "/stress/[a-z]*/branch/**/end", PROTECC_PERM_ALL },
 };
 
 static const protecc_parity_case_t PROTECC_BRANCHING_CASES[] = {

@@ -90,17 +90,56 @@ static bool __char_matches_node(const protecc_node_t* node, unsigned char c, uin
     }
 }
 
-static bool __state_set_has_terminal(
+static bool __state_set_best_perms(
     const uint64_t*               set_bits,
     const protecc_node_t* const*  nodes,
-    size_t                        node_count)
+    const uint16_t*               node_depths,
+    size_t                        node_count,
+    uint32_t*                     perms_out)
 {
+    bool found = false;
+    uint16_t best_depth = 0;
+    uint32_t perms = 0;
+
+    if (!perms_out) {
+        return false;
+    }
+
     for (size_t i = 0; i < node_count; i++) {
-        if (__bitset_test(set_bits, i) && nodes[i]->is_terminal) {
-            return true;
+        if (!__bitset_test(set_bits, i) || !nodes[i]->is_terminal) {
+            continue;
+        }
+
+        if (!found || node_depths[i] > best_depth) {
+            best_depth = node_depths[i];
+            perms = (uint32_t)nodes[i]->perms;
+            found = true;
+        } else if (node_depths[i] == best_depth) {
+            perms |= (uint32_t)nodes[i]->perms;
         }
     }
-    return false;
+
+    *perms_out = perms;
+    return found;
+}
+
+static void __compute_node_depths(
+    const protecc_node_t*         node,
+    const protecc_node_t* const*  nodes,
+    size_t                        node_count,
+    uint16_t*                     depths,
+    uint16_t                      depth)
+{
+    size_t index = protecc_find_node_index(nodes, node_count, node);
+
+    if (index == SIZE_MAX || depths[index] <= depth) {
+        return;
+    }
+
+    depths[index] = depth;
+    for (size_t i = 0; i < node->num_children; i++) {
+        __compute_node_depths(node->children[i], nodes, node_count, depths, (uint16_t)(depth + 1u));
+    }
 }
 
 static void __epsilon_closure(
@@ -187,6 +226,8 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
     size_t*                next_sibling = NULL;
     uint32_t*              transitions = NULL;
     uint32_t*              accept = NULL;
+    uint32_t*              perms = NULL;
+    uint16_t*              node_depths = NULL;
     size_t                 index = 0;
     size_t                 words_per_state;
     size_t                 state_capacity;
@@ -223,12 +264,25 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
         return PROTECC_ERROR_COMPILE_FAILED;
     }
 
+    node_depths = malloc(num_nodes * sizeof(*node_depths));
+    if (!node_depths) {
+        free(next_sibling);
+        free(nodes);
+        return PROTECC_ERROR_OUT_OF_MEMORY;
+    }
+
+    for (size_t i = 0; i < num_nodes; i++) {
+        node_depths[i] = UINT16_MAX;
+    }
+    __compute_node_depths(comp->root, nodes, num_nodes, node_depths, 0);
+
     for (size_t i = 0; i < num_nodes; i++) {
         const protecc_node_t* node = nodes[i];
         for (size_t c = 0; c < node->num_children; c++) {
             size_t child_idx = protecc_find_node_index(nodes, num_nodes, node->children[c]);
             if (child_idx == SIZE_MAX) {
                 free(next_sibling);
+                free(node_depths);
                 free(nodes);
                 return PROTECC_ERROR_COMPILE_FAILED;
             }
@@ -237,6 +291,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
                 size_t next_idx = protecc_find_node_index(nodes, num_nodes, node->children[c + 1u]);
                 if (next_idx == SIZE_MAX) {
                     free(next_sibling);
+                    free(node_depths);
                     free(nodes);
                     return PROTECC_ERROR_COMPILE_FAILED;
                 }
@@ -255,6 +310,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
     if (!state_sets || !scratch_set) {
         free(scratch_set);
         free(state_sets);
+        free(node_depths);
         free(nodes);
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
@@ -267,6 +323,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
     if (!transitions) {
         free(scratch_set);
         free(state_sets);
+        free(node_depths);
         free(nodes);
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
@@ -315,6 +372,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
                         free(transitions);
                         free(scratch_set);
                         free(state_sets);
+                        free(node_depths);
                         free(nodes);
                         return PROTECC_ERROR_COMPILE_FAILED;
                     }
@@ -347,6 +405,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
                         free(scratch_set);
                         free(state_sets);
                         free(next_sibling);
+                        free(node_depths);
                         free(nodes);
                         return PROTECC_ERROR_COMPILE_FAILED;
                     }
@@ -365,6 +424,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
                             free(scratch_set);
                             free(state_sets);
                             free(next_sibling);
+                            free(node_depths);
                             free(nodes);
                             return PROTECC_ERROR_COMPILE_FAILED;
                         }
@@ -376,6 +436,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
                             free(scratch_set);
                             free(state_sets);
                             free(next_sibling);
+                            free(node_depths);
                             free(nodes);
                             return PROTECC_ERROR_OUT_OF_MEMORY;
                         }
@@ -390,6 +451,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
                             free(scratch_set);
                             free(state_sets);
                             free(next_sibling);
+                            free(node_depths);
                             free(nodes);
                             return PROTECC_ERROR_OUT_OF_MEMORY;
                         }
@@ -415,17 +477,21 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
 
     comp->dfa_accept_words = (uint32_t)((state_count + 31u) / 32u);
     accept = calloc(comp->dfa_accept_words, sizeof(uint32_t));
-    if (!accept) {
+    perms = calloc(state_count, sizeof(uint32_t));
+    if (!accept || !perms) {
+        free(perms);
+        free(accept);
         free(transitions);
         free(scratch_set);
         free(state_sets);
+        free(node_depths);
         free(nodes);
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
     for (size_t i = 0; i < state_count; i++) {
         const uint64_t* state = state_sets + (i * words_per_state);
-        if (__state_set_has_terminal(state, nodes, num_nodes)) {
+        if (__state_set_best_perms(state, nodes, node_depths, num_nodes, &perms[i])) {
             accept[i >> 5] |= (1u << (i & 31u));
         }
     }
@@ -436,8 +502,10 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
     }
 
     free(comp->dfa_accept);
+    free(comp->dfa_perms);
     free(comp->dfa_transitions);
     comp->dfa_accept = accept;
+    comp->dfa_perms = perms;
     comp->dfa_transitions = transitions;
     comp->dfa_num_states = (uint32_t)state_count;
     comp->dfa_num_classes = 256u;
@@ -446,6 +514,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
 
     free(scratch_set);
     free(state_sets);
+    free(node_depths);
     free(next_sibling);
     free(nodes);
     return PROTECC_OK;

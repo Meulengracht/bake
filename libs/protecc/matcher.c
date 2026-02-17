@@ -61,6 +61,7 @@ static bool char_matches_node(
 typedef struct {
     const protecc_node_t* node;
     size_t                pos;
+    size_t                depth;
 } matcher_frame_t;
 
 static bool matcher_stack_push(
@@ -68,7 +69,8 @@ static bool matcher_stack_push(
     size_t*           stack_size,
     size_t*           stack_capacity,
     const protecc_node_t* node,
-    size_t            pos)
+    size_t            pos,
+    size_t            depth)
 {
     matcher_frame_t* resized;
     size_t           new_capacity;
@@ -85,8 +87,29 @@ static bool matcher_stack_push(
 
     (*stack)[*stack_size].node = node;
     (*stack)[*stack_size].pos = pos;
+    (*stack)[*stack_size].depth = depth;
     (*stack_size)++;
     return true;
+}
+
+static void update_best_match(
+    bool*                    found,
+    size_t*                  best_depth,
+    protecc_permission_t*    perms_out,
+    size_t                   depth,
+    protecc_permission_t     perms)
+{
+    if (!found || !best_depth || !perms_out) {
+        return;
+    }
+
+    if (!*found || depth > *best_depth) {
+        *best_depth = depth;
+        *perms_out = perms;
+        *found = true;
+    } else if (depth == *best_depth) {
+        *perms_out |= perms;
+    }
 }
 
 bool protecc_match_internal(
@@ -94,17 +117,22 @@ bool protecc_match_internal(
     const char* path,
     size_t path_len,
     size_t pos,
-    uint32_t flags
+    uint32_t flags,
+    protecc_permission_t* perms_out
 ) {
     matcher_frame_t* stack = NULL;
     size_t           stack_size = 0;
     size_t           stack_capacity = 0;
+    bool             found = false;
+    size_t           best_depth = 0;
 
-    if (!node) {
+    if (!node || !perms_out) {
         return false;
     }
 
-    if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, node, pos)) {
+    *perms_out = PROTECC_PERM_NONE;
+
+    if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, node, pos, 0)) {
         return false;
     }
 
@@ -117,8 +145,7 @@ bool protecc_match_internal(
         current = frame.node;
 
         if (frame.pos == path_len && current->is_terminal) {
-            free(stack);
-            return true;
+            update_best_match(&found, &best_depth, perms_out, frame.depth, current->perms);
         }
 
         if (current->num_children == 0) {
@@ -127,30 +154,30 @@ bool protecc_match_internal(
 
         for (size_t i = 0; i < current->num_children; i++) {
             const protecc_node_t* child = current->children[i];
+            size_t child_depth = frame.depth + 1u;
 
             if (child->modifier != MODIFIER_NONE) {
                 const protecc_node_t* next = (i + 1 < current->num_children) ? current->children[i + 1] : NULL;
+                size_t next_depth = child_depth;
 
                 if (child->modifier == MODIFIER_OPTIONAL) {
                     if (next) {
-                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, next, frame.pos)) {
+                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, next, frame.pos, next_depth)) {
                             free(stack);
                             return false;
                         }
                     } else if (child->is_terminal && frame.pos == path_len) {
-                        free(stack);
-                        return true;
+                        update_best_match(&found, &best_depth, perms_out, child_depth, child->perms);
                     }
 
                     if (frame.pos < path_len && char_matches_node(child, path[frame.pos], flags)) {
                         if (next) {
-                            if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, next, frame.pos + 1)) {
+                            if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, next, frame.pos + 1, next_depth)) {
                                 free(stack);
                                 return false;
                             }
                         } else if (child->is_terminal && frame.pos + 1 == path_len) {
-                            free(stack);
-                            return true;
+                            update_best_match(&found, &best_depth, perms_out, child_depth, child->perms);
                         }
                     }
                     continue;
@@ -168,13 +195,12 @@ bool protecc_match_internal(
 
                     while (k <= path_len) {
                         if (next) {
-                            if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, next, k)) {
+                            if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, next, k, next_depth)) {
                                 free(stack);
                                 return false;
                             }
                         } else if (child->is_terminal && k == path_len) {
-                            free(stack);
-                            return true;
+                            update_best_match(&found, &best_depth, perms_out, child_depth, child->perms);
                         }
 
                         if (k >= path_len || !char_matches_node(child, path[k], flags)) {
@@ -191,7 +217,7 @@ bool protecc_match_internal(
             switch (child->type) {
                 case NODE_WILDCARD_RECURSIVE:
                     for (size_t try_pos = frame.pos; try_pos <= path_len; try_pos++) {
-                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, child, try_pos)) {
+                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, child, try_pos, child_depth)) {
                             free(stack);
                             return false;
                         }
@@ -201,7 +227,7 @@ bool protecc_match_internal(
                 case NODE_WILDCARD_MULTI: {
                     size_t try_pos = frame.pos;
                     while (try_pos <= path_len) {
-                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, child, try_pos)) {
+                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, child, try_pos, child_depth)) {
                             free(stack);
                             return false;
                         }
@@ -218,7 +244,7 @@ bool protecc_match_internal(
                 case NODE_CHARSET:
                 case NODE_RANGE:
                     if (frame.pos < path_len && char_matches_node(child, path[frame.pos], flags)) {
-                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, child, frame.pos + 1)) {
+                        if (!matcher_stack_push(&stack, &stack_size, &stack_capacity, child, frame.pos + 1, child_depth)) {
                             free(stack);
                             return false;
                         }
@@ -232,5 +258,5 @@ bool protecc_match_internal(
     }
 
     free(stack);
-    return false;
+    return found;
 }

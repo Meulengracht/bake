@@ -72,6 +72,7 @@ struct protecc_node {
     size_t           capacity_children;
     
     bool             is_terminal;       /**< True if this ends a pattern */
+    protecc_permission_t perms;         /**< Permissions for terminal nodes */
 };
 
 /**
@@ -88,6 +89,7 @@ struct protecc_compiled {
     uint32_t                 dfa_accept_words;
     uint8_t                  dfa_classmap[256];
     uint32_t*                dfa_accept;
+    uint32_t*                dfa_perms;
     uint32_t*                dfa_transitions;
     protecc_stats_t          stats;              /**< Statistics */
 };
@@ -123,7 +125,8 @@ void protecc_node_collect_stats(
 protecc_error_t protecc_parse_pattern(
     const char*     pattern,
     protecc_node_t* root,
-    uint32_t        flags);
+    uint32_t        flags,
+    protecc_node_t** terminal_out);
 
 /**
  * @brief Set a character in a charset
@@ -153,6 +156,7 @@ bool protecc_match_internal(
     const char*           path,
     size_t                path_len,
     size_t                pos,
-    uint32_t              flags);
+    uint32_t              flags,
+    protecc_permission_t* perms_out);
 
 #endif /* PROTECC_INTERNAL_H */

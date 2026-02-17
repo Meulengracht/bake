@@ -152,16 +152,21 @@ protecc_error_t protecc_compile(
 
 /**
  * @brief Match a path against the compiled pattern set
+ *
+ * If multiple patterns match, the permissions from the most specific
+ * (deepest) pattern are returned; ties are combined with bitwise OR.
  * 
  * @param compiled Compiled pattern set
  * @param path Path to match
  * @param pathLength Length of path (or 0 to use strlen)
+ * @param perms_out Output pointer for matched permissions
  * @return true if path matches any pattern, false otherwise
  */
 bool protecc_match(
     const protecc_compiled_t* compiled,
     const char*               path,
-    size_t                    pathLength);
+     size_t                    pathLength,
+     protecc_permission_t*     perms_out);
 
 /**
  * @brief Get statistics about the compiled pattern set

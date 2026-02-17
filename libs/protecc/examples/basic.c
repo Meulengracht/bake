@@ -23,7 +23,8 @@
 #include <stdlib.h>
 
 void print_match_result(const protecc_compiled_t* compiled, const char* path) {
-    bool match = protecc_match(compiled, path, 0);
+    protecc_permission_t perms = PROTECC_PERM_NONE;
+    bool match = protecc_match(compiled, path, 0, &perms);
     printf("  %s: %s\n", path, match ? "ALLOWED" : "DENIED");
 }
 
@@ -37,9 +38,9 @@ int main(void) {
     printf("1. Basic file access patterns:\n");
     {
         const protecc_pattern_t patterns[] = {
-            { "/etc/passwd" },
-            { "/etc/group" },
-            { "/tmp/*" },
+            { "/etc/passwd", PROTECC_PERM_ALL },
+            { "/etc/group", PROTECC_PERM_ALL },
+            { "/tmp/*", PROTECC_PERM_ALL },
         };
         
         err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
@@ -61,9 +62,9 @@ int main(void) {
     printf("2. Wildcard patterns:\n");
     {
         const protecc_pattern_t patterns[] = {
-            { "/home/**" },           // Recursive match
-            { "/var/log/*.log" },     // Single directory wildcard
-            { "/dev/tty?" },          // Single character wildcard
+            { "/home/**", PROTECC_PERM_ALL },           // Recursive match
+            { "/var/log/*.log", PROTECC_PERM_ALL },     // Single directory wildcard
+            { "/dev/tty?", PROTECC_PERM_ALL },          // Single character wildcard
         };
         
         err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
@@ -87,9 +88,9 @@ int main(void) {
     printf("3. Character ranges and sets:\n");
     {
         const protecc_pattern_t patterns[] = {
-            { "/dev/tty[0-9]+" },         // TTY devices with numbers
-            { "/tmp/[a-z]*" },            // Files starting with lowercase
-            { "/var/log/app[0-9].log" },  // Numbered log files
+            { "/dev/tty[0-9]+", PROTECC_PERM_ALL },         // TTY devices with numbers
+            { "/tmp/[a-z]*", PROTECC_PERM_ALL },            // Files starting with lowercase
+            { "/var/log/app[0-9].log", PROTECC_PERM_ALL },  // Numbered log files
         };
         
         err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
@@ -113,8 +114,8 @@ int main(void) {
     printf("4. Case-insensitive matching:\n");
     {
         const protecc_pattern_t patterns[] = {
-            { "/Windows/*" },
-            { "/Program Files/**" },
+            { "/Windows/*", PROTECC_PERM_ALL },
+            { "/Program Files/**", PROTECC_PERM_ALL },
         };
         
         err = protecc_compile(patterns, 2, PROTECC_FLAG_CASE_INSENSITIVE, NULL, &compiled);
@@ -136,10 +137,10 @@ int main(void) {
     printf("5. Pattern statistics:\n");
     {
         const protecc_pattern_t patterns[] = {
-            { "/etc/*" },
-            { "/var/**" },
-            { "/tmp/[a-z]*" },
-            { "/home/user/*" },
+            { "/etc/*", PROTECC_PERM_ALL },
+            { "/var/**", PROTECC_PERM_ALL },
+            { "/tmp/[a-z]*", PROTECC_PERM_ALL },
+            { "/home/user/*", PROTECC_PERM_ALL },
         };
         
         err = protecc_compile(patterns, 4, PROTECC_FLAG_OPTIMIZE, NULL, &compiled);
@@ -164,8 +165,8 @@ int main(void) {
     printf("6. Binary export (for eBPF):\n");
     {
         const protecc_pattern_t patterns[] = {
-            { "/etc/passwd" },
-            { "/tmp/*" },
+            { "/etc/passwd", PROTECC_PERM_ALL },
+            { "/tmp/*", PROTECC_PERM_ALL },
         };
         
         err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, NULL, &compiled);

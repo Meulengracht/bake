@@ -56,6 +56,7 @@ static __always_inline bool __validate_profile_dfa(
     __u64                        transitionsCount;
     __u64                        transitionsSize;
     __u64                        acceptSize;
+    __u64                        permsSize;
 
     if (header == NULL || dfaOut == NULL || profileSizeOut == NULL || transitionsCountOut == NULL) {
         return false;
@@ -92,12 +93,17 @@ static __always_inline bool __validate_profile_dfa(
     transitionsCount = (__u64)dfa->num_states * (__u64)dfa->num_classes;
     transitionsSize = transitionsCount * sizeof(__u32);
     acceptSize = (__u64)dfa->accept_words * sizeof(__u32);
+    permsSize = (__u64)dfa->num_states * sizeof(__u32);
 
     if (!__profile_slice_in_bounds(dfa->classmap_off, PROTECC_PROFILE_DFA_CLASSMAP_SIZE, profileSize)) {
         return false;
     }
 
     if ((dfa->accept_off & 3u) != 0u || !__profile_slice_in_bounds(dfa->accept_off, acceptSize, profileSize)) {
+        return false;
+    }
+
+    if ((dfa->perms_off & 3u) != 0u || !__profile_slice_in_bounds(dfa->perms_off, permsSize, profileSize)) {
         return false;
     }
 
@@ -129,16 +135,18 @@ static __always_inline bool __dfa_is_match(
     return (accept[wordIndex] & (1u << bitIndex)) != 0u;
 }
 
-static __always_inline bool protecc_bpf_match(
+static __always_inline bool protecc_bpf_match_perms(
     const __u8 profile[PROTECC_BPF_MAX_PROFILE_SIZE],
     const __u8 path[PROTECC_BPF_MAX_PATH],
     __u32      pathStart,
-    __u32      pathLength)
+    __u32      pathLength,
+    __u32*     permsOut)
 {
     const protecc_profile_header_t* header = (const protecc_profile_header_t*)profile;
     const protecc_profile_dfa_t*    dfa;
     const __u8*                     classmap;
     const __u32*                    accept;
+    const __u32*                    perms;
     const __u32*                    transitions;
     __u64                           transitionsCount;
     __u32                           profileSize;
@@ -146,12 +154,19 @@ static __always_inline bool protecc_bpf_match(
     __u32                           i;
     __u16                           iterCount;
 
+    if (!permsOut) {
+        return false;
+    }
+
+    *permsOut = 0;
+
     if (!__validate_profile_dfa(profile, header, &dfa, &profileSize, &transitionsCount)) {
         return false;
     }
 
     classmap = &profile[dfa->classmap_off];
     accept = (const __u32*)(&profile[dfa->accept_off]);
+    perms = (const __u32*)(&profile[dfa->perms_off]);
     transitions = (const __u32*)(&profile[dfa->transitions_off]);
 
     iterCount = PROTECC_BPF_MAX_PATH;
@@ -194,7 +209,27 @@ static __always_inline bool protecc_bpf_match(
         }
         state = nextState;
     }
-    return __dfa_is_match(profile, dfa, state, accept);
+    if (!__dfa_is_match(profile, dfa, state, accept)) {
+        return false;
+    }
+
+    if (!__VALID_PROFILE_PTR(profile, &perms[state], sizeof(__u32))) {
+        return false;
+    }
+
+    *permsOut = perms[state];
+    return true;
+}
+
+static __always_inline bool protecc_bpf_match(
+    const __u8 profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const __u8 path[PROTECC_BPF_MAX_PATH],
+    __u32      pathStart,
+    __u32      pathLength)
+{
+    __u32 perms = 0;
+
+    return protecc_bpf_match_perms(profile, path, pathStart, pathLength, &perms);
 }
 
 #endif // !__PROTECC_BPF_H__

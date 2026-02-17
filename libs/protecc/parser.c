@@ -118,10 +118,15 @@ static protecc_modifier_t parse_modifier(const char** pattern) {
 protecc_error_t protecc_parse_pattern(
     const char* pattern,
     protecc_node_t* root,
-    uint32_t flags
+    uint32_t flags,
+    protecc_node_t** terminal_out
 ) {
     if (!pattern || !root) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (terminal_out) {
+        *terminal_out = NULL;
     }
     
     const char* p = pattern;
@@ -205,6 +210,9 @@ protecc_error_t protecc_parse_pattern(
     // Mark the last node as terminal
     if (current != root) {
         current->is_terminal = true;
+        if (terminal_out) {
+            *terminal_out = current;
+        }
     }
     
     return PROTECC_OK;

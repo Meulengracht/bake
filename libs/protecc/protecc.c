@@ -63,15 +63,24 @@ static size_t protecc_profile_dfa_size(uint32_t num_states, uint32_t num_classes
         + sizeof(protecc_profile_dfa_t)
         + PROTECC_PROFILE_DFA_CLASSMAP_SIZE
         + ((size_t)accept_words * sizeof(uint32_t))
+        + ((size_t)num_states * sizeof(uint32_t))
         + ((size_t)num_states * (size_t)num_classes * sizeof(uint32_t));
 }
 
-static bool __match_dfa(const protecc_compiled_t* compiled, const char* path, size_t path_len) {
+static bool __match_dfa(
+    const protecc_compiled_t* compiled,
+    const char* path,
+    size_t path_len,
+    protecc_permission_t* perms_out
+) {
     uint32_t state;
 
-    if (!compiled || !compiled->has_dfa || !compiled->dfa_transitions || !compiled->dfa_accept || !path) {
+    if (!compiled || !compiled->has_dfa || !compiled->dfa_transitions || !compiled->dfa_accept ||
+        !compiled->dfa_perms || !path || !perms_out) {
         return false;
     }
+
+    *perms_out = PROTECC_PERM_NONE;
 
     state = compiled->dfa_start_state;
     for (size_t i = 0; i < path_len; i++) {
@@ -90,7 +99,12 @@ static bool __match_dfa(const protecc_compiled_t* compiled, const char* path, si
         }
     }
 
-    return (compiled->dfa_accept[state >> 5] & (1u << (state & 31u))) != 0u;
+    if ((compiled->dfa_accept[state >> 5] & (1u << (state & 31u))) == 0u) {
+        return false;
+    }
+
+    *perms_out = (protecc_permission_t)compiled->dfa_perms[state];
+    return true;
 }
 
 void protecc_compile_config_default(protecc_compile_config_t* config) {
@@ -217,9 +231,13 @@ static protecc_error_t __build_trie_patterns(
     }
 
     for (size_t i = 0; i < count; i++) {
-        protecc_error_t err = protecc_parse_pattern(patterns[i].pattern, comp->root, flags);
+        protecc_node_t* terminal = NULL;
+        protecc_error_t err = protecc_parse_pattern(patterns[i].pattern, comp->root, flags, &terminal);
         if (err != PROTECC_OK) {
             return err;
+        }
+        if (terminal) {
+            terminal->perms |= patterns[i].perms;
         }
     }
     return PROTECC_OK;
@@ -305,8 +323,15 @@ protecc_error_t protecc_compile(
 bool protecc_match(
     const protecc_compiled_t* compiled,
     const char* path,
-    size_t path_len
+    size_t path_len,
+    protecc_permission_t* perms_out
 ) {
+    if (!perms_out) {
+        return false;
+    }
+
+    *perms_out = PROTECC_PERM_NONE;
+
     if (!compiled || !path) {
         return false;
     }
@@ -316,14 +341,14 @@ bool protecc_match(
     }
     
     if (compiled->has_dfa) {
-        return __match_dfa(compiled, path, path_len);
+        return __match_dfa(compiled, path, path_len, perms_out);
     }
 
     if (!compiled->root) {
         return false;
     }
 
-    return protecc_match_internal(compiled->root, path, path_len, 0, compiled->flags);
+    return protecc_match_internal(compiled->root, path, path_len, 0, compiled->flags, perms_out);
 }
 
 protecc_error_t protecc_get_stats(
@@ -390,12 +415,13 @@ static protecc_error_t __validate_import_dfa_layout(
     size_t buffer_size,
     uint32_t header_binary_size,
     size_t* transitions_size,
-    size_t* accept_size)
+    size_t* accept_size,
+    size_t* perms_size)
 {
     size_t transitions_count;
     size_t required_size;
 
-    if (!dfa || !transitions_size || !accept_size) {
+    if (!dfa || !transitions_size || !accept_size || !perms_size) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -412,6 +438,7 @@ static protecc_error_t __validate_import_dfa_layout(
     transitions_count = (size_t)dfa->num_states * (size_t)dfa->num_classes;
     *transitions_size = transitions_count * sizeof(uint32_t);
     *accept_size = (size_t)dfa->accept_words * sizeof(uint32_t);
+    *perms_size = (size_t)dfa->num_states * sizeof(uint32_t);
     required_size = protecc_profile_dfa_size(dfa->num_states, dfa->num_classes, dfa->accept_words);
 
     if (buffer_size < required_size || header_binary_size < required_size) {
@@ -423,6 +450,9 @@ static protecc_error_t __validate_import_dfa_layout(
     if ((dfa->accept_off & 3u) != 0u || (size_t)dfa->accept_off + *accept_size > required_size) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
+    if ((dfa->perms_off & 3u) != 0u || (size_t)dfa->perms_off + *perms_size > required_size) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
     if ((dfa->transitions_off & 3u) != 0u || (size_t)dfa->transitions_off + *transitions_size > required_size) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
@@ -432,6 +462,7 @@ static protecc_error_t __validate_import_dfa_layout(
 
 static protecc_error_t __allocate_import_dfa_buffers(
     size_t accept_size,
+    size_t perms_size,
     size_t transitions_size,
     protecc_compiled_t** compiled_out)
 {
@@ -447,9 +478,11 @@ static protecc_error_t __allocate_import_dfa_buffers(
     }
 
     comp->dfa_accept = malloc(accept_size);
+    comp->dfa_perms = malloc(perms_size);
     comp->dfa_transitions = malloc(transitions_size);
-    if (!comp->dfa_accept || !comp->dfa_transitions) {
+    if (!comp->dfa_accept || !comp->dfa_perms || !comp->dfa_transitions) {
         free(comp->dfa_transitions);
+        free(comp->dfa_perms);
         free(comp->dfa_accept);
         free(comp);
         return PROTECC_ERROR_OUT_OF_MEMORY;
@@ -471,9 +504,10 @@ static protecc_error_t __export_dfa_profile(
     protecc_profile_dfa_t dfa;
     uint32_t classmap_off;
     uint32_t accept_off;
+    uint32_t perms_off;
     uint32_t transitions_off;
 
-    if (!compiled->has_dfa || !compiled->dfa_transitions || !compiled->dfa_accept) {
+    if (!compiled->has_dfa || !compiled->dfa_transitions || !compiled->dfa_accept || !compiled->dfa_perms) {
         return PROTECC_ERROR_COMPILE_FAILED;
     }
 
@@ -503,7 +537,8 @@ static protecc_error_t __export_dfa_profile(
 
     classmap_off = (uint32_t)(sizeof(protecc_profile_header_t) + sizeof(protecc_profile_dfa_t));
     accept_off = classmap_off + PROTECC_PROFILE_DFA_CLASSMAP_SIZE;
-    transitions_off = accept_off + (uint32_t)(compiled->dfa_accept_words * sizeof(uint32_t));
+    perms_off = accept_off + (uint32_t)(compiled->dfa_accept_words * sizeof(uint32_t));
+    transitions_off = perms_off + (uint32_t)(compiled->dfa_num_states * sizeof(uint32_t));
 
     memset(&header, 0, sizeof(header));
     header.magic = PROTECC_PROFILE_MAGIC;
@@ -525,6 +560,7 @@ static protecc_error_t __export_dfa_profile(
     dfa.accept_words = compiled->dfa_accept_words;
     dfa.classmap_off = classmap_off;
     dfa.accept_off = accept_off;
+    dfa.perms_off = perms_off;
     dfa.transitions_off = transitions_off;
 
     out = (uint8_t*)buffer;
@@ -532,6 +568,7 @@ static protecc_error_t __export_dfa_profile(
     memcpy(out + sizeof(header), &dfa, sizeof(dfa));
     memcpy(out + classmap_off, compiled->dfa_classmap, PROTECC_PROFILE_DFA_CLASSMAP_SIZE);
     memcpy(out + accept_off, compiled->dfa_accept, (size_t)compiled->dfa_accept_words * sizeof(uint32_t));
+    memcpy(out + perms_off, compiled->dfa_perms, (size_t)compiled->dfa_num_states * sizeof(uint32_t));
     memcpy(out + transitions_off,
            compiled->dfa_transitions,
            (size_t)compiled->dfa_num_states * (size_t)compiled->dfa_num_classes * sizeof(uint32_t));
@@ -620,6 +657,7 @@ static protecc_error_t __export_trie_profile(
         profile.is_terminal = node->is_terminal ? 1 : 0;
         profile.child_start = (uint32_t)edge_offset;
         profile.child_count = (uint16_t)node->num_children;
+        profile.perms = (uint32_t)node->perms;
 
         if (node->num_children > UINT16_MAX) {
             free(nodes);
@@ -668,6 +706,7 @@ static protecc_error_t __import_dfa_profile(
     protecc_error_t err;
     size_t transitions_size;
     size_t accept_size;
+    size_t perms_size;
 
     if (buffer_size < sizeof(protecc_profile_header_t) + sizeof(protecc_profile_dfa_t)) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
@@ -676,18 +715,19 @@ static protecc_error_t __import_dfa_profile(
     memcpy(&dfa, base + sizeof(protecc_profile_header_t), sizeof(dfa));
 
     err = __validate_import_dfa_layout(&dfa, buffer_size, header->stats.binary_size,
-                                       &transitions_size, &accept_size);
+                                       &transitions_size, &accept_size, &perms_size);
     if (err != PROTECC_OK) {
         return err;
     }
 
-    err = __allocate_import_dfa_buffers(accept_size, transitions_size, &comp);
+    err = __allocate_import_dfa_buffers(accept_size, perms_size, transitions_size, &comp);
     if (err != PROTECC_OK) {
         return err;
     }
 
     memcpy(comp->dfa_classmap, base + dfa.classmap_off, PROTECC_PROFILE_DFA_CLASSMAP_SIZE);
     memcpy(comp->dfa_accept, base + dfa.accept_off, accept_size);
+    memcpy(comp->dfa_perms, base + dfa.perms_off, perms_size);
     memcpy(comp->dfa_transitions, base + dfa.transitions_off, transitions_size);
 
     comp->has_dfa = true;
@@ -753,6 +793,7 @@ static protecc_error_t __import_trie_profile(
 
         node->modifier = (protecc_modifier_t)profile_nodes[i].modifier;
         node->is_terminal = profile_nodes[i].is_terminal != 0;
+        node->perms = (protecc_permission_t)profile_nodes[i].perms;
 
         switch (node->type) {
             case NODE_LITERAL:
@@ -873,6 +914,7 @@ void protecc_free(protecc_compiled_t* compiled) {
     }
 
     free(compiled->dfa_accept);
+    free(compiled->dfa_perms);
     free(compiled->dfa_transitions);
     
     if (compiled->root) {

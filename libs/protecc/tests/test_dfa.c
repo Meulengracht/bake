@@ -18,6 +18,12 @@
         } \
     } while(0)
 
+static bool match_path(const protecc_compiled_t* compiled, const char* path) {
+    protecc_permission_t perms = PROTECC_PERM_NONE;
+
+    return protecc_match(compiled, path, 0, &perms);
+}
+
 static void setup_dfa_config(protecc_compile_config_t* config) {
     protecc_compile_config_default(config);
     config->mode = PROTECC_COMPILE_MODE_DFA;
@@ -34,15 +40,15 @@ int test_dfa_patterns(void) {
     // Test 1: basic DFA compilation/matching
     {
         const protecc_pattern_t patterns[] = {
-            { "/etc/passwd", 0 },
-            { "/tmp/*.txt", 0 }
+            { "/etc/passwd", PROTECC_PERM_ALL },
+            { "/tmp/*.txt", PROTECC_PERM_ALL }
         };
         err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile DFA basic patterns");
 
-        TEST_ASSERT(protecc_match(compiled, "/etc/passwd", 0), "DFA should match literal path");
-        TEST_ASSERT(protecc_match(compiled, "/tmp/file.txt", 0), "DFA should match wildcard path");
-        TEST_ASSERT(!protecc_match(compiled, "/tmp/file.log", 0), "DFA should reject non-matching extension");
+        TEST_ASSERT(match_path(compiled, "/etc/passwd"), "DFA should match literal path");
+        TEST_ASSERT(match_path(compiled, "/tmp/file.txt"), "DFA should match wildcard path");
+        TEST_ASSERT(!match_path(compiled, "/tmp/file.log"), "DFA should reject non-matching extension");
 
         protecc_free(compiled);
         compiled = NULL;
@@ -51,25 +57,25 @@ int test_dfa_patterns(void) {
     // Test 2: modifier support in DFA mode
     {
         const protecc_pattern_t patterns[] = {
-            { "/dev/tty[0-9]+", 0 },
-            { "/dev/port[0-9]?", 0 },
-            { "/var/log/[a-z]*.log", 0 },
+            { "/dev/tty[0-9]+", PROTECC_PERM_ALL },
+            { "/dev/port[0-9]?", PROTECC_PERM_ALL },
+            { "/var/log/[a-z]*.log", PROTECC_PERM_ALL },
         };
 
         err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile DFA modifier patterns");
 
-        TEST_ASSERT(protecc_match(compiled, "/dev/tty1", 0), "DFA should match one-or-more (+)");
-        TEST_ASSERT(protecc_match(compiled, "/dev/tty123", 0), "DFA should match one-or-more (+) repeated");
-        TEST_ASSERT(!protecc_match(compiled, "/dev/tty", 0), "DFA should reject missing + match");
+        TEST_ASSERT(match_path(compiled, "/dev/tty1"), "DFA should match one-or-more (+)");
+        TEST_ASSERT(match_path(compiled, "/dev/tty123"), "DFA should match one-or-more (+) repeated");
+        TEST_ASSERT(!match_path(compiled, "/dev/tty"), "DFA should reject missing + match");
 
-        TEST_ASSERT(protecc_match(compiled, "/dev/port", 0), "DFA should match optional (?) empty");
-        TEST_ASSERT(protecc_match(compiled, "/dev/port7", 0), "DFA should match optional (?) one char");
-        TEST_ASSERT(!protecc_match(compiled, "/dev/port77", 0), "DFA should reject optional (?) two chars");
+        TEST_ASSERT(match_path(compiled, "/dev/port"), "DFA should match optional (?) empty");
+        TEST_ASSERT(match_path(compiled, "/dev/port7"), "DFA should match optional (?) one char");
+        TEST_ASSERT(!match_path(compiled, "/dev/port77"), "DFA should reject optional (?) two chars");
 
-        TEST_ASSERT(protecc_match(compiled, "/var/log/system.log", 0), "DFA should match zero-or-more (*)");
-        TEST_ASSERT(protecc_match(compiled, "/var/log/a.log", 0), "DFA should match zero-or-more single");
-        TEST_ASSERT(!protecc_match(compiled, "/var/log/1.log", 0), "DFA should reject charset mismatch before *");
+        TEST_ASSERT(match_path(compiled, "/var/log/system.log"), "DFA should match zero-or-more (*)");
+        TEST_ASSERT(match_path(compiled, "/var/log/a.log"), "DFA should match zero-or-more single");
+        TEST_ASSERT(!match_path(compiled, "/var/log/1.log"), "DFA should reject charset mismatch before *");
 
         protecc_free(compiled);
         compiled = NULL;
@@ -78,8 +84,8 @@ int test_dfa_patterns(void) {
     // Test 3: export/import roundtrip for DFA profiles
     {
         const protecc_pattern_t patterns[] = {
-            { "/home/**", 0 },
-            { "/tmp/[a-z]+.txt", 0 }
+            { "/home/**", PROTECC_PERM_ALL },
+            { "/tmp/[a-z]+.txt", PROTECC_PERM_ALL }
         };
         void* blob = NULL;
         size_t blob_size = 0;
@@ -101,9 +107,9 @@ int test_dfa_patterns(void) {
         err = protecc_import(blob, blob_size, &imported);
         TEST_ASSERT(err == PROTECC_OK, "Failed to import DFA blob");
 
-        TEST_ASSERT(protecc_match(imported, "/home/user/docs/file", 0), "Imported DFA should match recursive path");
-        TEST_ASSERT(protecc_match(imported, "/tmp/abc.txt", 0), "Imported DFA should match charset+modifier path");
-        TEST_ASSERT(!protecc_match(imported, "/tmp/123.txt", 0), "Imported DFA should reject non-charset path");
+        TEST_ASSERT(match_path(imported, "/home/user/docs/file"), "Imported DFA should match recursive path");
+        TEST_ASSERT(match_path(imported, "/tmp/abc.txt"), "Imported DFA should match charset+modifier path");
+        TEST_ASSERT(!match_path(imported, "/tmp/123.txt"), "Imported DFA should reject non-charset path");
 
         protecc_free(imported);
         free(blob);
@@ -113,9 +119,15 @@ int test_dfa_patterns(void) {
 
     // Test 4: enforce max_patterns and max_pattern_length
     {
-        const protecc_pattern_t patterns_ok[] = { { "/a", 0 }, { "/b", 0 } };
-        const protecc_pattern_t patterns_too_many[] = { { "/a", 0 }, { "/b", 0 }, { "/c", 0 } };
-        const protecc_pattern_t pattern_too_long[] = { { "/this/pattern/is/definitely/longer/than/five", 0 } };
+        const protecc_pattern_t patterns_ok[] = { { "/a", PROTECC_PERM_ALL }, { "/b", PROTECC_PERM_ALL } };
+        const protecc_pattern_t patterns_too_many[] = {
+            { "/a", PROTECC_PERM_ALL },
+            { "/b", PROTECC_PERM_ALL },
+            { "/c", PROTECC_PERM_ALL }
+        };
+        const protecc_pattern_t pattern_too_long[] = {
+            { "/this/pattern/is/definitely/longer/than/five", PROTECC_PERM_ALL }
+        };
 
         config.max_patterns = 2;
         config.max_pattern_length = 64;
@@ -137,11 +149,11 @@ int test_dfa_patterns(void) {
     // Test 5: stress max_states enforcement in DFA mode
     {
         const protecc_pattern_t patterns[] = {
-            { "/stress/alpha", 0 },
-            { "/stress/beta", 0 },
-            { "/stress/gamma", 0 },
-            { "/stress/delta", 0 },
-            { "/stress/epsilon", 0 },
+            { "/stress/alpha", PROTECC_PERM_ALL },
+            { "/stress/beta", PROTECC_PERM_ALL },
+            { "/stress/gamma", PROTECC_PERM_ALL },
+            { "/stress/delta", PROTECC_PERM_ALL },
+            { "/stress/epsilon", PROTECC_PERM_ALL },
         };
 
         setup_dfa_config(&config);
@@ -154,7 +166,10 @@ int test_dfa_patterns(void) {
 
     // Test 6: import should reject truncated DFA blob
     {
-        const protecc_pattern_t patterns[] = { { "/import/test", 0 }, { "/tmp/[a-z]+.txt", 0 } };
+        const protecc_pattern_t patterns[] = {
+            { "/import/test", PROTECC_PERM_ALL },
+            { "/tmp/[a-z]+.txt", PROTECC_PERM_ALL }
+        };
         void* blob = NULL;
         size_t blob_size = 0;
         protecc_compiled_t* imported = NULL;
@@ -183,7 +198,10 @@ int test_dfa_patterns(void) {
 
     // Test 7: import should reject malformed DFA metadata
     {
-        const protecc_pattern_t patterns[] = { { "/import/meta", 0 }, { "/dev/tty[0-9]+", 0 } };
+        const protecc_pattern_t patterns[] = {
+            { "/import/meta", PROTECC_PERM_ALL },
+            { "/dev/tty[0-9]+", PROTECC_PERM_ALL }
+        };
         uint8_t* blob = NULL;
         size_t blob_size = 0;
         protecc_profile_header_t* header;
@@ -227,7 +245,17 @@ int test_dfa_patterns(void) {
             dfa->classmap_off = original;
         }
 
-        // 7c: out-of-range transition offset should fail
+        // 7c: out-of-range perms offset should fail
+        {
+            uint32_t original = dfa->perms_off;
+            dfa->perms_off = header->stats.binary_size - 1u;
+            err = protecc_import(blob, blob_size, &imported);
+            TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Import should reject bad perms offset");
+            TEST_ASSERT(imported == NULL, "Import output should remain NULL on bad perms offset");
+            dfa->perms_off = original;
+        }
+
+        // 7d: out-of-range transition offset should fail
         {
             uint32_t original = dfa->transitions_off;
             dfa->transitions_off = header->stats.binary_size - 2u;
@@ -237,7 +265,7 @@ int test_dfa_patterns(void) {
             dfa->transitions_off = original;
         }
 
-        // 7d: invalid start_state should fail
+        // 7e: invalid start_state should fail
         {
             uint32_t original = dfa->start_state;
             dfa->start_state = dfa->num_states;
@@ -247,7 +275,7 @@ int test_dfa_patterns(void) {
             dfa->start_state = original;
         }
 
-        // 7e: num_classes == 0 should fail
+        // 7f: num_classes == 0 should fail
         {
             uint32_t original = dfa->num_classes;
             dfa->num_classes = 0;
@@ -257,7 +285,7 @@ int test_dfa_patterns(void) {
             dfa->num_classes = original;
         }
 
-        // 7f: num_classes > 256 should fail
+        // 7g: num_classes > 256 should fail
         {
             uint32_t original = dfa->num_classes;
             dfa->num_classes = 257u;
@@ -283,7 +311,7 @@ int test_dfa_patterns(void) {
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile DFA deep branching parity patterns");
 
         for (size_t i = 0; i < PROTECC_BRANCHING_CASES_COUNT; i++) {
-            bool matched = protecc_match(compiled, PROTECC_BRANCHING_CASES[i].path, 0);
+            bool matched = match_path(compiled, PROTECC_BRANCHING_CASES[i].path);
             TEST_ASSERT((int)matched == PROTECC_BRANCHING_CASES[i].expected_match,
                        "Branching parity case mismatch in DFA test");
         }

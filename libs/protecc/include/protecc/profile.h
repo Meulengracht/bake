@@ -30,7 +30,7 @@
  * compact representation of the pattern matching automaton as a flat array of nodes and edges.
  */
 #define PROTECC_PROFILE_MAGIC   0x50524F54u // "PROT"
-#define PROTECC_PROFILE_VERSION 0x00010000u
+#define PROTECC_PROFILE_VERSION 0x00010001u
 
 #define PROTECC_PROFILE_FLAG_CASE_INSENSITIVE (1u << 0)
 #define PROTECC_PROFILE_FLAG_OPTIMIZE         (1u << 1)
@@ -63,6 +63,7 @@ typedef struct __attribute__((packed)) {
     uint32_t accept_words;
     uint32_t classmap_off;
     uint32_t accept_off;
+    uint32_t perms_off;
     uint32_t transitions_off;
 } protecc_profile_dfa_t;
 
@@ -74,6 +75,7 @@ typedef struct __attribute__((packed)) {
     uint32_t child_start;
     uint16_t child_count;
     uint16_t reserved2;
+    uint32_t perms;
     union {
         uint8_t literal;
         struct {
