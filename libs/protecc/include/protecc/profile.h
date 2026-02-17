@@ -23,6 +23,12 @@
 #include <stdint.h>
 #endif
 
+#ifdef _MSC_VER
+#define PROTECC_ONDISK_STRUCT(name, body) __pragma(pack(push, 1)) typedef struct name body name##_t __pragma(pack(pop))
+#else
+#define PROTECC_ONDISK_STRUCT(name, body) typedef struct __attribute__((packed)) name body name##_t
+#endif
+
 /**
  * @brief On-disk format for compiled profiles. This is what the userspace 
  * compiler emits and what the BPF program reads. The format is designed for 
@@ -39,14 +45,14 @@
 
 #define PROTECC_PROFILE_DFA_CLASSMAP_SIZE 256u
 
-typedef struct __attribute__((packed)) {
+PROTECC_ONDISK_STRUCT(protecc_profile_stats, {
     uint32_t num_patterns;
     uint32_t binary_size;
     uint32_t max_depth;
     uint32_t num_nodes;
-} protecc_profile_stats_t;
+});
 
-typedef struct __attribute__((packed)) {
+PROTECC_ONDISK_STRUCT(protecc_profile_header, {
     uint32_t magic;
     uint32_t version;
     uint32_t flags;
@@ -54,9 +60,9 @@ typedef struct __attribute__((packed)) {
     uint32_t num_edges;
     uint32_t root_index;
     protecc_profile_stats_t stats;
-} protecc_profile_header_t;
+});
 
-typedef struct __attribute__((packed)) {
+PROTECC_ONDISK_STRUCT(protecc_profile_dfa, {
     uint32_t num_states;
     uint32_t num_classes;
     uint32_t start_state;
@@ -65,9 +71,9 @@ typedef struct __attribute__((packed)) {
     uint32_t accept_off;
     uint32_t perms_off;
     uint32_t transitions_off;
-} protecc_profile_dfa_t;
+});
 
-typedef struct __attribute__((packed)) {
+PROTECC_ONDISK_STRUCT(protecc_profile_node, {
     uint8_t type;
     uint8_t modifier;
     uint8_t is_terminal;
@@ -85,6 +91,6 @@ typedef struct __attribute__((packed)) {
         } range;
         uint8_t charset[32];
     } data;
-} protecc_profile_node_t;
+});
 
 #endif // !__PROTECC_PROFILE_H__
