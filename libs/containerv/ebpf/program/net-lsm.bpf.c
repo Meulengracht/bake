@@ -14,6 +14,19 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
+ * https://github.com/torvalds/linux/blob/master/include/linux/lsm_hook_defs.h
+ * socket_create
+ * socket_socketpair
+ * socket_bind
+ * socket_connect
+ * socket_listen
+ * socket_accept
+ * socket_sendmsg
+ * socket_recvmsg
+ * socket_getsockopt
+ * socket_setsockopt
+ * socket_sock_shutdown
+ * socket_sock_rcv_skb
  */
 
 #include <vmlinux.h>

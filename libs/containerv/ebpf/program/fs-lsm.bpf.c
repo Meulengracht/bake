@@ -15,6 +15,28 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  * https://github.com/torvalds/linux/blob/master/include/linux/lsm_hook_defs.h
+ * inode_create : creating a new file
+ * inode_link : creating a new hard link
+ * inode_unlink : removing a hard link
+ * inode_symlink : creating a new symbolic link
+ * inode_mkdir : creating a new directory
+ * inode_rmdir : removing a directory
+ * inode_mknod : creating a new special file (such as socket) via mknod() syscall
+ * inode_rename : renaming a file or a directory
+ * path_chmod : changing file's mode.
+ * path_chown : changing the owner/group of the file.
+ * inode_readlink : read a symbolic link
+ * inode_permission : checked when a file is opened
+ * inode_setattr : setting attributes
+ * inode_getattr : obtaining attributes
+ * file_permission : reading/writing a file
+ * file_ioctl : ioctl syscall
+ * mmap_addr, mmap_file : mmap operation
+ * file_mprotect : changing memory access permission
+ * file_fcntl : fcntl syscall.
+ * 
+ * sb_statfs
+ * sb_pivotroot
  */
 
 #include <vmlinux.h>
