@@ -91,6 +91,10 @@ struct protecc_compiled {
     uint32_t*                dfa_accept;
     uint32_t*                dfa_perms;
     uint32_t*                dfa_transitions;
+    protecc_net_rule_t*      net_rules;          /**< Compiled network rules */
+    size_t                   net_rule_count;
+    protecc_mount_rule_t*    mount_rules;        /**< Compiled mount rules */
+    size_t                   mount_rule_count;
     protecc_stats_t          stats;              /**< Statistics */
 };
 

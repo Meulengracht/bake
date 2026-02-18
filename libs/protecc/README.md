@@ -130,18 +130,63 @@ free(buffer);
 
 ### Core Functions
 
-#### `protecc_compile`
+#### `protecc_profile_builder_*` (recommended)
+Build a multi-domain profile incrementally, then compile once.
+
+```c
+protecc_profile_builder_t* protecc_profile_builder_create(void);
+void protecc_profile_builder_reset(protecc_profile_builder_t* builder);
+void protecc_profile_builder_destroy(protecc_profile_builder_t* builder);
+
+protecc_error_t protecc_profile_builder_add_patterns(
+  protecc_profile_builder_t* builder,
+  const protecc_pattern_t* patterns,
+  size_t count
+);
+
+protecc_error_t protecc_profile_builder_add_net_rule(
+  protecc_profile_builder_t* builder,
+  const protecc_net_rule_t* rule
+);
+
+protecc_error_t protecc_profile_builder_add_mount_rule(
+  protecc_profile_builder_t* builder,
+  const protecc_mount_rule_t* rule
+);
+
+protecc_error_t protecc_profile_builder_add_mount_pattern(
+  protecc_profile_builder_t* builder,
+  const protecc_mount_rule_t* rule
+);
+
+protecc_error_t protecc_profile_compile(
+  const protecc_profile_builder_t* builder,
+  uint32_t flags,
+  const protecc_compile_config_t* config,
+  protecc_compiled_t** compiled
+);
+```
+
+Current status:
+- Path patterns are fully supported through the builder.
+- Network and mount rules are now compiled into domain-specific profile sections.
+- `protecc_profile_export_net()` and `protecc_profile_export_mounts()` emit dedicated `v1` linear binary formats for eBPF-side loaders.
+- Runtime match APIs are still path-focused (`protecc_match`), while net/mount evaluation hooks are introduced incrementally.
+
+#### `protecc_compile` (compatibility API)
 Compile an array of pattern strings into an optimized trie structure.
 
 ```c
 protecc_error_t protecc_compile(
-  const char** patterns,                       // Array of pattern strings
+  const protecc_pattern_t* patterns,           // Array of path patterns + perms
   size_t count,                                // Number of patterns
   uint32_t flags,                              // Compilation flags
   const protecc_compile_config_t* config,      // Limits + backend (NULL = defaults)
   protecc_compiled_t** compiled                // Output compiled pattern set
 );
 ```
+
+This function now internally uses `protecc_profile_builder_*` for backward-compatible migration.
 
 Compiler config defaults:
 - `mode = PROTECC_COMPILE_MODE_TRIE`
@@ -179,6 +224,96 @@ protecc_error_t protecc_export(
     size_t* bytes_written   // Actual bytes written
 );
 ```
+
+#### `protecc_profile_export_path`
+Export the path matcher profile.
+
+```c
+protecc_error_t protecc_profile_export_path(
+  const protecc_compiled_t* compiled,
+  void* buffer,
+  size_t buffer_size,
+  size_t* bytes_written
+);
+```
+
+#### `protecc_profile_export_net`
+Export the network matcher profile.
+
+```c
+protecc_error_t protecc_profile_export_net(
+  const protecc_compiled_t* compiled,
+  void* buffer,
+  size_t buffer_size,
+  size_t* bytes_written
+);
+```
+
+#### `protecc_profile_export_mounts`
+Export the mount matcher profile.
+
+```c
+protecc_error_t protecc_profile_export_mounts(
+  const protecc_compiled_t* compiled,
+  void* buffer,
+  size_t buffer_size,
+  size_t* bytes_written
+);
+```
+
+#### `protecc_profile_validate_net_blob`
+Validate a net profile blob before loader-side use.
+
+```c
+protecc_error_t protecc_profile_validate_net_blob(
+  const void* buffer,
+  size_t buffer_size
+);
+```
+
+#### `protecc_profile_validate_mount_blob`
+Validate a mount profile blob before loader-side use.
+
+```c
+protecc_error_t protecc_profile_validate_mount_blob(
+  const void* buffer,
+  size_t buffer_size
+);
+```
+
+#### `protecc_profile_import_net_blob`
+Import net blob rules into owned typed net rule arrays.
+
+```c
+protecc_error_t protecc_profile_import_net_blob(
+  const void* buffer,
+  size_t buffer_size,
+  protecc_net_rule_t** rules_out,
+  size_t* count_out
+);
+```
+
+#### `protecc_profile_import_mount_blob`
+Import mount blob rules into owned typed mount rule arrays.
+
+```c
+protecc_error_t protecc_profile_import_mount_blob(
+  const void* buffer,
+  size_t buffer_size,
+  protecc_mount_rule_t** rules_out,
+  size_t* count_out
+);
+```
+
+Use `protecc_profile_free_net_rules(...)` and `protecc_profile_free_mount_rules(...)` to free imported arrays.
+
+Zero-copy parse mode is also available:
+- `protecc_profile_net_view_init(...)` + `protecc_profile_net_view_get_rule(...)`
+- `protecc_profile_mount_view_init(...)` + `protecc_profile_mount_view_get_rule(...)`
+- Iterator helpers: `protecc_profile_net_view_first(...)` / `protecc_profile_net_view_next(...)`
+- Iterator helpers: `protecc_profile_mount_view_first(...)` / `protecc_profile_mount_view_next(...)`
+
+These APIs decode rules directly from the blob without allocations; returned string pointers are borrowed views into the input blob memory.
 
 #### `protecc_import`
 Import patterns from binary format.

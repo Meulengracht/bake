@@ -26,6 +26,7 @@ if(PROTECC_BUILD_TESTS)
         tests/test_wildcards.c
         tests/test_charset.c
         tests/test_dfa.c
+        tests/test_profile_builder.c
     )
     
     target_link_libraries(protecc_test PRIVATE protecc)
