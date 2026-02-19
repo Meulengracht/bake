@@ -18,13 +18,13 @@
     } while(0)
 
 static bool match_path_with_perms(
-    const protecc_compiled_t* compiled,
+    const protecc_profile_t* compiled,
     const char*               path,
     protecc_permission_t      expected)
 {
     protecc_permission_t perms = PROTECC_PERM_NONE;
 
-    if (!protecc_match(compiled, path, 0, &perms)) {
+    if (!protecc_match_path(compiled, path, 0, &perms)) {
         return false;
     }
 
@@ -36,7 +36,7 @@ typedef int (*profile_builder_subtest_fn_t)(void);
 static int test_profile_builder_paths_and_reset(void)
 {
     protecc_profile_builder_t* builder = NULL;
-    protecc_compiled_t* compiled = NULL;
+    protecc_profile_t* compiled = NULL;
     protecc_error_t err;
 
     const protecc_pattern_t first_patterns[] = {
@@ -77,7 +77,7 @@ static int test_profile_builder_paths_and_reset(void)
 
     {
         protecc_permission_t perms = PROTECC_PERM_NONE;
-        bool matched = protecc_match(compiled, "/etc/hosts", 0, &perms);
+        bool matched = protecc_match_path(compiled, "/etc/hosts", 0, &perms);
         TEST_ASSERT(!matched, "Old pattern should not match after reset");
     }
 
@@ -89,7 +89,7 @@ static int test_profile_builder_paths_and_reset(void)
 static int test_profile_builder_net_single_rule(void)
 {
     protecc_profile_builder_t* builder = NULL;
-    protecc_compiled_t* compiled = NULL;
+    protecc_profile_t* compiled = NULL;
     protecc_error_t err;
     size_t net_export_size = 0;
     uint8_t* net_buffer = NULL;
@@ -231,7 +231,7 @@ static int test_profile_builder_invalid_rule_rejection(void)
 static int test_profile_builder_mount_path_exports_and_empty_domains(void)
 {
     protecc_profile_builder_t* builder = NULL;
-    protecc_compiled_t* compiled = NULL;
+    protecc_profile_t* compiled = NULL;
     protecc_error_t err;
     const protecc_pattern_t patterns[] = {{"/opt/**", PROTECC_PERM_READ}};
     protecc_mount_rule_t mount_rule = {
@@ -345,7 +345,7 @@ static int test_profile_builder_mount_path_exports_and_empty_domains(void)
         void* buffer_a = NULL;
         void* buffer_b = NULL;
 
-        err = protecc_export(compiled, NULL, 0, &export_size);
+        err = protecc_profile_export_path(compiled, NULL, 0, &export_size);
         TEST_ASSERT(err == PROTECC_OK && export_size > 0, "Failed to query legacy export size");
 
         err = protecc_profile_export_path(compiled, NULL, 0, &export_path_size);
@@ -356,7 +356,7 @@ static int test_profile_builder_mount_path_exports_and_empty_domains(void)
         buffer_b = malloc(export_path_size);
         TEST_ASSERT(buffer_a != NULL && buffer_b != NULL, "Failed to allocate export buffers");
 
-        err = protecc_export(compiled, buffer_a, export_size, &export_size);
+        err = protecc_profile_export_path(compiled, buffer_a, export_size, &export_size);
         TEST_ASSERT(err == PROTECC_OK, "Failed to run legacy export");
         err = protecc_profile_export_path(compiled, buffer_b, export_path_size, &export_path_size);
         TEST_ASSERT(err == PROTECC_OK, "Failed to run path-only export");
@@ -458,7 +458,7 @@ static int test_profile_builder_mount_path_exports_and_empty_domains(void)
 static int test_profile_builder_domain_only_and_negatives(void)
 {
     protecc_profile_builder_t* builder = NULL;
-    protecc_compiled_t* compiled = NULL;
+    protecc_profile_t* compiled = NULL;
     protecc_error_t err;
     protecc_net_rule_t net_rules[] = {
         {

@@ -78,7 +78,7 @@ struct protecc_node {
 /**
  * @brief Compiled pattern set structure
  */
-struct protecc_compiled {
+struct protecc_profile {
     protecc_node_t*          root;               /**< Root of the trie */
     uint32_t                 flags;              /**< Compilation flags */
     protecc_compile_config_t config;             /**< Compiler configuration */
@@ -97,6 +97,16 @@ struct protecc_compiled {
     size_t                   mount_rule_count;
     protecc_stats_t          stats;              /**< Statistics */
 };
+
+extern char*       __blob_string_dup(const uint8_t* strings, uint32_t offset);
+extern uint32_t    __blob_string_write(uint8_t* base, size_t* cursor, const char* value);
+extern size_t      __blob_string_measure(const char* value);
+extern const char* __blob_string_ptr(const uint8_t* strings, uint32_t offset);
+
+extern protecc_error_t __update_stats_trie_profile(protecc_profile_t* compiled);
+
+extern protecc_error_t __validate_net_rule(const protecc_net_rule_t* rule);
+extern protecc_error_t __validate_mount_rule(const protecc_mount_rule_t* rule);
 
 /**
  * @brief Create a new trie node
@@ -150,7 +160,7 @@ void protecc_charset_set_range(protecc_charset_t* charset, char start, char end)
 /**
  * @brief Convert the compiled trie to a DFA representation
  */
-protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp);
+protecc_error_t protecc_dfa_from_trie(protecc_profile_t* comp);
 
 /**
  * @brief Match path against a trie starting from a specific node

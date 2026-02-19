@@ -173,7 +173,7 @@ void bpf_container_context_apply_paths(
     struct bpf_map_context*       mapContext,
     const char*                   rootfsPath)
 {
-    protecc_compiled_t* profile = NULL;
+    protecc_profile_t* profile = NULL;
     protecc_error_t     err;
     protecc_compile_config_t compileConfig;
     protecc_pattern_t*  paths = NULL;
@@ -195,14 +195,14 @@ void bpf_container_context_apply_paths(
     protecc_compile_config_default(&compileConfig);
     compileConfig.mode = PROTECC_COMPILE_MODE_DFA;
 
-    err = protecc_compile(paths, policy->path_count, PROTECC_FLAG_OPTIMIZE, &compileConfig, &profile);
+    err = protecc_compile_patterns(paths, policy->path_count, PROTECC_FLAG_OPTIMIZE, &compileConfig, &profile);
     if (err != PROTECC_OK) {
         VLOG_WARNING("cvd", "bpf_manager: failed to compile protecc patterns for container %s: %s\n",
                      containerContext->container_id, protecc_error_string(err));
         goto cleanup;
     }
     
-    err = protecc_export(profile, NULL, 0, &binaryProfileSize);
+    err = protecc_profile_export_path(profile, NULL, 0, &binaryProfileSize);
     if (err != PROTECC_OK) {
         VLOG_WARNING("cvd", "bpf_manager: unexpected error querying protecc export size for container %s: %s\n",
                      containerContext->container_id, protecc_error_string(err));
@@ -215,7 +215,7 @@ void bpf_container_context_apply_paths(
         goto cleanup;
     }
 
-    err = protecc_export(profile, binaryProfile, binaryProfileSize, &binaryProfileSize);
+    err = protecc_profile_export_path(profile, binaryProfile, binaryProfileSize, &binaryProfileSize);
     if (err != PROTECC_OK) {
         VLOG_WARNING("cvd", "bpf_manager: failed to export protecc profile for container %s: %s\n",
                      containerContext->container_id, protecc_error_string(err));

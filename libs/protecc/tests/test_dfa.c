@@ -18,10 +18,10 @@
         } \
     } while(0)
 
-static bool match_path(const protecc_compiled_t* compiled, const char* path) {
+static bool match_path(const protecc_profile_t* compiled, const char* path) {
     protecc_permission_t perms = PROTECC_PERM_NONE;
 
-    return protecc_match(compiled, path, 0, &perms);
+    return protecc_match_path(compiled, path, 0, &perms);
 }
 
 static void setup_dfa_config(protecc_compile_config_t* config) {
@@ -31,7 +31,7 @@ static void setup_dfa_config(protecc_compile_config_t* config) {
 }
 
 int test_dfa_patterns(void) {
-    protecc_compiled_t* compiled = NULL;
+    protecc_profile_t* compiled = NULL;
     protecc_error_t err;
     protecc_compile_config_t config;
 
@@ -43,7 +43,7 @@ int test_dfa_patterns(void) {
             { "/etc/passwd", PROTECC_PERM_ALL },
             { "/tmp/*.txt", PROTECC_PERM_ALL }
         };
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, &config, &compiled);
+        err = protecc_compile_patterns(patterns, 2, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile DFA basic patterns");
 
         TEST_ASSERT(match_path(compiled, "/etc/passwd"), "DFA should match literal path");
@@ -62,7 +62,7 @@ int test_dfa_patterns(void) {
             { "/var/log/[a-z]*.log", PROTECC_PERM_ALL },
         };
 
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, &config, &compiled);
+        err = protecc_compile_patterns(patterns, 3, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile DFA modifier patterns");
 
         TEST_ASSERT(match_path(compiled, "/dev/tty1"), "DFA should match one-or-more (+)");
@@ -89,22 +89,22 @@ int test_dfa_patterns(void) {
         };
         void* blob = NULL;
         size_t blob_size = 0;
-        protecc_compiled_t* imported = NULL;
+        protecc_profile_t* imported = NULL;
 
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, &config, &compiled);
+        err = protecc_compile_patterns(patterns, 2, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile DFA for export/import");
 
-        err = protecc_export(compiled, NULL, 0, &blob_size);
+        err = protecc_profile_export_path(compiled, NULL, 0, &blob_size);
         TEST_ASSERT(err == PROTECC_OK, "Failed to query DFA export size");
         TEST_ASSERT(blob_size > 0, "DFA export size should be > 0");
 
         blob = malloc(blob_size);
         TEST_ASSERT(blob != NULL, "Failed to allocate export blob");
 
-        err = protecc_export(compiled, blob, blob_size, &blob_size);
+        err = protecc_profile_export_path(compiled, blob, blob_size, &blob_size);
         TEST_ASSERT(err == PROTECC_OK, "Failed to export DFA blob");
 
-        err = protecc_import(blob, blob_size, &imported);
+        err = protecc_profile_import_path_blob(blob, blob_size, &imported);
         TEST_ASSERT(err == PROTECC_OK, "Failed to import DFA blob");
 
         TEST_ASSERT(match_path(imported, "/home/user/docs/file"), "Imported DFA should match recursive path");
@@ -132,17 +132,17 @@ int test_dfa_patterns(void) {
         config.max_patterns = 2;
         config.max_pattern_length = 64;
 
-        err = protecc_compile(patterns_ok, 2, PROTECC_FLAG_NONE, &config, &compiled);
+        err = protecc_compile_patterns(patterns_ok, 2, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Compile should pass under max_patterns");
         protecc_free(compiled);
         compiled = NULL;
 
-        err = protecc_compile(patterns_too_many, 3, PROTECC_FLAG_NONE, &config, &compiled);
+        err = protecc_compile_patterns(patterns_too_many, 3, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Compile should fail above max_patterns");
 
         config.max_patterns = 4;
         config.max_pattern_length = 5;
-        err = protecc_compile(pattern_too_long, 1, PROTECC_FLAG_NONE, &config, &compiled);
+        err = protecc_compile_patterns(pattern_too_long, 1, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Compile should fail above max_pattern_length");
     }
 
@@ -159,7 +159,7 @@ int test_dfa_patterns(void) {
         setup_dfa_config(&config);
         config.max_states = 2;
 
-        err = protecc_compile(patterns, 5, PROTECC_FLAG_NONE, &config, &compiled);
+        err = protecc_compile_patterns(patterns, 5, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_ERROR_COMPILE_FAILED,
                    "DFA compile should fail when max_states cap is exceeded");
     }
@@ -172,22 +172,22 @@ int test_dfa_patterns(void) {
         };
         void* blob = NULL;
         size_t blob_size = 0;
-        protecc_compiled_t* imported = NULL;
+        protecc_profile_t* imported = NULL;
 
         setup_dfa_config(&config);
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, &config, &compiled);
+        err = protecc_compile_patterns(patterns, 2, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile DFA for truncated import test");
 
-        err = protecc_export(compiled, NULL, 0, &blob_size);
+        err = protecc_profile_export_path(compiled, NULL, 0, &blob_size);
         TEST_ASSERT(err == PROTECC_OK && blob_size > 8, "Failed to query DFA export size for truncated import test");
 
         blob = malloc(blob_size);
         TEST_ASSERT(blob != NULL, "Failed to allocate blob for truncated import test");
 
-        err = protecc_export(compiled, blob, blob_size, &blob_size);
+        err = protecc_profile_export_path(compiled, blob, blob_size, &blob_size);
         TEST_ASSERT(err == PROTECC_OK, "Failed to export DFA blob for truncated import test");
 
-        err = protecc_import(blob, blob_size - 7, &imported);
+        err = protecc_profile_import_path_blob(blob, blob_size - 7, &imported);
         TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Import should reject truncated DFA blob");
         TEST_ASSERT(imported == NULL, "Import output should remain NULL on truncated blob");
 
@@ -206,20 +206,20 @@ int test_dfa_patterns(void) {
         size_t blob_size = 0;
         protecc_profile_header_t* header;
         protecc_profile_dfa_t* dfa;
-        protecc_compiled_t* imported = NULL;
+        protecc_profile_t* imported = NULL;
 
         setup_dfa_config(&config);
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, &config, &compiled);
+        err = protecc_compile_patterns(patterns, 2, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile DFA for malformed metadata test");
 
-        err = protecc_export(compiled, NULL, 0, &blob_size);
+        err = protecc_profile_export_path(compiled, NULL, 0, &blob_size);
         TEST_ASSERT(err == PROTECC_OK && blob_size >= sizeof(protecc_profile_header_t) + sizeof(protecc_profile_dfa_t),
                    "Failed to query DFA export size for malformed metadata test");
 
         blob = (uint8_t*)malloc(blob_size);
         TEST_ASSERT(blob != NULL, "Failed to allocate blob for malformed metadata test");
 
-        err = protecc_export(compiled, blob, blob_size, &blob_size);
+        err = protecc_profile_export_path(compiled, blob, blob_size, &blob_size);
         TEST_ASSERT(err == PROTECC_OK, "Failed to export DFA blob for malformed metadata test");
 
         header = (protecc_profile_header_t*)blob;
@@ -229,7 +229,7 @@ int test_dfa_patterns(void) {
         {
             uint32_t original = dfa->accept_words;
             dfa->accept_words = original + 1u;
-            err = protecc_import(blob, blob_size, &imported);
+            err = protecc_profile_import_path_blob(blob, blob_size, &imported);
             TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Import should reject wrong accept_words");
             TEST_ASSERT(imported == NULL, "Import output should remain NULL on wrong accept_words");
             dfa->accept_words = original;
@@ -239,7 +239,7 @@ int test_dfa_patterns(void) {
         {
             uint32_t original = dfa->classmap_off;
             dfa->classmap_off = header->stats.binary_size;
-            err = protecc_import(blob, blob_size, &imported);
+            err = protecc_profile_import_path_blob(blob, blob_size, &imported);
             TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Import should reject out-of-range classmap offset");
             TEST_ASSERT(imported == NULL, "Import output should remain NULL on bad classmap offset");
             dfa->classmap_off = original;
@@ -249,7 +249,7 @@ int test_dfa_patterns(void) {
         {
             uint32_t original = dfa->perms_off;
             dfa->perms_off = header->stats.binary_size - 1u;
-            err = protecc_import(blob, blob_size, &imported);
+            err = protecc_profile_import_path_blob(blob, blob_size, &imported);
             TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Import should reject bad perms offset");
             TEST_ASSERT(imported == NULL, "Import output should remain NULL on bad perms offset");
             dfa->perms_off = original;
@@ -259,7 +259,7 @@ int test_dfa_patterns(void) {
         {
             uint32_t original = dfa->transitions_off;
             dfa->transitions_off = header->stats.binary_size - 2u;
-            err = protecc_import(blob, blob_size, &imported);
+            err = protecc_profile_import_path_blob(blob, blob_size, &imported);
             TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Import should reject bad transition offset");
             TEST_ASSERT(imported == NULL, "Import output should remain NULL on bad transition offset");
             dfa->transitions_off = original;
@@ -269,7 +269,7 @@ int test_dfa_patterns(void) {
         {
             uint32_t original = dfa->start_state;
             dfa->start_state = dfa->num_states;
-            err = protecc_import(blob, blob_size, &imported);
+            err = protecc_profile_import_path_blob(blob, blob_size, &imported);
             TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Import should reject invalid start_state");
             TEST_ASSERT(imported == NULL, "Import output should remain NULL on invalid start_state");
             dfa->start_state = original;
@@ -279,7 +279,7 @@ int test_dfa_patterns(void) {
         {
             uint32_t original = dfa->num_classes;
             dfa->num_classes = 0;
-            err = protecc_import(blob, blob_size, &imported);
+            err = protecc_profile_import_path_blob(blob, blob_size, &imported);
             TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Import should reject num_classes == 0");
             TEST_ASSERT(imported == NULL, "Import output should remain NULL on num_classes == 0");
             dfa->num_classes = original;
@@ -289,7 +289,7 @@ int test_dfa_patterns(void) {
         {
             uint32_t original = dfa->num_classes;
             dfa->num_classes = 257u;
-            err = protecc_import(blob, blob_size, &imported);
+            err = protecc_profile_import_path_blob(blob, blob_size, &imported);
             TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT, "Import should reject num_classes > 256");
             TEST_ASSERT(imported == NULL, "Import output should remain NULL on num_classes > 256");
             dfa->num_classes = original;
@@ -303,7 +303,7 @@ int test_dfa_patterns(void) {
     // Test 8: DFA parity for deep branching wildcard/modifier patterns
     {
         setup_dfa_config(&config);
-        err = protecc_compile(PROTECC_BRANCHING_PATTERNS,
+        err = protecc_compile_patterns(PROTECC_BRANCHING_PATTERNS,
                               PROTECC_BRANCHING_PATTERNS_COUNT,
                               PROTECC_FLAG_NONE,
                               &config,

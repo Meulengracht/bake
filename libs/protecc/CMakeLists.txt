@@ -3,6 +3,11 @@ project(protecc C)
 
 # Create the protecc library
 add_library(protecc STATIC
+    profiles/builder.c
+    profiles/mount.c
+    profiles/net.c
+    profiles/path.c
+    profiles/utils.c
     dfatrie.c
     matcher.c
     node.c
@@ -13,6 +18,7 @@ add_library(protecc STATIC
 # Include directories
 target_include_directories(protecc PUBLIC include)
 target_include_directories(protecc PRIVATE .)
+target_link_libraries(protecc PUBLIC platform)
 
 # Add tests if building tests is enabled
 option(PROTECC_BUILD_TESTS "Build protecc tests" ON)

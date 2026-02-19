@@ -42,9 +42,9 @@
 #include <stdbool.h>
 
 /**
- * @brief Opaque handle to a compiled pattern set
+ * @brief Opaque handle to a compiled profile
  */
-typedef struct protecc_compiled protecc_compiled_t;
+typedef struct protecc_profile protecc_profile_t;
 typedef struct protecc_profile_builder protecc_profile_builder_t;
 
 /**
@@ -284,7 +284,7 @@ protecc_error_t protecc_profile_compile(
     const protecc_profile_builder_t* builder,
     uint32_t                         flags,
     const protecc_compile_config_t*  config,
-    protecc_compiled_t**             compiled);
+    protecc_profile_t**             compiled);
 
 /**
  * @brief Create a new compiled pattern set
@@ -295,12 +295,12 @@ protecc_error_t protecc_profile_compile(
  * @param compiled Output pointer for the compiled pattern set
  * @return PROTECC_OK on success, error code otherwise
  */
-protecc_error_t protecc_compile(
+protecc_error_t protecc_compile_patterns(
     const protecc_pattern_t*        patterns,
     size_t                          count,
     uint32_t                        flags,
     const protecc_compile_config_t* config,
-    protecc_compiled_t**            compiled);
+    protecc_profile_t**            compiled);
 
 /**
  * @brief Match a path against the compiled pattern set
@@ -314,11 +314,11 @@ protecc_error_t protecc_compile(
  * @param permsOut Output pointer for matched permissions
  * @return true if path matches any pattern, false otherwise
  */
-bool protecc_match(
-    const protecc_compiled_t* compiled,
-    const char*               path,
-    size_t                    pathLength,
-    protecc_permission_t*     permsOut);
+bool protecc_match_path(
+    const protecc_profile_t* compiled,
+    const char*              path,
+    size_t                   pathLength,
+    protecc_permission_t*    permsOut);
 
 /**
  * @brief Get statistics about the compiled pattern set
@@ -328,11 +328,11 @@ bool protecc_match(
  * @return PROTECC_OK on success, error code otherwise
  */
 protecc_error_t protecc_get_stats(
-    const protecc_compiled_t* compiled,
-    protecc_stats_t*          stats);
+    const protecc_profile_t* compiled,
+    protecc_stats_t*         stats);
 
 /**
- * @brief Export compiled pattern set to binary format
+ * @brief Export only the path profile from a compiled profile
  * 
  * This function exports the compiled pattern set to a binary format
  * suitable for loading in eBPF programs or other constrained environments.
@@ -343,38 +343,29 @@ protecc_error_t protecc_get_stats(
  * @param bytesWritten Output pointer for actual bytes written
  * @return PROTECC_OK on success, error code otherwise
  */
-protecc_error_t protecc_export(
-    const protecc_compiled_t* compiled,
-    void*                     buffer,
-    size_t                    bufferSize,
-    size_t*                   bytesWritten);
-
-/**
- * @brief Export only the path profile from a compiled profile
- */
 protecc_error_t protecc_profile_export_path(
-    const protecc_compiled_t* compiled,
-    void*                     buffer,
-    size_t                    bufferSize,
-    size_t*                   bytesWritten);
+    const protecc_profile_t* compiled,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten);
 
 /**
  * @brief Export only the network profile from a compiled profile
  */
 protecc_error_t protecc_profile_export_net(
-    const protecc_compiled_t* compiled,
-    void*                     buffer,
-    size_t                    bufferSize,
-    size_t*                   bytesWritten);
+    const protecc_profile_t* compiled,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten);
 
 /**
  * @brief Export only the mount profile from a compiled profile
  */
 protecc_error_t protecc_profile_export_mounts(
-    const protecc_compiled_t* compiled,
-    void*                     buffer,
-    size_t                    bufferSize,
-    size_t*                   bytesWritten);
+    const protecc_profile_t* compiled,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten);
 
 /**
  * @brief Validate a network profile blob exported by protecc_profile_export_net
@@ -494,17 +485,17 @@ protecc_error_t protecc_profile_mount_view_next(
  * @param compiled Output pointer for the compiled pattern set
  * @return PROTECC_OK on success, error code otherwise
  */
-protecc_error_t protecc_import(
+protecc_error_t protecc_profile_import_path_blob(
     const void*          buffer,
     size_t               bufferSize,
-    protecc_compiled_t** compiled);
+    protecc_profile_t** compiled);
 
 /**
  * @brief Free a compiled pattern set
  * 
  * @param compiled Compiled pattern set to free
  */
-void protecc_free(protecc_compiled_t* compiled);
+void protecc_free(protecc_profile_t* compiled);
 
 /**
  * @brief Validate a pattern string

@@ -17,20 +17,20 @@
         } \
     } while(0)
 
-static bool match_path(const protecc_compiled_t* compiled, const char* path) {
+static bool match_path(const protecc_profile_t* compiled, const char* path) {
     protecc_permission_t perms = PROTECC_PERM_NONE;
 
-    return protecc_match(compiled, path, 0, &perms);
+    return protecc_match_path(compiled, path, 0, &perms);
 }
 
 int test_wildcard_patterns(void) {
-    protecc_compiled_t* compiled = NULL;
+    protecc_profile_t* compiled = NULL;
     protecc_error_t err;
     
     // Test 1: Single character wildcard (?)
     {
         const protecc_pattern_t patterns[] = {{ "/tmp/file?", PROTECC_PERM_ALL }};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile ? pattern");
         
         TEST_ASSERT(match_path(compiled, "/tmp/file1"), 
@@ -49,7 +49,7 @@ int test_wildcard_patterns(void) {
     // Test 2: Multi-character wildcard (*)
     {
         const protecc_pattern_t patterns[] = {{ "/tmp/*.txt", PROTECC_PERM_ALL }};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile * pattern");
         
         TEST_ASSERT(match_path(compiled, "/tmp/file.txt"), 
@@ -68,7 +68,7 @@ int test_wildcard_patterns(void) {
     // Test 3: Recursive wildcard (**)
     {
         const protecc_pattern_t patterns[] = {{ "/home/**", PROTECC_PERM_ALL }};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile ** pattern");
         
         TEST_ASSERT(match_path(compiled, "/home/user/file.txt"), 
@@ -87,7 +87,7 @@ int test_wildcard_patterns(void) {
     // Test 4: Mixed wildcards
     {
         const protecc_pattern_t patterns[] = {{ "/var/log/*.log", PROTECC_PERM_ALL }};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile mixed pattern");
         
         TEST_ASSERT(match_path(compiled, "/var/log/system.log"), 
@@ -104,7 +104,7 @@ int test_wildcard_patterns(void) {
     // Test 5: Multiple wildcards in pattern
     {
         const protecc_pattern_t patterns[] = {{ "/tmp/*/?.txt", PROTECC_PERM_ALL }};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile multi-wildcard pattern");
         
         TEST_ASSERT(match_path(compiled, "/tmp/dir/a.txt"), 
@@ -124,7 +124,7 @@ int test_wildcard_patterns(void) {
             { "*.log", PROTECC_PERM_ALL },
             { "/tmp/*", PROTECC_PERM_ALL }
         };
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 2, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile start/end wildcard");
         
         TEST_ASSERT(match_path(compiled, "app.log"), 
@@ -140,7 +140,7 @@ int test_wildcard_patterns(void) {
 
     // Test 7: Deep branching stress (wildcards + modifiers)
     {
-        err = protecc_compile(PROTECC_BRANCHING_PATTERNS,
+        err = protecc_compile_patterns(PROTECC_BRANCHING_PATTERNS,
                               PROTECC_BRANCHING_PATTERNS_COUNT,
                               PROTECC_FLAG_NONE,
                               NULL,

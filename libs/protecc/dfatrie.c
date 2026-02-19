@@ -218,7 +218,7 @@ static ptrdiff_t __dfa_find_state(
     return -1;
 }
 
-protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp)
+protecc_error_t protecc_dfa_from_trie(protecc_profile_t* comp)
 {
     const protecc_node_t** nodes = NULL;
     uint64_t*              state_sets = NULL;

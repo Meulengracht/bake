@@ -41,11 +41,11 @@ const char* patterns[] = {
     "/dev/tty[0-9]+",       // Digit range with modifier
 };
 
-protecc_compiled_t* compiled;
+protecc_profile_t* compiled;
 protecc_compile_config_t config;
 protecc_compile_config_default(&config);
 
-protecc_error_t err = protecc_compile(
+protecc_error_t err = protecc_compile_patterns(
     patterns,
     5,
     PROTECC_FLAG_OPTIMIZE,
@@ -59,19 +59,19 @@ if (err != PROTECC_OK) {
 }
 
 // Match paths
-bool match1 = protecc_match(compiled, "/etc/passwd", 0);           // true
-bool match2 = protecc_match(compiled, "/tmp/test.txt", 0);         // true
-bool match3 = protecc_match(compiled, "/home/user/doc.txt", 0);    // true
-bool match4 = protecc_match(compiled, "/var/log/system.log", 0);   // true
-bool match5 = protecc_match(compiled, "/dev/tty0", 0);             // true
-bool match6 = protecc_match(compiled, "/usr/bin/ls", 0);           // false
+bool match1 = protecc_match_path(compiled, "/etc/passwd", 0);           // true
+bool match2 = protecc_match_path(compiled, "/tmp/test.txt", 0);         // true
+bool match3 = protecc_match_path(compiled, "/home/user/doc.txt", 0);    // true
+bool match4 = protecc_match_path(compiled, "/var/log/system.log", 0);   // true
+bool match5 = protecc_match_path(compiled, "/dev/tty0", 0);             // true
+bool match6 = protecc_match_path(compiled, "/usr/bin/ls", 0);           // false
 
 // Export to binary format for eBPF
 size_t size;
-protecc_export(compiled, NULL, 0, &size);  // Get required size
+protecc_profile_export_path(compiled, NULL, 0, &size);  // Get required size
 
 void* buffer = malloc(size);
-protecc_export(compiled, buffer, size, &size);
+protecc_profile_export_path(compiled, buffer, size, &size);
 
 // ... load buffer into eBPF program ...
 
@@ -163,7 +163,7 @@ protecc_error_t protecc_profile_compile(
   const protecc_profile_builder_t* builder,
   uint32_t flags,
   const protecc_compile_config_t* config,
-  protecc_compiled_t** compiled
+  protecc_profile_t** compiled
 );
 ```
 
@@ -177,12 +177,12 @@ Current status:
 Compile an array of pattern strings into an optimized trie structure.
 
 ```c
-protecc_error_t protecc_compile(
+protecc_error_t protecc_compile_patterns(
   const protecc_pattern_t* patterns,           // Array of path patterns + perms
   size_t count,                                // Number of patterns
   uint32_t flags,                              // Compilation flags
   const protecc_compile_config_t* config,      // Limits + backend (NULL = defaults)
-  protecc_compiled_t** compiled                // Output compiled pattern set
+  protecc_profile_t** compiled                // Output compiled pattern set
 );
 ```
 
@@ -195,7 +195,7 @@ Compiler config defaults:
 - `max_states = 2048`
 - `max_classes = 32`
 
-To target eBPF, set `config.mode = PROTECC_COMPILE_MODE_DFA` before calling `protecc_compile(...)`.
+To target eBPF, set `config.mode = PROTECC_COMPILE_MODE_DFA` before calling `protecc_compile_patterns(...)`.
 
 Flags:
 - `PROTECC_FLAG_NONE` - No special options
@@ -206,8 +206,8 @@ Flags:
 Match a path against compiled patterns.
 
 ```c
-bool protecc_match(
-    const protecc_compiled_t* compiled,  // Compiled pattern set
+bool protecc_match_path(
+    const protecc_profile_t* compiled,  // Compiled pattern set
     const char* path,                    // Path to match
     size_t path_len                      // Length (0 = use strlen)
 );
@@ -217,8 +217,8 @@ bool protecc_match(
 Export compiled patterns to binary format for eBPF.
 
 ```c
-protecc_error_t protecc_export(
-    const protecc_compiled_t* compiled,
+protecc_error_t protecc_profile_export_path(
+    const protecc_profile_t* compiled,
     void* buffer,           // Output buffer (NULL to query size)
     size_t buffer_size,     // Size of buffer
     size_t* bytes_written   // Actual bytes written
@@ -230,7 +230,7 @@ Export the path matcher profile.
 
 ```c
 protecc_error_t protecc_profile_export_path(
-  const protecc_compiled_t* compiled,
+  const protecc_profile_t* compiled,
   void* buffer,
   size_t buffer_size,
   size_t* bytes_written
@@ -242,7 +242,7 @@ Export the network matcher profile.
 
 ```c
 protecc_error_t protecc_profile_export_net(
-  const protecc_compiled_t* compiled,
+  const protecc_profile_t* compiled,
   void* buffer,
   size_t buffer_size,
   size_t* bytes_written
@@ -254,7 +254,7 @@ Export the mount matcher profile.
 
 ```c
 protecc_error_t protecc_profile_export_mounts(
-  const protecc_compiled_t* compiled,
+  const protecc_profile_t* compiled,
   void* buffer,
   size_t buffer_size,
   size_t* bytes_written
@@ -319,10 +319,10 @@ These APIs decode rules directly from the blob without allocations; returned str
 Import patterns from binary format.
 
 ```c
-protecc_error_t protecc_import(
+protecc_error_t protecc_profile_import_path_blob(
     const void* buffer,
     size_t buffer_size,
-    protecc_compiled_t** compiled
+    protecc_profile_t** compiled
 );
 ```
 
@@ -330,7 +330,7 @@ protecc_error_t protecc_import(
 Free compiled pattern set.
 
 ```c
-void protecc_free(protecc_compiled_t* compiled);
+void protecc_free(protecc_profile_t* compiled);
 ```
 
 ### Utility Functions
@@ -347,7 +347,7 @@ Get statistics about compiled patterns.
 
 ```c
 protecc_error_t protecc_get_stats(
-    const protecc_compiled_t* compiled,
+    const protecc_profile_t* compiled,
     protecc_stats_t* stats
 );
 ```
@@ -381,8 +381,8 @@ cmake --build build --target protecc_test
 The library is designed to work with containerv's eBPF security policies:
 
 1. **Compilation Phase** (user space)
-   - Compile patterns using `protecc_compile()`
-   - Export to binary format using `protecc_export()`
+   - Compile patterns using `protecc_compile_patterns()`
+   - Export to binary format using `protecc_profile_export_path()`
 
 2. **Loading Phase** (eBPF initialization)
   - Load binary format into eBPF maps

@@ -22,14 +22,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void print_match_result(const protecc_compiled_t* compiled, const char* path) {
+void print_match_result(const protecc_profile_t* compiled, const char* path) {
     protecc_permission_t perms = PROTECC_PERM_NONE;
-    bool match = protecc_match(compiled, path, 0, &perms);
+    bool match = protecc_match_path(compiled, path, 0, &perms);
     printf("  %s: %s\n", path, match ? "ALLOWED" : "DENIED");
 }
 
 int main(void) {
-    protecc_compiled_t* compiled = NULL;
+    protecc_profile_t* compiled = NULL;
     protecc_error_t err;
     
     printf("=== Protecc Library Example ===\n\n");
@@ -43,7 +43,7 @@ int main(void) {
             { "/tmp/*", PROTECC_PERM_ALL },
         };
         
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -67,7 +67,7 @@ int main(void) {
             { "/dev/tty?", PROTECC_PERM_ALL },          // Single character wildcard
         };
         
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -93,7 +93,7 @@ int main(void) {
             { "/var/log/app[0-9].log", PROTECC_PERM_ALL },  // Numbered log files
         };
         
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -118,7 +118,7 @@ int main(void) {
             { "/Program Files/**", PROTECC_PERM_ALL },
         };
         
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_CASE_INSENSITIVE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 2, PROTECC_FLAG_CASE_INSENSITIVE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -143,7 +143,7 @@ int main(void) {
             { "/home/user/*", PROTECC_PERM_ALL },
         };
         
-        err = protecc_compile(patterns, 4, PROTECC_FLAG_OPTIMIZE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 4, PROTECC_FLAG_OPTIMIZE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -169,7 +169,7 @@ int main(void) {
             { "/tmp/*", PROTECC_PERM_ALL },
         };
         
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 2, PROTECC_FLAG_NONE, NULL, &compiled);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Compilation failed: %s\n", protecc_error_string(err));
             return 1;
@@ -177,7 +177,7 @@ int main(void) {
         
         // Query export size
         size_t export_size;
-        err = protecc_export(compiled, NULL, 0, &export_size);
+        err = protecc_profile_export_path(compiled, NULL, 0, &export_size);
         if (err != PROTECC_OK) {
             fprintf(stderr, "Export size query failed: %s\n", protecc_error_string(err));
             protecc_free(compiled);
