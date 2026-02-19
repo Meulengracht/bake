@@ -218,15 +218,86 @@ static ptrdiff_t __dfa_find_state(
     return -1;
 }
 
-protecc_error_t protecc_dfa_from_trie(protecc_profile_t* comp)
+struct __dfa_builder_state {
+    size_t                 state_capacity;
+    size_t                 state_count;
+    uint64_t*              state_sets;
+    uint64_t*              scratch_set;
+
+    uint32_t*              transitions;
+    uint32_t*              accept;
+    uint32_t*              perms;
+    uint16_t*              node_depths;
+};
+
+static void __dfa_builder_state_cleanup(struct __dfa_builder_state* state) {
+    free(state->transitions);
+    free(state->accept);
+    free(state->perms);
+    free(state->node_depths);
+}
+
+static int __dfa_builder_state_add_state(struct __dfa_builder_state* state, size_t maxStateCount, size_t wordsPerState) {
+    if (state->state_count >= state->state_capacity) {
+        size_t    newCapacity = state->state_capacity * 2u;
+        uint64_t* newStates;
+        uint32_t* newTransitions;
+
+        if (newCapacity > maxStateCount) {
+            newCapacity = maxStateCount;
+        }
+        if (newCapacity <= state->state_capacity) {
+            return PROTECC_ERROR_COMPILE_FAILED;
+        }
+
+        newStates = realloc(state->state_sets, newCapacity * wordsPerState * sizeof(uint64_t));
+        if (!newStates) {
+            return PROTECC_ERROR_OUT_OF_MEMORY;
+        }
+
+        state->state_sets = newStates;
+        memset(
+            state->state_sets + (state->state_capacity * wordsPerState),
+            0,
+            (newCapacity - state->state_capacity) * wordsPerState * sizeof(uint64_t)
+        );
+
+        newTransitions = realloc(state->transitions, newCapacity * 256u * sizeof(uint32_t));
+        if (!newTransitions) {
+            return PROTECC_ERROR_OUT_OF_MEMORY;
+        }
+        
+        state->transitions = newTransitions;
+        memset(
+            state->transitions + (state->state_capacity * 256u),
+            0,
+            (newCapacity - state->state_capacity) * 256u * sizeof(uint32_t)
+        );
+        state->state_capacity = newCapacity;
+    }
+
+    memcpy(
+        state->state_sets + (state->state_count * wordsPerState),
+        state->scratch_set,
+        wordsPerState * sizeof(uint64_t)
+    );
+    return 0;
+}
+
+protecc_error_t protecc_dfa_from_trie(protecc_profile_t* profile)
 {
-    const protecc_node_t** nodes = NULL;
-    uint64_t*              state_sets = NULL;
-    uint64_t*              scratch_set = NULL;
+    const protecc_node_t**     nodes = NULL;
+    struct __dfa_builder_state state = {
+        .state_capacity = 16,
+        .state_count = 0,
+        .state_sets = NULL,
+        .scratch_set = NULL,
+        .transitions = NULL,
+        .accept = NULL,
+        .perms = NULL,
+        .node_depths = NULL
+    };
     size_t*                next_sibling = NULL;
-    uint32_t*              transitions = NULL;
-    uint32_t*              accept = NULL;
-    uint32_t*              perms = NULL;
     uint16_t*              node_depths = NULL;
     size_t                 index = 0;
     size_t                 words_per_state;
@@ -237,11 +308,11 @@ protecc_error_t protecc_dfa_from_trie(protecc_profile_t* comp)
     size_t                 max_depth = 0;
     size_t                 num_edges = 0;
 
-    if (comp == NULL || comp->root == NULL) {
+    if (profile == NULL || profile->root == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    protecc_node_collect_stats(comp->root, 0, &num_nodes, &max_depth, &num_edges);
+    protecc_node_collect_stats(profile->root, 0, &num_nodes, &max_depth, &num_edges);
     if (num_nodes == 0) {
         return PROTECC_ERROR_COMPILE_FAILED;
     }
@@ -257,7 +328,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_profile_t* comp)
         next_sibling[i] = SIZE_MAX;
     }
 
-    protecc_collect_nodes(comp->root, nodes, &index);
+    protecc_collect_nodes(profile->root, nodes, &index);
     if (index != num_nodes) {
         free(next_sibling);
         free(nodes);
@@ -274,7 +345,7 @@ protecc_error_t protecc_dfa_from_trie(protecc_profile_t* comp)
     for (size_t i = 0; i < num_nodes; i++) {
         node_depths[i] = UINT16_MAX;
     }
-    __compute_node_depths(comp->root, nodes, num_nodes, node_depths, 0);
+    __compute_node_depths(profile->root, nodes, num_nodes, node_depths, 0);
 
     for (size_t i = 0; i < num_nodes; i++) {
         const protecc_node_t* node = nodes[i];
@@ -410,60 +481,16 @@ protecc_error_t protecc_dfa_from_trie(protecc_profile_t* comp)
                         return PROTECC_ERROR_COMPILE_FAILED;
                     }
 
-                    if (state_count >= state_capacity) {
-                        size_t new_capacity = state_capacity * 2u;
-                        uint64_t* new_states;
-                        uint32_t* new_transitions;
-
-                        if (new_capacity > comp->config.max_states) {
-                            new_capacity = comp->config.max_states;
-                        }
-                        if (new_capacity <= state_capacity) {
-                            free(accept);
-                            free(transitions);
-                            free(scratch_set);
-                            free(state_sets);
-                            free(next_sibling);
-                            free(node_depths);
-                            free(nodes);
-                            return PROTECC_ERROR_COMPILE_FAILED;
-                        }
-
-                        new_states = realloc(state_sets, new_capacity * words_per_state * sizeof(uint64_t));
-                        if (!new_states) {
-                            free(accept);
-                            free(transitions);
-                            free(scratch_set);
-                            free(state_sets);
-                            free(next_sibling);
-                            free(node_depths);
-                            free(nodes);
-                            return PROTECC_ERROR_OUT_OF_MEMORY;
-                        }
-                        state_sets = new_states;
-                        memset(state_sets + (state_capacity * words_per_state), 0,
-                               (new_capacity - state_capacity) * words_per_state * sizeof(uint64_t));
-
-                        new_transitions = realloc(transitions, new_capacity * 256u * sizeof(uint32_t));
-                        if (!new_transitions) {
-                            free(accept);
-                            free(transitions);
-                            free(scratch_set);
-                            free(state_sets);
-                            free(next_sibling);
-                            free(node_depths);
-                            free(nodes);
-                            return PROTECC_ERROR_OUT_OF_MEMORY;
-                        }
-                        transitions = new_transitions;
-                        memset(transitions + (state_capacity * 256u), 0,
-                               (new_capacity - state_capacity) * 256u * sizeof(uint32_t));
-
-                        state_capacity = new_capacity;
+                    if (__dfa_builder_state_add_state(&state, comp->config.max_states, words_per_state) != 0) {
+                        free(accept);
+                        free(transitions);
+                        free(scratch_set);
+                        free(state_sets);
+                        free(next_sibling);
+                        free(node_depths);
+                        free(nodes);
+                        return PROTECC_ERROR_COMPILE_FAILED;
                     }
-
-                    memcpy(state_sets + (state_count * words_per_state), scratch_set,
-                           words_per_state * sizeof(uint64_t));
                     target_state = (uint32_t)state_count;
                     state_count++;
                 }
