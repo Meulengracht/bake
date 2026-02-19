@@ -55,93 +55,19 @@ void protecc_compile_config_default(protecc_compile_config_t* config) {
     config->max_classes = 32;
 }
 
-static void __free_compiled_mount_rules(protecc_profile_t* compiled)
-{
-    if (!compiled || !compiled->mount_rules) {
-        return;
-    }
-
-    for (size_t i = 0; i < compiled->mount_rule_count; i++) {
-        free((void*)compiled->mount_rules[i].source_pattern);
-        free((void*)compiled->mount_rules[i].target_pattern);
-        free((void*)compiled->mount_rules[i].fstype_pattern);
-        free((void*)compiled->mount_rules[i].options_pattern);
-    }
-
-    free(compiled->mount_rules);
-    compiled->mount_rules = NULL;
-    compiled->mount_rule_count = 0;
-}
-
-static bool __match_dfa(
-    const protecc_profile_t* compiled,
-    const char* path,
-    size_t path_len,
-    protecc_permission_t* perms_out
-) {
-    uint32_t state;
-
-    if (!compiled || !compiled->has_dfa || !compiled->dfa_transitions || !compiled->dfa_accept ||
-        !compiled->dfa_perms || !path || !perms_out) {
-        return false;
-    }
-
-    *perms_out = PROTECC_PERM_NONE;
-
-    state = compiled->dfa_start_state;
-    for (size_t i = 0; i < path_len; i++) {
-        uint8_t c = (uint8_t)path[i];
-        uint32_t cls = compiled->dfa_classmap[c];
-        uint64_t index;
-
-        if (cls >= compiled->dfa_num_classes) {
-            return false;
-        }
-
-        index = ((uint64_t)state * (uint64_t)compiled->dfa_num_classes) + (uint64_t)cls;
-        state = compiled->dfa_transitions[index];
-        if (state >= compiled->dfa_num_states) {
-            return false;
-        }
-    }
-
-    if ((compiled->dfa_accept[state >> 5] & (1u << (state & 31u))) == 0u) {
-        return false;
-    }
-
-    *perms_out = (protecc_permission_t)compiled->dfa_perms[state];
-    return true;
-}
-
 bool protecc_match_path(
     const protecc_profile_t* compiled,
     const char*              path,
-    size_t                   pathLength,
-    protecc_permission_t*    permsOut)
+    protecc_permission_t     requiredPermissions)
 {
-    if (!permsOut) {
+    if (compiled == NULL || path == NULL) {
         return false;
     }
 
-    *permsOut = PROTECC_PERM_NONE;
-
-    if (!compiled || !path) {
-        return false;
-    }
-    
-    if (pathLength == 0) {
-        pathLength = strlen(path);
-    }
-    
     if (compiled->has_dfa) {
-        return __match_dfa(compiled, path, pathLength, permsOut);
+        return __matcher_dfa(compiled, path, requiredPermissions);
     }
-
-    if (!compiled->root) {
-        return false;
-    }
-
-    return protecc_match_internal(compiled->root, path, pathLength, 0, compiled->flags, permsOut);
+    return __matcher_trie(compiled->root, path, 0, compiled->flags, requiredPermissions);
 }
 
 protecc_error_t protecc_get_stats(
@@ -156,38 +82,34 @@ protecc_error_t protecc_get_stats(
     return PROTECC_OK;
 }
 
-void protecc_profile_free_net_rules(
-    protecc_net_rule_t* rules,
-    size_t              count)
+static void __free_compiled_mount_rules(protecc_profile_t* compiled)
 {
-    if (rules == NULL) {
+    if (!compiled || !compiled->mount_rules) {
         return;
     }
 
-    for (size_t i = 0; i < count; i++) {
-        free((void*)rules[i].ip_pattern);
-        free((void*)rules[i].unix_path_pattern);
+    for (size_t i = 0; i < compiled->mount_rule_count; i++) {
+        free((void*)compiled->mount_rules[i].source_pattern);
+        free((void*)compiled->mount_rules[i].target_pattern);
+        free((void*)compiled->mount_rules[i].fstype_pattern);
+        free((void*)compiled->mount_rules[i].options_pattern);
     }
 
-    free(rules);
+    free(compiled->mount_rules);
 }
 
-void protecc_profile_free_mount_rules(
-    protecc_mount_rule_t* rules,
-    size_t                count)
+static void __free_compiled_net_rules(protecc_profile_t* compiled)
 {
-    if (rules == NULL) {
+    if (!compiled || !compiled->net_rules) {
         return;
     }
 
-    for (size_t i = 0; i < count; i++) {
-        free((void*)rules[i].source_pattern);
-        free((void*)rules[i].target_pattern);
-        free((void*)rules[i].fstype_pattern);
-        free((void*)rules[i].options_pattern);
+    for (size_t i = 0; i < compiled->net_rule_count; i++) {
+        free((void*)compiled->net_rules[i].ip_pattern);
+        free((void*)compiled->net_rules[i].unix_path_pattern);
     }
 
-    free(rules);
+    free(compiled->net_rules);
 }
 
 void protecc_free(protecc_profile_t* compiled)

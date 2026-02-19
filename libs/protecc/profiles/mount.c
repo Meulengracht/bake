@@ -301,3 +301,21 @@ protecc_error_t __validate_mount_rule(const protecc_mount_rule_t* rule)
 
     return PROTECC_OK;
 }
+
+void protecc_profile_free_mount_rules(
+    protecc_mount_rule_t* rules,
+    size_t                count)
+{
+    if (rules == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        free((void*)rules[i].source_pattern);
+        free((void*)rules[i].target_pattern);
+        free((void*)rules[i].fstype_pattern);
+        free((void*)rules[i].options_pattern);
+    }
+
+    free(rules);
+}

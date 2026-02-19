@@ -16,9 +16,7 @@
     } while(0)
 
 static bool match_path(const protecc_profile_t* compiled, const char* path) {
-    protecc_permission_t perms = PROTECC_PERM_NONE;
-
-    return protecc_match_path(compiled, path, 0, &perms);
+    return protecc_match_path(compiled, path, PROTECC_PERM_NONE);
 }
 
 int test_charset_patterns(void) {

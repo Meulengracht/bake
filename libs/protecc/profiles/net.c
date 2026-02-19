@@ -493,3 +493,19 @@ protecc_error_t __validate_net_rule(const protecc_net_rule_t* rule)
 
     return PROTECC_OK;
 }
+
+void protecc_profile_free_net_rules(
+    protecc_net_rule_t* rules,
+    size_t              count)
+{
+    if (rules == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        free((void*)rules[i].ip_pattern);
+        free((void*)rules[i].unix_path_pattern);
+    }
+
+    free(rules);
+}

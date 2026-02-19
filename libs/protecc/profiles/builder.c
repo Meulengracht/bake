@@ -293,22 +293,6 @@ protecc_error_t protecc_profile_builder_add_mount_pattern(
     return protecc_profile_builder_add_mount_rule(builder, rule);
 }
 
-static void __free_compiled_net_rules(protecc_profile_t* compiled)
-{
-    if (!compiled || !compiled->net_rules) {
-        return;
-    }
-
-    for (size_t i = 0; i < compiled->net_rule_count; i++) {
-        free((void*)compiled->net_rules[i].ip_pattern);
-        free((void*)compiled->net_rules[i].unix_path_pattern);
-    }
-
-    free(compiled->net_rules);
-    compiled->net_rules = NULL;
-    compiled->net_rule_count = 0;
-}
-
 static protecc_error_t __copy_builder_net_rules(
     const protecc_profile_builder_t* builder,
     protecc_profile_t*              compiled)

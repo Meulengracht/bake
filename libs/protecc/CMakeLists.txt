@@ -3,15 +3,16 @@ project(protecc C)
 
 # Create the protecc library
 add_library(protecc STATIC
+    matchers/dfa.c
+    matchers/trie.c
+    profiles/paths/dfatrie.c
+    profiles/paths/node.c
+    profiles/paths/parser.c
     profiles/builder.c
     profiles/mount.c
     profiles/net.c
     profiles/path.c
     profiles/utils.c
-    dfatrie.c
-    matcher.c
-    node.c
-    parser.c
     protecc.c
 )
 

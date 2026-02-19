@@ -22,7 +22,7 @@
 #include <ctype.h>
 #include <limits.h>
 
-#include "private.h"
+#include "../../private.h"
 
 static void protecc_collect_nodes(
     const protecc_node_t* node,

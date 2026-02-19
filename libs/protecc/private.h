@@ -165,12 +165,19 @@ protecc_error_t protecc_dfa_from_trie(protecc_profile_t* comp);
 /**
  * @brief Match path against a trie starting from a specific node
  */
-bool protecc_match_internal(
+extern bool __matcher_trie(
     const protecc_node_t* node,
     const char*           path,
-    size_t                path_len,
     size_t                pos,
     uint32_t              flags,
-    protecc_permission_t* perms_out);
+    protecc_permission_t  requiredPermissions);
+
+/**
+ * @brief Match path using DFA tables
+ */
+extern bool __matcher_dfa(
+    const protecc_profile_t* compiled,
+    const char*              path,
+    protecc_permission_t     requiredPermissions);
 
 #endif /* PROTECC_INTERNAL_H */

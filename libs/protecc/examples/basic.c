@@ -23,8 +23,7 @@
 #include <stdlib.h>
 
 void print_match_result(const protecc_profile_t* compiled, const char* path) {
-    protecc_permission_t perms = PROTECC_PERM_NONE;
-    bool match = protecc_match_path(compiled, path, 0, &perms);
+    bool match = protecc_match_path(compiled, path, PROTECC_PERM_NONE);
     printf("  %s: %s\n", path, match ? "ALLOWED" : "DENIED");
 }
 

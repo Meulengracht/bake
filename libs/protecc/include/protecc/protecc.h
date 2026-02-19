@@ -310,15 +310,13 @@ protecc_error_t protecc_compile_patterns(
  * 
  * @param compiled Compiled pattern set
  * @param path Path to match
- * @param pathLength Length of path (or 0 to use strlen)
- * @param permsOut Output pointer for matched permissions
+ * @param requiredPermissions Permissions required for a match to succeed (e.g. PROTECC_PERM_READ)
  * @return true if path matches any pattern, false otherwise
  */
 bool protecc_match_path(
     const protecc_profile_t* compiled,
     const char*              path,
-    size_t                   pathLength,
-    protecc_permission_t*    permsOut);
+    protecc_permission_t     requiredPermissions);
 
 /**
  * @brief Get statistics about the compiled pattern set

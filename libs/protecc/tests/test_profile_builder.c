@@ -17,20 +17,6 @@
         } \
     } while(0)
 
-static bool match_path_with_perms(
-    const protecc_profile_t* compiled,
-    const char*               path,
-    protecc_permission_t      expected)
-{
-    protecc_permission_t perms = PROTECC_PERM_NONE;
-
-    if (!protecc_match_path(compiled, path, 0, &perms)) {
-        return false;
-    }
-
-    return perms == expected;
-}
-
 typedef int (*profile_builder_subtest_fn_t)(void);
 
 static int test_profile_builder_paths_and_reset(void)
@@ -57,9 +43,9 @@ static int test_profile_builder_paths_and_reset(void)
     TEST_ASSERT(err == PROTECC_OK, "Failed to compile profile builder with paths");
     TEST_ASSERT(compiled != NULL, "Compiled profile is NULL");
 
-    TEST_ASSERT(match_path_with_perms(compiled, "/etc/hosts", PROTECC_PERM_READ),
+    TEST_ASSERT(protecc_match_path(compiled, "/etc/hosts", PROTECC_PERM_READ),
                 "Expected /etc/hosts to match with READ perms");
-    TEST_ASSERT(match_path_with_perms(compiled, "/var/log/app/x.log", PROTECC_PERM_READ | PROTECC_PERM_WRITE),
+    TEST_ASSERT(protecc_match_path(compiled, "/var/log/app/x.log", PROTECC_PERM_READ | PROTECC_PERM_WRITE),
                 "Expected /var/log path to match with READ|WRITE perms");
 
     protecc_free(compiled);
@@ -72,12 +58,12 @@ static int test_profile_builder_paths_and_reset(void)
     err = protecc_profile_compile(builder, PROTECC_FLAG_NONE, NULL, &compiled);
     TEST_ASSERT(err == PROTECC_OK, "Failed to compile profile after reset");
 
-    TEST_ASSERT(match_path_with_perms(compiled, "/tmp/new", PROTECC_PERM_EXECUTE),
+    TEST_ASSERT(protecc_match_path(compiled, "/tmp/new", PROTECC_PERM_EXECUTE),
                 "Expected /tmp/new to match after reset");
 
     {
         protecc_permission_t perms = PROTECC_PERM_NONE;
-        bool matched = protecc_match_path(compiled, "/etc/hosts", 0, &perms);
+        bool matched = protecc_match_path(compiled, "/etc/hosts", PROTECC_PERM_NONE);
         TEST_ASSERT(!matched, "Old pattern should not match after reset");
     }
 
