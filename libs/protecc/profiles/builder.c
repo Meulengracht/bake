@@ -44,12 +44,12 @@ static protecc_error_t __builder_reserve(
     void**  storage,
     size_t* capacity,
     size_t  count,
-    size_t  element_size)
+    size_t  elementSize)
 {
-    size_t new_capacity;
-    void* resized;
+    size_t newCapacity;
+    void*  resized;
 
-    if (!storage || !capacity || element_size == 0) {
+    if (storage == NULL || capacity == NULL || elementSize == 0) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -57,47 +57,43 @@ static protecc_error_t __builder_reserve(
         return PROTECC_OK;
     }
 
-    new_capacity = (*capacity == 0) ? 8 : *capacity;
-    while (new_capacity < count) {
-        if (new_capacity > (SIZE_MAX / 2)) {
+    newCapacity = (*capacity == 0) ? 8 : *capacity;
+    while (newCapacity < count) {
+        if (newCapacity > (SIZE_MAX / 2)) {
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
-        new_capacity *= 2;
+        newCapacity *= 2;
     }
 
-    if (new_capacity > (SIZE_MAX / element_size)) {
+    if (newCapacity > (SIZE_MAX / elementSize)) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
-    resized = realloc(*storage, new_capacity * element_size);
-    if (!resized) {
+    resized = realloc(*storage, newCapacity * elementSize);
+    if (resized == NULL) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
     *storage = resized;
-    *capacity = new_capacity;
+    *capacity = newCapacity;
     return PROTECC_OK;
 }
 
 static void __free_builder_patterns(protecc_profile_builder_t* builder)
 {
-    if (!builder || !builder->patterns) {
+    if (builder->patterns == NULL) {
         return;
     }
 
     for (size_t i = 0; i < builder->pattern_count; i++) {
         free((void*)builder->patterns[i].pattern);
     }
-
     free(builder->patterns);
-    builder->patterns = NULL;
-    builder->pattern_count = 0;
-    builder->pattern_capacity = 0;
 }
 
 static void __free_builder_net_rules(protecc_profile_builder_t* builder)
 {
-    if (!builder || !builder->net_rules) {
+    if (builder->net_rules == NULL) {
         return;
     }
 
@@ -105,16 +101,12 @@ static void __free_builder_net_rules(protecc_profile_builder_t* builder)
         free((void*)builder->net_rules[i].ip_pattern);
         free((void*)builder->net_rules[i].unix_path_pattern);
     }
-
     free(builder->net_rules);
-    builder->net_rules = NULL;
-    builder->net_rule_count = 0;
-    builder->net_rule_capacity = 0;
 }
 
 static void __free_builder_mount_rules(protecc_profile_builder_t* builder)
 {
-    if (!builder || !builder->mount_rules) {
+    if (builder->mount_rules == NULL) {
         return;
     }
 
@@ -124,11 +116,7 @@ static void __free_builder_mount_rules(protecc_profile_builder_t* builder)
         free((void*)builder->mount_rules[i].fstype_pattern);
         free((void*)builder->mount_rules[i].options_pattern);
     }
-
     free(builder->mount_rules);
-    builder->mount_rules = NULL;
-    builder->mount_rule_count = 0;
-    builder->mount_rule_capacity = 0;
 }
 
 protecc_profile_builder_t* protecc_profile_builder_create(void)
@@ -138,18 +126,19 @@ protecc_profile_builder_t* protecc_profile_builder_create(void)
 
 void protecc_profile_builder_reset(protecc_profile_builder_t* builder)
 {
-    if (!builder) {
+    if (builder == NULL) {
         return;
     }
 
     __free_builder_patterns(builder);
     __free_builder_net_rules(builder);
     __free_builder_mount_rules(builder);
+    memset(builder, 0, sizeof(protecc_profile_builder_t));
 }
 
 void protecc_profile_builder_destroy(protecc_profile_builder_t* builder)
 {
-    if (!builder) {
+    if (builder == NULL) {
         return;
     }
 
@@ -162,35 +151,36 @@ protecc_error_t protecc_profile_builder_add_patterns(
     const protecc_pattern_t*   patterns,
     size_t                     count)
 {
-    protecc_error_t reserve_err;
+    protecc_error_t err;
 
-    if (!builder || !patterns || count == 0) {
+    if (builder == NULL || patterns == NULL || count == 0) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    reserve_err = __builder_reserve((void**)&builder->patterns,
-                                    &builder->pattern_capacity,
-                                    builder->pattern_count + count,
-                                    sizeof(protecc_pattern_t));
-    if (reserve_err != PROTECC_OK) {
-        return reserve_err;
+    err = __builder_reserve(
+        (void**)&builder->patterns,
+        &builder->pattern_capacity,
+        builder->pattern_count + count,
+        sizeof(protecc_pattern_t)
+    );
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     for (size_t i = 0; i < count; i++) {
         char* pattern_copy;
-        protecc_error_t validation_err;
 
-        if (!patterns[i].pattern) {
+        if (patterns[i].pattern == NULL) {
             return PROTECC_ERROR_INVALID_ARGUMENT;
         }
 
-        validation_err = protecc_validate_pattern(patterns[i].pattern);
-        if (validation_err != PROTECC_OK) {
-            return validation_err;
+        err = protecc_validate_pattern(patterns[i].pattern);
+        if (err != PROTECC_OK) {
+            return err;
         }
 
         pattern_copy = platform_strdup(patterns[i].pattern);
-        if (!pattern_copy) {
+        if (pattern_copy == NULL) {
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
 
@@ -206,28 +196,27 @@ protecc_error_t protecc_profile_builder_add_net_rule(
     protecc_profile_builder_t* builder,
     const protecc_net_rule_t*  rule)
 {
-    protecc_error_t reserve_err;
-    protecc_error_t validate_err;
     protecc_net_rule_t copy;
+    protecc_error_t    err;
 
-    if (!builder || !rule) {
+    if (builder == NULL || rule == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    validate_err = __validate_net_rule(rule);
-    if (validate_err != PROTECC_OK) {
-        return validate_err;
+    err = __validate_net_rule(rule);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
-    reserve_err = __builder_reserve((void**)&builder->net_rules,
+    err = __builder_reserve((void**)&builder->net_rules,
                                     &builder->net_rule_capacity,
                                     builder->net_rule_count + 1,
                                     sizeof(protecc_net_rule_t));
-    if (reserve_err != PROTECC_OK) {
-        return reserve_err;
+    if (err != PROTECC_OK) {
+        return err;
     }
 
-    copy = *rule;
+    memcpy(&copy, rule, sizeof(protecc_net_rule_t));
     copy.ip_pattern = rule->ip_pattern ? platform_strdup(rule->ip_pattern) : NULL;
     copy.unix_path_pattern = rule->unix_path_pattern ? platform_strdup(rule->unix_path_pattern) : NULL;
 
@@ -246,28 +235,27 @@ protecc_error_t protecc_profile_builder_add_mount_rule(
     protecc_profile_builder_t*  builder,
     const protecc_mount_rule_t* rule)
 {
-    protecc_error_t reserve_err;
-    protecc_error_t validate_err;
+    protecc_error_t      err;
     protecc_mount_rule_t copy;
 
-    if (!builder || !rule) {
+    if (builder == NULL || rule == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    validate_err = __validate_mount_rule(rule);
-    if (validate_err != PROTECC_OK) {
-        return validate_err;
+    err = __validate_mount_rule(rule);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
-    reserve_err = __builder_reserve((void**)&builder->mount_rules,
+    err = __builder_reserve((void**)&builder->mount_rules,
                                     &builder->mount_rule_capacity,
                                     builder->mount_rule_count + 1,
                                     sizeof(protecc_mount_rule_t));
-    if (reserve_err != PROTECC_OK) {
-        return reserve_err;
+    if (err != PROTECC_OK) {
+        return err;
     }
 
-    copy = *rule;
+    memcpy(&copy, rule, sizeof(protecc_mount_rule_t));
     copy.source_pattern = rule->source_pattern ? platform_strdup(rule->source_pattern) : NULL;
     copy.target_pattern = rule->target_pattern ? platform_strdup(rule->target_pattern) : NULL;
     copy.fstype_pattern = rule->fstype_pattern ? platform_strdup(rule->fstype_pattern) : NULL;
@@ -297,9 +285,9 @@ protecc_error_t protecc_profile_builder_add_mount_pattern(
 
 static protecc_error_t __copy_builder_net_rules(
     const protecc_profile_builder_t* builder,
-    protecc_profile_t*              compiled)
+    protecc_profile_t*               profile)
 {
-    if (!builder || !compiled) {
+    if (builder == NULL || profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -307,23 +295,23 @@ static protecc_error_t __copy_builder_net_rules(
         return PROTECC_OK;
     }
 
-    compiled->net_rules = calloc(builder->net_rule_count, sizeof(protecc_net_rule_t));
-    if (!compiled->net_rules) {
+    profile->net_rules = calloc(builder->net_rule_count, sizeof(protecc_net_rule_t));
+    if (!profile->net_rules) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
-    compiled->net_rule_count = builder->net_rule_count;
+    profile->net_rule_count = builder->net_rule_count;
     for (size_t i = 0; i < builder->net_rule_count; i++) {
-        compiled->net_rules[i] = builder->net_rules[i];
-        compiled->net_rules[i].ip_pattern = builder->net_rules[i].ip_pattern
+        profile->net_rules[i] = builder->net_rules[i];
+        profile->net_rules[i].ip_pattern = builder->net_rules[i].ip_pattern
             ? platform_strdup(builder->net_rules[i].ip_pattern)
             : NULL;
-        compiled->net_rules[i].unix_path_pattern = builder->net_rules[i].unix_path_pattern
+        profile->net_rules[i].unix_path_pattern = builder->net_rules[i].unix_path_pattern
             ? platform_strdup(builder->net_rules[i].unix_path_pattern)
             : NULL;
 
-        if ((builder->net_rules[i].ip_pattern && !compiled->net_rules[i].ip_pattern)
-            || (builder->net_rules[i].unix_path_pattern && !compiled->net_rules[i].unix_path_pattern)) {
+        if ((builder->net_rules[i].ip_pattern && !profile->net_rules[i].ip_pattern)
+            || (builder->net_rules[i].unix_path_pattern && !profile->net_rules[i].unix_path_pattern)) {
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
     }
@@ -333,9 +321,9 @@ static protecc_error_t __copy_builder_net_rules(
 
 static protecc_error_t __copy_builder_mount_rules(
     const protecc_profile_builder_t* builder,
-    protecc_profile_t*              compiled)
+    protecc_profile_t*               profile)
 {
-    if (!builder || !compiled) {
+    if (builder == NULL || profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -343,31 +331,31 @@ static protecc_error_t __copy_builder_mount_rules(
         return PROTECC_OK;
     }
 
-    compiled->mount_rules = calloc(builder->mount_rule_count, sizeof(protecc_mount_rule_t));
-    if (!compiled->mount_rules) {
+    profile->mount_rules = calloc(builder->mount_rule_count, sizeof(protecc_mount_rule_t));
+    if (!profile->mount_rules) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
-    compiled->mount_rule_count = builder->mount_rule_count;
+    profile->mount_rule_count = builder->mount_rule_count;
     for (size_t i = 0; i < builder->mount_rule_count; i++) {
-        compiled->mount_rules[i] = builder->mount_rules[i];
-        compiled->mount_rules[i].source_pattern = builder->mount_rules[i].source_pattern
+        memcpy(&profile->mount_rules[i], &builder->mount_rules[i], sizeof(protecc_mount_rule_t));
+        profile->mount_rules[i].source_pattern = builder->mount_rules[i].source_pattern
             ? platform_strdup(builder->mount_rules[i].source_pattern)
             : NULL;
-        compiled->mount_rules[i].target_pattern = builder->mount_rules[i].target_pattern
+        profile->mount_rules[i].target_pattern = builder->mount_rules[i].target_pattern
             ? platform_strdup(builder->mount_rules[i].target_pattern)
             : NULL;
-        compiled->mount_rules[i].fstype_pattern = builder->mount_rules[i].fstype_pattern
+        profile->mount_rules[i].fstype_pattern = builder->mount_rules[i].fstype_pattern
             ? platform_strdup(builder->mount_rules[i].fstype_pattern)
             : NULL;
-        compiled->mount_rules[i].options_pattern = builder->mount_rules[i].options_pattern
+        profile->mount_rules[i].options_pattern = builder->mount_rules[i].options_pattern
             ? platform_strdup(builder->mount_rules[i].options_pattern)
             : NULL;
 
-        if ((builder->mount_rules[i].source_pattern && !compiled->mount_rules[i].source_pattern)
-            || (builder->mount_rules[i].target_pattern && !compiled->mount_rules[i].target_pattern)
-            || (builder->mount_rules[i].fstype_pattern && !compiled->mount_rules[i].fstype_pattern)
-            || (builder->mount_rules[i].options_pattern && !compiled->mount_rules[i].options_pattern)) {
+        if ((builder->mount_rules[i].source_pattern && !profile->mount_rules[i].source_pattern)
+            || (builder->mount_rules[i].target_pattern && !profile->mount_rules[i].target_pattern)
+            || (builder->mount_rules[i].fstype_pattern && !profile->mount_rules[i].fstype_pattern)
+            || (builder->mount_rules[i].options_pattern && !profile->mount_rules[i].options_pattern)) {
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
     }
@@ -376,51 +364,52 @@ static protecc_error_t __copy_builder_mount_rules(
 }
 
 static protecc_error_t __build_trie_patterns(
-    protecc_profile_t*             comp,
-    const protecc_pattern_t*        patterns,
-    size_t                          count,
-    uint32_t                        flags)
+    protecc_profile_t*       profile,
+    const protecc_pattern_t* patterns,
+    size_t                   count,
+    uint32_t                 flags)
 {
-    if (!comp || !patterns) {
+    if (patterns == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    comp->root = protecc_node_new(NODE_LITERAL);
-    if (!comp->root) {
+    profile->root = protecc_node_new(NODE_LITERAL);
+    if (profile->root == NULL) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
     for (size_t i = 0; i < count; i++) {
         protecc_node_t* terminal = NULL;
-        protecc_error_t err = protecc_parse_pattern(patterns[i].pattern, comp->root, flags, &terminal);
+        protecc_error_t err = protecc_parse_pattern(patterns[i].pattern, profile->root, flags, &terminal);
         if (err != PROTECC_OK) {
             return err;
         }
-        if (terminal) {
+        if (terminal != NULL) {
             terminal->perms |= patterns[i].perms;
         }
     }
     return PROTECC_OK;
 }
 
-static protecc_error_t __finalize_compilation(protecc_profile_t* comp) {
-    protecc_error_t stats_err;
+static protecc_error_t __finalize_compilation(protecc_profile_t* profile)
+{
+    protecc_error_t err;
 
-    if (!comp) {
+    if (profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    stats_err = __update_stats_trie_profile(comp);
-    if (stats_err != PROTECC_OK) {
-        return stats_err;
+    err = __update_stats_trie_profile(profile);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
-    if (comp->stats.num_nodes > comp->config.max_states) {
+    if (profile->stats.num_nodes > profile->config.max_states) {
         return PROTECC_ERROR_COMPILE_FAILED;
     }
 
-    if (comp->config.mode == PROTECC_COMPILE_MODE_DFA) {
-        return protecc_profile_setup_dfa(comp);
+    if (profile->config.mode == PROTECC_COMPILE_MODE_DFA) {
+        return protecc_profile_setup_dfa(profile);
     }
 
     return PROTECC_OK;
@@ -428,13 +417,12 @@ static protecc_error_t __finalize_compilation(protecc_profile_t* comp) {
 
 static protecc_error_t __compile_path_domain(
     const protecc_profile_builder_t* builder,
-    protecc_profile_t*              compiled,
+    protecc_profile_t*               profile,
     uint32_t                         flags)
 {
-    protecc_error_t build_err;
-    protecc_error_t finalize_err;
+    protecc_error_t err;
 
-    if (!builder || !compiled) {
+    if (builder == NULL || profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -442,14 +430,14 @@ static protecc_error_t __compile_path_domain(
         return PROTECC_OK;
     }
 
-    build_err = __build_trie_patterns(compiled, builder->patterns, builder->pattern_count, flags);
-    if (build_err != PROTECC_OK) {
-        return build_err;
+    err = __build_trie_patterns(profile, builder->patterns, builder->pattern_count, flags);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
-    finalize_err = __finalize_compilation(compiled);
-    if (finalize_err != PROTECC_OK) {
-        return finalize_err;
+    err = __finalize_compilation(profile);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     return PROTECC_OK;
@@ -457,24 +445,22 @@ static protecc_error_t __compile_path_domain(
 
 static protecc_error_t __compile_net_domain(
     const protecc_profile_builder_t* builder,
-    protecc_profile_t*              compiled)
+    protecc_profile_t*              profile)
 {
-    if (!builder || !compiled) {
+    if (builder == NULL || profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
-
-    return __copy_builder_net_rules(builder, compiled);
+    return __copy_builder_net_rules(builder, profile);
 }
 
 static protecc_error_t __compile_mount_domain(
     const protecc_profile_builder_t* builder,
-    protecc_profile_t*              compiled)
+    protecc_profile_t*              profile)
 {
-    if (!builder || !compiled) {
+    if (builder == NULL || profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
-
-    return __copy_builder_mount_rules(builder, compiled);
+    return __copy_builder_mount_rules(builder, profile);
 }
 
 static protecc_error_t __validate_compile_inputs(
@@ -482,7 +468,7 @@ static protecc_error_t __validate_compile_inputs(
     size_t                          count,
     const protecc_compile_config_t* cfg)
 {
-    if (!patterns || !cfg || count == 0) {
+    if (patterns == NULL || cfg == NULL || count == 0) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -491,14 +477,14 @@ static protecc_error_t __validate_compile_inputs(
     }
 
     for (size_t i = 0; i < count; i++) {
-        size_t pattern_length;
+        size_t length;
 
         if (patterns[i].pattern == NULL) {
             return PROTECC_ERROR_INVALID_ARGUMENT;
         }
 
-        pattern_length = strlen(patterns[i].pattern);
-        if (pattern_length > cfg->max_pattern_length) {
+        length = strlen(patterns[i].pattern);
+        if (length > cfg->max_pattern_length) {
             return PROTECC_ERROR_INVALID_ARGUMENT;
         }
     }
@@ -507,27 +493,27 @@ static protecc_error_t __validate_compile_inputs(
 }
 
 static protecc_error_t __resolve_compile_config(
-    const protecc_compile_config_t* input,
-    protecc_compile_config_t* local,
-    const protecc_compile_config_t** cfg_out)
+    const protecc_compile_config_t*  input,
+    protecc_compile_config_t*        local,
+    const protecc_compile_config_t** configOut)
 {
-    if (!local || !cfg_out) {
+    if (local == NULL || configOut == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
     if (input == NULL) {
         protecc_compile_config_default(local);
-        *cfg_out = local;
+        *configOut = local;
     } else {
-        *cfg_out = input;
+        *configOut = input;
     }
 
-    if ((*cfg_out)->mode != PROTECC_COMPILE_MODE_TRIE && (*cfg_out)->mode != PROTECC_COMPILE_MODE_DFA) {
+    if ((*configOut)->mode != PROTECC_COMPILE_MODE_TRIE && (*configOut)->mode != PROTECC_COMPILE_MODE_DFA) {
         return PROTECC_ERROR_COMPILE_FAILED;
     }
 
-    if ((*cfg_out)->max_patterns == 0 || (*cfg_out)->max_pattern_length == 0 ||
-        (*cfg_out)->max_states == 0 || (*cfg_out)->max_classes == 0) {
+    if ((*configOut)->max_patterns == 0 || (*configOut)->max_pattern_length == 0 ||
+        (*configOut)->max_states == 0 || (*configOut)->max_classes == 0) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -538,18 +524,14 @@ protecc_error_t protecc_profile_compile(
     const protecc_profile_builder_t* builder,
     uint32_t                         flags,
     const protecc_compile_config_t*  config,
-    protecc_profile_t**             compiled)
+    protecc_profile_t**              compiled)
 {
-    protecc_compile_config_t local_config;
+    protecc_compile_config_t        localConfig;
     const protecc_compile_config_t* cfg;
-    protecc_error_t config_err;
-    protecc_error_t input_err;
-    protecc_error_t path_err;
-    protecc_error_t net_err;
-    protecc_error_t mount_err;
-    protecc_profile_t* comp;
+    protecc_error_t                 err;
+    protecc_profile_t*              profile;
 
-    if (!builder || compiled == NULL) {
+    if (builder == NULL || compiled == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -559,45 +541,45 @@ protecc_error_t protecc_profile_compile(
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    config_err = __resolve_compile_config(config, &local_config, &cfg);
-    if (config_err != PROTECC_OK) {
-        return config_err;
+    err = __resolve_compile_config(config, &localConfig, &cfg);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     if (builder->pattern_count > 0) {
-        input_err = __validate_compile_inputs(builder->patterns, builder->pattern_count, cfg);
-        if (input_err != PROTECC_OK) {
-            return input_err;
+        err = __validate_compile_inputs(builder->patterns, builder->pattern_count, cfg);
+        if (err != PROTECC_OK) {
+            return err;
         }
     }
     
-    comp = calloc(1, sizeof(protecc_profile_t));
-    if (!comp) {
+    profile = calloc(1, sizeof(protecc_profile_t));
+    if (!profile) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
-    comp->flags = flags;
-    comp->config = *cfg;
-    comp->stats.num_patterns = builder->pattern_count;
+    profile->flags = flags;
+    profile->config = *cfg;
+    profile->stats.num_patterns = builder->pattern_count;
 
-    path_err = __compile_path_domain(builder, comp, flags);
-    if (path_err != PROTECC_OK) {
-        protecc_free(comp);
-        return path_err;
+    err = __compile_path_domain(builder, profile, flags);
+    if (err != PROTECC_OK) {
+        protecc_free(profile);
+        return err;
     }
 
-    net_err = __compile_net_domain(builder, comp);
-    if (net_err != PROTECC_OK) {
-        protecc_free(comp);
-        return net_err;
+    err = __compile_net_domain(builder, profile);
+    if (err != PROTECC_OK) {
+        protecc_free(profile);
+        return err;
     }
 
-    mount_err = __compile_mount_domain(builder, comp);
-    if (mount_err != PROTECC_OK) {
-        protecc_free(comp);
-        return mount_err;
+    err = __compile_mount_domain(builder, profile);
+    if (err != PROTECC_OK) {
+        protecc_free(profile);
+        return err;
     }
     
-    *compiled = comp;
+    *compiled = profile;
     return PROTECC_OK;
 }

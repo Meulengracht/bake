@@ -135,19 +135,19 @@ int test_profile_builder_domain_only_and_negatives(void)
 
             raw_rules[0].action = 0xFFu;
             err = protecc_profile_validate_net_blob(net_buffer, net_export_size);
-            TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT,
+            TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB,
                         "Expected invalid net action to fail validation");
             raw_rules[0].action = saved_action;
 
             raw_rules[0].protocol = 0xFEu;
             err = protecc_profile_validate_net_blob(net_buffer, net_export_size);
-            TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT,
+            TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB,
                         "Expected invalid net protocol to fail validation");
             raw_rules[0].protocol = saved_protocol;
 
             raw_rules[0].family = 0xFDu;
             err = protecc_profile_validate_net_blob(net_buffer, net_export_size);
-            TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT,
+            TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB,
                         "Expected invalid net family to fail validation");
             raw_rules[0].family = saved_family;
         }
@@ -188,7 +188,7 @@ int test_profile_builder_domain_only_and_negatives(void)
             uint8_t saved_action = raw_rules[0].action;
             raw_rules[0].action = 0xEEu;
             err = protecc_profile_validate_mount_blob(mount_buffer, mount_export_size);
-            TEST_ASSERT(err == PROTECC_ERROR_INVALID_ARGUMENT,
+            TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB,
                         "Expected invalid mount action to fail validation");
             raw_rules[0].action = saved_action;
         }

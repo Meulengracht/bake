@@ -24,44 +24,75 @@
 
 #include "../private.h"
 
-static protecc_error_t __export_mount_profile(
-    const protecc_profile_t* compiled,
-    void*                     buffer,
-    size_t                    buffer_size,
-    size_t*                   bytes_written)
+static protecc_error_t __export_mount_rule(
+    const protecc_profile_t* profile,
+    void*                    buffer,
+    size_t                   stringsSize)
 {
-    size_t strings_size = 0;
-    size_t required_size;
+    uint8_t*                      out = (uint8_t*)buffer;
+    protecc_mount_profile_rule_t* rules =
+        (protecc_mount_profile_rule_t*)(out + sizeof(protecc_mount_profile_header_t));
+    uint8_t*                      strings =
+        out + sizeof(protecc_mount_profile_header_t)
+        + (profile->mount_rule_count * sizeof(protecc_mount_profile_rule_t));
+    size_t                        cursor = 0;
+
+    memset(rules, 0, profile->mount_rule_count * sizeof(protecc_mount_profile_rule_t));
+
+    for (size_t i = 0; i < profile->mount_rule_count; i++) {
+        rules[i].action = (uint8_t)profile->mount_rules[i].action;
+        rules[i].flags = profile->mount_rules[i].flags;
+        rules[i].source_pattern_off = __blob_string_write(strings, &cursor, profile->mount_rules[i].source_pattern);
+        rules[i].target_pattern_off = __blob_string_write(strings, &cursor, profile->mount_rules[i].target_pattern);
+        rules[i].fstype_pattern_off = __blob_string_write(strings, &cursor, profile->mount_rules[i].fstype_pattern);
+        rules[i].options_pattern_off = __blob_string_write(strings, &cursor, profile->mount_rules[i].options_pattern);
+    }
+
+    if (cursor != stringsSize) {
+        return PROTECC_ERROR_COMPILE_FAILED;
+    }
+    return PROTECC_OK;
+}
+
+static protecc_error_t __export_mount_profile(
+    const protecc_profile_t* profile,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten)
+{
+    size_t                         stringsSize = 0;
+    size_t                         requiredSize;
     protecc_mount_profile_header_t header;
+    protecc_error_t                err;
 
-    if (!compiled) {
+    if (profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    for (size_t i = 0; i < compiled->mount_rule_count; i++) {
-        strings_size += __blob_string_measure(compiled->mount_rules[i].source_pattern);
-        strings_size += __blob_string_measure(compiled->mount_rules[i].target_pattern);
-        strings_size += __blob_string_measure(compiled->mount_rules[i].fstype_pattern);
-        strings_size += __blob_string_measure(compiled->mount_rules[i].options_pattern);
+    for (size_t i = 0; i < profile->mount_rule_count; i++) {
+        stringsSize += __blob_string_measure(profile->mount_rules[i].source_pattern);
+        stringsSize += __blob_string_measure(profile->mount_rules[i].target_pattern);
+        stringsSize += __blob_string_measure(profile->mount_rules[i].fstype_pattern);
+        stringsSize += __blob_string_measure(profile->mount_rules[i].options_pattern);
     }
 
-    required_size = sizeof(protecc_mount_profile_header_t)
-        + (compiled->mount_rule_count * sizeof(protecc_mount_profile_rule_t))
-        + strings_size;
+    requiredSize = sizeof(protecc_mount_profile_header_t)
+        + (profile->mount_rule_count * sizeof(protecc_mount_profile_rule_t))
+        + stringsSize;
 
-    if (required_size > UINT32_MAX || compiled->mount_rule_count > UINT32_MAX || strings_size > UINT32_MAX) {
+    if (requiredSize > UINT32_MAX || profile->mount_rule_count > UINT32_MAX || stringsSize > UINT32_MAX) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (bytes_written) {
-        *bytes_written = required_size;
+    if (bytesWritten) {
+        *bytesWritten = requiredSize;
     }
 
-    if (!buffer) {
+    if (buffer == NULL) {
         return PROTECC_OK;
     }
 
-    if (buffer_size < required_size) {
+    if (bufferSize < requiredSize) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -69,46 +100,26 @@ static protecc_error_t __export_mount_profile(
     header.magic = PROTECC_MOUNT_PROFILE_MAGIC;
     header.version = PROTECC_MOUNT_PROFILE_VERSION;
     header.flags = 0;
-    header.rule_count = (uint32_t)compiled->mount_rule_count;
-    header.strings_size = (uint32_t)strings_size;
+    header.rule_count = (uint32_t)profile->mount_rule_count;
+    header.strings_size = (uint32_t)stringsSize;
 
     memcpy(buffer, &header, sizeof(header));
 
-    {
-        uint8_t* out = (uint8_t*)buffer;
-        protecc_mount_profile_rule_t* out_rules =
-            (protecc_mount_profile_rule_t*)(out + sizeof(protecc_mount_profile_header_t));
-        uint8_t* out_strings =
-            out + sizeof(protecc_mount_profile_header_t)
-            + (compiled->mount_rule_count * sizeof(protecc_mount_profile_rule_t));
-        size_t cursor = 0;
-
-        memset(out_rules, 0, compiled->mount_rule_count * sizeof(protecc_mount_profile_rule_t));
-
-        for (size_t i = 0; i < compiled->mount_rule_count; i++) {
-            out_rules[i].action = (uint8_t)compiled->mount_rules[i].action;
-            out_rules[i].flags = compiled->mount_rules[i].flags;
-            out_rules[i].source_pattern_off = __blob_string_write(out_strings, &cursor, compiled->mount_rules[i].source_pattern);
-            out_rules[i].target_pattern_off = __blob_string_write(out_strings, &cursor, compiled->mount_rules[i].target_pattern);
-            out_rules[i].fstype_pattern_off = __blob_string_write(out_strings, &cursor, compiled->mount_rules[i].fstype_pattern);
-            out_rules[i].options_pattern_off = __blob_string_write(out_strings, &cursor, compiled->mount_rules[i].options_pattern);
-        }
-
-        if (cursor != strings_size) {
-            return PROTECC_ERROR_COMPILE_FAILED;
-        }
+    err = __export_mount_rule(profile, buffer, stringsSize);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     return PROTECC_OK;
 }
 
 protecc_error_t protecc_profile_export_mounts(
-    const protecc_profile_t* compiled,
-    void*                     buffer,
-    size_t                    bufferSize,
-    size_t*                   bytesWritten)
+    const protecc_profile_t* profile,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten)
 {
-    return __export_mount_profile(compiled, buffer, bufferSize, bytesWritten);
+    return __export_mount_profile(profile, buffer, bufferSize, bytesWritten);
 }
 
 protecc_error_t protecc_profile_import_mount_blob(
@@ -117,22 +128,21 @@ protecc_error_t protecc_profile_import_mount_blob(
     protecc_mount_rule_t** rulesOut,
     size_t*                countOut)
 {
-    const uint8_t* base;
-    protecc_mount_profile_header_t header;
-    const protecc_mount_profile_rule_t* in_rules;
-    const uint8_t* strings;
-    protecc_mount_rule_t* out_rules;
-    size_t rules_size;
+    const uint8_t*                      base;
+    protecc_mount_profile_header_t      header;
+    const protecc_mount_profile_rule_t* inRules;
+    const uint8_t*                      strings;
+    protecc_mount_rule_t*               outRules;
+    size_t                              rulesSize;
+    protecc_error_t                     err;
 
-    if (!buffer || !rulesOut || !countOut) {
+    if (buffer == NULL || rulesOut == NULL || countOut == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    *rulesOut = NULL;
-    *countOut = 0;
-
-    if (protecc_profile_validate_mount_blob(buffer, bufferSize) != PROTECC_OK) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    err = protecc_profile_validate_mount_blob(buffer, bufferSize);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     base = (const uint8_t*)buffer;
@@ -142,34 +152,34 @@ protecc_error_t protecc_profile_import_mount_blob(
         return PROTECC_OK;
     }
 
-    rules_size = (size_t)header.rule_count * sizeof(protecc_mount_profile_rule_t);
-    in_rules = (const protecc_mount_profile_rule_t*)(base + sizeof(protecc_mount_profile_header_t));
-    strings = base + sizeof(protecc_mount_profile_header_t) + rules_size;
+    rulesSize = (size_t)header.rule_count * sizeof(protecc_mount_profile_rule_t);
+    inRules = (const protecc_mount_profile_rule_t*)(base + sizeof(protecc_mount_profile_header_t));
+    strings = base + sizeof(protecc_mount_profile_header_t) + rulesSize;
 
-    out_rules = calloc(header.rule_count, sizeof(protecc_mount_rule_t));
-    if (!out_rules) {
+    outRules = calloc(header.rule_count, sizeof(protecc_mount_rule_t));
+    if (!outRules) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
     for (uint32_t i = 0; i < header.rule_count; i++) {
-        out_rules[i].action = (protecc_action_t)in_rules[i].action;
-        out_rules[i].flags = in_rules[i].flags;
+        outRules[i].action = (protecc_action_t)inRules[i].action;
+        outRules[i].flags = inRules[i].flags;
 
-        out_rules[i].source_pattern = __blob_string_dup(strings, in_rules[i].source_pattern_off);
-        out_rules[i].target_pattern = __blob_string_dup(strings, in_rules[i].target_pattern_off);
-        out_rules[i].fstype_pattern = __blob_string_dup(strings, in_rules[i].fstype_pattern_off);
-        out_rules[i].options_pattern = __blob_string_dup(strings, in_rules[i].options_pattern_off);
+        outRules[i].source_pattern = __blob_string_dup(strings, inRules[i].source_pattern_off);
+        outRules[i].target_pattern = __blob_string_dup(strings, inRules[i].target_pattern_off);
+        outRules[i].fstype_pattern = __blob_string_dup(strings, inRules[i].fstype_pattern_off);
+        outRules[i].options_pattern = __blob_string_dup(strings, inRules[i].options_pattern_off);
 
-        if ((in_rules[i].source_pattern_off != PROTECC_PROFILE_STRING_NONE && !out_rules[i].source_pattern)
-            || (in_rules[i].target_pattern_off != PROTECC_PROFILE_STRING_NONE && !out_rules[i].target_pattern)
-            || (in_rules[i].fstype_pattern_off != PROTECC_PROFILE_STRING_NONE && !out_rules[i].fstype_pattern)
-            || (in_rules[i].options_pattern_off != PROTECC_PROFILE_STRING_NONE && !out_rules[i].options_pattern)) {
-            protecc_profile_free_mount_rules(out_rules, i + 1u);
+        if ((inRules[i].source_pattern_off != PROTECC_PROFILE_STRING_NONE && !outRules[i].source_pattern)
+            || (inRules[i].target_pattern_off != PROTECC_PROFILE_STRING_NONE && !outRules[i].target_pattern)
+            || (inRules[i].fstype_pattern_off != PROTECC_PROFILE_STRING_NONE && !outRules[i].fstype_pattern)
+            || (inRules[i].options_pattern_off != PROTECC_PROFILE_STRING_NONE && !outRules[i].options_pattern)) {
+            protecc_profile_free_mount_rules(outRules, i + 1u);
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
     }
 
-    *rulesOut = out_rules;
+    *rulesOut = outRules;
     *countOut = header.rule_count;
     return PROTECC_OK;
 }
@@ -180,13 +190,15 @@ protecc_error_t protecc_profile_mount_view_init(
     protecc_mount_blob_view_t* viewOut)
 {
     protecc_mount_profile_header_t header;
+    protecc_error_t                err;
 
-    if (!buffer || !viewOut) {
+    if (buffer == NULL || viewOut == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (protecc_profile_validate_mount_blob(buffer, bufferSize) != PROTECC_OK) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    err = protecc_profile_validate_mount_blob(buffer, bufferSize);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     memcpy(&header, buffer, sizeof(header));
@@ -202,14 +214,15 @@ protecc_error_t protecc_profile_mount_view_get_rule(
     size_t                           index,
     protecc_mount_rule_view_t*       ruleOut)
 {
-    const uint8_t* base;
-    protecc_mount_profile_header_t header;
-    size_t rules_size;
+    const uint8_t*                      base;
+    protecc_mount_profile_header_t      header;
+    size_t                              rulesSize;
     const protecc_mount_profile_rule_t* rules;
-    const uint8_t* strings;
-    const protecc_mount_profile_rule_t* in_rule;
+    const uint8_t*                      strings;
+    const protecc_mount_profile_rule_t* inRule;
+    protecc_error_t                     err;
 
-    if (!view || !ruleOut || !view->blob) {
+    if (view == NULL || ruleOut == NULL || view->blob == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -217,24 +230,25 @@ protecc_error_t protecc_profile_mount_view_get_rule(
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (protecc_profile_validate_mount_blob(view->blob, view->blob_size) != PROTECC_OK) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    err = protecc_profile_validate_mount_blob(view->blob, view->blob_size);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     base = (const uint8_t*)view->blob;
     memcpy(&header, base, sizeof(header));
 
-    rules_size = (size_t)header.rule_count * sizeof(protecc_mount_profile_rule_t);
+    rulesSize = (size_t)header.rule_count * sizeof(protecc_mount_profile_rule_t);
     rules = (const protecc_mount_profile_rule_t*)(base + sizeof(protecc_mount_profile_header_t));
-    strings = base + sizeof(protecc_mount_profile_header_t) + rules_size;
-    in_rule = &rules[index];
+    strings = base + sizeof(protecc_mount_profile_header_t) + rulesSize;
+    inRule = &rules[index];
 
-    ruleOut->action = (protecc_action_t)in_rule->action;
-    ruleOut->flags = in_rule->flags;
-    ruleOut->source_pattern = __blob_string_ptr(strings, in_rule->source_pattern_off);
-    ruleOut->target_pattern = __blob_string_ptr(strings, in_rule->target_pattern_off);
-    ruleOut->fstype_pattern = __blob_string_ptr(strings, in_rule->fstype_pattern_off);
-    ruleOut->options_pattern = __blob_string_ptr(strings, in_rule->options_pattern_off);
+    ruleOut->action = (protecc_action_t)inRule->action;
+    ruleOut->flags = inRule->flags;
+    ruleOut->source_pattern = __blob_string_ptr(strings, inRule->source_pattern_off);
+    ruleOut->target_pattern = __blob_string_ptr(strings, inRule->target_pattern_off);
+    ruleOut->fstype_pattern = __blob_string_ptr(strings, inRule->fstype_pattern_off);
+    ruleOut->options_pattern = __blob_string_ptr(strings, inRule->options_pattern_off);
     return PROTECC_OK;
 }
 
@@ -243,11 +257,11 @@ protecc_error_t protecc_profile_mount_view_first(
     size_t*                          iterIndexInOut,
     protecc_mount_rule_view_t*       ruleOut)
 {
-    if (!iterIndexInOut) {
+    if (iterIndexInOut == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (!view || view->rule_count == 0) {
+    if (view == NULL || view->rule_count == 0) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -260,42 +274,38 @@ protecc_error_t protecc_profile_mount_view_next(
     size_t*                          iterIndexInOut,
     protecc_mount_rule_view_t*       ruleOut)
 {
-    size_t next_index;
+    size_t nextIndex;
 
-    if (!view || !iterIndexInOut) {
+    if (view == NULL || iterIndexInOut == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    next_index = *iterIndexInOut + 1u;
-    if (next_index >= view->rule_count) {
+    nextIndex = *iterIndexInOut + 1u;
+    if (nextIndex >= view->rule_count) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    *iterIndexInOut = next_index;
-    return protecc_profile_mount_view_get_rule(view, next_index, ruleOut);
+    *iterIndexInOut = nextIndex;
+    return protecc_profile_mount_view_get_rule(view, nextIndex, ruleOut);
 }
 
 protecc_error_t __validate_mount_rule(const protecc_mount_rule_t* rule)
 {
-    if (!rule) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
-    }
-
     if (!__is_valid_action(rule->action)) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
     if (rule->source_pattern) {
-        protecc_error_t source_err = protecc_validate_pattern(rule->source_pattern);
-        if (source_err != PROTECC_OK) {
-            return source_err;
+        protecc_error_t err = protecc_validate_pattern(rule->source_pattern);
+        if (err != PROTECC_OK) {
+            return err;
         }
     }
 
     if (rule->target_pattern) {
-        protecc_error_t target_err = protecc_validate_pattern(rule->target_pattern);
-        if (target_err != PROTECC_OK) {
-            return target_err;
+        protecc_error_t err = protecc_validate_pattern(rule->target_pattern);
+        if (err != PROTECC_OK) {
+            return err;
         }
     }
 

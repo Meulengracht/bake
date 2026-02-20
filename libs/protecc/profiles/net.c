@@ -41,9 +41,9 @@ static bool __is_valid_net_family(protecc_net_family_t family)
 }
 
 static protecc_error_t __validate_blob_string_offset(
-    uint32_t      offset,
+    uint32_t       offset,
     const uint8_t* strings,
-    size_t        strings_size)
+    size_t         stringsSize)
 {
     const uint8_t* end;
 
@@ -51,54 +51,82 @@ static protecc_error_t __validate_blob_string_offset(
         return PROTECC_OK;
     }
 
-    if (!strings || offset >= strings_size) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    if (!strings || offset >= stringsSize) {
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
-    end = memchr(strings + offset, '\0', strings_size - offset);
+    end = memchr(strings + offset, '\0', stringsSize - offset);
     if (!end) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
     return PROTECC_OK;
 }
 
-static protecc_error_t __export_net_profile(
-    const protecc_profile_t* compiled,
-    void*                     buffer,
-    size_t                    buffer_size,
-    size_t*                   bytes_written)
+static protecc_error_t __export_net_rule(
+    const protecc_profile_t* profile,
+    void*                    buffer,
+    size_t                   stringsSize)
 {
-    size_t strings_size = 0;
-    size_t required_size;
+    uint8_t*                    out = (uint8_t*)buffer;
+    protecc_net_profile_rule_t* rules =
+        (protecc_net_profile_rule_t*)(out + sizeof(protecc_net_profile_header_t));
+    uint8_t*                    strings =
+        out + sizeof(protecc_net_profile_header_t)
+        + (profile->net_rule_count * sizeof(protecc_net_profile_rule_t));
+    size_t cursor = 0;
+
+    memset(rules, 0, profile->net_rule_count * sizeof(protecc_net_profile_rule_t));
+
+    for (size_t i = 0; i < profile->net_rule_count; i++) {
+        rules[i].action = (uint8_t)profile->net_rules[i].action;
+        rules[i].protocol = (uint8_t)profile->net_rules[i].protocol;
+        rules[i].family = (uint8_t)profile->net_rules[i].family;
+        rules[i].port_from = profile->net_rules[i].port_from;
+        rules[i].port_to = profile->net_rules[i].port_to;
+        rules[i].ip_pattern_off = __blob_string_write(strings, &cursor, profile->net_rules[i].ip_pattern);
+        rules[i].unix_path_pattern_off = __blob_string_write(strings, &cursor, profile->net_rules[i].unix_path_pattern);
+    }
+
+    if (cursor != stringsSize) {
+        return PROTECC_ERROR_COMPILE_FAILED;
+    }
+    return PROTECC_OK;
+}
+
+static protecc_error_t __export_net_profile(
+    const protecc_profile_t* profile,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten)
+{
     protecc_net_profile_header_t header;
+    size_t                       stringsSize = 0;
+    size_t                       requiredSize;
+    protecc_error_t              err;
 
-    if (!compiled) {
+    for (size_t i = 0; i < profile->net_rule_count; i++) {
+        stringsSize += __blob_string_measure(profile->net_rules[i].ip_pattern);
+        stringsSize += __blob_string_measure(profile->net_rules[i].unix_path_pattern);
+    }
+
+    requiredSize = sizeof(protecc_net_profile_header_t)
+        + (profile->net_rule_count * sizeof(protecc_net_profile_rule_t))
+        + stringsSize;
+
+    if (requiredSize > UINT32_MAX || profile->net_rule_count > UINT32_MAX || stringsSize > UINT32_MAX) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    for (size_t i = 0; i < compiled->net_rule_count; i++) {
-        strings_size += __blob_string_measure(compiled->net_rules[i].ip_pattern);
-        strings_size += __blob_string_measure(compiled->net_rules[i].unix_path_pattern);
-    }
-
-    required_size = sizeof(protecc_net_profile_header_t)
-        + (compiled->net_rule_count * sizeof(protecc_net_profile_rule_t))
-        + strings_size;
-
-    if (required_size > UINT32_MAX || compiled->net_rule_count > UINT32_MAX || strings_size > UINT32_MAX) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
-    }
-
-    if (bytes_written) {
-        *bytes_written = required_size;
+    if (bytesWritten) {
+        *bytesWritten = requiredSize;
     }
 
     if (!buffer) {
         return PROTECC_OK;
     }
 
-    if (buffer_size < required_size) {
+    if (bufferSize < requiredSize) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -106,47 +134,25 @@ static protecc_error_t __export_net_profile(
     header.magic = PROTECC_NET_PROFILE_MAGIC;
     header.version = PROTECC_NET_PROFILE_VERSION;
     header.flags = 0;
-    header.rule_count = (uint32_t)compiled->net_rule_count;
-    header.strings_size = (uint32_t)strings_size;
+    header.rule_count = (uint32_t)profile->net_rule_count;
+    header.strings_size = (uint32_t)stringsSize;
 
     memcpy(buffer, &header, sizeof(header));
 
-    {
-        uint8_t* out = (uint8_t*)buffer;
-        protecc_net_profile_rule_t* out_rules =
-            (protecc_net_profile_rule_t*)(out + sizeof(protecc_net_profile_header_t));
-        uint8_t* out_strings =
-            out + sizeof(protecc_net_profile_header_t)
-            + (compiled->net_rule_count * sizeof(protecc_net_profile_rule_t));
-        size_t cursor = 0;
-
-        memset(out_rules, 0, compiled->net_rule_count * sizeof(protecc_net_profile_rule_t));
-
-        for (size_t i = 0; i < compiled->net_rule_count; i++) {
-            out_rules[i].action = (uint8_t)compiled->net_rules[i].action;
-            out_rules[i].protocol = (uint8_t)compiled->net_rules[i].protocol;
-            out_rules[i].family = (uint8_t)compiled->net_rules[i].family;
-            out_rules[i].port_from = compiled->net_rules[i].port_from;
-            out_rules[i].port_to = compiled->net_rules[i].port_to;
-            out_rules[i].ip_pattern_off = __blob_string_write(out_strings, &cursor, compiled->net_rules[i].ip_pattern);
-            out_rules[i].unix_path_pattern_off = __blob_string_write(out_strings, &cursor, compiled->net_rules[i].unix_path_pattern);
-        }
-
-        if (cursor != strings_size) {
-            return PROTECC_ERROR_COMPILE_FAILED;
-        }
+    err = __export_net_rule(profile, buffer, stringsSize);
+    if (err != PROTECC_OK) {
+        return err;
     }
-
     return PROTECC_OK;
 }
 
 protecc_error_t protecc_profile_export_net(
-    const protecc_profile_t* compiled,
-    void*                     buffer,
-    size_t                    bufferSize,
-    size_t*                   bytesWritten)
+    const protecc_profile_t* profile,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten)
 {
-    return __export_net_profile(compiled, buffer, bufferSize, bytesWritten);
+    return __export_net_profile(profile, buffer, bufferSize, bytesWritten);
 }
 
 protecc_error_t protecc_profile_import_net_blob(
@@ -155,22 +161,21 @@ protecc_error_t protecc_profile_import_net_blob(
     protecc_net_rule_t** rulesOut,
     size_t*              countOut)
 {
-    const uint8_t* base;
-    protecc_net_profile_header_t header;
-    const protecc_net_profile_rule_t* in_rules;
-    const uint8_t* strings;
-    protecc_net_rule_t* out_rules;
-    size_t rules_size;
+    const uint8_t*                    base;
+    protecc_net_profile_header_t      header;
+    const protecc_net_profile_rule_t* inRules;
+    const uint8_t*                    strings;
+    protecc_net_rule_t*               outRules;
+    size_t                            rulesSize;
+    protecc_error_t                   err;
 
-    if (!buffer || !rulesOut || !countOut) {
+    if (buffer == NULL || rulesOut == NULL || countOut == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    *rulesOut = NULL;
-    *countOut = 0;
-
-    if (protecc_profile_validate_net_blob(buffer, bufferSize) != PROTECC_OK) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    err = protecc_profile_validate_net_blob(buffer, bufferSize);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     base = (const uint8_t*)buffer;
@@ -180,33 +185,33 @@ protecc_error_t protecc_profile_import_net_blob(
         return PROTECC_OK;
     }
 
-    rules_size = (size_t)header.rule_count * sizeof(protecc_net_profile_rule_t);
-    in_rules = (const protecc_net_profile_rule_t*)(base + sizeof(protecc_net_profile_header_t));
-    strings = base + sizeof(protecc_net_profile_header_t) + rules_size;
+    rulesSize = (size_t)header.rule_count * sizeof(protecc_net_profile_rule_t);
+    inRules = (const protecc_net_profile_rule_t*)(base + sizeof(protecc_net_profile_header_t));
+    strings = base + sizeof(protecc_net_profile_header_t) + rulesSize;
 
-    out_rules = calloc(header.rule_count, sizeof(protecc_net_rule_t));
-    if (!out_rules) {
+    outRules = calloc(header.rule_count, sizeof(protecc_net_rule_t));
+    if (!outRules) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
     for (uint32_t i = 0; i < header.rule_count; i++) {
-        out_rules[i].action = (protecc_action_t)in_rules[i].action;
-        out_rules[i].protocol = (protecc_net_protocol_t)in_rules[i].protocol;
-        out_rules[i].family = (protecc_net_family_t)in_rules[i].family;
-        out_rules[i].port_from = in_rules[i].port_from;
-        out_rules[i].port_to = in_rules[i].port_to;
+        outRules[i].action = (protecc_action_t)inRules[i].action;
+        outRules[i].protocol = (protecc_net_protocol_t)inRules[i].protocol;
+        outRules[i].family = (protecc_net_family_t)inRules[i].family;
+        outRules[i].port_from = inRules[i].port_from;
+        outRules[i].port_to = inRules[i].port_to;
 
-        out_rules[i].ip_pattern = __blob_string_dup(strings, in_rules[i].ip_pattern_off);
-        out_rules[i].unix_path_pattern = __blob_string_dup(strings, in_rules[i].unix_path_pattern_off);
+        outRules[i].ip_pattern = __blob_string_dup(strings, inRules[i].ip_pattern_off);
+        outRules[i].unix_path_pattern = __blob_string_dup(strings, inRules[i].unix_path_pattern_off);
 
-        if ((in_rules[i].ip_pattern_off != PROTECC_PROFILE_STRING_NONE && !out_rules[i].ip_pattern)
-            || (in_rules[i].unix_path_pattern_off != PROTECC_PROFILE_STRING_NONE && !out_rules[i].unix_path_pattern)) {
-            protecc_profile_free_net_rules(out_rules, i + 1u);
+        if ((inRules[i].ip_pattern_off != PROTECC_PROFILE_STRING_NONE && !outRules[i].ip_pattern)
+            || (inRules[i].unix_path_pattern_off != PROTECC_PROFILE_STRING_NONE && !outRules[i].unix_path_pattern)) {
+            protecc_profile_free_net_rules(outRules, i + 1u);
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
     }
 
-    *rulesOut = out_rules;
+    *rulesOut = outRules;
     *countOut = header.rule_count;
     return PROTECC_OK;
 }
@@ -215,71 +220,74 @@ protecc_error_t protecc_profile_validate_net_blob(
     const void* buffer,
     size_t      bufferSize)
 {
-    const uint8_t* base;
-    protecc_net_profile_header_t header;
-    size_t rules_size;
-    size_t required;
+    const uint8_t*                    base;
+    protecc_net_profile_header_t      header;
+    size_t                            rulesSize;
+    size_t                            required;
     const protecc_net_profile_rule_t* rules;
-    const uint8_t* strings;
+    const uint8_t*                    strings;
 
-    if (!buffer || bufferSize < sizeof(protecc_net_profile_header_t)) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    if (buffer == NULL || bufferSize < sizeof(protecc_net_profile_header_t)) {
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
     base = (const uint8_t*)buffer;
     memcpy(&header, base, sizeof(header));
 
     if (header.magic != PROTECC_NET_PROFILE_MAGIC || header.version != PROTECC_NET_PROFILE_VERSION) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
     if (header.rule_count > (SIZE_MAX / sizeof(protecc_net_profile_rule_t))) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
-    rules_size = (size_t)header.rule_count * sizeof(protecc_net_profile_rule_t);
-    required = sizeof(protecc_net_profile_header_t) + rules_size + (size_t)header.strings_size;
+    rulesSize = (size_t)header.rule_count * sizeof(protecc_net_profile_rule_t);
+    required = sizeof(protecc_net_profile_header_t) + rulesSize + (size_t)header.strings_size;
 
     if (required < sizeof(protecc_net_profile_header_t) || bufferSize < required) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
     rules = (const protecc_net_profile_rule_t*)(base + sizeof(protecc_net_profile_header_t));
-    strings = base + sizeof(protecc_net_profile_header_t) + rules_size;
+    strings = base + sizeof(protecc_net_profile_header_t) + rulesSize;
 
     for (uint32_t i = 0; i < header.rule_count; i++) {
-        protecc_action_t action = (protecc_action_t)rules[i].action;
+        protecc_action_t       action = (protecc_action_t)rules[i].action;
         protecc_net_protocol_t protocol = (protecc_net_protocol_t)rules[i].protocol;
-        protecc_net_family_t family = (protecc_net_family_t)rules[i].family;
-        protecc_error_t ip_err;
-        protecc_error_t unix_err;
+        protecc_net_family_t   family = (protecc_net_family_t)rules[i].family;
+        protecc_error_t        err;
 
         if (!__is_valid_action(action)
             || !__is_valid_net_protocol(protocol)
             || !__is_valid_net_family(family)
             || rules[i].port_from > rules[i].port_to) {
-            return PROTECC_ERROR_INVALID_ARGUMENT;
+            return PROTECC_ERROR_INVALID_BLOB;
         }
 
         if (protocol == PROTECC_NET_PROTOCOL_UNIX) {
             if (family == PROTECC_NET_FAMILY_IPV4 || family == PROTECC_NET_FAMILY_IPV6) {
-                return PROTECC_ERROR_INVALID_ARGUMENT;
+                return PROTECC_ERROR_INVALID_BLOB;
             }
             if (rules[i].port_from != 0 || rules[i].port_to != 0) {
-                return PROTECC_ERROR_INVALID_ARGUMENT;
+                return PROTECC_ERROR_INVALID_BLOB;
             }
         }
 
         if (family == PROTECC_NET_FAMILY_UNIX) {
             if (protocol == PROTECC_NET_PROTOCOL_TCP || protocol == PROTECC_NET_PROTOCOL_UDP) {
-                return PROTECC_ERROR_INVALID_ARGUMENT;
+                return PROTECC_ERROR_INVALID_BLOB;
             }
         }
 
-        ip_err = __validate_blob_string_offset(rules[i].ip_pattern_off, strings, header.strings_size);
-        unix_err = __validate_blob_string_offset(rules[i].unix_path_pattern_off, strings, header.strings_size);
-        if (ip_err != PROTECC_OK || unix_err != PROTECC_OK) {
-            return PROTECC_ERROR_INVALID_ARGUMENT;
+        err = __validate_blob_string_offset(rules[i].ip_pattern_off, strings, header.strings_size);
+        if (err != PROTECC_OK) {
+            return err;
+        }
+
+        err = __validate_blob_string_offset(rules[i].unix_path_pattern_off, strings, header.strings_size);
+        if (err != PROTECC_OK) {
+            return err;
         }
     }
 
@@ -290,57 +298,64 @@ protecc_error_t protecc_profile_validate_mount_blob(
     const void* buffer,
     size_t      bufferSize)
 {
-    const uint8_t* base;
-    protecc_mount_profile_header_t header;
-    size_t rules_size;
-    size_t required;
+    const uint8_t*                      base;
+    protecc_mount_profile_header_t      header;
+    size_t                              rulesSize;
+    size_t                              required;
     const protecc_mount_profile_rule_t* rules;
-    const uint8_t* strings;
+    const uint8_t*                      strings;
 
-    if (!buffer || bufferSize < sizeof(protecc_mount_profile_header_t)) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    if (buffer == NULL || bufferSize < sizeof(protecc_mount_profile_header_t)) {
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
     base = (const uint8_t*)buffer;
     memcpy(&header, base, sizeof(header));
 
     if (header.magic != PROTECC_MOUNT_PROFILE_MAGIC || header.version != PROTECC_MOUNT_PROFILE_VERSION) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
     if (header.rule_count > (SIZE_MAX / sizeof(protecc_mount_profile_rule_t))) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
-    rules_size = (size_t)header.rule_count * sizeof(protecc_mount_profile_rule_t);
-    required = sizeof(protecc_mount_profile_header_t) + rules_size + (size_t)header.strings_size;
+    rulesSize = (size_t)header.rule_count * sizeof(protecc_mount_profile_rule_t);
+    required = sizeof(protecc_mount_profile_header_t) + rulesSize + (size_t)header.strings_size;
 
     if (required < sizeof(protecc_mount_profile_header_t) || bufferSize < required) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
     rules = (const protecc_mount_profile_rule_t*)(base + sizeof(protecc_mount_profile_header_t));
-    strings = base + sizeof(protecc_mount_profile_header_t) + rules_size;
+    strings = base + sizeof(protecc_mount_profile_header_t) + rulesSize;
 
     for (uint32_t i = 0; i < header.rule_count; i++) {
         protecc_action_t action = (protecc_action_t)rules[i].action;
-        protecc_error_t source_err;
-        protecc_error_t target_err;
-        protecc_error_t fstype_err;
-        protecc_error_t options_err;
+        protecc_error_t  err;
 
         if (!__is_valid_action(action)) {
-            return PROTECC_ERROR_INVALID_ARGUMENT;
+            return PROTECC_ERROR_INVALID_BLOB;
         }
 
-        source_err = __validate_blob_string_offset(rules[i].source_pattern_off, strings, header.strings_size);
-        target_err = __validate_blob_string_offset(rules[i].target_pattern_off, strings, header.strings_size);
-        fstype_err = __validate_blob_string_offset(rules[i].fstype_pattern_off, strings, header.strings_size);
-        options_err = __validate_blob_string_offset(rules[i].options_pattern_off, strings, header.strings_size);
+        err = __validate_blob_string_offset(rules[i].source_pattern_off, strings, header.strings_size);
+        if (err != PROTECC_OK) {
+            return err;
+        }
 
-        if (source_err != PROTECC_OK || target_err != PROTECC_OK
-            || fstype_err != PROTECC_OK || options_err != PROTECC_OK) {
-            return PROTECC_ERROR_INVALID_ARGUMENT;
+        err = __validate_blob_string_offset(rules[i].target_pattern_off, strings, header.strings_size);
+        if (err != PROTECC_OK) {
+            return err;
+        }
+        
+        err = __validate_blob_string_offset(rules[i].fstype_pattern_off, strings, header.strings_size);
+        if (err != PROTECC_OK) {
+            return err;
+        }
+        
+        err = __validate_blob_string_offset(rules[i].options_pattern_off, strings, header.strings_size);
+        if (err != PROTECC_OK) {
+            return err;
         }
     }
 
@@ -353,13 +368,15 @@ protecc_error_t protecc_profile_net_view_init(
     protecc_net_blob_view_t* viewOut)
 {
     protecc_net_profile_header_t header;
+    protecc_error_t              err;
 
     if (!buffer || !viewOut) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (protecc_profile_validate_net_blob(buffer, bufferSize) != PROTECC_OK) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    err = protecc_profile_validate_net_blob(buffer, bufferSize);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     memcpy(&header, buffer, sizeof(header));
@@ -375,14 +392,15 @@ protecc_error_t protecc_profile_net_view_get_rule(
     size_t                         index,
     protecc_net_rule_view_t*       ruleOut)
 {
-    const uint8_t* base;
-    protecc_net_profile_header_t header;
-    size_t rules_size;
+    const uint8_t*                    base;
+    protecc_net_profile_header_t      header;
+    size_t                            rulesSize;
     const protecc_net_profile_rule_t* rules;
-    const uint8_t* strings;
-    const protecc_net_profile_rule_t* in_rule;
+    const uint8_t*                    strings;
+    const protecc_net_profile_rule_t* inRule;
+    protecc_error_t                   err;
 
-    if (!view || !ruleOut || !view->blob) {
+    if (view == NULL || ruleOut == NULL || view->blob == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -390,25 +408,26 @@ protecc_error_t protecc_profile_net_view_get_rule(
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (protecc_profile_validate_net_blob(view->blob, view->blob_size) != PROTECC_OK) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
+    err = protecc_profile_validate_net_blob(view->blob, view->blob_size);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     base = (const uint8_t*)view->blob;
     memcpy(&header, base, sizeof(header));
 
-    rules_size = (size_t)header.rule_count * sizeof(protecc_net_profile_rule_t);
+    rulesSize = (size_t)header.rule_count * sizeof(protecc_net_profile_rule_t);
     rules = (const protecc_net_profile_rule_t*)(base + sizeof(protecc_net_profile_header_t));
-    strings = base + sizeof(protecc_net_profile_header_t) + rules_size;
-    in_rule = &rules[index];
+    strings = base + sizeof(protecc_net_profile_header_t) + rulesSize;
+    inRule = &rules[index];
 
-    ruleOut->action = (protecc_action_t)in_rule->action;
-    ruleOut->protocol = (protecc_net_protocol_t)in_rule->protocol;
-    ruleOut->family = (protecc_net_family_t)in_rule->family;
-    ruleOut->port_from = in_rule->port_from;
-    ruleOut->port_to = in_rule->port_to;
-    ruleOut->ip_pattern = __blob_string_ptr(strings, in_rule->ip_pattern_off);
-    ruleOut->unix_path_pattern = __blob_string_ptr(strings, in_rule->unix_path_pattern_off);
+    ruleOut->action = (protecc_action_t)inRule->action;
+    ruleOut->protocol = (protecc_net_protocol_t)inRule->protocol;
+    ruleOut->family = (protecc_net_family_t)inRule->family;
+    ruleOut->port_from = inRule->port_from;
+    ruleOut->port_to = inRule->port_to;
+    ruleOut->ip_pattern = __blob_string_ptr(strings, inRule->ip_pattern_off);
+    ruleOut->unix_path_pattern = __blob_string_ptr(strings, inRule->unix_path_pattern_off);
     return PROTECC_OK;
 }
 
@@ -417,11 +436,11 @@ protecc_error_t protecc_profile_net_view_first(
     size_t*                        iterIndexInOut,
     protecc_net_rule_view_t*       ruleOut)
 {
-    if (!iterIndexInOut) {
+    if (iterIndexInOut == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (!view || view->rule_count == 0) {
+    if (view == NULL || view->rule_count == 0) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -434,27 +453,23 @@ protecc_error_t protecc_profile_net_view_next(
     size_t*                        iterIndexInOut,
     protecc_net_rule_view_t*       ruleOut)
 {
-    size_t next_index;
+    size_t nextIndex;
 
-    if (!view || !iterIndexInOut) {
+    if (view == NULL || iterIndexInOut == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    next_index = *iterIndexInOut + 1u;
-    if (next_index >= view->rule_count) {
+    nextIndex = *iterIndexInOut + 1u;
+    if (nextIndex >= view->rule_count) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    *iterIndexInOut = next_index;
-    return protecc_profile_net_view_get_rule(view, next_index, ruleOut);
+    *iterIndexInOut = nextIndex;
+    return protecc_profile_net_view_get_rule(view, nextIndex, ruleOut);
 }
 
 protecc_error_t __validate_net_rule(const protecc_net_rule_t* rule)
 {
-    if (!rule) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
-    }
-
     if (!__is_valid_action(rule->action)
         || !__is_valid_net_protocol(rule->protocol)
         || !__is_valid_net_family(rule->family)

@@ -39,6 +39,8 @@ const char* protecc_error_string(protecc_error_t error)
             return "Compilation failed";
         case PROTECC_ERROR_NOT_SUPPORTED:
             return "Feature not supported";
+        case PROTECC_ERROR_INVALID_BLOB:
+            return "Invalid blob";
         default:
             return "Unknown error";
     }

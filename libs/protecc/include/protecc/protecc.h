@@ -93,6 +93,7 @@ typedef enum {
     PROTECC_ERROR_INVALID_ARGUMENT = -3,
     PROTECC_ERROR_COMPILE_FAILED = -4,
     PROTECC_ERROR_NOT_SUPPORTED = -5,
+    PROTECC_ERROR_INVALID_BLOB = -6,
 } protecc_error_t;
 
 /**

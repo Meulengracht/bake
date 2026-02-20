@@ -31,34 +31,34 @@ size_t __profile_size(uint32_t nodeCount, uint32_t edgeCount)
         + (size_t)edgeCount * sizeof(uint32_t);
 }
 
-protecc_error_t __update_stats_trie_profile(protecc_profile_t* compiled)
+protecc_error_t __update_stats_trie_profile(protecc_profile_t* profile)
 {
-    size_t num_nodes = 0;
-    size_t max_depth = 0;
-    size_t num_edges = 0;
+    size_t nodeCount = 0;
+    size_t maxDepth = 0;
+    size_t edgeCount = 0;
 
-    if (!compiled || !compiled->root) {
+    if (profile->root == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
-    protecc_node_collect_stats(compiled->root, 0, &num_nodes, &max_depth, &num_edges);
-
-    if (num_nodes > UINT32_MAX || num_edges > UINT32_MAX) {
+    
+    protecc_node_collect_stats(profile->root, 0, &nodeCount, &maxDepth, &edgeCount);
+    if (nodeCount > UINT32_MAX || edgeCount > UINT32_MAX) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    compiled->stats.num_nodes = num_nodes;
-    compiled->stats.max_depth = max_depth;
-    compiled->stats.binary_size = __profile_size((uint32_t)num_nodes, (uint32_t)num_edges);
+    profile->stats.num_nodes = nodeCount;
+    profile->stats.max_depth = maxDepth;
+    profile->stats.binary_size = __profile_size((uint32_t)nodeCount, (uint32_t)edgeCount);
 
     return PROTECC_OK;
 }
 
 static protecc_error_t __read_and_validate_profile_header(
-    const void* buffer,
-    size_t buffer_size,
+    const void*               buffer,
+    size_t                    bufferSize,
     protecc_profile_header_t* header)
 {
-    if (!buffer || !header || buffer_size < sizeof(protecc_profile_header_t)) {
+    if (buffer == NULL || header == NULL || bufferSize < sizeof(protecc_profile_header_t)) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
@@ -76,73 +76,76 @@ static protecc_error_t __read_and_validate_profile_header(
 }
 
 protecc_error_t protecc_profile_export_path(
-    const protecc_profile_t* compiled,
+    const protecc_profile_t* profile,
     void*                    buffer,
     size_t                   buffer_size,
     size_t*                  bytes_written
 ) {
-    if (!compiled) {
+    protecc_error_t err;
+
+    if (profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    protecc_error_t stats_err = __update_stats_trie_profile((protecc_profile_t*)compiled);
-    if (stats_err != PROTECC_OK) {
-        return stats_err;
+    err = __update_stats_trie_profile((protecc_profile_t*)profile);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
-    if (compiled->stats.num_patterns > UINT32_MAX) {
+    if (profile->stats.num_patterns > UINT32_MAX) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (compiled->config.mode == PROTECC_COMPILE_MODE_DFA) {
-        return __export_dfa_profile(compiled, buffer, buffer_size, bytes_written);
+    if (profile->config.mode == PROTECC_COMPILE_MODE_DFA) {
+        return __export_dfa_profile(profile, buffer, buffer_size, bytes_written);
     }
-    return __export_trie_profile(compiled, buffer, buffer_size, bytes_written);
+    return __export_trie_profile(profile, buffer, buffer_size, bytes_written);
 }
 
 protecc_error_t protecc_profile_import_path_blob(
-    const void* buffer,
-    size_t buffer_size,
+    const void*         buffer,
+    size_t              bufferSize,
     protecc_profile_t** compiled
 ) {
     const uint8_t*           base = (const uint8_t*)buffer;
     protecc_profile_header_t header;
-    protecc_error_t          header_err;
+    protecc_error_t          err;
 
-    if (!compiled || buffer_size < sizeof(uint32_t) * 3) {
+    if (compiled == NULL || bufferSize < sizeof(uint32_t) * 3) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    header_err = __read_and_validate_profile_header(buffer, buffer_size, &header);
-    if (header_err != PROTECC_OK) {
-        return header_err;
+    err = __read_and_validate_profile_header(buffer, bufferSize, &header);
+    if (err != PROTECC_OK) {
+        return err;
     }
 
     if ((header.flags & PROTECC_PROFILE_FLAG_TYPE_DFA) != 0) {
-        return __import_dfa_profile(base, buffer_size, &header, compiled);
+        return __import_dfa_profile(base, bufferSize, &header, compiled);
     }
-    return __import_trie_profile(base, buffer_size, &header, compiled);
+    return __import_trie_profile(base, bufferSize, &header, compiled);
 }
 
 protecc_error_t protecc_validate_pattern(const char* pattern) {
-    if (!pattern) {
+    int depth = 0;
+
+    if (pattern == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
     
     // Basic validation - check for balanced brackets
-    int bracket_depth = 0;
     for (const char* p = pattern; *p; p++) {
         if (*p == '[') {
-            bracket_depth++;
+            depth++;
         } else if (*p == ']') {
-            bracket_depth--;
-            if (bracket_depth < 0) {
+            depth--;
+            if (depth < 0) {
                 return PROTECC_ERROR_INVALID_PATTERN;
             }
         }
     }
     
-    if (bracket_depth != 0) {
+    if (depth != 0) {
         return PROTECC_ERROR_INVALID_PATTERN;
     }
     
