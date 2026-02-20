@@ -16,14 +16,12 @@
         } \
     } while(0)
 
-static bool match_path(const protecc_compiled_t* compiled, const char* path) {
-    protecc_permission_t perms = PROTECC_PERM_NONE;
-
-    return protecc_match(compiled, path, 0, &perms);
+static bool match_path(const protecc_profile_t* compiled, const char* path) {
+    return protecc_match_path(compiled, path, PROTECC_PERM_NONE);
 }
 
 int test_basic_patterns(void) {
-    protecc_compiled_t* compiled = NULL;
+    protecc_profile_t* compiled = NULL;
     protecc_error_t err;
     
     // Test 1: Exact match
@@ -32,7 +30,7 @@ int test_basic_patterns(void) {
             { "/etc/passwd", PROTECC_PERM_ALL }
         };
         
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile exact pattern");
         TEST_ASSERT(compiled != NULL, "Compiled result is NULL");
         
@@ -54,7 +52,7 @@ int test_basic_patterns(void) {
             { "/tmp/file2", PROTECC_PERM_ALL },
             { "/var/log", PROTECC_PERM_ALL }
         };
-        err = protecc_compile(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 3, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile multiple patterns");
         
         TEST_ASSERT(match_path(compiled, "/tmp/file1"), 
@@ -82,21 +80,21 @@ int test_basic_patterns(void) {
     
     // Test 4: Error handling
     {
-        err = protecc_compile(NULL, 1, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(NULL, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err != PROTECC_OK, "Should fail with NULL patterns");
         
         const protecc_pattern_t patterns[] = {{ "/test", PROTECC_PERM_ALL }};
-        err = protecc_compile(patterns, 0, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 0, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err != PROTECC_OK, "Should fail with zero count");
         
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, NULL);
+        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_NONE, NULL, NULL);
         TEST_ASSERT(err != PROTECC_OK, "Should fail with NULL output");
     }
     
     // Test 5: Empty path and edge cases
     {
         const protecc_pattern_t patterns[] = {{ "/", PROTECC_PERM_ALL }};
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile root pattern");
         
         TEST_ASSERT(match_path(compiled, "/"), "Should match root");
@@ -113,7 +111,7 @@ int test_basic_patterns(void) {
             { "/test1", PROTECC_PERM_ALL },
             { "/test2", PROTECC_PERM_ALL }
         };
-        err = protecc_compile(patterns, 2, PROTECC_FLAG_NONE, NULL, &compiled);
+        err = protecc_compile_patterns(patterns, 2, PROTECC_FLAG_NONE, NULL, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile for stats test");
         
         protecc_stats_t stats;
@@ -151,7 +149,7 @@ int test_basic_patterns(void) {
         protecc_compile_config_default(&config);
         config.max_pattern_length = sizeof(pattern) - 1;
 
-        err = protecc_compile(patterns, 1, PROTECC_FLAG_NONE, &config, &compiled);
+        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_NONE, &config, &compiled);
         TEST_ASSERT(err == PROTECC_OK, "Failed to compile deep pattern");
         TEST_ASSERT(match_path(compiled, path), "Deep pattern should match deep path");
         TEST_ASSERT(!match_path(compiled, "/a/a/a/b"), "Deep pattern should reject different deep path");

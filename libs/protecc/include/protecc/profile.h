@@ -38,6 +38,14 @@
 #define PROTECC_PROFILE_MAGIC   0x50524F54u // "PROT"
 #define PROTECC_PROFILE_VERSION 0x00010001u
 
+#define PROTECC_NET_PROFILE_MAGIC   0x50524E54u // "PRNT"
+#define PROTECC_NET_PROFILE_VERSION 0x00010000u
+
+#define PROTECC_MOUNT_PROFILE_MAGIC   0x50524D54u // "PRMT"
+#define PROTECC_MOUNT_PROFILE_VERSION 0x00010000u
+
+#define PROTECC_PROFILE_STRING_NONE 0xFFFFFFFFu
+
 #define PROTECC_PROFILE_FLAG_CASE_INSENSITIVE (1u << 0)
 #define PROTECC_PROFILE_FLAG_OPTIMIZE         (1u << 1)
 #define PROTECC_PROFILE_FLAG_TYPE_TRIE        (1u << 8)
@@ -91,6 +99,45 @@ PROTECC_ONDISK_STRUCT(protecc_profile_node, {
         } range;
         uint8_t charset[32];
     } data;
+});
+
+PROTECC_ONDISK_STRUCT(protecc_net_profile_header, {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t flags;
+    uint32_t rule_count;
+    uint32_t strings_size;
+    uint32_t reserved[3];
+});
+
+PROTECC_ONDISK_STRUCT(protecc_net_profile_rule, {
+    uint8_t  action;
+    uint8_t  protocol;
+    uint8_t  family;
+    uint8_t  reserved;
+    uint16_t port_from;
+    uint16_t port_to;
+    uint32_t ip_pattern_off;
+    uint32_t unix_path_pattern_off;
+});
+
+PROTECC_ONDISK_STRUCT(protecc_mount_profile_header, {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t flags;
+    uint32_t rule_count;
+    uint32_t strings_size;
+    uint32_t reserved[3];
+});
+
+PROTECC_ONDISK_STRUCT(protecc_mount_profile_rule, {
+    uint8_t  action;
+    uint8_t  reserved[3];
+    uint32_t flags;
+    uint32_t source_pattern_off;
+    uint32_t target_pattern_off;
+    uint32_t fstype_pattern_off;
+    uint32_t options_pattern_off;
 });
 
 #endif // !__PROTECC_PROFILE_H__

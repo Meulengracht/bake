@@ -42,9 +42,10 @@
 #include <stdbool.h>
 
 /**
- * @brief Opaque handle to a compiled pattern set
+ * @brief Opaque handle to a compiled profile
  */
-typedef struct protecc_compiled protecc_compiled_t;
+typedef struct protecc_profile protecc_profile_t;
+typedef struct protecc_profile_builder protecc_profile_builder_t;
 
 /**
  * @brief Pattern compilation flags
@@ -91,7 +92,63 @@ typedef enum {
     PROTECC_ERROR_OUT_OF_MEMORY = -2,
     PROTECC_ERROR_INVALID_ARGUMENT = -3,
     PROTECC_ERROR_COMPILE_FAILED = -4,
+    PROTECC_ERROR_NOT_SUPPORTED = -5,
+    PROTECC_ERROR_INVALID_BLOB = -6,
 } protecc_error_t;
+
+/**
+ * @brief High-level profile action for future multi-domain policy engines
+ */
+typedef enum {
+    PROTECC_ACTION_ALLOW = 0,
+    PROTECC_ACTION_DENY = 1,
+    PROTECC_ACTION_AUDIT = 2,
+} protecc_action_t;
+
+/**
+ * @brief Network protocol selector for network rules
+ */
+typedef enum {
+    PROTECC_NET_PROTOCOL_ANY = 0,
+    PROTECC_NET_PROTOCOL_TCP = 1,
+    PROTECC_NET_PROTOCOL_UDP = 2,
+    PROTECC_NET_PROTOCOL_UNIX = 3,
+} protecc_net_protocol_t;
+
+/**
+ * @brief Network address family selector
+ */
+typedef enum {
+    PROTECC_NET_FAMILY_ANY = 0,
+    PROTECC_NET_FAMILY_IPV4 = 1,
+    PROTECC_NET_FAMILY_IPV6 = 2,
+    PROTECC_NET_FAMILY_UNIX = 3,
+} protecc_net_family_t;
+
+/**
+ * @brief Rule describing network mediation intent
+ */
+typedef struct {
+    protecc_action_t       action;
+    protecc_net_protocol_t protocol;
+    protecc_net_family_t   family;
+    const char*            ip_pattern;
+    uint16_t               port_from;
+    uint16_t               port_to;
+    const char*            unix_path_pattern;
+} protecc_net_rule_t;
+
+/**
+ * @brief Rule describing mount mediation intent
+ */
+typedef struct {
+    protecc_action_t action;
+    const char*      source_pattern;
+    const char*      target_pattern;
+    const char*      fstype_pattern;
+    const char*      options_pattern;
+    uint32_t         flags;
+} protecc_mount_rule_t;
 
 /**
  * @brief Permission flags for compiled patterns
@@ -123,6 +180,71 @@ typedef struct {
 } protecc_pattern_t;
 
 /**
+ * @brief Zero-copy view over a net profile blob
+ */
+typedef struct {
+    const void* blob;
+    size_t      blob_size;
+    size_t      rule_count;
+} protecc_net_blob_view_t;
+
+/**
+ * @brief Zero-copy decoded net rule
+ */
+typedef struct {
+    protecc_action_t       action;
+    protecc_net_protocol_t protocol;
+    protecc_net_family_t   family;
+    uint16_t               port_from;
+    uint16_t               port_to;
+    const char*            ip_pattern;
+    const char*            unix_path_pattern;
+} protecc_net_rule_view_t;
+
+/**
+ * @brief Zero-copy view over a mount profile blob
+ */
+typedef struct {
+    const void* blob;
+    size_t      blob_size;
+    size_t      rule_count;
+} protecc_mount_blob_view_t;
+
+/**
+ * @brief Zero-copy decoded mount rule
+ */
+typedef struct {
+    protecc_action_t action;
+    uint32_t         flags;
+    const char*      source_pattern;
+    const char*      target_pattern;
+    const char*      fstype_pattern;
+    const char*      options_pattern;
+} protecc_mount_rule_view_t;
+
+/**
+ * @brief Runtime network access request for rule matching
+ */
+typedef struct {
+    protecc_net_protocol_t protocol;
+    protecc_net_family_t   family;
+    const char*            ip;
+    uint16_t               port;
+    const char*            unix_path;
+} protecc_net_request_t;
+
+/**
+ * @brief Runtime mount request for rule matching
+ */
+typedef struct {
+    const char* source;
+    const char* target;
+    const char* fstype;
+    const char* options;
+    uint32_t    flags;
+} protecc_mount_request_t;
+
+/**
  * @brief Initialize compiler config with defaults
  *
  * Defaults:
@@ -135,6 +257,59 @@ typedef struct {
 void protecc_compile_config_default(protecc_compile_config_t* config);
 
 /**
+ * @brief Create a new profile builder
+ */
+protecc_profile_builder_t* protecc_profile_builder_create(void);
+
+/**
+ * @brief Reset a profile builder and remove all queued rules
+ */
+void protecc_profile_builder_reset(protecc_profile_builder_t* builder);
+
+/**
+ * @brief Destroy a profile builder
+ */
+void protecc_profile_builder_destroy(protecc_profile_builder_t* builder);
+
+/**
+ * @brief Add path patterns to builder
+ */
+protecc_error_t protecc_profile_builder_add_patterns(
+    protecc_profile_builder_t* builder,
+    const protecc_pattern_t*   patterns,
+    size_t                     count);
+
+/**
+ * @brief Add a network rule to builder
+ */
+protecc_error_t protecc_profile_builder_add_net_rule(
+    protecc_profile_builder_t* builder,
+    const protecc_net_rule_t*  rule);
+
+/**
+ * @brief Add a mount rule to builder
+ */
+protecc_error_t protecc_profile_builder_add_mount_rule(
+    protecc_profile_builder_t*   builder,
+    const protecc_mount_rule_t*  rule);
+
+/**
+ * @brief Add a mount rule to builder (alias for add_mount_rule)
+ */
+protecc_error_t protecc_profile_builder_add_mount_pattern(
+    protecc_profile_builder_t*   builder,
+    const protecc_mount_rule_t*  rule);
+
+/**
+ * @brief Compile a profile builder into an opaque compiled profile
+ */
+protecc_error_t protecc_profile_compile(
+    const protecc_profile_builder_t* builder,
+    uint32_t                         flags,
+    const protecc_compile_config_t*  config,
+    protecc_profile_t**             compiled);
+
+/**
  * @brief Create a new compiled pattern set
  * 
  * @param patterns Array of pattern structures (NULL-terminated)
@@ -143,12 +318,12 @@ void protecc_compile_config_default(protecc_compile_config_t* config);
  * @param compiled Output pointer for the compiled pattern set
  * @return PROTECC_OK on success, error code otherwise
  */
-protecc_error_t protecc_compile(
+protecc_error_t protecc_compile_patterns(
     const protecc_pattern_t*        patterns,
     size_t                          count,
     uint32_t                        flags,
     const protecc_compile_config_t* config,
-    protecc_compiled_t**            compiled);
+    protecc_profile_t**            compiled);
 
 /**
  * @brief Match a path against the compiled pattern set
@@ -158,15 +333,43 @@ protecc_error_t protecc_compile(
  * 
  * @param compiled Compiled pattern set
  * @param path Path to match
- * @param pathLength Length of path (or 0 to use strlen)
- * @param permsOut Output pointer for matched permissions
+ * @param requiredPermissions Permissions required for a match to succeed (e.g. PROTECC_PERM_READ)
  * @return true if path matches any pattern, false otherwise
  */
-bool protecc_match(
-    const protecc_compiled_t* compiled,
-    const char*               path,
-    size_t                    pathLength,
-    protecc_permission_t*     permsOut);
+bool protecc_match_path(
+    const protecc_profile_t* compiled,
+    const char*              path,
+    protecc_permission_t     requiredPermissions);
+
+/**
+ * @brief Match a runtime network request against compiled network rules
+ *
+ * Rules are evaluated in insertion order; the first matching rule wins.
+ *
+ * @param compiled Compiled profile
+ * @param request Runtime network request to evaluate
+ * @param actionOut Optional output action of the first matching rule
+ * @return true if a rule matched, false otherwise
+ */
+bool protecc_match_net(
+    const protecc_profile_t*    compiled,
+    const protecc_net_request_t* request,
+    protecc_action_t*           actionOut);
+
+/**
+ * @brief Match a runtime mount request against compiled mount rules
+ *
+ * Rules are evaluated in insertion order; the first matching rule wins.
+ *
+ * @param compiled Compiled profile
+ * @param request Runtime mount request to evaluate
+ * @param actionOut Optional output action of the first matching rule
+ * @return true if a rule matched, false otherwise
+ */
+bool protecc_match_mount(
+    const protecc_profile_t*      compiled,
+    const protecc_mount_request_t* request,
+    protecc_action_t*             actionOut);
 
 /**
  * @brief Get statistics about the compiled pattern set
@@ -176,11 +379,11 @@ bool protecc_match(
  * @return PROTECC_OK on success, error code otherwise
  */
 protecc_error_t protecc_get_stats(
-    const protecc_compiled_t* compiled,
-    protecc_stats_t*          stats);
+    const protecc_profile_t* compiled,
+    protecc_stats_t*         stats);
 
 /**
- * @brief Export compiled pattern set to binary format
+ * @brief Export only the path profile from a compiled profile
  * 
  * This function exports the compiled pattern set to a binary format
  * suitable for loading in eBPF programs or other constrained environments.
@@ -191,11 +394,139 @@ protecc_error_t protecc_get_stats(
  * @param bytesWritten Output pointer for actual bytes written
  * @return PROTECC_OK on success, error code otherwise
  */
-protecc_error_t protecc_export(
-    const protecc_compiled_t* compiled,
-    void*                     buffer,
+protecc_error_t protecc_profile_export_path(
+    const protecc_profile_t* compiled,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten);
+
+/**
+ * @brief Export only the network profile from a compiled profile
+ */
+protecc_error_t protecc_profile_export_net(
+    const protecc_profile_t* compiled,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten);
+
+/**
+ * @brief Export only the mount profile from a compiled profile
+ */
+protecc_error_t protecc_profile_export_mounts(
+    const protecc_profile_t* compiled,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten);
+
+/**
+ * @brief Validate a network profile blob exported by protecc_profile_export_net
+ */
+protecc_error_t protecc_profile_validate_net_blob(
+    const void* buffer,
+    size_t      bufferSize);
+
+/**
+ * @brief Validate a mount profile blob exported by protecc_profile_export_mounts
+ */
+protecc_error_t protecc_profile_validate_mount_blob(
+    const void* buffer,
+    size_t      bufferSize);
+
+/**
+ * @brief Import a validated net profile blob into owned typed rules
+ */
+protecc_error_t protecc_profile_import_net_blob(
+    const void*          buffer,
+    size_t               bufferSize,
+    protecc_net_rule_t** rulesOut,
+    size_t*              countOut);
+
+/**
+ * @brief Import a validated mount profile blob into owned typed rules
+ */
+protecc_error_t protecc_profile_import_mount_blob(
+    const void*            buffer,
+    size_t                 bufferSize,
+    protecc_mount_rule_t** rulesOut,
+    size_t*                countOut);
+
+/**
+ * @brief Free net rules returned by protecc_profile_import_net_blob
+ */
+void protecc_profile_free_net_rules(
+    protecc_net_rule_t* rules,
+    size_t              count);
+
+/**
+ * @brief Free mount rules returned by protecc_profile_import_mount_blob
+ */
+void protecc_profile_free_mount_rules(
+    protecc_mount_rule_t* rules,
+    size_t                count);
+
+/**
+ * @brief Initialize a zero-copy net blob view
+ */
+protecc_error_t protecc_profile_net_view_init(
+    const void*               buffer,
     size_t                    bufferSize,
-    size_t*                   bytesWritten);
+    protecc_net_blob_view_t*  viewOut);
+
+/**
+ * @brief Get a decoded net rule by index from zero-copy net blob view
+ */
+protecc_error_t protecc_profile_net_view_get_rule(
+    const protecc_net_blob_view_t* view,
+    size_t                         index,
+    protecc_net_rule_view_t*       ruleOut);
+
+/**
+ * @brief Decode first net rule and initialize iteration index
+ */
+protecc_error_t protecc_profile_net_view_first(
+    const protecc_net_blob_view_t* view,
+    size_t*                        iterIndexInOut,
+    protecc_net_rule_view_t*       ruleOut);
+
+/**
+ * @brief Decode next net rule using iteration index
+ */
+protecc_error_t protecc_profile_net_view_next(
+    const protecc_net_blob_view_t* view,
+    size_t*                        iterIndexInOut,
+    protecc_net_rule_view_t*       ruleOut);
+
+/**
+ * @brief Initialize a zero-copy mount blob view
+ */
+protecc_error_t protecc_profile_mount_view_init(
+    const void*                 buffer,
+    size_t                      bufferSize,
+    protecc_mount_blob_view_t*  viewOut);
+
+/**
+ * @brief Get a decoded mount rule by index from zero-copy mount blob view
+ */
+protecc_error_t protecc_profile_mount_view_get_rule(
+    const protecc_mount_blob_view_t* view,
+    size_t                           index,
+    protecc_mount_rule_view_t*       ruleOut);
+
+/**
+ * @brief Decode first mount rule and initialize iteration index
+ */
+protecc_error_t protecc_profile_mount_view_first(
+    const protecc_mount_blob_view_t* view,
+    size_t*                          iterIndexInOut,
+    protecc_mount_rule_view_t*       ruleOut);
+
+/**
+ * @brief Decode next mount rule using iteration index
+ */
+protecc_error_t protecc_profile_mount_view_next(
+    const protecc_mount_blob_view_t* view,
+    size_t*                          iterIndexInOut,
+    protecc_mount_rule_view_t*       ruleOut);
 
 /**
  * @brief Import compiled pattern set from binary format
@@ -205,17 +536,17 @@ protecc_error_t protecc_export(
  * @param compiled Output pointer for the compiled pattern set
  * @return PROTECC_OK on success, error code otherwise
  */
-protecc_error_t protecc_import(
+protecc_error_t protecc_profile_import_path_blob(
     const void*          buffer,
     size_t               bufferSize,
-    protecc_compiled_t** compiled);
+    protecc_profile_t** compiled);
 
 /**
  * @brief Free a compiled pattern set
  * 
  * @param compiled Compiled pattern set to free
  */
-void protecc_free(protecc_compiled_t* compiled);
+void protecc_free(protecc_profile_t* compiled);
 
 /**
  * @brief Validate a pattern string

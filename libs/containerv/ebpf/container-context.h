@@ -26,31 +26,10 @@
 
 struct bpf_map_context;
 
-struct __bpf_container_net {
-    // Creation-based network policies (socket type/protocol based)
-    struct bpf_net_create_key* create_keys;
-    int                        create_key_count;
-    int                        create_key_capacity;
-
-    // Tuple-based network policies (for non-UNIX sockets)
-    struct bpf_net_tuple_key*  tuple_keys;
-    int                        tuple_key_count;
-    int                        tuple_key_capacity;
-    
-    // Unix socket policies are tracked separately since they are
-    // path-based.
-    struct bpf_net_unix_key*   unix_keys;
-    int                        unix_key_count;
-    int                        unix_key_capacity;
-};
-
 struct bpf_container_context {
     struct list_item               header;
     char*                          container_id;
     unsigned long long             cgroup_id;
-
-    // policy supported features
-    struct __bpf_container_net     net;
 
     // metrics for this container
     struct containerv_bpf_container_time_metrics metrics_time;
@@ -62,31 +41,6 @@ extern struct bpf_container_context* bpf_container_context_new(
 
 
 extern void bpf_container_context_delete(struct bpf_container_context* context);
-
-extern int bpf_container_context_add_tracked_file_entry(
-    struct bpf_container_context* context,
-    dev_t                         dev,
-    ino_t                         ino);
-extern int bpf_container_context_add_tracked_dir_entry(
-    struct bpf_container_context* context,
-    dev_t                         dev,
-    ino_t                         ino);
-extern int bpf_container_context_add_tracked_basename_entry(
-    struct bpf_container_context* context,
-    dev_t                         dev,
-    ino_t                         ino);
-
-extern int bpf_container_context_add_tracked_net_create_entry(
-    struct bpf_container_context*    context,
-    const struct bpf_net_create_key* key);
-
-extern int bpf_container_context_add_tracked_net_tuple_entry(
-    struct bpf_container_context*   context,
-    const struct bpf_net_tuple_key* key);
-
-extern int bpf_container_context_add_tracked_net_unix_entry(
-    struct bpf_container_context*  context,
-    const struct bpf_net_unix_key* key);
 
 extern void bpf_container_context_apply_paths(
     struct bpf_container_context* containerContext,

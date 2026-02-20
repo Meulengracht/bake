@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __PROTECC_BPF_H__
-#define __PROTECC_BPF_H__
+#ifndef __PROTECC_BPF_PATH_H__
+#define __PROTECC_BPF_PATH_H__
 
 #include <protecc/profile.h>
 
@@ -220,4 +220,4 @@ static __always_inline bool protecc_bpf_match(
     return true;
 }
 
-#endif // !__PROTECC_BPF_H__
+#endif // !__PROTECC_BPF_PATH_H__

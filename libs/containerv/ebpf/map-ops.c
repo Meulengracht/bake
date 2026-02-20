@@ -40,19 +40,20 @@ int bpf_syscall(int cmd, union bpf_attr *attr, unsigned int size)
     return syscall(__NR_bpf, cmd, attr, size);
 }
 
-int bpf_profile_map_set_profile(
-    struct bpf_map_context* context,
+int __set_profile_for_fd(
+    int                     mapFd,
+    unsigned long long      cgroupId,
     uint8_t*                profile,
     size_t                  profileSize)
 {
-    uint64_t                 key = context->cgroup_id;
+    uint64_t                 key = cgroupId;
     struct bpf_profile_value value = {};
     union bpf_attr           attr = {};
 
     memcpy(&value.data[0], profile, profileSize);
     value.size = (unsigned int)profileSize;
 
-    attr.map_fd = context->profile_map_fd;
+    attr.map_fd = mapFd;
     attr.key = (uintptr_t)&key;
     attr.value = (uintptr_t)&value;
     attr.flags = BPF_ANY;
@@ -60,79 +61,59 @@ int bpf_profile_map_set_profile(
     return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
 }
 
-int bpf_profile_map_clear_profile(
-    struct bpf_map_context* context)
+int bpf_profile_map_set_profile(
+    struct bpf_map_context* context,
+    uint8_t*                profile,
+    size_t                  profileSize)
+{
+    return __set_profile_for_fd(context->profile_map_fd, context->cgroup_id, profile, profileSize);
+}
+
+int bpf_profile_map_set_net_profile(
+    struct bpf_map_context* context,
+    uint8_t*                profile,
+    size_t                  profileSize)
+{
+    return __set_profile_for_fd(context->net_profile_map_fd, context->cgroup_id, profile, profileSize);
+}
+
+int bpf_profile_map_set_mount_profile(
+    struct bpf_map_context* context,
+    uint8_t*                profile,
+    size_t                  profileSize)
+{
+    return __set_profile_for_fd(context->mount_profile_map_fd, context->cgroup_id, profile, profileSize);
+}
+
+int __clear_profile_for_fd(
+    int                mapFd,
+    unsigned long long cgroupId)
 {
     union bpf_attr attr = {};
-    uint64_t       key = context->cgroup_id;
+    uint64_t       key = cgroupId;
 
-    attr.map_fd = context->profile_map_fd;
+    attr.map_fd = mapFd;
     attr.key = (uintptr_t)&key;
 
     return bpf_syscall(BPF_MAP_DELETE_ELEM, &attr, sizeof(attr));
 }
 
-int bpf_net_create_map_allow(
-    struct bpf_map_context*          context,
-    const struct bpf_net_create_key* key,
-    unsigned int                     allowMask)
+int bpf_profile_map_clear_profile(
+    struct bpf_map_context* context)
 {
-    struct bpf_net_policy_value value = {};
-    union bpf_attr               attr = {};
-
-    if (context->net_create_map_fd < 0 || key == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    value.allow_mask = allowMask;
-    attr.map_fd = context->net_create_map_fd;
-    attr.key = (uintptr_t)key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
+    return __clear_profile_for_fd(context->profile_map_fd, context->cgroup_id);
 }
 
-int bpf_net_tuple_map_allow(
-    struct bpf_map_context*         context,
-    const struct bpf_net_tuple_key* key,
-    unsigned int                    allowMask)
+int bpf_profile_map_clear_net_profile(
+    struct bpf_map_context* context)
 {
-    struct bpf_net_policy_value value = {};
-    union bpf_attr               attr = {};
-
-    if (context->net_tuple_map_fd < 0 || key == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    value.allow_mask = allowMask;
-    attr.map_fd = context->net_tuple_map_fd;
-    attr.key = (uintptr_t)key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
+    return __clear_profile_for_fd(context->net_profile_map_fd, context->cgroup_id);
 }
 
-int bpf_net_unix_map_allow(
-    struct bpf_map_context*        context,
-    const struct bpf_net_unix_key* key,
-    unsigned int                   allowMask)
+int bpf_profile_map_clear_mount_profile(
+    struct bpf_map_context* context)
 {
-    struct bpf_net_policy_value value = {};
-    union bpf_attr               attr = {};
-
-    if (context->net_unix_map_fd < 0 || key == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    value.allow_mask = allowMask;
-    attr.map_fd = context->net_unix_map_fd;
-    attr.key = (uintptr_t)key;
-    attr.value = (uintptr_t)&value;
-    attr.flags = BPF_ANY;
-    return bpf_syscall(BPF_MAP_UPDATE_ELEM, &attr, sizeof(attr));
+    return __clear_profile_for_fd(context->mount_profile_map_fd, context->cgroup_id);
 }
 
 int bpf_map_delete_batch_by_fd(int mapFd, void* keys, int count, size_t keySize)

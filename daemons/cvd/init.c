@@ -201,10 +201,8 @@ static void __initialize_bpf(void)
 
     if (containerv_bpf_get_metrics(&metrics) == 0) {
         VLOG_DEBUG("cvd", 
-            "BPF Policy Metrics - Containers: %d, Total Entries: %d, Capacity: %d\n",
-            metrics.container_count,
-            metrics.policy_entry_count,
-            metrics.max_map_capacity
+            "BPF Policy Metrics - containers: %d\n",
+            metrics.container_count
         );
     }
 

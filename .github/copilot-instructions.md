@@ -51,6 +51,7 @@ The project emphasizes cross-compilation support and lightweight package managem
 │   ├── oven/          # Build backend implementations
 │   ├── package/       # Package file format handling
 │   ├── platform/      # Platform abstraction layer
+│   ├── protecc/       # Profile and security rule engine
 │   ├── remote/        # Remote build operations
 │   ├── vlog/          # Logging library
 │   └── yaml/          # YAML recipe parsing
@@ -174,6 +175,8 @@ serve remove package              # Remove package
 ```
 
 ## Coding Standards
+
+If possible, apply these guidelines to all C code in the project, including tools, libraries, and daemons. The goal is to maintain a consistent style across the codebase for readability and maintainability. Most of the guidelines in this file are based on SOLID principles and common C coding practices, but adapted to the specific needs of this project.
 
 ### General Guidelines
 - **Language**: Pure C for maximum portability

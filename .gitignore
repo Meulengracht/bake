@@ -40,6 +40,7 @@ _codeql_detected_source_root
 .vchcache
 *.pack
 .vscode
+.cache
 .vs
 vcpkg_installed
 

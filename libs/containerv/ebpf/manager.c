@@ -51,6 +51,7 @@
 #ifdef HAVE_BPF_SKELETON
 #include "fs-lsm.skel.h"
 #include "net-lsm.skel.h"
+#include "mount-lsm.skel.h"
 #endif
 
 struct __manager_metrics {
@@ -65,13 +66,13 @@ static struct {
     
     // Policy map file descriptors
     int profile_map_fd;
-    int net_create_map_fd;
-    int net_tuple_map_fd;
-    int net_unix_map_fd;
+    int net_profile_map_fd;
+    int mount_profile_map_fd;
 
     // Denial queues
     struct ring_buffer* fs_denials;
     struct ring_buffer* net_denials;
+    struct ring_buffer* mount_denials;
 
     // Thread for processing deny events from BPF programs
     thrd_t       deny_thread;
@@ -87,18 +88,18 @@ static struct {
 #ifdef HAVE_BPF_SKELETON
     struct fs_lsm_bpf*  fs_skel;
     struct net_lsm_bpf* net_skel;
+    struct mount_lsm_bpf* mount_skel;
 #endif
 } g_bpf = {
     .status = CV_BPF_UNINITIALIZED,
     
     .profile_map_fd = -1,
-    .net_create_map_fd = -1,
-    .net_tuple_map_fd = -1,
-    .net_unix_map_fd = -1,
+    .net_profile_map_fd = -1,
+    .mount_profile_map_fd = -1,
 
     .fs_denials = NULL,
     .net_denials = NULL,
-
+    .mount_denials = NULL,
     .deny_thread = 0,
     .deny_thread_running = 0,
     .deny_thread_stop = 0,
@@ -206,6 +207,22 @@ static int __deny_event_thread(void* arg)
         ev.data.ptr = g_bpf.net_denials;
         if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
             VLOG_WARNING("cvd", "bpf_manager: epoll_ctl add net ring failed: %s\n", strerror(errno));
+            close(epfd);
+            return 0;
+        }
+    }
+
+    if (g_bpf.mount_denials != NULL) {
+        int fd = ring_buffer__epoll_fd(g_bpf.mount_denials);
+        if (fd < 0) {
+            VLOG_WARNING("cvd", "bpf_manager: mount deny ring epoll fd failed: %d\n", fd);
+            close(epfd);
+            return 0;
+        }
+        ev.events = EPOLLIN;
+        ev.data.ptr = g_bpf.mount_denials;
+        if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
+            VLOG_WARNING("cvd", "bpf_manager: epoll_ctl add mount ring failed: %s\n", strerror(errno));
             close(epfd);
             return 0;
         }
@@ -449,23 +466,12 @@ static int __load_net_program(void)
     VLOG_DEBUG("cvd", "bpf_manager: net BPF skeleton opened\n");
 
     int reused_create = __reuse_pinned_map_or_unpin(
-        g_bpf.net_skel->maps.net_create_map,
-        NET_CREATE_MAP_PIN_PATH,
+        g_bpf.net_skel->maps.net_profile_map,
+        NET_PROFILE_MAP_PIN_PATH,
         BPF_MAP_TYPE_HASH,
-        sizeof(struct bpf_net_create_key),
-        sizeof(struct bpf_net_policy_value));
-    int reused_tuple = __reuse_pinned_map_or_unpin(
-        g_bpf.net_skel->maps.net_tuple_map,
-        NET_TUPLE_MAP_PIN_PATH,
-        BPF_MAP_TYPE_HASH,
-        sizeof(struct bpf_net_tuple_key),
-        sizeof(struct bpf_net_policy_value));
-    int reused_unix = __reuse_pinned_map_or_unpin(
-        g_bpf.net_skel->maps.net_unix_map,
-        NET_UNIX_MAP_PIN_PATH,
-        BPF_MAP_TYPE_HASH,
-        sizeof(struct bpf_net_unix_key),
-        sizeof(struct bpf_net_policy_value));
+        sizeof(uint64_t),
+        sizeof(struct bpf_profile_value)
+    );
 
     status = net_lsm_bpf__load(g_bpf.net_skel);
     if (status) {
@@ -483,43 +489,21 @@ static int __load_net_program(void)
         return -1;
     }
 
-    g_bpf.net_create_map_fd = bpf_map__fd(g_bpf.net_skel->maps.net_create_map);
-    g_bpf.net_tuple_map_fd = bpf_map__fd(g_bpf.net_skel->maps.net_tuple_map);
-    g_bpf.net_unix_map_fd = bpf_map__fd(g_bpf.net_skel->maps.net_unix_map);
-    if (g_bpf.net_create_map_fd < 0 ||
-        g_bpf.net_tuple_map_fd < 0 ||
-        g_bpf.net_unix_map_fd < 0) {
+    g_bpf.net_profile_map_fd = bpf_map__fd(g_bpf.net_skel->maps.net_profile_map);
+    if (g_bpf.net_profile_map_fd < 0) {
         VLOG_ERROR("cvd", "bpf_manager: failed to get net policy map fds\n");
         net_lsm_bpf__destroy(g_bpf.net_skel);
         g_bpf.net_skel = NULL;
-        g_bpf.net_create_map_fd = -1;
-        g_bpf.net_tuple_map_fd = -1;
-        g_bpf.net_unix_map_fd = -1;
+        g_bpf.net_profile_map_fd = -1;
         return -1;
     }
 
-    status = __pin_map_best_effort(g_bpf.net_create_map_fd, NET_CREATE_MAP_PIN_PATH, reused_create);
+    status = __pin_map_best_effort(g_bpf.net_profile_map_fd, NET_PROFILE_MAP_PIN_PATH, reused_create);
     if (status < 0) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to pin net create map to %s: %s\n",
-                     NET_CREATE_MAP_PIN_PATH, strerror(errno));
+        VLOG_WARNING("cvd", "bpf_manager: failed to pin net profile map to %s: %s\n",
+                     NET_PROFILE_MAP_PIN_PATH, strerror(errno));
     } else {
-        VLOG_DEBUG("cvd", "bpf_manager: net create map pinned to %s\n", NET_CREATE_MAP_PIN_PATH);
-    }
-
-    status = __pin_map_best_effort(g_bpf.net_tuple_map_fd, NET_TUPLE_MAP_PIN_PATH, reused_tuple);
-    if (status < 0) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to pin net tuple map to %s: %s\n",
-                     NET_TUPLE_MAP_PIN_PATH, strerror(errno));
-    } else {
-        VLOG_DEBUG("cvd", "bpf_manager: net tuple map pinned to %s\n", NET_TUPLE_MAP_PIN_PATH);
-    }
-
-    status = __pin_map_best_effort(g_bpf.net_unix_map_fd, NET_UNIX_MAP_PIN_PATH, reused_unix);
-    if (status < 0) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to pin net unix map to %s: %s\n",
-                     NET_UNIX_MAP_PIN_PATH, strerror(errno));
-    } else {
-        VLOG_DEBUG("cvd", "bpf_manager: net unix map pinned to %s\n", NET_UNIX_MAP_PIN_PATH);
+        VLOG_DEBUG("cvd", "bpf_manager: net profile map pinned to %s\n", NET_PROFILE_MAP_PIN_PATH);
     }
 
     if (g_bpf.net_skel->maps.deny_events != NULL) {
@@ -534,11 +518,76 @@ static int __load_net_program(void)
     return 0;
 }
 
+static int __load_mount_program(void)
+{
+    int status;
+
+    g_bpf.mount_skel = mount_lsm_bpf__open();
+    if (!g_bpf.mount_skel) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to open mount BPF skeleton\n");
+        return -1;
+    }
+    
+    VLOG_DEBUG("cvd", "bpf_manager: mount BPF skeleton opened\n");
+
+    int reused_create = __reuse_pinned_map_or_unpin(
+        g_bpf.mount_skel->maps.mount_profile_map,
+        MOUNT_PROFILE_MAP_PIN_PATH,
+        BPF_MAP_TYPE_HASH,
+        sizeof(uint64_t),
+        sizeof(struct bpf_profile_value)
+    );
+
+    status = mount_lsm_bpf__load(g_bpf.mount_skel);
+    if (status) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to load mount BPF skeleton: %d\n", status);
+        mount_lsm_bpf__destroy(g_bpf.mount_skel);
+        g_bpf.mount_skel = NULL;
+        return -1;
+    }
+
+    status = mount_lsm_bpf__attach(g_bpf.mount_skel);
+    if (status) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to attach mount BPF LSM program: %d\n", status);
+        mount_lsm_bpf__destroy(g_bpf.mount_skel);
+        g_bpf.mount_skel = NULL;
+        return -1;
+    }
+
+    g_bpf.mount_profile_map_fd = bpf_map__fd(g_bpf.mount_skel->maps.mount_profile_map);
+    if (g_bpf.mount_profile_map_fd < 0) {
+        VLOG_ERROR("cvd", "bpf_manager: failed to get mount policy map fds\n");
+        mount_lsm_bpf__destroy(g_bpf.mount_skel);
+        g_bpf.mount_skel = NULL;
+        g_bpf.mount_profile_map_fd = -1;
+        return -1;
+    }
+
+    status = __pin_map_best_effort(g_bpf.mount_profile_map_fd, MOUNT_PROFILE_MAP_PIN_PATH, reused_create);
+    if (status < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to pin mount profile map to %s: %s\n",
+                     MOUNT_PROFILE_MAP_PIN_PATH, strerror(errno));
+    } else {
+        VLOG_DEBUG("cvd", "bpf_manager: mount profile map pinned to %s\n", MOUNT_PROFILE_MAP_PIN_PATH);
+    }
+
+    if (g_bpf.mount_skel->maps.deny_events != NULL) {
+        int deny_fd = bpf_map__fd(g_bpf.mount_skel->maps.deny_events);
+        if (deny_fd >= 0) {
+            g_bpf.mount_denials = ring_buffer__new(deny_fd, __deny_event_cb, NULL, NULL);
+            if (g_bpf.mount_denials == NULL) {
+                VLOG_WARNING("cvd", "bpf_manager: failed to create mount deny ring buffer\n");
+            }
+        }
+    }
+    return 0;
+}
+
 #endif /* HAVE_BPF_SKELETON */
 
 static void __start_denial_thread(void)
 {
-    if (g_bpf.fs_denials == NULL && g_bpf.net_denials == NULL) {
+    if (g_bpf.fs_denials == NULL && g_bpf.mount_denials == NULL) {
         return;
     }
 
@@ -558,52 +607,10 @@ static void __start_denial_thread(void)
         ring_buffer__free(g_bpf.net_denials);
         g_bpf.net_denials = NULL;
     }
-}
-
-static int __verify_net_map_writable(int map_fd, const void* key, const char* name)
-{
-    struct bpf_net_policy_value value = { .allow_mask = BPF_NET_CREATE };
-
-    if (map_fd < 0 || key == NULL || name == NULL) {
-        errno = EINVAL;
-        return -1;
+    if (g_bpf.mount_denials) {
+        ring_buffer__free(g_bpf.mount_denials);
+        g_bpf.mount_denials = NULL;
     }
-
-    if (bpf_map_update_elem(map_fd, key, &value, BPF_ANY) < 0) {
-        VLOG_ERROR("cvd", "bpf_manager: net map %s not writable: %s\n", name, strerror(errno));
-        return -1;
-    }
-
-    if (bpf_map_delete_elem(map_fd, key) < 0) {
-        VLOG_ERROR("cvd", "bpf_manager: net map %s delete failed: %s\n", name, strerror(errno));
-        return -1;
-    }
-
-    return 0;
-}
-
-static int __verify_net_maps_writable(void)
-{
-    struct bpf_net_create_key create_key = {0};
-    struct bpf_net_tuple_key tuple_key = {0};
-    struct bpf_net_unix_key unix_key = {0};
-
-    create_key.cgroup_id = ~0ULL;
-    tuple_key.cgroup_id = ~0ULL;
-    unix_key.cgroup_id = ~0ULL;
-    snprintf(unix_key.path, sizeof(unix_key.path), "cvd_probe");
-
-    if (__verify_net_map_writable(g_bpf.net_create_map_fd, &create_key, "net_create_map") < 0) {
-        return -1;
-    }
-    if (__verify_net_map_writable(g_bpf.net_tuple_map_fd, &tuple_key, "net_tuple_map") < 0) {
-        return -1;
-    }
-    if (__verify_net_map_writable(g_bpf.net_unix_map_fd, &unix_key, "net_unix_map") < 0) {
-        return -1;
-    }
-
-    return 0;
 }
 
 void __cleanup_fs_program(void)
@@ -623,18 +630,20 @@ void __cleanup_net_program(void)
         return;
     }
 
-    if (unlink(NET_CREATE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net create map: %s\n",
+    if (unlink(NET_PROFILE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net profile map: %s\n",
                      strerror(errno));
     }
+}
 
-    if (unlink(NET_TUPLE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net tuple map: %s\n",
-                     strerror(errno));
+void __cleanup_mount_program(void)
+{
+    if (g_bpf.mount_skel == NULL) {
+        return;
     }
 
-    if (unlink(NET_UNIX_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net unix map: %s\n",
+    if (unlink(MOUNT_PROFILE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin mount profile map: %s\n",
                      strerror(errno));
     }
 }
@@ -645,8 +654,8 @@ int containerv_bpf_initialize(void)
     VLOG_TRACE("cvd", "bpf_manager: BPF skeleton not available, using seccomp fallback\n");
     return 0;
 #else
-    int status;
     const char* env;
+    int         status;
 
     VLOG_TRACE("cvd", "bpf_manager: initializing BPF manager\n");
 
@@ -678,32 +687,10 @@ int containerv_bpf_initialize(void)
         VLOG_ERROR("cvd", "bpf_manager: failed to load net BPF program\n");
         return status;
     }
-
-    status = __verify_net_maps_writable();
+    
+    status = __load_mount_program();
     if (status) {
-        VLOG_ERROR("cvd", "bpf_manager: net policy maps are not writable\n");
-        __cleanup_fs_program();
-        __cleanup_net_program();
-        if (g_bpf.fs_denials) {
-            ring_buffer__free(g_bpf.fs_denials);
-            g_bpf.fs_denials = NULL;
-        }
-        if (g_bpf.net_denials) {
-            ring_buffer__free(g_bpf.net_denials);
-            g_bpf.net_denials = NULL;
-        }
-        if (g_bpf.fs_skel) {
-            fs_lsm_bpf__destroy(g_bpf.fs_skel);
-            g_bpf.fs_skel = NULL;
-        }
-        if (g_bpf.net_skel) {
-            net_lsm_bpf__destroy(g_bpf.net_skel);
-            g_bpf.net_skel = NULL;
-        }
-        g_bpf.profile_map_fd = -1;
-        g_bpf.net_create_map_fd = -1;
-        g_bpf.net_tuple_map_fd = -1;
-        g_bpf.net_unix_map_fd = -1;
+        VLOG_ERROR("cvd", "bpf_manager: failed to load mount BPF program\n");
         return status;
     }
     
@@ -740,7 +727,8 @@ void containerv_bpf_shutdown(void)
     // Cleanup programs
     __cleanup_fs_program();
     __cleanup_net_program();
-    
+    __cleanup_mount_program();
+
     __stop_denial_thread();
     if (g_bpf.fs_denials) {
         ring_buffer__free(g_bpf.fs_denials);
@@ -749,6 +737,10 @@ void containerv_bpf_shutdown(void)
     if (g_bpf.net_denials) {
         ring_buffer__free(g_bpf.net_denials);
         g_bpf.net_denials = NULL;
+    }
+    if (g_bpf.mount_denials) {
+        ring_buffer__free(g_bpf.mount_denials);
+        g_bpf.mount_denials = NULL;
     }
 
 #ifdef HAVE_BPF_SKELETON
@@ -760,12 +752,15 @@ void containerv_bpf_shutdown(void)
         net_lsm_bpf__destroy(g_bpf.net_skel);
         g_bpf.net_skel = NULL;
     }
+    if (g_bpf.mount_skel) {
+        mount_lsm_bpf__destroy(g_bpf.mount_skel);
+        g_bpf.mount_skel = NULL;
+    }
 #endif
     
     g_bpf.profile_map_fd = -1;
-    g_bpf.net_create_map_fd = -1;
-    g_bpf.net_tuple_map_fd = -1;
-    g_bpf.net_unix_map_fd = -1;
+    g_bpf.net_profile_map_fd = -1;
+    g_bpf.mount_profile_map_fd = -1;
     g_bpf.status = CV_BPF_UNINITIALIZED;
     
     VLOG_TRACE("cvd", "bpf_manager: shutdown complete\n");
@@ -786,9 +781,8 @@ static void __map_context_from_container_context(
     struct bpf_map_context*       mapContext)
 {
     mapContext->profile_map_fd = g_bpf.profile_map_fd;
-    mapContext->net_create_map_fd = g_bpf.net_create_map_fd;
-    mapContext->net_tuple_map_fd = g_bpf.net_tuple_map_fd;
-    mapContext->net_unix_map_fd = g_bpf.net_unix_map_fd;
+    mapContext->net_profile_map_fd = g_bpf.net_profile_map_fd;
+    mapContext->mount_profile_map_fd = g_bpf.mount_profile_map_fd;
     mapContext->cgroup_id = containerContext->cgroup_id;
 }
 
@@ -814,9 +808,7 @@ int containerv_bpf_populate_policy(
     }
     
     fsEnabled = (g_bpf.profile_map_fd >= 0);
-    netEnabled = (g_bpf.net_create_map_fd >= 0 ||
-                       g_bpf.net_tuple_map_fd >= 0 ||
-                       g_bpf.net_unix_map_fd >= 0);
+    netEnabled = (g_bpf.net_profile_map_fd >= 0);
 
     if (!fsEnabled && !netEnabled) {
         VLOG_DEBUG("cvd", "bpf_manager: no active BPF LSM programs for container %s\n", containerId);
@@ -960,19 +952,6 @@ int containerv_bpf_cleanup_policy(const char* containerId)
     return status;
 }
 
-static int __count_total_entries(void)
-{
-    struct list_item* i;
-    int               total = 0;
-    list_foreach(&g_bpf.trackers, i) {
-        struct bpf_container_context* context = (struct bpf_container_context*)i;
-        total += context->net.create_key_count;
-        total += context->net.tuple_key_count;
-        total += context->net.unix_key_count;
-    }
-    return total;
-}
-
 int containerv_bpf_get_metrics(struct containerv_bpf_metrics* metrics)
 {
     if (metrics == NULL) {
@@ -988,8 +967,6 @@ int containerv_bpf_get_metrics(struct containerv_bpf_metrics* metrics)
     
     metrics->status = g_bpf.status;
     metrics->container_count = g_bpf.trackers.count;
-    metrics->policy_entry_count = __count_total_entries();
-    metrics->max_map_capacity = MAX_TRACKED_ENTRIES;
     metrics->total_populate_ops = g_bpf.metrics.total_populate_ops;
     metrics->total_cleanup_ops = g_bpf.metrics.total_cleanup_ops;
     metrics->failed_populate_ops = g_bpf.metrics.failed_populate_ops;

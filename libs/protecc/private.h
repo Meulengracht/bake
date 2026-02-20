@@ -78,7 +78,7 @@ struct protecc_node {
 /**
  * @brief Compiled pattern set structure
  */
-struct protecc_compiled {
+struct protecc_profile {
     protecc_node_t*          root;               /**< Root of the trie */
     uint32_t                 flags;              /**< Compilation flags */
     protecc_compile_config_t config;             /**< Compiler configuration */
@@ -91,8 +91,53 @@ struct protecc_compiled {
     uint32_t*                dfa_accept;
     uint32_t*                dfa_perms;
     uint32_t*                dfa_transitions;
+    protecc_net_rule_t*      net_rules;          /**< Compiled network rules */
+    size_t                   net_rule_count;
+    protecc_mount_rule_t*    mount_rules;        /**< Compiled mount rules */
+    size_t                   mount_rule_count;
     protecc_stats_t          stats;              /**< Statistics */
 };
+
+static bool __is_valid_action(protecc_action_t action)
+{
+    return action == PROTECC_ACTION_ALLOW
+        || action == PROTECC_ACTION_DENY
+        || action == PROTECC_ACTION_AUDIT;
+}
+
+extern char*       __blob_string_dup(const uint8_t* strings, uint32_t offset);
+extern uint32_t    __blob_string_write(uint8_t* base, size_t* cursor, const char* value);
+extern size_t      __blob_string_measure(const char* value);
+extern const char* __blob_string_ptr(const uint8_t* strings, uint32_t offset);
+
+extern size_t __profile_size(uint32_t nodeCount, uint32_t edgeCount);
+extern protecc_error_t __update_stats_trie_profile(protecc_profile_t* compiled);
+
+extern protecc_error_t __validate_net_rule(const protecc_net_rule_t* rule);
+extern protecc_error_t __validate_mount_rule(const protecc_mount_rule_t* rule);
+
+extern protecc_error_t __export_dfa_profile(
+    const protecc_profile_t* profile,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten);
+
+extern protecc_error_t __import_dfa_profile(
+    const uint8_t*                  base,
+    size_t                          buffer_size,
+    const protecc_profile_header_t* header,
+    protecc_profile_t**             profileOut);
+
+extern protecc_error_t __export_trie_profile(
+    const protecc_profile_t* compiled,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten);
+extern protecc_error_t __import_trie_profile(
+    const uint8_t*                  base,
+    size_t                          bufferSize,
+    const protecc_profile_header_t* header,
+    protecc_profile_t**             profileOut);
 
 /**
  * @brief Create a new trie node
@@ -146,17 +191,32 @@ void protecc_charset_set_range(protecc_charset_t* charset, char start, char end)
 /**
  * @brief Convert the compiled trie to a DFA representation
  */
-protecc_error_t protecc_dfa_from_trie(protecc_compiled_t* comp);
+protecc_error_t protecc_profile_setup_dfa(protecc_profile_t* comp);
 
 /**
  * @brief Match path against a trie starting from a specific node
  */
-bool protecc_match_internal(
+extern bool __matcher_trie(
     const protecc_node_t* node,
     const char*           path,
-    size_t                path_len,
     size_t                pos,
     uint32_t              flags,
-    protecc_permission_t* perms_out);
+    protecc_permission_t  requiredPermissions);
+
+/**
+ * @brief Match path using DFA tables
+ */
+extern bool __matcher_dfa(
+    const protecc_profile_t* compiled,
+    const char*              path,
+    protecc_permission_t     requiredPermissions);
+
+/**
+ * @brief Match a net or mount rule pattern
+ */
+extern bool __match_optional_pattern(
+    const char* pattern,
+    const char* value,
+    bool        caseInsensitive);
 
 #endif /* PROTECC_INTERNAL_H */

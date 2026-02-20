@@ -47,7 +47,7 @@
 #include "common.h"
 #include "tracing.h"
 
-#include <protecc/bpf.h>
+#include <protecc/bpf/path.h>
 
 /* Permission bits */
 #define PERM_READ  0x1
