@@ -204,7 +204,7 @@ protecc_error_t protecc_get_stats(
 
 static void __free_compiled_mount_rules(protecc_profile_t* compiled)
 {
-    if (!compiled || !compiled->mount_rules) {
+    if (compiled->mount_rules == NULL) {
         return;
     }
 
@@ -220,7 +220,7 @@ static void __free_compiled_mount_rules(protecc_profile_t* compiled)
 
 static void __free_compiled_net_rules(protecc_profile_t* compiled)
 {
-    if (!compiled || !compiled->net_rules) {
+    if (compiled->net_rules == NULL) {
         return;
     }
 

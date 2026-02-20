@@ -27,11 +27,11 @@
 /**
  * @brief Parse a character set like [abc] or [a-z]
  */
-static protecc_error_t parse_charset(
-    const char** pattern,
+static protecc_error_t __parse_charset(
+    const char**    pattern,
     protecc_node_t* node,
-    uint32_t flags
-) {
+    uint32_t        flags)
+{
     const char* p = *pattern;
     
     if (*p != '[') {
@@ -95,14 +95,14 @@ static protecc_error_t parse_charset(
 /**
  * @brief Check if character is a modifier
  */
-static bool is_modifier(char c) {
+static bool __is_modifier(char c) {
     return c == '?' || c == '+' || c == '*';
 }
 
 /**
  * @brief Parse a modifier
  */
-static protecc_modifier_t parse_modifier(const char** pattern) {
+static protecc_modifier_t __parse_modifier(const char** pattern) {
     char c = **pattern;
     if (c == '?') {
         (*pattern)++;
@@ -118,29 +118,30 @@ static protecc_modifier_t parse_modifier(const char** pattern) {
 }
 
 protecc_error_t protecc_parse_pattern(
-    const char* pattern,
-    protecc_node_t* root,
-    uint32_t flags,
-    protecc_node_t** terminal_out
+    const char*      pattern,
+    protecc_node_t*  root,
+    uint32_t         flags,
+    protecc_node_t** terminalOut
 ) {
-    if (!pattern || !root) {
+    const char*     p = pattern;
+    protecc_node_t* current = root;
+    
+    if (pattern == NULL || root == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (terminal_out) {
-        *terminal_out = NULL;
+    if (terminalOut != NULL) {
+        *terminalOut = NULL;
     }
-    
-    const char* p = pattern;
-    protecc_node_t* current = root;
     
     while (*p) {
         protecc_node_t* node = NULL;
+        protecc_error_t err;
         
         if (*p == '*' && *(p + 1) == '*') {
             // ** - recursive wildcard
             node = protecc_node_new(NODE_WILDCARD_RECURSIVE);
-            if (!node) {
+            if (node == NULL) {
                 return PROTECC_ERROR_OUT_OF_MEMORY;
             }
             p += 2;
@@ -170,15 +171,15 @@ protecc_error_t protecc_parse_pattern(
                 return PROTECC_ERROR_OUT_OF_MEMORY;
             }
             
-            protecc_error_t err = parse_charset(&p, node, flags);
+            err = __parse_charset(&p, node, flags);
             if (err != PROTECC_OK) {
                 protecc_node_free(node);
                 return err;
             }
             
             // Check for modifier after charset
-            if (*p && is_modifier(*p) && *p != '*') {
-                node->modifier = parse_modifier(&p);
+            if (*p && __is_modifier(*p) && *p != '*') {
+                node->modifier = __parse_modifier(&p);
             }
         } else {
             // Literal character
@@ -200,7 +201,7 @@ protecc_error_t protecc_parse_pattern(
         }
         
         // Add node to current
-        protecc_error_t err = protecc_node_add_child(current, node);
+        err = protecc_node_add_child(current, node);
         if (err != PROTECC_OK) {
             protecc_node_free(node);
             return err;
@@ -212,8 +213,8 @@ protecc_error_t protecc_parse_pattern(
     // Mark the last node as terminal
     if (current != root) {
         current->is_terminal = true;
-        if (terminal_out) {
-            *terminal_out = current;
+        if (terminalOut) {
+            *terminalOut = current;
         }
     }
     

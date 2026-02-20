@@ -39,6 +39,7 @@ static __always_inline bool protecc_bpf_match_mount(
     const __u8*                           strings;
     __u64                                 rules_size;
     __u64                                 required_size;
+    __u32                                 i;
     bool                                  case_insensitive;
 
     if (!profile || !request) {
@@ -74,7 +75,7 @@ static __always_inline bool protecc_bpf_match_mount(
 
     case_insensitive = (header->flags & PROTECC_PROFILE_FLAG_CASE_INSENSITIVE) != 0;
 
-    bpf_for (__u32 i, 0, PROTECC_BPF_MAX_MOUNT_RULES) {
+    bpf_for (i, 0, PROTECC_BPF_MAX_MOUNT_RULES) {
         const protecc_mount_profile_rule_t* rule;
 
         if (i >= header->rule_count) {

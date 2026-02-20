@@ -37,6 +37,7 @@ if(CLANG AND BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
     set(BPF_SOURCES
         ${BPF_SOURCE_DIR}/fs-lsm.bpf.c
         ${BPF_SOURCE_DIR}/net-lsm.bpf.c
+        ${BPF_SOURCE_DIR}/mount-lsm.bpf.c
     )
     
     # Generate the vmlinux.h header for BPF

@@ -42,6 +42,7 @@ static __always_inline bool protecc_bpf_match_net(
     const __u8*                         strings;
     __u64                               rules_size;
     __u64                               required_size;
+    __u32                               i;
     bool                                case_insensitive;
 
     if (!profile || !request) {
@@ -77,7 +78,7 @@ static __always_inline bool protecc_bpf_match_net(
 
     case_insensitive = (header->flags & PROTECC_PROFILE_FLAG_CASE_INSENSITIVE) != 0;
 
-    bpf_for (__u32 i, 0, PROTECC_BPF_MAX_NET_RULES) {
+    bpf_for (i, 0, PROTECC_BPF_MAX_NET_RULES) {
         const protecc_net_profile_rule_t* rule;
 
         if (i >= header->rule_count) {

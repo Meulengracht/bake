@@ -50,8 +50,6 @@ struct containerv_bpf_container_metrics {
 struct containerv_bpf_metrics {
     enum containerv_bpf_status status;
     int                        container_count;
-    int                        policy_entry_count;
-    int                        max_map_capacity;
 
     // Total populate operations performed
     unsigned long long total_populate_ops;

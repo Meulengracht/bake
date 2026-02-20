@@ -47,7 +47,5 @@ if(PROTECC_BUILD_TESTS)
     target_link_libraries(protecc_test PRIVATE protecc)
     target_include_directories(protecc_test PRIVATE include .)
     
-    # Add test target
-    enable_testing()
     add_test(NAME protecc_test COMMAND protecc_test)
 endif()

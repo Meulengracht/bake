@@ -60,19 +60,7 @@ struct bpf_container_context* bpf_container_context_new(
     
     // Set initial members and capacities
     context->cgroup_id = cgroupId;
-    context->net.create_key_capacity = 16;
-    context->net.tuple_key_capacity = 32;
-    context->net.unix_key_capacity = 16;
-
-    context->net.create_keys = malloc(sizeof(struct bpf_net_create_key) * context->net.create_key_capacity);
-    context->net.tuple_keys = malloc(sizeof(struct bpf_net_tuple_key) * context->net.tuple_key_capacity);
-    context->net.unix_keys = malloc(sizeof(struct bpf_net_unix_key) * context->net.unix_key_capacity);
-
-    if (context->net.create_keys == NULL||
-        context->net.tuple_keys == NULL|| context->net.unix_keys == NULL) {
-        bpf_container_context_delete(context);
-        return NULL;
-    }
+    
     return context;
 }
 
@@ -82,89 +70,8 @@ void bpf_container_context_delete(struct bpf_container_context* context)
         return;
     }
 
-    free(context->net.tuple_keys);
-    free(context->net.create_keys);
-    free(context->net.unix_keys);
     free(context->container_id);
     free(context);
-}
-
-static int __ensure_capacity_sized(void** keys, int* count, int* capacity, size_t elem_size)
-{
-    if (*count < *capacity) {
-        return 0;
-    }
-    if (*capacity >= MAX_TRACKED_ENTRIES) {
-        return -1;
-    }
-    int new_capacity = (*capacity * 2 < MAX_TRACKED_ENTRIES) ? (*capacity * 2) : MAX_TRACKED_ENTRIES;
-    void* new_keys = realloc(*keys, elem_size * (size_t)new_capacity);
-    if (!new_keys) {
-        return -1;
-    }
-    *keys = new_keys;
-    *capacity = new_capacity;
-    return 0;
-}
-
-int bpf_container_context_add_tracked_net_create_entry(
-    struct bpf_container_context*    context,
-    const struct bpf_net_create_key* key)
-{
-    if (!context || !key) {
-        return -1;
-    }
-
-    if (__ensure_capacity_sized((void**)&context->net.create_keys,
-                                &context->net.create_key_count,
-                                &context->net.create_key_capacity,
-                                sizeof(*context->net.create_keys)) < 0) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked net create key capacity\n");
-        return -1;
-    }
-
-    context->net.create_keys[context->net.create_key_count++] = *key;
-    return 0;
-}
-
-int bpf_container_context_add_tracked_net_tuple_entry(
-    struct bpf_container_context* context,
-    const struct bpf_net_tuple_key* key)
-{
-    if (!context || !key) {
-        return -1;
-    }
-
-    if (__ensure_capacity_sized((void**)&context->net.tuple_keys,
-                                &context->net.tuple_key_count,
-                                &context->net.tuple_key_capacity,
-                                sizeof(*context->net.tuple_keys)) < 0) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked net tuple key capacity\n");
-        return -1;
-    }
-
-    context->net.tuple_keys[context->net.tuple_key_count++] = *key;
-    return 0;
-}
-
-int bpf_container_context_add_tracked_net_unix_entry(
-    struct bpf_container_context* context,
-    const struct bpf_net_unix_key* key)
-{
-    if (!context || !key) {
-        return -1;
-    }
-
-    if (__ensure_capacity_sized((void**)&context->net.unix_keys,
-                                &context->net.unix_key_count,
-                                &context->net.unix_key_capacity,
-                                sizeof(*context->net.unix_keys)) < 0) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to expand tracked net unix key capacity\n");
-        return -1;
-    }
-
-    context->net.unix_keys[context->net.unix_key_count++] = *key;
-    return 0;
 }
 
 void bpf_container_context_apply_paths(
@@ -173,9 +80,9 @@ void bpf_container_context_apply_paths(
     struct bpf_map_context*       mapContext,
     const char*                   rootfsPath)
 {
-    protecc_profile_t* profile = NULL;
-    protecc_error_t     err;
     protecc_compile_config_t compileConfig;
+    protecc_profile_t*  profile = NULL;
+    protecc_error_t     err;
     protecc_pattern_t*  paths = NULL;
     void*               binaryProfile = NULL;
     size_t              binaryProfileSize;
@@ -244,97 +151,75 @@ void bpf_container_context_apply_net(
     struct bpf_map_context*       mapContext,
     const char*                   rootfsPath)
 {
+    protecc_compile_config_t config;
+    protecc_profile_builder_t* builder;
+    protecc_profile_t*  profile = NULL;
+    protecc_error_t     err;
+    void*               binaryProfile = NULL;
+    size_t              binaryProfileSize;
+
+    builder = protecc_profile_builder_create();
+    if (builder == NULL) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to create protecc profile builder for container %s\n", containerContext->container_id);
+        return;
+    }
+
     for (int i = 0; i < policy->net_rule_count; i++) {
         const struct containerv_policy_net_rule* rule = &policy->net_rules[i];
-        unsigned int create_mask = rule->allow_mask & BPF_NET_CREATE;
-        unsigned int tuple_mask = rule->allow_mask & ~BPF_NET_CREATE;
 
-        if (create_mask) {
-            struct bpf_net_create_key ckey = {
-                .cgroup_id = containerContext->cgroup_id,
-                .family = (unsigned int)rule->family,
-                .type = (unsigned int)rule->type,
-                .protocol = (unsigned int)rule->protocol,
-            };
-            if (bpf_net_create_map_allow(mapContext, &ckey, create_mask) == 0) {
-                (void)bpf_container_context_add_tracked_net_create_entry(containerContext, &ckey);
-            } else {
-                VLOG_WARNING("cvd", "bpf_manager: failed to apply net create rule (family=%d type=%d proto=%d): %s\n",
-                                rule->family, rule->type, rule->protocol, strerror(errno));
-            }
-        }
-
-        if (tuple_mask == 0) {
-            continue;
-        }
-
-        if (rule->family == AF_UNIX) {
-            struct bpf_net_unix_key ukey = {0};
-            if (rule->unix_path == NULL || rule->unix_path[0] == '\0') {
-                VLOG_WARNING("cvd", "bpf_manager: net unix rule missing path (family=AF_UNIX)\n");
-                continue;
-            }
-            ukey.cgroup_id = containerContext->cgroup_id;
-            ukey.type = (unsigned int)rule->type;
-            ukey.protocol = (unsigned int)rule->protocol;
-
-            if (rule->unix_path[0] == '@') {
-                size_t path_len = strlen(rule->unix_path + 1);
-                size_t max_len = BPF_NET_UNIX_PATH_MAX - 1;
-                if (path_len == 0) {
-                    VLOG_WARNING("cvd", "bpf_manager: net unix rule missing abstract name (family=AF_UNIX)\n");
-                    continue;
-                }
-                if (path_len > max_len) {
-                    VLOG_WARNING("cvd", "bpf_manager: net unix abstract path too long (%zu)\n", path_len);
-                    continue;
-                }
-                ukey.is_abstract = 1;
-                ukey.path_len = (unsigned int)path_len;
-                memcpy(ukey.path, rule->unix_path + 1, path_len);
-            } else {
-                size_t path_len = strlen(rule->unix_path);
-                if (path_len >= BPF_NET_UNIX_PATH_MAX) {
-                    VLOG_WARNING("cvd", "bpf_manager: net unix path too long (%zu)\n", path_len);
-                    continue;
-                }
-                ukey.is_abstract = 0;
-                ukey.path_len = (unsigned int)path_len;
-                memcpy(ukey.path, rule->unix_path, path_len);
-                ukey.path[path_len] = '\0';
-            }
-
-            if (bpf_net_unix_map_allow(mapContext, &ukey, tuple_mask) == 0) {
-                (void)bpf_container_context_add_tracked_net_unix_entry(containerContext, &ukey);
-            } else {
-                VLOG_WARNING("cvd", "bpf_manager: failed to apply net unix rule (%s): %s\n",
-                                rule->unix_path, strerror(errno));
-            }
-            continue;
-        }
-
-        if (rule->addr_len > BPF_NET_ADDR_MAX) {
-            VLOG_WARNING("cvd", "bpf_manager: net rule addr_len too large (%u)\n", rule->addr_len);
-            continue;
-        }
-
-        struct bpf_net_tuple_key tkey = {0};
-        tkey.cgroup_id = containerContext->cgroup_id;
-        tkey.family = (unsigned int)rule->family;
-        tkey.type = (unsigned int)rule->type;
-        tkey.protocol = (unsigned int)rule->protocol;
-        tkey.port = rule->port;
-        if (rule->addr_len > 0) {
-            memcpy(tkey.addr, rule->addr, rule->addr_len);
-        }
-
-        if (bpf_net_tuple_map_allow(mapContext, &tkey, tuple_mask) == 0) {
-            (void)bpf_container_context_add_tracked_net_tuple_entry(containerContext, &tkey);
-        } else {
-            VLOG_WARNING("cvd", "bpf_manager: failed to apply net tuple rule (family=%d type=%d proto=%d): %s\n",
-                            rule->family, rule->type, rule->protocol, strerror(errno));
+        err = protecc_profile_builder_add_net_rule(builder, &(protecc_net_rule_t){
+            .action = rule->allow_mask ? PROTECC_ACTION_ALLOW : PROTECC_ACTION_DENY,
+            .family = rule->family,
+            .protocol = rule->protocol,
+            .port_from = rule->port,
+            .port_to = rule->port,
+            .ip_pattern = NULL, // Not used in builder
+            .unix_path_pattern = rule->unix_path ? strpathcombine(rootfsPath, rule->unix_path) : NULL,
+        });
+        if (err != PROTECC_OK) {
+            goto cleanup;
         }
     }
+
+    protecc_compile_config_default(&config);
+    config.mode = PROTECC_COMPILE_MODE_DFA;
+
+    err = protecc_profile_compile(builder, 0, &config, &profile);
+    if (err != PROTECC_OK) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to compile protecc net rules for container %s: %s\n",
+                     containerContext->container_id, protecc_error_string(err));
+        goto cleanup;
+    }
+    
+    err = protecc_profile_export_net(profile, NULL, 0, &binaryProfileSize);
+    if (err != PROTECC_OK) {
+        VLOG_WARNING("cvd", "bpf_manager: unexpected error querying protecc export size for container %s: %s\n",
+                     containerContext->container_id, protecc_error_string(err));
+        goto cleanup;
+    }
+
+    binaryProfile = malloc(binaryProfileSize);
+    if (binaryProfile == NULL) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to allocate buffer for protecc export for container %s\n", containerContext->container_id);
+        goto cleanup;
+    }
+
+    err = protecc_profile_export_net(profile, binaryProfile, binaryProfileSize, &binaryProfileSize);
+    if (err != PROTECC_OK) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to export protecc profile for container %s: %s\n",
+                     containerContext->container_id, protecc_error_string(err));
+        goto cleanup;
+    }
+
+    if (bpf_profile_map_set_net_profile(mapContext, binaryProfile, binaryProfileSize)) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to set net profile map for container %s: %s\n",
+                     containerContext->container_id, strerror(errno));
+    }
+
+cleanup:
+    protecc_profile_builder_destroy(builder);
+    free(binaryProfile);
+    protecc_free(profile);
 }
 
 int bpf_container_context_cleanup(
@@ -349,47 +234,18 @@ int bpf_container_context_cleanup(
         }
     }
 
-    if (containerContext->net.create_key_count > 0 && mapContext->net_create_map_fd >= 0) {
-        VLOG_DEBUG("cvd", "bpf_manager: deleting %d net create entries (cgroup_id=%llu)\n",
-                   containerContext->net.create_key_count, containerContext->cgroup_id);
-        int deleted_net = bpf_map_delete_batch_by_fd(
-            mapContext->net_create_map_fd,
-            containerContext->net.create_keys,
-            containerContext->net.create_key_count,
-            sizeof(struct bpf_net_create_key)
-        );
-        if (deleted_net < 0) {
-            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (net create map) for container %s\n", containerContext->container_id);
+    if (mapContext->net_profile_map_fd >= 0) {
+        int deleted_count = bpf_profile_map_clear_net_profile(mapContext);
+        if (deleted_count) {
+            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (net map) for container %s\n", containerContext->container_id);
             return -1;
         }
     }
 
-    if (containerContext->net.tuple_key_count > 0 && mapContext->net_tuple_map_fd >= 0) {
-        VLOG_DEBUG("cvd", "bpf_manager: deleting %d net tuple entries (cgroup_id=%llu)\n",
-                   containerContext->net.tuple_key_count, containerContext->cgroup_id);
-        int deleted_net = bpf_map_delete_batch_by_fd(
-            mapContext->net_tuple_map_fd,
-            containerContext->net.tuple_keys,
-            containerContext->net.tuple_key_count,
-            sizeof(struct bpf_net_tuple_key)
-        );
-        if (deleted_net < 0) {
-            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (net tuple map) for container %s\n", containerContext->container_id);
-            return -1;
-        }
-    }
-
-    if (containerContext->net.unix_key_count > 0 && mapContext->net_unix_map_fd >= 0) {
-        VLOG_DEBUG("cvd", "bpf_manager: deleting %d net unix entries (cgroup_id=%llu)\n",
-                   containerContext->net.unix_key_count, containerContext->cgroup_id);
-        int deleted_net = bpf_map_delete_batch_by_fd(
-            mapContext->net_unix_map_fd,
-            containerContext->net.unix_keys,
-            containerContext->net.unix_key_count,
-            sizeof(struct bpf_net_unix_key)
-        );
-        if (deleted_net < 0) {
-            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (net unix map) for container %s\n", containerContext->container_id);
+    if (mapContext->mount_profile_map_fd >= 0) {
+        int deleted_count = bpf_profile_map_clear_mount_profile(mapContext);
+        if (deleted_count) {
+            VLOG_ERROR("cvd", "bpf_manager: batch deletion failed (mount map) for container %s\n", containerContext->container_id);
             return -1;
         }
     }

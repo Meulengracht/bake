@@ -88,7 +88,7 @@ protecc_error_t __export_trie_profile(
         *bytesWritten = requiredSize;
     }
 
-    if (!buffer) {
+    if (buffer == NULL) {
         return PROTECC_OK;
     }
 
@@ -129,6 +129,7 @@ protecc_error_t __export_trie_profile(
     for (size_t i = 0; i < nodeCount; i++) {
         const protecc_node_t* node = nodes[i];
         protecc_profile_node_t profile = {0};
+        
         profile.type = (uint8_t)node->type;
         profile.modifier = (uint8_t)node->modifier;
         profile.is_terminal = node->is_terminal ? 1 : 0;
@@ -219,7 +220,7 @@ protecc_error_t __import_trie_profile(
                               + (size_t)header->num_nodes * sizeof(protecc_profile_node_t));
 
     profile = calloc(1, sizeof(protecc_profile_t));
-    if (!profile) {
+    if (profile == NULL) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
@@ -266,28 +267,28 @@ protecc_error_t __import_trie_profile(
 
     for (uint32_t i = 0; i < header->num_nodes; i++) {
         protecc_node_t* node = nodes[i];
-        uint16_t child_count = profileNodes[i].child_count;
-        uint32_t child_start = profileNodes[i].child_start;
+        uint16_t        childCount = profileNodes[i].child_count;
+        uint32_t        childStart = profileNodes[i].child_start;
 
-        if (child_count == 0) {
+        if (childCount == 0) {
             continue;
         }
 
-        if ((uint32_t)child_start + child_count > header->num_edges) {
+        if ((uint32_t)childStart + childCount > header->num_edges) {
             return __cleanup_import_trie_failure(nodes, header->num_nodes, profile,
                                                  PROTECC_ERROR_INVALID_ARGUMENT);
         }
 
-        node->children = calloc(child_count, sizeof(*node->children));
+        node->children = calloc(childCount, sizeof(*node->children));
         if (node->children == NULL) {
             return __cleanup_import_trie_failure(nodes, header->num_nodes, profile,
                                                  PROTECC_ERROR_OUT_OF_MEMORY);
         }
 
-        node->capacity_children = child_count;
-        node->num_children = child_count;
-        for (uint16_t c = 0; c < child_count; c++) {
-            uint32_t childIndex = edges[child_start + c];
+        node->capacity_children = childCount;
+        node->num_children = childCount;
+        for (uint16_t c = 0; c < childCount; c++) {
+            uint32_t childIndex = edges[childStart + c];
             if (childIndex >= header->num_nodes) {
                 return __cleanup_import_trie_failure(nodes, header->num_nodes, profile,
                                                      PROTECC_ERROR_INVALID_ARGUMENT);

@@ -121,6 +121,8 @@ int test_trie_import_patterns(void)
                 "Expected error string for PROTECC_OK");
     TEST_ASSERT(protecc_error_string(PROTECC_ERROR_INVALID_ARGUMENT) != NULL,
                 "Expected error string for invalid argument");
+    TEST_ASSERT(protecc_error_string(PROTECC_ERROR_INVALID_BLOB) != NULL,
+                "Expected error string for invalid blob");
 
     protecc_free(imported);
     protecc_free(compiled);

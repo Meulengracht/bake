@@ -94,6 +94,7 @@ static __always_inline bool __protecc_bpf_charclass_match(
     __u32*      consumed_out)
 {
     __u32 index = 1;
+    __u32 scan;
     bool invert = false;
     bool matched = false;
     __u8 token;
@@ -130,7 +131,7 @@ static __always_inline bool __protecc_bpf_charclass_match(
         index++;
     }
 
-    bpf_for (__u32 scan, 0, PROTECC_BPF_MAX_CHARCLASS_SPAN) {
+    bpf_for (scan, 0, PROTECC_BPF_MAX_CHARCLASS_SPAN) {
         __u8 first;
         __u8 dash;
         __u8 last;
@@ -194,12 +195,13 @@ static __always_inline bool __protecc_bpf_glob_match(
     __u32 value_index = 0;
     __u32 star_pattern = 0xFFFFFFFFu;
     __u32 star_value = 0xFFFFFFFFu;
+    __u32 steps;
 
     if (!strings || !value || (value->len != 0 && value->data == NULL)) {
         return false;
     }
 
-    bpf_for (__u32 steps, 0, PROTECC_BPF_MAX_GLOB_STEPS) {
+    bpf_for (steps, 0, PROTECC_BPF_MAX_GLOB_STEPS) {
         __u8 pc;
 
         if (!__protecc_bpf_pattern_char(strings, strings_size, pattern_off, pattern_index, &pc)) {

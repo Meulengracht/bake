@@ -132,11 +132,21 @@ int test_profile_builder_domain_only_and_negatives(void)
             uint8_t saved_action = raw_rules[0].action;
             uint8_t saved_protocol = raw_rules[0].protocol;
             uint8_t saved_family = raw_rules[0].family;
+            protecc_net_rule_t* imported_net = NULL;
+            size_t imported_net_count = 0;
 
             raw_rules[0].action = 0xFFu;
             err = protecc_profile_validate_net_blob(net_buffer, net_export_size);
             TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB,
                         "Expected invalid net action to fail validation");
+
+            err = protecc_profile_import_net_blob(net_buffer, net_export_size, &imported_net, &imported_net_count);
+            TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB,
+                        "Expected invalid net action to fail import");
+
+            err = protecc_profile_net_view_init(net_buffer, net_export_size, &net_view);
+            TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB,
+                        "Expected invalid net action to fail view init");
             raw_rules[0].action = saved_action;
 
             raw_rules[0].protocol = 0xFEu;
@@ -186,10 +196,20 @@ int test_profile_builder_domain_only_and_negatives(void)
             protecc_mount_profile_rule_t* raw_rules =
                 (protecc_mount_profile_rule_t*)(mount_buffer + sizeof(protecc_mount_profile_header_t));
             uint8_t saved_action = raw_rules[0].action;
+            protecc_mount_rule_t* imported_mount = NULL;
+            size_t imported_mount_count = 0;
             raw_rules[0].action = 0xEEu;
             err = protecc_profile_validate_mount_blob(mount_buffer, mount_export_size);
             TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB,
                         "Expected invalid mount action to fail validation");
+
+            err = protecc_profile_import_mount_blob(mount_buffer, mount_export_size, &imported_mount, &imported_mount_count);
+            TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB,
+                        "Expected invalid mount action to fail import");
+
+            err = protecc_profile_mount_view_init(mount_buffer, mount_export_size, &mount_view);
+            TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB,
+                        "Expected invalid mount action to fail view init");
             raw_rules[0].action = saved_action;
         }
     }

@@ -45,47 +45,14 @@ struct bpf_profile_value {
 
 #define BPF_PIN_PATH "/sys/fs/bpf/cvd"
 #define PROFILE_MAP_PIN_PATH BPF_PIN_PATH "/profile_map"
-
-#define NET_CREATE_MAP_PIN_PATH BPF_PIN_PATH "/net_create_map"
-#define NET_TUPLE_MAP_PIN_PATH BPF_PIN_PATH "/net_tuple_map"
-#define NET_UNIX_MAP_PIN_PATH BPF_PIN_PATH "/net_unix_map"
+#define NET_PROFILE_MAP_PIN_PATH BPF_PIN_PATH "/net_profile_map"
+#define MOUNT_PROFILE_MAP_PIN_PATH BPF_PIN_PATH "/mount_profile_map"
 
 #define MAX_TRACKED_ENTRIES 10240
 
 /* Network policy keys/values (must match BPF program) */
 #define BPF_NET_ADDR_MAX 16
 #define BPF_NET_UNIX_PATH_MAX 108
-
-struct bpf_net_create_key {
-    unsigned long long cgroup_id;
-    unsigned int       family;
-    unsigned int       type;
-    unsigned int       protocol;
-};
-
-struct bpf_net_tuple_key {
-    unsigned long long cgroup_id;
-    unsigned int       family;
-    unsigned int       type;
-    unsigned int       protocol;
-    unsigned short     port;
-    unsigned short     _pad;
-    unsigned char      addr[BPF_NET_ADDR_MAX];
-};
-
-struct bpf_net_unix_key {
-    unsigned long long cgroup_id;
-    unsigned int       type;
-    unsigned int       protocol;
-    unsigned int       path_len;
-    unsigned char      is_abstract;
-    unsigned char      _pad[3];
-    char               path[BPF_NET_UNIX_PATH_MAX];
-};
-
-struct bpf_net_policy_value {
-    unsigned int allow_mask;
-};
 
 enum bpf_deny_hook_id {
     BPF_DENY_HOOK_FILE_OPEN = 1,
@@ -106,6 +73,7 @@ enum bpf_deny_hook_id {
     BPF_DENY_HOOK_SOCKET_LISTEN = 23,
     BPF_DENY_HOOK_SOCKET_ACCEPT = 24,
     BPF_DENY_HOOK_SOCKET_SENDMSG = 25,
+    BPF_DENY_HOOK_SB_MOUNT = 30,
 };
 
 struct bpf_deny_event {
