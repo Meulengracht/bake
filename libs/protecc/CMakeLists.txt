@@ -26,7 +26,6 @@ target_link_libraries(protecc PUBLIC platform)
 
 # Add tests if building tests is enabled
 option(PROTECC_BUILD_TESTS "Build protecc tests" ON)
-option(PROTECC_BUILD_EXAMPLES "Build protecc examples" ON)
 
 if(PROTECC_BUILD_TESTS)
     # Test executable
@@ -51,11 +50,4 @@ if(PROTECC_BUILD_TESTS)
     # Add test target
     enable_testing()
     add_test(NAME protecc_test COMMAND protecc_test)
-endif()
-
-if (PROTECC_BUILD_EXAMPLES)
-    # Example executable
-    add_executable(protecc_example examples/basic.c)
-    target_link_libraries(protecc_example PRIVATE protecc)
-    target_include_directories(protecc_example PRIVATE include .)
 endif()
