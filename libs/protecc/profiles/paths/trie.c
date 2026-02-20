@@ -204,57 +204,57 @@ protecc_error_t __import_trie_profile(
     const protecc_profile_header_t* header,
     protecc_profile_t**             profileOut)
 {
-    size_t required_size = __profile_size(header->num_nodes, header->num_edges);
-    const protecc_profile_node_t* profile_nodes;
-    const uint32_t* edges;
-    protecc_profile_t* comp;
-    protecc_node_t** nodes;
+    size_t                        requiredSize = __profile_size(header->num_nodes, header->num_edges);
+    const protecc_profile_node_t* profileNodes;
+    const uint32_t*               edges;
+    protecc_profile_t*            profile;
+    protecc_node_t**              nodes;
 
-    if (bufferSize < required_size) {
+    if (bufferSize < requiredSize) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    profile_nodes = (const protecc_profile_node_t*)(base + sizeof(protecc_profile_header_t));
+    profileNodes = (const protecc_profile_node_t*)(base + sizeof(protecc_profile_header_t));
     edges = (const uint32_t*)(base + sizeof(protecc_profile_header_t)
                               + (size_t)header->num_nodes * sizeof(protecc_profile_node_t));
 
-    comp = calloc(1, sizeof(protecc_profile_t));
-    if (!comp) {
+    profile = calloc(1, sizeof(protecc_profile_t));
+    if (!profile) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
     if (header->root_index >= header->num_nodes) {
-        free(comp);
+        free(profile);
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
     nodes = calloc(header->num_nodes, sizeof(*nodes));
     if (nodes == NULL) {
-        free(comp);
+        free(profile);
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
     for (uint32_t i = 0; i < header->num_nodes; i++) {
-        protecc_node_t* node = protecc_node_new((protecc_node_type_t)profile_nodes[i].type);
+        protecc_node_t* node = protecc_node_new((protecc_node_type_t)profileNodes[i].type);
         if (node == NULL) {
-            return __cleanup_import_trie_failure(nodes, header->num_nodes, comp,
+            return __cleanup_import_trie_failure(nodes, header->num_nodes, profile,
                                                  PROTECC_ERROR_OUT_OF_MEMORY);
         }
 
-        node->modifier = (protecc_modifier_t)profile_nodes[i].modifier;
-        node->is_terminal = profile_nodes[i].is_terminal != 0;
-        node->perms = (protecc_permission_t)profile_nodes[i].perms;
+        node->modifier = (protecc_modifier_t)profileNodes[i].modifier;
+        node->is_terminal = profileNodes[i].is_terminal != 0;
+        node->perms = (protecc_permission_t)profileNodes[i].perms;
 
         switch (node->type) {
             case NODE_LITERAL:
-                node->data.literal = (char)profile_nodes[i].data.literal;
+                node->data.literal = (char)profileNodes[i].data.literal;
                 break;
             case NODE_RANGE:
-                node->data.range.start = (char)profile_nodes[i].data.range.start;
-                node->data.range.end = (char)profile_nodes[i].data.range.end;
+                node->data.range.start = (char)profileNodes[i].data.range.start;
+                node->data.range.end = (char)profileNodes[i].data.range.end;
                 break;
             case NODE_CHARSET:
-                memcpy(node->data.charset.chars, profile_nodes[i].data.charset,
+                memcpy(node->data.charset.chars, profileNodes[i].data.charset,
                        sizeof(node->data.charset.chars));
                 break;
             default:
@@ -266,46 +266,46 @@ protecc_error_t __import_trie_profile(
 
     for (uint32_t i = 0; i < header->num_nodes; i++) {
         protecc_node_t* node = nodes[i];
-        uint16_t child_count = profile_nodes[i].child_count;
-        uint32_t child_start = profile_nodes[i].child_start;
+        uint16_t child_count = profileNodes[i].child_count;
+        uint32_t child_start = profileNodes[i].child_start;
 
         if (child_count == 0) {
             continue;
         }
 
         if ((uint32_t)child_start + child_count > header->num_edges) {
-            return __cleanup_import_trie_failure(nodes, header->num_nodes, comp,
+            return __cleanup_import_trie_failure(nodes, header->num_nodes, profile,
                                                  PROTECC_ERROR_INVALID_ARGUMENT);
         }
 
         node->children = calloc(child_count, sizeof(*node->children));
         if (node->children == NULL) {
-            return __cleanup_import_trie_failure(nodes, header->num_nodes, comp,
+            return __cleanup_import_trie_failure(nodes, header->num_nodes, profile,
                                                  PROTECC_ERROR_OUT_OF_MEMORY);
         }
 
         node->capacity_children = child_count;
         node->num_children = child_count;
         for (uint16_t c = 0; c < child_count; c++) {
-            uint32_t child_index = edges[child_start + c];
-            if (child_index >= header->num_nodes) {
-                return __cleanup_import_trie_failure(nodes, header->num_nodes, comp,
+            uint32_t childIndex = edges[child_start + c];
+            if (childIndex >= header->num_nodes) {
+                return __cleanup_import_trie_failure(nodes, header->num_nodes, profile,
                                                      PROTECC_ERROR_INVALID_ARGUMENT);
             }
-            node->children[c] = nodes[child_index];
+            node->children[c] = nodes[childIndex];
         }
     }
 
-    comp->root = nodes[header->root_index];
-    comp->flags = header->flags & ~(PROTECC_PROFILE_FLAG_TYPE_TRIE | PROTECC_PROFILE_FLAG_TYPE_DFA);
-    comp->stats.num_patterns = header->stats.num_patterns;
-    comp->stats.binary_size = header->stats.binary_size;
-    comp->stats.max_depth = header->stats.max_depth;
-    comp->stats.num_nodes = header->stats.num_nodes;
+    profile->root = nodes[header->root_index];
+    profile->flags = header->flags & ~(PROTECC_PROFILE_FLAG_TYPE_TRIE | PROTECC_PROFILE_FLAG_TYPE_DFA);
+    profile->stats.num_patterns = header->stats.num_patterns;
+    profile->stats.binary_size = header->stats.binary_size;
+    profile->stats.max_depth = header->stats.max_depth;
+    profile->stats.num_nodes = header->stats.num_nodes;
 
-    protecc_compile_config_default(&comp->config);
+    protecc_compile_config_default(&profile->config);
 
     free(nodes);
-    *profileOut = comp;
+    *profileOut = profile;
     return PROTECC_OK;
 }

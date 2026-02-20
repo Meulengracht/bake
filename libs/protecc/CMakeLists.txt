@@ -4,6 +4,7 @@ project(protecc C)
 # Create the protecc library
 add_library(protecc STATIC
     matchers/dfa.c
+    matchers/glob.c
     matchers/trie.c
     profiles/paths/dfa.c
     profiles/paths/dfatrie.c
@@ -35,7 +36,13 @@ if(PROTECC_BUILD_TESTS)
         tests/test_wildcards.c
         tests/test_charset.c
         tests/test_dfa.c
+        tests/test_trie.c
         tests/test_profile_builder.c
+        tests/test_profile_builder_paths.c
+        tests/test_profile_builder_serialization.c
+        tests/test_profile_builder_negatives.c
+        tests/test_profile_builder_net.c
+        tests/test_profile_builder_mount.c
     )
     
     target_link_libraries(protecc_test PRIVATE protecc)

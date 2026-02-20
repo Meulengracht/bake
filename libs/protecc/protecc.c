@@ -24,7 +24,8 @@
 
 #include "private.h"
 
-const char* protecc_error_string(protecc_error_t error) {
+const char* protecc_error_string(protecc_error_t error)
+{
     switch (error) {
         case PROTECC_OK:
             return "Success";
@@ -43,8 +44,9 @@ const char* protecc_error_string(protecc_error_t error) {
     }
 }
 
-void protecc_compile_config_default(protecc_compile_config_t* config) {
-    if (!config) {
+void protecc_compile_config_default(protecc_compile_config_t* config)
+{
+    if (config == NULL) {
         return;
     }
 
@@ -53,6 +55,78 @@ void protecc_compile_config_default(protecc_compile_config_t* config) {
     config->max_pattern_length = 128;
     config->max_states = 2048;
     config->max_classes = 32;
+}
+
+static bool __net_rule_matches(
+    const protecc_profile_t*     profile,
+    const protecc_net_rule_t*    rule,
+    const protecc_net_request_t* request)
+{
+    bool caseInsensitive;
+
+    if (rule == NULL ) {
+        return false;
+    }
+
+    if (rule->protocol != PROTECC_NET_PROTOCOL_ANY && rule->protocol != request->protocol) {
+        return false;
+    }
+
+    if (rule->family != PROTECC_NET_FAMILY_ANY && rule->family != request->family) {
+        return false;
+    }
+
+    if (request->port < rule->port_from || request->port > rule->port_to) {
+        return false;
+    }
+
+    caseInsensitive = (profile->flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
+
+    if (!__match_optional_pattern(rule->ip_pattern, request->ip, caseInsensitive)) {
+        return false;
+    }
+
+    if (!__match_optional_pattern(rule->unix_path_pattern, request->unix_path, caseInsensitive)) {
+        return false;
+    }
+
+    return true;
+}
+
+static bool __mount_rule_matches(
+    const protecc_profile_t*       compiled,
+    const protecc_mount_rule_t*    rule,
+    const protecc_mount_request_t* request)
+{
+    bool caseInsensitive;
+
+    if (rule == NULL) {
+        return false;
+    }
+
+    caseInsensitive = (compiled->flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
+
+    if (!__match_optional_pattern(rule->source_pattern, request->source, caseInsensitive)) {
+        return false;
+    }
+
+    if (!__match_optional_pattern(rule->target_pattern, request->target, caseInsensitive)) {
+        return false;
+    }
+
+    if (!__match_optional_pattern(rule->fstype_pattern, request->fstype, caseInsensitive)) {
+        return false;
+    }
+
+    if (!__match_optional_pattern(rule->options_pattern, request->options, caseInsensitive)) {
+        return false;
+    }
+
+    if (rule->flags != 0 && (request->flags & rule->flags) != rule->flags) {
+        return false;
+    }
+
+    return true;
 }
 
 bool protecc_match_path(
@@ -68,6 +142,50 @@ bool protecc_match_path(
         return __matcher_dfa(compiled, path, requiredPermissions);
     }
     return __matcher_trie(compiled->root, path, 0, compiled->flags, requiredPermissions);
+}
+
+bool protecc_match_net(
+    const protecc_profile_t*     profile,
+    const protecc_net_request_t* request,
+    protecc_action_t*            actionOut)
+{
+    if (profile == NULL || request == NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i < profile->net_rule_count; i++) {
+        const protecc_net_rule_t* rule = &profile->net_rules[i];
+        if (__net_rule_matches(profile, rule, request)) {
+            if (actionOut) {
+                *actionOut = rule->action;
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool protecc_match_mount(
+    const protecc_profile_t*       profile,
+    const protecc_mount_request_t* request,
+    protecc_action_t*              actionOut)
+{
+    if (profile == NULL || request == NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i < profile->mount_rule_count; i++) {
+        const protecc_mount_rule_t* rule = &profile->mount_rules[i];
+        if (__mount_rule_matches(profile, rule, request)) {
+            if (actionOut) {
+                *actionOut = rule->action;
+            }
+            return true;
+        }
+    }
+
+    return false;
 }
 
 protecc_error_t protecc_get_stats(

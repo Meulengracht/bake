@@ -222,6 +222,28 @@ typedef struct {
 } protecc_mount_rule_view_t;
 
 /**
+ * @brief Runtime network access request for rule matching
+ */
+typedef struct {
+    protecc_net_protocol_t protocol;
+    protecc_net_family_t   family;
+    const char*            ip;
+    uint16_t               port;
+    const char*            unix_path;
+} protecc_net_request_t;
+
+/**
+ * @brief Runtime mount request for rule matching
+ */
+typedef struct {
+    const char* source;
+    const char* target;
+    const char* fstype;
+    const char* options;
+    uint32_t    flags;
+} protecc_mount_request_t;
+
+/**
  * @brief Initialize compiler config with defaults
  *
  * Defaults:
@@ -317,6 +339,36 @@ bool protecc_match_path(
     const protecc_profile_t* compiled,
     const char*              path,
     protecc_permission_t     requiredPermissions);
+
+/**
+ * @brief Match a runtime network request against compiled network rules
+ *
+ * Rules are evaluated in insertion order; the first matching rule wins.
+ *
+ * @param compiled Compiled profile
+ * @param request Runtime network request to evaluate
+ * @param actionOut Optional output action of the first matching rule
+ * @return true if a rule matched, false otherwise
+ */
+bool protecc_match_net(
+    const protecc_profile_t*    compiled,
+    const protecc_net_request_t* request,
+    protecc_action_t*           actionOut);
+
+/**
+ * @brief Match a runtime mount request against compiled mount rules
+ *
+ * Rules are evaluated in insertion order; the first matching rule wins.
+ *
+ * @param compiled Compiled profile
+ * @param request Runtime mount request to evaluate
+ * @param actionOut Optional output action of the first matching rule
+ * @return true if a rule matched, false otherwise
+ */
+bool protecc_match_mount(
+    const protecc_profile_t*      compiled,
+    const protecc_mount_request_t* request,
+    protecc_action_t*             actionOut);
 
 /**
  * @brief Get statistics about the compiled pattern set

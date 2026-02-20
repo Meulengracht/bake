@@ -28,4 +28,4 @@
 #include "common.h"
 #include "tracing.h"
 
-#include <protecc/bpf.h>
+#include <protecc/bpf/path.h>

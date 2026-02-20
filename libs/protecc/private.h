@@ -211,4 +211,12 @@ extern bool __matcher_dfa(
     const char*              path,
     protecc_permission_t     requiredPermissions);
 
+/**
+ * @brief Match a net or mount rule pattern
+ */
+extern bool __match_optional_pattern(
+    const char* pattern,
+    const char* value,
+    bool        caseInsensitive);
+
 #endif /* PROTECC_INTERNAL_H */

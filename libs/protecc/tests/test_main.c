@@ -11,7 +11,10 @@ extern int test_basic_patterns(void);
 extern int test_wildcard_patterns(void);
 extern int test_charset_patterns(void);
 extern int test_dfa_patterns(void);
+extern int test_trie_import_patterns(void);
 extern int test_profile_builder(void);
+extern int test_profile_builder_runtime_net_matchers(void);
+extern int test_profile_builder_runtime_mount_matchers(void);
 
 typedef struct {
     const char* name;
@@ -23,7 +26,10 @@ static const test_case_t tests[] = {
     {"Wildcard patterns", test_wildcard_patterns},
     {"Charset patterns", test_charset_patterns},
     {"DFA patterns", test_dfa_patterns},
+    {"Trie import", test_trie_import_patterns},
     {"Profile builder", test_profile_builder},
+    {"Runtime net matchers", test_profile_builder_runtime_net_matchers},
+    {"Runtime mount matchers", test_profile_builder_runtime_mount_matchers},
 };
 
 static const size_t num_tests = sizeof(tests) / sizeof(tests[0]);

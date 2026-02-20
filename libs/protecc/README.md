@@ -209,8 +209,64 @@ Match a path against compiled patterns.
 bool protecc_match_path(
     const protecc_profile_t* compiled,  // Compiled pattern set
     const char* path,                    // Path to match
-    size_t path_len                      // Length (0 = use strlen)
+    protecc_permission_t requiredPermissions
 );
+```
+
+#### `protecc_match_net`
+Match a runtime network request against compiled net rules.
+
+```c
+bool protecc_match_net(
+  const protecc_profile_t* compiled,
+  const protecc_net_request_t* request,
+  protecc_action_t* action_out
+);
+```
+
+Example:
+
+```c
+protecc_net_request_t req = {
+  .protocol = PROTECC_NET_PROTOCOL_TCP,
+  .family = PROTECC_NET_FAMILY_IPV4,
+  .ip = "10.0.42.9",
+  .port = 443,
+  .unix_path = NULL,
+};
+
+protecc_action_t action;
+if (protecc_match_net(compiled, &req, &action)) {
+  // action is ALLOW / DENY / AUDIT from first matching rule
+}
+```
+
+#### `protecc_match_mount`
+Match a runtime mount request against compiled mount rules.
+
+```c
+bool protecc_match_mount(
+  const protecc_profile_t* compiled,
+  const protecc_mount_request_t* request,
+  protecc_action_t* action_out
+);
+```
+
+Example:
+
+```c
+protecc_mount_request_t req = {
+  .source = "/dev/sda1",
+  .target = "/mnt/data",
+  .fstype = "ext4",
+  .options = "rw,nosuid",
+  .flags = 0x1,
+};
+
+protecc_action_t action;
+if (protecc_match_mount(compiled, &req, &action)) {
+  // action is ALLOW / DENY / AUDIT from first matching rule
+}
 ```
 
 #### `protecc_export`

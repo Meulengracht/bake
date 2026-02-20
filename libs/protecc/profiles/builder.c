@@ -228,8 +228,8 @@ protecc_error_t protecc_profile_builder_add_net_rule(
     }
 
     copy = *rule;
-    copy.ip_pattern = platform_strdup(rule->ip_pattern);
-    copy.unix_path_pattern = platform_strdup(rule->unix_path_pattern);
+    copy.ip_pattern = rule->ip_pattern ? platform_strdup(rule->ip_pattern) : NULL;
+    copy.unix_path_pattern = rule->unix_path_pattern ? platform_strdup(rule->unix_path_pattern) : NULL;
 
     if ((rule->ip_pattern && !copy.ip_pattern) ||
         (rule->unix_path_pattern && !copy.unix_path_pattern)) {
@@ -268,10 +268,10 @@ protecc_error_t protecc_profile_builder_add_mount_rule(
     }
 
     copy = *rule;
-    copy.source_pattern = platform_strdup(rule->source_pattern);
-    copy.target_pattern = platform_strdup(rule->target_pattern);
-    copy.fstype_pattern = platform_strdup(rule->fstype_pattern);
-    copy.options_pattern = platform_strdup(rule->options_pattern);
+    copy.source_pattern = rule->source_pattern ? platform_strdup(rule->source_pattern) : NULL;
+    copy.target_pattern = rule->target_pattern ? platform_strdup(rule->target_pattern) : NULL;
+    copy.fstype_pattern = rule->fstype_pattern ? platform_strdup(rule->fstype_pattern) : NULL;
+    copy.options_pattern = rule->options_pattern ? platform_strdup(rule->options_pattern) : NULL;
 
     if ((rule->source_pattern && !copy.source_pattern) ||
         (rule->target_pattern && !copy.target_pattern) ||
@@ -315,8 +315,12 @@ static protecc_error_t __copy_builder_net_rules(
     compiled->net_rule_count = builder->net_rule_count;
     for (size_t i = 0; i < builder->net_rule_count; i++) {
         compiled->net_rules[i] = builder->net_rules[i];
-        compiled->net_rules[i].ip_pattern = platform_strdup(builder->net_rules[i].ip_pattern);
-        compiled->net_rules[i].unix_path_pattern = platform_strdup(builder->net_rules[i].unix_path_pattern);
+        compiled->net_rules[i].ip_pattern = builder->net_rules[i].ip_pattern
+            ? platform_strdup(builder->net_rules[i].ip_pattern)
+            : NULL;
+        compiled->net_rules[i].unix_path_pattern = builder->net_rules[i].unix_path_pattern
+            ? platform_strdup(builder->net_rules[i].unix_path_pattern)
+            : NULL;
 
         if ((builder->net_rules[i].ip_pattern && !compiled->net_rules[i].ip_pattern)
             || (builder->net_rules[i].unix_path_pattern && !compiled->net_rules[i].unix_path_pattern)) {
@@ -347,10 +351,18 @@ static protecc_error_t __copy_builder_mount_rules(
     compiled->mount_rule_count = builder->mount_rule_count;
     for (size_t i = 0; i < builder->mount_rule_count; i++) {
         compiled->mount_rules[i] = builder->mount_rules[i];
-        compiled->mount_rules[i].source_pattern = platform_strdup(builder->mount_rules[i].source_pattern);
-        compiled->mount_rules[i].target_pattern = platform_strdup(builder->mount_rules[i].target_pattern);
-        compiled->mount_rules[i].fstype_pattern = platform_strdup(builder->mount_rules[i].fstype_pattern);
-        compiled->mount_rules[i].options_pattern = platform_strdup(builder->mount_rules[i].options_pattern);
+        compiled->mount_rules[i].source_pattern = builder->mount_rules[i].source_pattern
+            ? platform_strdup(builder->mount_rules[i].source_pattern)
+            : NULL;
+        compiled->mount_rules[i].target_pattern = builder->mount_rules[i].target_pattern
+            ? platform_strdup(builder->mount_rules[i].target_pattern)
+            : NULL;
+        compiled->mount_rules[i].fstype_pattern = builder->mount_rules[i].fstype_pattern
+            ? platform_strdup(builder->mount_rules[i].fstype_pattern)
+            : NULL;
+        compiled->mount_rules[i].options_pattern = builder->mount_rules[i].options_pattern
+            ? platform_strdup(builder->mount_rules[i].options_pattern)
+            : NULL;
 
         if ((builder->mount_rules[i].source_pattern && !compiled->mount_rules[i].source_pattern)
             || (builder->mount_rules[i].target_pattern && !compiled->mount_rules[i].target_pattern)

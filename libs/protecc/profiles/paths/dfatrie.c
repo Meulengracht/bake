@@ -436,7 +436,7 @@ protecc_error_t protecc_profile_setup_dfa(protecc_profile_t* profile)
         
         .transitions = NULL
     };
-    protecc_error_t        err;
+    protecc_error_t        err = PROTECC_OK;
     size_t                 wordsPerState;
     size_t                 queueIndex = 0;
     size_t                 maxDepth = 0;
