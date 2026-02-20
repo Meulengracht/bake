@@ -16,6 +16,8 @@
  *
  */
 
+#include <chef/platform.h>
+
 #include <protecc/profile.h>
 #include <stdlib.h>
 #include <string.h>
@@ -187,7 +189,7 @@ protecc_error_t protecc_profile_builder_add_patterns(
             return validation_err;
         }
 
-        pattern_copy = __dup_string(patterns[i].pattern);
+        pattern_copy = platform_strdup(patterns[i].pattern);
         if (!pattern_copy) {
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
@@ -226,8 +228,8 @@ protecc_error_t protecc_profile_builder_add_net_rule(
     }
 
     copy = *rule;
-    copy.ip_pattern = __dup_string(rule->ip_pattern);
-    copy.unix_path_pattern = __dup_string(rule->unix_path_pattern);
+    copy.ip_pattern = platform_strdup(rule->ip_pattern);
+    copy.unix_path_pattern = platform_strdup(rule->unix_path_pattern);
 
     if ((rule->ip_pattern && !copy.ip_pattern) ||
         (rule->unix_path_pattern && !copy.unix_path_pattern)) {
@@ -266,10 +268,10 @@ protecc_error_t protecc_profile_builder_add_mount_rule(
     }
 
     copy = *rule;
-    copy.source_pattern = __dup_string(rule->source_pattern);
-    copy.target_pattern = __dup_string(rule->target_pattern);
-    copy.fstype_pattern = __dup_string(rule->fstype_pattern);
-    copy.options_pattern = __dup_string(rule->options_pattern);
+    copy.source_pattern = platform_strdup(rule->source_pattern);
+    copy.target_pattern = platform_strdup(rule->target_pattern);
+    copy.fstype_pattern = platform_strdup(rule->fstype_pattern);
+    copy.options_pattern = platform_strdup(rule->options_pattern);
 
     if ((rule->source_pattern && !copy.source_pattern) ||
         (rule->target_pattern && !copy.target_pattern) ||
@@ -313,12 +315,11 @@ static protecc_error_t __copy_builder_net_rules(
     compiled->net_rule_count = builder->net_rule_count;
     for (size_t i = 0; i < builder->net_rule_count; i++) {
         compiled->net_rules[i] = builder->net_rules[i];
-        compiled->net_rules[i].ip_pattern = __dup_string(builder->net_rules[i].ip_pattern);
-        compiled->net_rules[i].unix_path_pattern = __dup_string(builder->net_rules[i].unix_path_pattern);
+        compiled->net_rules[i].ip_pattern = platform_strdup(builder->net_rules[i].ip_pattern);
+        compiled->net_rules[i].unix_path_pattern = platform_strdup(builder->net_rules[i].unix_path_pattern);
 
         if ((builder->net_rules[i].ip_pattern && !compiled->net_rules[i].ip_pattern)
             || (builder->net_rules[i].unix_path_pattern && !compiled->net_rules[i].unix_path_pattern)) {
-            __free_compiled_net_rules(compiled);
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
     }
@@ -346,16 +347,15 @@ static protecc_error_t __copy_builder_mount_rules(
     compiled->mount_rule_count = builder->mount_rule_count;
     for (size_t i = 0; i < builder->mount_rule_count; i++) {
         compiled->mount_rules[i] = builder->mount_rules[i];
-        compiled->mount_rules[i].source_pattern = __dup_string(builder->mount_rules[i].source_pattern);
-        compiled->mount_rules[i].target_pattern = __dup_string(builder->mount_rules[i].target_pattern);
-        compiled->mount_rules[i].fstype_pattern = __dup_string(builder->mount_rules[i].fstype_pattern);
-        compiled->mount_rules[i].options_pattern = __dup_string(builder->mount_rules[i].options_pattern);
+        compiled->mount_rules[i].source_pattern = platform_strdup(builder->mount_rules[i].source_pattern);
+        compiled->mount_rules[i].target_pattern = platform_strdup(builder->mount_rules[i].target_pattern);
+        compiled->mount_rules[i].fstype_pattern = platform_strdup(builder->mount_rules[i].fstype_pattern);
+        compiled->mount_rules[i].options_pattern = platform_strdup(builder->mount_rules[i].options_pattern);
 
         if ((builder->mount_rules[i].source_pattern && !compiled->mount_rules[i].source_pattern)
             || (builder->mount_rules[i].target_pattern && !compiled->mount_rules[i].target_pattern)
             || (builder->mount_rules[i].fstype_pattern && !compiled->mount_rules[i].fstype_pattern)
             || (builder->mount_rules[i].options_pattern && !compiled->mount_rules[i].options_pattern)) {
-            __free_compiled_mount_rules(compiled);
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
     }
@@ -408,7 +408,7 @@ static protecc_error_t __finalize_compilation(protecc_profile_t* comp) {
     }
 
     if (comp->config.mode == PROTECC_COMPILE_MODE_DFA) {
-        return protecc_dfa_from_trie(comp);
+        return protecc_profile_setup_dfa(comp);
     }
 
     return PROTECC_OK;

@@ -16,6 +16,7 @@
  *
  */
 
+#include <protecc/profile.h>
 #include <stdlib.h>
 #include <string.h>
 

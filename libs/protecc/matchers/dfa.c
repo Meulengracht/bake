@@ -16,6 +16,7 @@
  *
  */
 
+#include <protecc/profile.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -23,10 +24,10 @@
 #include "../private.h"
 
 static bool __valid_dfa(const protecc_profile_t* compiled) {
-    if (!compiled || !compiled->has_dfa) {
+    if (compiled == NULL || !compiled->has_dfa) {
         return false;
     }
-    if (!compiled->dfa_transitions || !compiled->dfa_accept || !compiled->dfa_perms) {
+    if (compiled->dfa_transitions == NULL || compiled->dfa_accept == NULL || compiled->dfa_perms == NULL) {
         return false;
     }
     if (compiled->dfa_num_states == 0 || compiled->dfa_num_classes == 0) {

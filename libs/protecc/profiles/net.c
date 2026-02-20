@@ -40,13 +40,6 @@ static bool __is_valid_net_family(protecc_net_family_t family)
         || family == PROTECC_NET_FAMILY_UNIX;
 }
 
-static bool __is_valid_action(protecc_action_t action)
-{
-    return action == PROTECC_ACTION_ALLOW
-        || action == PROTECC_ACTION_DENY
-        || action == PROTECC_ACTION_AUDIT;
-}
-
 static protecc_error_t __validate_blob_string_offset(
     uint32_t      offset,
     const uint8_t* strings,

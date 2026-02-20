@@ -98,15 +98,46 @@ struct protecc_profile {
     protecc_stats_t          stats;              /**< Statistics */
 };
 
+static bool __is_valid_action(protecc_action_t action)
+{
+    return action == PROTECC_ACTION_ALLOW
+        || action == PROTECC_ACTION_DENY
+        || action == PROTECC_ACTION_AUDIT;
+}
+
 extern char*       __blob_string_dup(const uint8_t* strings, uint32_t offset);
 extern uint32_t    __blob_string_write(uint8_t* base, size_t* cursor, const char* value);
 extern size_t      __blob_string_measure(const char* value);
 extern const char* __blob_string_ptr(const uint8_t* strings, uint32_t offset);
 
+extern size_t __profile_size(uint32_t nodeCount, uint32_t edgeCount);
 extern protecc_error_t __update_stats_trie_profile(protecc_profile_t* compiled);
 
 extern protecc_error_t __validate_net_rule(const protecc_net_rule_t* rule);
 extern protecc_error_t __validate_mount_rule(const protecc_mount_rule_t* rule);
+
+extern protecc_error_t __export_dfa_profile(
+    const protecc_profile_t* profile,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten);
+
+extern protecc_error_t __import_dfa_profile(
+    const uint8_t*                  base,
+    size_t                          buffer_size,
+    const protecc_profile_header_t* header,
+    protecc_profile_t**             profileOut);
+
+extern protecc_error_t __export_trie_profile(
+    const protecc_profile_t* compiled,
+    void*                    buffer,
+    size_t                   bufferSize,
+    size_t*                  bytesWritten);
+extern protecc_error_t __import_trie_profile(
+    const uint8_t*                  base,
+    size_t                          bufferSize,
+    const protecc_profile_header_t* header,
+    protecc_profile_t**             profileOut);
 
 /**
  * @brief Create a new trie node
@@ -160,7 +191,7 @@ void protecc_charset_set_range(protecc_charset_t* charset, char start, char end)
 /**
  * @brief Convert the compiled trie to a DFA representation
  */
-protecc_error_t protecc_dfa_from_trie(protecc_profile_t* comp);
+protecc_error_t protecc_profile_setup_dfa(protecc_profile_t* comp);
 
 /**
  * @brief Match path against a trie starting from a specific node

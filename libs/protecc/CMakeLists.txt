@@ -5,9 +5,11 @@ project(protecc C)
 add_library(protecc STATIC
     matchers/dfa.c
     matchers/trie.c
+    profiles/paths/dfa.c
     profiles/paths/dfatrie.c
     profiles/paths/node.c
     profiles/paths/parser.c
+    profiles/paths/trie.c
     profiles/builder.c
     profiles/mount.c
     profiles/net.c

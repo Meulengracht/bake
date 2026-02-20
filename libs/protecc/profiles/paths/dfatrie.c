@@ -24,22 +24,22 @@
 
 #include "../../private.h"
 
-static void protecc_collect_nodes(
-    const protecc_node_t* node,
+static void __collect_nodes(
+    const protecc_node_t*  node,
     const protecc_node_t** nodes,
-    size_t* index
-) {
+    size_t*                index)
+{
     if (node == NULL) {
         return;
     }
 
     nodes[(*index)++] = node;
     for (size_t i = 0; i < node->num_children; i++) {
-        protecc_collect_nodes(node->children[i], nodes, index);
+        __collect_nodes(node->children[i], nodes, index);
     }
 }
 
-static size_t protecc_find_node_index(
+static size_t __find_node_index(
     const protecc_node_t* const* nodes,
     size_t                       count,
     const protecc_node_t*        target)
@@ -52,8 +52,8 @@ static size_t protecc_find_node_index(
     return SIZE_MAX;
 }
 
-static size_t __bitset_words(size_t bit_count) {
-    return (bit_count + 63u) / 64u;
+static size_t __bitset_words(size_t bitCount) {
+    return (bitCount + 63u) / 64u;
 }
 
 static void __bitset_set(uint64_t* bits, size_t index) {
@@ -64,11 +64,11 @@ static bool __bitset_test(const uint64_t* bits, size_t index) {
     return (bits[index >> 6] & (1ull << (index & 63u))) != 0;
 }
 
-static bool __char_matches_node(const protecc_node_t* node, unsigned char c, uint32_t flags) {
-    bool case_insensitive = (flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
+static bool __char_matches_node(const protecc_node_t* node, unsigned char c, uint32_t flags)
+{
     char ch = (char)c;
 
-    if (case_insensitive) {
+    if (flags & PROTECC_FLAG_CASE_INSENSITIVE) {
         ch = (char)tolower((unsigned char)ch);
     }
 
@@ -91,46 +91,42 @@ static bool __char_matches_node(const protecc_node_t* node, unsigned char c, uin
 }
 
 static bool __state_set_best_perms(
-    const uint64_t*               set_bits,
+    const uint64_t*               bitSet,
     const protecc_node_t* const*  nodes,
-    const uint16_t*               node_depths,
-    size_t                        node_count,
-    uint32_t*                     perms_out)
+    const uint16_t*               nodeDepths,
+    size_t                        nodeCount,
+    uint32_t*                     permissionsOut)
 {
-    bool found = false;
+    bool     found = false;
     uint16_t best_depth = 0;
     uint32_t perms = 0;
 
-    if (!perms_out) {
-        return false;
-    }
-
-    for (size_t i = 0; i < node_count; i++) {
-        if (!__bitset_test(set_bits, i) || !nodes[i]->is_terminal) {
+    for (size_t i = 0; i < nodeCount; i++) {
+        if (!__bitset_test(bitSet, i) || !nodes[i]->is_terminal) {
             continue;
         }
 
-        if (!found || node_depths[i] > best_depth) {
-            best_depth = node_depths[i];
+        if (!found || nodeDepths[i] > best_depth) {
+            best_depth = nodeDepths[i];
             perms = (uint32_t)nodes[i]->perms;
             found = true;
-        } else if (node_depths[i] == best_depth) {
+        } else if (nodeDepths[i] == best_depth) {
             perms |= (uint32_t)nodes[i]->perms;
         }
     }
 
-    *perms_out = perms;
+    *permissionsOut = perms;
     return found;
 }
 
 static void __compute_node_depths(
     const protecc_node_t*         node,
     const protecc_node_t* const*  nodes,
-    size_t                        node_count,
+    size_t                        nodeCount,
     uint16_t*                     depths,
     uint16_t                      depth)
 {
-    size_t index = protecc_find_node_index(nodes, node_count, node);
+    size_t index = __find_node_index(nodes, nodeCount, node);
 
     if (index == SIZE_MAX || depths[index] <= depth) {
         return;
@@ -138,31 +134,43 @@ static void __compute_node_depths(
 
     depths[index] = depth;
     for (size_t i = 0; i < node->num_children; i++) {
-        __compute_node_depths(node->children[i], nodes, node_count, depths, (uint16_t)(depth + 1u));
+        __compute_node_depths(node->children[i], nodes, nodeCount, depths, (uint16_t)(depth + 1u));
     }
 }
 
+struct __dfa_builder_state {
+    const protecc_node_t** nodes;
+    size_t                 node_count;
+    size_t*                next_sibling;
+    uint16_t*              node_depths;
+
+    size_t                 state_capacity;
+    size_t                 state_count;
+    uint64_t*              state_sets;
+    uint64_t*              scratch_set;
+
+    uint32_t*              transitions;
+};
+
 static void __epsilon_closure(
-    uint64_t*                     set_bits,
-    const protecc_node_t* const*  nodes,
-    size_t                        node_count,
-    const size_t*                 next_sibling)
+    struct __dfa_builder_state* state,
+    uint64_t*                   bitSet)
 {
     bool changed = true;
 
     while (changed) {
         changed = false;
-        for (size_t i = 0; i < node_count; i++) {
+        for (size_t i = 0; i < state->node_count; i++) {
             const protecc_node_t* node;
 
-            if (!__bitset_test(set_bits, i)) {
+            if (!__bitset_test(bitSet, i)) {
                 continue;
             }
 
-            node = nodes[i];
+            node = state->nodes[i];
             for (size_t c = 0; c < node->num_children; c++) {
                 const protecc_node_t* child = node->children[c];
-                size_t child_index = protecc_find_node_index(nodes, node_count, child);
+                size_t child_index = __find_node_index(state->nodes, state->node_count, child);
                 size_t next_index = SIZE_MAX;
 
                 if (child_index == SIZE_MAX) {
@@ -170,22 +178,22 @@ static void __epsilon_closure(
                 }
 
                 if (c + 1u < node->num_children) {
-                    next_index = protecc_find_node_index(nodes, node_count, node->children[c + 1u]);
+                    next_index = __find_node_index(state->nodes, state->node_count, node->children[c + 1u]);
                 }
 
                 if (child->modifier == MODIFIER_OPTIONAL || child->modifier == MODIFIER_ZERO_OR_MORE) {
-                    if (next_index != SIZE_MAX && !__bitset_test(set_bits, next_index)) {
-                        __bitset_set(set_bits, next_index);
+                    if (next_index != SIZE_MAX && !__bitset_test(bitSet, next_index)) {
+                        __bitset_set(bitSet, next_index);
                         changed = true;
-                    } else if (next_index == SIZE_MAX && !__bitset_test(set_bits, child_index)) {
-                        __bitset_set(set_bits, child_index);
+                    } else if (next_index == SIZE_MAX && !__bitset_test(bitSet, child_index)) {
+                        __bitset_set(bitSet, child_index);
                         changed = true;
                     }
                 }
 
                 if (child->type == NODE_WILDCARD_MULTI || child->type == NODE_WILDCARD_RECURSIVE) {
-                    if (!__bitset_test(set_bits, child_index)) {
-                        __bitset_set(set_bits, child_index);
+                    if (!__bitset_test(bitSet, child_index)) {
+                        __bitset_set(bitSet, child_index);
                         changed = true;
                     }
                 }
@@ -193,9 +201,9 @@ static void __epsilon_closure(
 
             if (node->modifier == MODIFIER_ONE_OR_MORE || node->modifier == MODIFIER_ZERO_OR_MORE ||
                 node->modifier == MODIFIER_OPTIONAL) {
-                size_t next_index = next_sibling[i];
-                if (next_index != SIZE_MAX && !__bitset_test(set_bits, next_index)) {
-                    __bitset_set(set_bits, next_index);
+                size_t next_index = state->next_sibling[i];
+                if (next_index != SIZE_MAX && !__bitset_test(bitSet, next_index)) {
+                    __bitset_set(bitSet, next_index);
                     changed = true;
                 }
             }
@@ -203,41 +211,91 @@ static void __epsilon_closure(
     }
 }
 
-static ptrdiff_t __dfa_find_state(
-    const uint64_t* states,
-    size_t          state_count,
-    size_t          words_per_state,
-    const uint64_t* candidate)
+static int __dfa_builder_state_initialize_nodes(
+    struct __dfa_builder_state* state,
+    const protecc_profile_t*    profile,
+    size_t                      nodeCount)
 {
-    for (size_t i = 0; i < state_count; i++) {
-        const uint64_t* state = states + (i * words_per_state);
-        if (memcmp(state, candidate, words_per_state * sizeof(uint64_t)) == 0) {
-            return (ptrdiff_t)i;
+    size_t index = 0;
+    
+    state->nodes = calloc(nodeCount, sizeof(*state->nodes));
+    state->next_sibling = malloc(nodeCount * sizeof(*state->next_sibling));
+    if (!state->nodes || !state->next_sibling) {
+        return -1;
+    }
+    state->node_count = nodeCount;
+
+    for (size_t i = 0; i < nodeCount; i++) {
+        state->next_sibling[i] = SIZE_MAX;
+    }
+
+    __collect_nodes(profile->root, state->nodes, &index);
+    if (index != nodeCount) {
+        return -1;
+    }
+
+    state->node_depths = malloc(nodeCount * sizeof(*state->node_depths));
+    if (!state->node_depths) {
+        return -1;
+    }
+
+    for (size_t i = 0; i < nodeCount; i++) {
+        state->node_depths[i] = UINT16_MAX;
+    }
+    __compute_node_depths(profile->root, state->nodes, nodeCount, state->node_depths, 0);
+
+    for (size_t i = 0; i < nodeCount; i++) {
+        const protecc_node_t* node = state->nodes[i];
+        for (size_t c = 0; c < node->num_children; c++) {
+            size_t child_idx = __find_node_index(state->nodes, nodeCount, node->children[c]);
+            if (child_idx == SIZE_MAX) {
+                return -1;
+            }
+
+            if (c + 1u < node->num_children) {
+                size_t next_idx = __find_node_index(state->nodes, nodeCount, node->children[c + 1u]);
+                if (next_idx == SIZE_MAX) {
+                    return -1;
+                }
+                state->next_sibling[child_idx] = next_idx;
+            }
         }
     }
-    return -1;
+    return 0;
 }
 
-struct __dfa_builder_state {
-    size_t                 state_capacity;
-    size_t                 state_count;
-    uint64_t*              state_sets;
-    uint64_t*              scratch_set;
+static int __dfa_builder_state_setup(struct __dfa_builder_state* state, size_t wordsPerState)
+{
+    state->state_sets = calloc(state->state_capacity * wordsPerState, sizeof(uint64_t));
+    state->scratch_set = calloc(wordsPerState, sizeof(uint64_t));
+    if (!state->state_sets || !state->scratch_set) {
+        return -1;
+    }
 
-    uint32_t*              transitions;
-    uint32_t*              accept;
-    uint32_t*              perms;
-    uint16_t*              node_depths;
-};
+    __bitset_set(state->state_sets, 0);
+    __epsilon_closure(state, state->state_sets);
 
-static void __dfa_builder_state_cleanup(struct __dfa_builder_state* state) {
-    free(state->transitions);
-    free(state->accept);
-    free(state->perms);
+    state->state_count = 1;
+    state->transitions = calloc(state->state_capacity * PROTECC_PROFILE_DFA_CLASSMAP_SIZE, sizeof(uint32_t));
+    if (!state->transitions) {
+        return -1;
+    }
+    return 0;
+}
+
+static void __dfa_builder_state_cleanup(struct __dfa_builder_state* state, protecc_error_t err)
+{
+    free(state->next_sibling);
     free(state->node_depths);
+    free(state->nodes);
+
+    if (err != PROTECC_OK) {
+        free(state->transitions);
+    }
 }
 
-static int __dfa_builder_state_add_state(struct __dfa_builder_state* state, size_t maxStateCount, size_t wordsPerState) {
+static int __dfa_builder_state_add_state(struct __dfa_builder_state* state, size_t maxStateCount, size_t wordsPerState)
+{
     if (state->state_count >= state->state_capacity) {
         size_t    newCapacity = state->state_capacity * 2u;
         uint64_t* newStates;
@@ -262,16 +320,16 @@ static int __dfa_builder_state_add_state(struct __dfa_builder_state* state, size
             (newCapacity - state->state_capacity) * wordsPerState * sizeof(uint64_t)
         );
 
-        newTransitions = realloc(state->transitions, newCapacity * 256u * sizeof(uint32_t));
+        newTransitions = realloc(state->transitions, newCapacity * PROTECC_PROFILE_DFA_CLASSMAP_SIZE * sizeof(uint32_t));
         if (!newTransitions) {
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
         
         state->transitions = newTransitions;
         memset(
-            state->transitions + (state->state_capacity * 256u),
+            state->transitions + (state->state_capacity * PROTECC_PROFILE_DFA_CLASSMAP_SIZE),
             0,
-            (newCapacity - state->state_capacity) * 256u * sizeof(uint32_t)
+            (newCapacity - state->state_capacity) * PROTECC_PROFILE_DFA_CLASSMAP_SIZE * sizeof(uint32_t)
         );
         state->state_capacity = newCapacity;
     }
@@ -284,265 +342,200 @@ static int __dfa_builder_state_add_state(struct __dfa_builder_state* state, size
     return 0;
 }
 
-protecc_error_t protecc_dfa_from_trie(protecc_profile_t* profile)
+static ptrdiff_t __dfa_builder_state_find_state(
+    struct __dfa_builder_state* state,
+    size_t                      words_per_state)
 {
-    const protecc_node_t**     nodes = NULL;
+    for (size_t i = 0; i < state->state_count; i++) {
+        const uint64_t* state_set = state->state_sets + (i * words_per_state);
+        if (memcmp(state_set, state->scratch_set, words_per_state * sizeof(uint64_t)) == 0) {
+            return (ptrdiff_t)i;
+        }
+    }
+    return -1;
+}
+
+static int __dfa_builder_state_add_transition(struct __dfa_builder_state* state, size_t queueIndex, uint32_t c, size_t wordsPerState, protecc_profile_t* profile)
+{
+    ptrdiff_t existing = __dfa_builder_state_find_state(state, wordsPerState);
+    uint32_t  nextState;
+    int       status;
+
+    if (existing >= 0) {
+        nextState = (uint32_t)existing;
+    } else {
+        if ((uint32_t)state->state_count >= profile->config.max_states) {
+            return -1;
+        }
+
+        status = __dfa_builder_state_add_state(state, profile->config.max_states, wordsPerState);
+        if (status != 0) {
+            return status;
+        }
+        nextState = (uint32_t)state->state_count;
+        state->state_count++;
+    }
+
+    state->transitions[(queueIndex * PROTECC_PROFILE_DFA_CLASSMAP_SIZE) + c] = nextState;
+    return 0;
+}
+
+static int __install_dfa_into_profile(protecc_profile_t* profile, struct __dfa_builder_state* state, size_t wordsPerState)
+{
+    uint32_t  acceptWordCount;
+    uint32_t* accept;
+    uint32_t* perms;
+
+    acceptWordCount = (uint32_t)((state->state_count + 31u) / 32u);
+    accept = calloc(acceptWordCount, sizeof(uint32_t));
+    perms = calloc(state->state_count, sizeof(uint32_t));
+    if (accept == NULL || perms == NULL) {
+        free(accept);
+        free(perms);
+        return -1;
+    }
+
+    for (size_t i = 0; i < state->state_count; i++) {
+        const uint64_t* state_set = state->state_sets + (i * wordsPerState);
+        if (__state_set_best_perms(state_set, state->nodes, state->node_depths, state->node_count, &perms[i])) {
+            accept[i >> 5] |= (1u << (i & 31u));
+        }
+    }
+
+    memset(profile->dfa_classmap, 0, sizeof(profile->dfa_classmap));
+    for (unsigned int c = 0; c < PROTECC_PROFILE_DFA_CLASSMAP_SIZE; c++) {
+        profile->dfa_classmap[c] = (uint8_t)c;
+    }
+
+    free(profile->dfa_accept);
+    free(profile->dfa_perms);
+    free(profile->dfa_transitions);
+    profile->dfa_accept_words = acceptWordCount;
+    profile->dfa_accept = accept;
+    profile->dfa_perms = perms;
+    profile->dfa_transitions = state->transitions;
+    profile->dfa_num_states = (uint32_t)state->state_count;
+    profile->dfa_num_classes = PROTECC_PROFILE_DFA_CLASSMAP_SIZE;
+    profile->dfa_start_state = 0u;
+    profile->has_dfa = true;
+    return 0;
+}
+
+protecc_error_t protecc_profile_setup_dfa(protecc_profile_t* profile)
+{
     struct __dfa_builder_state state = {
+        .nodes = NULL,
+        .node_count = 0,
+        .next_sibling = NULL,
+        .node_depths = NULL,
+
         .state_capacity = 16,
         .state_count = 0,
         .state_sets = NULL,
         .scratch_set = NULL,
-        .transitions = NULL,
-        .accept = NULL,
-        .perms = NULL,
-        .node_depths = NULL
+        
+        .transitions = NULL
     };
-    size_t*                next_sibling = NULL;
-    uint16_t*              node_depths = NULL;
-    size_t                 index = 0;
-    size_t                 words_per_state;
-    size_t                 state_capacity;
-    size_t                 state_count;
-    size_t                 queue_index;
-    size_t                 num_nodes = 0;
-    size_t                 max_depth = 0;
-    size_t                 num_edges = 0;
+    protecc_error_t        err;
+    size_t                 wordsPerState;
+    size_t                 queueIndex = 0;
+    size_t                 maxDepth = 0;
+    size_t                 edgeCount = 0;
 
     if (profile == NULL || profile->root == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    protecc_node_collect_stats(profile->root, 0, &num_nodes, &max_depth, &num_edges);
-    if (num_nodes == 0) {
+    protecc_node_collect_stats(profile->root, 0, &state.node_count, &maxDepth, &edgeCount);
+    if (state.node_count == 0) {
         return PROTECC_ERROR_COMPILE_FAILED;
     }
 
-    nodes = calloc(num_nodes, sizeof(*nodes));
-    next_sibling = malloc(num_nodes * sizeof(*next_sibling));
-    if (!nodes || !next_sibling) {
-        free(next_sibling);
-        return PROTECC_ERROR_OUT_OF_MEMORY;
+    if (__dfa_builder_state_initialize_nodes(&state, profile, state.node_count)) {
+        err = PROTECC_ERROR_COMPILE_FAILED;
+        goto cleanup;
     }
 
-    for (size_t i = 0; i < num_nodes; i++) {
-        next_sibling[i] = SIZE_MAX;
+    wordsPerState = __bitset_words(state.node_count);
+    if (__dfa_builder_state_setup(&state, wordsPerState)) {
+        err = PROTECC_ERROR_OUT_OF_MEMORY;
+        goto cleanup;
     }
 
-    protecc_collect_nodes(profile->root, nodes, &index);
-    if (index != num_nodes) {
-        free(next_sibling);
-        free(nodes);
-        return PROTECC_ERROR_COMPILE_FAILED;
-    }
+    while (queueIndex < state.state_count) {
+        const uint64_t* current = state.state_sets + (queueIndex * wordsPerState);
 
-    node_depths = malloc(num_nodes * sizeof(*node_depths));
-    if (!node_depths) {
-        free(next_sibling);
-        free(nodes);
-        return PROTECC_ERROR_OUT_OF_MEMORY;
-    }
+        for (uint32_t c = 0; c < PROTECC_PROFILE_DFA_CLASSMAP_SIZE; c++) {
+            memset(state.scratch_set, 0, wordsPerState * sizeof(uint64_t));
 
-    for (size_t i = 0; i < num_nodes; i++) {
-        node_depths[i] = UINT16_MAX;
-    }
-    __compute_node_depths(profile->root, nodes, num_nodes, node_depths, 0);
-
-    for (size_t i = 0; i < num_nodes; i++) {
-        const protecc_node_t* node = nodes[i];
-        for (size_t c = 0; c < node->num_children; c++) {
-            size_t child_idx = protecc_find_node_index(nodes, num_nodes, node->children[c]);
-            if (child_idx == SIZE_MAX) {
-                free(next_sibling);
-                free(node_depths);
-                free(nodes);
-                return PROTECC_ERROR_COMPILE_FAILED;
-            }
-
-            if (c + 1u < node->num_children) {
-                size_t next_idx = protecc_find_node_index(nodes, num_nodes, node->children[c + 1u]);
-                if (next_idx == SIZE_MAX) {
-                    free(next_sibling);
-                    free(node_depths);
-                    free(nodes);
-                    return PROTECC_ERROR_COMPILE_FAILED;
-                }
-                next_sibling[child_idx] = next_idx;
-            }
-        }
-    }
-
-    words_per_state = __bitset_words(num_nodes);
-    state_capacity = 16;
-    state_count = 0;
-    queue_index = 0;
-
-    state_sets = calloc(state_capacity * words_per_state, sizeof(uint64_t));
-    scratch_set = calloc(words_per_state, sizeof(uint64_t));
-    if (!state_sets || !scratch_set) {
-        free(scratch_set);
-        free(state_sets);
-        free(node_depths);
-        free(nodes);
-        return PROTECC_ERROR_OUT_OF_MEMORY;
-    }
-
-    __bitset_set(state_sets, 0);
-    __epsilon_closure(state_sets, nodes, num_nodes, next_sibling);
-
-    state_count = 1;
-    transitions = calloc(state_capacity * 256u, sizeof(uint32_t));
-    if (!transitions) {
-        free(scratch_set);
-        free(state_sets);
-        free(node_depths);
-        free(nodes);
-        return PROTECC_ERROR_OUT_OF_MEMORY;
-    }
-
-    while (queue_index < state_count) {
-        const uint64_t* current = state_sets + (queue_index * words_per_state);
-
-        for (unsigned int c = 0; c < 256u; c++) {
-            memset(scratch_set, 0, words_per_state * sizeof(uint64_t));
-
-            for (size_t n = 0; n < num_nodes; n++) {
+            for (size_t n = 0; n < state.node_count; n++) {
                 const protecc_node_t* node;
 
                 if (!__bitset_test(current, n)) {
                     continue;
                 }
 
-                node = nodes[n];
+                node = state.nodes[n];
 
                 if ((node->type == NODE_WILDCARD_MULTI || node->type == NODE_WILDCARD_RECURSIVE) &&
-                    __char_matches_node(node, (unsigned char)c, comp->flags)) {
-                    __bitset_set(scratch_set, n);
+                    __char_matches_node(node, (unsigned char)c, profile->flags)) {
+                    __bitset_set(state.scratch_set, n);
                 }
 
                 if ((node->modifier == MODIFIER_ONE_OR_MORE || node->modifier == MODIFIER_ZERO_OR_MORE) &&
-                    __char_matches_node(node, (unsigned char)c, comp->flags)) {
-                    __bitset_set(scratch_set, n);
+                    __char_matches_node(node, (unsigned char)c, profile->flags)) {
+                    __bitset_set(state.scratch_set, n);
                 }
 
                 for (size_t k = 0; k < node->num_children; k++) {
                     const protecc_node_t* child = node->children[k];
-                    size_t child_index;
-                    size_t next_index = SIZE_MAX;
+                    size_t                nextIndex = SIZE_MAX;
+                    size_t                childIndex;
 
                     if (k + 1u < node->num_children) {
-                        next_index = protecc_find_node_index(nodes, num_nodes, node->children[k + 1u]);
+                        nextIndex = __find_node_index(state.nodes, state.node_count, node->children[k + 1u]);
                     }
 
-                    if (!__char_matches_node(child, (unsigned char)c, comp->flags)) {
+                    if (!__char_matches_node(child, (unsigned char)c, profile->flags)) {
                         continue;
                     }
 
-                    child_index = protecc_find_node_index(nodes, num_nodes, child);
-                    if (child_index == SIZE_MAX) {
-                        free(accept);
-                        free(transitions);
-                        free(scratch_set);
-                        free(state_sets);
-                        free(node_depths);
-                        free(nodes);
-                        return PROTECC_ERROR_COMPILE_FAILED;
+                    childIndex = __find_node_index(state.nodes, state.node_count, child);
+                    if (childIndex == SIZE_MAX) {
+                        err = PROTECC_ERROR_COMPILE_FAILED;
+                        goto cleanup;
                     }
+
                     if (child->modifier == MODIFIER_NONE) {
-                        __bitset_set(scratch_set, child_index);
+                        __bitset_set(state.scratch_set, childIndex);
                     } else if (child->modifier == MODIFIER_OPTIONAL) {
-                        if (next_index != SIZE_MAX) {
-                            __bitset_set(scratch_set, next_index);
+                        if (nextIndex != SIZE_MAX) {
+                            __bitset_set(state.scratch_set, nextIndex);
                         } else {
-                            __bitset_set(scratch_set, child_index);
+                            __bitset_set(state.scratch_set, childIndex);
                         }
                     } else if (child->modifier == MODIFIER_ONE_OR_MORE || child->modifier == MODIFIER_ZERO_OR_MORE) {
-                        __bitset_set(scratch_set, child_index);
+                        __bitset_set(state.scratch_set, childIndex);
                     }
                 }
             }
 
-            __epsilon_closure(scratch_set, nodes, num_nodes, next_sibling);
-
-            {
-                ptrdiff_t existing = __dfa_find_state(state_sets, state_count, words_per_state, scratch_set);
-                uint32_t target_state;
-
-                if (existing >= 0) {
-                    target_state = (uint32_t)existing;
-                } else {
-                    if ((uint32_t)state_count >= comp->config.max_states) {
-                        free(accept);
-                        free(transitions);
-                        free(scratch_set);
-                        free(state_sets);
-                        free(next_sibling);
-                        free(node_depths);
-                        free(nodes);
-                        return PROTECC_ERROR_COMPILE_FAILED;
-                    }
-
-                    if (__dfa_builder_state_add_state(&state, comp->config.max_states, words_per_state) != 0) {
-                        free(accept);
-                        free(transitions);
-                        free(scratch_set);
-                        free(state_sets);
-                        free(next_sibling);
-                        free(node_depths);
-                        free(nodes);
-                        return PROTECC_ERROR_COMPILE_FAILED;
-                    }
-                    target_state = (uint32_t)state_count;
-                    state_count++;
-                }
-
-                transitions[(queue_index * 256u) + c] = target_state;
+            __epsilon_closure(&state, state.scratch_set);
+            if (__dfa_builder_state_add_transition(&state, queueIndex, c, wordsPerState, profile)) {
+                err = PROTECC_ERROR_COMPILE_FAILED;
+                goto cleanup;
             }
         }
 
-        queue_index++;
+        queueIndex++;
     }
 
-    comp->dfa_accept_words = (uint32_t)((state_count + 31u) / 32u);
-    accept = calloc(comp->dfa_accept_words, sizeof(uint32_t));
-    perms = calloc(state_count, sizeof(uint32_t));
-    if (!accept || !perms) {
-        free(perms);
-        free(accept);
-        free(transitions);
-        free(scratch_set);
-        free(state_sets);
-        free(node_depths);
-        free(nodes);
-        return PROTECC_ERROR_OUT_OF_MEMORY;
+    if (__install_dfa_into_profile(profile, &state, wordsPerState) != 0) {
+        err = PROTECC_ERROR_OUT_OF_MEMORY;
+        goto cleanup;
     }
 
-    for (size_t i = 0; i < state_count; i++) {
-        const uint64_t* state = state_sets + (i * words_per_state);
-        if (__state_set_best_perms(state, nodes, node_depths, num_nodes, &perms[i])) {
-            accept[i >> 5] |= (1u << (i & 31u));
-        }
-    }
-
-    memset(comp->dfa_classmap, 0, sizeof(comp->dfa_classmap));
-    for (unsigned int c = 0; c < 256u; c++) {
-        comp->dfa_classmap[c] = (uint8_t)c;
-    }
-
-    free(comp->dfa_accept);
-    free(comp->dfa_perms);
-    free(comp->dfa_transitions);
-    comp->dfa_accept = accept;
-    comp->dfa_perms = perms;
-    comp->dfa_transitions = transitions;
-    comp->dfa_num_states = (uint32_t)state_count;
-    comp->dfa_num_classes = 256u;
-    comp->dfa_start_state = 0u;
-    comp->has_dfa = true;
-
-    free(scratch_set);
-    free(state_sets);
-    free(node_depths);
-    free(next_sibling);
-    free(nodes);
-    return PROTECC_OK;
+cleanup:
+    __dfa_builder_state_cleanup(&state, err);
+    return err;
 }
