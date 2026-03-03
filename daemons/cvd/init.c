@@ -182,7 +182,7 @@ static void __initialize_bpf(void)
     if (status) {
         VLOG_WARNING("cvd", "Failed to initialize bpf manager: critical startup error\n");
         VLOG_WARNING("cvd", "BPF LSM may require kernel 5.7+ with CONFIG_BPF_LSM=y and 'bpf' in LSM list\n");
-        VLOG_WARNING("cvd", "Container security enforcement (BPF/seccomp) failed to initialize\n");
+        VLOG_WARNING("cvd", "Limited container security enforcement available on this platform\n");
         return;
     }
 

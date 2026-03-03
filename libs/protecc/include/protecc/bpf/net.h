@@ -25,29 +25,25 @@
 #define PROTECC_BPF_NET_FAMILY_ANY   0u
 
 typedef struct {
-    __u8                  protocol;
-    __u8                  family;
-    __u16                 port;
-    protecc_bpf_string_t  ip;
-    protecc_bpf_string_t  unix_path;
+    __u8                 protocol;
+    __u8                 family;
+    __u16                port;
+    protecc_bpf_string_t ip;
+    protecc_bpf_string_t unix_path;
 } protecc_bpf_net_request_t;
 
 static __always_inline bool protecc_bpf_match_net(
-    const __u8                     profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const __u8                       profile[PROTECC_BPF_MAX_PROFILE_SIZE],
     const protecc_bpf_net_request_t* request,
-    __u8*                          action_out)
+    __u8*                            actionOut)
 {
     const protecc_net_profile_header_t* header;
     const protecc_net_profile_rule_t*   rules;
     const __u8*                         strings;
-    __u64                               rules_size;
-    __u64                               required_size;
+    __u64                               rulesSize;
+    __u64                               requiredSize;
     __u32                               i;
-    bool                                case_insensitive;
-
-    if (!profile || !request) {
-        return false;
-    }
+    bool                                caseInsensitive;
 
     header = (const protecc_net_profile_header_t*)profile;
     if (header->magic != PROTECC_NET_PROFILE_MAGIC || header->version != PROTECC_NET_PROFILE_VERSION) {
@@ -58,17 +54,17 @@ static __always_inline bool protecc_bpf_match_net(
         return false;
     }
 
-    rules_size = (__u64)header->rule_count * sizeof(protecc_net_profile_rule_t);
-    required_size = sizeof(protecc_net_profile_header_t) + rules_size + (__u64)header->strings_size;
+    rulesSize = (__u64)header->rule_count * sizeof(protecc_net_profile_rule_t);
+    requiredSize = sizeof(protecc_net_profile_header_t) + rulesSize + (__u64)header->strings_size;
 
-    if (required_size > PROTECC_BPF_MAX_PROFILE_SIZE) {
+    if (requiredSize > PROTECC_BPF_MAX_PROFILE_SIZE) {
         return false;
     }
 
     rules = (const protecc_net_profile_rule_t*)(profile + sizeof(protecc_net_profile_header_t));
-    strings = profile + sizeof(protecc_net_profile_header_t) + rules_size;
+    strings = profile + sizeof(protecc_net_profile_header_t) + rulesSize;
 
-    if (!__VALID_PROFILE_PTR(profile, rules, rules_size)) {
+    if (!__VALID_PROFILE_PTR(profile, rules, rulesSize)) {
         return false;
     }
 
@@ -76,7 +72,7 @@ static __always_inline bool protecc_bpf_match_net(
         return false;
     }
 
-    case_insensitive = (header->flags & PROTECC_PROFILE_FLAG_CASE_INSENSITIVE) != 0;
+    caseInsensitive = (header->flags & PROTECC_PROFILE_FLAG_CASE_INSENSITIVE) != 0;
 
     bpf_for (i, 0, PROTECC_BPF_MAX_NET_RULES) {
         const protecc_net_profile_rule_t* rule;
@@ -103,7 +99,7 @@ static __always_inline bool protecc_bpf_match_net(
                                           header->strings_size,
                                           rule->ip_pattern_off,
                                           &request->ip,
-                                          case_insensitive)) {
+                                          caseInsensitive)) {
             continue;
         }
 
@@ -111,12 +107,12 @@ static __always_inline bool protecc_bpf_match_net(
                                           header->strings_size,
                                           rule->unix_path_pattern_off,
                                           &request->unix_path,
-                                          case_insensitive)) {
+                                          caseInsensitive)) {
             continue;
         }
 
-        if (action_out) {
-            *action_out = rule->action;
+        if (actionOut) {
+            *actionOut = rule->action;
         }
         return true;
     }

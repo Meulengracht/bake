@@ -76,12 +76,8 @@ struct {
 
 static __always_inline struct per_cpu_data* __cpu_data(void)
 {
-	__u32                key = 0;
-	struct per_cpu_data* scratch = bpf_map_lookup_elem(&per_cpu_data_map, &key);
-	if (!scratch) {
-		return NULL;
-	}
-	return scratch;
+	__u32 key = 0;
+	return bpf_map_lookup_elem(&per_cpu_data_map, &key);
 }
 
 static __always_inline __u32 __bounded_str_len(const char* text, __u32 maxLen)

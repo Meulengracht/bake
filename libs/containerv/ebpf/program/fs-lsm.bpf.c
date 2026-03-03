@@ -111,12 +111,8 @@ static __always_inline void __emit_deny_event_dentry(struct dentry* dentry, __u3
 
 static __always_inline struct per_cpu_data* __cpu_data(void)
 {
-    __u32                key = 0;
-    struct per_cpu_data* scratch = bpf_map_lookup_elem(&per_cpu_data_map, &key);
-    if (!scratch) {
-        return NULL;
-    }
-    return scratch;
+    __u32 key = 0;
+    return bpf_map_lookup_elem(&per_cpu_data_map, &key);
 }
 
 static int __check_profile_match(

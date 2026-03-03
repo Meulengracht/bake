@@ -39,28 +39,6 @@
 
 #include <protecc/bpf/net.h>
 
-/* Network permission bits */
-#define NET_PERM_CREATE  0x1
-#define NET_PERM_BIND    0x2
-#define NET_PERM_CONNECT 0x4
-#define NET_PERM_LISTEN  0x8
-#define NET_PERM_ACCEPT  0x10
-#define NET_PERM_SEND    0x20
-
-/* Protecc action values (must match protecc_action_t). */
-#define PROTECC_ACTION_ALLOW 0u
-#define PROTECC_ACTION_DENY  1u
-
-/* Protecc net protocol values (must match protecc_net_protocol_t). */
-#define PROTECC_NET_PROTOCOL_TCP  1u
-#define PROTECC_NET_PROTOCOL_UDP  2u
-#define PROTECC_NET_PROTOCOL_UNIX 3u
-
-/* Protecc net family values (must match protecc_net_family_t). */
-#define PROTECC_NET_FAMILY_IPV4 1u
-#define PROTECC_NET_FAMILY_IPV6 2u
-#define PROTECC_NET_FAMILY_UNIX 3u
-
 #ifndef PROTECC_PROFILE_MAP_MAX_ENTRIES
 #define PROTECC_PROFILE_MAP_MAX_ENTRIES 1024u
 #endif
@@ -68,17 +46,6 @@
 struct profile_value {
     __u32 size;
     __u8  data[PROTECC_BPF_MAX_PROFILE_SIZE];
-};
-
-struct net_create_key {
-    __u64 cgroup_id;
-    __u32 family;
-    __u32 type;
-    __u32 protocol;
-};
-
-struct net_policy_value {
-    __u32 allow_mask;
 };
 
 struct per_cpu_data {
@@ -106,12 +73,8 @@ struct {
 
 static __always_inline struct per_cpu_data* __cpu_data(void)
 {
-    __u32                key = 0;
-    struct per_cpu_data* scratch = bpf_map_lookup_elem(&per_cpu_data_map, &key);
-    if (!scratch) {
-        return NULL;
-    }
-    return scratch;
+    __u32 key = 0;
+    return bpf_map_lookup_elem(&per_cpu_data_map, &key);
 }
 
 static __always_inline __u8 __to_protecc_net_family(__u32 family)
@@ -144,96 +107,114 @@ static __always_inline __u8 __to_protecc_net_protocol(__u32 family, __u32 protoc
     return PROTECC_BPF_NET_PROTOCOL_ANY;
 }
 
-static __always_inline __u32 __append_u8_dec(char* out, __u8 value)
-{
-    __u32 n = 0;
-    __u8 hundreds;
-    __u8 tens;
-    __u8 ones;
-
-    if (value >= 100) {
-        hundreds = value / 100;
-        tens = (value / 10) % 10;
-        ones = value % 10;
-        out[n++] = (char)('0' + hundreds);
-        out[n++] = (char)('0' + tens);
-        out[n++] = (char)('0' + ones);
-        return n;
-    }
-
-    if (value >= 10) {
-        tens = value / 10;
-        ones = value % 10;
-        out[n++] = (char)('0' + tens);
-        out[n++] = (char)('0' + ones);
-        return n;
-    }
-
-    out[n++] = (char)('0' + value);
-    return n;
-}
-
-static __always_inline __u8 __to_hex(__u8 value)
-{
-    if (value < 10) {
-        return (__u8)('0' + value);
-    }
-    return (__u8)('a' + (value - 10));
-}
-
-static __always_inline int __tuple_to_ip_string(
-    struct per_cpu_data*    scratch,
-    const struct net_tuple_key* key,
-    protecc_bpf_string_t*   ipOut)
+static int __request_from_address(
+    struct per_cpu_data*       scratch,
+    __u16                      family,
+    struct sockaddr*           addr,
+    int                        addrlen,
+    protecc_bpf_net_request_t* request)
 {
     __u32 i;
     __u32 n = 0;
 
-    if (!scratch || !key || !ipOut) {
-        return -EACCES;
-    }
+    request->port = 0;
+    request->ip.data = NULL;
+    request->ip.len = 0;
+    request->unix_path.data = NULL;
+    request->unix_path.len = 0;
 
-    if (key->family == AF_INET) {
-        bpf_for (i, 0, 4) {
-            n += __append_u8_dec(&scratch->text[n], key->addr[i]);
-            if (i != 3) {
-                scratch->text[n++] = '.';
+    switch (family) {
+        case AF_INET: {
+            struct sockaddr_in sin = {};
+            __u32              addr4;
+            
+            if (addrlen < (int)sizeof(struct sockaddr_in)) {
+                return -EACCES;
             }
-        }
-        ipOut->data = (const __u8*)&scratch->text[0];
-        ipOut->len = n;
-        return 0;
-    }
 
-    if (key->family == AF_INET6) {
-        bpf_for (i, 0, 8) {
-            __u8 hi = key->addr[(i * 2) + 0];
-            __u8 lo = key->addr[(i * 2) + 1];
+            bpf_core_read(&sin, sizeof(sin), addr);
+            addr4 = bpf_ntohl(sin.sin_addr.s_addr);
 
-            scratch->text[n++] = (char)__to_hex((__u8)((hi >> 4) & 0xF));
-            scratch->text[n++] = (char)__to_hex((__u8)(hi & 0xF));
-            scratch->text[n++] = (char)__to_hex((__u8)((lo >> 4) & 0xF));
-            scratch->text[n++] = (char)__to_hex((__u8)(lo & 0xF));
-
-            if (i != 7) {
-                scratch->text[n++] = ':';
+            bpf_for (i, 0, 4) {
+                __u8 octet = (__u8)((addr4 >> (24 - (i * 8))) & 0xFF);
+                n += __append_u8_dec(&scratch->text[n], octet);
+                if (i != 3) {
+                    scratch->text[n++] = '.';
+                }
             }
-        }
-        ipOut->data = (const __u8*)&scratch->text[0];
-        ipOut->len = n;
-        return 0;
-    }
 
-    ipOut->data = NULL;
-    ipOut->len = 0;
+            request->port = bpf_ntohs(sin.sin_port);
+            request->ip.data = (const __u8*)&scratch->text[0];
+            request->ip.len = n;
+        } break;
+        case AF_INET6: {
+            struct sockaddr_in6 sin6 = {};
+
+            if (addrlen < (int)sizeof(struct sockaddr_in6)) {
+                return -EACCES;
+            }
+            
+            bpf_core_read(&sin6, sizeof(sin6), addr);
+
+            bpf_for (i, 0, 8) {
+                __u8 hi = sin6.sin6_addr.in6_u.u6_addr8[(i * 2) + 0];
+                __u8 lo = sin6.sin6_addr.in6_u.u6_addr8[(i * 2) + 1];
+
+                scratch->text[n++] = (char)__to_hex((__u8)((hi >> 4) & 0xF));
+                scratch->text[n++] = (char)__to_hex((__u8)(hi & 0xF));
+                scratch->text[n++] = (char)__to_hex((__u8)((lo >> 4) & 0xF));
+                scratch->text[n++] = (char)__to_hex((__u8)(lo & 0xF));
+
+                if (i != 7) {
+                    scratch->text[n++] = ':';
+                }
+            }
+            
+            request->port = bpf_ntohs(sin6.sin6_port);
+            request->ip.data = (const __u8*)&scratch->text[0];
+            request->ip.len = n;
+        } break;
+        case AF_UNIX: {
+            struct sockaddr_un sun = {};
+            __u32              baseSize = (__u32)offsetof(struct sockaddr_un, sun_path);
+            __u32              pathLength;
+
+            if (addrlen < (int)baseSize) {
+                return -EACCES;
+            }
+
+            pathLength = (__u32)addrlen - baseSize;
+            if (pathLength > (NET_UNIX_PATH_MAX - 1)) {
+                pathLength = NET_UNIX_PATH_MAX - 1;
+            }
+
+            bpf_core_read(&sun, sizeof(sun), addr);
+            if (sun.sun_path[0] == 0) {
+                scratch->text[n++] = '@';
+                if (pathLength > 0) {
+                    bpf_core_read(&scratch->text[n], pathLength, &sun.sun_path[1]);
+                    n += pathLength;
+                }
+            } else {
+                if (pathLength > 0) {
+                    bpf_core_read(&scratch->text[n], pathLength, &sun.sun_path[0]);
+                    n += pathLength;
+                }
+            }
+            request->unix_path.data = (const __u8*)&scratch->text[0];
+            request->unix_path.len = n;
+        } break;
+        default:
+            return -EACCES;
+    }
     return 0;
 }
 
 static __noinline int __net_allow_request(
-    __u64                           cgroupId,
+    __u64                            cgroupId,
     const protecc_bpf_net_request_t* request,
-    __u32                           required,
-    __u32                           hookId)
+    __u32                            required,
+    __u32                            hookId)
 {
     struct profile_value* profile;
     __u8                  action = PROTECC_ACTION_ALLOW;
@@ -296,12 +277,11 @@ int BPF_PROG(socket_create_restrict, int family, int type, int protocol, int ker
 SEC("lsm/socket_bind")
 int BPF_PROG(socket_bind_restrict, struct socket *sock, struct sockaddr *address, int addrlen, int ret)
 {
-    struct net_tuple_key tkey = {};
-    struct net_unix_key  ukey = {};
     protecc_bpf_net_request_t request = {};
-    struct per_cpu_data* scratch;
-    __u64 cgroupId;
-    __u32 family, type, protocol;
+    struct per_cpu_data*      scratch;
+    __u64                     cgroupId;
+    __u16                     family, type;
+    __u32                     protocol;
 
     if (ret) {
         return ret;
@@ -319,11 +299,7 @@ int BPF_PROG(socket_bind_restrict, struct socket *sock, struct sockaddr *address
     cgroupId = get_current_cgroup_id();
     request.family = __to_protecc_net_family(family);
     request.protocol = __to_protecc_net_protocol(family, protocol);
-    request.port = 0;
-    request.ip.data = NULL;
-    request.ip.len = 0;
-    request.unix_path.data = NULL;
-    request.unix_path.len = 0;
+    
     scratch = __cpu_data();
     if (!scratch) {
         __emit_deny_event_basic(cgroupId, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
@@ -332,38 +308,26 @@ int BPF_PROG(socket_bind_restrict, struct socket *sock, struct sockaddr *address
 
     (void)type;
 
-    if (__sockaddr_to_unix(address, addrlen, &ukey) == 0) {
-        request.unix_path.data = (const __u8*)ukey.path;
-        request.unix_path.len = ukey.path_len;
-        return __net_allow_request(cgroupId, &request, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
+    if (__request_from_address(scratch, family, address, addrlen, &request)) {
+        __emit_deny_event_basic(cgroupId, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
+        return -EACCES;
     }
-
-    if (__sockaddr_to_tuple(address, addrlen, &tkey) == 0) {
-        request.port = tkey.port;
-        if (__tuple_to_ip_string(scratch, &tkey, &request.ip) != 0) {
-            __emit_deny_event_basic(cgroupId, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
-            return -EACCES;
-        }
-        return __net_allow_request(cgroupId, &request, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
-    }
-
-    __emit_deny_event_basic(cgroupId, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
-    return -EACCES;
+    return __net_allow_request(cgroupId, &request, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
 }
 
 SEC("lsm/socket_connect")
 int BPF_PROG(socket_connect_restrict, struct socket *sock, struct sockaddr *address, int addrlen, int ret)
 {
-    struct net_tuple_key tkey = {};
-    struct net_unix_key  ukey = {};
     protecc_bpf_net_request_t request = {};
-    struct per_cpu_data* scratch;
-    __u64 cgroupId;
-    __u32 family, type, protocol;
+    struct per_cpu_data*      scratch;
+    __u64                     cgroupId;
+    __u16                     family, type;
+    __u32                     protocol;
 
     if (ret) {
         return ret;
     }
+
     if (!sock || !address) {
         __emit_deny_event_basic(get_current_cgroup_id(), NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
         return -EACCES;
@@ -377,11 +341,7 @@ int BPF_PROG(socket_connect_restrict, struct socket *sock, struct sockaddr *addr
     cgroupId = get_current_cgroup_id();
     request.family = __to_protecc_net_family(family);
     request.protocol = __to_protecc_net_protocol(family, protocol);
-    request.port = 0;
-    request.ip.data = NULL;
-    request.ip.len = 0;
-    request.unix_path.data = NULL;
-    request.unix_path.len = 0;
+    
     scratch = __cpu_data();
     if (!scratch) {
         __emit_deny_event_basic(cgroupId, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
@@ -390,23 +350,11 @@ int BPF_PROG(socket_connect_restrict, struct socket *sock, struct sockaddr *addr
 
     (void)type;
 
-    if (__sockaddr_to_unix(address, addrlen, &ukey) == 0) {
-        request.unix_path.data = (const __u8*)ukey.path;
-        request.unix_path.len = ukey.path_len;
-        return __net_allow_request(cgroupId, &request, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
+    if (__request_from_address(scratch, family, address, addrlen, &request)) {
+        __emit_deny_event_basic(cgroupId, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
+        return -EACCES;
     }
-
-    if (__sockaddr_to_tuple(address, addrlen, &tkey) == 0) {
-        request.port = tkey.port;
-        if (__tuple_to_ip_string(scratch, &tkey, &request.ip) != 0) {
-            __emit_deny_event_basic(cgroupId, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
-            return -EACCES;
-        }
-        return __net_allow_request(cgroupId, &request, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
-    }
-
-    __emit_deny_event_basic(cgroupId, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
-    return -EACCES;
+    return __net_allow_request(cgroupId, &request, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
 }
 
 SEC("lsm/socket_listen")
@@ -415,7 +363,8 @@ int BPF_PROG(socket_listen_restrict, struct socket *sock, int backlog, int ret)
     protecc_bpf_net_request_t request = {};
     struct sock* sk = NULL;
     __u64 cgroupId;
-    __u32 family, type, protocol;
+    __u16 family, type;
+    __u32 protocol;
     __u16 port = 0;
 
     (void)backlog;
@@ -457,7 +406,8 @@ int BPF_PROG(socket_accept_restrict, struct socket *sock, struct socket *newsock
     protecc_bpf_net_request_t request = {};
     struct sock* sk = NULL;
     __u64 cgroupId;
-    __u32 family, type, protocol;
+    __u16 family, type;
+    __u32 protocol;
     __u16 port = 0;
 
     (void)newsock;
@@ -497,12 +447,11 @@ int BPF_PROG(socket_accept_restrict, struct socket *sock, struct socket *newsock
 SEC("lsm/socket_sendmsg")
 int BPF_PROG(socket_sendmsg_restrict, struct socket *sock, struct msghdr *msg, int size, int ret)
 {
-    struct net_tuple_key tkey = {};
-    struct net_unix_key  ukey = {};
     protecc_bpf_net_request_t request = {};
     struct per_cpu_data* scratch;
     __u64 cgroupId;
-    __u32 family, type, protocol;
+    __u16 family, type;
+    __u32 protocol;
     struct sockaddr* addr = NULL;
     __u32 addrlen = 0;
 
@@ -542,20 +491,11 @@ int BPF_PROG(socket_sendmsg_restrict, struct socket *sock, struct msghdr *msg, i
     }
 
     if (addr) {
-        if (__sockaddr_to_unix(addr, (int)addrlen, &ukey) == 0) {
-            request.unix_path.data = (const __u8*)ukey.path;
-            request.unix_path.len = ukey.path_len;
-            return __net_allow_request(cgroupId, &request, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
+        if (__request_from_address(scratch, family, addr, addrlen, &request)) {
+            __emit_deny_event_basic(cgroupId, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
+            return -EACCES;
         }
-
-        if (__sockaddr_to_tuple(addr, (int)addrlen, &tkey) == 0) {
-            request.port = tkey.port;
-            if (__tuple_to_ip_string(scratch, &tkey, &request.ip) != 0) {
-                __emit_deny_event_basic(cgroupId, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
-                return -EACCES;
-            }
-            return __net_allow_request(cgroupId, &request, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
-        }
+        return __net_allow_request(cgroupId, &request, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
     }
 
     return __net_allow_request(cgroupId, &request, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);

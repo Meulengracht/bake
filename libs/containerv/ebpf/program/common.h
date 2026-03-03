@@ -111,4 +111,41 @@ static __always_inline u32 __resolve_dentry_path(char* buffer, struct dentry* de
     return pathLength;
 }
 
+static __always_inline __u32 __append_u8_dec(char* out, __u8 value)
+{
+    __u32 n = 0;
+    __u8 hundreds;
+    __u8 tens;
+    __u8 ones;
+
+    if (value >= 100) {
+        hundreds = value / 100;
+        tens = (value / 10) % 10;
+        ones = value % 10;
+        out[n++] = (char)('0' + hundreds);
+        out[n++] = (char)('0' + tens);
+        out[n++] = (char)('0' + ones);
+        return n;
+    }
+
+    if (value >= 10) {
+        tens = value / 10;
+        ones = value % 10;
+        out[n++] = (char)('0' + tens);
+        out[n++] = (char)('0' + ones);
+        return n;
+    }
+
+    out[n++] = (char)('0' + value);
+    return n;
+}
+
+static __always_inline __u8 __to_hex(__u8 value)
+{
+    if (value < 10) {
+        return (__u8)('0' + value);
+    }
+    return (__u8)('a' + (value - 10));
+}
+
 #endif // !__BPF_PROGRAM_COMMON_H__

@@ -35,150 +35,43 @@
 #define AF_INET6 10
 #endif
 
+/* Network permission bits */
+#define NET_PERM_CREATE  0x1
+#define NET_PERM_BIND    0x2
+#define NET_PERM_CONNECT 0x4
+#define NET_PERM_LISTEN  0x8
+#define NET_PERM_ACCEPT  0x10
+#define NET_PERM_SEND    0x20
+
+/* Protecc action values (must match protecc_action_t). */
+#define PROTECC_ACTION_ALLOW 0u
+#define PROTECC_ACTION_DENY  1u
+
+/* Protecc net protocol values (must match protecc_net_protocol_t). */
+#define PROTECC_NET_PROTOCOL_TCP  1u
+#define PROTECC_NET_PROTOCOL_UDP  2u
+#define PROTECC_NET_PROTOCOL_UNIX 3u
+
+/* Protecc net family values (must match protecc_net_family_t). */
+#define PROTECC_NET_FAMILY_IPV4 1u
+#define PROTECC_NET_FAMILY_IPV6 2u
+#define PROTECC_NET_FAMILY_UNIX 3u
+
 /* Network policy keys/values */
-#define NET_ADDR_MAX 16
 #define NET_UNIX_PATH_MAX 108
 
-struct net_tuple_key {
-    __u64 cgroup_id;
-    __u32 family;
-    __u32 type;
-    __u32 protocol;
-    __u16 port;
-    __u16 _pad;
-    __u8  addr[NET_ADDR_MAX];
-};
-
-struct net_unix_key {
-    __u64 cgroup_id;
-    __u32 type;
-    __u32 protocol;
-    __u32 path_len;
-    __u8  is_abstract;
-    __u8  _pad[3];
-    char  path[NET_UNIX_PATH_MAX];
-};
-
-static __always_inline int __sock_get_meta(struct socket* sock, __u32* family, __u32* type, __u32* protocol)
+static __always_inline int __sock_get_meta(struct socket* sock, __u16* family, __u16* type, __u32* protocol)
 {
     struct sock* sk = (struct sock*)NULL;
-    __u16 fam = 0;
-    __u16 proto = 0;
-    __u32 stype = 0;
-
-    if (!sock || !family || !type || !protocol) {
-        return -EACCES;
-    }
 
     CORE_READ_INTO(&sk, sock, sk);
-    if (!sk) {
+    if (sk == NULL) {
         return -EACCES;
     }
 
-    CORE_READ_INTO(&fam, sk, __sk_common.skc_family);
-    CORE_READ_INTO(&proto, sk, sk_protocol);
-    CORE_READ_INTO(&stype, sock, type);
-
-    *family = (__u32)fam;
-    *protocol = (__u32)proto;
-    *type = stype;
-    return 0;
-}
-
-static __always_inline int __sockaddr_to_tuple(
-    struct sockaddr* addr,
-    int addrlen,
-    struct net_tuple_key* key)
-{
-    struct sockaddr sa = {};
-    __u16 family = 0;
-
-    if (!addr || !key || addrlen < (int)sizeof(sa)) {
-        return -EACCES;
-    }
-
-    bpf_core_read(&sa, sizeof(sa), addr);
-    family = sa.sa_family;
-    key->family = family;
-
-    if (family == AF_INET) {
-        struct sockaddr_in sin = {};
-        __u32 addr4 = 0;
-        bpf_core_read(&sin, sizeof(sin), addr);
-        addr4 = sin.sin_addr.s_addr;
-        key->port = bpf_ntohs(sin.sin_port);
-        __builtin_memcpy(key->addr, &addr4, sizeof(addr4));
-        return 0;
-    }
-
-    if (family == AF_INET6) {
-        struct sockaddr_in6 sin6 = {};
-        bpf_core_read(&sin6, sizeof(sin6), addr);
-        key->port = bpf_ntohs(sin6.sin6_port);
-        bpf_core_read(&key->addr, sizeof(key->addr), &sin6.sin6_addr);
-        return 0;
-    }
-
-    return -EACCES;
-}
-
-static __always_inline int __sockaddr_to_unix(
-    struct sockaddr* addr,
-    int addrlen,
-    struct net_unix_key* key)
-{
-    struct sockaddr sa = {};
-
-    if (!addr || !key || addrlen < (int)sizeof(sa)) {
-        return -EACCES;
-    }
-
-    bpf_core_read(&sa, sizeof(sa), addr);
-    if (sa.sa_family != AF_UNIX) {
-        return -EACCES;
-    }
-
-    struct sockaddr_un sun = {};
-    bpf_core_read(&sun, sizeof(sun), addr);
-    __u32 max_len = NET_UNIX_PATH_MAX;
-    __u32 copy_len = (__u32)addrlen;
-    if (copy_len > sizeof(sun)) {
-        copy_len = sizeof(sun);
-    }
-
-    if (copy_len > (__builtin_offsetof(struct sockaddr_un, sun_path) + max_len)) {
-        copy_len = __builtin_offsetof(struct sockaddr_un, sun_path) + max_len;
-    }
-
-    key->path_len = 0;
-    key->is_abstract = 0;
-
-    if (copy_len > __builtin_offsetof(struct sockaddr_un, sun_path)) {
-        __u32 path_len = copy_len - __builtin_offsetof(struct sockaddr_un, sun_path);
-        if (path_len > max_len) {
-            path_len = max_len;
-        }
-
-        if (path_len > 0 && sun.sun_path[0] == 0) {
-            key->is_abstract = 1;
-            path_len -= 1;
-            key->path_len = path_len;
-            if (path_len > 0) {
-                bpf_core_read(&key->path, path_len, &sun.sun_path[1]);
-            }
-        } else {
-            key->path_len = path_len;
-            if (path_len > 0) {
-                bpf_core_read(&key->path, path_len, &sun.sun_path[0]);
-            }
-            if (path_len < NET_UNIX_PATH_MAX) {
-                key->path[path_len] = 0;
-            }
-        }
-    } else {
-        key->path[0] = 0;
-    }
-
+    CORE_READ_INTO(family, sk, __sk_common.skc_family);
+    CORE_READ_INTO(protocol, sk, sk_protocol);
+    CORE_READ_INTO(type, sock, type);
     return 0;
 }
 
