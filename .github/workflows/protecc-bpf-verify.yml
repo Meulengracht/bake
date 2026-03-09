@@ -1,0 +1,50 @@
+name: Verify protecc eBPF implementations
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main, devel ]
+
+jobs:
+  protecc-bpf-verify:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          clang \
+          llvm \
+          libsqlite3-dev \
+          libfuse3-dev \
+          libcap-dev \
+          libcurl4-openssl-dev \
+          libssl-dev \
+          libseccomp-dev \
+          libbpf-dev \
+          linux-tools-generic
+
+    - name: Ensure bpffs is mounted
+      run: |
+        if ! mountpoint -q /sys/fs/bpf; then
+          sudo mount -t bpf bpf /sys/fs/bpf
+        fi
+
+    - name: Configure
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build protecc targets
+      run: cmake --build build --target protecc_test protecc_bpf_verify_obj --config Release
+
+    - name: Run protecc unit tests
+      run: ctest --test-dir build -R '^protecc_test$' --output-on-failure --timeout 120
+
+    - name: Run protecc eBPF verifier test
+      run: sudo ctest --test-dir build -R '^protecc_bpf_verify$' --output-on-failure --timeout 120
