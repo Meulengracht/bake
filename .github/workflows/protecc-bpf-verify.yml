@@ -29,8 +29,7 @@ jobs:
           libssl-dev \
           libseccomp-dev \
           libbpf-dev \
-          linux-tools-azure \
-          bpftool
+          linux-tools-azure
 
     - name: Ensure bpffs is mounted
       run: |

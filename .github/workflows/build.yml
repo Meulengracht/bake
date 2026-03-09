@@ -44,7 +44,6 @@ jobs:
           libseccomp-dev \
           libbpf-dev \
           linux-tools-azure \
-          bpftool \
           auditd
 
     - name: Install Windows dependencies
