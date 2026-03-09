@@ -55,6 +55,10 @@ if(PROTECC_BUILD_TESTS)
         find_program(PROTECC_CLANG clang)
         find_program(PROTECC_BPFTOOL bpftool)
         set(PROTECC_BPFTOOL_USABLE FALSE)
+        set(PROTECC_BPF_SMOKE_OBJECTS_ARG "")
+
+        # Keep this target available for pipelines that build it explicitly.
+        add_custom_target(protecc_bpf_verify_obj)
 
         if(PROTECC_BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
             execute_process(
@@ -122,14 +126,18 @@ if(PROTECC_BUILD_TESTS)
                 )
             endforeach()
 
-            add_custom_target(protecc_bpf_verify_obj DEPENDS ${PROTECC_BPF_SMOKE_OBJECTS})
+            add_custom_target(protecc_bpf_verify_obj_build DEPENDS ${PROTECC_BPF_SMOKE_OBJECTS})
+            add_dependencies(protecc_bpf_verify_obj protecc_bpf_verify_obj_build)
 
             string(JOIN ";" PROTECC_BPF_SMOKE_OBJECTS_ARG ${PROTECC_BPF_SMOKE_OBJECTS})
-            add_test(
-                NAME protecc_bpf_verify
-                COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/bpf/verify_protecc_bpf.sh ${PROTECC_BPF_SMOKE_OBJECTS_ARG}
-            )
-            set_tests_properties(protecc_bpf_verify PROPERTIES SKIP_RETURN_CODE 77)
+        else()
+            message(STATUS "protecc_bpf_verify will run in skip-only mode (BPF compile prerequisites unavailable)")
         endif()
+
+        add_test(
+            NAME protecc_bpf_verify
+            COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/bpf/verify_protecc_bpf.sh ${PROTECC_BPF_SMOKE_OBJECTS_ARG}
+        )
+        set_tests_properties(protecc_bpf_verify PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 endif()

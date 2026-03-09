@@ -8,7 +8,23 @@ find_program(CLANG clang)
 find_program(BPFTOOL bpftool)
 find_program(LLVM_STRIP llvm-strip)
 
-if(CLANG AND BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
+set(BPFTOOL_USABLE FALSE)
+if(BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
+    execute_process(
+        COMMAND ${BPFTOOL} btf dump file /sys/kernel/btf/vmlinux format c
+        OUTPUT_QUIET
+        ERROR_QUIET
+        RESULT_VARIABLE BPFTOOL_CHECK_RC
+    )
+
+    if(BPFTOOL_CHECK_RC EQUAL 0)
+        set(BPFTOOL_USABLE TRUE)
+    else()
+        message(STATUS "bpftool is present but not usable for this kernel; protecc_bpf_verify will be configured as skip-only")
+    endif()
+endif()
+
+if(CLANG AND BPFTOOL_USABLE)
     message(STATUS "BPF tools found: clang=${CLANG}, bpftool=${BPFTOOL}")
     
     set(BPF_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
