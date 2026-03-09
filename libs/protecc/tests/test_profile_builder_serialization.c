@@ -24,7 +24,7 @@ int test_profile_builder_net_single_rule(void)
     protecc_error_t err;
     size_t net_export_size = 0;
     uint8_t* net_buffer = NULL;
-    const protecc_net_profile_header_t* net_header = NULL;
+    const protecc_rule_profile_header_t* net_header = NULL;
 
     protecc_net_rule_t net_rule = {
         .action = PROTECC_ACTION_ALLOW,
@@ -46,7 +46,7 @@ int test_profile_builder_net_single_rule(void)
     TEST_ASSERT(err == PROTECC_OK, "Expected net rules to compile in phase 3");
 
     err = protecc_profile_export_net(compiled, NULL, 0, &net_export_size);
-    TEST_ASSERT(err == PROTECC_OK && net_export_size >= sizeof(protecc_net_profile_header_t),
+    TEST_ASSERT(err == PROTECC_OK && net_export_size >= sizeof(protecc_rule_profile_header_t),
                 "Failed to query net export size");
 
     net_buffer = malloc(net_export_size);
@@ -58,10 +58,21 @@ int test_profile_builder_net_single_rule(void)
     err = protecc_profile_validate_net_blob(net_buffer, net_export_size);
     TEST_ASSERT(err == PROTECC_OK, "Expected exported net profile to validate");
 
-    net_header = (const protecc_net_profile_header_t*)net_buffer;
+    net_header = (const protecc_rule_profile_header_t*)net_buffer;
     TEST_ASSERT(net_header->magic == PROTECC_NET_PROFILE_MAGIC, "Unexpected net profile magic");
     TEST_ASSERT(net_header->version == PROTECC_NET_PROFILE_VERSION, "Unexpected net profile version");
     TEST_ASSERT(net_header->rule_count == 1, "Expected one net rule in exported profile");
+    TEST_ASSERT(net_header->dfa_section_off != 0, "Expected net DFA section to be present");
+
+    {
+        protecc_rule_profile_header_t* mutable_header = (protecc_rule_profile_header_t*)net_buffer;
+        uint32_t saved_off = mutable_header->dfa_section_off;
+
+        mutable_header->dfa_section_off = 0;
+        err = protecc_profile_validate_net_blob(net_buffer, net_export_size);
+        TEST_ASSERT(err == PROTECC_ERROR_INVALID_BLOB, "Expected missing net DFA section to fail validation");
+        mutable_header->dfa_section_off = saved_off;
+    }
 
     {
         protecc_net_rule_t* imported = NULL;
@@ -150,10 +161,10 @@ int test_profile_builder_mount_path_exports_and_empty_domains(void)
     {
         size_t mount_export_size = 0;
         uint8_t* mount_buffer = NULL;
-        const protecc_mount_profile_header_t* mount_header = NULL;
+        const protecc_rule_profile_header_t* mount_header = NULL;
 
         err = protecc_profile_export_mounts(compiled, NULL, 0, &mount_export_size);
-        TEST_ASSERT(err == PROTECC_OK && mount_export_size >= sizeof(protecc_mount_profile_header_t),
+        TEST_ASSERT(err == PROTECC_OK && mount_export_size >= sizeof(protecc_rule_profile_header_t),
                     "Failed to query mount export size");
 
         mount_buffer = malloc(mount_export_size);
@@ -165,10 +176,12 @@ int test_profile_builder_mount_path_exports_and_empty_domains(void)
         err = protecc_profile_validate_mount_blob(mount_buffer, mount_export_size);
         TEST_ASSERT(err == PROTECC_OK, "Expected exported mount profile to validate");
 
-        mount_header = (const protecc_mount_profile_header_t*)mount_buffer;
+        mount_header = (const protecc_rule_profile_header_t*)mount_buffer;
         TEST_ASSERT(mount_header->magic == PROTECC_MOUNT_PROFILE_MAGIC, "Unexpected mount profile magic");
         TEST_ASSERT(mount_header->version == PROTECC_MOUNT_PROFILE_VERSION, "Unexpected mount profile version");
         TEST_ASSERT(mount_header->rule_count == 1, "Expected one mount rule in exported profile");
+        TEST_ASSERT(mount_header->dfa_section_off != 0, "Expected mount DFA offset to be present");
+        TEST_ASSERT(mount_header->dfa_section_off >= mount_header->charclass_table_off, "Unexpected mount DFA offset layout");
 
         {
             protecc_mount_rule_t* imported = NULL;
@@ -212,7 +225,7 @@ int test_profile_builder_mount_path_exports_and_empty_domains(void)
 
         {
             protecc_mount_profile_rule_t* rules =
-                (protecc_mount_profile_rule_t*)(mount_buffer + sizeof(protecc_mount_profile_header_t));
+                (protecc_mount_profile_rule_t*)(mount_buffer + sizeof(protecc_rule_profile_header_t));
             uint32_t saved_off = rules[0].source_pattern_off;
             rules[0].source_pattern_off = mount_header->strings_size + 1u;
             err = protecc_profile_validate_mount_blob(mount_buffer, mount_export_size);
@@ -265,15 +278,15 @@ int test_profile_builder_mount_path_exports_and_empty_domains(void)
         size_t mount_export_size = 0;
         uint8_t* net_buffer = NULL;
         uint8_t* mount_buffer = NULL;
-        const protecc_net_profile_header_t* net_header = NULL;
-        const protecc_mount_profile_header_t* mount_header = NULL;
+        const protecc_rule_profile_header_t* net_header = NULL;
+        const protecc_rule_profile_header_t* mount_header = NULL;
 
         err = protecc_profile_export_net(compiled, NULL, 0, &net_export_size);
-        TEST_ASSERT(err == PROTECC_OK && net_export_size == sizeof(protecc_net_profile_header_t),
+        TEST_ASSERT(err == PROTECC_OK && net_export_size == sizeof(protecc_rule_profile_header_t),
                     "Expected empty net export to contain header only");
 
         err = protecc_profile_export_mounts(compiled, NULL, 0, &mount_export_size);
-        TEST_ASSERT(err == PROTECC_OK && mount_export_size == sizeof(protecc_mount_profile_header_t),
+        TEST_ASSERT(err == PROTECC_OK && mount_export_size == sizeof(protecc_rule_profile_header_t),
                     "Expected empty mount export to contain header only");
 
         net_buffer = malloc(net_export_size);
@@ -291,8 +304,8 @@ int test_profile_builder_mount_path_exports_and_empty_domains(void)
         err = protecc_profile_validate_mount_blob(mount_buffer, mount_export_size);
         TEST_ASSERT(err == PROTECC_OK, "Expected empty mount blob to validate");
 
-        net_header = (const protecc_net_profile_header_t*)net_buffer;
-        mount_header = (const protecc_mount_profile_header_t*)mount_buffer;
+        net_header = (const protecc_rule_profile_header_t*)net_buffer;
+        mount_header = (const protecc_rule_profile_header_t*)mount_buffer;
         TEST_ASSERT(net_header->rule_count == 0, "Expected zero rules in empty net export");
         TEST_ASSERT(mount_header->rule_count == 0, "Expected zero rules in empty mount export");
 
@@ -340,6 +353,139 @@ int test_profile_builder_mount_path_exports_and_empty_domains(void)
         }
 
         free(net_buffer);
+        free(mount_buffer);
+    }
+
+    protecc_free(compiled);
+    protecc_profile_builder_destroy(builder);
+    return 0;
+}
+
+int test_profile_builder_charclass_metadata(void)
+{
+    protecc_profile_builder_t* builder = NULL;
+    protecc_profile_t* compiled = NULL;
+    protecc_error_t err;
+
+    protecc_net_rule_t net_rule = {
+        .action = PROTECC_ACTION_ALLOW,
+        .protocol = PROTECC_NET_PROTOCOL_TCP,
+        .family = PROTECC_NET_FAMILY_IPV4,
+        .ip_pattern = "[12]0.0.0.1",
+        .port_from = 80,
+        .port_to = 80,
+        .unix_path_pattern = NULL
+    };
+
+    protecc_mount_rule_t mount_rule = {
+        .action = PROTECC_ACTION_ALLOW,
+        .source_pattern = "/dev/sd[a-c]*",
+        .target_pattern = "/mnt/[A-C]svc",
+        .fstype_pattern = NULL,
+        .options_pattern = NULL,
+        .flags = 0
+    };
+
+    builder = protecc_profile_builder_create();
+    TEST_ASSERT(builder != NULL, "Failed to create builder for charclass metadata test");
+
+    err = protecc_profile_builder_add_net_rule(builder, &net_rule);
+    TEST_ASSERT(err == PROTECC_OK, "Failed to add net rule with charclass");
+    err = protecc_profile_builder_add_mount_rule(builder, &mount_rule);
+    TEST_ASSERT(err == PROTECC_OK, "Failed to add mount rule with charclass");
+
+    err = protecc_profile_compile(builder, PROTECC_FLAG_NONE, NULL, &compiled);
+    TEST_ASSERT(err == PROTECC_OK && compiled != NULL, "Failed to compile profile for charclass test");
+
+    /* Net export */
+    {
+        size_t net_export_size = 0;
+        uint8_t* net_buffer = NULL;
+        const protecc_rule_profile_header_t* net_header = NULL;
+        const protecc_profile_charclass_entry_t* classes = NULL;
+        const uint8_t* strings = NULL;
+        size_t rules_size;
+
+        err = protecc_profile_export_net(compiled, NULL, 0, &net_export_size);
+        TEST_ASSERT(err == PROTECC_OK && net_export_size > sizeof(protecc_rule_profile_header_t),
+                    "Failed to query net export with charclass");
+
+        net_buffer = malloc(net_export_size);
+        TEST_ASSERT(net_buffer != NULL, "Failed to allocate net export buffer for charclass test");
+
+        err = protecc_profile_export_net(compiled, net_buffer, net_export_size, &net_export_size);
+        TEST_ASSERT(err == PROTECC_OK, "Failed to export net profile with charclass");
+
+        net_header = (const protecc_rule_profile_header_t*)net_buffer;
+        TEST_ASSERT(net_header->charclass_count > 0, "Expected net charclass_count > 0");
+        rules_size = (size_t)net_header->rule_count * sizeof(protecc_net_profile_rule_t);
+        TEST_ASSERT(net_header->charclass_table_off == sizeof(protecc_rule_profile_header_t) + rules_size + net_header->strings_size,
+                    "Unexpected net charclass table offset");
+
+        strings = net_buffer + sizeof(protecc_rule_profile_header_t) + rules_size;
+        classes = (const protecc_profile_charclass_entry_t*)(net_buffer + net_header->charclass_table_off);
+        TEST_ASSERT(classes[0].consumed > 0, "Expected non-zero consumed for net charclass");
+        TEST_ASSERT(classes[0].pattern_off < net_header->strings_size, "Net charclass pattern_off out of range");
+        TEST_ASSERT(strings[classes[0].pattern_off] == '[', "Expected net charclass to point at '['");
+
+        {
+            uint8_t byte1 = classes[0].bitmap['1' >> 3u];
+            uint8_t byte2 = classes[0].bitmap['2' >> 3u];
+            TEST_ASSERT((byte1 & (1u << ('1' & 7u))) != 0, "Expected '1' set in net charclass bitmap");
+            TEST_ASSERT((byte2 & (1u << ('2' & 7u))) != 0, "Expected '2' set in net charclass bitmap");
+            TEST_ASSERT((byte2 & (1u << ('3' & 7u))) == 0, "Expected '3' clear in net charclass bitmap");
+        }
+
+        free(net_buffer);
+    }
+
+    /* Mount export */
+    {
+        size_t mount_export_size = 0;
+        uint8_t* mount_buffer = NULL;
+        const protecc_rule_profile_header_t* mount_header = NULL;
+        const protecc_profile_charclass_entry_t* classes = NULL;
+        const uint8_t* strings = NULL;
+        size_t rules_size;
+
+        err = protecc_profile_export_mounts(compiled, NULL, 0, &mount_export_size);
+        TEST_ASSERT(err == PROTECC_OK && mount_export_size > sizeof(protecc_rule_profile_header_t),
+                    "Failed to query mount export with charclass");
+
+        mount_buffer = malloc(mount_export_size);
+        TEST_ASSERT(mount_buffer != NULL, "Failed to allocate mount export buffer for charclass test");
+
+        err = protecc_profile_export_mounts(compiled, mount_buffer, mount_export_size, &mount_export_size);
+        TEST_ASSERT(err == PROTECC_OK, "Failed to export mount profile with charclass");
+
+        mount_header = (const protecc_rule_profile_header_t*)mount_buffer;
+        TEST_ASSERT(mount_header->charclass_count >= 2, "Expected mount charclass_count >= 2");
+        rules_size = (size_t)mount_header->rule_count * sizeof(protecc_mount_profile_rule_t);
+        TEST_ASSERT(mount_header->charclass_table_off == sizeof(protecc_rule_profile_header_t) + rules_size + mount_header->strings_size,
+                    "Unexpected mount charclass table offset");
+
+        strings = mount_buffer + sizeof(protecc_rule_profile_header_t) + rules_size;
+        classes = (const protecc_profile_charclass_entry_t*)(mount_buffer + mount_header->charclass_table_off);
+        TEST_ASSERT(classes[0].consumed > 0 && classes[1].consumed > 0, "Expected non-zero consumed for mount charclasses");
+        TEST_ASSERT(classes[0].pattern_off < mount_header->strings_size, "Mount charclass[0] pattern_off out of range");
+        TEST_ASSERT(classes[1].pattern_off < mount_header->strings_size, "Mount charclass[1] pattern_off out of range");
+        TEST_ASSERT(strings[classes[0].pattern_off] == '[', "Expected mount charclass[0] to point at '['");
+        TEST_ASSERT(strings[classes[1].pattern_off] == '[', "Expected mount charclass[1] to point at '['");
+
+        {
+            uint8_t bytea = classes[0].bitmap['a' >> 3u];
+            uint8_t byteb = classes[0].bitmap['b' >> 3u];
+            TEST_ASSERT((bytea & (1u << ('a' & 7u))) != 0, "Expected 'a' set in mount source charclass");
+            TEST_ASSERT((byteb & (1u << ('b' & 7u))) != 0, "Expected 'b' set in mount source charclass");
+        }
+
+        {
+            uint8_t byteA = classes[1].bitmap['A' >> 3u];
+            uint8_t byteB = classes[1].bitmap['B' >> 3u];
+            TEST_ASSERT((byteA & (1u << ('A' & 7u))) != 0, "Expected 'A' set in mount target charclass");
+            TEST_ASSERT((byteB & (1u << ('B' & 7u))) != 0, "Expected 'B' set in mount target charclass");
+        }
+
         free(mount_buffer);
     }
 

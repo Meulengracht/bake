@@ -11,6 +11,7 @@ add_library(protecc STATIC
     profiles/paths/node.c
     profiles/paths/parser.c
     profiles/paths/trie.c
+    profiles/rules/dfa.c
     profiles/builder.c
     profiles/mount.c
     profiles/net.c

@@ -23,13 +23,8 @@
 
 #include <bpf/bpf_helpers.h>
 
-#define PROTECC_BPF_MAX_PATH         4096u
-#define PROTECC_BPF_MAX_PROFILE_SIZE (65536u - 4u)
+#define PROTECC_BPF_MAX_PATH 4096u
 
-#define __VALID_PTR(base, max, ptr, size) \
-    ((const void*)(ptr) >= (const void*)(base) && ((const void*)(ptr) + (size)) <= ((const void*)(base) + (max)))
-#define __VALID_PROFILE_PTR(prof, ptr, size) \
-    __VALID_PTR((prof), PROTECC_BPF_MAX_PROFILE_SIZE, (ptr), (size))
 #define __VALID_PATH_PTR(path, ptr, size) \
     __VALID_PTR((path), PROTECC_BPF_MAX_PATH, (ptr), (size))
 

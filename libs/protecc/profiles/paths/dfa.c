@@ -35,13 +35,20 @@ static size_t __profile_dfa_size(uint32_t stateCount, uint32_t classCount, uint3
 }
 
 static bool __valid_dfa(const protecc_profile_t* profile) {
-    if (profile == NULL || !profile->has_dfa) {
+    const protecc_path_dfa_runtime_t* dfa;
+
+    if (profile == NULL) {
         return false;
     }
-    if (profile->dfa_transitions == NULL || profile->dfa_accept == NULL || profile->dfa_perms == NULL) {
+
+    dfa = &profile->path_dfa;
+    if (!dfa->present) {
         return false;
     }
-    if (profile->dfa_num_states == 0 || profile->dfa_num_classes == 0) {
+    if (dfa->transitions == NULL || dfa->accept == NULL || dfa->perms == NULL) {
+        return false;
+    }
+    if (dfa->num_states == 0 || dfa->num_classes == 0) {
         return false;
     }
     return true;
@@ -53,32 +60,35 @@ protecc_error_t __export_dfa_profile(
     size_t                   bufferSize,
     size_t*                  bytesWritten)
 {
-    size_t                   requiredSize;
-    uint8_t*                 out;
-    protecc_profile_header_t header;
-    protecc_profile_dfa_t    dfa;
-    uint32_t                 classmapOffset;
-    uint32_t                 acceptOffset;
-    uint32_t                 permissionsOffset;
-    uint32_t                 transitionsOffset;
+    size_t                            requiredSize;
+    uint8_t*                          out;
+    protecc_profile_header_t          header;
+    protecc_profile_dfa_t             dfaHeader;
+    const protecc_path_dfa_runtime_t* dfa;
+    uint32_t                          classmapOffset;
+    uint32_t                          acceptOffset;
+    uint32_t                          permissionsOffset;
+    uint32_t                          transitionsOffset;
 
     if (!__valid_dfa(profile)) {
         return PROTECC_ERROR_COMPILE_FAILED;
     }
+
+    dfa = &profile->path_dfa;
 
     // Either must be provided
     if (buffer == NULL && bytesWritten == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    if (profile->dfa_num_classes != PROTECC_PROFILE_DFA_CLASSMAP_SIZE) {
+    if (dfa->num_classes != PROTECC_PROFILE_DFA_CLASSMAP_SIZE) {
         return PROTECC_ERROR_COMPILE_FAILED;
     }
 
     requiredSize = __profile_dfa_size(
-        profile->dfa_num_states,
-        profile->dfa_num_classes,
-        profile->dfa_accept_words
+        dfa->num_states,
+        dfa->num_classes,
+        dfa->accept_words
     );
     if (requiredSize > UINT32_MAX) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
@@ -98,8 +108,8 @@ protecc_error_t __export_dfa_profile(
 
     classmapOffset = (uint32_t)(sizeof(protecc_profile_header_t) + sizeof(protecc_profile_dfa_t));
     acceptOffset = classmapOffset + PROTECC_PROFILE_DFA_CLASSMAP_SIZE;
-    permissionsOffset = acceptOffset + (uint32_t)(profile->dfa_accept_words * sizeof(uint32_t));
-    transitionsOffset = permissionsOffset + (uint32_t)(profile->dfa_num_states * sizeof(uint32_t));
+    permissionsOffset = acceptOffset + (uint32_t)(dfa->accept_words * sizeof(uint32_t));
+    transitionsOffset = permissionsOffset + (uint32_t)(dfa->num_states * sizeof(uint32_t));
 
     memset(&header, 0, sizeof(header));
     header.magic = PROTECC_PROFILE_MAGIC;
@@ -114,26 +124,26 @@ protecc_error_t __export_dfa_profile(
     header.stats.max_depth = (uint32_t)profile->stats.max_depth;
     header.stats.num_nodes = (uint32_t)profile->stats.num_nodes;
 
-    memset(&dfa, 0, sizeof(dfa));
-    dfa.num_states = profile->dfa_num_states;
-    dfa.num_classes = profile->dfa_num_classes;
-    dfa.start_state = profile->dfa_start_state;
-    dfa.accept_words = profile->dfa_accept_words;
-    dfa.classmap_off = classmapOffset;
-    dfa.accept_off = acceptOffset;
-    dfa.perms_off = permissionsOffset;
-    dfa.transitions_off = transitionsOffset;
+    memset(&dfaHeader, 0, sizeof(dfaHeader));
+    dfaHeader.num_states = dfa->num_states;
+    dfaHeader.num_classes = dfa->num_classes;
+    dfaHeader.start_state = dfa->start_state;
+    dfaHeader.accept_words = dfa->accept_words;
+    dfaHeader.classmap_off = classmapOffset;
+    dfaHeader.accept_off = acceptOffset;
+    dfaHeader.perms_off = permissionsOffset;
+    dfaHeader.transitions_off = transitionsOffset;
 
     out = (uint8_t*)buffer;
     memcpy(out, &header, sizeof(header));
-    memcpy(out + sizeof(header), &dfa, sizeof(dfa));
-    memcpy(out + classmapOffset, profile->dfa_classmap, PROTECC_PROFILE_DFA_CLASSMAP_SIZE);
-    memcpy(out + acceptOffset, profile->dfa_accept, (size_t)profile->dfa_accept_words * sizeof(uint32_t));
-    memcpy(out + permissionsOffset, profile->dfa_perms, (size_t)profile->dfa_num_states * sizeof(uint32_t));
+    memcpy(out + sizeof(header), &dfaHeader, sizeof(dfaHeader));
+    memcpy(out + classmapOffset, dfa->classmap, PROTECC_PROFILE_DFA_CLASSMAP_SIZE);
+    memcpy(out + acceptOffset, dfa->accept, (size_t)dfa->accept_words * sizeof(uint32_t));
+    memcpy(out + permissionsOffset, dfa->perms, (size_t)dfa->num_states * sizeof(uint32_t));
     memcpy(
         out + transitionsOffset,
-        profile->dfa_transitions,
-        (size_t)profile->dfa_num_states * (size_t)profile->dfa_num_classes * sizeof(uint32_t)
+        dfa->transitions,
+        (size_t)dfa->num_states * (size_t)dfa->num_classes * sizeof(uint32_t)
     );
     return PROTECC_OK;
 }
@@ -190,20 +200,22 @@ static protecc_error_t __allocate_import_dfa_buffers(
     size_t              transitionsSize,
     protecc_profile_t** profileOut)
 {
-    protecc_profile_t* profile;
+    protecc_profile_t*          profile;
+    protecc_path_dfa_runtime_t* dfa;
 
     profile = calloc(1, sizeof(protecc_profile_t));
     if (profile == NULL) {
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
 
-    profile->dfa_accept = malloc(acceptSize);
-    profile->dfa_perms = malloc(permissionsSize);
-    profile->dfa_transitions = malloc(transitionsSize);
-    if (profile->dfa_accept == NULL || profile->dfa_perms == NULL || profile->dfa_transitions == NULL) {
-        free(profile->dfa_transitions);
-        free(profile->dfa_perms);
-        free(profile->dfa_accept);
+    dfa = &profile->path_dfa;
+    dfa->accept = malloc(acceptSize);
+    dfa->perms = malloc(permissionsSize);
+    dfa->transitions = malloc(transitionsSize);
+    if (dfa->accept == NULL || dfa->perms == NULL || dfa->transitions == NULL) {
+        free(dfa->transitions);
+        free(dfa->perms);
+        free(dfa->accept);
         free(profile);
         return PROTECC_ERROR_OUT_OF_MEMORY;
     }
@@ -248,16 +260,16 @@ protecc_error_t __import_dfa_profile(
         return err;
     }
 
-    memcpy(profile->dfa_classmap, base + dfa.classmap_off, PROTECC_PROFILE_DFA_CLASSMAP_SIZE);
-    memcpy(profile->dfa_accept, base + dfa.accept_off, acceptSize);
-    memcpy(profile->dfa_perms, base + dfa.perms_off, permissionsSize);
-    memcpy(profile->dfa_transitions, base + dfa.transitions_off, transitionsSize);
+    memcpy(profile->path_dfa.classmap, base + dfa.classmap_off, PROTECC_PROFILE_DFA_CLASSMAP_SIZE);
+    memcpy(profile->path_dfa.accept, base + dfa.accept_off, acceptSize);
+    memcpy(profile->path_dfa.perms, base + dfa.perms_off, permissionsSize);
+    memcpy(profile->path_dfa.transitions, base + dfa.transitions_off, transitionsSize);
 
-    profile->has_dfa = true;
-    profile->dfa_num_states = dfa.num_states;
-    profile->dfa_num_classes = dfa.num_classes;
-    profile->dfa_start_state = dfa.start_state;
-    profile->dfa_accept_words = dfa.accept_words;
+    profile->path_dfa.present = true;
+    profile->path_dfa.num_states = dfa.num_states;
+    profile->path_dfa.num_classes = dfa.num_classes;
+    profile->path_dfa.start_state = dfa.start_state;
+    profile->path_dfa.accept_words = dfa.accept_words;
 
     profile->flags = header->flags & ~(PROTECC_PROFILE_FLAG_TYPE_TRIE | PROTECC_PROFILE_FLAG_TYPE_DFA);
     profile->stats.num_patterns = header->stats.num_patterns;

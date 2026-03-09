@@ -7,6 +7,7 @@
 #define PROTECC_INTERNAL_H
 
 #include <protecc/protecc.h>
+#include <protecc/profile.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -75,27 +76,55 @@ struct protecc_node {
     protecc_permission_t perms;         /**< Permissions for terminal nodes */
 };
 
+typedef struct protecc_rule_dfa_runtime {
+    bool      present;
+    uint32_t  num_states;
+    uint32_t  num_classes;
+    uint32_t  start_state;
+    uint32_t  accept_words;
+    uint32_t  rule_count;
+    uint8_t   classmap[PROTECC_PROFILE_DFA_CLASSMAP_SIZE];
+    uint32_t* accept;
+    uint32_t* candidate_index;
+    uint32_t* candidate_count;
+    uint32_t* candidates;
+    uint32_t  candidates_total;
+    uint32_t* transitions;
+} protecc_rule_dfa_runtime_t;
+
+typedef struct protecc_rule_dfa_pattern {
+    const char* pattern;
+    uint32_t    rule_index;
+} protecc_rule_dfa_pattern_t;
+
+typedef struct protecc_path_dfa_runtime {
+    bool      present;                            /**< True when DFA tables are present */
+    uint32_t  num_states;
+    uint32_t  num_classes;
+    uint32_t  start_state;
+    uint32_t  accept_words;
+    uint8_t   classmap[PROTECC_PROFILE_DFA_CLASSMAP_SIZE];
+    uint32_t* accept;
+    uint32_t* perms;
+    uint32_t* transitions;
+} protecc_path_dfa_runtime_t;
+
 /**
  * @brief Compiled pattern set structure
  */
 struct protecc_profile {
-    protecc_node_t*          root;               /**< Root of the trie */
-    uint32_t                 flags;              /**< Compilation flags */
-    protecc_compile_config_t config;             /**< Compiler configuration */
-    bool                     has_dfa;            /**< True when DFA tables are present */
-    uint32_t                 dfa_num_states;
-    uint32_t                 dfa_num_classes;
-    uint32_t                 dfa_start_state;
-    uint32_t                 dfa_accept_words;
-    uint8_t                  dfa_classmap[256];
-    uint32_t*                dfa_accept;
-    uint32_t*                dfa_perms;
-    uint32_t*                dfa_transitions;
-    protecc_net_rule_t*      net_rules;          /**< Compiled network rules */
-    size_t                   net_rule_count;
-    protecc_mount_rule_t*    mount_rules;        /**< Compiled mount rules */
-    size_t                   mount_rule_count;
-    protecc_stats_t          stats;              /**< Statistics */
+    protecc_node_t*             root;               /**< Root of the trie */
+    uint32_t                    flags;              /**< Compilation flags */
+    protecc_compile_config_t    config;             /**< Compiler configuration */
+    protecc_path_dfa_runtime_t  path_dfa;           /**< Compiled DFA tables for paths */
+    protecc_net_rule_t*         net_rules;          /**< Compiled network rules */
+    size_t                      net_rule_count;
+    protecc_rule_dfa_runtime_t* net_ip_dfa;         /**< Compiled DFA for IP-style rules */
+    protecc_rule_dfa_runtime_t* net_unix_dfa;       /**< Compiled DFA for UNIX socket rules */
+    protecc_rule_dfa_runtime_t* mount_dfa;          /**< Compiled DFA for mount what+where pairs */
+    protecc_mount_rule_t*       mount_rules;        /**< Compiled mount rules */
+    size_t                      mount_rule_count;
+    protecc_stats_t             stats;              /**< Statistics */
 };
 
 static bool __is_valid_action(protecc_action_t action)
@@ -115,6 +144,29 @@ extern protecc_error_t __update_stats_trie_profile(protecc_profile_t* compiled);
 
 extern protecc_error_t __validate_net_rule(const protecc_net_rule_t* rule);
 extern protecc_error_t __validate_mount_rule(const protecc_mount_rule_t* rule);
+
+extern protecc_error_t __protecc_net_build_dfa(protecc_profile_t* profile);
+extern void __protecc_net_free_dfas(protecc_profile_t* profile);
+extern protecc_error_t __protecc_mount_build_dfa(protecc_profile_t* profile);
+extern void __protecc_mount_free_dfa(protecc_profile_t* profile);
+extern protecc_error_t __build_dfa_from_patterns(
+    const protecc_rule_dfa_pattern_t* patterns,
+    size_t                            pattern_count,
+    const protecc_profile_t*          source_profile,
+    protecc_rule_dfa_runtime_t**       outDfa);
+extern size_t __net_dfa_block_size(const protecc_rule_dfa_runtime_t* dfa);
+extern protecc_error_t __net_export_dfa_block(
+    const protecc_rule_dfa_runtime_t* dfa,
+    uint8_t*                         base,
+    size_t                           bufferSize,
+    uint32_t                         offset);
+extern protecc_error_t __net_validate_dfa_block(
+    const uint8_t* base,
+    size_t         bufferSize,
+    size_t         offset,
+    size_t         ruleCount,
+    size_t*        blockSizeOut);
+extern void __net_dfa_free_runtime(protecc_rule_dfa_runtime_t* dfa);
 
 extern protecc_error_t __export_dfa_profile(
     const protecc_profile_t* profile,
@@ -138,6 +190,20 @@ extern protecc_error_t __import_trie_profile(
     size_t                          bufferSize,
     const protecc_profile_header_t* header,
     protecc_profile_t**             profileOut);
+
+typedef struct {
+    protecc_profile_charclass_entry_t* entries;
+    size_t                             count;
+    size_t                             capacity;
+} protecc_charclass_table_t;
+
+extern protecc_error_t __charclass_collect(
+    const char*             pattern,
+    uint32_t                pattern_offset,
+    bool                    case_insensitive,
+    protecc_charclass_table_t* table);
+
+extern void __charclass_table_free(protecc_charclass_table_t* table);
 
 /**
  * @brief Create a new trie node

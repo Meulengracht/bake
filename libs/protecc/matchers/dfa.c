@@ -24,13 +24,20 @@
 #include "../private.h"
 
 static bool __valid_dfa(const protecc_profile_t* compiled) {
-    if (compiled == NULL || !compiled->has_dfa) {
+    const protecc_path_dfa_runtime_t* dfa;
+
+    if (compiled == NULL) {
         return false;
     }
-    if (compiled->dfa_transitions == NULL || compiled->dfa_accept == NULL || compiled->dfa_perms == NULL) {
+
+    dfa = &compiled->path_dfa;
+    if (!dfa->present) {
         return false;
     }
-    if (compiled->dfa_num_states == 0 || compiled->dfa_num_classes == 0) {
+    if (dfa->transitions == NULL || dfa->accept == NULL || dfa->perms == NULL) {
+        return false;
+    }
+    if (dfa->num_states == 0 || dfa->num_classes == 0) {
         return false;
     }
     return true;
@@ -41,34 +48,36 @@ bool __matcher_dfa(
     const char*              path,
     protecc_permission_t     requiredPermissions)
 {
+    const protecc_path_dfa_runtime_t* dfa;
     uint32_t state;
 
     if (!__valid_dfa(compiled)) {
         return false;
     }
 
-    state = compiled->dfa_start_state;
+    dfa = &compiled->path_dfa;
+    state = dfa->start_state;
     for (size_t i = 0; path[i]; i++) {
         uint8_t  c   = (uint8_t)path[i];
-        uint32_t cls = compiled->dfa_classmap[c];
+        uint32_t cls = dfa->classmap[c];
         uint64_t index;
 
-        if (cls >= compiled->dfa_num_classes) {
+        if (cls >= dfa->num_classes) {
             return false;
         }
 
-        index = ((uint64_t)state * (uint64_t)compiled->dfa_num_classes) + (uint64_t)cls;
-        state = compiled->dfa_transitions[index];
-        if (state >= compiled->dfa_num_states) {
+        index = ((uint64_t)state * (uint64_t)dfa->num_classes) + (uint64_t)cls;
+        state = dfa->transitions[index];
+        if (state >= dfa->num_states) {
             return false;
         }
     }
 
-    if ((compiled->dfa_accept[state >> 5] & (1u << (state & 31u))) == 0u) {
+    if ((dfa->accept[state >> 5] & (1u << (state & 31u))) == 0u) {
         return false;
     }
 
-    if ((compiled->dfa_perms[state] & requiredPermissions) != requiredPermissions) {
+    if ((dfa->perms[state] & requiredPermissions) != requiredPermissions) {
         return false;
     }
     return true;

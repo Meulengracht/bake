@@ -82,7 +82,7 @@ int test_profile_builder_domain_only_and_negatives(void)
                 "Expected domain-only builder compile (no path patterns) to succeed");
 
     err = protecc_profile_export_net(compiled, NULL, 0, &net_export_size);
-    TEST_ASSERT(err == PROTECC_OK && net_export_size > sizeof(protecc_net_profile_header_t),
+    TEST_ASSERT(err == PROTECC_OK && net_export_size > sizeof(protecc_rule_profile_header_t),
                 "Failed to query net export for multi-rule iterator test");
     net_buffer = malloc(net_export_size);
     TEST_ASSERT(net_buffer != NULL, "Failed to allocate net export buffer for iterator test");
@@ -90,7 +90,7 @@ int test_profile_builder_domain_only_and_negatives(void)
     TEST_ASSERT(err == PROTECC_OK, "Failed to export net blob for iterator test");
 
     err = protecc_profile_export_mounts(compiled, NULL, 0, &mount_export_size);
-    TEST_ASSERT(err == PROTECC_OK && mount_export_size > sizeof(protecc_mount_profile_header_t),
+    TEST_ASSERT(err == PROTECC_OK && mount_export_size > sizeof(protecc_rule_profile_header_t),
                 "Failed to query mount export for multi-rule iterator test");
     mount_buffer = malloc(mount_export_size);
     TEST_ASSERT(mount_buffer != NULL, "Failed to allocate mount export buffer for iterator test");
@@ -128,7 +128,7 @@ int test_profile_builder_domain_only_and_negatives(void)
 
         {
             protecc_net_profile_rule_t* raw_rules =
-                (protecc_net_profile_rule_t*)(net_buffer + sizeof(protecc_net_profile_header_t));
+                (protecc_net_profile_rule_t*)(net_buffer + sizeof(protecc_rule_profile_header_t));
             uint8_t saved_action = raw_rules[0].action;
             uint8_t saved_protocol = raw_rules[0].protocol;
             uint8_t saved_family = raw_rules[0].family;
@@ -194,7 +194,7 @@ int test_profile_builder_domain_only_and_negatives(void)
 
         {
             protecc_mount_profile_rule_t* raw_rules =
-                (protecc_mount_profile_rule_t*)(mount_buffer + sizeof(protecc_mount_profile_header_t));
+                (protecc_mount_profile_rule_t*)(mount_buffer + sizeof(protecc_rule_profile_header_t));
             uint8_t saved_action = raw_rules[0].action;
             protecc_mount_rule_t* imported_mount = NULL;
             size_t imported_mount_count = 0;

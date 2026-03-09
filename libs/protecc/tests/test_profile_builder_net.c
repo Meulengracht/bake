@@ -6,6 +6,8 @@
 #include <protecc/protecc.h>
 #include <stdio.h>
 
+#include "../private.h"
+
 #define TEST_ASSERT(cond, msg) \
     do { \
         if (!(cond)) { \
@@ -209,5 +211,58 @@ int test_profile_builder_runtime_net_matchers(void)
         protecc_profile_builder_destroy(ci_builder);
     }
 
+    return 0;
+}
+
+int test_profile_builder_net_dfa_without_linear_rules(void)
+{
+    protecc_profile_builder_t* builder = NULL;
+    protecc_profile_t* compiled = NULL;
+    protecc_error_t err;
+    protecc_action_t action = PROTECC_ACTION_DENY;
+    size_t saved_count;
+
+    protecc_net_rule_t net_rule = {
+        .action = PROTECC_ACTION_ALLOW,
+        .protocol = PROTECC_NET_PROTOCOL_TCP,
+        .family = PROTECC_NET_FAMILY_IPV4,
+        .ip_pattern = "192.168.50.*",
+        .port_from = 8080,
+        .port_to = 8080,
+        .unix_path_pattern = NULL
+    };
+
+    builder = protecc_profile_builder_create();
+    TEST_ASSERT(builder != NULL, "Failed to create profile builder for DFA-only net test");
+
+    err = protecc_profile_builder_add_net_rule(builder, &net_rule);
+    TEST_ASSERT(err == PROTECC_OK, "Failed to add net rule for DFA-only net test");
+
+    err = protecc_profile_compile(builder, PROTECC_FLAG_NONE, NULL, &compiled);
+    TEST_ASSERT(err == PROTECC_OK && compiled != NULL, "Failed to compile profile for DFA-only net test");
+    TEST_ASSERT(compiled->net_ip_dfa != NULL && compiled->net_ip_dfa->present,
+                "Expected net IP DFA to be present");
+
+    saved_count = compiled->net_rule_count;
+    compiled->net_rule_count = 0; /* Disable linear fallback; DFA must succeed */
+
+    {
+        protecc_net_request_t req = {
+            .protocol = PROTECC_NET_PROTOCOL_TCP,
+            .family = PROTECC_NET_FAMILY_IPV4,
+            .ip = "192.168.50.25",
+            .port = 8080,
+            .unix_path = NULL
+        };
+
+        bool matched = protecc_match_net(compiled, &req, &action);
+        TEST_ASSERT(matched && action == PROTECC_ACTION_ALLOW,
+                    "Expected DFA match to succeed with linear rules disabled");
+    }
+
+    compiled->net_rule_count = saved_count; /* restore for cleanup */
+
+    protecc_free(compiled);
+    protecc_profile_builder_destroy(builder);
     return 0;
 }

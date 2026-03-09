@@ -447,10 +447,18 @@ static protecc_error_t __compile_net_domain(
     const protecc_profile_builder_t* builder,
     protecc_profile_t*              profile)
 {
+    protecc_error_t err;
+
     if (builder == NULL || profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
-    return __copy_builder_net_rules(builder, profile);
+
+    err = __copy_builder_net_rules(builder, profile);
+    if (err != PROTECC_OK) {
+        return err;
+    }
+
+    return __protecc_net_build_dfa(profile);
 }
 
 static protecc_error_t __compile_mount_domain(
@@ -460,7 +468,14 @@ static protecc_error_t __compile_mount_domain(
     if (builder == NULL || profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
-    return __copy_builder_mount_rules(builder, profile);
+    protecc_error_t err;
+
+    err = __copy_builder_mount_rules(builder, profile);
+    if (err != PROTECC_OK) {
+        return err;
+    }
+
+    return __protecc_mount_build_dfa(profile);
 }
 
 static protecc_error_t __validate_compile_inputs(
