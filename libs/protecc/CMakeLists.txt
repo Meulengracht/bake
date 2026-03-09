@@ -54,8 +54,24 @@ if(PROTECC_BUILD_TESTS)
     if(PROTECC_BUILD_EBPF_VERIFY_TESTS)
         find_program(PROTECC_CLANG clang)
         find_program(PROTECC_BPFTOOL bpftool)
+        set(PROTECC_BPFTOOL_USABLE FALSE)
 
-        if(PROTECC_CLANG AND PROTECC_BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
+        if(PROTECC_BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
+            execute_process(
+                COMMAND ${PROTECC_BPFTOOL} btf dump file /sys/kernel/btf/vmlinux format c
+                OUTPUT_QUIET
+                ERROR_QUIET
+                RESULT_VARIABLE PROTECC_BPFTOOL_CHECK_RC
+            )
+
+            if(PROTECC_BPFTOOL_CHECK_RC EQUAL 0)
+                set(PROTECC_BPFTOOL_USABLE TRUE)
+            else()
+                message(STATUS "bpftool is present but not usable for this kernel; protecc_bpf_verify will be configured as skip-only")
+            endif()
+        endif()
+
+        if(PROTECC_CLANG AND PROTECC_BPFTOOL_USABLE)
             if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
                 set(PROTECC_BPF_ARCH "x86")
             elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
@@ -106,7 +122,7 @@ if(PROTECC_BUILD_TESTS)
                 )
             endforeach()
 
-            add_custom_target(protecc_bpf_verify_obj ALL DEPENDS ${PROTECC_BPF_SMOKE_OBJECTS})
+            add_custom_target(protecc_bpf_verify_obj DEPENDS ${PROTECC_BPF_SMOKE_OBJECTS})
 
             string(JOIN ";" PROTECC_BPF_SMOKE_OBJECTS_ARG ${PROTECC_BPF_SMOKE_OBJECTS})
             add_test(

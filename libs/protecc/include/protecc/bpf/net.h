@@ -50,7 +50,7 @@ static __always_inline bool protecc_bpf_match_net(
     const protecc_rule_profile_header_t* header;
     const protecc_net_profile_rule_t*   rules;
     const protecc_net_dfa_section_t*    section;
-    const protecc_profile_dfa_t*            dfa = NULL;
+    const protecc_profile_dfa_t*        dfa = NULL;
     __u64                               rulesSize;
     __u64                               classTableSize;
     __u64                               dfaSectionOff;
