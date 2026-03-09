@@ -619,3 +619,217 @@ cleanup:
     protecc_node_free(root);
     return err;
 }
+
+size_t __dfa_block_size(const protecc_rule_dfa_runtime_t* dfa)
+{
+    size_t base;
+
+    if (dfa == NULL || !dfa->present) {
+        return 0;
+    }
+
+    base = sizeof(protecc_profile_dfa_t);
+    base += PROTECC_PROFILE_DFA_CLASSMAP_SIZE;
+    base += (size_t)dfa->accept_words * sizeof(uint32_t);
+    base += (size_t)dfa->num_states * sizeof(uint32_t); /* candidate_index */
+    base += (size_t)dfa->num_states * sizeof(uint32_t); /* candidate_count */
+    base += (size_t)dfa->candidates_total * sizeof(uint32_t);
+    base += (size_t)dfa->num_states * (size_t)dfa->num_classes * sizeof(uint32_t);
+    return base;
+}
+
+protecc_error_t __net_export_dfa_block(
+    const protecc_rule_dfa_runtime_t* dfa,
+    uint8_t*                         base,
+    size_t                           bufferSize,
+    uint32_t                         offset)
+{
+    protecc_profile_dfa_t header;
+    uint8_t*          out;
+    size_t            required;
+    size_t            classmap_off;
+    size_t            accept_off;
+    size_t            cand_index_off;
+    size_t            cand_count_off;
+    size_t            candidates_off;
+    size_t            transitions_off;
+
+    if (dfa == NULL || !dfa->present) {
+        return PROTECC_OK;
+    }
+
+    required = __dfa_block_size(dfa);
+    if ((size_t)offset > bufferSize || required > bufferSize - offset) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    classmap_off = sizeof(protecc_profile_dfa_t);
+    accept_off = classmap_off + PROTECC_PROFILE_DFA_CLASSMAP_SIZE;
+    cand_index_off = accept_off + ((size_t)dfa->accept_words * sizeof(uint32_t));
+    cand_count_off = cand_index_off + ((size_t)dfa->num_states * sizeof(uint32_t));
+    candidates_off = cand_count_off + ((size_t)dfa->num_states * sizeof(uint32_t));
+    transitions_off = candidates_off + ((size_t)dfa->candidates_total * sizeof(uint32_t));
+
+    if (classmap_off > UINT32_MAX || accept_off > UINT32_MAX || cand_index_off > UINT32_MAX
+        || cand_count_off > UINT32_MAX || candidates_off > UINT32_MAX || transitions_off > UINT32_MAX) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
+    memset(&header, 0, sizeof(header));
+    header.num_states = dfa->num_states;
+    header.num_classes = dfa->num_classes;
+    header.start_state = dfa->start_state;
+    header.accept_words = dfa->accept_words;
+    header.classmap_off = (uint32_t)classmap_off;
+    header.accept_off = (uint32_t)accept_off;
+    header.candidate_index_off = (uint32_t)cand_index_off;
+    header.candidate_count_off = (uint32_t)cand_count_off;
+    header.candidates_off = (uint32_t)candidates_off;
+    header.candidates_count = dfa->candidates_total;
+    header.transitions_off = (uint32_t)transitions_off;
+
+    out = base + offset;
+    memcpy(out, &header, sizeof(header));
+    memcpy(out + classmap_off, dfa->classmap, PROTECC_PROFILE_DFA_CLASSMAP_SIZE);
+    memcpy(out + accept_off, dfa->accept, (size_t)dfa->accept_words * sizeof(uint32_t));
+    memcpy(out + cand_index_off, dfa->candidate_index, (size_t)dfa->num_states * sizeof(uint32_t));
+    memcpy(out + cand_count_off, dfa->candidate_count, (size_t)dfa->num_states * sizeof(uint32_t));
+    memcpy(out + candidates_off, dfa->candidates, (size_t)dfa->candidates_total * sizeof(uint32_t));
+    memcpy(
+        out + transitions_off,
+        dfa->transitions,
+        (size_t)dfa->num_states * (size_t)dfa->num_classes * sizeof(uint32_t)
+    );
+    return PROTECC_OK;
+}
+
+protecc_error_t __dfa_validate_block(
+    const uint8_t* blockBase,
+    size_t         bufferSize,
+    size_t         blockOffset,
+    size_t         ruleCount,
+    size_t*        blockSizeOut)
+{
+    protecc_profile_dfa_t header;
+    size_t            classmap_off;
+    size_t            accept_off;
+    size_t            cand_index_off;
+    size_t            cand_count_off;
+    size_t            candidates_off;
+    size_t            transitions_off;
+    size_t            required;
+    size_t            transitions_count;
+    uint64_t          tmp;
+
+    if (blockOffset > bufferSize || bufferSize - blockOffset < sizeof(protecc_profile_dfa_t)) {
+        return PROTECC_ERROR_INVALID_BLOB;
+    }
+
+    memcpy(&header, blockBase + blockOffset, sizeof(header));
+
+    if (header.num_states == 0 || header.num_classes == 0 || header.num_classes > PROTECC_PROFILE_DFA_CLASSMAP_SIZE) {
+        return PROTECC_ERROR_INVALID_BLOB;
+    }
+
+    if (header.accept_words != ((header.num_states + 31u) / 32u)) {
+        return PROTECC_ERROR_INVALID_BLOB;
+    }
+
+    classmap_off = header.classmap_off;
+    accept_off = header.accept_off;
+    cand_index_off = header.candidate_index_off;
+    cand_count_off = header.candidate_count_off;
+    candidates_off = header.candidates_off;
+    transitions_off = header.transitions_off;
+
+    required = sizeof(protecc_profile_dfa_t)
+        + PROTECC_PROFILE_DFA_CLASSMAP_SIZE
+        + ((size_t)header.accept_words * sizeof(uint32_t))
+        + ((size_t)header.num_states * sizeof(uint32_t))
+        + ((size_t)header.num_states * sizeof(uint32_t))
+        + ((size_t)header.candidates_count * sizeof(uint32_t));
+
+    tmp = (uint64_t)header.num_states * (uint64_t)header.num_classes;
+    if (tmp > SIZE_MAX / sizeof(uint32_t)) {
+        return PROTECC_ERROR_INVALID_BLOB;
+    }
+    transitions_count = (size_t)tmp;
+    if (transitions_off < candidates_off + ((size_t)header.candidates_count * sizeof(uint32_t))) {
+        return PROTECC_ERROR_INVALID_BLOB;
+    }
+
+    required = transitions_off + (transitions_count * sizeof(uint32_t));
+
+    if (required > bufferSize - blockOffset) {
+        return PROTECC_ERROR_INVALID_BLOB;
+    }
+
+    if (classmap_off < sizeof(protecc_profile_dfa_t)) {
+        return PROTECC_ERROR_INVALID_BLOB;
+    }
+
+    if (accept_off < classmap_off + PROTECC_PROFILE_DFA_CLASSMAP_SIZE
+        || cand_index_off < accept_off + ((size_t)header.accept_words * sizeof(uint32_t))
+        || cand_count_off < cand_index_off + ((size_t)header.num_states * sizeof(uint32_t))
+        || candidates_off < cand_count_off + ((size_t)header.num_states * sizeof(uint32_t))
+        || transitions_off < candidates_off + ((size_t)header.candidates_count * sizeof(uint32_t))) {
+        return PROTECC_ERROR_INVALID_BLOB;
+    }
+
+    /* Verify candidates do not exceed declared total and rule bounds */
+    {
+        const uint32_t* counts = (const uint32_t*)(blockBase + blockOffset + cand_count_off);
+        const uint32_t* starts = (const uint32_t*)(blockBase + blockOffset + cand_index_off);
+        size_t          total = 0;
+
+        for (uint32_t i = 0; i < header.num_states; i++) {
+            uint32_t count = counts[i];
+            uint32_t start = starts[i];
+
+            if (count > ruleCount) {
+                return PROTECC_ERROR_INVALID_BLOB;
+            }
+
+            if ((uint64_t)start + (uint64_t)count > header.candidates_count) {
+                return PROTECC_ERROR_INVALID_BLOB;
+            }
+
+            total += count;
+        }
+
+        if (total != header.candidates_count) {
+            return PROTECC_ERROR_INVALID_BLOB;
+        }
+    }
+
+    /* Verify transitions stay within state range */
+    {
+        const uint32_t* transitions = (const uint32_t*)(blockBase + blockOffset + transitions_off);
+
+        for (size_t i = 0; i < transitions_count; i++) {
+            if (transitions[i] >= header.num_states) {
+                return PROTECC_ERROR_INVALID_BLOB;
+            }
+        }
+    }
+
+    if (blockSizeOut) {
+        *blockSizeOut = required;
+    }
+
+    return PROTECC_OK;
+}
+
+void __net_dfa_free_runtime(protecc_rule_dfa_runtime_t* dfa)
+{
+    if (dfa == NULL) {
+        return;
+    }
+
+    free(dfa->accept);
+    free(dfa->candidate_index);
+    free(dfa->candidate_count);
+    free(dfa->candidates);
+    free(dfa->transitions);
+    free(dfa);
+}

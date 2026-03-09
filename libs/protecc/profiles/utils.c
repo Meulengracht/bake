@@ -71,6 +71,29 @@ const char* __blob_string_ptr(const uint8_t* strings, uint32_t offset)
     return (const char*)(strings + offset);
 }
 
+protecc_error_t __blob_string_offset_validate(
+    uint32_t       offset,
+    const uint8_t* strings,
+    size_t         stringsSize)
+{
+    const uint8_t* end;
+
+    if (offset == PROTECC_PROFILE_STRING_NONE) {
+        return PROTECC_OK;
+    }
+
+    if (!strings || offset >= stringsSize) {
+        return PROTECC_ERROR_INVALID_BLOB;
+    }
+
+    end = memchr(strings + offset, '\0', stringsSize - offset);
+    if (!end) {
+        return PROTECC_ERROR_INVALID_BLOB;
+    }
+
+    return PROTECC_OK;
+}
+
 static void __charclass_bitmap_set(uint8_t bitmap[PROTECC_PROFILE_CHARCLASS_BITMAP_SIZE], unsigned char c)
 {
     bitmap[c >> 3u] |= (uint8_t)(1u << (c & 7u));

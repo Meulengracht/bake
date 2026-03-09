@@ -40,229 +40,6 @@ static bool __is_valid_net_family(protecc_net_family_t family)
         || family == PROTECC_NET_FAMILY_UNIX;
 }
 
-static protecc_error_t __validate_blob_string_offset(
-    uint32_t       offset,
-    const uint8_t* strings,
-    size_t         stringsSize)
-{
-    const uint8_t* end;
-
-    if (offset == PROTECC_PROFILE_STRING_NONE) {
-        return PROTECC_OK;
-    }
-
-    if (!strings || offset >= stringsSize) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    end = memchr(strings + offset, '\0', stringsSize - offset);
-    if (!end) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    return PROTECC_OK;
-}
-
-size_t __net_dfa_block_size(const protecc_rule_dfa_runtime_t* dfa)
-{
-    size_t base;
-
-    if (dfa == NULL || !dfa->present) {
-        return 0;
-    }
-
-    base = sizeof(protecc_profile_dfa_t);
-    base += PROTECC_PROFILE_DFA_CLASSMAP_SIZE;
-    base += (size_t)dfa->accept_words * sizeof(uint32_t);
-    base += (size_t)dfa->num_states * sizeof(uint32_t); /* candidate_index */
-    base += (size_t)dfa->num_states * sizeof(uint32_t); /* candidate_count */
-    base += (size_t)dfa->candidates_total * sizeof(uint32_t);
-    base += (size_t)dfa->num_states * (size_t)dfa->num_classes * sizeof(uint32_t);
-    return base;
-}
-
-protecc_error_t __net_export_dfa_block(
-    const protecc_rule_dfa_runtime_t* dfa,
-    uint8_t*                         base,
-    size_t                           bufferSize,
-    uint32_t                         offset)
-{
-    protecc_profile_dfa_t header;
-    uint8_t*          out;
-    size_t            required;
-    size_t            classmap_off;
-    size_t            accept_off;
-    size_t            cand_index_off;
-    size_t            cand_count_off;
-    size_t            candidates_off;
-    size_t            transitions_off;
-
-    if (dfa == NULL || !dfa->present) {
-        return PROTECC_OK;
-    }
-
-    required = __net_dfa_block_size(dfa);
-    if ((size_t)offset > bufferSize || required > bufferSize - offset) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
-    }
-
-    classmap_off = sizeof(protecc_profile_dfa_t);
-    accept_off = classmap_off + PROTECC_PROFILE_DFA_CLASSMAP_SIZE;
-    cand_index_off = accept_off + ((size_t)dfa->accept_words * sizeof(uint32_t));
-    cand_count_off = cand_index_off + ((size_t)dfa->num_states * sizeof(uint32_t));
-    candidates_off = cand_count_off + ((size_t)dfa->num_states * sizeof(uint32_t));
-    transitions_off = candidates_off + ((size_t)dfa->candidates_total * sizeof(uint32_t));
-
-    if (classmap_off > UINT32_MAX || accept_off > UINT32_MAX || cand_index_off > UINT32_MAX
-        || cand_count_off > UINT32_MAX || candidates_off > UINT32_MAX || transitions_off > UINT32_MAX) {
-        return PROTECC_ERROR_INVALID_ARGUMENT;
-    }
-
-    memset(&header, 0, sizeof(header));
-    header.num_states = dfa->num_states;
-    header.num_classes = dfa->num_classes;
-    header.start_state = dfa->start_state;
-    header.accept_words = dfa->accept_words;
-    header.classmap_off = (uint32_t)classmap_off;
-    header.accept_off = (uint32_t)accept_off;
-    header.candidate_index_off = (uint32_t)cand_index_off;
-    header.candidate_count_off = (uint32_t)cand_count_off;
-    header.candidates_off = (uint32_t)candidates_off;
-    header.candidates_count = dfa->candidates_total;
-    header.transitions_off = (uint32_t)transitions_off;
-
-    out = base + offset;
-    memcpy(out, &header, sizeof(header));
-    memcpy(out + classmap_off, dfa->classmap, PROTECC_PROFILE_DFA_CLASSMAP_SIZE);
-    memcpy(out + accept_off, dfa->accept, (size_t)dfa->accept_words * sizeof(uint32_t));
-    memcpy(out + cand_index_off, dfa->candidate_index, (size_t)dfa->num_states * sizeof(uint32_t));
-    memcpy(out + cand_count_off, dfa->candidate_count, (size_t)dfa->num_states * sizeof(uint32_t));
-    memcpy(out + candidates_off, dfa->candidates, (size_t)dfa->candidates_total * sizeof(uint32_t));
-    memcpy(
-        out + transitions_off,
-        dfa->transitions,
-        (size_t)dfa->num_states * (size_t)dfa->num_classes * sizeof(uint32_t)
-    );
-    return PROTECC_OK;
-}
-
-protecc_error_t __net_validate_dfa_block(
-    const uint8_t* blockBase,
-    size_t         bufferSize,
-    size_t         blockOffset,
-    size_t         ruleCount,
-    size_t*        blockSizeOut)
-{
-    protecc_profile_dfa_t header;
-    size_t            classmap_off;
-    size_t            accept_off;
-    size_t            cand_index_off;
-    size_t            cand_count_off;
-    size_t            candidates_off;
-    size_t            transitions_off;
-    size_t            required;
-    size_t            transitions_count;
-    uint64_t          tmp;
-
-    if (blockOffset > bufferSize || bufferSize - blockOffset < sizeof(protecc_profile_dfa_t)) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    memcpy(&header, blockBase + blockOffset, sizeof(header));
-
-    if (header.num_states == 0 || header.num_classes == 0 || header.num_classes > PROTECC_PROFILE_DFA_CLASSMAP_SIZE) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    if (header.accept_words != ((header.num_states + 31u) / 32u)) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    classmap_off = header.classmap_off;
-    accept_off = header.accept_off;
-    cand_index_off = header.candidate_index_off;
-    cand_count_off = header.candidate_count_off;
-    candidates_off = header.candidates_off;
-    transitions_off = header.transitions_off;
-
-    required = sizeof(protecc_profile_dfa_t)
-        + PROTECC_PROFILE_DFA_CLASSMAP_SIZE
-        + ((size_t)header.accept_words * sizeof(uint32_t))
-        + ((size_t)header.num_states * sizeof(uint32_t))
-        + ((size_t)header.num_states * sizeof(uint32_t))
-        + ((size_t)header.candidates_count * sizeof(uint32_t));
-
-    tmp = (uint64_t)header.num_states * (uint64_t)header.num_classes;
-    if (tmp > SIZE_MAX / sizeof(uint32_t)) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-    transitions_count = (size_t)tmp;
-    if (transitions_off < candidates_off + ((size_t)header.candidates_count * sizeof(uint32_t))) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    required = transitions_off + (transitions_count * sizeof(uint32_t));
-
-    if (required > bufferSize - blockOffset) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    if (classmap_off < sizeof(protecc_profile_dfa_t)) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    if (accept_off < classmap_off + PROTECC_PROFILE_DFA_CLASSMAP_SIZE
-        || cand_index_off < accept_off + ((size_t)header.accept_words * sizeof(uint32_t))
-        || cand_count_off < cand_index_off + ((size_t)header.num_states * sizeof(uint32_t))
-        || candidates_off < cand_count_off + ((size_t)header.num_states * sizeof(uint32_t))
-        || transitions_off < candidates_off + ((size_t)header.candidates_count * sizeof(uint32_t))) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    /* Verify candidates do not exceed declared total and rule bounds */
-    {
-        const uint32_t* counts = (const uint32_t*)(blockBase + blockOffset + cand_count_off);
-        const uint32_t* starts = (const uint32_t*)(blockBase + blockOffset + cand_index_off);
-        size_t          total = 0;
-
-        for (uint32_t i = 0; i < header.num_states; i++) {
-            uint32_t count = counts[i];
-            uint32_t start = starts[i];
-
-            if (count > ruleCount) {
-                return PROTECC_ERROR_INVALID_BLOB;
-            }
-
-            if ((uint64_t)start + (uint64_t)count > header.candidates_count) {
-                return PROTECC_ERROR_INVALID_BLOB;
-            }
-
-            total += count;
-        }
-
-        if (total != header.candidates_count) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-    }
-
-    /* Verify transitions stay within state range */
-    {
-        const uint32_t* transitions = (const uint32_t*)(blockBase + blockOffset + transitions_off);
-
-        for (size_t i = 0; i < transitions_count; i++) {
-            if (transitions[i] >= header.num_states) {
-                return PROTECC_ERROR_INVALID_BLOB;
-            }
-        }
-    }
-
-    if (blockSizeOut) {
-        *blockSizeOut = required;
-    }
-
-    return PROTECC_OK;
-}
-
 typedef struct {
     uint32_t ip_pattern_off;
     uint32_t unix_path_pattern_off;
@@ -410,8 +187,8 @@ static protecc_error_t __export_net_profile(
         goto cleanup;
     }
 
-    ipDfaSize = __net_dfa_block_size(profile->net_ip_dfa);
-    unixDfaSize = __net_dfa_block_size(profile->net_unix_dfa);
+    ipDfaSize = __dfa_block_size(profile->net_ip_dfa);
+    unixDfaSize = __dfa_block_size(profile->net_unix_dfa);
 
     if (profile->net_rule_count > 0 && ipDfaSize == 0 && unixDfaSize == 0) {
         err = PROTECC_ERROR_COMPILE_FAILED;
@@ -490,7 +267,7 @@ static protecc_error_t __export_net_profile(
 
         if (ipDfaSize > 0) {
             section->ip_dfa_off = cursor;
-            err = __net_export_dfa_block(profile->net_ip_dfa, out_base + dfaSectionOff, bufferSize - dfaSectionOff, cursor);
+            err = __dfa_export_block(profile->net_ip_dfa, out_base + dfaSectionOff, bufferSize - dfaSectionOff, cursor);
             if (err != PROTECC_OK) {
                 goto cleanup;
             }
@@ -499,7 +276,7 @@ static protecc_error_t __export_net_profile(
 
         if (unixDfaSize > 0) {
             section->unix_dfa_off = cursor;
-            err = __net_export_dfa_block(profile->net_unix_dfa, out_base + dfaSectionOff, bufferSize - dfaSectionOff, cursor);
+            err = __dfa_export_block(profile->net_unix_dfa, out_base + dfaSectionOff, bufferSize - dfaSectionOff, cursor);
             if (err != PROTECC_OK) {
                 goto cleanup;
             }
@@ -678,7 +455,7 @@ protecc_error_t protecc_profile_validate_net_blob(
             }
         }
 
-        err = __validate_blob_string_offset(rules[i].ip_pattern_off, strings, header.strings_size);
+        err = __blob_string_offset_validate(rules[i].ip_pattern_off, strings, header.strings_size);
         if (err != PROTECC_OK) {
             return err;
         }
@@ -690,7 +467,7 @@ protecc_error_t protecc_profile_validate_net_blob(
             }
         }
 
-        err = __validate_blob_string_offset(rules[i].unix_path_pattern_off, strings, header.strings_size);
+        err = __blob_string_offset_validate(rules[i].unix_path_pattern_off, strings, header.strings_size);
         if (err != PROTECC_OK) {
             return err;
         }
@@ -739,7 +516,7 @@ protecc_error_t protecc_profile_validate_net_blob(
                 return PROTECC_ERROR_INVALID_BLOB;
             }
 
-            err = __net_validate_dfa_block(
+            err = __dfa_validate_block(
                 base,
                 bufferSize,
                 header.dfa_section_off + section->ip_dfa_off,
@@ -763,7 +540,7 @@ protecc_error_t protecc_profile_validate_net_blob(
                 return PROTECC_ERROR_INVALID_BLOB;
             }
 
-            err = __net_validate_dfa_block(
+            err = __dfa_validate_block(
                 base,
                 bufferSize,
                 header.dfa_section_off + section->unix_dfa_off,
@@ -784,166 +561,6 @@ protecc_error_t protecc_profile_validate_net_blob(
         }
     } else if (header.rule_count > 0) {
         return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    return PROTECC_OK;
-}
-
-protecc_error_t protecc_profile_validate_mount_blob(
-    const void* buffer,
-    size_t      bufferSize)
-{
-    const uint8_t*                      base;
-    protecc_rule_profile_header_t      header;
-    size_t                              rulesSize;
-    size_t                              required;
-    size_t                              dfa_size = 0;
-    size_t                              classTableSize;
-    const protecc_mount_profile_rule_t* rules;
-    const uint8_t*                      strings;
-    const protecc_profile_charclass_entry_t* classes;
-
-    if (buffer == NULL || bufferSize < sizeof(protecc_rule_profile_header_t)) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    base = (const uint8_t*)buffer;
-    memcpy(&header, base, sizeof(header));
-
-    if (header.magic != PROTECC_MOUNT_PROFILE_MAGIC || header.version != PROTECC_MOUNT_PROFILE_VERSION) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    if ((header.flags & ~(PROTECC_PROFILE_FLAG_CASE_INSENSITIVE)) != 0) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    if (header.rule_count > (SIZE_MAX / sizeof(protecc_mount_profile_rule_t))) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    if (header.charclass_count > PROTECC_PROFILE_MAX_CHAR_CLASSES) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    rulesSize = (size_t)header.rule_count * sizeof(protecc_mount_profile_rule_t);
-    classTableSize = (size_t)header.charclass_count * sizeof(protecc_profile_charclass_entry_t);
-
-    if (header.charclass_table_off < sizeof(protecc_rule_profile_header_t) + rulesSize + (size_t)header.strings_size) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    if ((size_t)header.charclass_table_off > SIZE_MAX - classTableSize) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    required = (size_t)header.charclass_table_off + classTableSize;
-
-    if (header.rule_count > 0) {
-        if (header.dfa_section_off == 0) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-
-        if (header.dfa_section_off < required) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-
-        if (__net_validate_dfa_block(base, bufferSize, header.dfa_section_off, header.rule_count, &dfa_size) != PROTECC_OK) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-
-        if (header.dfa_section_off > SIZE_MAX - dfa_size) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-
-        if (required < header.dfa_section_off + dfa_size) {
-            required = header.dfa_section_off + dfa_size;
-        }
-    }
-
-    if (required < sizeof(protecc_rule_profile_header_t) || bufferSize < required) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    rules = (const protecc_mount_profile_rule_t*)(base + sizeof(protecc_rule_profile_header_t));
-    strings = base + sizeof(protecc_rule_profile_header_t) + rulesSize;
-    classes = (const protecc_profile_charclass_entry_t*)(base + header.charclass_table_off);
-
-    if (classTableSize > 0) {
-        if (classes < (const protecc_profile_charclass_entry_t*)base
-            || (const uint8_t*)(classes + header.charclass_count) > (base + bufferSize)) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-    }
-
-    for (uint32_t i = 0; i < header.rule_count; i++) {
-        protecc_action_t action = (protecc_action_t)rules[i].action;
-        protecc_error_t  err;
-
-        if (!__is_valid_action(action)) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-
-        err = __validate_blob_string_offset(rules[i].source_pattern_off, strings, header.strings_size);
-        if (err != PROTECC_OK) {
-            return err;
-        }
-
-        if (rules[i].source_pattern_off != PROTECC_PROFILE_STRING_NONE) {
-            size_t len = strnlen((const char*)(strings + rules[i].source_pattern_off), header.strings_size - rules[i].source_pattern_off);
-            if (len > PROTECC_MAX_GLOB_STEPS) {
-                return PROTECC_ERROR_INVALID_BLOB;
-            }
-        }
-
-        err = __validate_blob_string_offset(rules[i].target_pattern_off, strings, header.strings_size);
-        if (err != PROTECC_OK) {
-            return err;
-        }
-
-        if (rules[i].target_pattern_off != PROTECC_PROFILE_STRING_NONE) {
-            size_t len = strnlen((const char*)(strings + rules[i].target_pattern_off), header.strings_size - rules[i].target_pattern_off);
-            if (len > PROTECC_MAX_GLOB_STEPS) {
-                return PROTECC_ERROR_INVALID_BLOB;
-            }
-        }
-        
-        err = __validate_blob_string_offset(rules[i].fstype_pattern_off, strings, header.strings_size);
-        if (err != PROTECC_OK) {
-            return err;
-        }
-
-        if (rules[i].fstype_pattern_off != PROTECC_PROFILE_STRING_NONE) {
-            size_t len = strnlen((const char*)(strings + rules[i].fstype_pattern_off), header.strings_size - rules[i].fstype_pattern_off);
-            if (len > PROTECC_MAX_GLOB_STEPS) {
-                return PROTECC_ERROR_INVALID_BLOB;
-            }
-        }
-        
-        err = __validate_blob_string_offset(rules[i].options_pattern_off, strings, header.strings_size);
-        if (err != PROTECC_OK) {
-            return err;
-        }
-
-        if (rules[i].options_pattern_off != PROTECC_PROFILE_STRING_NONE) {
-            size_t len = strnlen((const char*)(strings + rules[i].options_pattern_off), header.strings_size - rules[i].options_pattern_off);
-            if (len > PROTECC_MAX_GLOB_STEPS) {
-                return PROTECC_ERROR_INVALID_BLOB;
-            }
-        }
-    }
-
-    for (uint32_t i = 0; i < header.charclass_count; i++) {
-        uint64_t end;
-
-        if (classes[i].consumed == 0) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-
-        end = (uint64_t)classes[i].pattern_off + (uint64_t)classes[i].consumed;
-        if (end > header.strings_size) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
     }
 
     return PROTECC_OK;
@@ -1105,20 +722,6 @@ void protecc_profile_free_net_rules(
     free(rules);
 }
 
-void __net_dfa_free_runtime(protecc_rule_dfa_runtime_t* dfa)
-{
-    if (dfa == NULL) {
-        return;
-    }
-
-    free(dfa->accept);
-    free(dfa->candidate_index);
-    free(dfa->candidate_count);
-    free(dfa->candidates);
-    free(dfa->transitions);
-    free(dfa);
-}
-
 protecc_error_t __protecc_net_build_dfa(protecc_profile_t* profile)
 {
     protecc_rule_dfa_pattern_t ip_patterns[PROTECC_MAX_RULES];
@@ -1131,8 +734,8 @@ protecc_error_t __protecc_net_build_dfa(protecc_profile_t* profile)
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    __net_dfa_free_runtime(profile->net_ip_dfa);
-    __net_dfa_free_runtime(profile->net_unix_dfa);
+    __dfa_free_runtime(profile->net_ip_dfa);
+    __dfa_free_runtime(profile->net_unix_dfa);
     profile->net_ip_dfa = NULL;
     profile->net_unix_dfa = NULL;
 
@@ -1166,7 +769,7 @@ protecc_error_t __protecc_net_build_dfa(protecc_profile_t* profile)
 
     err = __build_dfa_from_patterns(unix_patterns, unix_count, profile, &profile->net_unix_dfa);
     if (err != PROTECC_OK) {
-        __net_dfa_free_runtime(profile->net_ip_dfa);
+        __dfa_free_runtime(profile->net_ip_dfa);
         profile->net_ip_dfa = NULL;
         return err;
     }
@@ -1180,8 +783,8 @@ void __protecc_net_free_dfas(protecc_profile_t* profile)
         return;
     }
 
-    __net_dfa_free_runtime(profile->net_ip_dfa);
-    __net_dfa_free_runtime(profile->net_unix_dfa);
+    __dfa_free_runtime(profile->net_ip_dfa);
+    __dfa_free_runtime(profile->net_unix_dfa);
     profile->net_ip_dfa = NULL;
     profile->net_unix_dfa = NULL;
 }

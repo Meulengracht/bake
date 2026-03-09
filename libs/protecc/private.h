@@ -138,6 +138,7 @@ extern char*       __blob_string_dup(const uint8_t* strings, uint32_t offset);
 extern uint32_t    __blob_string_write(uint8_t* base, size_t* cursor, const char* value);
 extern size_t      __blob_string_measure(const char* value);
 extern const char* __blob_string_ptr(const uint8_t* strings, uint32_t offset);
+extern protecc_error_t __blob_string_offset_validate(uint32_t offset, const uint8_t* strings, size_t stringsSize);
 
 extern size_t __profile_size(uint32_t nodeCount, uint32_t edgeCount);
 extern protecc_error_t __update_stats_trie_profile(protecc_profile_t* compiled);
@@ -154,19 +155,19 @@ extern protecc_error_t __build_dfa_from_patterns(
     size_t                            pattern_count,
     const protecc_profile_t*          source_profile,
     protecc_rule_dfa_runtime_t**       outDfa);
-extern size_t __net_dfa_block_size(const protecc_rule_dfa_runtime_t* dfa);
-extern protecc_error_t __net_export_dfa_block(
+extern size_t __dfa_block_size(const protecc_rule_dfa_runtime_t* dfa);
+extern protecc_error_t __dfa_export_block(
     const protecc_rule_dfa_runtime_t* dfa,
     uint8_t*                         base,
     size_t                           bufferSize,
     uint32_t                         offset);
-extern protecc_error_t __net_validate_dfa_block(
+extern protecc_error_t __dfa_validate_block(
     const uint8_t* base,
     size_t         bufferSize,
     size_t         offset,
     size_t         ruleCount,
     size_t*        blockSizeOut);
-extern void __net_dfa_free_runtime(protecc_rule_dfa_runtime_t* dfa);
+extern void __dfa_free_runtime(protecc_rule_dfa_runtime_t* dfa);
 
 extern protecc_error_t __export_dfa_profile(
     const protecc_profile_t* profile,
