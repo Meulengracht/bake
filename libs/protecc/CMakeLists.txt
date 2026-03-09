@@ -130,12 +130,6 @@ if(PROTECC_BUILD_TESTS)
                 COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/bpf/verify_protecc_bpf.sh ${PROTECC_BPF_SMOKE_OBJECTS_ARG}
             )
             set_tests_properties(protecc_bpf_verify PROPERTIES SKIP_RETURN_CODE 77)
-        else()
-            add_test(
-                NAME protecc_bpf_verify
-                COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/bpf/verify_protecc_bpf.sh ""
-            )
-            set_tests_properties(protecc_bpf_verify PROPERTIES SKIP_RETURN_CODE 77)
         endif()
     endif()
 endif()
