@@ -2,19 +2,21 @@
 set -eu
 
 OBJ_LIST="${1:-}"
+BPFFS_PATH="${CHEF_BPFFS_PATH:-/sys/fs/bpf}"
+BTF_FILE="${CHEF_BTF_FILE:-/sys/kernel/btf/vmlinux}"
 
 if ! command -v bpftool >/dev/null 2>&1; then
     echo "SKIP: bpftool not available"
     exit 77
 fi
 
-if [ ! -e /sys/fs/bpf ]; then
-    echo "SKIP: /sys/fs/bpf is not available"
+if [ ! -e "$BPFFS_PATH" ]; then
+    echo "SKIP: bpffs is not available at $BPFFS_PATH"
     exit 77
 fi
 
-if [ ! -e /sys/kernel/btf/vmlinux ]; then
-    echo "SKIP: /sys/kernel/btf/vmlinux is not available"
+if [ ! -e "$BTF_FILE" ]; then
+    echo "SKIP: kernel BTF file is not available at $BTF_FILE"
     exit 77
 fi
 
@@ -28,7 +30,7 @@ if [ -z "$OBJ_LIST" ]; then
     exit 77
 fi
 
-PIN_DIR="/sys/fs/bpf/protecc-verifier-$$"
+PIN_DIR="$BPFFS_PATH/protecc-verifier-$$"
 mkdir -p "$PIN_DIR"
 cleanup() {
     rm -rf "$PIN_DIR"

@@ -21,7 +21,7 @@ if(LIBBPF_INCLUDE_DIR AND LIBBPF_LIBRARY AND BPF_PROGRAMS_AVAILABLE)
     set(BPF_PROGRAMS_AVAILABLE TRUE PARENT_SCOPE)
     set(BPF_OUTPUT_DIR ${BPF_OUTPUT_DIR} PARENT_SCOPE)
 else()
-    message(WARNING "libbpf not found. BPF-based features will be disabled.")
+    message(WARNING "libbpf not found, or bpftool support was insufficient. BPF-based features will be disabled.")
     add_library(containerv-ebpf STATIC stubs.c)
 endif()
 

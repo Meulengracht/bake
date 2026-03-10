@@ -1,6 +1,10 @@
 # Project setup
 project(protecc C)
 
+include(ChefBpf)
+
+chef_bpf_init_cache_vars()
+
 # Create the protecc library
 add_library(protecc STATIC
     matchers/dfa.c
@@ -52,41 +56,30 @@ if(PROTECC_BUILD_TESTS)
     add_test(NAME protecc_test COMMAND protecc_test)
 
     if(PROTECC_BUILD_EBPF_VERIFY_TESTS)
+        if(WIN32)
+            message(STATUS "protecc_bpf_verify is disabled on Windows")
+        else()
         find_program(PROTECC_CLANG clang)
         find_program(PROTECC_BPFTOOL bpftool)
-        set(PROTECC_BPFTOOL_USABLE FALSE)
+        chef_bpf_probe_bpftool("${PROTECC_BPFTOOL}" PROTECC_BPFTOOL_USABLE PROTECC_BPFTOOL_CAN_DUMP_BTF)
+        chef_bpf_check_bpffs(PROTECC_BPFFS_AVAILABLE)
         set(PROTECC_BPF_SMOKE_OBJECTS_ARG "")
 
         # Keep this target available for pipelines that build it explicitly.
         add_custom_target(protecc_bpf_verify_obj)
 
-        if(PROTECC_BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
-            execute_process(
-                COMMAND ${PROTECC_BPFTOOL} btf dump file /sys/kernel/btf/vmlinux format c
-                OUTPUT_QUIET
-                ERROR_QUIET
-                RESULT_VARIABLE PROTECC_BPFTOOL_CHECK_RC
-            )
-
-            if(PROTECC_BPFTOOL_CHECK_RC EQUAL 0)
-                set(PROTECC_BPFTOOL_USABLE TRUE)
-            else()
-                message(STATUS "bpftool is present but not usable for this kernel; protecc_bpf_verify will be configured as skip-only")
-            endif()
+        if(NOT PROTECC_BPFFS_AVAILABLE)
+            message(STATUS "bpffs is not available at ${CHEF_BPFFS_PATH}; protecc_bpf_verify will be configured as skip-only")
         endif()
 
-        if(PROTECC_CLANG AND PROTECC_BPFTOOL_USABLE)
-            if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
-                set(PROTECC_BPF_ARCH "x86")
-            elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-                set(PROTECC_BPF_ARCH "arm64")
-            elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
-                set(PROTECC_BPF_ARCH "arm")
-            elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
-                set(PROTECC_BPF_ARCH "riscv")
-            else()
+        if(PROTECC_BPFTOOL AND NOT PROTECC_BPFTOOL_CAN_DUMP_BTF)
+            message(STATUS "bpftool is present but not usable for kernel BTF at ${CHEF_BTF_FILE}; protecc_bpf_verify will be configured as skip-only")
+        endif()
+
+        if(PROTECC_CLANG AND PROTECC_BPFTOOL_USABLE AND PROTECC_BPFFS_AVAILABLE)
+            chef_bpf_detect_target_arch(PROTECC_BPF_ARCH)
+            if(PROTECC_BPF_ARCH STREQUAL "x86" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64|x86|i386|i686")
                 message(WARNING "Unknown architecture ${CMAKE_SYSTEM_PROCESSOR}, defaulting to x86 for protecc BPF tests")
-                set(PROTECC_BPF_ARCH "x86")
             endif()
 
             set(PROTECC_BPF_TEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/tests/bpf)
@@ -96,48 +89,48 @@ if(PROTECC_BUILD_TESTS)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/bpf/protecc-verifier-net.bpf.c
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/bpf/protecc-verifier-mount.bpf.c
             )
-            set(PROTECC_BPF_SMOKE_OBJECTS "")
             file(MAKE_DIRECTORY ${PROTECC_BPF_TEST_DIR})
 
-            add_custom_command(
-                OUTPUT ${PROTECC_BPF_VMLINUX}
-                COMMAND ${PROTECC_BPFTOOL} btf dump file /sys/kernel/btf/vmlinux format c > ${PROTECC_BPF_VMLINUX}
-                COMMENT "Generating protecc BPF vmlinux.h"
-                VERBATIM
-            )
-
-            foreach(PROTECC_BPF_SMOKE_SRC ${PROTECC_BPF_SMOKE_SOURCES})
-                get_filename_component(PROTECC_BPF_SMOKE_NAME ${PROTECC_BPF_SMOKE_SRC} NAME_WE)
-                set(PROTECC_BPF_SMOKE_OBJ ${PROTECC_BPF_TEST_DIR}/${PROTECC_BPF_SMOKE_NAME}.bpf.o)
-                list(APPEND PROTECC_BPF_SMOKE_OBJECTS ${PROTECC_BPF_SMOKE_OBJ})
-
-                add_custom_command(
-                    OUTPUT ${PROTECC_BPF_SMOKE_OBJ}
-                    COMMAND ${PROTECC_CLANG} -g -O2 -target bpf
-                        -D__TARGET_ARCH_${PROTECC_BPF_ARCH}
-                        -I${PROTECC_BPF_TEST_DIR}
-                        -I${CMAKE_CURRENT_SOURCE_DIR}/include
-                        -I/usr/include
-                        -c ${PROTECC_BPF_SMOKE_SRC}
-                        -o ${PROTECC_BPF_SMOKE_OBJ}
-                    DEPENDS ${PROTECC_BPF_SMOKE_SRC} ${PROTECC_BPF_VMLINUX}
-                    COMMENT "Building protecc eBPF verifier smoke object: ${PROTECC_BPF_SMOKE_NAME}"
-                    VERBATIM
+            chef_bpf_prepare_vmlinux_header("${PROTECC_BPFTOOL}" ${PROTECC_BPFTOOL_CAN_DUMP_BTF} ${PROTECC_BPF_VMLINUX} PROTECC_BPF_VMLINUX_READY)
+            if(NOT PROTECC_BPF_VMLINUX_READY)
+                message(STATUS "protecc_bpf_verify will run in skip-only mode (failed to prepare vmlinux.h)")
+                set(PROTECC_BPF_SMOKE_OBJECTS_ARG "")
+            else()
+                set(PROTECC_BPF_INCLUDE_DIRS
+                    ${PROTECC_BPF_TEST_DIR}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/include
+                    /usr/include
                 )
-            endforeach()
 
-            add_custom_target(protecc_bpf_verify_obj_build DEPENDS ${PROTECC_BPF_SMOKE_OBJECTS})
-            add_dependencies(protecc_bpf_verify_obj protecc_bpf_verify_obj_build)
+                chef_bpf_add_object_commands(
+                    CLANG "${PROTECC_CLANG}"
+                    TARGET_ARCH "${PROTECC_BPF_ARCH}"
+                    OUTPUT_DIR "${PROTECC_BPF_TEST_DIR}"
+                    VMLINUX_HEADER "${PROTECC_BPF_VMLINUX}"
+                    SOURCES ${PROTECC_BPF_SMOKE_SOURCES}
+                    INCLUDE_DIRS ${PROTECC_BPF_INCLUDE_DIRS}
+                    OUT_OBJECTS PROTECC_BPF_SMOKE_OBJECTS
+                )
 
-            string(JOIN ";" PROTECC_BPF_SMOKE_OBJECTS_ARG ${PROTECC_BPF_SMOKE_OBJECTS})
+                add_custom_target(protecc_bpf_verify_obj_build DEPENDS ${PROTECC_BPF_SMOKE_OBJECTS})
+                add_dependencies(protecc_bpf_verify_obj protecc_bpf_verify_obj_build)
+
+                string(JOIN ";" PROTECC_BPF_SMOKE_OBJECTS_ARG ${PROTECC_BPF_SMOKE_OBJECTS})
+            endif()
         else()
-            message(STATUS "protecc_bpf_verify will run in skip-only mode (BPF compile prerequisites unavailable)")
+            message(STATUS "protecc_bpf_verify will run in skip-only mode (BPF compile prerequisites unavailable or bpffs missing at ${CHEF_BPFFS_PATH})")
         endif()
 
         add_test(
             NAME protecc_bpf_verify
             COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/bpf/verify_protecc_bpf.sh ${PROTECC_BPF_SMOKE_OBJECTS_ARG}
         )
-        set_tests_properties(protecc_bpf_verify PROPERTIES SKIP_RETURN_CODE 77)
+        set_tests_properties(
+            protecc_bpf_verify
+            PROPERTIES
+                SKIP_RETURN_CODE 77
+                ENVIRONMENT "CHEF_BPFFS_PATH=${CHEF_BPFFS_PATH};CHEF_BTF_FILE=${CHEF_BTF_FILE}"
+        )
+        endif()
     endif()
 endif()
