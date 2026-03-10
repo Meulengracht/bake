@@ -111,7 +111,7 @@ if(CLANG AND BPFTOOL_USABLE)
     set(BPF_OUTPUT_DIR ${BPF_OUTPUT_DIR} PARENT_SCOPE)
     
 else()
-    if(NOT (CLANG AND BPFTOOL))
+    if(NOT (CLANG AND BPFTOOL_USABLE))
         message(STATUS "BPF tools not found - BPF LSM programs will not be built (clang and bpftool required)")
     else()
         message(STATUS "Kernel BTF not found at /sys/kernel/btf/vmlinux - BPF LSM programs will not be built")

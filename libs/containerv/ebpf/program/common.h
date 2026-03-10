@@ -46,7 +46,7 @@ static __always_inline int __resolve_file_path(struct file *f, char *buf, int le
     return bpf_path_d_path(&f->f_path, buf, len);
 #else
     // Automatic fallback to the older kernel
-    return bpf_d_path(&f->f_path, buf, len);
+    return bpf_d_path((struct path*)&f->f_path, buf, len);
 #endif
 }
 
