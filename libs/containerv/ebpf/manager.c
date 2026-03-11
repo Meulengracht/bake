@@ -379,11 +379,9 @@ static int __create_bpf_pin_directory(void)
     
     // Create our pin directory
     if (mkdir(BPF_PIN_PATH, 0700) < 0 && errno != EEXIST) {
-        VLOG_ERROR("cvd", "bpf_manager: failed to create %s: %s\n", 
-                   BPF_PIN_PATH, strerror(errno));
+        VLOG_ERROR("cvd", "bpf_manager: failed to create %s\n", BPF_PIN_PATH);
         return -1;
     }
-    
     return 0;
 }
 
@@ -622,6 +620,12 @@ void __cleanup_fs_program(void)
     if (unlink(PROFILE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
         VLOG_WARNING("cvd", "bpf_manager: failed to unpin profile map\n");
     }
+
+#ifdef HAVE_BPF_SKELETON
+    fs_lsm_bpf__destroy(g_bpf.fs_skel);
+    g_bpf.fs_skel = NULL;
+#endif
+    
 }
 
 void __cleanup_net_program(void)
@@ -631,9 +635,14 @@ void __cleanup_net_program(void)
     }
 
     if (unlink(NET_PROFILE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net profile map: %s\n",
-                     strerror(errno));
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin net profile map\n");
     }
+
+#ifdef HAVE_BPF_SKELETON
+    net_lsm_bpf__destroy(g_bpf.net_skel);
+    g_bpf.net_skel = NULL;
+#endif
+    
 }
 
 void __cleanup_mount_program(void)
@@ -643,16 +652,20 @@ void __cleanup_mount_program(void)
     }
 
     if (unlink(MOUNT_PROFILE_MAP_PIN_PATH) < 0 && errno != ENOENT) {
-        VLOG_WARNING("cvd", "bpf_manager: failed to unpin mount profile map: %s\n",
-                     strerror(errno));
+        VLOG_WARNING("cvd", "bpf_manager: failed to unpin mount profile map\n");
     }
+
+#ifdef HAVE_BPF_SKELETON
+    mount_lsm_bpf__destroy(g_bpf.mount_skel);
+    g_bpf.mount_skel = NULL;
+#endif
 }
 
-int containerv_bpf_initialize(void)
+enum containerv_bpf_status containerv_bpf_initialize(void)
 {
 #ifndef HAVE_BPF_SKELETON
     VLOG_TRACE("cvd", "bpf_manager: BPF skeleton not available, using seccomp fallback\n");
-    return 0;
+    return CV_BPF_NOT_SUPPORTED;
 #else
     const char* env;
     int         status;
@@ -661,7 +674,7 @@ int containerv_bpf_initialize(void)
 
     if (!bpf_check_lsm_available()) {
         VLOG_TRACE("cvd", "bpf_manager: BPF LSM not available, using seccomp fallback\n");
-        return 0;
+        return CV_BPF_NOT_SUPPORTED;
     }
 
     if (bpf_bump_memlock_rlimit() < 0) {
@@ -673,32 +686,42 @@ int containerv_bpf_initialize(void)
     }
 
     if (__create_bpf_pin_directory() < 0) {
-        return -1;
+        g_bpf.status = CV_BPF_FAILED_TO_INITIALIZE;
+        goto error;
     }
 
     status = __load_fs_program();
     if (status) {
         VLOG_ERROR("cvd", "bpf_manager: failed to load fs BPF program\n");
-        return status;
+        g_bpf.status = CV_BPF_FAILED_TO_INITIALIZE;
+        goto error;
     }
     
     status = __load_net_program();
     if (status) {
         VLOG_ERROR("cvd", "bpf_manager: failed to load net BPF program\n");
-        return status;
+        g_bpf.status = CV_BPF_FAILED_TO_INITIALIZE;
+        goto error;
     }
     
     status = __load_mount_program();
     if (status) {
         VLOG_ERROR("cvd", "bpf_manager: failed to load mount BPF program\n");
-        return status;
+        g_bpf.status = CV_BPF_FAILED_TO_INITIALIZE;
+        goto error;
     }
     
     __start_denial_thread();
 
     g_bpf.status = CV_BPF_AVAILABLE;
     VLOG_TRACE("cvd", "bpf_manager: initialization complete, BPF LSM enforcement active\n");
-    return 0;
+    goto done;
+
+error:
+    containerv_bpf_shutdown();
+
+done:
+    return g_bpf.status;
 #endif // HAVE_BPF_SKELETON
 }
 
@@ -715,7 +738,9 @@ void __stop_denial_thread(void)
 
 void containerv_bpf_shutdown(void)
 {
-    if (g_bpf.status != CV_BPF_AVAILABLE) {
+    // Allow shutdown to be called multiple times without issue
+    // and be robust to partially-initialized states if initialization failed midway.
+    if (g_bpf.status == CV_BPF_UNINITIALIZED) {
         return;
     }
     
@@ -724,12 +749,11 @@ void containerv_bpf_shutdown(void)
     // Clean up all entry trackers
     list_destroy(&g_bpf.trackers, (void(*)(void*))bpf_container_context_delete);
     
-    // Cleanup programs
+    __stop_denial_thread();
     __cleanup_fs_program();
     __cleanup_net_program();
     __cleanup_mount_program();
 
-    __stop_denial_thread();
     if (g_bpf.fs_denials) {
         ring_buffer__free(g_bpf.fs_denials);
         g_bpf.fs_denials = NULL;
@@ -743,26 +767,10 @@ void containerv_bpf_shutdown(void)
         g_bpf.mount_denials = NULL;
     }
 
-#ifdef HAVE_BPF_SKELETON
-    if (g_bpf.fs_skel) {
-        fs_lsm_bpf__destroy(g_bpf.fs_skel);
-        g_bpf.fs_skel = NULL;
-    }
-    if (g_bpf.net_skel) {
-        net_lsm_bpf__destroy(g_bpf.net_skel);
-        g_bpf.net_skel = NULL;
-    }
-    if (g_bpf.mount_skel) {
-        mount_lsm_bpf__destroy(g_bpf.mount_skel);
-        g_bpf.mount_skel = NULL;
-    }
-#endif
-    
     g_bpf.profile_map_fd = -1;
     g_bpf.net_profile_map_fd = -1;
     g_bpf.mount_profile_map_fd = -1;
     g_bpf.status = CV_BPF_UNINITIALIZED;
-    
     VLOG_TRACE("cvd", "bpf_manager: shutdown complete\n");
 }
 

@@ -19,10 +19,10 @@
 #include <chef/containerv/bpf.h>
 #include <vlog.h>
 
-int containerv_bpf_initialize(void)
+enum containerv_bpf_status containerv_bpf_initialize(void)
 {
     VLOG_WARNING("containerv[bpf]", "BPF manager is not available\n");
-    return 0;
+    return CV_BPF_NOT_SUPPORTED;
 }
 
 void containerv_bpf_shutdown(void)

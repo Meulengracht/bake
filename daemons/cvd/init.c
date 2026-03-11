@@ -175,23 +175,22 @@ int register_server_link(gracht_server_t* server)
 static void __initialize_bpf(void)
 {
     struct containerv_bpf_metrics metrics;
-    int                           status;
+    enum containerv_bpf_status    status;
     VLOG_TRACE("cvd", "Initializing bpf manager\n");
 
     status = containerv_bpf_initialize();
-    if (status) {
+    if (status == CV_BPF_FAILED_TO_INITIALIZE) {
         VLOG_WARNING("cvd", "Failed to initialize bpf manager: critical startup error\n");
-        VLOG_WARNING("cvd", "BPF LSM may require kernel 5.7+ with CONFIG_BPF_LSM=y and 'bpf' in LSM list\n");
+        VLOG_WARNING("cvd", "BPF LSM may require kernel 6.0+ with CONFIG_BPF_LSM=y and 'bpf' in LSM list\n");
         VLOG_WARNING("cvd", "Limited container security enforcement available on this platform\n");
         return;
     }
 
-    if (containerv_bpf_is_available() != CV_BPF_AVAILABLE) {
+    if (status != CV_BPF_AVAILABLE) {
         VLOG_DEBUG("cvd", "BPF LSM is not available on this system, containers will use seccomp fallback\n");
         return;
     }
 
-    
     VLOG_TRACE("cvd", "BPF LSM enforcement is active\n");
 
     // Sanity-check that filesystem enforcement is actually pinned (if enabled).
