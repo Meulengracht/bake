@@ -135,10 +135,27 @@ static int __request_from_address(
             bpf_core_read(&sin, sizeof(sin), addr);
             addr4 = bpf_ntohl(sin.sin_addr.s_addr);
 
-            bpf_for (i, 0, 4) {
+            #pragma unroll
+            for (i = 0; i < 4; i++) {
+                __u32 remaining;
+                __u32 written;
                 __u8 octet = (__u8)((addr4 >> (24 - (i * 8))) & 0xFF);
-                n += __append_u8_dec(&scratch->text[n], octet);
+
+                if (n >= PATH_BUFFER_SIZE) {
+                    return -EACCES;
+                }
+
+                remaining = PATH_BUFFER_SIZE - n;
+                written = __append_u8_dec(&scratch->text[n], remaining, octet);
+                if (written == 0) {
+                    return -EACCES;
+                }
+                n += written;
+
                 if (i != 3) {
+                    if (n >= PATH_BUFFER_SIZE) {
+                        return -EACCES;
+                    }
                     scratch->text[n++] = '.';
                 }
             }
@@ -156,7 +173,8 @@ static int __request_from_address(
             
             bpf_core_read(&sin6, sizeof(sin6), addr);
 
-            bpf_for (i, 0, 8) {
+            #pragma unroll
+            for (i = 0; i < 8; i++) {
                 __u8 hi = sin6.sin6_addr.in6_u.u6_addr8[(i * 2) + 0];
                 __u8 lo = sin6.sin6_addr.in6_u.u6_addr8[(i * 2) + 1];
 
@@ -384,7 +402,7 @@ int BPF_PROG(socket_listen_restrict, struct socket *sock, int backlog, int ret)
 }
 
 SEC("lsm/socket_accept")
-int BPF_PROG(socket_accept_restrict, struct socket *sock, struct socket *newsock, int flags, int ret)
+int BPF_PROG(socket_accept_restrict, struct socket *sock, struct socket *newsock, int flags)
 {
     protecc_bpf_net_request_t request = {};
     struct sock* sk = NULL;
@@ -394,10 +412,6 @@ int BPF_PROG(socket_accept_restrict, struct socket *sock, struct socket *newsock
     __u16 port = 0;
     (void)newsock;
     (void)flags;
-
-    if (ret) {
-        return ret;
-    }
 
     if (__sock_get_meta(sock, &family, &type, &protocol)) {
         __emit_deny_event_basic(get_current_cgroup_id(), NET_PERM_ACCEPT, DENY_HOOK_SOCKET_ACCEPT);

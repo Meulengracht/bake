@@ -111,7 +111,7 @@ static __always_inline u32 __resolve_dentry_path(char* buffer, struct dentry* de
     return pathLength;
 }
 
-static __always_inline __u32 __append_u8_dec(char* out, __u8 value)
+static __always_inline __u32 __append_u8_dec(char* out, __u32 out_len, __u8 value)
 {
     __u32 n = 0;
     __u8 hundreds;
@@ -119,6 +119,10 @@ static __always_inline __u32 __append_u8_dec(char* out, __u8 value)
     __u8 ones;
 
     if (value >= 100) {
+        if (out_len < 3) {
+            return 0;
+        }
+
         hundreds = value / 100;
         tens = (value / 10) % 10;
         ones = value % 10;
@@ -129,11 +133,19 @@ static __always_inline __u32 __append_u8_dec(char* out, __u8 value)
     }
 
     if (value >= 10) {
+        if (out_len < 2) {
+            return 0;
+        }
+
         tens = value / 10;
         ones = value % 10;
         out[n++] = (char)('0' + tens);
         out[n++] = (char)('0' + ones);
         return n;
+    }
+
+    if (out_len < 1) {
+        return 0;
     }
 
     out[n++] = (char)('0' + value);
