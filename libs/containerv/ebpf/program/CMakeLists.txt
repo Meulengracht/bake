@@ -4,12 +4,24 @@
 # The BPF programs are compiled to BPF bytecode and then skeletons are generated
 # for easy integration with the C code.
 
+include(ChefBpf)
+
+chef_bpf_init_cache_vars()
+
 find_program(CLANG clang)
 find_program(BPFTOOL bpftool)
 find_program(LLVM_STRIP llvm-strip)
 
-if(CLANG AND BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
+chef_bpf_probe_bpftool("${BPFTOOL}" BPFTOOL_USABLE BPFTOOL_CAN_DUMP_BTF)
+
+if(CLANG AND BPFTOOL_USABLE)
     message(STATUS "BPF tools found: clang=${CLANG}, bpftool=${BPFTOOL}")
+    chef_bpf_check_bpffs(BPF_BPFFS_AVAILABLE)
+    if(BPF_BPFFS_AVAILABLE)
+        message(STATUS "bpffs detected at ${CHEF_BPFFS_PATH} (supports LXD security.delegate_bpf setups)")
+    else()
+        message(STATUS "bpffs not detected at ${CHEF_BPFFS_PATH}; build will continue, but runtime program pinning may fail")
+    endif()
     
     set(BPF_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
     set(BPF_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/bpf)
@@ -18,17 +30,9 @@ if(CLANG AND BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
     file(MAKE_DIRECTORY ${BPF_OUTPUT_DIR})
     
     # Detect target architecture for BPF
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
-        set(BPF_ARCH "x86")
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-        set(BPF_ARCH "arm64")
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
-        set(BPF_ARCH "arm")
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
-        set(BPF_ARCH "riscv")
-    else()
+    chef_bpf_detect_target_arch(BPF_ARCH)
+    if(BPF_ARCH STREQUAL "x86" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64|x86|i386|i686")
         message(WARNING "Unknown architecture ${CMAKE_SYSTEM_PROCESSOR}, defaulting to x86 for BPF")
-        set(BPF_ARCH "x86")
     endif()
     
     message(STATUS "BPF target architecture: ${BPF_ARCH}")
@@ -37,51 +41,36 @@ if(CLANG AND BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
     set(BPF_SOURCES
         ${BPF_SOURCE_DIR}/fs-lsm.bpf.c
         ${BPF_SOURCE_DIR}/net-lsm.bpf.c
+        ${BPF_SOURCE_DIR}/mount-lsm.bpf.c
     )
     
     # Generate the vmlinux.h header for BPF
     set(VMLINUX_HEADER ${BPF_OUTPUT_DIR}/vmlinux.h)
-    add_custom_command(
-        OUTPUT ${VMLINUX_HEADER}
-        COMMAND ${BPFTOOL} btf dump file /sys/kernel/btf/vmlinux format c > ${VMLINUX_HEADER}
-        COMMENT "Generating vmlinux.h for BPF: ${VMLINUX_HEADER}"
-        VERBATIM
-    )
+    chef_bpf_prepare_vmlinux_header("${BPFTOOL}" ${BPFTOOL_CAN_DUMP_BTF} ${VMLINUX_HEADER} BPF_VMLINUX_READY)
+    if(NOT BPF_VMLINUX_READY)
+        message(STATUS "BPF LSM programs will not be built because vmlinux.h generation failed")
+        set(BPF_PROGRAMS_AVAILABLE FALSE PARENT_SCOPE)
+        return()
+    endif()
     
-    set(BPF_OBJECTS "")
-    set(BPF_SKELETONS "")
+    set(BPF_INCLUDE_DIRS
+        ${BPF_OUTPUT_DIR}
+        ${CMAKE_SOURCE_DIR}/libs/protecc/include
+        /usr/include
+        /usr/include/${CMAKE_LIBRARY_ARCHITECTURE}
+    )
 
-    foreach(BPF_SOURCE ${BPF_SOURCES})
-        get_filename_component(BPF_NAME ${BPF_SOURCE} NAME_WE)
-        set(BPF_OBJECT ${BPF_OUTPUT_DIR}/${BPF_NAME}.bpf.o)
-        set(BPF_SKEL ${BPF_OUTPUT_DIR}/${BPF_NAME}.skel.h)
-
-        list(APPEND BPF_OBJECTS ${BPF_OBJECT})
-        list(APPEND BPF_SKELETONS ${BPF_SKEL})
-
-        add_custom_command(
-            OUTPUT ${BPF_OBJECT}
-            COMMAND ${CLANG} -g -O2 -target bpf
-                -D__TARGET_ARCH_${BPF_ARCH}
-                -I${BPF_OUTPUT_DIR}
-                -I${CMAKE_SOURCE_DIR}/libs/protecc/include
-                -I/usr/include
-                -I/usr/include/${CMAKE_LIBRARY_ARCHITECTURE}
-                -c ${BPF_SOURCE}
-                -o ${BPF_OBJECT}
-            DEPENDS ${BPF_SOURCE} ${VMLINUX_HEADER}
-            COMMENT "Building BPF object: ${BPF_OBJECT}"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT ${BPF_SKEL}
-            COMMAND ${BPFTOOL} gen skeleton ${BPF_OBJECT} > ${BPF_SKEL}
-            DEPENDS ${BPF_OBJECT}
-            COMMENT "Generating BPF skeleton: ${BPF_SKEL}"
-            VERBATIM
-        )
-    endforeach()
+    chef_bpf_add_program_commands(
+        CLANG "${CLANG}"
+        BPFTOOL "${BPFTOOL}"
+        TARGET_ARCH "${BPF_ARCH}"
+        OUTPUT_DIR "${BPF_OUTPUT_DIR}"
+        VMLINUX_HEADER "${VMLINUX_HEADER}"
+        SOURCES ${BPF_SOURCES}
+        INCLUDE_DIRS ${BPF_INCLUDE_DIRS}
+        OUT_OBJECTS BPF_OBJECTS
+        OUT_SKELETONS BPF_SKELETONS
+    )
 
     # Create custom target for BPF programs
     add_custom_target(bpf_programs ALL
@@ -94,10 +83,12 @@ if(CLANG AND BPFTOOL AND EXISTS /sys/kernel/btf/vmlinux)
     set(BPF_OUTPUT_DIR ${BPF_OUTPUT_DIR} PARENT_SCOPE)
     
 else()
-    if(NOT (CLANG AND BPFTOOL))
-        message(STATUS "BPF tools not found - BPF LSM programs will not be built (clang and bpftool required)")
+    if(NOT CLANG)
+        message(STATUS "clang not found - BPF LSM programs will not be built")
+    elseif(NOT BPFTOOL_USABLE)
+        message(STATUS "bpftool not found or unusable - BPF LSM programs will not be built (bpftool with working 'version' and 'gen skeleton' support is required)")
     else()
-        message(STATUS "Kernel BTF not found at /sys/kernel/btf/vmlinux - BPF LSM programs will not be built")
+        message(STATUS "BPF prerequisites unavailable - BPF LSM programs will not be built")
     endif()
     set(BPF_PROGRAMS_AVAILABLE FALSE PARENT_SCOPE)
 endif()

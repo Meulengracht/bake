@@ -89,7 +89,7 @@ struct containerv_policy {
 
     // Network allow rules
     struct containerv_policy_net_rule net_rules[MAX_NET_RULES];
-    int                                net_rule_count;
+    int                               net_rule_count;
 };
 
 struct containerv_policy_handler {

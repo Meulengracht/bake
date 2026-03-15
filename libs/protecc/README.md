@@ -41,11 +41,11 @@ const char* patterns[] = {
     "/dev/tty[0-9]+",       // Digit range with modifier
 };
 
-protecc_compiled_t* compiled;
+protecc_profile_t* compiled;
 protecc_compile_config_t config;
 protecc_compile_config_default(&config);
 
-protecc_error_t err = protecc_compile(
+protecc_error_t err = protecc_compile_patterns(
     patterns,
     5,
     PROTECC_FLAG_OPTIMIZE,
@@ -59,19 +59,19 @@ if (err != PROTECC_OK) {
 }
 
 // Match paths
-bool match1 = protecc_match(compiled, "/etc/passwd", 0);           // true
-bool match2 = protecc_match(compiled, "/tmp/test.txt", 0);         // true
-bool match3 = protecc_match(compiled, "/home/user/doc.txt", 0);    // true
-bool match4 = protecc_match(compiled, "/var/log/system.log", 0);   // true
-bool match5 = protecc_match(compiled, "/dev/tty0", 0);             // true
-bool match6 = protecc_match(compiled, "/usr/bin/ls", 0);           // false
+bool match1 = protecc_match_path(compiled, "/etc/passwd", 0);           // true
+bool match2 = protecc_match_path(compiled, "/tmp/test.txt", 0);         // true
+bool match3 = protecc_match_path(compiled, "/home/user/doc.txt", 0);    // true
+bool match4 = protecc_match_path(compiled, "/var/log/system.log", 0);   // true
+bool match5 = protecc_match_path(compiled, "/dev/tty0", 0);             // true
+bool match6 = protecc_match_path(compiled, "/usr/bin/ls", 0);           // false
 
 // Export to binary format for eBPF
 size_t size;
-protecc_export(compiled, NULL, 0, &size);  // Get required size
+protecc_profile_export_path(compiled, NULL, 0, &size);  // Get required size
 
 void* buffer = malloc(size);
-protecc_export(compiled, buffer, size, &size);
+protecc_profile_export_path(compiled, buffer, size, &size);
 
 // ... load buffer into eBPF program ...
 
@@ -130,18 +130,63 @@ free(buffer);
 
 ### Core Functions
 
-#### `protecc_compile`
+#### `protecc_profile_builder_*` (recommended)
+Build a multi-domain profile incrementally, then compile once.
+
+```c
+protecc_profile_builder_t* protecc_profile_builder_create(void);
+void protecc_profile_builder_reset(protecc_profile_builder_t* builder);
+void protecc_profile_builder_destroy(protecc_profile_builder_t* builder);
+
+protecc_error_t protecc_profile_builder_add_patterns(
+  protecc_profile_builder_t* builder,
+  const protecc_pattern_t* patterns,
+  size_t count
+);
+
+protecc_error_t protecc_profile_builder_add_net_rule(
+  protecc_profile_builder_t* builder,
+  const protecc_net_rule_t* rule
+);
+
+protecc_error_t protecc_profile_builder_add_mount_rule(
+  protecc_profile_builder_t* builder,
+  const protecc_mount_rule_t* rule
+);
+
+protecc_error_t protecc_profile_builder_add_mount_pattern(
+  protecc_profile_builder_t* builder,
+  const protecc_mount_rule_t* rule
+);
+
+protecc_error_t protecc_profile_compile(
+  const protecc_profile_builder_t* builder,
+  uint32_t flags,
+  const protecc_compile_config_t* config,
+  protecc_profile_t** compiled
+);
+```
+
+Current status:
+- Path patterns are fully supported through the builder.
+- Network and mount rules are now compiled into domain-specific profile sections.
+- `protecc_profile_export_net()` and `protecc_profile_export_mounts()` emit dedicated `v1` linear binary formats for eBPF-side loaders.
+- Runtime match APIs are still path-focused (`protecc_match`), while net/mount evaluation hooks are introduced incrementally.
+
+#### `protecc_compile` (compatibility API)
 Compile an array of pattern strings into an optimized trie structure.
 
 ```c
-protecc_error_t protecc_compile(
-  const char** patterns,                       // Array of pattern strings
+protecc_error_t protecc_compile_patterns(
+  const protecc_pattern_t* patterns,           // Array of path patterns + perms
   size_t count,                                // Number of patterns
   uint32_t flags,                              // Compilation flags
   const protecc_compile_config_t* config,      // Limits + backend (NULL = defaults)
-  protecc_compiled_t** compiled                // Output compiled pattern set
+  protecc_profile_t** compiled                // Output compiled pattern set
 );
 ```
+
+This function now internally uses `protecc_profile_builder_*` for backward-compatible migration.
 
 Compiler config defaults:
 - `mode = PROTECC_COMPILE_MODE_TRIE`
@@ -150,7 +195,7 @@ Compiler config defaults:
 - `max_states = 2048`
 - `max_classes = 32`
 
-To target eBPF, set `config.mode = PROTECC_COMPILE_MODE_DFA` before calling `protecc_compile(...)`.
+To target eBPF, set `config.mode = PROTECC_COMPILE_MODE_DFA` before calling `protecc_compile_patterns(...)`.
 
 Flags:
 - `PROTECC_FLAG_NONE` - No special options
@@ -161,33 +206,179 @@ Flags:
 Match a path against compiled patterns.
 
 ```c
-bool protecc_match(
-    const protecc_compiled_t* compiled,  // Compiled pattern set
+bool protecc_match_path(
+    const protecc_profile_t* compiled,  // Compiled pattern set
     const char* path,                    // Path to match
-    size_t path_len                      // Length (0 = use strlen)
+    protecc_permission_t requiredPermissions
 );
+```
+
+#### `protecc_match_net`
+Match a runtime network request against compiled net rules.
+
+```c
+bool protecc_match_net(
+  const protecc_profile_t* compiled,
+  const protecc_net_request_t* request,
+  protecc_action_t* action_out
+);
+```
+
+Example:
+
+```c
+protecc_net_request_t req = {
+  .protocol = PROTECC_NET_PROTOCOL_TCP,
+  .family = PROTECC_NET_FAMILY_IPV4,
+  .ip = "10.0.42.9",
+  .port = 443,
+  .unix_path = NULL,
+};
+
+protecc_action_t action;
+if (protecc_match_net(compiled, &req, &action)) {
+  // action is ALLOW / DENY / AUDIT from first matching rule
+}
+```
+
+#### `protecc_match_mount`
+Match a runtime mount request against compiled mount rules.
+
+```c
+bool protecc_match_mount(
+  const protecc_profile_t* compiled,
+  const protecc_mount_request_t* request,
+  protecc_action_t* action_out
+);
+```
+
+Example:
+
+```c
+protecc_mount_request_t req = {
+  .source = "/dev/sda1",
+  .target = "/mnt/data",
+  .fstype = "ext4",
+  .options = "rw,nosuid",
+  .flags = 0x1,
+};
+
+protecc_action_t action;
+if (protecc_match_mount(compiled, &req, &action)) {
+  // action is ALLOW / DENY / AUDIT from first matching rule
+}
 ```
 
 #### `protecc_export`
 Export compiled patterns to binary format for eBPF.
 
 ```c
-protecc_error_t protecc_export(
-    const protecc_compiled_t* compiled,
+protecc_error_t protecc_profile_export_path(
+    const protecc_profile_t* compiled,
     void* buffer,           // Output buffer (NULL to query size)
     size_t buffer_size,     // Size of buffer
     size_t* bytes_written   // Actual bytes written
 );
 ```
 
+#### `protecc_profile_export_path`
+Export the path matcher profile.
+
+```c
+protecc_error_t protecc_profile_export_path(
+  const protecc_profile_t* compiled,
+  void* buffer,
+  size_t buffer_size,
+  size_t* bytes_written
+);
+```
+
+#### `protecc_profile_export_net`
+Export the network matcher profile.
+
+```c
+protecc_error_t protecc_profile_export_net(
+  const protecc_profile_t* compiled,
+  void* buffer,
+  size_t buffer_size,
+  size_t* bytes_written
+);
+```
+
+#### `protecc_profile_export_mounts`
+Export the mount matcher profile.
+
+```c
+protecc_error_t protecc_profile_export_mounts(
+  const protecc_profile_t* compiled,
+  void* buffer,
+  size_t buffer_size,
+  size_t* bytes_written
+);
+```
+
+#### `protecc_profile_validate_net_blob`
+Validate a net profile blob before loader-side use.
+
+```c
+protecc_error_t protecc_profile_validate_net_blob(
+  const void* buffer,
+  size_t buffer_size
+);
+```
+
+#### `protecc_profile_validate_mount_blob`
+Validate a mount profile blob before loader-side use.
+
+```c
+protecc_error_t protecc_profile_validate_mount_blob(
+  const void* buffer,
+  size_t buffer_size
+);
+```
+
+#### `protecc_profile_import_net_blob`
+Import net blob rules into owned typed net rule arrays.
+
+```c
+protecc_error_t protecc_profile_import_net_blob(
+  const void* buffer,
+  size_t buffer_size,
+  protecc_net_rule_t** rules_out,
+  size_t* count_out
+);
+```
+
+#### `protecc_profile_import_mount_blob`
+Import mount blob rules into owned typed mount rule arrays.
+
+```c
+protecc_error_t protecc_profile_import_mount_blob(
+  const void* buffer,
+  size_t buffer_size,
+  protecc_mount_rule_t** rules_out,
+  size_t* count_out
+);
+```
+
+Use `protecc_profile_free_net_rules(...)` and `protecc_profile_free_mount_rules(...)` to free imported arrays.
+
+Zero-copy parse mode is also available:
+- `protecc_profile_net_view_init(...)` + `protecc_profile_net_view_get_rule(...)`
+- `protecc_profile_mount_view_init(...)` + `protecc_profile_mount_view_get_rule(...)`
+- Iterator helpers: `protecc_profile_net_view_first(...)` / `protecc_profile_net_view_next(...)`
+- Iterator helpers: `protecc_profile_mount_view_first(...)` / `protecc_profile_mount_view_next(...)`
+
+These APIs decode rules directly from the blob without allocations; returned string pointers are borrowed views into the input blob memory.
+
 #### `protecc_import`
 Import patterns from binary format.
 
 ```c
-protecc_error_t protecc_import(
+protecc_error_t protecc_profile_import_path_blob(
     const void* buffer,
     size_t buffer_size,
-    protecc_compiled_t** compiled
+    protecc_profile_t** compiled
 );
 ```
 
@@ -195,7 +386,7 @@ protecc_error_t protecc_import(
 Free compiled pattern set.
 
 ```c
-void protecc_free(protecc_compiled_t* compiled);
+void protecc_free(protecc_profile_t* compiled);
 ```
 
 ### Utility Functions
@@ -212,7 +403,7 @@ Get statistics about compiled patterns.
 
 ```c
 protecc_error_t protecc_get_stats(
-    const protecc_compiled_t* compiled,
+    const protecc_profile_t* compiled,
     protecc_stats_t* stats
 );
 ```
@@ -246,8 +437,8 @@ cmake --build build --target protecc_test
 The library is designed to work with containerv's eBPF security policies:
 
 1. **Compilation Phase** (user space)
-   - Compile patterns using `protecc_compile()`
-   - Export to binary format using `protecc_export()`
+   - Compile patterns using `protecc_compile_patterns()`
+   - Export to binary format using `protecc_profile_export_path()`
 
 2. **Loading Phase** (eBPF initialization)
   - Load binary format into eBPF maps

@@ -26,9 +26,8 @@
 struct bpf_map_context {
     unsigned long long cgroup_id;
     int                profile_map_fd;
-    int                net_create_map_fd;
-    int                net_tuple_map_fd;
-    int                net_unix_map_fd;
+    int                net_profile_map_fd;
+    int                mount_profile_map_fd;
 };
 
 /**
@@ -43,6 +42,16 @@ extern int bpf_profile_map_set_profile(
     uint8_t*                profile,
     size_t                  profileSize);
 
+extern int bpf_profile_map_set_net_profile(
+    struct bpf_map_context* context,
+    uint8_t*                profile,
+    size_t                  profileSize);
+
+extern int bpf_profile_map_set_mount_profile(
+    struct bpf_map_context* context,
+    uint8_t*                profile,
+    size_t                  profileSize);
+
 /**
  * @brief Deletes the protecc profile associated with the group_id in the context
  * @param context BPF profile context
@@ -50,30 +59,16 @@ extern int bpf_profile_map_set_profile(
  */
 extern int bpf_profile_map_clear_profile(
     struct bpf_map_context* context);
-
-extern int bpf_net_create_map_allow(
-    struct bpf_map_context*          context,
-    const struct bpf_net_create_key* key,
-    unsigned int                     allowMask
-);
-
-extern int bpf_net_tuple_map_allow(
-    struct bpf_map_context*         context,
-    const struct bpf_net_tuple_key* key,
-    unsigned int                    allowMask
-);
-
-extern int bpf_net_unix_map_allow(
-    struct bpf_map_context*        context,
-    const struct bpf_net_unix_key* key,
-    unsigned int                   allowMask
-);
+extern int bpf_profile_map_clear_net_profile(
+    struct bpf_map_context* context);
+extern int bpf_profile_map_clear_mount_profile(
+    struct bpf_map_context* context);
 
 extern int bpf_map_delete_batch_by_fd(
-    int                     mapFd,
-    void*                   keys,
-    int                     count,
-    size_t                  keySize
+    int    mapFd,
+    void*  keys,
+    int    count,
+    size_t keySize
 );
 
 #endif //!__MAP_OPS_PRIVATE_H__

@@ -16,20 +16,15 @@
  *
  */
 
-#ifndef __PROTECC_BPF_H__
-#define __PROTECC_BPF_H__
+#ifndef __PROTECC_BPF_PATH_H__
+#define __PROTECC_BPF_PATH_H__
 
 #include <protecc/profile.h>
 
 #include <bpf/bpf_helpers.h>
 
-#define PROTECC_BPF_MAX_PATH         4096u
-#define PROTECC_BPF_MAX_PROFILE_SIZE (65536u - 4u)
+#define PROTECC_BPF_MAX_PATH 4096u
 
-#define __VALID_PTR(base, max, ptr, size) \
-    ((const void*)(ptr) >= (const void*)(base) && ((const void*)(ptr) + (size)) <= ((const void*)(base) + (max)))
-#define __VALID_PROFILE_PTR(prof, ptr, size) \
-    __VALID_PTR((prof), PROTECC_BPF_MAX_PROFILE_SIZE, (ptr), (size))
 #define __VALID_PATH_PTR(path, ptr, size) \
     __VALID_PTR((path), PROTECC_BPF_MAX_PATH, (ptr), (size))
 
@@ -220,4 +215,4 @@ static __always_inline bool protecc_bpf_match(
     return true;
 }
 
-#endif // !__PROTECC_BPF_H__
+#endif // !__PROTECC_BPF_PATH_H__

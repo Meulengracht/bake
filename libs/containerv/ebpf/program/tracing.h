@@ -44,6 +44,7 @@ enum deny_hook_id {
     DENY_HOOK_SOCKET_LISTEN = 23,
     DENY_HOOK_SOCKET_ACCEPT = 24,
     DENY_HOOK_SOCKET_SENDMSG = 25,
+    DENY_HOOK_SB_MOUNT = 30,
 };
 
 struct deny_event {

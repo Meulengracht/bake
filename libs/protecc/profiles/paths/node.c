@@ -16,14 +16,16 @@
  *
  */
 
+#include <protecc/profile.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "private.h"
+#include "../../private.h"
 
-protecc_node_t* protecc_node_new(protecc_node_type_t type) {
+protecc_node_t* protecc_node_new(protecc_node_type_t type)
+{
     protecc_node_t* node = calloc(1, sizeof(protecc_node_t));
-    if (!node) {
+    if (node == NULL) {
         return NULL;
     }
     
@@ -38,7 +40,7 @@ protecc_node_t* protecc_node_new(protecc_node_type_t type) {
 }
 
 void protecc_node_free(protecc_node_t* node) {
-    if (!node) {
+    if (node == NULL) {
         return;
     }
     
@@ -52,22 +54,23 @@ void protecc_node_free(protecc_node_t* node) {
 }
 
 protecc_error_t protecc_node_add_child(protecc_node_t* parent, protecc_node_t* child) {
-    if (!parent || !child) {
+    if (parent == NULL || child == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
     
     // Check if we need to expand capacity
     if (parent->num_children >= parent->capacity_children) {
-        size_t new_capacity = parent->capacity_children == 0 ? 4 : parent->capacity_children * 2;
-        protecc_node_t** new_children = realloc(
+        size_t           newCapacity = parent->capacity_children == 0 ? 4 : parent->capacity_children * 2;
+        protecc_node_t** newChildren = realloc(
             parent->children,
-            new_capacity * sizeof(protecc_node_t*)
+            newCapacity * sizeof(protecc_node_t*)
         );
-        if (!new_children) {
+        if (newChildren == NULL) {
             return PROTECC_ERROR_OUT_OF_MEMORY;
         }
-        parent->children = new_children;
-        parent->capacity_children = new_capacity;
+        
+        parent->children = newChildren;
+        parent->capacity_children = newCapacity;
     }
     
     parent->children[parent->num_children++] = child;
@@ -75,50 +78,56 @@ protecc_error_t protecc_node_add_child(protecc_node_t* parent, protecc_node_t* c
 }
 
 void protecc_charset_set(protecc_charset_t* charset, unsigned char c) {
-    if (!charset) {
+    if (charset == NULL) {
         return;
     }
     charset->chars[c / 8] |= (1 << (c % 8));
 }
 
 bool protecc_charset_contains(const protecc_charset_t* charset, unsigned char c) {
-    if (!charset) {
+    if (charset == NULL) {
         return false;
     }
     return (charset->chars[c / 8] & (1 << (c % 8))) != 0;
 }
 
 void protecc_charset_set_range(protecc_charset_t* charset, char start, char end) {
-    if (!charset) {
-        return;
-    }
     // Handle unsigned char properly to avoid overflow at 255
     unsigned char ustart = (unsigned char)start;
     unsigned char uend = (unsigned char)end;
+    
+    if (charset == NULL) {
+        return;
+    }
+
     for (unsigned int c = ustart; c <= uend; c++) {
         protecc_charset_set(charset, (unsigned char)c);
-        if (c == 255) break; // Prevent overflow
+
+        // Prevent overflow
+        if (c == 255) {
+            break;
+        }
     }
 }
 
 void protecc_node_collect_stats(
     const protecc_node_t* node,
     size_t                depth,
-    size_t*               num_nodes,
-    size_t*               max_depth,
-    size_t*               num_edges)
+    size_t*               numNodes,
+    size_t*               maxDepth,
+    size_t*               numEdges)
 {
     if (node == NULL) {
         return;
     }
 
-    (*num_nodes)++;
-    if (depth > *max_depth) {
-        *max_depth = depth;
+    (*numNodes)++;
+    if (depth > *maxDepth) {
+        *maxDepth = depth;
     }
-    *num_edges += node->num_children;
+    *numEdges += node->num_children;
 
     for (size_t i = 0; i < node->num_children; i++) {
-        protecc_node_collect_stats(node->children[i], depth + 1, num_nodes, max_depth, num_edges);
+        protecc_node_collect_stats(node->children[i], depth + 1, numNodes, maxDepth, numEdges);
     }
 }

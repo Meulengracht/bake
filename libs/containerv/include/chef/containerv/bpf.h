@@ -24,6 +24,7 @@ struct containerv_policy;
 
 enum containerv_bpf_status {
     CV_BPF_UNINITIALIZED = 0,
+    CV_BPF_FAILED_TO_INITIALIZE = -1,
     CV_BPF_AVAILABLE = 1,
     CV_BPF_NOT_SUPPORTED = 2
 };
@@ -50,8 +51,6 @@ struct containerv_bpf_container_metrics {
 struct containerv_bpf_metrics {
     enum containerv_bpf_status status;
     int                        container_count;
-    int                        policy_entry_count;
-    int                        max_map_capacity;
 
     // Total populate operations performed
     unsigned long long total_populate_ops;
@@ -73,9 +72,12 @@ struct containerv_bpf_metrics {
  * If BPF LSM is not available, this function will log a warning and
  * return success to allow fallback to seccomp-based enforcement.
  * 
- * @return 0 on success or if BPF LSM unavailable, -1 on critical error
+ * @return 
+ *  CV_BPF_AVAILABLE if BPF LSM is active,
+ *  CV_BPF_NOT_SUPPORTED if not available, 
+ *  CV_BPF_FAILED_TO_INITIALIZE on critical error
  */
-extern int containerv_bpf_initialize(void);
+extern enum containerv_bpf_status containerv_bpf_initialize(void);
 
 /**
  * @brief Shutdown the BPF manager and clean up resources

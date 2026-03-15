@@ -172,23 +172,17 @@ static int __safe_close(int fd)
 int containerv_bpf_sanity_check_pins(void)
 {
     int profile_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/profile_map");
-    int net_create_fd = bpf_obj_get("/sys/fs/bpf/cvd/net_create_map");
-    int net_tuple_fd = bpf_obj_get("/sys/fs/bpf/cvd/net_tuple_map");
-    int net_unix_fd = bpf_obj_get("/sys/fs/bpf/cvd/net_unix_map");
+    int net_profile_map_fd = bpf_obj_get("/sys/fs/bpf/cvd/net_profile_map");
 
     __safe_close(profile_map_fd);
-    __safe_close(net_create_fd);
-    __safe_close(net_tuple_fd);
-    __safe_close(net_unix_fd);
+    __safe_close(net_profile_map_fd);
 
-    if (profile_map_fd < 0 || net_create_fd < 0 || net_tuple_fd < 0 || net_unix_fd < 0) {
+    if (profile_map_fd < 0 || net_profile_map_fd < 0) {
         VLOG_WARNING("containerv",
-                     "BPF LSM sanity check failed (pinned profile_map=%s, pinned net_create=%s, pinned net_tuple=%s, pinned net_unix=%s). "
+                     "BPF LSM sanity check failed (pinned profile_map=%s, pinned net_profile_map=%s). "
                      "Enforcement may be misconfigured or stale pins exist.\n",
                      (profile_map_fd >= 0) ? "ok" : "missing",
-                     (net_create_fd >= 0) ? "ok" : "missing",
-                     (net_tuple_fd >= 0) ? "ok" : "missing",
-                     (net_unix_fd >= 0) ? "ok" : "missing");
+                     (net_profile_map_fd >= 0) ? "ok" : "missing");
         errno = ENOENT;
         return -1;
     }
