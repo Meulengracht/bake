@@ -556,6 +556,10 @@ protecc_error_t protecc_profile_compile(
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
+    if ((flags & ~((uint32_t)PROTECC_FLAG_OPTIMIZE)) != 0) {
+        return PROTECC_ERROR_INVALID_ARGUMENT;
+    }
+
     err = __resolve_compile_config(config, &localConfig, &cfg);
     if (err != PROTECC_OK) {
         return err;

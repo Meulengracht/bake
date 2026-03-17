@@ -52,8 +52,7 @@ typedef struct protecc_profile_builder protecc_profile_builder_t;
  */
 typedef enum {
     PROTECC_FLAG_NONE = 0,
-    PROTECC_FLAG_CASE_INSENSITIVE = 1 << 0,  /**< Case-insensitive matching */
-    PROTECC_FLAG_OPTIMIZE = 1 << 1,           /**< Enable optimizations (default) */
+    PROTECC_FLAG_OPTIMIZE = 1 << 0, /**< Enable optimizations (default) */
 } protecc_flags_t;
 
 /**

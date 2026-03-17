@@ -199,7 +199,6 @@ To target eBPF, set `config.mode = PROTECC_COMPILE_MODE_DFA` before calling `pro
 
 Flags:
 - `PROTECC_FLAG_NONE` - No special options
-- `PROTECC_FLAG_CASE_INSENSITIVE` - Case-insensitive matching
 - `PROTECC_FLAG_OPTIMIZE` - Enable optimizations (default)
 
 #### `protecc_match`

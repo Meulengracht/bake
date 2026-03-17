@@ -102,7 +102,6 @@ static void __charclass_bitmap_set(uint8_t bitmap[PROTECC_PROFILE_CHARCLASS_BITM
 static bool __charclass_parse(
     const char*                        pattern,
     size_t                             start_index,
-    bool                               case_insensitive,
     protecc_profile_charclass_entry_t* entry_out)
 {
     size_t  cursor;
@@ -130,9 +129,6 @@ static bool __charclass_parse(
 
     if (pattern[cursor] == ']') {
         unsigned char value = (unsigned char)pattern[cursor];
-        if (case_insensitive) {
-            value = (unsigned char)tolower(value);
-        }
         __charclass_bitmap_set(working, value);
         cursor++;
     }
@@ -159,11 +155,6 @@ static bool __charclass_parse(
             unsigned char left = (unsigned char)first;
             unsigned char right = (unsigned char)last;
 
-            if (case_insensitive) {
-                left = (unsigned char)tolower(left);
-                right = (unsigned char)tolower(right);
-            }
-
             if (left <= right) {
                 unsigned char value = left;
                 for (;;) {
@@ -181,9 +172,6 @@ static bool __charclass_parse(
 
         {
             unsigned char value = (unsigned char)first;
-            if (case_insensitive) {
-                value = (unsigned char)tolower(value);
-            }
             __charclass_bitmap_set(working, value);
         }
 
@@ -249,7 +237,6 @@ static protecc_error_t __charclass_table_reserve(
 protecc_error_t __charclass_collect(
     const char*               pattern,
     uint32_t                  pattern_offset,
-    bool                      case_insensitive,
     protecc_charclass_table_t* table)
 {
     size_t length;
@@ -273,7 +260,7 @@ protecc_error_t __charclass_collect(
         }
 
         memset(&entry, 0, sizeof(entry));
-        if (!__charclass_parse(pattern, i, case_insensitive, &entry)) {
+        if (!__charclass_parse(pattern, i, &entry)) {
             continue;
         }
 

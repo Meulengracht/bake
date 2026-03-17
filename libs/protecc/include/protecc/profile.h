@@ -54,14 +54,13 @@
 
 #define PROTECC_PROFILE_STRING_NONE 0xFFFFFFFFu
 
-#define PROTECC_PROFILE_FLAG_CASE_INSENSITIVE (1u << 0)
-#define PROTECC_PROFILE_FLAG_OPTIMIZE         (1u << 1)
+#define PROTECC_PROFILE_FLAG_OPTIMIZE         (1u << 0)
 #define PROTECC_PROFILE_FLAG_TYPE_TRIE        (1u << 8)
 #define PROTECC_PROFILE_FLAG_TYPE_DFA         (1u << 9)
 
-#define PROTECC_PROFILE_DFA_CLASSMAP_SIZE 256u
+#define PROTECC_PROFILE_DFA_CLASSMAP_SIZE     256u
 #define PROTECC_PROFILE_CHARCLASS_BITMAP_SIZE 32u
-#define PROTECC_PROFILE_MAX_CHAR_CLASSES     256u
+#define PROTECC_PROFILE_MAX_CHAR_CLASSES      256u
 #define PROTECC_MOUNT_DFA_SEPARATOR           0x1fu
 
 PROTECC_ONDISK_STRUCT(protecc_profile_stats, {
@@ -145,6 +144,13 @@ PROTECC_ONDISK_STRUCT(protecc_net_dfa_section, {
     uint32_t ip_dfa_off;   /* Offset to IP DFA block from start of section, 0 if none */
     uint32_t unix_dfa_off; /* Offset to UNIX-socket DFA block from start of section, 0 if none */
     uint32_t reserved[2];
+});
+
+PROTECC_ONDISK_STRUCT(protecc_mount_dfa_section, {
+    uint32_t source_target_dfa_off; /* Offset to source+target DFA block from start of section, 0 if none */
+    uint32_t fstype_dfa_off;        /* Offset to fstype DFA block from start of section, 0 if none */
+    uint32_t options_dfa_off;       /* Offset to options DFA block from start of section, 0 if none */
+    uint32_t reserved;
 });
 
 PROTECC_ONDISK_STRUCT(protecc_mount_profile_rule, {

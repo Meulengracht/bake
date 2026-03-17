@@ -19,7 +19,13 @@
 #ifndef __PROTECC_BPF_MOUNT_H__
 #define __PROTECC_BPF_MOUNT_H__
 
-#include <protecc/bpf/match.h>
+#include <protecc/profile.h>
+#include <bpf/bpf_helpers.h>
+
+typedef struct {
+    const __u8* data;
+    __u32       len;
+} protecc_bpf_string_t;
 
 typedef struct {
     __u32                 flags;
@@ -29,48 +35,294 @@ typedef struct {
     protecc_bpf_string_t  options;
 } protecc_bpf_mount_request_t;
 
-static __always_inline bool __protecc_bpf_mount_run_dfa(
-    const __u8                        profile[PROTECC_BPF_MAX_PROFILE_SIZE],
-    const protecc_profile_dfa_t*      dfa,
-    const __u8*                       classmap,
-    const __u32*                      transitions,
-    const __u32*                      accept,
-    const __u32*                      candidate_index,
-    const __u32*                      candidate_count,
-    const protecc_bpf_mount_request_t* request,
-    __u32*                            state_out)
+static __always_inline bool __protecc_bpf_mount_read_u32(
+    const __u8 profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    __u64      base_off,
+    __u32      table_off,
+    __u32      index,
+    __u32*     value_out);
+
+static __always_inline bool __protecc_bpf_mount_validate_candidate_tables(
+    const __u8                   profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const protecc_profile_dfa_t* dfa,
+    __u64                        dfa_block_off,
+    __u32                        rule_count)
 {
-    __u32 state;
-    __u32 accept_word;
-    __u64 combined_len;
+    __u32 i;
+    __u32 total = 0;
+
+    bpf_for (i, 0, PROTECC_MAX_RULES) {
+        __u32 count;
+        __u32 start;
+
+        if (i >= dfa->num_states) {
+            break;
+        }
+
+        if (!__protecc_bpf_mount_read_u32(
+                profile,
+                dfa_block_off,
+                dfa->candidate_count_off,
+                i,
+                &count)) {
+            return false;
+        }
+
+        if (count > rule_count) {
+            return false;
+        }
+
+        if (!__protecc_bpf_mount_read_u32(
+                profile,
+                dfa_block_off,
+                dfa->candidate_index_off,
+                i,
+                &start)) {
+            return false;
+        }
+
+        if ((__u64)start > dfa->candidates_count) {
+            return false;
+        }
+
+        if ((__u64)count > (dfa->candidates_count - (__u64)start)) {
+            return false;
+        }
+
+        total += count;
+    }
+
+    return total == dfa->candidates_count;
+}
+
+static __always_inline bool __protecc_bpf_mount_validate_dfa_layout(
+    const protecc_profile_dfa_t* dfa,
+    __u64                        dfa_block_off)
+{
     __u64 transitions_count;
-    __u64 idx;
+    __u64 dfa_block_size;
 
-    state = dfa->start_state;
-    combined_len = (__u64)request->source.len + 1u + (__u64)request->target.len;
-
-    if (combined_len > PROTECC_MAX_GLOB_STEPS) {
+    if (dfa->num_states == 0 || dfa->num_classes == 0 || dfa->num_classes > PROTECC_PROFILE_DFA_CLASSMAP_SIZE) {
         return false;
     }
 
-    if (!__VALID_PROFILE_PTR(profile, classmap, PROTECC_PROFILE_DFA_CLASSMAP_SIZE)) {
-        return false;
-    }
-
-    if (!__VALID_PROFILE_PTR(profile, accept, (__u64)dfa->accept_words * sizeof(__u32))) {
-        return false;
-    }
-
-    if (!__VALID_PROFILE_PTR(profile, candidate_index, (__u64)dfa->num_states * sizeof(__u32))) {
-        return false;
-    }
-
-    if (!__VALID_PROFILE_PTR(profile, candidate_count, (__u64)dfa->num_states * sizeof(__u32))) {
+    if (dfa->accept_words != ((dfa->num_states + 31u) / 32u)) {
         return false;
     }
 
     transitions_count = (__u64)dfa->num_states * (__u64)dfa->num_classes;
-    if (!__VALID_PROFILE_PTR(profile, transitions, transitions_count * sizeof(__u32))) {
+
+    if (dfa->classmap_off < sizeof(protecc_profile_dfa_t)) {
+        return false;
+    }
+
+    if (dfa->accept_off < dfa->classmap_off + PROTECC_PROFILE_DFA_CLASSMAP_SIZE) {
+        return false;
+    }
+
+    if (dfa->candidate_index_off < dfa->accept_off + ((__u64)dfa->accept_words * sizeof(__u32))) {
+        return false;
+    }
+
+    if (dfa->candidate_count_off < dfa->candidate_index_off + ((__u64)dfa->num_states * sizeof(__u32))) {
+        return false;
+    }
+
+    if (dfa->candidates_off < dfa->candidate_count_off + ((__u64)dfa->num_states * sizeof(__u32))) {
+        return false;
+    }
+
+    if (dfa->transitions_off < dfa->candidates_off + ((__u64)dfa->candidates_count * sizeof(__u32))) {
+        return false;
+    }
+
+    dfa_block_size = (__u64)dfa->transitions_off + (transitions_count * sizeof(__u32));
+    if (dfa_block_size > PROTECC_BPF_MAX_PROFILE_SIZE || dfa_block_off > PROTECC_BPF_MAX_PROFILE_SIZE - dfa_block_size) {
+        return false;
+    }
+
+    return true;
+}
+
+static __always_inline bool __protecc_bpf_mount_read_u32(
+    const __u8 profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    __u64      base_off,
+    __u32      table_off,
+    __u32      index,
+    __u32*     value_out)
+{
+    const __u32* value_ptr;
+    __u64        value_off;
+
+    if (value_out == NULL) {
+        return false;
+    }
+
+    value_off = base_off + (__u64)table_off + ((__u64)index * sizeof(__u32));
+    if (value_off > PROTECC_BPF_MAX_PROFILE_SIZE - sizeof(__u32)) {
+        return false;
+    }
+
+    value_ptr = (const __u32*)(profile + value_off);
+    if (!__VALID_PROFILE_PTR(profile, value_ptr, sizeof(__u32))) {
+        return false;
+    }
+
+    *value_out = *value_ptr;
+    return true;
+}
+
+static __always_inline bool __protecc_bpf_mount_read_accept_bits(
+    const __u8                   profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const protecc_profile_dfa_t* dfa,
+    __u64                        dfa_block_off,
+    __u32                        state,
+    __u32*                       accept_bits_out)
+{
+    __u32 accept_word;
+
+    accept_word = state >> 5;
+    if (accept_word >= dfa->accept_words) {
+        return false;
+    }
+
+    return __protecc_bpf_mount_read_u32(
+        profile,
+        dfa_block_off,
+        dfa->accept_off,
+        accept_word,
+        accept_bits_out
+    );
+}
+
+static __always_inline bool __protecc_bpf_mount_read_state_candidates(
+    const __u8                   profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const protecc_profile_dfa_t* dfa,
+    __u64                        dfa_block_off,
+    __u32                        state,
+    __u32*                       state_candidate_index_out,
+    __u32*                       state_candidate_count_out)
+{
+    __u32 state_candidate_index;
+    __u32 state_candidate_count;
+
+    if (!__protecc_bpf_mount_read_u32(
+            profile,
+            dfa_block_off,
+            dfa->candidate_index_off,
+            state,
+            &state_candidate_index)) {
+        return false;
+    }
+
+    if (!__protecc_bpf_mount_read_u32(
+            profile,
+            dfa_block_off,
+            dfa->candidate_count_off,
+            state,
+            &state_candidate_count)) {
+        return false;
+    }
+
+    if ((__u64)state_candidate_index > dfa->candidates_count) {
+        return false;
+    }
+
+    if ((__u64)state_candidate_count > (dfa->candidates_count - (__u64)state_candidate_index)) {
+        return false;
+    }
+
+    if (state_candidate_index_out) {
+        *state_candidate_index_out = state_candidate_index;
+    }
+
+    if (state_candidate_count_out) {
+        *state_candidate_count_out = state_candidate_count;
+    }
+
+    return true;
+}
+
+static __always_inline bool __protecc_bpf_mount_dfa_step(
+    const __u8                   profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const protecc_profile_dfa_t* dfa,
+    __u64                        dfa_block_off,
+    __u32                        num_states,
+    __u32                        num_classes,
+    __u32                        transitions_count32,
+    __u32*                       state_inout,
+    __u8                         c)
+{
+    const __u8* class_ptr;
+    const __u32* state_ptr;
+    __u32 state;
+    __u32 cls;
+    __u32 index32;
+    __u64 class_off;
+    __u64 state_off;
+
+    state = *state_inout;
+    if (state >= num_states) {
+        return false;
+    }
+
+    class_off = dfa_block_off + dfa->classmap_off + (__u64)c;
+    if (class_off > PROTECC_BPF_MAX_PROFILE_SIZE - sizeof(__u8)) {
+        return false;
+    }
+
+    class_ptr = (const __u8*)(profile + class_off);
+    if (!__VALID_PROFILE_PTR(profile, class_ptr, sizeof(__u8))) {
+        return false;
+    }
+
+    cls = *class_ptr;
+    if (cls >= num_classes) {
+        return false;
+    }
+
+    index32 = (state * num_classes) + cls;
+    if (index32 >= transitions_count32) {
+        return false;
+    }
+
+    state_off = dfa_block_off + dfa->transitions_off + ((__u64)index32 * sizeof(__u32));
+    if (state_off > PROTECC_BPF_MAX_PROFILE_SIZE - sizeof(__u32)) {
+        return false;
+    }
+
+    state_ptr = (const __u32*)(profile + state_off);
+    if (!__VALID_PROFILE_PTR(profile, state_ptr, sizeof(__u32))) {
+        return false;
+    }
+
+    state = *state_ptr;
+    if (state >= num_states) {
+        return false;
+    }
+
+    *state_inout = state;
+    return true;
+}
+
+static __always_inline bool __protecc_bpf_mount_run_dfa(
+    const __u8                         profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const protecc_profile_dfa_t*       dfa,
+    __u64                              dfa_block_off,
+    const protecc_bpf_mount_request_t* request,
+    __u32*                             state_out)
+{
+    __u32 state;
+    __u32 accept_bits;
+    __u32 transitions_count;
+    __u32 source_target_len;
+    __u32 idx;
+    __u32 combined_len;
+
+    state = dfa->start_state;
+    combined_len = request->source.len + 1u + request->target.len;
+
+    if (combined_len > PROTECC_MAX_GLOB_STEPS) {
         return false;
     }
 
@@ -79,49 +331,94 @@ static __always_inline bool __protecc_bpf_mount_run_dfa(
         return false;
     }
 
-    for (idx = 0; idx < combined_len; idx++) {
+    source_target_len = request->source.len + request->target.len;
+    if (source_target_len < request->source.len || source_target_len > (PROTECC_MAX_GLOB_STEPS - 1u)) {
+        return false;
+    }
+
+    transitions_count = dfa->num_states * dfa->num_classes;
+    bpf_for (idx, 0, PROTECC_MAX_GLOB_STEPS) {
         __u8 c;
-        __u32 cls;
-        __u64 index;
 
-        if (idx < request->source.len) {
-            c = request->source.data[idx];
-        } else if (idx == request->source.len) {
-            c = (uint8_t)PROTECC_MOUNT_DFA_SEPARATOR;
-        } else {
-            c = request->target.data[idx - request->source.len - 1u];
+        if (idx >= request->source.len) {
+            break;
         }
 
-        cls = classmap[c];
-        if (cls >= dfa->num_classes) {
+        if (!__VALID_PTR(request->source.data, request->source.len, &request->source.data[idx], 1)) {
             return false;
         }
+        c = request->source.data[idx];
 
-        index = ((__u64)state * (__u64)dfa->num_classes) + (__u64)cls;
-        if (index >= transitions_count) {
-            return false;
-        }
-
-        if (!__VALID_PROFILE_PTR(profile, &transitions[index], sizeof(__u32))) {
-            return false;
-        }
-
-        state = transitions[index];
-        if (state >= dfa->num_states) {
+        if (!__protecc_bpf_mount_dfa_step(
+                profile,
+                dfa,
+                dfa_block_off,
+                dfa->num_states,
+                dfa->num_classes,
+                transitions_count,
+                &state,
+                c)) {
             return false;
         }
     }
 
-    accept_word = state >> 5;
-    if (accept_word >= dfa->accept_words) {
+    if (!__protecc_bpf_mount_dfa_step(
+            profile,
+            dfa,
+            dfa_block_off,
+            dfa->num_states,
+            dfa->num_classes,
+            transitions_count,
+            &state,
+            (__u8)PROTECC_MOUNT_DFA_SEPARATOR)) {
         return false;
     }
 
-    if ((accept[accept_word] & (1u << (state & 31u))) == 0u) {
+    bpf_for (idx, 0, PROTECC_MAX_GLOB_STEPS) {
+        __u8 c;
+
+        if (idx >= request->target.len) {
+            break;
+        }
+
+        if (!__VALID_PTR(request->target.data, request->target.len, &request->target.data[idx], 1)) {
+            return false;
+        }
+        c = request->target.data[idx];
+
+        if (!__protecc_bpf_mount_dfa_step(
+                profile,
+                dfa,
+                dfa_block_off,
+                dfa->num_states,
+                dfa->num_classes,
+                transitions_count,
+                &state,
+                c)) {
+            return false;
+        }
+    }
+
+    if (!__protecc_bpf_mount_read_accept_bits(
+            profile,
+            dfa,
+            dfa_block_off,
+            state,
+            &accept_bits)) {
         return false;
     }
 
-    if ((__u64)candidate_index[state] + (__u64)candidate_count[state] > dfa->candidates_count) {
+    if ((accept_bits & (1u << (state & 31u))) == 0u) {
+        return false;
+    }
+
+    if (!__protecc_bpf_mount_read_state_candidates(
+            profile,
+            dfa,
+            dfa_block_off,
+            state,
+            NULL,
+            NULL)) {
         return false;
     }
 
@@ -129,53 +426,215 @@ static __always_inline bool __protecc_bpf_mount_run_dfa(
     return true;
 }
 
-static __always_inline bool __protecc_bpf_mount_select_action(
-    const __u8                        profile[PROTECC_BPF_MAX_PROFILE_SIZE],
-    const protecc_rule_profile_header_t* header,
-    const protecc_mount_profile_rule_t*  rules,
-    const protecc_profile_dfa_t*      dfa,
-    const __u8*                        strings,
-    const protecc_profile_charclass_entry_t* classes,
-    const __u32*                       candidate_index,
-    const __u32*                       candidate_count,
-    const __u32*                       candidates,
-    const protecc_bpf_mount_request_t* request,
-    __u32                              state,
-    bool                               case_insensitive,
-    __u8*                              action_out)
+static __always_inline bool __protecc_bpf_mount_run_string_dfa(
+    const __u8                         profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const protecc_profile_dfa_t*       dfa,
+    __u64                              dfa_block_off,
+    const protecc_bpf_string_t*        value,
+    __u32*                             state_out)
 {
-    __u32 i;
+    __u32 state;
+    __u32 accept_bits;
+    __u32 num_states;
+    __u32 num_classes;
+    __u32 transitions_count32;
+    __u32 idx;
 
-    if (!__VALID_PROFILE_PTR(profile, candidate_index, (__u64)state * sizeof(__u32) + sizeof(__u32))) {
+    if (value == NULL || state_out == NULL) {
         return false;
     }
 
-    if (!__VALID_PROFILE_PTR(profile, candidate_count, (__u64)state * sizeof(__u32) + sizeof(__u32))) {
+    if (value->len > PROTECC_MAX_GLOB_STEPS || (value->len > 0 && value->data == NULL)) {
         return false;
     }
 
-    if (!__VALID_PROFILE_PTR(profile, candidates, (__u64)dfa->candidates_count * sizeof(__u32))) {
+    state = dfa->start_state;
+    num_states = dfa->num_states;
+    num_classes = dfa->num_classes;
+
+    if (num_states == 0 || num_classes == 0 || num_classes > PROTECC_PROFILE_DFA_CLASSMAP_SIZE) {
         return false;
     }
 
-    bpf_for (i, 0, PROTECC_BPF_MAX_MOUNT_RULES) {
-        __u32 rule_index;
-        const protecc_mount_profile_rule_t* rule;
+    if ((__u64)num_states > ((__u64)PROTECC_BPF_MAX_PROFILE_SIZE / sizeof(__u32))) {
+        return false;
+    }
 
-        if (i >= candidate_count[state]) {
+    if ((__u64)num_states * (__u64)num_classes > ((__u64)PROTECC_BPF_MAX_PROFILE_SIZE / sizeof(__u32))) {
+        return false;
+    }
+
+    transitions_count32 = num_states * num_classes;
+
+    bpf_for (idx, 0, PROTECC_MAX_GLOB_STEPS) {
+        __u8 c;
+
+        if (idx >= value->len) {
             break;
         }
 
-        if ((__u64)candidate_index[state] + (__u64)i >= (__u64)dfa->candidates_count) {
+        if (value->data == NULL || !__VALID_PTR(value->data, value->len, &value->data[idx], 1)) {
+            return false;
+        }
+        c = value->data[idx];
+
+        if (!__protecc_bpf_mount_dfa_step(
+                profile,
+                dfa,
+                dfa_block_off,
+                num_states,
+                num_classes,
+                transitions_count32,
+                &state,
+                c)) {
+            return false;
+        }
+    }
+
+    if (!__protecc_bpf_mount_read_accept_bits(
+            profile,
+            dfa,
+            dfa_block_off,
+            state,
+            &accept_bits)) {
+        return false;
+    }
+
+    if ((accept_bits & (1u << (state & 31u))) == 0u) {
+        return false;
+    }
+
+    if (!__protecc_bpf_mount_read_state_candidates(
+            profile,
+            dfa,
+            dfa_block_off,
+            state,
+            NULL,
+            NULL)) {
+        return false;
+    }
+
+    *state_out = state;
+    return true;
+}
+
+static __always_inline bool __protecc_bpf_mount_candidate_contains(
+    const __u8                   profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    const protecc_profile_dfa_t* dfa,
+    __u64                        dfa_block_off,
+    __u32                        state,
+    __u32                        rule_index)
+{
+    __u32 state_candidate_index;
+    __u32 state_candidate_count;
+    __u32 i;
+
+    if (!__protecc_bpf_mount_read_state_candidates(
+            profile,
+            dfa,
+            dfa_block_off,
+            state,
+            &state_candidate_index,
+            &state_candidate_count)) {
+        return false;
+    }
+
+    bpf_for (i, 0, PROTECC_MAX_RULES) {
+        const __u32* candidate_ptr;
+        __u32        candidate_rule_index;
+        __u64        candidate_off;
+
+        if (i >= state_candidate_count) {
+            break;
+        }
+
+        if ((__u64)state_candidate_index + (__u64)i >= (__u64)dfa->candidates_count) {
             return false;
         }
 
-        if (!__VALID_PROFILE_PTR(profile, &candidates[candidate_index[state] + i], sizeof(__u32))) {
+        candidate_off = dfa_block_off + dfa->candidates_off + (((__u64)state_candidate_index + (__u64)i) * sizeof(__u32));
+        if (candidate_off > PROTECC_BPF_MAX_PROFILE_SIZE - sizeof(__u32)) {
             return false;
         }
 
-        rule_index = candidates[candidate_index[state] + i];
-        if (rule_index >= header->rule_count) {
+        candidate_ptr = (const __u32*)(profile + candidate_off);
+        if (!__VALID_PROFILE_PTR(profile, candidate_ptr, sizeof(__u32))) {
+            return false;
+        }
+
+        candidate_rule_index = *candidate_ptr;
+        if (candidate_rule_index == rule_index) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static __always_inline bool __protecc_bpf_mount_select_action(
+    const __u8                        profile[PROTECC_BPF_MAX_PROFILE_SIZE],
+    __u32                             rule_count,
+    const protecc_mount_profile_rule_t*  rules,
+    const protecc_profile_dfa_t*      source_target_dfa,
+    __u64                             source_target_dfa_block_off,
+    const protecc_profile_dfa_t*      fstype_dfa,
+    __u64                             fstype_dfa_block_off,
+    __u32                             fstype_state,
+    bool                              has_fstype_state,
+    const protecc_profile_dfa_t*      options_dfa,
+    __u64                             options_dfa_block_off,
+    __u32                             options_state,
+    bool                              has_options_state,
+    const protecc_bpf_mount_request_t* request,
+    __u32                              state,
+    __u8*                              action_out)
+{
+    __u32 state_candidate_index;
+    __u32 state_candidate_count;
+    __u32 i;
+
+    if (rule_count == 0 || rule_count > PROTECC_MAX_RULES) {
+        return false;
+    }
+
+    if (!__protecc_bpf_mount_read_state_candidates(
+            profile,
+            source_target_dfa,
+            source_target_dfa_block_off,
+            state,
+            &state_candidate_index,
+            &state_candidate_count)) {
+        return false;
+    }
+
+    bpf_for (i, 0, PROTECC_MAX_RULES) {
+        const protecc_mount_profile_rule_t* rule;
+        const __u32*                        candidate_ptr;
+        __u32                               rule_index;
+        __u64                               candidate_off;
+
+        if (i >= state_candidate_count) {
+            break;
+        }
+
+        if ((__u64)state_candidate_index + (__u64)i >= (__u64)source_target_dfa->candidates_count) {
+            return false;
+        }
+
+        candidate_off = source_target_dfa_block_off
+            + source_target_dfa->candidates_off
+            + (((__u64)state_candidate_index + (__u64)i) * sizeof(__u32));
+        if (candidate_off > PROTECC_BPF_MAX_PROFILE_SIZE - sizeof(__u32)) {
+            return false;
+        }
+
+        candidate_ptr = (const __u32*)(profile + candidate_off);
+        if (!__VALID_PROFILE_PTR(profile, candidate_ptr, sizeof(__u32))) {
+            return false;
+        }
+
+        rule_index = *candidate_ptr;
+        if (rule_index >= rule_count) {
             return false;
         }
 
@@ -185,24 +644,34 @@ static __always_inline bool __protecc_bpf_mount_select_action(
             continue;
         }
 
-        if (!__protecc_bpf_profile_match(profile, strings,
-                                          header->strings_size,
-                                          classes,
-                                          header->charclass_count,
-                                          rule->fstype_pattern_off,
-                                          &request->fstype,
-                                          case_insensitive)) {
-            continue;
+        if (rule->fstype_pattern_off != PROTECC_PROFILE_STRING_NONE) {
+            if (!has_fstype_state) {
+                continue;
+            }
+
+            if (!__protecc_bpf_mount_candidate_contains(
+                    profile,
+                    fstype_dfa,
+                    fstype_dfa_block_off,
+                    fstype_state,
+                    rule_index)) {
+                continue;
+            }
         }
 
-        if (!__protecc_bpf_profile_match(profile, strings,
-                                          header->strings_size,
-                                          classes,
-                                          header->charclass_count,
-                                          rule->options_pattern_off,
-                                          &request->options,
-                                          case_insensitive)) {
-            continue;
+        if (rule->options_pattern_off != PROTECC_PROFILE_STRING_NONE) {
+            if (!has_options_state) {
+                continue;
+            }
+
+            if (!__protecc_bpf_mount_candidate_contains(
+                    profile,
+                    options_dfa,
+                    options_dfa_block_off,
+                    options_state,
+                    rule_index)) {
+                continue;
+            }
         }
 
         if (action_out) {
@@ -219,23 +688,23 @@ static __always_inline bool protecc_bpf_match_mount(
     const protecc_bpf_mount_request_t* request,
     __u8*                              action_out)
 {
-    const protecc_rule_profile_header_t* header;
-    const protecc_mount_profile_rule_t*   rules;
-    const __u8*                           strings;
-    const protecc_profile_charclass_entry_t* classes;
-    const protecc_profile_dfa_t*              dfa;
-    const __u8*                           classmap;
-    const __u32*                          accept;
-    const __u32*                          candidate_index;
-    const __u32*                          candidate_count;
-    const __u32*                          candidates;
-    const __u32*                          transitions;
-    __u64                                 rules_size;
-    __u64                                 required_size;
-    __u64                                 class_table_size;
-    __u64                                 dfa_end;
-    __u32                                 state;
-    bool                                  case_insensitive;
+    const protecc_rule_profile_header_t*      header;
+    const protecc_mount_profile_rule_t*       rules;
+    const protecc_mount_dfa_section_t*        dfa_section;
+    const protecc_profile_dfa_t*              source_target_dfa;
+    const protecc_profile_dfa_t*              fstype_dfa = NULL;
+    const protecc_profile_dfa_t*              options_dfa = NULL;
+    __u64                                     rules_size;
+    __u64                                     required_size;
+    __u64                                     dfa_section_off;
+    __u64                                     source_target_dfa_block_off;
+    __u64                                     fstype_dfa_block_off = 0;
+    __u64                                     options_dfa_block_off = 0;
+    __u32                                     state;
+    __u32                                     fstype_state = 0;
+    __u32                                     options_state = 0;
+    bool                                      has_fstype_state = false;
+    bool                                      has_options_state = false;
 
     if (!profile || !request) {
         return false;
@@ -246,44 +715,28 @@ static __always_inline bool protecc_bpf_match_mount(
         return false;
     }
 
-    if ((header->flags & ~(PROTECC_PROFILE_FLAG_CASE_INSENSITIVE)) != 0) {
+    if (header->flags != 0) {
         return false;
     }
 
-    if (header->rule_count > PROTECC_BPF_MAX_MOUNT_RULES) {
+    if (header->rule_count > PROTECC_MAX_RULES) {
         return false;
     }
 
-    if (header->charclass_count > PROTECC_BPF_MAX_CHAR_CLASSES) {
+    if (header->charclass_count != 0 || header->charclass_table_off != 0) {
         return false;
     }
 
     rules_size = (__u64)header->rule_count * sizeof(protecc_mount_profile_rule_t);
-    class_table_size = (__u64)header->charclass_count * sizeof(protecc_profile_charclass_entry_t);
 
-    if (header->charclass_table_off < sizeof(protecc_rule_profile_header_t) + rules_size + (__u64)header->strings_size) {
-        return false;
-    }
-
-    required_size = (__u64)header->charclass_table_off + class_table_size;
-
-    if (required_size > PROTECC_BPF_MAX_PROFILE_SIZE) {
+    required_size = (__u64)sizeof(protecc_rule_profile_header_t) + rules_size + (__u64)header->strings_size;
+    if (required_size < (__u64)sizeof(protecc_rule_profile_header_t) || required_size > PROTECC_BPF_MAX_PROFILE_SIZE) {
         return false;
     }
 
     rules = (const protecc_mount_profile_rule_t*)(profile + sizeof(protecc_rule_profile_header_t));
-    strings = profile + sizeof(protecc_rule_profile_header_t) + rules_size;
-    classes = (const protecc_profile_charclass_entry_t*)(profile + header->charclass_table_off);
 
     if (!__VALID_PROFILE_PTR(profile, rules, rules_size)) {
-        return false;
-    }
-
-    if (!__VALID_PROFILE_PTR(profile, strings, header->strings_size)) {
-        return false;
-    }
-
-    if (class_table_size > 0 && !__VALID_PROFILE_PTR(profile, classes, class_table_size)) {
         return false;
     }
 
@@ -291,81 +744,121 @@ static __always_inline bool protecc_bpf_match_mount(
         return false;
     }
 
-    dfa = (const protecc_profile_dfa_t*)(profile + header->dfa_section_off);
-    if (!__VALID_PROFILE_PTR(profile, dfa, sizeof(*dfa))) {
+    dfa_section_off = header->dfa_section_off;
+    dfa_section = (const protecc_mount_dfa_section_t*)(profile + dfa_section_off);
+    if (!__VALID_PROFILE_PTR(profile, dfa_section, sizeof(*dfa_section))) {
         return false;
     }
 
-    if (dfa->num_states == 0 || dfa->num_classes == 0 || dfa->num_classes > PROTECC_PROFILE_DFA_CLASSMAP_SIZE) {
+    if (dfa_section->source_target_dfa_off == 0) {
         return false;
     }
 
-    classmap = profile + header->dfa_section_off + dfa->classmap_off;
-    accept = (const __u32*)(profile + header->dfa_section_off + dfa->accept_off);
-    candidate_index = (const __u32*)(profile + header->dfa_section_off + dfa->candidate_index_off);
-    candidate_count = (const __u32*)(profile + header->dfa_section_off + dfa->candidate_count_off);
-    candidates = (const __u32*)(profile + header->dfa_section_off + dfa->candidates_off);
-    transitions = (const __u32*)(profile + header->dfa_section_off + dfa->transitions_off);
-
-    dfa_end = (__u64)header->dfa_section_off + dfa->transitions_off
-        + ((__u64)dfa->num_states * (__u64)dfa->num_classes * sizeof(__u32));
-
-    if (dfa_end > PROTECC_BPF_MAX_PROFILE_SIZE) {
+    source_target_dfa_block_off = dfa_section_off + dfa_section->source_target_dfa_off;
+    if (source_target_dfa_block_off < dfa_section_off || source_target_dfa_block_off > PROTECC_BPF_MAX_PROFILE_SIZE - sizeof(protecc_profile_dfa_t)) {
         return false;
     }
 
-    if (!__VALID_PROFILE_PTR(profile, classmap, PROTECC_PROFILE_DFA_CLASSMAP_SIZE)) {
+    source_target_dfa = (const protecc_profile_dfa_t*)(profile + source_target_dfa_block_off);
+    if (!__VALID_PROFILE_PTR(profile, source_target_dfa, sizeof(*source_target_dfa))) {
         return false;
     }
 
-    if (!__VALID_PROFILE_PTR(profile, accept, (size_t)dfa->accept_words * sizeof(__u32))) {
+    if (!__protecc_bpf_mount_validate_dfa_layout(source_target_dfa, source_target_dfa_block_off)) {
         return false;
     }
 
-    if (!__VALID_PROFILE_PTR(profile, candidate_index, (size_t)dfa->num_states * sizeof(__u32))) {
+    if (!__protecc_bpf_mount_validate_candidate_tables(profile, source_target_dfa, source_target_dfa_block_off, header->rule_count)) {
         return false;
     }
 
-    if (!__VALID_PROFILE_PTR(profile, candidate_count, (size_t)dfa->num_states * sizeof(__u32))) {
-        return false;
+    if (dfa_section->fstype_dfa_off != 0) {
+        fstype_dfa_block_off = dfa_section_off + dfa_section->fstype_dfa_off;
+        if (fstype_dfa_block_off < dfa_section_off || fstype_dfa_block_off > PROTECC_BPF_MAX_PROFILE_SIZE - sizeof(protecc_profile_dfa_t)) {
+            return false;
+        }
+
+        fstype_dfa = (const protecc_profile_dfa_t*)(profile + fstype_dfa_block_off);
+        if (!__VALID_PROFILE_PTR(profile, fstype_dfa, sizeof(*fstype_dfa))) {
+            return false;
+        }
+
+        if (!__protecc_bpf_mount_validate_dfa_layout(fstype_dfa, fstype_dfa_block_off)) {
+            return false;
+        }
+
+        if (!__protecc_bpf_mount_validate_candidate_tables(profile, fstype_dfa, fstype_dfa_block_off, header->rule_count)) {
+            return false;
+        }
     }
 
-    if (!__VALID_PROFILE_PTR(profile, candidates, (size_t)dfa->candidates_count * sizeof(__u32))) {
-        return false;
-    }
+    if (dfa_section->options_dfa_off != 0) {
+        options_dfa_block_off = dfa_section_off + dfa_section->options_dfa_off;
+        if (options_dfa_block_off < dfa_section_off || options_dfa_block_off > PROTECC_BPF_MAX_PROFILE_SIZE - sizeof(protecc_profile_dfa_t)) {
+            return false;
+        }
 
-    if (!__VALID_PROFILE_PTR(profile, transitions, (size_t)dfa->num_states * (size_t)dfa->num_classes * sizeof(__u32))) {
-        return false;
+        options_dfa = (const protecc_profile_dfa_t*)(profile + options_dfa_block_off);
+        if (!__VALID_PROFILE_PTR(profile, options_dfa, sizeof(*options_dfa))) {
+            return false;
+        }
+
+        if (!__protecc_bpf_mount_validate_dfa_layout(options_dfa, options_dfa_block_off)) {
+            return false;
+        }
+
+        if (!__protecc_bpf_mount_validate_candidate_tables(profile, options_dfa, options_dfa_block_off, header->rule_count)) {
+            return false;
+        }
     }
 
     if (!__protecc_bpf_mount_run_dfa(
             profile,
-            dfa,
-            classmap,
-            transitions,
-            accept,
-            candidate_index,
-            candidate_count,
+            source_target_dfa,
+            source_target_dfa_block_off,
             request,
             &state)) {
         return false;
     }
 
-    case_insensitive = (header->flags & PROTECC_PROFILE_FLAG_CASE_INSENSITIVE) != 0;
+    if (fstype_dfa != NULL) {
+        if (__protecc_bpf_mount_run_string_dfa(
+                profile,
+                fstype_dfa,
+                fstype_dfa_block_off,
+                &request->fstype,
+                &fstype_state)) {
+            has_fstype_state = true;
+        }
+    }
+
+    if (options_dfa != NULL) {
+        if (__protecc_bpf_mount_run_string_dfa(
+                profile,
+                options_dfa,
+                options_dfa_block_off,
+                &request->options,
+                &options_state)) {
+            has_options_state = true;
+        }
+    }
 
     if (__protecc_bpf_mount_select_action(
             profile,
-            header,
+            header->rule_count,
             rules,
-            dfa,
-            strings,
-            classes,
-            candidate_index,
-            candidate_count,
-            candidates,
+            source_target_dfa,
+            source_target_dfa_block_off,
+            fstype_dfa,
+            fstype_dfa_block_off,
+            fstype_state,
+            has_fstype_state,
+            options_dfa,
+            options_dfa_block_off,
+            options_state,
+            has_options_state,
             request,
             state,
-            case_insensitive,
             action_out)) {
         return true;
     }

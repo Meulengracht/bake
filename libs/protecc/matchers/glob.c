@@ -23,17 +23,12 @@
 
 #include "../private.h"
 
-static int __char_fold(int c, bool caseInsensitive)
-{
-    return caseInsensitive ? tolower((unsigned char)c) : c;
-}
-
-static bool __charclass_match(const char* pattern, size_t* consumed, char value, bool caseInsensitive)
+static bool __charclass_match(const char* pattern, size_t* consumed, char value)
 {
     size_t index = 1;
     bool   invert = false;
     bool   matched = false;
-    int    foldedC = __char_fold(value, caseInsensitive);
+    int    foldedC = (unsigned char)value;
 
     if (pattern[index] == '!' || pattern[index] == '^') {
         invert = true;
@@ -41,7 +36,7 @@ static bool __charclass_match(const char* pattern, size_t* consumed, char value,
     }
 
     if (pattern[index] == ']') {
-        int first = __char_fold(pattern[index], caseInsensitive);
+        int first = (unsigned char)pattern[index];
         if (first == foldedC) {
             matched = true;
         }
@@ -49,10 +44,10 @@ static bool __charclass_match(const char* pattern, size_t* consumed, char value,
     }
 
     while (pattern[index] && pattern[index] != ']') {
-        int first = __char_fold(pattern[index], caseInsensitive);
+        int first = (unsigned char)pattern[index];
 
         if (pattern[index + 1] == '-' && pattern[index + 2] && pattern[index + 2] != ']') {
-            int last = __char_fold(pattern[index + 2], caseInsensitive);
+            int last = (unsigned char)pattern[index + 2];
             if (first <= foldedC && foldedC <= last) {
                 matched = true;
             }
@@ -75,7 +70,7 @@ static bool __charclass_match(const char* pattern, size_t* consumed, char value,
     return invert ? !matched : matched;
 }
 
-static bool __glob_match(const char* pattern, const char* value, bool caseInsensitive)
+static bool __glob_match(const char* pattern, const char* value)
 {
     size_t patternIndex = 0;
     size_t valueIndex = 0;
@@ -100,13 +95,12 @@ static bool __glob_match(const char* pattern, const char* value, bool caseInsens
 
         if (pattern[patternIndex] == '[') {
             size_t consumed = 0;
-            if (__charclass_match(pattern + patternIndex, &consumed, value[valueIndex], caseInsensitive)) {
+            if (__charclass_match(pattern + patternIndex, &consumed, value[valueIndex])) {
                 patternIndex += consumed;
                 valueIndex++;
                 continue;
             }
-        } else if (__char_fold(pattern[patternIndex], caseInsensitive)
-                == __char_fold(value[valueIndex], caseInsensitive)) {
+        } else if ((unsigned char)pattern[patternIndex] == (unsigned char)value[valueIndex]) {
             patternIndex++;
             valueIndex++;
             continue;
@@ -129,7 +123,7 @@ static bool __glob_match(const char* pattern, const char* value, bool caseInsens
     return pattern[patternIndex] == '\0';
 }
 
-bool __match_optional_pattern(const char* pattern, const char* value, bool caseInsensitive)
+bool __match_optional_pattern(const char* pattern, const char* value)
 {
     if (pattern == NULL) {
         return true;
@@ -137,5 +131,5 @@ bool __match_optional_pattern(const char* pattern, const char* value, bool caseI
     if (value == NULL) {
         return false;
     }
-    return __glob_match(pattern, value, caseInsensitive);
+    return __glob_match(pattern, value);
 }

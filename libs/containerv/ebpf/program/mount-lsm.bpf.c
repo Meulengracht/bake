@@ -80,26 +80,6 @@ static __always_inline struct per_cpu_data* __cpu_data(void)
 	return bpf_map_lookup_elem(&per_cpu_data_map, &key);
 }
 
-static __always_inline __u32 __bounded_str_len(const char* text, __u32 maxLen)
-{
-	__u32 length = 0;
-
-	if (!text || maxLen == 0) {
-		return 0;
-	}
-
-	bpf_for (length, 0, MOUNT_TEXT_SMALL_MAX) {
-		if (length >= maxLen) {
-			break;
-		}
-		if (text[length] == '\0') {
-			return length;
-		}
-	}
-
-	return maxLen;
-}
-
 static __always_inline int __read_user_or_kernel_string(
 	const char* in,
 	char*       out,
@@ -108,14 +88,10 @@ static __always_inline int __read_user_or_kernel_string(
 {
 	int read;
 
-	if (!out || !lenOut || outSize == 0) {
-		return -EACCES;
-	}
-
 	out[0] = '\0';
 	*lenOut = 0;
-
-	if (!in) {
+	
+	if (in == NULL) {
 		return 0;
 	}
 
@@ -129,10 +105,10 @@ static __always_inline int __read_user_or_kernel_string(
 }
 
 static __always_inline int __check_allow_mount_request(
-	__u64                             cgroupId,
+	__u64                              cgroupId,
 	const protecc_bpf_mount_request_t* request,
-	__u32                             required,
-	__u32                             hookId)
+	__u32                              required,
+	__u32                              hookId)
 {
 	struct profile_value* profile;
 	__u8                  action = PROTECC_ACTION_ALLOW;
@@ -182,7 +158,6 @@ int BPF_PROG(sb_mount_restrict,
 	__u32                       targetLen = 0;
 	__u32                       fstypeLen = 0;
 	__u32                       optionsLen = 0;
-	__u32                       targetStart = 0;
 
 	if (ret) {
 		return ret;
@@ -209,35 +184,28 @@ int BPF_PROG(sb_mount_restrict,
 		return -EACCES;
 	}
 
-	if (__read_user_or_kernel_string((const char*)data,
-									 &scratch->options[0],
-									 MOUNT_TEXT_SMALL_MAX,
-									 &optionsLen) != 0) {
+	if (__read_user_or_kernel_string((const char*)data, &scratch->options[0], MOUNT_TEXT_SMALL_MAX, &optionsLen) != 0) {
+		// data is optional and may be NULL, so we treat read errors as empty options
 		scratch->options[0] = '\0';
 		optionsLen = 0;
 	}
 
 	if (path) {
-		CORE_READ_INTO(&dentry, path, dentry);
-		if (dentry) {
-			targetLen = __resolve_dentry_path(&scratch->target[0], dentry, &targetStart);
-			if (targetStart < PATH_BUFFER_SIZE) {
-				targetLen = __bounded_str_len(&scratch->target[targetStart], PATH_BUFFER_SIZE - targetStart);
-			} else {
-				targetLen = 0;
-				targetStart = 0;
-			}
+		targetLen = __resolve_path((struct path*)path, &scratch->target[0], PATH_BUFFER_SIZE) - 1;
+		if (targetLen < 0) {
+			scratch->target[0] = '\0';
+			targetLen = 0;
 		}
 	}
 
 	request.flags = (__u32)flags;
-	request.source.data = (sourceLen > 0) ? (const __u8*)&scratch->source[0] : NULL;
+	request.source.data = (const __u8*)&scratch->source[0];
 	request.source.len = sourceLen;
-	request.target.data = (targetLen > 0) ? (const __u8*)&scratch->target[targetStart] : NULL;
+	request.target.data = (const __u8*)&scratch->target[0];
 	request.target.len = targetLen;
-	request.fstype.data = (fstypeLen > 0) ? (const __u8*)&scratch->fstype[0] : NULL;
+	request.fstype.data = (const __u8*)&scratch->fstype[0];
 	request.fstype.len = fstypeLen;
-	request.options.data = (optionsLen > 0) ? (const __u8*)&scratch->options[0] : NULL;
+	request.options.data = (const __u8*)&scratch->options[0];
 	request.options.len = optionsLen;
 
 	return __check_allow_mount_request(cgroupId, &request, MOUNT_PERM_MOUNT, DENY_HOOK_SB_MOUNT);

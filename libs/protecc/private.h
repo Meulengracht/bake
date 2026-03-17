@@ -122,6 +122,8 @@ struct protecc_profile {
     protecc_rule_dfa_runtime_t* net_ip_dfa;         /**< Compiled DFA for IP-style rules */
     protecc_rule_dfa_runtime_t* net_unix_dfa;       /**< Compiled DFA for UNIX socket rules */
     protecc_rule_dfa_runtime_t* mount_dfa;          /**< Compiled DFA for mount what+where pairs */
+    protecc_rule_dfa_runtime_t* mount_fstype_dfa;   /**< Compiled DFA for mount fstype patterns */
+    protecc_rule_dfa_runtime_t* mount_options_dfa;  /**< Compiled DFA for mount options patterns */
     protecc_mount_rule_t*       mount_rules;        /**< Compiled mount rules */
     size_t                      mount_rule_count;
     protecc_stats_t             stats;              /**< Statistics */
@@ -201,7 +203,6 @@ typedef struct {
 extern protecc_error_t __charclass_collect(
     const char*             pattern,
     uint32_t                pattern_offset,
-    bool                    case_insensitive,
     protecc_charclass_table_t* table);
 
 extern void __charclass_table_free(protecc_charclass_table_t* table);
@@ -283,7 +284,6 @@ extern bool __matcher_dfa(
  */
 extern bool __match_optional_pattern(
     const char* pattern,
-    const char* value,
-    bool        caseInsensitive);
+    const char* value);
 
 #endif /* PROTECC_INTERNAL_H */

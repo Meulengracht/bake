@@ -60,12 +60,9 @@ void protecc_compile_config_default(protecc_compile_config_t* config)
 }
 
 static bool __net_rule_matches(
-    const protecc_profile_t*     profile,
     const protecc_net_rule_t*    rule,
     const protecc_net_request_t* request)
 {
-    bool caseInsensitive;
-
     if (rule == NULL ) {
         return false;
     }
@@ -82,13 +79,11 @@ static bool __net_rule_matches(
         return false;
     }
 
-    caseInsensitive = (profile->flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
-
-    if (!__match_optional_pattern(rule->ip_pattern, request->ip, caseInsensitive)) {
+    if (!__match_optional_pattern(rule->ip_pattern, request->ip)) {
         return false;
     }
 
-    if (!__match_optional_pattern(rule->unix_path_pattern, request->unix_path, caseInsensitive)) {
+    if (!__match_optional_pattern(rule->unix_path_pattern, request->unix_path)) {
         return false;
     }
 
@@ -158,7 +153,7 @@ static bool __net_match_with_dfa(
 
         rule = &profile->net_rules[rule_index];
 
-        if (__net_rule_matches(profile, rule, request)) {
+        if (__net_rule_matches(rule, request)) {
             if (actionOut) {
                 *actionOut = rule->action;
             }
@@ -174,23 +169,35 @@ static bool __mount_match_with_dfa(
     const protecc_mount_request_t* request,
     protecc_action_t*              actionOut)
 {
-    protecc_rule_dfa_runtime_t* dfa;
-    const char*                  source;
-    const char*                  target;
-    size_t                       source_len;
-    size_t                       target_len;
-    size_t                       combined_len;
-    char                         combined[PROTECC_MAX_GLOB_STEPS + 1u];
-    uint32_t                     state;
-    bool                         caseInsensitive;
+    protecc_rule_dfa_runtime_t* source_target_dfa;
+    protecc_rule_dfa_runtime_t* fstype_dfa;
+    protecc_rule_dfa_runtime_t* options_dfa;
+    const char*                 source;
+    const char*                 target;
+    const char*                 fstype;
+    const char*                 options;
+    size_t                      source_len;
+    size_t                      target_len;
+    size_t                      combined_len;
+    char                        combined[PROTECC_MAX_GLOB_STEPS + 1u];
+    uint32_t                    source_target_state;
+    uint32_t                    fstype_state = 0;
+    uint32_t                    options_state = 0;
+    bool                        have_fstype_state = false;
+    bool                        have_options_state = false;
 
-    dfa = profile->mount_dfa;
-    if (dfa == NULL || !dfa->present) {
+    source_target_dfa = profile->mount_dfa;
+    fstype_dfa = profile->mount_fstype_dfa;
+    options_dfa = profile->mount_options_dfa;
+
+    if (source_target_dfa == NULL || !source_target_dfa->present) {
         return false;
     }
 
     source = request->source ? request->source : "";
     target = request->target ? request->target : "";
+    fstype = request->fstype ? request->fstype : "";
+    options = request->options ? request->options : "";
     source_len = strlen(source);
     target_len = strlen(target);
 
@@ -204,38 +211,98 @@ static bool __mount_match_with_dfa(
     memcpy(combined + source_len + 1u, target, target_len);
     combined[combined_len] = '\0';
 
-    state = dfa->start_state;
+    source_target_state = source_target_dfa->start_state;
     for (size_t i = 0; i < combined_len; i++) {
         uint8_t  c   = (uint8_t)combined[i];
-        uint32_t cls = dfa->classmap[c];
+        uint32_t cls = source_target_dfa->classmap[c];
         uint64_t index;
 
-        if (cls >= dfa->num_classes) {
+        if (cls >= source_target_dfa->num_classes) {
             return false;
         }
 
-        index = ((uint64_t)state * (uint64_t)dfa->num_classes) + (uint64_t)cls;
-        state = dfa->transitions[index];
-        if (state >= dfa->num_states) {
+        index = ((uint64_t)source_target_state * (uint64_t)source_target_dfa->num_classes) + (uint64_t)cls;
+        source_target_state = source_target_dfa->transitions[index];
+        if (source_target_state >= source_target_dfa->num_states) {
             return false;
         }
     }
 
-    if ((dfa->accept[state >> 5] & (1u << (state & 31u))) == 0u) {
+    if ((source_target_dfa->accept[source_target_state >> 5] & (1u << (source_target_state & 31u))) == 0u) {
         return false;
     }
 
-    if ((uint64_t)dfa->candidate_index[state] + (uint64_t)dfa->candidate_count[state] > dfa->candidates_total) {
+    if ((uint64_t)source_target_dfa->candidate_index[source_target_state] + (uint64_t)source_target_dfa->candidate_count[source_target_state] > source_target_dfa->candidates_total) {
         return false;
     }
 
-    caseInsensitive = (profile->flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
+    if (fstype_dfa && fstype_dfa->present) {
+        size_t len = strlen(fstype);
 
-    for (uint32_t i = 0; i < dfa->candidate_count[state] && i < PROTECC_MAX_RULES; i++) {
-        uint32_t               rule_index = dfa->candidates[dfa->candidate_index[state] + i];
+        if (len > PROTECC_MAX_GLOB_STEPS) {
+            return false;
+        }
+
+        fstype_state = fstype_dfa->start_state;
+        for (size_t i = 0; i < len; i++) {
+            uint8_t  c   = (uint8_t)fstype[i];
+            uint32_t cls = fstype_dfa->classmap[c];
+            uint64_t index;
+
+            if (cls >= fstype_dfa->num_classes) {
+                return false;
+            }
+
+            index = ((uint64_t)fstype_state * (uint64_t)fstype_dfa->num_classes) + (uint64_t)cls;
+            fstype_state = fstype_dfa->transitions[index];
+            if (fstype_state >= fstype_dfa->num_states) {
+                return false;
+            }
+        }
+
+        if ((fstype_dfa->accept[fstype_state >> 5] & (1u << (fstype_state & 31u))) != 0u
+            && (uint64_t)fstype_dfa->candidate_index[fstype_state] + (uint64_t)fstype_dfa->candidate_count[fstype_state] <= fstype_dfa->candidates_total) {
+            have_fstype_state = true;
+        }
+    }
+
+    if (options_dfa && options_dfa->present) {
+        size_t len = strlen(options);
+
+        if (len > PROTECC_MAX_GLOB_STEPS) {
+            return false;
+        }
+
+        options_state = options_dfa->start_state;
+        for (size_t i = 0; i < len; i++) {
+            uint8_t  c   = (uint8_t)options[i];
+            uint32_t cls = options_dfa->classmap[c];
+            uint64_t index;
+
+            if (cls >= options_dfa->num_classes) {
+                return false;
+            }
+
+            index = ((uint64_t)options_state * (uint64_t)options_dfa->num_classes) + (uint64_t)cls;
+            options_state = options_dfa->transitions[index];
+            if (options_state >= options_dfa->num_states) {
+                return false;
+            }
+        }
+
+        if ((options_dfa->accept[options_state >> 5] & (1u << (options_state & 31u))) != 0u
+            && (uint64_t)options_dfa->candidate_index[options_state] + (uint64_t)options_dfa->candidate_count[options_state] <= options_dfa->candidates_total) {
+            have_options_state = true;
+        }
+    }
+
+    for (uint32_t i = 0; i < source_target_dfa->candidate_count[source_target_state] && i < PROTECC_MAX_RULES; i++) {
+        uint32_t               rule_index = source_target_dfa->candidates[source_target_dfa->candidate_index[source_target_state] + i];
         const protecc_mount_rule_t* rule;
+        bool                   fstype_ok = true;
+        bool                   options_ok = true;
 
-        if (rule_index >= dfa->rule_count) {
+        if (rule_index >= source_target_dfa->rule_count) {
             return false;
         }
 
@@ -245,11 +312,41 @@ static bool __mount_match_with_dfa(
             continue;
         }
 
-        if (!__match_optional_pattern(rule->fstype_pattern, request->fstype, caseInsensitive)) {
+        if (rule->fstype_pattern != NULL) {
+            if (!have_fstype_state) {
+                continue;
+            }
+
+            fstype_ok = false;
+            for (uint32_t j = 0; j < fstype_dfa->candidate_count[fstype_state] && j < PROTECC_MAX_RULES; j++) {
+                uint32_t candidate = fstype_dfa->candidates[fstype_dfa->candidate_index[fstype_state] + j];
+                if (candidate == rule_index) {
+                    fstype_ok = true;
+                    break;
+                }
+            }
+        }
+
+        if (!fstype_ok) {
             continue;
         }
 
-        if (!__match_optional_pattern(rule->options_pattern, request->options, caseInsensitive)) {
+        if (rule->options_pattern != NULL) {
+            if (!have_options_state) {
+                continue;
+            }
+
+            options_ok = false;
+            for (uint32_t j = 0; j < options_dfa->candidate_count[options_state] && j < PROTECC_MAX_RULES; j++) {
+                uint32_t candidate = options_dfa->candidates[options_dfa->candidate_index[options_state] + j];
+                if (candidate == rule_index) {
+                    options_ok = true;
+                    break;
+                }
+            }
+        }
+
+        if (!options_ok) {
             continue;
         }
 
@@ -263,31 +360,26 @@ static bool __mount_match_with_dfa(
 }
 
 static bool __mount_rule_matches(
-    const protecc_profile_t*       compiled,
     const protecc_mount_rule_t*    rule,
     const protecc_mount_request_t* request)
 {
-    bool caseInsensitive;
-
     if (rule == NULL) {
         return false;
     }
 
-    caseInsensitive = (compiled->flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
-
-    if (!__match_optional_pattern(rule->source_pattern, request->source, caseInsensitive)) {
+    if (!__match_optional_pattern(rule->source_pattern, request->source)) {
         return false;
     }
 
-    if (!__match_optional_pattern(rule->target_pattern, request->target, caseInsensitive)) {
+    if (!__match_optional_pattern(rule->target_pattern, request->target)) {
         return false;
     }
 
-    if (!__match_optional_pattern(rule->fstype_pattern, request->fstype, caseInsensitive)) {
+    if (!__match_optional_pattern(rule->fstype_pattern, request->fstype)) {
         return false;
     }
 
-    if (!__match_optional_pattern(rule->options_pattern, request->options, caseInsensitive)) {
+    if (!__match_optional_pattern(rule->options_pattern, request->options)) {
         return false;
     }
 
@@ -328,7 +420,7 @@ bool protecc_match_net(
 
     for (size_t i = 0; i < profile->net_rule_count; i++) {
         const protecc_net_rule_t* rule = &profile->net_rules[i];
-        if (__net_rule_matches(profile, rule, request)) {
+        if (__net_rule_matches(rule, request)) {
             if (actionOut) {
                 *actionOut = rule->action;
             }
@@ -354,7 +446,7 @@ bool protecc_match_mount(
 
     for (size_t i = 0; i < profile->mount_rule_count; i++) {
         const protecc_mount_rule_t* rule = &profile->mount_rules[i];
-        if (__mount_rule_matches(profile, rule, request)) {
+        if (__mount_rule_matches(rule, request)) {
             if (actionOut) {
                 *actionOut = rule->action;
             }
