@@ -76,24 +76,14 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       env:
         CONTAINERV_SECCOMP_LOG: 1
-      run: bash .github/scripts/system-tests.sh
+        BUILD_DIR: ${{github.workspace}}/build
+      run: bash tests/system/run.sh
 
     - name: System tests (Windows)
       if: matrix.os == 'windows-latest'
-      run: powershell -ExecutionPolicy Bypass -File .github/scripts/windows-tests.ps1
-
-    # ── Phase 1 system-test suite ─────────────────────────────────────────────
-    # Runs the structured tests/system/ harness.
-    # • smoke-cvd and hello-build are hard gates (exit 1 = CI failure).
-    # • hello-runtime exits with code 2 when aspirational steps are not yet
-    #   implemented; run.sh maps code 2 to a warning so CI does not fail while
-    #   the local-file install path in served is under development.
-    - name: Phase 1 system tests (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
       env:
-        CONTAINERV_SECCOMP_LOG: 1
         BUILD_DIR: ${{github.workspace}}/build
-      run: bash tests/system/run.sh
+      run: powershell -ExecutionPolicy Bypass -File tests/system/run.ps1
 
     - name: Upload system-test logs on failure
       if: matrix.os == 'ubuntu-latest' && failure()

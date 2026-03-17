@@ -40,7 +40,7 @@ start_daemon_as_root "cvd" "$CVD_LOG" "$CMD_CVD" -vv
 echo "      Waiting for cvd to become alive..."
 if ! wait_for_cvd 40 0.25; then
     echo "FAIL: cvd did not become alive"
-    dump_log "$CVD_LOG" 200
+    dump_log "$CVD_LOG" 1000
     exit 1
 fi
 
@@ -52,7 +52,7 @@ sleep 2
 
 if ! daemon_is_alive "cvd"; then
     echo "FAIL: cvd exited unexpectedly after startup"
-    dump_log "$CVD_LOG" 200
+    dump_log "$CVD_LOG" 1000
     exit 1
 fi
 

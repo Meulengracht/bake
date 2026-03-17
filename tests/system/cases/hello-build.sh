@@ -77,7 +77,7 @@ build_rc=0
 
 if [[ $build_rc -ne 0 ]]; then
     echo "FAIL: bake build exited with code $build_rc"
-    dump_log "$BUILD_LOG" 300
+    dump_log "$BUILD_LOG" 1000
     exit 1
 fi
 

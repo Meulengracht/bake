@@ -102,7 +102,7 @@ build_rc=0
 
 if [[ $build_rc -ne 0 ]]; then
     echo "FAIL: bake build exited with code $build_rc"
-    dump_log "$BUILD_LOG" 300
+    dump_log "$BUILD_LOG" 1000
     exit 1
 fi
 
@@ -127,7 +127,7 @@ start_daemon_as_root "served" "$SERVED_LOG" "$CMD_SERVED" --root "$SERVED_ROOT"
 echo "       Waiting for served socket (/tmp/served)..."
 if ! wait_for_served 80 0.25; then
     echo "FAIL: served did not become ready"
-    dump_log "$SERVED_LOG" 300
+    dump_log "$SERVED_LOG" 1000
     exit 1
 fi
 echo "       served is ready."
@@ -142,7 +142,7 @@ echo "$list_output" >"$LIST_LOG"
 
 if [[ $list_rc -ne 0 ]]; then
     echo "FAIL: 'serve list' exited with code $list_rc (served not responsive)"
-    dump_log "$SERVED_LOG" 200
+    dump_log "$SERVED_LOG" 1000
     exit 1
 fi
 echo "       served responded to 'serve list' — infrastructure is functional."
