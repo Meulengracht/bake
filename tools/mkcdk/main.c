@@ -58,6 +58,8 @@ static void __print_help(void)
     printf("      The size of the generated image, default is 4GB\n");
     printf("  -z, --sector-size\n");
     printf("      The sector size to use for the generated image, default is 512 bytes\n");
+    printf("  --root <path>\n");
+    printf("      Set a custom root path for all state and data files\n");
     printf("  -v..\n");
     printf("      Controls the verbosity of mkcdk\n");
     printf("      --version\n");
@@ -827,6 +829,9 @@ int main(int argc, char** argv, char** envp)
                 continue;
             } else if (!__parse_quantity_switch(argv, argc, &i, "-z", 2, "--sector-size", 13, 512, &options.sector_size)) {
                 continue;
+            } else if (!strcmp(argv[i], "--root") && i + 1 < argc) {
+                chef_dirs_set_root(argv[i + 1]);
+                i++;
             } else if (imagePath == NULL) {
                 imagePath = argv[i];
             }

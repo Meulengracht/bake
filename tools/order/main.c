@@ -57,6 +57,8 @@ static void __print_help(void)
     printf("  publish     publish a new pack to chef\n");
     printf("\n");
     printf("Options:\n");
+    printf("  --root <path>\n");
+    printf("      Set a custom root path for all state and data files\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
     printf("  -v, --version\n");
@@ -100,6 +102,14 @@ int main(int argc, char** argv, char** envp)
     if (!command) {
         __print_help();
         return 0;
+    }
+
+    // scan all arguments for global options (e.g. --root) before initializing
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--root") && i + 1 < argc) {
+            chef_dirs_set_root(argv[i + 1]);
+            i++;
+        }
     }
 
     vlog_initialize(VLOG_LEVEL_DEBUG);

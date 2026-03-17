@@ -41,6 +41,10 @@ static struct {
     const char* config;
 } g_dirs = { 0, 0, NULL, NULL, NULL, NULL, NULL };
 
+// Optional root override set via chef_dirs_set_root().
+// When non-NULL, all paths are computed relative to this prefix.
+static char* g_root_override = NULL;
+
 static int __directory_exists(
     const char* path)
 {
@@ -194,6 +198,32 @@ static char* __strdup_fail(const char* str) {
     return copy;
 }
 
+void chef_dirs_set_root(const char* root)
+{
+    free(g_root_override);
+    g_root_override = (root != NULL && root[0] != '\0') ? __strdup_fail(root) : NULL;
+}
+
+// Returns a newly-allocated path formed by prepending g_root_override to an
+// absolute path.  The leading '/' of |path| is stripped so that strpathcombine
+// does not treat it as an absolute path on its own.
+// When no root override is set the string is duplicated unchanged.
+static char* __rooted(const char* path)
+{
+    if (g_root_override == NULL) {
+        return __strdup_fail(path);
+    }
+    // Skip the leading '/' so that strpathcombine produces <root>/rel
+    const char* rel = path;
+    while (*rel == '/') {
+        rel++;
+    }
+    if (*rel == '\0') {
+        return __strdup_fail(g_root_override);
+    }
+    return strpathcombine(g_root_override, rel);
+}
+
 static const char* __root_common_directory(void)
 {
 #ifdef CHEF_AS_SNAP
@@ -256,12 +286,25 @@ static int __initialize_daemon(void)
         return -1;
     }
 
-    g_dirs.root    = __strdup_fail(__root_common_directory());
-    g_dirs.config  = __strdup_fail("/etc/chef");
-    g_dirs.store  = strpathcombine(g_dirs.root, "store");
-    g_dirs.cache   = __cache_directory();
-    g_dirs.kitchen = __spaces_directory();
-    if (g_dirs.store == NULL || g_dirs.store == NULL) {
+    if (g_root_override != NULL) {
+        // Root override takes precedence: all paths are rooted under the given
+        // prefix. SNAP_COMMON is intentionally ignored when a root is set, as
+        // --root is typically used for testing and multi-instance scenarios that
+        // require full filesystem isolation.
+        g_dirs.root   = strpathcombine(g_root_override, "var/chef");
+        g_dirs.config = strpathcombine(g_root_override, "etc/chef");
+    } else {
+        g_dirs.root   = __strdup_fail(__root_common_directory());
+        g_dirs.config = __strdup_fail("/etc/chef");
+    }
+    if (g_dirs.root == NULL || g_dirs.config == NULL) {
+        VLOG_FATAL("dirs", "failed to allocate memory for paths\n");
+    }
+
+    g_dirs.store   = strpathcombine(g_dirs.root, "store");
+    g_dirs.cache   = strpathcombine(g_dirs.root, "cache");
+    g_dirs.kitchen = strpathcombine(g_dirs.root, "spaces");
+    if (g_dirs.store == NULL || g_dirs.cache == NULL || g_dirs.kitchen == NULL) {
         VLOG_FATAL("dirs", "failed to allocate memory for paths\n");
     }
     return __ensure_chef_global_dirs();
@@ -276,9 +319,12 @@ static int __initialize_bakectl(void)
         return -1;
     }
 
-    g_dirs.root   = __strdup_fail("/chef");
-    g_dirs.config = __strdup_fail("/chef/config");
-    g_dirs.store = __strdup_fail("/chef/store");
+    g_dirs.root   = __rooted("/chef");
+    g_dirs.config = strpathcombine(g_dirs.root, "config");
+    g_dirs.store  = strpathcombine(g_dirs.root, "store");
+    if (g_dirs.config == NULL || g_dirs.store == NULL) {
+        VLOG_FATAL("dirs", "failed to allocate memory for paths\n");
+    }
     return __ensure_chef_global_dirs();
 }
 
@@ -289,7 +335,12 @@ static int __initialize_bake(void)
         return -1;
     }
 
-    g_dirs.root = __common_user_directory();
+    if (g_root_override != NULL) {
+        // Treat the root override as a stand-in for the home directory.
+        g_dirs.root = strpathcombine(g_root_override, ".chef");
+    } else {
+        g_dirs.root = __common_user_directory();
+    }
     if (g_dirs.root == NULL) {
         VLOG_ERROR("dirs", "failed to resolve user root directory\n");
         return -1;

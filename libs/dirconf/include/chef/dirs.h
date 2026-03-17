@@ -70,6 +70,19 @@ enum chef_dir_scope {
 };
 
 /**
+ * @brief Override the filesystem root used for all directory paths.
+ *
+ * When set, all Chef directory paths are computed relative to this root
+ * instead of the platform defaults. This enables isolated testing and
+ * running multiple instances on the same machine.
+ *
+ * Must be called before chef_dirs_initialize().
+ *
+ * @param root Root path prefix, or NULL to clear any previous override.
+ */
+extern void chef_dirs_set_root(const char* root);
+
+/**
  * @brief Initialize directory paths for the given scope.
  *
  * Implementations typically create the relevant directories as part of

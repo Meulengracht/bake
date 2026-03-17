@@ -77,6 +77,8 @@ static void __print_help(void)
     printf("      a single architecture can be set at one time. When doing remote builds\n");
     printf("      multiple architectures can be specified like --archs=amd64,arm64 to build\n");
     printf("      multiple times in parallel. If not set, the host architecture is used.\n");
+    printf("  --root <path>\n");
+    printf("      Set a custom root path for all state and data files\n");
     printf("  --version\n");
     printf("      Print the version of bake\n");
     printf("  -h, --help\n");
@@ -259,6 +261,9 @@ int main(int argc, char** argv, char** envp)
                     continue;
                 } else if (!__parse_stringv_switch(argv, argc, &i, "-a", 2, "--archs", 7, NULL, &options.architectures)) {
                     continue;
+                } else if (!strcmp(argv[i], "--root") && i + 1 < argc) {
+                    chef_dirs_set_root(argv[i + 1]);
+                    i++;
                 } else if (!strncmp(argv[i], "-v", 2)) {
                     int li = 1;
                     while (argv[i][li++] == 'v') {
