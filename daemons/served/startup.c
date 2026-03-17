@@ -35,6 +35,7 @@
 #include <chef/client.h>
 #include <chef/api/package.h>
 
+static const char* g_profileDropInDir = "/etc/profile.d";
 static const char* g_profileScriptPath = "/etc/profile.d/chef.sh";
 static const char* g_profileScript = 
 "#!/bin/sh\n"
@@ -43,44 +44,55 @@ static const char* g_profileScript =
 
 static int __write_profile_d_script(void)
 {
-    char*  profileScriptPath;
+    char*  profileDropInDir = NULL;
+    char*  profileScriptPath = NULL;
     int    status;
-    FILE*  file;
+    FILE*  file = NULL;
     size_t written;
     VLOG_TRACE("startup", "__write_profile_d_script()\n");
 
+    profileDropInDir = served_paths_path(g_profileDropInDir);
     profileScriptPath = served_paths_path(g_profileScriptPath);
-    if (profileScriptPath == NULL) {
+    if (profileDropInDir == NULL || profileScriptPath == NULL) {
         VLOG_ERROR("startup", "failed to get full path for profile script\n");
-        return -1;
+        goto cleanup;
+    }
+
+    // create the path
+    status = platform_mkdir(profileDropInDir);
+    if (status) {
+        VLOG_ERROR("startup", "failed to create path %s\n", g_profileDropInDir);
+        goto cleanup;
     }
 
     // if file exists, then we do not touch it
     file = fopen(profileScriptPath, "r");
     if (file != NULL) {
-        free(profileScriptPath);
-        fclose(file);
-        return 0;
+        goto cleanup;
     }
     
     file = fopen(profileScriptPath, "w");
     if (file == NULL) {
         VLOG_ERROR("startup", "failed to write profile script: %s\n", profileScriptPath);
-        free(profileScriptPath);
-        return -1;
+        status = -1;
+        goto cleanup;
     }
     
     written = fwrite(g_profileScript, strlen(g_profileScript), 1, file);
     if (written != 1) {
-        free(profileScriptPath);
-        fclose(file);
-        return -1;
+        status = -1;
+        goto cleanup;
     }
 
     // change permissions to executable
     status = platform_chmod(profileScriptPath, 0755);
+
+cleanup:
+    free(profileDropInDir);
     free(profileScriptPath);
-    fclose(file);
+    if (file != NULL) {
+        fclose(file);
+    }
     return status;
 }
 
