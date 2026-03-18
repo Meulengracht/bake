@@ -1,4 +1,4 @@
-# System Test Suite — Phases 1–3
+# System Test Suite
 
 This directory contains the system-test harness for `bake`.  The tests
 exercise the real binaries as subprocesses, assert on filesystem artifacts and
@@ -36,8 +36,8 @@ own build dependencies:
 | `libfuse3` / FUSE kernel module | VaFS mounting inside `served` |
 | `libsqlite3` | `served` state database |
 | `libssl` / `libcrypto` | Package proof verification |
-| `python3` | Running the dummy store HTTP server (Phase 3) |
-| `curl` | Seeding the dummy store and negative-path checks (Phase 3) |
+| `python3` | Running the dummy store HTTP server |
+| `curl` | Seeding the dummy store and negative-path checks |
 
 ---
 
@@ -54,15 +54,15 @@ tests/
       daemon.sh        ← daemon start / stop / readiness checks
       assert.sh        ← lightweight assertion functions
       cleanup.sh       ← teardown, log capture, and temp-dir removal
-      dummy-store.py   ← Python HTTP server implementing the fake store (Phase 3)
-      store.sh         ← helpers for starting/seeding the dummy store (Phase 3)
+      dummy-store.py   ← Python HTTP server implementing the fake store
+      store.sh         ← helpers for starting/seeding the dummy store
     cases/
       smoke-cvd.sh                  ← smoke test: cvd starts and stays alive
       hello-build.sh                ← build test: hello-world produces a .pack artifact
       hello-runtime.sh              ← runtime test: build → install → run hello-world
-      dummy-store-roundtrip.sh      ← Phase 3: dummy store publish/download/find/info
-      order-fetch-from-store.sh     ← Phase 3: order find/info against dummy store
-      served-install-from-store.sh  ← Phase 3: served downloading from dummy store
+      dummy-store-roundtrip.sh      ← dummy store publish/download/find/info
+      order-fetch-from-store.sh     ← order find/info against dummy store
+      served-install-from-store.sh  ← served downloading from dummy store
 ```
 
 ---
@@ -136,7 +136,7 @@ steps not yet implemented.
 
 ---
 
-### `dummy-store-roundtrip.sh` (Phase 3)
+### `dummy-store-roundtrip.sh`
 
 Validates the dummy store itself at a basic workflow level.
 
@@ -151,7 +151,7 @@ Exit codes: `0` = pass, `1` = fail.
 
 ---
 
-### `order-fetch-from-store.sh` (Phase 3)
+### `order-fetch-from-store.sh`
 
 Validates that `tools/order` can interact with the dummy store through the
 real chefclient code paths.
@@ -167,7 +167,7 @@ Exit codes: `0` = pass, `1` = fail.
 
 ---
 
-### `served-install-from-store.sh` (Phase 3)
+### `served-install-from-store.sh`
 
 Validates that `daemons/served` can download a package from the dummy store.
 
@@ -445,11 +445,11 @@ Each test case creates a unique temp directory and writes separate log files:
 |---|---|
 | `cvd.log` | stdout+stderr from the `cvd` daemon |
 | `served.log` | stdout+stderr from the `served` daemon |
-| `dummy-store.log` | stdout+stderr from the dummy store (Phase 3) |
+| `dummy-store.log` | stdout+stderr from the dummy store |
 | `bake-build.log` | stdout+stderr from `bake build` |
 | `serve-install.log` | stdout+stderr from `serve install` |
 | `serve-list.log` | stdout+stderr from `serve list` |
-| `order.log` | stdout+stderr from `order` commands (Phase 3) |
+| `order.log` | stdout+stderr from `order` commands |
 | `run-output.log` | stdout+stderr from the installed application |
 
 On failure the teardown handler prints the relevant log files to stdout so
