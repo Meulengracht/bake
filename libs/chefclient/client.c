@@ -116,8 +116,10 @@ void chefclient_cleanup(void)
 
 const char* chefclient_api_base_url(void)
 {
-    //json_t* urlObject = json_object_get(g_chefclient.settings, "api-url");
-    //return json_string_value(urlObject);
+    const char* override = getenv("CHEF_STORE_URL");
+    if (override != NULL && override[0] != '\0') {
+        return override;
+    }
     return CHEF_CLIENT_API_URL;
 }
 

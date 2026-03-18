@@ -45,8 +45,54 @@ start_daemon_as_root() {
     echo "  started daemon '$name' (PID $pid), log: $log_file"
 }
 
-# Start a daemon in the background without root.
-# Usage:  start_daemon NAME LOG_FILE CMD [ARGS...]
+# Start a daemon in the background as root (via sudo), with extra environment
+# variables injected into the privileged process.
+#
+# Usage:  start_daemon_as_root_with_env NAME LOG_FILE "VAR=val ..." CMD [ARGS...]
+#
+# The EXTRA_ENV argument is a space-separated list of VAR=value assignments.
+# Variable values must not contain spaces or shell special characters.
+# Only test-controlled values (such as URLs and paths) should be passed here.
+start_daemon_as_root_with_env() {
+    local name="$1"
+    local log_file="$2"
+    local extra_env="$3"
+    shift 3
+    local cmd=("$@")
+
+    local pid
+    if [[ -z "$SUDO" ]]; then
+        # Already running as root — evaluate each assignment in a subshell
+        (
+            IFS=' '
+            for pair in $extra_env; do
+                export "$pair"
+            done
+            "${cmd[@]}" >"$log_file" 2>&1
+        ) &
+        pid=$!
+    else
+        local cmd_str
+        cmd_str="$(printf '%q ' "${cmd[@]}")"
+        # Build one "export VAR=val" statement per pair.
+        # Values are test-controlled (URLs, paths) and must not contain spaces.
+        local env_exports=""
+        IFS=' '
+        for pair in $extra_env; do
+            env_exports="export ${pair}; "
+        done
+        pid="$($SUDO bash -c "${env_exports}${cmd_str} >\"${log_file}\" 2>&1 & echo \$!")" || {
+            echo "ERROR: failed to start daemon '$name' via sudo" >&2
+            return 1
+        }
+    fi
+
+    _DAEMON_PIDS["$name"]="$pid"
+    _DAEMON_VIA_SUDO["$name"]="${SUDO:+1}"
+    echo "  started daemon '$name' (PID $pid, env: $extra_env), log: $log_file"
+}
+
+
 start_daemon() {
     local name="$1"
     local log_file="$2"
