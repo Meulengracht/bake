@@ -37,6 +37,8 @@ static void __print_help(void)
     printf("Options:\n");
     printf("  -v\n");
     printf("      Provide this for improved logging output\n");
+    printf("  --root <path>\n");
+    printf("      Set a custom root path for all state and data files\n");
     printf("  --version\n");
     printf("      Print the version of waiterd\n");
     printf("  -h, --help\n");
@@ -60,6 +62,9 @@ int main(int argc, char** argv)
             } else if (!strcmp(argv[i], "--version")) {
                 printf("waiterd: version " PROJECT_VER "\n");
                 return 0;
+            } else if (!strcmp(argv[i], "--root") && i + 1 < argc) {
+                chef_dirs_set_root(argv[i + 1]);
+                i++;
             } else if (!strncmp(argv[i], "-v", 2)) {
                 int li = 1;
                 while (argv[i][li++] == 'v') {

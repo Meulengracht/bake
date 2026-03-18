@@ -113,6 +113,7 @@ int main(int argc, char** argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--root") == 0 && i + 1 < argc) {
             utils_path_set_root(argv[i + 1]);
+            chef_dirs_set_root(argv[i + 1]);
             i++; // skip next argument as it's the root path
         }
     }

@@ -38,6 +38,10 @@ static struct {
     const char* config;
 } g_dirs = { 0, NULL, NULL, NULL, NULL, NULL };
 
+// Optional root override set via chef_dirs_set_root().
+// When non-NULL, all paths are computed relative to this prefix.
+static char* g_root_override = NULL;
+
 static char* __strdup_fail(const char* str)
 {
     char* copy = platform_strdup(str);
@@ -45,6 +49,12 @@ static char* __strdup_fail(const char* str)
         VLOG_FATAL("dirs", "failed to allocate memory for %s\n", str);
     }
     return copy;
+}
+
+void chef_dirs_set_root(const char* root)
+{
+    free(g_root_override);
+    g_root_override = (root != NULL && root[0] != '\0') ? __strdup_fail(root) : NULL;
 }
 
 static int __ensure_dirs(const char* const* paths)
@@ -99,7 +109,11 @@ static char* __global_root_directory(void)
 
 static int __initialize_daemon(void)
 {
-    g_dirs.root = __global_root_directory();
+    if (g_root_override != NULL) {
+        g_dirs.root = strpathcombine(g_root_override, "chef");
+    } else {
+        g_dirs.root = __global_root_directory();
+    }
     if (g_dirs.root == NULL) {
         VLOG_ERROR("dirs", "failed to resolve global root directory\n");
         return -1;
@@ -123,11 +137,16 @@ static int __initialize_bakectl(void)
 {
     // bakectl runs inside the container. Keep the same conceptual layout as Linux.
     // This path is also plausible for Windows-based containers.
-    g_dirs.root   = __strdup_fail("C:\\chef");
-    g_dirs.config = __strdup_fail("C:\\chef\\config");
-    g_dirs.store  = __strdup_fail("C:\\chef\\store");
-    g_dirs.cache  = __strdup_fail("C:\\chef\\cache");
-    g_dirs.kitchen = __strdup_fail("C:\\chef\\spaces");
+    const char* base = (g_root_override != NULL) ? g_root_override : "C:\\";
+    g_dirs.root    = strpathcombine(base, "chef");
+    g_dirs.config  = strpathcombine(base, "chef\\config");
+    g_dirs.store   = strpathcombine(base, "chef\\store");
+    g_dirs.cache   = strpathcombine(base, "chef\\cache");
+    g_dirs.kitchen = strpathcombine(base, "chef\\spaces");
+    if (g_dirs.root == NULL || g_dirs.config == NULL || g_dirs.store == NULL
+            || g_dirs.cache == NULL || g_dirs.kitchen == NULL) {
+        VLOG_FATAL("dirs", "failed to allocate memory for paths\n");
+    }
 
     {
         const char* paths[] = { g_dirs.root, g_dirs.config, g_dirs.store, g_dirs.cache, g_dirs.kitchen, NULL };
@@ -137,20 +156,26 @@ static int __initialize_bakectl(void)
 
 static int __initialize_bake(void)
 {
-    g_dirs.root = __user_root_directory();
-    if (g_dirs.root == NULL) {
-        VLOG_ERROR("dirs", "failed to resolve user root directory\n");
-        return -1;
+    if (g_root_override != NULL) {
+        // Treat the root override as a stand-in for the user home directory.
+        g_dirs.root   = strpathcombine(g_root_override, "chef");
+        g_dirs.config = strpathcombine(g_root_override, "chef");
+    } else {
+        g_dirs.root = __user_root_directory();
+        if (g_dirs.root == NULL) {
+            VLOG_ERROR("dirs", "failed to resolve user root directory\n");
+            return -1;
+        }
+
+        // Windows convention: config in RoamingAppData, data/cache in LocalAppData.
+        g_dirs.config = __user_config_directory();
+        if (g_dirs.config == NULL) {
+            VLOG_ERROR("dirs", "failed to resolve user config directory\n");
+            return -1;
+        }
     }
 
-    // Windows convention: config in RoamingAppData, data/cache in LocalAppData.
-    g_dirs.config = __user_config_directory();
-    if (g_dirs.config == NULL) {
-        VLOG_ERROR("dirs", "failed to resolve user config directory\n");
-        return -1;
-    }
-
-    // store/cache/spaces remain under the LocalAppData root.
+    // store/cache/spaces remain under the root.
     g_dirs.store   = strpathcombine(g_dirs.root, "store");
     g_dirs.cache   = strpathcombine(g_dirs.root, "cache");
     g_dirs.kitchen = strpathcombine(g_dirs.root, "spaces");
