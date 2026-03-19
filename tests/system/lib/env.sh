@@ -30,6 +30,11 @@ CMD_BAKE="$BUILD_DIR/bin/bake"
 CMD_CVD="$BUILD_DIR/daemons/cvd/cvd"
 CMD_SERVED="$BUILD_DIR/daemons/served/served"
 CMD_SERVE="$BUILD_DIR/bin/serve"
+CMD_ORDER="$BUILD_DIR/bin/order"
+
+# Timeout for long-running build steps (e.g. bake build).
+# Can be overridden by the caller before sourcing this file.
+BUILD_TIMEOUT_MINS="${BUILD_TIMEOUT_MINS:-20}"
 
 # Verify required binaries exist and are executable
 _check_required_binary() {
