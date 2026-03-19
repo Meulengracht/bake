@@ -77,6 +77,21 @@ struct chef_package_application_config {
     const char* network_dns;
 };
 
+enum chef_package_proof_origin {
+    CHEF_PACKAGE_PROOF_ORIGIN_NONE = 0,
+    CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER = 1,
+    CHEF_PACKAGE_PROOF_ORIGIN_STORE = 2
+};
+
+struct chef_package_proof {
+    enum chef_package_proof_origin origin;
+    const char*                    identity;
+    const char*                    hash_algorithm;
+    const char*                    hash;
+    const char*                    public_key;
+    const char*                    signature;
+};
+
 struct chef_package {
     const char* platform;
     const char* arch;

@@ -91,6 +91,16 @@ extern void chef_commands_free(struct chef_command* commands, int count);
 extern void chef_package_application_config_free(struct chef_package_application_config* appConfig);
 
 /**
+ * @brief Cleans up a package proof and all resources owned by it.
+ *
+ * Releases the proof strings and the proof object itself. Passing NULL is
+ * allowed and has no effect.
+ *
+ * @param[In] proof A pointer to the proof that will be freed.
+ */
+extern void chef_package_proof_free(struct chef_package_proof* proof);
+
+/**
  * @brief Parses a string containing a chef version.
  */
 extern int chef_version_from_string(const char* string, struct chef_version* version);

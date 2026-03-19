@@ -567,7 +567,6 @@ static int __write_version_metadata(struct VaFs* vafs, const char* version)
     if (tagPointer != NULL) {
         dataPointer = (char*)packageVersion + sizeof(struct chef_vafs_feature_package_version);
         memcpy(dataPointer, tagPointer, packageVersion->tag_length);
-        dataPointer += packageVersion->tag_length;
     }
 
     // write the package header
@@ -1067,6 +1066,7 @@ int bake_pack(struct __pack_options* options)
     status = __write_package_metadata(vafs, name, options);
     if (status != 0) {
         VLOG_ERROR("bake", "unable to write package metadata\n");
+        goto cleanup;
     }
 
 cleanup:

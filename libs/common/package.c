@@ -287,6 +287,20 @@ static void __free_revision(struct chef_revision* revision)
     __free_version(&revision->current_version);
 }
 
+void chef_package_proof_free(struct chef_package_proof* proof)
+{
+    if (proof == NULL) {
+        return;
+    }
+
+    free((void*)proof->identity);
+    free((void*)proof->hash_algorithm);
+    free((void*)proof->hash);
+    free((void*)proof->public_key);
+    free((void*)proof->signature);
+    free(proof);
+}
+
 void chef_package_free(struct chef_package* package)
 {
     if (package == NULL) {

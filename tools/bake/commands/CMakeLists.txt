@@ -10,6 +10,7 @@ add_library(bake-commands STATIC
     build.c
     clean.c
     pack.c
+    sign.c
 
     # stuff
     store.c
@@ -30,4 +31,4 @@ add_library(bake-commands STATIC
 
 add_dependencies(bake-commands service_client)
 target_include_directories(bake-commands PRIVATE ../include ${CMAKE_BINARY_DIR}/protocols)
-target_link_libraries(bake-commands libcvd libpackage store remote platform gracht)
+target_link_libraries(bake-commands libcvd libpackage store remote platform gracht OpenSSL::SSL)

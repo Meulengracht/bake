@@ -46,98 +46,46 @@ static void __print_help(void)
     printf("  -R, --revision\n");
     printf("      Install a specific revision of the package\n");
     printf("  -P, --proof\n");
-    printf("      If the package is a local file, then a proof can be provided in addition to this\n");
+    printf("      If the package is a local file, use this proof instead of the default <pack>.proof\n");
+    printf("  --allow-unsigned\n");
+    printf("      Allow installing a local package without proof. Intended for development only.\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
 }
 
-static int __ask_yes_no_question(const char* question)
+static char* __default_local_proof_path(const char* packagePath)
 {
-    char answer[3];
-    printf("%s [y/n] ", question);
-    if (fgets(answer, sizeof(answer), stdin) == NULL) {
-        return 0;
-    }
-    return answer[0] == 'y' || answer[0] == 'Y';
-}
+    char*  proofPath;
+    size_t length;
 
-static int __parse_package_identifier(const char* id, const char** publisherOut, const char** nameOut)
-{
-    char** names;
-    int    count = 0;
-
-    // split the publisher/package
-    names = strsplit(id, '/');
-    if (names == NULL) {
-        fprintf(stderr, "unknown package name or path: %s\n", id);
-        return -1;
-    }
-    
-    while (names[count] != NULL) {
-        count++;
-    }
-
-    if (count != 2) {
-        fprintf(stderr, "unknown package name or path: %s\n", id);
-        return -1;
-    }
-
-    *publisherOut = platform_strdup(names[0]);
-    *nameOut      = platform_strdup(names[1]);
-    strsplit_free(names);
-    return 0;
-}
-
-static char* __get_unsafe_infoname(struct chef_package* package, struct chef_version* version)
-{
-    char* name;
-
-    name = malloc(128);
-    if (name == NULL) {
+    length = strlen(packagePath);
+    proofPath = malloc(length + strlen(".proof") + 1);
+    if (proofPath == NULL) {
         return NULL;
     }
 
-    sprintf(name, "[devel] %s %i.%i.%i",
-        package->package, version->major,
-        version->minor, version->patch
-    );
-    return name;
+    sprintf(proofPath, "%s.proof", packagePath);
+    return proofPath;
 }
 
-static char* __get_safe_infoname(const char* publisher, struct chef_package* package, struct chef_version* version)
+static int __proof_file_exists(const char* proofPath)
 {
-    char* name;
-
-    name = malloc(128);
-    if (name == NULL) {
-        return NULL;
-    }
-
-    sprintf(name, "%s/%s (verified, revision %i)",
-        publisher, package->package, version->revision
-    );
-    return name;
+    struct platform_stat stats;
+    return platform_stat(proofPath, &stats) == 0;
 }
 
 static int __verify_package(const char* path, const char* proof)
 {
     struct chef_package* package;
-    struct chef_version* version;
     int                  status;
 
     if (proof == NULL) {
-        fprintf(stderr, "WARNING: no proof provided for package, cannot verify its integrity.\n");
-        fprintf(stderr, "It's recommended not to continue with the installation of this package,\n");
-        fprintf(stderr, "unless you know exactly what you are doing and what you are installing.\n");
-        status = __ask_yes_no_question("continue?");
-        if (!status) {
-            fprintf(stderr, "aborting\n");
-            return -1;
-        }
+        fprintf(stderr, "no proof was provided for the local package\n");
+        return -1;
     }
 
     // dont care about commands
-    status = chef_package_load(path, &package, &version, NULL, NULL);
+    status = chef_package_load(path, &package, NULL, NULL, NULL);
     if (status != 0) {
         fprintf(stderr, "failed to load package: %s\n", path);
         return -1;
@@ -145,7 +93,6 @@ static int __verify_package(const char* path, const char* proof)
 
     // free resources
     chef_package_free(package);
-    chef_version_free(version);
     return 0;
 }
 
@@ -158,6 +105,7 @@ int install_main(int argc, char** argv)
     uint64_t                           revision;
     const char*                        package   = NULL;
     char*                              fullpath  = NULL;
+    char*                              defaultProofPath = NULL;
 
     // set default channel
     installOptions.channel = "stable";
@@ -173,6 +121,9 @@ int install_main(int argc, char** argv)
                 continue;
             } else if (!__parse_quantity_switch(argv, argc, &i, "-R", 2, "--revision", 10, 0, &revision)) {
                 installOptions.revision = (int)revision;
+                continue;
+            } else if (!strcmp(argv[i], "--allow-unsigned")) {
+                installOptions.allow_unsigned = 1;
                 continue;
             } else if (argv[i][0] != '-') {
                 if (package == NULL) {
@@ -195,8 +146,22 @@ int install_main(int argc, char** argv)
     // is the package a path? otherwise try to download from
     // official repo
     if (platform_stat(package, &stats) == 0) {
+        if (installOptions.proof == NULL) {
+            defaultProofPath = __default_local_proof_path(package);
+            if (defaultProofPath != NULL && __proof_file_exists(defaultProofPath)) {
+                installOptions.proof = defaultProofPath;
+            }
+        }
+
+        if (installOptions.proof == NULL && !installOptions.allow_unsigned) {
+            fprintf(stderr, "Missing local proof. Provide --proof or use --allow-unsigned in development mode.\n");
+            free(defaultProofPath);
+            return -1;
+        }
+
         status = __verify_package(package, installOptions.proof);
         if (status != 0) {
+            free(defaultProofPath);
             return status;
         }
         
@@ -229,6 +194,7 @@ int install_main(int argc, char** argv)
 
 cleanup:
     gracht_client_shutdown(client);
+    free(defaultProofPath);
     free(fullpath);
     return status;
 }

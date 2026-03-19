@@ -76,6 +76,7 @@ struct served_install_options {
     string path;
     string proof;
     string channel;
+    int    allow_unsigned;
     int    revision;
 }
 
