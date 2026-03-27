@@ -4,6 +4,7 @@ add_subdirectory(states)
 add_subdirectory(utils)
 
 set (GENERATED_SRCS
+    ${CMAKE_BINARY_DIR}/protocols/chef_served_local_upload_service_server.c
     ${CMAKE_BINARY_DIR}/protocols/chef_served_service_server.c
 )
 set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)

@@ -72,12 +72,28 @@ struct served_package {
 }
 
 struct served_install_options {
+    // Package is the package identifier in the format of
+    // <publisher>/<package>
     string package;
-    string path;
-    string proof;
+    // Optionally, for packages from store, one can either
+    // request the package from a specific channel or revision.
     string channel;
-    int    allow_unsigned;
     int    revision;
+}
+
+// Local package uploads are staged into daemon-owned storage before they are
+// committed into the normal transaction pipeline. This keeps served from
+// opening arbitrary client filesystem paths.
+struct served_install_local_options {
+    int    allow_unsigned;
+    ulong  package_size;
+    ulong  proof_size;
+}
+
+struct served_install_local_session {
+    string import_id;
+    string package_resource_id;
+    string proof_resource_id;
 }
 
 struct served_update_options {
@@ -150,7 +166,7 @@ struct transaction_log {
     transaction_log_entry entry;
 }
 
-service served (42) {
+service served : message {
     func install(served_install_options options) : (uint transaction_id) = 1;
     func update(served_update_options options) : (uint transaction_id) = 2;
     func switch(served_switch_options options) : (uint transaction_id) = 3;
@@ -159,10 +175,24 @@ service served (42) {
     func listcount() : (uint count) = 6;
     func list() : (served_package[] packages) = 7;
     func logs(uint transaction_id) : (transaction_log_entry[] entries) = 8;
+
+    func install_local_begin(served_install_local_options options) : (served_install_local_session session) = 9;
+    func install_local_end(string import_id) : (uint transaction_id) = 10;
+    func install_local_cancel(string import_id) : () = 11;
     
-    event transaction_started : (transaction_started info) = 9;
-    event transaction_state_changed : (transaction_state_changed info) = 10;
-    event transaction_completed : (transaction_completed info) = 11;
-    event transaction_io_progress : (transaction_io_progress info) = 12;
-    event transaction_log : (transaction_log info) = 13;
+    event transaction_started : (transaction_started info) = 12;
+    event transaction_state_changed : (transaction_state_changed info) = 13;
+    event transaction_completed : (transaction_completed info) = 14;
+    event transaction_io_progress : (transaction_io_progress info) = 15;
+    event transaction_log : (transaction_log info) = 16;
+}
+
+// Upload package/proof bytes into a daemon-issued import resource.
+// Resource ids are returned by install_local_begin and are opaque to clients.
+// The package and proof use separate stream sessions so served can bind each
+// upload target explicitly instead of inferring roles from client paths.
+service served_local_upload : stream {
+    option direction = to_server;
+    option mode = bounded;
+    option chunk_size = 256K;
 }
