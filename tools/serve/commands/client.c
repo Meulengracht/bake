@@ -22,7 +22,11 @@
 #include <string.h>
 #include <errno.h>
 
+#define LOCAL_UPLOAD_STREAM_BUFFER_SIZE (256 * 1024)
+#define LOCAL_UPLOAD_STREAM_BUFFER_COUNT 4
+
 // client protocol
+#include "chef_served_local_upload_service_client.h"
 #include "chef_served_service_client.h"
 
 #if defined(__linux__)
@@ -77,6 +81,11 @@ int __chef_client_initialize(gracht_client_t** clientOut)
     init_socket_config(link);
 
     gracht_client_configuration_set_link(&clientConfiguration, (struct gracht_link*)link);
+    gracht_client_configuration_set_stream_buffer_size(
+        &clientConfiguration,
+        LOCAL_UPLOAD_STREAM_BUFFER_SIZE,
+        LOCAL_UPLOAD_STREAM_BUFFER_COUNT
+    );
 
     code = gracht_client_create(&clientConfiguration, &client);
     if (code) {
