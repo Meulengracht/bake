@@ -29,6 +29,15 @@
 #include "chef_served_local_upload_service_client.h"
 #include "chef_served_service_client.h"
 
+// Transaction watcher state — set by __chef_client_watch_transaction(),
+// updated by event callbacks, checked by __chef_client_await_transaction().
+static struct {
+    unsigned int                 id;
+    int                          active;
+    int                          completed;
+    enum chef_transaction_result result;
+} g_txn_watcher = { 0 };
+
 #if defined(__linux__)
 #include <sys/un.h>
 
@@ -110,25 +119,84 @@ int __chef_client_initialize(gracht_client_t** clientOut)
 
 void chef_served_event_transaction_started_invocation(gracht_client_t* client, const struct chef_transaction_started* info)
 {
-
+    if (!g_txn_watcher.active || info->id != g_txn_watcher.id) {
+        return;
+    }
+    printf("transaction %u started: %s\n", info->id, info->name ? info->name : "");
 }
 
 void chef_served_event_transaction_state_changed_invocation(gracht_client_t* client, const struct chef_transaction_state_changed* info)
 {
-
+    if (!g_txn_watcher.active || info->id != g_txn_watcher.id) {
+        return;
+    }
+    printf("  [%u/%u] %s\n", info->step, info->total_steps, info->state_name ? info->state_name : "?");
 }
 
 void chef_served_event_transaction_completed_invocation(gracht_client_t* client, const struct chef_transaction_completed* info)
 {
+    if (!g_txn_watcher.active || info->id != g_txn_watcher.id) {
+        return;
+    }
+    g_txn_watcher.result    = info->result;
+    g_txn_watcher.completed = 1;
 
+    if (info->result == CHEF_TRANSACTION_RESULT_SUCCESS) {
+        printf("transaction %u completed successfully\n", info->id);
+    } else {
+        fprintf(stderr, "transaction %u failed: %s\n", info->id, info->message ? info->message : "unknown error");
+    }
 }
 
 void chef_served_event_transaction_io_progress_invocation(gracht_client_t* client, const struct chef_transaction_io_progress* info)
 {
-    
+    if (!g_txn_watcher.active || info->id != g_txn_watcher.id) {
+        return;
+    }
+    printf("  progress: %u%%\r", info->percentage);
+    fflush(stdout);
 }
 
 void chef_served_event_transaction_log_invocation(gracht_client_t* client, const struct chef_transaction_log* info)
 {
-    
+    if (!g_txn_watcher.active || info->id != g_txn_watcher.id) {
+        return;
+    }
+    if (info->entry.message != NULL) {
+        printf("  log: %s\n", info->entry.message);
+    }
+}
+
+int __chef_client_subscribe(gracht_client_t* client)
+{
+    struct gracht_message_context context;
+    int                           status;
+
+    status = chef_served_subscribe(client, &context);
+    if (status) {
+        return status;
+    }
+    return gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+}
+
+int __chef_client_await_transaction(gracht_client_t* client, unsigned int transactionId, enum chef_transaction_result* resultOut)
+{
+    g_txn_watcher.id        = transactionId;
+    g_txn_watcher.completed = 0;
+    g_txn_watcher.result    = CHEF_TRANSACTION_RESULT_ERROR_UNKNOWN;
+    g_txn_watcher.active    = 1;
+
+    while (!g_txn_watcher.completed) {
+        int status = gracht_client_wait_message(client, NULL, GRACHT_MESSAGE_BLOCK);
+        if (status) {
+            g_txn_watcher.active = 0;
+            return status;
+        }
+    }
+
+    g_txn_watcher.active = 0;
+    if (resultOut != NULL) {
+        *resultOut = g_txn_watcher.result;
+    }
+    return 0;
 }

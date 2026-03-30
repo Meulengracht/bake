@@ -30,6 +30,8 @@
 #include "chef_served_service_client.h"
 
 extern int __chef_client_initialize(gracht_client_t** clientOut);
+extern int __chef_client_subscribe(gracht_client_t* client);
+extern int __chef_client_await_transaction(gracht_client_t* client, unsigned int transactionId, enum chef_transaction_result* resultOut);
 
 static const char* g_installMsgs[] = {
     "success",
@@ -51,6 +53,8 @@ static void __print_help(void)
     printf("      If the package is a local file, use this proof instead of the default <pack>.proof\n");
     printf("  --allow-unsigned\n");
     printf("      Allow installing a local package without proof. Intended for development only.\n");
+    printf("  -d, --detach\n");
+    printf("      Submit the install and exit without waiting for completion\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
 }
@@ -278,10 +282,10 @@ static int __install_from_local(
     gracht_client_t* client,
     const char*      package_path,
     const char*      proof_path,
-    int              allow_unsigned)
+    int              allow_unsigned,
+    unsigned int*    transactionIdOut)
 {
-    unsigned int transactionId = 0;
-    int          status;
+    int status;
 
     status = __verify_package(package_path, proof_path);
     if (status) {
@@ -293,7 +297,7 @@ static int __install_from_local(
         package_path,
         proof_path,
         allow_unsigned, 
-        &transactionId
+        transactionIdOut
     );
     if (status) {
         printf("communication error: %i\n", status);
@@ -301,10 +305,9 @@ static int __install_from_local(
     return status;  
 }
 
-static int __install_from_store(gracht_client_t* client, struct chef_served_install_options* options)
+static int __install_from_store(gracht_client_t* client, struct chef_served_install_options* options, unsigned int* transactionIdOut)
 {
     struct gracht_message_context context;
-    unsigned int                  transactionId = 0;
     int                           status;
 
     status = chef_served_install(client, &context, options);
@@ -319,7 +322,7 @@ static int __install_from_store(gracht_client_t* client, struct chef_served_inst
         return status;
     }
 
-    status = chef_served_install_result(client, &context, &transactionId);
+    status = chef_served_install_result(client, &context, transactionIdOut);
     if (status) {
         printf("communication error: %i\n", status);
         return status;
@@ -330,6 +333,7 @@ static int __install_from_store(gracht_client_t* client, struct chef_served_inst
 struct __install_options {
     struct chef_served_install_options chef_options;
     int                                allow_unsigned;
+    int                                detach;
     const char*                        package_path;
     const char*                        proof_path;
 };
@@ -343,7 +347,7 @@ static int __is_package_file(const char* package)
 static int __parse_options(struct __install_options* options, int argc, char** argv)
 {
     const char* package = NULL;
-    int         revision = 0;
+    uint64_t    revision = 0;
 
     for (int i = 2; i < argc; i++) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
@@ -358,6 +362,9 @@ static int __parse_options(struct __install_options* options, int argc, char** a
             continue;
         } else if (!strcmp(argv[i], "--allow-unsigned")) {
             options->allow_unsigned = 1;
+            continue;
+        } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--detach")) {
+            options->detach = 1;
             continue;
         } else if (argv[i][0] != '-') {
             if (package == NULL) {
@@ -396,9 +403,11 @@ static int __parse_options(struct __install_options* options, int argc, char** a
 
 int install_main(int argc, char** argv)
 {
-    struct __install_options installOptions = { 0 };
-    gracht_client_t*         client;
-    int                      status;
+    struct __install_options     installOptions = { 0 };
+    gracht_client_t*             client;
+    enum chef_transaction_result txnResult;
+    unsigned int                 transactionId = 0;
+    int                          status;
 
     // set default channel
     installOptions.chef_options.channel = "stable";
@@ -422,14 +431,42 @@ int install_main(int argc, char** argv)
         return status;
     }
 
+    // Subscribe for transaction events before issuing the install,
+    // so we don't miss any notifications.
+    if (!installOptions.detach) {
+        status = __chef_client_subscribe(client);
+        if (status) {
+            fprintf(stderr, "warning: failed to subscribe for events, will not track progress\n");
+        }
+    }
+
     // is the package a path? otherwise try to download from
     // official repo
     if (installOptions.package_path != NULL) {
-        status = __install_from_local(client, installOptions.package_path, installOptions.proof_path, installOptions.allow_unsigned);
+        status = __install_from_local(client, installOptions.package_path, installOptions.proof_path, installOptions.allow_unsigned, &transactionId);
     } else {
-        status = __install_from_store(client, &installOptions.chef_options);
+        status = __install_from_store(client, &installOptions.chef_options, &transactionId);
     }
-    
+
+    if (status) {
+        goto cleanup;
+    }
+
+    if (installOptions.detach) {
+        printf("transaction %u submitted\n", transactionId);
+        goto cleanup;
+    }
+
+    status = __chef_client_await_transaction(client, transactionId, &txnResult);
+    if (status) {
+        fprintf(stderr, "lost connection while waiting for transaction %u\n", transactionId);
+        goto cleanup;
+    }
+
+    if (txnResult != CHEF_TRANSACTION_RESULT_SUCCESS) {
+        status = -1;
+    }
+
 cleanup:
     gracht_client_shutdown(client);
     return status;
