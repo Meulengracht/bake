@@ -116,7 +116,7 @@ static int __ensure_chef_paths(void)
     }
     free(path);
 
-    path = utils_path_packs_root();
+    path = utils_path_local_store_root();
     if (platform_mkdir(path) != 0) {
         VLOG_ERROR("startup", "failed to create path %s\n", path);
         free(path);

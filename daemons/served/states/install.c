@@ -133,16 +133,23 @@ enum sm_action_result served_handle_state_install(void* context)
         goto cleanup;
     }
 
-    status = store_package_path(&(struct store_package) {
-        .name = state->name,
-        .platform = CHEF_PLATFORM_STR,
-        .arch = CHEF_ARCHITECTURE_STR,
-        .channel = NULL,
-        .revision = state->revision
-    }, &path);
-    if (status) {
-        VLOG_ERROR("served", "could not find the revision %i for %s\n", state->revision, state->name);
-        goto cleanup;
+    if (state->revision < 0) {
+        path = utils_path_local_pack(names[0], names[1], state->revision);
+        if (path == NULL) {
+            goto cleanup;
+        }
+    } else {
+        status = store_package_path(&(struct store_package) {
+            .name = state->name,
+            .platform = CHEF_PLATFORM_STR,
+            .arch = CHEF_ARCHITECTURE_STR,
+            .channel = NULL,
+            .revision = state->revision
+        }, &path);
+        if (status) {
+            VLOG_ERROR("served", "could not find the revision %i for %s\n", state->revision, state->name);
+            goto cleanup;
+        }
     }
 
     storagePath = utils_path_pack(names[0], names[1]);
@@ -173,6 +180,9 @@ enum sm_action_result served_handle_state_install(void* context)
 
 cleanup:
     strsplit_free(names);
+    if (state != NULL && state->revision < 0) {
+        free((void*)path);
+    }
     free((void*)storagePath);
     served_sm_post_event(&transaction->sm, event);
     return SM_ACTION_CONTINUE;

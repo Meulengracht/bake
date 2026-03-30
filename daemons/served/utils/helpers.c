@@ -28,7 +28,6 @@ char** utils_split_package_name(const char* name)
     int    namesCount = 0;
     char** names = strsplit(name, '/');
     if (names == NULL) {
-        VLOG_ERROR("store", "__find_package_in_inventory: invalid package naming '%s' (must be publisher/package)\n", name);
         return NULL;
     }
 
@@ -37,7 +36,6 @@ char** utils_split_package_name(const char* name)
     }
 
     if (namesCount != 2) {
-        VLOG_ERROR("store", "__find_package_in_inventory: invalid package naming '%s' (must be publisher/package)\n", name);
         strsplit_free(names);
         return NULL;
     }

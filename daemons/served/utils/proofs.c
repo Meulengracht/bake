@@ -17,7 +17,11 @@
  */
 
 #include <chef/store.h>
+#include <chef/package.h>
 #include <chef/platform.h>
+#include <jansson.h>
+#include <openssl/bio.h>
+#include <openssl/evp.h>
 #include <errno.h>
 #include <openssl/decoder.h>
 #include <openssl/err.h>
@@ -28,6 +32,8 @@
 const char* g_certAuthority = "MIIF1TCCA72gAwIBAgIUBrKWdEkac/ETLHLvzNjz4e6mElgwDQYJKoZIhvcNAQENBQAwejELMAkGA1UEBhMCREsxEzARBgNVBAgMCkNvcGVuaGFnZW4xEzARBgNVBAcMCkNvcGVuaGFnZW4xDTALBgNVBAoMBENoZWYxDjAMBgNVBAsMBVN0b3JlMSIwIAYDVQQDDBlDaGVmIFN0b3JlIFJvb3QgQXV0aG9yaXR5MB4XDTI1MTAyNzA4NTIyNVoXDTM1MTAyNTA4NTIyNVowejELMAkGA1UEBhMCREsxEzARBgNVBAgMCkNvcGVuaGFnZW4xEzARBgNVBAcMCkNvcGVuaGFnZW4xDTALBgNVBAoMBENoZWYxDjAMBgNVBAsMBVN0b3JlMSIwIAYDVQQDDBlDaGVmIFN0b3JlIFJvb3QgQXV0aG9yaXR5MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAwGnBxbYyRxTQX8+ENMDQMFK8XuMVlCoE1/wcHxseBGLOAEV6FqKdmw8daIf7dqkpK9dVyRm5MYAe1DaDvSWXPOZtzpklWUzLTkYIX+K81QTDgF58W4OkCz9qQnhVJ9snPgjy6UL/9mNJ4g4OUWtQiqkpZsua9J75p3aUQjeM1dOtAUsIps8dGyOJ75Z1h9yTGomNt9xK95I56x1vru5ifKvUsZ5iKpA9uXQ+VZIxlfDwCjl+p3wH0H1ZgvjIk1etdzWOls0E2KNycjGwyQ+H/bJtQZ4oEaZNETRu5QuXJ4zUxdjt7HnUZWD04ySIIT4CyiaH8Lgo6oXIJkal9cJQYgf5kZk2OWhelu1DcqZhOc7GDPU1PYFh8riy2LKxhl6GCVaUgOPeQzB3TLP/Doa6ME9xczOCOlJKrR0aQRgcJSKQss6N8Zrxy3xjnKkAV8YxUu317onv4JTxLyyzJdn3HjoGaQLM9CHh0IbfUJPRIPERJn3L2FGnWlA+lFD2uj1qTfAdOxElRrdLWTFzYHEM+RgBkzOU7hLUNpFsK+IY1zCu+7xtQXwdWqcLM0ppDQZwayMDB/9HfIY7+yOcYQg3nO0Yyi5Yik9mhTah4e2svjYzwEGSIu/SyASipXULf1RY+0FRlDhHcnjGu6oZURjEim6BZcU4LsVpmOlyOAFcl+MCAwEAAaNTMFEwHQYDVR0OBBYEFIRJLeleZKj9FAGU3ojpbCi/X+f8MB8GA1UdIwQYMBaAFIRJLeleZKj9FAGU3ojpbCi/X+f8MA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQENBQADggIBAA+RIVZ0+O7WGqMuzu5QdiTNAa3pTSh9YUSWj0K8VwgxNkOC+2xovVujkBSTSrcXpFElNUbhsPcoMWFSoy/4IjhyGsNeNDXESzPgND+AWsZIQQH3zhOimBN4ulDBqkjgY/t37M3e1g9g6/p1/n47h/KlOMpi3qiAj3DmsmIfsVb0BtkC4XFP3+z4BpqTGOnS6a741MvPLyYAYij26rmbt56jm8Wn1wGSfmtZ7UatIxDgopO65ZLKrWeQiw6elB/Rvw2IY/izqy4XPRYlgfGjrWvf0BX2IJ+l3PfmKYwELlMFIeLCwJj0v3NAUGuJRNue65lmeMWJhkNIRSNHs0KdlUpnuO65ytOFP0Z/3zj2dDevcwXwfQUVtJ2css06S5Rr7wbVouZptXGFoH4dFz6EDE8GvJvmdmv0EJgYKKYLcy+7PSl7bqZIt8loboHFvBF45KtpChxHk+/0pmPcBVApo12F6JQ7dsL9RD+BHvDQygx3S1ovQMeLKeYboZ6pN4TbItMR3gaLDAnEZ6/pDqK1mNdxmU62KEcVQ46fy7b087Q8I4yh2u7b/xMeyx80dXR85rcbHsWywWO5dFTB0kqZIzKyXrHEDGGlyltu57YlZ7iRChqu6MAHztHZDs0SisZwMbFz5HZeTDAKtmGrMJdN3VQd/Or2tEFdcjCeU4fR8ygM";
 
 #define _SEGMENT_SIZE (1024 * 1024)
+
+static int __calculate_file_sha512(const char* path, unsigned char** hash, unsigned int* hashLength);
 
 static void __print_crypt_errors(const char* prefix)
 {
@@ -73,7 +79,161 @@ static int __verify_signature(EVP_PKEY* key, const char* data, size_t dataLength
         status = -1;
     }
     EVP_MD_CTX_free(mdctx);
+    return status;
+}
+
+static int __base64_decode(const char* value, unsigned char** dataOut, size_t* dataLengthOut)
+{
+    size_t         valueLength;
+    unsigned char* buffer;
+    int            decodedLength;
+
+    if (value == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    valueLength = strlen(value);
+    buffer = calloc((valueLength * 3) / 4 + 4, 1);
+    if (buffer == NULL) {
+        return -1;
+    }
+
+    decodedLength = EVP_DecodeBlock(buffer, (const unsigned char*)value, (int)valueLength);
+    if (decodedLength < 0) {
+        free(buffer);
+        errno = EINVAL;
+        return -1;
+    }
+
+    while (valueLength > 0 && value[valueLength - 1] == '=') {
+        decodedLength--;
+        valueLength--;
+    }
+
+    *dataOut = buffer;
+    *dataLengthOut = (size_t)decodedLength;
     return 0;
+}
+
+static int __parse_public_key_pem(const char* key, EVP_PKEY** keyOut)
+{
+    BIO* bio;
+
+    bio = BIO_new_mem_buf(key, (int)strlen(key));
+    if (bio == NULL) {
+        return -1;
+    }
+
+    *keyOut = PEM_read_bio_PUBKEY(bio, NULL, NULL, NULL);
+    BIO_free_all(bio);
+    return *keyOut == NULL ? -1 : 0;
+}
+
+static int __verify_developer_proof(struct chef_package_proof* proof, const char* packagePath)
+{
+    unsigned char* expectedHash = NULL;
+    size_t         expectedHashLength = 0;
+    unsigned char* signature = NULL;
+    size_t         signatureLength = 0;
+    unsigned char* actualHash = NULL;
+    unsigned int   actualHashLength = 0;
+    EVP_PKEY*      publicKey = NULL;
+    int            status = -1;
+
+    if (proof == NULL || proof->origin != CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (proof->hash_algorithm == NULL || strcmp(proof->hash_algorithm, "sha512") != 0) {
+        errno = ENOTSUP;
+        return -1;
+    }
+
+    status = __base64_decode(proof->hash, &expectedHash, &expectedHashLength);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    status = __base64_decode(proof->signature, &signature, &signatureLength);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    status = __calculate_file_sha512(packagePath, &actualHash, &actualHashLength);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    if (expectedHashLength != actualHashLength || memcmp(expectedHash, actualHash, actualHashLength) != 0) {
+        errno = EBADMSG;
+        goto cleanup;
+    }
+
+    status = __parse_public_key_pem(proof->public_key, &publicKey);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    status = __verify_signature(publicKey, (const char*)actualHash, actualHashLength, signature, signatureLength);
+
+cleanup:
+    OPENSSL_free(actualHash);
+    EVP_PKEY_free(publicKey);
+    free(expectedHash);
+    free(signature);
+    return status;
+}
+
+static int __load_proof(const char* proofPath, struct chef_package_proof** proofOut)
+{
+    json_t*                    root;
+    json_error_t               error;
+    struct chef_package_proof* proof;
+
+    root = json_load_file(proofPath, 0, &error);
+    if (root == NULL) {
+        return -1;
+    }
+
+    proof = calloc(1, sizeof(struct chef_package_proof));
+    if (proof == NULL) {
+        json_decref(root);
+        return -1;
+    }
+
+    proof->origin = CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER;
+    proof->identity = platform_strdup(json_string_value(json_object_get(root, "identity")));
+    proof->hash_algorithm = platform_strdup(json_string_value(json_object_get(root, "hash-algorithm")));
+    proof->hash = platform_strdup(json_string_value(json_object_get(root, "hash")));
+    proof->public_key = platform_strdup(json_string_value(json_object_get(root, "public-key")));
+    proof->signature = platform_strdup(json_string_value(json_object_get(root, "signature")));
+    json_decref(root);
+
+    if (proof->identity == NULL || proof->hash_algorithm == NULL || proof->hash == NULL ||
+        proof->public_key == NULL || proof->signature == NULL) {
+        chef_package_proof_free(proof);
+        errno = EINVAL;
+        return -1;
+    }
+
+    *proofOut = proof;
+    return 0;
+}
+
+int utils_load_local_package_proof(const char* proofPath, struct chef_package_proof** proofOut)
+{
+    if (proofOut != NULL) {
+        *proofOut = NULL;
+    }
+
+    if (proofPath == NULL || proofPath[0] == '\0' || proofOut == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return __load_proof(proofPath, proofOut);
 }
 
 static int __verify_signature_against_cert(struct store_proof_publisher* proof)
@@ -237,12 +397,12 @@ static int __parse_public_key(const unsigned char* key, size_t keyLength, EVP_PK
 
 static int __verify_package(struct store_proof_publisher* publisherProof, const char* packagePath, const char* publisher, const char* package, int revision)
 {
-    unsigned char*              hash;
-    unsigned int                hashLength;
-    int                         status;
-    char                        key[128];
+    unsigned char*             hash;
+    unsigned int               hashLength;
+    int                        status;
+    char                       key[128];
     struct store_proof_package proof;
-    EVP_PKEY*                   pkey;
+    EVP_PKEY*                  pkey;
 
     proof_format_package_key(&key[0], sizeof(key), publisher, package, revision);
 
@@ -294,13 +454,16 @@ int utils_verify_package(const char* publisher, const char* package, int revisio
 
     snprintf(&name[0], sizeof(name), "%s/%s", publisher, package);
 
-    status = store_package_path(&(struct store_package) {
-        .name = &name[0],
-        .platform = CHEF_PLATFORM_STR,
-        .arch = CHEF_ARCHITECTURE_STR,
-        .channel = NULL,
-        .revision = revision
-    }, &path);
+    status = store_package_path(
+        &(struct store_package) {
+            .name = &name[0],
+            .platform = CHEF_PLATFORM_STR,
+            .arch = CHEF_ARCHITECTURE_STR,
+            .channel = NULL,
+            .revision = revision
+        },
+        &path
+    );
     if (status) {
         VLOG_ERROR("served", "could not find the revision %i for %s/%s\n", revision, publisher, package);
         return status;
@@ -318,5 +481,34 @@ int utils_verify_package(const char* publisher, const char* package, int revisio
         return status;
     }
 
+    return 0;
+}
+
+int utils_verify_local_package(const char* packagePath, const char* proofPath, struct chef_package_proof** proofOut)
+{
+    struct chef_package_proof* proof = NULL;
+    int                        status;
+
+    if (proofOut != NULL) {
+        *proofOut = NULL;
+    }
+
+    status = utils_load_local_package_proof(proofPath, &proof);
+
+    if (status != 0 || proof == NULL) {
+        return -1;
+    }
+
+    status = __verify_developer_proof(proof, packagePath);
+    if (status != 0) {
+        chef_package_proof_free(proof);
+        return status;
+    }
+
+    if (proofOut != NULL) {
+        *proofOut = proof;
+    } else {
+        chef_package_proof_free(proof);
+    }
     return 0;
 }

@@ -1789,8 +1789,17 @@ int served_state_transaction_state_new(unsigned int id, struct state_transaction
     g_state->transaction_states = newStates;
     g_state->transaction_states[g_state->transaction_state_count] = *state;
     g_state->transaction_states[g_state->transaction_state_count].id = id;
+    g_state->transaction_states[g_state->transaction_state_count].name = state->name ? platform_strdup(state->name) : NULL;
+    g_state->transaction_states[g_state->transaction_state_count].channel = state->channel ? platform_strdup(state->channel) : NULL;
     g_state->transaction_states[g_state->transaction_state_count].logs = NULL;
     g_state->transaction_states[g_state->transaction_state_count].logs_count = 0;
+
+    if ((state->name != NULL && g_state->transaction_states[g_state->transaction_state_count].name == NULL) ||
+        (state->channel != NULL && g_state->transaction_states[g_state->transaction_state_count].channel == NULL)) {
+        __state_transaction_delete(&g_state->transaction_states[g_state->transaction_state_count]);
+        return -1;
+    }
+
     g_state->transaction_state_count++;
 
     // Defer the database operation
