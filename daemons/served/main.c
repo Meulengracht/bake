@@ -98,7 +98,16 @@ int __init_server(gracht_server_t** serverOut)
         return code;
     }
 
-    return __register_server_links(*serverOut);
+    code = __register_server_links(*serverOut);
+    if (code) {
+        return code;
+    }
+
+    // Make the socket accessible to non-root users so any user
+    // can run access the protocol. The authentication of users will
+    // be handled on the protocol level, not by the socket permissions.
+    platform_chmod(g_servedUnPath, 0666);
+    return 0;
 }
 
 static void __cleanup_systems(int sig)
