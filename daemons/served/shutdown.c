@@ -38,7 +38,6 @@ void served_shutdown(void)
         .name        = "system-shutdown",
         .description = "Served system shutdown",
         .type        = SERVED_TRANSACTION_TYPE_EPHEMERAL,
-        .initialState = g_StateSetShutdownInitialStateIndex,
         .stateSet    = &g_stateSetShutdown,
     });
 

@@ -475,6 +475,7 @@ void served_transaction_construct(struct served_transaction* transaction, struct
 {
     struct served_sm_state_set  stateSet;
     struct served_sm_state_set* stateSetPtr;
+    int                         initialState;
 
     transaction->id = options->id;
     transaction->name = options->name ? platform_strdup(options->name) : NULL;
@@ -489,10 +490,17 @@ void served_transaction_construct(struct served_transaction* transaction, struct
         stateSetPtr = &stateSet;
     }
 
+    // If the initial state is 0, then we start from the first
+    // state
+    initialState = options->initialState;
+    if (initialState == 0) {
+        initialState = stateSetPtr->states[0]->state;
+    }
+
     served_sm_init(
         &transaction->sm,
         stateSetPtr,
-        options->initialState,
+        initialState,
         transaction
     );
 }

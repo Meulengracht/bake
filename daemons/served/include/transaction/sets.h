@@ -90,7 +90,6 @@ static const struct served_sm_state_set g_stateSetStartup = {
     .states = g_stateSetStartupStates,
     .states_count = sizeof(g_stateSetStartupStates) / sizeof(g_stateSetStartupStates[0])
 };
-static const int g_StateSetStartupInitialStateIndex = SERVED_TX_STATE_LOAD;
 
 static const struct served_sm_state* g_stateSetShutdownStates[] = {
     &g_stateRemoveWrappersAll,
@@ -103,6 +102,5 @@ static const struct served_sm_state_set g_stateSetShutdown = {
     .states = g_stateSetShutdownStates,
     .states_count = sizeof(g_stateSetShutdownStates) / sizeof(g_stateSetShutdownStates[0])
 };
-static const int g_StateSetShutdownInitialStateIndex = SERVED_TX_STATE_REMOVE_WRAPPERS;
 
 #endif //!__SERVED_TRANSACTION_SETS_H__

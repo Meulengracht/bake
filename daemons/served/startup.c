@@ -181,7 +181,6 @@ int served_startup(void)
         .name = "system-startup",
         .description = "Served system initialization",
         .type = SERVED_TRANSACTION_TYPE_EPHEMERAL,
-        .initialState = g_StateSetStartupInitialStateIndex,
         .stateSet = &g_stateSetStartup,
     });
     if (transactionId == (unsigned int)-1) {
