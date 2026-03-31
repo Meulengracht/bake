@@ -79,20 +79,30 @@ static const struct served_sm_state* g_stateSetUpdate[] = {
 };
 
 // Ephemeral transactions for startup and shutdown
-static const struct served_sm_state* g_stateSetStartup[] = {
+static const struct served_sm_state* g_stateSetStartupStates[] = {
     &g_stateLoadAll,
     &g_stateStartServicesAll,
     &g_stateGenerateWrappersAll,
 
     &g_stateCompleted, &g_stateError, &g_stateCancelled
 };
+static const struct served_sm_state_set g_stateSetStartup = {
+    .states = g_stateSetStartupStates,
+    .states_count = sizeof(g_stateSetStartupStates) / sizeof(g_stateSetStartupStates[0])
+};
+static const int g_StateSetStartupInitialStateIndex = SERVED_TX_STATE_LOAD;
 
-static const struct served_sm_state* g_stateSetShutdown[] = {
+static const struct served_sm_state* g_stateSetShutdownStates[] = {
     &g_stateRemoveWrappersAll,
     &g_stateStopServicesAll,
     &g_stateUnloadAll,
 
     &g_stateCompleted, &g_stateError, &g_stateCancelled
 };
+static const struct served_sm_state_set g_stateSetShutdown = {
+    .states = g_stateSetShutdownStates,
+    .states_count = sizeof(g_stateSetShutdownStates) / sizeof(g_stateSetShutdownStates[0])
+};
+static const int g_StateSetShutdownInitialStateIndex = SERVED_TX_STATE_REMOVE_WRAPPERS;
 
 #endif //!__SERVED_TRANSACTION_SETS_H__

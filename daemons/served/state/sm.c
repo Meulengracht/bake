@@ -126,6 +126,7 @@ enum sm_action_result served_sm_execute(struct served_sm* sm)
     }
 
     if (currentState->action != NULL) {
+        VLOG_DEBUG("served", "served_sm_execute: executing action for state %u\n", sm->state);
         return currentState->action(sm->context);
     }
 

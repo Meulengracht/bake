@@ -153,15 +153,15 @@ static void __state_set_from_type(struct served_sm_state_set* set, enum served_t
     switch (type) {
     case SERVED_TRANSACTION_TYPE_INSTALL:
         set->states = g_stateSetInstall;
-        set->states_count = 14;
+        set->states_count = sizeof(g_stateSetInstall) / sizeof(g_stateSetInstall[0]);
         break;
     case SERVED_TRANSACTION_TYPE_UNINSTALL:
         set->states = g_stateSetUninstall;
-        set->states_count = 8;
+        set->states_count = sizeof(g_stateSetUninstall) / sizeof(g_stateSetUninstall[0]);
         break;
     case SERVED_TRANSACTION_TYPE_UPDATE:
         set->states = g_stateSetUpdate;
-        set->states_count = 18;
+        set->states_count = sizeof(g_stateSetUpdate) / sizeof(g_stateSetUpdate[0]);
         break;
     default:
         VLOG_ERROR("served", "__state_set_from_type: unsupported transaction type: %d\n", type);
@@ -473,7 +473,7 @@ unsigned int served_transaction_create(struct served_transaction_options* option
 
 void served_transaction_construct(struct served_transaction* transaction, struct served_transaction_options* options)
 {
-    struct served_sm_state_set stateSet;
+    struct served_sm_state_set  stateSet;
     struct served_sm_state_set* stateSetPtr;
 
     transaction->id = options->id;

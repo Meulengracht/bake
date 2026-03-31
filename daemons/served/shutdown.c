@@ -38,10 +38,8 @@ void served_shutdown(void)
         .name        = "system-shutdown",
         .description = "Served system shutdown",
         .type        = SERVED_TRANSACTION_TYPE_EPHEMERAL,
-        .stateSet    = &(struct served_sm_state_set){
-            .states = g_stateSetShutdown,
-            .states_count = 7
-        },
+        .initialState = g_StateSetShutdownInitialStateIndex,
+        .stateSet    = &g_stateSetShutdown,
     });
 
     VLOG_DEBUG("shutdown", "requesting runner thread to stop\n");
