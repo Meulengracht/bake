@@ -5,7 +5,7 @@ add_library(served-state STATIC
     state.c
 )
 target_include_directories(served-state PRIVATE ../include ${CMAKE_BINARY_DIR}/protocols)
-target_link_libraries(served-state PUBLIC common platform vlog gracht SQLite3::SQLite3)
+target_link_libraries(served-state PUBLIC common platform vlog gracht ${CHEF_SQLITE_TARGET})
 
 # Set C11 standard for proper threads.h support on Windows
 if(MSVC)
