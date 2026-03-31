@@ -1006,7 +1006,7 @@ int bake_pack(struct __pack_options* options)
     status = __build_pack_names(options->name, options->output_dir, &name, &path);
     if (status) {
         platform_getfiles_destroy(&files);
-        VLOG_ERROR("bake", "failed to get files marked for install\n");
+        VLOG_ERROR("bake", "failed to build pack names\n");
         return -1;
     }
 

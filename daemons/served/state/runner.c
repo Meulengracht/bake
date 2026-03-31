@@ -205,9 +205,11 @@ static int __is_wait_satisfied(struct served_transaction* txn)
         case SERVED_TRANSACTION_WAIT_TYPE_REBOOT:
             // TODO: Implement reboot detection
             // For now, assume reboot never happens
+            VLOG_ERROR("served", "__is_wait_satisfied: REBOOT wait type not implemented, treating as unsatisfied\n");
             return 0;
         
         default:
+            VLOG_ERROR("served", "__is_wait_satisfied: unsupported wait type: %d\n", txn->wait.type);
             return 0;
     }
 }
@@ -391,8 +393,13 @@ void served_runner_execute(void)
     
     __process_waiting_transactions();
 
-    VLOG_DEBUG("served", "served_runner_execute: processing %d active, %d waiting transactions\n",
-               g_active_transactions.count, g_waiting_transactions.count);
+    if (g_active_transactions.count > 0) {
+        VLOG_DEBUG(
+            "served",
+            "served_runner_execute: processing %d active\n",
+            g_active_transactions.count
+        );
+    }
     
     // Use safe iteration since we may move transactions to waiting queue
     mtx_lock(&g_queue_lock);

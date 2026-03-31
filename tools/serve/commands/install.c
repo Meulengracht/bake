@@ -395,7 +395,7 @@ static int __parse_options(struct __install_options* options, int argc, char** a
             }
         }
     } else {
-        options->chef_options.package = package;
+        options->chef_options.package = platform_strdup(package);
     }
 
     return 0;
