@@ -79,7 +79,7 @@ static const struct served_sm_state* g_stateSetUpdate[] = {
 };
 
 // Ephemeral transactions for startup and shutdown
-static const struct served_sm_state* g_stateSetStartupStates[] = {
+static const struct served_sm_state* g_statesStartup[] = {
     &g_stateLoadAll,
     &g_stateStartServicesAll,
     &g_stateGenerateWrappersAll,
@@ -87,11 +87,11 @@ static const struct served_sm_state* g_stateSetStartupStates[] = {
     &g_stateCompleted, &g_stateError, &g_stateCancelled
 };
 static const struct served_sm_state_set g_stateSetStartup = {
-    .states = g_stateSetStartupStates,
-    .states_count = sizeof(g_stateSetStartupStates) / sizeof(g_stateSetStartupStates[0])
+    .states = g_statesStartup,
+    .states_count = sizeof(g_statesStartup) / sizeof(g_statesStartup[0])
 };
 
-static const struct served_sm_state* g_stateSetShutdownStates[] = {
+static const struct served_sm_state* g_statesShutdown[] = {
     &g_stateRemoveWrappersAll,
     &g_stateStopServicesAll,
     &g_stateUnloadAll,
@@ -99,8 +99,8 @@ static const struct served_sm_state* g_stateSetShutdownStates[] = {
     &g_stateCompleted, &g_stateError, &g_stateCancelled
 };
 static const struct served_sm_state_set g_stateSetShutdown = {
-    .states = g_stateSetShutdownStates,
-    .states_count = sizeof(g_stateSetShutdownStates) / sizeof(g_stateSetShutdownStates[0])
+    .states = g_statesShutdown,
+    .states_count = sizeof(g_statesShutdown) / sizeof(g_statesShutdown[0])
 };
 
 #endif //!__SERVED_TRANSACTION_SETS_H__
