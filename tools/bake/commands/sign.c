@@ -90,8 +90,8 @@ static int __load_dev_proof_options(struct __dev_proof_options* options)
     if (__copy_config_value(config, accountSection, "email", &options->developer_identity) != 0 ||
         __copy_config_value(config, accountSection, "public-key", &options->public_key_path) != 0 ||
         __copy_config_value(config, accountSection, "private-key", &options->private_key_path) != 0) {
-        VLOG_ERROR("bake", "developer identity configuration is incomplete, please run the following command\n");
-        VLOG_ERROR("bake", "  order account whoami\n");
+        printf("developer identity configuration is incomplete, please run the following command\n");
+        printf("  order account whoami\n");
         __cleanup_dev_proof_options(options);
         errno = EINVAL;
         return -1;

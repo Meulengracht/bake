@@ -24,3 +24,8 @@ target_include_directories(served-api PRIVATE
 target_link_libraries(served-api PRIVATE
     served-state store gracht platform vlog
 )
+
+# Set C11 standard for proper threads.h support on Windows
+if(MSVC)
+    target_compile_features(served-api PRIVATE c_std_11)
+endif()
