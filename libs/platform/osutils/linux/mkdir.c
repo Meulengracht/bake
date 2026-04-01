@@ -39,7 +39,14 @@ static int __mkdir(const char* path, int perms)
 {
     int status = __directory_exists(path);
     if (!status) {
-        return mkdir(path, perms);
+        status = mkdir(path, perms);
+        if (status) {
+            return status;
+        }
+        // Ensure the requested permissions are applied regardless of the
+        // process umask (mkdir applies umask, chmod does not).
+        chmod(path, perms);
+        return 0;
     }
     return status == 1 ? 0 : -1;
 }
