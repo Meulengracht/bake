@@ -51,8 +51,6 @@ static void __print_help(void)
     printf("      Install a specific revision of the package\n");
     printf("  -P, --proof\n");
     printf("      If the package is a local file, use this proof instead of the default <pack>.proof\n");
-    printf("  --allow-unsigned\n");
-    printf("      Allow installing a local package without proof. Intended for development only.\n");
     printf("  -d, --detach\n");
     printf("      Submit the install and exit without waiting for completion\n");
     printf("  -h, --help\n");
@@ -193,7 +191,6 @@ static int __install_local_package(
     gracht_client_t* client,
     const char*      packagePath,
     const char*      proofPath,
-    int              allowUnsigned,
     unsigned int*    transactionIdOut)
 {
     struct gracht_message_context        context;
@@ -212,7 +209,6 @@ static int __install_local_package(
         return status;
     }
 
-    options.allow_unsigned = allowUnsigned;
     options.package_size = (size_t)packageStats.size;
     if (proofPath != NULL && proofPath[0] != '\0') {
         status = platform_stat(proofPath, &proofStats);
@@ -282,7 +278,6 @@ static int __install_from_local(
     gracht_client_t* client,
     const char*      package_path,
     const char*      proof_path,
-    int              allow_unsigned,
     unsigned int*    transactionIdOut)
 {
     int status;
@@ -296,7 +291,6 @@ static int __install_from_local(
         client,
         package_path,
         proof_path,
-        allow_unsigned, 
         transactionIdOut
     );
     if (status) {
@@ -332,7 +326,6 @@ static int __install_from_store(gracht_client_t* client, struct chef_served_inst
 
 struct __install_options {
     struct chef_served_install_options chef_options;
-    int                                allow_unsigned;
     int                                detach;
     const char*                        package_path;
     const char*                        proof_path;
@@ -360,9 +353,6 @@ static int __parse_options(struct __install_options* options, int argc, char** a
         } else if (!__parse_quantity_switch(argv, argc, &i, "-R", 2, "--revision", 10, 0, &revision)) {
             options->chef_options.revision = (int)revision;
             continue;
-        } else if (!strcmp(argv[i], "--allow-unsigned")) {
-            options->allow_unsigned = 1;
-            continue;
         } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--detach")) {
             options->detach = 1;
             continue;
@@ -388,7 +378,7 @@ static int __parse_options(struct __install_options* options, int argc, char** a
                 options->proof_path = defaultProofPath;
             }
             
-            if (options->proof_path == NULL && !options->allow_unsigned) {
+            if (options->proof_path == NULL) {
                 fprintf(stderr, "Missing local proof. Provide --proof or use --allow-unsigned in development mode.\n");
                 free(defaultProofPath);
                 return -1;
@@ -447,7 +437,7 @@ int install_main(int argc, char** argv)
     // is the package a path? otherwise try to download from
     // official repo
     if (installOptions.package_path != NULL) {
-        status = __install_from_local(client, installOptions.package_path, installOptions.proof_path, installOptions.allow_unsigned, &transactionId);
+        status = __install_from_local(client, installOptions.package_path, installOptions.proof_path, &transactionId);
     } else {
         status = __install_from_store(client, &installOptions.chef_options, &transactionId);
     }

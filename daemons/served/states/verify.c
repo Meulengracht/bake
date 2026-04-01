@@ -95,14 +95,6 @@ static int __verify_local_package(
         goto done;
     }
 
-    if (errno == ENOENT && strcmp(publisher, "local") == 0) {
-        __emit_verify_progress(transaction, 100, 100);
-        TXLOG_WARNING(transaction,
-            "Installed local package without proof because unsigned override was explicitly enabled");
-        status = 0;
-        goto done;
-    }
-
     if (errno == ENOENT) {
         TXLOG_ERROR(transaction, "Developer proof was not found for local package");
     } else if (errno) {

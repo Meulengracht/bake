@@ -49,7 +49,6 @@ struct __local_upload_session {
     unsigned int                   proof_chunk_index;
     int                            package_finished;
     int                            proof_finished;
-    int                            allow_unsigned;
 };
 
 static struct __local_upload_session* g_localUploadSessions = NULL;
@@ -279,7 +278,6 @@ static int __stage_local_install(
 static int __prepare_local_install(
     const char*                               packagePath,
     const char*                               proofPath,
-    int                                       allowUnsigned,
     char**                                    packageNameOut,
     int*                                      revisionOut)
 {
@@ -308,8 +306,6 @@ static int __prepare_local_install(
             goto cleanup;
         }
         publisher = proof->identity;
-    } else if (allowUnsigned) {
-        publisher = CHEF_PACKAGE_LOCAL_PUBLISHER;
     } else {
         errno = ENOENT;
         goto cleanup;
@@ -358,7 +354,7 @@ void chef_served_install_local_begin_invocation(struct gracht_message* message, 
         return;
     }
 
-    if (!options->allow_unsigned && options->proof_size == 0) {
+    if (options->proof_size == 0) {
         chef_served_install_local_begin_response(message, &response);
         return;
     }
@@ -376,7 +372,6 @@ void chef_served_install_local_begin_invocation(struct gracht_message* message, 
     session->proof_path = (options->proof_size > 0 && session->import_id != NULL) ? __local_upload_path(session->import_id, "proof") : NULL;
     session->package_size = options->package_size;
     session->proof_size = options->proof_size;
-    session->allow_unsigned = options->allow_unsigned;
 
     if (session->import_id == NULL || session->package_resource_id == NULL || session->package_path == NULL ||
         (options->proof_size > 0 && (session->proof_resource_id == NULL || session->proof_path == NULL))) {
@@ -529,7 +524,7 @@ void chef_served_install_local_end_invocation(struct gracht_message* message, co
 
     mtx_lock(&g_localUploadLock);
     session = __find_local_upload_session_by_import(import_id);
-    if (session == NULL || !session->package_finished || (!session->allow_unsigned && !session->proof_finished)) {
+    if (session == NULL || !session->package_finished || !session->proof_finished) {
         mtx_unlock(&g_localUploadLock);
         chef_served_install_local_end_response(message, 0);
         return;
@@ -538,7 +533,6 @@ void chef_served_install_local_end_invocation(struct gracht_message* message, co
     if (__prepare_local_install(
             session->package_path,
             session->proof_finished ? session->proof_path : NULL,
-            session->allow_unsigned,
             &packageName,
             &revision) == 0) {
         // served_api_create_install_transaction will check whether the

@@ -85,7 +85,6 @@ struct served_install_options {
 // committed into the normal transaction pipeline. This keeps served from
 // opening arbitrary client filesystem paths.
 struct served_install_local_options {
-    int    allow_unsigned;
     ulong  package_size;
     ulong  proof_size;
 }
