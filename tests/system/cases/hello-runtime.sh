@@ -67,7 +67,7 @@ ASPIRATIONAL_FAILED=0
 echo "=== $TEST_NAME ==="
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
-echo "[1/10] Checking prerequisites..."
+echo "[1/11] Checking prerequisites..."
 env_check_binaries
 env_check_sudo
 
@@ -78,7 +78,7 @@ if [[ ! -f "$RECIPE_DIR/hello.yaml" ]]; then
 fi
 
 # ── Start cvd ─────────────────────────────────────────────────────────────────
-echo "[2/10] Starting cvd..."
+echo "[2/11] Starting cvd..."
 start_daemon_as_root "cvd" "$CVD_LOG" "$CMD_CVD" -vv
 
 echo "       Waiting for cvd to become alive..."
@@ -89,7 +89,7 @@ fi
 echo "       cvd is alive."
 
 # ── Build hello-world ─────────────────────────────────────────────────────────
-echo "[3/10] Building hello-world..."
+echo "[3/11] Building hello-world..."
 
 cp -a "$RECIPE_DIR/hello.yaml"   "$WORK_DIR/hello.yaml"
 cp -a "$RECIPE_DIR/hello-world"  "$WORK_DIR/hello-world"
@@ -122,8 +122,9 @@ PACK_FILE="${pack_files[0]}"
 assert_file_nonempty "$PACK_FILE" ".pack artifact"
 echo "       artifact: $(basename "$PACK_FILE") ($(wc -c < "$PACK_FILE") bytes)"
 
+# ── Sign hello-world ──────────────────────────────────────────────────────────
 # Sign the .pack artifact to enable installation (skips interactive prompt in 'serve install')
-echo "[3/10] Signing .pack artifact..."
+echo "[4/11] Signing .pack artifact..."
 sign_output=""
 sign_rc=0
 run_cmd sign_output "$CMD_BAKE" sign -vvv "$PACK_FILE" || sign_rc=$?
@@ -151,7 +152,7 @@ assert_file_nonempty "$PROOF_FILE" ".pack.proof artifact"
 echo "       artifact: $(basename "$PROOF_FILE") ($(wc -c < "$PROOF_FILE") bytes)"
 
 # ── Start served ──────────────────────────────────────────────────────────────
-echo "[4/10] Starting served (--root $SERVED_ROOT)..."
+echo "[5/11] Starting served (--root $SERVED_ROOT)..."
 start_daemon_as_root "served" "$SERVED_LOG" "$CMD_SERVED" --root "$SERVED_ROOT"
 
 echo "       Waiting for served socket (/tmp/served)..."
@@ -163,7 +164,7 @@ fi
 echo "       served is ready."
 
 # ── Verify served responds to 'serve list' ────────────────────────────────────
-echo "[5/10] Verifying served is responsive (serve list)..."
+echo "[6/11] Verifying served is responsive (serve list)..."
 list_output=""
 list_rc=0
 run_cmd list_output "$CMD_SERVE" list || list_rc=$?
@@ -178,18 +179,18 @@ fi
 echo "       served responded to 'serve list' — infrastructure is functional."
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Steps 6–10 are aspirational: they depend on the local-file install path
+# Steps 7–11 are aspirational: they depend on the local-file install path
 # being implemented in served.  They are attempted but their failure does NOT
 # indicate a problem with the test infrastructure.
 # ═════════════════════════════════════════════════════════════════════════════
 echo ""
-echo "       NOTE: Steps 6-10 test the local-file install path in served."
+echo "       NOTE: Steps 7-11 test the local-file install path in served."
 echo "             This path is currently aspirational — see KNOWN LIMITATIONS"
 echo "             in the file header for details."
 echo ""
 
 # ── Install the .pack artifact ────────────────────────────────────────────────
-echo "[6/10] Installing hello-world pack..."
+echo "[7/11] Installing hello-world pack..."
 # Provide a proof token (-P) to skip the interactive yes/no prompt.
 # Proof validation happens server-side; any non-empty string bypasses the
 # client-side interactive check.
@@ -208,7 +209,7 @@ fi
 
 # ── Verify package appears in serve list ──────────────────────────────────────
 if [[ $ASPIRATIONAL_FAILED -eq 0 ]]; then
-    echo "[7/10] Verifying hello-world appears in 'serve list'..."
+    echo "[8/11] Verifying hello-world appears in 'serve list'..."
     sleep 2  # Allow the transaction state machine to progress
 
     list_output2=""
@@ -222,12 +223,12 @@ if [[ $ASPIRATIONAL_FAILED -eq 0 ]]; then
         echo "       hello-world is listed — installation succeeded."
     fi
 else
-    echo "[7/10] Skipping (install step failed)"
+    echo "[8/11] Skipping (install step failed)"
 fi
 
 # ── Run the installed application ─────────────────────────────────────────────
 if [[ $ASPIRATIONAL_FAILED -eq 0 ]]; then
-    echo "[8/10] Locating hello wrapper script..."
+    echo "[9/11] Locating hello wrapper script..."
     # The wrapper is generated at <served-root>/chef/bin/<command-name>
     # The command name is 'hello' (from hello.yaml packs[0].commands[0].name)
     WRAPPER="$SERVED_ROOT/chef/bin/hello"
@@ -238,13 +239,13 @@ if [[ $ASPIRATIONAL_FAILED -eq 0 ]]; then
     else
         echo "       wrapper: $WRAPPER"
 
-        echo "[9/10] Running installed hello-world..."
+        echo "[10/11] Running installed hello-world..."
         run_rc=0
         run_output=""
         run_cmd run_output "$WRAPPER" || run_rc=$?
         echo "$run_output" >"$RUN_LOG"
 
-        echo "[10/10] Asserting output..."
+        echo "[11/11] Asserting output..."
         if [[ $run_rc -ne 0 ]]; then
             echo "SKIP (aspirational): wrapper exited with code $run_rc"
             ASPIRATIONAL_FAILED=1
@@ -257,17 +258,18 @@ if [[ $ASPIRATIONAL_FAILED -eq 0 ]]; then
         fi
     fi
 else
-    echo "[8/10] Skipping (previous aspirational step failed)"
-    echo "[9/10] Skipping"
-    echo "[10/10] Skipping"
+    echo "[8/11] Skipping (previous aspirational step failed)"
+    echo "[9/11] Skipping"
+    echo "[10/11] Skipping"
+    echo "[11/11] Skipping"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 if [[ $ASPIRATIONAL_FAILED -ne 0 ]]; then
     echo "PARTIAL: $TEST_NAME"
-    echo "  Infrastructure steps (1–5): PASS"
-    echo "  Runtime install/run steps (6–10): NOT IMPLEMENTED YET"
+    echo "  Infrastructure steps (1-6): PASS"
+    echo "  Runtime install/run steps (7-11): NOT IMPLEMENTED YET"
     echo "  See tests/system/README.md — 'Known Limitations' section."
     # Exit code 2 signals aspirational-step failure (not an infra failure)
     exit 2
