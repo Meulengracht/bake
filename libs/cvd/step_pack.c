@@ -50,6 +50,7 @@ static void __initialize_pack_options(
     options->homepage         = bctx->recipe->project.url;
     options->filters          = &pack->filters;
     options->commands         = &pack->commands;
+    options->capabilities     = &pack->capabilities;
 
     if (pack->type == CHEF_PACKAGE_TYPE_APPLICATION) {
         options->app_config.network_dns = pack->app_options.dns;

@@ -1,0 +1,52 @@
+name: webapp-example
+author: Jane Doe
+email: jane@example.com
+version: 1.0.0
+license: MIT
+
+platforms:
+  - name: linux
+    base: ubuntu:24
+
+recipes:
+  - name: webapp
+    source:
+      type: path
+      path: src
+    steps:
+    - name: config
+      type: generate
+      system: cmake
+      arguments: [-G, '"Unix Makefiles"']
+    - name: build
+      type: build
+      depends: [config]
+      system: make
+
+packs:
+- name: webapp-example
+  type: application
+  summary: Web application with network and filesystem capabilities
+  description: |
+    Demonstrates using capabilities to declare what system access
+    the application sandbox should grant.
+  capabilities:
+    # Grant network access with custom DNS and gateway
+    - name: network
+      config:
+        dns: 10.0.0.1
+        gateway: 10.0.0.1
+
+    # Allow the application to manage files outside its sandbox root
+    - name: file-control
+      config:
+        paths:
+          - /var/data
+          - /tmp/webapp
+
+    # Allow process control (e.g. spawning subprocesses)
+    - name: process-control
+  commands:
+  - name: webapp
+    path: /usr/bin/webapp
+    type: executable

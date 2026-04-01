@@ -83,6 +83,27 @@ struct chef_package_application_config {
     const char* network_dns;
 };
 
+/**
+ * @brief A single key-value entry in a deserialized capability config.
+ * For scalar values, value is set and values/values_count are zero.
+ * For list values, value is NULL and values/values_count are populated.
+ */
+struct chef_package_capability_config {
+    const char*  key;
+    const char*  value;         // scalar value, or NULL for list-type
+    const char** values;        // array of strings for list-type
+    int          values_count;  // number of list items
+};
+
+/**
+ * @brief A deserialized capability from pack metadata.
+ */
+struct chef_package_capability {
+    const char*                           name;
+    struct chef_package_capability_config* config;
+    int                                   config_count;
+};
+
 enum chef_package_proof_origin {
     CHEF_PACKAGE_PROOF_ORIGIN_NONE = 0,
     CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER = 1,

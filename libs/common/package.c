@@ -28,6 +28,7 @@ static struct VaFsGuid g_headerGuid   = CHEF_PACKAGE_HEADER_GUID;
 static struct VaFsGuid g_versionGuid  = CHEF_PACKAGE_VERSION_GUID;
 static struct VaFsGuid g_commandsGuid = CHEF_PACKAGE_APPS_GUID;
 static struct VaFsGuid g_networkGuid  = CHEF_PACKAGE_NETWORK_GUID;
+static struct VaFsGuid g_capabilitiesGuid = CHEF_PACKAGE_CAPABILITIES_GUID;
 
 static int __load_package_header(struct VaFs* vafs, struct chef_package** packageOut)
 {
@@ -188,13 +189,99 @@ static int __load_package_network(struct VaFs* vafs, struct chef_package_applica
     return 0;
 }
 
+static int __load_package_capabilities(
+    struct VaFs*                      vafs,
+    struct chef_package_capability**  capabilitiesOut,
+    int*                              capabilitiesCountOut)
+{
+    struct chef_vafs_feature_package_capabilities* header;
+    struct chef_package_capability*                caps;
+    char*                                          data;
+    int                                            status;
+
+    status = vafs_feature_query(vafs, &g_capabilitiesGuid, (struct VaFsFeatureHeader**)&header);
+    if (status != 0) {
+        return status;
+    }
+
+    if (header->capabilities_count == 0) {
+        return -1;
+    }
+
+    caps = calloc(header->capabilities_count, sizeof(struct chef_package_capability));
+    if (caps == NULL) {
+        return -1;
+    }
+
+    data = (char*)header + sizeof(struct chef_vafs_feature_package_capabilities);
+    for (uint32_t i = 0; i < header->capabilities_count; i++) {
+        uint32_t nameLen, configCount;
+
+        memcpy(&nameLen, data, sizeof(uint32_t));     data += sizeof(uint32_t);
+        memcpy(&configCount, data, sizeof(uint32_t)); data += sizeof(uint32_t);
+
+        if (nameLen > 0) {
+            caps[i].name = platform_strndup(data, nameLen);
+            data += nameLen;
+        }
+
+        caps[i].config_count = (int)configCount;
+        if (configCount > 0) {
+            caps[i].config = calloc(configCount, sizeof(struct chef_package_capability_config));
+            if (caps[i].config == NULL) {
+                chef_package_capabilities_free(caps, (int)i);
+                return -1;
+            }
+
+            for (uint32_t j = 0; j < configCount; j++) {
+                uint32_t keyLen, valLen, valsCnt;
+
+                memcpy(&keyLen, data, sizeof(uint32_t));   data += sizeof(uint32_t);
+                memcpy(&valLen, data, sizeof(uint32_t));   data += sizeof(uint32_t);
+                memcpy(&valsCnt, data, sizeof(uint32_t));  data += sizeof(uint32_t);
+
+                if (keyLen > 0) {
+                    caps[i].config[j].key = platform_strndup(data, keyLen);
+                    data += keyLen;
+                }
+                if (valLen > 0) {
+                    caps[i].config[j].value = platform_strndup(data, valLen);
+                    data += valLen;
+                }
+                caps[i].config[j].values_count = (int)valsCnt;
+                if (valsCnt > 0) {
+                    caps[i].config[j].values = calloc(valsCnt, sizeof(const char*));
+                    if (caps[i].config[j].values == NULL) {
+                        chef_package_capabilities_free(caps, (int)i + 1);
+                        return -1;
+                    }
+                    for (uint32_t k = 0; k < valsCnt; k++) {
+                        uint32_t itemLen;
+                        memcpy(&itemLen, data, sizeof(uint32_t)); data += sizeof(uint32_t);
+                        if (itemLen > 0) {
+                            caps[i].config[j].values[k] = platform_strndup(data, itemLen);
+                            data += itemLen;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    *capabilitiesOut = caps;
+    *capabilitiesCountOut = (int)header->capabilities_count;
+    return 0;
+}
+
 int chef_package_load_vafs(
     struct VaFs*                             vafs,
     struct chef_package**                    packageOut,
     struct chef_version**                    versionOut,
     struct chef_command**                    commandsOut,
     int*                                     commandCountOut,
-    struct chef_package_application_config** appConfigOut)
+    struct chef_package_application_config** appConfigOut,
+    struct chef_package_capability**         capabilitiesOut,
+    int*                                     capabilitiesCountOut)
 {
     int status = 0;
 
@@ -238,6 +325,15 @@ int chef_package_load_vafs(
         }
     }
 
+    if (capabilitiesOut != NULL && capabilitiesCountOut != NULL) {
+        // This header is optional
+        status = __load_package_capabilities(vafs, capabilitiesOut, capabilitiesCountOut);
+        if (status != 0) {
+            *capabilitiesOut = NULL;
+            *capabilitiesCountOut = 0;
+        }
+    }
+
     return status;
 }
 
@@ -267,6 +363,8 @@ int chef_package_load(
         versionOut,
         commandsOut,
         commandCountOut,
+        NULL,
+        NULL,
         NULL
     );
     vafs_close(vafs);
@@ -358,6 +456,31 @@ void chef_package_application_config_free(struct chef_package_application_config
 
     free((void*)appConfig->network_gateway);
     free((void*)appConfig->network_dns);
+}
+
+void chef_package_capabilities_free(struct chef_package_capability* capabilities, int count)
+{
+    if (capabilities == NULL || count == 0) {
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        free((void*)capabilities[i].name);
+        if (capabilities[i].config != NULL) {
+            for (int j = 0; j < capabilities[i].config_count; j++) {
+                free((void*)capabilities[i].config[j].key);
+                free((void*)capabilities[i].config[j].value);
+                if (capabilities[i].config[j].values != NULL) {
+                    for (int k = 0; k < capabilities[i].config[j].values_count; k++) {
+                        free((void*)capabilities[i].config[j].values[k]);
+                    }
+                    free(capabilities[i].config[j].values);
+                }
+            }
+            free(capabilities[i].config);
+        }
+    }
+    free(capabilities);
 }
 
 int chef_version_from_string(const char* string, struct chef_version* version)

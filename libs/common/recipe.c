@@ -115,6 +115,14 @@ enum state {
     STATE_PACK_FILTER_LIST,
     STATE_PACK_COMMANDS_LIST,
     
+    STATE_PACK_CAPABILITIES_LIST,
+    STATE_CAPABILITY,
+    STATE_CAPABILITY_NAME,
+    STATE_CAPABILITY_CONFIG,
+    STATE_CAPABILITY_CONFIG_KEY,
+    STATE_CAPABILITY_CONFIG_VALUE,
+    STATE_CAPABILITY_CONFIG_VALUE_LIST,
+
     STATE_PACK_NETWORK_GATEWAY,
     STATE_PACK_NETWORK_DNS,
 
@@ -148,6 +156,8 @@ struct parser_state {
     struct recipe_step          step;
     struct recipe_pack          pack;
     struct recipe_pack_command  command;
+    struct recipe_pack_capability          capability;
+    struct recipe_pack_capability_config_entry capability_config;
     struct chef_keypair_item    env_keypair;
     struct meson_wrap_item      meson_wrap_item;
 };
@@ -502,6 +512,47 @@ static void __finalize_command(struct parser_state* state)
 static void __finalize_pack_ingredient_options(struct parser_state* state)
 {
     // todo
+}
+
+static void __finalize_capability_config(struct parser_state* state)
+{
+    struct recipe_pack_capability_config_entry* entry;
+
+    if (state->capability_config.key == NULL || strlen(state->capability_config.key) == 0) {
+        return;
+    }
+
+    entry = malloc(sizeof(struct recipe_pack_capability_config_entry));
+    if (entry == NULL) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+
+    memcpy(entry, &state->capability_config, sizeof(struct recipe_pack_capability_config_entry));
+    list_add(&state->capability.config, &entry->list_header);
+
+    memset(&state->capability_config, 0, sizeof(struct recipe_pack_capability_config_entry));
+}
+
+static void __finalize_capability(struct parser_state* state)
+{
+    struct recipe_pack_capability* capability;
+
+    if (state->capability.name == NULL) {
+        fprintf(stderr, "parse error: capability name is required\n");
+        exit(EXIT_FAILURE);
+    }
+
+    capability = malloc(sizeof(struct recipe_pack_capability));
+    if (capability == NULL) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+
+    memcpy(capability, &state->capability, sizeof(struct recipe_pack_capability));
+    list_add(&state->pack.capabilities, &capability->list_header);
+
+    memset(&state->capability, 0, sizeof(struct recipe_pack_capability));
 }
 
 static void __finalize_pack(struct parser_state* state)
@@ -1249,6 +1300,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_PACK_FILTER_LIST);
                     } else if (strcmp(value, "commands") == 0) {
                         __parser_push_state(s, STATE_PACK_COMMANDS_LIST);
+                    } else if (strcmp(value, "capabilities") == 0) {
+                        __parser_push_state(s, STATE_PACK_CAPABILITIES_LIST);
                     } else {
                         fprintf(stderr, "__consume_event: (STATE_PACK) unexpected scalar: %s.\n", value);
                         return -1;
@@ -1373,6 +1426,101 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_COMMAND_TYPE, command.type, __parse_command_type)
         __consume_scalar_fn(STATE_COMMAND_ICON, command.icon, __parse_string)
         __consume_sequence_unmapped(STATE_COMMAND_ARGUMENT_LIST, __add_command_arguments)
+
+        __consume_sequence_mapped(STATE_PACK_CAPABILITIES_LIST, STATE_CAPABILITY)
+
+        case STATE_CAPABILITY:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __finalize_capability(s);
+                    __parser_pop_state(s);
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "name") == 0) {
+                        __parser_push_state(s, STATE_CAPABILITY_NAME);
+                    } else if (strcmp(value, "config") == 0) {
+                        __parser_push_state(s, STATE_CAPABILITY_CONFIG);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_CAPABILITY) unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_CAPABILITY_NAME, capability.name, __parse_string)
+
+        case STATE_CAPABILITY_CONFIG:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __parser_pop_state(s);
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    s->capability_config.key = __parse_string(value);
+                    __parser_push_state(s, STATE_CAPABILITY_CONFIG_VALUE);
+                    break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        case STATE_CAPABILITY_CONFIG_VALUE:
+            switch (event->type) {
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    s->capability_config.value = __parse_string(value);
+                    __finalize_capability_config(s);
+                    __parser_pop_state(s);
+                    break;
+
+                case YAML_SEQUENCE_START_EVENT:
+                    s->state = STATE_CAPABILITY_CONFIG_VALUE_LIST;
+                    break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        case STATE_CAPABILITY_CONFIG_VALUE_LIST:
+            switch (event->type) {
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    {
+                        struct list_item_string* item = malloc(sizeof(struct list_item_string));
+                        if (!item) {
+                            fprintf(stderr, "error: out of memory\n");
+                            exit(EXIT_FAILURE);
+                        }
+                        item->value = platform_strdup(value);
+                        list_add(&s->capability_config.values, &item->list_header);
+                    }
+                    break;
+
+                case YAML_SEQUENCE_END_EVENT:
+                    __finalize_capability_config(s);
+                    __parser_pop_state(s);
+                    break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
         
         case STATE_STOP:
             break;
@@ -1527,10 +1675,26 @@ static void __destroy_pack_ingredient_options(struct recipe_pack_ingredient_opti
     __destroy_list(string, options->linker_flags.head, struct list_item_string);
 }
 
+static void __destroy_capability_config_entry(struct recipe_pack_capability_config_entry* entry)
+{
+    __destroy_list(string, entry->values.head, struct list_item_string);
+    free((void*)entry->key);
+    free((void*)entry->value);
+    free(entry);
+}
+
+static void __destroy_capability(struct recipe_pack_capability* capability)
+{
+    __destroy_list(capability_config_entry, capability->config.head, struct recipe_pack_capability_config_entry);
+    free((void*)capability->name);
+    free(capability);
+}
+
 static void __destroy_pack(struct recipe_pack* pack)
 {
     __destroy_pack_ingredient_options(&pack->options);
     __destroy_list(command, pack->commands.head, struct recipe_pack_command);
+    __destroy_list(capability, pack->capabilities.head, struct recipe_pack_capability);
     __destroy_list(string, pack->filters.head, struct list_item_string);
 
     free((void*)pack->app_options.gateway);

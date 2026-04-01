@@ -58,7 +58,9 @@ extern int chef_package_load_vafs(
     struct chef_version**                    versionOut,
     struct chef_command**                    commandsOut,
     int*                                     commandCountOut,
-    struct chef_package_application_config** appConfigOut);
+    struct chef_package_application_config** appConfigOut,
+    struct chef_package_capability**         capabilitiesOut,
+    int*                                     capabilitiesCountOut);
 
 /**
  * @brief Cleans up any resources allocated by the package.
@@ -89,6 +91,11 @@ extern void chef_commands_free(struct chef_command* commands, int count);
  * @brief Cleans up any resources allocated by chef_package_load
  */
 extern void chef_package_application_config_free(struct chef_package_application_config* appConfig);
+
+/**
+ * @brief Cleans up any resources allocated for capabilities.
+ */
+extern void chef_package_capabilities_free(struct chef_package_capability* capabilities, int count);
 
 /**
  * @brief Cleans up a package proof and all resources owned by it.

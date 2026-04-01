@@ -139,6 +139,27 @@ struct recipe_pack_application_options {
     const char* dns;
 };
 
+/**
+ * @brief A single key-value entry in a capability's config block.
+ * For simple scalar values, `value` is set and `values` is empty.
+ * For list-type values, `value` is NULL and `values` contains the items.
+ */
+struct recipe_pack_capability_config_entry {
+    struct list_item list_header;
+    const char*      key;
+    const char*      value;   // scalar value, or NULL for list-type
+    struct list      values;  // list<list_item_string> for array values
+};
+
+/**
+ * @brief A single capability declaration within a pack.
+ */
+struct recipe_pack_capability {
+    struct list_item list_header;
+    const char*      name;    // e.g. "network", "service", "shared-content"
+    struct list      config;  // list<recipe_pack_capability_config_entry>
+};
+
 struct recipe_pack {
     struct list_item                       list_header;
     const char*                            name;
@@ -150,6 +171,7 @@ struct recipe_pack {
     struct recipe_pack_ingredient_options  options;
     struct list                            filters;  // list<list_item_string>
     struct list                            commands; // list<recipe_pack_command>
+    struct list                            capabilities; // list<recipe_pack_capability>
 };
 
 struct recipe_host_environment {
