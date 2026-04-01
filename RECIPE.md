@@ -299,6 +299,37 @@ packs:
       - share
     
     ###########################
+    # capabilities - Optional
+    #
+    # Capabilities declare what system access this pack needs at runtime.
+    # The runtime daemon (served) translates each capability into the
+    # appropriate containerv policy plugins and security settings.
+    # See docs/capabilities/ for full reference documentation.
+    #
+    # Supported system capabilities:
+    #   network-client     — outbound IP networking (HTTP, databases, APIs, …)
+    #   file-control       — file creation/deletion/rename beyond own rootfs
+    #   process-control    — fork/exec/clone
+    #   package-management — package-management related syscalls
+    capabilities:
+        ###########################
+        # name - Required
+        #
+        # The capability name. "network-client" is the canonical name for
+        # outbound networking; "network" is accepted as a legacy alias.
+      - name: network-client
+
+        ###########################
+        # config - Optional
+        #
+        # Key-value pairs that configure the capability. Supported keys
+        # depend on the capability; see individual docs for details.
+        # For network-client: dns, gateway (and allow — planned).
+        config:
+          dns: 10.0.0.1
+          gateway: 10.0.0.1
+
+    ###########################
     # commands - Required for applications
     # 
     # commands are applications or services that should be available
