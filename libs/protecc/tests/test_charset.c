@@ -150,18 +150,18 @@ int test_charset_patterns(void) {
         compiled = NULL;
     }
     
-    // Test 8: Case insensitive flag
+    // Test 8: Explicit case alternatives
     {
-        const protecc_pattern_t patterns[] = {{ "/tmp/File", PROTECC_PERM_ALL }};
-        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_CASE_INSENSITIVE, NULL, &compiled);
-        TEST_ASSERT(err == PROTECC_OK, "Failed to compile case-insensitive pattern");
+        const protecc_pattern_t patterns[] = {{ "/tmp/[fF][iI][lL][eE]", PROTECC_PERM_ALL }};
+        err = protecc_compile_patterns(patterns, 1, PROTECC_FLAG_NONE, NULL, &compiled);
+        TEST_ASSERT(err == PROTECC_OK, "Failed to compile explicit-case pattern");
         
         TEST_ASSERT(match_path(compiled, "/tmp/file"), 
-                   "Should match case-insensitive");
+                   "Should match explicit-case lowercase");
         TEST_ASSERT(match_path(compiled, "/tmp/FILE"), 
-                   "Should match case-insensitive");
+                   "Should match explicit-case uppercase");
         TEST_ASSERT(match_path(compiled, "/tmp/File"), 
-                   "Should match case-insensitive");
+                   "Should match explicit-case mixed");
         
         protecc_free(compiled);
         compiled = NULL;

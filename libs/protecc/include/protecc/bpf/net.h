@@ -327,7 +327,7 @@ static __always_inline bool protecc_bpf_match_net(
         return false;
     }
 
-    if ((header->flags & ~(PROTECC_PROFILE_FLAG_CASE_INSENSITIVE)) != 0) {
+    if (header->flags != 0) {
         return false;
     }
 

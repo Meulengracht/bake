@@ -110,14 +110,12 @@ static protecc_error_t __export_net_profile(
     size_t                       unixDfaSize;
     size_t                       dfaSectionSize = 0;
     size_t                       dfaSectionOff = 0;
-    bool                         caseInsensitive;
     protecc_error_t              err;
 
     if (profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    caseInsensitive = (profile->flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
     rulesSize = profile->net_rule_count * sizeof(protecc_net_profile_rule_t);
 
     if (profile->net_rule_count > PROTECC_MAX_RULES) {
@@ -146,7 +144,6 @@ static protecc_error_t __export_net_profile(
             ip_offset = (uint32_t)stringsSize;
             err = __charclass_collect(profile->net_rules[i].ip_pattern,
                                       ip_offset,
-                                      caseInsensitive,
                                       &charclasses);
             if (err != PROTECC_OK) {
                 goto cleanup;
@@ -164,7 +161,6 @@ static protecc_error_t __export_net_profile(
             unix_offset = (uint32_t)stringsSize;
             err = __charclass_collect(profile->net_rules[i].unix_path_pattern,
                                       unix_offset,
-                                      caseInsensitive,
                                       &charclasses);
             if (err != PROTECC_OK) {
                 goto cleanup;
@@ -231,7 +227,7 @@ static protecc_error_t __export_net_profile(
     memset(&header, 0, sizeof(header));
     header.magic = PROTECC_NET_PROFILE_MAGIC;
     header.version = PROTECC_NET_PROFILE_VERSION;
-    header.flags = caseInsensitive ? PROTECC_PROFILE_FLAG_CASE_INSENSITIVE : 0u;
+    header.flags = 0u;
     header.rule_count = (uint32_t)profile->net_rule_count;
     header.strings_size = (uint32_t)stringsSize;
     header.charclass_count = (uint32_t)charclasses.count;
@@ -391,7 +387,7 @@ protecc_error_t protecc_profile_validate_net_blob(
         return PROTECC_ERROR_INVALID_BLOB;
     }
 
-    if ((header.flags & ~(PROTECC_PROFILE_FLAG_CASE_INSENSITIVE)) != 0) {
+    if (header.flags != 0) {
         return PROTECC_ERROR_INVALID_BLOB;
     }
 

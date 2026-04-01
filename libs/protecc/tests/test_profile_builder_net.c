@@ -175,24 +175,24 @@ int test_profile_builder_runtime_net_matchers(void)
     }
 
     {
-        protecc_profile_builder_t* ci_builder = protecc_profile_builder_create();
-        protecc_profile_t* ci_compiled = NULL;
-        protecc_net_rule_t ci_rule = {
+        protecc_profile_builder_t* explicit_builder = protecc_profile_builder_create();
+        protecc_profile_t* explicit_compiled = NULL;
+        protecc_net_rule_t explicit_rule = {
             .action = PROTECC_ACTION_ALLOW,
             .protocol = PROTECC_NET_PROTOCOL_UNIX,
             .family = PROTECC_NET_FAMILY_UNIX,
             .ip_pattern = NULL,
             .port_from = 0,
             .port_to = 0,
-            .unix_path_pattern = "/RUN/[a-z]?rvice.sock"
+            .unix_path_pattern = "/[Rr][Uu][Nn]/[Ss]ervice.sock"
         };
 
-        TEST_ASSERT(ci_builder != NULL, "Failed to create case-insensitive net builder");
-        err = protecc_profile_builder_add_net_rule(ci_builder, &ci_rule);
-        TEST_ASSERT(err == PROTECC_OK, "Failed to add case-insensitive net rule");
-        err = protecc_profile_compile(ci_builder, PROTECC_FLAG_CASE_INSENSITIVE, NULL, &ci_compiled);
-        TEST_ASSERT(err == PROTECC_OK && ci_compiled != NULL,
-                    "Failed to compile case-insensitive net profile");
+        TEST_ASSERT(explicit_builder != NULL, "Failed to create explicit net builder");
+        err = protecc_profile_builder_add_net_rule(explicit_builder, &explicit_rule);
+        TEST_ASSERT(err == PROTECC_OK, "Failed to add explicit net rule");
+        err = protecc_profile_compile(explicit_builder, PROTECC_FLAG_NONE, NULL, &explicit_compiled);
+        TEST_ASSERT(err == PROTECC_OK && explicit_compiled != NULL,
+                    "Failed to compile explicit net profile");
 
         {
             protecc_net_request_t req = {
@@ -202,13 +202,13 @@ int test_profile_builder_runtime_net_matchers(void)
                 .port = 0,
                 .unix_path = "/run/Service.sock"
             };
-            bool matched = protecc_match_net(ci_compiled, &req, &action);
+            bool matched = protecc_match_net(explicit_compiled, &req, &action);
             TEST_ASSERT(matched && action == PROTECC_ACTION_ALLOW,
-                        "Expected case-insensitive charset/? net pattern match");
+                        "Expected explicit charset net pattern match");
         }
 
-        protecc_free(ci_compiled);
-        protecc_profile_builder_destroy(ci_builder);
+        protecc_free(explicit_compiled);
+        protecc_profile_builder_destroy(explicit_builder);
     }
 
     return 0;

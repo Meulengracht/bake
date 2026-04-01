@@ -68,9 +68,7 @@ static bool __char_matches_node(const protecc_node_t* node, unsigned char c, uin
 {
     char ch = (char)c;
 
-    if (flags & PROTECC_FLAG_CASE_INSENSITIVE) {
-        ch = (char)tolower((unsigned char)ch);
-    }
+    (void)flags;
 
     switch (node->type) {
         case NODE_LITERAL:

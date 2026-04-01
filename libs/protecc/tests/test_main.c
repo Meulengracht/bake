@@ -33,7 +33,7 @@ static const test_case_t tests[] = {
     {"Runtime net matchers", test_profile_builder_runtime_net_matchers},
     {"Net DFA without linear rules", test_profile_builder_net_dfa_without_linear_rules},
     {"Runtime mount matchers", test_profile_builder_runtime_mount_matchers},
-    {"Profile builder charclass metadata", test_profile_builder_charclass_metadata},
+    {"Profile builder net charclass and mount DFA metadata", test_profile_builder_charclass_metadata},
 };
 
 static const size_t num_tests = sizeof(tests) / sizeof(tests[0]);

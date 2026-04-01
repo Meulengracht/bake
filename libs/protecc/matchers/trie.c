@@ -25,11 +25,7 @@
 
 static bool __char_matches_node(const protecc_node_t* node, char c, uint32_t flags)
 {
-    bool case_insensitive = (flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
-    
-    if (case_insensitive) {
-        c = tolower(c);
-    }
+    (void)flags;
     
     switch (node->type) {
         case NODE_LITERAL:
@@ -42,10 +38,6 @@ static bool __char_matches_node(const protecc_node_t* node, char c, uint32_t fla
             return protecc_charset_contains(&node->data.charset, (unsigned char)c);
         
         case NODE_RANGE:
-            if (case_insensitive) {
-                return (c >= tolower(node->data.range.start) && 
-                        c <= tolower(node->data.range.end));
-            }
             return (c >= node->data.range.start && c <= node->data.range.end);
         
         default:

@@ -61,13 +61,19 @@ static protecc_error_t __mount_combine_pattern(const protecc_mount_rule_t* rule,
 
 static protecc_error_t __protecc_mount_build_dfa_internal(protecc_profile_t* profile)
 {
-    protecc_rule_dfa_pattern_t patterns[PROTECC_MAX_RULES];
+    protecc_rule_dfa_pattern_t source_target_patterns[PROTECC_MAX_RULES];
+    protecc_rule_dfa_pattern_t fstype_patterns[PROTECC_MAX_RULES];
+    protecc_rule_dfa_pattern_t options_patterns[PROTECC_MAX_RULES];
     char*                      combined[PROTECC_MAX_RULES] = {0};
     size_t                     count = profile->mount_rule_count;
+    size_t                     fstype_count = 0;
+    size_t                     options_count = 0;
     protecc_error_t            err;
 
     if (count == 0) {
         profile->mount_dfa = NULL;
+        profile->mount_fstype_dfa = NULL;
+        profile->mount_options_dfa = NULL;
         return PROTECC_OK;
     }
 
@@ -81,13 +87,55 @@ static protecc_error_t __protecc_mount_build_dfa_internal(protecc_profile_t* pro
             goto cleanup;
         }
 
-        patterns[i].pattern = combined[i];
-        patterns[i].rule_index = (uint32_t)i;
+        source_target_patterns[i].pattern = combined[i];
+        source_target_patterns[i].rule_index = (uint32_t)i;
+
+        if (profile->mount_rules[i].fstype_pattern != NULL) {
+            fstype_patterns[fstype_count].pattern = profile->mount_rules[i].fstype_pattern;
+            fstype_patterns[fstype_count].rule_index = (uint32_t)i;
+            fstype_count++;
+        }
+
+        if (profile->mount_rules[i].options_pattern != NULL) {
+            options_patterns[options_count].pattern = profile->mount_rules[i].options_pattern;
+            options_patterns[options_count].rule_index = (uint32_t)i;
+            options_count++;
+        }
     }
 
-    err = __build_dfa_from_patterns(patterns, count, profile, &profile->mount_dfa);
+    err = __build_dfa_from_patterns(source_target_patterns, count, profile, &profile->mount_dfa);
+    if (err != PROTECC_OK) {
+        goto cleanup;
+    }
+
+    if (fstype_count > 0) {
+        err = __build_dfa_from_patterns(fstype_patterns, fstype_count, profile, &profile->mount_fstype_dfa);
+        if (err != PROTECC_OK) {
+            goto cleanup;
+        }
+    } else {
+        profile->mount_fstype_dfa = NULL;
+    }
+
+    if (options_count > 0) {
+        err = __build_dfa_from_patterns(options_patterns, options_count, profile, &profile->mount_options_dfa);
+        if (err != PROTECC_OK) {
+            goto cleanup;
+        }
+    } else {
+        profile->mount_options_dfa = NULL;
+    }
 
 cleanup:
+    if (err != PROTECC_OK) {
+        __dfa_free_runtime(profile->mount_dfa);
+        profile->mount_dfa = NULL;
+        __dfa_free_runtime(profile->mount_fstype_dfa);
+        profile->mount_fstype_dfa = NULL;
+        __dfa_free_runtime(profile->mount_options_dfa);
+        profile->mount_options_dfa = NULL;
+    }
+
     for (size_t i = 0; i < count; i++) {
         free(combined[i]);
     }
@@ -112,6 +160,10 @@ void __protecc_mount_free_dfa(protecc_profile_t* profile)
 
     __dfa_free_runtime(profile->mount_dfa);
     profile->mount_dfa = NULL;
+    __dfa_free_runtime(profile->mount_fstype_dfa);
+    profile->mount_fstype_dfa = NULL;
+    __dfa_free_runtime(profile->mount_options_dfa);
+    profile->mount_options_dfa = NULL;
 }
 
 struct protecc_mount_rule_offsets {
@@ -145,11 +197,8 @@ protecc_error_t protecc_profile_validate_mount_blob(
     protecc_rule_profile_header_t      header;
     size_t                              rulesSize;
     size_t                              required;
-    size_t                              dfa_size = 0;
-    size_t                              classTableSize;
     const protecc_mount_profile_rule_t* rules;
     const uint8_t*                      strings;
-    const protecc_profile_charclass_entry_t* classes;
 
     if (buffer == NULL || bufferSize < sizeof(protecc_rule_profile_header_t)) {
         return PROTECC_ERROR_INVALID_BLOB;
@@ -162,7 +211,7 @@ protecc_error_t protecc_profile_validate_mount_blob(
         return PROTECC_ERROR_INVALID_BLOB;
     }
 
-    if ((header.flags & ~(PROTECC_PROFILE_FLAG_CASE_INSENSITIVE)) != 0) {
+    if (header.flags != 0) {
         return PROTECC_ERROR_INVALID_BLOB;
     }
 
@@ -170,22 +219,17 @@ protecc_error_t protecc_profile_validate_mount_blob(
         return PROTECC_ERROR_INVALID_BLOB;
     }
 
-    if (header.charclass_count > PROTECC_PROFILE_MAX_CHAR_CLASSES) {
+    if (header.charclass_count != 0 || header.charclass_table_off != 0) {
         return PROTECC_ERROR_INVALID_BLOB;
     }
 
     rulesSize = (size_t)header.rule_count * sizeof(protecc_mount_profile_rule_t);
-    classTableSize = (size_t)header.charclass_count * sizeof(protecc_profile_charclass_entry_t);
 
-    if (header.charclass_table_off < sizeof(protecc_rule_profile_header_t) + rulesSize + (size_t)header.strings_size) {
+    if (header.strings_size > SIZE_MAX - sizeof(protecc_rule_profile_header_t) - rulesSize) {
         return PROTECC_ERROR_INVALID_BLOB;
     }
 
-    if ((size_t)header.charclass_table_off > SIZE_MAX - classTableSize) {
-        return PROTECC_ERROR_INVALID_BLOB;
-    }
-
-    required = (size_t)header.charclass_table_off + classTableSize;
+    required = sizeof(protecc_rule_profile_header_t) + rulesSize + (size_t)header.strings_size;
 
     if (header.rule_count > 0) {
         if (header.dfa_section_off == 0) {
@@ -195,18 +239,8 @@ protecc_error_t protecc_profile_validate_mount_blob(
         if (header.dfa_section_off < required) {
             return PROTECC_ERROR_INVALID_BLOB;
         }
-
-        if (__dfa_validate_block(base, bufferSize, header.dfa_section_off, header.rule_count, &dfa_size) != PROTECC_OK) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-
-        if (header.dfa_section_off > SIZE_MAX - dfa_size) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-
-        if (required < header.dfa_section_off + dfa_size) {
-            required = header.dfa_section_off + dfa_size;
-        }
+    } else if (header.dfa_section_off != 0) {
+        return PROTECC_ERROR_INVALID_BLOB;
     }
 
     if (required < sizeof(protecc_rule_profile_header_t) || bufferSize < required) {
@@ -215,14 +249,6 @@ protecc_error_t protecc_profile_validate_mount_blob(
 
     rules = (const protecc_mount_profile_rule_t*)(base + sizeof(protecc_rule_profile_header_t));
     strings = base + sizeof(protecc_rule_profile_header_t) + rulesSize;
-    classes = (const protecc_profile_charclass_entry_t*)(base + header.charclass_table_off);
-
-    if (classTableSize > 0) {
-        if (classes < (const protecc_profile_charclass_entry_t*)base
-            || (const uint8_t*)(classes + header.charclass_count) > (base + bufferSize)) {
-            return PROTECC_ERROR_INVALID_BLOB;
-        }
-    }
 
     for (uint32_t i = 0; i < header.rule_count; i++) {
         protecc_action_t action = (protecc_action_t)rules[i].action;
@@ -281,15 +307,95 @@ protecc_error_t protecc_profile_validate_mount_blob(
         }
     }
 
-    for (uint32_t i = 0; i < header.charclass_count; i++) {
-        uint64_t end;
+    if (header.dfa_section_off != 0) {
+        const protecc_mount_dfa_section_t* section;
+        size_t                             section_end;
 
-        if (classes[i].consumed == 0) {
+        if (header.dfa_section_off < required) {
             return PROTECC_ERROR_INVALID_BLOB;
         }
 
-        end = (uint64_t)classes[i].pattern_off + (uint64_t)classes[i].consumed;
-        if (end > header.strings_size) {
+        if (header.dfa_section_off > bufferSize - sizeof(protecc_mount_dfa_section_t)) {
+            return PROTECC_ERROR_INVALID_BLOB;
+        }
+
+        section = (const protecc_mount_dfa_section_t*)(base + header.dfa_section_off);
+        section_end = header.dfa_section_off + sizeof(*section);
+
+        if (section->source_target_dfa_off == 0) {
+            return PROTECC_ERROR_INVALID_BLOB;
+        }
+
+        {
+            size_t source_target_size = 0;
+            size_t source_target_block_off;
+
+            if (section->source_target_dfa_off > SIZE_MAX - header.dfa_section_off) {
+                return PROTECC_ERROR_INVALID_BLOB;
+            }
+
+            if (__dfa_validate_block(
+                    base,
+                    bufferSize,
+                    header.dfa_section_off + section->source_target_dfa_off,
+                    header.rule_count,
+                    &source_target_size) != PROTECC_OK) {
+                return PROTECC_ERROR_INVALID_BLOB;
+            }
+
+            source_target_block_off = header.dfa_section_off + section->source_target_dfa_off;
+            if (section_end < source_target_block_off + source_target_size) {
+                section_end = source_target_block_off + source_target_size;
+            }
+        }
+
+        if (section->fstype_dfa_off != 0) {
+            size_t fstype_size = 0;
+            size_t fstype_block_off;
+
+            if (section->fstype_dfa_off > SIZE_MAX - header.dfa_section_off) {
+                return PROTECC_ERROR_INVALID_BLOB;
+            }
+
+            if (__dfa_validate_block(
+                    base,
+                    bufferSize,
+                    header.dfa_section_off + section->fstype_dfa_off,
+                    header.rule_count,
+                    &fstype_size) != PROTECC_OK) {
+                return PROTECC_ERROR_INVALID_BLOB;
+            }
+
+            fstype_block_off = header.dfa_section_off + section->fstype_dfa_off;
+            if (section_end < fstype_block_off + fstype_size) {
+                section_end = fstype_block_off + fstype_size;
+            }
+        }
+
+        if (section->options_dfa_off != 0) {
+            size_t options_size = 0;
+            size_t options_block_off;
+
+            if (section->options_dfa_off > SIZE_MAX - header.dfa_section_off) {
+                return PROTECC_ERROR_INVALID_BLOB;
+            }
+
+            if (__dfa_validate_block(
+                    base,
+                    bufferSize,
+                    header.dfa_section_off + section->options_dfa_off,
+                    header.rule_count,
+                    &options_size) != PROTECC_OK) {
+                return PROTECC_ERROR_INVALID_BLOB;
+            }
+
+            options_block_off = header.dfa_section_off + section->options_dfa_off;
+            if (section_end < options_block_off + options_size) {
+                section_end = options_block_off + options_size;
+            }
+        }
+
+        if (section_end > bufferSize) {
             return PROTECC_ERROR_INVALID_BLOB;
         }
     }
@@ -357,24 +463,28 @@ static protecc_error_t __export_mount_profile(
     size_t*                  bytesWritten)
 {
     protecc_rule_profile_header_t   header;
-    protecc_rule_dfa_runtime_t*     dfa;
+    protecc_rule_dfa_runtime_t*     source_target_dfa;
+    protecc_rule_dfa_runtime_t*     fstype_dfa;
+    protecc_rule_dfa_runtime_t*     options_dfa;
     struct protecc_mount_rule_offsets* offsets = NULL;
-    protecc_charclass_table_t        charclasses = {0};
     size_t                           stringsSize = 0;
     size_t                           requiredSize;
     size_t                           rulesSize;
-    size_t                           classTableSize;
-    size_t                           dfa_size = 0;
-    bool                             caseInsensitive;
+    size_t                           source_target_dfa_size = 0;
+    size_t                           fstype_dfa_size = 0;
+    size_t                           options_dfa_size = 0;
+    size_t                           dfa_section_size = 0;
+    size_t                           dfa_section_off = 0;
     protecc_error_t                  err;
 
     if (profile == NULL) {
         return PROTECC_ERROR_INVALID_ARGUMENT;
     }
 
-    dfa = profile->mount_dfa;
+    source_target_dfa = profile->mount_dfa;
+    fstype_dfa = profile->mount_fstype_dfa;
+    options_dfa = profile->mount_options_dfa;
 
-    caseInsensitive = (profile->flags & PROTECC_FLAG_CASE_INSENSITIVE) != 0;
     rulesSize = profile->mount_rule_count * sizeof(protecc_mount_profile_rule_t);
 
     if (profile->mount_rule_count > UINT32_MAX) {
@@ -428,13 +538,6 @@ static protecc_error_t __export_mount_profile(
             }
 
             source_off = (uint32_t)stringsSize;
-            err = __charclass_collect(profile->mount_rules[i].source_pattern,
-                                      source_off,
-                                      caseInsensitive,
-                                      &charclasses);
-            if (err != PROTECC_OK) {
-                goto cleanup;
-            }
             stringsSize += measurement;
         }
 
@@ -446,13 +549,6 @@ static protecc_error_t __export_mount_profile(
             }
 
             target_off = (uint32_t)stringsSize;
-            err = __charclass_collect(profile->mount_rules[i].target_pattern,
-                                      target_off,
-                                      caseInsensitive,
-                                      &charclasses);
-            if (err != PROTECC_OK) {
-                goto cleanup;
-            }
             stringsSize += measurement;
         }
 
@@ -464,13 +560,6 @@ static protecc_error_t __export_mount_profile(
             }
 
             fstype_off = (uint32_t)stringsSize;
-            err = __charclass_collect(profile->mount_rules[i].fstype_pattern,
-                                      fstype_off,
-                                      caseInsensitive,
-                                      &charclasses);
-            if (err != PROTECC_OK) {
-                goto cleanup;
-            }
             stringsSize += measurement;
         }
 
@@ -482,13 +571,6 @@ static protecc_error_t __export_mount_profile(
             }
 
             options_off = (uint32_t)stringsSize;
-            err = __charclass_collect(profile->mount_rules[i].options_pattern,
-                                      options_off,
-                                      caseInsensitive,
-                                      &charclasses);
-            if (err != PROTECC_OK) {
-                goto cleanup;
-            }
             stringsSize += measurement;
         }
 
@@ -498,31 +580,32 @@ static protecc_error_t __export_mount_profile(
         offsets[i].options_pattern_off = options_off;
     }
 
-    if (stringsSize > UINT32_MAX || charclasses.count > UINT32_MAX) {
-        err = PROTECC_ERROR_INVALID_ARGUMENT;
-        goto cleanup;
-    }
-
-    classTableSize = charclasses.count * sizeof(protecc_profile_charclass_entry_t);
-    if (classTableSize > UINT32_MAX) {
+    if (stringsSize > UINT32_MAX) {
         err = PROTECC_ERROR_INVALID_ARGUMENT;
         goto cleanup;
     }
 
     if (profile->mount_rule_count > 0) {
-        if (dfa == NULL || !dfa->present) {
+        if (source_target_dfa == NULL || !source_target_dfa->present) {
             err = PROTECC_ERROR_COMPILE_FAILED;
             goto cleanup;
         }
 
-        dfa_size = __dfa_block_size(dfa);
+        source_target_dfa_size = __dfa_block_size(source_target_dfa);
+        if (source_target_dfa_size == 0) {
+            err = PROTECC_ERROR_COMPILE_FAILED;
+            goto cleanup;
+        }
+
+        fstype_dfa_size = __dfa_block_size(fstype_dfa);
+        options_dfa_size = __dfa_block_size(options_dfa);
+        dfa_section_size = sizeof(protecc_mount_dfa_section_t) + source_target_dfa_size + fstype_dfa_size + options_dfa_size;
     }
 
     requiredSize = sizeof(protecc_rule_profile_header_t)
         + rulesSize
         + stringsSize
-        + classTableSize
-        + dfa_size;
+        + dfa_section_size;
 
     if (requiredSize > UINT32_MAX) {
         err = PROTECC_ERROR_INVALID_ARGUMENT;
@@ -546,14 +629,18 @@ static protecc_error_t __export_mount_profile(
     memset(&header, 0, sizeof(header));
     header.magic = PROTECC_MOUNT_PROFILE_MAGIC;
     header.version = PROTECC_MOUNT_PROFILE_VERSION;
-    header.flags = caseInsensitive ? PROTECC_PROFILE_FLAG_CASE_INSENSITIVE : 0u;
+    header.flags = 0u;
     header.rule_count = (uint32_t)profile->mount_rule_count;
     header.strings_size = (uint32_t)stringsSize;
-    header.charclass_count = (uint32_t)charclasses.count;
-    header.charclass_table_off = (uint32_t)(sizeof(protecc_rule_profile_header_t) + rulesSize + stringsSize);
-    header.dfa_section_off = dfa_size > 0
-        ? (uint32_t)(header.charclass_table_off + classTableSize)
+    header.charclass_count = 0;
+    header.charclass_table_off = 0;
+    header.dfa_section_off = dfa_section_size > 0
+        ? (uint32_t)(sizeof(protecc_rule_profile_header_t) + rulesSize + stringsSize)
         : 0u;
+
+    if (header.dfa_section_off > 0) {
+        dfa_section_off = header.dfa_section_off;
+    }
 
     memcpy(buffer, &header, sizeof(header));
 
@@ -562,24 +649,42 @@ static protecc_error_t __export_mount_profile(
         goto cleanup;
     }
 
-    if (charclasses.count > 0) {
-        protecc_profile_charclass_entry_t* out_classes;
+    if (dfa_section_size > 0) {
+        protecc_mount_dfa_section_t* section;
+        uint8_t*                     out_base = (uint8_t*)buffer;
+        uint32_t                     cursor = sizeof(protecc_mount_dfa_section_t);
 
-        out_classes = (protecc_profile_charclass_entry_t*)((uint8_t*)buffer + header.charclass_table_off);
-        memcpy(out_classes, charclasses.entries, charclasses.count * sizeof(protecc_profile_charclass_entry_t));
-    }
+        section = (protecc_mount_dfa_section_t*)(out_base + dfa_section_off);
+        memset(section, 0, sizeof(*section));
 
-    if (dfa_size > 0) {
-        err = __dfa_export_block(dfa, (uint8_t*)buffer, bufferSize, header.dfa_section_off);
+        section->source_target_dfa_off = cursor;
+        err = __dfa_export_block(source_target_dfa, out_base + dfa_section_off, bufferSize - dfa_section_off, cursor);
         if (err != PROTECC_OK) {
             goto cleanup;
+        }
+        cursor += (uint32_t)source_target_dfa_size;
+
+        if (fstype_dfa_size > 0) {
+            section->fstype_dfa_off = cursor;
+            err = __dfa_export_block(fstype_dfa, out_base + dfa_section_off, bufferSize - dfa_section_off, cursor);
+            if (err != PROTECC_OK) {
+                goto cleanup;
+            }
+            cursor += (uint32_t)fstype_dfa_size;
+        }
+
+        if (options_dfa_size > 0) {
+            section->options_dfa_off = cursor;
+            err = __dfa_export_block(options_dfa, out_base + dfa_section_off, bufferSize - dfa_section_off, cursor);
+            if (err != PROTECC_OK) {
+                goto cleanup;
+            }
         }
     }
 
     err = PROTECC_OK;
 
 cleanup:
-    __charclass_table_free(&charclasses);
     free(offsets);
     return err;
 }

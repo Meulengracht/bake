@@ -33,6 +33,8 @@ static protecc_error_t __parse_charset(
     uint32_t        flags)
 {
     const char* p = *pattern;
+
+    (void)flags;
     
     if (*p != '[') {
         return PROTECC_ERROR_INVALID_PATTERN;
@@ -47,38 +49,17 @@ static protecc_error_t __parse_charset(
             char start = *p;
             char end = *(p + 2);
             
-            if (flags & PROTECC_FLAG_CASE_INSENSITIVE) {
-                start = tolower(start);
-                end = tolower(end);
-            }
-            
             if (start > end) {
                 return PROTECC_ERROR_INVALID_PATTERN;
             }
             
             protecc_charset_set_range(&node->data.charset, start, end);
             
-            // Also add uppercase range if case insensitive
-            if ((flags & PROTECC_FLAG_CASE_INSENSITIVE) && isalpha(start)) {
-                protecc_charset_set_range(
-                    &node->data.charset,
-                    toupper(start),
-                    toupper(end)
-                );
-            }
-            
             p += 3; // skip 'a-z'
         } else {
             // Single character
             char c = *p;
-            if (flags & PROTECC_FLAG_CASE_INSENSITIVE) {
-                protecc_charset_set(&node->data.charset, tolower(c));
-                if (isalpha(c)) {
-                    protecc_charset_set(&node->data.charset, toupper(c));
-                }
-            } else {
-                protecc_charset_set(&node->data.charset, c);
-            }
+            protecc_charset_set(&node->data.charset, c);
             p++;
         }
     }
@@ -133,6 +114,8 @@ protecc_error_t protecc_parse_pattern(
     if (terminalOut != NULL) {
         *terminalOut = NULL;
     }
+
+    (void)flags;
     
     while (*p) {
         protecc_node_t* node = NULL;
@@ -189,9 +172,6 @@ protecc_error_t protecc_parse_pattern(
             }
             
             char c = *p;
-            if (flags & PROTECC_FLAG_CASE_INSENSITIVE) {
-                c = tolower(c);
-            }
             node->data.literal = c;
             p++;
         }

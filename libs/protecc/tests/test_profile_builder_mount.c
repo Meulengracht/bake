@@ -157,23 +157,23 @@ int test_profile_builder_runtime_mount_matchers(void)
     }
 
     {
-        protecc_profile_builder_t* ci_builder = protecc_profile_builder_create();
-        protecc_profile_t* ci_compiled = NULL;
-        protecc_mount_rule_t ci_rule = {
+        protecc_profile_builder_t* explicit_builder = protecc_profile_builder_create();
+        protecc_profile_t* explicit_compiled = NULL;
+        protecc_mount_rule_t explicit_rule = {
             .action = PROTECC_ACTION_ALLOW,
-            .source_pattern = "/DEV/SDA?",
-            .target_pattern = "/MNT/[dD]ata",
-            .fstype_pattern = "EXT*",
-            .options_pattern = "RW*",
+            .source_pattern = "/[dD][eE][vV]/[sS][dD][aA]?",
+            .target_pattern = "/[mM][nN][tT]/[dD]ata",
+            .fstype_pattern = "[eE][xX][tT]*",
+            .options_pattern = "[rR][wW]*",
             .flags = 0
         };
 
-        TEST_ASSERT(ci_builder != NULL, "Failed to create case-insensitive mount builder");
-        err = protecc_profile_builder_add_mount_rule(ci_builder, &ci_rule);
-        TEST_ASSERT(err == PROTECC_OK, "Failed to add case-insensitive mount rule");
-        err = protecc_profile_compile(ci_builder, PROTECC_FLAG_CASE_INSENSITIVE, NULL, &ci_compiled);
-        TEST_ASSERT(err == PROTECC_OK && ci_compiled != NULL,
-                    "Failed to compile case-insensitive mount profile");
+        TEST_ASSERT(explicit_builder != NULL, "Failed to create explicit mount builder");
+        err = protecc_profile_builder_add_mount_rule(explicit_builder, &explicit_rule);
+        TEST_ASSERT(err == PROTECC_OK, "Failed to add explicit mount rule");
+        err = protecc_profile_compile(explicit_builder, PROTECC_FLAG_NONE, NULL, &explicit_compiled);
+        TEST_ASSERT(err == PROTECC_OK && explicit_compiled != NULL,
+                    "Failed to compile explicit mount profile");
 
         {
             protecc_mount_request_t req = {
@@ -183,13 +183,13 @@ int test_profile_builder_runtime_mount_matchers(void)
                 .options = "rw,nosuid",
                 .flags = 0
             };
-            bool matched = protecc_match_mount(ci_compiled, &req, &action);
+            bool matched = protecc_match_mount(explicit_compiled, &req, &action);
             TEST_ASSERT(matched && action == PROTECC_ACTION_ALLOW,
-                        "Expected case-insensitive mount glob/charset match");
+                        "Expected explicit-case mount glob/charset match");
         }
 
-        protecc_free(ci_compiled);
-        protecc_profile_builder_destroy(ci_builder);
+        protecc_free(explicit_compiled);
+        protecc_profile_builder_destroy(explicit_builder);
     }
 
     return 0;

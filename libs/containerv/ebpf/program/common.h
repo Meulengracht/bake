@@ -39,15 +39,23 @@ static __always_inline __u64 get_current_cgroup_id(void)
 /**
  * @brief Helper to get full path; uses new kfunc on >=6.8 or falls back 
  * Supported by LSM programs: https://docs.ebpf.io/linux/kfuncs/bpf_path_d_path/
- * */
-static __always_inline int __resolve_file_path(struct file *f, char *buf, int len) {
+ * 
+ * @return A positive integer corresponding to the length of 
+ * the resolved path name in buf, including the NULL termination character. 
+ * On error, a negative integer is returned.
+ */
+static __always_inline int __resolve_path(struct path* p, char *buf, int len) {
 #ifdef bpf_path_d_path
     // kernel >= 6.8
-    return bpf_path_d_path(&f->f_path, buf, len);
+    return bpf_path_d_path(p, buf, len);
 #else
     // Automatic fallback to the older kernel
-    return bpf_d_path((struct path*)&f->f_path, buf, len);
+    return bpf_d_path(p, buf, len);
 #endif
+}
+
+static __always_inline int __resolve_file_path(struct file *f, char *buf, int len) {
+    return __resolve_path((struct path*)&f->f_path, buf, len);
 }
 
 #define PATH_MAX_DEPTH   32

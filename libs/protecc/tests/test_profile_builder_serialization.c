@@ -444,8 +444,6 @@ int test_profile_builder_charclass_metadata(void)
         size_t mount_export_size = 0;
         uint8_t* mount_buffer = NULL;
         const protecc_rule_profile_header_t* mount_header = NULL;
-        const protecc_profile_charclass_entry_t* classes = NULL;
-        const uint8_t* strings = NULL;
         size_t rules_size;
 
         err = protecc_profile_export_mounts(compiled, NULL, 0, &mount_export_size);
@@ -459,32 +457,11 @@ int test_profile_builder_charclass_metadata(void)
         TEST_ASSERT(err == PROTECC_OK, "Failed to export mount profile with charclass");
 
         mount_header = (const protecc_rule_profile_header_t*)mount_buffer;
-        TEST_ASSERT(mount_header->charclass_count >= 2, "Expected mount charclass_count >= 2");
+        TEST_ASSERT(mount_header->charclass_count == 0, "Expected mount charclass_count == 0");
         rules_size = (size_t)mount_header->rule_count * sizeof(protecc_mount_profile_rule_t);
-        TEST_ASSERT(mount_header->charclass_table_off == sizeof(protecc_rule_profile_header_t) + rules_size + mount_header->strings_size,
-                    "Unexpected mount charclass table offset");
-
-        strings = mount_buffer + sizeof(protecc_rule_profile_header_t) + rules_size;
-        classes = (const protecc_profile_charclass_entry_t*)(mount_buffer + mount_header->charclass_table_off);
-        TEST_ASSERT(classes[0].consumed > 0 && classes[1].consumed > 0, "Expected non-zero consumed for mount charclasses");
-        TEST_ASSERT(classes[0].pattern_off < mount_header->strings_size, "Mount charclass[0] pattern_off out of range");
-        TEST_ASSERT(classes[1].pattern_off < mount_header->strings_size, "Mount charclass[1] pattern_off out of range");
-        TEST_ASSERT(strings[classes[0].pattern_off] == '[', "Expected mount charclass[0] to point at '['");
-        TEST_ASSERT(strings[classes[1].pattern_off] == '[', "Expected mount charclass[1] to point at '['");
-
-        {
-            uint8_t bytea = classes[0].bitmap['a' >> 3u];
-            uint8_t byteb = classes[0].bitmap['b' >> 3u];
-            TEST_ASSERT((bytea & (1u << ('a' & 7u))) != 0, "Expected 'a' set in mount source charclass");
-            TEST_ASSERT((byteb & (1u << ('b' & 7u))) != 0, "Expected 'b' set in mount source charclass");
-        }
-
-        {
-            uint8_t byteA = classes[1].bitmap['A' >> 3u];
-            uint8_t byteB = classes[1].bitmap['B' >> 3u];
-            TEST_ASSERT((byteA & (1u << ('A' & 7u))) != 0, "Expected 'A' set in mount target charclass");
-            TEST_ASSERT((byteB & (1u << ('B' & 7u))) != 0, "Expected 'B' set in mount target charclass");
-        }
+        TEST_ASSERT(mount_header->charclass_table_off == 0, "Expected mount charclass table offset == 0");
+        TEST_ASSERT(mount_header->dfa_section_off == sizeof(protecc_rule_profile_header_t) + rules_size + mount_header->strings_size,
+                "Unexpected mount DFA section offset");
 
         free(mount_buffer);
     }
