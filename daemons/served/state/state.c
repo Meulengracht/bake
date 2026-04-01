@@ -1129,6 +1129,7 @@ static int __execute_add_transaction_op(struct __state* state, struct served_tra
         VLOG_ERROR("served", "__execute_add_transaction_op: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
         return -1;
     }
+    VLOG_DEBUG("served", "__execute_add_transaction_op: adding transaction id=%u, type=%d, state=%d\n", transaction->id, transaction->type, served_sm_current_state(&transaction->sm));
 
     sqlite3_bind_int(stmt, 1, transaction->id);
     sqlite3_bind_int(stmt, 2, transaction->type);
@@ -1598,6 +1599,7 @@ unsigned int served_state_transaction_new(struct served_transaction_options* opt
         VLOG_ERROR("served", "served_state_transaction_new: state lock not held\n");
         return 0;
     }
+    VLOG_DEBUG("served", "served_state_transaction_new: creating new transaction with type=%d\n", options->type);
 
     // Generate the transaction ID now
     transactionID = g_state->next_transaction_id++;
@@ -1789,8 +1791,17 @@ int served_state_transaction_state_new(unsigned int id, struct state_transaction
     g_state->transaction_states = newStates;
     g_state->transaction_states[g_state->transaction_state_count] = *state;
     g_state->transaction_states[g_state->transaction_state_count].id = id;
+    g_state->transaction_states[g_state->transaction_state_count].name = state->name ? platform_strdup(state->name) : NULL;
+    g_state->transaction_states[g_state->transaction_state_count].channel = state->channel ? platform_strdup(state->channel) : NULL;
     g_state->transaction_states[g_state->transaction_state_count].logs = NULL;
     g_state->transaction_states[g_state->transaction_state_count].logs_count = 0;
+
+    if ((state->name != NULL && g_state->transaction_states[g_state->transaction_state_count].name == NULL) ||
+        (state->channel != NULL && g_state->transaction_states[g_state->transaction_state_count].channel == NULL)) {
+        __state_transaction_delete(&g_state->transaction_states[g_state->transaction_state_count]);
+        return -1;
+    }
+
     g_state->transaction_state_count++;
 
     // Defer the database operation

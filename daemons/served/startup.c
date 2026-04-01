@@ -116,7 +116,7 @@ static int __ensure_chef_paths(void)
     }
     free(path);
 
-    path = utils_path_packs_root();
+    path = utils_path_local_store_root();
     if (platform_mkdir(path) != 0) {
         VLOG_ERROR("startup", "failed to create path %s\n", path);
         free(path);
@@ -181,11 +181,8 @@ int served_startup(void)
         .name = "system-startup",
         .description = "Served system initialization",
         .type = SERVED_TRANSACTION_TYPE_EPHEMERAL,
-        .stateSet = &(struct served_sm_state_set){
-            .states = g_stateSetStartup,
-            .states_count = 7
-        },
-    });
+        .stateSet = (struct served_sm_state_set*)&g_stateSetStartup,
+    }, NULL);
     if (transactionId == (unsigned int)-1) {
         VLOG_ERROR("startup", "failed to create startup transaction\n");
         return -1;

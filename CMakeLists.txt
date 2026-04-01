@@ -24,6 +24,11 @@ endif()
 find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(SQLite3 REQUIRED)
+if(TARGET SQLite3::SQLite3)
+    set(CHEF_SQLITE_TARGET SQLite3::SQLite3 CACHE STRING "SQLite target name")
+elseif(TARGET SQLite::SQLite3)
+    set(CHEF_SQLITE_TARGET SQLite::SQLite3 CACHE STRING "SQLite target name")
+endif()
 
 include_directories(${CMAKE_BINARY_DIR})
 

@@ -21,9 +21,15 @@
 
 #include <stddef.h>
 
+// Magic identifier for local publisher, used for local installs where
+// packages are not coming from a verified publisher. This name is not
+// a valid publisher name.
+#define CHEF_PACKAGE_LOCAL_PUBLISHER "@"
+
 #define CHEF_PACKAGE_PUBLISHER_NAME_LENGTH_MAX 64
 #define CHEF_PACKAGE_NAME_LENGTH_MAX           128
 #define CHEF_PACKAGE_ID_LENGTH_MAX             CHEF_PACKAGE_PUBLISHER_NAME_LENGTH_MAX + CHEF_PACKAGE_NAME_LENGTH_MAX
+
 
 // prototypes imported from vafs;
 struct VaFs;
@@ -75,6 +81,42 @@ struct chef_package_application_config {
     // These are advisory and may be overridden by runtime policy.
     const char* network_gateway;
     const char* network_dns;
+};
+
+/**
+ * @brief A single key-value entry in a deserialized capability config.
+ * For scalar values, value is set and values/values_count are zero.
+ * For list values, value is NULL and values/values_count are populated.
+ */
+struct chef_package_capability_config {
+    const char*  key;
+    const char*  value;         // scalar value, or NULL for list-type
+    const char** values;        // array of strings for list-type
+    int          values_count;  // number of list items
+};
+
+/**
+ * @brief A deserialized capability from pack metadata.
+ */
+struct chef_package_capability {
+    const char*                           name;
+    struct chef_package_capability_config* config;
+    int                                   config_count;
+};
+
+enum chef_package_proof_origin {
+    CHEF_PACKAGE_PROOF_ORIGIN_NONE = 0,
+    CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER = 1,
+    CHEF_PACKAGE_PROOF_ORIGIN_STORE = 2
+};
+
+struct chef_package_proof {
+    enum chef_package_proof_origin origin;
+    const char*                    identity;
+    const char*                    hash_algorithm;
+    const char*                    hash;
+    const char*                    public_key;
+    const char*                    signature;
 };
 
 struct chef_package {

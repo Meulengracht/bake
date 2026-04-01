@@ -26,7 +26,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-static int __load_application(const char* name)
+static int __load_application(const char* name, int revision)
 {
     struct state_application* application;
     char**                    names = NULL;
@@ -39,7 +39,12 @@ static int __load_application(const char* name)
         return -1;
     }
 
-    package = utils_path_pack(names[0], names[1]);
+    if (revision < 0) {
+        package = utils_path_local_pack(names[0], names[1], revision);
+    } else {
+        package = utils_path_pack(names[0], names[1]);
+    }
+
     if (package == NULL) {
         strsplit_free(names);
         return -1;
@@ -80,7 +85,7 @@ enum sm_action_result served_handle_state_load(void* context)
         goto cleanup;
     }
 
-    if (__load_application(state->name)) {
+    if (__load_application(state->name, state->revision)) {
         goto cleanup;
     }
 
@@ -108,7 +113,11 @@ enum sm_action_result served_handle_state_load_all(void* context)
 
     for (int i = 0; i < count; i++) {
         struct state_application* app = &applications[i];
-        if (__load_application(app->name)) {
+        if (app->revisions_count == 0) {
+            continue;
+        }
+
+        if (__load_application(app->name, app->revisions[app->revisions_count - 1].version->revision)) {
             goto cleanup;
         }
     }

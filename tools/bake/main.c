@@ -30,6 +30,7 @@
 
 extern int init_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int run_main(int argc, char** argv, char** envp, struct bake_command_options* options);
+extern int sign_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int clean_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int store_main(int argc, char** argv, char** envp, struct bake_command_options* options);
 extern int remote_main(int argc, char** argv, char** envp, struct bake_command_options* options);
@@ -42,10 +43,16 @@ struct command_handler {
 static struct command_handler g_commands[] = {
     { "init",   init_main },
     { "build",  run_main },
+    { "sign",   sign_main },
     { "clean",  clean_main },
     { "store",  store_main },
     { "remote", remote_main }
 };
+
+static int __is_sign_command(struct command_handler* command)
+{
+    return command != NULL && command->handler == sign_main;
+}
 
 static void __print_help(void)
 {
@@ -62,6 +69,8 @@ static void __print_help(void)
     printf("              builds the provided (or inferred) bake recipe\n");
     printf("  clean\n");
     printf("              cleanup all build and intermediate directories\n");
+    printf("  sign\n");
+    printf("              sign the provided package, this is only required for local installs\n");
     printf("  remote {init, build, resume, download}\n");
     printf("              used for building recipes remotely for any given configured\n");
     printf("              build server, parallel builds can be initiated for multiple\n");
@@ -271,7 +280,11 @@ int main(int argc, char** argv, char** envp)
                     }
                 } else if (argv[i][0] != '-') {
                     if (__file_exists(argv[i])) {
-                        options.recipe_path = argv[i];
+                        if (__is_sign_command(command)) {
+                            options.input_path = argv[i];
+                        } else {
+                            options.recipe_path = argv[i];
+                        }
                     }
                 }
             }

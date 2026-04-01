@@ -1,0 +1,103 @@
+name: service-example
+author: Jane Doe
+email: jane@example.com
+version: 2.0.0
+license: MIT
+
+platforms:
+  - name: linux
+    base: ubuntu:24
+
+recipes:
+  - name: api-server
+    source:
+      type: path
+      path: api-server
+    steps:
+    - name: config
+      type: generate
+      system: cmake
+      arguments: [-G, '"Unix Makefiles"']
+    - name: build
+      type: build
+      depends: [config]
+      system: make
+
+  - name: worker
+    source:
+      type: path
+      path: worker
+    steps:
+    - name: config
+      type: generate
+      system: cmake
+      arguments: [-G, '"Unix Makefiles"']
+    - name: build
+      type: build
+      depends: [config]
+      system: make
+
+packs:
+# ---------- API server pack ----------
+# Exposes a gRPC endpoint that other packages can connect to,
+# and serves shared icon assets to consumers.
+- name: api-server
+  type: application
+  summary: API server providing a gRPC service and shared assets
+  description: |
+    Demonstrates cross-package capabilities.  The api-server pack
+    declares a service endpoint and a shared-content source that
+    other packs can consume.
+  capabilities:
+    - name: network
+      config:
+        dns: 10.0.0.1
+        gateway: 10.0.0.1
+
+    # Publish a service endpoint for other packages
+    - name: service
+      config:
+        endpoint: service-example.api
+        protocol: grpc
+        port: 8080
+
+    # Publish read-only assets that other packages can mount
+    - name: shared-content
+      config:
+        source: /usr/share/icons
+        tag: service-example.icons
+
+  commands:
+  - name: api-server
+    path: /usr/bin/api-server
+    type: daemon
+
+# ---------- Worker pack ----------
+# Consumes the API server's service endpoint and mounts its
+# shared icon assets.
+- name: worker
+  type: application
+  summary: Worker that consumes the API server
+  description: |
+    Demonstrates the client side of cross-package capabilities.
+    The worker connects to the api-server service and mounts its
+    shared icons read-only.
+  capabilities:
+    - name: process-control
+
+    # Connect to the API server's endpoint
+    - name: service-client
+      config:
+        endpoint: acme/service-example.api
+        required: true
+
+    # Mount the API server's shared icons
+    - name: shared-content-client
+      config:
+        tag: acme/service-example.icons
+        mount: /usr/share/icons
+
+  commands:
+  - name: worker
+    path: /usr/bin/worker
+    type: executable

@@ -74,6 +74,10 @@ static int __mkdir_if_not_exists(const char* path, unsigned int mode, uid_t uid,
         return status;
     }
 
+    // Ensure the requested permissions are applied regardless of the
+    // process umask (mkdir applies umask, chmod does not).
+    platform_chmod(path, mode);
+
     status = chown(path, uid, gid);
     if (status) {
         VLOG_ERROR("dirs", "failed to change ownership of %s\n", path);
@@ -168,9 +172,9 @@ static int __ensure_chef_global_dirs(void)
         // with the filesystem
         { &g_dirs.root,   0777 },
         // Config/cache can be more restrictive, we do not want arbitrary access
-        // here
-        { &g_dirs.config, 0644 },
-        { &g_dirs.cache,  0644 },
+        // here, but directories still need the execute bit for traversal.
+        { &g_dirs.config, 0755 },
+        { &g_dirs.cache,  0755 },
         { NULL },
     };
     for (int i = 0; paths[i].path != NULL; i++) {

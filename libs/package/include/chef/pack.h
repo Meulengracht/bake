@@ -64,6 +64,9 @@ struct __pack_options {
 
     // Package configuration options
     struct __application_configuration_options app_config;
+
+    // Capabilities declared for this pack (list<recipe_pack_capability>)
+    struct list* capabilities;
 };
 
 /**

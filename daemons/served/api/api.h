@@ -13,23 +13,17 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 
-#ifndef __BAKE_COMMANDS_H__
-#define __BAKE_COMMANDS_H__
+#ifndef __SERVED_API_INTERNAL_H__
+#define __SERVED_API_INTERNAL_H__
 
-#include <chef/cli.h>
-#include <chef/recipe.h>
-#include <stdlib.h>
+struct state_application;
+struct chef_served_package;
 
-struct bake_command_options {
-    struct recipe* recipe;
-    const char*    recipe_path;
-    const char*    input_path;
-    const char*    platform;
-    struct list    architectures;
-    const char*    cwd;
-};
+extern unsigned int served_api_create_install_transaction(const char* packageName, const char* channel, int revision);
+extern void         served_api_convert_app_to_info(struct state_application* application, struct chef_served_package* info);
+extern void         served_api_cleanup_info(struct chef_served_package* info);
 
-#endif //!__BAKE_COMMANDS_H__
+#endif /* __SERVED_API_INTERNAL_H__ */

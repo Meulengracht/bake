@@ -27,7 +27,11 @@
 #include <stdio.h>
 #include <vlog.h>
 
+#define LOCAL_UPLOAD_STREAM_BUFFER_SIZE (256 * 1024)
+#define LOCAL_UPLOAD_STREAM_BUFFER_COUNT 4
+
 // server protocol
+#include "chef_served_local_upload_service_server.h"
 #include "chef_served_service_server.h"
 #include "startup.h"
 
@@ -82,6 +86,11 @@ int __init_server(gracht_server_t** serverOut)
     int                                code;
     
     gracht_server_configuration_init(&serverConfiguration);
+    gracht_server_configuration_set_stream_buffer_size(
+        &serverConfiguration,
+        LOCAL_UPLOAD_STREAM_BUFFER_SIZE,
+        LOCAL_UPLOAD_STREAM_BUFFER_COUNT
+    );
     
     code = gracht_server_create(&serverConfiguration, serverOut);
     if (code) {
@@ -89,7 +98,16 @@ int __init_server(gracht_server_t** serverOut)
         return code;
     }
 
-    return __register_server_links(*serverOut);
+    code = __register_server_links(*serverOut);
+    if (code) {
+        return code;
+    }
+
+    // Make the socket accessible to non-root users so any user
+    // can run access the protocol. The authentication of users will
+    // be handled on the protocol level, not by the socket permissions.
+    platform_chmod(g_servedUnPath, 0666);
+    return 0;
 }
 
 static void __cleanup_systems(int sig)
@@ -160,6 +178,7 @@ int main(int argc, char** argv)
 
     // Register protocol handlers
     gracht_server_register_protocol(g_server, &chef_served_server_protocol);
+    gracht_server_register_protocol(g_server, &chef_served_local_upload_server_protocol);
     
     VLOG_DEBUG("served", "entering main loop\n");
     return gracht_server_main_loop(g_server);

@@ -21,13 +21,17 @@
 #include <chef/package.h>
 #include <chef/platform.h>
 #include <gracht/client.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
+#include "chef_served_local_upload_service_client.h"
 #include "chef_served_service_client.h"
 
 extern int __chef_client_initialize(gracht_client_t** clientOut);
+extern int __chef_client_subscribe(gracht_client_t* client);
+extern int __chef_client_await_transaction(gracht_client_t* client, unsigned int transactionId, enum chef_transaction_result* resultOut);
 
 static const char* g_installMsgs[] = {
     "success",
@@ -46,98 +50,49 @@ static void __print_help(void)
     printf("  -R, --revision\n");
     printf("      Install a specific revision of the package\n");
     printf("  -P, --proof\n");
-    printf("      If the package is a local file, then a proof can be provided in addition to this\n");
+    printf("      If the package is a local file, use this proof instead of the default <pack>.proof\n");
+    printf("  -d, --detach\n");
+    printf("      Submit the install and exit without waiting for completion\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
 }
 
-static int __ask_yes_no_question(const char* question)
+static char* __default_local_proof_path(const char* packagePath)
 {
-    char answer[3];
-    printf("%s [y/n] ", question);
-    if (fgets(answer, sizeof(answer), stdin) == NULL) {
-        return 0;
-    }
-    return answer[0] == 'y' || answer[0] == 'Y';
-}
+    char*  proofPath;
+    size_t length;
 
-static int __parse_package_identifier(const char* id, const char** publisherOut, const char** nameOut)
-{
-    char** names;
-    int    count = 0;
-
-    // split the publisher/package
-    names = strsplit(id, '/');
-    if (names == NULL) {
-        fprintf(stderr, "unknown package name or path: %s\n", id);
-        return -1;
-    }
-    
-    while (names[count] != NULL) {
-        count++;
-    }
-
-    if (count != 2) {
-        fprintf(stderr, "unknown package name or path: %s\n", id);
-        return -1;
-    }
-
-    *publisherOut = platform_strdup(names[0]);
-    *nameOut      = platform_strdup(names[1]);
-    strsplit_free(names);
-    return 0;
-}
-
-static char* __get_unsafe_infoname(struct chef_package* package, struct chef_version* version)
-{
-    char* name;
-
-    name = malloc(128);
-    if (name == NULL) {
+    length = strlen(packagePath);
+    proofPath = malloc(length + strlen(".proof") + 1);
+    if (proofPath == NULL) {
         return NULL;
     }
 
-    sprintf(name, "[devel] %s %i.%i.%i",
-        package->package, version->major,
-        version->minor, version->patch
-    );
-    return name;
+    sprintf(proofPath, "%s.proof", packagePath);
+    return proofPath;
 }
 
-static char* __get_safe_infoname(const char* publisher, struct chef_package* package, struct chef_version* version)
+static int __proof_file_exists(const char* proofPath)
 {
-    char* name;
-
-    name = malloc(128);
-    if (name == NULL) {
-        return NULL;
-    }
-
-    sprintf(name, "%s/%s (verified, revision %i)",
-        publisher, package->package, version->revision
-    );
-    return name;
+    struct platform_stat stats;
+    return platform_stat(proofPath, &stats) == 0;
 }
 
 static int __verify_package(const char* path, const char* proof)
 {
     struct chef_package* package;
-    struct chef_version* version;
     int                  status;
 
     if (proof == NULL) {
-        fprintf(stderr, "WARNING: no proof provided for package, cannot verify its integrity.\n");
-        fprintf(stderr, "It's recommended not to continue with the installation of this package,\n");
-        fprintf(stderr, "unless you know exactly what you are doing and what you are installing.\n");
-        status = __ask_yes_no_question("continue?");
-        if (!status) {
-            fprintf(stderr, "aborting\n");
-            return -1;
-        }
+        // Unsigned local installs are still allowed when explicitly requested;
+        // this preflight only checks that the package can be loaded.
+    } else if (proof[0] == '\0') {
+        fprintf(stderr, "no proof was provided for the local package\n");
+        return -1;
     }
 
     // dont care about commands
-    status = chef_package_load(path, &package, &version, NULL, NULL);
+    status = chef_package_load(path, &package, NULL, NULL, NULL);
     if (status != 0) {
         fprintf(stderr, "failed to load package: %s\n", path);
         return -1;
@@ -145,90 +100,368 @@ static int __verify_package(const char* path, const char* proof)
 
     // free resources
     chef_package_free(package);
-    chef_version_free(version);
+    return 0;
+}
+
+static int __upload_local_resource(
+    gracht_client_t* client,
+    const char*      resourceId,
+    const char*      path)
+{
+    struct gracht_message_context context;
+    struct platform_stat          stats;
+    char                          sessionId[128] = { 0 };
+    unsigned char                 buffer[256 * 1024];
+    FILE*                         file = NULL;
+    uint64_t                      offset = 0;
+    unsigned int                  index = 0;
+    int                           status = -1;
+
+    if (resourceId == NULL || resourceId[0] == '\0' || path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    status = platform_stat(path, &stats);
+    if (status != 0) {
+        return status;
+    }
+
+    if (stats.size > UINT_MAX) {
+        errno = EFBIG;
+        return -1;
+    }
+
+    file = fopen(path, "rb");
+    if (file == NULL) {
+        return -1;
+    }
+
+    status = chef_served_local_upload_open(client, &context, resourceId, (unsigned int)stats.size);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    status = gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    status = chef_served_local_upload_open_result(client, &context, &sessionId[0], sizeof(sessionId));
+    if (status != 0 || sessionId[0] == '\0') {
+        status = -1;
+        goto cleanup;
+    }
+
+    while (offset < stats.size) {
+        size_t bytesRead = fread(&buffer[0], 1, sizeof(buffer), file);
+        if (bytesRead == 0) {
+            status = ferror(file) ? -1 : 0;
+            break;
+        }
+
+        status = chef_served_local_upload_write_chunk(client, NULL, &sessionId[0], index, &buffer[0], (uint32_t)bytesRead);
+        if (status != 0) {
+            goto cleanup;
+        }
+
+        offset += bytesRead;
+        index++;
+    }
+
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    status = chef_served_local_upload_finish(client, NULL, &sessionId[0]);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    status = chef_served_local_upload_close(client, NULL, &sessionId[0]);
+
+cleanup:
+    if (file != NULL) {
+        fclose(file);
+    }
+    return status;
+}
+
+static int __install_local_package(
+    gracht_client_t* client,
+    const char*      packagePath,
+    const char*      proofPath,
+    unsigned int*    transactionIdOut)
+{
+    struct gracht_message_context        context;
+    struct chef_served_install_local_options options = { 0 };
+    struct chef_served_install_local_session session = { 0 };
+    struct platform_stat                 packageStats;
+    struct platform_stat                 proofStats;
+    int                                  status;
+
+    if (transactionIdOut != NULL) {
+        *transactionIdOut = 0;
+    }
+
+    status = platform_stat(packagePath, &packageStats);
+    if (status != 0) {
+        return status;
+    }
+
+    options.package_size = (size_t)packageStats.size;
+    if (proofPath != NULL && proofPath[0] != '\0') {
+        status = platform_stat(proofPath, &proofStats);
+        if (status != 0) {
+            return status;
+        }
+        options.proof_size = (size_t)proofStats.size;
+    }
+
+    status = chef_served_install_local_begin(client, &context, &options);
+    if (status != 0) {
+        return status;
+    }
+
+    status = gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    if (status != 0) {
+        return status;
+    }
+
+    status = chef_served_install_local_begin_result(client, &context, &session);
+    if (status != 0) {
+        return status;
+    }
+
+    if (session.import_id == NULL || session.package_resource_id == NULL) {
+        chef_served_install_local_session_destroy(&session);
+        errno = EPROTO;
+        return -1;
+    }
+
+    status = __upload_local_resource(client, session.package_resource_id, packagePath);
+    if (status != 0) {
+        chef_served_install_local_cancel(client, NULL, session.import_id);
+        chef_served_install_local_session_destroy(&session);
+        return status;
+    }
+
+    if (proofPath != NULL && proofPath[0] != '\0') {
+        if (session.proof_resource_id == NULL || session.proof_resource_id[0] == '\0') {
+            chef_served_install_local_cancel(client, NULL, session.import_id);
+            chef_served_install_local_session_destroy(&session);
+            errno = EPROTO;
+            return -1;
+        }
+
+        status = __upload_local_resource(client, session.proof_resource_id, proofPath);
+        if (status != 0) {
+            chef_served_install_local_cancel(client, NULL, session.import_id);
+            chef_served_install_local_session_destroy(&session);
+            return status;
+        }
+    }
+
+    status = chef_served_install_local_end(client, &context, session.import_id);
+    if (status == 0) {
+        status = gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    }
+    if (status == 0 && transactionIdOut != NULL) {
+        status = chef_served_install_local_end_result(client, &context, transactionIdOut);
+    }
+
+    chef_served_install_local_session_destroy(&session);
+    return status;
+}
+
+static int __install_from_local(
+    gracht_client_t* client,
+    const char*      package_path,
+    const char*      proof_path,
+    unsigned int*    transactionIdOut)
+{
+    int status;
+
+    status = __verify_package(package_path, proof_path);
+    if (status) {
+        return status;
+    }
+    
+    status = __install_local_package(
+        client,
+        package_path,
+        proof_path,
+        transactionIdOut
+    );
+    if (status) {
+        printf("communication error: %i\n", status);
+    }
+    return status;  
+}
+
+static int __install_from_store(gracht_client_t* client, struct chef_served_install_options* options, unsigned int* transactionIdOut)
+{
+    struct gracht_message_context context;
+    int                           status;
+
+    status = chef_served_install(client, &context, options);
+    if (status) {
+        printf("communication error: %i\n", status);
+        return status;
+    }
+
+    status = gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    if (status) {
+        printf("communication error: %i\n", status);
+        return status;
+    }
+
+    status = chef_served_install_result(client, &context, transactionIdOut);
+    if (status) {
+        printf("communication error: %i\n", status);
+        return status;
+    }
+    return 0;
+}
+
+struct __install_options {
+    struct chef_served_install_options chef_options;
+    int                                detach;
+    const char*                        package_path;
+    const char*                        proof_path;
+};
+
+static int __is_package_file(const char* package)
+{
+    struct platform_stat stats;
+    return platform_stat(package, &stats) == 0 && stats.type == PLATFORM_FILETYPE_FILE;
+}
+
+static int __parse_options(struct __install_options* options, int argc, char** argv)
+{
+    const char* package = NULL;
+    uint64_t    revision = 0;
+
+    for (int i = 2; i < argc; i++) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            __print_help();
+            return -1;
+        } else if (!__parse_string_switch(argv, argc, &i, "-C", 2, "--channel", 9, NULL, (char**)&options->chef_options.channel)) {
+            continue;
+        } else if (!__parse_string_switch(argv, argc, &i, "-P", 2, "--proof", 7, NULL, (char**)&options->proof_path)) {
+            continue;
+        } else if (!__parse_quantity_switch(argv, argc, &i, "-R", 2, "--revision", 10, 0, &revision)) {
+            options->chef_options.revision = (int)revision;
+            continue;
+        } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--detach")) {
+            options->detach = 1;
+            continue;
+        } else if (argv[i][0] != '-') {
+            if (package == NULL) {
+                package = argv[i];
+            } else {
+                printf("unknown option: %s\n", argv[i]);
+                __print_help();
+                return -1;
+            }
+        }
+    }
+
+    // if the package looks like a file, treat it as a local install
+    if (package != NULL && __is_package_file(package)) {
+        options->package_path = package;
+
+        // In this case, the proof path *must* be provided
+        if (options->proof_path == NULL) {
+            char* defaultProofPath = __default_local_proof_path(package);
+            if (defaultProofPath != NULL && __proof_file_exists(defaultProofPath)) {
+                options->proof_path = defaultProofPath;
+            }
+            
+            if (options->proof_path == NULL) {
+                fprintf(stderr, "Missing local proof. Provide --proof or use --allow-unsigned in development mode.\n");
+                free(defaultProofPath);
+                return -1;
+            }
+        }
+    } else {
+        options->chef_options.package = platform_strdup(package);
+    }
+
     return 0;
 }
 
 int install_main(int argc, char** argv)
 {
-    struct chef_served_install_options installOptions = { 0 };
-    gracht_client_t*                   client;
-    int                                status;
-    struct platform_stat               stats;
-    uint64_t                           revision;
-    const char*                        package   = NULL;
-    char*                              fullpath  = NULL;
+    struct __install_options     installOptions = { 0 };
+    gracht_client_t*             client;
+    enum chef_transaction_result txnResult;
+    unsigned int                 transactionId = 0;
+    int                          status;
 
     // set default channel
-    installOptions.channel = "stable";
+    installOptions.chef_options.channel = "stable";
 
     if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            } else if (!__parse_string_switch(argv, argc, &i, "-C", 2, "--channel", 9, NULL, (char**)&installOptions.channel)) {
-                continue;
-            } else if (!__parse_string_switch(argv, argc, &i, "-P", 2, "--proof", 7, NULL, &installOptions.proof)) {
-                continue;
-            } else if (!__parse_quantity_switch(argv, argc, &i, "-R", 2, "--revision", 10, 0, &revision)) {
-                installOptions.revision = (int)revision;
-                continue;
-            } else if (argv[i][0] != '-') {
-                if (package == NULL) {
-                    package = argv[i];
-                } else {
-                    printf("unknown option: %s\n", argv[i]);
-                    __print_help();
-                    return -1;
-                }
-            }
+        status = __parse_options(&installOptions, argc, argv);
+        if (status) {
+            return status;
         }
     }
 
-    if (package == NULL) {
+    if (installOptions.package_path == NULL && installOptions.chef_options.package == NULL) {
         printf("no package specified\n");
         __print_help();
         return -1;
     }
-
-    // is the package a path? otherwise try to download from
-    // official repo
-    if (platform_stat(package, &stats) == 0) {
-        status = __verify_package(package, installOptions.proof);
-        if (status != 0) {
-            return status;
-        }
-        
-        fullpath = platform_abspath(package);
-        if (fullpath == NULL) {
-            printf("failed to get resolve package path: %s\n", package);
-            return -1;
-        }
-
-        installOptions.path = fullpath;
-    } else {
-        installOptions.package = (char*)package;
-    }
-
-    // at this point package points to a file in our PATH
-    // but we need the absolute path
+    
     status = __chef_client_initialize(&client);
     if (status != 0) {
         printf("failed to initialize client: %s\n", strerror(status));
         return status;
     }
 
-    status = chef_served_install(client, NULL, &installOptions);
-    if (status != 0) {
-        printf("communication error: %i\n", status);
+    // Only needed for packet based links, currently we connect unconditionally
+    // as a stream-based link, meaning we are always subscribed to events.
+#if 0
+    // Subscribe for transaction events before issuing the install,
+    // so we don't miss any notifications.
+    if (!installOptions.detach) {
+        status = __chef_client_subscribe(client);
+        if (status) {
+            fprintf(stderr, "warning: failed to subscribe for events, will not track progress\n");
+        }
+    }
+#endif
+
+    // is the package a path? otherwise try to download from
+    // official repo
+    if (installOptions.package_path != NULL) {
+        status = __install_from_local(client, installOptions.package_path, installOptions.proof_path, &transactionId);
+    } else {
+        status = __install_from_store(client, &installOptions.chef_options, &transactionId);
+    }
+
+    if (status) {
         goto cleanup;
     }
 
-    gracht_client_wait_message(client, NULL, GRACHT_MESSAGE_BLOCK);
+    if (installOptions.detach) {
+        printf("transaction %u submitted\n", transactionId);
+        goto cleanup;
+    }
+
+    status = __chef_client_await_transaction(client, transactionId, &txnResult);
+    if (status) {
+        fprintf(stderr, "lost connection while waiting for transaction %u\n", transactionId);
+        goto cleanup;
+    }
+
+    if (txnResult != CHEF_TRANSACTION_RESULT_SUCCESS) {
+        status = -1;
+    }
 
 cleanup:
     gracht_client_shutdown(client);
-    free(fullpath);
     return status;
 }

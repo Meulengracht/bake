@@ -91,6 +91,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
     char*                      base = NULL;
     struct chef_package*       package = NULL;
     sm_event_t                 event = SERVED_TX_EVENT_FAILED;
+    int                        revision;
 
     served_state_lock();
     state = served_state_transaction(transaction->id);
@@ -101,6 +102,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
     }
 
     names = utils_split_package_name(state->name);
+    revision = state->revision;
     served_state_unlock();
 
     if (names == NULL) {
@@ -108,7 +110,12 @@ enum sm_action_result served_handle_state_dependencies(void* context)
         goto cleanup;
     }
 
-    path = utils_path_pack(names[0], names[1]);
+    if (revision < 0) {
+        path = utils_path_local_pack(names[0], names[1], revision);
+    } else {
+        path = utils_path_pack(names[0], names[1]);
+    }
+    
     if (path == NULL) {
         TXLOG_ERROR(transaction,
             "Failed to construct package path for '%s/%s'",
@@ -130,17 +137,33 @@ enum sm_action_result served_handle_state_dependencies(void* context)
 
     // If a base is specified, ensure it is installed
     if (package->base != NULL && strlen(package->base) > 0) {
-        base = utils_base_to_store_id(package->base);
-        if (base == NULL) {
-            TXLOG_ERROR(
-                transaction,
-                "Failed to allocate memory for base store ID (%s)",
-                package->base
-            );
-            goto cleanup;
+        // Two types of automatic bases are supported:
+        // Bases from the same identity (e.g. publisher "foo" can have package "foo/base" as a base for "foo/bar")
+        // Bases from the official identity (vali/base)
+        const char* possibleBaseIdentities[3] = {
+            package->publisher,
+            "vali",
+            NULL
+        };
+
+        for (int i = 0; possibleBaseIdentities[i] != NULL; i++) {
+            base = utils_base_to_store_id(possibleBaseIdentities[i], package->base);
+            if (base == NULL) {
+                TXLOG_ERROR(
+                    transaction,
+                    "Failed to allocate memory for base store ID (%s)",
+                    package->base
+                );
+                break;
+            }
+
+            event = __ensure_base(transaction, state->name, base);
+            free(base);
+            if (event == SERVED_TX_EVENT_OK) {
+                break;
+            }
         }
 
-        event = __ensure_base(transaction, state->name, base);
     } else {
         // No base specified, nothing to do
         TXLOG_INFO(transaction, "No package dependencies detected");
@@ -150,7 +173,6 @@ enum sm_action_result served_handle_state_dependencies(void* context)
 cleanup:
     chef_package_free(package);
     strsplit_free(names);
-    free(base);
     free(path);
     served_sm_post_event(&transaction->sm, event);
     return event == SERVED_TX_EVENT_WAIT ? SM_ACTION_WAIT : SM_ACTION_CONTINUE;

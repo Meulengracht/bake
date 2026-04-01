@@ -369,6 +369,10 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
 
     vlog_step_begin(&step_pack);
     status = build_step_pack(g_context);
+    if (status) {
+        vlog_step_fail(&step_pack);
+        goto cleanup;
+    }
     vlog_step_end(&step_pack, status == 0);
 
 cleanup:

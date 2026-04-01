@@ -1,4 +1,5 @@
 set (GENERATED_SRCS
+    ${CMAKE_BINARY_DIR}/protocols/chef_served_local_upload_service_client.c
     ${CMAKE_BINARY_DIR}/protocols/chef_served_service_client.c
 )
 set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)

@@ -32,6 +32,7 @@
 #define CHEF_PACKAGE_APPS_GUID            { 0xBE0B9C0E, 0x78D0, 0x45B9, { 0xBA, 0xF9, 0x51, 0xC8, 0x0B, 0x8D, 0x46, 0xC9 } }
 #define CHEF_PACKAGE_INGREDIENT_OPTS_GUID { 0xACB75CCE, 0x1A4C, 0x4830, { 0xA2, 0x54, 0x85, 0x2E, 0x9C, 0x03, 0xF5, 0xBA } }
 #define CHEF_PACKAGE_NETWORK_GUID         { 0x2E8B3C5D, 0xA8A0, 0x4A62, { 0xB4, 0xD8, 0x11, 0x2C, 0xEE, 0x41, 0x2A, 0x19 } }
+#define CHEF_PACKAGE_CAPABILITIES_GUID    { 0x7F3A1B2D, 0xC9E4, 0x4D56, { 0xA1, 0x7E, 0x3B, 0x8F, 0x6D, 0x52, 0xE9, 0x04 } }
 
 struct chef_vafs_feature_package_header {
     struct VaFsFeatureHeader header;
@@ -98,6 +99,26 @@ struct chef_vafs_feature_package_network {
     struct VaFsFeatureHeader header;
     uint32_t                 gateway_length;
     uint32_t                 dns_length;
+};
+
+// Capability definitions for application packages.
+// Variable-length binary encoding:
+//   For each capability:
+//     uint32_t name_length
+//     uint32_t config_count
+//     char     name[name_length]
+//     For each config entry:
+//       uint32_t key_length
+//       uint32_t value_length    (>0 for scalar, 0 for list)
+//       uint32_t values_count    (>0 for list, 0 for scalar)
+//       char     key[key_length]
+//       char     value[value_length]           (scalar)
+//       OR for each list item:
+//         uint32_t item_length
+//         char     item[item_length]
+struct chef_vafs_feature_package_capabilities {
+    struct VaFsFeatureHeader header;
+    uint32_t                 capabilities_count;
 };
 
 #endif //!__PLATFORM_UTILS_VAFS_H__

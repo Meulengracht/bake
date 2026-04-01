@@ -394,6 +394,76 @@ static int __load_pack_network_defaults(const char* packPath, char** gatewayOut,
     return 0;
 }
 
+// System capability names that map directly to containerv policy plugins
+static const char* g_systemCapabilities[] = {
+    "network",
+    "file-control",
+    "process-control",
+    "package-management",
+    NULL
+};
+
+static int __is_system_capability(const char* name)
+{
+    for (int i = 0; g_systemCapabilities[i] != NULL; i++) {
+        if (strcmp(name, g_systemCapabilities[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int __load_pack_capabilities_as_plugins(
+    const char*                packPath,
+    struct chef_policy_spec*   policyOut)
+{
+    struct VaFs*                    vafs = NULL;
+    struct chef_package_capability* capabilities = NULL;
+    int                             capCount = 0;
+    int                             pluginCount = 0;
+    int                             pluginIdx = 0;
+    int                             status;
+
+    if (packPath == NULL) {
+        return 0;
+    }
+
+    status = vafs_open_file(packPath, &vafs);
+    if (status != 0) {
+        return 0;
+    }
+
+    status = chef_package_load_vafs(
+        vafs, NULL, NULL, NULL, NULL, NULL,
+        &capabilities, &capCount
+    );
+    vafs_close(vafs);
+    if (status != 0 || capabilities == NULL || capCount == 0) {
+        return 0;
+    }
+
+    // count system capabilities to know how many plugins to allocate
+    for (int i = 0; i < capCount; i++) {
+        if (__is_system_capability(capabilities[i].name)) {
+            pluginCount++;
+        }
+    }
+
+    if (pluginCount > 0) {
+        chef_policy_spec_plugins_add(policyOut, pluginCount);
+        for (int i = 0; i < capCount; i++) {
+            if (__is_system_capability(capabilities[i].name)) {
+                chef_policy_spec_plugins_get(policyOut, pluginIdx)->name =
+                    platform_strdup(capabilities[i].name);
+                pluginIdx++;
+            }
+        }
+    }
+
+    chef_package_capabilities_free(capabilities, capCount);
+    return pluginCount;
+}
+
 static enum chef_status __create_container(
     gracht_client_t* client,
     const char*      id,
@@ -443,6 +513,12 @@ static enum chef_status __create_container(
         (void)__load_pack_network_defaults(package, &params.network.gateway_ip, &params.network.dns);
         (void)__load_pack_network_defaults(rootfs, &params.network.gateway_ip, &params.network.dns);
     }
+
+    // Load capabilities from the package and convert system capabilities
+    // (network, file-control, process-control, package-management) into
+    // policy plugins for the container security policy.
+    chef_policy_spec_init(&params.policy);
+    (void)__load_pack_capabilities_as_plugins(package, &params.policy);
 
     // On Windows HCS containers, OVERLAY layers are not supported.
 #ifdef _WIN32

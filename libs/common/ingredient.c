@@ -192,7 +192,8 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
         vafsHandle,
         &ingredient->package,
         &ingredient->version,
-        NULL, NULL, NULL
+        NULL, NULL, NULL,
+        NULL, NULL
     );
     if (status) {
         fprintf(stderr, "ingredient_open: cannot open vafs image: %s\n", path);

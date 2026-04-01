@@ -118,6 +118,7 @@ enum sm_action_result served_handle_state_install(void* context)
     const char*                path;
     char**                     names = NULL;
     int                        status;
+    int                        revision;
 
     served_state_lock();
     state = served_state_transaction(transaction->id);
@@ -126,26 +127,40 @@ enum sm_action_result served_handle_state_install(void* context)
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
     }
-    served_state_unlock();
 
     names = utils_split_package_name(state->name);
+    revision = state->revision;
+    served_state_unlock();
+
     if (names == NULL) {
         goto cleanup;
     }
 
-    status = store_package_path(&(struct store_package) {
-        .name = state->name,
-        .platform = CHEF_PLATFORM_STR,
-        .arch = CHEF_ARCHITECTURE_STR,
-        .channel = NULL,
-        .revision = state->revision
-    }, &path);
-    if (status) {
-        VLOG_ERROR("served", "could not find the revision %i for %s\n", state->revision, state->name);
-        goto cleanup;
+    if (revision < 0) {
+        path = utils_path_local_pack(names[0], names[1], revision);
+        if (path == NULL) {
+            goto cleanup;
+        }
+    } else {
+        status = store_package_path(&(struct store_package) {
+            .name = state->name,
+            .platform = CHEF_PLATFORM_STR,
+            .arch = CHEF_ARCHITECTURE_STR,
+            .channel = NULL,
+            .revision = revision
+        }, &path);
+        if (status) {
+            VLOG_ERROR("served", "could not find the revision %i for %s\n", revision, state->name);
+            goto cleanup;
+        }
     }
 
-    storagePath = utils_path_pack(names[0], names[1]);
+    if (revision < 0) {
+        storagePath = utils_path_local_pack(names[0], names[1], revision);
+    } else {
+        storagePath = utils_path_pack(names[0], names[1]);
+    }
+
     if (storagePath == NULL) {
         goto cleanup;
     }
@@ -173,6 +188,9 @@ enum sm_action_result served_handle_state_install(void* context)
 
 cleanup:
     strsplit_free(names);
+    if (state != NULL && state->revision < 0) {
+        free((void*)path);
+    }
     free((void*)storagePath);
     served_sm_post_event(&transaction->sm, event);
     return SM_ACTION_CONTINUE;

@@ -13,23 +13,15 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 
-#ifndef __BAKE_COMMANDS_H__
-#define __BAKE_COMMANDS_H__
+#include <gracht/server.h>
 
-#include <chef/cli.h>
-#include <chef/recipe.h>
-#include <stdlib.h>
+#include "chef_served_service_server.h"
 
-struct bake_command_options {
-    struct recipe* recipe;
-    const char*    recipe_path;
-    const char*    input_path;
-    const char*    platform;
-    struct list    architectures;
-    const char*    cwd;
-};
-
-#endif //!__BAKE_COMMANDS_H__
+void chef_served_switch_invocation(struct gracht_message* message, const struct chef_served_switch_options* options)
+{
+    // TODO: Figure out what this means, but ignore it for now
+    chef_served_switch_response(message, 0);
+}

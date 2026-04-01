@@ -19,6 +19,8 @@
 #ifndef __SERVED_UTILS_H__
 #define __SERVED_UTILS_H__
 
+#include <chef/package.h>
+
 typedef struct gracht_server gracht_server_t;
 struct chef_config_address;
 
@@ -39,16 +41,26 @@ extern int utils_verify_publisher(const char* publisher);
 extern int utils_verify_package(const char* publisher, const char* package, int revision);
 
 /**
+ * @brief Loads a developer proof for a local package.
+ */
+extern int utils_load_local_package_proof(const char* proofPath, struct chef_package_proof** proofOut);
+
+/**
+ * @brief Verifies a local package using a developer proof.
+ */
+extern int utils_verify_local_package(const char* packagePath, const char* proofPath, struct chef_package_proof** proofOut);
+
+/**
  * @brief Splits a package name in the format of <publisher>/<package> into their subparts
  * The array must be freed with strsplit_free from chef/platform.h
  */
 extern char** utils_split_package_name(const char* name);
 
 /**
- * @brief Converts a base identifier (os:version) into a store ID format (vali/os-version).
+ * @brief Converts a base identifier (os:version) into a store ID format (identity/os-version).
  * The returned string must be freed by the caller.
  */
-extern char* utils_base_to_store_id(const char* base);
+extern char* utils_base_to_store_id(const char* identity, const char* base);
 
 /**
  * @brief Formats the given system path according to the base-directory set for the current
@@ -60,12 +72,14 @@ extern char* served_paths_path(const char* path);
 // The following functions return paths already adjusted by served_paths_path
 extern void  utils_path_set_root(const char* root);
 extern char* utils_path_pack(const char* publisher, const char* package);
+extern char* utils_path_local_pack(const char* publisher, const char* package, int revision);
+extern char* utils_path_local_proof(const char* publisher, const char* package, int revision);
 extern char* utils_path_data(const char* publisher, const char* package, int revision);
 extern char* utils_path_command_wrapper(const char* name);
 extern char* utils_path_state_db(void);
 
 extern char* utils_path_binary_path(void);
-extern char* utils_path_packs_root(void);
+extern char* utils_path_local_store_root(void);
 extern char* utils_path_data_root(void);
 
 
