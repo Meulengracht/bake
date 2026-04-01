@@ -57,10 +57,10 @@ extern int utils_verify_local_package(const char* packagePath, const char* proof
 extern char** utils_split_package_name(const char* name);
 
 /**
- * @brief Converts a base identifier (os:version) into a store ID format (vali/os-version).
+ * @brief Converts a base identifier (os:version) into a store ID format (identity/os-version).
  * The returned string must be freed by the caller.
  */
-extern char* utils_base_to_store_id(const char* base);
+extern char* utils_base_to_store_id(const char* identity, const char* base);
 
 /**
  * @brief Formats the given system path according to the base-directory set for the current

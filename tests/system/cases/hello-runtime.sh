@@ -46,6 +46,7 @@ SERVED_LOG="$TEST_LOG_DIR/served.log"
 BUILD_LOG="$TEST_LOG_DIR/bake-build.log"
 INSTALL_LOG="$TEST_LOG_DIR/serve-install.log"
 LIST_LOG="$TEST_LOG_DIR/serve-list.log"
+SIGN_LOG="$TEST_LOG_DIR/serve-sign.log"
 RUN_LOG="$TEST_LOG_DIR/run-output.log"
 
 mkdir -p "$WORK_DIR" "$SERVED_ROOT"
@@ -56,6 +57,7 @@ register_log    "$SERVED_LOG"
 register_log    "$BUILD_LOG"
 register_log    "$INSTALL_LOG"
 register_log    "$LIST_LOG"
+register_log    "$SIGN_LOG"
 register_log    "$RUN_LOG"
 trap 'teardown_test' EXIT
 
@@ -120,6 +122,34 @@ PACK_FILE="${pack_files[0]}"
 assert_file_nonempty "$PACK_FILE" ".pack artifact"
 echo "       artifact: $(basename "$PACK_FILE") ($(wc -c < "$PACK_FILE") bytes)"
 
+# Sign the .pack artifact to enable installation (skips interactive prompt in 'serve install')
+echo "[3/10] Signing .pack artifact..."
+sign_output=""
+sign_rc=0
+run_cmd sign_output "$CMD_BAKE" sign -vvv "$PACK_FILE" || sign_rc=$?
+
+echo "$sign_output" >"$SIGN_LOG"
+
+if [[ $sign_rc -ne 0 ]]; then
+    echo "FAIL: bake sign exited with code $sign_rc"
+    dump_log "$SIGN_LOG" 1000
+    exit 1
+fi
+
+# Locate the .pack.proof artifact
+shopt -s nullglob
+proof_files=( "$WORK_DIR"/*.pack.proof )
+shopt -u nullglob
+
+if [[ ${#proof_files[@]} -eq 0 ]]; then
+    echo "FAIL: bake build succeeded but no .pack.proof file was produced" >&2
+    exit 1
+fi
+
+PROOF_FILE="${proof_files[0]}"
+assert_file_nonempty "$PROOF_FILE" ".pack.proof artifact"
+echo "       artifact: $(basename "$PROOF_FILE") ($(wc -c < "$PROOF_FILE") bytes)"
+
 # ── Start served ──────────────────────────────────────────────────────────────
 echo "[4/10] Starting served (--root $SERVED_ROOT)..."
 start_daemon_as_root "served" "$SERVED_LOG" "$CMD_SERVED" --root "$SERVED_ROOT"
@@ -153,7 +183,7 @@ echo "       served responded to 'serve list' — infrastructure is functional."
 # indicate a problem with the test infrastructure.
 # ═════════════════════════════════════════════════════════════════════════════
 echo ""
-echo "       NOTE: Steps 6–10 test the local-file install path in served."
+echo "       NOTE: Steps 6-10 test the local-file install path in served."
 echo "             This path is currently aspirational — see KNOWN LIMITATIONS"
 echo "             in the file header for details."
 echo ""
@@ -165,7 +195,7 @@ echo "[6/10] Installing hello-world pack..."
 # client-side interactive check.
 install_rc=0
 run_cmd_with_timeout 60 install_output \
-    "$CMD_SERVE" install "$PACK_FILE" -P "ci-test-proof" || install_rc=$?
+    "$CMD_SERVE" install -vvv "$PACK_FILE" || install_rc=$?
 
 echo "$install_output" >"$INSTALL_LOG"
 

@@ -42,13 +42,14 @@ char** utils_split_package_name(const char* name)
     return names;
 }
 
-char* utils_base_to_store_id(const char* base)
+char* utils_base_to_store_id(const char* identity, const char* base)
 {
     char   storeID[CHEF_PACKAGE_ID_LENGTH_MAX] = { 0 };
-    size_t len = strlen(base);
-    strcpy(&storeID[0], "vali/");
+    size_t identityLength = strlen(identity);
+    size_t baseLength = strlen(base);
+    snprintf(&storeID[0], sizeof(storeID), "%s/", identity);
 
-    for (size_t i = 0, j = 5; i < len; i++, j++) {
+    for (size_t i = 0, j = identityLength + 1; i < baseLength; i++, j++) {
         if (base[i] == ':') {
             storeID[j] = '-';
         } else {

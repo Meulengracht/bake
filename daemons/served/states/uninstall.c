@@ -61,7 +61,12 @@ enum sm_action_result served_handle_state_uninstall(void* context)
     }
 
     // Build the storage path for the package file
-    storagePath = utils_path_pack(names[0], names[1]);
+    if (state->revision < 0) {
+        storagePath = utils_path_local_pack(names[0], names[1], state->revision);
+    } else {
+        storagePath = utils_path_pack(names[0], names[1]);
+    }
+
     if (storagePath == NULL) {
         VLOG_ERROR("served", "Failed to build storage path for %s\n", state->name);
         goto cleanup;
