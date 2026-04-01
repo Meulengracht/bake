@@ -20,6 +20,7 @@
 #define __SERVED_STATE_RUNNER_H__
 
 #include <transaction/transaction.h>
+#include <state.h>
 
 /**
  * @brief Starts the runner thread. The runner will continuously process transactions
@@ -50,9 +51,13 @@ extern int served_runner_is_running(void);
  * The created transaction will be managed and executed by the runner.
  * 
  * @param options Configuration options for the new transaction
+ * @param transactionState The state to be attached to the transaction, this is not
+ *                         supported for ephemeral transactions and can be NULL in that case.
  * @return unsigned int The ID of the newly created transaction, or 0 on failure
  */
-extern unsigned int served_transaction_create(struct served_transaction_options* options);
+extern unsigned int served_transaction_create(
+    struct served_transaction_options* options,
+    struct state_transaction*          transactionState);
 
 /**
  * @brief Maps an internal transaction state to the protocol state enum.

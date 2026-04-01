@@ -431,6 +431,9 @@ int install_main(int argc, char** argv)
         return status;
     }
 
+    // Only needed for packet based links, currently we connect unconditionally
+    // as a stream-based link, meaning we are always subscribed to events.
+#if 0
     // Subscribe for transaction events before issuing the install,
     // so we don't miss any notifications.
     if (!installOptions.detach) {
@@ -439,6 +442,7 @@ int install_main(int argc, char** argv)
             fprintf(stderr, "warning: failed to subscribe for events, will not track progress\n");
         }
     }
+#endif
 
     // is the package a path? otherwise try to download from
     // official repo

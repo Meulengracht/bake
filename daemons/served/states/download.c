@@ -101,6 +101,13 @@ enum sm_action_result served_handle_state_download(void* context)
     
     served_state_unlock();
 
+    // Handle the case of locally installed packages that just need to be verified without downloading
+    if (strncmp(package.name, CHEF_PACKAGE_LOCAL_PUBLISHER "/", strlen(CHEF_PACKAGE_LOCAL_PUBLISHER) + 1) == 0) {
+        TXLOG_INFO(transaction, "Local package, skipping download and proceeding to verification");
+        served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
+        return SM_ACTION_CONTINUE;
+    }
+
     status = store_ensure_package(
         &package,
         &(struct chef_observer){

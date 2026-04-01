@@ -182,7 +182,7 @@ int served_startup(void)
         .description = "Served system initialization",
         .type = SERVED_TRANSACTION_TYPE_EPHEMERAL,
         .stateSet = (struct served_sm_state_set*)&g_stateSetStartup,
-    });
+    }, NULL);
     if (transactionId == (unsigned int)-1) {
         VLOG_ERROR("startup", "failed to create startup transaction\n");
         return -1;

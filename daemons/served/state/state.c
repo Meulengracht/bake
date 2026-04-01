@@ -1129,6 +1129,7 @@ static int __execute_add_transaction_op(struct __state* state, struct served_tra
         VLOG_ERROR("served", "__execute_add_transaction_op: failed to prepare statement: %s\n", sqlite3_errmsg(state->database));
         return -1;
     }
+    VLOG_DEBUG("served", "__execute_add_transaction_op: adding transaction id=%u, type=%d, state=%d\n", transaction->id, transaction->type, served_sm_current_state(&transaction->sm));
 
     sqlite3_bind_int(stmt, 1, transaction->id);
     sqlite3_bind_int(stmt, 2, transaction->type);
@@ -1598,6 +1599,7 @@ unsigned int served_state_transaction_new(struct served_transaction_options* opt
         VLOG_ERROR("served", "served_state_transaction_new: state lock not held\n");
         return 0;
     }
+    VLOG_DEBUG("served", "served_state_transaction_new: creating new transaction with type=%d\n", options->type);
 
     // Generate the transaction ID now
     transactionID = g_state->next_transaction_id++;

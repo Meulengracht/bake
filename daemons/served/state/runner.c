@@ -364,10 +364,14 @@ static void __handle_on_transition(struct served_transaction* txn, sm_state_t ne
     const char*                 stateName     = __get_state_name(protocolState);
     unsigned int                step          = __calculate_step(txn);
     unsigned int                totalSteps    = (unsigned int)txn->sm.states.states_count;
+    int                         status;
     
-    if (served_state_transaction_update(txn) != 0) {
+    served_state_lock();
+    status = served_state_transaction_update(txn);
+    if (status) {
         VLOG_ERROR("served", "served_runner_execute: failed to update transaction %u state\n", txn->id);
     }
+    served_state_unlock();
 
     chef_served_event_transaction_state_changed_all(
         served_gracht_server(),
@@ -416,16 +420,18 @@ void served_runner_execute(void)
             __handle_on_start(txn);
         }
 
-        // Execute the current state's action (only runs on state entry)
-        result = served_sm_execute(&txn->sm);
+        // Execute the state machine until it either finishes, needs to wait, or encounters an error
+        do {
+            result = served_sm_execute(&txn->sm);
 
-        // Emit state change event if state transitioned, but we only do so for
-        // transactions that are not ephemeral. Ephemeral transactions are
-        // not created by users, and thus we don't need to notify about their state changes.
-        newState = served_sm_current_state(&txn->sm);
-        if (newState != oldState && txn->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
-            __handle_on_transition(txn, newState);
-        }
+            // Emit state change event if state transitioned, but we only do so for
+            // transactions that are not ephemeral. Ephemeral transactions are
+            // not created by users, and thus we don't need to notify about their state changes.
+            newState = served_sm_current_state(&txn->sm);
+            if (newState != oldState && txn->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
+                __handle_on_transition(txn, newState);
+            }
+        } while (result == SM_ACTION_CONTINUE);
 
         if (result == SM_ACTION_WAIT) {
             VLOG_DEBUG("served", "Transaction %u entering wait state (type=%d)\n", 
@@ -443,39 +449,54 @@ void served_runner_execute(void)
     mtx_unlock(&g_queue_lock);
 }
 
-unsigned int served_transaction_create(struct served_transaction_options* options)
+unsigned int served_transaction_create(
+    struct served_transaction_options* options,
+    struct state_transaction*          transactionState)
 {
     struct served_transaction* txn;
-    unsigned int               transaction_id = 0;
+    unsigned int               transactionId = 0;
     
     // For persistent transactions, create in state first
+    served_state_lock();
     if (options->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
-        served_state_lock();
-        transaction_id = served_state_transaction_new(options);
-        if (transaction_id == 0) {
+        transactionId = served_state_transaction_new(options);
+        if (transactionId == 0) {
             VLOG_ERROR("served", "served_transaction_create: failed to create transaction in state\n");
             served_state_unlock();
             return 0;
         }
-        served_state_unlock();  // Commits transaction to database here
     }
     
     // Now create the runtime transaction wrapper
     txn = served_transaction_new(options);
     if (txn == NULL) {
         VLOG_ERROR("served", "served_transaction_create: failed to allocate transaction\n");
+        served_state_unlock();
         return 0;
     }
     
-    txn->id = transaction_id;
+    txn->id = transactionId;
     
+    // If the transaction state was provided and it's not an ephemeral transaction,
+    // then create it in state prior to scheduling it.
+    if (transactionState != NULL && options->type != SERVED_TRANSACTION_TYPE_EPHEMERAL) {
+        int status = served_state_transaction_state_new(transactionId, transactionState);
+        if (status) {
+            VLOG_ERROR("served", "served_transaction_create: failed to create transaction state\n");
+            served_transaction_delete(txn);
+            served_state_unlock();
+            return 0;
+        }
+    }
+    served_state_unlock();
+
     // Add to active queue (new transactions always start active)
     mtx_lock(&g_queue_lock);
     list_add(&g_active_transactions, &txn->list_header);
     mtx_unlock(&g_queue_lock);
     
-    VLOG_DEBUG("served", "served_transaction_create: created transaction %u\n", transaction_id);
-    return transaction_id;
+    VLOG_DEBUG("served", "served_transaction_create: created transaction %u\n", transactionId);
+    return transactionId;
 }
 
 void served_transaction_construct(struct served_transaction* transaction, struct served_transaction_options* options)

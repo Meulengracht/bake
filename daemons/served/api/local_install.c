@@ -32,8 +32,6 @@
 #include "chef_served_local_upload_service_server.h"
 #include "chef_served_service_server.h"
 
-static const char* g_localPublisher = "local";
-
 struct __local_upload_session {
     struct __local_upload_session* next;
     char*                          import_id;
@@ -311,7 +309,7 @@ static int __prepare_local_install(
         }
         publisher = proof->identity;
     } else if (allowUnsigned) {
-        publisher = g_localPublisher;
+        publisher = CHEF_PACKAGE_LOCAL_PUBLISHER;
     } else {
         errno = ENOENT;
         goto cleanup;

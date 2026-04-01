@@ -30,7 +30,7 @@ static const struct served_sm_state g_stateDownload = {
     .action = served_handle_state_download,
     .transition_count = 4,
     .transitions = {
-        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_DOWNLOAD },
+        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_VERIFY },
         { SERVED_TX_EVENT_RETRY,  SERVED_TX_STATE_DOWNLOAD_RETRY },
         { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
         { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }
@@ -47,4 +47,4 @@ static const struct served_sm_state g_stateDownloadRetry = {
     }
 };
 
-#endif //!__SERVED_TRANSACTION_STATE_PRECHECK_H__
+#endif //!__SERVED_TRANSACTION_STATE_DOWNLOAD_H__

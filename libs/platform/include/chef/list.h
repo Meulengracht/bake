@@ -87,6 +87,7 @@ static inline void list_destroy(struct list* list, void(*freecb)(void* item))
         freecb(li);
         li = next;
     }
+    list_init(list);
 }
 
 #endif //!__LIBPLATFORM_LIST_H__

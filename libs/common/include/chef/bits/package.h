@@ -21,9 +21,15 @@
 
 #include <stddef.h>
 
+// Magic identifier for local publisher, used for local installs where
+// packages are not coming from a verified publisher. This name is not
+// a valid publisher name.
+#define CHEF_PACKAGE_LOCAL_PUBLISHER "@"
+
 #define CHEF_PACKAGE_PUBLISHER_NAME_LENGTH_MAX 64
 #define CHEF_PACKAGE_NAME_LENGTH_MAX           128
 #define CHEF_PACKAGE_ID_LENGTH_MAX             CHEF_PACKAGE_PUBLISHER_NAME_LENGTH_MAX + CHEF_PACKAGE_NAME_LENGTH_MAX
+
 
 // prototypes imported from vafs;
 struct VaFs;

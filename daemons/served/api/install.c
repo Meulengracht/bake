@@ -26,53 +26,33 @@
 
 #include <transaction/transaction.h>
 
+#include <runner.h>
 #include "api.h"
 #include "chef_served_service_server.h"
 
-static unsigned int __schedule_update(const char* packageName, const char* channel, int revision)
+static unsigned int __create_transaction(
+    enum served_transaction_type type,
+    const char*                  packageName,
+    const char*                  channel,
+    int                          revision)
 {
     unsigned int transactionId;
     char         nameBuffer[256];
     char         descriptionBuffer[512];
+    const char*  label = (type == SERVED_TRANSACTION_TYPE_UPDATE) ? "Update" : "Install";
 
-    snprintf(nameBuffer, sizeof(nameBuffer), "Update via API (%s)", packageName);
-    snprintf(descriptionBuffer, sizeof(descriptionBuffer), "Update of package '%s' requested via served API", packageName);
+    snprintf(nameBuffer, sizeof(nameBuffer), "%s via API (%s)", label, packageName);
+    snprintf(descriptionBuffer, sizeof(descriptionBuffer),
+             "%s of package '%s' requested via served API", label, packageName);
 
-    transactionId = served_state_transaction_new(&(struct served_transaction_options){
-        .name = &nameBuffer[0],
-        .description = &descriptionBuffer[0],
-        .type = SERVED_TRANSACTION_TYPE_UPDATE,
-    });
-
-    served_state_transaction_state_new(
-        transactionId,
-        &(struct state_transaction){
-            .name = (char*)packageName,
-            .channel = (char*)channel,
-            .revision = revision,
-        }
-    );
-    return transactionId;
-}
-
-static unsigned int __schedule_install(const char* packageName, const char* channel, int revision)
-{
-    unsigned int transactionId;
-    char         nameBuffer[256];
-    char         descriptionBuffer[512];
-
-    snprintf(nameBuffer, sizeof(nameBuffer), "Install via API (%s)", packageName);
-    snprintf(descriptionBuffer, sizeof(descriptionBuffer), "Installation of package '%s' requested via served API", packageName);
-
-    transactionId = served_state_transaction_new(&(struct served_transaction_options){
-        .name = &nameBuffer[0],
-        .description = &descriptionBuffer[0],
-        .type = SERVED_TRANSACTION_TYPE_INSTALL,
-    });
-
-    served_state_transaction_state_new(
-        transactionId,
-        &(struct state_transaction){
+    // served_transaction_create persists to DB *and* adds the runtime
+    // object to the runner's active queue so it actually gets executed.
+    transactionId = served_transaction_create(
+        &(struct served_transaction_options){
+            .name = &nameBuffer[0],
+            .description = &descriptionBuffer[0],
+            .type = type,
+        }, &(struct state_transaction){
             .name = (char*)packageName,
             .channel = (char*)channel,
             .revision = revision,
@@ -83,9 +63,9 @@ static unsigned int __schedule_install(const char* packageName, const char* chan
 
 unsigned int served_api_create_install_transaction(const char* packageName, const char* channel, int revision)
 {
-    unsigned int              transactionId;
-    struct state_application* application;
-    char**                    nameParts = NULL;
+    struct state_application*    application;
+    enum served_transaction_type type;
+    char**                       nameParts = NULL;
 
     // package-name must be in the correct format
     nameParts = utils_split_package_name(packageName);
@@ -95,18 +75,17 @@ unsigned int served_api_create_install_transaction(const char* packageName, cons
     }
     strsplit_free(nameParts);
 
+    // Check whether this is an install or an update while holding the
+    // state lock, then release before calling served_transaction_create
+    // (which takes the lock internally).
     served_state_lock();
-
-    // If the package is already installed, we should schedule an update transaction
     application = served_state_application(packageName);
-    if (application != NULL) {
-        transactionId = __schedule_update(packageName, channel, revision);
-    } else {
-        transactionId = __schedule_install(packageName, channel, revision);
-    }
-
+    type = (application != NULL)
+         ? SERVED_TRANSACTION_TYPE_UPDATE
+         : SERVED_TRANSACTION_TYPE_INSTALL;
     served_state_unlock();
-    return transactionId;
+
+    return __create_transaction(type, packageName, channel, revision);
 }
 
 void chef_served_install_invocation(struct gracht_message* message, const struct chef_served_install_options* options)
