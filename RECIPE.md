@@ -323,11 +323,13 @@ packs:
         #
         # Key-value pairs that configure the capability. Supported keys
         # depend on the capability; see individual docs for details.
-        # For network-client: allow (list of "proto:port[,port|start-end]" strings).
+        # For network-client: allow (list of proto/ports rules).
         config:
           allow:
-            - "tcp:80,443"
-            - "udp:53"
+            - proto: tcp
+              ports: [80, 443]
+            - proto: udp
+              ports: [53]
 
     ###########################
     # commands - Required for applications

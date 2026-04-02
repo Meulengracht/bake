@@ -122,6 +122,9 @@ enum state {
     STATE_CAPABILITY_CONFIG_KEY,
     STATE_CAPABILITY_CONFIG_VALUE,
     STATE_CAPABILITY_CONFIG_VALUE_LIST,
+    STATE_CAPABILITY_CONFIG_VALUE_OBJECT,
+    STATE_CAPABILITY_CONFIG_VALUE_OBJECT_VALUE,
+    STATE_CAPABILITY_CONFIG_VALUE_OBJECT_LIST,
 
     STATE_PACK_NETWORK_GATEWAY,
     STATE_PACK_NETWORK_DNS,
@@ -160,6 +163,16 @@ struct parser_state {
     struct recipe_pack_capability_config_entry capability_config;
     struct chef_keypair_item    env_keypair;
     struct meson_wrap_item      meson_wrap_item;
+
+    // Scratch space for flattening a YAML mapping inside a config
+    // value list into a "key=value;key=value" string.
+    struct {
+        char  buffer[512];
+        int   offset;
+        int   field_count;
+        int   list_items;
+        char* current_key;
+    } config_object;
 };
 
 static void __parser_push_state(struct parser_state* state, enum state next) {
@@ -512,6 +525,59 @@ static void __finalize_command(struct parser_state* state)
 static void __finalize_pack_ingredient_options(struct parser_state* state)
 {
     // todo
+}
+
+// ---------------------------------------------------------------------------
+// Config-object flattening helpers
+//
+// When a config value list contains YAML mappings instead of plain scalars,
+// each mapping is flattened into a single "key=value;key=value;..." string
+// that is stored as a regular list item.  Capability handlers parse these
+// compact representations at runtime.
+// ---------------------------------------------------------------------------
+
+static void __config_object_reset(struct parser_state* state)
+{
+    state->config_object.buffer[0]    = '\0';
+    state->config_object.offset       = 0;
+    state->config_object.field_count  = 0;
+    state->config_object.list_items   = 0;
+    free(state->config_object.current_key);
+    state->config_object.current_key  = NULL;
+}
+
+static void __config_object_append(struct parser_state* state, const char* text)
+{
+    int remaining = (int)sizeof(state->config_object.buffer) - state->config_object.offset - 1;
+    int len       = (int)strlen(text);
+
+    if (len > remaining) {
+        len = remaining;
+    }
+    if (len > 0) {
+        memcpy(state->config_object.buffer + state->config_object.offset, text, len);
+        state->config_object.offset += len;
+        state->config_object.buffer[state->config_object.offset] = '\0';
+    }
+}
+
+// Finish the current object and add it as a string to the config values list.
+static void __config_object_finalize(struct parser_state* state)
+{
+    struct list_item_string* item;
+
+    if (state->config_object.offset == 0) {
+        return;
+    }
+
+    item = malloc(sizeof(struct list_item_string));
+    if (item == NULL) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+    item->value = platform_strdup(state->config_object.buffer);
+    list_add(&state->capability_config.values, &item->list_header);
+    __config_object_reset(state);
 }
 
 static void __finalize_capability_config(struct parser_state* state)
@@ -1511,8 +1577,91 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     }
                     break;
 
+                case YAML_MAPPING_START_EVENT:
+                    __config_object_reset(s);
+                    __parser_push_state(s, STATE_CAPABILITY_CONFIG_VALUE_OBJECT);
+                    break;
+
                 case YAML_SEQUENCE_END_EVENT:
                     __finalize_capability_config(s);
+                    __parser_pop_state(s);
+                    break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        // Parsing a YAML mapping inside a config value list.
+        // Collects key=value pairs and flattens them into a single string.
+        case STATE_CAPABILITY_CONFIG_VALUE_OBJECT:
+            switch (event->type) {
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    free(s->config_object.current_key);
+                    s->config_object.current_key = platform_strdup(value);
+                    __parser_push_state(s, STATE_CAPABILITY_CONFIG_VALUE_OBJECT_VALUE);
+                    break;
+
+                case YAML_MAPPING_END_EVENT:
+                    __config_object_finalize(s);
+                    __parser_pop_state(s);
+                    break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        // Parsing a field value inside a config value object.
+        // Can be a scalar or a list.
+        case STATE_CAPABILITY_CONFIG_VALUE_OBJECT_VALUE:
+            switch (event->type) {
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (s->config_object.field_count > 0) {
+                        __config_object_append(s, ";");
+                    }
+                    __config_object_append(s, s->config_object.current_key);
+                    __config_object_append(s, "=");
+                    __config_object_append(s, value);
+                    s->config_object.field_count++;
+                    __parser_pop_state(s);
+                    break;
+
+                case YAML_SEQUENCE_START_EVENT:
+                    if (s->config_object.field_count > 0) {
+                        __config_object_append(s, ";");
+                    }
+                    __config_object_append(s, s->config_object.current_key);
+                    __config_object_append(s, "=");
+                    s->config_object.field_count++;
+                    s->state = STATE_CAPABILITY_CONFIG_VALUE_OBJECT_LIST;
+                    break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        // Parsing a list field inside a config value object.
+        // Items are appended comma-separated.
+        case STATE_CAPABILITY_CONFIG_VALUE_OBJECT_LIST:
+            switch (event->type) {
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (s->config_object.list_items > 0) {
+                        __config_object_append(s, ",");
+                    }
+                    __config_object_append(s, value);
+                    s->config_object.list_items++;
+                    break;
+
+                case YAML_SEQUENCE_END_EVENT:
+                    s->config_object.list_items = 0;
                     __parser_pop_state(s);
                     break;
 

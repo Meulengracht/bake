@@ -438,10 +438,11 @@ static int __find_capability_entry(const char* name)
 // network-client config handler
 //
 // Parses "allow" config entries into chef_policy_plugin_network_client.
-// Each value in the "allow" list is a string: "<proto>:<port>[,<port>|<start>-<end>]..."
-//   e.g. "tcp:80,443"   -> TCP, ports [{80,80},{443,443}]
-//        "udp:53"       -> UDP, ports [{53,53}]
-//        "tcp:8000-9000"-> TCP, ports [{8000,9000}]
+// Each value in the "allow" list is a flattened object string produced by
+// the recipe parser from structured YAML:
+//   "proto=tcp;ports=80,443"   -> TCP, ports [{80,80},{443,443}]
+//   "proto=udp;ports=53"       -> UDP, ports [{53,53}]
+//   "proto=tcp;ports=8000-9000"-> TCP, ports [{8000,9000}]
 // ---------------------------------------------------------------------------
 
 static int __count_port_specs(const char* str)
@@ -496,44 +497,86 @@ static int __parse_port_spec(
     return 0;
 }
 
+// Look up a field value in a "key=value;key=value" object string.
+// Returns a pointer to the value (inside str) and sets *out_len to
+// the length of the value, or returns NULL if not found.
+static const char* __object_field(
+    const char* str,
+    const char* key,
+    int*        out_len)
+{
+    size_t klen = strlen(key);
+    const char* p = str;
+
+    while (*p != '\0') {
+        const char* semi = strchr(p, ';');
+        int         seg  = semi ? (int)(semi - p) : (int)strlen(p);
+        const char* eq   = memchr(p, '=', seg);
+
+        if (eq != NULL && (size_t)(eq - p) == klen && strncmp(p, key, klen) == 0) {
+            const char* val = eq + 1;
+            *out_len = (int)(p + seg - val);
+            return val;
+        }
+        p = semi ? semi + 1 : p + seg;
+    }
+    return NULL;
+}
+
 static int __parse_network_rule(const char* str, struct chef_network_rule* rule)
 {
-    const char* colon;
-    const char* ports_str;
+    const char* proto_val;
+    const char* ports_val;
+    int         proto_len;
+    int         ports_len;
     int         port_count;
     int         idx;
 
-    colon = strchr(str, ':');
-    if (colon == NULL) {
+    proto_val = __object_field(str, "proto", &proto_len);
+    if (proto_val == NULL) {
         return -1;
     }
 
-    if (strncmp(str, "tcp", (size_t)(colon - str)) == 0) {
+    if (proto_len == 3 && strncmp(proto_val, "tcp", 3) == 0) {
         rule->protocol = CHEF_NETWORK_RULE_PROTOCOL_TCP;
-    } else if (strncmp(str, "udp", (size_t)(colon - str)) == 0) {
+    } else if (proto_len == 3 && strncmp(proto_val, "udp", 3) == 0) {
         rule->protocol = CHEF_NETWORK_RULE_PROTOCOL_UDP;
     } else {
         return -1;
     }
 
-    ports_str  = colon + 1;
-    if (*ports_str == '\0') {
+    ports_val = __object_field(str, "ports", &ports_len);
+    if (ports_val == NULL || ports_len == 0) {
         return -1;
     }
-    port_count = __count_port_specs(ports_str);
-    chef_network_rule_ports_add(rule, port_count);
 
-    idx = 0;
-    while (*ports_str != '\0') {
-        const char* comma = strchr(ports_str, ',');
-        int         len   = comma ? (int)(comma - ports_str) : (int)strlen(ports_str);
+    // Work with a NUL-terminated copy of the ports substring.
+    {
+        char  ports_buf[256];
+        const char* p;
 
-        if (__parse_port_spec(ports_str, len, chef_network_rule_ports_get(rule, idx)) != 0) {
-            VLOG_ERROR("served", "invalid port spec in network rule: %s\n", str);
+        if (ports_len >= (int)sizeof(ports_buf)) {
             return -1;
         }
-        idx++;
-        ports_str = comma ? comma + 1 : ports_str + len;
+        memcpy(ports_buf, ports_val, ports_len);
+        ports_buf[ports_len] = '\0';
+
+        port_count = __count_port_specs(ports_buf);
+        chef_network_rule_ports_add(rule, port_count);
+
+        idx = 0;
+        p = ports_buf;
+        while (*p != '\0') {
+            const char* comma = strchr(p, ',');
+            int         len   = comma ? (int)(comma - p) : (int)strlen(p);
+
+            if (__parse_port_spec(p, len, chef_network_rule_ports_get(rule, idx)) != 0) {
+                VLOG_ERROR("served", "invalid port spec in network rule: %s\n", str);
+                return -1;
+            }
+            idx++;
+            p = comma ? comma + 1 : p + len;
+        }
     }
     return 0;
 }

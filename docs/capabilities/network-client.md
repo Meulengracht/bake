@@ -26,31 +26,22 @@ capabilities:
     config:
       # Restrict which destinations are reachable (optional).
       # If omitted, all outbound connections are allowed.
-      #
-      # Each entry is a string: "<protocol>:<port>[,<port>|<start>-<end>]..."
       allow:
-        - "tcp:80,443"
-        - "udp:53"
-        - "tcp:8000-9000"
+        - proto: tcp
+          ports: [80, 443]
+        - proto: udp
+          ports: [53]
+        - proto: tcp
+          ports: [8000-9000]
 ```
 
 ## Configuration Reference
 
 | Key | Type | Required | Default | Description |
 |-----|------|----------|---------|-------------|
-| `allow` | list of string | No | Allow all | Restrict outbound to specific protocol/port combinations |
-
-Each `allow` entry is a string with the format `<proto>:<ports>` where:
-- `<proto>` is `tcp` or `udp`
-- `<ports>` is a comma-separated list of port numbers or port ranges (`start-end`)
-
-**Examples:**
-| Entry | Meaning |
-|-------|---------|
-| `"tcp:443"` | Allow TCP on port 443 |
-| `"tcp:80,443"` | Allow TCP on ports 80 and 443 |
-| `"udp:53"` | Allow UDP on port 53 |
-| `"tcp:8000-9000"` | Allow TCP on ports 8000 through 9000 |
+| `allow` | list of objects | No | Allow all | Restrict outbound to specific protocol/port combinations |
+| `allow[].proto` | string | Yes | — | Protocol: `tcp` or `udp` |
+| `allow[].ports` | list | Yes | — | Allowed destination ports or port ranges (`start-end`) |
 
 ## What It Enables
 
@@ -113,8 +104,10 @@ packs:
       - name: network-client
         config:
           allow:
-            - "tcp:443"
-            - "udp:53"
+            - proto: tcp
+              ports: [443]
+            - proto: udp
+              ports: [53]
     commands:
       - name: weather
         path: /bin/weather
