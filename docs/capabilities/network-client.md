@@ -26,22 +26,31 @@ capabilities:
     config:
       # Restrict which destinations are reachable (optional).
       # If omitted, all outbound connections are allowed.
+      #
+      # Each entry is a string: "<protocol>:<port>[,<port>|<start>-<end>]..."
       allow:
-        - proto: tcp
-          ports: [80, 443]
-        - proto: udp
-          ports: [53]
+        - "tcp:80,443"
+        - "udp:53"
+        - "tcp:8000-9000"
 ```
 
 ## Configuration Reference
 
 | Key | Type | Required | Default | Description |
 |-----|------|----------|---------|-------------|
-| `allow` | list | No | Allow all | Restrict outbound to specific protocol/port combinations |
-| `allow[].proto` | string | Yes (in entry) | — | Protocol: `tcp` or `udp` |
-| `allow[].ports` | list of int | Yes (in entry) | — | Allowed destination ports |
+| `allow` | list of string | No | Allow all | Restrict outbound to specific protocol/port combinations |
 
-> **Note:** Support for `allow` rule parsing requires a parser enhancement and is tracked as a follow-up.
+Each `allow` entry is a string with the format `<proto>:<ports>` where:
+- `<proto>` is `tcp` or `udp`
+- `<ports>` is a comma-separated list of port numbers or port ranges (`start-end`)
+
+**Examples:**
+| Entry | Meaning |
+|-------|---------|
+| `"tcp:443"` | Allow TCP on port 443 |
+| `"tcp:80,443"` | Allow TCP on ports 80 and 443 |
+| `"udp:53"` | Allow UDP on port 53 |
+| `"tcp:8000-9000"` | Allow TCP on ports 8000 through 9000 |
 
 ## What It Enables
 
@@ -68,7 +77,7 @@ Adds read access to network-related system files via the `"network"` eBPF policy
 When `allow` rules are specified, generates `containerv_policy_net_rule` entries:
 - `family`: `AF_INET` / `AF_INET6`
 - `protocol`: `IPPROTO_TCP` or `IPPROTO_UDP`
-- `port`: from `allow[].ports`
+- `port`: from the allow rule port specs
 - `allow_mask`: `CV_NET_CONNECT | CV_NET_SEND`
 
 When no `allow` rules are specified, the eBPF network LSM allows all outbound by default (connect/send on any port).
@@ -104,10 +113,8 @@ packs:
       - name: network-client
         config:
           allow:
-            - proto: tcp
-              ports: [443]
-            - proto: udp
-              ports: [53]
+            - "tcp:443"
+            - "udp:53"
     commands:
       - name: weather
         path: /bin/weather

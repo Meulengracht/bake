@@ -323,11 +323,11 @@ packs:
         #
         # Key-value pairs that configure the capability. Supported keys
         # depend on the capability; see individual docs for details.
-        # For network-client: allow (planned — port/protocol restrictions).
+        # For network-client: allow (list of "proto:port[,port|start-end]" strings).
         config:
           allow:
-            - proto: tcp
-              ports: [443]
+            - "tcp:80,443"
+            - "udp:53"
 
     ###########################
     # commands - Required for applications

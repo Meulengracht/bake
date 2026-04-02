@@ -394,26 +394,164 @@ static int __load_pack_network_defaults(const char* packPath, char** gatewayOut,
     return 0;
 }
 
-// System capability names recognised by served.
-// Note: "network-client" maps to the "network" policy plugin — the names are
-// intentionally different (see __load_pack_capabilities_as_plugins).
-static const char* g_systemCapabilities[] = {
-    "network-client",
-    "file-control",
-    "process-control",
-    "package-management",
-    NULL
+// Signature for per-capability config handlers.
+// Each handler translates raw capability config entries into the protocol-level
+// plugin config variant. Return 0 on success.
+typedef int (*plugin_config_fn)(
+    struct chef_policy_plugin*            plugin,
+    const struct chef_package_capability* capability
+);
+
+static int __configure_network_client(
+    struct chef_policy_plugin*            plugin,
+    const struct chef_package_capability* capability);
+
+// Table of recognised system capabilities.
+// Each entry maps a capability name to the policy plugin name that cvd expects,
+// plus an optional config handler. To add a new capability, append a row here
+// and (if it carries config) implement the handler.
+static const struct {
+    const char*      capability_name;
+    const char*      plugin_name;
+    plugin_config_fn configure;
+} g_capabilityTable[] = {
+    { "network-client",     "network",            __configure_network_client },
+    { "file-control",       "file-control",       NULL },
+    { "process-control",    "process-control",    NULL },
+    { "package-management", "package-management", NULL },
 };
 
-static int __is_system_capability(const char* name)
+#define CAPABILITY_TABLE_COUNT (sizeof(g_capabilityTable) / sizeof(g_capabilityTable[0]))
+
+// Returns the table index for a recognised capability, or -1.
+static int __find_capability_entry(const char* name)
 {
-    for (int i = 0; g_systemCapabilities[i] != NULL; i++) {
-        if (strcmp(name, g_systemCapabilities[i]) == 0) {
-            return 1;
+    for (int i = 0; i < (int)CAPABILITY_TABLE_COUNT; i++) {
+        if (strcmp(name, g_capabilityTable[i].capability_name) == 0) {
+            return i;
         }
+    }
+    return -1;
+}
+
+// ---------------------------------------------------------------------------
+// network-client config handler
+//
+// Parses "allow" config entries into chef_policy_plugin_network_client.
+// Each value in the "allow" list is a string: "<proto>:<port>[,<port>|<start>-<end>]..."
+//   e.g. "tcp:80,443"   -> TCP, ports [{80,80},{443,443}]
+//        "udp:53"       -> UDP, ports [{53,53}]
+//        "tcp:8000-9000"-> TCP, ports [{8000,9000}]
+// ---------------------------------------------------------------------------
+
+static int __count_port_specs(const char* str)
+{
+    int count = 1;
+    for (const char* p = str; *p != '\0'; p++) {
+        if (*p == ',') {
+            count++;
+        }
+    }
+    return count;
+}
+
+static int __parse_port_spec(
+    const char*                  str,
+    int                          len,
+    struct chef_network_rule_port* port)
+{
+    char  buf[32];
+    char* dash;
+
+    if (len <= 0 || len >= (int)sizeof(buf)) {
+        return -1;
+    }
+    memcpy(buf, str, len);
+    buf[len] = '\0';
+
+    dash = strchr(buf, '-');
+    if (dash != NULL) {
+        *dash = '\0';
+        port->start = (uint16_t)atoi(buf);
+        port->end   = (uint16_t)atoi(dash + 1);
+    } else {
+        port->start = (uint16_t)atoi(buf);
+        port->end   = port->start;
     }
     return 0;
 }
+
+static int __parse_network_rule(const char* str, struct chef_network_rule* rule)
+{
+    const char* colon;
+    const char* ports_str;
+    int         port_count;
+    int         idx;
+
+    colon = strchr(str, ':');
+    if (colon == NULL) {
+        return -1;
+    }
+
+    if (strncmp(str, "tcp", (size_t)(colon - str)) == 0) {
+        rule->protocol = CHEF_NETWORK_RULE_PROTOCOL_TCP;
+    } else if (strncmp(str, "udp", (size_t)(colon - str)) == 0) {
+        rule->protocol = CHEF_NETWORK_RULE_PROTOCOL_UDP;
+    } else {
+        return -1;
+    }
+
+    ports_str  = colon + 1;
+    port_count = __count_port_specs(ports_str);
+    chef_network_rule_ports_add(rule, port_count);
+
+    idx = 0;
+    while (*ports_str != '\0') {
+        const char* comma = strchr(ports_str, ',');
+        int         len   = comma ? (int)(comma - ports_str) : (int)strlen(ports_str);
+
+        if (__parse_port_spec(ports_str, len, chef_network_rule_ports_get(rule, idx)) != 0) {
+            VLOG_ERROR("served", "invalid port spec in network rule: %s\n", str);
+            return -1;
+        }
+        idx++;
+        ports_str = comma ? comma + 1 : ports_str + len;
+    }
+    return 0;
+}
+
+static int __configure_network_client(
+    struct chef_policy_plugin*            plugin,
+    const struct chef_package_capability* capability)
+{
+    struct chef_policy_plugin_network_client nc;
+    chef_policy_plugin_network_client_init(&nc);
+
+    for (int i = 0; i < capability->config_count; i++) {
+        const struct chef_package_capability_config* entry = &capability->config[i];
+        if (strcmp(entry->key, "allow") != 0 || entry->values == NULL) {
+            continue;
+        }
+
+        chef_policy_plugin_network_client_allow_add(&nc, entry->values_count);
+        for (int j = 0; j < entry->values_count; j++) {
+            struct chef_network_rule* rule =
+                chef_policy_plugin_network_client_allow_get(&nc, j);
+            if (__parse_network_rule(entry->values[j], rule) != 0) {
+                VLOG_ERROR("served", "failed to parse network allow rule: %s\n",
+                    entry->values[j]);
+            }
+        }
+    }
+
+    chef_policy_plugin_config_set_policy_plugin_network_client(plugin, &nc);
+    chef_policy_plugin_network_client_destroy(&nc);
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Generic capability → plugin translation
+// ---------------------------------------------------------------------------
 
 static int __load_pack_capabilities_as_plugins(
     const char*                packPath,
@@ -444,9 +582,8 @@ static int __load_pack_capabilities_as_plugins(
         return 0;
     }
 
-    // count system capabilities to know how many plugins to allocate
     for (int i = 0; i < capCount; i++) {
-        if (__is_system_capability(capabilities[i].name)) {
+        if (__find_capability_entry(capabilities[i].name) >= 0) {
             pluginCount++;
         }
     }
@@ -454,22 +591,19 @@ static int __load_pack_capabilities_as_plugins(
     if (pluginCount > 0) {
         chef_policy_spec_plugins_add(policyOut, pluginCount);
         for (int i = 0; i < capCount; i++) {
-            const char* pluginName = NULL;
+            int entry = __find_capability_entry(capabilities[i].name);
+            struct chef_policy_plugin* plugin;
 
-            if (!__is_system_capability(capabilities[i].name)) {
+            if (entry < 0) {
                 continue;
             }
 
-            // "network-client" is the canonical outbound-network capability.
-            // It maps to the "network" policy plugin.
-            if (strcmp(capabilities[i].name, "network-client") == 0) {
-                pluginName = "network";
-            } else {
-                pluginName = capabilities[i].name;
-            }
+            plugin = chef_policy_spec_plugins_get(policyOut, pluginIdx);
+            plugin->name = platform_strdup(g_capabilityTable[entry].plugin_name);
 
-            chef_policy_spec_plugins_get(policyOut, pluginIdx)->name =
-                platform_strdup(pluginName);
+            if (g_capabilityTable[entry].configure != NULL) {
+                g_capabilityTable[entry].configure(plugin, &capabilities[i]);
+            }
             pluginIdx++;
         }
     }
