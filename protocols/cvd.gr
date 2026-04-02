@@ -58,24 +58,23 @@ enum guest_type {
     WINDOWS
 }
 
-struct policy_plugin_network_host {
-    string container_ip;
-    string container_netmask;
-    string host_ip;
-    string gateway_ip;
-    string dns;
-}
-
 struct policy_plugin {
-    string  name;
-    variant config {
-        policy_plugin_network_host network_host;
-    }
+    string name;
 }
 
 struct policy_spec {
     // If no plugins are set, then it uses the minimal
     policy_plugin[] plugins;
+}
+
+// Optional network configuration.
+// Any empty/omitted field means "not specified".
+struct network_options {
+    string container_ip;
+    string container_netmask;
+    string host_ip;
+    string gateway_ip;
+    string dns;
 }
 
 struct windows_guest_options {
@@ -95,6 +94,7 @@ struct create_parameters {
     guest_type            gtype;
     layer_descriptor[]    layers;
     policy_spec           policy;
+    network_options       network;
     windows_guest_options guest_windows;
 }
 
