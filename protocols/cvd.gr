@@ -58,8 +58,29 @@ enum guest_type {
     WINDOWS
 }
 
+enum network_rule_protocol {
+    UDP,
+    TCP
+}
+
+struct network_rule_port {
+    uint16 start;
+    uint16 end;
+}
+
+struct network_rule {
+    network_rule_protocol protocol;
+    network_rule_port[]   ports;
+
+struct policy_plugin_network_client {
+    network_rule[] allow;
+}
+
 struct policy_plugin {
-    string name;
+    string  name;
+    variant config {
+        policy_plugin_network_client network_client;
+    }
 }
 
 struct policy_spec {
