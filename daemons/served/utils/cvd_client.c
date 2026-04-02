@@ -456,12 +456,14 @@ static int __count_port_specs(const char* str)
 }
 
 static int __parse_port_spec(
-    const char*                  str,
-    int                          len,
+    const char*                    str,
+    int                            len,
     struct chef_network_rule_port* port)
 {
-    char  buf[32];
-    char* dash;
+    char          buf[32];
+    char*         dash;
+    char*         end;
+    unsigned long val;
 
     if (len <= 0 || len >= (int)sizeof(buf)) {
         return -1;
@@ -472,10 +474,23 @@ static int __parse_port_spec(
     dash = strchr(buf, '-');
     if (dash != NULL) {
         *dash = '\0';
-        port->start = (uint16_t)atoi(buf);
-        port->end   = (uint16_t)atoi(dash + 1);
+        val = strtoul(buf, &end, 10);
+        if (*end != '\0' || val == 0 || val > 65535) {
+            return -1;
+        }
+        port->start = (uint16_t)val;
+
+        val = strtoul(dash + 1, &end, 10);
+        if (*end != '\0' || val == 0 || val > 65535) {
+            return -1;
+        }
+        port->end = (uint16_t)val;
     } else {
-        port->start = (uint16_t)atoi(buf);
+        val = strtoul(buf, &end, 10);
+        if (*end != '\0' || val == 0 || val > 65535) {
+            return -1;
+        }
+        port->start = (uint16_t)val;
         port->end   = port->start;
     }
     return 0;
@@ -502,6 +517,9 @@ static int __parse_network_rule(const char* str, struct chef_network_rule* rule)
     }
 
     ports_str  = colon + 1;
+    if (*ports_str == '\0') {
+        return -1;
+    }
     port_count = __count_port_specs(ports_str);
     chef_network_rule_ports_add(rule, port_count);
 
@@ -529,17 +547,37 @@ static int __configure_network_client(
 
     for (int i = 0; i < capability->config_count; i++) {
         const struct chef_package_capability_config* entry = &capability->config[i];
+        int ruleIdx;
+
         if (strcmp(entry->key, "allow") != 0 || entry->values == NULL) {
             continue;
         }
 
-        chef_policy_plugin_network_client_allow_add(&nc, entry->values_count);
+        // Count parseable rules first so we allocate only valid slots.
+        int validCount = 0;
+        for (int j = 0; j < entry->values_count; j++) {
+            struct chef_network_rule probe;
+            chef_network_rule_init(&probe);
+            if (__parse_network_rule(entry->values[j], &probe) == 0) {
+                validCount++;
+            } else {
+                VLOG_ERROR("served", "skipping invalid network allow rule: %s\n",
+                    entry->values[j]);
+            }
+            chef_network_rule_destroy(&probe);
+        }
+
+        if (validCount == 0) {
+            continue;
+        }
+
+        chef_policy_plugin_network_client_allow_add(&nc, validCount);
+        ruleIdx = 0;
         for (int j = 0; j < entry->values_count; j++) {
             struct chef_network_rule* rule =
-                chef_policy_plugin_network_client_allow_get(&nc, j);
-            if (__parse_network_rule(entry->values[j], rule) != 0) {
-                VLOG_ERROR("served", "failed to parse network allow rule: %s\n",
-                    entry->values[j]);
+                chef_policy_plugin_network_client_allow_get(&nc, ruleIdx);
+            if (__parse_network_rule(entry->values[j], rule) == 0) {
+                ruleIdx++;
             }
         }
     }
