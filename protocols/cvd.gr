@@ -71,6 +71,7 @@ struct network_rule_port {
 struct network_rule {
     network_rule_protocol protocol;
     network_rule_port[]   ports;
+}
 
 struct policy_plugin_network_client {
     network_rule[] allow;
