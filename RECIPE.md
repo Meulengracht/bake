@@ -315,8 +315,7 @@ packs:
         ###########################
         # name - Required
         #
-        # The capability name. "network-client" is the canonical name for
-        # outbound networking; "network" is accepted as a legacy alias.
+        # The capability name.
       - name: network-client
 
         ###########################
@@ -324,10 +323,11 @@ packs:
         #
         # Key-value pairs that configure the capability. Supported keys
         # depend on the capability; see individual docs for details.
-        # For network-client: dns, gateway (and allow — planned).
+        # For network-client: allow (planned — port/protocol restrictions).
         config:
-          dns: 10.0.0.1
-          gateway: 10.0.0.1
+          allow:
+            - proto: tcp
+              ports: [443]
 
     ###########################
     # commands - Required for applications

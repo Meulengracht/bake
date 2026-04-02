@@ -9,8 +9,6 @@ Declares that this package needs to make outbound network connections. This is t
 
 Without this capability, the container has no network interface beyond loopback and cannot reach external hosts.
 
-> **Backward compatibility:** The capability name `"network"` continues to work as an alias for `"network-client"` to avoid breaking early adopters.
-
 ## Recipe Syntax
 
 ### Minimal (allow all outbound)
@@ -33,12 +31,6 @@ capabilities:
           ports: [80, 443]
         - proto: udp
           ports: [53]
-
-      # Override DNS servers for this container (optional)
-      dns: "10.0.0.1"
-
-      # Override default gateway for this container (optional)
-      gateway: "10.0.0.1"
 ```
 
 ## Configuration Reference
@@ -48,10 +40,8 @@ capabilities:
 | `allow` | list | No | Allow all | Restrict outbound to specific protocol/port combinations |
 | `allow[].proto` | string | Yes (in entry) | — | Protocol: `tcp` or `udp` |
 | `allow[].ports` | list of int | Yes (in entry) | — | Allowed destination ports |
-| `dns` | string | No | From rootfs/system | DNS server(s) for the container |
-| `gateway` | string | No | Auto-assigned | Default gateway IP |
 
-> **Note:** Support for `allow` rule parsing requires a parser enhancement and is tracked as a follow-up. The `dns` and `gateway` scalar config keys are fully supported today.
+> **Note:** Support for `allow` rule parsing requires a parser enhancement and is tracked as a follow-up.
 
 ## What It Enables
 

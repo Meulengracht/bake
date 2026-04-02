@@ -395,11 +395,9 @@ static int __load_pack_network_defaults(const char* packPath, char** gatewayOut,
 }
 
 // System capability names recognised by served.
-// "network-client" is the canonical name; "network" is kept as a legacy alias.
 // Note: "network-client" maps to the "network" policy plugin — the names are
 // intentionally different (see __load_pack_capabilities_as_plugins).
 static const char* g_systemCapabilities[] = {
-    "network",
     "network-client",
     "file-control",
     "process-control",
@@ -419,9 +417,7 @@ static int __is_system_capability(const char* name)
 
 static int __load_pack_capabilities_as_plugins(
     const char*                packPath,
-    struct chef_policy_spec*   policyOut,
-    char**                     dnsOut,
-    char**                     gatewayOut)
+    struct chef_policy_spec*   policyOut)
 {
     struct VaFs*                    vafs = NULL;
     struct chef_package_capability* capabilities = NULL;
@@ -465,24 +461,9 @@ static int __load_pack_capabilities_as_plugins(
             }
 
             // "network-client" is the canonical outbound-network capability.
-            // It maps to the "network" policy plugin. The legacy alias "network"
-            // maps directly and is kept for backward compatibility.
+            // It maps to the "network" policy plugin.
             if (strcmp(capabilities[i].name, "network-client") == 0) {
                 pluginName = "network";
-
-                // Extract optional dns/gateway overrides from the capability config.
-                // These only apply when not already set by a bake.json per-pack override.
-                for (int j = 0; j < capabilities[i].config_count; j++) {
-                    const struct chef_package_capability_config* configEntry = &capabilities[i].config[j];
-                    if (configEntry->key == NULL || configEntry->value == NULL) {
-                        continue;
-                    }
-                    if (strcmp(configEntry->key, "dns") == 0 && dnsOut != NULL && *dnsOut == NULL) {
-                        *dnsOut = platform_strdup(configEntry->value);
-                    } else if (strcmp(configEntry->key, "gateway") == 0 && gatewayOut != NULL && *gatewayOut == NULL) {
-                        *gatewayOut = platform_strdup(configEntry->value);
-                    }
-                }
             } else {
                 pluginName = capabilities[i].name;
             }
@@ -525,10 +506,9 @@ static enum chef_status __create_container(
 #endif
 
     // Optional network settings.
-    // Precedence (highest to lowest):
-    // 1. served per-pack override (bake.json section "pack-network")
-    // 2. network-client capability config (dns/gateway keys)
-    // 3. package defaults (from CHEF_PACKAGE_NETWORK_GUID)
+    // Precedence:
+    // - served per-pack override (bake.json section "pack-network")
+    // - package defaults (from CHEF_PACKAGE_NETWORK_GUID)
     //
     // Keys are stored per pack identifier (<publisher>/<package>) as strings:
     //   <publisher>/<package>.gateway
@@ -543,20 +523,16 @@ static enum chef_status __create_container(
 
     params.network.gateway_ip = __dup_pack_network_config_value(pack_id, "gateway");
     params.network.dns = __dup_pack_network_config_value(pack_id, "dns");
-
-    // Load capabilities from the package and convert system capabilities
-    // (network-client, file-control, process-control, package-management) into
-    // policy plugins for the container security policy.  Any dns/gateway values
-    // declared in a network-client capability config fill in as fallbacks when
-    // the per-pack bake.json override hasn't set them yet.
-    chef_policy_spec_init(&params.policy);
-    (void)__load_pack_capabilities_as_plugins(package, &params.policy,
-        &params.network.dns, &params.network.gateway_ip);
-
     if (params.network.gateway_ip == NULL || params.network.dns == NULL) {
         (void)__load_pack_network_defaults(package, &params.network.gateway_ip, &params.network.dns);
         (void)__load_pack_network_defaults(rootfs, &params.network.gateway_ip, &params.network.dns);
     }
+
+    // Load capabilities from the package and convert system capabilities
+    // (network-client, file-control, process-control, package-management) into
+    // policy plugins for the container security policy.
+    chef_policy_spec_init(&params.policy);
+    (void)__load_pack_capabilities_as_plugins(package, &params.policy);
 
     // On Windows HCS containers, OVERLAY layers are not supported.
 #ifdef _WIN32
