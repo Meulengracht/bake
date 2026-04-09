@@ -27,12 +27,9 @@ capabilities:
       # Restrict which destinations are reachable (optional).
       # If omitted, all outbound connections are allowed.
       allow:
-        - proto: tcp
-          ports: [80, 443]
-        - proto: udp
-          ports: [53]
-        - proto: tcp
-          ports: [8000-9000]
+        - tcp: 80,7000-8000
+        - udp: 53
+        - unix: /path/to/socket
 ```
 
 ## Configuration Reference
@@ -40,8 +37,8 @@ capabilities:
 | Key | Type | Required | Default | Description |
 |-----|------|----------|---------|-------------|
 | `allow` | list of objects | No | Allow all | Restrict outbound to specific protocol/port combinations |
-| `allow[].proto` | string | Yes | — | Protocol: `tcp` or `udp` |
-| `allow[].ports` | list | Yes | — | Allowed destination ports or port ranges (`start-end`) |
+| `allow[].*` | string | Yes | — | Protocol: `tcp`, `udp` or `unix` |
+| `allow[].<proto>:*` | list | Yes | — | Allowed destination path, ports or port ranges (`start-end`) |
 
 ## What It Enables
 

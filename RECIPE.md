@@ -326,10 +326,8 @@ packs:
         # For network-client: allow (list of proto/ports rules).
         config:
           allow:
-            - proto: tcp
-              ports: [80, 443]
-            - proto: udp
-              ports: [53]
+            - tcp: 80,443
+            - udp: 53
 
     ###########################
     # commands - Required for applications

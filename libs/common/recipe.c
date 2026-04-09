@@ -118,13 +118,11 @@ enum state {
     STATE_PACK_CAPABILITIES_LIST,
     STATE_CAPABILITY,
     STATE_CAPABILITY_NAME,
-    STATE_CAPABILITY_CONFIG,
-    STATE_CAPABILITY_CONFIG_KEY,
-    STATE_CAPABILITY_CONFIG_VALUE,
-    STATE_CAPABILITY_CONFIG_VALUE_LIST,
-    STATE_CAPABILITY_CONFIG_VALUE_OBJECT,
-    STATE_CAPABILITY_CONFIG_VALUE_OBJECT_VALUE,
-    STATE_CAPABILITY_CONFIG_VALUE_OBJECT_LIST,
+    
+    STATE_CAPABILITY_CONFIG_NETWORK_CLIENT,
+    STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST,
+    STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM,
+    STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM_VALUE,
 
     STATE_PACK_NETWORK_GATEWAY,
     STATE_PACK_NETWORK_DNS,
@@ -147,32 +145,33 @@ enum state {
 };
 
 struct parser_state {
-    enum state                  states[32];
-    int                         state_index;
-    enum state                  state;
-    struct list*                ingredients;
-    enum recipe_ingredient_type ingredients_type;
-    struct recipe               recipe;
-    struct recipe_platform      platform;
-    struct recipe_ingredient    ingredient;
-    struct recipe_part          part;
-    struct recipe_step          step;
-    struct recipe_pack          pack;
-    struct recipe_pack_command  command;
-    struct recipe_pack_capability          capability;
-    struct recipe_pack_capability_config_entry capability_config;
-    struct chef_keypair_item    env_keypair;
-    struct meson_wrap_item      meson_wrap_item;
+    enum state                           states[32];
+    int                                  state_index;
+    enum state                           state;
+    struct list*                         ingredients;
+    enum recipe_ingredient_type          ingredients_type;
+    struct recipe                        recipe;
+    struct recipe_platform               platform;
+    struct recipe_ingredient             ingredient;
+    struct recipe_part                   part;
+    struct recipe_step                   step;
+    struct recipe_pack                   pack;
+    struct recipe_pack_command           command;
+    struct recipe_pack_capability        capability;
+    struct chef_keypair_item             env_keypair;
+    struct meson_wrap_item               meson_wrap_item;
 
-    // Scratch space for flattening a YAML mapping inside a config
-    // value list into a "key=value;key=value" string.
     struct {
-        char  buffer[512];
-        int   offset;
-        int   field_count;
-        int   list_items;
         char* current_key;
     } config_object;
+};
+
+struct __capability_to_parser_state {
+    const char* capability_name;
+    enum state  config_state;
+} g_capability_to_parser_state_map[] = {
+    { "network-client", STATE_CAPABILITY_CONFIG_NETWORK_CLIENT },
+    { NULL, 0 }
 };
 
 static void __parser_push_state(struct parser_state* state, enum state next) {
@@ -527,79 +526,6 @@ static void __finalize_pack_ingredient_options(struct parser_state* state)
     // todo
 }
 
-// ---------------------------------------------------------------------------
-// Config-object flattening helpers
-//
-// When a config value list contains YAML mappings instead of plain scalars,
-// each mapping is flattened into a single "key=value;key=value;..." string
-// that is stored as a regular list item.  Capability handlers parse these
-// compact representations at runtime.
-// ---------------------------------------------------------------------------
-
-static void __config_object_reset(struct parser_state* state)
-{
-    state->config_object.buffer[0]    = '\0';
-    state->config_object.offset       = 0;
-    state->config_object.field_count  = 0;
-    state->config_object.list_items   = 0;
-    free(state->config_object.current_key);
-    state->config_object.current_key  = NULL;
-}
-
-static void __config_object_append(struct parser_state* state, const char* text)
-{
-    int remaining = (int)sizeof(state->config_object.buffer) - state->config_object.offset - 1;
-    int len       = (int)strlen(text);
-
-    if (len > remaining) {
-        len = remaining;
-    }
-    if (len > 0) {
-        memcpy(state->config_object.buffer + state->config_object.offset, text, len);
-        state->config_object.offset += len;
-        state->config_object.buffer[state->config_object.offset] = '\0';
-    }
-}
-
-// Finish the current object and add it as a string to the config values list.
-static void __config_object_finalize(struct parser_state* state)
-{
-    struct list_item_string* item;
-
-    if (state->config_object.offset == 0) {
-        return;
-    }
-
-    item = malloc(sizeof(struct list_item_string));
-    if (item == NULL) {
-        fprintf(stderr, "error: out of memory\n");
-        exit(EXIT_FAILURE);
-    }
-    item->value = platform_strdup(state->config_object.buffer);
-    list_add(&state->capability_config.values, &item->list_header);
-    __config_object_reset(state);
-}
-
-static void __finalize_capability_config(struct parser_state* state)
-{
-    struct recipe_pack_capability_config_entry* entry;
-
-    if (state->capability_config.key == NULL || strlen(state->capability_config.key) == 0) {
-        return;
-    }
-
-    entry = malloc(sizeof(struct recipe_pack_capability_config_entry));
-    if (entry == NULL) {
-        fprintf(stderr, "error: out of memory\n");
-        exit(EXIT_FAILURE);
-    }
-
-    memcpy(entry, &state->capability_config, sizeof(struct recipe_pack_capability_config_entry));
-    list_add(&state->capability.config, &entry->list_header);
-
-    memset(&state->capability_config, 0, sizeof(struct recipe_pack_capability_config_entry));
-}
-
 static void __finalize_capability(struct parser_state* state)
 {
     struct recipe_pack_capability* capability;
@@ -611,7 +537,7 @@ static void __finalize_capability(struct parser_state* state)
 
     capability = malloc(sizeof(struct recipe_pack_capability));
     if (capability == NULL) {
-        fprintf(stderr, "error: out of memory\n");
+        fprintf(stderr, "error: __finalize_capability: out of memory\n");
         exit(EXIT_FAILURE);
     }
 
@@ -619,6 +545,63 @@ static void __finalize_capability(struct parser_state* state)
     list_add(&state->pack.capabilities, &capability->list_header);
 
     memset(&state->capability, 0, sizeof(struct recipe_pack_capability));
+}
+
+// __validate_net_port validates that the given string is a valid network
+// port or port-range.
+static int __validate_net_port(const char* str)
+{
+    char* endptr;
+    long  port;
+
+    // check if it's a port range
+    if (strchr(str, '-') != NULL) {
+        char* start_str = strtok(platform_strdup(str), "-");
+        char* end_str   = strtok(NULL, "-");
+        if (start_str == NULL || end_str == NULL) {
+            return -1;
+        }
+        port = strtol(start_str, &endptr, 10);
+        if (*endptr != '\0' || port < 1 || port > 65535) {
+            return -1;
+        }
+        port = strtol(end_str, &endptr, 10);
+        if (*endptr != '\0' || port < 1 || port > 65535) {
+            return -1;
+        }
+    } else {
+        // single port
+        port = strtol(str, &endptr, 10);
+        if (*endptr != '\0' || port < 1 || port > 65535) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void __cap_network_client_add_allow_entry(struct parser_state* state, const char* key, const char* value)
+{
+    struct list_item_string* item;
+    char                     buffer[512];
+    
+    snprintf(buffer, sizeof(buffer), "%s:%s", key, value);
+
+    item = calloc(1, sizeof(struct list_item_string));
+    if (item == NULL) {
+        fprintf(stderr, "error: __cap_network_client_add_allow_entry: out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    item->value = platform_strdup(&buffer[0]);
+    if (item->value == NULL) {
+        fprintf(stderr, "error: __cap_network_client_add_allow_entry: out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+
+    list_add(
+        &state->capability.config.network_client.allow, 
+        &item->list_header
+    );
 }
 
 static void __finalize_pack(struct parser_state* state)
@@ -767,6 +750,24 @@ static int __parse_boolean(const char* string)
     // default to false
     fprintf(stderr, "parse error: unrecognized boolean value: %s\n", string);
     return 0;
+}
+
+static int __parser_push_capability_config_stage(struct parser_state* state)
+{
+    if (state->capability.name == NULL) {
+        fprintf(stderr, "unexpected capability config entry: capability name must be specified first\n");
+        return -1;
+    }
+
+    for (int i = 0; g_capability_to_parser_state_map[i].capability_name != NULL; i++) {
+        if (strcmp(state->capability.name, g_capability_to_parser_state_map[i].capability_name) == 0) {
+            __parser_push_state(state, g_capability_to_parser_state_map[i].config_state);
+            return 0;
+        }
+    }
+
+    fprintf(stderr, "unexpected capability config entry: unrecognized capability '%s'\n", state->capability.name);
+    return -1;
 }
 
 static int __consume_event(struct parser_state* s, yaml_event_t* event)
@@ -1509,7 +1510,9 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     if (strcmp(value, "name") == 0) {
                         __parser_push_state(s, STATE_CAPABILITY_NAME);
                     } else if (strcmp(value, "config") == 0) {
-                        __parser_push_state(s, STATE_CAPABILITY_CONFIG);
+                        if (__parser_push_capability_config_stage(s)) {
+                            return -1;
+                        }
                     } else {
                         fprintf(stderr, "__consume_event: (STATE_CAPABILITY) unexpected scalar: %s.\n", value);
                         return -1;
@@ -1523,7 +1526,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_CAPABILITY_NAME, capability.name, __parse_string)
 
-        case STATE_CAPABILITY_CONFIG:
+        case STATE_CAPABILITY_CONFIG_NETWORK_CLIENT:
             switch (event->type) {
                 case YAML_MAPPING_START_EVENT:
                     break;
@@ -1533,9 +1536,12 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
-                    s->capability_config.key = __parse_string(value);
-                    __parser_push_state(s, STATE_CAPABILITY_CONFIG_VALUE);
-                    break;
+                    if (strcmp(value, "allow") == 0) {
+                        __parser_push_state(s, STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_CAPABILITY_CONFIG_NETWORK_CLIENT) unexpected scalar: %s.\n", value);
+                        return -1;
+                    } break;
 
                 default:
                     fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
@@ -1543,69 +1549,28 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        case STATE_CAPABILITY_CONFIG_VALUE:
+        __consume_sequence_mapped(
+            STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST,
+            STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM
+        )
+        
+        case STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM:
             switch (event->type) {
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
-                    s->capability_config.value = __parse_string(value);
-                    __finalize_capability_config(s);
-                    __parser_pop_state(s);
-                    break;
+                    s->config_object.current_key = __parse_string(value);
 
-                case YAML_SEQUENCE_START_EVENT:
-                    s->state = STATE_CAPABILITY_CONFIG_VALUE_LIST;
-                    break;
-
-                default:
-                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
-                    return -1;
-            }
-            break;
-
-        case STATE_CAPABILITY_CONFIG_VALUE_LIST:
-            switch (event->type) {
-                case YAML_SCALAR_EVENT:
-                    value = (char *)event->data.scalar.value;
-                    {
-                        struct list_item_string* item = malloc(sizeof(struct list_item_string));
-                        if (!item) {
-                            fprintf(stderr, "error: out of memory\n");
-                            exit(EXIT_FAILURE);
-                        }
-                        item->value = platform_strdup(value);
-                        list_add(&s->capability_config.values, &item->list_header);
+                    if (strcmp(s->config_object.current_key, "tcp") == 0) {
+                        __parser_push_state(s, STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM_VALUE);
+                    } else if (strcmp(s->config_object.current_key, "udp") == 0) {
+                        __parser_push_state(s, STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM_VALUE);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM) unexpected allow list type: %s.\n", s->config_object.current_key);
+                        return -1;
                     }
                     break;
 
-                case YAML_MAPPING_START_EVENT:
-                    __config_object_reset(s);
-                    __parser_push_state(s, STATE_CAPABILITY_CONFIG_VALUE_OBJECT);
-                    break;
-
-                case YAML_SEQUENCE_END_EVENT:
-                    __finalize_capability_config(s);
-                    __parser_pop_state(s);
-                    break;
-
-                default:
-                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
-                    return -1;
-            }
-            break;
-
-        // Parsing a YAML mapping inside a config value list.
-        // Collects key=value pairs and flattens them into a single string.
-        case STATE_CAPABILITY_CONFIG_VALUE_OBJECT:
-            switch (event->type) {
-                case YAML_SCALAR_EVENT:
-                    value = (char *)event->data.scalar.value;
-                    free(s->config_object.current_key);
-                    s->config_object.current_key = platform_strdup(value);
-                    __parser_push_state(s, STATE_CAPABILITY_CONFIG_VALUE_OBJECT_VALUE);
-                    break;
-
                 case YAML_MAPPING_END_EVENT:
-                    __config_object_finalize(s);
                     __parser_pop_state(s);
                     break;
 
@@ -1617,51 +1582,26 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         // Parsing a field value inside a config value object.
         // Can be a scalar or a list.
-        case STATE_CAPABILITY_CONFIG_VALUE_OBJECT_VALUE:
+        case STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM_VALUE:
             switch (event->type) {
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
-                    if (s->config_object.field_count > 0) {
-                        __config_object_append(s, ";");
+                    if (strcmp(s->config_object.current_key, "tcp") == 0) {
+                        if (__validate_net_port(value)) {
+                            fprintf(stderr, "__consume_event: (STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM_VALUE) failed to parse TCP port: %s.\n", value);
+                            return -1;
+                        }
+                    } else if (strcmp(s->config_object.current_key, "udp") == 0) {
+                        if (__validate_net_port(value)) {
+                            fprintf(stderr, "__consume_event: (STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM_VALUE) failed to parse UDP port: %s.\n", value);
+                            return -1;
+                        }
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_CAPABILITY_CONFIG_NETWORK_CLIENT_ALLOW_LIST_ITEM_VALUE) unexpected allow list type: %s.\n", s->config_object.current_key);
+                        return -1;
                     }
-                    __config_object_append(s, s->config_object.current_key);
-                    __config_object_append(s, "=");
-                    __config_object_append(s, value);
-                    s->config_object.field_count++;
-                    __parser_pop_state(s);
-                    break;
-
-                case YAML_SEQUENCE_START_EVENT:
-                    if (s->config_object.field_count > 0) {
-                        __config_object_append(s, ";");
-                    }
-                    __config_object_append(s, s->config_object.current_key);
-                    __config_object_append(s, "=");
-                    s->config_object.field_count++;
-                    s->state = STATE_CAPABILITY_CONFIG_VALUE_OBJECT_LIST;
-                    break;
-
-                default:
-                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
-                    return -1;
-            }
-            break;
-
-        // Parsing a list field inside a config value object.
-        // Items are appended comma-separated.
-        case STATE_CAPABILITY_CONFIG_VALUE_OBJECT_LIST:
-            switch (event->type) {
-                case YAML_SCALAR_EVENT:
-                    value = (char *)event->data.scalar.value;
-                    if (s->config_object.list_items > 0) {
-                        __config_object_append(s, ",");
-                    }
-                    __config_object_append(s, value);
-                    s->config_object.list_items++;
-                    break;
-
-                case YAML_SEQUENCE_END_EVENT:
-                    s->config_object.list_items = 0;
+                    // Add the port to the current allow list item.
+                    __cap_network_client_add_allow_entry(s, s->config_object.current_key, value);
                     __parser_pop_state(s);
                     break;
 
@@ -1670,7 +1610,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     return -1;
             }
             break;
-        
+
         case STATE_STOP:
             break;
     }
@@ -1824,17 +1764,15 @@ static void __destroy_pack_ingredient_options(struct recipe_pack_ingredient_opti
     __destroy_list(string, options->linker_flags.head, struct list_item_string);
 }
 
-static void __destroy_capability_config_entry(struct recipe_pack_capability_config_entry* entry)
-{
-    __destroy_list(string, entry->values.head, struct list_item_string);
-    free((void*)entry->key);
-    free((void*)entry->value);
-    free(entry);
-}
-
 static void __destroy_capability(struct recipe_pack_capability* capability)
 {
-    __destroy_list(capability_config_entry, capability->config.head, struct recipe_pack_capability_config_entry);
+    if (strcmp(capability->name, "network-client") == 0) {
+        __destroy_list(
+            string,
+            capability->config.network_client.allow.head,
+            struct list_item_string
+        );
+    }
     free((void*)capability->name);
     free(capability);
 }
