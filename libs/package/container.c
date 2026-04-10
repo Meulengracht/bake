@@ -892,94 +892,105 @@ static int __write_network_metadata(struct VaFs* vafs, struct __pack_options* op
     return status;
 }
 
-static size_t __capability_config_entry_size(struct recipe_pack_capability_config_entry* entry)
+static size_t __capability_network_client_config_size(union recipe_pack_capability_config* config)
 {
-    size_t size = sizeof(uint32_t) * 3; // key_length + value_length + values_count
-    size += __safe_strlen(entry->key);
-    if (entry->value != NULL) {
-        size += __safe_strlen(entry->value);
-    } else {
-        struct list_item* item;
-        list_foreach(&entry->values, item) {
-            struct list_item_string* str = (struct list_item_string*)item;
-            size += sizeof(uint32_t) + __safe_strlen(str->value);
-        }
+    size_t            size = 0;
+    struct list_item* item;
+
+    // calculate size needed to serialize the allow list
+    list_foreach(&config->network_client.allow, item) {
+        struct list_item_string* str = (struct list_item_string*)item;
+        size += sizeof(uint32_t) + __safe_strlen(str->value);
     }
+
     return size;
 }
+
+static size_t __capability_network_client_config_serialize(union recipe_pack_capability_config* config, char* buffer)
+{
+    size_t            size = 0;
+    struct list_item* item;
+
+    // serialize the allow list
+    list_foreach(&config->network_client.allow, item) {
+        struct list_item_string* str = (struct list_item_string*)item;
+        uint32_t                 len = (uint32_t)__safe_strlen(str->value);
+        memcpy(buffer, &len, sizeof(uint32_t));
+        buffer += sizeof(uint32_t);
+        memcpy(buffer, str->value, len);
+        buffer += len;
+        size += sizeof(uint32_t) + len;
+    }
+
+    return size;
+}
+
+struct __capability_serializers {
+    const char* name;
+    size_t    (*serialize)(union recipe_pack_capability_config* config, char* buf);
+    size_t    (*size)(union recipe_pack_capability_config* config);
+} g_capability_serializers[] = {
+    { "network-client", __capability_network_client_config_serialize, __capability_network_client_config_size },
+    { NULL, NULL, NULL }
+};
 
 static size_t __capability_size(struct recipe_pack_capability* cap)
 {
-    struct list_item* item;
-    size_t size = sizeof(uint32_t) * 2; // name_length + config_count
-    size += __safe_strlen(cap->name);
-    list_foreach(&cap->config, item) {
-        struct recipe_pack_capability_config_entry* entry =
-            (struct recipe_pack_capability_config_entry*)item;
-        size += __capability_config_entry_size(entry);
-    }
-    return size;
-}
-
-static size_t __serialize_capability_config_entry(struct recipe_pack_capability_config_entry* entry, char* buf)
-{
-    char*    start = buf;
-    uint32_t keyLen = (uint32_t)__safe_strlen(entry->key);
-    uint32_t valLen = entry->value ? (uint32_t)__safe_strlen(entry->value) : 0;
-    uint32_t valsCnt = (uint32_t)entry->values.count;
-
-    memcpy(buf, &keyLen, sizeof(uint32_t));  buf += sizeof(uint32_t);
-    memcpy(buf, &valLen, sizeof(uint32_t));  buf += sizeof(uint32_t);
-    memcpy(buf, &valsCnt, sizeof(uint32_t)); buf += sizeof(uint32_t);
-
-    if (keyLen) { memcpy(buf, entry->key, keyLen); buf += keyLen; }
-    if (valLen) { memcpy(buf, entry->value, valLen); buf += valLen; }
-
-    if (valsCnt > 0) {
-        struct list_item* item;
-        list_foreach(&entry->values, item) {
-            struct list_item_string* str = (struct list_item_string*)item;
-            uint32_t itemLen = (uint32_t)__safe_strlen(str->value);
-            memcpy(buf, &itemLen, sizeof(uint32_t)); buf += sizeof(uint32_t);
-            if (itemLen) { memcpy(buf, str->value, itemLen); buf += itemLen; }
+    for (size_t i = 0; g_capability_serializers[i].name != NULL; i++) {
+        if (strcmp(cap->name, g_capability_serializers[i].name) == 0) {
+            return sizeof(struct chef_vafs_capability_header) 
+                + g_capability_serializers[i].size(&cap->config);
         }
     }
-    return (size_t)(buf - start);
+    return sizeof(struct chef_vafs_capability_header);
 }
 
-static size_t __serialize_capability(struct recipe_pack_capability* cap, char* buf)
+static size_t __serialize_capability(struct recipe_pack_capability* cap, char* buffer)
 {
-    char*          start = buf;
-    struct list_item* item;
-    uint32_t       nameLen = (uint32_t)__safe_strlen(cap->name);
-    uint32_t       configCount = (uint32_t)cap->config.count;
+    struct chef_vafs_capability_header* header;
 
-    memcpy(buf, &nameLen, sizeof(uint32_t));     buf += sizeof(uint32_t);
-    memcpy(buf, &configCount, sizeof(uint32_t)); buf += sizeof(uint32_t);
-    if (nameLen) { memcpy(buf, cap->name, nameLen); buf += nameLen; }
-
-    list_foreach(&cap->config, item) {
-        struct recipe_pack_capability_config_entry* entry =
-            (struct recipe_pack_capability_config_entry*)item;
-        buf += __serialize_capability_config_entry(entry, buf);
+    for (size_t i = 0; g_capability_serializers[i].name != NULL; i++) {
+        if (strcmp(cap->name, g_capability_serializers[i].name) == 0) {
+            header = (struct chef_vafs_capability_header*)buffer;
+            buffer += sizeof(struct chef_vafs_capability_header);
+            
+            header->name_length = (uint32_t)strlen(cap->name);
+            header->config_length = (uint32_t)g_capability_serializers[i].size(&cap->config);
+            
+            memcpy(buffer, cap->name, header->name_length);
+            buffer += header->name_length;
+            
+            return sizeof(struct chef_vafs_capability_header) 
+                + header->name_length 
+                + g_capability_serializers[i].serialize(&cap->config, buffer);
+        }
     }
-    return (size_t)(buf - start);
+
+    // if we don't have a serializer for this capability, just write the name
+    header = (struct chef_vafs_capability_header*)buffer;
+    buffer += sizeof(struct chef_vafs_capability_header);
+    
+    header->name_length = (uint32_t)strlen(cap->name);
+    header->config_length = 0;
+    
+    memcpy(buffer, cap->name, header->name_length);
+    return sizeof(struct chef_vafs_capability_header) + header->name_length;
 }
 
-static int __write_capabilities_metadata(struct VaFs* vafs, struct __pack_options* options)
+static int __write_capabilities_metadata(struct VaFs* vafs, struct list* capabilities)
 {
     struct chef_vafs_feature_package_capabilities* feature;
-    struct list_item* item;
-    size_t totalSize;
-    char*  buffer;
-    int    status;
+    struct list_item*                              item;
+    size_t                                         totalSize;
+    char*                                          buffer;
+    int                                            status;
 
-    if (options->capabilities == NULL || options->capabilities->count == 0) {
+    if (capabilities == NULL || capabilities->count == 0) {
         return 0;
     }
 
     totalSize = sizeof(struct chef_vafs_feature_package_capabilities);
-    list_foreach(options->capabilities, item) {
+    list_foreach(capabilities, item) {
         struct recipe_pack_capability* cap = (struct recipe_pack_capability*)item;
         totalSize += __capability_size(cap);
     }
@@ -993,10 +1004,10 @@ static int __write_capabilities_metadata(struct VaFs* vafs, struct __pack_option
     feature = (struct chef_vafs_feature_package_capabilities*)buffer;
     memcpy(&feature->header.Guid, &g_capabilitiesGuid, sizeof(struct VaFsGuid));
     feature->header.Length = (uint32_t)totalSize;
-    feature->capabilities_count = (uint32_t)options->capabilities->count;
+    feature->capabilities_count = (uint32_t)capabilities->count;
 
     buffer += sizeof(struct chef_vafs_feature_package_capabilities);
-    list_foreach(options->capabilities, item) {
+    list_foreach(capabilities, item) {
         struct recipe_pack_capability* cap = (struct recipe_pack_capability*)item;
         buffer += __serialize_capability(cap, buffer);
     }
@@ -1040,7 +1051,7 @@ static int __write_package_metadata(struct VaFs* vafs, const char* name, struct 
         return -1;
     }
 
-    status = __write_capabilities_metadata(vafs, options);
+    status = __write_capabilities_metadata(vafs, options->capabilities);
     if (status) {
         VLOG_ERROR("bake", "failed to write package capabilities\n");
         return -1;
