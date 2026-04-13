@@ -20,47 +20,17 @@
 #define __CHEF_PACKAGE_H__
 
 #include <chef/bits/package.h>
-#include <stddef.h>
-
-// prototypes imported from vafs;
-struct VaFs;
 
 /**
- * @brief 
- * 
- * @param[In]       path
- * @param[Out, Opt] packageOut
- * @param[Out, Opt] versionOut
- * @param[Out, Opt] commandsOut     A pointer to a chef_command*, it will be set to an array of commands.
- * @param[Out, Opt] commandCountOut Will be set to the size of commandsOut.
- * @return int 
+ * @brief Shared Chef package types and ownership helpers.
+ *
+ * Header layering for the package API is intentionally split by concern:
+ * - `chef/package.h` exposes shared package structs, proof structs, and free helpers.
+ * - `chef/package_manifest.h` exposes the canonical metadata model and codec.
+ * - `chef/package_image.h` exposes `.pack` image construction.
+ *
+ * Include this header when you only need the shared types or cleanup helpers.
  */
-extern int chef_package_load(
-    const char*           path,
-    struct chef_package** packageOut,
-    struct chef_version** versionOut,
-    struct chef_command** commandsOut,
-    int*                  commandCountOut);
-
-/**
- * @brief 
- * 
- * @param[In]       path
- * @param[Out, Opt] packageOut
- * @param[Out, Opt] versionOut
- * @param[Out, Opt] commandsOut     A pointer to a chef_command*, it will be set to an array of commands.
- * @param[Out, Opt] commandCountOut Will be set to the size of commandsOut.
- * @return int 
- */
-extern int chef_package_load_vafs(
-    struct VaFs*                             vafs,
-    struct chef_package**                    packageOut,
-    struct chef_version**                    versionOut,
-    struct chef_command**                    commandsOut,
-    int*                                     commandCountOut,
-    struct chef_package_application_config** appConfigOut,
-    struct chef_package_capability**         capabilitiesOut,
-    int*                                     capabilitiesCountOut);
 
 /**
  * @brief Cleans up any resources allocated by the package.
@@ -70,17 +40,17 @@ extern int chef_package_load_vafs(
 extern void chef_package_free(struct chef_package* package);
 
 /**
- * @brief Cleans up any resources allocated by the version structure. This is only neccessary
- * to call if the verison was allocated seperately (by chef_package_load).
+ * @brief Cleans up a separately owned version structure.
  * 
  * @param[In] version A pointer to the version that will be freed. 
  */
 extern void chef_version_free(struct chef_version* version);
 
 /**
- * @brief Cleans up any resources allocated by chef_package_load. The commands pointer will pont
- * to an array of struct chef_command, and the caller must save the count as well to pass to this
- * function.
+ * @brief Cleans up any resources allocated for command arrays.
+ *
+ * The commands pointer must reference an array of `struct chef_command`, and
+ * the caller must provide the number of elements in that array.
  *
  * @param[In] commands A pointer to an array of commands.
  * @param[In] count    The size of the array passed.
@@ -88,7 +58,7 @@ extern void chef_version_free(struct chef_version* version);
 extern void chef_commands_free(struct chef_command* commands, int count);
 
 /**
- * @brief Cleans up any resources allocated by chef_package_load
+ * @brief Cleans up package application configuration structures.
  */
 extern void chef_package_application_config_free(struct chef_package_application_config* appConfig);
 
@@ -108,7 +78,10 @@ extern void chef_package_capabilities_free(struct chef_package_capability* capab
 extern void chef_package_proof_free(struct chef_package_proof* proof);
 
 /**
- * @brief Parses a string containing a chef version.
+ * @brief Parses a string containing a Chef package version.
+ *
+ * This is a convenience alias for the canonical parser in
+ * `chef/package_manifest.h`.
  */
 extern int chef_version_from_string(const char* string, struct chef_version* version);
 

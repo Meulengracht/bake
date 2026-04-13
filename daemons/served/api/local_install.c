@@ -18,6 +18,7 @@
 
 #include <chef/platform.h>
 #include <chef/package.h>
+#include <chef/package_manifest.h>
 #include <errno.h>
 #include <gracht/server.h>
 #include <state.h>
@@ -281,7 +282,7 @@ static int __prepare_local_install(
     char**                                    packageNameOut,
     int*                                      revisionOut)
 {
-    struct chef_package*       package = NULL;
+    struct chef_package_manifest* manifest = NULL;
     struct chef_package_proof* proof = NULL;
     char*                      fullName = NULL;
     const char*                publisher = NULL;
@@ -295,7 +296,7 @@ static int __prepare_local_install(
 
     *packageNameOut = NULL;
 
-    status = chef_package_load(packagePath, &package, NULL, NULL, NULL);
+    status = chef_package_manifest_load(packagePath, &manifest);
     if (status != 0) {
         return -1;
     }
@@ -311,12 +312,12 @@ static int __prepare_local_install(
         goto cleanup;
     }
 
-    fullName = malloc(strlen(publisher) + strlen(package->package) + 2);
+    fullName = malloc(strlen(publisher) + strlen(manifest->name) + 2);
     if (fullName == NULL) {
         goto cleanup;
     }
 
-    sprintf(fullName, "%s/%s", publisher, package->package);
+    sprintf(fullName, "%s/%s", publisher, manifest->name);
     if (__validate_package_name(fullName) != 0) {
         goto cleanup;
     }
@@ -324,7 +325,7 @@ static int __prepare_local_install(
     served_state_lock();
     revision = __next_local_revision(fullName);
 
-    status = __stage_local_install(packagePath, proofPath, publisher, package->package, revision);
+    status = __stage_local_install(packagePath, proofPath, publisher, manifest->name, revision);
     if (status != 0) {
         served_state_unlock();
         goto cleanup;
@@ -337,7 +338,7 @@ static int __prepare_local_install(
 
 cleanup:
     chef_package_proof_free(proof);
-    chef_package_free(package);
+    chef_package_manifest_free(manifest);
     if (status != 0) {
         free(fullName);
     }

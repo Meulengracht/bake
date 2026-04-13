@@ -102,23 +102,20 @@ struct chef_vafs_feature_package_network {
 };
 
 // Capability definitions for application packages.
-// Variable-length binary encoding:
-//   For each capability:
-//     uint32_t name_length
-//     uint32_t config_count
-//     char     name[name_length]
-//     For each config entry:
-//       uint32_t key_length
-//       uint32_t value_length    (>0 for scalar, 0 for list)
-//       uint32_t values_count    (>0 for list, 0 for scalar)
-//       char     key[key_length]
-//       char     value[value_length]           (scalar)
-//       OR for each list item:
-//         uint32_t item_length
-//         char     item[item_length]
 struct chef_vafs_feature_package_capabilities {
     struct VaFsFeatureHeader header;
     uint32_t                 capabilities_count;
+};
+
+// capabilities are serialized as:
+// [capability count][capability 1][capability 2]...
+// where each capability is serialized as:
+// [name length][config length][name][config data]
+// now each capability has configuration data, which is serialized after
+// the name. The configuration data varies based on the type of interface
+struct chef_vafs_capability_header {
+    uint8_t  name_length;
+    uint16_t config_length;
 };
 
 #endif //!__PLATFORM_UTILS_VAFS_H__

@@ -139,25 +139,18 @@ struct recipe_pack_application_options {
     const char* dns;
 };
 
-/**
- * @brief A single key-value entry in a capability's config block.
- * For simple scalar values, `value` is set and `values` is empty.
- * For list-type values, `value` is NULL and `values` contains the items.
- */
-struct recipe_pack_capability_config_entry {
-    struct list_item list_header;
-    const char*      key;
-    const char*      value;   // scalar value, or NULL for list-type
-    struct list      values;  // list<list_item_string> for array values
+union recipe_pack_capability_config {
+    struct {
+        // list of allowed network protocol/ports, e.g. 
+        // "tcp:80", "udp:53", "tcp:443", "tcp:1024-65535"
+        struct list allow; // list<list_item_string>
+    } network_client;
 };
 
-/**
- * @brief A single capability declaration within a pack.
- */
 struct recipe_pack_capability {
-    struct list_item list_header;
-    const char*      name;    // e.g. "network", "service", "shared-content"
-    struct list      config;  // list<recipe_pack_capability_config_entry>
+    struct list_item                    list_header;
+    const char*                         name;
+    union recipe_pack_capability_config config;
 };
 
 struct recipe_pack {

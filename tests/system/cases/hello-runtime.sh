@@ -124,6 +124,12 @@ echo "       artifact: $(basename "$PACK_FILE") ($(wc -c < "$PACK_FILE") bytes)"
 
 # ── Sign hello-world ──────────────────────────────────────────────────────────
 # Sign the .pack artifact to enable installation (skips interactive prompt in 'serve install')
+# Run these commands to enable signing configuration for this test:
+# Should be RSA 
+# openssh-keygen -t rsa -b 4096 -f "$WORK_DIR/hello_key" -N ""
+# order config auth.name "Github CI"
+# order config auth.email "bake-ci@github.com"
+# order config auth.key "$WORK_DIR/hello_key"
 echo "[4/11] Signing .pack artifact..."
 sign_output=""
 sign_rc=0

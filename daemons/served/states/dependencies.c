@@ -21,7 +21,7 @@
 #include <state.h>
 #include <utils.h>
 
-#include <chef/package.h>
+#include <chef/package_manifest.h>
 #include <chef/platform.h>
 #include <errno.h>
 #include <stdio.h>
@@ -89,7 +89,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
     char**                     names = NULL;
     char*                      path = NULL;
     char*                      base = NULL;
-    struct chef_package*       package = NULL;
+    struct chef_package_manifest* manifest = NULL;
     sm_event_t                 event = SERVED_TX_EVENT_FAILED;
     int                        revision;
 
@@ -126,7 +126,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
 
     // Goal: parse the package, figure out which base it uses. We then need to ensure
     // that the base of the package is installed prior to the package itself.
-    if (chef_package_load(path, &package, NULL, NULL, NULL)) {
+    if (chef_package_manifest_load(path, &manifest) != 0) {
         TXLOG_ERROR(
             transaction,
             "Failed to load package %s/%s (%s): %s",
@@ -136,23 +136,23 @@ enum sm_action_result served_handle_state_dependencies(void* context)
     }
 
     // If a base is specified, ensure it is installed
-    if (package->base != NULL && strlen(package->base) > 0) {
+    if (manifest->base != NULL && strlen(manifest->base) > 0) {
         // Two types of automatic bases are supported:
         // Bases from the same identity (e.g. publisher "foo" can have package "foo/base" as a base for "foo/bar")
         // Bases from the official identity (vali/base)
         const char* possibleBaseIdentities[3] = {
-            package->publisher,
+            names[0],
             "vali",
             NULL
         };
 
         for (int i = 0; possibleBaseIdentities[i] != NULL; i++) {
-            base = utils_base_to_store_id(possibleBaseIdentities[i], package->base);
+            base = utils_base_to_store_id(possibleBaseIdentities[i], manifest->base);
             if (base == NULL) {
                 TXLOG_ERROR(
                     transaction,
                     "Failed to allocate memory for base store ID (%s)",
-                    package->base
+                    manifest->base
                 );
                 break;
             }
@@ -171,7 +171,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
     }
 
 cleanup:
-    chef_package_free(package);
+    chef_package_manifest_free(manifest);
     strsplit_free(names);
     free(path);
     served_sm_post_event(&transaction->sm, event);
