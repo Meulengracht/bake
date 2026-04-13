@@ -3,7 +3,6 @@
 add_subdirectory(platform)
 add_subdirectory(vlog)
 add_subdirectory(dirconf)
-add_subdirectory(common)
 add_subdirectory(protecc)
 add_subdirectory(containerv)
 
@@ -20,6 +19,7 @@ endif()
 
 add_subdirectory(yaml)
 add_subdirectory(gracht)
+add_subdirectory(common)
 
 # build libchefclient
 add_subdirectory(chefclient)
@@ -27,7 +27,6 @@ add_subdirectory(chefclient)
 # build support libraries for tools
 add_subdirectory(disk)
 add_subdirectory(cvd)
-add_subdirectory(package)
 add_subdirectory(oven)
 add_subdirectory(store)
 add_subdirectory(remote)

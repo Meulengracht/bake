@@ -40,6 +40,10 @@ extern int test_image_fat_options(void);
 extern int test_image_multiple_partitions(void);
 extern int test_image_full(void);
 
+// package manifest tests
+extern int test_package_manifest_application_roundtrip(void);
+extern int test_package_manifest_ingredient_roundtrip(void);
+
 typedef struct {
     const char* name;
     int (*func)(void);
@@ -66,6 +70,10 @@ static const test_case_t tests[] = {
     {"Image: FAT options",           test_image_fat_options},
     {"Image: multiple partitions",   test_image_multiple_partitions},
     {"Image: full",                  test_image_full},
+
+    // package manifest tests
+    {"Package manifest: application roundtrip", test_package_manifest_application_roundtrip},
+    {"Package manifest: ingredient roundtrip", test_package_manifest_ingredient_roundtrip},
 };
 
 static const size_t num_tests = sizeof(tests) / sizeof(tests[0]);

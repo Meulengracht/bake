@@ -20,9 +20,9 @@
 #include <chef/config.h>
 #include <chef/dirs.h>
 #include <chef/environment.h>
+#include <chef/package_manifest.h>
 #include <chef/platform.h>
 #include <chef/utils_vafs.h>
-#include <chef/package.h>
 #include <errno.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
@@ -398,13 +398,13 @@ static int __load_pack_network_defaults(const char* packPath, char** gatewayOut,
 // Each handler translates raw capability config entries into the protocol-level
 // plugin config variant. Return 0 on success.
 typedef int (*plugin_config_fn)(
-    struct chef_policy_plugin*            plugin,
-    const struct chef_package_capability* capability
+    struct chef_policy_plugin*                     plugin,
+    const struct chef_package_manifest_capability* capability
 );
 
 static int __configure_network_client(
-    struct chef_policy_plugin*            plugin,
-    const struct chef_package_capability* capability);
+    struct chef_policy_plugin*                     plugin,
+    const struct chef_package_manifest_capability* capability);
 
 // Table of recognised system capabilities.
 // Each entry maps a capability name to the policy plugin name that cvd expects,
@@ -589,46 +589,42 @@ static int __parse_network_rule(const char* str, struct chef_network_rule* rule)
 }
 
 static int __configure_network_client(
-    struct chef_policy_plugin*            plugin,
-    const struct chef_package_capability* capability)
+    struct chef_policy_plugin*                     plugin,
+    const struct chef_package_manifest_capability* capability)
 {
     struct chef_policy_plugin_network_client nc;
+    size_t                                 i;
+    int                                    rule_idx;
+    int                                    valid_count = 0;
+
     chef_policy_plugin_network_client_init(&nc);
 
-    for (int i = 0; i < capability->config_count; i++) {
-        const struct chef_package_capability_config* entry = &capability->config[i];
-        int rule_idx;
+    for (i = 0; i < capability->allow_list.count; i++) {
+        struct chef_network_rule probe;
 
-        if (strcmp(entry->key, "allow") != 0 || entry->values == NULL) {
-            continue;
+        chef_network_rule_init(&probe);
+        if (__parse_network_rule(capability->allow_list.values[i], &probe) == 0) {
+            valid_count++;
+        } else {
+            VLOG_ERROR("served", "skipping invalid network allow rule: %s\n", capability->allow_list.values[i]);
         }
+        chef_network_rule_destroy(&probe);
+    }
 
-        // Count parseable rules first so we allocate only valid slots.
-        int valid_count = 0;
-        for (int j = 0; j < entry->values_count; j++) {
-            struct chef_network_rule probe;
-            chef_network_rule_init(&probe);
-            if (__parse_network_rule(entry->values[j], &probe) == 0) {
-                valid_count++;
-            } else {
-                VLOG_ERROR("served", "skipping invalid network allow rule: %s\n",
-                    entry->values[j]);
-            }
-            chef_network_rule_destroy(&probe);
-        }
+    if (valid_count == 0) {
+        chef_policy_plugin_config_set_policy_plugin_network_client(plugin, &nc);
+        chef_policy_plugin_network_client_destroy(&nc);
+        return 0;
+    }
 
-        if (valid_count == 0) {
-            continue;
-        }
+    chef_policy_plugin_network_client_allow_add(&nc, valid_count);
+    rule_idx = 0;
+    for (i = 0; i < capability->allow_list.count; i++) {
+        struct chef_network_rule* rule =
+            chef_policy_plugin_network_client_allow_get(&nc, rule_idx);
 
-        chef_policy_plugin_network_client_allow_add(&nc, valid_count);
-        rule_idx = 0;
-        for (int j = 0; j < entry->values_count; j++) {
-            struct chef_network_rule* rule =
-                chef_policy_plugin_network_client_allow_get(&nc, rule_idx);
-            if (__parse_network_rule(entry->values[j], rule) == 0) {
-                rule_idx++;
-            }
+        if (__parse_network_rule(capability->allow_list.values[i], rule) == 0) {
+            rule_idx++;
         }
     }
 
@@ -646,8 +642,7 @@ static int __load_pack_capabilities_as_plugins(
     struct chef_policy_spec*   policyOut)
 {
     struct VaFs*                    vafs = NULL;
-    struct chef_package_capability* capabilities = NULL;
-    int                             capCount = 0;
+    struct chef_package_manifest*   manifest = NULL;
     int                             pluginCount = 0;
     int                             pluginIdx = 0;
     int                             status;
@@ -661,25 +656,22 @@ static int __load_pack_capabilities_as_plugins(
         return 0;
     }
 
-    status = chef_package_load_vafs(
-        vafs, NULL, NULL, NULL, NULL, NULL,
-        &capabilities, &capCount
-    );
+    status = chef_package_manifest_load_vafs(vafs, &manifest);
     vafs_close(vafs);
-    if (status != 0 || capabilities == NULL || capCount == 0) {
+    if (status != 0 || manifest == NULL || manifest->capabilities_count == 0) {
         return 0;
     }
 
-    for (int i = 0; i < capCount; i++) {
-        if (__find_capability_entry(capabilities[i].name) >= 0) {
+    for (size_t i = 0; i < manifest->capabilities_count; i++) {
+        if (__find_capability_entry(manifest->capabilities[i].name) >= 0) {
             pluginCount++;
         }
     }
 
     if (pluginCount > 0) {
         chef_policy_spec_plugins_add(policyOut, pluginCount);
-        for (int i = 0; i < capCount; i++) {
-            int entry = __find_capability_entry(capabilities[i].name);
+        for (size_t i = 0; i < manifest->capabilities_count; i++) {
+            int entry = __find_capability_entry(manifest->capabilities[i].name);
             struct chef_policy_plugin* plugin;
 
             if (entry < 0) {
@@ -690,13 +682,13 @@ static int __load_pack_capabilities_as_plugins(
             plugin->name = platform_strdup(g_capabilityTable[entry].plugin_name);
 
             if (g_capabilityTable[entry].configure != NULL) {
-                g_capabilityTable[entry].configure(plugin, &capabilities[i]);
+                g_capabilityTable[entry].configure(plugin, &manifest->capabilities[i]);
             }
             pluginIdx++;
         }
     }
 
-    chef_package_capabilities_free(capabilities, capCount);
+    chef_package_manifest_free(manifest);
     return pluginCount;
 }
 

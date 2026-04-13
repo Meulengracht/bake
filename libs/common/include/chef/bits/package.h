@@ -19,6 +19,7 @@
 #ifndef __CHEF_PACKAGE_BITS_H__
 #define __CHEF_PACKAGE_BITS_H__
 
+#include <chef/list.h>
 #include <stddef.h>
 
 // Magic identifier for local publisher, used for local installs where

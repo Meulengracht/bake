@@ -21,6 +21,7 @@
 #include <chef/api/package.h>
 #include <chef/cli.h>
 #include <chef/client.h>
+#include <chef/package_manifest.h>
 #include <chef/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -101,8 +102,7 @@ static int __ensure_publisher_valid(char** publisherNameOut)
 int publish_main(int argc, char** argv)
 {
     struct chef_publish_params params    = { 0 };
-    struct chef_package*       package   = NULL;
-    struct chef_version*       version   = NULL;
+    struct chef_package_manifest* manifest = NULL;
     char*                      packPath  = NULL;
     char*                      publisher = NULL;
     int                        status;
@@ -136,22 +136,24 @@ int publish_main(int argc, char** argv)
         return -1;
     }
 
-    status = chef_package_load(packPath, &package, &version, NULL, NULL);
+    status = chef_package_manifest_load(packPath, &manifest);
     if (status != 0) {
         printf("failed to load package: %s\n", strerror(errno));
         return -1;
     }
 
     // dump information
-    printf("publishing package: %s\n", package->package);
-    printf("platform:           %s\n", package->platform);
-    printf("architecture:       %s\n", package->arch);
+    printf("publishing package: %s\n", manifest->name);
+    printf("platform:           %s\n", manifest->platform);
+    printf("architecture:       %s\n", manifest->architecture);
     printf("channel:            %s\n", params.channel);
-    printf("version:            %d.%d.%d\n", version->major, version->minor, version->patch);
+    printf("version:            %d.%d.%d\n", manifest->version.major, manifest->version.minor, manifest->version.patch);
 
     // set the parameter values
-    params.package = package->package;
-    params.version = version;
+    params.package = manifest->name;
+    params.platform = manifest->platform;
+    params.architecture = manifest->architecture;
+    params.version = &manifest->version;
 
     // initialize chefclient
     status = chefclient_initialize();
@@ -191,12 +193,11 @@ int publish_main(int argc, char** argv)
         printf("package has been added to the publish queue, it can take up to 10 minuttes "
                "before the package has been published, it depends on the server load and size "
                "of the package. You can check when the package version has changed by running\n"
-               "'order info %s/%s'\n", publisher, package->package);
+               "'order info %s/%s'\n", publisher, manifest->name);
         free(publisher);
         break;
     }
-    
-    chef_version_free(version);
-    chef_package_free(package);
+
+    chef_package_manifest_free(manifest);
     return status;
 }

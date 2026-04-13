@@ -20,47 +20,6 @@
 #define __CHEF_PACKAGE_H__
 
 #include <chef/bits/package.h>
-#include <stddef.h>
-
-// prototypes imported from vafs;
-struct VaFs;
-
-/**
- * @brief 
- * 
- * @param[In]       path
- * @param[Out, Opt] packageOut
- * @param[Out, Opt] versionOut
- * @param[Out, Opt] commandsOut     A pointer to a chef_command*, it will be set to an array of commands.
- * @param[Out, Opt] commandCountOut Will be set to the size of commandsOut.
- * @return int 
- */
-extern int chef_package_load(
-    const char*           path,
-    struct chef_package** packageOut,
-    struct chef_version** versionOut,
-    struct chef_command** commandsOut,
-    int*                  commandCountOut);
-
-/**
- * @brief 
- * 
- * @param[In]       path
- * @param[Out, Opt] packageOut
- * @param[Out, Opt] versionOut
- * @param[Out, Opt] commandsOut     A pointer to a chef_command*, it will be set to an array of commands.
- * @param[Out, Opt] commandCountOut Will be set to the size of commandsOut.
- * @return int 
- */
-extern int chef_package_load_vafs(
-    struct VaFs*                             vafs,
-    struct chef_package**                    packageOut,
-    struct chef_version**                    versionOut,
-    struct chef_command**                    commandsOut,
-    int*                                     commandCountOut,
-    struct chef_package_application_config** appConfigOut,
-    struct chef_package_capability**         capabilitiesOut,
-    int*                                     capabilitiesCountOut);
 
 /**
  * @brief Cleans up any resources allocated by the package.
@@ -78,7 +37,7 @@ extern void chef_package_free(struct chef_package* package);
 extern void chef_version_free(struct chef_version* version);
 
 /**
- * @brief Cleans up any resources allocated by chef_package_load. The commands pointer will pont
+ * @brief Cleans up any resources allocated for command arrays.
  * to an array of struct chef_command, and the caller must save the count as well to pass to this
  * function.
  *
@@ -88,7 +47,7 @@ extern void chef_version_free(struct chef_version* version);
 extern void chef_commands_free(struct chef_command* commands, int count);
 
 /**
- * @brief Cleans up any resources allocated by chef_package_load
+ * @brief Cleans up package application configuration structures.
  */
 extern void chef_package_application_config_free(struct chef_package_application_config* appConfig);
 

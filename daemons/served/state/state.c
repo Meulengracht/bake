@@ -302,6 +302,7 @@ static void __state_application_delete(struct state_application* application)
         }
         free((void*)application->revisions);
     }
+    free((void*)application->base);
     free((void*)application->name);
 }
 

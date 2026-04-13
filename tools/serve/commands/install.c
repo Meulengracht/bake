@@ -18,7 +18,7 @@
 
 #include <errno.h>
 #include <chef/cli.h>
-#include <chef/package.h>
+#include <chef/package_manifest.h>
 #include <chef/platform.h>
 #include <gracht/client.h>
 #include <limits.h>
@@ -80,8 +80,8 @@ static int __proof_file_exists(const char* proofPath)
 
 static int __verify_package(const char* path, const char* proof)
 {
-    struct chef_package* package;
-    int                  status;
+    struct chef_package_manifest* manifest = NULL;
+    int                           status;
 
     if (proof == NULL) {
         // Unsigned local installs are still allowed when explicitly requested;
@@ -92,14 +92,13 @@ static int __verify_package(const char* path, const char* proof)
     }
 
     // dont care about commands
-    status = chef_package_load(path, &package, NULL, NULL, NULL);
+    status = chef_package_manifest_load(path, &manifest);
     if (status != 0) {
         fprintf(stderr, "failed to load package: %s\n", path);
         return -1;
     }
 
-    // free resources
-    chef_package_free(package);
+    chef_package_manifest_free(manifest);
     return 0;
 }
 

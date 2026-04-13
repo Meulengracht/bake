@@ -18,7 +18,7 @@
 
 #include <chef/config.h>
 #include <chef/dirs.h>
-#include <chef/package.h>
+#include <chef/package_manifest.h>
 #include <chef/platform.h>
 #include <errno.h>
 #include <openssl/evp.h>
@@ -335,7 +335,7 @@ int bake_write_dev_proof(const char* packPath)
 {
     struct __dev_proof_options options = { 0 };
     struct __developer_proof   proof = { 0 };
-    struct chef_package*       package = NULL;
+    struct chef_package_manifest* manifest = NULL;
     struct platform_stat       stats;
     int                        status;
 
@@ -354,7 +354,7 @@ int bake_write_dev_proof(const char* packPath)
         return status;
     }
 
-    status = chef_package_load(packPath, &package, NULL, NULL, NULL);
+    status = chef_package_manifest_load(packPath, &manifest);
     if (status) {
         VLOG_ERROR("bake", "failed to load package %s\n", packPath);
         goto cleanup;
@@ -362,14 +362,14 @@ int bake_write_dev_proof(const char* packPath)
 
     status = __create_developer_proof(packPath, &options, &proof);
     if (status == 0) {
-        status = __write_developer_proof_file(packPath, package->package, &options, &proof);
+        status = __write_developer_proof_file(packPath, manifest->name, &options, &proof);
     }
     if (status) {
         VLOG_ERROR("bake", "unable to write developer proof for %s\n", packPath);
     }
 
 cleanup:
-    chef_package_free(package);
+    chef_package_manifest_free(manifest);
     __developer_proof_cleanup(&proof);
     __cleanup_dev_proof_options(&options);
     return status;

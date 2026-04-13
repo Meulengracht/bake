@@ -183,7 +183,7 @@ static void __parser_pop_state(struct parser_state* state) {
     state->state = state->states[--state->state_index];
 }
 
-static const char* __parse_string(const char* value)
+static char* __parse_string(const char* value)
 {
     if (value == NULL || strlen(value) == 0) {
         return NULL;

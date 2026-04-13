@@ -17,6 +17,7 @@
  */
 
 #include <chef/ingredient.h>
+#include <chef/package_manifest.h>
 #include <chef/platform.h>
 #include <chef/utils_vafs.h>
 #include <errno.h>
@@ -157,6 +158,68 @@ static struct ingredient* __ingredient_new(void)
     return ingredient;
 }
 
+static struct chef_version* __duplicate_version(const struct chef_version* source)
+{
+    struct chef_version* version;
+
+    version = calloc(1, sizeof(struct chef_version));
+    if (version == NULL) {
+        return NULL;
+    }
+
+    version->major = source->major;
+    version->minor = source->minor;
+    version->patch = source->patch;
+    version->revision = source->revision;
+    version->size = source->size;
+    version->created = source->created ? platform_strdup(source->created) : NULL;
+    version->tag = source->tag ? platform_strdup(source->tag) : NULL;
+    if ((source->created != NULL && version->created == NULL)
+     || (source->tag != NULL && version->tag == NULL)) {
+        chef_version_free(version);
+        return NULL;
+    }
+    return version;
+}
+
+static struct chef_package* __duplicate_package(const struct chef_package_manifest* manifest)
+{
+    struct chef_package* package;
+
+    package = calloc(1, sizeof(struct chef_package));
+    if (package == NULL) {
+        return NULL;
+    }
+
+    package->platform = manifest->platform ? platform_strdup(manifest->platform) : NULL;
+    package->arch = manifest->architecture ? platform_strdup(manifest->architecture) : NULL;
+    package->package = manifest->name ? platform_strdup(manifest->name) : NULL;
+    package->base = manifest->base ? platform_strdup(manifest->base) : NULL;
+    package->summary = manifest->summary ? platform_strdup(manifest->summary) : NULL;
+    package->description = manifest->description ? platform_strdup(manifest->description) : NULL;
+    package->homepage = manifest->homepage ? platform_strdup(manifest->homepage) : NULL;
+    package->license = manifest->license ? platform_strdup(manifest->license) : NULL;
+    package->eula = manifest->eula ? platform_strdup(manifest->eula) : NULL;
+    package->maintainer = manifest->maintainer ? platform_strdup(manifest->maintainer) : NULL;
+    package->maintainer_email = manifest->maintainer_email ? platform_strdup(manifest->maintainer_email) : NULL;
+    package->type = manifest->type;
+    if ((manifest->platform != NULL && package->platform == NULL)
+     || (manifest->architecture != NULL && package->arch == NULL)
+     || (manifest->name != NULL && package->package == NULL)
+     || (manifest->base != NULL && package->base == NULL)
+     || (manifest->summary != NULL && package->summary == NULL)
+     || (manifest->description != NULL && package->description == NULL)
+     || (manifest->homepage != NULL && package->homepage == NULL)
+     || (manifest->license != NULL && package->license == NULL)
+     || (manifest->eula != NULL && package->eula == NULL)
+     || (manifest->maintainer != NULL && package->maintainer == NULL)
+     || (manifest->maintainer_email != NULL && package->maintainer_email == NULL)) {
+        chef_package_free(package);
+        return NULL;
+    }
+    return package;
+}
+
 static void __ingredient_delete(struct ingredient* ingredient)
 {
     if (ingredient == NULL) {
@@ -174,6 +237,7 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
 {
     struct VaFs*           vafsHandle;
     struct ingredient*     ingredient;
+    struct chef_package_manifest* manifest = NULL;
     int                    status;
 
     ingredient = __ingredient_new();
@@ -187,18 +251,22 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
         free(ingredient);
         return status;
     }
+    ingredient->vafs = vafsHandle;
 
-    status = chef_package_load_vafs(
-        vafsHandle,
-        &ingredient->package,
-        &ingredient->version,
-        NULL, NULL, NULL,
-        NULL, NULL
-    );
+    status = chef_package_manifest_load_vafs(vafsHandle, &manifest);
     if (status) {
         fprintf(stderr, "ingredient_open: cannot open vafs image: %s\n", path);
-        free(ingredient);
+        __ingredient_delete(ingredient);
         return status;
+    }
+
+    ingredient->package = __duplicate_package(manifest);
+    ingredient->version = __duplicate_version(&manifest->version);
+    if (ingredient->package == NULL || ingredient->version == NULL) {
+        chef_package_manifest_free(manifest);
+        __ingredient_delete(ingredient);
+        errno = ENOMEM;
+        return -1;
     }
 
     status = __handle_overview(vafsHandle, ingredient);
@@ -228,6 +296,8 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
         __ingredient_delete(ingredient);
         return status;
     }
+
+    chef_package_manifest_free(manifest);
 
     *ingredientOut = ingredient;
     return 0;

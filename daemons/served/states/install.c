@@ -21,11 +21,35 @@
 #include <state.h>
 #include <utils.h>
 
-#include <chef/package.h>
+#include <chef/package_manifest.h>
 #include <chef/platform.h>
 #include <chef/store.h>
 #include <vlog.h>
 #include <stdlib.h>
+
+static struct chef_version* __duplicate_version(const struct chef_version* source)
+{
+    struct chef_version* version;
+
+    version = calloc(1, sizeof(struct chef_version));
+    if (version == NULL) {
+        return NULL;
+    }
+
+    version->major = source->major;
+    version->minor = source->minor;
+    version->patch = source->patch;
+    version->revision = source->revision;
+    version->size = source->size;
+    version->created = source->created ? platform_strdup(source->created) : NULL;
+    version->tag = source->tag ? platform_strdup(source->tag) : NULL;
+    if ((source->created != NULL && version->created == NULL)
+     || (source->tag != NULL && version->tag == NULL)) {
+        chef_version_free(version);
+        return NULL;
+    }
+    return version;
+}
 
 static struct state_application* __application_new(const char* name)
 {
@@ -42,10 +66,17 @@ static struct state_application* __application_new(const char* name)
 
 static int __application_add_revision(struct state_application* application, const char* channel, struct chef_version* version)
 {
-    application->revisions = realloc(application->revisions, application->revisions_count + 1);
-    if (application->revisions == NULL) {
+    struct state_application_revision* revisions;
+
+    revisions = realloc(
+        application->revisions,
+        (application->revisions_count + 1) * sizeof(struct state_application_revision)
+    );
+    if (revisions == NULL) {
         return -1;
     }
+
+    application->revisions = revisions;
 
     application->revisions[application->revisions_count].tracking_channel = channel;
     application->revisions[application->revisions_count].version = version;
@@ -55,27 +86,33 @@ static int __application_add_revision(struct state_application* application, con
 
 static int __load_application_package(struct state_transaction* state, const char* path, struct state_application** applicationOut)
 {
-    struct state_application* application;
-    struct chef_package*      package;
-    struct chef_version*      version;
-    struct chef_command*      commands;
-    int                       count;
-    int                       status;
+    struct state_application*    application;
+    struct chef_package_manifest* manifest = NULL;
+    struct chef_version*          version = NULL;
+    int                           status;
 
-    status = chef_package_load(
-        path, &package, &version, &commands, &count
-    );
+    status = chef_package_manifest_load(path, &manifest);
     if (status) {
         return status;
     }
 
     application = __application_new(state->name);
     if (application == NULL) {
-        chef_version_free(version);
         status = -1;
         goto cleanup;
     }
-    
+
+    application->base = manifest->base ? platform_strdup(manifest->base) : NULL;
+    if (manifest->base != NULL && application->base == NULL) {
+        status = -1;
+        goto cleanup;
+    }
+    version = __duplicate_version(&manifest->version);
+    if (version == NULL) {
+        status = -1;
+        goto cleanup;
+    }
+
     version->revision = state->revision;
     status = __application_add_revision(application, state->channel, version);
     if (status) {
@@ -83,28 +120,33 @@ static int __load_application_package(struct state_transaction* state, const cha
         goto cleanup;
     }
 
-    application->commands_count = count;
-    if (count) {
-        application->commands = calloc(count, sizeof(struct state_application_command));
+    application->commands_count = (int)manifest->commands_count;
+    if (manifest->commands_count > 0) {
+        application->commands = calloc(manifest->commands_count, sizeof(struct state_application_command));
         if (application->commands == NULL) {
-            chef_version_free(version);
             status = -1;
             goto cleanup;
         }
 
-        for (int i = 0; i < count; i++) {
-            application->commands[i].type      = commands[i].type;
-            application->commands[i].name      = platform_strdup(commands[i].name);
-            application->commands[i].path      = platform_strdup(commands[i].path);
-            application->commands[i].arguments = commands[i].arguments ? platform_strdup(commands[i].arguments) : NULL;
+        for (size_t i = 0; i < manifest->commands_count; i++) {
+            application->commands[i].type = manifest->commands[i].type;
+            application->commands[i].name = platform_strdup(manifest->commands[i].name);
+            application->commands[i].path = platform_strdup(manifest->commands[i].path);
+            application->commands[i].arguments = manifest->commands[i].arguments
+                ? platform_strdup(manifest->commands[i].arguments)
+                : NULL;
+            if (application->commands[i].name == NULL || application->commands[i].path == NULL
+             || (manifest->commands[i].arguments != NULL && application->commands[i].arguments == NULL)) {
+                status = -1;
+                goto cleanup;
+            }
         }
     }
 
     *applicationOut = application;
 
 cleanup:
-    chef_package_free(package);
-    chef_commands_free(commands, count);
+    chef_package_manifest_free(manifest);
     return status;
 }
 
