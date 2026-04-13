@@ -18,7 +18,7 @@
 
 #include <chef/client.h>
 #include <chef/cvd.h>
-#include <chef/pack.h>
+#include <chef/package_image.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>

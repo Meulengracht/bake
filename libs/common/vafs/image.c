@@ -17,7 +17,7 @@
  */
 
 #include <errno.h>
-#include <chef/pack.h>
+#include <chef/package_image.h>
 #include <chef/platform.h>
 #include <chef/utils_vafs.h>
 #include <stdio.h>

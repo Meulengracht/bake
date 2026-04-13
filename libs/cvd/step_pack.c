@@ -19,7 +19,7 @@
 #include <chef/cvd.h>
 #include <chef/build-common.h>
 #include <chef/list.h>
-#include <chef/pack.h>
+#include <chef/package_image.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
 #include <errno.h>

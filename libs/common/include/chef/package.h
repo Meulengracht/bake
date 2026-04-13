@@ -22,6 +22,17 @@
 #include <chef/bits/package.h>
 
 /**
+ * @brief Shared Chef package types and ownership helpers.
+ *
+ * Header layering for the package API is intentionally split by concern:
+ * - `chef/package.h` exposes shared package structs, proof structs, and free helpers.
+ * - `chef/package_manifest.h` exposes the canonical metadata model and codec.
+ * - `chef/package_image.h` exposes `.pack` image construction.
+ *
+ * Include this header when you only need the shared types or cleanup helpers.
+ */
+
+/**
  * @brief Cleans up any resources allocated by the package.
  * 
  * @param[In] package A pointer to the package that will be freed. 
@@ -29,8 +40,7 @@
 extern void chef_package_free(struct chef_package* package);
 
 /**
- * @brief Cleans up any resources allocated by the version structure. This is only neccessary
- * to call if the verison was allocated seperately (by chef_package_load).
+ * @brief Cleans up a separately owned version structure.
  * 
  * @param[In] version A pointer to the version that will be freed. 
  */
@@ -38,8 +48,9 @@ extern void chef_version_free(struct chef_version* version);
 
 /**
  * @brief Cleans up any resources allocated for command arrays.
- * to an array of struct chef_command, and the caller must save the count as well to pass to this
- * function.
+ *
+ * The commands pointer must reference an array of `struct chef_command`, and
+ * the caller must provide the number of elements in that array.
  *
  * @param[In] commands A pointer to an array of commands.
  * @param[In] count    The size of the array passed.
@@ -67,7 +78,10 @@ extern void chef_package_capabilities_free(struct chef_package_capability* capab
 extern void chef_package_proof_free(struct chef_package_proof* proof);
 
 /**
- * @brief Parses a string containing a chef version.
+ * @brief Parses a string containing a Chef package version.
+ *
+ * This is a convenience alias for the canonical parser in
+ * `chef/package_manifest.h`.
  */
 extern int chef_version_from_string(const char* string, struct chef_version* version);
 

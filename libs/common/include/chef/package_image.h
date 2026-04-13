@@ -1,4 +1,3 @@
-
 /**
  * Copyright, Philip Meulengracht
  *
@@ -14,20 +13,25 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 
-#ifndef __PACK_H__
-#define __PACK_H__
+#ifndef __CHEF_PACKAGE_IMAGE_H__
+#define __CHEF_PACKAGE_IMAGE_H__
 
 #include <chef/list.h>
 #include <chef/package_manifest.h>
 
 /**
- * @brief Options for constructing a `.pack` image from an input directory.
+ * @brief Package image construction API.
  *
- * This API is responsible for VaFs image construction only. Chef package
- * metadata is supplied separately as a manifest.
+ * This layer is responsible for creating a `.pack` image from a staged file
+ * tree and a canonical package manifest. It does not define or own the
+ * metadata model itself; see `chef/package_manifest.h` for that API.
+ */
+
+/**
+ * @brief Options for constructing a `.pack` image from an input directory.
  */
 struct chef_package_image_options {
     const char*                         input_dir;
@@ -46,4 +50,4 @@ struct chef_package_image_options {
  */
 extern int chef_package_image_create(const struct chef_package_image_options* options);
 
-#endif //!__PACK_H__
+#endif //!__CHEF_PACKAGE_IMAGE_H__

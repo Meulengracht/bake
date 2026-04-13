@@ -19,10 +19,17 @@
 #ifndef __CHEF_PACKAGE_MANIFEST_H__
 #define __CHEF_PACKAGE_MANIFEST_H__
 
-#include <chef/bits/package.h>
+#include <chef/package.h>
 #include <stddef.h>
 
 struct VaFs;
+
+/**
+ * @brief Chef package metadata model and codec.
+ *
+ * This header extends `chef/package.h` with the manifest representation used
+ * for reading and writing Chef metadata inside `.pack` images.
+ */
 
 struct chef_package_blob {
     const void* data;

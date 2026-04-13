@@ -16,8 +16,7 @@
  *
  */
 
-#include <chef/pack.h>
-#include <chef/package_manifest.h>
+#include <chef/package_image.h>
 #include <chef/platform.h>
 #include <limits.h>
 #include <stdio.h>
