@@ -76,7 +76,7 @@ static int __verify_local_package(
     char*                      proofPath = NULL;
     int                        status;
 
-    path = utils_path_local_pack(publisher, package, revision);
+    path = utils_path_pack(publisher, package, revision);
     proofPath = utils_path_local_proof(publisher, package, revision);
     if (path == NULL || proofPath == NULL) {
         free(path);
