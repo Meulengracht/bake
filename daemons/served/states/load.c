@@ -39,12 +39,7 @@ static int __load_application(const char* name, int revision)
         return -1;
     }
 
-    if (revision < 0) {
-        package = utils_path_local_pack(names[0], names[1], revision);
-    } else {
-        package = utils_path_pack(names[0], names[1]);
-    }
-
+    package = utils_path_pack(names[0], names[1], revision);
     if (package == NULL) {
         strsplit_free(names);
         return -1;

@@ -116,7 +116,7 @@ enum sm_action_result served_handle_state_download(void* context)
         }
     );
 
-    if (status) {
+    if (status == 0) {
         if (errno == ENOSPC) {
             TXLOG_ERROR(transaction, "Insufficient disk space to download package");
         } else if (errno == EACCES || errno == EPERM) {
@@ -131,6 +131,15 @@ enum sm_action_result served_handle_state_download(void* context)
         
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
+    } else if (package.revision == 0) {
+        // update the revision in state
+        served_state_lock();
+        state = served_state_transaction(transaction->id);
+        if (state != NULL) {
+            state->revision = package.revision;
+            served_state_transaction_state_update(state);
+        }
+        served_state_unlock();
     }
 
     TXLOG_INFO(transaction, "Package downloaded successfully");
@@ -142,7 +151,7 @@ enum sm_action_result served_handle_state_download_retry(void* context)
 {
     struct served_transaction* transaction = context;
 
-    // TODO: wait for retry
+    // TODO: wait for retry, support sleeping in the state machine
 
     served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_OK);
     return SM_ACTION_CONTINUE;

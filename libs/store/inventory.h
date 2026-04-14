@@ -102,5 +102,6 @@ extern const char* inventory_pack_name(struct store_inventory_pack* pack);
 extern const char* inventory_pack_path(struct store_inventory_pack* pack);
 extern const char* inventory_pack_platform(struct store_inventory_pack* pack);
 extern const char* inventory_pack_arch(struct store_inventory_pack* pack);
+extern int         inventory_pack_revision(struct store_inventory_pack* pack);
 
 #endif //!__CHEF_STORE_INVENTORY_H__

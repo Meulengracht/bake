@@ -101,7 +101,10 @@ extern void store_cleanup(void);
  * our local store.
  * 
  * @param[In] package Options describing the package that should be fetched from store.
- * @return int 
+ * @return int 0 If the package failed to resolve, otherwise it returns 
+ *               the revision of the package that is now available in the local store. 
+ *               This may be different from the requested revision if, for instance, a channel was 
+ *               specified instead of a revision.
  */
 extern int store_ensure_package(struct store_package* package, struct chef_observer* observer);
 

@@ -197,12 +197,7 @@ enum sm_action_result served_handle_state_install(void* context)
         }
     }
 
-    if (revision < 0) {
-        storagePath = utils_path_local_pack(names[0], names[1], revision);
-    } else {
-        storagePath = utils_path_pack(names[0], names[1]);
-    }
-
+    storagePath = utils_path_pack(names[0], names[1], revision);
     if (storagePath == NULL) {
         goto cleanup;
     }

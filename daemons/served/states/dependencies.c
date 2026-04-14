@@ -110,12 +110,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
         goto cleanup;
     }
 
-    if (revision < 0) {
-        path = utils_path_local_pack(names[0], names[1], revision);
-    } else {
-        path = utils_path_pack(names[0], names[1]);
-    }
-    
+    path = utils_path_pack(names[0], names[1], revision);
     if (path == NULL) {
         TXLOG_ERROR(transaction,
             "Failed to construct package path for '%s/%s'",

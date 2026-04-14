@@ -182,19 +182,20 @@ int store_ensure_package(struct store_package* package, struct chef_observer* ob
 
     if (g_store.backend.resolve_package == NULL) {
         errno = ENOTSUP;
-        return -1;
+        return 0;
     }
 
     // split the publisher/package
     names = __split_name(package->name);
     if (names == NULL) {
         VLOG_ERROR("store", "store_ensure_package: invalid package naming '%s' (must be publisher/package)\n", package->name);
-        return -1;
+        return 0;
     }
 
     status = __find_package_in_inventory(package, &pack);
     if (status == 0) {
         VLOG_DEBUG("store", "package %s has already been downloaded\n", package->name);
+        revision = inventory_pack_revision(pack);
         goto cleanup;
     }
 
@@ -212,11 +213,13 @@ int store_ensure_package(struct store_package* package, struct chef_observer* ob
 
     path = __format_package_path(names[0], names[1], revision);
     if (path == NULL) {
+        revision = 0;
         goto cleanup;
     }
 
     status = rename(pathTmp, path);
     if (status) {
+        revision = 0;
         goto cleanup;
     }
 
@@ -231,16 +234,21 @@ int store_ensure_package(struct store_package* package, struct chef_observer* ob
         &pack
     );
     if (status) {
+        revision = 0;
         goto cleanup;
     }
 
     status = inventory_save(g_store.inventory);
+    if (status) {
+        revision = 0;
+        goto cleanup;
+    }
 
 cleanup:
     strsplit_free(names);
     free(pathTmp);
     free(path);
-    return status;
+    return revision;
 }
 
 int store_package_path(struct store_package* package, const char** pathOut)

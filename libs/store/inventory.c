@@ -686,3 +686,11 @@ const char* inventory_pack_arch(struct store_inventory_pack* pack)
     }
     return pack->arch;
 }
+
+int inventory_pack_revision(struct store_inventory_pack* pack)
+{
+    if (pack == NULL) {
+        return 0;
+    }
+    return pack->revision;
+}

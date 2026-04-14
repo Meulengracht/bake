@@ -46,15 +46,42 @@ char* served_paths_path(const char* path)
 #endif
 }
 
-char* utils_path_pack(const char* publisher, const char* package)
+char* utils_path_local_store_root(void)
 {
     char buffer[PATH_MAX];
     snprintf(
         &buffer[0], sizeof(buffer),
-        "var/chef/packs/%s-%s.pack",
-        publisher, package
+        "var/chef/local-store"
     );
     return served_paths_path(&buffer[0]);
+}
+
+static char* __local_pack_path(const char* publisher, const char* package, int revision)
+{
+    char buffer[PATH_MAX];
+    snprintf(
+        &buffer[0], sizeof(buffer),
+        "%s/%s-%s.%i.pack",
+        utils_path_local_store_root(), publisher, package, revision
+    );
+    return platform_strdup(&buffer[0]);
+}
+
+char* utils_path_pack(const char* publisher, const char* package, int revision)
+{
+    if (revision == 0) {
+        return NULL;
+    } else if (revision < 0) {
+        return __local_pack_path(publisher, package, revision);
+    } else {
+        char buffer[PATH_MAX];
+        snprintf(
+            &buffer[0], sizeof(buffer),
+            "var/chef/packs/%s-%s.%i.pack",
+            publisher, package, revision
+        );
+        return served_paths_path(&buffer[0]);
+    }
 }
 
 char* utils_path_data(const char* publisher, const char* package, int revision)
@@ -97,27 +124,6 @@ char* utils_path_binary_path(void)
         "chef/bin"
     );
     return served_paths_path(&buffer[0]);
-}
-
-char* utils_path_local_store_root(void)
-{
-    char buffer[PATH_MAX];
-    snprintf(
-        &buffer[0], sizeof(buffer),
-        "var/chef/local-store"
-    );
-    return served_paths_path(&buffer[0]);
-}
-
-char* utils_path_local_pack(const char* publisher, const char* package, int revision)
-{
-    char buffer[PATH_MAX];
-    snprintf(
-        &buffer[0], sizeof(buffer),
-        "%s/%s-%s.%i.pack",
-        utils_path_local_store_root(), publisher, package, revision
-    );
-    return platform_strdup(&buffer[0]);
 }
 
 char* utils_path_local_proof(const char* publisher, const char* package, int revision)
