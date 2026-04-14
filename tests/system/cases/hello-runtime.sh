@@ -5,13 +5,14 @@
 #   1.  Create isolated temp environment
 #   2.  Start cvd (container daemon)
 #   3.  Build examples/recipes/hello-world  →  produces hello-world-*.pack
-#   4.  Start served (runtime daemon) with --root pointing at the temp dir
-#   5.  Wait for served to be ready (/tmp/served socket appears)
-#   6.  Verify served is responsive via 'serve list'
-#   7.  Install the built .pack via 'serve install'
-#   8.  Verify the package appears in 'serve list'
-#   9.  Run the installed application via its wrapper script
-#   10. Assert exit code 0 and expected stdout ("hello world")
+#   4.  Configure an isolated signing identity and sign the built .pack
+#   5.  Start served (runtime daemon) with --root pointing at the temp dir
+#   6.  Wait for served to be ready (/tmp/served socket appears)
+#   7.  Verify served is responsive via 'serve list'
+#   8.  Install the built .pack via 'serve install'
+#   9.  Verify the package appears in 'serve list'
+#   10. Run the installed application via its wrapper script
+#   11. Assert exit code 0 and expected stdout ("hello world")
 #
 # ┌─────────────────────────────────────────────────────────────────────────┐
 # │ KNOWN LIMITATIONS (Phase 1 — as discovered during harness development) │
@@ -19,10 +20,10 @@
 # │ • The 'served' install API currently does not propagate the local-file  │
 # │   path through its transaction state machine (api.c stores             │
 # │   options->package but not options->path, so installing from a local   │
-# │   .pack sets a NULL package name in the transaction).  Steps 7–10 will │
+# │   .pack sets a NULL package name in the transaction).  Steps 8–11 will │
 # │   therefore FAIL until this gap is closed.                             │
 # │                                                                         │
-# │ • Steps 1–6 are hard assertions.  Steps 7–10 are attempted and their  │
+# │ • Steps 1–7 are hard assertions.  Steps 8–11 are attempted and their  │
 # │   failure is clearly reported, but the test exits with a distinct      │
 # │   non-zero code (2) so CI can distinguish infrastructure failures from  │
 # │   aspirational-feature failures.                                        │
@@ -34,6 +35,7 @@ TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$TESTS_DIR/lib/env.sh"
 source "$TESTS_DIR/lib/cleanup.sh"
 source "$TESTS_DIR/lib/process.sh"
+source "$TESTS_DIR/lib/signing.sh"
 source "$TESTS_DIR/lib/daemon.sh"
 source "$TESTS_DIR/lib/assert.sh"
 
@@ -41,6 +43,7 @@ TEST_NAME="hello-runtime"
 TEST_LOG_DIR="$(mktemp -d)"
 WORK_DIR="$TEST_LOG_DIR/build"
 SERVED_ROOT="$TEST_LOG_DIR/served-root"
+SIGNING_ROOT="$TEST_LOG_DIR/signing-root"
 CVD_LOG="$TEST_LOG_DIR/cvd.log"
 SERVED_LOG="$TEST_LOG_DIR/served.log"
 BUILD_LOG="$TEST_LOG_DIR/bake-build.log"
@@ -49,7 +52,7 @@ LIST_LOG="$TEST_LOG_DIR/serve-list.log"
 SIGN_LOG="$TEST_LOG_DIR/serve-sign.log"
 RUN_LOG="$TEST_LOG_DIR/run-output.log"
 
-mkdir -p "$WORK_DIR" "$SERVED_ROOT"
+mkdir -p "$WORK_DIR" "$SERVED_ROOT" "$SIGNING_ROOT"
 
 register_tmpdir "$TEST_LOG_DIR"
 register_log    "$CVD_LOG"
@@ -123,17 +126,18 @@ assert_file_nonempty "$PACK_FILE" ".pack artifact"
 echo "       artifact: $(basename "$PACK_FILE") ($(wc -c < "$PACK_FILE") bytes)"
 
 # ── Sign hello-world ──────────────────────────────────────────────────────────
-# Sign the .pack artifact to enable installation (skips interactive prompt in 'serve install')
-# Run these commands to enable signing configuration for this test:
-# Should be RSA 
-# openssh-keygen -t rsa -b 4096 -f "$WORK_DIR/hello_key" -N ""
-# order config auth.name "Github CI"
-# order config auth.email "bake-ci@github.com"
-# order config auth.key "$WORK_DIR/hello_key"
-echo "[4/11] Signing .pack artifact..."
+# Sign the .pack artifact to enable installation (skips interactive prompt in
+# 'serve install'). Keep signing config under an isolated root so the test does
+# not touch the developer's real ~/.chef state.
+echo "[4/11] Configuring signing identity and signing .pack artifact..."
+if ! setup_test_signing_identity "$SIGNING_ROOT" "$WORK_DIR/hello_key"; then
+    echo "FAIL: could not configure test signing identity"
+    exit 1
+fi
+
 sign_output=""
 sign_rc=0
-run_cmd sign_output "$CMD_BAKE" sign -vvv "$PACK_FILE" || sign_rc=$?
+run_cmd sign_output "$CMD_BAKE" sign --root "$SIGNING_ROOT" -vvv "$PACK_FILE" || sign_rc=$?
 
 echo "$sign_output" >"$SIGN_LOG"
 

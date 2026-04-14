@@ -36,6 +36,7 @@ own build dependencies:
 | `libfuse3` / FUSE kernel module | VaFS mounting inside `served` |
 | `libsqlite3` | `served` state database |
 | `libssl` / `libcrypto` | Package proof verification |
+| `ssh-keygen` (OpenSSH client) | Generating ephemeral RSA signing keys for local-install tests |
 | `python3` | Running the dummy store HTTP server |
 | `curl` | Seeding the dummy store and negative-path checks |
 
@@ -51,6 +52,7 @@ tests/
     lib/
       env.sh           ← binary paths and environment setup
       process.sh       ← command execution and socket-readiness helpers
+      signing.sh       ← isolated signing identity helpers for bake sign
       daemon.sh        ← daemon start / stop / readiness checks
       assert.sh        ← lightweight assertion functions
       cleanup.sh       ← teardown, log capture, and temp-dir removal
@@ -123,13 +125,14 @@ End-to-end runtime workflow: build → install → run.
 | 1 | Create isolated temp environment | ✅ implemented |
 | 2 | Start `cvd` | ✅ implemented |
 | 3 | Build `hello-world` | ✅ implemented |
-| 4 | Start `served` with `--root <tmpdir>` | ✅ implemented |
-| 5 | Wait for `/tmp/served` socket | ✅ implemented |
-| 6 | Verify `serve list` succeeds | ✅ implemented |
-| 7 | `serve install <pack>` | ⚠️ aspirational — see Known Limitations |
-| 8 | Verify package in `serve list` | ⚠️ aspirational |
-| 9 | Run wrapper script | ⚠️ aspirational |
-| 10 | Assert exit 0 and output `"hello world"` | ⚠️ aspirational |
+| 4 | Configure isolated signing identity and sign the built `.pack` | ✅ implemented |
+| 5 | Start `served` with `--root <tmpdir>` | ✅ implemented |
+| 6 | Wait for `/tmp/served` socket | ✅ implemented |
+| 7 | Verify `serve list` succeeds | ✅ implemented |
+| 8 | `serve install <pack>` | ⚠️ aspirational — see Known Limitations |
+| 9 | Verify package in `serve list` | ⚠️ aspirational |
+| 10 | Run wrapper script | ⚠️ aspirational |
+| 11 | Assert exit 0 and output `"hello world"` | ⚠️ aspirational |
 
 Exit codes: `0` = full pass, `1` = infrastructure failure, `2` = aspirational
 steps not yet implemented.
