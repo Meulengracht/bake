@@ -179,7 +179,7 @@ enum sm_action_result served_handle_state_install(void* context)
     }
 
     if (revision < 0) {
-        path = utils_path_local_pack(names[0], names[1], revision);
+        path = utils_path_pack(names[0], names[1], revision);
         if (path == NULL) {
             goto cleanup;
         }

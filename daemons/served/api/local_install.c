@@ -244,7 +244,7 @@ static int __stage_local_install(
     char* proofPath;
     int   status;
 
-    packPath = utils_path_local_pack(publisher, package, revision);
+    packPath = utils_path_pack(publisher, package, revision);
     proofPath = utils_path_local_proof(publisher, package, revision);
     if (packPath == NULL || proofPath == NULL) {
         free(packPath);
