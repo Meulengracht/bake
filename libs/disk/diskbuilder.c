@@ -57,9 +57,10 @@ struct chef_diskbuilder {
     uint64_t                     last_usable_sector;
 };
 
-static unsigned int __crc32b(const unsigned char* data, size_t length) {
-   int          i, j;
-   unsigned int byte, crc, mask;
+static uint32_t __calculate_crc32(const unsigned char* data, size_t length)
+{
+    int      i, j;
+    uint32_t byte, crc, mask;
 
    i = 0;
    crc = 0xFFFFFFFF;
@@ -73,7 +74,7 @@ static unsigned int __crc32b(const unsigned char* data, size_t length) {
       }
       i = i + 1;
    }
-   return ~crc;
+    return ~crc;
 }
 
 static void __calculate_geometry(struct chef_disk_geometry* geo, uint64_t size, uint16_t sectorSize)
@@ -247,8 +248,8 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
     }
 
     // calculate CRC, first the array member
-    header->partition_array_crc32 = __crc32b((unsigned char*)table, builder->partitions.count * __GPT_ENTRY_SIZE);
-    header->header_crc32 = __crc32b(headerSector, __GPT_HEADER_SIZE);
+    header->partition_array_crc32 = __calculate_crc32((unsigned char*)table, builder->partitions.count * __GPT_ENTRY_SIZE);
+    header->header_crc32 = __calculate_crc32(headerSector, __GPT_HEADER_SIZE);
 
     // just write the main header and the table
     written = fwrite(&header, builder->disk_geometry.bytes_per_sector, 1, builder->image_stream);
@@ -274,7 +275,7 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
     header->partition_entry_lba = builder->disk_geometry.sector_count - sectorsForTable;
     header->backup_lba = 1;
     header->header_crc32 = 0;
-    header->header_crc32 = __crc32b(headerSector, __GPT_HEADER_SIZE);
+    header->header_crc32 = __calculate_crc32(headerSector, __GPT_HEADER_SIZE);
 
     // seek to the correct space in the file
     fseek(

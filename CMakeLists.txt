@@ -1,4 +1,33 @@
 cmake_minimum_required(VERSION 3.14.3)
+
+if(CMAKE_HOST_WIN32 AND NOT CMAKE_GENERATOR MATCHES "^Visual Studio")
+    set(_chef_windows_sdk_env_ready FALSE)
+    if(DEFINED ENV{LIB} AND NOT "$ENV{LIB}" STREQUAL "")
+        set(_chef_windows_sdk_env_ready TRUE)
+    endif()
+
+    if(NOT _chef_windows_sdk_env_ready)
+        find_program(_chef_clang_path NAMES clang)
+        find_program(_chef_cl_path NAMES cl)
+
+        if(_chef_clang_path AND NOT _chef_cl_path)
+            message(FATAL_ERROR
+                "Windows builds with ${CMAKE_GENERATOR} require an initialized MSVC and Windows SDK environment. "
+                "CMake detected clang at '${_chef_clang_path}', but the current shell does not expose the LIB search path used for libcmt.lib, ole32.lib, and the rest of the Windows import libraries. "
+                "Use a Developer PowerShell for Visual Studio, configure with a Visual Studio generator such as 'cmake -B build -G \"Visual Studio 17 2022\" -A ARM64', or set 'cmake.useVsDeveloperEnvironment' to 'always' in VS Code CMake Tools. "
+                "If you want Ninja, run it from a Developer PowerShell and explicitly select cl.exe or clang-cl.exe from that environment."
+            )
+        endif()
+
+        unset(_chef_clang_path CACHE)
+        unset(_chef_cl_path CACHE)
+        unset(_chef_clang_path)
+        unset(_chef_cl_path)
+    endif()
+
+    unset(_chef_windows_sdk_env_ready)
+endif()
+
 project(chef VERSION "1.5.0")
 
 INCLUDE(CheckCXXSourceCompiles)

@@ -32,6 +32,11 @@ endif ()
 message(STATUS "Building jansson from source")
 include(ExternalProject)
 
+set(_jansson_static_library_name "${CMAKE_STATIC_LIBRARY_PREFIX}jansson${CMAKE_STATIC_LIBRARY_SUFFIX}")
+if(MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  set(_jansson_static_library_name "${CMAKE_STATIC_LIBRARY_PREFIX}jansson_d${CMAKE_STATIC_LIBRARY_SUFFIX}")
+endif()
+
 ExternalProject_Add(bundled_jansson
   URL
     https://github.com/akheron/jansson/archive/refs/tags/v2.14.1.tar.gz
@@ -55,11 +60,11 @@ ExternalProject_Add(bundled_jansson
     -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
     -DCMAKE_OSX_SYSROOT=${CMAKE_OSX_SYSROOT}
   BUILD_BYPRODUCTS
-    <INSTALL_DIR>/lib/${CMAKE_STATIC_LIBRARY_PREFIX}jansson${CMAKE_STATIC_LIBRARY_SUFFIX}
+    <INSTALL_DIR>/lib/${_jansson_static_library_name}
 )
 
 add_dependencies(jansson bundled_jansson)
 ExternalProject_Get_Property(bundled_jansson INSTALL_DIR)
 
 target_include_directories(jansson INTERFACE "${INSTALL_DIR}/include")
-target_link_libraries(jansson INTERFACE "${INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}jansson${CMAKE_STATIC_LIBRARY_SUFFIX}")
+target_link_libraries(jansson INTERFACE "${INSTALL_DIR}/lib/${_jansson_static_library_name}")

@@ -22,7 +22,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <process.h>
+#else
 #include <unistd.h>
+#endif
 #include <vafs/vafs.h>
 
 #define TEST_ASSERT(cond, msg) \
@@ -48,7 +52,11 @@ static int __create_temp_paths(
         return -1;
     }
 
+#if defined(_WIN32)
+    pid = (int)_getpid();
+#else
     pid = (int)getpid();
+#endif
     token = rand();
     snprintf(inputDirOut, inputDirSize, "%s/chef-package-input-%d-%d", tmpDir, pid, token);
     snprintf(packPathOut, packPathSize, "%s/chef-package-image-%d-%d.pack", tmpDir, pid, token);
