@@ -92,7 +92,7 @@ sudo cmake --install build
 ### Windows
 
 #### Prerequisites
-- Visual Studio 2019 or later (with C/C++ development tools), or MinGW-w64
+- Visual Studio 2022 or later with C/C++ development tools and the ARM64 toolset if you are building on Windows on Arm, or MinGW-w64
 - CMake 3.14.3 or later
 - Git for Windows
 
@@ -102,8 +102,11 @@ sudo cmake --install build
 git clone --recursive https://github.com/Meulengracht/bake.git
 cd bake
 
-# Configure for Visual Studio
-cmake -B build -G "Visual Studio 16 2019" -A x64
+# Configure for Visual Studio on x64
+cmake -B build -G "Visual Studio 17 2022" -A x64
+
+# Configure for Visual Studio on Windows on Arm
+cmake -B build -G "Visual Studio 17 2022" -A ARM64
 
 # Build
 cmake --build build --config Release
@@ -111,6 +114,19 @@ cmake --build build --config Release
 # Install (optional, requires admin)
 cmake --install build
 ```
+
+#### Build with Ninja on Windows
+```powershell
+# Open a Developer PowerShell for Visual Studio first so LIB/INCLUDE point at the MSVC and Windows SDK Arm64 libraries.
+
+# Configure for Ninja from that shell
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+# Build
+cmake --build build --config Release
+```
+
+Windows on Arm uses the same import library names as x64, for example ole32, advapi32, and ws2_32. If CMake fails with lld-link errors about libcmt.lib, ole32.lib, or similar files not being found, the problem is usually that CMake picked plain LLVM clang from PATH without an initialized MSVC and Windows SDK environment.
 
 #### Build with MinGW
 ```bash
