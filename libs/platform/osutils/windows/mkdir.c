@@ -24,6 +24,45 @@
 #include <string.h>
 #include <wchar.h>
 
+static wchar_t* __mkdir_start(wchar_t* path)
+{
+    wchar_t* current;
+
+    if (path == NULL) {
+        return NULL;
+    }
+
+    if (((path[0] >= L'A' && path[0] <= L'Z') || (path[0] >= L'a' && path[0] <= L'z')) && path[1] == L':') {
+        if (path[2] == L'\\' || path[2] == L'/') {
+            return path + 3;
+        }
+        return path + 2;
+    }
+
+    if ((path[0] == L'\\' || path[0] == L'/') && (path[1] == L'\\' || path[1] == L'/')) {
+        current = path + 2;
+        while (*current && *current != L'\\' && *current != L'/') {
+            current++;
+        }
+        if (*current) {
+            current++;
+            while (*current && *current != L'\\' && *current != L'/') {
+                current++;
+            }
+            if (*current) {
+                return current + 1;
+            }
+        }
+        return current;
+    }
+
+    if (path[0] == L'\\' || path[0] == L'/') {
+        return path + 1;
+    }
+
+    return path + 1;
+}
+
 static wchar_t* __mbtowc(const char* path) 
 {
     size_t   pathLength = strlen(path);
@@ -37,6 +76,7 @@ static wchar_t* __mbtowc(const char* path)
 int platform_mkdir(const char* path) 
 {
     size_t   length;
+    wchar_t* current;
     int      status;
     wchar_t* wpath = __mbtowc(path);
     
@@ -49,14 +89,17 @@ int platform_mkdir(const char* path)
         wpath[length - 1] = L'\0';
     }
 
-    for (wchar_t* p = wpath + 1; *p; p++) {
+    current = __mkdir_start(wpath);
+    for (wchar_t* p = current; *p; p++) {
         if (*p == L'\\' || *p == L'/') {
+            wchar_t separator = *p;
+
             *p = L'\0';
             if (_wmkdir(wpath) != 0 && errno != EEXIST) {
                 free(wpath);
                 return -1;
             }
-            *p = L'\\';
+            *p = separator;
         }
     }
 
