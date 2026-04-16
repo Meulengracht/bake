@@ -97,6 +97,7 @@ int main(int argc, char** argv, char** envp)
                 fprintf(stderr, "order: invalid command %s\n", argv[i]);
                 return -1;
             }
+            break;
         }
     }
 
