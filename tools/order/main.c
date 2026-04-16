@@ -80,36 +80,29 @@ int main(int argc, char** argv, char** envp)
     struct command_handler* command = NULL;
     int                     result;
 
-    // first argument must be the command if not --help or --version
-    if (argc > 1) {
-        if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
+    // scan all arguments for global options (e.g. --root) before initializing
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
             return 0;
-        }
-
-        if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
+        } else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--version")) {
             printf("order: version " PROJECT_VER "\n");
             return 0;
-        }
-
-        command = __get_command(argv[1]);
-        if (!command) {
-            fprintf(stderr, "order: invalid command %s\n", argv[1]);
-            return -1;
+        } else if (!strcmp(argv[i], "--root") && (i + 1) < argc) {
+            chef_dirs_set_root(argv[i + 1]);
+            i++;
+        } else {
+            command = __get_command(argv[i]);
+            if (!command) {
+                fprintf(stderr, "order: invalid command %s\n", argv[i]);
+                return -1;
+            }
         }
     }
 
     if (!command) {
         __print_help();
         return 0;
-    }
-
-    // scan all arguments for global options (e.g. --root) before initializing
-    for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--root") && i + 1 < argc) {
-            chef_dirs_set_root(argv[i + 1]);
-            i++;
-        }
     }
 
     vlog_initialize(VLOG_LEVEL_DEBUG);
