@@ -272,30 +272,35 @@ int info_main(int argc, char** argv)
     struct chef_package*    package;
     char*                   packCopy = NULL;
     int                     status;
+    int                     i = 0;
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            } else {
-                // do this only once
-                if (params.publisher == NULL) {
+    // skip past 'info' subcommand
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "info") == 0) {
+            break;
+        }
+    }
+
+    for (i = i + 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            __print_help();
+            return 0;
+        } else if (argv[i][0] != '-') {
+            // do this only once
+            if (params.publisher == NULL) {
                 // assume this is the pack name
-                    packCopy = platform_strdup(argv[i]);
-                    status   = __parse_packname(packCopy, &params);
-                    if (status != 0) {
-                        free(packCopy);
-                        fprintf(stderr, "order: failed to parse pack name: %s\n", strerror(errno));
-                        return status;
-                    }
-                }
-                else {
+                packCopy = platform_strdup(argv[i]);
+                status   = __parse_packname(packCopy, &params);
+                if (status) {
                     free(packCopy);
-                    fprintf(stderr, "order: too many arguments\n");
-                    __print_help();
-                    return -1;
+                    fprintf(stderr, "order: failed to parse pack name: %s\n", strerror(errno));
+                    return status;
                 }
+            } else {
+                free(packCopy);
+                fprintf(stderr, "order: too many arguments\n");
+                __print_help();
+                return -1;
             }
         }
     }

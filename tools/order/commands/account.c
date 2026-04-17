@@ -302,25 +302,30 @@ static int __handle_publisher_option(const char* option)
 
 int account_main(int argc, char** argv)
 {
-    char* command = NULL;
-    char* option  = NULL;
-    char* value   = NULL;
-    int   status;
+    const char* command = NULL;
+    const char* option  = NULL;
+    const char* value   = NULL;
+    int         i       = 0;
+    int         status;
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            }
-            else {
-                if (command == NULL) {
-                    command = argv[i];
-                } else if (option == NULL) {
-                    option = argv[i];
-                } else if (value == NULL) {
-                    value = argv[i];
-                }
+    // skip past 'account' subcommand
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "account") == 0) {
+            break;
+        }
+    }
+
+    for (i = i + 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            __print_help();
+            return 0;
+        } else if (argv[i][0] != '-') {
+            if (command == NULL) {
+                command = argv[i];
+            } else if (option == NULL) {
+                option = argv[i];
+            } else if (value == NULL) {
+                value = argv[i];
             }
         }
     }

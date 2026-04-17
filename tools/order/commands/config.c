@@ -132,18 +132,24 @@ int config_main(int argc, char** argv)
 {
     const char* option = NULL;
     const char* value  = NULL;
+    int         i      = 0;
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            } else if (argv[i][0] != '-') {
-                if (option == NULL) {
-                    option = argv[i];
-                } else if (value == NULL) {
-                    value = argv[i];
-                }
+    // skip past 'config' subcommand
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "config") == 0) {
+            break;
+        }
+    }
+
+    for (i = i + 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            __print_help();
+            return 0;
+        } else if (argv[i][0] != '-') {
+            if (option == NULL) {
+                option = argv[i];
+            } else if (value == NULL) {
+                value = argv[i];
             }
         }
     }

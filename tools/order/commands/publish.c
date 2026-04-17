@@ -101,32 +101,38 @@ static int __ensure_publisher_valid(char** publisherNameOut)
 
 int publish_main(int argc, char** argv)
 {
-    struct chef_publish_params params    = { 0 };
-    struct chef_package_manifest* manifest = NULL;
-    char*                      packPath  = NULL;
-    char*                      publisher = NULL;
-    int                        status;
+    struct chef_publish_params    params    = { 0 };
+    struct chef_package_manifest* manifest  = NULL;
+    char*                         packPath  = NULL;
+    char*                         publisher = NULL;
+    int                           i         = 0;
+    int                           status;
 
     // set default channel
     params.channel = "devel";
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            } else if (!__parse_string_switch(argv, argc, &i, "-c", 2, "--channel", 9, NULL, (char**)&params.channel)) {
-                continue;
-            } else if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--publisher", 11, NULL, &publisher)) {
-                continue;
-            } else {
-                if (packPath != NULL) {
-                    printf("only one pack path can be specified\n");
-                    return -1;
-                }
+    // skip past 'publish' subcommand
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "publish") == 0) {
+            break;
+        }
+    }
 
-                packPath = argv[i];
+    for (i = i + 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            __print_help();
+            return 0;
+        } else if (!__parse_string_switch(argv, argc, &i, "-c", 2, "--channel", 9, NULL, (char**)&params.channel)) {
+            continue;
+        } else if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--publisher", 11, NULL, &publisher)) {
+            continue;
+        } else if (argv[i][0] != '-') {
+            if (packPath != NULL) {
+                printf("only one pack path can be specified\n");
+                return -1;
             }
+
+            packPath = argv[i];
         }
     }
 

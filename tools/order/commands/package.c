@@ -262,27 +262,33 @@ static int __handle_set(const char* package, const char* parameter, const char* 
 
 int package_main(int argc, char** argv)
 {
-    char* command   = NULL;
-    char* package   = NULL;
-    char* parameter = NULL;
-    char* value     = NULL;
-    int   status;
+    const char* command   = NULL;
+    const char* package   = NULL;
+    const char* parameter = NULL;
+    const char* value     = NULL;
+    int         i         = 0;
+    int         status;
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            } else {
-                if (command == NULL) {
-                    command = argv[i];
-                } else if (package == NULL) {
-                    package = argv[i];
-                } else if (parameter == NULL) {
-                    parameter = argv[i];
-                } else if (value == NULL) {
-                    value = argv[i];
-                }
+    // skip past 'package' subcommand
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "package") == 0) {
+            break;
+        }
+    }
+
+    for (i = i + 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            __print_help();
+            return 0;
+        } else if (argv[i][0] != '-') {
+            if (command == NULL) {
+                command = argv[i];
+            } else if (package == NULL) {
+                package = argv[i];
+            } else if (parameter == NULL) {
+                parameter = argv[i];
+            } else if (value == NULL) {
+                value = argv[i];
             }
         }
     }
