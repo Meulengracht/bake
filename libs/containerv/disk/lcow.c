@@ -234,80 +234,90 @@ static int __copy_directory_recursive(const char* source_dir, const char* target
     return 0;
 }
 
-static char* __ps_quote_single(const char* s)
+static int __append_fragment(char* buffer, size_t buffer_size, size_t* index, const char* fragment)
 {
-    if (s == NULL) {
-        return platform_strdup("''");
+    int written;
+
+    if (*index >= buffer_size) {
+        return -1;
     }
 
-    size_t in_len = strlen(s);
-    size_t extra = 0;
-    for (size_t i = 0; i < in_len; i++) {
-        if (s[i] == '\'') {
-            extra++;
-        }
+    written = snprintf(buffer + *index, buffer_size - *index, "%s", fragment);
+    if (written < 0 || (size_t)written >= buffer_size - *index) {
+        return -1;
     }
 
-    char* out = calloc(in_len + extra + 3, 1);
-    if (out == NULL) {
-        return NULL;
+    *index += (size_t)written;
+    return 0;
+}
+
+static int __append_token(char* buffer, size_t buffer_size, size_t* index, const char* token)
+{
+    if (*index != 0 && __append_fragment(buffer, buffer_size, index, " ") != 0) {
+        return -1;
     }
 
-    char* w = out;
-    *w++ = '\'';
-    for (size_t i = 0; i < in_len; i++) {
-        if (s[i] == '\'') {
-            *w++ = '\'';
-            *w++ = '\'';
+    if (__append_fragment(buffer, buffer_size, index, "\"") != 0) {
+        return -1;
+    }
+
+    for (const char* p = token; *p != '\0'; ++p) {
+        char piece[3] = { 0 };
+
+        if (*p == '\"') {
+            piece[0] = '\\';
+            piece[1] = '\"';
         } else {
-            *w++ = s[i];
+            piece[0] = *p;
+        }
+
+        if (__append_fragment(buffer, buffer_size, index, piece) != 0) {
+            return -1;
         }
     }
-    *w++ = '\'';
-    *w = '\0';
-    return out;
+
+    return __append_fragment(buffer, buffer_size, index, "\"");
 }
 
 static int __download_and_extract_zip(const char* url, const char* dest_dir, const char* zip_path)
 {
-    char* url_q = __ps_quote_single(url);
-    char* dest_q = __ps_quote_single(dest_dir);
-    char* zip_q = __ps_quote_single(zip_path);
-    if (url_q == NULL || dest_q == NULL || zip_q == NULL) {
-        free(url_q);
-        free(dest_q);
-        free(zip_q);
+    char   arguments[8192] = { 0 };
+    size_t index = 0;
+    int    status;
+
+    (void)platform_rmdir(dest_dir);
+    if (__ensure_dir(dest_dir) != 0) {
         return -1;
     }
 
-    char script[8192];
-    int rc = snprintf(
-        script,
-        sizeof(script),
-        "$ProgressPreference='SilentlyContinue'; "
-        "$url=%s; $zip=%s; $dest=%s; "
-        "if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }; "
-        "New-Item -ItemType Directory -Path $dest | Out-Null; "
-        "Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip; "
-        "Expand-Archive -Path $zip -DestinationPath $dest -Force;",
-        url_q,
-        zip_q,
-        dest_q
-    );
-    free(url_q);
-    free(dest_q);
-    free(zip_q);
-    if (rc < 0 || (size_t)rc >= sizeof(script)) {
+    (void)platform_unlink(zip_path);
+    status = __append_token(arguments, sizeof(arguments), &index, "-L");
+    status |= __append_token(arguments, sizeof(arguments), &index, "--fail");
+    status |= __append_token(arguments, sizeof(arguments), &index, "--output");
+    status |= __append_token(arguments, sizeof(arguments), &index, zip_path);
+    status |= __append_token(arguments, sizeof(arguments), &index, url);
+    if (status != 0) {
         return -1;
     }
 
-    char args[9000];
-    rc = snprintf(args, sizeof(args), "-NoProfile -NonInteractive -Command \"%s\"", script);
-    if (rc < 0 || (size_t)rc >= sizeof(args)) {
+    status = platform_spawn("curl", arguments, NULL, &(struct platform_spawn_options) {0});
+    if (status != 0) {
         return -1;
     }
 
-    return platform_spawn("powershell", args, NULL, &(struct platform_spawn_options) {0});
+    memset(arguments, 0, sizeof(arguments));
+    index = 0;
+    status = __append_token(arguments, sizeof(arguments), &index, "-xf");
+    status |= __append_token(arguments, sizeof(arguments), &index, zip_path);
+    status |= __append_token(arguments, sizeof(arguments), &index, "-C");
+    status |= __append_token(arguments, sizeof(arguments), &index, dest_dir);
+    if (status != 0) {
+        return -1;
+    }
+
+    status = platform_spawn("tar", arguments, NULL, &(struct platform_spawn_options) {0});
+    (void)platform_unlink(zip_path);
+    return status;
 }
 
 static int __write_marker(const char* marker)

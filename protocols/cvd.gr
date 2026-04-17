@@ -103,6 +103,9 @@ struct windows_guest_options {
     // Flattened list of WCOW parent layer paths (double-NUL terminated).
     uint8[] wcow_parent_layers;
 
+    // Optional explicit UtilityVM directory for WCOW Hyper-V isolation.
+    string wcow_utilityvm_path;
+
     // LCOW UVM asset retrieval/configuration.
     // Provide either a pre-extracted directory path or a URL to an archive.
     string lcow_uvm_image_path;

@@ -34,6 +34,7 @@ extern int source_main(int argc, char** argv, struct __bakelib_context* context,
 extern int build_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
 extern int clean_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
 extern int stage_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
+extern int base_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
 
 struct command_handler {
     char* name;
@@ -41,6 +42,7 @@ struct command_handler {
 };
 
 static struct command_handler g_commands[] = {
+    { "base", base_main },
     { "init", init_main },
     { "source", source_main },
     { "build",  build_main },
@@ -56,6 +58,7 @@ static void __print_help(void)
     printf("of chef projects. This utility must only be invoked by the main binary (bake).\n");
     printf("\n");
     printf("Commands:\n");
+    printf("  base        manage registered build base images\n");
     printf("  init        initializes/updates the chef environment\n");
     printf("  source      prepares the source of the specified part and step\n");
     printf("  build       runs the build backend of the specified part and step\n");
@@ -252,6 +255,10 @@ int main(int argc, char** argv, char** envp)
                 }
             }
         }
+    }
+
+    if (!strcmp(command->name, "base")) {
+        return command->handler(argc, argv, NULL, &options);
     }
 
     // check against recipe

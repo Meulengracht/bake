@@ -6,6 +6,10 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 add_subdirectory(bake)
 add_subdirectory(bakectl)
 add_subdirectory(mkcdk)
+if (WIN32)
+    add_subdirectory(mkwbase)
+    add_subdirectory(mkuvm)
+endif()
 add_subdirectory(order)
 add_subdirectory(serve)
 add_subdirectory(serve-exec)
@@ -17,6 +21,12 @@ install(
     TARGETS bake order serve mkcdk
     RUNTIME DESTINATION bin
 )
+if (WIN32)
+    install(
+        TARGETS mkwbase mkuvm
+        RUNTIME DESTINATION bin
+    )
+endif()
 install(
     TARGETS bakectl serve-exec
     RUNTIME DESTINATION libexec/chef
@@ -27,6 +37,12 @@ if (NOT CHEF_BUILD_AS_SNAP)
         TARGETS order serve bake mkcdk
         RUNTIME DESTINATION bin
     )
+    if (WIN32)
+        install(
+            TARGETS mkwbase mkuvm
+            RUNTIME DESTINATION bin
+        )
+    endif()
 
     install(
         TARGETS bakectl serve-exec

@@ -511,6 +511,10 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
             return lcow_status;
         }
         containerv_options_set_windows_lcow_hvruntime(containerParams->opts, uvm_image, kernel, initrd, boot);
+    } else if (params->guest_windows.wcow_utilityvm_path != NULL && params->guest_windows.wcow_utilityvm_path[0] != '\0') {
+        containerv_options_set_windows_container_utilityvm_path(
+            containerParams->opts,
+            params->guest_windows.wcow_utilityvm_path);
     }
     
     // Optional WCOW parent layers (flattened list).

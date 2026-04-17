@@ -5,4 +5,4 @@ add_library(cvctl-commands STATIC
     config.c
     uvm.c
 )
-target_link_libraries(cvctl-commands containerv dirconf jansson platform vlog)
+target_link_libraries(cvctl-commands containerv common dirconf jansson platform vlog)

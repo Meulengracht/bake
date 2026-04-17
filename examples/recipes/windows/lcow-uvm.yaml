@@ -3,8 +3,9 @@ project:
   summary: LCOW utility VM assets
   description: |
     Builds an LCOW UVM bundle (uvm.vhdx + optional kernel/initrd/boot params)
-    using hcsshim + LinuxKit. The output is a directory suitable for
-    CHEF_LCOW_UVM_IMAGE_PATH.
+    using hcsshim + LinuxKit as an offline asset-production step. The
+    normalized output is suitable for `mkuvm`,
+    `cvctl uvm import`, `cvctl uvm import-pack`, and future package-based delivery.
   author: Philip Meulengracht
   email: the_meulengracht@hotmail.com
   version: 1.0.0

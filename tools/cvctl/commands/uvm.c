@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <chef/containerv/disk/lcow.h>
 #include <chef/dirs.h>
+#include <chef/ingredient.h>
 #include <chef/platform.h>
 #include <jansson.h>
 #include <stdio.h>
@@ -36,8 +37,12 @@ static void __print_help(void)
     printf("      Show the current LCOW UVM configuration and detected bundle files\n");
     printf("  import <bundle-dir>\n");
     printf("      Copy a local UVM bundle into Chef's cache and configure cvd to use it\n");
+    printf("  import-pack <pack-file>\n");
+    printf("      Unpack an LCOW UVM os-pack and import the normalized bundle into Chef's cache\n");
     printf("  fetch <zip-url>\n");
     printf("      Download a zipped UVM bundle into Chef's cache and configure cvd to use it\n");
+    printf("  construct\n");
+    printf("      Deprecated runtime path; use mkuvm construct and then import/import-pack\n");
 }
 
 static json_t* __load_root(const char* path)
@@ -258,6 +263,49 @@ static int __handle_import(const char* config_path, const char* source_dir)
     return status;
 }
 
+static int __handle_import_pack(const char* config_path, const char* pack_path)
+{
+    struct ingredient* ingredient = NULL;
+    char*              temp_root = NULL;
+    int                status = -1;
+
+    if (pack_path == NULL || pack_path[0] == '\0') {
+        fprintf(stderr, "cvctl: missing pack path\n");
+        return -1;
+    }
+
+    status = ingredient_open(pack_path, &ingredient);
+    if (status != 0) {
+        fprintf(stderr, "cvctl: failed to open pack %s\n", pack_path);
+        return -1;
+    }
+
+    if (ingredient->package == NULL || ingredient->package->type != CHEF_PACKAGE_TYPE_OSBASE) {
+        ingredient_close(ingredient);
+        fprintf(stderr, "cvctl: pack %s is not an os base pack\n", pack_path);
+        return -1;
+    }
+
+    temp_root = chef_dirs_rootfs_new("lcow-pack");
+    if (temp_root == NULL) {
+        ingredient_close(ingredient);
+        fprintf(stderr, "cvctl: failed to allocate temporary unpack path\n");
+        return -1;
+    }
+
+    status = ingredient_unpack(ingredient, temp_root, NULL, NULL);
+    ingredient_close(ingredient);
+    if (status != 0) {
+        free(temp_root);
+        fprintf(stderr, "cvctl: failed to unpack pack %s\n", pack_path);
+        return -1;
+    }
+
+    status = __handle_import(config_path, temp_root);
+    free(temp_root);
+    return status;
+}
+
 static int __handle_fetch(const char* config_path, const char* url)
 {
     struct containerv_disk_lcow_uvm_config cfg = { 0 };
@@ -304,12 +352,26 @@ int uvm_main(int argc, char** argv, char** envp, struct cvctl_command_options* o
         return __handle_import(config_path, argv[3]);
     }
 
+    if (!strcmp(argv[2], "import-pack")) {
+        if (argc < 4) {
+            fprintf(stderr, "cvctl: missing pack file\n");
+            return -1;
+        }
+        return __handle_import_pack(config_path, argv[3]);
+    }
+
     if (!strcmp(argv[2], "fetch")) {
         if (argc < 4) {
             fprintf(stderr, "cvctl: missing UVM bundle URL\n");
             return -1;
         }
         return __handle_fetch(config_path, argv[3]);
+    }
+
+    if (!strcmp(argv[2], "construct")) {
+        fprintf(stderr, "cvctl: uvm construction is no longer performed at runtime\n");
+        fprintf(stderr, "cvctl: use 'mkuvm construct --output <bundle-dir>' and then 'cvctl uvm import <bundle-dir>' or 'cvctl uvm import-pack <pack-file>'\n");
+        return -1;
     }
 
     fprintf(stderr, "cvctl: unknown uvm command '%s'\n", argv[2]);
