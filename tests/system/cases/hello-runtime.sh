@@ -137,7 +137,7 @@ fi
 
 sign_output=""
 sign_rc=0
-run_cmd sign_output "$CMD_BAKE" sign --root "$SIGNING_ROOT" -vvv "$PACK_FILE" || sign_rc=$?
+run_cmd sign_output "$CMD_BAKE" --root "$SIGNING_ROOT" -vvv sign "$PACK_FILE" || sign_rc=$?
 
 echo "$sign_output" >"$SIGN_LOG"
 
