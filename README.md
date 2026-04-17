@@ -158,6 +158,8 @@ $ bake init
 For examples on recipes, please see the examples/ directory, the chef.yaml, or refer
 to the Recipe Specification in the bottom of this page.
 
+For build and runtime base images, including Ubuntu rootfs, LCOW UVM bundles, and Windows HCS bases, see [docs/bases/README.md](docs/bases/README.md).
+
 Once the recipe is created, you can start baking!
 
 ## Building

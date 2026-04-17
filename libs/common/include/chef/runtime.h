@@ -28,6 +28,12 @@ extern struct chef_runtime_info* chef_runtime_info_parse(const char* name);
 extern void                      chef_runtime_info_delete(struct chef_runtime_info* info);
 
 /**
+ * @brief Convert a logical base name like "ubuntu:24" or "windows:ltsc2022"
+ * into a store package id under the provided publisher identity.
+ */
+extern char* chef_runtime_base_to_store_id(const char* identity, const char* base);
+
+/**
  * @brief Normalize a path according to the runtime's conventions.
  */
 extern int chef_runtime_normalize_path(

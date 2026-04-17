@@ -32,7 +32,7 @@ int platform_readfile(const char* path, void** bufferOut, size_t* lengthOut)
         return -1;
     }
 
-    file = fopen(path, "r");
+    file = fopen(path, "rb");
     if (!file) {
         return -1;
     }
@@ -50,6 +50,7 @@ int platform_readfile(const char* path, void** bufferOut, size_t* lengthOut)
     read = fread(buffer, 1, size, file);
     if (read < size) {
         fclose(file);
+        free(buffer);
         return -1;
     }
     

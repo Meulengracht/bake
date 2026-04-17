@@ -21,6 +21,21 @@
 
 #include "private.h"
 
+static void __replace_owned_string(const char** destination, const char* source)
+{
+    char* duplicated = NULL;
+
+    if (source != NULL) {
+        duplicated = _strdup(source);
+        if (duplicated == NULL) {
+            return;
+        }
+    }
+
+    free((void*)*destination);
+    *destination = duplicated;
+}
+
 struct containerv_options* containerv_options_new(void)
 {
     struct containerv_options* options = calloc(1, sizeof(struct containerv_options));
@@ -54,6 +69,11 @@ void containerv_options_delete(struct containerv_options* options)
     }
 
     containerv_policy_delete(options->policy);
+    free((void*)options->windows_container.utilityvm_path);
+    free((void*)options->windows_lcow.image_path);
+    free((void*)options->windows_lcow.kernel_file);
+    free((void*)options->windows_lcow.initrd_file);
+    free((void*)options->windows_lcow.boot_parameters);
     free(options);
 }
 
@@ -160,7 +180,7 @@ void containerv_options_set_windows_container_utilityvm_path(
     if (options == NULL) {
         return;
     }
-    options->windows_container.utilityvm_path = utilityvm_path;
+    __replace_owned_string(&options->windows_container.utilityvm_path, utilityvm_path);
 }
 
 void containerv_options_set_windows_container_type(
@@ -194,10 +214,10 @@ void containerv_options_set_windows_lcow_hvruntime(
         return;
     }
 
-    options->windows_lcow.image_path = uvm_image_path;
-    options->windows_lcow.kernel_file = kernel_file;
-    options->windows_lcow.initrd_file = initrd_file;
-    options->windows_lcow.boot_parameters = boot_parameters;
+    __replace_owned_string(&options->windows_lcow.image_path, uvm_image_path);
+    __replace_owned_string(&options->windows_lcow.kernel_file, kernel_file);
+    __replace_owned_string(&options->windows_lcow.initrd_file, initrd_file);
+    __replace_owned_string(&options->windows_lcow.boot_parameters, boot_parameters);
 }
 
 void containerv_options_set_windows_wcow_parent_layers(

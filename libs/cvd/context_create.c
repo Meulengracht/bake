@@ -37,9 +37,7 @@ static int __construct_paths(struct __bake_build_context* bctx) {
     // construct the root layer path
     snprintf(&buffer[0], sizeof(buffer),
         "/var/chef/layers/%s/contents",
-        build_cache_uuid(bctx->build_cache),
-        bctx->target_platform,
-        bctx->target_architecture
+        build_cache_uuid(bctx->build_cache)
     );
 
     bctx->install_path = strpathjoin(

@@ -32,10 +32,8 @@ endif ()
 message(STATUS "Building jansson from source")
 include(ExternalProject)
 
-set(_jansson_static_library_name "${CMAKE_STATIC_LIBRARY_PREFIX}jansson${CMAKE_STATIC_LIBRARY_SUFFIX}")
-if(MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(_jansson_static_library_name "${CMAKE_STATIC_LIBRARY_PREFIX}jansson_d${CMAKE_STATIC_LIBRARY_SUFFIX}")
-endif()
+set(_jansson_release_library_name "${CMAKE_STATIC_LIBRARY_PREFIX}jansson${CMAKE_STATIC_LIBRARY_SUFFIX}")
+set(_jansson_debug_library_name "${CMAKE_STATIC_LIBRARY_PREFIX}jansson_d${CMAKE_STATIC_LIBRARY_SUFFIX}")
 
 ExternalProject_Add(bundled_jansson
   URL
@@ -59,12 +57,24 @@ ExternalProject_Add(bundled_jansson
     -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
     -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
     -DCMAKE_OSX_SYSROOT=${CMAKE_OSX_SYSROOT}
+  BUILD_COMMAND
+    ${CMAKE_COMMAND} --build . --config $<CONFIG>
+  INSTALL_COMMAND
+    ${CMAKE_COMMAND} --build . --target install --config $<CONFIG>
   BUILD_BYPRODUCTS
-    <INSTALL_DIR>/lib/${_jansson_static_library_name}
+    <INSTALL_DIR>/lib/${_jansson_release_library_name}
+    <INSTALL_DIR>/lib/${_jansson_debug_library_name}
 )
 
 add_dependencies(jansson bundled_jansson)
 ExternalProject_Get_Property(bundled_jansson INSTALL_DIR)
 
 target_include_directories(jansson INTERFACE "${INSTALL_DIR}/include")
-target_link_libraries(jansson INTERFACE "${INSTALL_DIR}/lib/${_jansson_static_library_name}")
+if (MSVC)
+  target_link_libraries(jansson INTERFACE
+    debug "${INSTALL_DIR}/lib/${_jansson_debug_library_name}"
+    optimized "${INSTALL_DIR}/lib/${_jansson_release_library_name}"
+  )
+else ()
+  target_link_libraries(jansson INTERFACE "${INSTALL_DIR}/lib/${_jansson_release_library_name}")
+endif ()

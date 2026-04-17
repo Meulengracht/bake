@@ -17,8 +17,10 @@
  */
 
 #include <chef/platform.h>
+#include <chef/package.h>
 #include <chef/runtime.h>
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -77,6 +79,26 @@ struct chef_runtime_info* chef_runtime_info_parse(const char* name)
     
     info->runtime = __runtime_target(info->name);
     return info;
+}
+
+char* chef_runtime_base_to_store_id(const char* identity, const char* base)
+{
+    char   store_id[CHEF_PACKAGE_ID_LENGTH_MAX] = { 0 };
+    size_t identity_length;
+    size_t base_length;
+
+    if (identity == NULL || base == NULL) {
+        return NULL;
+    }
+
+    identity_length = strlen(identity);
+    base_length = strlen(base);
+    snprintf(&store_id[0], sizeof(store_id), "%s/", identity);
+
+    for (size_t i = 0, j = identity_length + 1; i < base_length && j < sizeof(store_id) - 1; i++, j++) {
+        store_id[j] = base[i] == ':' ? '-' : base[i];
+    }
+    return platform_strdup(&store_id[0]);
 }
 
 void chef_runtime_info_delete(struct chef_runtime_info* info)

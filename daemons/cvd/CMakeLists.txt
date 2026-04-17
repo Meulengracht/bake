@@ -19,6 +19,17 @@ add_dependencies(cvd service_server)
 target_include_directories(cvd PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
 target_link_libraries(cvd PRIVATE containerv jansson vlog dirconf common platform gracht)
 
+if (WIN32)
+    add_custom_command(
+        TARGET cvd POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:gracht>
+            $<TARGET_FILE_DIR:cvd>
+        COMMENT "Copying gracht runtime for cvd"
+        VERBATIM
+    )
+endif ()
+
 install(
     TARGETS cvd
     RUNTIME DESTINATION libexec/chef

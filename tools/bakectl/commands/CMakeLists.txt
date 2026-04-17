@@ -19,6 +19,7 @@ add_sources(
     resolvers/resolver_linux.c
     resolvers/resolver_windows.c
     
+    base.c
     build.c
     clean.c
     common.c
@@ -30,4 +31,4 @@ add_sources(
 add_library(bakectl-commands STATIC ${CMD_SRCS})
 
 target_include_directories(bakectl-commands PRIVATE ../include)
-target_link_libraries(bakectl-commands oven store jansson platform)
+target_link_libraries(bakectl-commands oven store jansson platform dirconf)

@@ -39,6 +39,23 @@ ctest --test-dir build --output-on-failure
 ctest --test-dir build -R '^protecc_test$' --output-on-failure
 ```
 
+## Basic Container Build Smoke Test
+- To verify container-backed builds, start `cvd` first; `bake` uses the `cvd` daemon directly to spawn containers and execute build steps inside them.
+- Use the built binaries from the current tree for this check:
+```bash
+sudo -n ./build/daemons/cvd/cvd -vv
+```
+- After `cvd` is alive, use `examples/recipes/hello.yaml` as the basic smoke-test recipe for `bake`.
+- Copy both the recipe file and its `examples/recipes/hello-world` source directory into an isolated work directory before invoking `bake`, so the recipe's relative source path resolves correctly:
+```bash
+work_dir="$(mktemp -d)"
+cp -a examples/recipes/hello.yaml "$work_dir/hello.yaml"
+cp -a examples/recipes/hello-world "$work_dir/hello-world"
+(cd "$work_dir" && ./build/bin/bake build hello.yaml -v)
+```
+- Expected result: `bake build hello.yaml -v` succeeds after `cvd` has started, proving the basic container execution path works.
+- Reference workflow: `tests/system/cases/hello-build.sh`.
+
 ## Protecc eBPF Verifier Smoke Test
 - `libs/protecc` includes an isolated verifier smoke test (`protecc_bpf_verify`) that compiles BPF objects and attempts `bpftool prog loadall`.
 - This test is expected to skip (return code 77) when prerequisites are missing (root privileges, `bpftool`, `/sys/kernel/btf/vmlinux`, or `/sys/fs/bpf`).

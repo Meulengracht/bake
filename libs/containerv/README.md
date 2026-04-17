@@ -34,12 +34,57 @@ LCOW support is being implemented using the standard **OCI-in-UVM** approach:
 - Container type selection: use the HCS container backend and set container type to Linux.
 - Requires a Linux utility VM (UVM) image directory plus (optionally) kernel/initrd/boot parameters.
 
-In `cvd` (Windows host), these are currently wired via environment variables:
-- `CHEF_WINDOWS_CONTAINER_TYPE=linux`
-- `CHEF_LCOW_UVM_IMAGE_PATH` (required)
-- `CHEF_LCOW_KERNEL_FILE` (optional; file name under `CHEF_LCOW_UVM_IMAGE_PATH`)
-- `CHEF_LCOW_INITRD_FILE` (optional; file name under `CHEF_LCOW_UVM_IMAGE_PATH`)
-- `CHEF_LCOW_BOOT_PARAMETERS` (optional)
+In `cvd` (Windows host), these are configured once in `cvd.json` or via `cvctl`.
+
+Preferred setup flows:
+- Produce or normalize a bundle offline: `mkuvm normalize --source <raw-dir> --output <bundle-dir>`
+- Build a bundle offline with hcsshim + LinuxKit: `mkuvm construct --output <bundle-dir>`
+- Import a locally built bundle into Chef's cache: `cvctl uvm import <bundle-dir>`
+- Import a packaged os-base bundle: `cvctl uvm import-pack <bundle.pack>`
+- Fetch a prebuilt bundle archive into Chef's cache: `cvctl uvm fetch <zip-url>`
+
+The fetch flow uses host-native command line tools (`curl` and `tar`) in the same spirit as the Linux rootfs fetch path; it no longer relies on PowerShell.
+
+These commands validate that the bundle contains `uvm.vhdx`, stage it under Chef's cache, and auto-detect optional `kernel`, `initrd`, and `boot_parameters` bundle files.
+
+Chef no longer constructs LCOW bundles inside the runtime tools. Bundle construction and normalization should happen offline, and the resulting directory or pack should then be imported.
+
+The normalized bundle layout is usable in both places Chef needs it today:
+- direct `cvd` build-container configuration via `cvctl uvm import <bundle-dir>`
+- future packaging/repacking flows (zip/VaFS) that need a stable LCOW bundle directory to ingest
+
+Low-level config keys remain available when needed:
+- `lcow.uvm-image-path` or `lcow.uvm-url` (one is required)
+- `lcow.kernel-file` (optional; file name under the configured UVM image path)
+- `lcow.initrd-file` (optional; file name under the configured UVM image path)
+- `lcow.boot-parameters` (optional)
+
+Examples:
+
+```powershell
+ mkuvm construct --output "C:\\temp\\lcow-uvm" --archive "C:\\temp\\lcow-uvm.zip"
+ mkuvm normalize --source "C:\\raw\\lcow-uvm" --output "C:\\temp\\lcow-uvm"
+cvctl uvm import "C:\\ProgramData\\chef\\lcow\\uvm"
+cvctl uvm import-pack "C:\\packages\\lcow-uvm.pack"
+cvctl uvm fetch "https://example.invalid/lcow-uvm.zip"
+```
+
+Or in `cvd.json`:
+
+```json
+{
+   "api-address": {
+      "type": "inet4",
+      "address": "127.0.0.1",
+      "port": 51003
+   },
+   "lcow": {
+      "uvm-image-path": "C:/ProgramData/chef/lcow/uvm",
+      "kernel-file": "kernel",
+      "initrd-file": "initrd.img"
+   }
+}
+```
 
 Current status: LCOW compute-system bring-up is present and containerv will emit a minimal OCI spec for LCOW processes; rootfs mapping and full OCI bundle semantics are still evolving.
 

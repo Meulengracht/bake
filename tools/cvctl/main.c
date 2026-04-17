@@ -30,6 +30,8 @@ static struct containerv_container* g_container = NULL;
 
 extern int start_main(int argc, char** argv, char** envp, struct cvctl_command_options* options);
 extern int exec_main(int argc, char** argv, char** envp, struct cvctl_command_options* options);
+extern int config_main(int argc, char** argv, char** envp, struct cvctl_command_options* options);
+extern int uvm_main(int argc, char** argv, char** envp, struct cvctl_command_options* options);
 
 struct command_handler {
     char* name;
@@ -38,7 +40,9 @@ struct command_handler {
 
 static struct command_handler g_commands[] = {
     { "start", start_main },
-    { "exec",  exec_main }
+    { "exec",  exec_main },
+    { "config", config_main },
+    { "uvm", uvm_main }
 };
 
 static void __print_help(void)
@@ -48,6 +52,8 @@ static void __print_help(void)
     printf("Commands:\n");
     printf("  start      starts a new container\n");
     printf("  exec       executes a command inside an existing container\n");
+    printf("  config     view or change cvd configuration values\n");
+    printf("  uvm        fetch or import LCOW UVM assets\n");
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help\n");
