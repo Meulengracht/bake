@@ -9,6 +9,8 @@ license: MIT
 platforms:
   - name: linux
     base: ubuntu:24
+  - name: windows
+    base: windows:ltsc2022
 
 recipes:
   - name: hello
