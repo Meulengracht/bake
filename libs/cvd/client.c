@@ -300,20 +300,9 @@ static char* __initialize_maybe_rootfs(struct recipe* recipe, struct build_cache
 }
 
 #ifdef CHEF_ON_WINDOWS
-#include <chef/containerv/disk/lcow.h>
-
 static int __initialize_maybe_lcow_uvm(struct chef_create_parameters* params)
 {
-    struct chef_windows_guest_options*     guest = &params->guest_windows;
-    struct containerv_disk_lcow_uvm_config cfg = { 0 };
-    char*                                  lcow_uvm_resolved = NULL;
-
-    if (containerv_disk_lcow_resolve_uvm(&cfg, &lcow_uvm_resolved)) {
-        VLOG_ERROR("cvd", "cvd_create: failed to resolve LCOW UVM assets\n");
-        return -1;
-    }
-
-    guest->lcow_uvm_image_path = lcow_uvm_resolved;
+    (void)params;
     return 0;
 }
 #endif

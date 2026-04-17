@@ -34,6 +34,14 @@ struct config_address {
     unsigned short port;
 };
 
+struct config_lcow {
+    const char* uvm_image_path;
+    const char* uvm_url;
+    const char* kernel_file;
+    const char* initrd_file;
+    const char* boot_parameters;
+};
+
 static int __parse_config_address(struct config_address* address, json_t* root)
 {
     json_t* member;
@@ -74,8 +82,77 @@ static json_t* __serialize_config_address(struct config_address* address)
     return root;
 }
 
+static int __parse_config_lcow(struct config_lcow* lcow, json_t* root)
+{
+    json_t* member;
+    VLOG_DEBUG("config", "__parse_config_lcow()\n");
+
+    member = json_object_get(root, "uvm-image-path");
+    if (member != NULL) {
+        lcow->uvm_image_path = platform_strdup(json_string_value(member));
+    }
+
+    member = json_object_get(root, "uvm-url");
+    if (member != NULL) {
+        lcow->uvm_url = platform_strdup(json_string_value(member));
+    }
+
+    member = json_object_get(root, "kernel-file");
+    if (member != NULL) {
+        lcow->kernel_file = platform_strdup(json_string_value(member));
+    }
+
+    member = json_object_get(root, "initrd-file");
+    if (member != NULL) {
+        lcow->initrd_file = platform_strdup(json_string_value(member));
+    }
+
+    member = json_object_get(root, "boot-parameters");
+    if (member != NULL) {
+        lcow->boot_parameters = platform_strdup(json_string_value(member));
+    }
+    return 0;
+}
+
+static json_t* __serialize_config_lcow(struct config_lcow* lcow)
+{
+    json_t* root;
+    VLOG_DEBUG("config", "__serialize_config_lcow()\n");
+
+    if (lcow->uvm_image_path == NULL &&
+        lcow->uvm_url == NULL &&
+        lcow->kernel_file == NULL &&
+        lcow->initrd_file == NULL &&
+        lcow->boot_parameters == NULL) {
+        return NULL;
+    }
+
+    root = json_object();
+    if (!root) {
+        return NULL;
+    }
+
+    if (lcow->uvm_image_path != NULL) {
+        json_object_set_new(root, "uvm-image-path", json_string(lcow->uvm_image_path));
+    }
+    if (lcow->uvm_url != NULL) {
+        json_object_set_new(root, "uvm-url", json_string(lcow->uvm_url));
+    }
+    if (lcow->kernel_file != NULL) {
+        json_object_set_new(root, "kernel-file", json_string(lcow->kernel_file));
+    }
+    if (lcow->initrd_file != NULL) {
+        json_object_set_new(root, "initrd-file", json_string(lcow->initrd_file));
+    }
+    if (lcow->boot_parameters != NULL) {
+        json_object_set_new(root, "boot-parameters", json_string(lcow->boot_parameters));
+    }
+    return root;
+}
+
 struct config {
     struct config_address api_address;
+    struct config_lcow    lcow;
 };
 
 static struct config g_config = { 0 };
@@ -85,6 +162,7 @@ static json_t* __serialize_config(struct config* config)
 {
     json_t* root;
     json_t* api_address;
+    json_t* lcow;
     VLOG_DEBUG("config", "__serialize_config()\n");
     
     root = json_object();
@@ -100,6 +178,11 @@ static json_t* __serialize_config(struct config* config)
     }
 
     json_object_set_new(root, "api-address", api_address);
+
+    lcow = __serialize_config_lcow(&config->lcow);
+    if (lcow != NULL) {
+        json_object_set_new(root, "lcow", lcow);
+    }
 
     return root;
 }
@@ -135,6 +218,14 @@ static int __parse_config(struct config* config, json_t* root)
     status = __parse_config_address(&config->api_address, member);
     if (status) {
         return status;
+    }
+
+    member = json_object_get(root, "lcow");
+    if (member != NULL) {
+        status = __parse_config_lcow(&config->lcow, member);
+        if (status) {
+            return status;
+        }
     }
 
     return 0;
@@ -194,4 +285,17 @@ void cvd_config_api_address(struct cvd_config_address* address)
     address->type = g_config.api_address.type;
     address->address = g_config.api_address.address;
     address->port = g_config.api_address.port;
+}
+
+void cvd_config_lcow(struct cvd_config_lcow* lcow)
+{
+    if (lcow == NULL) {
+        return;
+    }
+
+    lcow->uvm_image_path = g_config.lcow.uvm_image_path;
+    lcow->uvm_url = g_config.lcow.uvm_url;
+    lcow->kernel_file = g_config.lcow.kernel_file;
+    lcow->initrd_file = g_config.lcow.initrd_file;
+    lcow->boot_parameters = g_config.lcow.boot_parameters;
 }

@@ -100,8 +100,6 @@ static int __configure_local_bind(struct gracht_link_socket* link)
 #include <windows.h>
 #include <ws2ipdef.h>
 #include <process.h>
-#include <chef/containerv/disk/lcow.h>
-
 // Windows 10 Insider build 17063 ++ 
 #include <afunix.h>
 
@@ -154,44 +152,12 @@ static enum chef_guest_type __guest_type_from_base(const char* platform)
 }
 
 #ifdef _WIN32
-// TODO: We need a shared implementation that can be used here
-// and with cvd/client.c. They both need this kind of setup, and we
-// need to make a system that can be shared between the two.,
 static int __configure_windows_guest_options(struct chef_create_parameters* params)
 {
-    const char* container_type = getenv("CHEF_WINDOWS_CONTAINER_TYPE");
-    const char* uvm_image_path = getenv("CHEF_LCOW_UVM_IMAGE_PATH");
-    const char* uvm_url = getenv("CHEF_LCOW_UVM_URL");
-    const char* kernel = getenv("CHEF_LCOW_KERNEL_FILE");
-    const char* initrd = getenv("CHEF_LCOW_INITRD_FILE");
-    const char* boot = getenv("CHEF_LCOW_BOOT_PARAMETERS");
+    (void)params;
 
     if (params->gtype != CHEF_GUEST_TYPE_LINUX) {
         return 0;
-    }
-
-    if (uvm_image_path != NULL && uvm_image_path[0] != '\0') {
-        params->guest_windows.lcow_uvm_image_path = platform_strdup(uvm_image_path);
-    } else if (uvm_url != NULL && uvm_url[0] != '\0') {
-        struct containerv_disk_lcow_uvm_config cfg = { 0 };
-        char* resolved = NULL;
-
-        cfg.uvm_url = uvm_url;
-        if (containerv_disk_lcow_resolve_uvm(&cfg, &resolved) != 0) {
-            VLOG_ERROR("served", "failed to resolve LCOW UVM assets from %s\n", uvm_url);
-            return -1;
-        }
-        params->guest_windows.lcow_uvm_image_path = resolved;
-    }
-
-    if (kernel != NULL && kernel[0] != '\0') {
-        params->guest_windows.lcow_kernel_file = platform_strdup(kernel);
-    }
-    if (initrd != NULL && initrd[0] != '\0') {
-        params->guest_windows.lcow_initrd_file = platform_strdup(initrd);
-    }
-    if (boot != NULL && boot[0] != '\0') {
-        params->guest_windows.lcow_boot_parameters = platform_strdup(boot);
     }
 
     return 0;

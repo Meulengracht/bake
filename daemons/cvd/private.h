@@ -27,6 +27,14 @@ struct cvd_config_address {
     unsigned short port;
 };
 
+struct cvd_config_lcow {
+    const char* uvm_image_path;
+    const char* uvm_url;
+    const char* kernel_file;
+    const char* initrd_file;
+    const char* boot_parameters;
+};
+
 struct config_custom_path {
     const char* path;
     int         access;  // bitwise OR of CV_FS_READ, CV_FS_WRITE, CV_FS_EXEC
@@ -46,6 +54,11 @@ extern void cvd_config_destroy(void);
  * @brief 
  */
 extern void cvd_config_api_address(struct cvd_config_address* address);
+
+/**
+ * @brief
+ */
+extern void cvd_config_lcow(struct cvd_config_lcow* lcow);
 
 /**
  * @brief

@@ -25,6 +25,34 @@ struct containerv_disk_lcow_uvm_config {
 };
 
 /**
+ * @brief Validate that the provided directory is a usable LCOW UVM bundle.
+ *
+ * A valid bundle must at minimum contain a top-level `uvm.vhdx` file.
+ */
+extern int containerv_disk_lcow_validate_uvm(const char* image_path);
+
+/**
+ * @brief Detect optional LCOW bundle files under the provided image path.
+ *
+ * When present, the returned strings are allocated and must be freed by the
+ * caller. Missing optional files return NULL outputs.
+ */
+extern int containerv_disk_lcow_detect_uvm_files(
+    const char* image_path,
+    char**      kernel_file_out,
+    char**      initrd_file_out,
+    char**      boot_parameters_out);
+
+/**
+ * @brief Copy a local LCOW UVM bundle into Chef's cache and return the staged path.
+ *
+ * On success, allocates a string in *image_path_out which must be freed by the caller.
+ */
+extern int containerv_disk_lcow_import_uvm(
+    const char* source_dir,
+    char**      image_path_out);
+
+/**
  * @brief Resolve (download/cache) LCOW UVM assets and return the image path.
  *
  * On success, allocates a string in *image_path_out which must be freed
