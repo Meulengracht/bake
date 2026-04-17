@@ -441,7 +441,7 @@ int base_main(int argc, char** argv, struct __bakelib_context* context, struct b
     if (!strcmp(command, "construct")) {
         free(output_dir);
         fprintf(stderr, "bakectl: base construction is no longer performed at runtime\n");
-        fprintf(stderr, "bakectl: use 'mkwbase construct --base %s --image <image> --output <dir>' and then 'bakectl base import %s <dir>'\n", base_name, base_name);
+        fprintf(stderr, "bakectl: use 'mkwbase construct --base <base> --image <image> --output <dir>' and then 'bakectl base import <base> <dir>'\n");
         return -1;
     }
 
