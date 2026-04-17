@@ -127,7 +127,7 @@ static int __handle_whoami(void)
     return 0;
 }
 
-static int __handle_get(char* parameter)
+static int __handle_get(const char* parameter)
 {
     struct chef_account* account;
     int                  status;
@@ -157,7 +157,7 @@ static int __handle_get(char* parameter)
     return 0;
 }
 
-static int __handle_set(char* parameter, char* value)
+static int __handle_set(const char* parameter, const char* value)
 {
     struct chef_account* account;
     int                  status;
@@ -181,12 +181,14 @@ static int __handle_set(char* parameter, char* value)
         chef_account_name_set(account, value);
     } else {
         printf("order: unknown parameter '%s'\n", parameter);
+        chef_account_free(account);
         return -1;
     }
 
     status = chef_account_update(account);
     if (status) {
         fprintf(stderr, "failed to update account information: %s\n", strerror(errno));
+        chef_account_free(account);
         return status;
     }
 

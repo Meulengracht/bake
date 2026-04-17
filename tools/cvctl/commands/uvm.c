@@ -28,6 +28,12 @@
 
 #include "commands.h"
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#define CVCTL_HAS_LCOW_UVM 1
+#else
+#define CVCTL_HAS_LCOW_UVM 0
+#endif
+
 static void __print_help(void)
 {
     printf("Usage: cvctl uvm <command> [options]\n");
@@ -43,7 +49,15 @@ static void __print_help(void)
     printf("      Download a zipped UVM bundle into Chef's cache and configure cvd to use it\n");
     printf("  construct\n");
     printf("      Deprecated runtime path; use mkuvm construct and then import/import-pack\n");
+
+#if !CVCTL_HAS_LCOW_UVM
+    printf("\n");
+    printf("Note:\n");
+    printf("  LCOW UVM management is only available on Windows hosts\n");
+#endif
 }
+
+#if CVCTL_HAS_LCOW_UVM
 
 static json_t* __load_root(const char* path)
 {
@@ -378,3 +392,21 @@ int uvm_main(int argc, char** argv, char** envp, struct cvctl_command_options* o
     __print_help();
     return -1;
 }
+
+#else
+
+int uvm_main(int argc, char** argv, char** envp, struct cvctl_command_options* options)
+{
+    (void)envp;
+    (void)options;
+
+    if (argc < 3 || !strcmp(argv[2], "-h") || !strcmp(argv[2], "--help")) {
+        __print_help();
+        return argc < 3 ? -1 : 0;
+    }
+
+    fprintf(stderr, "cvctl: LCOW UVM management is only available on Windows hosts\n");
+    return -1;
+}
+
+#endif
