@@ -24,6 +24,68 @@
 #include <string.h>
 #include <stdlib.h>
 
+enum cli_parse_result {
+    CLI_PARSE_RESULT_ERROR = -1,
+    CLI_PARSE_RESULT_HANDLED = 0,
+    CLI_PARSE_RESULT_UNHANDLED = 1
+};
+
+typedef int (*cli_global_option_parser_fn)(int argc, char** argv, int* index, void* context);
+
+static int __cli_is_help_switch(const char* arg)
+{
+    return arg != NULL && (!strcmp(arg, "-h") || !strcmp(arg, "--help"));
+}
+
+static int __cli_parse_verbosity_switch(const char* arg)
+{
+    int count = 0;
+
+    if (arg == NULL || arg[0] != '-' || arg[1] != 'v') {
+        return -1;
+    }
+
+    for (const char* p = &arg[1]; *p != '\0'; ++p) {
+        if (*p != 'v') {
+            return -1;
+        }
+        count++;
+    }
+    return count;
+}
+
+static int __cli_parse_staged_global_options(
+    int argc,
+    char** argv,
+    cli_global_option_parser_fn parser,
+    void* context,
+    int* commandIndex)
+{
+    int i = 1;
+
+    if (parser == NULL || commandIndex == NULL) {
+        return -1;
+    }
+
+    while (i < argc) {
+        int status = parser(argc, argv, &i, context);
+
+        if (status == CLI_PARSE_RESULT_HANDLED) {
+            i++;
+            continue;
+        }
+
+        if (status == CLI_PARSE_RESULT_UNHANDLED) {
+            *commandIndex = i;
+            return 0;
+        }
+        return -1;
+    }
+
+    *commandIndex = argc;
+    return 0;
+}
+
 static uint64_t __parse_quantity(const char* size)
 {
     char*    end = NULL;

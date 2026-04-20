@@ -108,28 +108,22 @@ int remote_info_main(int argc, char** argv, char** envp, struct bake_command_opt
     gracht_client_t* client = NULL;
     const char*      agent_name = NULL;
     int              status;
-    int              i;
 
-    // Parse arguments - find "info" first, then the agent name
-    int found_info = 0;
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "info")) {
-            found_info = 1;
-            // Next argument should be the agent name if it exists
-            if (i + 1 < argc && strcmp(argv[i + 1], "-h") != 0 && strcmp(argv[i + 1], "--help") != 0) {
-                agent_name = argv[i + 1];
-            }
-            continue;
-        }
-        
-        if (found_info && (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))) {
+    (void)envp;
+    (void)options;
+
+    if (argc < 2 || __cli_is_help_switch(argv[1])) {
+        __print_help();
+        return argc < 2 ? -1 : 0;
+    }
+
+    agent_name = argv[1];
+    for (int i = 2; i < argc; i++) {
+        if (__cli_is_help_switch(argv[i])) {
             __print_help();
             return 0;
         }
-    }
-
-    if (agent_name == NULL) {
-        fprintf(stderr, "bake: agent name required\n");
+        fprintf(stderr, "bake: unexpected argument %s\n", argv[i]);
         __print_help();
         return -1;
     }

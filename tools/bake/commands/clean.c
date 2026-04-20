@@ -36,12 +36,20 @@ static void __print_help(void)
     printf("Options:\n");
     printf("  --purge\n");
     printf("      cleans all active recipes in the kitchen area\n");
-    printf("  -cc, --cross-compile\n");
-    printf("      Cross-compile for another platform or/and architecture. This switch\n");
-    printf("      can be used with two different formats, either just like\n");
-    printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
+    printf("  -p, --platform\n");
+    printf("      Cross-compile for a specific platform.\n");
+    printf("  -a, --archs\n");
+    printf("      Cross-compile for specific architectures. If not set, the host\n");
+    printf("      architecture is used.\n");
     printf("  -h, --help\n");
     printf("      Shows this help message\n");
+}
+
+static int __file_exists(const char* path)
+{
+    struct platform_stat stats;
+
+    return platform_stat(path, &stats) == 0 ? 1 : 0;
 }
 
 static void __cleanup_systems(int sig)
@@ -75,17 +83,43 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
     const char*          arch;
 
     // handle individual help command
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            } else if (!strcmp(argv[i], "--purge")) {
-                purge = 1;
-            } else if (argv[i][0] != '-') {
-                partOrStep = argv[i];
-            }
+    bake_command_options_reset(options);
+
+    for (int i = 1; i < argc; i++) {
+        int parse_status;
+
+        if (__cli_is_help_switch(argv[i])) {
+            __print_help();
+            return 0;
         }
+        if (!strcmp(argv[i], "--purge")) {
+            purge = 1;
+            continue;
+        }
+
+        parse_status = bake_command_parse_target_option(argc, argv, &i, options);
+        if (parse_status == CLI_PARSE_RESULT_HANDLED) {
+            continue;
+        }
+
+        if (argv[i][0] == '-') {
+            fprintf(stderr, "bake: unknown option %s\n", argv[i]);
+            __print_help();
+            return -1;
+        }
+
+        if (options->recipe_path == NULL && __file_exists(argv[i])) {
+            options->recipe_path = argv[i];
+            continue;
+        }
+        if (partOrStep == NULL) {
+            partOrStep = argv[i];
+            continue;
+        }
+
+        fprintf(stderr, "bake: unexpected argument %s\n", argv[i]);
+        __print_help();
+        return -1;
     }
 
     // if purge was set, then clean the entire kitchen
@@ -101,10 +135,9 @@ int clean_main(int argc, char** argv, char** envp, struct bake_command_options* 
         return bake_purge_kitchens();
     }
 
-    if (options->recipe == NULL) {
-        fprintf(stderr, "bake: no recipe provided\n");
-        __print_help();
-        return -1;
+    status = bake_command_load_recipe(options);
+    if (status) {
+        return status;
     }
 
     // get the architecture from the list

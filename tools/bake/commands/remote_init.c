@@ -55,25 +55,23 @@ static void __print_help(void)
 int remote_init_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     int local = 0;
-    int i;
 
-    // handle arguments specifically for init
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "init")) {
-            i++;
-            break;
-        }
-    }
+    (void)envp;
+    (void)options;
 
-    if (i < argc) {
+    for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-l") || !strcmp(argv[i], "--local")) {
             local = 1;
-        } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+        } else if (__cli_is_help_switch(argv[i])) {
             __print_help();
             return 0;
         } else if (!strcmp(argv[i], "--version")) {
             printf("bake: version " PROJECT_VER "\n");
             return 0;
+        } else {
+            fprintf(stderr, "bake: unknown option %s\n", argv[i]);
+            __print_help();
+            return -1;
         }
     }
 

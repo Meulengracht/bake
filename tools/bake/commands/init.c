@@ -59,25 +59,24 @@ int init_main(int argc, char** argv, char** envp, struct bake_command_options* o
 {
     char* output = "recipe.yaml";
 
+    (void)envp;
     (void)options;
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            }
-            else if (!strncmp(argv[i], "-n", 2) || !strncmp(argv[i], "--name", 6)) {
-                char* name = strchr(argv[i], '=');
-                if (name) {
-                    name++;
-                    output = name;
-                } else {
-                    printf("bake: missing recipe name for --name=...\n");
-                    return -1;
-                }
-            }
+    for (int i = 1; i < argc; i++) {
+        if (__cli_is_help_switch(argv[i])) {
+            __print_help();
+            return 0;
         }
+        if (!__parse_string_switch(argv, argc, &i, "-n", 2, "--name", 6, NULL, &output)) {
+            if (output == NULL) {
+                fprintf(stderr, "bake: missing recipe name for --name\n");
+                return -1;
+            }
+            continue;
+        }
+        fprintf(stderr, "bake: unknown option %s\n", argv[i]);
+        __print_help();
+        return -1;
     }
     return __write_recipe(output);
 }

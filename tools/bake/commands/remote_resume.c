@@ -67,16 +67,8 @@ int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_o
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
 
-    // skip ahead of 'resume'
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "resume")) {
-            i++;
-            break;
-        }
-    }
-
     // handle individual commands
-    for (; i < argc; i++) {
+    for (i = 1; i < argc; i++) {
         if (strncmp(argv[i], "--ids", 5) == 0) {
             status = __parse_build_ids(argv, argc, &i, &builds);
             if (status) {
@@ -84,10 +76,20 @@ int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_o
                 __print_help();
                 return -1;
             }
-        } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+        } else if (__cli_is_help_switch(argv[i])) {
             __print_help();
             return 0;
+        } else {
+            fprintf(stderr, "bake: unknown option %s\n", argv[i]);
+            __print_help();
+            return -1;
         }
+    }
+
+    if (builds.count == 0) {
+        fprintf(stderr, "bake: --ids must be supplied to resume remote builds\n");
+        __print_help();
+        return -1;
     }
 
     // setup the build log box

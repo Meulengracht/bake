@@ -93,35 +93,28 @@ static struct command_handler* __get_command(const char* command)
 int remote_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
     struct command_handler* command = NULL;
-    int                     i;
 
-    // handle individual commands as well as --help and --version
-    // locate the remote command on the cmdline
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "remote")) {
-            i++;
-            break;
-        }
+    if (argc < 2) {
+        fprintf(stderr, "bake: command must be supplied for 'bake remote'\n");
+        __print_help();
+        return -1;
     }
 
-    if (i < argc) {
-        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-            __print_help();
-            return 0;
-        }
-
-        if (!strcmp(argv[i], "--version")) {
-            printf("bake: version " PROJECT_VER "\n");
-            return 0;
-        }
-
-        command = __get_command(argv[i]);
+    if (__cli_is_help_switch(argv[1])) {
+        __print_help();
+        return 0;
     }
+    if (!strcmp(argv[1], "--version")) {
+        printf("bake: version " PROJECT_VER "\n");
+        return 0;
+    }
+
+    command = __get_command(argv[1]);
 
     if (command == NULL) {
         fprintf(stderr, "bake: command must be supplied for 'bake remote'\n");
         __print_help();
         return -1;
     }
-    return command->handler(argc, argv, envp, options);
+    return command->handler(argc - 1, &argv[1], envp, options);
 }

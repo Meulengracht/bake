@@ -130,7 +130,7 @@ int remote_list_main(int argc, char** argv, char** envp, struct bake_command_opt
 
     // Parse arguments
     for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+        if (__cli_is_help_switch(argv[i])) {
             __print_help();
             return 0;
         }
@@ -141,6 +141,10 @@ int remote_list_main(int argc, char** argv, char** envp, struct bake_command_opt
                 fprintf(stderr, "bake: invalid architecture: %s\n", argv[i] + 7);
                 return -1;
             }
+        } else {
+            fprintf(stderr, "bake: unknown option %s\n", argv[i]);
+            __print_help();
+            return -1;
         }
     }
 

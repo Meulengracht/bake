@@ -5,6 +5,8 @@ set_source_files_properties(${GENERATED_SRCS} PROPERTIES GENERATED TRUE)
 
 add_library(bake-commands STATIC
     ${GENERATED_SRCS}
+
+    common.c
     
     # container backend
     build.c

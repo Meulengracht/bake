@@ -32,4 +32,8 @@ struct bake_command_options {
     const char*    cwd;
 };
 
+extern void bake_command_options_reset(struct bake_command_options* options);
+extern int bake_command_parse_target_option(int argc, char** argv, int* index, struct bake_command_options* options);
+extern int bake_command_load_recipe(struct bake_command_options* options);
+
 #endif //!__BAKE_COMMANDS_H__

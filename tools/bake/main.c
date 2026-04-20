@@ -19,7 +19,6 @@
 #include <errno.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
-#include <chef/recipe.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,45 +48,46 @@ static struct command_handler g_commands[] = {
     { "remote", remote_main }
 };
 
-static int __is_sign_command(struct command_handler* command)
-{
-    return command != NULL && command->handler == sign_main;
-}
+enum bake_global_action {
+    BAKE_GLOBAL_ACTION_NONE,
+    BAKE_GLOBAL_ACTION_HELP,
+    BAKE_GLOBAL_ACTION_VERSION
+};
+
+struct bake_global_options {
+    int                     log_level;
+    enum bake_global_action action;
+};
 
 static void __print_help(void)
 {
-    printf("Usage: bake <command> <recipe> [options]\n");
+    printf("Usage: bake [global-options] <command> [command-options]\n");
     printf("\n");
-    printf("If no recipe is specified, it will search for default recipe names as follows:\n");
+    printf("Build-oriented commands search for default recipe names when no recipe is supplied:\n");
     printf("  chef/recipe.yaml\n");
     printf("  recipe.yaml\n");
     printf("\n");
     printf("Commands:\n");
     printf("  init\n");
     printf("              initializes a new recipe in the current directory\n");
-    printf("  build\n");
-    printf("              builds the provided (or inferred) bake recipe\n");
-    printf("  clean\n");
+    printf("  build [recipe]\n");
+    printf("              builds the provided bake recipe\n");
+    printf("  clean [recipe]\n");
     printf("              cleanup all build and intermediate directories\n");
-    printf("  sign\n");
+    printf("  sign <package>\n");
     printf("              sign the provided package, this is only required for local installs\n");
-    printf("  remote {init, build, resume, download}\n");
+    printf("  remote {init, build, resume, download, list, info}\n");
     printf("              used for building recipes remotely for any given configured\n");
     printf("              build server, parallel builds can be initiated for multiple\n");
-    printf("              architectures by using the --archs switch\n");
+    printf("              architectures by using the command-local --archs switch\n");
     printf("  store {list, update, remove, clean}\n");
     printf("              manage ingredients used for building\n");
     printf("\n");
-    printf("Options:\n");
-    printf("  -p, --platform\n");
-    printf("      Cross-compile for a specific platform.\n");
-    printf("  -a, --archs\n");
-    printf("      Cross-compile for specific architectures, when doing local builds only\n");
-    printf("      a single architecture can be set at one time. When doing remote builds\n");
-    printf("      multiple architectures can be specified like --archs=amd64,arm64 to build\n");
-    printf("      multiple times in parallel. If not set, the host architecture is used.\n");
+    printf("Global Options:\n");
     printf("  --root <path>\n");
     printf("      Set a custom root path for all state and data files\n");
+    printf("  -v..\n");
+    printf("      Controls the verbosity of bake\n");
     printf("  --version\n");
     printf("      Print the version of bake\n");
     printf("  -h, --help\n");
@@ -100,75 +100,6 @@ static struct command_handler* __get_command(const char* command)
         if (!strcmp(command, g_commands[i].name)) {
             return &g_commands[i];
         }
-    }
-    return NULL;
-}
-
-static int __is_osbase(const char* name)
-{
-    if (strcmp(name, "vali/linux-1") == 0) {
-        return 0;
-    }
-    return -1;
-}
-
-static int __add_ingredient(struct recipe* recipe, const char* name)
-{
-    struct recipe_ingredient* ingredient;
-
-    ingredient = malloc(sizeof(struct recipe_ingredient));
-    if (ingredient == NULL) {
-        return -1;
-    }
-
-    memset(ingredient, 0, sizeof(struct recipe_ingredient));
-    ingredient->name = platform_strdup(name);
-    ingredient->type = RECIPE_INGREDIENT_TYPE_HOST;
-    if (ingredient->name == NULL) {
-        free(ingredient);
-        return -1;
-    }
-
-    ingredient->channel = "devel"; // TODO: should be something else
-    list_add(&recipe->environment.host.ingredients, &ingredient->list_header);
-    return 0;
-}
-
-static int __add_osbase(struct recipe* recipe)
-{
-    char nameBuffer[32];
-    snprintf(&nameBuffer[0], sizeof(nameBuffer), "vali/%s-1", CHEF_PLATFORM_STR);
-    return __add_ingredient(recipe, &nameBuffer[0]);
-}
-
-static int __add_implicit_ingredients(struct recipe* recipe)
-{
-    struct list_item* i;
-    int               needsOs = recipe->environment.host.base;
-
-    list_foreach(&recipe->environment.host.ingredients, i) {
-        struct recipe_ingredient* ingredient = (struct recipe_ingredient*)i;
-        if (__is_osbase(ingredient->name) == 0) {
-            needsOs = 0;
-        }
-    }
-
-#if defined(__MOLLENOS__)
-    if (needsOs && __add_osbase(recipe)) {
-        return -1;
-    }
-#endif
-    return 0;
-}
-
-static const char* __find_default_recipe(void)
-{
-    struct platform_stat stats;
-    if (platform_stat("chef/recipe.yaml", &stats) == 0) {
-        return "chef/recipe.yaml";
-    }
-    if (platform_stat("recipe.yaml", &stats) == 0) {
-        return "recipe.yaml";
     }
     return NULL;
 }
@@ -213,14 +144,54 @@ static unsigned int __get_snap_uid(void)
 }
 #endif
 
+static int __parse_global_option(int argc, char** argv, int* index, void* context)
+{
+    struct bake_global_options* options = context;
+    int                         verbosity;
+
+    if (__cli_is_help_switch(argv[*index])) {
+        options->action = BAKE_GLOBAL_ACTION_HELP;
+        return CLI_PARSE_RESULT_HANDLED;
+    }
+    if (!strcmp(argv[*index], "--version")) {
+        options->action = BAKE_GLOBAL_ACTION_VERSION;
+        return CLI_PARSE_RESULT_HANDLED;
+    }
+
+    if (!strncmp(argv[*index], "--root", 6)) {
+        char* root = __split_switch(argv, argc, index);
+
+        if (root == NULL) {
+            fprintf(stderr, "bake: missing path for --root\n");
+            return CLI_PARSE_RESULT_ERROR;
+        }
+        chef_dirs_set_root(root);
+        return CLI_PARSE_RESULT_HANDLED;
+    }
+
+    verbosity = __cli_parse_verbosity_switch(argv[*index]);
+    if (verbosity > 0) {
+        options->log_level += verbosity;
+        return CLI_PARSE_RESULT_HANDLED;
+    }
+
+    if (argv[*index][0] == '-') {
+        fprintf(stderr, "bake: invalid global option %s\n", argv[*index]);
+        return CLI_PARSE_RESULT_ERROR;
+    }
+    return CLI_PARSE_RESULT_UNHANDLED;
+}
+
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler*     command = &g_commands[1]; // build step is default
+    struct command_handler*     command = NULL;
     struct bake_command_options options = { 0 };
-    void*                       buffer;
-    size_t                      length;
+    struct bake_global_options  global_options = {
+        .log_level = VLOG_LEVEL_TRACE,
+        .action = BAKE_GLOBAL_ACTION_NONE
+    };
+    int                         commandIndex = argc;
     int                         status;
-    int                         logLevel = VLOG_LEVEL_TRACE;
     
 #if __linux__
     // make sure we're not actually running as root
@@ -239,56 +210,33 @@ int main(int argc, char** argv, char** envp)
 #endif
 #endif
 
-    // first argument must be the command if not --help or --version
-    if (argc > 1) {
-        if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
-            __print_help();
-            return 0;
-        }
+    status = __cli_parse_staged_global_options(argc, argv, __parse_global_option, &global_options, &commandIndex);
+    if (status) {
+        return -1;
+    }
 
-        if (!strcmp(argv[1], "--version")) {
-            printf("bake: version " PROJECT_VER "\n");
-            return 0;
-        }
+    if (global_options.action == BAKE_GLOBAL_ACTION_HELP) {
+        __print_help();
+        return 0;
+    }
+    if (global_options.action == BAKE_GLOBAL_ACTION_VERSION) {
+        printf("bake: version " PROJECT_VER "\n");
+        return 0;
+    }
 
-        command = __get_command(argv[1]);
-        if (command == NULL) {
-            // was a file passed? Then it was the recipe, and we assume
-            // that the run command should be run.
-            if (__file_exists(argv[1])) {
-                command = &g_commands[1];
-                options.recipe_path = argv[1];
-            } else {
-                fprintf(stderr, "bake: invalid command %s\n", argv[1]);
-                return -1;
-            }
-        }
+    if (commandIndex >= argc) {
+        __print_help();
+        return 0;
+    }
 
-        if (argc > 2) {
-            for (int i = 2; i < argc; i++) {
-                if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--platform", 10, NULL, (char**)&options.platform)) {
-                    continue;
-                } else if (!__parse_stringv_switch(argv, argc, &i, "-a", 2, "--archs", 7, NULL, &options.architectures)) {
-                    continue;
-                } else if (!strcmp(argv[i], "--root") && i + 1 < argc) {
-                    chef_dirs_set_root(argv[i + 1]);
-                    i++;
-                } else if (!strncmp(argv[i], "-v", 2)) {
-                    int li = 1;
-                    while (argv[i][li++] == 'v') {
-                        logLevel++;
-                    }
-                } else if (argv[i][0] != '-') {
-                    if (__file_exists(argv[i])) {
-                        if (__is_sign_command(command)) {
-                            options.input_path = argv[i];
-                        } else {
-                            options.recipe_path = argv[i];
-                        }
-                    }
-                }
-            }
+    command = __get_command(argv[commandIndex]);
+    if (command == NULL) {
+        if (__file_exists(argv[commandIndex])) {
+            fprintf(stderr, "bake: recipe paths must be supplied to 'bake build <recipe>'\n");
+        } else {
+            fprintf(stderr, "bake: invalid command %s\n", argv[commandIndex]);
         }
+        return -1;
     }
 
     // get the current working directory
@@ -297,47 +245,21 @@ int main(int argc, char** argv, char** envp)
         return -1;
     }
 
-    if (options.recipe_path == NULL) {
-        options.recipe_path = (char*)__find_default_recipe();
-    }
-
-    if (options.recipe_path != NULL) {
-        status = platform_readfile(options.recipe_path, &buffer, &length);
-        if (!status) {
-            status = recipe_parse(buffer, length, &options.recipe);
-            free(buffer);
-            if (status) {
-                fprintf(stderr, "bake: failed to parse recipe\n");
-                return status;
-            }
-            
-            status = __add_implicit_ingredients(options.recipe);
-            if (status) {
-                fprintf(stderr, "bake: failed to add implicit ingredients\n");
-                return status;
-            }
-
-            status = recipe_ensure_target(options.recipe, &options.platform, &options.architectures);
-            if (status) {
-                return -1;
-            }
-        } else {
-            fprintf(stderr, "bake: failed to read recipe: %s\n", options.recipe_path);
-        }
-    }
-
     // initialize the logging system
-    vlog_initialize(logLevel);
+    vlog_initialize(global_options.log_level);
 
     // initialize directories
     status = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKE);
     if (status) {
         fprintf(stderr, "bake: failed to initialize directories\n");
+        free((void*)options.cwd);
+        vlog_cleanup();
         return -1;
     }
 
-    status = command->handler(argc, argv, envp, &options);
-    recipe_destroy(options.recipe);
+    status = command->handler(argc - commandIndex, &argv[commandIndex], envp, &options);
+    bake_command_options_reset(&options);
+    free((void*)options.cwd);
     vlog_cleanup();
     return status;
 }

@@ -174,25 +174,28 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
 
-    // skip ahead of 'download'
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "download")) {
-            i++;
-            break;
-        }
+    if (argc >= 2 && __cli_is_help_switch(argv[1])) {
+        __print_help();
+        return 0;
     }
 
-    // next must be log or artifact
-    if (strcmp(argv[i], "artifact") == 0) {
-        atype = CHEF_ARTIFACT_TYPE_PACKAGE;
-    } else if (strcmp(argv[i], "log") == 0) {
-        atype = CHEF_ARTIFACT_TYPE_LOG;
-    } else {
-        fprintf(stderr, "bake: unsupported download type %s\n", argv[i]);
+    if (argc < 2) {
+        fprintf(stderr, "bake: download type must be supplied\n");
         __print_help();
         return -1;
     }
-    i++;
+
+    // next must be log or artifact
+    if (strcmp(argv[1], "artifact") == 0) {
+        atype = CHEF_ARTIFACT_TYPE_PACKAGE;
+    } else if (strcmp(argv[1], "log") == 0) {
+        atype = CHEF_ARTIFACT_TYPE_LOG;
+    } else {
+        fprintf(stderr, "bake: unsupported download type %s\n", argv[1]);
+        __print_help();
+        return -1;
+    }
+    i = 2;
 
     // handle individual options
     for (; i < argc; i++) {
@@ -203,9 +206,13 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
                 __print_help();
                 return -1;
             }
-        } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+        } else if (__cli_is_help_switch(argv[i])) {
             __print_help();
             return 0;
+        } else {
+            fprintf(stderr, "bake: unknown option %s\n", argv[i]);
+            __print_help();
+            return -1;
         }
     }
 

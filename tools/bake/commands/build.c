@@ -45,10 +45,12 @@ static void __print_help(void)
     printf("Usage: bake build [options]\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -cc, --cross-compile\n");
-    printf("      Cross-compile for another platform or/and architecture. This switch\n");
-    printf("      can be used with two different formats, either just like\n");
-    printf("      --cross-compile=arch or --cross-compile=platform/arch\n");
+    printf("  -p, --platform\n");
+    printf("      Cross-compile for a specific platform.\n");
+    printf("  -a, --archs\n");
+    printf("      Cross-compile for specific architectures. Local builds support a\n");
+    printf("      single architecture at a time. If not set, the host architecture\n");
+    printf("      is used.\n");
     printf("  -h,  --help\n");
     printf("      Shows this help message\n");
 }
@@ -228,20 +230,34 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
 
-    // handle individual help command
-    if (argc > 1) {
-        for (int i = 1; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            }
+    bake_command_options_reset(options);
+
+    for (int i = 1; i < argc; i++) {
+        int parse_status;
+
+        if (__cli_is_help_switch(argv[i])) {
+            __print_help();
+            return 0;
         }
+        parse_status = bake_command_parse_target_option(argc, argv, &i, options);
+        if (parse_status == CLI_PARSE_RESULT_HANDLED) {
+            continue;
+        }
+        if (argv[i][0] == '-') {
+            fprintf(stderr, "bake: unknown option %s\n", argv[i]);
+            __print_help();
+            return -1;
+        }
+        if (options->recipe_path != NULL) {
+            fprintf(stderr, "bake: only one recipe path can be specified\n");
+            return -1;
+        }
+        options->recipe_path = argv[i];
     }
 
-    if (options->recipe == NULL) {
-        fprintf(stderr, "bake: no recipe provided\n");
-        __print_help();
-        return -1;
+    status = bake_command_load_recipe(options);
+    if (status) {
+        return status;
     }
 
     if (options->architectures.count > 1) {

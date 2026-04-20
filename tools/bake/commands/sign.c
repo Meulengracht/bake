@@ -386,26 +386,30 @@ static void __print_help(void)
 
 int sign_main(int argc, char** argv, char** envp, struct bake_command_options* options)
 {
-    const char* packPath = options->input_path;
+    const char* packPath = NULL;
     int         status;
 
     (void)envp;
+    (void)options;
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
-            if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-                __print_help();
-                return 0;
-            }
-
-            if (argv[i][0] != '-') {
-                if (packPath != NULL && strcmp(packPath, argv[i]) != 0) {
-                    fprintf(stderr, "bake: only one package file can be specified\n");
-                    return -1;
-                }
-                packPath = argv[i];
-            }
+    for (int i = 1; i < argc; i++) {
+        if (__cli_is_help_switch(argv[i])) {
+            __print_help();
+            return 0;
         }
+
+        if (argv[i][0] != '-') {
+            if (packPath != NULL && strcmp(packPath, argv[i]) != 0) {
+                fprintf(stderr, "bake: only one package file can be specified\n");
+                return -1;
+            }
+            packPath = argv[i];
+            continue;
+        }
+
+        fprintf(stderr, "bake: unknown option %s\n", argv[i]);
+        __print_help();
+        return -1;
     }
 
     if (packPath == NULL) {

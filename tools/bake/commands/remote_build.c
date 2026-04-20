@@ -226,26 +226,34 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
 
-    // skip ahead of 'build'
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "build")) {
-            i++;
-            break;
-        }
-    }
+    bake_command_options_reset(options);
 
-    // handle build options that needs to be proxied
-    for (; i < argc; i++) {
-        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+    for (i = 1; i < argc; i++) {
+        int parse_status;
+
+        if (__cli_is_help_switch(argv[i])) {
             __print_help();
             return 0;
         }
+        parse_status = bake_command_parse_target_option(argc, argv, &i, options);
+        if (parse_status == CLI_PARSE_RESULT_HANDLED) {
+            continue;
+        }
+        if (argv[i][0] == '-') {
+            fprintf(stderr, "bake: unknown option %s\n", argv[i]);
+            __print_help();
+            return -1;
+        }
+        if (options->recipe_path != NULL) {
+            fprintf(stderr, "bake: only one recipe path can be specified\n");
+            return -1;
+        }
+        options->recipe_path = argv[i];
     }
 
-    if (options->recipe == NULL) {
-        fprintf(stderr, "bake: no recipe provided\n");
-        __print_help();
-        return -1;
+    status = bake_command_load_recipe(options);
+    if (status) {
+        return status;
     }
 
     header = __format_header(options->recipe->project.name, options->platform, "*");
