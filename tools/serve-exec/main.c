@@ -22,6 +22,24 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "chef-config.h"
+
+static void __print_help(void)
+{
+    printf("Usage: serve-exec --container <container-name> --path <path-inside-container> --wdir <working-directory> [command-args...]\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -h, --help\n");
+    printf("      Print this help message\n");
+    printf("  -v, --version\n");
+    printf("      Print the version of serve-exec\n");
+    printf("  --container <container-name>\n");
+    printf("      Name or socket path of the target container\n");
+    printf("  --path <path-inside-container>\n");
+    printf("      Command path to execute inside the container\n");
+    printf("  --wdir <working-directory>\n");
+    printf("      Working directory for the in-container process\n");
+}
 
 static char** __rebuild_args(int argc, char** argv, const char* arg0, int argIndex)
 {
@@ -88,6 +106,17 @@ int main(int argc, char** argv, char** envp)
     int         argIndex      = 1;
     int         status;
 
+    if (argc > 1) {
+        if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
+            __print_help();
+            return 0;
+        }
+        if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
+            printf("serve-exec: version " PROJECT_VER "\n");
+            return 0;
+        }
+    }
+
     while (argIndex < argc) {
         if (strcmp(argv[argIndex], "--container") == 0 && argIndex + 1 < argc) {
             containerName = argv[argIndex + 1];
@@ -106,6 +135,7 @@ int main(int argc, char** argv, char** envp)
     // now assume the rest are for the command
     if (containerName == NULL || commandPath == NULL || workingDirectory == NULL) {
         fprintf(stderr, "serve-exec: missing required arguments --container, --path, and --wdir\n");
+        __print_help();
         return -1;
     }
 
