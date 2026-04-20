@@ -106,9 +106,9 @@ echo "      cvd is alive."
 build_rc=0
 (cd "$WORK_DIR" && \
     if command -v timeout >/dev/null 2>&1; then
-        timeout "${BUILD_TIMEOUT_MINS}m" "$CMD_BAKE" build hello.yaml -v
+        timeout "${BUILD_TIMEOUT_MINS}m" "$CMD_BAKE" -v build hello.yaml
     else
-        "$CMD_BAKE" build hello.yaml -v
+        "$CMD_BAKE" -v build hello.yaml
     fi) >"$BUILD_LOG" 2>&1 || build_rc=$?
 
 if [[ $build_rc -ne 0 ]]; then

@@ -70,9 +70,9 @@ cp -a "$RECIPE_DIR/hello-world"  "$WORK_DIR/hello-world"
 build_rc=0
 (cd "$WORK_DIR" && \
     if command -v timeout >/dev/null 2>&1; then
-        timeout 20m "$CMD_BAKE" build hello.yaml -v
+        timeout 20m "$CMD_BAKE" -v build hello.yaml
     else
-        "$CMD_BAKE" build hello.yaml -v
+        "$CMD_BAKE" -v build hello.yaml
     fi) >"$BUILD_LOG" 2>&1 || build_rc=$?
 
 if [[ $build_rc -ne 0 ]]; then
