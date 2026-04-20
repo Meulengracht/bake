@@ -42,11 +42,15 @@ int list_main(int argc, char** argv)
     uint32_t                      packageCount;
     struct chef_served_package*   packages;
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
+    if (argc > 1) {
+        for (int i = 1; i < argc; i++) {
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
+            } else {
+                printf("serve: unknown option: %s\n", argv[i]);
+                __print_help();
+                return -1;
             }
         }
     }

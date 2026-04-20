@@ -45,12 +45,16 @@ int update_main(int argc, char** argv)
     int                           status;
     const char*                   package = NULL;
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
+    if (argc > 1) {
+        for (int i = 1; i < argc; i++) {
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
             } else if (!strcmp(argv[i], "-p") || !strcmp(argv[i], "--pack")) {
+                if ((i + 1) >= argc) {
+                    fprintf(stderr, "serve: missing value for %s\n", argv[i]);
+                    return -1;
+                }
                 package = argv[++i];
             } else {
                 printf("serve: unknown option: %s\n", argv[i]);

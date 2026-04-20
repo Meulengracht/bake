@@ -341,10 +341,10 @@ static int __parse_options(struct __install_options* options, int argc, char** a
     const char* package = NULL;
     uint64_t    revision = 0;
 
-    for (int i = 2; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
-            return -1;
+            return 1;
         } else if (!__parse_string_switch(argv, argc, &i, "-C", 2, "--channel", 9, NULL, (char**)&options->chef_options.channel)) {
             continue;
         } else if (!__parse_string_switch(argv, argc, &i, "-P", 2, "--proof", 7, NULL, (char**)&options->proof_path)) {
@@ -355,6 +355,10 @@ static int __parse_options(struct __install_options* options, int argc, char** a
         } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--detach")) {
             options->detach = 1;
             continue;
+        } else if (argv[i][0] == '-') {
+            printf("unknown option: %s\n", argv[i]);
+            __print_help();
+            return -1;
         } else if (argv[i][0] != '-') {
             if (package == NULL) {
                 package = argv[i];
@@ -366,8 +370,12 @@ static int __parse_options(struct __install_options* options, int argc, char** a
         }
     }
 
+    if (package == NULL) {
+        return 0;
+    }
+
     // if the package looks like a file, treat it as a local install
-    if (package != NULL && __is_package_file(package)) {
+    if (__is_package_file(package)) {
         options->package_path = package;
 
         // In this case, the proof path *must* be provided
@@ -401,8 +409,11 @@ int install_main(int argc, char** argv)
     // set default channel
     installOptions.chef_options.channel = "stable";
 
-    if (argc > 2) {
+    if (argc > 1) {
         status = __parse_options(&installOptions, argc, argv);
+        if (status == 1) {
+            return 0;
+        }
         if (status) {
             return status;
         }

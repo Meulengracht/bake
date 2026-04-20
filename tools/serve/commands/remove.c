@@ -41,11 +41,15 @@ int remove_main(int argc, char** argv)
     int                           status;
     const char*                   package = NULL;
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
+    if (argc > 1) {
+        for (int i = 1; i < argc; i++) {
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
+            } else if (argv[i][0] == '-') {
+                printf("serve: unknown option: %s\n", argv[i]);
+                __print_help();
+                return -1;
             } else {
                 if (package == NULL) {
                     package = argv[i];

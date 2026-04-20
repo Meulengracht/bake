@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/cli.h>
 #include <stdio.h>
 #include <string.h>
 #include "chef-config.h"
@@ -39,9 +40,19 @@ static struct command_handler g_commands[] = {
     { "config",  config_main }
 };
 
+enum serve_global_action {
+    SERVE_GLOBAL_ACTION_NONE,
+    SERVE_GLOBAL_ACTION_HELP,
+    SERVE_GLOBAL_ACTION_VERSION
+};
+
+struct serve_global_options {
+    enum serve_global_action action;
+};
+
 static void __print_help(void)
 {
-    printf("Usage: serve <command> [options]\n");
+    printf("Usage: serve [global-options] <command> [command-options]\n");
     printf("\n");
     printf("Commands:\n");
     printf("  install     install a new package\n");
@@ -50,7 +61,7 @@ static void __print_help(void)
     printf("  list        list all installed packages\n");
     printf("  config      view or change served configuration values\n");
     printf("\n");
-    printf("Options:\n");
+    printf("Global Options:\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
     printf("  -v, --version\n");
@@ -67,36 +78,59 @@ static struct command_handler* __get_command(const char* command)
     return NULL;
 }
 
+static int __parse_global_option(int argc, char** argv, int* index, void* context)
+{
+    struct serve_global_options* options = context;
+
+    if (__cli_is_help_switch(argv[*index])) {
+        options->action = SERVE_GLOBAL_ACTION_HELP;
+        return CLI_PARSE_RESULT_HANDLED;
+    }
+    if (!strcmp(argv[*index], "-v") || !strcmp(argv[*index], "--version")) {
+        options->action = SERVE_GLOBAL_ACTION_VERSION;
+        return CLI_PARSE_RESULT_HANDLED;
+    }
+    if (argv[*index][0] == '-') {
+        fprintf(stderr, "serve: invalid global option %s\n", argv[*index]);
+        return CLI_PARSE_RESULT_ERROR;
+    }
+    return CLI_PARSE_RESULT_UNHANDLED;
+}
+
 int main(int argc, char** argv, char** envp)
 {
+    struct serve_global_options options = { 0 };
     struct command_handler* command = NULL;
+    int                     commandIndex = argc;
     int                     result;
 
-    // first argument must be the command if not --help or --version
-    if (argc > 1) {
-        if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
-            __print_help();
-            return 0;
-        }
+    (void)envp;
 
-        if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
-            printf("serve: version " PROJECT_VER "\n");
-            return 0;
-        }
-
-        command = __get_command(argv[1]);
-        if (!command) {
-            fprintf(stderr, "serve: invalid command %s\n", argv[1]);
-            return -1;
-        }
+    result = __cli_parse_staged_global_options(argc, argv, __parse_global_option, &options, &commandIndex);
+    if (result != 0) {
+        return -1;
     }
 
-    if (!command) {
+    if (options.action == SERVE_GLOBAL_ACTION_HELP) {
+        __print_help();
+        return 0;
+    }
+    if (options.action == SERVE_GLOBAL_ACTION_VERSION) {
+        printf("serve: version " PROJECT_VER "\n");
+        return 0;
+    }
+    if (commandIndex >= argc) {
         __print_help();
         return 0;
     }
 
-    result = command->handler(argc, argv);
+    command = __get_command(argv[commandIndex]);
+    if (!command) {
+        fprintf(stderr, "serve: invalid command %s\n", argv[commandIndex]);
+        return -1;
+    }
+
+    result = command->handler(argc - commandIndex, &argv[commandIndex]);
     if (result != 0) {
         return result;
     }
