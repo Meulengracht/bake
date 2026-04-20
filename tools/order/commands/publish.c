@@ -105,20 +105,12 @@ int publish_main(int argc, char** argv)
     struct chef_package_manifest* manifest  = NULL;
     char*                         packPath  = NULL;
     char*                         publisher = NULL;
-    int                           i         = 0;
     int                           status;
 
     // set default channel
     params.channel = "devel";
 
-    // skip past 'publish' subcommand
-    for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "publish") == 0) {
-            break;
-        }
-    }
-
-    for (i = i + 1; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
             return 0;
@@ -126,6 +118,9 @@ int publish_main(int argc, char** argv)
             continue;
         } else if (!__parse_string_switch(argv, argc, &i, "-p", 2, "--publisher", 11, NULL, &publisher)) {
             continue;
+        } else if (argv[i][0] == '-') {
+            fprintf(stderr, "order: unknown option '%s' for 'publish'\n", argv[i]);
+            return -1;
         } else if (argv[i][0] != '-') {
             if (packPath != NULL) {
                 printf("only one pack path can be specified\n");

@@ -54,20 +54,15 @@ int find_main(int argc, char** argv)
     struct chef_find_params   params       = { 0 };
     struct chef_find_result** packages     = NULL;
     int                       packageCount = 0;
-    int                       i            = 0;
     int                       status;
 
-    // skip past 'find' subcommand
-    for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "find") == 0) {
-            break;
-        }
-    }
-
-    for (i = i + 1; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
             return 0;
+        } else if (argv[i][0] == '-') {
+            fprintf(stderr, "order: unknown option '%s' for 'find'\n", argv[i]);
+            return -1;
         } else if (argv[i][0] != '-') {
             if (params.query != NULL) {
                 fprintf(stderr, "order: multiple search strings provided\n");

@@ -307,20 +307,15 @@ int account_main(int argc, char** argv)
     const char* command = NULL;
     const char* option  = NULL;
     const char* value   = NULL;
-    int         i       = 0;
     int         status;
 
-    // skip past 'account' subcommand
-    for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "account") == 0) {
-            break;
-        }
-    }
-
-    for (i = i + 1; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
             return 0;
+        } else if (argv[i][0] == '-') {
+            fprintf(stderr, "order: unknown option '%s' for 'account'\n", argv[i]);
+            return -1;
         } else if (argv[i][0] != '-') {
             if (command == NULL) {
                 command = argv[i];
