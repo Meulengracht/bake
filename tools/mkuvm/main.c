@@ -25,6 +25,7 @@
 #include <string.h>
 #include <time.h>
 #include <vlog.h>
+#include "chef-config.h"
 
 struct mkuvm_options {
     const char* output_dir;
@@ -50,7 +51,7 @@ struct bundle_source_info {
 
 static void __print_help(void)
 {
-    printf("Usage: mkuvm <command> [options]\n");
+    printf("Usage: mkuvm [global-options] <command> [command-options]\n");
     printf("\n");
     printf("Commands:\n");
     printf("  normalize\n");
@@ -62,7 +63,11 @@ static void __print_help(void)
     printf("  construct\n");
     printf("      Build an LCOW UVM bundle using hcsshim + LinuxKit\n");
     printf("\n");
-    printf("Options:\n");
+    printf("Global Options:\n");
+    printf("  -v, --version\n");
+    printf("      Print the version of mkuvm\n");
+    printf("\n");
+    printf("Command Options:\n");
     printf("  -o, --output <dir>\n");
     printf("      Output directory for normalize, fetch, and construct\n");
     printf("  -s, --source <dir>\n");
@@ -868,7 +873,7 @@ static int __parse_options(int argc, char** argv, struct mkuvm_options* options)
             options->force = 1;
         } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
-            exit(0);
+            return 1;
         } else {
             fprintf(stderr, "mkuvm: unknown option %s\n", argv[i]);
             return -1;
@@ -879,9 +884,10 @@ static int __parse_options(int argc, char** argv, struct mkuvm_options* options)
 
 int main(int argc, char** argv)
 {
-    const char*         command;
-    struct mkuvm_options options = { 0 };
+    const char*               command;
+    struct mkuvm_options      options = { 0 };
     struct bundle_source_info source_info = { 0 };
+    int                       result;
 
     if (argc < 2) {
         __print_help();
@@ -892,9 +898,21 @@ int main(int argc, char** argv)
         __print_help();
         return 0;
     }
+    if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
+        printf("mkuvm: version " PROJECT_VER "\n");
+        return 0;
+    }
+    if (argv[1][0] == '-') {
+        fprintf(stderr, "mkuvm: invalid global option %s\n", argv[1]);
+        return -1;
+    }
 
     command = argv[1];
-    if (__parse_options(argc, argv, &options) != 0) {
+    result = __parse_options(argc, argv, &options);
+    if (result == 1) {
+        return 0;
+    }
+    if (result != 0) {
         __print_help();
         return -1;
     }
