@@ -54,11 +54,15 @@ int exec_main(int argc, char** argv, char** envp, struct cvctl_command_options* 
     signal(SIGINT, __cleanup_systems);
 
     // handle individual help command
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
+    if (argc > 1) {
+        for (int i = 1; i < argc; i++) {
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
+            } else if (argv[i][0] == '-') {
+                fprintf(stderr, "cvctl: unknown option '%s'\n", argv[i]);
+                __print_help();
+                return -1;
             } else if (argv[i][0] != '-') {
                 if (commSocket == NULL) {
                     commSocket = argv[i];

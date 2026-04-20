@@ -345,50 +345,50 @@ int uvm_main(int argc, char** argv, char** envp, struct cvctl_command_options* o
     (void)envp;
     (void)options;
 
-    if (argc < 3 || !strcmp(argv[2], "-h") || !strcmp(argv[2], "--help")) {
+    if (argc < 2 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
         __print_help();
-        return argc < 3 ? -1 : 0;
+        return argc < 2 ? -1 : 0;
     }
 
     if (__config_path(config_path) != 0) {
         return -1;
     }
 
-    if (!strcmp(argv[2], "show")) {
+    if (!strcmp(argv[1], "show")) {
         return __show_current(config_path);
     }
 
-    if (!strcmp(argv[2], "import")) {
-        if (argc < 4) {
+    if (!strcmp(argv[1], "import")) {
+        if (argc < 3) {
             fprintf(stderr, "cvctl: missing bundle directory\n");
             return -1;
         }
-        return __handle_import(config_path, argv[3]);
+        return __handle_import(config_path, argv[2]);
     }
 
-    if (!strcmp(argv[2], "import-pack")) {
-        if (argc < 4) {
+    if (!strcmp(argv[1], "import-pack")) {
+        if (argc < 3) {
             fprintf(stderr, "cvctl: missing pack file\n");
             return -1;
         }
-        return __handle_import_pack(config_path, argv[3]);
+        return __handle_import_pack(config_path, argv[2]);
     }
 
-    if (!strcmp(argv[2], "fetch")) {
-        if (argc < 4) {
+    if (!strcmp(argv[1], "fetch")) {
+        if (argc < 3) {
             fprintf(stderr, "cvctl: missing UVM bundle URL\n");
             return -1;
         }
-        return __handle_fetch(config_path, argv[3]);
+        return __handle_fetch(config_path, argv[2]);
     }
 
-    if (!strcmp(argv[2], "construct")) {
+    if (!strcmp(argv[1], "construct")) {
         fprintf(stderr, "cvctl: uvm construction is no longer performed at runtime\n");
         fprintf(stderr, "cvctl: use 'mkuvm construct --output <bundle-dir>' and then 'cvctl uvm import <bundle-dir>' or 'cvctl uvm import-pack <pack-file>'\n");
         return -1;
     }
 
-    fprintf(stderr, "cvctl: unknown uvm command '%s'\n", argv[2]);
+    fprintf(stderr, "cvctl: unknown uvm command '%s'\n", argv[1]);
     __print_help();
     return -1;
 }
@@ -400,9 +400,9 @@ int uvm_main(int argc, char** argv, char** envp, struct cvctl_command_options* o
     (void)envp;
     (void)options;
 
-    if (argc < 3 || !strcmp(argv[2], "-h") || !strcmp(argv[2], "--help")) {
+    if (argc < 2 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
         __print_help();
-        return argc < 3 ? -1 : 0;
+        return argc < 2 ? -1 : 0;
     }
 
     fprintf(stderr, "cvctl: LCOW UVM management is only available on Windows hosts\n");

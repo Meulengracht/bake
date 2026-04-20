@@ -170,17 +170,23 @@ int config_main(int argc, char** argv, char** envp, struct cvctl_command_options
     (void)envp;
     (void)options;
 
-    if (argc > 2) {
-        for (int i = 2; i < argc; i++) {
+    if (argc > 1) {
+        for (int i = 1; i < argc; i++) {
             if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
                 __print_help();
                 return 0;
             } else if (!strcmp(argv[i], "--unset")) {
                 unset = 1;
+            } else if (argv[i][0] == '-') {
+                fprintf(stderr, "cvctl: unknown option '%s'\n", argv[i]);
+                return -1;
             } else if (option == NULL) {
                 option = argv[i];
             } else if (value == NULL) {
                 value = argv[i];
+            } else {
+                fprintf(stderr, "cvctl: too many arguments\n");
+                return -1;
             }
         }
     }

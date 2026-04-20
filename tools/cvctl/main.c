@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/cli.h>
 #include <chef/containerv.h>
 #include <chef/platform.h>
 #include <signal.h>
@@ -45,9 +46,19 @@ static struct command_handler g_commands[] = {
     { "uvm", uvm_main }
 };
 
+enum cvctl_global_action {
+    CVCTL_GLOBAL_ACTION_NONE,
+    CVCTL_GLOBAL_ACTION_HELP,
+    CVCTL_GLOBAL_ACTION_VERSION
+};
+
+struct cvctl_global_options {
+    enum cvctl_global_action action;
+};
+
 static void __print_help(void)
 {
-    printf("Usage: cvctl <command> [options]\n");
+    printf("Usage: cvctl [global-options] <command> [command-options]\n");
     printf("\n");
     printf("Commands:\n");
     printf("  start      starts a new container\n");
@@ -55,7 +66,7 @@ static void __print_help(void)
     printf("  config     view or change cvd configuration values\n");
     printf("  uvm        fetch or import LCOW UVM assets\n");
     printf("\n");
-    printf("Options:\n");
+    printf("Global Options:\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
     printf("  -v, --version\n");
@@ -72,29 +83,55 @@ static struct command_handler* __get_command(const char* command)
     return NULL;
 }
 
+static int __parse_global_option(int argc, char** argv, int* index, void* context)
+{
+    struct cvctl_global_options* options = context;
+
+    if (__cli_is_help_switch(argv[*index])) {
+        options->action = CVCTL_GLOBAL_ACTION_HELP;
+        return CLI_PARSE_RESULT_HANDLED;
+    }
+    if (!strcmp(argv[*index], "-v") || !strcmp(argv[*index], "--version")) {
+        options->action = CVCTL_GLOBAL_ACTION_VERSION;
+        return CLI_PARSE_RESULT_HANDLED;
+    }
+    if (argv[*index][0] == '-') {
+        fprintf(stderr, "cvctl: invalid global option %s\n", argv[*index]);
+        return CLI_PARSE_RESULT_ERROR;
+    }
+    return CLI_PARSE_RESULT_UNHANDLED;
+}
+
 int main(int argc, char** argv, char** envp)
 {
     struct command_handler*      command = NULL;
+    struct cvctl_global_options  globalOptions = { 0 };
     struct cvctl_command_options options = { 0 };
+    int                          commandIndex = argc;
+    int                          result;
 
-    // first argument must be the command if not --help or --version
-    if (argc > 1) {
-        if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
-            __print_help();
-            return 0;
-        }
-
-        if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
-            printf("cvctl: version " PROJECT_VER "\n");
-            return 0;
-        }
-
-        command = __get_command(argv[1]);
-    }
-
-    if (command == NULL) {
-        fprintf(stderr, "cvctl: invalid command %s\n", argv[1]);
+    result = __cli_parse_staged_global_options(argc, argv, __parse_global_option, &globalOptions, &commandIndex);
+    if (result != 0) {
         return -1;
     }
-    return command->handler(argc, argv, envp, &options);
+
+    if (globalOptions.action == CVCTL_GLOBAL_ACTION_HELP) {
+        __print_help();
+        return 0;
+    }
+    if (globalOptions.action == CVCTL_GLOBAL_ACTION_VERSION) {
+        printf("cvctl: version " PROJECT_VER "\n");
+        return 0;
+    }
+    if (commandIndex >= argc) {
+        __print_help();
+        return 0;
+    }
+
+    command = __get_command(argv[commandIndex]);
+    if (command == NULL) {
+        fprintf(stderr, "cvctl: invalid command %s\n", argv[commandIndex]);
+        return -1;
+    }
+    return command->handler(argc - commandIndex, &argv[commandIndex], envp, &options);
 }
