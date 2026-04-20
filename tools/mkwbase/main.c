@@ -24,6 +24,7 @@
 #include <string.h>
 #include <time.h>
 #include <vlog.h>
+#include "chef-config.h"
 
 #if defined(_MSC_VER)
 #define popen _popen
@@ -40,7 +41,7 @@ struct mkwbase_options {
 
 static void __print_help(void)
 {
-    printf("Usage: mkwbase <command> [options]\n");
+    printf("Usage: mkwbase [global-options] <command> [command-options]\n");
     printf("\n");
     printf("Commands:\n");
     printf("  normalize\n");
@@ -48,7 +49,11 @@ static void __print_help(void)
     printf("  construct\n");
     printf("      Build a Windows base directory from a Docker/MCR image\n");
     printf("\n");
-    printf("Options:\n");
+    printf("Global Options:\n");
+    printf("  -v, --version\n");
+    printf("      Print the version of mkwbase\n");
+    printf("\n");
+    printf("Command Options:\n");
     printf("  -b, --base <base>\n");
     printf("      Logical base name, for example windows:ltsc2022\n");
     printf("  -s, --source <dir>\n");
@@ -811,7 +816,7 @@ static int __parse_options(int argc, char** argv, struct mkwbase_options* option
             options->force = 1;
         } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             __print_help();
-            exit(0);
+            return 1;
         } else {
             fprintf(stderr, "mkwbase: unknown option %s\n", argv[i]);
             return -1;
@@ -824,6 +829,7 @@ int main(int argc, char** argv)
 {
     const char*            command;
     struct mkwbase_options options = { 0 };
+    int                    result;
 
     if (argc < 2) {
         __print_help();
@@ -834,9 +840,21 @@ int main(int argc, char** argv)
         __print_help();
         return 0;
     }
+    if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
+        printf("mkwbase: version " PROJECT_VER "\n");
+        return 0;
+    }
+    if (argv[1][0] == '-') {
+        fprintf(stderr, "mkwbase: invalid global option %s\n", argv[1]);
+        return -1;
+    }
 
     command = argv[1];
-    if (__parse_options(argc, argv, &options) != 0) {
+    result = __parse_options(argc, argv, &options);
+    if (result == 1) {
+        return 0;
+    }
+    if (result != 0) {
         __print_help();
         return -1;
     }
