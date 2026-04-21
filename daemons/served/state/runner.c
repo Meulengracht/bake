@@ -244,7 +244,6 @@ static int __reconstruct_transactions_from_db(void)
 {
     struct served_transaction* transactions;
     int                        transactionsCount;
-    struct served_transaction* runtimes;
     int                        status;
 
     status = served_state_get_transactions(&transactions, &transactionsCount);
@@ -253,19 +252,13 @@ static int __reconstruct_transactions_from_db(void)
         return -1;
     }
 
-    runtimes = calloc(transactionsCount, sizeof(struct served_transaction));
-    if (runtimes == NULL) {
-        VLOG_ERROR("served", "__reconstruct_transactions_from_db: failed to allocate runtime transactions\n");
-        return -1;
-    }
-
     mtx_lock(&g_queue_lock);
     for (int i = 0; i < transactionsCount; i++) {
         struct served_transaction* persisted = &transactions[i];
-        struct served_transaction* runtime = &runtimes[i];
+        struct served_transaction* runtime;
         
         // Construct transaction from persisted data
-        served_transaction_construct(runtime, &(struct served_transaction_options) {
+        runtime = served_transaction_new(&(struct served_transaction_options) {
             .id = persisted->id,
             .name = persisted->name,
             .description = persisted->description,
@@ -273,6 +266,15 @@ static int __reconstruct_transactions_from_db(void)
             .initialState = served_sm_current_state(&persisted->sm),
             .wait = persisted->wait
         });
+        if (runtime == NULL) {
+            VLOG_ERROR(
+                "served",
+                "__reconstruct_transactions_from_db: failed to allocate runtime wrapper for transaction %u\n",
+                persisted->id
+            );
+            mtx_unlock(&g_queue_lock);
+            return -1;
+        }
         
         // Add to appropriate queue based on wait state
         if (runtime->wait.type == SERVED_TRANSACTION_WAIT_TYPE_NONE) {

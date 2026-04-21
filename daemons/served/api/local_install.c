@@ -277,17 +277,17 @@ static int __stage_local_install(
 }
 
 static int __prepare_local_install(
-    const char*                               packagePath,
-    const char*                               proofPath,
-    char**                                    packageNameOut,
-    int*                                      revisionOut)
+    const char* packagePath,
+    const char* proofPath,
+    char**      packageNameOut,
+    int*        revisionOut)
 {
     struct chef_package_manifest* manifest = NULL;
-    struct chef_package_proof* proof = NULL;
-    char*                      fullName = NULL;
-    const char*                publisher = NULL;
-    int                        revision;
-    int                        status = -1;
+    struct chef_package_proof*    proof = NULL;
+    char*                         fullName = NULL;
+    const char*                   publisher = NULL;
+    int                           revision;
+    int                           status = -1;
 
     if (packageNameOut == NULL || revisionOut == NULL) {
         errno = EINVAL;
@@ -350,32 +350,38 @@ void chef_served_install_local_begin_invocation(struct gracht_message* message, 
     struct __local_upload_session*           session = NULL;
     struct chef_served_install_local_session response = { 0 };
 
-    if (__ensure_local_upload_lock() != 0 || options->package_size == 0) {
+    if (__ensure_local_upload_lock()) {
+        VLOG_ERROR("api", "failed to initialize local upload lock\n");
         chef_served_install_local_begin_response(message, &response);
         return;
     }
 
-    if (options->proof_size == 0) {
+    if (options->package_size == 0 || options->proof_size == 0) {
+        VLOG_ERROR("api", "invalid local install options: package_size=%zu, proof_size=%zu\n",
+                   options->package_size, options->proof_size);
         chef_served_install_local_begin_response(message, &response);
         return;
     }
 
     session = calloc(1, sizeof(struct __local_upload_session));
     if (session == NULL) {
+        VLOG_ERROR("api", "failed to allocate local upload session\n");
         chef_served_install_local_begin_response(message, &response);
         return;
     }
 
     session->import_id = platform_secure_random_string_new(24);
     session->package_resource_id = platform_secure_random_string_new(24);
-    session->proof_resource_id = options->proof_size > 0 ? platform_secure_random_string_new(24) : NULL;
+    session->proof_resource_id = platform_secure_random_string_new(24);
     session->package_path = session->import_id != NULL ? __local_upload_path(session->import_id, "pack") : NULL;
-    session->proof_path = (options->proof_size > 0 && session->import_id != NULL) ? __local_upload_path(session->import_id, "proof") : NULL;
+    session->proof_path = session->import_id != NULL ? __local_upload_path(session->import_id, "proof") : NULL;
     session->package_size = options->package_size;
     session->proof_size = options->proof_size;
 
-    if (session->import_id == NULL || session->package_resource_id == NULL || session->package_path == NULL ||
-        (options->proof_size > 0 && (session->proof_resource_id == NULL || session->proof_path == NULL))) {
+    if (session->import_id == NULL || 
+        session->package_resource_id == NULL || session->package_path == NULL ||
+        (session->proof_resource_id == NULL || session->proof_path == NULL)) {
+        VLOG_ERROR("api", "failed to initialize local upload session resources\n");
         __local_upload_session_destroy(session, 1);
         chef_served_install_local_begin_response(message, &response);
         return;
@@ -383,18 +389,18 @@ void chef_served_install_local_begin_invocation(struct gracht_message* message, 
 
     session->package_file = fopen(session->package_path, "wb");
     if (session->package_file == NULL) {
+        VLOG_ERROR("api", "failed to open local package file for writing: %s\n", session->package_path);
         __local_upload_session_destroy(session, 1);
         chef_served_install_local_begin_response(message, &response);
         return;
     }
 
-    if (options->proof_size > 0) {
-        session->proof_file = fopen(session->proof_path, "wb");
-        if (session->proof_file == NULL) {
-            __local_upload_session_destroy(session, 1);
-            chef_served_install_local_begin_response(message, &response);
-            return;
-        }
+    session->proof_file = fopen(session->proof_path, "wb");
+    if (session->proof_file == NULL) {
+        VLOG_ERROR("api", "failed to open local proof file for writing: %s\n", session->proof_path);
+        __local_upload_session_destroy(session, 1);
+        chef_served_install_local_begin_response(message, &response);
+        return;
     }
 
     mtx_lock(&g_localUploadLock);
@@ -413,7 +419,7 @@ void chef_served_local_upload_open_invocation(struct gracht_message* message, co
     struct __local_upload_session* session;
     int                            isProof = 0;
 
-    if (__ensure_local_upload_lock() != 0 || resource_id == NULL) {
+    if (__ensure_local_upload_lock() || resource_id == NULL) {
         chef_served_local_upload_open_response(message, "");
         return;
     }
@@ -425,6 +431,7 @@ void chef_served_local_upload_open_invocation(struct gracht_message* message, co
         chef_served_local_upload_open_response(message, "");
         return;
     }
+
     mtx_unlock(&g_localUploadLock);
     chef_served_local_upload_open_response(message, (char*)resource_id);
 }
@@ -440,7 +447,7 @@ void chef_served_local_upload_write_chunk_invocation(struct gracht_message* mess
 
     (void)message;
 
-    if (__ensure_local_upload_lock() != 0 || session_id == NULL || data == NULL) {
+    if (__ensure_local_upload_lock() || session_id == NULL || data == NULL) {
         return;
     }
 
@@ -478,7 +485,7 @@ void chef_served_local_upload_finish_invocation(struct gracht_message* message, 
 
     (void)message;
 
-    if (__ensure_local_upload_lock() != 0 || session_id == NULL) {
+    if (__ensure_local_upload_lock() || session_id == NULL) {
         return;
     }
 
@@ -518,7 +525,7 @@ void chef_served_install_local_end_invocation(struct gracht_message* message, co
     VLOG_DEBUG("api", "chef_served_install_local_end_invocation(import_id=%s)\n",
                import_id ? import_id : "(null)");
 
-    if (__ensure_local_upload_lock() != 0 || import_id == NULL) {
+    if (__ensure_local_upload_lock() || import_id == NULL) {
         chef_served_install_local_end_response(message, 0);
         return;
     }
@@ -554,7 +561,7 @@ void chef_served_install_local_cancel_invocation(struct gracht_message* message,
 
     (void)message;
 
-    if (__ensure_local_upload_lock() != 0 || import_id == NULL) {
+    if (__ensure_local_upload_lock() || import_id == NULL) {
         return;
     }
 
