@@ -28,7 +28,7 @@ struct waiter_agent_info {
     int queue_size;
 }
 
-service waiterd (44) {
+service waiterd : message {
     func build(waiter_build_request request) : (queue_status status, string id) = 1;
     func status(string id) : (waiter_status_response response) = 2;
     func artifact(string id, artifact_type type) : (string link) = 3;
@@ -59,7 +59,7 @@ struct cook_update_request {
     int unused;
 }
 
-service waiterd_cook (45) {
+service waiterd_cook : message {
     func ready(cook_ready_event evt) : () = 1;
     func update(cook_update_event evt) : () = 2;
     func status(cook_build_event evt) : () = 3;

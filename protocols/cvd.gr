@@ -149,7 +149,7 @@ struct file_parameters {
     string destination_path;
 }
 
-service cvd (43) {
+service cvd : message {
     func create(create_parameters params) : (string id, status st) = 1;
     func spawn(spawn_parameters params) : (uint pid, status st) = 2;
     func kill(string container_id, uint pid) : (status st) = 3;
