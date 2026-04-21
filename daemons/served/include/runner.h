@@ -60,6 +60,20 @@ extern unsigned int served_transaction_create(
     struct state_transaction*          transactionState);
 
 /**
+ * @brief Creates a new transaction while the caller already holds the runner queue lock.
+ *
+ * This is intended for state handlers running inside the runner thread that need to
+ * schedule child transactions without re-entering the queue mutex.
+ *
+ * @param options Configuration options for the new transaction
+ * @param transactionState State to attach to the transaction, or NULL for ephemeral transactions
+ * @return unsigned int The ID of the newly created transaction, or 0 on failure
+ */
+extern unsigned int served_transaction_create_locked(
+    struct served_transaction_options* options,
+    struct state_transaction*          transactionState);
+
+/**
  * @brief Maps an internal transaction state to the protocol state enum.
  * 
  * @param state The internal state machine state

@@ -504,9 +504,28 @@ Download the cryptographic proof (signature) for a specific package revision. Th
 
 #### Response `200 OK`
 
-Binary proof data (`application/octet-stream`). The client streams this to a file or memory buffer.
-This response is not the same format as the local developer `.proof` file written by `bake sign`.
-For that JSON file format, see [PROOF_FORMAT.md](PROOF_FORMAT.md).
+Body containing the `.proof` JSON document. The current API serves this as `application/octet-stream`.
+
+Canonical proof shape:
+```json
+{
+  "origin": "publisher",
+  "identity": "chef",
+  "package": "chef-server",
+  "hash-algorithm": "sha512",
+  "hash": "<base64 of 64 raw SHA-512 bytes>",
+  "public-key": "<base64 of PEM public key bytes>",
+  "signature": "<base64 of RSA signature bytes>"
+}
+```
+
+Proof generation notes:
+- The proof is stored next to the package object as `<package-object-key>.proof`.
+- `hash` is base64 of the raw SHA-512 digest of the package bytes.
+- `public-key` is base64 of the publisher PEM public key contents.
+- `signature` is base64 of the RSA PKCS#1 signature produced by signing the raw digest bytes as data with SHA-512.
+
+For more information, see [PROOF_FORMAT.md](PROOF_FORMAT.md).
 
 #### Error responses
 

@@ -451,9 +451,10 @@ void served_runner_execute(void)
     mtx_unlock(&g_queue_lock);
 }
 
-unsigned int served_transaction_create(
+static unsigned int __served_transaction_create(
     struct served_transaction_options* options,
-    struct state_transaction*          transactionState)
+    struct state_transaction*          transactionState,
+    int                                queueLocked)
 {
     struct served_transaction* txn;
     unsigned int               transactionId = 0;
@@ -493,12 +494,30 @@ unsigned int served_transaction_create(
     served_state_unlock();
 
     // Add to active queue (new transactions always start active)
-    mtx_lock(&g_queue_lock);
+    if (!queueLocked) {
+        mtx_lock(&g_queue_lock);
+    }
     list_add(&g_active_transactions, &txn->list_header);
-    mtx_unlock(&g_queue_lock);
+    if (!queueLocked) {
+        mtx_unlock(&g_queue_lock);
+    }
     
     VLOG_DEBUG("served", "served_transaction_create: created transaction %u\n", transactionId);
     return transactionId;
+}
+
+unsigned int served_transaction_create(
+    struct served_transaction_options* options,
+    struct state_transaction*          transactionState)
+{
+    return __served_transaction_create(options, transactionState, 0);
+}
+
+unsigned int served_transaction_create_locked(
+    struct served_transaction_options* options,
+    struct state_transaction*          transactionState)
+{
+    return __served_transaction_create(options, transactionState, 1);
 }
 
 void served_transaction_construct(struct served_transaction* transaction, struct served_transaction_options* options)

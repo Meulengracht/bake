@@ -18,6 +18,7 @@
 
 #include <transaction/states/dependencies.h>
 #include <transaction/transaction.h>
+#include <runner.h>
 #include <state.h>
 #include <utils.h>
 
@@ -35,24 +36,27 @@ static sm_event_t __ensure_base(struct served_transaction* transaction, const ch
     unsigned int              transactionId;
     char                      nameBuffer[256];
     char                      descriptionBuffer[512];
+    int                       applicationMissing;
+    int                       baseInstalled;
     
     served_state_lock();
     application = served_state_application(name);
-    if (application == NULL) {
+    base = served_state_application(baseName);
+    applicationMissing = (application == NULL);
+    baseInstalled = (base != NULL);
+    served_state_unlock();
+
+    if (applicationMissing) {
         TXLOG_ERROR(
             transaction,
             "Package '%s' not found in state while resolving base dependency",
             name
         );
-        served_state_unlock();
         return SERVED_TX_EVENT_FAILED;
     }
 
-    base = served_state_application(baseName);
-    if (base != NULL) {
-        // base already installed
+    if (baseInstalled) {
         TXLOG_INFO(transaction, "Base for %s already installed", name);
-        served_state_unlock();
         return SERVED_TX_EVENT_OK;
     }
 
@@ -60,25 +64,31 @@ static sm_event_t __ensure_base(struct served_transaction* transaction, const ch
     snprintf(nameBuffer, sizeof(nameBuffer), "Install dependency (%s)", baseName);
     snprintf(descriptionBuffer, sizeof(descriptionBuffer), "Installation of package dependency '%s' requested", baseName);
 
-    transactionId = served_state_transaction_new(&(struct served_transaction_options){
-        .name = &nameBuffer[0],
-        .description = &descriptionBuffer[0],
-        .type = SERVED_TRANSACTION_TYPE_INSTALL,
-    });
-
-    served_state_transaction_state_new(
-        transactionId, 
+    transactionId = served_transaction_create_locked(
+        &(struct served_transaction_options){
+            .name = &nameBuffer[0],
+            .description = &descriptionBuffer[0],
+            .type = SERVED_TRANSACTION_TYPE_INSTALL,
+        },
         &(struct state_transaction){
             .name = baseName,
             .channel = "stable",
         }
     );
+    if (transactionId == 0) {
+        TXLOG_ERROR(
+            transaction,
+            "Failed to schedule base installation for %s",
+            baseName
+        );
+        return SERVED_TX_EVENT_FAILED;
+    }
+
     TXLOG_INFO(
         transaction,
         "Installing base required for %s - transaction ID %u",
         name, transactionId
     );
-    served_state_unlock();
     return served_transaction_wait(transaction, SERVED_TRANSACTION_WAIT_TYPE_TRANSACTION, transactionId);
 }
 
@@ -86,6 +96,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
 {
     struct served_transaction* transaction = context;
     struct state_transaction*  state;
+    char*                      packageName = NULL;
     char**                     names = NULL;
     char*                      path = NULL;
     char*                      base = NULL;
@@ -96,14 +107,21 @@ enum sm_action_result served_handle_state_dependencies(void* context)
     served_state_lock();
     state = served_state_transaction(transaction->id);
     if (state == NULL) {
-        TXLOG_ERROR(transaction, "Failed to load transaction state while resolving dependencies");
         served_state_unlock();
+        TXLOG_ERROR(transaction, "Failed to load transaction state while resolving dependencies");
         goto cleanup;
     }
 
-    names = utils_split_package_name(state->name);
+    packageName = state->name ? platform_strdup(state->name) : NULL;
     revision = state->revision;
     served_state_unlock();
+
+    if (packageName == NULL) {
+        TXLOG_ERROR(transaction, "Failed to copy package name from transaction state");
+        goto cleanup;
+    }
+
+    names = utils_split_package_name(packageName);
 
     if (names == NULL) {
         TXLOG_ERROR(transaction, "Failed to split package name identifiers");
@@ -152,7 +170,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
                 break;
             }
 
-            event = __ensure_base(transaction, state->name, base);
+            event = __ensure_base(transaction, packageName, base);
             free(base);
             if (event == SERVED_TX_EVENT_OK) {
                 break;
@@ -168,6 +186,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
 cleanup:
     chef_package_manifest_free(manifest);
     strsplit_free(names);
+    free(packageName);
     free(path);
     served_sm_post_event(&transaction->sm, event);
     return event == SERVED_TX_EVENT_WAIT ? SM_ACTION_WAIT : SM_ACTION_CONTINUE;
