@@ -23,13 +23,10 @@
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <errno.h>
-#include <openssl/decoder.h>
 #include <openssl/err.h>
-#include <openssl/x509.h>
 #include <openssl/pem.h>
+#include <string.h>
 #include <vlog.h>
-
-const char* g_certAuthority = "MIIF1TCCA72gAwIBAgIUBrKWdEkac/ETLHLvzNjz4e6mElgwDQYJKoZIhvcNAQENBQAwejELMAkGA1UEBhMCREsxEzARBgNVBAgMCkNvcGVuaGFnZW4xEzARBgNVBAcMCkNvcGVuaGFnZW4xDTALBgNVBAoMBENoZWYxDjAMBgNVBAsMBVN0b3JlMSIwIAYDVQQDDBlDaGVmIFN0b3JlIFJvb3QgQXV0aG9yaXR5MB4XDTI1MTAyNzA4NTIyNVoXDTM1MTAyNTA4NTIyNVowejELMAkGA1UEBhMCREsxEzARBgNVBAgMCkNvcGVuaGFnZW4xEzARBgNVBAcMCkNvcGVuaGFnZW4xDTALBgNVBAoMBENoZWYxDjAMBgNVBAsMBVN0b3JlMSIwIAYDVQQDDBlDaGVmIFN0b3JlIFJvb3QgQXV0aG9yaXR5MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAwGnBxbYyRxTQX8+ENMDQMFK8XuMVlCoE1/wcHxseBGLOAEV6FqKdmw8daIf7dqkpK9dVyRm5MYAe1DaDvSWXPOZtzpklWUzLTkYIX+K81QTDgF58W4OkCz9qQnhVJ9snPgjy6UL/9mNJ4g4OUWtQiqkpZsua9J75p3aUQjeM1dOtAUsIps8dGyOJ75Z1h9yTGomNt9xK95I56x1vru5ifKvUsZ5iKpA9uXQ+VZIxlfDwCjl+p3wH0H1ZgvjIk1etdzWOls0E2KNycjGwyQ+H/bJtQZ4oEaZNETRu5QuXJ4zUxdjt7HnUZWD04ySIIT4CyiaH8Lgo6oXIJkal9cJQYgf5kZk2OWhelu1DcqZhOc7GDPU1PYFh8riy2LKxhl6GCVaUgOPeQzB3TLP/Doa6ME9xczOCOlJKrR0aQRgcJSKQss6N8Zrxy3xjnKkAV8YxUu317onv4JTxLyyzJdn3HjoGaQLM9CHh0IbfUJPRIPERJn3L2FGnWlA+lFD2uj1qTfAdOxElRrdLWTFzYHEM+RgBkzOU7hLUNpFsK+IY1zCu+7xtQXwdWqcLM0ppDQZwayMDB/9HfIY7+yOcYQg3nO0Yyi5Yik9mhTah4e2svjYzwEGSIu/SyASipXULf1RY+0FRlDhHcnjGu6oZURjEim6BZcU4LsVpmOlyOAFcl+MCAwEAAaNTMFEwHQYDVR0OBBYEFIRJLeleZKj9FAGU3ojpbCi/X+f8MB8GA1UdIwQYMBaAFIRJLeleZKj9FAGU3ojpbCi/X+f8MA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQENBQADggIBAA+RIVZ0+O7WGqMuzu5QdiTNAa3pTSh9YUSWj0K8VwgxNkOC+2xovVujkBSTSrcXpFElNUbhsPcoMWFSoy/4IjhyGsNeNDXESzPgND+AWsZIQQH3zhOimBN4ulDBqkjgY/t37M3e1g9g6/p1/n47h/KlOMpi3qiAj3DmsmIfsVb0BtkC4XFP3+z4BpqTGOnS6a741MvPLyYAYij26rmbt56jm8Wn1wGSfmtZ7UatIxDgopO65ZLKrWeQiw6elB/Rvw2IY/izqy4XPRYlgfGjrWvf0BX2IJ+l3PfmKYwELlMFIeLCwJj0v3NAUGuJRNue65lmeMWJhkNIRSNHs0KdlUpnuO65ytOFP0Z/3zj2dDevcwXwfQUVtJ2css06S5Rr7wbVouZptXGFoH4dFz6EDE8GvJvmdmv0EJgYKKYLcy+7PSl7bqZIt8loboHFvBF45KtpChxHk+/0pmPcBVApo12F6JQ7dsL9RD+BHvDQygx3S1ovQMeLKeYboZ6pN4TbItMR3gaLDAnEZ6/pDqK1mNdxmU62KEcVQ46fy7b087Q8I4yh2u7b/xMeyx80dXR85rcbHsWywWO5dFTB0kqZIzKyXrHEDGGlyltu57YlZ7iRChqu6MAHztHZDs0SisZwMbFz5HZeTDAKtmGrMJdN3VQd/Or2tEFdcjCeU4fR8ygM";
 
 #define _SEGMENT_SIZE (1024 * 1024)
 
@@ -125,6 +122,28 @@ static int __base64_decode(const char* value, unsigned char** dataOut, size_t* d
     return 0;
 }
 
+static int __parse_proof_origin(const char* origin, enum chef_package_proof_origin* originOut)
+{
+    if (origin == NULL || originOut == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (strcmp(origin, "developer") == 0) {
+        *originOut = CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER;
+        return 0;
+    }
+
+    if (strcmp(origin, "publisher") == 0 || strcmp(origin, "store") == 0) {
+        *originOut = CHEF_PACKAGE_PROOF_ORIGIN_STORE;
+        return 0;
+    }
+
+    VLOG_ERROR("served", "__parse_proof_origin: unsupported proof origin '%s'\n", origin);
+    errno = ENOTSUP;
+    return -1;
+}
+
 static int __parse_public_key_pem(const unsigned char* key, size_t keyLength, EVP_PKEY** keyOut)
 {
     BIO* bio;
@@ -145,7 +164,10 @@ static int __parse_public_key_pem(const unsigned char* key, size_t keyLength, EV
     return *keyOut == NULL ? -1 : 0;
 }
 
-static int __verify_developer_proof(struct chef_package_proof* proof, const char* packagePath)
+static int __verify_package_proof(
+    struct chef_package_proof*     proof,
+    const char*                    packagePath,
+    enum chef_package_proof_origin expectedOrigin)
 {
     unsigned char* expectedHash = NULL;
     size_t         expectedHashLength = 0;
@@ -158,8 +180,14 @@ static int __verify_developer_proof(struct chef_package_proof* proof, const char
     EVP_PKEY*      publicKey = NULL;
     int            status = -1;
 
-    if (proof == NULL || proof->origin != CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER) {
-        VLOG_ERROR("served", "__verify_developer_proof: invalid developer proof\n");
+    if (proof == NULL || proof->origin == CHEF_PACKAGE_PROOF_ORIGIN_NONE) {
+        VLOG_ERROR("served", "__verify_package_proof: invalid package proof\n");
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (expectedOrigin != CHEF_PACKAGE_PROOF_ORIGIN_NONE && proof->origin != expectedOrigin) {
+        VLOG_ERROR("served", "__verify_package_proof: proof origin %d did not match expected %d\n", proof->origin, expectedOrigin);
         errno = EINVAL;
         return -1;
     }
@@ -167,7 +195,7 @@ static int __verify_developer_proof(struct chef_package_proof* proof, const char
     if (proof->hash_algorithm == NULL || strcmp(proof->hash_algorithm, "sha512") != 0) {
         VLOG_ERROR(
             "served",
-            "__verify_developer_proof: unsupported hash algorithm %s\n",
+            "__verify_package_proof: unsupported hash algorithm %s\n",
             proof->hash_algorithm != NULL ? proof->hash_algorithm : "<null>"
         );
         errno = ENOTSUP;
@@ -176,43 +204,43 @@ static int __verify_developer_proof(struct chef_package_proof* proof, const char
 
     status = __base64_decode(proof->hash, &expectedHash, &expectedHashLength);
     if (status != 0) {
-        VLOG_ERROR("served", "__verify_developer_proof: failed to decode proof hash for %s\n", packagePath);
+        VLOG_ERROR("served", "__verify_package_proof: failed to decode proof hash for %s\n", packagePath);
         goto cleanup;
     }
 
     status = __base64_decode(proof->signature, &signature, &signatureLength);
     if (status != 0) {
-        VLOG_ERROR("served", "__verify_developer_proof: failed to decode proof signature for %s\n", packagePath);
+        VLOG_ERROR("served", "__verify_package_proof: failed to decode proof signature for %s\n", packagePath);
         goto cleanup;
     }
 
     status = __calculate_file_sha512(packagePath, &actualHash, &actualHashLength);
     if (status != 0) {
-        VLOG_ERROR("served", "__verify_developer_proof: failed to calculate package hash for %s\n", packagePath);
+        VLOG_ERROR("served", "__verify_package_proof: failed to calculate package hash for %s\n", packagePath);
         goto cleanup;
     }
 
     if (expectedHashLength != actualHashLength || memcmp(expectedHash, actualHash, actualHashLength) != 0) {
-        VLOG_ERROR("served", "__verify_developer_proof: hash mismatch for %s\n", packagePath);
+        VLOG_ERROR("served", "__verify_package_proof: hash mismatch for %s\n", packagePath);
         errno = EBADMSG;
         goto cleanup;
     }
 
     status = __base64_decode(proof->public_key, &publicKeyPem, &publicKeyPemLength);
     if (status != 0) {
-        VLOG_ERROR("served", "__verify_developer_proof: failed to decode public key for %s\n", packagePath);
+        VLOG_ERROR("served", "__verify_package_proof: failed to decode public key for %s\n", packagePath);
         goto cleanup;
     }
 
     status = __parse_public_key_pem(publicKeyPem, publicKeyPemLength, &publicKey);
     if (status != 0) {
-        VLOG_ERROR("served", "__verify_developer_proof: failed to parse proof public key for %s\n", packagePath);
+        VLOG_ERROR("served", "__verify_package_proof: failed to parse proof public key for %s\n", packagePath);
         goto cleanup;
     }
 
     status = __verify_signature(publicKey, (const char*)actualHash, actualHashLength, signature, signatureLength);
     if (status != 0) {
-        VLOG_ERROR("served", "__verify_developer_proof: signature verification failed for %s\n", packagePath);
+        VLOG_ERROR("served", "__verify_package_proof: signature verification failed for %s\n", packagePath);
     }
 
 cleanup:
@@ -241,7 +269,12 @@ static int __load_proof(const char* proofPath, struct chef_package_proof** proof
         return -1;
     }
 
-    proof->origin = CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER;
+    if (__parse_proof_origin(json_string_value(json_object_get(root, "origin")), &proof->origin) != 0) {
+        json_decref(root);
+        free(proof);
+        return -1;
+    }
+
     proof->identity = platform_strdup(json_string_value(json_object_get(root, "identity")));
     proof->hash_algorithm = platform_strdup(json_string_value(json_object_get(root, "hash-algorithm")));
     proof->hash = platform_strdup(json_string_value(json_object_get(root, "hash")));
@@ -262,77 +295,16 @@ static int __load_proof(const char* proofPath, struct chef_package_proof** proof
 
 int utils_load_local_package_proof(const char* proofPath, struct chef_package_proof** proofOut)
 {
+    if (proofOut != NULL) {
+        *proofOut = NULL;
+    }
+
     if (proofPath == NULL || proofPath[0] == '\0' || proofOut == NULL) {
         errno = EINVAL;
         return -1;
     }
 
     return __load_proof(proofPath, proofOut);
-}
-
-static int __verify_signature_against_cert(struct store_proof_publisher* proof)
-{
-    BIO*      keybio;
-    X509*     xcert = NULL;
-    EVP_PKEY* pubkey = NULL;
-    int       status = -1;
-
-    keybio = BIO_new_mem_buf(g_certAuthority, (int)strlen(g_certAuthority));
-    if (keybio == NULL) {
-        VLOG_ERROR("served", "__verify_signature_against_cert: failed to create memory reader\n");
-        return -1;
-    }
-
-    xcert = PEM_read_bio_X509(keybio, NULL, NULL, NULL);
-    if (xcert == NULL) {
-        VLOG_ERROR("served", "__verify_signature_against_cert: failed to read certificate\n");
-        __print_crypt_errors("__verify_signature_against_cert: read certificate");
-        goto cleanup;
-    }
-
-    pubkey = X509_get_pubkey(xcert);
-    if (pubkey == NULL) {
-        VLOG_ERROR("served", "__verify_signature_against_cert: failed to read public key from certificate\n");
-        __print_crypt_errors("__verify_signature_against_cert: read public key");
-        goto cleanup;
-    }
-
-    status = __verify_signature(
-        pubkey,
-        &proof->public_key[0],
-        strlen(&proof->public_key[0]),
-        &proof->signed_key[0],
-        strlen(&proof->signed_key[0])
-    );
-    if (status) {
-        VLOG_ERROR("served", "__verify_signature_against_cert: failed to verify proof against certificate\n");
-    }
-
-cleanup:
-    EVP_PKEY_free(pubkey);
-    X509_free(xcert);
-    BIO_free_all(keybio);
-    return status;
-}
-
-static int __verify_and_get_publisher_key(const char* publisher, struct store_proof_publisher* proof)
-{
-    int  status;
-    char key[128];
-
-    proof_format_publisher_key(&key[0], sizeof(key), publisher);
-
-    status = store_proof_lookup(STORE_PROOF_PACKAGE, &key[0], proof);
-    if (status) {
-        VLOG_ERROR("served", "__verify_publisher_key: failed to retrieve the proof of publisher %s\n", publisher);
-        return status;
-    }
-
-    status = __verify_signature_against_cert(proof);
-    if (status) {
-        VLOG_ERROR("served", "__verify_publisher_key: failed to verify certificate proof for publisher %s\n", publisher);
-    }
-    return status;
 }
 
 static int __calculate_file_sha512(const char* path, unsigned char** hash, unsigned int* hashLength)
@@ -416,94 +388,38 @@ cleanup:
     return status;
 }
 
-
-static int __parse_public_key(const unsigned char* key, size_t keyLength, EVP_PKEY** keyOut) {
-    int               status;
-    OSSL_DECODER_CTX* dctx = OSSL_DECODER_CTX_new_for_pkey(
-        keyOut,
-        "DER",
-        NULL,
-        "RSA",
-        OSSL_KEYMGMT_SELECT_PUBLIC_KEY,
-        NULL,
-        NULL
-    );
-    if (dctx == NULL) {
-        VLOG_ERROR("served", "__parse_public_key: failed to create key decoder for %zu-byte key\n", keyLength);
-        __print_crypt_errors("__parse_public_key: create decoder");
-        return -1;
-    }
-
-    status = OSSL_DECODER_from_data(dctx, &key, &keyLength);
-    OSSL_DECODER_CTX_free(dctx);
-    if (!status) {
-        VLOG_ERROR("served", "__parse_public_key: failed to decode publisher key for verification\n");
-        __print_crypt_errors("__parse_public_key: decode key");
-        return -1;
-    }
-    return 0;
-}
-
-static int __verify_package(struct store_proof_publisher* publisherProof, const char* packagePath, const char* publisher, const char* package, int revision)
+static int __verify_store_package(const char* packagePath, const char* publisher, const char* package, int revision)
 {
-    unsigned char*             hash = NULL;
-    unsigned int               hashLength;
     int                        status;
     char                       key[128];
-    struct store_proof_package proof;
-    EVP_PKEY*                  pkey = NULL;
+    struct store_proof_package proof = { 0 };
 
     proof_format_package_key(&key[0], sizeof(key), publisher, package, revision);
 
+    status = store_proof_ensure(STORE_PROOF_PACKAGE, &key[0], NULL);
+    if (status) {
+        VLOG_ERROR("served", "__verify_store_package: failed to ensure proof for package %s\n", &key[0]);
+        return status;
+    }
+
     status = store_proof_lookup(STORE_PROOF_PACKAGE, &key[0], &proof);
     if (status) {
-        VLOG_ERROR("served", "__verify_package: failed to retrieve proof for package %s\n", &key[0]);
+        VLOG_ERROR("served", "__verify_store_package: failed to load proof for package %s\n", &key[0]);
         return status;
     }
 
-    status = __calculate_file_sha512(packagePath, &hash, &hashLength);
+    status = __verify_package_proof(&proof.proof, packagePath, CHEF_PACKAGE_PROOF_ORIGIN_STORE);
     if (status) {
-        VLOG_ERROR("served", "__verify_package: failed to calculate SHA512 checksum of package path %s\n", packagePath);
-        goto cleanup;
+        VLOG_ERROR("served", "__verify_store_package: failed to verify proof for %s/%s revision %d\n", publisher, package, revision);
     }
-
-    status = __parse_public_key(&publisherProof->public_key[0], strlen(&publisherProof->public_key[0]), &pkey);
-    if (status) {
-        VLOG_ERROR("served", "__verify_package: failed to parse publisher public key for %s/%s\n", publisher, package);
-        goto cleanup;
-    }
-
-    status = __verify_signature(pkey, hash, hashLength, &proof.signature[0], strlen(&proof.signature[0]));
-    if (status) {
-        VLOG_ERROR("served", "__verify_package: failed to verify proof for %s/%s revision %d\n", publisher, package, revision);
-    }
-
-cleanup:
-    OPENSSL_free(hash);
-    EVP_PKEY_free(pkey);
     return status;
-}
-
-int utils_verify_publisher(const char* publisher)
-{
-    int                          status;
-    struct store_proof_publisher publisherProof;
-
-    status = __verify_and_get_publisher_key(publisher, &publisherProof);
-    if (status) {
-        VLOG_ERROR("served", "could not verify the authenticity of the publisher %s\n", publisher);
-        return status;
-    }
-
-    return 0;
 }
 
 int utils_verify_package(const char* publisher, const char* package, int revision)
 {
-    int                          status;
-    char                         name[128];
-    const char*                  path;
-    struct store_proof_publisher publisherProof;
+    int         status;
+    char        name[128];
+    const char* path;
 
     snprintf(&name[0], sizeof(name), "%s/%s", publisher, package);
 
@@ -522,13 +438,7 @@ int utils_verify_package(const char* publisher, const char* package, int revisio
         return status;
     }
 
-    status = __verify_and_get_publisher_key(publisher, &publisherProof);
-    if (status) {
-        VLOG_ERROR("served", "could not verify the authenticity of the publisher %s\n", publisher);
-        return status;
-    }
-
-    status = __verify_package(&publisherProof, path, publisher, package, revision);
+    status = __verify_store_package(path, publisher, package, revision);
     if (status) {
         VLOG_ERROR("served", "could not verify the authenticity of the package %s of publisher %s\n", package, publisher);
         return status;
@@ -549,7 +459,7 @@ int utils_verify_local_package(const char* packagePath, const char* proofPath, s
         return status;
     }
 
-    status = __verify_developer_proof(proof, packagePath);
+    status = __verify_package_proof(proof, packagePath, CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER);
     if (status) {
         VLOG_ERROR("served", "utils_verify_local_package: failed to verify developer proof for package %s\n", packagePath);
         chef_package_proof_free(proof);

@@ -44,6 +44,31 @@ struct store_context {
 
 static struct store_context g_store = { 0 };
 
+static void __cleanup_resolved_proof(union store_proof* proof)
+{
+    if (proof == NULL) {
+        return;
+    }
+
+    switch (proof->header.type) {
+        case STORE_PROOF_PUBLISHER:
+            free((void*)proof->publisher.public_key);
+            free((void*)proof->publisher.signed_key);
+            break;
+        case STORE_PROOF_PACKAGE:
+            free((void*)proof->package.proof.identity);
+            free((void*)proof->package.proof.hash_algorithm);
+            free((void*)proof->package.proof.hash);
+            free((void*)proof->package.proof.public_key);
+            free((void*)proof->package.proof.signature);
+            break;
+        default:
+            break;
+    }
+
+    memset(proof, 0, sizeof(union store_proof));
+}
+
 int store_initialize(struct store_parameters* parameters)
 {
     int status;
@@ -285,8 +310,9 @@ cleanup:
 
 int store_proof_ensure(enum store_proof_type keyType, const char* key, struct chef_observer* observer)
 {
-    union store_proof proof;
+    union store_proof proof = { 0 };
     int               status;
+    int               resolved = 0;
     VLOG_DEBUG("store", "store_proof_ensure(key=%s)\n", key);
 
     if (g_store.backend.resolve_proof == NULL) {
@@ -300,6 +326,8 @@ int store_proof_ensure(enum store_proof_type keyType, const char* key, struct ch
         goto cleanup;
     }
 
+    proof.header.type = keyType;
+    resolved = 1;
     status = g_store.backend.resolve_proof(keyType, key, observer, &proof);
     if (status) {
         goto cleanup;
@@ -313,6 +341,9 @@ int store_proof_ensure(enum store_proof_type keyType, const char* key, struct ch
     status = inventory_save(g_store.inventory);
 
 cleanup:
+    if (resolved) {
+        __cleanup_resolved_proof(&proof);
+    }
     return status;
 }
 

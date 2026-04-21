@@ -1,13 +1,14 @@
 <h1 align="center" style="margin-top: 0px;">Proof Format</h1>
 
-This document specifies the proof file written by `bake sign <package-file>`.
+This document specifies the package proof format written by `bake sign <package-file>`
+and returned by `GET /package/proof`.
 
 A proof is written next to the package file as `<package-file>.proof`. For example,
 signing `hello-world.pack` produces `hello-world.pack.proof`.
 
-This format is **not** the same as the store proof payload returned by `GET /package/proof`
-in [store-api.md](store-api.md). Store proofs are raw binary payloads. This document only
-describes the local JSON `.proof` file emitted by `bake sign`.
+The same JSON shape is used for local `.proof` files and store proof responses.
+The store API currently transports this JSON body as `application/octet-stream`; see
+[store-api.md](store-api.md).
 
 ## File Encoding
 
@@ -39,10 +40,10 @@ Examples:
 
 ## Top-Level Members
 
-| Member | Type | Generated value | Required by current local loader | Notes |
+| Member | Type | Generated value | Required by current readers | Notes |
 | --- | --- | --- | --- | --- |
-| `origin` | string | Always `"developer"` | No | Informational today. `served` sets the in-memory origin to developer without reading this field. |
-| `identity` | string | Configured developer identity. The current writer uses the configured email address. | Yes | `served` uses this value as the publisher identity during local install staging. |
+| `origin` | string | Local proofs use `"developer"`; store proofs use `"publisher"` | Yes | `served` maps `developer` to a local proof and `publisher` to a store proof. |
+| `identity` | string | Signer identity. Local proofs currently use the configured email address. | Yes | `served` uses this value as the publisher identity during local install staging. |
 | `package` | string | Package name from the package manifest (`manifest->name`) | No | Informational today. The current local loader does not read or validate it. |
 | `hash-algorithm` | string | Always `"sha512"` | Yes | The current verifier accepts only `sha512`. |
 | `hash` | string | Base64 of the raw 64-byte SHA-512 digest of the package file | Yes | This is base64 of binary digest bytes, not hex and not base64 of text. |
@@ -53,9 +54,9 @@ Examples:
 
 ```json
 {
-  "origin": "developer",
-  "identity": "developer@example.com",
-  "package": "hello-world",
+  "origin": "<developer|publisher>",
+  "identity": "signer@example.com",
+  "package": "package-name",
   "hash-algorithm": "sha512",
   "hash": "<base64 of 64 raw SHA-512 bytes>",
   "public-key": "<base64 of the public key file bytes>",
@@ -101,10 +102,11 @@ Important compatibility details:
 
 ## Current implementation
 
-The current local proof loader and verifier in `served` behave as follows:
+The current proof loaders and verifiers in `served` behave as follows:
 
-- require `identity`, `hash-algorithm`, `hash`, `public-key`, and `signature`
-- ignore `origin` and `package`
+- require `origin`, `identity`, `hash-algorithm`, `hash`, `public-key`, and `signature`
+- parse `origin` as `developer` for local proofs and `publisher` for store proofs
+- ignore `package`
 - reject any `hash-algorithm` other than `sha512`
 - base64-decode `hash`, `public-key`, and `signature`
 - recompute SHA-512 over the package bytes and compare the raw digest against `hash`

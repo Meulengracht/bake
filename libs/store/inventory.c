@@ -36,9 +36,20 @@ struct __proof_publisher {
     char                  signed_key[4096];
 };
 
+#define __PROOF_IDENTITY_MAX 512
+#define __PROOF_HASH_ALGORITHM_MAX 64
+#define __PROOF_HASH_MAX 256
+#define __PROOF_PUBLIC_KEY_MAX 4096
+#define __PROOF_SIGNATURE_MAX 4096
+
 struct __proof_package {
-    struct store_proof_header header;
-    char                      signature[4096];
+    struct store_proof_header   header;
+    enum chef_package_proof_origin origin;
+    char                        identity[__PROOF_IDENTITY_MAX];
+    char                        hash_algorithm[__PROOF_HASH_ALGORITHM_MAX];
+    char                        hash[__PROOF_HASH_MAX];
+    char                        public_key[__PROOF_PUBLIC_KEY_MAX];
+    char                        signature[__PROOF_SIGNATURE_MAX];
 };
 
 union __proof {
@@ -83,6 +94,40 @@ static struct timespec __parse_timespec(const char* timestamp)
 {
     struct timespec ts;
     return ts;
+}
+
+static int __proof_origin_from_string(const char* origin, enum chef_package_proof_origin* originOut)
+{
+    if (origin == NULL || originOut == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (strcmp(origin, "developer") == 0) {
+        *originOut = CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER;
+        return 0;
+    }
+
+    if (strcmp(origin, "publisher") == 0 || strcmp(origin, "store") == 0) {
+        *originOut = CHEF_PACKAGE_PROOF_ORIGIN_STORE;
+        return 0;
+    }
+
+    VLOG_ERROR("inventory", "__proof_origin_from_string: unsupported origin '%s'\n", origin);
+    errno = ENOTSUP;
+    return -1;
+}
+
+static const char* __proof_origin_to_string(enum chef_package_proof_origin origin)
+{
+    switch (origin) {
+        case CHEF_PACKAGE_PROOF_ORIGIN_DEVELOPER:
+            return "developer";
+        case CHEF_PACKAGE_PROOF_ORIGIN_STORE:
+            return "publisher";
+        default:
+            return NULL;
+    }
 }
 
 static int __parse_packs(struct store_inventory* inventory, json_t* packs)
@@ -150,21 +195,48 @@ static int __parse_publisher_proof(struct __proof_publisher* proof, json_t* root
 
 static int __parse_package_proof(struct __proof_package* proof, json_t* root)
 {
+    json_t* origin = json_object_get(root, "origin");
+    json_t* identity = json_object_get(root, "identity");
+    json_t* hashAlgorithm = json_object_get(root, "hash-algorithm");
+    json_t* hash = json_object_get(root, "hash");
+    json_t* publicKey = json_object_get(root, "public-key");
     json_t* signature = json_object_get(root, "signature");
+    size_t  identityLength;
+    size_t  hashAlgorithmLength;
+    size_t  hashLength;
+    size_t  publicKeyLength;
     size_t  signatureLength;
     
-    if (signature == NULL) {
+    if (origin == NULL || identity == NULL || hashAlgorithm == NULL || hash == NULL ||
+        publicKey == NULL || signature == NULL) {
         VLOG_ERROR("inventory", "__parse_package_proof: invalid proof entry\n");
         return -1;
     }
 
+    if (__proof_origin_from_string(json_string_value(origin), &proof->origin) != 0) {
+        return -1;
+    }
+
+    identityLength = strlen(json_string_value(identity));
+    hashAlgorithmLength = strlen(json_string_value(hashAlgorithm));
+    hashLength = strlen(json_string_value(hash));
+    publicKeyLength = strlen(json_string_value(publicKey));
+
     signatureLength = strlen(json_string_value(signature));
 
-    if (signatureLength >= sizeof(proof->signature)) {
+    if (identityLength >= sizeof(proof->identity) ||
+        hashAlgorithmLength >= sizeof(proof->hash_algorithm) ||
+        hashLength >= sizeof(proof->hash) ||
+        publicKeyLength >= sizeof(proof->public_key) ||
+        signatureLength >= sizeof(proof->signature)) {
         VLOG_ERROR("inventory", "__parse_package_proof: corrupted proof entry\n");
         return -1;
     }
 
+    memcpy(&proof->identity[0], json_string_value(identity), identityLength);
+    memcpy(&proof->hash_algorithm[0], json_string_value(hashAlgorithm), hashAlgorithmLength);
+    memcpy(&proof->hash[0], json_string_value(hash), hashLength);
+    memcpy(&proof->public_key[0], json_string_value(publicKey), publicKeyLength);
     memcpy(&proof->signature[0], json_string_value(signature), signatureLength);
     return 0;
 }
@@ -410,7 +482,12 @@ static void __to_store_version(union __proof* ip, union store_proof* sp)
             sp->publisher.signed_key = &ip->publisher.signed_key[0];
             break;
         case STORE_PROOF_PACKAGE:
-            sp->package.signature = &ip->package.signature[0];
+            sp->package.proof.origin = ip->package.origin;
+            sp->package.proof.identity = &ip->package.identity[0];
+            sp->package.proof.hash_algorithm = &ip->package.hash_algorithm[0];
+            sp->package.proof.hash = &ip->package.hash[0];
+            sp->package.proof.public_key = &ip->package.public_key[0];
+            sp->package.proof.signature = &ip->package.signature[0];
             break;
     }
 }
@@ -425,7 +502,7 @@ int inventory_get_proof(struct store_inventory* inventory, enum store_proof_type
     }
 
     for (int i = 0; i < inventory->proofs_count; i++) {
-        if (strcmp(&inventory->proofs[i].header.key[0], key) == 0) {
+        if (inventory->proofs[i].header.type == keyType && strcmp(&inventory->proofs[i].header.key[0], key) == 0) {
             __to_store_version(&inventory->proofs[i], proof);
             return 0;
         }
@@ -446,7 +523,12 @@ static void __to_inventory_version(union store_proof* sp, union __proof* ip)
             memcpy(&ip->publisher.signed_key[0], sp->publisher.signed_key, strlen(sp->publisher.signed_key));
             break;
         case STORE_PROOF_PACKAGE:
-            memcpy(&ip->package.signature[0], sp->package.signature, strlen(sp->package.signature));
+            ip->package.origin = sp->package.proof.origin;
+            memcpy(&ip->package.identity[0], sp->package.proof.identity, strlen(sp->package.proof.identity));
+            memcpy(&ip->package.hash_algorithm[0], sp->package.proof.hash_algorithm, strlen(sp->package.proof.hash_algorithm));
+            memcpy(&ip->package.hash[0], sp->package.proof.hash, strlen(sp->package.proof.hash));
+            memcpy(&ip->package.public_key[0], sp->package.proof.public_key, strlen(sp->package.proof.public_key));
+            memcpy(&ip->package.signature[0], sp->package.proof.signature, strlen(sp->package.proof.signature));
             break;
     }
 }
@@ -522,6 +604,19 @@ static int __serialize_publisher_proof(json_t* jsproof, struct __proof_publisher
 
 static int __serialize_package_proof(json_t* jsproof, struct __proof_package* proof)
 {
+    const char* origin = __proof_origin_to_string(proof->origin);
+
+    if (origin == NULL) {
+        VLOG_ERROR("inventory", "__serialize_package_proof: unsupported proof origin %d\n", proof->origin);
+        errno = EINVAL;
+        return -1;
+    }
+
+    json_object_set_new(jsproof, "origin", json_string(origin));
+    json_object_set_new(jsproof, "identity", json_string(&proof->identity[0]));
+    json_object_set_new(jsproof, "hash-algorithm", json_string(&proof->hash_algorithm[0]));
+    json_object_set_new(jsproof, "hash", json_string(&proof->hash[0]));
+    json_object_set_new(jsproof, "public-key", json_string(&proof->public_key[0]));
     json_object_set_new(jsproof, "signature", json_string(&proof->signature[0]));
     return 0;
 }
