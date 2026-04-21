@@ -116,17 +116,20 @@ static int __base64_decode(const char* value, unsigned char** dataOut, size_t* d
     return 0;
 }
 
-static int __parse_public_key_pem(const char* key, EVP_PKEY** keyOut)
+static int __parse_public_key_pem(const unsigned char* key, size_t keyLength, EVP_PKEY** keyOut)
 {
     BIO* bio;
 
-    bio = BIO_new_mem_buf(key, (int)strlen(key));
+    bio = BIO_new_mem_buf(key, (int)keyLength);
     if (bio == NULL) {
         return -1;
     }
 
     *keyOut = PEM_read_bio_PUBKEY(bio, NULL, NULL, NULL);
     BIO_free_all(bio);
+    if (*keyOut == NULL) {
+        errno = EINVAL;
+    }
     return *keyOut == NULL ? -1 : 0;
 }
 
@@ -134,6 +137,8 @@ static int __verify_developer_proof(struct chef_package_proof* proof, const char
 {
     unsigned char* expectedHash = NULL;
     size_t         expectedHashLength = 0;
+    unsigned char* publicKeyPem = NULL;
+    size_t         publicKeyPemLength = 0;
     unsigned char* signature = NULL;
     size_t         signatureLength = 0;
     unsigned char* actualHash = NULL;
@@ -171,7 +176,12 @@ static int __verify_developer_proof(struct chef_package_proof* proof, const char
         goto cleanup;
     }
 
-    status = __parse_public_key_pem(proof->public_key, &publicKey);
+    status = __base64_decode(proof->public_key, &publicKeyPem, &publicKeyPemLength);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    status = __parse_public_key_pem(publicKeyPem, publicKeyPemLength, &publicKey);
     if (status != 0) {
         goto cleanup;
     }
@@ -182,6 +192,7 @@ cleanup:
     OPENSSL_free(actualHash);
     EVP_PKEY_free(publicKey);
     free(expectedHash);
+    free(publicKeyPem);
     free(signature);
     return status;
 }

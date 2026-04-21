@@ -106,14 +106,6 @@ The current local proof loader and verifier in `served` behave as follows:
 - require `identity`, `hash-algorithm`, `hash`, `public-key`, and `signature`
 - ignore `origin` and `package`
 - reject any `hash-algorithm` other than `sha512`
-- base64-decode `hash` and `signature`
+- base64-decode `hash`, `public-key`, and `signature`
 - recompute SHA-512 over the package bytes and compare the raw digest against `hash`
-
-Compatibility note:
-
-- The current local verifier passes `public-key` directly to a PEM parser instead of
-  base64-decoding it first.
-- That behavior does not match the writer, which base64-encodes the full public key file
-  contents.
-- Treat the on-disk format defined above as authoritative for newly generated `.proof` files;
-  the verifier discrepancy is an implementation gap.
+- PEM-parse the decoded `public-key` bytes before verifying the signature
