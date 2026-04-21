@@ -63,7 +63,7 @@ static char* __default_local_proof_path(const char* packagePath)
     size_t length;
 
     length = strlen(packagePath);
-    proofPath = malloc(length + strlen(".proof") + 1);
+    proofPath = malloc(length + 6 + 1);
     if (proofPath == NULL) {
         return NULL;
     }

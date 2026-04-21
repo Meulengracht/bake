@@ -201,9 +201,9 @@ echo ""
 
 # ── Install the .pack artifact ────────────────────────────────────────────────
 echo "[7/11] Installing hello-world pack..."
-# Provide a proof token (-P) to skip the interactive yes/no prompt.
-# Proof validation happens server-side; any non-empty string bypasses the
-# client-side interactive check.
+
+# If no proof is provided it will automatically deduce it as long as it's generated
+# next to the package, which we do.
 install_rc=0
 run_cmd_with_timeout 60 install_output \
     "$CMD_SERVE" install "$PACK_FILE" || install_rc=$?

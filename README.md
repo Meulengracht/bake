@@ -33,7 +33,7 @@ release will mark the first initial complete version of Chef. Some highlights of
   - Remote build orchestration via waiterd/cookd with `bake remote` commands.
   - Utilizes `cvd` to create build containers for recipes.
 - Chef Disk Imaging Tools
-  - Build disk images using yaml files. (TODO: IMAGE_RECIPE.md)
+  - Build disk images using yaml files.
   - Supports deploying Chef Packages.
 - Chef Application Store
   - Create user, register a publisher name and login through `order`.
@@ -254,6 +254,10 @@ The 'serve' utility communicates with the 'served' daemon through a network prot
 of a computer. The serve protocol provides the ability to install, update and remove packages from the system. For
 more information about the 'served' daemon, see the README in directory daemons/served.
 
-<h1 align="center" style="margin-top: 0px;">Recipe Specification</h1>
+<h1 align="center" style="margin-top: 0px;">Package Recipe Specification</h1>
 
-See [RECIPE.md](RECIPE.md) for the specification of Chef Recipes.
+See [PACKAGE_RECIPE.md](docs/PACKAGE_RECIPE.md) for the specification of Chef Recipes.
+
+<h1 align="center" style="margin-top: 0px;">Image Recipe Specification</h1>
+
+See [IMAGE_RECIPE.md](docs/IMAGE_RECIPE.md) for the specification of Chef Image Recipes.
