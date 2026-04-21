@@ -505,6 +505,8 @@ Download the cryptographic proof (signature) for a specific package revision. Th
 #### Response `200 OK`
 
 Binary proof data (`application/octet-stream`). The client streams this to a file or memory buffer.
+This response is not the same format as the local developer `.proof` file written by `bake sign`.
+For that JSON file format, see [PROOF_FORMAT.md](PROOF_FORMAT.md).
 
 #### Error responses
 

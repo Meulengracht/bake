@@ -261,3 +261,8 @@ See [PACKAGE_RECIPE.md](docs/PACKAGE_RECIPE.md) for the specification of Chef Re
 <h1 align="center" style="margin-top: 0px;">Image Recipe Specification</h1>
 
 See [IMAGE_RECIPE.md](docs/IMAGE_RECIPE.md) for the specification of Chef Image Recipes.
+
+<h1 align="center" style="margin-top: 0px;">Proof Format</h1>
+
+See [PROOF_FORMAT.md](docs/PROOF_FORMAT.md) for the format written by
+`bake sign` when it emits local `.proof` files next to package artifacts.
