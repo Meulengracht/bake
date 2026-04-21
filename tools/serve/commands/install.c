@@ -215,7 +215,7 @@ static int __local_session_start(
         return status;
     }
 
-    status = chef_served_install_local_begin_result(client, &context, &session);
+    status = chef_served_install_local_begin_result(client, &context, session);
     if (status) {
         return status;
     }
