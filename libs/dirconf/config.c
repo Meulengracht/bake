@@ -247,7 +247,7 @@ const char* chef_config_get_string(const struct chef_config* config, void* secti
 {
     json_t* sectionObject = section;
     json_t* keyObject;
-    VLOG_DEBUG("config", "chef_config_get_string(section=%s, key=%s)\n", section, key);
+    VLOG_DEBUG("config", "chef_config_get_string(key=%s)\n", key);
 
     if (key == NULL) {
         return NULL;
@@ -267,7 +267,7 @@ const char* chef_config_get_string(const struct chef_config* config, void* secti
 int chef_config_set_string(struct chef_config* config, void* section, const char* key, const char* value)
 {
     json_t* sectionObject = section;
-    VLOG_DEBUG("config", "chef_config_set_string(section=%s, key=%s, value=%s)\n", section, key, value);
+    VLOG_DEBUG("config", "chef_config_set_string(key=%s, value=%s)\n", key, value);
 
     if (key == NULL) {
         VLOG_ERROR("config", "chef_config_set_string: key is NULL\n");

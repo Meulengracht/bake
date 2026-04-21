@@ -21,6 +21,8 @@
 #include <chef/package_manifest.h>
 #include <chef/platform.h>
 #include <errno.h>
+#include <openssl/decoder.h>
+#include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <stdio.h>
@@ -63,6 +65,7 @@ static void __cleanup_dev_proof_options(struct __dev_proof_options* options)
         return;
     }
 
+    free(options->developer_identity);
     free(options->public_key_path);
     free(options->private_key_path);
     memset(options, 0, sizeof(struct __dev_proof_options));
@@ -96,6 +99,9 @@ static int __load_dev_proof_options(struct __dev_proof_options* options)
         errno = EINVAL;
         return -1;
     }
+
+    VLOG_DEBUG("bake", "loaded developer proof options: identity=%s, public_key_path=%s, private_key_path=%s\n",
+               options->developer_identity, options->public_key_path, options->private_key_path);
     return 0;
 }
 
@@ -116,22 +122,6 @@ static int __encode_base64(const unsigned char* data, size_t dataLength, char** 
     }
 
     *encodedOut = encoded;
-    return 0;
-}
-
-static int __read_file(const char* path, unsigned char** bufferOut, size_t* sizeOut)
-{
-    void*  buffer;
-    size_t size;
-    int    status;
-
-    status = platform_readfile(path, &buffer, &size);
-    if (status != 0) {
-        return status;
-    }
-
-    *bufferOut = buffer;
-    *sizeOut = size;
     return 0;
 }
 
@@ -178,6 +168,66 @@ static int __calculate_file_sha512(const char* path, unsigned char hash[EVP_MAX_
     return 0;
 }
 
+static const char* __openssl_error_string(char* buffer, size_t len)
+{
+    unsigned long errorCode = ERR_get_error();
+
+    if (errorCode == 0) {
+        return "no OpenSSL error details";
+    }
+
+    ERR_error_string_n(errorCode, buffer, len - 1);
+    return buffer;
+}
+
+static int __private_key_uses_openssh_format(const char* privateKeyPath)
+{
+    char  header[64] = { 0 };
+    FILE* file;
+
+    file = fopen(privateKeyPath, "rb");
+    if (file == NULL) {
+        return 0;
+    }
+
+    if (fgets(header, sizeof(header), file) == NULL) {
+        fclose(file);
+        return 0;
+    }
+
+    fclose(file);
+    return strcmp(header, "-----BEGIN OPENSSH PRIVATE KEY-----\n") == 0 ? 1 : 0;
+}
+
+static int __load_private_key(BIO* keybio, EVP_PKEY** pkeyOut, char* errorBuffer, size_t errorBufferLength)
+{
+    OSSL_DECODER_CTX* dctx;
+    EVP_PKEY*         pkey = NULL;
+
+    dctx = OSSL_DECODER_CTX_new_for_pkey(
+        &pkey,
+        NULL,
+        NULL,
+        NULL,
+        OSSL_KEYMGMT_SELECT_PRIVATE_KEY | OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS,
+        NULL,
+        NULL
+    );
+    if (dctx == NULL) {
+        VLOG_ERROR("bake", "failed to create private key decoder: %s\n", __openssl_error_string(errorBuffer, errorBufferLength));
+        return -1;
+    }
+
+    if (OSSL_DECODER_from_bio(dctx, keybio) != 1) {
+        OSSL_DECODER_CTX_free(dctx);
+        return -1;
+    }
+
+    OSSL_DECODER_CTX_free(dctx);
+    *pkeyOut = pkey;
+    return 0;
+}
+
 static int __sign_hash(const char* privateKeyPath, const unsigned char* hash, size_t hashLength, char** signatureOut)
 {
     BIO*           keybio;
@@ -186,46 +236,74 @@ static int __sign_hash(const char* privateKeyPath, const unsigned char* hash, si
     unsigned char* signature = NULL;
     size_t         signatureLength = 0;
     char*          encoded = NULL;
+    char           errorBuffer[256] = { 0 };
     int            status = -1;
+    VLOG_DEBUG("bake", "__sign_hash(privateKey=%s)\n", privateKeyPath);
 
     keybio = BIO_new_file(privateKeyPath, "rb");
     if (keybio == NULL) {
+        VLOG_ERROR(
+            "bake",
+            "failed to open private key %s\n", 
+            privateKeyPath
+        );
         return -1;
     }
 
-    pkey = PEM_read_bio_PrivateKey(keybio, NULL, NULL, NULL);
-    BIO_free_all(keybio);
-    if (pkey == NULL) {
+    if (__load_private_key(keybio, &pkey, errorBuffer, sizeof(errorBuffer)) != 0) {
+        if (__private_key_uses_openssh_format(privateKeyPath)) {
+            VLOG_ERROR(
+                "bake",
+                "private key %s uses OpenSSH private-key format; bake sign expects a PEM-encoded private key\n",
+                privateKeyPath
+            );
+        }
+        VLOG_ERROR(
+            "bake",
+            "failed to read private key from %s: %s\n",
+            privateKeyPath,
+            __openssl_error_string(errorBuffer, sizeof(errorBuffer))
+        );
+        BIO_free_all(keybio);
         return -1;
     }
+
+    BIO_free_all(keybio);
 
     mdctx = EVP_MD_CTX_new();
     if (mdctx == NULL) {
+        VLOG_ERROR("bake", "failed to create message digest context: %s\n", __openssl_error_string(errorBuffer, sizeof(errorBuffer)));
         goto cleanup;
     }
 
-    if (EVP_DigestSignInit(mdctx, NULL, EVP_sha512(), NULL, pkey) != 1) {
+    if (EVP_DigestSignInit(mdctx, NULL, EVP_sha512(), NULL, pkey) <= 0) {
+        VLOG_ERROR("bake", "failed to initialize digest sign context: %s\n", __openssl_error_string(errorBuffer, sizeof(errorBuffer)));
         goto cleanup;
     }
 
-    if (EVP_DigestSignUpdate(mdctx, hash, hashLength) != 1) {
+    if (EVP_DigestSignUpdate(mdctx, hash, hashLength) <= 0) {
+        VLOG_ERROR("bake", "failed to update digest sign context: %s\n", __openssl_error_string(errorBuffer, sizeof(errorBuffer)));
         goto cleanup;
     }
 
-    if (EVP_DigestSignFinal(mdctx, NULL, &signatureLength) != 1) {
+    if (EVP_DigestSignFinal(mdctx, NULL, &signatureLength) <= 0) {
+        VLOG_ERROR("bake", "failed to finalize digest sign context: %s\n", __openssl_error_string(errorBuffer, sizeof(errorBuffer)));
         goto cleanup;
     }
 
     signature = malloc(signatureLength);
     if (signature == NULL) {
+        VLOG_ERROR("bake", "failed to allocate memory for signature\n");
         goto cleanup;
     }
 
-    if (EVP_DigestSignFinal(mdctx, signature, &signatureLength) != 1) {
+    if (EVP_DigestSignFinal(mdctx, signature, &signatureLength) <= 0) {
+        VLOG_ERROR("bake", "failed to finalize digest sign context: %s\n", __openssl_error_string(errorBuffer, sizeof(errorBuffer)));
         goto cleanup;
     }
 
-    if (__encode_base64(signature, signatureLength, &encoded) != 0) {
+    if (__encode_base64(signature, signatureLength, &encoded)) {
+        VLOG_ERROR("bake", "failed to encode signature\n");
         goto cleanup;
     }
 
@@ -250,39 +328,50 @@ static void __developer_proof_cleanup(struct __developer_proof* proof)
     free(proof->hash);
     free(proof->public_key);
     free(proof->signature);
-    memset(proof, 0, sizeof(struct __developer_proof));
 }
 
 static int __create_developer_proof(const char* packPath, const struct __dev_proof_options* options, struct __developer_proof* proof)
 {
-    unsigned char* publicKeyBuffer;
+    void*          publicKeyBuffer;
     size_t         publicKeyLength;
     unsigned char  hash[EVP_MAX_MD_SIZE];
     unsigned int   hashLength;
     int            status;
+    VLOG_DEBUG("bake", "__create_developer_proof(packPath=%s)\n", packPath);
 
     memset(proof, 0, sizeof(struct __developer_proof));
 
-    status = __read_file(options->public_key_path, &publicKeyBuffer, &publicKeyLength);
-    if (status != 0) {
+    status = platform_readfile(options->public_key_path, &publicKeyBuffer, &publicKeyLength);
+    if (status) {
+        VLOG_ERROR("bake", "failed to read public key from %s\n", options->public_key_path);
         return status;
     }
 
     status = __calculate_file_sha512(packPath, hash, &hashLength);
-    if (status == 0) {
-        status = __encode_base64(hash, hashLength, &proof->hash);
-    }
-    if (status == 0) {
-        status = __encode_base64(publicKeyBuffer, publicKeyLength, &proof->public_key);
-    }
-    if (status == 0) {
-        status = __sign_hash(options->private_key_path, hash, hashLength, &proof->signature);
+    if (status) {
+        VLOG_ERROR("bake", "failed to calculate hash for %s\n", packPath);
+        goto cleanup;
     }
 
-    free(publicKeyBuffer);
-    if (status != 0) {
-        __developer_proof_cleanup(proof);
+    status = __encode_base64(hash, hashLength, &proof->hash);
+    if (status) {
+        VLOG_ERROR("bake", "failed to encode hash for %s\n", packPath);
+        goto cleanup;
     }
+
+    status = __encode_base64((const unsigned char*)publicKeyBuffer, publicKeyLength, &proof->public_key);
+    if (status) {
+        VLOG_ERROR("bake", "failed to encode public key for %s\n", packPath);
+        goto cleanup;
+    }
+    
+    status = __sign_hash(options->private_key_path, hash, hashLength, &proof->signature);
+    if (status) {
+        VLOG_ERROR("bake", "failed to sign hash for %s\n", packPath);
+    }
+
+cleanup:
+    free(publicKeyBuffer);
     return status;
 }
 
@@ -295,15 +384,18 @@ static int __write_developer_proof_file(
     char* proofPath;
     FILE* file;
 
-    proofPath = malloc(strlen(packPath) + strlen(".proof") + 1);
+    // <pack-path>.proof
+    proofPath = malloc(strlen(packPath) + 6 + 1);
     if (proofPath == NULL) {
+        VLOG_ERROR("bake", "failed to allocate memory for proof path\n");
         return -1;
     }
 
     sprintf(proofPath, "%s.proof", packPath);
     file = fopen(proofPath, "wb");
-    free(proofPath);
     if (file == NULL) {
+        VLOG_ERROR("bake", "failed to open proof file %s for writing\n", proofPath);
+        free(proofPath);
         return -1;
     }
 
@@ -325,9 +417,8 @@ static int __write_developer_proof_file(
         proof->signature
     );
 
-    if (fclose(file) != 0) {
-        return -1;
-    }
+    fclose(file);
+    free(proofPath);
     return 0;
 }
 
@@ -351,6 +442,7 @@ int bake_write_dev_proof(const char* packPath)
 
     status = __load_dev_proof_options(&options);
     if (status) {
+        VLOG_ERROR("bake", "failed to load proof configuration\n");
         return status;
     }
 
@@ -361,9 +453,12 @@ int bake_write_dev_proof(const char* packPath)
     }
 
     status = __create_developer_proof(packPath, &options, &proof);
-    if (status == 0) {
-        status = __write_developer_proof_file(packPath, manifest->name, &options, &proof);
+    if (status) {
+        VLOG_ERROR("bake", "failed to generate proof for %s\n", packPath);
+        goto cleanup;
     }
+
+    status = __write_developer_proof_file(packPath, manifest->name, &options, &proof);
     if (status) {
         VLOG_ERROR("bake", "unable to write developer proof for %s\n", packPath);
     }

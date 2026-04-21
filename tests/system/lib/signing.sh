@@ -52,7 +52,7 @@ setup_test_signing_identity() {
     fi
 
     if [[ ! -e "$key_path" ]]; then
-        if ! "$keygen" -q -t rsa -b 4096 -f "$key_path" -N "" >/dev/null 2>&1; then
+        if ! "$keygen" -q -m PEM -t rsa -b 4096 -f "$key_path" -N "" >/dev/null 2>&1; then
             echo "ERROR: failed to generate RSA keypair at $key_path" >&2
             return 1
         fi
