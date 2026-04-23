@@ -1,0 +1,128 @@
+name: Windows Base Archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Logical base name to construct
+        required: true
+        default: windows:ltsc2022
+      image:
+        description: Source Windows container image
+        required: true
+        default: mcr.microsoft.com/windows:ltsc2022
+
+# also mcr.microsoft.com/windows/nanoserver:ltsc2022
+# and mcr.microsoft.com/windows/servercore:ltsc2022
+# are supported
+
+jobs:
+  build-windows-base:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      BUILD_TYPE: Release
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Windows dependencies
+      run: |
+        vcpkg install --triplet x64-windows
+
+    - name: Configure CMake
+      run: |
+        cmake -B "${{ github.workspace }}/build" -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}" -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+
+    - name: Build mkwbase
+      run: |
+        cmake --build "${{ github.workspace }}/build" --config "${{ env.BUILD_TYPE }}" --target mkwbase
+
+    - name: Resolve mkwbase path
+      id: resolve-mkwbase
+      run: |
+        $candidates = @(
+          (Join-Path $env:GITHUB_WORKSPACE 'build\bin\mkwbase.exe'),
+          (Join-Path $env:GITHUB_WORKSPACE 'build\bin\Release\mkwbase.exe'),
+          (Join-Path $env:GITHUB_WORKSPACE 'build\Release\mkwbase.exe')
+        )
+
+        $mkwbasePath = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $mkwbasePath) {
+          throw 'mkwbase.exe not found in the expected build output locations.'
+        }
+
+        "path=$mkwbasePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+    - name: Install Docker
+      run: |
+        $dockerCommand = Get-Command docker -ErrorAction SilentlyContinue
+        $dockerReady = $false
+
+        if ($dockerCommand) {
+          docker version
+          if ($LASTEXITCODE -eq 0) {
+            $dockerReady = $true
+          }
+        }
+
+        if (-not $dockerReady) {
+          $dockerService = Get-Service docker, com.docker.service -ErrorAction SilentlyContinue | Select-Object -First 1
+
+          if (-not $dockerCommand -or -not $dockerService) {
+          Write-Host 'Installing Docker engine with DockerMsftProvider'
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force | Out-Null
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name DockerMsftProvider -Repository PSGallery -Force
+          Install-Package -Name docker -ProviderName DockerMsftProvider -Force
+          $dockerCommand = Get-Command docker -ErrorAction SilentlyContinue
+            $dockerService = Get-Service docker, com.docker.service -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+
+          if (-not $dockerCommand) {
+            throw 'docker.exe is not available after installation.'
+          }
+
+          if (-not $dockerService) {
+            throw 'Docker service is not available after installation.'
+          }
+
+          if ($dockerService.Status -ne 'Running') {
+            Start-Service $dockerService.Name
+            $dockerService.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+          }
+
+          docker version
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Docker daemon is unavailable after installation or startup.'
+          }
+        }
+
+        docker version
+
+    - name: Construct base archive
+      id: construct
+      run: |
+        $outputDir = Join-Path $env:RUNNER_TEMP 'windows-base'
+        $archivePath = Join-Path $env:RUNNER_TEMP 'windows-ltsc2022-base.tar.xz'
+
+        & "${{ github.workspace }}/.github/scripts/construct-windows-base.ps1" `
+          -MkwbasePath "${{ steps.resolve-mkwbase.outputs.path }}" `
+          -Base "${{ inputs.base }}" `
+          -Image "${{ inputs.image }}" `
+          -OutputDir $outputDir `
+          -ArchivePath $archivePath
+
+    - name: Upload base archive
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-base-archive
+        path: ${{ steps.construct.outputs.archive_path }}
+        if-no-files-found: error
