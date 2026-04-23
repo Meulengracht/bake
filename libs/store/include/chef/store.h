@@ -19,6 +19,7 @@
 #ifndef __LIBSTORE_H__
 #define __LIBSTORE_H__
 
+#include <chef/package.h>
 #include <chef/list.h>
 #include <chef/observer.h>
 #include <stdio.h>
@@ -49,7 +50,7 @@ struct store_proof_publisher {
 
 struct store_proof_package {
     struct store_proof_header header;
-    const char*               signature;
+    struct chef_package_proof proof;
 };
 
 union store_proof {

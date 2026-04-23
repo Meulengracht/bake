@@ -102,7 +102,7 @@ static int __verify_package(const char* path, const char* proof)
     return 0;
 }
 
-static int __upload_local_resource(
+static int __local_session_upload(
     gracht_client_t* client,
     const char*      resourceId,
     const char*      path)
@@ -116,17 +116,13 @@ static int __upload_local_resource(
     unsigned int                  index = 0;
     int                           status = -1;
 
-    if (resourceId == NULL || resourceId[0] == '\0' || path == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
     status = platform_stat(path, &stats);
-    if (status != 0) {
+    if (status) {
         return status;
     }
 
-    if (stats.size > UINT_MAX) {
+    // Maximum upload size is 4GB for now
+    if (stats.size > UINT32_MAX) {
         errno = EFBIG;
         return -1;
     }
@@ -160,7 +156,7 @@ static int __upload_local_resource(
         }
 
         status = chef_served_local_upload_write_chunk(client, NULL, &sessionId[0], index, &buffer[0], (uint32_t)bytesRead);
-        if (status != 0) {
+        if (status) {
             goto cleanup;
         }
 
@@ -168,12 +164,12 @@ static int __upload_local_resource(
         index++;
     }
 
-    if (status != 0) {
+    if (status) {
         goto cleanup;
     }
 
     status = chef_served_local_upload_finish(client, NULL, &sessionId[0]);
-    if (status != 0) {
+    if (status) {
         goto cleanup;
     }
 
@@ -186,89 +182,112 @@ cleanup:
     return status;
 }
 
+static int __local_session_start(
+    gracht_client_t*                          client,
+    const char*                               packagePath,
+    const char*                               proofPath,
+    struct chef_served_install_local_session* session)
+{
+    struct gracht_message_context            context;
+    struct chef_served_install_local_options options = { 0 };
+    struct platform_stat                     stats;
+    int                                      status;
+
+    status = platform_stat(packagePath, &stats);
+    if (status) {
+        return status;
+    }
+    options.package_size = (size_t)stats.size;
+    
+    status = platform_stat(proofPath, &stats);
+    if (status) {
+        return status;
+    }
+    options.proof_size = (size_t)stats.size;
+
+    status = chef_served_install_local_begin(client, &context, &options);
+    if (status) {
+        return status;
+    }
+
+    status = gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    if (status) {
+        return status;
+    }
+
+    status = chef_served_install_local_begin_result(client, &context, session);
+    if (status) {
+        return status;
+    }
+    return 0;
+}
+
+static int  __local_session_commit(
+    gracht_client_t* client,
+    const char*      importId,
+    unsigned int*    transactionIdOut)
+{
+    struct gracht_message_context context;
+    int                           status;
+
+    status = chef_served_install_local_end(client, &context, importId);
+    if (status) {
+        return status;
+    }
+
+    status = gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
+    if (status) {
+        return status;
+    }
+
+    status = chef_served_install_local_end_result(client, &context, transactionIdOut);
+    if (status) {
+        return status;
+    }
+    return 0;
+}
+
 static int __install_local_package(
     gracht_client_t* client,
     const char*      packagePath,
     const char*      proofPath,
     unsigned int*    transactionIdOut)
 {
-    struct gracht_message_context        context;
-    struct chef_served_install_local_options options = { 0 };
     struct chef_served_install_local_session session = { 0 };
-    struct platform_stat                 packageStats;
-    struct platform_stat                 proofStats;
-    int                                  status;
+    int                                      status;
 
     if (transactionIdOut != NULL) {
         *transactionIdOut = 0;
     }
 
-    status = platform_stat(packagePath, &packageStats);
-    if (status != 0) {
+    status = __local_session_start(client, packagePath, proofPath, &session);
+    if (status) {
         return status;
     }
 
-    options.package_size = (size_t)packageStats.size;
-    if (proofPath != NULL && proofPath[0] != '\0') {
-        status = platform_stat(proofPath, &proofStats);
-        if (status != 0) {
-            return status;
-        }
-        options.proof_size = (size_t)proofStats.size;
-    }
-
-    status = chef_served_install_local_begin(client, &context, &options);
-    if (status != 0) {
-        return status;
-    }
-
-    status = gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
-    if (status != 0) {
-        return status;
-    }
-
-    status = chef_served_install_local_begin_result(client, &context, &session);
-    if (status != 0) {
-        return status;
-    }
-
-    if (session.import_id == NULL || session.package_resource_id == NULL) {
+    if (session.import_id == NULL || 
+        session.package_resource_id == NULL || session.package_resource_id[0] == '\0' ||
+        session.proof_resource_id == NULL || session.proof_resource_id[0] == '\0') {
         chef_served_install_local_session_destroy(&session);
         errno = EPROTO;
         return -1;
     }
 
-    status = __upload_local_resource(client, session.package_resource_id, packagePath);
+    status = __local_session_upload(client, session.package_resource_id, packagePath);
     if (status != 0) {
         chef_served_install_local_cancel(client, NULL, session.import_id);
         chef_served_install_local_session_destroy(&session);
         return status;
     }
 
-    if (proofPath != NULL && proofPath[0] != '\0') {
-        if (session.proof_resource_id == NULL || session.proof_resource_id[0] == '\0') {
-            chef_served_install_local_cancel(client, NULL, session.import_id);
-            chef_served_install_local_session_destroy(&session);
-            errno = EPROTO;
-            return -1;
-        }
-
-        status = __upload_local_resource(client, session.proof_resource_id, proofPath);
-        if (status != 0) {
-            chef_served_install_local_cancel(client, NULL, session.import_id);
-            chef_served_install_local_session_destroy(&session);
-            return status;
-        }
+    status = __local_session_upload(client, session.proof_resource_id, proofPath);
+    if (status != 0) {
+        chef_served_install_local_cancel(client, NULL, session.import_id);
+        chef_served_install_local_session_destroy(&session);
+        return status;
     }
 
-    status = chef_served_install_local_end(client, &context, session.import_id);
-    if (status == 0) {
-        status = gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
-    }
-    if (status == 0 && transactionIdOut != NULL) {
-        status = chef_served_install_local_end_result(client, &context, transactionIdOut);
-    }
-
+    status = __local_session_commit(client, session.import_id, transactionIdOut);
     chef_served_install_local_session_destroy(&session);
     return status;
 }

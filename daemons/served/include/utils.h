@@ -31,11 +31,6 @@ struct chef_config_address;
 extern gracht_server_t* served_gracht_server(void);
 
 /**
- * @brief Verifies a publisher against the database of proofs. 
- */
-extern int utils_verify_publisher(const char* publisher);
-
-/**
  * @brief Verifies the package and it's publisher against the database of proofs.
  */
 extern int utils_verify_package(const char* publisher, const char* package, int revision);

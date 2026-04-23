@@ -244,7 +244,6 @@ static int __reconstruct_transactions_from_db(void)
 {
     struct served_transaction* transactions;
     int                        transactionsCount;
-    struct served_transaction* runtimes;
     int                        status;
 
     status = served_state_get_transactions(&transactions, &transactionsCount);
@@ -253,19 +252,13 @@ static int __reconstruct_transactions_from_db(void)
         return -1;
     }
 
-    runtimes = calloc(transactionsCount, sizeof(struct served_transaction));
-    if (runtimes == NULL) {
-        VLOG_ERROR("served", "__reconstruct_transactions_from_db: failed to allocate runtime transactions\n");
-        return -1;
-    }
-
     mtx_lock(&g_queue_lock);
     for (int i = 0; i < transactionsCount; i++) {
         struct served_transaction* persisted = &transactions[i];
-        struct served_transaction* runtime = &runtimes[i];
+        struct served_transaction* runtime;
         
         // Construct transaction from persisted data
-        served_transaction_construct(runtime, &(struct served_transaction_options) {
+        runtime = served_transaction_new(&(struct served_transaction_options) {
             .id = persisted->id,
             .name = persisted->name,
             .description = persisted->description,
@@ -273,6 +266,15 @@ static int __reconstruct_transactions_from_db(void)
             .initialState = served_sm_current_state(&persisted->sm),
             .wait = persisted->wait
         });
+        if (runtime == NULL) {
+            VLOG_ERROR(
+                "served",
+                "__reconstruct_transactions_from_db: failed to allocate runtime wrapper for transaction %u\n",
+                persisted->id
+            );
+            mtx_unlock(&g_queue_lock);
+            return -1;
+        }
         
         // Add to appropriate queue based on wait state
         if (runtime->wait.type == SERVED_TRANSACTION_WAIT_TYPE_NONE) {
@@ -449,9 +451,10 @@ void served_runner_execute(void)
     mtx_unlock(&g_queue_lock);
 }
 
-unsigned int served_transaction_create(
+static unsigned int __served_transaction_create(
     struct served_transaction_options* options,
-    struct state_transaction*          transactionState)
+    struct state_transaction*          transactionState,
+    int                                queueLocked)
 {
     struct served_transaction* txn;
     unsigned int               transactionId = 0;
@@ -491,12 +494,30 @@ unsigned int served_transaction_create(
     served_state_unlock();
 
     // Add to active queue (new transactions always start active)
-    mtx_lock(&g_queue_lock);
+    if (!queueLocked) {
+        mtx_lock(&g_queue_lock);
+    }
     list_add(&g_active_transactions, &txn->list_header);
-    mtx_unlock(&g_queue_lock);
+    if (!queueLocked) {
+        mtx_unlock(&g_queue_lock);
+    }
     
     VLOG_DEBUG("served", "served_transaction_create: created transaction %u\n", transactionId);
     return transactionId;
+}
+
+unsigned int served_transaction_create(
+    struct served_transaction_options* options,
+    struct state_transaction*          transactionState)
+{
+    return __served_transaction_create(options, transactionState, 0);
+}
+
+unsigned int served_transaction_create_locked(
+    struct served_transaction_options* options,
+    struct state_transaction*          transactionState)
+{
+    return __served_transaction_create(options, transactionState, 1);
 }
 
 void served_transaction_construct(struct served_transaction* transaction, struct served_transaction_options* options)
