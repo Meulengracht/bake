@@ -36,8 +36,6 @@ static void __print_help(void)
     printf("      Show the registered base image path for one base\n");
     printf("  import <base> <source-dir>\n");
     printf("      Normalize and register a Windows base directory for bake\n");
-    printf("  construct <base> <container-image>\n");
-    printf("      Deprecated runtime path; use mkwbase construct --base <base> --image <image> --output <dir> and then import\n");
 }
 
 static int __path_exists(const char* path)
@@ -436,13 +434,6 @@ int base_main(int argc, char** argv, struct __bakelib_context* context, struct b
             return -1;
         }
         return __register_base(base_name, output_dir);
-    }
-
-    if (!strcmp(command, "construct")) {
-        free(output_dir);
-        fprintf(stderr, "bakectl: base construction is no longer performed at runtime\n");
-        fprintf(stderr, "bakectl: use 'mkwbase construct --base <base> --image <image> --output <dir>' and then 'bakectl base import <base> <dir>'\n");
-        return -1;
     }
 
     free(output_dir);
