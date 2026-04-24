@@ -149,6 +149,20 @@ static void __report_errno_copy(const char* operation, const char* source, const
         target != NULL ? target : "(null)",
         errno,
         __errno_message());
+
+#if defined(_WIN32) || defined(_WIN64)
+    {
+        unsigned long win32_error = platform_copydir_lasterror();
+        const char*   win32_operation = platform_copydir_lasterror_operation();
+
+        if (win32_error != 0 && win32_operation != NULL) {
+            fprintf(stderr,
+                "mkwbase: copydir win32 failure during %s (win32=%lu)\n",
+                win32_operation,
+                win32_error);
+        }
+    }
+#endif
 }
 
 static int __path_exists(const char* path)

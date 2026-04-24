@@ -39,12 +39,28 @@ static int __path_is_directory(const char* path)
 #if defined(_WIN32) || defined(_WIN64)
 #define PLATFORM_COPYDIR_BUFFER_SIZE (128 * 1024)
 
+static DWORD       __copydir_last_error;
+static const char* __copydir_last_operation;
+
 struct __backup_privilege_scope {
     HANDLE           token;
     TOKEN_PRIVILEGES previous_state;
     DWORD            previous_state_size;
     int              restore;
 };
+
+static void __set_copydir_error(const char* operation, DWORD error)
+{
+    __copydir_last_operation = operation;
+    __copydir_last_error = error;
+    __set_errno_from_windows_error(error);
+}
+
+static void __clear_copydir_error(void)
+{
+    __copydir_last_operation = NULL;
+    __copydir_last_error = ERROR_SUCCESS;
+}
 
 static void __set_errno_from_windows_error(DWORD error)
 {
@@ -323,7 +339,7 @@ static int __mkdir_recursive_wide(const wchar_t* path)
             if (error != ERROR_ALREADY_EXISTS) {
                 *p = separator;
                 free(working);
-                __set_errno_from_windows_error(error);
+                __set_copydir_error("create destination directory", error);
                 return -1;
             }
         }
@@ -335,7 +351,7 @@ static int __mkdir_recursive_wide(const wchar_t* path)
 
         if (error != ERROR_ALREADY_EXISTS) {
             free(working);
-            __set_errno_from_windows_error(error);
+            __set_copydir_error("create destination directory", error);
             return -1;
         }
     }
@@ -409,7 +425,7 @@ static HANDLE __open_directory_handle(const wchar_t* path)
 {
     return CreateFileW(
         path,
-        FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES,
+    GENERIC_READ,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         NULL,
         OPEN_EXISTING,
@@ -433,7 +449,7 @@ static int __copyfile_windows(const wchar_t* source, const wchar_t* destination)
         FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_SEQUENTIAL_SCAN,
         NULL);
     if (source_handle == INVALID_HANDLE_VALUE) {
-        __set_errno_from_windows_error(GetLastError());
+        __set_copydir_error("open source file", GetLastError());
         return -1;
     }
 
@@ -446,7 +462,7 @@ static int __copyfile_windows(const wchar_t* source, const wchar_t* destination)
         FILE_ATTRIBUTE_NORMAL,
         NULL);
     if (destination_handle == INVALID_HANDLE_VALUE) {
-        __set_errno_from_windows_error(GetLastError());
+        __set_copydir_error("open destination file", GetLastError());
         CloseHandle(source_handle);
         return -1;
     }
@@ -463,7 +479,7 @@ static int __copyfile_windows(const wchar_t* source, const wchar_t* destination)
         DWORD bytes_read = 0;
 
         if (!ReadFile(source_handle, buffer, PLATFORM_COPYDIR_BUFFER_SIZE, &bytes_read, NULL)) {
-            __set_errno_from_windows_error(GetLastError());
+            __set_copydir_error("read source file", GetLastError());
             goto cleanup;
         }
         if (bytes_read == 0) {
@@ -482,7 +498,7 @@ static int __copyfile_windows(const wchar_t* source, const wchar_t* destination)
                         bytes_read - total_written,
                         &bytes_written,
                         NULL)) {
-                    __set_errno_from_windows_error(GetLastError());
+                    __set_copydir_error("write destination file", GetLastError());
                     goto cleanup;
                 }
                 total_written += bytes_written;
@@ -523,7 +539,7 @@ static int __copydir_windows(const wchar_t* source, const wchar_t* destination)
     dir_handle = __open_directory_handle(source);
     if (dir_handle == INVALID_HANDLE_VALUE) {
         DWORD error = GetLastError();
-        __set_errno_from_windows_error(error);
+        __set_copydir_error("open source directory", error);
         return -1;
     }
 
@@ -532,7 +548,7 @@ static int __copydir_windows(const wchar_t* source, const wchar_t* destination)
             DWORD error = GetLastError();
 
             if (error != ERROR_NO_MORE_FILES) {
-                __set_errno_from_windows_error(error);
+                __set_copydir_error("enumerate source directory", error);
                 status = -1;
             }
             break;
@@ -665,6 +681,7 @@ int platform_copydir(const char* source, const char* destination)
     wchar_t*                        destination_wide;
     int                             status;
 
+    __clear_copydir_error();
     source_wide = __path_to_normalized_wide(source);
     destination_wide = __path_to_normalized_wide(destination);
     if (source_wide == NULL || destination_wide == NULL) {
@@ -682,5 +699,23 @@ int platform_copydir(const char* source, const char* destination)
     return status;
 #else
     return __copydir_linux(source, destination);
+#endif
+}
+
+unsigned long platform_copydir_lasterror(void)
+{
+#if defined(_WIN32) || defined(_WIN64)
+    return (unsigned long)__copydir_last_error;
+#else
+    return 0;
+#endif
+}
+
+const char* platform_copydir_lasterror_operation(void)
+{
+#if defined(_WIN32) || defined(_WIN64)
+    return __copydir_last_operation;
+#else
+    return NULL;
 #endif
 }

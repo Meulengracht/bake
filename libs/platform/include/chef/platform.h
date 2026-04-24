@@ -262,6 +262,8 @@ extern void platform_getfiles_destroy(struct list* files);
 extern int platform_cpucount(void);
 extern int platform_copyfile(const char* source, const char* destination);
 extern int platform_copydir(const char* source, const char* destination);
+extern unsigned long platform_copydir_lasterror(void);
+extern const char* platform_copydir_lasterror_operation(void);
 extern int platform_readfile(const char* path, void** bufferOut, size_t* lengthOut);
 extern int platform_writetextfile(const char* path, const char* text);
 extern char* platform_tmpdir(void);
