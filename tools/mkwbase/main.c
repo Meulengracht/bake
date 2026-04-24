@@ -165,101 +165,12 @@ static int __path_is_directory(const char* path)
     return (path != NULL && platform_stat(path, &st) == 0 && st.type == PLATFORM_FILETYPE_DIRECTORY) ? 1 : 0;
 }
 
-static int __ensure_parent_dir(const char* path)
-{
-    char* parent;
-    char* separator;
-
-    if (path == NULL || path[0] == '\0') {
-        errno = EINVAL;
-        return -1;
-    }
-
-    parent = platform_strdup(path);
-    if (parent == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    separator = strrchr(parent, '\\');
-    if (separator == NULL) {
-        separator = strrchr(parent, '/');
-    }
-
-    if (separator != NULL) {
-        *separator = '\0';
-        if (parent[0] != '\0' && platform_mkdir(parent) != 0) {
-            __report_errno_path("failed to create destination parent directory", parent);
-            free(parent);
-            return -1;
-        }
-    }
-
-    free(parent);
-    return 0;
-}
-
 static int __copy_directory_recursive(const char* source_dir, const char* target_dir)
 {
-    if (!__path_is_directory(source_dir)) {
-        fprintf(stderr, "mkwbase: source directory is missing or not a directory: %s\n", source_dir);
-        errno = ENOENT;
+    if (platform_copydir(source_dir, target_dir) != 0) {
+        __report_errno_copy("failed to copy directory", source_dir, target_dir);
         return -1;
     }
-
-    struct list files;
-    struct list_item* item;
-
-    if (platform_mkdir(target_dir) != 0) {
-        __report_errno_copy("failed to create target directory", source_dir, target_dir);
-        return -1;
-    }
-
-    list_init(&files);
-    if (platform_getfiles(source_dir, 1, &files) != 0) {
-        __report_errno_path("failed to enumerate directory contents", source_dir);
-        return -1;
-    }
-
-    list_foreach(&files, item) {
-        struct platform_file_entry* entry = (struct platform_file_entry*)item;
-        char*                       destination;
-
-        if (entry->type != PLATFORM_FILETYPE_FILE) {
-            continue;
-        }
-
-        destination = strpathcombine(target_dir, entry->sub_path != NULL ? entry->sub_path : entry->name);
-        if (destination == NULL) {
-            fprintf(stderr,
-                "mkwbase: failed to allocate destination path while copying %s into %s\n",
-                entry->path != NULL ? entry->path : "(null)",
-                target_dir != NULL ? target_dir : "(null)");
-            platform_getfiles_destroy(&files);
-            errno = ENOMEM;
-            return -1;
-        }
-
-        if (__ensure_parent_dir(destination) != 0) {
-            fprintf(stderr,
-                "mkwbase: failed to prepare destination directory for file copy %s -> %s\n",
-                entry->path != NULL ? entry->path : "(null)",
-                destination);
-            free(destination);
-            platform_getfiles_destroy(&files);
-            return -1;
-        }
-
-        if (platform_copyfile(entry->path, destination) != 0) {
-            __report_errno_copy("failed to copy file", entry->path, destination);
-            free(destination);
-            platform_getfiles_destroy(&files);
-            return -1;
-        }
-        free(destination);
-    }
-
-    platform_getfiles_destroy(&files);
     return 0;
 }
 

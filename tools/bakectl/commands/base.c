@@ -52,85 +52,6 @@ static int __path_is_directory(const char* path)
     return (path != NULL && platform_stat(path, &st) == 0 && st.type == PLATFORM_FILETYPE_DIRECTORY) ? 1 : 0;
 }
 
-static int __ensure_parent_dir(const char* path)
-{
-    char* parent;
-    char* separator;
-
-    if (path == NULL || path[0] == '\0') {
-        errno = EINVAL;
-        return -1;
-    }
-
-    parent = platform_strdup(path);
-    if (parent == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    separator = strrchr(parent, '\\');
-    if (separator == NULL) {
-        separator = strrchr(parent, '/');
-    }
-
-    if (separator != NULL) {
-        *separator = '\0';
-        if (parent[0] != '\0' && platform_mkdir(parent) != 0) {
-            free(parent);
-            return -1;
-        }
-    }
-
-    free(parent);
-    return 0;
-}
-
-static int __copy_directory_recursive(const char* source_dir, const char* target_dir)
-{
-    struct list files;
-    struct list_item* item;
-
-    if (!__path_is_directory(source_dir)) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    if (platform_mkdir(target_dir) != 0) {
-        return -1;
-    }
-
-    list_init(&files);
-    if (platform_getfiles(source_dir, 1, &files) != 0) {
-        return -1;
-    }
-
-    list_foreach(&files, item) {
-        struct platform_file_entry* entry = (struct platform_file_entry*)item;
-        char*                       destination;
-
-        if (entry->type != PLATFORM_FILETYPE_FILE) {
-            continue;
-        }
-
-        destination = strpathcombine(target_dir, entry->sub_path != NULL ? entry->sub_path : entry->name);
-        if (destination == NULL) {
-            platform_getfiles_destroy(&files);
-            errno = ENOMEM;
-            return -1;
-        }
-
-        if (__ensure_parent_dir(destination) != 0 || platform_copyfile(entry->path, destination) != 0) {
-            free(destination);
-            platform_getfiles_destroy(&files);
-            return -1;
-        }
-        free(destination);
-    }
-
-    platform_getfiles_destroy(&files);
-    return 0;
-}
-
 static char* __find_windowsfilter_root(const char* source_root)
 {
     char* candidate;
@@ -238,7 +159,7 @@ static int __normalize_base_directory(const char* base_name, const char* source_
         goto cleanup;
     }
 
-    if (__copy_directory_recursive(windowsfilter_root, target_rootfs) != 0) {
+    if (platform_copydir(windowsfilter_root, target_rootfs) != 0) {
         fprintf(stderr, "bakectl: failed to copy windowsfilter contents from %s\n", windowsfilter_root);
         free(target_rootfs);
         goto cleanup;
@@ -280,7 +201,7 @@ static int __normalize_base_directory(const char* base_name, const char* source_
             goto cleanup;
         }
 
-        if (__copy_directory_recursive(utilityvm_source, utilityvm_target) != 0) {
+        if (platform_copydir(utilityvm_source, utilityvm_target) != 0) {
             fprintf(stderr, "bakectl: failed to copy UtilityVM contents from %s\n", utilityvm_source);
             goto cleanup;
         }

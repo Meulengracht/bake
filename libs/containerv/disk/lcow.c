@@ -74,39 +74,6 @@ static char* __path_join3(const char* path1, const char* path2, const char* path
     return result;
 }
 
-static int __ensure_parent_dir(const char* path)
-{
-    char* parent;
-    char* separator;
-
-    if (path == NULL || path[0] == '\0') {
-        errno = EINVAL;
-        return -1;
-    }
-
-    parent = platform_strdup(path);
-    if (parent == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    separator = strrchr(parent, '\\');
-    if (separator == NULL) {
-        separator = strrchr(parent, '/');
-    }
-
-    if (separator != NULL) {
-        *separator = '\0';
-        if (parent[0] != '\0' && __ensure_dir(parent) != 0) {
-            free(parent);
-            return -1;
-        }
-    }
-
-    free(parent);
-    return 0;
-}
-
 static char* __find_optional_bundle_file(const char* image_path, const char* const* candidates)
 {
     for (int i = 0; candidates[i] != NULL; ++i) {
@@ -186,52 +153,6 @@ static char* __read_boot_parameters_file(const char* image_path)
         return NULL;
     }
     return text;
-}
-
-static int __copy_directory_recursive(const char* source_dir, const char* target_dir)
-{
-    struct list files;
-    struct list_item* item;
-
-    if (!__path_is_directory(source_dir)) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    if (__ensure_dir(target_dir) != 0) {
-        return -1;
-    }
-
-    list_init(&files);
-    if (platform_getfiles(source_dir, 1, &files) != 0) {
-        return -1;
-    }
-
-    list_foreach(&files, item) {
-        struct platform_file_entry* entry = (struct platform_file_entry*)item;
-        char*                       destination;
-
-        if (entry->type != PLATFORM_FILETYPE_FILE) {
-            continue;
-        }
-
-        destination = strpathcombine(target_dir, entry->sub_path != NULL ? entry->sub_path : entry->name);
-        if (destination == NULL) {
-            platform_getfiles_destroy(&files);
-            errno = ENOMEM;
-            return -1;
-        }
-
-        if (__ensure_parent_dir(destination) != 0 || platform_copyfile(entry->path, destination) != 0) {
-            free(destination);
-            platform_getfiles_destroy(&files);
-            return -1;
-        }
-        free(destination);
-    }
-
-    platform_getfiles_destroy(&files);
-    return 0;
 }
 
 static int __append_fragment(char* buffer, size_t buffer_size, size_t* index, const char* fragment)
@@ -460,7 +381,7 @@ int containerv_disk_lcow_import_uvm(const char* source_dir, char** image_path_ou
     }
 
     (void)platform_rmdir(target_dir);
-    if (__copy_directory_recursive(absolute_source, target_dir) != 0 || containerv_disk_lcow_validate_uvm(target_dir) != 0) {
+    if (platform_copydir(absolute_source, target_dir) != 0 || containerv_disk_lcow_validate_uvm(target_dir) != 0) {
         free(absolute_source);
         free(lcow_dir);
         free(uvm_dir);

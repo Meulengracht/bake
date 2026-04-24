@@ -261,6 +261,7 @@ extern int platform_getfiles(const char* path, int recursive, struct list* files
 extern void platform_getfiles_destroy(struct list* files);
 extern int platform_cpucount(void);
 extern int platform_copyfile(const char* source, const char* destination);
+extern int platform_copydir(const char* source, const char* destination);
 extern int platform_readfile(const char* path, void** bufferOut, size_t* lengthOut);
 extern int platform_writetextfile(const char* path, const char* text);
 extern char* platform_tmpdir(void);

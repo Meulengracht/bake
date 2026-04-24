@@ -1,4 +1,5 @@
 add_library(platform-ioutils STATIC
+    copydir.c
     copyfile.c
     getfiles.c
     readfile.c
