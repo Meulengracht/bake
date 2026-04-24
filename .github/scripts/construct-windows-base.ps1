@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$MkwbasePath,
     [string]$Base = 'windows:ltsc2022',
-    [string]$Image = 'mcr.microsoft.com/windows:ltsc2022',
+    [string]$Image = 'mcr.microsoft.com/windows/servercore:ltsc2022',
     [string]$OutputDir = 'C:\temp\windows-base',
     [string]$ArchivePath = 'C:\temp\windows-base.tar.xz'
 )

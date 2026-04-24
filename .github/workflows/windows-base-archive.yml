@@ -10,10 +10,12 @@ on:
       image:
         description: Source Windows container image
         required: true
-        default: mcr.microsoft.com/windows:ltsc2022
+        default: mcr.microsoft.com/windows/servercore:ltsc2022
 
-# also mcr.microsoft.com/windows/nanoserver:ltsc2022
-# and mcr.microsoft.com/windows/servercore:ltsc2022
+# windows:ltsc2022 defaults to the Server Core base image
+# mcr.microsoft.com/windows/servercore:ltsc2022
+# windows:nanoserver-ltsc2022 => mcr.microsoft.com/windows/nanoserver:ltsc2022
+# windows:servercore-ltsc2022 => mcr.microsoft.com/windows/servercore:ltsc2022
 # are supported
 
 jobs:

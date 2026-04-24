@@ -21,7 +21,7 @@ The current standalone producer is [tools/mkwbase/main.c](../../tools/mkwbase/ma
 Typical flow for the default LTSC 2022 Windows base:
 
 ```powershell
-mkwbase construct --base windows:ltsc2022 --image mcr.microsoft.com/windows:ltsc2022 --output C:\temp\windows-base
+mkwbase construct --base windows:ltsc2022 --image mcr.microsoft.com/windows/servercore:ltsc2022 --output C:\temp\windows-base
 bakectl base import windows:ltsc2022 C:\temp\windows-base
 ```
 

@@ -18,7 +18,7 @@ recipes:
       type: script
       script: |
         local root = build.paths.install()
-        local image = 'mcr.microsoft.com/windows:ltsc2022'
+        local image = 'mcr.microsoft.com/windows/servercore:ltsc2022'
 
         build.shell('powershell.exe', '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' ..
           "$ErrorActionPreference='Stop'; " ..
