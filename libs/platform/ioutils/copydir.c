@@ -42,6 +42,8 @@ static int __path_is_directory(const char* path)
 static DWORD       __copydir_last_error;
 static const char* __copydir_last_operation;
 
+static void __set_errno_from_windows_error(DWORD error);
+
 struct __backup_privilege_scope {
     HANDLE           token;
     TOKEN_PRIVILEGES previous_state;
@@ -392,7 +394,7 @@ static void __backup_privilege_begin(struct __backup_privilege_scope* scope)
         return;
     }
 
-    if (!LookupPrivilegeValueW(NULL, SE_BACKUP_NAME, &privilege_luid)) {
+    if (!LookupPrivilegeValueW(NULL, L"SeBackupPrivilege", &privilege_luid)) {
         __backup_privilege_end(scope);
         return;
     }
