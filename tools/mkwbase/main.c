@@ -123,6 +123,34 @@ static int __append_token(char* buffer, size_t buffer_size, size_t* index, const
     return __append_fragment(buffer, buffer_size, index, "\"");
 }
 
+static const char* __errno_message(void)
+{
+    const char* message = strerror(errno);
+
+    return message != NULL ? message : "unknown";
+}
+
+static void __report_errno_path(const char* operation, const char* path)
+{
+    fprintf(stderr,
+        "mkwbase: %s failed for %s (errno=%d: %s)\n",
+        operation,
+        path != NULL ? path : "(null)",
+        errno,
+        __errno_message());
+}
+
+static void __report_errno_copy(const char* operation, const char* source, const char* target)
+{
+    fprintf(stderr,
+        "mkwbase: %s failed (source=%s, target=%s, errno=%d: %s)\n",
+        operation,
+        source != NULL ? source : "(null)",
+        target != NULL ? target : "(null)",
+        errno,
+        __errno_message());
+}
+
 static int __path_exists(const char* path)
 {
     struct platform_stat st;
@@ -161,6 +189,7 @@ static int __ensure_parent_dir(const char* path)
     if (separator != NULL) {
         *separator = '\0';
         if (parent[0] != '\0' && platform_mkdir(parent) != 0) {
+            __report_errno_path("failed to create destination parent directory", parent);
             free(parent);
             return -1;
         }
@@ -172,20 +201,23 @@ static int __ensure_parent_dir(const char* path)
 
 static int __copy_directory_recursive(const char* source_dir, const char* target_dir)
 {
-    struct list files;
-    struct list_item* item;
-
     if (!__path_is_directory(source_dir)) {
+        fprintf(stderr, "mkwbase: source directory is missing or not a directory: %s\n", source_dir);
         errno = ENOENT;
         return -1;
     }
 
+    struct list files;
+    struct list_item* item;
+
     if (platform_mkdir(target_dir) != 0) {
+        __report_errno_copy("failed to create target directory", source_dir, target_dir);
         return -1;
     }
 
     list_init(&files);
     if (platform_getfiles(source_dir, 1, &files) != 0) {
+        __report_errno_path("failed to enumerate directory contents", source_dir);
         return -1;
     }
 
@@ -199,12 +231,27 @@ static int __copy_directory_recursive(const char* source_dir, const char* target
 
         destination = strpathcombine(target_dir, entry->sub_path != NULL ? entry->sub_path : entry->name);
         if (destination == NULL) {
+            fprintf(stderr,
+                "mkwbase: failed to allocate destination path while copying %s into %s\n",
+                entry->path != NULL ? entry->path : "(null)",
+                target_dir != NULL ? target_dir : "(null)");
             platform_getfiles_destroy(&files);
             errno = ENOMEM;
             return -1;
         }
 
-        if (__ensure_parent_dir(destination) != 0 || platform_copyfile(entry->path, destination) != 0) {
+        if (__ensure_parent_dir(destination) != 0) {
+            fprintf(stderr,
+                "mkwbase: failed to prepare destination directory for file copy %s -> %s\n",
+                entry->path != NULL ? entry->path : "(null)",
+                destination);
+            free(destination);
+            platform_getfiles_destroy(&files);
+            return -1;
+        }
+
+        if (platform_copyfile(entry->path, destination) != 0) {
+            __report_errno_copy("failed to copy file", entry->path, destination);
             free(destination);
             platform_getfiles_destroy(&files);
             return -1;
@@ -583,25 +630,38 @@ static int __copy_parent_layers(const char* layer_dir, const char* windowsfilter
 
     source = json_load_file(chain_path, 0, &error);
     if (source == NULL || !json_is_array(source)) {
-        fprintf(stderr, "mkwbase: failed to parse %s\n", chain_path);
+        fprintf(stderr,
+            "mkwbase: failed to parse %s (line=%d, column=%d, error=%s)\n",
+            chain_path,
+            error.line,
+            error.column,
+            error.text);
         goto cleanup;
     }
 
     parents_dir = strpathcombine(windowsfilter_dir, "parents");
     if (parents_dir == NULL) {
+        fprintf(stderr,
+            "mkwbase: failed to allocate parents directory path under %s\n",
+            windowsfilter_dir != NULL ? windowsfilter_dir : "(null)");
         goto cleanup;
     }
     if (!__path_is_directory(parents_dir) && platform_mkdir(parents_dir) != 0) {
+        __report_errno_path("failed to create parents directory", parents_dir);
         goto cleanup;
     }
 
     target_chain_path = strpathcombine(windowsfilter_dir, "layerchain.json");
     if (target_chain_path == NULL) {
+        fprintf(stderr,
+            "mkwbase: failed to allocate rewritten layerchain path under %s\n",
+            windowsfilter_dir != NULL ? windowsfilter_dir : "(null)");
         goto cleanup;
     }
 
     rewritten = json_array();
     if (rewritten == NULL) {
+        fprintf(stderr, "mkwbase: failed to allocate rewritten parent layer array\n");
         goto cleanup;
     }
 
@@ -622,10 +682,18 @@ static int __copy_parent_layers(const char* layer_dir, const char* windowsfilter
 
         destination = strpathcombine(parents_dir, name);
         if (destination == NULL) {
+            fprintf(stderr,
+                "mkwbase: failed to allocate parent layer destination for %s under %s\n",
+                name,
+                parents_dir != NULL ? parents_dir : "(null)");
             goto cleanup;
         }
 
         if (!__path_is_directory(destination) && __copy_directory_recursive(parent_path, destination) != 0) {
+            fprintf(stderr,
+                "mkwbase: failed to copy parent layer directory %s into %s\n",
+                parent_path,
+                destination);
             free(destination);
             goto cleanup;
         }
@@ -633,11 +701,15 @@ static int __copy_parent_layers(const char* layer_dir, const char* windowsfilter
 
         snprintf(relative, sizeof(relative), "parents\\%s", name);
         if (json_array_append_new(rewritten, json_string(relative)) != 0) {
+            fprintf(stderr,
+                "mkwbase: failed to append rewritten parent layer entry %s\n",
+                relative);
             goto cleanup;
         }
     }
 
     if (json_dump_file(rewritten, target_chain_path, JSON_INDENT(2)) != 0) {
+        __report_errno_path("failed to write rewritten layerchain", target_chain_path);
         goto cleanup;
     }
 
@@ -768,7 +840,10 @@ static int __construct_base(const char* base_name, const char* image, const char
     }
 
     if (__copy_parent_layers(layer_path, windowsfilter_dir) != 0) {
-        fprintf(stderr, "mkwbase: failed to rewrite parent layers for %s\n", layer_path);
+        fprintf(stderr,
+            "mkwbase: failed to rewrite parent layers from %s into %s\n",
+            layer_path,
+            windowsfilter_dir);
         goto cleanup;
     }
 
