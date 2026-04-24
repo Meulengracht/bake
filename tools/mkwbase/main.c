@@ -562,6 +562,7 @@ static int __docker_inspect_layer_path(const char* container_name, char** layer_
 static int __copy_parent_layers(const char* layer_dir, const char* windowsfilter_dir)
 {
     char*  chain_path = NULL;
+    char*  target_chain_path = NULL;
     char*  parents_dir = NULL;
     json_t* source = NULL;
     json_t* rewritten = NULL;
@@ -590,7 +591,12 @@ static int __copy_parent_layers(const char* layer_dir, const char* windowsfilter
     if (parents_dir == NULL) {
         goto cleanup;
     }
-    if (platform_mkdir(parents_dir) != 0) {
+    if (!__path_is_directory(parents_dir) && platform_mkdir(parents_dir) != 0) {
+        goto cleanup;
+    }
+
+    target_chain_path = strpathcombine(windowsfilter_dir, "layerchain.json");
+    if (target_chain_path == NULL) {
         goto cleanup;
     }
 
@@ -631,7 +637,7 @@ static int __copy_parent_layers(const char* layer_dir, const char* windowsfilter
         }
     }
 
-    if (json_dump_file(rewritten, chain_path, JSON_INDENT(2)) != 0) {
+    if (json_dump_file(rewritten, target_chain_path, JSON_INDENT(2)) != 0) {
         goto cleanup;
     }
 
@@ -639,6 +645,7 @@ static int __copy_parent_layers(const char* layer_dir, const char* windowsfilter
 
 cleanup:
     free(chain_path);
+    free(target_chain_path);
     free(parents_dir);
     if (source != NULL) {
         json_decref(source);
