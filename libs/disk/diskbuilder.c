@@ -337,14 +337,14 @@ static int __write_mbr(struct chef_diskbuilder* builder, const unsigned char* te
     list_foreach(&builder->partitions, i) {
         struct chef_disk_partition* p = (struct chef_disk_partition*)i;
         int                         offset = __MBR_PARTITION(pi++);
-        int                         pstatus;
+        uint8_t                     pstatus = 0x00;
         uint8_t                     sectorsPerTrack;
         uint8_t                     headOfStart, headOfEnd;
         uint16_t                    cylinderOfStart, cylinderOfEnd;
         uint8_t                     sectorInCylinderStart, sectorInCylinderEnd;
 
         if (p->attributes & CHEF_PARTITION_ATTRIBUTE_BOOT) {
-            pstatus |= 0x80;
+            pstatus = 0x80;
         }
 
         sectorsPerTrack = builder->disk_geometry.sectors_per_track;
