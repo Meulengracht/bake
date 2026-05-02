@@ -110,6 +110,6 @@ void                fl_listdirectory(struct fatfs* fs, const char *path);
 int                 fl_createdirectory(struct fatfs* fs, const char *path);
 int                 fl_is_dir(struct fatfs* fs, const char *path);
 
-int                 fl_format(struct fatfs* fs, uint32 volume_sectors, const char *name);
+int                 fl_format(struct fatfs* fs, uint32 volume_sectors, const char *name, uint32 partition_lba);
 
 #endif

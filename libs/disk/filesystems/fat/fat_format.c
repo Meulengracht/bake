@@ -112,7 +112,7 @@ static int fatfs_erase_sectors(struct fatfs *fs, uint32 lba, int count)
 //-----------------------------------------------------------------------------
 // fatfs_create_boot_sector: Create the boot sector
 //-----------------------------------------------------------------------------
-static int fatfs_create_boot_sector(struct fatfs *fs, uint32 boot_sector_lba, uint32 vol_sectors, const char *name, int is_fat32)
+static int fatfs_create_boot_sector(struct fatfs *fs, uint32 boot_sector_lba, uint32 vol_sectors, const char *name, int is_fat32, uint32 partition_lba)
 {
     uint32 total_clusters;
     int i;
@@ -198,11 +198,11 @@ static int fatfs_create_boot_sector(struct fatfs *fs, uint32 boot_sector_lba, ui
         fs->currentsector.sector[26] = 0x00;
         fs->currentsector.sector[27] = 0x00;
 
-        // Hidden sectors
-        fs->currentsector.sector[28] = 0x20;
-        fs->currentsector.sector[29] = 0x00;
-        fs->currentsector.sector[30] = 0x00;
-        fs->currentsector.sector[31] = 0x00;
+        // Hidden sectors (partition LBA start)
+        fs->currentsector.sector[28] = (uint8)((partition_lba>>0)&0xFF);
+        fs->currentsector.sector[29] = (uint8)((partition_lba>>8)&0xFF);
+        fs->currentsector.sector[30] = (uint8)((partition_lba>>16)&0xFF);
+        fs->currentsector.sector[31] = (uint8)((partition_lba>>24)&0xFF);
 
         // Total sectors for this volume
         fs->currentsector.sector[32] = (uint8)((vol_sectors>>0)&0xFF);
@@ -260,14 +260,14 @@ static int fatfs_create_boot_sector(struct fatfs *fs, uint32 boot_sector_lba, ui
         fs->currentsector.sector[25] = 0x00;
 
         // Heads (default)
-        fs->currentsector.sector[26] = 0xFF;
+        fs->currentsector.sector[26] = 0x10;
         fs->currentsector.sector[27] = 0x00;
 
-        // Hidden sectors
-        fs->currentsector.sector[28] = 0x00;
-        fs->currentsector.sector[29] = 0x00;
-        fs->currentsector.sector[30] = 0x00;
-        fs->currentsector.sector[31] = 0x00;
+        // Hidden sectors (partition LBA start)
+        fs->currentsector.sector[28] = (uint8)((partition_lba>>0)&0xFF);
+        fs->currentsector.sector[29] = (uint8)((partition_lba>>8)&0xFF);
+        fs->currentsector.sector[30] = (uint8)((partition_lba>>16)&0xFF);
+        fs->currentsector.sector[31] = (uint8)((partition_lba>>24)&0xFF);
 
         // Total sectors for this volume
         fs->currentsector.sector[32] = (uint8)((vol_sectors>>0)&0xFF);
@@ -425,7 +425,7 @@ static int fatfs_erase_fat(struct fatfs *fs, int is_fat32)
 //-----------------------------------------------------------------------------
 // fatfs_format_fat16: Format a FAT16 partition
 //-----------------------------------------------------------------------------
-int fatfs_format_fat16(struct fatfs *fs, uint32 volume_sectors, const char *name)
+int fatfs_format_fat16(struct fatfs *fs, uint32 volume_sectors, const char *name, uint32 partition_lba)
 {
     fs->currentsector.address = FAT32_INVALID_CLUSTER;
     fs->currentsector.dirty = 0;
@@ -448,7 +448,7 @@ int fatfs_format_fat16(struct fatfs *fs, uint32 volume_sectors, const char *name
     // Sector 0: Boot sector
     // NOTE: We don't need an MBR, it is a waste of a good sector!
     fs->lba_begin = 0;
-    if (!fatfs_create_boot_sector(fs, fs->lba_begin, volume_sectors, name, 0))
+    if (!fatfs_create_boot_sector(fs, fs->lba_begin, volume_sectors, name, 0, partition_lba))
         return 0;
 
     // For FAT16 (which this may be), rootdir_first_cluster is actuall rootdir_first_sector
@@ -475,7 +475,7 @@ int fatfs_format_fat16(struct fatfs *fs, uint32 volume_sectors, const char *name
 //-----------------------------------------------------------------------------
 // fatfs_format_fat32: Format a FAT32 partition
 //-----------------------------------------------------------------------------
-int fatfs_format_fat32(struct fatfs *fs, uint32 volume_sectors, const char *name)
+int fatfs_format_fat32(struct fatfs *fs, uint32 volume_sectors, const char *name, uint32 partition_lba)
 {
     fs->currentsector.address = FAT32_INVALID_CLUSTER;
     fs->currentsector.dirty = 0;
@@ -498,7 +498,7 @@ int fatfs_format_fat32(struct fatfs *fs, uint32 volume_sectors, const char *name
     // Sector 0: Boot sector
     // NOTE: We don't need an MBR, it is a waste of a good sector!
     fs->lba_begin = 0;
-    if (!fatfs_create_boot_sector(fs, fs->lba_begin, volume_sectors, name, 1))
+    if (!fatfs_create_boot_sector(fs, fs->lba_begin, volume_sectors, name, 1, partition_lba))
         return 0;
 
     // First FAT LBA address
@@ -525,12 +525,12 @@ int fatfs_format_fat32(struct fatfs *fs, uint32 volume_sectors, const char *name
 //-----------------------------------------------------------------------------
 // fatfs_format: Format a partition with either FAT16 or FAT32 based on size
 //-----------------------------------------------------------------------------
-int fatfs_format(struct fatfs *fs, uint32 volume_sectors, const char *name)
+int fatfs_format(struct fatfs *fs, uint32 volume_sectors, const char *name, uint32 partition_lba)
 {
     // 2GB - 32K limit for safe behaviour for FAT16
     if (volume_sectors < 4194302)
-        return fatfs_format_fat16(fs, volume_sectors, name);
+        return fatfs_format_fat16(fs, volume_sectors, name, partition_lba);
     else
-        return fatfs_format_fat32(fs, volume_sectors, name);
+        return fatfs_format_fat32(fs, volume_sectors, name, partition_lba);
 }
 #endif /*FATFS_INC_FORMAT_SUPPORT*/
