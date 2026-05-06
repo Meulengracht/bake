@@ -1,0 +1,118 @@
+name: LCOW UVM Archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: LCOW UVM architecture
+        required: true
+        default: amd64
+      linuxkit_version:
+        description: LinuxKit release tag to install
+        required: true
+        default: v1.8.2
+
+jobs:
+  build-lcow-uvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      BUILD_TYPE: Release
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Ubuntu build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libsqlite3-dev \
+          libfuse3-dev \
+          libcap-dev \
+          libcurl4-openssl-dev \
+          libssl-dev \
+          libseccomp-dev \
+          libbpf-dev \
+          git \
+          curl \
+          tar \
+          bash
+
+    - name: Configure CMake
+      run: |
+        cmake -B "${{ github.workspace }}/build" -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}"
+
+    - name: Build mkuvm
+      run: |
+        cmake --build "${{ github.workspace }}/build" --config "${{ env.BUILD_TYPE }}" --target mkuvm
+
+    - name: Resolve mkuvm path
+      id: resolve-mkuvm
+      run: |
+        candidates=(
+          "$GITHUB_WORKSPACE/build/bin/mkuvm"
+          "$GITHUB_WORKSPACE/build/bin/Release/mkuvm"
+          "$GITHUB_WORKSPACE/build/Release/mkuvm"
+        )
+
+        mkuvm_path=""
+        for candidate in "${candidates[@]}"; do
+          if [[ -x "$candidate" ]]; then
+            mkuvm_path="$candidate"
+            break
+          fi
+        done
+
+        if [[ -z "$mkuvm_path" ]]; then
+          echo 'mkuvm not found in the expected build output locations.' >&2
+          exit 1
+        fi
+
+        echo "path=$mkuvm_path" >> "$GITHUB_OUTPUT"
+
+    - name: Install LinuxKit
+      id: install-linuxkit
+      run: |
+        linuxkit_path="$RUNNER_TEMP/linuxkit"
+        curl -L --fail \
+          --output "$linuxkit_path" \
+          "https://github.com/linuxkit/linuxkit/releases/download/${{ inputs.linuxkit_version }}/linuxkit-linux-amd64"
+        chmod +x "$linuxkit_path"
+        "$linuxkit_path" --help >/dev/null
+        echo "path=$linuxkit_path" >> "$GITHUB_OUTPUT"
+
+    - name: Construct LCOW UVM bundle
+      id: construct
+      run: |
+        output_dir="$RUNNER_TEMP/lcow-uvm"
+        archive_path="$RUNNER_TEMP/lcow-uvm-${{ inputs.architecture }}.tar.gz"
+        working_dir="$RUNNER_TEMP/lcow-uvm-work"
+
+        bash "$GITHUB_WORKSPACE/.github/scripts/construct-lcow-uvm.sh" \
+          --mkuvm-path "${{ steps.resolve-mkuvm.outputs.path }}" \
+          --linuxkit-bin "${{ steps.install-linuxkit.outputs.path }}" \
+          --output-dir "$output_dir" \
+          --archive-path "$archive_path" \
+          --arch "${{ inputs.architecture }}" \
+          --working-directory "$working_dir"
+
+    - name: Upload LCOW UVM bundle directory
+      uses: actions/upload-artifact@v4
+      with:
+        name: lcow-uvm-bundle-${{ inputs.architecture }}
+        path: ${{ steps.construct.outputs.output_dir }}
+        if-no-files-found: error
+
+    - name: Upload LCOW UVM archive
+      uses: actions/upload-artifact@v4
+      with:
+        name: lcow-uvm-archive-${{ inputs.architecture }}
+        path: ${{ steps.construct.outputs.archive_path }}
+        if-no-files-found: error

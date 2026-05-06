@@ -39,15 +39,8 @@ bakectl base import windows:ltsc2022 C:\temp\windows-base
 - copying `UtilityVM` if present
 - writing `base.json`
 
-## Importing It For Runtime Use
-
-Once the normalized directory exists, register it with [tools/bakectl/commands/base.c](../../tools/bakectl/commands/base.c):
-
-```powershell
-bakectl base import windows:ltsc2022 C:\temp\windows-base
-```
-
-After that, recipes that target `base: windows:ltsc2022` can use the registered base when `bake` asks `cvd` to create a Windows build container.
+The base must then be uploaded the the Chef archive of build-bases. It will then be automatically
+downloaded and imported for use by the disk library (../../libs/containerv/disk/windows.c)
 
 ## Example Recipe Flow
 

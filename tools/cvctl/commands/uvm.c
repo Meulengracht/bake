@@ -178,7 +178,7 @@ static int __print_detected_bundle(const char* image_path)
     }
 
     printf("lcow.uvm-image-path = %s\n", image_path);
-    if (containerv_disk_lcow_validate_uvm(image_path) != 0) {
+    if (containerv_disk_validate_lcow_uvm(image_path) != 0) {
         printf("lcow.bundle-valid = false\n");
         return 0;
     }
@@ -327,7 +327,7 @@ static int __handle_fetch(const char* config_path, const char* url)
     int                                    status;
 
     cfg.uvm_url = url;
-    status = containerv_disk_lcow_resolve_uvm(&cfg, &image_path);
+    status = containerv_disk_setup_lcow_uvm(&cfg, &image_path);
     if (status != 0) {
         fprintf(stderr, "cvctl: failed to fetch LCOW UVM bundle from %s\n", url);
         return -1;

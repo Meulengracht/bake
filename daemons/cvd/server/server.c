@@ -411,7 +411,7 @@ static enum chef_status __resolve_lcow_runtime(
         boot = lcow.boot_parameters;
     }
 
-    if (uvm_image != NULL && uvm_image[0] != '\0' && containerv_disk_lcow_validate_uvm(uvm_image) != 0) {
+    if (uvm_image != NULL && uvm_image[0] != '\0' && containerv_disk_validate_lcow_uvm(uvm_image) != 0) {
         VLOG_ERROR("cvd", "cvd_create: configured LCOW UVM bundle is invalid: %s\n", uvm_image);
         uvm_image = NULL;
     }
@@ -421,7 +421,7 @@ static enum chef_status __resolve_lcow_runtime(
         struct containerv_disk_lcow_uvm_config cfg = { 0 };
 
         cfg.uvm_url = lcow.uvm_url;
-        if (containerv_disk_lcow_resolve_uvm(&cfg, resolved_uvm_image) != 0) {
+        if (containerv_disk_setup_lcow_uvm(&cfg, resolved_uvm_image) != 0) {
             VLOG_ERROR("cvd", "cvd_create: failed to resolve LCOW UVM assets from %s\n", lcow.uvm_url);
             return CHEF_STATUS_FAILED_ROOTFS_SETUP;
         }

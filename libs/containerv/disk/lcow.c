@@ -252,7 +252,7 @@ static int __write_marker(const char* marker)
     return 0;
 }
 
-int containerv_disk_lcow_validate_uvm(const char* image_path)
+int containerv_disk_validate_lcow_uvm(const char* image_path)
 {
     char* uvm_vhdx;
     int   status;
@@ -296,7 +296,7 @@ int containerv_disk_lcow_detect_uvm_files(
         *boot_parameters_out = NULL;
     }
 
-    if (containerv_disk_lcow_validate_uvm(image_path) != 0) {
+    if (containerv_disk_validate_lcow_uvm(image_path) != 0) {
         return -1;
     }
 
@@ -314,9 +314,7 @@ int containerv_disk_lcow_detect_uvm_files(
 
 int containerv_disk_lcow_import_uvm(const char* source_dir, char** image_path_out)
 {
-    const char* cache_root;
     char*       absolute_source;
-    char*       lcow_dir;
     char*       uvm_dir;
     char*       import_dir;
     char*       target_dir;
@@ -335,33 +333,23 @@ int containerv_disk_lcow_import_uvm(const char* source_dir, char** image_path_ou
         return -1;
     }
 
-    if (containerv_disk_lcow_validate_uvm(absolute_source) != 0) {
+    if (containerv_disk_validate_lcow_uvm(absolute_source) != 0) {
         free(absolute_source);
         return -1;
     }
 
-    cache_root = chef_dirs_cache();
-    if (cache_root == NULL) {
+    uvm_dir = strpathcombine(chef_dirs_cache(), "uvm");
+    import_dir = strpathcombine(chef_dirs_cache(), "lcow-imported");
+    if (uvm_dir == NULL || import_dir == NULL) {
         free(absolute_source);
-        errno = ENOENT;
-        return -1;
-    }
-
-    lcow_dir = strpathcombine(cache_root, "lcow");
-    uvm_dir = lcow_dir ? strpathcombine(lcow_dir, "uvm") : NULL;
-    import_dir = uvm_dir ? strpathcombine(uvm_dir, "imported") : NULL;
-    if (lcow_dir == NULL || uvm_dir == NULL || import_dir == NULL) {
-        free(absolute_source);
-        free(lcow_dir);
         free(uvm_dir);
         free(import_dir);
         errno = ENOMEM;
         return -1;
     }
 
-    if (__ensure_dir(lcow_dir) != 0 || __ensure_dir(uvm_dir) != 0 || __ensure_dir(import_dir) != 0) {
+    if (__ensure_dir(uvm_dir) != 0 || __ensure_dir(import_dir) != 0) {
         free(absolute_source);
-        free(lcow_dir);
         free(uvm_dir);
         free(import_dir);
         return -1;
@@ -373,7 +361,6 @@ int containerv_disk_lcow_import_uvm(const char* source_dir, char** image_path_ou
     target_dir = strpathcombine(import_dir, key);
     if (target_dir == NULL) {
         free(absolute_source);
-        free(lcow_dir);
         free(uvm_dir);
         free(import_dir);
         errno = ENOMEM;
@@ -381,9 +368,8 @@ int containerv_disk_lcow_import_uvm(const char* source_dir, char** image_path_ou
     }
 
     (void)platform_rmdir(target_dir);
-    if (platform_copydir(absolute_source, target_dir) != 0 || containerv_disk_lcow_validate_uvm(target_dir) != 0) {
+    if (platform_copydir(absolute_source, target_dir) != 0 || containerv_disk_validate_lcow_uvm(target_dir) != 0) {
         free(absolute_source);
-        free(lcow_dir);
         free(uvm_dir);
         free(import_dir);
         free(target_dir);
@@ -391,108 +377,8 @@ int containerv_disk_lcow_import_uvm(const char* source_dir, char** image_path_ou
     }
 
     free(absolute_source);
-    free(lcow_dir);
     free(uvm_dir);
     free(import_dir);
     *image_path_out = target_dir;
-    return 0;
-}
-
-int containerv_disk_lcow_resolve_uvm(
-    const struct containerv_disk_lcow_uvm_config* config,
-    char**                                       image_path_out)
-{
-    if (image_path_out == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    *image_path_out = NULL;
-
-    if (config == NULL || config->uvm_url == NULL || config->uvm_url[0] == '\0') {
-        errno = EINVAL;
-        return -1;
-    }
-
-    const char* cache_root = chef_dirs_cache();
-    if (cache_root == NULL) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    char* lcow_dir = strpathcombine(cache_root, "lcow");
-    char* uvm_dir = lcow_dir ? strpathcombine(lcow_dir, "uvm") : NULL;
-    if (lcow_dir == NULL || uvm_dir == NULL) {
-        free(lcow_dir);
-        free(uvm_dir);
-        errno = ENOMEM;
-        return -1;
-    }
-
-    if (__ensure_dir(lcow_dir) != 0 || __ensure_dir(uvm_dir) != 0) {
-        free(lcow_dir);
-        free(uvm_dir);
-        return -1;
-    }
-
-    uint64_t h = __fnv1a64(config->uvm_url);
-    char key[32];
-    snprintf(key, sizeof(key), "%016llx", (unsigned long long)h);
-
-    char* target_dir = strpathcombine(uvm_dir, key);
-    if (target_dir == NULL) {
-        free(lcow_dir);
-        free(uvm_dir);
-        errno = ENOMEM;
-        return -1;
-    }
-
-    char* marker = strpathcombine(target_dir, "uvm.ready");
-    char* zip_path = strpathcombine(uvm_dir, "uvm.zip");
-    if (marker == NULL || zip_path == NULL) {
-        free(lcow_dir);
-        free(uvm_dir);
-        free(target_dir);
-        free(marker);
-        free(zip_path);
-        errno = ENOMEM;
-        return -1;
-    }
-
-    if (!__path_exists(marker)) {
-        VLOG_DEBUG("containerv[lcow]", "downloading LCOW UVM assets from %s\n", config->uvm_url);
-        if (__download_and_extract_zip(config->uvm_url, target_dir, zip_path) != 0) {
-            VLOG_ERROR("containerv[lcow]", "failed to download/extract LCOW UVM assets\n");
-            free(lcow_dir);
-            free(uvm_dir);
-            free(target_dir);
-            free(marker);
-            free(zip_path);
-            return -1;
-        }
-        if (containerv_disk_lcow_validate_uvm(target_dir) != 0) {
-            VLOG_ERROR("containerv[lcow]", "downloaded LCOW UVM bundle is invalid: %s\n", target_dir);
-            free(lcow_dir);
-            free(uvm_dir);
-            free(target_dir);
-            free(marker);
-            free(zip_path);
-            return -1;
-        }
-        (void)__write_marker(marker);
-    } else if (containerv_disk_lcow_validate_uvm(target_dir) != 0) {
-        VLOG_ERROR("containerv[lcow]", "cached LCOW UVM bundle is invalid: %s\n", target_dir);
-        free(lcow_dir);
-        free(uvm_dir);
-        free(target_dir);
-        free(marker);
-        free(zip_path);
-        return -1;
-    }
-
-    *image_path_out = target_dir;
-    free(lcow_dir);
-    free(uvm_dir);
-    free(marker);
-    free(zip_path);
     return 0;
 }

@@ -283,29 +283,56 @@ static char* __path_join_if_exists(const char* base, const char* name)
     return candidate;
 }
 
+// Windows base images are constructed by mkwbase, and we expect them to have the following structure:
+// - windowsfilter/
+// - windowsfilter/layerchain.json
+// - base.json
+// - UtilityVM/ (optional, only for wcow images)
 static int __resolve_windows_rootfs_layout(const char* imageDirectory, char** rootfsOut, char** utilityVMOut)
 {
     char* windowsFilterDirectory;
-    char* utilityVMDirectory;
+    char* layerchainPath;
+
+    if (!__path_is_directory(imageDirectory)) {
+        VLOG_ERROR("cvd", "windows image path is not a directory: %s\n", imageDirectory);
+        return -1;
+    }
+
+    // TODO: we could parse base.json to get exact structure and format
+    // instead of relying on convention.
 
     windowsFilterDirectory = __path_join_if_exists(imageDirectory, "windowsfilter");
-    utilityVMDirectory = __path_join_if_exists(imageDirectory, "UtilityVM");
-    
     if (windowsFilterDirectory != NULL && __path_is_directory(windowsFilterDirectory)) {
         *rootfsOut = windowsFilterDirectory;
-        *utilityVMOut = utilityVMDirectory;
+        *utilityVMOut = __path_join_if_exists(imageDirectory, "UtilityVM");
         return 0;
     }
 
-    if (__path_is_directory(imageDirectory)) {
-        char* layerchain = __path_join_if_exists(imageDirectory, "layerchain.json");
-        if (layerchain != NULL) {
-            free(layerchain);
-            *rootfsOut = platform_strdup(imageDirectory);
-            return *rootfsOut == NULL ? -1 : 0;
-        }
+    layerchainPath = __path_join_if_exists(imageDirectory, "layerchain.json");
+    if (layerchainPath != NULL) {
+        free(layerchainPath);
+        *rootfsOut = platform_strdup(imageDirectory);
+        return *rootfsOut == NULL ? -1 : 0;
     }
     return -1;
+}
+
+static int __resolve_windows_lcow_uvm(const char* lcowUvmDirectory, struct chef_create_parameters* params)
+{
+    char* kernel = NULL;
+    char* initrd = NULL;
+    char* boot   = NULL;
+
+    if (containerv_disk_lcow_detect_uvm_files(lcowUvmDirectory, &kernel, &initrd, &boot) != 0) {
+        fprintf(stderr, "cvctl: invalid LCOW UVM bundle at %s\n", lcowUvmDirectory);
+        return -1;
+    }
+
+    params->guest_windows.lcow_kernel_file     = kernel;
+    params->guest_windows.lcow_initrd_file     = initrd;
+    params->guest_windows.lcow_boot_parameters = boot;
+    params->guest_windows.lcow_uvm_image_path  = lcowUvmDirectory;
+    return 0;
 }
 
 static void __initialize_layers(
@@ -358,21 +385,16 @@ static void __initialize_layers(
 // initialized. We use the build cache, and check key "rootfs-initialized" to see if we've
 // already done this.
 static char* __initialize_maybe_rootfs(
-    struct recipe*       recipe,
-    const char*          platform,
-    const char*          architecture,
-    enum chef_guest_type guestType,
-    struct build_cache*  cache,
-    char**               utilityVMOut)
+    struct recipe*                 recipe,
+    const char*                    platform,
+    const char*                    architecture,
+    struct build_cache*            cache,
+    struct chef_create_parameters* params)
 {
     const char* base;
     char*       rootfs;
     int         status;
     VLOG_DEBUG("bake", "__initialize_maybe_rootfs(uuid=%s)\n", build_cache_uuid(cache));
-
-    if (utilityVMOut != NULL) {
-        *utilityVMOut = NULL;
-    }
 
     base = recipe_platform_base(recipe, platform);
     if (base == NULL) {
@@ -391,11 +413,11 @@ static char* __initialize_maybe_rootfs(
         return rootfs;
     }
 
-    if (guestType == CHEF_GUEST_TYPE_WINDOWS) {
+    if (params->gtype == CHEF_GUEST_TYPE_WINDOWS) {
         char* unpackedRootFS = NULL;
         char* utilityVMPath = NULL;
 
-        status = containerv_disk_setup_windows_image(rootfs, base);
+        status = containerv_disk_setup_wcow_uvm(rootfs, base);
         if (status) {
             VLOG_ERROR("cvd", "failed to resolve the windows image\n");
             free(rootfs);
@@ -408,15 +430,30 @@ static char* __initialize_maybe_rootfs(
             free(rootfs);
             return NULL;
         }
+
+        params->guest_windows.wcow_utilityvm_path = platform_strdup(utilityVMPath);
         
-        if (utilityVMOut != NULL) {
-            *utilityVMOut = utilityVMPath;
-        } else {
-            free(utilityVMPath);
-        }
         free(rootfs);
         return unpackedRootFS;
     } else {
+        // On windows, linux containers require special UVM setup in addition
+        // to the rootfs overlay. The UVM setup is done here.
+#ifdef CHEF_ON_WINDOWS
+        char* lcowUvmDirectory = NULL;
+
+        status = containerv_disk_setup_lcow_uvm(&lcowUvmDirectory);
+        if (status) {
+            fprintf(stderr, "cvctl: failed to fetch LCOW UVM bundle\n");
+            return NULL;
+        }
+        
+        status = __resolve_windows_lcow_uvm(lcowUvmDirectory, params);
+        if (status) {
+            fprintf(stderr, "cvctl: failed to resolve LCOW UVM configuration from %s\n", lcowUvmDirectory);
+            free(lcowUvmDirectory);
+            return NULL;
+        }
+#endif
         status = containerv_disk_setup_ubuntu_rootfs(rootfs, base);
         if (status) {
             VLOG_ERROR("cvd", "failed to resolve the ubuntu rootfs image\n");
@@ -430,14 +467,6 @@ static char* __initialize_maybe_rootfs(
     build_cache_transaction_commit(cache);
     return rootfs;
 }
-
-#ifdef CHEF_ON_WINDOWS
-static int __initialize_maybe_lcow_uvm(struct chef_create_parameters* params)
-{
-    (void)params;
-    return 0;
-}
-#endif
 
 enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
 {
@@ -468,25 +497,14 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
     // Setup build container policy plugins
     chef_policy_spec_plugins_get(&params.policy, 0)->name = platform_strdup("file-control");
     chef_policy_spec_plugins_get(&params.policy, 1)->name = platform_strdup("package-management");
-    
-    // On windows, linux containers require special UVM setup in addition
-    // to the rootfs overlay. The UVM setup is done here.
-#ifdef CHEF_ON_WINDOWS
-    if (params.gtype == CHEF_GUEST_TYPE_LINUX) {
-        if (__initialize_maybe_lcow_uvm(&params) != 0) {
-            chef_create_parameters_destroy(&params);
-            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-        }
-    }
-#endif
-    
+        
     rootfs = __initialize_maybe_rootfs(
         bctx->recipe,
         bctx->target_platform,
         bctx->target_architecture,
-        params.gtype,
         bctx->build_cache,
-        &utilityVMPath);
+        &params
+    );
     if (rootfs == NULL) {
         chef_create_parameters_destroy(&params);
         VLOG_ERROR("bake", "bake_client_create_container: failed to resolve build rootfs\n");
