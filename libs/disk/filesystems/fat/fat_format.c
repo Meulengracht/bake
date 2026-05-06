@@ -112,7 +112,7 @@ static int fatfs_erase_sectors(struct fatfs *fs, uint32 lba, int count)
 //-----------------------------------------------------------------------------
 // fatfs_create_boot_sector: Create the boot sector
 //-----------------------------------------------------------------------------
-static int fatfs_create_boot_sector(struct fatfs *fs, uint32 boot_sector_lba, uint32 vol_sectors, const char *name, int is_fat32, uint32 partition_lba)
+static int fatfs_create_boot_sector(struct fatfs *fs, uint32 boot_sector_lba, uint32 vol_sectors, const char *name, int is_fat32)
 {
     uint32 total_clusters;
     int i;
@@ -199,10 +199,10 @@ static int fatfs_create_boot_sector(struct fatfs *fs, uint32 boot_sector_lba, ui
         fs->currentsector.sector[27] = 0x00;
 
         // Hidden sectors (partition LBA start)
-        fs->currentsector.sector[28] = (uint8)((partition_lba>>0)&0xFF);
-        fs->currentsector.sector[29] = (uint8)((partition_lba>>8)&0xFF);
-        fs->currentsector.sector[30] = (uint8)((partition_lba>>16)&0xFF);
-        fs->currentsector.sector[31] = (uint8)((partition_lba>>24)&0xFF);
+        fs->currentsector.sector[28] = (uint8)((boot_sector_lba>>0)&0xFF);
+        fs->currentsector.sector[29] = (uint8)((boot_sector_lba>>8)&0xFF);
+        fs->currentsector.sector[30] = (uint8)((boot_sector_lba>>16)&0xFF);
+        fs->currentsector.sector[31] = (uint8)((boot_sector_lba>>24)&0xFF);
 
         // Total sectors for this volume
         fs->currentsector.sector[32] = (uint8)((vol_sectors>>0)&0xFF);
@@ -260,14 +260,14 @@ static int fatfs_create_boot_sector(struct fatfs *fs, uint32 boot_sector_lba, ui
         fs->currentsector.sector[25] = 0x00;
 
         // Heads (default)
-        fs->currentsector.sector[26] = 0x10;
+        fs->currentsector.sector[26] = 0xFF;
         fs->currentsector.sector[27] = 0x00;
 
         // Hidden sectors (partition LBA start)
-        fs->currentsector.sector[28] = (uint8)((partition_lba>>0)&0xFF);
-        fs->currentsector.sector[29] = (uint8)((partition_lba>>8)&0xFF);
-        fs->currentsector.sector[30] = (uint8)((partition_lba>>16)&0xFF);
-        fs->currentsector.sector[31] = (uint8)((partition_lba>>24)&0xFF);
+        fs->currentsector.sector[28] = (uint8)((boot_sector_lba>>0)&0xFF);
+        fs->currentsector.sector[29] = (uint8)((boot_sector_lba>>8)&0xFF);
+        fs->currentsector.sector[30] = (uint8)((boot_sector_lba>>16)&0xFF);
+        fs->currentsector.sector[31] = (uint8)((boot_sector_lba>>24)&0xFF);
 
         // Total sectors for this volume
         fs->currentsector.sector[32] = (uint8)((vol_sectors>>0)&0xFF);
@@ -447,8 +447,8 @@ int fatfs_format_fat16(struct fatfs *fs, uint32 volume_sectors, const char *name
 
     // Sector 0: Boot sector
     // NOTE: We don't need an MBR, it is a waste of a good sector!
-    fs->lba_begin = 0;
-    if (!fatfs_create_boot_sector(fs, fs->lba_begin, volume_sectors, name, 0, partition_lba))
+    fs->lba_begin = partition_lba;
+    if (!fatfs_create_boot_sector(fs, fs->lba_begin, volume_sectors, name, 0))
         return 0;
 
     // For FAT16 (which this may be), rootdir_first_cluster is actuall rootdir_first_sector
@@ -497,8 +497,8 @@ int fatfs_format_fat32(struct fatfs *fs, uint32 volume_sectors, const char *name
 
     // Sector 0: Boot sector
     // NOTE: We don't need an MBR, it is a waste of a good sector!
-    fs->lba_begin = 0;
-    if (!fatfs_create_boot_sector(fs, fs->lba_begin, volume_sectors, name, 1, partition_lba))
+    fs->lba_begin = partition_lba;
+    if (!fatfs_create_boot_sector(fs, fs->lba_begin, volume_sectors, name, 1))
         return 0;
 
     // First FAT LBA address
