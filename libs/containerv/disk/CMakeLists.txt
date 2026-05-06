@@ -14,6 +14,7 @@ endmacro()
 
 add_sources(
     ubuntu.c
+    windows.c
 )
 
 if (WIN32)

@@ -19,7 +19,6 @@ add_sources(
     resolvers/resolver_linux.c
     resolvers/resolver_windows.c
     
-    base.c
     build.c
     clean.c
     common.c
