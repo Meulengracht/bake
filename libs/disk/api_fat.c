@@ -31,6 +31,7 @@ struct __fat_filesystem {
     const char*                        label;
     const char*                        content;
     uint64_t                           sector_count;
+    uint64_t                           sector_start;
     uint16_t                           bytes_per_sector;
     FILE*                              stream;
 };
@@ -202,7 +203,7 @@ static int __fs_format(struct chef_disk_filesystem* fs)
     }
     // fat library will always return 1 for success, 0 for failure
     // we need to invert that to match api expectations
-    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label) == 1 ? 0 : -1;
+    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label, (uint32_t)cfs->sector_start) == 1 ? 0 : -1;
 }
 
 static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params)
@@ -300,6 +301,7 @@ struct chef_disk_filesystem* chef_filesystem_fat32_new(struct chef_disk_partitio
     cfs->label = partition->name;
     cfs->bytes_per_sector = params->sector_size;
     cfs->sector_count = partition->sector_count;
+    cfs->sector_start = partition->sector_start;
     cfs->stream = partition->stream;
 
     // copy options

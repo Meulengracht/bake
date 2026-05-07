@@ -1551,8 +1551,8 @@ int fl_is_dir(struct fatfs* fs, const char *path)
 // fl_format: Format a partition with either FAT16 or FAT32 based on size
 //-----------------------------------------------------------------------------
 #if FATFS_INC_FORMAT_SUPPORT
-int fl_format(struct fatfs* fs, uint32 volume_sectors, const char *name)
+int fl_format(struct fatfs* fs, uint32 volume_sectors, const char *name, uint32 partition_lba)
 {
-    return fatfs_format(fs, volume_sectors, name);
+    return fatfs_format(fs, volume_sectors, name, partition_lba);
 }
 #endif /*FATFS_INC_FORMAT_SUPPORT*/
