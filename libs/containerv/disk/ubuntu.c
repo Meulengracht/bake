@@ -20,17 +20,13 @@
 #include <chef/containerv/disk/ubuntu.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
+#include "common.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
-static int __file_exists(const char* path)
-{
-    struct platform_stat stats;
-    return platform_stat(path, &stats) == 0 ? 1 : 0;
-}
-
+/* Replace the extracted resolver config with a deterministic container-facing DNS file. */
 static int __fixup_dns(const char* rootfs)
 {
     int   status;
@@ -63,34 +59,12 @@ static int __fixup_dns(const char* rootfs)
     return fclose(stream);
 }
 
-static int __download_base(const char* base, const char* dir)
-{
-    char  tmp[PATH_MAX];
-    int   status;
-    char* url = __ubuntu_get_base_image_url(base);
-    if (url == NULL) {
-        VLOG_ERROR("cvd", "failed to allocate memory for base image url\n");
-        return -1;
-    }
-
-    snprintf(&tmp[0], sizeof(tmp), "-P %s %s", dir, url);
-
-    VLOG_TRACE("cvd", "downloading %s\n", url);
-    status = platform_spawn(
-        "wget", &tmp[0], NULL, &(struct platform_spawn_options) { }
-    );
-    if (status) {
-        VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
-    }
-    free(url);
-    return status;
-}
-
 int containerv_disk_setup_ubuntu_rootfs(const char* path, const char* base)
 {
     char* imageCache = NULL;
     char* imageName = NULL;
-    char  tmp[PATH_MAX];
+    char* imageUrl = NULL;
+    char* archivePath = NULL;
     int   status;
     VLOG_DEBUG("cvd", "containerv_disk_setup_ubuntu_rootfs(path=%s, base=%s)\n", path, base);
     
@@ -113,30 +87,24 @@ int containerv_disk_setup_ubuntu_rootfs(const char* path, const char* base)
         goto exit;
     }
 
-    snprintf(&tmp[0], sizeof(tmp), "%s/%s", imageCache, imageName);
-
-    if (!__file_exists(&tmp[0])) {
-        status = __download_base(base, imageCache);
-        if (status) {
-            VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
-            goto exit;
-        }
+    imageUrl = __ubuntu_get_base_image_url(base);
+    if (imageUrl == NULL) {
+        VLOG_ERROR("cvd", "failed to allocate memory for base image url\n");
+        status = -1;
+        goto exit;
     }
 
-    snprintf(
-        &tmp[0],
-        sizeof(tmp),
-        "-x --xattrs-include=* -f %s/%s -C %s",
-        imageCache, imageName, path
-    );
-
-    VLOG_TRACE("cvd", "unpacking %s/%s\n", imageCache, imageName);
-    status = platform_spawn(
-        "tar", &tmp[0], NULL, &(struct platform_spawn_options) {
-        }
-    );
+    VLOG_TRACE("cvd", "downloading %s\n", imageUrl);
+    status = containerv_disk_cache_archive(imageCache, imageName, imageUrl, &archivePath);
     if (status) {
         VLOG_ERROR("cvd", "failed to download ubuntu rootfs\n");
+        goto exit;
+    }
+
+    VLOG_TRACE("cvd", "unpacking %s into %s\n", archivePath, path);
+    status = containerv_disk_extract_archive(archivePath, path, 0, 1);
+    if (status) {
+        VLOG_ERROR("cvd", "failed to unpack ubuntu rootfs\n");
         goto exit;
     }
 
@@ -147,7 +115,9 @@ int containerv_disk_setup_ubuntu_rootfs(const char* path, const char* base)
     }
 
 exit:
+    free(archivePath);
     free(imageCache);
     free(imageName);
+    free(imageUrl);
     return status;
 }

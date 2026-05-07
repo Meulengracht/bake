@@ -20,78 +20,94 @@
 #include <chef/containerv/disk/windows.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
+#include "common.h"
+#include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
 
-static int __file_exists(const char* path)
+/* Derive a stable cache archive name by prefixing the source suffix with a URL hash. */
+static int __build_cached_archive_name(const char* url, uint64_t hash, char* buffer, size_t buffer_size)
 {
-    struct platform_stat stats;
-    return platform_stat(path, &stats) == 0 ? 1 : 0;
+    const char* name = url;
+    const char* slash;
+    const char* suffix;
+    int         written;
+
+    if (url == NULL || buffer == NULL || buffer_size == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    slash = strrchr(url, '/');
+    if (slash != NULL && slash[1] != '\0') {
+        name = slash + 1;
+    }
+
+    suffix = strchr(name, '.');
+    if (suffix == NULL) {
+        suffix = ".archive";
+    }
+
+    written = snprintf(buffer, buffer_size, "%016llx%s", (unsigned long long)hash, suffix);
+    if (written < 0 || (size_t)written >= buffer_size) {
+        errno = ENOMEM;
+        return -1;
+    }
+    return 0;
 }
 
-static int __download_container_base(const char* base, const char* dir)
+/* Reuse the remote file name as the cache entry name for WCOW archives. */
+static char* __archive_name_from_url(const char* url)
 {
-    char  tmp[PATH_MAX];
-    int   status;
-    char* url = __resolve_windows_wcow_base_url(base);
+    const char* name = url;
+    const char* slash;
+
     if (url == NULL) {
-        VLOG_ERROR("cvd", "failed to allocate memory for base image url\n");
-        return -1;
+        errno = EINVAL;
+        return NULL;
     }
 
-    snprintf(&tmp[0], sizeof(tmp), "-P %s %s", dir, url);
-
-    VLOG_TRACE("cvd", "downloading %s\n", url);
-    status = platform_spawn(
-        "wget", &tmp[0], NULL, &(struct platform_spawn_options) { }
-    );
-    if (status) {
-        VLOG_ERROR("cvd", "failed to download windows container image\n");
+    slash = strrchr(url, '/');
+    if (slash != NULL && slash[1] != '\0') {
+        name = slash + 1;
     }
-    free(url);
-    return status;
+    return platform_strdup(name);
 }
 
-static int __download_and_extract_zip(const char* url, const char* dest_dir, const char* zip_path)
+/* Keep a validated LCOW bundle unpacked behind a readiness marker in the shared cache. */
+static int __ensure_cached_lcow_bundle(const char* archive_path, const char* bundle_path)
 {
-    char   arguments[8192] = { 0 };
-    size_t index = 0;
-    int    status;
+    char* marker = NULL;
+    int   status = -1;
 
-    (void)platform_rmdir(dest_dir);
-    if (platform_mkdir(dest_dir) != 0) {
+    marker = strpathcombine(bundle_path, "uvm.ready");
+    if (marker == NULL) {
+        errno = ENOMEM;
         return -1;
     }
 
-    (void)platform_unlink(zip_path);
-    status = __append_token(arguments, sizeof(arguments), &index, "-L");
-    status |= __append_token(arguments, sizeof(arguments), &index, "--fail");
-    status |= __append_token(arguments, sizeof(arguments), &index, "--output");
-    status |= __append_token(arguments, sizeof(arguments), &index, zip_path);
-    status |= __append_token(arguments, sizeof(arguments), &index, url);
-    if (status != 0) {
-        return -1;
+    if (!containerv_disk_path_exists(marker) || containerv_disk_validate_lcow_uvm(bundle_path) != 0) {
+        if (containerv_disk_extract_archive(archive_path, bundle_path, 1, 0) != 0) {
+            goto cleanup;
+        }
+
+        if (containerv_disk_validate_lcow_uvm(bundle_path) != 0) {
+            goto cleanup;
+        }
+
+        if (containerv_disk_write_marker(marker) != 0) {
+            goto cleanup;
+        }
     }
 
-    status = platform_spawn("curl", arguments, NULL, &(struct platform_spawn_options) {0});
-    if (status != 0) {
-        return -1;
-    }
+    status = 0;
 
-    memset(arguments, 0, sizeof(arguments));
-    index = 0;
-    status = __append_token(arguments, sizeof(arguments), &index, "-xf");
-    status |= __append_token(arguments, sizeof(arguments), &index, zip_path);
-    status |= __append_token(arguments, sizeof(arguments), &index, "-C");
-    status |= __append_token(arguments, sizeof(arguments), &index, dest_dir);
-    if (status != 0) {
-        return -1;
-    }
-
-    status = platform_spawn("tar", arguments, NULL, &(struct platform_spawn_options) {0});
-    (void)platform_unlink(zip_path);
+cleanup:
+    free(marker);
     return status;
 }
 
@@ -99,7 +115,8 @@ int containerv_disk_setup_wcow_uvm(const char* path, const char* base)
 {
     char* imageCache = NULL;
     char* imageName = NULL;
-    char  tmp[PATH_MAX];
+    char* imageUrl = NULL;
+    char* archivePath = NULL;
     int   status;
     VLOG_DEBUG("cvd", "containerv_disk_setup_wcow_uvm(path=%s, base=%s)\n", path, base);
     
@@ -115,82 +132,48 @@ int containerv_disk_setup_wcow_uvm(const char* path, const char* base)
         goto exit;
     }
 
-    imageName = __windows_get_base_image_name(base);
+    imageUrl = __resolve_windows_wcow_base_url(base);
+    if (imageUrl == NULL) {
+        VLOG_ERROR("cvd", "failed to allocate memory for base image url\n");
+        status = -1;
+        goto exit;
+    }
+
+    imageName = __archive_name_from_url(imageUrl);
     if (imageName == NULL) {
         VLOG_ERROR("cvd", "failed to allocate memory for base image name\n");
         status = -1;
         goto exit;
     }
 
-    snprintf(&tmp[0], sizeof(tmp), "%s/%s", imageCache, imageName);
-
-    if (!__file_exists(&tmp[0])) {
-        status = __download_container_base(base, imageCache);
-        if (status) {
-            VLOG_ERROR("cvd", "failed to download windows image\n");
-            goto exit;
-        }
+    VLOG_TRACE("cvd", "downloading %s\n", imageUrl);
+    status = containerv_disk_cache_archive(imageCache, imageName, imageUrl, &archivePath);
+    if (status) {
+        VLOG_ERROR("cvd", "failed to download windows image\n");
+        goto exit;
     }
 
-    snprintf(
-        &tmp[0],
-        sizeof(tmp),
-        "-x --xattrs-include=* -f %s/%s -C %s",
-        imageCache, imageName, path
-    );
-
-    VLOG_TRACE("cvd", "unpacking %s/%s\n", imageCache, imageName);
-    status = platform_spawn(
-        "tar", &tmp[0], NULL, &(struct platform_spawn_options) {
-        }
-    );
+    VLOG_TRACE("cvd", "unpacking %s into %s\n", archivePath, path);
+    status = containerv_disk_extract_archive(archivePath, path, 0, 0);
     if (status) {
         VLOG_ERROR("cvd", "failed to unpack windows image\n");
         goto exit;
     }
 
-    status = __fixup_dns(path);
-    if (status) {
-        VLOG_ERROR("cvd", "failed to fix dns settings\n");
-        goto exit;
-    }
-
 exit:
+    free(archivePath);
     free(imageCache);
     free(imageName);
+    free(imageUrl);
     return status;
 }
 
-static uint64_t __fnv1a64(const char* s)
-{
-    uint64_t h = 1469598103934665603ULL;
-    if (s == NULL) {
-        return h;
-    }
-    for (const unsigned char* p = (const unsigned char*)s; *p; ++p) {
-        h ^= (uint64_t)(*p);
-        h *= 1099511628211ULL;
-    }
-    return h;
-}
-
-static int __path_exists(const char* path)
-{
-    struct platform_stat st;
-    return (path && platform_stat(path, &st) == 0) ? 1 : 0;
-}
-
-static int __path_is_directory(const char* path)
-{
-    struct platform_stat st;
-    return (path && platform_stat(path, &st) == 0 && st.type == PLATFORM_FILETYPE_DIRECTORY) ? 1 : 0;
-}
-
+/* Return the first optional bundle file present under the LCOW image directory. */
 static char* __find_optional_bundle_file(const char* image_path, const char* const* candidates)
 {
     for (int i = 0; candidates[i] != NULL; ++i) {
         char* candidate_path = strpathcombine(image_path, candidates[i]);
-        int   exists = __path_exists(candidate_path);
+        int   exists = containerv_disk_path_exists(candidate_path);
         free(candidate_path);
         if (exists) {
             return platform_strdup(candidates[i]);
@@ -199,6 +182,7 @@ static char* __find_optional_bundle_file(const char* image_path, const char* con
     return NULL;
 }
 
+/* Trim surrounding whitespace in place for text files embedded in the bundle. */
 static void __trim_whitespace(char* text)
 {
     char* start;
@@ -224,6 +208,7 @@ static void __trim_whitespace(char* text)
     }
 }
 
+/* Read and normalize the optional LCOW boot parameter file when present. */
 static char* __read_boot_parameters_file(const char* image_path)
 {
     char*  path;
@@ -236,7 +221,7 @@ static char* __read_boot_parameters_file(const char* image_path)
         return NULL;
     }
 
-    if (!__path_exists(path)) {
+    if (!containerv_disk_path_exists(path)) {
         free(path);
         return NULL;
     }
@@ -266,23 +251,12 @@ static char* __read_boot_parameters_file(const char* image_path)
     return text;
 }
 
-static int __write_marker(const char* marker)
-{
-    FILE* f = fopen(marker, "wb");
-    if (f == NULL) {
-        return -1;
-    }
-    fputs("ok", f);
-    fclose(f);
-    return 0;
-}
-
 int containerv_disk_validate_lcow_uvm(const char* image_path)
 {
     char* uvm_vhdx;
     int   status;
 
-    if (!__path_is_directory(image_path)) {
+    if (!containerv_disk_path_is_directory(image_path)) {
         errno = ENOENT;
         return -1;
     }
@@ -293,7 +267,7 @@ int containerv_disk_validate_lcow_uvm(const char* image_path)
         return -1;
     }
 
-    status = __path_exists(uvm_vhdx) ? 0 : -1;
+    status = containerv_disk_path_exists(uvm_vhdx) ? 0 : -1;
     free(uvm_vhdx);
     if (status != 0) {
         errno = ENOENT;
@@ -337,73 +311,76 @@ int containerv_disk_lcow_detect_uvm_files(
     return 0;
 }
 
-int containerv_disk_setup_lcow_uvm(char** uvmImageOut)
+int containerv_disk_setup_lcow_uvm(
+    const struct containerv_disk_lcow_uvm_config* config,
+    char**                                        uvmImageOut)
 {
-    char*    uvmUrl;
+    const char* configuredUrl;
+    char*    uvmUrl = NULL;
     char*    uvmDirectory = NULL;
     uint64_t uvmUrlHash;
     char     uvmCacheKey[32];
+    char     archiveName[64];
+    char*    archivePath = NULL;
     char*    uvmUnpackDirectory = NULL;
-    int      status;
+    int      status = -1;
 
     if (uvmImageOut == NULL) {
+        errno = EINVAL;
         return -1;
     }
+    *uvmImageOut = NULL;
     
     // TODO: We need to implement a versioning system to detect when
     // we should update the lcow UVM assets.
-    uvmUrl = __resolve_windows_lcow_base_url();
+    configuredUrl = (config != NULL && config->uvm_url != NULL && config->uvm_url[0] != '\0') ? config->uvm_url : NULL;
+    uvmUrl = configuredUrl != NULL ? platform_strdup(configuredUrl) : __resolve_windows_lcow_base_url();
+    if (uvmUrl == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
 
     uvmDirectory = strpathcombine(chef_dirs_cache(), "uvm");
     if (uvmDirectory == NULL) {
-        return -1;
-    }
-
-    status = platform_mkdir(uvmDirectory);
-    if (status) {
+        errno = ENOMEM;
         goto cleanup;
     }
 
-    uvmUrlHash = __fnv1a64(uvmUrl);
+    if (platform_mkdir(uvmDirectory) != 0) {
+        goto cleanup;
+    }
+
+    uvmUrlHash = containerv_disk_fnv1a64(uvmUrl);
     snprintf(uvmCacheKey, sizeof(uvmCacheKey), "%016llx", (unsigned long long)uvmUrlHash);
+    if (__build_cached_archive_name(uvmUrl, uvmUrlHash, archiveName, sizeof(archiveName)) != 0) {
+        goto cleanup;
+    }
+
+    VLOG_DEBUG("containerv[lcow]", "resolving LCOW UVM assets from %s\n", uvmUrl);
+    if (containerv_disk_cache_archive(uvmDirectory, archiveName, uvmUrl, &archivePath) != 0) {
+        VLOG_ERROR("containerv[lcow]", "failed to cache LCOW UVM assets from %s\n", uvmUrl);
+        goto cleanup;
+    }
 
     uvmUnpackDirectory = strpathcombine(uvmDirectory, uvmCacheKey);
     if (uvmUnpackDirectory == NULL) {
-        free(uvmDirectory);
-        return -1;
-    }
-
-    char* marker = strpathcombine(uvmUnpackDirectory, "uvm.ready");
-    char* zip_path = strpathcombine(uvmDirectory, "uvm.zip");
-    if (marker == NULL || zip_path == NULL) {
-        status = -1;
+        errno = ENOMEM;
         goto cleanup;
     }
 
-    if (!__path_exists(marker)) {
-        VLOG_DEBUG("containerv[lcow]", "downloading LCOW UVM assets from %s\n", uvmUrl);
-        if (__download_and_extract_zip(uvmUrl, uvmUnpackDirectory, zip_path) != 0) {
-            VLOG_ERROR("containerv[lcow]", "failed to download/extract LCOW UVM assets\n");
-            status = -1;
-            goto cleanup;
-        }
-        if (containerv_disk_validate_lcow_uvm(uvmUnpackDirectory) != 0) {
-            VLOG_ERROR("containerv[lcow]", "downloaded LCOW UVM bundle is invalid: %s\n", uvmUnpackDirectory);
-            status = -1;
-            goto cleanup;
-        }
-        (void)__write_marker(marker);
-    } else if (containerv_disk_validate_lcow_uvm(uvmUnpackDirectory) != 0) {
-        VLOG_ERROR("containerv[lcow]", "cached LCOW UVM bundle is invalid: %s\n", uvmUnpackDirectory);
-        status = -1;
+    if (__ensure_cached_lcow_bundle(archivePath, uvmUnpackDirectory) != 0) {
+        VLOG_ERROR("containerv[lcow]", "failed to prepare cached LCOW UVM bundle at %s\n", uvmUnpackDirectory);
         goto cleanup;
     }
 
     *uvmImageOut = uvmUnpackDirectory;
+    uvmUnpackDirectory = NULL;
+    status = 0;
 
 cleanup:
+    free(archivePath);
+    free(uvmUrl);
     free(uvmDirectory);
-    free(marker);
-    free(zip_path);
-    return 0;
+    free(uvmUnpackDirectory);
+    return status;
 }

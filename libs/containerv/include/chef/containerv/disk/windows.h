@@ -25,9 +25,14 @@
 #include <string.h>
 #include <vlog.h>
 
+/**
+ * @brief Build the default downloadable WCOW base archive URL for a selector.
+ * @param base Base selector such as "windows:ltsc2022". NULL defaults to ltsc2022.
+ * @return Allocated URL string, or NULL on failure.
+ */
 static char* __resolve_windows_wcow_base_url(const char* base) {
     char  tmp[1024];
-    char* variant = strchr(base, ':');
+    const char* variant = base != NULL ? strchr(base, ':') : NULL;
     
     if (variant == NULL) {
         variant = "ltsc2022";
@@ -43,6 +48,10 @@ static char* __resolve_windows_wcow_base_url(const char* base) {
     return platform_strdup(&tmp[0]);
 }
 
+/**
+ * @brief Build the default downloadable LCOW UVM bundle URL.
+ * @return Allocated URL string, or NULL on failure.
+ */
 static char* __resolve_windows_lcow_base_url(void) {
     char tmp[1024];
     snprintf(&tmp[0], sizeof(tmp), 
@@ -53,9 +62,9 @@ static char* __resolve_windows_lcow_base_url(void) {
 }
 
 /**
- * @brief Download the Windows base image to the specified cache directory.
- * @param path The directory to construct the rootfs into.
- * @param base The base image string, e.g., "windows:ltsc2022".
+ * @brief Resolve a cached WCOW base archive and unpack it into the requested path.
+ * @param path Destination directory for the unpacked Windows base.
+ * @param base Base image string, e.g., "windows:ltsc2022".
  * @return 0 on success, non-zero on failure.
  */
 extern int containerv_disk_setup_wcow_uvm(const char* path, const char* base);
@@ -79,12 +88,24 @@ extern int containerv_disk_lcow_detect_uvm_files(
     char**      initrd_file_out,
     char**      boot_parameters_out);
 
+struct containerv_disk_lcow_uvm_config {
+    /** Optional override URL for the LCOW UVM archive. */
+    const char* uvm_url;
+};
+
 /**
- * @brief Resolve (download/cache) LCOW UVM assets and return the image path.
+ * @brief Resolve (download/cache) LCOW UVM assets and return a shared cached bundle path.
  *
- * On success, allocates a string in *image_path_out which must be freed
+ * The unpacked bundle is reusable across containers; callers should treat the
+ * returned directory as read-only shared cache state.
+ *
+ * If config is NULL or config->uvm_url is empty, the default bundled LCOW URL is used.
+ *
+ * On success, allocates a string in *uvmImageOut which must be freed
  * by the caller.
  */
-extern int containerv_disk_setup_lcow_uvm(char** uvmImageOut);
+extern int containerv_disk_setup_lcow_uvm(
+    const struct containerv_disk_lcow_uvm_config* config,
+    char**                                        uvmImageOut);
 
 #endif // !__CONTAINERV_DISK_WINDOWS_H__

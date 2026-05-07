@@ -31,7 +31,11 @@
 #define UBUNTU_22_LTS_VERSION "22.04"
 #define UBUNTU_22_LTS_RELEASE "5"
 
-// helper to get the base image number from a string like "ubuntu:24"
+/**
+ * @brief Parse the Ubuntu major version from a base selector.
+ * @param base Base selector such as "ubuntu:24".
+ * @return Parsed major version, defaulting to 24 when base is NULL.
+ */
 static int __ubuntu_get_base_number(const char* base) {
     const char* p;
     int         version;
@@ -53,6 +57,11 @@ static int __ubuntu_get_base_number(const char* base) {
     return version;
 }
 
+/**
+ * @brief Resolve the Ubuntu point-release suffix for a supported base selector.
+ * @param base Base selector such as "ubuntu:24".
+ * @return Release suffix string, or NULL when the selector is unsupported.
+ */
 static const char* __ubuntu_get_base_release(const char* base) {
     int version = __ubuntu_get_base_number(base);
     switch (version) {
@@ -66,6 +75,11 @@ static const char* __ubuntu_get_base_release(const char* base) {
     }
 }
 
+/**
+ * @brief Build the expected Ubuntu base archive name for a selector.
+ * @param base Base selector such as "ubuntu:24".
+ * @return Allocated archive name string, or NULL on failure.
+ */
 static char* __ubuntu_get_base_image_name(const char* base) {
     char        tmp[1024];
     int         version = __ubuntu_get_base_number(base);
@@ -83,6 +97,11 @@ static char* __ubuntu_get_base_image_name(const char* base) {
     return platform_strdup(&tmp[0]);
 }
 
+/**
+ * @brief Build the upstream Ubuntu base archive URL for a selector.
+ * @param base Base selector such as "ubuntu:24".
+ * @return Allocated URL string, or NULL on failure.
+ */
 static char* __ubuntu_get_base_image_url(const char* base) {
     char        tmp[1024];
     int         version = __ubuntu_get_base_number(base);
@@ -102,9 +121,9 @@ static char* __ubuntu_get_base_image_url(const char* base) {
 }
 
 /**
- * @brief Download the Ubuntu base image to the specified cache directory.
- * @param path The directory to construct the rootfs into.
- * @param base The base image string, e.g., "ubuntu:24".
+ * @brief Resolve a cached Ubuntu base archive and unpack it into the requested rootfs path.
+ * @param path Destination directory for the unpacked rootfs.
+ * @param base Base image string, e.g., "ubuntu:24".
  * @return 0 on success, non-zero on failure.
  */
 extern int containerv_disk_setup_ubuntu_rootfs(const char* path, const char* base);

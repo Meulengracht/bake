@@ -18,7 +18,7 @@
 #define _GNU_SOURCE // needed for mknod
 
 #include <chef/containerv.h>
-#include <chef/containerv/disk/lcow.h>
+#include <chef/containerv/disk/windows.h>
 #include <chef/containerv/layers.h>
 #include <chef/containerv/policy.h>
 #include <chef/dirs.h>

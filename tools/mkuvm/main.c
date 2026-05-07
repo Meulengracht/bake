@@ -17,7 +17,7 @@
  */
 
 #include <errno.h>
-#include <chef/containerv/disk/lcow.h>
+#include <chef/containerv/disk/windows.h>
 #include <chef/platform.h>
 #include <jansson.h>
 #include <stdio.h>

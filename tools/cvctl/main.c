@@ -43,7 +43,6 @@ static struct command_handler g_commands[] = {
     { "start", start_main },
     { "exec",  exec_main },
     { "config", config_main },
-    { "uvm", uvm_main }
 };
 
 enum cvctl_global_action {
@@ -64,7 +63,6 @@ static void __print_help(void)
     printf("  start      starts a new container\n");
     printf("  exec       executes a command inside an existing container\n");
     printf("  config     view or change cvd configuration values\n");
-    printf("  uvm        fetch or import LCOW UVM assets\n");
     printf("\n");
     printf("Global Options:\n");
     printf("  -h, --help\n");

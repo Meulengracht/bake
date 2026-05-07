@@ -317,7 +317,7 @@ static int __resolve_windows_rootfs_layout(const char* imageDirectory, char** ro
     return -1;
 }
 
-static int __resolve_windows_lcow_uvm(const char* lcowUvmDirectory, struct chef_create_parameters* params)
+static int __resolve_windows_lcow_uvm(char* lcowUvmDirectory, struct chef_create_parameters* params)
 {
     char* kernel = NULL;
     char* initrd = NULL;
@@ -441,7 +441,7 @@ static char* __initialize_maybe_rootfs(
 #ifdef CHEF_ON_WINDOWS
         char* lcowUvmDirectory = NULL;
 
-        status = containerv_disk_setup_lcow_uvm(&lcowUvmDirectory);
+        status = containerv_disk_setup_lcow_uvm(NULL, &lcowUvmDirectory);
         if (status) {
             fprintf(stderr, "cvctl: failed to fetch LCOW UVM bundle\n");
             return NULL;

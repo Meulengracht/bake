@@ -13,15 +13,10 @@ macro (add_sources)
 endmacro()
 
 add_sources(
+    common.c
     ubuntu.c
     windows.c
 )
-
-if (WIN32)
-    add_sources(
-        lcow.c
-    )
-endif()
 
 add_library(containerv-disk STATIC ${SRCS})
 target_include_directories(containerv-disk PRIVATE ../include)
