@@ -353,7 +353,6 @@ int inventory_load(const char* path, struct store_inventory** inventoryOut)
 
     json = json_load_file(filePath, 0, &error);
     if (json == NULL) {
-        VLOG_WARNING("inventory", "inventory_load: failed to load %s (%u)\n", filePath, json_error_code(&error));
         if (json_error_code(&error) != json_error_cannot_open_file) {
             VLOG_ERROR("inventory", "inventory_load: error at line %d, column %d: %s\n", 
                 error.line, error.column, error.text);
@@ -370,7 +369,7 @@ int inventory_load(const char* path, struct store_inventory** inventoryOut)
         VLOG_ERROR("inventory", "inventory_load: failed to parse the inventory, file corrupt??\n");
         return -1;
     }
-    VLOG_TRACE("inventory", "inventory loaded, %i packs available\n", inventory->packs_count);
+    VLOG_DEBUG("inventory", "inventory loaded, %i packs available\n", inventory->packs_count);
 
     // store the base path of the inventory
     inventory->path = platform_strdup(path);
