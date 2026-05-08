@@ -17,6 +17,7 @@
  */
 
 #include <chef/bits/package.h>
+#include <chef/containerv/disk/windows.h>
 #include <chef/config.h>
 #include <chef/dirs.h>
 #include <chef/environment.h>
@@ -35,6 +36,7 @@
 #include <vlog.h>
 
 #include <utils.h>
+#include <state.h>
 
 #include "chef_cvd_service_client.h"
 
@@ -143,7 +145,7 @@ static int __configure_local_bind(struct gracht_link_socket* link)
 // windows:nanoserver-ltsc2022
 // windows:ltsc2022
 // From this, derive the guest type
-static enum chef_guest_type __guest_type_from_base(const char* platform)
+static enum chef_guest_type __guest_type_from_base_selector(const char* platform)
 {
     if (strncmp(platform, "windows:", 8) == 0 || strncmp(platform, "windows", 7) == 0) {
         return CHEF_GUEST_TYPE_WINDOWS;
@@ -151,15 +153,306 @@ static enum chef_guest_type __guest_type_from_base(const char* platform)
     return CHEF_GUEST_TYPE_LINUX;
 }
 
-#ifdef _WIN32
-static int __configure_windows_guest_options(struct chef_create_parameters* params)
+static char* __resolve_base_package_path(const char* pack_id, const char* base_selector)
 {
-    (void)params;
+    struct state_application* base_application;
+    char**                    package_parts = NULL;
+    char**                    base_parts = NULL;
+    char*                     base_store_id = NULL;
+    char*                     base_package_path = NULL;
+    struct VaFs*              vafs = NULL;
+    const char*               candidate_identities[3] = { NULL, "vali", NULL };
 
+    if (base_selector == NULL || base_selector[0] == '\0') {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    if (pack_id != NULL) {
+        package_parts = utils_split_package_name(pack_id);
+        if (package_parts != NULL) {
+            candidate_identities[0] = package_parts[0];
+        }
+    }
+
+    for (int i = 0; candidate_identities[i] != NULL; ++i) {
+        const char* identity = candidate_identities[i];
+        int         revision;
+
+        if (identity[0] == '\0') {
+            continue;
+        }
+
+        base_store_id = utils_base_to_store_id(identity, base_selector);
+        if (base_store_id == NULL) {
+            continue;
+        }
+
+        base_application = served_state_application(base_store_id);
+        if (base_application == NULL ||
+            base_application->revisions_count == 0 ||
+            base_application->revisions[base_application->revisions_count - 1].version == NULL) {
+            free(base_store_id);
+            base_store_id = NULL;
+            continue;
+        }
+
+        revision = base_application->revisions[base_application->revisions_count - 1].version->revision;
+        base_parts = utils_split_package_name(base_store_id);
+        if (base_parts == NULL) {
+            free(base_store_id);
+            base_store_id = NULL;
+            break;
+        }
+
+        base_package_path = utils_path_pack(base_parts[0], base_parts[1], revision);
+        strsplit_free(base_parts);
+        base_parts = NULL;
+        free(base_store_id);
+        base_store_id = NULL;
+        if (base_package_path == NULL) {
+            continue;
+        }
+
+        if (vafs_open_file(base_package_path, &vafs) == 0) {
+            vafs_close(vafs);
+            break;
+        }
+
+        free(base_package_path);
+        base_package_path = NULL;
+    }
+
+    strsplit_free(base_parts);
+    strsplit_free(package_parts);
+    free(base_store_id);
+
+    if (base_package_path == NULL) {
+        errno = ENOENT;
+    }
+    return base_package_path;
+}
+
+#ifdef _WIN32
+static int __path_exists(const char* path)
+{
+    struct platform_stat st;
+
+    return (path != NULL && path[0] != '\0' && platform_stat(path, &st) == 0) ? 1 : 0;
+}
+
+static int __path_is_directory(const char* path)
+{
+    struct platform_stat st;
+
+    return (path != NULL && path[0] != '\0' && platform_stat(path, &st) == 0 && st.type == PLATFORM_FILETYPE_DIRECTORY) ? 1 : 0;
+}
+
+static uint64_t __fnv1a64(const char* text)
+{
+    uint64_t hash = 1469598103934665603ULL;
+
+    if (text == NULL) {
+        return hash;
+    }
+
+    for (const unsigned char* current = (const unsigned char*)text; *current != '\0'; ++current) {
+        hash ^= (uint64_t)(*current);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+static int __write_ready_marker(const char* marker_path)
+{
+    FILE* stream;
+
+    stream = fopen(marker_path, "wb");
+    if (stream == NULL) {
+        return -1;
+    }
+
+    fputs("ok", stream);
+    return fclose(stream);
+}
+
+static int __extract_pack_to_directory(const char* pack_path, const char* output_directory)
+{
+    char arguments[8192];
+    int  written;
+
+    (void)platform_rmdir(output_directory);
+    if (platform_mkdir(output_directory) != 0) {
+        return -1;
+    }
+
+    written = snprintf(arguments, sizeof(arguments), "--no-progress --out \"%s\" \"%s\"", output_directory, pack_path);
+    if (written < 0 || (size_t)written >= sizeof(arguments)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return platform_spawn("unmkvafs", arguments, NULL, &(struct platform_spawn_options) {0});
+}
+
+static int __resolve_lcow_base_layout(
+    const char* extracted_directory,
+    char**      rootfs_out,
+    char**      kernel_out,
+    char**      initrd_out,
+    char**      boot_out)
+{
+    char* rootfs_directory;
+
+    if (rootfs_out == NULL || kernel_out == NULL || initrd_out == NULL || boot_out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    *rootfs_out = NULL;
+    *kernel_out = NULL;
+    *initrd_out = NULL;
+    *boot_out = NULL;
+
+    rootfs_directory = strpathcombine(extracted_directory, "rootfs");
+    if (rootfs_directory == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    if (!__path_is_directory(rootfs_directory)) {
+        VLOG_ERROR("served", "LCOW base package is missing required rootfs/ directory in %s\n", extracted_directory);
+        free(rootfs_directory);
+        errno = ENOENT;
+        return -1;
+    }
+
+    if (containerv_disk_lcow_detect_uvm_files(extracted_directory, kernel_out, initrd_out, boot_out) != 0) {
+        VLOG_ERROR("served", "LCOW base package is missing a valid UVM bundle in %s\n", extracted_directory);
+        free(rootfs_directory);
+        return -1;
+    }
+
+    *rootfs_out = rootfs_directory;
+    return 0;
+}
+
+static int __prepare_lcow_base_package(
+    const char*                    base_package_path,
+    struct chef_create_parameters* params,
+    char**                         base_rootfs_out)
+{
+    char     cache_key[32];
+    char*    cache_root = NULL;
+    char*    extracted_directory = NULL;
+    char*    marker_path = NULL;
+    char*    rootfs_directory = NULL;
+    char*    kernel = NULL;
+    char*    initrd = NULL;
+    char*    boot = NULL;
+    uint64_t hash;
+    int      status = -1;
+
+    cache_root = strpathcombine(chef_dirs_cache(), "served-lcow");
+    if (cache_root == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    if (platform_mkdir(cache_root) != 0) {
+        goto cleanup;
+    }
+
+    hash = __fnv1a64(base_package_path);
+    snprintf(cache_key, sizeof(cache_key), "%016llx", (unsigned long long)hash);
+
+    extracted_directory = strpathcombine(cache_root, cache_key);
+    marker_path = extracted_directory != NULL ? strpathcombine(extracted_directory, "lcow.ready") : NULL;
+    if (extracted_directory == NULL || marker_path == NULL) {
+        errno = ENOMEM;
+        goto cleanup;
+    }
+
+    if (!__path_exists(marker_path) ||
+        __resolve_lcow_base_layout(extracted_directory, &rootfs_directory, &kernel, &initrd, &boot) != 0) {
+        free(rootfs_directory);
+        free(kernel);
+        free(initrd);
+        free(boot);
+        rootfs_directory = NULL;
+        kernel = NULL;
+        initrd = NULL;
+        boot = NULL;
+
+        VLOG_DEBUG("served", "extracting LCOW base package %s into %s\n", base_package_path, extracted_directory);
+        if (__extract_pack_to_directory(base_package_path, extracted_directory) != 0) {
+            VLOG_ERROR("served", "failed to extract LCOW base package %s\n", base_package_path);
+            goto cleanup;
+        }
+
+        if (__resolve_lcow_base_layout(extracted_directory, &rootfs_directory, &kernel, &initrd, &boot) != 0) {
+            goto cleanup;
+        }
+
+        if (__write_ready_marker(marker_path) != 0) {
+            goto cleanup;
+        }
+    }
+
+    params->guest_windows.lcow_uvm_image_path = extracted_directory;
+    params->guest_windows.lcow_kernel_file = kernel;
+    params->guest_windows.lcow_initrd_file = initrd;
+    params->guest_windows.lcow_boot_parameters = boot;
+    *base_rootfs_out = rootfs_directory;
+    extracted_directory = NULL;
+    kernel = NULL;
+    initrd = NULL;
+    boot = NULL;
+    rootfs_directory = NULL;
+    status = 0;
+
+cleanup:
+    free(cache_root);
+    free(extracted_directory);
+    free(marker_path);
+    free(rootfs_directory);
+    free(kernel);
+    free(initrd);
+    free(boot);
+    return status;
+}
+
+static int __configure_windows_guest_options(
+    struct chef_create_parameters* params,
+    const char*                    base_package_path,
+    char**                         base_rootfs_out)
+{
+    if (params == NULL || base_rootfs_out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    *base_rootfs_out = NULL;
     if (params->gtype != CHEF_GUEST_TYPE_LINUX) {
         return 0;
     }
 
+    if (base_package_path == NULL || base_package_path[0] == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return __prepare_lcow_base_package(base_package_path, params, base_rootfs_out);
+}
+#else
+static int __configure_windows_guest_options(
+    struct chef_create_parameters* params,
+    const char*                    base_package_path,
+    char**                         base_rootfs_out)
+{
+    (void)params;
+    (void)base_package_path;
+    (void)base_rootfs_out;
     return 0;
 }
 #endif
@@ -662,12 +955,14 @@ static enum chef_status __create_container(
     gracht_client_t* client,
     const char*      id,
     const char*      pack_id,
-    const char*      rootfs,
+    const char*      baseSelector,
     const char*      package)
 {
     struct gracht_message_context context;
     struct chef_create_parameters params;
     struct chef_layer_descriptor* layer;
+    char*                         basePackagePath = NULL;
+    char*                         baseRootfsPath = NULL;
     int                           status;
     enum chef_status              chstatus;
     char                          cvdid[CHEF_PACKAGE_ID_LENGTH_MAX];
@@ -676,10 +971,19 @@ static enum chef_status __create_container(
     chef_create_parameters_init(&params);
     
     params.id = (char*)id;
-    params.gtype = __guest_type_from_base(rootfs);
+    params.gtype = __guest_type_from_base_selector(baseSelector);
+
+    basePackagePath = __resolve_base_package_path(pack_id, baseSelector);
+    if (basePackagePath == NULL) {
+        VLOG_ERROR("served", "__create_container: failed to resolve base package for selector %s\n", baseSelector);
+        chef_create_parameters_destroy(&params);
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+    }
 
 #ifdef _WIN32
-    if (__configure_windows_guest_options(&params) != 0) {
+    if (__configure_windows_guest_options(&params, basePackagePath, &baseRootfsPath) != 0) {
+        free(basePackagePath);
+        free(baseRootfsPath);
         chef_create_parameters_destroy(&params);
         return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
@@ -705,7 +1009,7 @@ static enum chef_status __create_container(
     params.network.dns = __dup_pack_network_config_value(pack_id, "dns");
     if (params.network.gateway_ip == NULL || params.network.dns == NULL) {
         (void)__load_pack_network_defaults(package, &params.network.gateway_ip, &params.network.dns);
-        (void)__load_pack_network_defaults(rootfs, &params.network.gateway_ip, &params.network.dns);
+        (void)__load_pack_network_defaults(basePackagePath, &params.network.gateway_ip, &params.network.dns);
     }
 
     // Load capabilities from the package and convert system capabilities
@@ -724,8 +1028,15 @@ static enum chef_status __create_container(
     // initialize the base rootfs layer, this is a layer from
     // the base package
     layer = chef_create_parameters_layers_get(&params, 0);
-    layer->type = CHEF_LAYER_TYPE_VAFS_PACKAGE;
-    layer->source = platform_strdup(rootfs);
+    if (baseRootfsPath != NULL) {
+        layer->type = CHEF_LAYER_TYPE_BASE_ROOTFS;
+        layer->source = baseRootfsPath;
+        baseRootfsPath = NULL;
+    } else {
+        layer->type = CHEF_LAYER_TYPE_VAFS_PACKAGE;
+        layer->source = basePackagePath;
+        basePackagePath = NULL;
+    }
     layer->target = platform_strdup("/");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
 
@@ -746,12 +1057,16 @@ static enum chef_status __create_container(
     
     status = chef_cvd_create(client, &context, &params);
     if (status) {
+        free(basePackagePath);
+        free(baseRootfsPath);
         chef_create_parameters_destroy(&params);
         VLOG_ERROR("served", "__create_container failed to create client\n");
         return status;
     }
     gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
     chef_cvd_create_result(client, &context, &cvdid[0], sizeof(cvdid) - 1, &chstatus);
+    free(basePackagePath);
+    free(baseRootfsPath);
     chef_create_parameters_destroy(&params);
     return chstatus;
 }

@@ -72,6 +72,11 @@ struct containerv_layers_compose_options {
      */
     const char* const* windows_wcow_parent_layers;
     int                windows_wcow_parent_layer_count;
+
+    /**
+     * Windows: non-zero when composing an LCOW guest rootfs rather than WCOW.
+     */
+    int                windows_is_lcow;
 };
 
 typedef int (*containerv_layers_iterate_cb)(

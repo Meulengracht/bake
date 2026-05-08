@@ -152,7 +152,6 @@ static json_t* __serialize_config_lcow(struct config_lcow* lcow)
 
 struct config {
     struct config_address api_address;
-    struct config_lcow    lcow;
 };
 
 static struct config g_config = { 0 };
@@ -178,11 +177,6 @@ static json_t* __serialize_config(struct config* config)
     }
 
     json_object_set_new(root, "api-address", api_address);
-
-    lcow = __serialize_config_lcow(&config->lcow);
-    if (lcow != NULL) {
-        json_object_set_new(root, "lcow", lcow);
-    }
 
     return root;
 }
@@ -218,14 +212,6 @@ static int __parse_config(struct config* config, json_t* root)
     status = __parse_config_address(&config->api_address, member);
     if (status) {
         return status;
-    }
-
-    member = json_object_get(root, "lcow");
-    if (member != NULL) {
-        status = __parse_config_lcow(&config->lcow, member);
-        if (status) {
-            return status;
-        }
     }
 
     return 0;
@@ -285,17 +271,4 @@ void cvd_config_api_address(struct cvd_config_address* address)
     address->type = g_config.api_address.type;
     address->address = g_config.api_address.address;
     address->port = g_config.api_address.port;
-}
-
-void cvd_config_lcow(struct cvd_config_lcow* lcow)
-{
-    if (lcow == NULL) {
-        return;
-    }
-
-    lcow->uvm_image_path = g_config.lcow.uvm_image_path;
-    lcow->uvm_url = g_config.lcow.uvm_url;
-    lcow->kernel_file = g_config.lcow.kernel_file;
-    lcow->initrd_file = g_config.lcow.initrd_file;
-    lcow->boot_parameters = g_config.lcow.boot_parameters;
 }

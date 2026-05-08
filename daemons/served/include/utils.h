@@ -86,6 +86,8 @@ struct container_options {
     // Package identifier in the format "publisher/package".
     // Used for per-package configuration overrides.
     const char* pack_id;
+    // Base selector from the application manifest, e.g. "ubuntu:24".
+    // The container client resolves this to the installed base package path.
     const char* rootfs;
     const char* package;
 };

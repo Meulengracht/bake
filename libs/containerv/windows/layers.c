@@ -871,6 +871,7 @@ int containerv_layers_compose_ex(
     int base_rootfs_count = 0;
     int vafs_count = 0;
     const char* base_rootfs = NULL;
+    const int is_lcow = (compose_options != NULL && compose_options->windows_is_lcow != 0) ? 1 : 0;
 
     for (int i = 0; i < layer_count; ++i) {
         switch (layers[i].type) {
@@ -944,10 +945,9 @@ int containerv_layers_compose_ex(
         parent_count = compose_options->windows_wcow_parent_layer_count;
     }
 
-    // If HCS mode is preferred and the base rootfs is already a windowsfilter layer, use it directly
-    // (only valid when no VAFS layers need applying).
+    // If HCS mode already has a usable rootfs path, reuse it directly when no package layers need applying.
     if (vafs_count == 0 && base_rootfs_count == 1 && base_rootfs != NULL &&
-        __windowsfilter_has_layerchain(base_rootfs)) {
+        (is_lcow || __windowsfilter_has_layerchain(base_rootfs))) {
         context->composed_rootfs = _strdup(base_rootfs);
     } else {
         char* outDir = NULL;
@@ -1032,40 +1032,42 @@ int containerv_layers_compose_ex(
         }
         
         if (source_rootfs == NULL) {
-            VLOG_ERROR("containerv", "containerv_layers_compose: missing rootfs content for windowsfilter import\n");
+            VLOG_ERROR("containerv", "containerv_layers_compose: missing rootfs content for %s\n", is_lcow ? "LCOW materialization" : "windowsfilter import");
             containerv_layers_destroy(context);
             errno = EINVAL;
             return -1;
         }
 
-        char wcow_dir[MAX_PATH];
-        int rc = snprintf(wcow_dir, sizeof(wcow_dir), "%s\\windowsfilter", context->materialized_container_dir);
-        if (rc < 0 || (size_t)rc >= sizeof(wcow_dir)) {
-            containerv_layers_destroy(context);
-            errno = EINVAL;
-            return -1;
-        }
+        if (!is_lcow) {
+            char wcow_dir[MAX_PATH];
+            int rc = snprintf(wcow_dir, sizeof(wcow_dir), "%s\\windowsfilter", context->materialized_container_dir);
+            if (rc < 0 || (size_t)rc >= sizeof(wcow_dir)) {
+                containerv_layers_destroy(context);
+                errno = EINVAL;
+                return -1;
+            }
 
-        char** parent_layers = NULL;
-        int parent_layer_count = 0;
-        if (__copy_parent_layers(parents, parent_count, &parent_layers, &parent_layer_count) != 0) {
-            containerv_layers_destroy(context);
-            errno = EINVAL;
-            return -1;
-        }
+            char** parent_layers = NULL;
+            int parent_layer_count = 0;
+            if (__copy_parent_layers(parents, parent_count, &parent_layers, &parent_layer_count) != 0) {
+                containerv_layers_destroy(context);
+                errno = EINVAL;
+                return -1;
+            }
 
-        if (__windowsfilter_import_from_dir(wcow_dir, source_rootfs, (const char* const*)parent_layers, parent_layer_count) != 0) {
+            if (__windowsfilter_import_from_dir(wcow_dir, source_rootfs, (const char* const*)parent_layers, parent_layer_count) != 0) {
+                __free_parent_layers(parent_layers, parent_layer_count);
+                VLOG_ERROR("containerv", "containerv_layers_compose: failed to import windowsfilter layer from %s\n", source_rootfs);
+                containerv_layers_destroy(context);
+                return -1;
+            }
+
             __free_parent_layers(parent_layers, parent_layer_count);
-            VLOG_ERROR("containerv", "containerv_layers_compose: failed to import windowsfilter layer from %s\n", source_rootfs);
-            containerv_layers_destroy(context);
-            return -1;
+
+            context->windowsfilter_dir = _strdup(wcow_dir);
+            free(context->composed_rootfs);
+            context->composed_rootfs = _strdup(wcow_dir);
         }
-
-        __free_parent_layers(parent_layers, parent_layer_count);
-
-        context->windowsfilter_dir = _strdup(wcow_dir);
-        free(context->composed_rootfs);
-        context->composed_rootfs = _strdup(wcow_dir);
     }
 
     if (context->composed_rootfs == NULL) {
@@ -1099,6 +1101,7 @@ int containerv_layers_compose_with_options(
     if (options != NULL) {
         compose_options.windows_wcow_parent_layers = options->windows_wcow_parent_layers;
         compose_options.windows_wcow_parent_layer_count = options->windows_wcow_parent_layer_count;
+        compose_options.windows_is_lcow = options->windows_container_type == WINDOWS_CONTAINER_TYPE_LINUX;
     }
 
     return containerv_layers_compose_ex(layers, layer_count, container_id, &compose_options, context_out);

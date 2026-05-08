@@ -243,6 +243,7 @@ struct containerv_policy* __policy_from_spec(const struct chef_policy_spec* spec
                 __to_policy_plugin(&spec->plugins[i]);
             if (plugin == NULL) {
                 list_destroy(&plugins, __free_policy_plugin);
+                return NULL;
             }
             list_add(&plugins, &plugin->header);
         }
@@ -340,6 +341,7 @@ static enum chef_status __create_linux_container(const struct chef_create_parame
     }
     return CHEF_STATUS_SUCCESS;
 }
+
 #elif CHEF_ON_WINDOWS
 static int __windows_hcs_has_disallowed_layers(const struct chef_create_parameters* params)
 {
@@ -370,11 +372,10 @@ static enum chef_status __resolve_lcow_runtime(
     const char**                         initrd_out,
     const char**                         boot_out)
 {
-    struct cvd_config_lcow lcow = { 0 };
-    const char*            uvm_image;
-    const char*            kernel;
-    const char*            initrd;
-    const char*            boot;
+    const char* uvm_image;
+    const char* kernel;
+    const char* initrd;
+    const char* boot;
 
     if (resolved_uvm_image == NULL ||
         resolved_kernel == NULL ||
@@ -391,7 +392,6 @@ static enum chef_status __resolve_lcow_runtime(
     *resolved_kernel = NULL;
     *resolved_initrd = NULL;
     *resolved_boot = NULL;
-    cvd_config_lcow(&lcow);
 
     uvm_image = params->guest_windows.lcow_uvm_image_path;
     kernel = params->guest_windows.lcow_kernel_file;
@@ -399,37 +399,24 @@ static enum chef_status __resolve_lcow_runtime(
     boot = params->guest_windows.lcow_boot_parameters;
 
     if (uvm_image == NULL || uvm_image[0] == '\0') {
-        uvm_image = lcow.uvm_image_path;
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
     if (kernel == NULL || kernel[0] == '\0') {
-        kernel = lcow.kernel_file;
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
     if (initrd == NULL || initrd[0] == '\0') {
-        initrd = lcow.initrd_file;
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
     if (boot == NULL || boot[0] == '\0') {
-        boot = lcow.boot_parameters;
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
 
-    if (uvm_image != NULL && uvm_image[0] != '\0' && containerv_disk_validate_lcow_uvm(uvm_image) != 0) {
+    if ((uvm_image == NULL || uvm_image[0] == '\0')) {
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+    }
+
+    if (containerv_disk_validate_lcow_uvm(uvm_image) != 0) {
         VLOG_ERROR("cvd", "cvd_create: configured LCOW UVM bundle is invalid: %s\n", uvm_image);
-        uvm_image = NULL;
-    }
-
-    if ((uvm_image == NULL || uvm_image[0] == '\0') &&
-        lcow.uvm_url != NULL && lcow.uvm_url[0] != '\0') {
-        struct containerv_disk_lcow_uvm_config cfg = { 0 };
-
-        cfg.uvm_url = lcow.uvm_url;
-        if (containerv_disk_setup_lcow_uvm(&cfg, resolved_uvm_image) != 0) {
-            VLOG_ERROR("cvd", "cvd_create: failed to resolve LCOW UVM assets from %s\n", lcow.uvm_url);
-            return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-        }
-        uvm_image = *resolved_uvm_image;
-    }
-
-    if (uvm_image == NULL || uvm_image[0] == '\0') {
-        VLOG_ERROR("cvd", "cvd_create: LCOW requires a configured UVM image path or UVM URL in cvd.json\n");
         return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
 
