@@ -27,6 +27,7 @@
 
 #include "json-util.h"
 
+#include <chef/platform.h>
 #include <chef/containerv/layers.h>
 
 #include "oci-spec.h"
@@ -173,6 +174,38 @@ static char* __wide_to_utf8_alloc(const wchar_t* s)
         return NULL;
     }
     return out;
+}
+
+static int __path_exists_utf8(const char* path)
+{
+    DWORD attributes;
+
+    if (path == NULL || path[0] == '\0') {
+        return 0;
+    }
+
+    attributes = GetFileAttributesA(path);
+    return attributes != INVALID_FILE_ATTRIBUTES;
+}
+
+static int __lcow_bundle_uses_vhd_boot(const char* image_path)
+{
+    static const char* const rootfs_candidates[] = { "rootfs.vhd", "rootfs.vhdx", NULL };
+
+    if (image_path == NULL || image_path[0] == '\0') {
+        return 0;
+    }
+
+    for (int i = 0; rootfs_candidates[i] != NULL; ++i) {
+        char* candidate_path = strpathcombine(image_path, rootfs_candidates[i]);
+        int   exists = __path_exists_utf8(candidate_path);
+
+        free(candidate_path);
+        if (exists) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int __looks_like_guid(const char* s)
@@ -1302,9 +1335,18 @@ static wchar_t* __hcs_create_container_config_schema1(
         }
 
         if (linux_container) {
+            const int   boot_from_vhd = __lcow_bundle_uses_vhd_boot(utilityvm_path);
             const char* kf = (options && options->windows_lcow.kernel_file) ? options->windows_lcow.kernel_file : NULL;
             const char* ir = (options && options->windows_lcow.initrd_file) ? options->windows_lcow.initrd_file : NULL;
             const char* bp = (options && options->windows_lcow.boot_parameters) ? options->windows_lcow.boot_parameters : NULL;
+
+            if (boot_from_vhd && containerv_json_object_set_string(hvrt, "BootSource", "Vhd") != 0) {
+                json_decref(hvrt);
+                json_decref(cfg);
+                json_decref(mapped);
+                json_decref(layers);
+                return NULL;
+            }
 
             if (kf && kf[0] && containerv_json_object_set_string(hvrt, "LinuxKernelFile", kf) != 0) {
                 json_decref(hvrt);
@@ -1313,7 +1355,7 @@ static wchar_t* __hcs_create_container_config_schema1(
                 json_decref(layers);
                 return NULL;
             }
-            if (ir && ir[0] && containerv_json_object_set_string(hvrt, "LinuxInitrdFile", ir) != 0) {
+            if (!boot_from_vhd && ir && ir[0] && containerv_json_object_set_string(hvrt, "LinuxInitrdFile", ir) != 0) {
                 json_decref(hvrt);
                 json_decref(cfg);
                 json_decref(mapped);

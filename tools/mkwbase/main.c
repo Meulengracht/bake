@@ -36,6 +36,7 @@ struct mkwbase_options {
     const char* source_dir;
     const char* image;
     const char* output_dir;
+    const char* archive_path;
     int         force;
 };
 
@@ -62,6 +63,8 @@ static void __print_help(void)
     printf("      Container image for construct\n");
     printf("  -o, --output <dir>\n");
     printf("      Output directory for the normalized base\n");
+    printf("  -a, --archive <path>\n");
+    printf("      Optional tar-compatible archive path for the normalized base\n");
     printf("  -f, --force\n");
     printf("      Replace the output directory if it already exists\n");
     printf("  -h, --help\n");
@@ -77,6 +80,8 @@ static void __spawn_output_handler(const char* line, enum platform_spawn_output_
         fputc('\n', stream);
     }
 }
+
+static int __run_command(const char* program, const char* arguments);
 
 static int __append_fragment(char* buffer, size_t buffer_size, size_t* index, const char* fragment)
 {
@@ -293,7 +298,48 @@ static int __prepare_output_directory(const char* output_dir, int force)
     return 0;
 }
 
-static int __normalize_base_directory(const char* base_name, const char* source_dir, const char* output_dir, int force)
+static int __prepare_archive_path(const char* archive_path, int force)
+{
+    if (__path_exists(archive_path)) {
+        if (!force) {
+            fprintf(stderr, "mkwbase: archive path already exists: %s\n", archive_path);
+            return -1;
+        }
+        if (platform_unlink(archive_path) != 0) {
+            __report_errno_path("failed to remove archive", archive_path);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int __archive_base_directory(const char* source_dir, const char* archive_path, int force)
+{
+    char   arguments[4096] = { 0 };
+    size_t index = 0;
+
+    if (__prepare_archive_path(archive_path, force) != 0) {
+        return -1;
+    }
+
+    if (__append_token(arguments, sizeof(arguments), &index, "-a") != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, "-cf") != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, archive_path) != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, "-C") != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, source_dir) != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, ".") != 0) {
+        return -1;
+    }
+
+    return __run_command("tar", arguments);
+}
+
+static int __normalize_base_directory(
+    const char* base_name,
+    const char* source_dir,
+    const char* output_dir,
+    const char* archive_path,
+    int         force)
 {
     char* absolute_source;
     char* windowsfilter_root;
@@ -378,6 +424,13 @@ static int __normalize_base_directory(const char* base_name, const char* source_
     if (__write_base_manifest(output_dir, base_name, has_utility_vm) != 0) {
         fprintf(stderr, "mkwbase: failed to write base manifest for %s\n", base_name);
         goto cleanup;
+    }
+
+    if (archive_path != NULL && archive_path[0] != '\0') {
+        if (__archive_base_directory(output_dir, archive_path, force) != 0) {
+            fprintf(stderr, "mkwbase: failed to archive normalized base to %s\n", archive_path);
+            goto cleanup;
+        }
     }
 
     printf("Windows base prepared at %s\n", output_dir);
@@ -702,7 +755,12 @@ static char* __find_utilityvm_path(const char* layer_dir)
     return NULL;
 }
 
-static int __construct_base(const char* base_name, const char* image, const char* output_dir, int force)
+static int __construct_base(
+    const char* base_name,
+    const char* image,
+    const char* output_dir,
+    const char* archive_path,
+    int         force)
 {
     char* temp_root = NULL;
     char* windowsfilter_dir = NULL;
@@ -778,7 +836,7 @@ static int __construct_base(const char* base_name, const char* image, const char
         goto cleanup;
     }
 
-    status = __normalize_base_directory(base_name, temp_root, output_dir, force);
+    status = __normalize_base_directory(base_name, temp_root, output_dir, archive_path, force);
 
 cleanup:
     if (container_name != NULL) {
@@ -819,6 +877,11 @@ static int __parse_options(int argc, char** argv, struct mkwbase_options* option
                 return -1;
             }
             options->output_dir = argv[i];
+        } else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--archive")) {
+            if (++i >= argc) {
+                return -1;
+            }
+            options->archive_path = argv[i];
         } else if (!strcmp(argv[i], "-f") || !strcmp(argv[i], "--force")) {
             options->force = 1;
         } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
@@ -876,7 +939,12 @@ int main(int argc, char** argv)
             __print_help();
             return -1;
         }
-        return __normalize_base_directory(options.base, options.source_dir, options.output_dir, options.force);
+        return __normalize_base_directory(
+            options.base,
+            options.source_dir,
+            options.output_dir,
+            options.archive_path,
+            options.force);
     }
 
     if (!strcmp(command, "construct")) {
@@ -884,7 +952,12 @@ int main(int argc, char** argv)
             __print_help();
             return -1;
         }
-        return __construct_base(options.base, options.image, options.output_dir, options.force);
+        return __construct_base(
+            options.base,
+            options.image,
+            options.output_dir,
+            options.archive_path,
+            options.force);
     }
 
     fprintf(stderr, "mkwbase: unknown command %s\n", command);

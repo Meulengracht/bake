@@ -6,8 +6,9 @@ The LCOW base is not a root filesystem by itself. It is the Linux utility VM bun
 
 A normalized LCOW bundle contains:
 
-- `uvm.vhdx`
+- either `uvm.vhdx`/`uvm.vhd` or a boot-files root such as `rootfs.vhd`
 - optionally `kernel`
+- optionally `vmlinux`
 - optionally `initrd` or `initrd.img`
 - optionally `boot_parameters`
 - `bundle.json`
@@ -23,34 +24,52 @@ Windows-hosted Linux builds need two separate artifacts:
 
 The rootfs gives the container filesystem. The UVM gives the Windows host the Linux guest environment needed to boot and run that filesystem.
 
-## Recommended Producer: `mkuvm`
+## Producer Notes: `mkuvm`
 
 The current offline producer is [tools/mkuvm/main.c](../../tools/mkuvm/main.c). It supports four useful commands:
 
 - `mkuvm normalize --source <raw-dir> --output <bundle-dir>`
-- `mkuvm fetch --url <zip-url> --output <bundle-dir>`
+- `mkuvm fetch --url <archive-url> --output <bundle-dir>`
 - `mkuvm archive --source <bundle-dir> --archive <path>`
-- `mkuvm construct --output <bundle-dir>`
+- `mkuvm construct --base-archive <base.tar.gz> --kernel <kernel> --output <bundle-dir>`
 
-Typical construction flow:
+The stable flows today are `normalize`, `fetch`, `archive`, and the explicit `construct` path when you already have the upstream boot inputs.
 
-```powershell
-mkuvm construct --output C:\temp\lcow-uvm
-```
+`mkuvm normalize` now accepts both Chef's legacy LCOW bundle layout and the current upstream `hcsshim` boot-files layout, as long as the source directory contains a usable kernel plus either an initrd or a `rootfs.vhd(.x)` boot disk.
 
-If you already have a raw bundle tree:
+`mkuvm construct` is now an explicit assembly step for the modern boot-files flow. It takes a tar-compatible base archive plus an explicit kernel path, optionally merges an extra delta archive into the rootfs staging tree, packs `initrd.img`, and then normalizes the result into Chef's stable LCOW bundle layout. It no longer clones `hcsshim` or shells into the removed `build-lcow-uvm.sh` compatibility path.
+
+If you already have a raw legacy bundle tree:
 
 ```powershell
 mkuvm normalize --source C:\raw\lcow-uvm --output C:\temp\lcow-uvm
 ```
 
-If you want a zip transport artifact as well:
+If you have a prebuilt bundle archive:
+
+```powershell
+mkuvm fetch --url https://example.invalid/windows-lcow-arm64.tar.xz --output C:\temp\lcow-uvm
+```
+
+Explicit modern construction flow from upstream-style inputs:
+
+```powershell
+mkuvm construct --base-archive C:\inputs\base.tar.gz --kernel C:\inputs\vmlinux --output C:\temp\lcow-uvm
+```
+
+If you also need to layer an extra rootfs overlay before `initrd.img` is packed:
+
+```powershell
+mkuvm construct --base-archive C:\inputs\base.tar.gz --delta-archive C:\inputs\delta.tar.gz --kernel C:\inputs\vmlinux --output C:\temp\lcow-uvm
+```
+
+If you want a transport archive as well:
 
 ```powershell
 mkuvm archive --source C:\temp\lcow-uvm --archive C:\temp\lcow-uvm.zip
 ```
 
-`mkuvm fetch` is the mirror image of that archive flow and downloads a zipped bundle with host-native `curl` and `tar` before normalizing it.
+`mkuvm fetch` is the mirror image of that archive flow and downloads a tar-compatible bundle with host-native `curl` and `tar` before normalizing it.
 
 ## Importing It For Runtime Use
 
@@ -58,13 +77,13 @@ The runtime/import side is handled by [tools/cvctl/commands/uvm.c](../../tools/c
 
 - `cvctl uvm import <bundle-dir>` for a local normalized directory
 - `cvctl uvm import-pack <bundle.pack>` for a Chef package
-- `cvctl uvm fetch <zip-url>` for a prebuilt zip archive
+- `cvctl uvm fetch <archive-url>` for a prebuilt tar-compatible archive
 
 This is the important distinction:
 
 - Directories are imported with `cvctl uvm import`.
 - Chef `.pack` files are imported with `cvctl uvm import-pack`.
-- Zip archives are fetched with `cvctl uvm fetch`.
+- Tar-compatible bundle archives are fetched with `cvctl uvm fetch`.
 
 ## Example Recipe Flow
 
@@ -107,11 +126,21 @@ That can be useful for ad hoc transport or inspection, but Chef's runtime-aware 
 
 ## Host Requirements
 
-`mkuvm construct` and the example script both rely on external host tools:
+`mkuvm construct` relies on external host tools:
 
-- `git`
+- `tar`
+
+On hosts where `tar` cannot emit a gzipped cpio archive directly, it also falls back to:
+
 - `bash`
-- `linuxkit`
-- an `hcsshim` checkout, either supplied via `--hcsshim-dir` or cloned automatically by `mkuvm`
+- `find`
+- `cpio`
+- `gzip`
+
+It also expects you to provide the boot inputs explicitly:
+
+- a tar-compatible base archive such as `base.tar.gz`
+- a kernel path such as `vmlinux`
+- optionally an extra delta archive layered into the rootfs before `initrd.img` is packed
 
 If you only need to consume an existing bundle, you can avoid those build prerequisites and use `mkuvm normalize`, `mkuvm fetch`, or `cvctl uvm import-pack` instead.

@@ -5,7 +5,7 @@ project:
     Builds a self-contained LCOW runtime base package for Windows-hosted Linux
     containers. The pack contains:
     - a Linux guest rootfs under `rootfs/`
-    - an LCOW UVM bundle at the package root (`uvm.vhdx` + optional kernel/initrd/boot params)
+    - an LCOW UVM bundle at the package root (legacy `uvm.vhdx` or modern kernel + initrd/rootfs boot files)
 
     This layout lets served/cvd resolve both the guest rootfs and the HvRuntime
     UVM settings from a single base package.
@@ -18,8 +18,8 @@ environment:
   host:
     packages:
       - ca-certificates
-      - git
-      - linuxkit
+      - cpio
+      - gzip
       - tar
       - wget
 
@@ -30,6 +30,9 @@ recipes:
       path: ./
       script: |
         if build.subsystem.platform_host() == "linux" then
+          if os.getenv("LCOW_BASE_ARCHIVE") == nil or os.getenv("LCOW_KERNEL_PATH") == nil then
+            error("LCOW_BASE_ARCHIVE and LCOW_KERNEL_PATH must be set for the explicit LCOW UVM construct flow")
+          end
           args = build.paths.install()
           args = args .. " " .. build.subsystem.arch_target()
           build.shell("construct.sh", args)

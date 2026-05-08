@@ -5,61 +5,66 @@ DIR="$1"
 ARCH="$2"
 
 OUT_DIR="$DIR/uvm"
-HCSSHIM_DIR="${HCSSHIM_DIR:-$DIR/hcsshim}"
-LINUXKIT_BIN="${LINUXKIT_BIN:-linuxkit}"
+MKUVM_BIN="${MKUVM_BIN:-/chef/build/bin/mkuvm}"
+BASE_ARCHIVE="${LCOW_BASE_ARCHIVE:-}"
+DELTA_ARCHIVE="${LCOW_DELTA_ARCHIVE:-}"
+KERNEL_PATH="${LCOW_KERNEL_PATH:-}"
+BASH_BIN="${LCOW_BASH_BIN:-bash}"
 
 mkdir -p "$OUT_DIR"
 
-if ! command -v "$LINUXKIT_BIN" >/dev/null 2>&1; then
-    echo "linuxkit not found; install it or set LINUXKIT_BIN" >&2
+if [[ "$MKUVM_BIN" == */* ]]; then
+    if [[ ! -x "$MKUVM_BIN" ]]; then
+        echo "mkuvm not found or not executable: $MKUVM_BIN" >&2
+        exit 1
+    fi
+elif ! command -v "$MKUVM_BIN" >/dev/null 2>&1; then
+    echo "mkuvm not found on PATH: $MKUVM_BIN" >&2
     exit 1
 fi
 
-if [ ! -d "$HCSSHIM_DIR" ]; then
-    echo "hcsshim repo not found; cloning..." >&2
-    git clone --depth 1 https://github.com/microsoft/hcsshim.git "$HCSSHIM_DIR"
-fi
-
-BUILD_SCRIPT="${HCSSHIM_DIR}/scripts/build-lcow-uvm.sh"
-if [ ! -f "$BUILD_SCRIPT" ]; then
-    echo "Expected hcsshim build script not found: $BUILD_SCRIPT" >&2
-    echo "Please ensure you have a recent hcsshim checkout or update HCSSHIM_DIR." >&2
+if [ -z "$BASE_ARCHIVE" ] || [ -z "$KERNEL_PATH" ]; then
+    echo "LCOW_BASE_ARCHIVE and LCOW_KERNEL_PATH are required for the explicit mkuvm construct flow" >&2
     exit 1
 fi
 
-TMP_OUT="$(mktemp -d)"
-trap 'rm -rf "$TMP_OUT"' EXIT
+if [ ! -f "$BASE_ARCHIVE" ]; then
+    echo "LCOW base archive not found: $BASE_ARCHIVE" >&2
+    exit 1
+fi
 
-# Build the LCOW UVM using hcsshim's LinuxKit pipeline.
-# The script is expected to emit a VHDX plus optional kernel/initrd artifacts.
-# If your hcsshim version uses different flags, update below accordingly.
-"$BUILD_SCRIPT" \
-    --linuxkit "$LINUXKIT_BIN" \
-    --output "$TMP_OUT" \
+if [ -n "$DELTA_ARCHIVE" ] && [ ! -f "$DELTA_ARCHIVE" ]; then
+    echo "LCOW delta archive not found: $DELTA_ARCHIVE" >&2
+    exit 1
+fi
+
+if [ ! -f "$KERNEL_PATH" ]; then
+    echo "LCOW kernel path not found: $KERNEL_PATH" >&2
+    exit 1
+fi
+
+args=(
+    construct
+    --output "$OUT_DIR"
+    --base-archive "$BASE_ARCHIVE"
+    --kernel "$KERNEL_PATH"
     --arch "$ARCH"
+    --bash-bin "$BASH_BIN"
+    --force
+)
 
-# Normalize outputs into a bundle directory.
-# Required: a VHDX UVM disk.
-UVM_VHDX="$(find "$TMP_OUT" -maxdepth 2 -type f -name '*.vhdx' | head -n 1 || true)"
-if [ -z "$UVM_VHDX" ]; then
-    echo "No VHDX produced by LCOW UVM build" >&2
-    exit 1
+if [ -n "$DELTA_ARCHIVE" ]; then
+    args+=(--delta-archive "$DELTA_ARCHIVE")
 fi
-install -m 0644 "$UVM_VHDX" "$OUT_DIR/uvm.vhdx"
 
-# Optional: kernel / initrd / boot parameters.
-KERNEL="$(find "$TMP_OUT" -maxdepth 2 -type f -name 'kernel*' | head -n 1 || true)"
-INITRD="$(find "$TMP_OUT" -maxdepth 2 -type f -name 'initrd*' | head -n 1 || true)"
-BOOT="$(find "$TMP_OUT" -maxdepth 2 -type f -name 'boot*' | head -n 1 || true)"
+echo "Running $MKUVM_BIN ${args[*]}"
+"$MKUVM_BIN" "${args[@]}"
 
-if [ -n "$KERNEL" ]; then
-    install -m 0644 "$KERNEL" "$OUT_DIR/kernel"
-fi
-if [ -n "$INITRD" ]; then
-    install -m 0644 "$INITRD" "$OUT_DIR/initrd"
-fi
-if [ -n "$BOOT" ]; then
-    install -m 0644 "$BOOT" "$OUT_DIR/boot_parameters"
-fi
+for expected in "$OUT_DIR/bundle.json" "$OUT_DIR/kernel" "$OUT_DIR/initrd"; do
+    if [ ! -e "$expected" ]; then
+        echo "Expected construct output is missing: $expected" >&2
+        exit 1
+    fi
+done
 
 echo "LCOW UVM bundle written to $OUT_DIR"

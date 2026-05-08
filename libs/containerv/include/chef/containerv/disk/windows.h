@@ -72,7 +72,10 @@ extern int containerv_disk_setup_wcow_uvm(const char* path, const char* base);
 /**
  * @brief Validate that the provided directory is a usable LCOW UVM bundle.
  *
- * A valid bundle must at minimum contain a top-level `uvm.vhdx` file.
+ * Supported bundle layouts are:
+ * - legacy: a top-level `uvm.vhdx`/`uvm.vhd`
+ * - boot files: a kernel (`kernel` or `vmlinux`) plus either `initrd(.img)`
+ *   or `rootfs.vhd(.x)`
  */
 extern int containerv_disk_validate_lcow_uvm(const char* image_path);
 

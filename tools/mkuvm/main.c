@@ -32,9 +32,10 @@ struct mkuvm_options {
     const char* source_dir;
     const char* source_url;
     const char* archive_path;
+    const char* base_archive_path;
+    const char* delta_archive_path;
+    const char* kernel_path;
     const char* working_directory;
-    const char* hcsshim_dir;
-    const char* linuxkit_bin;
     const char* bash_bin;
     const char* architecture;
     const char* boot_parameters;
@@ -45,6 +46,9 @@ struct bundle_source_info {
     const char* mode;
     const char* url;
     const char* source_dir;
+    const char* base_archive;
+    const char* delta_archive;
+    const char* kernel_file;
     const char* hcsshim;
     const char* linuxkit;
 };
@@ -61,7 +65,7 @@ static void __print_help(void)
     printf("  archive\n");
     printf("      Archive a normalized LCOW UVM bundle\n");
     printf("  construct\n");
-    printf("      Build an LCOW UVM bundle using hcsshim + LinuxKit\n");
+    printf("      Assemble an LCOW UVM bundle from an explicit base archive and kernel\n");
     printf("\n");
     printf("Global Options:\n");
     printf("  -v, --version\n");
@@ -76,14 +80,16 @@ static void __print_help(void)
     printf("      Bundle archive URL for fetch\n");
     printf("  -a, --archive <path>\n");
     printf("      Optional archive output path, or required for archive command\n");
+    printf("  --base-archive <path>\n");
+    printf("      Base rootfs archive for construct (for example base.tar.gz)\n");
+    printf("  --delta-archive <path>\n");
+    printf("      Optional overlay archive merged into construct before initrd packing\n");
+    printf("  --kernel <path>\n");
+    printf("      Explicit kernel or vmlinux file for construct\n");
     printf("  -w, --working-directory <dir>\n");
-    printf("      Working directory for construct\n");
-    printf("  --hcsshim-dir <dir>\n");
-    printf("      Existing hcsshim checkout for construct\n");
-    printf("  --linuxkit-bin <path>\n");
-    printf("      LinuxKit executable, default is linuxkit\n");
+    printf("      Working directory for construct staging\n");
     printf("  --bash-bin <path>\n");
-    printf("      Bash executable, default is bash\n");
+    printf("      Bash executable used to pack initrd for construct, default is bash\n");
     printf("  --arch <arch>\n");
     printf("      Bundle architecture, default is arm64\n");
     printf("  -p, --boot-parameters <text>\n");
@@ -168,6 +174,13 @@ static int __path_is_directory(const char* path)
     struct platform_stat st;
 
     return (path != NULL && platform_stat(path, &st) == 0 && st.type == PLATFORM_FILETYPE_DIRECTORY) ? 1 : 0;
+}
+
+static int __path_is_file(const char* path)
+{
+    struct platform_stat st;
+
+    return (path != NULL && platform_stat(path, &st) == 0 && st.type == PLATFORM_FILETYPE_FILE) ? 1 : 0;
 }
 
 static int __prepare_output_directory(const char* path, int force)
@@ -361,6 +374,51 @@ static char* __find_first_file(const char* root, const char* const* exact_names,
     return result;
 }
 
+static const char* __path_filename(const char* path)
+{
+    const char* slash;
+    const char* backslash;
+
+    if (path == NULL) {
+        return NULL;
+    }
+
+    slash = strrchr(path, '/');
+    backslash = strrchr(path, '\\');
+    if (slash == NULL && backslash == NULL) {
+        return path;
+    }
+    if (slash == NULL) {
+        return backslash + 1;
+    }
+    if (backslash == NULL) {
+        return slash + 1;
+    }
+    return (slash > backslash ? slash : backslash) + 1;
+}
+
+static const char* __canonical_lcow_disk_name(const char* source_path)
+{
+    const char* name;
+
+    name = __path_filename(source_path);
+    if (name == NULL || name[0] == '\0') {
+        return "uvm.vhdx";
+    }
+
+    if (_stricmp(name, "rootfs.vhd") == 0 ||
+        _stricmp(name, "rootfs.vhdx") == 0 ||
+        _stricmp(name, "uvm.vhd") == 0 ||
+        _stricmp(name, "uvm.vhdx") == 0) {
+        return name;
+    }
+
+    if (__matches_suffix(name, ".vhd")) {
+        return "rootfs.vhd";
+    }
+    return "uvm.vhdx";
+}
+
 static int __copy_canonical_file(const char* source_path, const char* target_dir, const char* target_name)
 {
     char* destination;
@@ -436,6 +494,68 @@ static int __extract_archive(const char* archive_path, const char* destination)
     return __run_command("tar", arguments);
 }
 
+static int __extract_archive_into_existing(const char* archive_path, const char* destination)
+{
+    char   arguments[4096] = { 0 };
+    size_t index = 0;
+
+    if (!__path_is_directory(destination) && platform_mkdir(destination) != 0) {
+        fprintf(stderr, "mkuvm: failed to create staging directory %s\n", destination);
+        return -1;
+    }
+
+    if (__append_token(arguments, sizeof(arguments), &index, "-xf") != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, archive_path) != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, "-C") != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, destination) != 0) {
+        return -1;
+    }
+
+    return __run_command("tar", arguments);
+}
+
+static int __build_initrd_from_directory(const char* source_dir, const char* initrd_path, const char* bash_bin)
+{
+    char   arguments[4096] = { 0 };
+    size_t index = 0;
+    int    status;
+
+    if (__append_token(arguments, sizeof(arguments), &index, "--format=cpio") != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, "-czf") != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, initrd_path) != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, "-C") != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, source_dir) != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, ".") != 0) {
+        return -1;
+    }
+
+    status = __run_command("tar", arguments);
+    if (status == 0) {
+        return 0;
+    }
+
+    if (__path_exists(initrd_path)) {
+        (void)platform_unlink(initrd_path);
+    }
+
+    memset(arguments, 0, sizeof(arguments));
+    index = 0;
+
+    if (__append_token(arguments, sizeof(arguments), &index, "-lc") != 0 ||
+        __append_token(
+            arguments,
+            sizeof(arguments),
+            &index,
+            "set -e; cd \"$1\"; find . -mindepth 1 -print0 | cpio --null -o --format=newc --quiet | gzip -c > \"$2\"") != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, "mkuvm-construct") != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, source_dir) != 0 ||
+        __append_token(arguments, sizeof(arguments), &index, initrd_path) != 0) {
+        return -1;
+    }
+
+    return __run_command(bash_bin, arguments);
+}
+
 static int __write_boot_parameters(const char* target_dir, const char* boot_parameters)
 {
     char* path;
@@ -460,6 +580,7 @@ static int __write_bundle_manifest(
     const char*                    target_dir,
     const char*                    architecture,
     const struct bundle_source_info* source_info,
+    const char*                    uvm_image_name,
     int                            has_kernel,
     int                            has_initrd,
     int                            has_boot_parameters)
@@ -492,6 +613,15 @@ static int __write_bundle_manifest(
         if (source_info->source_dir != NULL && json_object_set_new(source, "source_dir", json_string(source_info->source_dir)) != 0) {
             goto cleanup;
         }
+        if (source_info->base_archive != NULL && json_object_set_new(source, "base_archive", json_string(source_info->base_archive)) != 0) {
+            goto cleanup;
+        }
+        if (source_info->delta_archive != NULL && json_object_set_new(source, "delta_archive", json_string(source_info->delta_archive)) != 0) {
+            goto cleanup;
+        }
+        if (source_info->kernel_file != NULL && json_object_set_new(source, "kernel", json_string(source_info->kernel_file)) != 0) {
+            goto cleanup;
+        }
         if (source_info->hcsshim != NULL && json_object_set_new(source, "hcsshim", json_string(source_info->hcsshim)) != 0) {
             goto cleanup;
         }
@@ -503,7 +633,7 @@ static int __write_bundle_manifest(
     if (json_object_set_new(root, "kind", json_string("lcow-uvm")) != 0 ||
         json_object_set_new(root, "format_version", json_integer(1)) != 0 ||
         json_object_set_new(root, "architecture", json_string(architecture)) != 0 ||
-        json_object_set_new(files, "uvm_image", json_string("uvm.vhdx")) != 0 ||
+        json_object_set_new(files, "uvm_image", (uvm_image_name != NULL && uvm_image_name[0] != '\0') ? json_string(uvm_image_name) : json_null()) != 0 ||
         json_object_set_new(files, "kernel", has_kernel ? json_string("kernel") : json_null()) != 0 ||
         json_object_set_new(files, "initrd", has_initrd ? json_string("initrd") : json_null()) != 0 ||
         json_object_set_new(files, "boot_parameters", has_boot_parameters ? json_string("boot_parameters") : json_null()) != 0 ||
@@ -539,10 +669,10 @@ static int __normalize_bundle(
     const char*                      archive_path,
     int                              force)
 {
-    static const char* const uvm_exact[] = { "uvm.vhdx", NULL };
-    static const char* const kernel_exact[] = { "kernel", NULL };
+    static const char* const uvm_exact[] = { "uvm.vhdx", "uvm.vhd", "rootfs.vhd", "rootfs.vhdx", NULL };
+    static const char* const kernel_exact[] = { "vmlinux", "kernel", NULL };
     static const char* const kernel_prefix[] = { "kernel", NULL };
-    static const char* const initrd_exact[] = { "initrd", "initrd.img", NULL };
+    static const char* const initrd_exact[] = { "initrd.img", "initrd", NULL };
     static const char* const initrd_prefix[] = { "initrd", NULL };
     static const char* const boot_exact[] = { "boot_parameters", NULL };
     static const char* const boot_prefix[] = { "boot", NULL };
@@ -551,6 +681,7 @@ static int __normalize_bundle(
     char* initrd_file = NULL;
     char* boot_file = NULL;
     char* boot_text = NULL;
+    const char* bundle_disk_name = NULL;
     int   has_kernel = 0;
     int   has_initrd = 0;
     int   has_boot_parameters = 0;
@@ -570,13 +701,14 @@ static int __normalize_bundle(
         uvm_file = __find_first_file(source_dir, NULL, NULL, ".vhdx");
     }
     if (uvm_file == NULL) {
-        fprintf(stderr, "mkuvm: no uvm.vhdx or VHDX image found under %s\n", source_dir);
-        goto cleanup;
+        uvm_file = __find_first_file(source_dir, NULL, NULL, ".vhd");
     }
-
-    if (__copy_canonical_file(uvm_file, output_dir, "uvm.vhdx") != 0) {
-        fprintf(stderr, "mkuvm: failed to copy %s\n", uvm_file);
-        goto cleanup;
+    if (uvm_file != NULL) {
+        bundle_disk_name = __canonical_lcow_disk_name(uvm_file);
+        if (__copy_canonical_file(uvm_file, output_dir, bundle_disk_name) != 0) {
+            fprintf(stderr, "mkuvm: failed to copy %s\n", uvm_file);
+            goto cleanup;
+        }
     }
 
     kernel_file = __find_first_file(source_dir, kernel_exact, kernel_prefix, NULL);
@@ -611,7 +743,12 @@ static int __normalize_bundle(
         has_boot_parameters = 1;
     }
 
-    if (__write_bundle_manifest(output_dir, architecture, source_info, has_kernel, has_initrd, has_boot_parameters) != 0) {
+    if (bundle_disk_name == NULL && !(has_kernel && has_initrd)) {
+        fprintf(stderr, "mkuvm: expected either a utility VM disk or a kernel plus initrd under %s\n", source_dir);
+        goto cleanup;
+    }
+
+    if (__write_bundle_manifest(output_dir, architecture, source_info, bundle_disk_name, has_kernel, has_initrd, has_boot_parameters) != 0) {
         fprintf(stderr, "mkuvm: failed to write bundle manifest\n");
         goto cleanup;
     }
@@ -699,13 +836,14 @@ static int __construct_bundle(const struct mkuvm_options* options)
     };
     char* temp_root = NULL;
     char* working_dir = NULL;
-    char* hcsshim_dir = NULL;
+    char* rootfs_dir = NULL;
     char* raw_output = NULL;
-    char* build_script = NULL;
+    char* initrd_path = NULL;
+    char* base_archive_path = NULL;
+    char* delta_archive_path = NULL;
+    char* kernel_path = NULL;
     int   owns_working_dir = 0;
     int   status = -1;
-    char  arguments[4096] = { 0 };
-    size_t index = 0;
 
     if (options->working_directory != NULL) {
         working_dir = platform_abspath(options->working_directory);
@@ -713,7 +851,7 @@ static int __construct_bundle(const struct mkuvm_options* options)
             fprintf(stderr, "mkuvm: invalid working directory %s\n", options->working_directory);
             goto cleanup;
         }
-        if (platform_mkdir(working_dir) != 0) {
+        if (!__path_is_directory(working_dir) && platform_mkdir(working_dir) != 0) {
             fprintf(stderr, "mkuvm: failed to create working directory %s\n", working_dir);
             goto cleanup;
         }
@@ -729,68 +867,82 @@ static int __construct_bundle(const struct mkuvm_options* options)
         owns_working_dir = 1;
     }
 
-    if (options->hcsshim_dir != NULL) {
-        hcsshim_dir = platform_abspath(options->hcsshim_dir);
-    } else {
-        hcsshim_dir = strpathcombine(working_dir, "hcsshim");
-    }
-    if (hcsshim_dir == NULL) {
+    base_archive_path = platform_abspath(options->base_archive_path);
+    kernel_path = platform_abspath(options->kernel_path);
+    if (base_archive_path == NULL || kernel_path == NULL) {
         goto cleanup;
     }
 
-    if (!__path_is_directory(hcsshim_dir)) {
-        memset(arguments, 0, sizeof(arguments));
-        index = 0;
-        if (__append_token(arguments, sizeof(arguments), &index, "clone") != 0 ||
-            __append_token(arguments, sizeof(arguments), &index, "--depth") != 0 ||
-            __append_token(arguments, sizeof(arguments), &index, "1") != 0 ||
-            __append_token(arguments, sizeof(arguments), &index, "https://github.com/microsoft/hcsshim.git") != 0 ||
-            __append_token(arguments, sizeof(arguments), &index, hcsshim_dir) != 0) {
+    if (!__path_is_file(base_archive_path)) {
+        fprintf(stderr, "mkuvm: base archive not found: %s\n", options->base_archive_path);
+        goto cleanup;
+    }
+    if (!__path_is_file(kernel_path)) {
+        fprintf(stderr, "mkuvm: kernel file not found: %s\n", options->kernel_path);
+        goto cleanup;
+    }
+
+    if (options->delta_archive_path != NULL) {
+        delta_archive_path = platform_abspath(options->delta_archive_path);
+        if (delta_archive_path == NULL) {
             goto cleanup;
         }
-
-        printf("Cloning hcsshim into %s\n", hcsshim_dir);
-        if (__run_command("git", arguments) != 0) {
-            fprintf(stderr, "mkuvm: failed to clone hcsshim\n");
+        if (!__path_is_file(delta_archive_path)) {
+            fprintf(stderr, "mkuvm: delta archive not found: %s\n", options->delta_archive_path);
             goto cleanup;
         }
     }
 
-    build_script = strpathjoin(hcsshim_dir, "scripts", "build-lcow-uvm.sh", NULL);
+    rootfs_dir = strpathcombine(working_dir, "rootfs");
     raw_output = strpathcombine(working_dir, "output");
-    if (build_script == NULL || raw_output == NULL) {
+    if (rootfs_dir == NULL || raw_output == NULL) {
         goto cleanup;
     }
 
-    if (!__path_exists(build_script)) {
-        fprintf(stderr, "mkuvm: expected build script not found: %s\n", build_script);
+    if (__prepare_output_directory(rootfs_dir, 1) != 0) {
         goto cleanup;
+    }
+
+    printf("Extracting %s\n", base_archive_path);
+    if (__extract_archive_into_existing(base_archive_path, rootfs_dir) != 0) {
+        fprintf(stderr, "mkuvm: failed to extract %s\n", base_archive_path);
+        goto cleanup;
+    }
+
+    if (delta_archive_path != NULL) {
+        printf("Merging %s\n", delta_archive_path);
+        if (__extract_archive_into_existing(delta_archive_path, rootfs_dir) != 0) {
+            fprintf(stderr, "mkuvm: failed to extract %s\n", delta_archive_path);
+            goto cleanup;
+        }
     }
 
     if (__prepare_output_directory(raw_output, 1) != 0) {
         goto cleanup;
     }
 
-    memset(arguments, 0, sizeof(arguments));
-    index = 0;
-    if (__append_token(arguments, sizeof(arguments), &index, build_script) != 0 ||
-        __append_token(arguments, sizeof(arguments), &index, "--linuxkit") != 0 ||
-        __append_token(arguments, sizeof(arguments), &index, options->linuxkit_bin) != 0 ||
-        __append_token(arguments, sizeof(arguments), &index, "--output") != 0 ||
-        __append_token(arguments, sizeof(arguments), &index, raw_output) != 0 ||
-        __append_token(arguments, sizeof(arguments), &index, "--arch") != 0 ||
-        __append_token(arguments, sizeof(arguments), &index, options->architecture) != 0) {
+    initrd_path = strpathcombine(raw_output, "initrd.img");
+    if (initrd_path == NULL) {
         goto cleanup;
     }
 
-    printf("Building LCOW UVM bundle into %s\n", raw_output);
-    if (__run_command(options->bash_bin, arguments) != 0) {
-        fprintf(stderr, "mkuvm: LCOW UVM build failed\n");
+    printf("Packing initrd from %s\n", rootfs_dir);
+    if (__build_initrd_from_directory(rootfs_dir, initrd_path, options->bash_bin) != 0) {
+        fprintf(stderr,
+            "mkuvm: failed to pack initrd from %s\n"
+            "mkuvm: construct requires tar with cpio output support, or bash plus find, cpio, and gzip\n",
+            rootfs_dir);
         goto cleanup;
     }
 
-    source_info.hcsshim = hcsshim_dir;
-    source_info.linuxkit = options->linuxkit_bin;
+    if (__copy_canonical_file(kernel_path, raw_output, "kernel") != 0) {
+        fprintf(stderr, "mkuvm: failed to copy %s\n", kernel_path);
+        goto cleanup;
+    }
+
+    source_info.base_archive = base_archive_path;
+    source_info.delta_archive = delta_archive_path;
+    source_info.kernel_file = kernel_path;
     status = __normalize_bundle(
         raw_output,
         options->output_dir,
@@ -806,15 +958,17 @@ cleanup:
     }
     free(temp_root);
     free(working_dir);
-    free(hcsshim_dir);
+    free(rootfs_dir);
     free(raw_output);
-    free(build_script);
+    free(initrd_path);
+    free(base_archive_path);
+    free(delta_archive_path);
+    free(kernel_path);
     return status;
 }
 
 static int __parse_options(int argc, char** argv, struct mkuvm_options* options)
 {
-    options->linuxkit_bin = "linuxkit";
     options->bash_bin = "bash";
     options->architecture = "arm64";
 
@@ -839,21 +993,26 @@ static int __parse_options(int argc, char** argv, struct mkuvm_options* options)
                 return -1;
             }
             options->archive_path = argv[i];
+        } else if (!strcmp(argv[i], "--base-archive")) {
+            if (++i >= argc) {
+                return -1;
+            }
+            options->base_archive_path = argv[i];
+        } else if (!strcmp(argv[i], "--delta-archive")) {
+            if (++i >= argc) {
+                return -1;
+            }
+            options->delta_archive_path = argv[i];
+        } else if (!strcmp(argv[i], "--kernel")) {
+            if (++i >= argc) {
+                return -1;
+            }
+            options->kernel_path = argv[i];
         } else if (!strcmp(argv[i], "-w") || !strcmp(argv[i], "--working-directory")) {
             if (++i >= argc) {
                 return -1;
             }
             options->working_directory = argv[i];
-        } else if (!strcmp(argv[i], "--hcsshim-dir")) {
-            if (++i >= argc) {
-                return -1;
-            }
-            options->hcsshim_dir = argv[i];
-        } else if (!strcmp(argv[i], "--linuxkit-bin")) {
-            if (++i >= argc) {
-                return -1;
-            }
-            options->linuxkit_bin = argv[i];
         } else if (!strcmp(argv[i], "--bash-bin")) {
             if (++i >= argc) {
                 return -1;
@@ -952,7 +1111,7 @@ int main(int argc, char** argv)
     }
 
     if (!strcmp(command, "construct")) {
-        if (options.output_dir == NULL) {
+        if (options.output_dir == NULL || options.base_archive_path == NULL || options.kernel_path == NULL) {
             __print_help();
             return -1;
         }

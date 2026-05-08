@@ -7,10 +7,16 @@ on:
         description: LCOW UVM architecture
         required: true
         default: amd64
-      linuxkit_version:
-        description: LinuxKit release tag to install
+      base_archive_url:
+        description: URL for the base rootfs archive consumed by mkuvm construct
         required: true
-        default: v1.8.2
+      kernel_url:
+        description: URL for the explicit kernel or vmlinux consumed by mkuvm construct
+        required: true
+      delta_archive_url:
+        description: Optional URL for an overlay archive merged into the initrd before normalization
+        required: false
+        default: ""
 
 jobs:
   build-lcow-uvm:
@@ -40,6 +46,7 @@ jobs:
           libssl-dev \
           libseccomp-dev \
           libbpf-dev \
+          cpio \
           git \
           curl \
           tar \
@@ -77,30 +84,43 @@ jobs:
 
         echo "path=$mkuvm_path" >> "$GITHUB_OUTPUT"
 
-    - name: Install LinuxKit
-      id: install-linuxkit
-      run: |
-        linuxkit_path="$RUNNER_TEMP/linuxkit"
-        curl -L --fail \
-          --output "$linuxkit_path" \
-          "https://github.com/linuxkit/linuxkit/releases/download/${{ inputs.linuxkit_version }}/linuxkit-linux-amd64"
-        chmod +x "$linuxkit_path"
-        "$linuxkit_path" --help >/dev/null
-        echo "path=$linuxkit_path" >> "$GITHUB_OUTPUT"
-
     - name: Construct LCOW UVM bundle
       id: construct
       run: |
         output_dir="$RUNNER_TEMP/lcow-uvm"
         archive_path="$RUNNER_TEMP/lcow-uvm-${{ inputs.architecture }}.tar.gz"
         working_dir="$RUNNER_TEMP/lcow-uvm-work"
+        inputs_dir="$RUNNER_TEMP/lcow-uvm-inputs"
+        base_archive="$inputs_dir/base.tar.gz"
+        kernel_path="$inputs_dir/kernel"
+
+        mkdir -p "$inputs_dir"
+
+        curl -L --fail \
+          --output "$base_archive" \
+          "${{ inputs.base_archive_url }}"
+
+        curl -L --fail \
+          --output "$kernel_path" \
+          "${{ inputs.kernel_url }}"
+
+        delta_args=()
+        if [[ -n "${{ inputs.delta_archive_url }}" ]]; then
+          delta_archive="$inputs_dir/delta.tar.gz"
+          curl -L --fail \
+            --output "$delta_archive" \
+            "${{ inputs.delta_archive_url }}"
+          delta_args=(--delta-archive "$delta_archive")
+        fi
 
         bash "$GITHUB_WORKSPACE/.github/scripts/construct-lcow-uvm.sh" \
           --mkuvm-path "${{ steps.resolve-mkuvm.outputs.path }}" \
-          --linuxkit-bin "${{ steps.install-linuxkit.outputs.path }}" \
           --output-dir "$output_dir" \
           --archive-path "$archive_path" \
+          --base-archive "$base_archive" \
+          --kernel-path "$kernel_path" \
           --arch "${{ inputs.architecture }}" \
+          "${delta_args[@]}" \
           --working-directory "$working_dir"
 
     - name: Upload LCOW UVM bundle directory

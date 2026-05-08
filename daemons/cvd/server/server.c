@@ -401,19 +401,6 @@ static enum chef_status __resolve_lcow_runtime(
     if (uvm_image == NULL || uvm_image[0] == '\0') {
         return CHEF_STATUS_FAILED_ROOTFS_SETUP;
     }
-    if (kernel == NULL || kernel[0] == '\0') {
-        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-    }
-    if (initrd == NULL || initrd[0] == '\0') {
-        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-    }
-    if (boot == NULL || boot[0] == '\0') {
-        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-    }
-
-    if ((uvm_image == NULL || uvm_image[0] == '\0')) {
-        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
-    }
 
     if (containerv_disk_validate_lcow_uvm(uvm_image) != 0) {
         VLOG_ERROR("cvd", "cvd_create: configured LCOW UVM bundle is invalid: %s\n", uvm_image);

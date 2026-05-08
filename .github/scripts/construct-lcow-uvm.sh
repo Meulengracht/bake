@@ -4,11 +4,12 @@ set -euo pipefail
 mkuvm_path=""
 output_dir=""
 archive_path=""
+base_archive=""
+delta_archive=""
+kernel_path=""
 arch="amd64"
-linuxkit_bin="linuxkit"
 bash_bin="bash"
 working_dir=""
-hcsshim_dir=""
 
 while (($# > 0)); do
     case "$1" in
@@ -24,12 +25,20 @@ while (($# > 0)); do
             archive_path="$2"
             shift 2
             ;;
-        --arch)
-            arch="$2"
+        --base-archive)
+            base_archive="$2"
             shift 2
             ;;
-        --linuxkit-bin)
-            linuxkit_bin="$2"
+        --delta-archive)
+            delta_archive="$2"
+            shift 2
+            ;;
+        --kernel-path)
+            kernel_path="$2"
+            shift 2
+            ;;
+        --arch)
+            arch="$2"
             shift 2
             ;;
         --bash-bin)
@@ -40,10 +49,6 @@ while (($# > 0)); do
             working_dir="$2"
             shift 2
             ;;
-        --hcsshim-dir)
-            hcsshim_dir="$2"
-            shift 2
-            ;;
         *)
             echo "Unknown argument: $1" >&2
             exit 1
@@ -51,8 +56,8 @@ while (($# > 0)); do
     esac
 done
 
-if [[ -z "$mkuvm_path" || -z "$output_dir" || -z "$archive_path" ]]; then
-    echo "Required arguments: --mkuvm-path, --output-dir, --archive-path" >&2
+if [[ -z "$mkuvm_path" || -z "$output_dir" || -z "$archive_path" || -z "$base_archive" || -z "$kernel_path" ]]; then
+    echo "Required arguments: --mkuvm-path, --output-dir, --archive-path, --base-archive, --kernel-path" >&2
     exit 1
 fi
 
@@ -66,13 +71,18 @@ if ! command -v tar >/dev/null 2>&1; then
     exit 1
 fi
 
-if [[ "$linuxkit_bin" == */* ]]; then
-    if [[ ! -x "$linuxkit_bin" ]]; then
-        echo "linuxkit binary is not executable: $linuxkit_bin" >&2
-        exit 1
-    fi
-elif ! command -v "$linuxkit_bin" >/dev/null 2>&1; then
-    echo "linuxkit command not found: $linuxkit_bin" >&2
+if [[ ! -f "$base_archive" ]]; then
+    echo "Base archive not found: $base_archive" >&2
+    exit 1
+fi
+
+if [[ -n "$delta_archive" && ! -f "$delta_archive" ]]; then
+    echo "Delta archive not found: $delta_archive" >&2
+    exit 1
+fi
+
+if [[ ! -f "$kernel_path" ]]; then
+    echo "Kernel path not found: $kernel_path" >&2
     exit 1
 fi
 
@@ -93,19 +103,20 @@ construct_args=(
     construct
     --output "$output_dir"
     --archive "$archive_path"
+    --base-archive "$base_archive"
+    --kernel "$kernel_path"
     --arch "$arch"
-    --linuxkit-bin "$linuxkit_bin"
     --bash-bin "$bash_bin"
     --force
 )
 
+if [[ -n "$delta_archive" ]]; then
+    construct_args+=(--delta-archive "$delta_archive")
+fi
+
 if [[ -n "$working_dir" ]]; then
     mkdir -p "$working_dir"
     construct_args+=(--working-directory "$working_dir")
-fi
-
-if [[ -n "$hcsshim_dir" ]]; then
-    construct_args+=(--hcsshim-dir "$hcsshim_dir")
 fi
 
 echo "Running mkuvm ${construct_args[*]}"
@@ -113,7 +124,8 @@ echo "Running mkuvm ${construct_args[*]}"
 
 expected_paths=(
     "$output_dir/bundle.json"
-    "$output_dir/uvm.vhdx"
+    "$output_dir/kernel"
+    "$output_dir/initrd"
     "$archive_path"
 )
 

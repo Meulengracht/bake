@@ -38,14 +38,14 @@ In `cvd` (Windows host), these are configured once in `cvd.json` or via `cvctl`.
 
 Preferred setup flows:
 - Produce or normalize a bundle offline: `mkuvm normalize --source <raw-dir> --output <bundle-dir>`
-- Build a bundle offline with hcsshim + LinuxKit: `mkuvm construct --output <bundle-dir>`
+- Assemble a bundle offline from an explicit base archive + kernel: `mkuvm construct --base-archive <base.tar.gz> --kernel <kernel> --output <bundle-dir>`
 - Import a locally built bundle into Chef's cache: `cvctl uvm import <bundle-dir>`
 - Import a packaged os-base bundle: `cvctl uvm import-pack <bundle.pack>`
-- Fetch a prebuilt bundle archive into Chef's cache: `cvctl uvm fetch <zip-url>`
+- Fetch a prebuilt bundle archive into Chef's cache: `cvctl uvm fetch <archive-url>`
 
 The fetch flow uses host-native command line tools (`curl` and `tar`) in the same spirit as the Linux rootfs fetch path; it no longer relies on PowerShell.
 
-These commands validate that the bundle contains `uvm.vhdx`, stage it under Chef's cache, and auto-detect optional `kernel`, `initrd`, and `boot_parameters` bundle files.
+These commands validate either the legacy `uvm.vhdx` layout or the newer boot-files layout, stage the bundle under Chef's cache, and auto-detect optional `kernel`, `initrd`, and `boot_parameters` bundle files.
 
 Chef no longer constructs LCOW bundles inside the runtime tools. Bundle construction and normalization should happen offline, and the resulting directory or pack should then be imported.
 
@@ -62,11 +62,11 @@ Low-level config keys remain available when needed:
 Examples:
 
 ```powershell
- mkuvm construct --output "C:\\temp\\lcow-uvm" --archive "C:\\temp\\lcow-uvm.zip"
+ mkuvm construct --base-archive "C:\\inputs\\base.tar.gz" --kernel "C:\\inputs\\vmlinux" --output "C:\\temp\\lcow-uvm" --archive "C:\\temp\\lcow-uvm.tar.gz"
  mkuvm normalize --source "C:\\raw\\lcow-uvm" --output "C:\\temp\\lcow-uvm"
 cvctl uvm import "C:\\ProgramData\\chef\\lcow\\uvm"
 cvctl uvm import-pack "C:\\packages\\lcow-uvm.pack"
-cvctl uvm fetch "https://example.invalid/lcow-uvm.zip"
+cvctl uvm fetch "https://example.invalid/lcow-uvm.tar.gz"
 ```
 
 Or in `cvd.json`:

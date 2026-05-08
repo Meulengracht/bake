@@ -251,29 +251,49 @@ static char* __read_boot_parameters_file(const char* image_path)
     return text;
 }
 
+static int __bundle_has_any_file(const char* image_path, const char* const* candidates)
+{
+    char* detected;
+
+    detected = __find_optional_bundle_file(image_path, candidates);
+    if (detected == NULL) {
+        return 0;
+    }
+
+    free(detected);
+    return 1;
+}
+
 int containerv_disk_validate_lcow_uvm(const char* image_path)
 {
-    char* uvm_vhdx;
-    int   status;
+    static const char* const legacy_disk_candidates[] = { "uvm.vhdx", "uvm.vhd", NULL };
+    static const char* const kernel_candidates[] = { "vmlinux", "kernel", "kernel64", NULL };
+    static const char* const initrd_candidates[] = { "initrd.img", "initrd", NULL };
+    static const char* const rootfs_candidates[] = { "rootfs.vhd", "rootfs.vhdx", NULL };
+    int has_legacy_disk;
+    int has_kernel;
+    int has_initrd;
+    int has_rootfs;
 
     if (!containerv_disk_path_is_directory(image_path)) {
         errno = ENOENT;
         return -1;
     }
 
-    uvm_vhdx = strpathcombine(image_path, "uvm.vhdx");
-    if (uvm_vhdx == NULL) {
-        errno = ENOMEM;
-        return -1;
+    has_legacy_disk = __bundle_has_any_file(image_path, legacy_disk_candidates);
+    if (has_legacy_disk) {
+        return 0;
     }
 
-    status = containerv_disk_path_exists(uvm_vhdx) ? 0 : -1;
-    free(uvm_vhdx);
-    if (status != 0) {
-        errno = ENOENT;
-        return -1;
+    has_kernel = __bundle_has_any_file(image_path, kernel_candidates);
+    has_initrd = __bundle_has_any_file(image_path, initrd_candidates);
+    has_rootfs = __bundle_has_any_file(image_path, rootfs_candidates);
+    if (has_kernel && (has_initrd || has_rootfs)) {
+        return 0;
     }
-    return 0;
+
+    errno = ENOENT;
+    return -1;
 }
 
 int containerv_disk_lcow_detect_uvm_files(
@@ -282,8 +302,8 @@ int containerv_disk_lcow_detect_uvm_files(
     char**      initrd_file_out,
     char**      boot_parameters_out)
 {
-    static const char* const kernel_candidates[] = { "kernel", "kernel64", NULL };
-    static const char* const initrd_candidates[] = { "initrd", "initrd.img", NULL };
+    static const char* const kernel_candidates[] = { "vmlinux", "kernel", "kernel64", NULL };
+    static const char* const initrd_candidates[] = { "initrd.img", "initrd", NULL };
 
     if (kernel_file_out != NULL) {
         *kernel_file_out = NULL;
