@@ -12,7 +12,7 @@ A normalized LCOW bundle contains:
 - optionally `boot_parameters`
 - `bundle.json`
 
-This is the artifact configured into `cvd` and imported with `cvctl uvm ...`.
+This is the artifact configured for `cvd`.
 
 ## When `bake` Needs It
 
@@ -36,14 +36,12 @@ Typical construction flow:
 
 ```powershell
 mkuvm construct --output C:\temp\lcow-uvm
-cvctl uvm import C:\temp\lcow-uvm
 ```
 
 If you already have a raw bundle tree:
 
 ```powershell
 mkuvm normalize --source C:\raw\lcow-uvm --output C:\temp\lcow-uvm
-cvctl uvm import C:\temp\lcow-uvm
 ```
 
 If you want a zip transport artifact as well:
