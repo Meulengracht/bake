@@ -2,24 +2,9 @@ name: LCOW UVM Archive
 
 on:
   workflow_dispatch:
-    inputs:
-      architecture:
-        description: LCOW UVM architecture
-        required: true
-        default: amd64
-      base_archive_url:
-        description: URL for the base rootfs archive consumed by mkuvm construct
-        required: true
-      kernel_url:
-        description: URL for the explicit kernel or vmlinux consumed by mkuvm construct
-        required: true
-      delta_archive_url:
-        description: Optional URL for an overlay archive merged into the initrd before normalization
-        required: false
-        default: ""
 
 jobs:
-  build-lcow-uvm:
+  produce-upstream-inputs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -28,6 +13,53 @@ jobs:
       run:
         shell: bash
     env:
+      # Pinned artifact references for deterministic, reproducible builds
+      LCOW_ARCH: amd64
+      LCOW_UBUNTU_VERSION: 24
+      LCOW_UBUNTU_RELEASE: 3
+      LCOW_KERNEL_IMAGE: linuxkit/kernel:6.12.59-0ef72d722190ecfe0b3b37711f9a871a696e301a
+      LCOW_HCSSHIM_REPO: https://github.com/microsoft/hcsshim.git
+      LCOW_HCSSHIM_REF: main
+      BUILD_TYPE: Release
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Ubuntu build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          gzip \
+          curl \
+          make
+
+    - name: Produce upstream LCOW inputs
+      run: |
+        export LCOW_OUTPUT_DIR="$RUNNER_TEMP/lcow-upstream-inputs"
+        bash "$GITHUB_WORKSPACE/.github/scripts/produce-lcow-upstream-inputs.sh"
+
+    - name: Upload produced upstream inputs
+      uses: actions/upload-artifact@v4
+      with:
+        name: lcow-upstream-inputs-amd64
+        path: ${{ runner.temp }}/lcow-upstream-inputs
+        if-no-files-found: error
+
+  build-lcow-uvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    needs: produce-upstream-inputs
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      LCOW_ARCH: amd64
       BUILD_TYPE: Release
 
     steps:
@@ -51,6 +83,12 @@ jobs:
           curl \
           tar \
           bash
+
+    - name: Download produced upstream inputs
+      uses: actions/download-artifact@v4
+      with:
+        name: lcow-upstream-inputs-amd64
+        path: ${{ runner.temp }}/lcow-upstream-inputs
 
     - name: Configure CMake
       run: |
@@ -88,51 +126,33 @@ jobs:
       id: construct
       run: |
         output_dir="$RUNNER_TEMP/lcow-uvm"
-        archive_path="$RUNNER_TEMP/lcow-uvm-${{ inputs.architecture }}.tar.gz"
+        archive_path="$RUNNER_TEMP/lcow-uvm-$LCOW_ARCH.tar.gz"
         working_dir="$RUNNER_TEMP/lcow-uvm-work"
-        inputs_dir="$RUNNER_TEMP/lcow-uvm-inputs"
+        inputs_dir="$RUNNER_TEMP/lcow-upstream-inputs"
         base_archive="$inputs_dir/base.tar.gz"
+        delta_archive="$inputs_dir/delta.tar.gz"
         kernel_path="$inputs_dir/kernel"
-
-        mkdir -p "$inputs_dir"
-
-        curl -L --fail \
-          --output "$base_archive" \
-          "${{ inputs.base_archive_url }}"
-
-        curl -L --fail \
-          --output "$kernel_path" \
-          "${{ inputs.kernel_url }}"
-
-        delta_args=()
-        if [[ -n "${{ inputs.delta_archive_url }}" ]]; then
-          delta_archive="$inputs_dir/delta.tar.gz"
-          curl -L --fail \
-            --output "$delta_archive" \
-            "${{ inputs.delta_archive_url }}"
-          delta_args=(--delta-archive "$delta_archive")
-        fi
 
         bash "$GITHUB_WORKSPACE/.github/scripts/construct-lcow-uvm.sh" \
           --mkuvm-path "${{ steps.resolve-mkuvm.outputs.path }}" \
           --output-dir "$output_dir" \
           --archive-path "$archive_path" \
           --base-archive "$base_archive" \
+          --delta-archive "$delta_archive" \
           --kernel-path "$kernel_path" \
-          --arch "${{ inputs.architecture }}" \
-          "${delta_args[@]}" \
+          --arch "$LCOW_ARCH" \
           --working-directory "$working_dir"
 
     - name: Upload LCOW UVM bundle directory
       uses: actions/upload-artifact@v4
       with:
-        name: lcow-uvm-bundle-${{ inputs.architecture }}
+        name: lcow-uvm-bundle-amd64
         path: ${{ steps.construct.outputs.output_dir }}
         if-no-files-found: error
 
     - name: Upload LCOW UVM archive
       uses: actions/upload-artifact@v4
       with:
-        name: lcow-uvm-archive-${{ inputs.architecture }}
+        name: lcow-uvm-archive-amd64
         path: ${{ steps.construct.outputs.archive_path }}
         if-no-files-found: error
