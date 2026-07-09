@@ -527,8 +527,8 @@ int fatfs_format_fat32(struct fatfs *fs, uint32 volume_sectors, const char *name
 //-----------------------------------------------------------------------------
 int fatfs_format(struct fatfs *fs, uint32 volume_sectors, const char *name, uint32 partition_lba)
 {
-    // 2GB - 32K limit for safe behaviour for FAT16
-    if (volume_sectors < 4194302)
+    // 512MB - 32K limit for safe behaviour for FAT16
+    if (volume_sectors < (1048576 - 64))
         return fatfs_format_fat16(fs, volume_sectors, name, partition_lba);
     else
         return fatfs_format_fat32(fs, volume_sectors, name, partition_lba);
