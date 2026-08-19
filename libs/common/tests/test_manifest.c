@@ -27,7 +27,6 @@
 #else
 #include <unistd.h>
 #endif
-#include <vafs/vafs.h>
 
 #define TEST_ASSERT(cond, msg) \
     do { \

@@ -19,87 +19,25 @@
 #include <chef/ingredient.h>
 #include <chef/package_manifest.h>
 #include <chef/platform.h>
+#include <chef/vafs.h>
 #include <chef/utils_vafs.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vafs/vafs.h>
-#include <vafs/file.h>
-#include <vafs/directory.h>
-#include <zstd.h>
-
-struct VaFsFeatureFilter {
-    struct VaFsFeatureHeader Header;
-};
+#include <vafs/reader.h>
+#include <vafs/stat.h>
 
 static struct VaFsGuid g_headerGuid    = CHEF_PACKAGE_HEADER_GUID;
 static struct VaFsGuid g_optionsGuid   = CHEF_PACKAGE_INGREDIENT_OPTS_GUID;
 static struct VaFsGuid g_overviewGuid  = VA_FS_FEATURE_OVERVIEW;
-static struct VaFsGuid g_filterGuid    = VA_FS_FEATURE_FILTER;
-static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
-
-static int __zstd_decode(void* Input, uint32_t InputLength, void* Output, uint32_t* OutputLength)
-{
-    /* Read the content size from the frame header. For simplicity we require
-     * that it is always present. By default, zstd will write the content size
-     * in the header when it is known. If you can't guarantee that the frame
-     * content size is always written into the header, either use streaming
-     * decompression, or ZSTD_decompressBound().
-     */
-    size_t             decompressedSize;
-    unsigned long long contentSize = ZSTD_getFrameContentSize(Input, InputLength);
-    if (contentSize == ZSTD_CONTENTSIZE_ERROR || contentSize == ZSTD_CONTENTSIZE_UNKNOWN) {
-        fprintf(stderr, "__zstd_decode: failed to get frame content size\n");
-        return -1;
-    }
-    
-    /* Decompress.
-     * If you are doing many decompressions, you may want to reuse the context
-     * and use ZSTD_decompressDCtx(). If you want to set advanced parameters,
-     * use ZSTD_DCtx_setParameter().
-     */
-    decompressedSize = ZSTD_decompress(Output, *OutputLength, Input, InputLength);
-    if (ZSTD_isError(decompressedSize)) {
-        return -1;
-    }
-    *OutputLength = (uint32_t)decompressedSize;
-    return 0;
-}
-
-static int __set_filter_ops(
-    struct VaFs* vafs)
-{
-    struct VaFsFeatureFilterOps filterOps;
-
-    memcpy(&filterOps.Header.Guid, &g_filterOpsGuid, sizeof(struct VaFsGuid));
-
-    filterOps.Header.Length = sizeof(struct VaFsFeatureFilterOps);
-    filterOps.Encode = NULL;
-    filterOps.Decode = __zstd_decode;
-
-    return vafs_feature_add(vafs, &filterOps.Header);
-}
-
-static int __handle_filter(struct VaFs* vafs)
-{
-    struct VaFsFeatureFilter* filter;
-    int                       status;
-
-    status = vafs_feature_query(vafs, &g_filterGuid, (struct VaFsFeatureHeader**)&filter);
-    if (status) {
-        // no filter present
-        return 0;
-    }
-    return __set_filter_ops(vafs);
-}
 
 static int __handle_overview(struct VaFs* vafsHandle, struct ingredient* ingredient)
 {
     struct VaFsFeatureOverview* overview;
     int                         status;
 
-    status = vafs_feature_query(vafsHandle, &g_overviewGuid, (struct VaFsFeatureHeader**)&overview);
+    status = vafs_reader_query_feature(vafsHandle, &g_overviewGuid, (struct VaFsFeatureHeader**)&overview);
     if (status) {
         fprintf(stderr, "__handle_overview: failed to query feature overview - %i\n", errno);
         return -1;
@@ -118,7 +56,7 @@ static int __handle_options(struct VaFs* vafsHandle, struct ingredient* ingredie
     char*                                     data;
 
     // options are optional - ignore if the guid is not present
-    status = vafs_feature_query(vafsHandle, &g_optionsGuid, (struct VaFsFeatureHeader**)&options);
+    status = vafs_reader_query_feature(vafsHandle, &g_optionsGuid, (struct VaFsFeatureHeader**)&options);
     if (status) {
         return 0;
     }
@@ -228,8 +166,9 @@ static void __ingredient_delete(struct ingredient* ingredient)
 
     chef_package_free(ingredient->package);
     chef_version_free(ingredient->version);
-    vafs_directory_close(ingredient->root_handle);
-    vafs_close(ingredient->vafs);
+    vafs_directory_reader_close(ingredient->root_reader);
+    vafs_reader_close(ingredient->vafs);
+    chef_vafs_codec_context_destroy(ingredient->codec_context);
     free(ingredient);
 }
 
@@ -245,9 +184,17 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
         return -1;
     }
 
-    status = vafs_open_file(path, &vafsHandle);
+    status = chef_vafs_codec_context_create(&ingredient->codec_context);
+    if (status) {
+        fprintf(stderr, "ingredient_open: cannot initialize compression context\n");
+        free(ingredient);
+        return status;
+    }
+
+    status = chef_vafs_reader_open_file(ingredient->codec_context, path, &vafsHandle);
     if (status) {
         fprintf(stderr, "ingredient_open: cannot open vafs image: %s\n", path);
+        chef_vafs_codec_context_destroy(ingredient->codec_context);
         free(ingredient);
         return status;
     }
@@ -283,14 +230,7 @@ int ingredient_open(const char* path, struct ingredient** ingredientOut)
         return status;
     }
 
-    status = __handle_filter(vafsHandle);
-    if (status) {
-        fprintf(stderr, "ingredient_open: failed to handle image filter\n");
-        __ingredient_delete(ingredient);
-        return status;
-    }
-
-    status = vafs_directory_open(vafsHandle, "/", &ingredient->root_handle);
+    status = vafs_directory_reader_open(vafsHandle, "/", VaFsLookup_None, &ingredient->root_reader);
     if (status) {
         fprintf(stderr, "ingredient_open: cannot open root directory: /\n");
         __ingredient_delete(ingredient);
@@ -319,36 +259,52 @@ static const char* __get_relative_path(
 }
 
 static int __extract_file(
-    struct VaFsFileHandle* fileHandle,
-    const char*            path)
+    struct VaFsObjectReader* fileHandle,
+    const char*              path)
 {
-    FILE*  file;
-    size_t fileSize;
-    void*  fileBuffer;
+    FILE*                file;
+    uint64_t             fileSize;
+    uint64_t             bytesRead;
+    void*                fileBuffer;
+    struct VaFsMetadata  metadata;
+    int                  status;
 
     if ((file = fopen(path, "wb+")) == NULL) {
         fprintf(stderr, "__extract_file: unable to open file %s\n", path);
         return -1;
     }
 
-    fileSize = vafs_file_length(fileHandle);
+    fileSize = vafs_object_reader_length(fileHandle);
     if (fileSize) {
-        fileBuffer = malloc(fileSize);
+        fileBuffer = malloc((size_t)fileSize);
         if (fileBuffer == NULL) {
             fprintf(stderr, "__extract_file: unable to allocate memory for file %s\n", path);
+            fclose(file);
             return -1;
         }
 
-        vafs_file_read(fileHandle, fileBuffer, fileSize);
-        fwrite(fileBuffer, 1, fileSize, file);
+        bytesRead = vafs_object_reader_read(fileHandle, fileBuffer, fileSize);
+        if (bytesRead != fileSize) {
+            free(fileBuffer);
+            fclose(file);
+            errno = EIO;
+            return -1;
+        }
+
+        fwrite(fileBuffer, 1, (size_t)fileSize, file);
         free(fileBuffer);
     }
     fclose(file);
-    return platform_chmod(path, vafs_file_permissions(fileHandle));
+
+    status = vafs_object_reader_stat(fileHandle, &metadata);
+    if (status != 0) {
+        return status;
+    }
+    return platform_chmod(path, metadata.Mode & 07777u);
 }
 
 static int __extract_directory(
-    struct VaFsDirectoryHandle* directoryHandle,
+    struct VaFsDirectoryReader* directoryHandle,
     const char*                 root,
     const char*                 path,
     ingredient_progress_cb      progressCB,
@@ -367,7 +323,7 @@ static int __extract_directory(
     }
 
     do {
-        status = vafs_directory_read(directoryHandle, &dp);
+        status = vafs_directory_reader_next(directoryHandle, &dp);
         if (status) {
             if (errno != ENOENT) {
                 fprintf(stderr, "__extract_directory: failed to read directory '%s' - %i\n",
@@ -387,64 +343,94 @@ static int __extract_directory(
             progressCB(dp.Name, INGREDIENT_PROGRESS_START, context);
         }
         if (dp.Type == VaFsEntryType_Directory) {
-            struct VaFsDirectoryHandle* subdirectoryHandle;
-            status = vafs_directory_open_directory(directoryHandle, dp.Name, &subdirectoryHandle);
+            struct VaFsDirectoryReader* subdirectoryHandle;
+
+            status = vafs_directory_reader_open_directory_in(directoryHandle, dp.Name, &subdirectoryHandle);
             if (status) {
                 fprintf(stderr, "__extract_directory: failed to open directory '%s'\n", __get_relative_path(root, filepathBuffer));
+                free(filepathBuffer);
                 return -1;
             }
 
             status = __extract_directory(subdirectoryHandle, root, filepathBuffer, progressCB, context);
             if (status) {
                 fprintf(stderr, "__extract_directory: unable to extract directory '%s'\n", __get_relative_path(root, path));
+                vafs_directory_reader_close(subdirectoryHandle);
+                free(filepathBuffer);
                 return -1;
             }
 
-            status = vafs_directory_close(subdirectoryHandle);
+            status = vafs_directory_reader_close(subdirectoryHandle);
             if (status) {
                 fprintf(stderr, "__extract_directory: failed to close directory '%s'\n", __get_relative_path(root, filepathBuffer));
+                free(filepathBuffer);
                 return -1;
             }
             if (progressCB != NULL) {
                 progressCB(dp.Name, INGREDIENT_PROGRESS_DIRECTORY, context);
             }
         } else if (dp.Type == VaFsEntryType_File) {
-            struct VaFsFileHandle* fileHandle;
-            status = vafs_directory_open_file(directoryHandle, dp.Name, &fileHandle);
+            struct VaFsObjectReader* fileHandle;
+
+            status = vafs_directory_reader_open_object_in(directoryHandle, dp.Name, &fileHandle);
             if (status) {
                 fprintf(stderr, "__extract_directory: failed to open file '%s' - %i\n",
                     __get_relative_path(root, filepathBuffer), status);
+                free(filepathBuffer);
                 return -1;
             }
 
             status = __extract_file(fileHandle, filepathBuffer);
             if (status) {
                 fprintf(stderr, "__extract_directory: unable to extract file '%s'\n", __get_relative_path(root, path));
+                vafs_object_reader_close(fileHandle);
+                free(filepathBuffer);
                 return -1;
             }
 
-            status = vafs_file_close(fileHandle);
-            if (status) {
-                fprintf(stderr, "__extract_directory: failed to close file '%s'\n", __get_relative_path(root, filepathBuffer));
-                return -1;
-            }
+            vafs_object_reader_close(fileHandle);
             if (progressCB != NULL) {
                 progressCB(dp.Name, INGREDIENT_PROGRESS_FILE, context);
             }
         } else if (dp.Type == VaFsEntryType_Symlink) {
-            const char* symlinkTarget;
+            struct VaFsObjectReader* symlinkHandle;
+            uint64_t                 symlinkLength;
+            uint64_t                 bytesRead;
+            char*                    symlinkTarget;
             
-            status = vafs_directory_read_symlink(directoryHandle, dp.Name, &symlinkTarget);
+            status = vafs_directory_reader_open_object_in(directoryHandle, dp.Name, &symlinkHandle);
             if (status) {
-                fprintf(stderr, "__extract_directory: failed to read symlink '%s' - %i\n",
+                fprintf(stderr, "__extract_directory: failed to open symlink '%s' - %i\n",
                     __get_relative_path(root, filepathBuffer), status);
+                free(filepathBuffer);
                 return -1;
             }
 
+            symlinkLength = vafs_object_reader_length(symlinkHandle);
+            symlinkTarget = malloc((size_t)symlinkLength + 1);
+            if (symlinkTarget == NULL) {
+                vafs_object_reader_close(symlinkHandle);
+                free(filepathBuffer);
+                errno = ENOMEM;
+                return -1;
+            }
+
+            bytesRead = vafs_object_reader_read(symlinkHandle, symlinkTarget, symlinkLength);
+            vafs_object_reader_close(symlinkHandle);
+            if (bytesRead != symlinkLength) {
+                free(symlinkTarget);
+                free(filepathBuffer);
+                errno = EIO;
+                return -1;
+            }
+            symlinkTarget[symlinkLength] = '\0';
+
             status = platform_symlink(filepathBuffer, symlinkTarget, 0 /* TODO */);
+            free(symlinkTarget);
             if (status) {
                 fprintf(stderr, "__extract_directory: failed to create symlink '%s' - %i\n",
                     __get_relative_path(root, filepathBuffer), status);
+                free(filepathBuffer);
                 return -1;
             }
             if (progressCB != NULL) {
@@ -452,6 +438,7 @@ static int __extract_directory(
             }
         } else {
             fprintf(stderr, "__extract_directory: unable to extract unknown type '%s'\n", __get_relative_path(root, filepathBuffer));
+            free(filepathBuffer);
             return -1;
         }
         free(filepathBuffer);
@@ -466,5 +453,5 @@ int ingredient_unpack(struct ingredient* ingredient, const char* path, ingredien
         errno = EINVAL;
         return -1;
     }
-    return __extract_directory(ingredient->root_handle, path, path, progressCB, context);
+    return __extract_directory(ingredient->root_reader, path, path, progressCB, context);
 }

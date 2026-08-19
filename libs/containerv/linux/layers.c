@@ -21,6 +21,7 @@
 #include <chef/containerv/layers.h>
 #include <chef/containerv.h>
 #include <chef/platform.h>
+#include <chef/vafs.h>
 #include <errno.h>
 #include <fuse3/fuse.h>
 #include <limits.h>
@@ -30,9 +31,7 @@
 #include <sys/mount.h>
 #include <threads.h>
 #include <unistd.h>
-#include <vafs/vafs.h>
-#include <vafs/file.h>
-#include <vafs/directory.h>
+#include <vafs/reader.h>
 #include <vafs/stat.h>
 #include <vlog.h>
 
@@ -40,10 +39,11 @@
  * @brief VaFS FUSE mount handle
  */
 struct __vafs_mount {
-    struct VaFs* vafs;
-    struct fuse* fuse;
-    char*        mount_point;
-    thrd_t       worker;
+    struct VaFs*                    vafs;
+    struct chef_vafs_codec_context* codec_context;
+    struct fuse*                    fuse;
+    char*                            mount_point;
+    thrd_t                          worker;
 };
 
 /**
@@ -79,21 +79,42 @@ static int __vafs_getattr(const char* path, struct stat* stbuf, struct fuse_file
 {
     struct fuse_context* context = fuse_get_context();
     struct __vafs_mount* mount   = (struct __vafs_mount*)context->private_data;
-    struct vafs_stat     vstat;
-    int                  status;
-    
-    status = vafs_path_stat(mount->vafs, path, 1, &vstat);
+    struct VaFsObjectReader* handle = NULL;
+    struct VaFsMetadata      metadata;
+    int                      status;
+    int                      isRoot;
+
+    memset(stbuf, 0, sizeof(struct stat));
+    if (fi != NULL && fi->fh != 0) {
+        handle = (struct VaFsObjectReader*)fi->fh;
+        status = vafs_object_reader_stat(handle, &metadata);
+        if (status != 0) {
+            return status;
+        }
+
+        stbuf->st_blksize = 512;
+        stbuf->st_mode = metadata.Mode;
+        stbuf->st_size = (off_t)metadata.Size;
+        stbuf->st_nlink = metadata.LinkCount ? metadata.LinkCount : 1;
+        return 0;
+    }
+
+    status = vafs_object_reader_open(mount->vafs, path, VaFsLookup_NoFollow, &handle);
     if (status) {
         return status;
     }
-    
-    memset(stbuf, 0, sizeof(struct stat));
-    stbuf->st_mode = vstat.mode;
-    stbuf->st_size = vstat.size;
-    stbuf->st_uid = 0;
-    stbuf->st_gid = 0;
-    stbuf->st_nlink = 1;
-    
+
+    status = vafs_object_reader_stat(handle, &metadata);
+    vafs_object_reader_close(handle);
+    if (status != 0) {
+        return status;
+    }
+
+    isRoot = (strcmp(path, "/") == 0);
+    stbuf->st_blksize = 512;
+    stbuf->st_mode = metadata.Mode;
+    stbuf->st_size = (off_t)metadata.Size;
+    stbuf->st_nlink = isRoot ? 2 : (metadata.LinkCount ? metadata.LinkCount : 1);
     return 0;
 }
 
@@ -101,10 +122,15 @@ static int __vafs_open(const char* path, struct fuse_file_info* fi)
 {
     struct fuse_context*   context = fuse_get_context();
     struct __vafs_mount*   mount   = (struct __vafs_mount*)context->private_data;
-    struct VaFsFileHandle* handle;
-    int                    status;
-    
-    status = vafs_file_open(mount->vafs, path, &handle);
+    struct VaFsObjectReader* handle;
+    int                      status;
+
+    if ((fi->flags & O_ACCMODE) != O_RDONLY) {
+        errno = EACCES;
+        return -1;
+    }
+
+    status = vafs_object_reader_open(mount->vafs, path, VaFsLookup_None, &handle);
     if (status) {
         return status;
     }
@@ -115,28 +141,38 @@ static int __vafs_open(const char* path, struct fuse_file_info* fi)
 
 static int __vafs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
-    struct VaFsFileHandle* handle = (struct VaFsFileHandle*)fi->fh;
-    size_t                 bytesRead;
-    int                    status;
-    
-    status = vafs_file_seek(handle, SEEK_SET, offset);
-    if (status) {
-        return status;
+    struct VaFsObjectReader* handle = (struct VaFsObjectReader*)fi->fh;
+    uint64_t                 bytesRead;
+    int                      status;
+
+    if (handle == NULL) {
+        errno = EINVAL;
+        return -1;
     }
-    
-    bytesRead = vafs_file_read(handle, buf, size);
+
+    if (offset != 0) {
+        status = vafs_object_reader_seek(handle, offset, SEEK_SET);
+        if (status) {
+            return status;
+        }
+    }
+
+    bytesRead = vafs_object_reader_read(handle, buf, size);
+    if (bytesRead == UINT64_MAX) {
+        return -1;
+    }
     return (int)bytesRead;
 }
 
 static int __vafs_release(const char* path, struct fuse_file_info* fi)
 {
-    struct VaFsFileHandle* handle = (struct VaFsFileHandle*)fi->fh;
+    struct VaFsObjectReader* handle = (struct VaFsObjectReader*)fi->fh;
     
     if (handle == NULL) {
         return -EINVAL;
     }
     
-    vafs_file_close(handle);
+    vafs_object_reader_close(handle);
     fi->fh = 0;
     return 0;
 }
@@ -145,10 +181,10 @@ static int __vafs_opendir(const char* path, struct fuse_file_info* fi)
 {
     struct fuse_context*        context = fuse_get_context();
     struct __vafs_mount*        mount   = (struct __vafs_mount*)context->private_data;
-    struct VaFsDirectoryHandle* handle;
+    struct VaFsDirectoryReader* handle;
     int                         status;
-    
-    status = vafs_directory_open(mount->vafs, path, &handle);
+
+    status = vafs_directory_reader_open(mount->vafs, path, VaFsLookup_None, &handle);
     if (status) {
         return status;
     }
@@ -160,14 +196,36 @@ static int __vafs_opendir(const char* path, struct fuse_file_info* fi)
 static int __vafs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, 
                           off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags)
 {
-    struct VaFsDirectoryHandle* handle = (struct VaFsDirectoryHandle*)fi->fh;
-    struct VaFsEntry            entry;
+    struct VaFsDirectoryReader* handle = (struct VaFsDirectoryReader*)fi->fh;
+    int                         status;
+
+    (void)path;
+    (void)offset;
+    (void)flags;
+
+    if (handle == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
     
     filler(buf, ".", NULL, 0, 0);
     filler(buf, "..", NULL, 0, 0);
     
-    while (vafs_directory_read(handle, &entry) == 0) {
-        filler(buf, entry.Name, NULL, 0, 0);
+    while (1) {
+        struct VaFsEntry entry;
+
+        status = vafs_directory_reader_next(handle, &entry);
+        if (status != 0) {
+            if (errno != ENOENT) {
+                return status;
+            }
+            break;
+        }
+
+        status = filler(buf, entry.Name, NULL, 0, 0);
+        if (status != 0) {
+            return status;
+        }
     }
     
     return 0;
@@ -175,13 +233,13 @@ static int __vafs_readdir(const char* path, void* buf, fuse_fill_dir_t filler,
 
 static int __vafs_releasedir(const char* path, struct fuse_file_info* fi)
 {
-    struct VaFsDirectoryHandle* handle = (struct VaFsDirectoryHandle*)fi->fh;
+    struct VaFsDirectoryReader* handle = (struct VaFsDirectoryReader*)fi->fh;
     
     if (handle == NULL) {
         return -EINVAL;
     }
     
-    vafs_directory_close(handle);
+    vafs_directory_reader_close(handle);
     fi->fh = 0;
     return 0;
 }
@@ -221,9 +279,18 @@ static int __vafs_mount(const char* pack_path, const char* mount_point, struct _
         return -1;
     }
     
-    status = vafs_open_file(pack_path, &mount->vafs);
+    status = chef_vafs_codec_context_create(&mount->codec_context);
+    if (status != 0) {
+        VLOG_ERROR("containerv", "__vafs_mount: failed to initialize compression context\n");
+        free(mount->mount_point);
+        free(mount);
+        return -1;
+    }
+
+    status = chef_vafs_reader_open_file(mount->codec_context, pack_path, &mount->vafs);
     if (status != 0) {
         VLOG_ERROR("containerv", "__vafs_mount: failed to open VaFS package\n");
+        chef_vafs_codec_context_destroy(mount->codec_context);
         free(mount->mount_point);
         free(mount);
         return -1;
@@ -232,7 +299,8 @@ static int __vafs_mount(const char* pack_path, const char* mount_point, struct _
     mount->fuse = fuse_new(&args, &g_vafs_operations, sizeof(g_vafs_operations), mount);
     if (mount->fuse == NULL) {
         VLOG_ERROR("containerv", "__vafs_mount: failed to create FUSE instance\n");
-        vafs_close(mount->vafs);
+        vafs_reader_close(mount->vafs);
+        chef_vafs_codec_context_destroy(mount->codec_context);
         free(mount->mount_point);
         free(mount);
         return -1;
@@ -242,7 +310,8 @@ static int __vafs_mount(const char* pack_path, const char* mount_point, struct _
     if (status != 0) {
         VLOG_ERROR("containerv", "__vafs_mount: failed to mount FUSE\n");
         fuse_destroy(mount->fuse);
-        vafs_close(mount->vafs);
+        vafs_reader_close(mount->vafs);
+        chef_vafs_codec_context_destroy(mount->codec_context);
         free(mount->mount_point);
         free(mount);
         return -1;
@@ -253,7 +322,8 @@ static int __vafs_mount(const char* pack_path, const char* mount_point, struct _
         VLOG_ERROR("containerv", "__vafs_mount: failed to create worker thread\n");
         fuse_unmount(mount->fuse);
         fuse_destroy(mount->fuse);
-        vafs_close(mount->vafs);
+        vafs_reader_close(mount->vafs);
+        chef_vafs_codec_context_destroy(mount->codec_context);
         free(mount->mount_point);
         free(mount);
         return -1;
@@ -284,8 +354,9 @@ static void __vafs_unmount(struct __vafs_mount* mount)
     }
     
     if (mount->vafs != NULL) {
-        vafs_close(mount->vafs);
+        vafs_reader_close(mount->vafs);
     }
+    chef_vafs_codec_context_destroy(mount->codec_context);
     
     free(mount->mount_point);
     free(mount);

@@ -18,13 +18,15 @@
 
 #include <chef/package_manifest.h>
 #include <chef/platform.h>
+#include <chef/vafs.h>
 #include <chef/utils_vafs.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vafs/vafs.h>
+#include <vafs/builder.h>
+#include <vafs/reader.h>
 #include <vlog.h>
 
 static struct VaFsGuid g_headerGuid       = CHEF_PACKAGE_HEADER_GUID;
@@ -379,7 +381,7 @@ static int __write_header_metadata(struct VaFs* vafs, const struct chef_package_
 
 #undef WRITE_MANIFEST_STRING
 
-    status = vafs_feature_add(vafs, &packageHeader->header);
+    status = vafs_builder_add_feature(vafs, &packageHeader->header);
     free(packageHeader);
     if (status != 0) {
         VLOG_ERROR("bake", "failed to write package header\n");
@@ -417,7 +419,7 @@ static int __write_version_metadata(struct VaFs* vafs, const struct chef_version
         );
     }
 
-    status = vafs_feature_add(vafs, &packageVersion->header);
+    status = vafs_builder_add_feature(vafs, &packageVersion->header);
     free(packageVersion);
     return status;
 }
@@ -443,7 +445,7 @@ static int __write_icon_metadata(struct VaFs* vafs, const struct chef_package_bl
     packageIcon->header.Length = (uint32_t)featureSize;
     memcpy((char*)packageIcon + sizeof(struct chef_vafs_feature_package_icon), icon->data, icon->size);
 
-    status = vafs_feature_add(vafs, &packageIcon->header);
+    status = vafs_builder_add_feature(vafs, &packageIcon->header);
     free(packageIcon);
     return status;
 }
@@ -530,7 +532,7 @@ static int __write_commands_metadata(struct VaFs* vafs, const struct chef_packag
         buffer += __serialize_command(&manifest->commands[i], buffer);
     }
 
-    status = vafs_feature_add(vafs, &packageApps->header);
+    status = vafs_builder_add_feature(vafs, &packageApps->header);
     free(packageApps);
     return status;
 }
@@ -607,7 +609,7 @@ static int __write_ingredient_options_metadata(struct VaFs* vafs, const struct c
 
 #undef WRITE_OPTIONAL_BUFFER
 
-    status = vafs_feature_add(vafs, &optionsFeature->header);
+    status = vafs_builder_add_feature(vafs, &optionsFeature->header);
     free(optionsFeature);
     free(bins);
     free(incs);
@@ -657,7 +659,7 @@ static int __write_network_metadata(struct VaFs* vafs, const struct chef_package
         memcpy(data, manifest->application.network_dns, dnsLength);
     }
 
-    status = vafs_feature_add(vafs, &network->header);
+    status = vafs_builder_add_feature(vafs, &network->header);
     free(network);
     return status;
 }
@@ -739,7 +741,7 @@ static int __write_capabilities_metadata(struct VaFs* vafs, const struct chef_pa
         buffer += __serialize_capability(&manifest->capabilities[i], buffer);
     }
 
-    status = vafs_feature_add(vafs, &feature->header);
+    status = vafs_builder_add_feature(vafs, &feature->header);
     free(feature);
     return status;
 }
@@ -750,7 +752,7 @@ static int __load_package_header(struct VaFs* vafs, struct chef_package_manifest
     char*                                    data;
     int                                      status;
 
-    status = vafs_feature_query(vafs, &g_headerGuid, (struct VaFsFeatureHeader**)&header);
+    status = vafs_reader_query_feature(vafs, &g_headerGuid, (struct VaFsFeatureHeader**)&header);
     if (status != 0) {
         return status;
     }
@@ -785,7 +787,7 @@ static int __load_package_version(struct VaFs* vafs, struct chef_package_manifes
     struct chef_vafs_feature_package_version* header;
     int                                       status;
 
-    status = vafs_feature_query(vafs, &g_versionGuid, (struct VaFsFeatureHeader**)&header);
+    status = vafs_reader_query_feature(vafs, &g_versionGuid, (struct VaFsFeatureHeader**)&header);
     if (status != 0) {
         return status;
     }
@@ -813,7 +815,7 @@ static int __load_icon_metadata(struct VaFs* vafs, struct chef_package_manifest*
     size_t                                 iconSize;
     int                                    status;
 
-    status = vafs_feature_query(vafs, &g_iconGuid, (struct VaFsFeatureHeader**)&header);
+    status = vafs_reader_query_feature(vafs, &g_iconGuid, (struct VaFsFeatureHeader**)&header);
     if (status != 0) {
         return 0;
     }
@@ -838,7 +840,7 @@ static int __load_commands_metadata(struct VaFs* vafs, struct chef_package_manif
     int                                    status;
     int                                    i;
 
-    status = vafs_feature_query(vafs, &g_commandsGuid, (struct VaFsFeatureHeader**)&header);
+    status = vafs_reader_query_feature(vafs, &g_commandsGuid, (struct VaFsFeatureHeader**)&header);
     if (status != 0) {
         return 0;
     }
@@ -896,7 +898,7 @@ static int __load_ingredient_options_metadata(struct VaFs* vafs, struct chef_pac
     char*                                     data;
     int                                       status;
 
-    status = vafs_feature_query(vafs, &g_optionsGuid, (struct VaFsFeatureHeader**)&header);
+    status = vafs_reader_query_feature(vafs, &g_optionsGuid, (struct VaFsFeatureHeader**)&header);
     if (status != 0) {
         return 0;
     }
@@ -930,7 +932,7 @@ static int __load_network_metadata(struct VaFs* vafs, struct chef_package_manife
     char*                                     data;
     int                                       status;
 
-    status = vafs_feature_query(vafs, &g_networkGuid, (struct VaFsFeatureHeader**)&header);
+    status = vafs_reader_query_feature(vafs, &g_networkGuid, (struct VaFsFeatureHeader**)&header);
     if (status != 0) {
         return 0;
     }
@@ -995,7 +997,7 @@ static int __load_capabilities_metadata(struct VaFs* vafs, struct chef_package_m
     uint32_t                                       i;
     int                                            status;
 
-    status = vafs_feature_query(vafs, &g_capabilitiesGuid, (struct VaFsFeatureHeader**)&header);
+    status = vafs_reader_query_feature(vafs, &g_capabilitiesGuid, (struct VaFsFeatureHeader**)&header);
     if (status != 0) {
         return 0;
     }
@@ -1140,21 +1142,29 @@ int chef_package_manifest_load_vafs(struct VaFs* vafs, struct chef_package_manif
 
 int chef_package_manifest_load(const char* path, struct chef_package_manifest** manifestOut)
 {
-    struct VaFs* vafs;
-    int          status;
+    struct chef_vafs_codec_context* codecContext = NULL;
+    struct VaFs*                    vafs;
+    int                              status;
 
     if (path == NULL || manifestOut == NULL) {
         errno = EINVAL;
         return -1;
     }
 
-    status = vafs_open_file(path, &vafs);
+    status = chef_vafs_codec_context_create(&codecContext);
     if (status != 0) {
         return status;
     }
 
+    status = chef_vafs_reader_open_file(codecContext, path, &vafs);
+    if (status != 0) {
+        chef_vafs_codec_context_destroy(codecContext);
+        return status;
+    }
+
     status = chef_package_manifest_load_vafs(vafs, manifestOut);
-    vafs_close(vafs);
+    vafs_reader_close(vafs);
+    chef_vafs_codec_context_destroy(codecContext);
     return status;
 }
 

@@ -20,14 +20,13 @@
 #include <chef/package_image.h>
 #include <chef/platform.h>
 #include <chef/utils_vafs.h>
+#include <chef/vafs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vafs/directory.h>
-#include <vafs/file.h>
-#include <vafs/vafs.h>
+#include <vafs/builder.h>
+#include <vafs/stat.h>
 #include <vlog.h>
-#include <zstd.h>
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <dirent_win32.h>
@@ -46,13 +45,6 @@ struct progress_context {
 struct VaFsFeatureFilter {
     struct VaFsFeatureHeader Header;
 };
-
-static struct VaFsGuid g_filterGuid = VA_FS_FEATURE_FILTER;
-static struct VaFsGuid g_filterOpsGuid = VA_FS_FEATURE_FILTER_OPS;
-
-#define __CHEF_ZSTD_COMPRESSION_LEVEL 15
-
-static ZSTD_CCtx* g_compressContext = NULL;
 
 static const char* __get_filename(const char* path)
 {
@@ -138,20 +130,31 @@ static void __write_progress(const char* prefix, struct progress_context* contex
     VLOG_TRACE("bake", "%3d%% | %s\n", percent, prefix);
 }
 
-static int __write_file(
-    struct VaFsDirectoryHandle* directoryHandle,
-    const char*                 path,
-    const char*                 filename,
-    uint32_t                    permissions)
+static struct VaFsMetadata __metadata_for_mode(enum VaFsEntryType type, uint32_t mode)
 {
-    struct VaFsFileHandle* fileHandle = NULL;
-    FILE*                  file = NULL;
-    long                   fileSize;
-    void*                  fileBuffer = NULL;
-    size_t                 bytesRead;
-    int                    status;
+    struct VaFsMetadata metadata;
 
-    status = vafs_directory_create_file(directoryHandle, filename, permissions, &fileHandle);
+    vafs_metadata_initialize(&metadata);
+    vafs_metadata_set_mode(&metadata, type, mode);
+    return metadata;
+}
+
+static int __write_file(
+    struct VaFsDirectoryBuilder* directoryHandle,
+    const char*                  path,
+    const char*                  filename,
+    uint32_t                     permissions)
+{
+    struct VaFsFileBuilder* fileHandle = NULL;
+    struct VaFsMetadata     metadata = __metadata_for_mode(VaFsEntryType_File, permissions);
+    FILE*                   file = NULL;
+    long                    fileSize;
+    void*                   fileBuffer = NULL;
+    size_t                  bytesRead;
+    size_t                  bytesWritten = 0;
+    int                     status;
+
+    status = vafs_directory_builder_create_file(directoryHandle, filename, &metadata, &fileHandle, NULL);
     if (status != 0) {
         return status;
     }
@@ -159,7 +162,7 @@ static int __write_file(
     file = fopen(path, "rb");
     if (file == NULL) {
         VLOG_ERROR("bake", "unable to open file %s\n", path);
-        vafs_file_close(fileHandle);
+        vafs_file_builder_close(fileHandle);
         return -1;
     }
 
@@ -172,7 +175,7 @@ static int __write_file(
         fileBuffer = malloc((size_t)fileSize);
         if (fileBuffer == NULL) {
             fclose(file);
-            vafs_file_close(fileHandle);
+            vafs_file_builder_close(fileHandle);
             errno = ENOMEM;
             return -1;
         }
@@ -182,8 +185,9 @@ static int __write_file(
             VLOG_ERROR("bake", "only partial read %s\n", path);
         }
 
-        writeFailed = vafs_file_write(fileHandle, fileBuffer, (size_t)fileSize);
-        if (writeFailed) {
+        status = vafs_file_builder_write(fileHandle, fileBuffer, (size_t)fileSize, &bytesWritten);
+        if (status != 0 || bytesWritten != (size_t)fileSize) {
+            errno = EIO;
             status = -1;
         }
     }
@@ -193,11 +197,11 @@ static int __write_file(
 
     if (status != 0) {
         VLOG_ERROR("bake", "failed to write file '%s': %s\n", filename, strerror(errno));
-        vafs_file_close(fileHandle);
+        vafs_file_builder_close(fileHandle);
         return -1;
     }
 
-    status = vafs_file_close(fileHandle);
+    status = vafs_file_builder_close(fileHandle);
     if (status != 0) {
         VLOG_ERROR("bake", "failed to close file '%s'\n", filename);
         return -1;
@@ -206,11 +210,11 @@ static int __write_file(
 }
 
 static int __write_directory(
-    struct progress_context*    progress,
-    const struct list*          filters,
-    struct VaFsDirectoryHandle* directoryHandle,
-    const char*                 path,
-    const char*                 subPath)
+    struct progress_context*     progress,
+    const struct list*           filters,
+    struct VaFsDirectoryBuilder* directoryHandle,
+    const char*                  path,
+    const char*                  subPath)
 {
     struct dirent* dp;
     DIR*           dfd;
@@ -257,9 +261,10 @@ static int __write_directory(
         __write_progress(dp->d_name, progress);
 
         if (stats.type == PLATFORM_FILETYPE_DIRECTORY) {
-            struct VaFsDirectoryHandle* subdirectoryHandle;
+            struct VaFsDirectoryBuilder* subdirectoryHandle;
+            struct VaFsMetadata          metadata = __metadata_for_mode(VaFsEntryType_Directory, stats.permissions);
 
-            status = vafs_directory_create_directory(directoryHandle, dp->d_name, stats.permissions, &subdirectoryHandle);
+            status = vafs_directory_builder_create_directory(directoryHandle, dp->d_name, &metadata, &subdirectoryHandle, NULL);
             if (status != 0) {
                 VLOG_ERROR("bake", "failed to create directory '%s'\n", dp->d_name);
             } else {
@@ -267,7 +272,7 @@ static int __write_directory(
                 if (status != 0) {
                     VLOG_ERROR("bake", "unable to write directory %s\n", combinedPath);
                 }
-                if (vafs_directory_close(subdirectoryHandle) != 0) {
+                if (vafs_directory_builder_close(subdirectoryHandle) != 0) {
                     VLOG_ERROR("bake", "failed to close directory '%s'\n", combinedPath);
                     status = -1;
                 }
@@ -285,7 +290,9 @@ static int __write_directory(
             if (status != 0) {
                 VLOG_ERROR("bake", "failed to read link %s\n", combinedPath);
             } else {
-                status = vafs_directory_create_symlink(directoryHandle, dp->d_name, linkpath);
+                struct VaFsMetadata metadata = __metadata_for_mode(VaFsEntryType_Symlink, stats.permissions);
+
+                status = vafs_directory_builder_create_symlink(directoryHandle, dp->d_name, linkpath, &metadata, NULL);
                 free(linkpath);
                 if (status != 0) {
                     VLOG_ERROR("bake", "failed to create symlink %s\n", combinedPath);
@@ -308,72 +315,6 @@ static int __write_directory(
 
     closedir(dfd);
     return status;
-}
-
-static int __zstd_encode(void* Input, uint32_t InputLength, void** Output, uint32_t* OutputLength)
-{
-    size_t compressedSize = ZSTD_compressBound(InputLength);
-    void*  compressedData;
-    size_t checkSize;
-
-    compressedData = malloc(compressedSize);
-    if (compressedData == NULL) {
-        return -1;
-    }
-
-    checkSize = ZSTD_compressCCtx(
-        g_compressContext,
-        compressedData,
-        compressedSize,
-        Input,
-        InputLength,
-        __CHEF_ZSTD_COMPRESSION_LEVEL
-    );
-    if (ZSTD_isError(checkSize)) {
-        free(compressedData);
-        return -1;
-    }
-
-    *Output = compressedData;
-    *OutputLength = (uint32_t)checkSize;
-    return 0;
-}
-
-static int __zstd_decode(void* Input, uint32_t InputLength, void* Output, uint32_t* OutputLength)
-{
-    size_t decompressedSize;
-
-    decompressedSize = ZSTD_decompress(Output, *OutputLength, Input, InputLength);
-    if (ZSTD_isError(decompressedSize)) {
-        return -1;
-    }
-    *OutputLength = (uint32_t)decompressedSize;
-    return 0;
-}
-
-static int __set_filter_ops(struct VaFs* vafs)
-{
-    struct VaFsFeatureFilterOps filterOps;
-
-    memcpy(&filterOps.Header.Guid, &g_filterOpsGuid, sizeof(struct VaFsGuid));
-    filterOps.Header.Length = sizeof(struct VaFsFeatureFilterOps);
-    filterOps.Encode = __zstd_encode;
-    filterOps.Decode = __zstd_decode;
-    return vafs_feature_add(vafs, &filterOps.Header);
-}
-
-static int __install_filter(struct VaFs* vafs)
-{
-    struct VaFsFeatureFilter filter;
-    int                      status;
-
-    memcpy(&filter.Header.Guid, &g_filterGuid, sizeof(struct VaFsGuid));
-    filter.Header.Length = sizeof(struct VaFsFeatureFilter);
-    status = vafs_feature_add(vafs, &filter.Header);
-    if (status != 0) {
-        return status;
-    }
-    return __set_filter_ops(vafs);
 }
 
 static enum VaFsArchitecture __parse_arch(const char* arch)
@@ -403,13 +344,14 @@ static void __finalize_progress(struct progress_context* progress, const char* p
 
 int chef_package_image_create(const struct chef_package_image_options* options)
 {
-    struct VaFsDirectoryHandle* directoryHandle = NULL;
-    struct VaFsConfiguration    configuration;
-    struct VaFs*                vafs = NULL;
-    struct list                 files = { 0 };
-    struct progress_context     progressContext = { 0 };
-    const char*                 progressName;
-    int                         status;
+    struct VaFsDirectoryBuilder*    directoryHandle = NULL;
+    struct VaFsBuilderConfiguration configuration;
+    struct chef_vafs_codec_context* codecContext = NULL;
+    struct VaFs*                    vafs = NULL;
+    struct list                     files = { 0 };
+    struct progress_context         progressContext = { 0 };
+    const char*                     progressName;
+    int                             status;
 
     if (options == NULL || options->input_dir == NULL || options->output_path == NULL || options->manifest == NULL) {
         errno = EINVAL;
@@ -432,25 +374,25 @@ int chef_package_image_create(const struct chef_package_image_options* options)
         goto cleanup;
     }
 
-    vafs_config_initialize(&configuration);
-    vafs_config_set_architecture(&configuration, __parse_arch(options->manifest->architecture));
-    vafs_config_set_block_size(&configuration, 1024 * 1024);
+    status = chef_vafs_codec_context_create(&codecContext);
+    if (status != 0) {
+        VLOG_ERROR("bake", "cannot initialize compression context\n");
+        goto cleanup;
+    }
 
-    status = vafs_create(options->output_path, &configuration, &vafs);
+    chef_vafs_builder_config_initialize(codecContext, &configuration);
+    vafs_builder_config_set_architecture(&configuration, __parse_arch(options->manifest->architecture));
+    vafs_builder_config_set_descriptor_block_size(&configuration, 1024 * 1024);
+    vafs_builder_config_set_data_block_size(&configuration, 1024 * 1024);
+
+    status = vafs_builder_new(options->output_path, &configuration, &vafs, &directoryHandle);
     if (status != 0) {
         goto cleanup;
     }
 
-    g_compressContext = ZSTD_createCCtx();
-    status = __install_filter(vafs);
+    status = chef_vafs_builder_install_zstd_feature(vafs);
     if (status != 0) {
         VLOG_ERROR("bake", "cannot initialize compression\n");
-        goto cleanup;
-    }
-
-    status = vafs_directory_open(vafs, "/", &directoryHandle);
-    if (status != 0) {
-        VLOG_ERROR("bake", "cannot open root directory\n");
         goto cleanup;
     }
 
@@ -469,15 +411,12 @@ int chef_package_image_create(const struct chef_package_image_options* options)
 
 cleanup:
     if (directoryHandle != NULL) {
-        vafs_directory_close(directoryHandle);
+        vafs_directory_builder_close(directoryHandle);
     }
     if (vafs != NULL) {
-        vafs_close(vafs);
+        vafs_builder_close(vafs);
     }
+    chef_vafs_codec_context_destroy(codecContext);
     platform_getfiles_destroy(&files);
-    if (g_compressContext != NULL) {
-        ZSTD_freeCCtx(g_compressContext);
-        g_compressContext = NULL;
-    }
     return status;
 }

@@ -23,7 +23,8 @@
 
 // prototypes imported from vafs;
 struct VaFs;
-struct VaFsDirectoryHandle;
+struct VaFsDirectoryReader;
+struct chef_vafs_codec_context;
 
 struct ingredient_options {
     char** bin_dirs;
@@ -34,14 +35,15 @@ struct ingredient_options {
 };
 
 struct ingredient {
-    struct VaFs*                vafs;
-    struct VaFsDirectoryHandle* root_handle;
-    struct chef_package*        package;
-    struct chef_version*        version;
-    struct ingredient_options*  options;
-    int                         file_count;
-    int                         directory_count;
-    int                         symlink_count;
+    struct VaFs*                     vafs;
+    struct chef_vafs_codec_context*  codec_context;
+    struct VaFsDirectoryReader*      root_reader;
+    struct chef_package*             package;
+    struct chef_version*             version;
+    struct ingredient_options*       options;
+    int                              file_count;
+    int                              directory_count;
+    int                              symlink_count;
 };
 
 #define INGREDIENT_PROGRESS_START     0

@@ -24,6 +24,7 @@
 #include <chef/package_manifest.h>
 #include <chef/platform.h>
 #include <chef/utils_vafs.h>
+#include <chef/vafs.h>
 #include <errno.h>
 #include <gracht/link/socket.h>
 #include <gracht/client.h>
@@ -32,7 +33,7 @@
 #ifndef _WIN32
 #include <strings.h>
 #endif
-#include <vafs/vafs.h>
+#include <vafs/reader.h>
 #include <vlog.h>
 
 #include <utils.h>
@@ -161,10 +162,15 @@ static char* __resolve_base_package_path(const char* pack_id, const char* base_s
     char*                     base_store_id = NULL;
     char*                     base_package_path = NULL;
     struct VaFs*              vafs = NULL;
+    struct chef_vafs_codec_context* codecContext = NULL;
     const char*               candidate_identities[3] = { NULL, "vali", NULL };
 
     if (base_selector == NULL || base_selector[0] == '\0') {
         errno = EINVAL;
+        return NULL;
+    }
+
+    if (chef_vafs_codec_context_create(&codecContext) != 0) {
         return NULL;
     }
 
@@ -214,8 +220,8 @@ static char* __resolve_base_package_path(const char* pack_id, const char* base_s
             continue;
         }
 
-        if (vafs_open_file(base_package_path, &vafs) == 0) {
-            vafs_close(vafs);
+        if (chef_vafs_reader_open_file(codecContext, base_package_path, &vafs) == 0) {
+            vafs_reader_close(vafs);
             break;
         }
 
@@ -223,6 +229,7 @@ static char* __resolve_base_package_path(const char* pack_id, const char* base_s
         base_package_path = NULL;
     }
 
+    chef_vafs_codec_context_destroy(codecContext);
     strsplit_free(base_parts);
     strsplit_free(package_parts);
     free(base_store_id);
@@ -621,6 +628,7 @@ static char* __dup_pack_network_config_value(const char* pack_id, const char* su
 static int __load_pack_network_defaults(const char* packPath, char** gatewayOut, char** dnsOut)
 {
     struct VaFs* vafs = NULL;
+    struct chef_vafs_codec_context* codecContext = NULL;
     struct chef_vafs_feature_package_network* header = NULL;
     struct VaFsGuid guid = CHEF_PACKAGE_NETWORK_GUID;
     int status;
@@ -629,14 +637,21 @@ static int __load_pack_network_defaults(const char* packPath, char** gatewayOut,
         return 0;
     }
 
-    status = vafs_open_file(packPath, &vafs);
+    status = chef_vafs_codec_context_create(&codecContext);
     if (status != 0) {
         return 0;
     }
 
-    status = vafs_feature_query(vafs, &guid, (struct VaFsFeatureHeader**)&header);
+    status = chef_vafs_reader_open_file(codecContext, packPath, &vafs);
     if (status != 0) {
-        vafs_close(vafs);
+        chef_vafs_codec_context_destroy(codecContext);
+        return 0;
+    }
+
+    status = vafs_reader_query_feature(vafs, &guid, (struct VaFsFeatureHeader**)&header);
+    if (status != 0) {
+        vafs_reader_close(vafs);
+        chef_vafs_codec_context_destroy(codecContext);
         return 0;
     }
 
@@ -649,7 +664,8 @@ static int __load_pack_network_defaults(const char* packPath, char** gatewayOut,
         *dnsOut = platform_strndup(data, header->dns_length);
     }
 
-    vafs_close(vafs);
+    vafs_reader_close(vafs);
+    chef_vafs_codec_context_destroy(codecContext);
     return 0;
 }
 
@@ -901,6 +917,7 @@ static int __load_pack_capabilities_as_plugins(
     struct chef_policy_spec*   policyOut)
 {
     struct VaFs*                    vafs = NULL;
+    struct chef_vafs_codec_context*  codecContext = NULL;
     struct chef_package_manifest*   manifest = NULL;
     int                             pluginCount = 0;
     int                             pluginIdx = 0;
@@ -910,13 +927,20 @@ static int __load_pack_capabilities_as_plugins(
         return 0;
     }
 
-    status = vafs_open_file(packPath, &vafs);
+    status = chef_vafs_codec_context_create(&codecContext);
     if (status != 0) {
         return 0;
     }
 
+    status = chef_vafs_reader_open_file(codecContext, packPath, &vafs);
+    if (status != 0) {
+        chef_vafs_codec_context_destroy(codecContext);
+        return 0;
+    }
+
     status = chef_package_manifest_load_vafs(vafs, &manifest);
-    vafs_close(vafs);
+    vafs_reader_close(vafs);
+    chef_vafs_codec_context_destroy(codecContext);
     if (status != 0 || manifest == NULL || manifest->capabilities_count == 0) {
         return 0;
     }

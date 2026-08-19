@@ -22,7 +22,7 @@
 #include <stddef.h>
 #include <chef/package.h>
 #include <stdint.h>
-#include <vafs/vafs.h>
+#include <vafs/types.h>
 
 #define CHEF_PACKAGE_VERSION 0x00010000
 

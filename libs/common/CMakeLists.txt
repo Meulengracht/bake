@@ -6,6 +6,7 @@ add_library(common STATIC
     recipes/package.c
     recipes/utils.c
 
+    vafs/helpers.c
     vafs/image.c
     vafs/ingredient.c
     vafs/metadata.c

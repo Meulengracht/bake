@@ -7,6 +7,8 @@ add_subdirectory(protecc)
 add_subdirectory(containerv)
 
 # Build utility libraries before the system libraries
+set(VAFS_BUILD_BENCHMARKS OFF CACHE BOOL "Build vafs benchmarks" FORCE)
+set(VAFS_BUILD_TESTS OFF CACHE BOOL "Build vafs tests" FORCE)
 add_subdirectory(vafs)
 
 # Add platform include directory to vafs tools for Windows dirent support
