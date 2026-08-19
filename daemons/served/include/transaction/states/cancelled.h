@@ -28,7 +28,6 @@ static const struct served_sm_state g_stateCancelled = {
     .state = SERVED_TX_STATE_CANCELLED,
     .action = served_handle_state_cancelled,
     .transition_count = 0,
-    .transitions = { },
 };
 
 #endif //!__SERVED_TRANSACTION_STATE_CANCELLED_H__

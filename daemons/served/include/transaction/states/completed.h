@@ -28,7 +28,6 @@ static const struct served_sm_state g_stateCompleted = {
     .state = SERVED_TX_STATE_COMPLETED,
     .action = served_handle_state_completed,
     .transition_count = 0,
-    .transitions = { },
 };
 
 #endif //!__SERVED_TRANSACTION_STATE_COMPLETED_H__

@@ -28,7 +28,6 @@ static const struct served_sm_state g_stateError = {
     .state = SERVED_TX_STATE_ERROR,
     .action = served_handle_state_error,
     .transition_count = 0,
-    .transitions = { },
 };
 
 #endif //!__SERVED_TRANSACTION_STATE_ERROR_H__
