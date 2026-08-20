@@ -31,31 +31,17 @@
 
 static sm_event_t __ensure_base(struct served_transaction* transaction, const char* name, const char* baseName)
 {
-    struct state_application* application;
     struct state_application* base;
     unsigned int              transactionId;
     char                      nameBuffer[256];
     char                      descriptionBuffer[512];
-    int                       applicationMissing;
     int                       baseInstalled;
     
     served_state_lock();
-    application = served_state_application(name);
     base = served_state_application(baseName);
-    applicationMissing = (application == NULL);
-    baseInstalled = (base != NULL);
     served_state_unlock();
 
-    if (applicationMissing) {
-        TXLOG_ERROR(
-            transaction,
-            "Package '%s' not found in state while resolving base dependency",
-            name
-        );
-        return SERVED_TX_EVENT_FAILED;
-    }
-
-    if (baseInstalled) {
+    if (base != NULL) {
         TXLOG_INFO(transaction, "Base for %s already installed", name);
         return SERVED_TX_EVENT_OK;
     }
