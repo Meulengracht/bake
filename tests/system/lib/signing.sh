@@ -58,6 +58,16 @@ setup_test_signing_identity() {
         fi
     fi
 
+    # ssh-keygen always writes the public key in OpenSSH format, which served cannot parse.
+    if ! head -n 1 "${key_path}.pub" | grep -q -- "-----BEGIN PUBLIC KEY-----"; then
+        if ! "$keygen" -e -m PKCS8 -f "$key_path" > "${key_path}.pub.pem" 2>/dev/null; then
+            echo "ERROR: failed to convert public key to PEM at ${key_path}.pub" >&2
+            rm -f "${key_path}.pub.pem"
+            return 1
+        fi
+        mv "${key_path}.pub.pem" "${key_path}.pub"
+    fi
+
     if ! "$CMD_ORDER" --root "$root_dir" config auth.name "$signer_name" >/dev/null; then
         echo "ERROR: failed to configure signing name in $root_dir" >&2
         return 1
