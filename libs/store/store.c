@@ -301,7 +301,7 @@ int store_package_path(struct store_package* package, const char** pathOut)
         goto cleanup;
     }
 
-    *pathOut = __format_package_path(names[0], names[1], package->revision);
+    *pathOut = inventory_pack_path(pack);
 
 cleanup:
     strsplit_free(names);

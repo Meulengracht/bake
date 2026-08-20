@@ -453,13 +453,29 @@ int inventory_add(struct store_inventory* inventory, const char* packPath, const
     packEntry = &((struct store_inventory_pack*)newArray)[inventory->packs_count];
     memset(packEntry, 0, sizeof(struct store_inventory_pack));
 
-    packEntry->path      = platform_strdup(packPath);
+    packEntry->path      = packPath != NULL ? platform_strdup(packPath) : NULL;
     packEntry->publisher = platform_strdup(publisher);
     packEntry->package   = platform_strdup(package);
     packEntry->platform  = platform != NULL ? platform_strdup(platform) : NULL;
-    packEntry->arch      = platform != NULL ? platform_strdup(arch) : NULL;
-    packEntry->channel   = platform_strdup(channel);
+    packEntry->arch      = arch != NULL ? platform_strdup(arch) : NULL;
+    packEntry->channel   = channel != NULL ? platform_strdup(channel) : NULL;
     packEntry->revision  = revision;
+
+    if ((packPath != NULL && packEntry->path == NULL) ||
+        packEntry->publisher == NULL ||
+        packEntry->package == NULL ||
+        (platform != NULL && packEntry->platform == NULL) ||
+        (arch != NULL && packEntry->arch == NULL) ||
+        (channel != NULL && packEntry->channel == NULL)) {
+        free((void*)packEntry->path);
+        free((void*)packEntry->publisher);
+        free((void*)packEntry->package);
+        free((void*)packEntry->platform);
+        free((void*)packEntry->arch);
+        free((void*)packEntry->channel);
+        free(newArray);
+        return -1;
+    }
 
     *packOut = packEntry;
 

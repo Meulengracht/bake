@@ -295,7 +295,7 @@ static json_t* __serialize_cache(struct recipe_cache* cache)
     }
 
     ingredients = __serialize_cache_ingredients(&cache->ingredients);
-    if (packages == NULL) {
+    if (ingredients == NULL) {
         json_decref(packages);
         json_decref(root);
         return NULL;
@@ -516,7 +516,7 @@ int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct re
         int                      exists = 0;
 
         list_foreach(&cache->packages, j) {
-            struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
+            struct recipe_cache_package* pkg = (struct recipe_cache_package*)j;
             if (strcmp(toCheck->value, pkg->name) == 0) {
                 // found, not a new package
                 exists = 1;
@@ -534,18 +534,18 @@ int recipe_cache_calculate_package_changes(struct recipe_cache* cache, struct re
     // check packages removed
     VLOG_DEBUG("cache", "calculating package removed\n");
     list_foreach(&cache->packages, i) {
-        struct list_item_string* toCheck = (struct list_item_string*)i;
-        int                     exists = 0;
+        struct recipe_cache_package* toCheck = (struct recipe_cache_package*)i;
+        int                          exists = 0;
         list_foreach(&cache->current->environment.host.packages, j) {
-            struct recipe_cache_package* pkg = (struct recipe_cache_package*)i;
-            if (strcmp(toCheck->value, pkg->name) == 0) {
+            struct list_item_string* pkg = (struct list_item_string*)j;
+            if (strcmp(toCheck->name, pkg->value) == 0) {
                 // found, not a new package
                 exists = 1;
                 break;
             }
         }
         if (!exists) {
-            if (__add_package_change(changes, changeCount, &capacity, toCheck->value, RECIPE_CACHE_CHANGE_REMOVED)) {
+            if (__add_package_change(changes, changeCount, &capacity, toCheck->name, RECIPE_CACHE_CHANGE_REMOVED)) {
                 return -1;
             }
         }
