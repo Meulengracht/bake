@@ -5,7 +5,7 @@
 #   1.  Create isolated temp environment
 #   2.  Start cvd (container daemon)
 #   3.  Build the Ubuntu base and hello-world recipes
-#   4.  Configure an isolated signing identity and sign both built .packs
+#   4.  Configure an isolated fake-store keypair and sign both built .packs
 #   5.  Publish both packs to an isolated dummy store
 #   6.  Start served (runtime daemon) with --root pointing at the temp dir
 #   7.  Wait for served to be ready (/tmp/served socket appears)
@@ -167,24 +167,21 @@ echo "       artifact: $(basename "$PACK_FILE") ($(wc -c < "$PACK_FILE") bytes)"
 # Sign the .pack artifacts to enable installation (skips interactive prompt in
 # 'serve install'). Keep signing config under an isolated root so the test does
 # not touch the developer's real ~/.chef state.
-echo "[4/11] Configuring signing identity and signing .pack artifacts..."
-if ! setup_test_signing_identity "$SIGNING_ROOT" "$WORK_DIR/hello_key"; then
-    echo "FAIL: could not configure test signing identity"
+echo "[4/11] Configuring fake-store keypair and signing .pack artifacts..."
+STORE_KEY="$SIGNING_ROOT/store_key"
+if ! setup_test_store_signing_identity "$SIGNING_ROOT" "$STORE_KEY"; then
+    echo "FAIL: could not configure fake-store signing identity"
     exit 1
 fi
 
-sign_rc=0
 : >"$SIGN_LOG"
 for sign_pack in "$BASE_PACK_FILE" "$PACK_FILE"; do
-    sign_output=""
-    run_cmd sign_output "$CMD_BAKE" --root "$SIGNING_ROOT" -vvv sign "$sign_pack" || sign_rc=$?
-    echo "$sign_output" >>"$SIGN_LOG"
-
-    if [[ $sign_rc -ne 0 ]]; then
-        echo "FAIL: bake sign exited with code $sign_rc for $(basename "$sign_pack")"
-        dump_log "$SIGN_LOG" 1000
+    proof_file="$sign_pack.proof"
+    if ! create_test_store_proof "$sign_pack" "$proof_file" "$STORE_KEY" "$STORE_KEY.pub" "$(basename "$sign_pack" .pack)"; then
+        echo "FAIL: could not create fake-store proof for $(basename "$sign_pack")" >&2
         exit 1
     fi
+    echo "created publisher proof: $(basename "$proof_file")" >>"$SIGN_LOG"
 done
 
 # Locate the .pack.proof artifact

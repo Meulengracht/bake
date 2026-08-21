@@ -164,6 +164,15 @@ EOF
         return 1
     fi
 
+    if [[ -n "$proof_file" ]]; then
+        local stored_proof
+        stored_proof="$DUMMY_STORE_ROOT/packages/$publisher/$name/rev/$revision/proof.bin"
+        if ! cp "$proof_file" "$stored_proof"; then
+            echo "ERROR: seed_dummy_store: failed to install proof at $stored_proof" >&2
+            return 1
+        fi
+    fi
+
     echo "$revision"
     return 0
 }
