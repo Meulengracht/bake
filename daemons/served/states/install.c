@@ -25,6 +25,8 @@
 #include <chef/platform.h>
 #include <chef/store.h>
 #include <vlog.h>
+#include <errno.h>
+#include <string.h>
 #include <stdlib.h>
 
 static struct chef_version* __duplicate_version(const struct chef_version* source)
@@ -157,7 +159,7 @@ enum sm_action_result served_handle_state_install(void* context)
     struct state_application*  application;
     sm_event_t                 event = SERVED_TX_EVENT_FAILED;
     char*                      storagePath = NULL;
-    const char*                path;
+    const char*                path = NULL;
     char**                     names = NULL;
     int                        status;
     int                        revision;
@@ -172,15 +174,19 @@ enum sm_action_result served_handle_state_install(void* context)
 
     names = utils_split_package_name(state->name);
     revision = state->revision;
+    VLOG_DEBUG("served", "install: package=%s revision=%i\n", state->name, revision);
     served_state_unlock();
 
     if (names == NULL) {
+        VLOG_ERROR("served", "install: invalid package name %s\n", state->name);
         goto cleanup;
     }
 
     if (revision < 0) {
         path = utils_path_pack(names[0], names[1], revision);
         if (path == NULL) {
+            VLOG_ERROR("served", "install: failed to construct local package path for %s revision %i\n",
+                state->name, revision);
             goto cleanup;
         }
     } else {
@@ -192,38 +198,60 @@ enum sm_action_result served_handle_state_install(void* context)
             .revision = revision
         }, &path);
         if (status) {
-            VLOG_ERROR("served", "could not find the revision %i for %s\n", revision, state->name);
+            VLOG_ERROR("served", "install: could not find revision %i for %s: %s\n",
+                revision, state->name, strerror(errno));
             goto cleanup;
         }
     }
 
+    VLOG_DEBUG("served", "install: source path=%s\n", path != NULL ? path : "<null>");
     storagePath = utils_path_pack(names[0], names[1], revision);
     if (storagePath == NULL) {
+        VLOG_ERROR("served", "install: failed to construct storage path for %s revision %i\n",
+            state->name, revision);
         goto cleanup;
     }
 
+    VLOG_DEBUG("served", "install: storage path=%s\n", storagePath);
+
     status = platform_copyfile(path, storagePath);
     if (status) {
+        VLOG_ERROR("served", "install: failed to copy %s to %s: %s\n",
+            path, storagePath, strerror(errno));
         goto cleanup;
     }
+    VLOG_DEBUG("served", "install: copied package to storage path\n");
 
     served_state_lock();
     status = __load_application_package(state, path, &application);
     if (status) {
+        VLOG_ERROR("served", "install: failed to load package manifest from %s: %s\n",
+            path, strerror(errno));
         served_state_unlock();
         goto cleanup;
     }
+    VLOG_DEBUG("served", "install: loaded package manifest\n");
 
     status = served_state_add_application(application);
     if (status) {
+        VLOG_ERROR("served", "install: failed to add application %s: %s\n",
+            state->name, strerror(errno));
         served_state_unlock();
         goto cleanup;
     }
     served_state_unlock();
+    VLOG_DEBUG("served", "install: application registered\n");
     
     event = SERVED_TX_EVENT_OK;
 
 cleanup:
+    if (event != SERVED_TX_EVENT_OK) {
+        VLOG_ERROR("served", "install: failed package=%s revision=%i source=%s storage=%s\n",
+            state != NULL && state->name != NULL ? state->name : "<null>",
+            revision,
+            path != NULL ? path : "<null>",
+            storagePath != NULL ? storagePath : "<null>");
+    }
     strsplit_free(names);
     if (state != NULL && state->revision < 0) {
         free((void*)path);

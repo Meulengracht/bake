@@ -124,6 +124,14 @@ static int __ensure_chef_paths(void)
     }
     free(path);
 
+    path = served_paths_path("var/chef/packs");
+    if (platform_mkdir(path) != 0) {
+        VLOG_ERROR("startup", "failed to create path %s\n", path);
+        free(path);
+        return -1;
+    }
+    free(path);
+
     path = utils_path_data_root();
     if (platform_mkdir(path) != 0) {
         VLOG_ERROR("startup", "failed to create path %s\n", path);
