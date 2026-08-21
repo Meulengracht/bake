@@ -305,6 +305,14 @@ int store_package_path(struct store_package* package, const char** pathOut)
     }
 
     *pathOut = inventory_pack_path(pack);
+    VLOG_DEBUG(
+        "store",
+        "store_package_path: matched path=%s revision=%i platform=%s arch=%s\n",
+        *pathOut != NULL ? *pathOut : "<null>",
+        inventory_pack_revision(pack),
+        inventory_pack_platform(pack),
+        inventory_pack_arch(pack)
+    );
 
 cleanup:
     strsplit_free(names);
