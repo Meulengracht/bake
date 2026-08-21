@@ -270,6 +270,9 @@ int store_ensure_package(struct store_package* package, struct chef_observer* ob
     }
 
 cleanup:
+    // Update the resolved revision, on errors this
+    // will be 0'ed
+    package->revision = revision;
     strsplit_free(names);
     free(pathTmp);
     free(path);
