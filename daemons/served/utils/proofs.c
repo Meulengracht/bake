@@ -394,8 +394,6 @@ static int __verify_store_package(const char* packagePath, const char* publisher
     char                       key[128];
     struct store_proof_package proof = { 0 };
 
-    VLOG_DEBUG("served", "__verify_store_package: package path before proof lookup: %s\n",
-        packagePath != NULL ? packagePath : "<null>");
     proof_format_package_key(&key[0], sizeof(key), publisher, package, revision);
 
     status = store_proof_ensure(STORE_PROOF_PACKAGE, &key[0], NULL);
@@ -409,9 +407,6 @@ static int __verify_store_package(const char* packagePath, const char* publisher
         VLOG_ERROR("served", "__verify_store_package: failed to load proof for package %s\n", &key[0]);
         return status;
     }
-
-    VLOG_DEBUG("served", "__verify_store_package: package path after proof lookup: %s\n",
-        packagePath != NULL ? packagePath : "<null>");
 
     status = __verify_package_proof(&proof.proof, packagePath, CHEF_PACKAGE_PROOF_ORIGIN_STORE);
     if (status) {
@@ -442,9 +437,6 @@ int utils_verify_package(const char* publisher, const char* package, int revisio
         VLOG_ERROR("served", "could not find the revision %i for %s/%s\n", revision, publisher, package);
         return status;
     }
-
-    VLOG_DEBUG("served", "utils_verify_package: resolved package path: %s\n",
-        path != NULL ? path : "<null>");
 
     status = __verify_store_package(path, publisher, package, revision);
     if (status) {

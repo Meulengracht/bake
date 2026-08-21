@@ -191,6 +191,10 @@ static int __find_package_in_inventory(struct store_package* package, struct sto
         &pack
     );
 
+    if (status == 0 && packOut != NULL) {
+        *packOut = pack;
+    }
+
     strsplit_free(names);
     return status;
 }
@@ -305,14 +309,6 @@ int store_package_path(struct store_package* package, const char** pathOut)
     }
 
     *pathOut = inventory_pack_path(pack);
-    VLOG_DEBUG(
-        "store",
-        "store_package_path: matched path=%s revision=%i platform=%s arch=%s\n",
-        *pathOut != NULL ? *pathOut : "<null>",
-        inventory_pack_revision(pack),
-        inventory_pack_platform(pack),
-        inventory_pack_arch(pack)
-    );
 
 cleanup:
     strsplit_free(names);
