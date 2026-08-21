@@ -175,6 +175,7 @@ static int __ensure_chef_global_dirs(void)
         // here, but directories still need the execute bit for traversal.
         { &g_dirs.config, 0755 },
         { &g_dirs.cache,  0755 },
+        { &g_dirs.store,  0755 },
         { NULL },
     };
     for (int i = 0; paths[i].path != NULL; i++) {

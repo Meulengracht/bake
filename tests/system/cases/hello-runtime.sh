@@ -124,7 +124,9 @@ if [[ $base_build_rc -ne 0 ]]; then
     exit 1
 fi
 
+shopt -s nullglob
 base_pack_files=( "$WORK_DIR"/ubuntu-24*.pack )
+shopt -u nullglob
 if [[ ${#base_pack_files[@]} -eq 0 ]]; then
     echo "FAIL: base bake build succeeded but no Ubuntu base .pack file was produced" >&2
     exit 1
@@ -207,16 +209,22 @@ if ! wait_for_dummy_store 40 0.25; then
     exit 1
 fi
 
-base_revision=$(seed_dummy_store \
-    "testpub" "ubuntu-24" "linux" "amd64" "stable" 1 0 0 "$BASE_PACK_FILE")
+if ! base_revision=$(seed_dummy_store \
+    "testpub" "ubuntu-24" "linux" "amd64" "stable" 1 0 0 "$BASE_PACK_FILE"); then
+    echo "FAIL: failed to seed testpub/ubuntu-24" >&2
+    exit 1
+fi
 if [[ -z "$base_revision" ]]; then
     echo "FAIL: failed to seed testpub/ubuntu-24" >&2
     exit 1
 fi
 echo "       Seeded testpub/ubuntu-24 at revision $base_revision"
 
-app_revision=$(seed_dummy_store \
-    "testpub" "hello-world" "linux" "amd64" "stable" 1 0 0 "$PACK_FILE")
+if ! app_revision=$(seed_dummy_store \
+    "testpub" "hello-world" "linux" "amd64" "stable" 1 0 0 "$PACK_FILE"); then
+    echo "FAIL: failed to seed testpub/hello-world" >&2
+    exit 1
+fi
 if [[ -z "$app_revision" ]]; then
     echo "FAIL: failed to seed testpub/hello-world" >&2
     exit 1
