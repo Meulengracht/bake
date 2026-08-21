@@ -1,13 +1,12 @@
-project: 
-  name: ubuntu-24
-  summary: The Ubuntu 24.04 base
-  description: |
-    This is the Ubuntu 24.04 OS base, which is the default base for all
-    other chef packages built for linux.
-  author: Philip Meulengracht
-  email: the_meulengracht@hotmail.com
-  version: 1.0.0
-  license: MIT
+name: ubuntu-24
+summary: The Ubuntu 24.04 base
+description: |
+  This is the Ubuntu 24.04 OS base, which is the default base for all
+  other chef packages built for linux.
+author: Philip Meulengracht
+email: the_meulengracht@hotmail.com
+version: 1.0.0
+license: MIT
 
 environment:
   host:
