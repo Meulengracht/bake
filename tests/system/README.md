@@ -124,15 +124,15 @@ End-to-end runtime workflow: build → install → run.
 |------|-------------|--------|
 | 1 | Create isolated temp environment | ✅ implemented |
 | 2 | Start `cvd` | ✅ implemented |
-| 3 | Build `hello-world` | ✅ implemented |
-| 4 | Configure isolated signing identity and sign the built `.pack` | ✅ implemented |
-| 5 | Start `served` with `--root <tmpdir>` | ✅ implemented |
-| 6 | Wait for `/tmp/served` socket | ✅ implemented |
-| 7 | Verify `serve list` succeeds | ✅ implemented |
-| 8 | `serve install <pack>` | ⚠️ aspirational — see Known Limitations |
-| 9 | Verify package in `serve list` | ⚠️ aspirational |
-| 10 | Run wrapper script | ⚠️ aspirational |
-| 11 | Assert exit 0 and output `"hello world"` | ⚠️ aspirational |
+| 3 | Build the Ubuntu base pack and `hello-world` | ✅ implemented |
+| 4 | Configure isolated signing identity and sign both `.pack` files | ✅ implemented |
+| 5 | Publish both packs to the isolated dummy store | ✅ implemented |
+| 6 | Start `served` with `--root <tmpdir>` and the dummy store URL | ✅ implemented |
+| 7 | Wait for `/tmp/served` socket | ✅ implemented |
+| 8 | Verify `serve list` succeeds | ✅ implemented |
+| 9 | `serve install testpub/hello-world`; served resolves `testpub/ubuntu-24` | ⚠️ aspirational — see Known Limitations |
+| 10 | Verify package in `serve list` | ⚠️ aspirational |
+| 11 | Run wrapper and assert output `"hello world"` | ⚠️ aspirational |
 
 Exit codes: `0` = full pass, `1` = infrastructure failure, `2` = aspirational
 steps not yet implemented.
