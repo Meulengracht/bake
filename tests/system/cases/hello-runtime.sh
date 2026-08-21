@@ -210,7 +210,7 @@ if ! wait_for_dummy_store 40 0.25; then
 fi
 
 if ! base_revision=$(seed_dummy_store \
-    "testpub" "ubuntu-24" "linux" "amd64" "stable" 1 0 0 "$BASE_PACK_FILE"); then
+    "testpub" "ubuntu-24" "linux" "amd64" "stable" 1 0 0 "$BASE_PACK_FILE" "$BASE_PACK_FILE.proof"); then
     echo "FAIL: failed to seed testpub/ubuntu-24" >&2
     exit 1
 fi
@@ -221,7 +221,7 @@ fi
 echo "       Seeded testpub/ubuntu-24 at revision $base_revision"
 
 if ! app_revision=$(seed_dummy_store \
-    "testpub" "hello-world" "linux" "amd64" "stable" 1 0 0 "$PACK_FILE"); then
+    "testpub" "hello-world" "linux" "amd64" "stable" 1 0 0 "$PACK_FILE" "$PACK_FILE.proof"); then
     echo "FAIL: failed to seed testpub/hello-world" >&2
     exit 1
 fi
