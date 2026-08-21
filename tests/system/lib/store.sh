@@ -167,7 +167,20 @@ EOF
     if [[ -n "$proof_file" ]]; then
         local stored_proof
         stored_proof="$DUMMY_STORE_ROOT/packages/$publisher/$name/rev/$revision/proof.bin"
-        if ! cp "$proof_file" "$stored_proof"; then
+        if ! python3 - "$proof_file" "$stored_proof" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as source:
+    proof = json.load(source)
+
+proof["origin"] = "publisher"
+
+with open(sys.argv[2], "w", encoding="utf-8") as destination:
+    json.dump(proof, destination, indent=2)
+    destination.write("\n")
+PY
+        then
             echo "ERROR: seed_dummy_store: failed to install proof at $stored_proof" >&2
             return 1
         fi
