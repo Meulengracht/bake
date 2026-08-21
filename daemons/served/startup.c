@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <chef/platform.h>
 #include <chef/store-default.h>
+#include <chef/config.h>
 #include <startup.h>
 #include <state.h>
 #include <runner.h>
@@ -142,10 +143,11 @@ static int __ensure_chef_paths(void)
     return 0;
 }
 
-int served_startup(void)
+int served_startup(struct chef_config* config)
 {
-    unsigned int transactionId;
-    int          status;
+    struct chef_config_address address;
+    unsigned int               transactionId;
+    int                        status;
     VLOG_DEBUG("startup", "served_startup()\n");
 
 #if !defined(CHEF_AS_SNAP) && !defined(_WIN32)
@@ -159,6 +161,16 @@ int served_startup(void)
     status = __ensure_chef_paths();
     if (status != 0) {
         VLOG_ERROR("startup", "failed to write necessary chef paths\n");
+        return status;
+    }
+
+    // Read the configured address for CVD
+    chef_config_cvd_address(config, &address);
+
+    // Now we can create the cvd client
+    status = container_client_initialize(&address);
+    if (status != 0) {
+        VLOG_ERROR("startup", "failed to initialize container client\n");
         return status;
     }
 

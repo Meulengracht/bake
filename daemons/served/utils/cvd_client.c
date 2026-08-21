@@ -595,7 +595,7 @@ static void __ensure_config_loaded(void)
     }
 
     // served initializes chef dirs at startup, so this should be safe.
-    g_servedConfig = chef_config_load(chef_dirs_config());
+    g_servedConfig = chef_config_load();
     if (g_servedConfig != NULL) {
         // Note: chef_config_section() creates the section if it does not exist.
         // We keep this to a single section to avoid creating many objects during lookups.
@@ -1037,14 +1037,12 @@ static enum chef_status __create_container(
         (void)__load_pack_network_defaults(package, &params.network.gateway_ip, &params.network.dns);
         (void)__load_pack_network_defaults(basePackagePath, &params.network.gateway_ip, &params.network.dns);
     }
-    VLOG_DEBUG("served", "__create_container: loaded network defaults\n");
 
     // Load capabilities from the package and convert system capabilities
     // (network-client, file-control, process-control, package-management) into
     // policy plugins for the container security policy.
     chef_policy_spec_init(&params.policy);
     (void)__load_pack_capabilities_as_plugins(package, &params.policy);
-    VLOG_DEBUG("served", "__create_container: loaded package capabilities\n");
 
     // On Windows HCS containers, OVERLAY layers are not supported.
 #ifdef _WIN32
@@ -1052,7 +1050,6 @@ static enum chef_status __create_container(
 #else
     chef_create_parameters_layers_add(&params, 3);
 #endif
-    VLOG_DEBUG("served", "__create_container: allocated container layers\n");
     
     // initialize the base rootfs layer, this is a layer from
     // the base package
@@ -1068,7 +1065,6 @@ static enum chef_status __create_container(
     }
     layer->target = platform_strdup("/");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
-    VLOG_DEBUG("served", "__create_container: configured base layer\n");
 
     // initialize the application layer, this is a layer from
     // the application package
@@ -1077,7 +1073,6 @@ static enum chef_status __create_container(
     layer->source = platform_strdup(package);
     layer->target = platform_strdup("/");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
-    VLOG_DEBUG("served", "__create_container: configured package layer\n");
 
 #ifndef _WIN32
     // initialize the overlay layer, this is an writable layer
@@ -1091,7 +1086,7 @@ static enum chef_status __create_container(
         free(basePackagePath);
         free(baseRootfsPath);
         chef_create_parameters_destroy(&params);
-        VLOG_ERROR("served", "__create_container failed to create client\n");
+        VLOG_ERROR("served", "__create_container failed to create container\n");
         return status;
     }
     gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);

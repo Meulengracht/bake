@@ -19,6 +19,7 @@
 #include <startup.h>
 #include <state.h>
 #include <runner.h>
+#include <utils.h>
 #include <vlog.h>
 
 #include <transaction/sets.h>
@@ -56,6 +57,9 @@ cleanup_state:
     } else {
         VLOG_DEBUG("shutdown", "state flushed successfully\n");
     }
+
+    // Close the connection to CVD
+    container_client_shutdown();
     
     // Close state database
     VLOG_TRACE("shutdown", "shutdown complete\n");

@@ -29,17 +29,28 @@ struct chef_config_address {
 struct chef_config;
 
 /**
- * @brief 
- * 
- * @return int 
+ * @brief Loads the Chef configuration from the configured Chef directory.
+ *
+ * The configuration is read from `bake.json` below chef_dirs_config(). If the
+ * file does not exist, a new configuration is created with platform defaults
+ * (including the local CVD address on Linux). The returned configuration owns
+ * its parsed data and is also the object used by the section and setter APIs.
+ *
+ * @return A newly loaded configuration, or NULL if the configuration directory
+ *         cannot be resolved, memory allocation fails, or the file is invalid.
  */
-extern struct chef_config* chef_config_load(const char* confdir);
+extern struct chef_config* chef_config_load(void);
 
 /**
- * @brief 
- * 
- * @param config 
- * @return int 
+ * @brief Writes a configuration back to its configured `bake.json` path.
+ *
+ * Address fields are serialized into the root JSON object before writing, and
+ * sections modified through chef_config_section() or chef_config_set_string()
+ * are persisted as part of the same JSON document. The configuration must
+ * have been returned by chef_config_load().
+ *
+ * @param config Configuration to serialize and save.
+ * @return 0 on success, or -1 if the configuration cannot be written.
  */
 extern int chef_config_save(struct chef_config* config);
 

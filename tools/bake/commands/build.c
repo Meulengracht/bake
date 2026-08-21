@@ -265,7 +265,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         return -1;
     }
 
-    config = chef_config_load(chef_dirs_config());
+    config = chef_config_load();
     if (config == NULL) {
         VLOG_ERROR("remote", "remote_client_create: failed to load configuration\n");
         return -1;

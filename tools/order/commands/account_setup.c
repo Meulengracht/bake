@@ -151,7 +151,7 @@ int account_login_setup(void)
         goto login;
     }
 
-    config = chef_config_load(chef_dirs_config());
+    config = chef_config_load();
     if (config == NULL) {
         fprintf(stderr, "order: failed to load configuration: %s\n", strerror(errno));
         return -1;

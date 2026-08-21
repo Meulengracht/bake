@@ -179,7 +179,7 @@ int remote_client_create(gracht_client_t** clientOut)
     struct chef_config_address         apiAddress;
     int                                code;
 
-    config = chef_config_load(chef_dirs_config());
+    config = chef_config_load();
     if (config == NULL) {
         VLOG_ERROR("remote", "remote_client_create: failed to load configuration\n");
         return -1;
