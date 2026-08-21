@@ -994,7 +994,7 @@ static enum chef_status __create_container(
 
     chef_create_parameters_init(&params);
     
-    params.id = (char*)id;
+    params.id = platform_strdup(id);
     params.gtype = __guest_type_from_base_selector(baseSelector);
 
     basePackagePath = __resolve_base_package_path(pack_id, baseSelector);
