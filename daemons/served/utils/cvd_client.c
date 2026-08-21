@@ -1031,16 +1031,20 @@ static enum chef_status __create_container(
 
     params.network.gateway_ip = __dup_pack_network_config_value(pack_id, "gateway");
     params.network.dns = __dup_pack_network_config_value(pack_id, "dns");
+    VLOG_DEBUG("served", "__create_container: loaded network overrides\n");
     if (params.network.gateway_ip == NULL || params.network.dns == NULL) {
+        VLOG_DEBUG("served", "__create_container: loading package network defaults\n");
         (void)__load_pack_network_defaults(package, &params.network.gateway_ip, &params.network.dns);
         (void)__load_pack_network_defaults(basePackagePath, &params.network.gateway_ip, &params.network.dns);
     }
+    VLOG_DEBUG("served", "__create_container: loaded network defaults\n");
 
     // Load capabilities from the package and convert system capabilities
     // (network-client, file-control, process-control, package-management) into
     // policy plugins for the container security policy.
     chef_policy_spec_init(&params.policy);
     (void)__load_pack_capabilities_as_plugins(package, &params.policy);
+    VLOG_DEBUG("served", "__create_container: loaded package capabilities\n");
 
     // On Windows HCS containers, OVERLAY layers are not supported.
 #ifdef _WIN32
@@ -1048,6 +1052,7 @@ static enum chef_status __create_container(
 #else
     chef_create_parameters_layers_add(&params, 3);
 #endif
+    VLOG_DEBUG("served", "__create_container: allocated container layers\n");
     
     // initialize the base rootfs layer, this is a layer from
     // the base package
@@ -1063,6 +1068,7 @@ static enum chef_status __create_container(
     }
     layer->target = platform_strdup("/");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
+    VLOG_DEBUG("served", "__create_container: configured base layer\n");
 
     // initialize the application layer, this is a layer from
     // the application package
@@ -1071,6 +1077,7 @@ static enum chef_status __create_container(
     layer->source = platform_strdup(package);
     layer->target = platform_strdup("/");
     layer->options = CHEF_MOUNT_OPTIONS_READONLY;
+    VLOG_DEBUG("served", "__create_container: configured package layer\n");
 
 #ifndef _WIN32
     // initialize the overlay layer, this is an writable layer

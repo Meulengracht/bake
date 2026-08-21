@@ -174,7 +174,6 @@ enum sm_action_result served_handle_state_install(void* context)
 
     names = utils_split_package_name(state->name);
     revision = state->revision;
-    VLOG_DEBUG("served", "install: package=%s revision=%i\n", state->name, revision);
     served_state_unlock();
 
     if (names == NULL) {
@@ -212,15 +211,12 @@ enum sm_action_result served_handle_state_install(void* context)
         goto cleanup;
     }
 
-    VLOG_DEBUG("served", "install: storage path=%s\n", storagePath);
-
     status = platform_copyfile(path, storagePath);
     if (status) {
         VLOG_ERROR("served", "install: failed to copy %s to %s: %s\n",
             path, storagePath, strerror(errno));
         goto cleanup;
     }
-    VLOG_DEBUG("served", "install: copied package to storage path\n");
 
     served_state_lock();
     status = __load_application_package(state, path, &application);
@@ -230,7 +226,6 @@ enum sm_action_result served_handle_state_install(void* context)
         served_state_unlock();
         goto cleanup;
     }
-    VLOG_DEBUG("served", "install: loaded package manifest\n");
 
     status = served_state_add_application(application);
     if (status) {
@@ -240,18 +235,10 @@ enum sm_action_result served_handle_state_install(void* context)
         goto cleanup;
     }
     served_state_unlock();
-    VLOG_DEBUG("served", "install: application registered\n");
     
     event = SERVED_TX_EVENT_OK;
 
 cleanup:
-    if (event != SERVED_TX_EVENT_OK) {
-        VLOG_ERROR("served", "install: failed package=%s revision=%i source=%s storage=%s\n",
-            state != NULL && state->name != NULL ? state->name : "<null>",
-            revision,
-            path != NULL ? path : "<null>",
-            storagePath != NULL ? storagePath : "<null>");
-    }
     strsplit_free(names);
     if (state != NULL && state->revision < 0) {
         free((void*)path);
