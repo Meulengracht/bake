@@ -41,10 +41,9 @@ static const struct served_sm_state g_stateDependencies = {
 static const struct served_sm_state g_stateDependenciesWait = {
     .state = SERVED_TX_STATE_DEPENDENCIES_WAIT,
     .action = served_handle_state_dependencies_wait,
-    .transition_count = 4,
+    .transition_count = 3,
     .transitions = {
-        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_INSTALL }, // When installing
-        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_REMOVE_WRAPPERS }, // When updating
+        { SERVED_TX_EVENT_OK,     SERVED_TX_STATE_DEPENDENCIES },
         { SERVED_TX_EVENT_FAILED, SERVED_TX_STATE_ERROR },
         { SERVED_TX_EVENT_CANCEL, SERVED_TX_STATE_CANCELLED }
     }

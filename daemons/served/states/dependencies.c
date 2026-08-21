@@ -175,7 +175,7 @@ enum sm_action_result served_handle_state_dependencies(void* context)
 
             event = __ensure_base(transaction, packageName, base);
             free(base);
-            if (event == SERVED_TX_EVENT_OK) {
+            if (event == SERVED_TX_EVENT_OK || event == SERVED_TX_EVENT_WAIT) {
                 break;
             }
         }
