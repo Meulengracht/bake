@@ -79,6 +79,7 @@ enum sm_action_result served_handle_state_download(void* context)
     struct served_transaction* transaction = context;
     struct state_transaction*  state;
     struct store_package       package = { NULL };
+    int                        requestedRevision;
     int                        status;
 
     transaction->io_progress.bytes_current = 0;
@@ -99,6 +100,9 @@ enum sm_action_result served_handle_state_download(void* context)
     package.channel = state->channel;
     package.revision = state->revision;
     
+    // package.revision will be updated during store_ensure_package, so
+    // just keep the originally requested revision for a check later
+    requestedRevision = state->revision;
     served_state_unlock();
 
     // Handle the case of locally installed packages that just need to be verified without downloading
@@ -131,7 +135,7 @@ enum sm_action_result served_handle_state_download(void* context)
         
         served_sm_post_event(&transaction->sm, SERVED_TX_EVENT_FAILED);
         return SM_ACTION_CONTINUE;
-    } else if (package.revision == 0) {
+    } else if (requestedRevision == 0) {
         // update the revision in state
         served_state_lock();
         state = served_state_transaction(transaction->id);
