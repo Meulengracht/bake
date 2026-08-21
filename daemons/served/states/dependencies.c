@@ -151,6 +151,13 @@ enum sm_action_result served_handle_state_dependencies(void* context)
         goto cleanup;
     }
 
+    // If this is an OS base, then skip dependencies.
+    if (manifest->type == CHEF_PACKAGE_TYPE_OSBASE) {
+        TXLOG_INFO(transaction, "Installing an OS base package, skipping dependency checks");
+        event = SERVED_TX_EVENT_OK;
+        goto cleanup;
+    }
+
     // If a base is specified, ensure it is installed
     if (manifest->base != NULL && strlen(manifest->base) > 0) {
         // Two types of automatic bases are supported:
