@@ -705,10 +705,6 @@ static int __container_run(
         flags |= CLONE_NEWNET;
     }
 
-    if (options->capabilities & CV_CAP_PROCESS_CONTROL) {
-        flags |= CLONE_NEWPID;
-    }
-
     if (options->capabilities & CV_CAP_IPC) {
         flags |= CLONE_NEWIPC;
     }
@@ -946,6 +942,19 @@ static int __container_run(
         }
     } else {
         VLOG_DEBUG("containerv[child]", "__container_run: no security policy configured\n");
+    }
+
+    // Unshare the pid namespace last, right before dropping capabilities: the
+    // calling task never joins pid_ns_for_children itself (only its next fork
+    // does), so deferring this keeps that fork - containerv_set_init_process()'s -
+    // as the only one that can claim PID 1, and lets earlier setup (layer
+    // mounting, pthread_create for the VaFS FUSE worker, etc.) run unaffected.
+    if (options->capabilities & CV_CAP_PROCESS_CONTROL) {
+        status = unshare(CLONE_NEWPID);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to unshare the pid namespace\n");
+            return status;
+        }
     }
 
     // Drop capabilities that we no longer need
