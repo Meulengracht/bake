@@ -26,6 +26,7 @@
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "private.h"
 #include <vlog.h>
 
@@ -269,6 +270,11 @@ static int __directory_exists(
         if (errno == ENOENT) {
             return 0;
         }
+        VLOG_ERROR(
+            "containerv[child]",
+            "__directory_exists: stat %s failed: %s (process euid=%d egid=%d)\n",
+            path, strerror(errno), geteuid(), getegid()
+        );
         return -1;
     }
     return S_ISDIR(st.st_mode) ? 1 : -1;

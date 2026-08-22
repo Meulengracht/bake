@@ -611,6 +611,26 @@ int containerv_layers_mount_in_namespace(struct containerv_layer_context* contex
         }
 
         ml->handle = mount_handle;
+
+        // Diagnostic: compare the FUSE root's reported ownership/mode against
+        // this process's own credentials, since stat() on the composed
+        // overlay later fails with EPERM and FUSE access is uid-gated.
+        {
+            struct stat st;
+            if (stat(ml->mount_point, &st) == 0) {
+                VLOG_DEBUG(
+                    "containerv",
+                    "containerv_layers_mount_in_namespace: %s stat uid=%d gid=%d mode=%o (process euid=%d egid=%d)\n",
+                    ml->mount_point, st.st_uid, st.st_gid, st.st_mode & 07777, geteuid(), getegid()
+                );
+            } else {
+                VLOG_ERROR(
+                    "containerv",
+                    "containerv_layers_mount_in_namespace: failed to stat %s: %s\n",
+                    ml->mount_point, strerror(errno)
+                );
+            }
+        }
     }
 
     // 2) Compose overlay in this namespace, if we have multiple layers
@@ -620,6 +640,24 @@ int containerv_layers_mount_in_namespace(struct containerv_layer_context* contex
             VLOG_ERROR("containerv", "containerv_layers_mount_in_namespace: overlay mount failed\n");
             // Optional: unmount already-mounted VAFS layers here
             return -1;
+        }
+
+        // Diagnostic: same check for the composed overlay root.
+        {
+            struct stat st;
+            if (stat(context->composed_rootfs, &st) == 0) {
+                VLOG_DEBUG(
+                    "containerv",
+                    "containerv_layers_mount_in_namespace: %s stat uid=%d gid=%d mode=%o (process euid=%d egid=%d)\n",
+                    context->composed_rootfs, st.st_uid, st.st_gid, st.st_mode & 07777, geteuid(), getegid()
+                );
+            } else {
+                VLOG_ERROR(
+                    "containerv",
+                    "containerv_layers_mount_in_namespace: failed to stat %s: %s\n",
+                    context->composed_rootfs, strerror(errno)
+                );
+            }
         }
     }
 
