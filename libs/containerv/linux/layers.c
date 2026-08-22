@@ -89,7 +89,7 @@ static int __vafs_getattr(const char* path, struct stat* stbuf, struct fuse_file
         handle = (struct VaFsObjectReader*)fi->fh;
         status = vafs_object_reader_stat(handle, &metadata);
         if (status != 0) {
-            return status;
+            return -errno;
         }
 
         stbuf->st_blksize = 512;
@@ -101,13 +101,13 @@ static int __vafs_getattr(const char* path, struct stat* stbuf, struct fuse_file
 
     status = vafs_object_reader_open(mount->vafs, path, VaFsLookup_NoFollow, &handle);
     if (status) {
-        return status;
+        return -errno;
     }
 
     status = vafs_object_reader_stat(handle, &metadata);
     vafs_object_reader_close(handle);
     if (status != 0) {
-        return status;
+        return -errno;
     }
 
     isRoot = (strcmp(path, "/") == 0);
@@ -126,13 +126,12 @@ static int __vafs_open(const char* path, struct fuse_file_info* fi)
     int                      status;
 
     if ((fi->flags & O_ACCMODE) != O_RDONLY) {
-        errno = EACCES;
-        return -1;
+        return -EACCES;
     }
 
     status = vafs_object_reader_open(mount->vafs, path, VaFsLookup_None, &handle);
     if (status) {
-        return status;
+        return -errno;
     }
     
     fi->fh = (uint64_t)handle;
@@ -153,13 +152,13 @@ static int __vafs_read(const char* path, char* buf, size_t size, off_t offset, s
     if (offset != 0) {
         status = vafs_object_reader_seek(handle, offset, SEEK_SET);
         if (status) {
-            return status;
+            return -errno;
         }
     }
 
     bytesRead = vafs_object_reader_read(handle, buf, size);
     if (bytesRead == UINT64_MAX) {
-        return -1;
+        return -errno;
     }
     return (int)bytesRead;
 }
@@ -186,7 +185,7 @@ static int __vafs_opendir(const char* path, struct fuse_file_info* fi)
 
     status = vafs_directory_reader_open(mount->vafs, path, VaFsLookup_None, &handle);
     if (status) {
-        return status;
+        return -errno;
     }
     
     fi->fh = (uint64_t)handle;
@@ -217,14 +216,15 @@ static int __vafs_readdir(const char* path, void* buf, fuse_fill_dir_t filler,
         status = vafs_directory_reader_next(handle, &entry);
         if (status != 0) {
             if (errno != ENOENT) {
-                return status;
+                return -errno;
             }
             break;
         }
 
         status = filler(buf, entry.Name, NULL, 0, 0);
         if (status != 0) {
-            return status;
+            // filler's buffer is full; stop iterating, not an error
+            break;
         }
     }
     
@@ -611,26 +611,6 @@ int containerv_layers_mount_in_namespace(struct containerv_layer_context* contex
         }
 
         ml->handle = mount_handle;
-
-        // Diagnostic: compare the FUSE root's reported ownership/mode against
-        // this process's own credentials, since stat() on the composed
-        // overlay later fails with EPERM and FUSE access is uid-gated.
-        {
-            struct stat st;
-            if (stat(ml->mount_point, &st) == 0) {
-                VLOG_DEBUG(
-                    "containerv",
-                    "containerv_layers_mount_in_namespace: %s stat uid=%d gid=%d mode=%o (process euid=%d egid=%d)\n",
-                    ml->mount_point, st.st_uid, st.st_gid, st.st_mode & 07777, geteuid(), getegid()
-                );
-            } else {
-                VLOG_ERROR(
-                    "containerv",
-                    "containerv_layers_mount_in_namespace: failed to stat %s: %s\n",
-                    ml->mount_point, strerror(errno)
-                );
-            }
-        }
     }
 
     // 2) Compose overlay in this namespace, if we have multiple layers
@@ -640,24 +620,6 @@ int containerv_layers_mount_in_namespace(struct containerv_layer_context* contex
             VLOG_ERROR("containerv", "containerv_layers_mount_in_namespace: overlay mount failed\n");
             // Optional: unmount already-mounted VAFS layers here
             return -1;
-        }
-
-        // Diagnostic: same check for the composed overlay root.
-        {
-            struct stat st;
-            if (stat(context->composed_rootfs, &st) == 0) {
-                VLOG_DEBUG(
-                    "containerv",
-                    "containerv_layers_mount_in_namespace: %s stat uid=%d gid=%d mode=%o (process euid=%d egid=%d)\n",
-                    context->composed_rootfs, st.st_uid, st.st_gid, st.st_mode & 07777, geteuid(), getegid()
-                );
-            } else {
-                VLOG_ERROR(
-                    "containerv",
-                    "containerv_layers_mount_in_namespace: failed to stat %s: %s\n",
-                    context->composed_rootfs, strerror(errno)
-                );
-            }
         }
     }
 
