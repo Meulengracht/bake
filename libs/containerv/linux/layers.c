@@ -263,7 +263,8 @@ static int __fuse_loop_wrapper(void* arg)
 static int __vafs_mount(const char* pack_path, const char* mount_point, struct __vafs_mount** mount_out)
 {
     struct __vafs_mount* mount;
-    struct fuse_args     args = FUSE_ARGS_INIT(0, NULL);
+    char*                argv[] = { "vafs" }; // fuse_session_new() requires a non-empty argv
+    struct fuse_args     args = FUSE_ARGS_INIT(1, argv);
     int                  status;
     
     VLOG_DEBUG("containerv", "__vafs_mount: mounting %s at %s\n", pack_path, mount_point);
