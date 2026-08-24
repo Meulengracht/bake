@@ -258,17 +258,6 @@ if [[ $list_rc -ne 0 ]]; then
 fi
 echo "       served responded to 'serve list' — infrastructure is functional."
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Steps 9–11 are aspirational: they depend on the store-backed install path
-# being fully implemented in served.  They are attempted but their failure does NOT
-# indicate a problem with the test infrastructure.
-# ═════════════════════════════════════════════════════════════════════════════
-echo ""
-echo "       NOTE: Steps 9-11 test the store-backed install path in served."
-echo "             This path is currently aspirational — see KNOWN LIMITATIONS"
-echo "             in the file header for details."
-echo ""
-
 # ── Install the application and let served resolve its base ───────────────────
 echo "[9/11] Installing hello-world from the dummy store..."
 install_rc=0
@@ -278,104 +267,117 @@ run_cmd_with_timeout 60 install_output \
 echo "$install_output" >"$INSTALL_LOG"
 
 if [[ $install_rc -ne 0 ]]; then
-    echo "SKIP (aspirational): store-backed 'serve install' exited with code $install_rc"
-    echo "     See tests/system/README.md for details."
-    ASPIRATIONAL_FAILED=1
+    echo "FAIL: store-backed 'serve install' exited with code $install_rc"
+    exit 1
 else
     echo "       hello-world install request accepted; served should resolve ubuntu-24."
 fi
 
 # ── Verify package appears in serve list ──────────────────────────────────────
-if [[ $ASPIRATIONAL_FAILED -eq 0 ]]; then
-    echo "[10/11] Verifying hello-world appears in 'serve list'..."
-    sleep 2  # Allow the transaction state machine to progress
+echo "[10/11] Verifying hello-world appears in 'serve list'..."
+sleep 2  # Allow the transaction state machine to progress
 
-    list_output2=""
-    run_cmd list_output2 "$CMD_SERVE" list || true
-    echo "$list_output2" >>"$LIST_LOG"
+list_output2=""
+run_cmd list_output2 "$CMD_SERVE" list || true
+echo "$list_output2" >>"$LIST_LOG"
 
-    if ! assert_package_listed "$list_output2" "hello-world" 2>/dev/null; then
-        echo "SKIP (aspirational): hello-world not yet visible in 'serve list'"
-        ASPIRATIONAL_FAILED=1
-    else
-        echo "       hello-world is listed — installation succeeded."
-    fi
+if ! assert_package_listed "$list_output2" "hello-world" 2>/dev/null; then
+    echo "FAIL: hello-world not yet visible in 'serve list'"
+    exit 1
 else
-    echo "[10/11] Skipping (install step failed)"
+    echo "       hello-world is listed — installation succeeded."
 fi
 
-# ── Run the installed application ─────────────────────────────────────────────
-if [[ $ASPIRATIONAL_FAILED -eq 0 ]]; then
-    echo "[11/11] Locating hello wrapper script..."
-    # The wrapper is generated at <served-root>/chef/bin/<command-name>
-    # The command name is 'hello' (from hello.yaml packs[0].commands[0].name)
-    WRAPPER="$SERVED_ROOT/chef/bin/hello"
+# ═════════════════════════════════════════════════════════════════════════════
+# Step 11 is aspirational: they depend on the store-backed install path
+# being fully implemented in served. It is attempted but its failure does NOT
+# indicate a problem with the test infrastructure.
+# ═════════════════════════════════════════════════════════════════════════════
+echo ""
+echo "       NOTE: Step 11 test the store-backed install path in served."
+echo "             This path is currently aspirational — see KNOWN LIMITATIONS"
+echo "             in the file header for details."
+echo ""
 
-    if [[ ! -x "$WRAPPER" ]]; then
-        echo "SKIP (aspirational): wrapper script not found or not executable: $WRAPPER"
+# ── Run the installed application ─────────────────────────────────────────────
+echo "[11/11] Locating hello wrapper script..."
+# The wrapper is generated at <served-root>/chef/bin/<command-name>
+# The command name is 'hello' (from hello.yaml packs[0].commands[0].name)
+WRAPPER="$SERVED_ROOT/chef/bin/hello"
+
+# WORKAROUND DUE TO RUNNING FROM BUILD
+# served binary used by this test: /home/runner/work/bake/bake/build/daemons/served/served
+# expected serve-exec (same dir as served): /home/runner/work/bake/bake/build/daemons/served/serve-exec
+# actual serve-exec path: /home/runner/work/bake/bake/build/bin/serve-exec
+# lets copy it to the expected location so the wrapper can find it
+EXPECTED_SERVE_EXEC="$(dirname "$CMD_SERVED")/serve-exec"
+if [[ ! -x "$EXPECTED_SERVE_EXEC" ]]; then
+    echo "       Copying serve-exec to expected location: $EXPECTED_SERVE_EXEC"
+    mkdir -p "$(dirname "$EXPECTED_SERVE_EXEC")"
+    cp "$BUILD_DIR/bin/serve-exec" "$EXPECTED_SERVE_EXEC"
+fi
+
+if [[ ! -x "$WRAPPER" ]]; then
+    echo "SKIP (aspirational): wrapper script not found or not executable: $WRAPPER"
+    ASPIRATIONAL_FAILED=1
+else
+    echo "       wrapper: $WRAPPER"
+
+    echo "       Running installed hello-world..."
+    run_rc=0
+    run_output=""
+    run_cmd run_output "$WRAPPER" || run_rc=$?
+    echo "$run_output" >"$RUN_LOG"
+
+    echo "       Asserting output..."
+    if [[ $run_rc -ne 0 ]]; then
+        echo "SKIP (aspirational): wrapper exited with code $run_rc"
+        echo "       --- debug: wrapper script ($WRAPPER) ---"
+        cat "$WRAPPER" 2>&1 | sed 's/^/       | /'
+        echo "       --- debug: wrapper output ---"
+        printf '%s\n' "$run_output" | sed 's/^/       | /'
+        if [[ $run_rc -eq 127 ]]; then
+            echo "       --- debug: exit 127 means 'command not found' — inspecting invoked serve-exec ---"
+            # The wrapper's 2nd line is: <sexec_path> --container ... --path ... --wdir ... [args]
+            # (line 1 is the '#!/bin/sh' shebang, which always resolves fine)
+            exec_line="$(sed -n '2p' "$WRAPPER" 2>/dev/null)"
+            sexec_path="${exec_line%% *}"
+            echo "       invoked command line: $exec_line"
+            echo "       resolved serve-exec path: $sexec_path"
+            if [[ -z "$sexec_path" ]]; then
+                echo "       could not extract sexec path from wrapper"
+            elif [[ ! -e "$sexec_path" ]]; then
+                echo "       MISSING: '$sexec_path' does not exist"
+                echo "       (served derives this path from its own /proc/self/exe directory + 'serve-exec';"
+                echo "        it may not match where this test's serve-exec binary actually lives)"
+            elif [[ ! -x "$sexec_path" ]]; then
+                echo "       '$sexec_path' exists but is NOT executable"
+                ls -la "$sexec_path" 2>&1 | sed 's/^/       | /'
+            else
+                echo "       '$sexec_path' exists and is executable; checking dynamic deps..."
+                ldd "$sexec_path" 2>&1 | sed 's/^/       | /'
+            fi
+            echo "       served binary used by this test: $CMD_SERVED"
+            echo "       expected serve-exec (same dir as served): $(dirname "$CMD_SERVED")/serve-exec"
+            echo "       --- debug: contents of $SERVED_ROOT/chef ---"
+            find "$SERVED_ROOT/chef" -maxdepth 4 2>&1 | sed 's/^/       | /'
+        fi
+        ASPIRATIONAL_FAILED=1
+    elif ! assert_contains "$run_output" "hello world" "hello-world stdout"; then
+        echo "SKIP (aspirational): expected output not found"
         ASPIRATIONAL_FAILED=1
     else
-        echo "       wrapper: $WRAPPER"
-
-        echo "       Running installed hello-world..."
-        run_rc=0
-        run_output=""
-        run_cmd run_output "$WRAPPER" || run_rc=$?
-        echo "$run_output" >"$RUN_LOG"
-
-        echo "       Asserting output..."
-        if [[ $run_rc -ne 0 ]]; then
-            echo "SKIP (aspirational): wrapper exited with code $run_rc"
-            echo "       --- debug: wrapper script ($WRAPPER) ---"
-            cat "$WRAPPER" 2>&1 | sed 's/^/       | /'
-            echo "       --- debug: wrapper output ---"
-            printf '%s\n' "$run_output" | sed 's/^/       | /'
-            if [[ $run_rc -eq 127 ]]; then
-                echo "       --- debug: exit 127 means 'command not found' — inspecting invoked serve-exec ---"
-                # The wrapper's 2nd line is: <sexec_path> --container ... --path ... --wdir ... [args]
-                # (line 1 is the '#!/bin/sh' shebang, which always resolves fine)
-                exec_line="$(sed -n '2p' "$WRAPPER" 2>/dev/null)"
-                sexec_path="${exec_line%% *}"
-                echo "       invoked command line: $exec_line"
-                echo "       resolved serve-exec path: $sexec_path"
-                if [[ -z "$sexec_path" ]]; then
-                    echo "       could not extract sexec path from wrapper"
-                elif [[ ! -e "$sexec_path" ]]; then
-                    echo "       MISSING: '$sexec_path' does not exist"
-                    echo "       (served derives this path from its own /proc/self/exe directory + 'serve-exec';"
-                    echo "        it may not match where this test's serve-exec binary actually lives)"
-                elif [[ ! -x "$sexec_path" ]]; then
-                    echo "       '$sexec_path' exists but is NOT executable"
-                    ls -la "$sexec_path" 2>&1 | sed 's/^/       | /'
-                else
-                    echo "       '$sexec_path' exists and is executable; checking dynamic deps..."
-                    ldd "$sexec_path" 2>&1 | sed 's/^/       | /'
-                fi
-                echo "       served binary used by this test: $CMD_SERVED"
-                echo "       expected serve-exec (same dir as served): $(dirname "$CMD_SERVED")/serve-exec"
-                echo "       --- debug: contents of $SERVED_ROOT/chef ---"
-                find "$SERVED_ROOT/chef" -maxdepth 4 2>&1 | sed 's/^/       | /'
-            fi
-            ASPIRATIONAL_FAILED=1
-        elif ! assert_contains "$run_output" "hello world" "hello-world stdout"; then
-            echo "SKIP (aspirational): expected output not found"
-            ASPIRATIONAL_FAILED=1
-        else
-            echo "       output: $run_output"
-            echo "       Application ran and produced expected output."
-        fi
+        echo "       output: $run_output"
+        echo "       Application ran and produced expected output."
     fi
-else
-    echo "[10/11] Skipping (previous aspirational step failed)"
-    echo "[11/11] Skipping"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 if [[ $ASPIRATIONAL_FAILED -ne 0 ]]; then
     echo "PARTIAL: $TEST_NAME"
-    echo "  Infrastructure steps (1-8): PASS"
-    echo "  Runtime install/run steps (9-11): NOT IMPLEMENTED YET"
+    echo "  Infrastructure steps (1-10): PASS"
+    echo "  Runtime run step (11): NOT IMPLEMENTED YET"
     echo "  See tests/system/README.md — 'Known Limitations' section."
     # Exit code 2 signals aspirational-step failure (not an infra failure)
     exit 2
