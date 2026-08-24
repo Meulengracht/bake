@@ -160,7 +160,7 @@ int containerv_open_socket(struct containerv_container* container)
 
     // Put the correct socket permissions so other processes can connect to it
     VLOG_DEBUG("containerv[child]", "updating socket permissions %d\n", fd);
-    if (fchmod(fd, 0660) != 0) {
+    if (fchmod(fd, 0666) != 0) {
         VLOG_ERROR("containerv[child]", "containerv_open_socket: failed to update socket permissions\n");
         close(fd);
         return -1;

@@ -156,7 +156,7 @@ static struct containerv_container* __container_new(const char* containerId)
     // The runtime socket permissions should be set to 770 
     // so that only the owner and group can access it. This is important 
     // for security, as the socket is used for communication between the container and the host.
-    if (platform_chmod(container->runtime_dir, S_IRWXU | S_IRWXG | S_ISVTX)) {
+    if (platform_chmod(container->runtime_dir, S_IRWXU | S_IRWXG)) {
         VLOG_ERROR("containerv", "__container_new: failed to set permissions on runtime dir %s\n", container->runtime_dir);
         free(container->runtime_dir);
         free(container);
@@ -173,7 +173,7 @@ static struct containerv_container* __container_new(const char* containerId)
         free(container);
         return NULL;
     }
-    if (platform_mkdir(clientSocketsDir) || platform_chmod(clientSocketsDir, S_IRWXU | S_IRWXG | S_IRWXO | S_ISVTX)) {
+    if (platform_mkdir(clientSocketsDir) || platform_chmod(clientSocketsDir, S_IRWXU | S_IRWXG | S_IRWXO)) {
         VLOG_ERROR("containerv", "__container_new: failed to create client socket dir %s\n", clientSocketsDir);
         free(clientSocketsDir);
         free(container->runtime_dir);
