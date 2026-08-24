@@ -125,6 +125,7 @@ static char* __container_create_runtime_dir(void)
 static struct containerv_container* __container_new(const char* containerId)
 {
     struct containerv_container* container;
+    char*                        clientSocketsDir = NULL;
 
     container = calloc(1, sizeof(struct containerv_container));
     if (container == NULL) {
@@ -151,6 +152,25 @@ static struct containerv_container* __container_new(const char* containerId)
             return NULL;
         }
     }
+
+    // The client socket dir is to allow clients to create their own 
+    // sockets for communication with the container. This allows multiple clients to 
+    // connect to the same container without interfering with each other.
+    // And also allows communication with reduced privileges
+    clientSocketsDir = strpathcombine(container->runtime_dir, "clients");
+    if (clientSocketsDir == NULL) {
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    }
+    if (platform_mkdir(clientSocketsDir) || platform_chmod(clientSocketsDir, S_IRWXU | S_IRWXG | S_IRWXO | S_ISVTX)) {
+        VLOG_ERROR("containerv", "__container_new: failed to create client socket dir %s\n", clientSocketsDir);
+        free(clientSocketsDir);
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    }
+    free(clientSocketsDir);
     
     // get last part of directory path, the last token is the id
     container->id = strrchr(container->runtime_dir, CHEF_PATH_SEPARATOR) + 1;

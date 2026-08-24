@@ -565,7 +565,13 @@ struct containerv_socket_client {
 char* __get_client_socket_name(const char* containerId)
 {
     char buffer[PATH_MAX] = { 0 };
-    snprintf(&buffer[0], sizeof(buffer), __CONTAINER_SOCKET_RUNTIME_BASE "/%s/client", containerId);
+    char suffix[17] = { 0 };
+
+    if (platform_secure_random_string(&suffix[0], sizeof(suffix) - 1) != 0) {
+        return NULL;
+    }
+
+    snprintf(&buffer[0], sizeof(buffer), __CONTAINER_SOCKET_RUNTIME_BASE "/%s/clients/client.%s", containerId, &suffix[0]);
     return strdup(&buffer[0]);
 }
 
