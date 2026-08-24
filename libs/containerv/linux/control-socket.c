@@ -157,6 +157,14 @@ int containerv_open_socket(struct containerv_container* container)
         VLOG_ERROR("containerv[child]", "containerv_open_socket: failed to bind socket to address %s\n", &namesock.sun_path[0]);
         return -1;
     }
+
+    // Put the correct socket permissions so other processes can connect to it
+    VLOG_DEBUG("containerv[child]", "updating socket permissions %d\n", fd);
+    if (fchmod(fd, 0660) != 0) {
+        VLOG_ERROR("containerv[child]", "containerv_open_socket: failed to update socket permissions\n");
+        close(fd);
+        return -1;
+    }
     return fd;
 }
 
