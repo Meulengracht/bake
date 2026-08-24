@@ -313,63 +313,56 @@ WRAPPER="$SERVED_ROOT/chef/bin/hello"
 EXPECTED_SERVE_EXEC="$(dirname "$CMD_SERVED")/serve-exec"
 if [[ ! -x "$EXPECTED_SERVE_EXEC" ]]; then
     echo "       Copying serve-exec to expected location: $EXPECTED_SERVE_EXEC"
-    mkdir -p "$(dirname "$EXPECTED_SERVE_EXEC")"
     cp "$BUILD_DIR/bin/serve-exec" "$EXPECTED_SERVE_EXEC"
 fi
 
-if [[ ! -x "$WRAPPER" ]]; then
-    echo "SKIP (aspirational): wrapper script not found or not executable: $WRAPPER"
+echo "       Wrapper: $WRAPPER"
+echo "       Running installed hello-world..."
+run_rc=0
+run_output=""
+run_cmd run_output "$WRAPPER" || run_rc=$?
+echo "$run_output" >"$RUN_LOG"
+
+echo "       Asserting output..."
+if [[ $run_rc -ne 0 ]]; then
+    echo "SKIP (aspirational): wrapper exited with code $run_rc"
+    echo "       --- debug: wrapper script ($WRAPPER) ---"
+    cat "$WRAPPER" 2>&1 | sed 's/^/       | /'
+    echo "       --- debug: wrapper output ---"
+    printf '%s\n' "$run_output" | sed 's/^/       | /'
+    if [[ $run_rc -eq 127 ]]; then
+        echo "       --- debug: exit 127 means 'command not found' — inspecting invoked serve-exec ---"
+        # The wrapper's 2nd line is: <sexec_path> --container ... --path ... --wdir ... [args]
+        # (line 1 is the '#!/bin/sh' shebang, which always resolves fine)
+        exec_line="$(sed -n '2p' "$WRAPPER" 2>/dev/null)"
+        sexec_path="${exec_line%% *}"
+        echo "       invoked command line: $exec_line"
+        echo "       resolved serve-exec path: $sexec_path"
+        if [[ -z "$sexec_path" ]]; then
+            echo "       could not extract sexec path from wrapper"
+        elif [[ ! -e "$sexec_path" ]]; then
+            echo "       MISSING: '$sexec_path' does not exist"
+            echo "       (served derives this path from its own /proc/self/exe directory + 'serve-exec';"
+            echo "        it may not match where this test's serve-exec binary actually lives)"
+        elif [[ ! -x "$sexec_path" ]]; then
+            echo "       '$sexec_path' exists but is NOT executable"
+            ls -la "$sexec_path" 2>&1 | sed 's/^/       | /'
+        else
+            echo "       '$sexec_path' exists and is executable; checking dynamic deps..."
+            ldd "$sexec_path" 2>&1 | sed 's/^/       | /'
+        fi
+        echo "       served binary used by this test: $CMD_SERVED"
+        echo "       expected serve-exec (same dir as served): $(dirname "$CMD_SERVED")/serve-exec"
+        echo "       --- debug: contents of $SERVED_ROOT/chef ---"
+        find "$SERVED_ROOT/chef" -maxdepth 4 2>&1 | sed 's/^/       | /'
+    fi
+    ASPIRATIONAL_FAILED=1
+elif ! assert_contains "$run_output" "hello world" "hello-world stdout"; then
+    echo "SKIP (aspirational): expected output not found"
     ASPIRATIONAL_FAILED=1
 else
-    echo "       wrapper: $WRAPPER"
-
-    echo "       Running installed hello-world..."
-    run_rc=0
-    run_output=""
-    run_cmd run_output "$WRAPPER" || run_rc=$?
-    echo "$run_output" >"$RUN_LOG"
-
-    echo "       Asserting output..."
-    if [[ $run_rc -ne 0 ]]; then
-        echo "SKIP (aspirational): wrapper exited with code $run_rc"
-        echo "       --- debug: wrapper script ($WRAPPER) ---"
-        cat "$WRAPPER" 2>&1 | sed 's/^/       | /'
-        echo "       --- debug: wrapper output ---"
-        printf '%s\n' "$run_output" | sed 's/^/       | /'
-        if [[ $run_rc -eq 127 ]]; then
-            echo "       --- debug: exit 127 means 'command not found' — inspecting invoked serve-exec ---"
-            # The wrapper's 2nd line is: <sexec_path> --container ... --path ... --wdir ... [args]
-            # (line 1 is the '#!/bin/sh' shebang, which always resolves fine)
-            exec_line="$(sed -n '2p' "$WRAPPER" 2>/dev/null)"
-            sexec_path="${exec_line%% *}"
-            echo "       invoked command line: $exec_line"
-            echo "       resolved serve-exec path: $sexec_path"
-            if [[ -z "$sexec_path" ]]; then
-                echo "       could not extract sexec path from wrapper"
-            elif [[ ! -e "$sexec_path" ]]; then
-                echo "       MISSING: '$sexec_path' does not exist"
-                echo "       (served derives this path from its own /proc/self/exe directory + 'serve-exec';"
-                echo "        it may not match where this test's serve-exec binary actually lives)"
-            elif [[ ! -x "$sexec_path" ]]; then
-                echo "       '$sexec_path' exists but is NOT executable"
-                ls -la "$sexec_path" 2>&1 | sed 's/^/       | /'
-            else
-                echo "       '$sexec_path' exists and is executable; checking dynamic deps..."
-                ldd "$sexec_path" 2>&1 | sed 's/^/       | /'
-            fi
-            echo "       served binary used by this test: $CMD_SERVED"
-            echo "       expected serve-exec (same dir as served): $(dirname "$CMD_SERVED")/serve-exec"
-            echo "       --- debug: contents of $SERVED_ROOT/chef ---"
-            find "$SERVED_ROOT/chef" -maxdepth 4 2>&1 | sed 's/^/       | /'
-        fi
-        ASPIRATIONAL_FAILED=1
-    elif ! assert_contains "$run_output" "hello world" "hello-world stdout"; then
-        echo "SKIP (aspirational): expected output not found"
-        ASPIRATIONAL_FAILED=1
-    else
-        echo "       output: $run_output"
-        echo "       Application ran and produced expected output."
-    fi
+    echo "       output: $run_output"
+    echo "       Application ran and produced expected output."
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────

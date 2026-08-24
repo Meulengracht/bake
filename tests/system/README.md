@@ -392,25 +392,6 @@ uses `printf("hello world")` without `\n`).
 
 ### 8. Known limitations / implementation gaps
 
-#### Local-file install path not implemented in `served`
-
-When `serve install ./file.pack` is invoked:
-
-1. The `serve` CLI sets `installOptions.path = <absolute-path>` and leaves
-   `installOptions.package = NULL`.
-2. `served`'s API handler (`daemons/served/api.c`,
-   `chef_served_install_invocation`) stores `options->package` in the
-   transaction state but **ignores `options->path`**.
-3. The transaction state machine's DOWNLOAD step calls
-   `store_ensure_package()` with a NULL package name, which fails.
-
-**Impact:** Steps 7–10 of `hello-runtime.sh` will fail until this gap is
-closed.
-
-**Fix required:** Store `options->path` in `state_transaction` and add a
-bypass in the DOWNLOAD state that uses the local path directly instead of
-fetching from the store.
-
 #### Package proof verification requires real RSA keys
 
 The VERIFY state in `served` calls `utils_verify_package` which:
