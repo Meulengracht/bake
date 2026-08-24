@@ -84,6 +84,15 @@ struct state_application_command {
 };
 
 /**
+ * @brief Enumerates the types of packages that can be installed.
+ */
+enum state_application_type {
+    STATE_APPLICATION_TYPE_OSBASE,
+    STATE_APPLICATION_TYPE_CONTENT,
+    STATE_APPLICATION_TYPE_APPLICATION
+};
+
+/**
  * @brief Represents an installed application with its commands and revisions.
  * 
  * Applications are installed packages that have been unpacked and configured.
@@ -93,6 +102,7 @@ struct state_application_command {
 struct state_application {
     const char* name;                                   /**< Application name (unique identifier) */
     const char* base;                                   /**< Base rootfs type for the application */
+    enum state_application_type type;                   /**< Type of application (OS base, content, or application) */
 
     struct state_application_command*  commands;        /**< Array of available commands */
     int                                commands_count;  /**< Number of commands */

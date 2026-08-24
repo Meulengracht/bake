@@ -49,6 +49,7 @@ static int __unload_application(const char* name)
 
 enum sm_action_result served_handle_state_unload(void* context)
 {
+    struct state_application*  application;
     struct served_transaction* transaction = context;
     int                        status;
 
@@ -56,6 +57,20 @@ enum sm_action_result served_handle_state_unload(void* context)
     VLOG_DEBUG("served", "Unloading container for package %s\n",
         transaction->name
     );
+
+    // Ensure we are unloading applications only
+    served_state_lock();
+    application = served_state_application(transaction->name);
+    if (application == NULL) {
+        served_state_unlock();
+        return -1;
+    }
+
+    if (application->type != STATE_APPLICATION_TYPE_APPLICATION) {
+        served_state_unlock();
+        return 0;
+    }
+    served_state_unlock();
 
     // Destroy the container running for publisher.package
     status = __unload_application(transaction->name);
@@ -84,6 +99,9 @@ enum sm_action_result served_handle_state_unload_all(void* context)
 
     for (int i = 0; i < count; i++) {
         struct state_application* app = &applications[i];
+        if (app->type != STATE_APPLICATION_TYPE_APPLICATION) {
+            continue;
+        }
         status = __unload_application(app->name);
         if (status) {
             VLOG_ERROR("served", "Failed to unload application %s: %d\n", app->name, status);

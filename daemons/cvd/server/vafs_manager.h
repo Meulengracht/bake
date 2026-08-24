@@ -91,7 +91,7 @@ extern void cvd_vafs_layer_instance_release(
 // package files directly, so the manager collapses to no-ops.
 static inline int cvd_vafs_mount_manager_initialize(void) { return 0; }
 static inline void cvd_vafs_mount_manager_shutdown(void) { }
-static inline void cvd_vafs_layer_instance_release(struct cvd_vafs_layer_instance* instance) { (void)activation; }
+static inline void cvd_vafs_layer_instance_release(struct cvd_vafs_layer_instance* instance) { (void)instance; }
 
 static inline int cvd_vafs_mount_manager_prepare_layers(
     struct containerv_layer*         layers,

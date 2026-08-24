@@ -88,7 +88,7 @@ static int __application_add_revision(struct state_application* application, con
 
 static int __load_application_package(struct state_transaction* state, const char* path, struct state_application** applicationOut)
 {
-    struct state_application*    application;
+    struct state_application*     application;
     struct chef_package_manifest* manifest = NULL;
     struct chef_version*          version = NULL;
     int                           status;
@@ -100,6 +100,23 @@ static int __load_application_package(struct state_transaction* state, const cha
 
     application = __application_new(state->name);
     if (application == NULL) {
+        status = -1;
+        goto cleanup;
+    }
+
+    switch (manifest->type) {
+    case CHEF_PACKAGE_TYPE_OSBASE:
+        application->type = STATE_APPLICATION_TYPE_OSBASE;
+        break;
+    case CHEF_PACKAGE_TYPE_CONTENT:
+        application->type = STATE_APPLICATION_TYPE_CONTENT;
+        break;
+    case CHEF_PACKAGE_TYPE_APPLICATION:
+        application->type = STATE_APPLICATION_TYPE_APPLICATION;
+        break;
+    default:
+        VLOG_ERROR("served", "load_application_package: unsupported package type %d for %s\n",
+            manifest->type, state->name);
         status = -1;
         goto cleanup;
     }
@@ -120,6 +137,10 @@ static int __load_application_package(struct state_transaction* state, const cha
     if (status) {
         chef_version_free(version);
         goto cleanup;
+    }
+
+    if (application->type != STATE_APPLICATION_TYPE_APPLICATION) {
+        goto done;
     }
 
     application->commands_count = (int)manifest->commands_count;
@@ -145,6 +166,7 @@ static int __load_application_package(struct state_transaction* state, const cha
         }
     }
 
+done:
     *applicationOut = application;
 
 cleanup:
