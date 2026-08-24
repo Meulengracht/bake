@@ -316,6 +316,13 @@ if [[ ! -x "$EXPECTED_SERVE_EXEC" ]]; then
     cp "$BUILD_DIR/bin/serve-exec" "$EXPECTED_SERVE_EXEC"
 fi
 
+# serve-exec additionally needs to be SUID to have enough privileges to enter the container and run the command. 
+# This is a workaround for the test environment, which is normally done by install
+if [[ ! -u "$EXPECTED_SERVE_EXEC" ]]; then
+    echo "       Setting SUID bit on serve-exec: $EXPECTED_SERVE_EXEC"
+    chmod u+s "$EXPECTED_SERVE_EXEC"
+fi
+
 echo "       Wrapper: $WRAPPER"
 echo "       Running installed hello-world..."
 run_rc=0
