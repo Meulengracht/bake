@@ -363,6 +363,17 @@ if [[ $run_rc -ne 0 ]]; then
         echo "       --- debug: contents of $SERVED_ROOT/chef ---"
         find "$SERVED_ROOT/chef" -maxdepth 4 2>&1 | sed 's/^/       | /'
     fi
+    # Debug the /run/containerv socket permissions, which can cause the wrapper to fail with exit 127
+    echo "       --- debug: /run/containerv socket permissions ---"
+    if [[ -e /run/containerv ]]; then
+        ls -la /run/containerv 2>&1 | sed 's/^/       | /'
+    else
+        echo "       /run/containerv does not exist"
+    fi
+    # Also list all recursively under /run/containerv to see if the socket is present and what its permissions are
+    if [[ -d /run/containerv ]]; then
+        find /run/containerv -maxdepth 4 2>&1 | sed 's/^/       | /'
+    fi
     ASPIRATIONAL_FAILED=1
 elif ! assert_contains "$run_output" "hello world" "hello-world stdout"; then
     echo "SKIP (aspirational): expected output not found"
