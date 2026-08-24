@@ -367,12 +367,9 @@ if [[ $run_rc -ne 0 ]]; then
     echo "       --- debug: /run/containerv socket permissions ---"
     if [[ -e /run/containerv ]]; then
         ls -la /run/containerv 2>&1 | sed 's/^/       | /'
+        ls -la /run/containerv/testpub.hello-world 2>&1 | sed 's/^/       | /'
     else
         echo "       /run/containerv does not exist"
-    fi
-    # Also list all recursively under /run/containerv to see if the socket is present and what its permissions are
-    if [[ -d /run/containerv ]]; then
-        find /run/containerv -maxdepth 4 2>&1 | sed 's/^/       | /'
     fi
     ASPIRATIONAL_FAILED=1
 elif ! assert_contains "$run_output" "hello world" "hello-world stdout"; then
