@@ -153,6 +153,16 @@ static struct containerv_container* __container_new(const char* containerId)
         }
     }
 
+    // The runtime socket permissions should be set to 770 
+    // so that only the owner and group can access it. This is important 
+    // for security, as the socket is used for communication between the container and the host.
+    if (platform_chmod(container->runtime_dir, S_IRWXU | S_IRWXG | S_ISVTX)) {
+        VLOG_ERROR("containerv", "__container_new: failed to set permissions on runtime dir %s\n", container->runtime_dir);
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    } 
+
     // The client socket dir is to allow clients to create their own 
     // sockets for communication with the container. This allows multiple clients to 
     // connect to the same container without interfering with each other.
