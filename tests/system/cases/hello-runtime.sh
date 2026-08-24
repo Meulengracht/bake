@@ -326,6 +326,36 @@ if [[ $ASPIRATIONAL_FAILED -eq 0 ]]; then
         echo "       Asserting output..."
         if [[ $run_rc -ne 0 ]]; then
             echo "SKIP (aspirational): wrapper exited with code $run_rc"
+            echo "       --- debug: wrapper script ($WRAPPER) ---"
+            cat "$WRAPPER" 2>&1 | sed 's/^/       | /'
+            echo "       --- debug: wrapper output ---"
+            printf '%s\n' "$run_output" | sed 's/^/       | /'
+            if [[ $run_rc -eq 127 ]]; then
+                echo "       --- debug: exit 127 means 'command not found' — inspecting invoked serve-exec ---"
+                # The wrapper's 2nd line is: <sexec_path> --container ... --path ... --wdir ... [args]
+                # (line 1 is the '#!/bin/sh' shebang, which always resolves fine)
+                exec_line="$(sed -n '2p' "$WRAPPER" 2>/dev/null)"
+                sexec_path="${exec_line%% *}"
+                echo "       invoked command line: $exec_line"
+                echo "       resolved serve-exec path: $sexec_path"
+                if [[ -z "$sexec_path" ]]; then
+                    echo "       could not extract sexec path from wrapper"
+                elif [[ ! -e "$sexec_path" ]]; then
+                    echo "       MISSING: '$sexec_path' does not exist"
+                    echo "       (served derives this path from its own /proc/self/exe directory + 'serve-exec';"
+                    echo "        it may not match where this test's serve-exec binary actually lives)"
+                elif [[ ! -x "$sexec_path" ]]; then
+                    echo "       '$sexec_path' exists but is NOT executable"
+                    ls -la "$sexec_path" 2>&1 | sed 's/^/       | /'
+                else
+                    echo "       '$sexec_path' exists and is executable; checking dynamic deps..."
+                    ldd "$sexec_path" 2>&1 | sed 's/^/       | /'
+                fi
+                echo "       served binary used by this test: $CMD_SERVED"
+                echo "       expected serve-exec (same dir as served): $(dirname "$CMD_SERVED")/serve-exec"
+                echo "       --- debug: contents of $SERVED_ROOT/chef ---"
+                find "$SERVED_ROOT/chef" -maxdepth 4 2>&1 | sed 's/^/       | /'
+            fi
             ASPIRATIONAL_FAILED=1
         elif ! assert_contains "$run_output" "hello world" "hello-world stdout"; then
             echo "SKIP (aspirational): expected output not found"
