@@ -323,6 +323,10 @@ if [[ ! -u "$EXPECTED_SERVE_EXEC" ]]; then
     chmod u+s "$EXPECTED_SERVE_EXEC"
 fi
 
+# list permissions of serve-exec to verify it is executable and SUID
+echo "       serve-exec permissions:"
+ls -la "$EXPECTED_SERVE_EXEC" 2>&1 | sed 's/^/       | /'
+
 echo "       Wrapper: $WRAPPER"
 echo "       Running installed hello-world..."
 run_rc=0
