@@ -6,6 +6,7 @@ export PATH=$PATH:$GOROOT/bin
 
 GO_VERSION=go1.25.1
 UBUNTU_VERSION=24.04
+CHISEL_VERSION=v1.4.2
 
 DIR="$1"
 ARCH="$2"
@@ -30,7 +31,7 @@ tar -C /usr/local -xzf "${GO_VERSION}.linux-amd64.tar.gz"
 
 # ensure chisel is available
 if ! command -v chisel >/dev/null 2>&1; then
-    go install github.com/canonical/chisel/cmd/chisel@latest
+    go install github.com/canonical/chisel/cmd/chisel@${CHISEL_VERSION}
 fi
 
 # build a whitespace separated list
@@ -40,5 +41,27 @@ for item in "${PACKAGES[@]}"; do
     JOINED="$JOINED$delim$item"
     delim=" "
 done
+
+# setup rootfs symlinks that are not created by chisel
+install_merged_directory() {
+  if [ ! -d "$DIR/$1" ]; then
+    mkdir -p "$DIR/$1"
+    # mkdir -p "$DIR/$1.usr-is-merged"
+    chown "root:$4" "$DIR/$1"
+    chmod "$3" "$DIR/$1"
+  fi
+  ln -sfn "$2" "$DIR/$1"
+}
+
+# bin => usr/bin
+# lib => usr/lib
+# lib32 => usr/lib32
+# lib64 => usr/lib64
+# sbin => usr/sbin
+install_merged_directory "bin" "usr/bin" 755 root
+install_merged_directory "lib" "usr/lib" 755 root
+install_merged_directory "lib64" "usr/lib64" 755 root
+install_merged_directory "lib32" "usr/lib32" 755 root
+install_merged_directory "sbin" "usr/sbin" 755 root
 
 /chef/go/bin/chisel cut --release "ubuntu-${UBUNTU_VERSION}" --root $DIR --arch $ARCH $JOINED
