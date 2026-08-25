@@ -32,6 +32,9 @@
 // import the policy structure details
 #include "../policies/private.h"
 
+#undef VLOG_DEBUG
+#define VLOG_DEBUG(tag, ...)
+
 static uint32_t __determine_default_action(void)
 {
     const char* logMode;
@@ -121,10 +124,22 @@ static int __parse_masked_equal(
 	
     status = __parse_number(args[0], syscallFlags, valueOut);
 	if (status) {
+        VLOG_ERROR(
+            "containerv",
+            "policy_seccomp: failed to parse masked equality value '%s'\n",
+            args[0]
+        );
 		goto cleanup;
 	}
 	
     status = __parse_number(args[1], syscallFlags, value2Out);
+    if (status) {
+        VLOG_ERROR(
+            "containerv",
+            "policy_seccomp: failed to parse masked equality mask '%s'\n",
+            args[1]
+        );
+    }
 
 cleanup:
     strsplit_free(args);
