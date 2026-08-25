@@ -44,24 +44,24 @@ done
 
 # setup rootfs symlinks that are not created by chisel
 install_merged_directory() {
-  if [ ! -d "$DIR/$1" ]; then
-    mkdir -p "$DIR/$1"
-    # mkdir -p "$DIR/$1.usr-is-merged"
-    chown "root:$4" "$DIR/$1"
-    chmod "$3" "$DIR/$1"
+  if [ ! -d "$DIR/$2" ]; then
+    mkdir -p "$DIR/$2"
+    chown "root:$4" "$DIR/$2"
+    chmod "$3" "$DIR/$2"
   fi
-  ln -sfn "$2" "$DIR/$1"
+  if [ ! -L "$DIR/$1" ]; then
+    ln -sfn "$2" "$DIR/$1"
+  fi
 }
 
-# bin => usr/bin
-# lib => usr/lib
-# lib32 => usr/lib32
-# lib64 => usr/lib64
-# sbin => usr/sbin
+# create the directory
+mkdir -p "$DIR"
+
+/chef/go/bin/chisel cut --release "ubuntu-${UBUNTU_VERSION}" --root $DIR --arch $ARCH $JOINED
+
+# ensure a user-merge system
 install_merged_directory "bin" "usr/bin" 755 root
 install_merged_directory "lib" "usr/lib" 755 root
 install_merged_directory "lib64" "usr/lib64" 755 root
 install_merged_directory "lib32" "usr/lib32" 755 root
 install_merged_directory "sbin" "usr/sbin" 755 root
-
-/chef/go/bin/chisel cut --release "ubuntu-${UBUNTU_VERSION}" --root $DIR --arch $ARCH $JOINED
