@@ -827,7 +827,7 @@ int containerv_socket_client_get_root(struct containerv_socket_client* client, c
     struct __socket_command command = {
         .type = __SOCKET_COMMAND_GETROOT
     };
-    VLOG_DEBUG("containerv[host]", "containerv_get_ns_sockets()\n");
+    VLOG_DEBUG("containerv[host]", "containerv_socket_client_get_root()\n");
 
     status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, &command, sizeof(struct __socket_command));
     if (status < 0) {

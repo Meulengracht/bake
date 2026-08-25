@@ -385,6 +385,9 @@ else
     echo "       Application ran and produced expected output."
 fi
 
+# Dump the contents of /var/chef/layers/testpub.hello-world/merged
+$SUDO find "/var/chef/layers/testpub.hello-world/merged" -maxdepth 4 2>&1 | sed 's/^/       | /'
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 if [[ $ASPIRATIONAL_FAILED -ne 0 ]]; then
