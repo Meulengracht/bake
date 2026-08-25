@@ -320,7 +320,8 @@ fi
 # This is a workaround for the test environment, which is normally done by install
 if [[ ! -u "$EXPECTED_SERVE_EXEC" ]]; then
     echo "       Setting SUID bit on serve-exec: $EXPECTED_SERVE_EXEC"
-    chmod u+s "$EXPECTED_SERVE_EXEC"
+    $SUDO chown root:root "$EXPECTED_SERVE_EXEC"
+    $SUDO chmod u+s "$EXPECTED_SERVE_EXEC"
 fi
 
 # list permissions of serve-exec to verify it is executable and SUID
