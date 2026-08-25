@@ -152,17 +152,15 @@ int containerv_open_socket(struct containerv_container* container)
         return -1;
     }
 
+    // Configure 0770 permissions for the socket so that the host can connect to it
+    VLOG_DEBUG("containerv[child]", "updating socket permissions %d\n", fd);
+    if (fchmod(fd, 0770) != 0) {
+        VLOG_ERROR("containerv[child]", "containerv_open_socket: failed to configure socket permissions\n");
+    }
+
     VLOG_DEBUG("containerv[child]", "listening on %s\n", &namesock.sun_path[0]);
     if (bind(fd, (struct sockaddr*)&namesock, sizeof(struct sockaddr_un))) {
         VLOG_ERROR("containerv[child]", "containerv_open_socket: failed to bind socket to address %s\n", &namesock.sun_path[0]);
-        return -1;
-    }
-
-    // Put the correct socket permissions so other processes can connect to it
-    VLOG_DEBUG("containerv[child]", "updating socket permissions %d\n", fd);
-    if (fchmod(fd, 0666) != 0) {
-        VLOG_ERROR("containerv[child]", "containerv_open_socket: failed to update socket permissions\n");
-        close(fd);
         return -1;
     }
     return fd;
