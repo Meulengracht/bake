@@ -385,8 +385,8 @@ else
     echo "       Application ran and produced expected output."
 fi
 
-# Dump the contents of /var/chef/layers/testpub.hello-world/merged
-$SUDO find "/var/chef/layers/testpub.hello-world/merged" -maxdepth 4 2>&1 | sed 's/^/       | /'
+# Dump the contents of the vafs layers
+$SUDO find "/var/chef/vafs" -maxdepth 6 2>&1 | sed 's/^/       | /'
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
