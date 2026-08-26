@@ -65,3 +65,8 @@ install_merged_directory "lib" "usr/lib" 755 root
 install_merged_directory "lib64" "usr/lib64" 755 root
 install_merged_directory "lib32" "usr/lib32" 755 root
 install_merged_directory "sbin" "usr/sbin" 755 root
+
+# symlink bash to sh if not already present
+if ! [ -e "$DIR/bin/sh" ]; then
+  ln -sf bash "$DIR/bin/sh"
+fi
