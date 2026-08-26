@@ -125,6 +125,7 @@ static char* __container_create_runtime_dir(void)
 static struct containerv_container* __container_new(const char* containerId)
 {
     struct containerv_container* container;
+    char*                        clientSocketsDir = NULL;
 
     container = calloc(1, sizeof(struct containerv_container));
     if (container == NULL) {
@@ -151,7 +152,43 @@ static struct containerv_container* __container_new(const char* containerId)
             return NULL;
         }
     }
-    
+
+    // The runtime directory permissions should be set to 766
+    // so that only the owner and group can access it. This is important 
+    // for security, as the socket is used for communication between the container and the host.
+    if (platform_chmod(container->runtime_dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
+        VLOG_ERROR("containerv", "__container_new: failed to set permissions on runtime dir %s\n", container->runtime_dir);
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    }
+
+    // The client socket dir is to allow clients to create their own 
+    // sockets for communication with the container. This allows multiple clients to 
+    // connect to the same container without interfering with each other.
+    clientSocketsDir = strpathcombine(container->runtime_dir, "clients");
+    if (clientSocketsDir == NULL) {
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    }
+    if (platform_mkdir(clientSocketsDir)) {
+        VLOG_ERROR("containerv", "__container_new: failed to create client socket dir %s\n", clientSocketsDir);
+        free(clientSocketsDir);
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    }
+    // The runtime clients directory permissions should be set to 766
+    if (platform_chmod(clientSocketsDir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
+        VLOG_ERROR("containerv", "__container_new: failed to set permissions on client socket dir %s\n", clientSocketsDir);
+        free(clientSocketsDir);
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    }
+    free(clientSocketsDir);
+
     // get last part of directory path, the last token is the id
     container->id = strrchr(container->runtime_dir, CHEF_PATH_SEPARATOR) + 1;
 
@@ -705,10 +742,6 @@ static int __container_run(
         flags |= CLONE_NEWNET;
     }
 
-    if (options->capabilities & CV_CAP_PROCESS_CONTROL) {
-        flags |= CLONE_NEWPID;
-    }
-
     if (options->capabilities & CV_CAP_IPC) {
         flags |= CLONE_NEWIPC;
     }
@@ -946,6 +979,19 @@ static int __container_run(
         }
     } else {
         VLOG_DEBUG("containerv[child]", "__container_run: no security policy configured\n");
+    }
+
+    // Unshare the pid namespace last, right before dropping capabilities: the
+    // calling task never joins pid_ns_for_children itself (only its next fork
+    // does), so deferring this keeps that fork - containerv_set_init_process()'s -
+    // as the only one that can claim PID 1, and lets earlier setup (layer
+    // mounting, pthread_create for the VaFS FUSE worker, etc.) run unaffected.
+    if (options->capabilities & CV_CAP_PROCESS_CONTROL) {
+        status = unshare(CLONE_NEWPID);
+        if (status) {
+            VLOG_ERROR("containerv[child]", "__container_run: failed to unshare the pid namespace\n");
+            return status;
+        }
     }
 
     // Drop capabilities that we no longer need

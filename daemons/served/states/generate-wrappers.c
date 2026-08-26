@@ -187,7 +187,7 @@ static int __generate_wrappers(const char* appName)
     }
 
     application = served_state_application(appName);
-    if (application == NULL) {
+    if (application == NULL || application->type != STATE_APPLICATION_TYPE_APPLICATION) {
         goto cleanup;
     }
 

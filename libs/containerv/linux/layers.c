@@ -16,35 +16,17 @@
  * 
  */
 
-#define FUSE_USE_VERSION 32
-
 #include <chef/containerv/layers.h>
 #include <chef/containerv.h>
 #include <chef/platform.h>
-#include <chef/vafs.h>
 #include <errno.h>
-#include <fuse3/fuse.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mount.h>
-#include <threads.h>
 #include <unistd.h>
-#include <vafs/reader.h>
-#include <vafs/stat.h>
 #include <vlog.h>
-
-/**
- * @brief VaFS FUSE mount handle
- */
-struct __vafs_mount {
-    struct VaFs*                    vafs;
-    struct chef_vafs_codec_context* codec_context;
-    struct fuse*                    fuse;
-    char*                            mount_point;
-    thrd_t                          worker;
-};
 
 /**
  * @brief Mounted layer information
@@ -54,7 +36,6 @@ struct __mounted_layer {
     char*                      mount_point;   // Where layer is mounted
     char*                      source_path;   // Original source
     int                        readonly;      // For HOST_DIRECTORY layers
-    void*                      handle;        // Mount handle (e.g., __vafs_mount*)
 };
 
 /**
@@ -70,297 +51,6 @@ struct containerv_layer_context {
     int                     overlay_mounted;  // Whether overlay was mounted
     int                     readonly;         // Read-only flag
 };
-
-// ============================================================================
-// VaFS FUSE Implementation
-// ============================================================================
-
-static int __vafs_getattr(const char* path, struct stat* stbuf, struct fuse_file_info* fi)
-{
-    struct fuse_context* context = fuse_get_context();
-    struct __vafs_mount* mount   = (struct __vafs_mount*)context->private_data;
-    struct VaFsObjectReader* handle = NULL;
-    struct VaFsMetadata      metadata;
-    int                      status;
-    int                      isRoot;
-
-    memset(stbuf, 0, sizeof(struct stat));
-    if (fi != NULL && fi->fh != 0) {
-        handle = (struct VaFsObjectReader*)fi->fh;
-        status = vafs_object_reader_stat(handle, &metadata);
-        if (status != 0) {
-            return status;
-        }
-
-        stbuf->st_blksize = 512;
-        stbuf->st_mode = metadata.Mode;
-        stbuf->st_size = (off_t)metadata.Size;
-        stbuf->st_nlink = metadata.LinkCount ? metadata.LinkCount : 1;
-        return 0;
-    }
-
-    status = vafs_object_reader_open(mount->vafs, path, VaFsLookup_NoFollow, &handle);
-    if (status) {
-        return status;
-    }
-
-    status = vafs_object_reader_stat(handle, &metadata);
-    vafs_object_reader_close(handle);
-    if (status != 0) {
-        return status;
-    }
-
-    isRoot = (strcmp(path, "/") == 0);
-    stbuf->st_blksize = 512;
-    stbuf->st_mode = metadata.Mode;
-    stbuf->st_size = (off_t)metadata.Size;
-    stbuf->st_nlink = isRoot ? 2 : (metadata.LinkCount ? metadata.LinkCount : 1);
-    return 0;
-}
-
-static int __vafs_open(const char* path, struct fuse_file_info* fi)
-{
-    struct fuse_context*   context = fuse_get_context();
-    struct __vafs_mount*   mount   = (struct __vafs_mount*)context->private_data;
-    struct VaFsObjectReader* handle;
-    int                      status;
-
-    if ((fi->flags & O_ACCMODE) != O_RDONLY) {
-        errno = EACCES;
-        return -1;
-    }
-
-    status = vafs_object_reader_open(mount->vafs, path, VaFsLookup_None, &handle);
-    if (status) {
-        return status;
-    }
-    
-    fi->fh = (uint64_t)handle;
-    return 0;
-}
-
-static int __vafs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
-{
-    struct VaFsObjectReader* handle = (struct VaFsObjectReader*)fi->fh;
-    uint64_t                 bytesRead;
-    int                      status;
-
-    if (handle == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (offset != 0) {
-        status = vafs_object_reader_seek(handle, offset, SEEK_SET);
-        if (status) {
-            return status;
-        }
-    }
-
-    bytesRead = vafs_object_reader_read(handle, buf, size);
-    if (bytesRead == UINT64_MAX) {
-        return -1;
-    }
-    return (int)bytesRead;
-}
-
-static int __vafs_release(const char* path, struct fuse_file_info* fi)
-{
-    struct VaFsObjectReader* handle = (struct VaFsObjectReader*)fi->fh;
-    
-    if (handle == NULL) {
-        return -EINVAL;
-    }
-    
-    vafs_object_reader_close(handle);
-    fi->fh = 0;
-    return 0;
-}
-
-static int __vafs_opendir(const char* path, struct fuse_file_info* fi)
-{
-    struct fuse_context*        context = fuse_get_context();
-    struct __vafs_mount*        mount   = (struct __vafs_mount*)context->private_data;
-    struct VaFsDirectoryReader* handle;
-    int                         status;
-
-    status = vafs_directory_reader_open(mount->vafs, path, VaFsLookup_None, &handle);
-    if (status) {
-        return status;
-    }
-    
-    fi->fh = (uint64_t)handle;
-    return 0;
-}
-
-static int __vafs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, 
-                          off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags)
-{
-    struct VaFsDirectoryReader* handle = (struct VaFsDirectoryReader*)fi->fh;
-    int                         status;
-
-    (void)path;
-    (void)offset;
-    (void)flags;
-
-    if (handle == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    
-    filler(buf, ".", NULL, 0, 0);
-    filler(buf, "..", NULL, 0, 0);
-    
-    while (1) {
-        struct VaFsEntry entry;
-
-        status = vafs_directory_reader_next(handle, &entry);
-        if (status != 0) {
-            if (errno != ENOENT) {
-                return status;
-            }
-            break;
-        }
-
-        status = filler(buf, entry.Name, NULL, 0, 0);
-        if (status != 0) {
-            return status;
-        }
-    }
-    
-    return 0;
-}
-
-static int __vafs_releasedir(const char* path, struct fuse_file_info* fi)
-{
-    struct VaFsDirectoryReader* handle = (struct VaFsDirectoryReader*)fi->fh;
-    
-    if (handle == NULL) {
-        return -EINVAL;
-    }
-    
-    vafs_directory_reader_close(handle);
-    fi->fh = 0;
-    return 0;
-}
-
-static const struct fuse_operations g_vafs_operations = {
-    .getattr    = __vafs_getattr,
-    .open       = __vafs_open,
-    .read       = __vafs_read,
-    .release    = __vafs_release,
-    .opendir    = __vafs_opendir,
-    .readdir    = __vafs_readdir,
-    .releasedir = __vafs_releasedir,
-};
-
-static int __fuse_loop_wrapper(void* arg)
-{
-    struct fuse* fuse = (struct fuse*)arg;
-    return fuse_loop(fuse);
-}
-
-static int __vafs_mount(const char* pack_path, const char* mount_point, struct __vafs_mount** mount_out)
-{
-    struct __vafs_mount* mount;
-    struct fuse_args     args = FUSE_ARGS_INIT(0, NULL);
-    int                  status;
-    
-    VLOG_DEBUG("containerv", "__vafs_mount: mounting %s at %s\n", pack_path, mount_point);
-    
-    mount = calloc(1, sizeof(struct __vafs_mount));
-    if (mount == NULL) {
-        return -1;
-    }
-    
-    mount->mount_point = strdup(mount_point);
-    if (mount->mount_point == NULL) {
-        free(mount);
-        return -1;
-    }
-    
-    status = chef_vafs_codec_context_create(&mount->codec_context);
-    if (status != 0) {
-        VLOG_ERROR("containerv", "__vafs_mount: failed to initialize compression context\n");
-        free(mount->mount_point);
-        free(mount);
-        return -1;
-    }
-
-    status = chef_vafs_reader_open_file(mount->codec_context, pack_path, &mount->vafs);
-    if (status != 0) {
-        VLOG_ERROR("containerv", "__vafs_mount: failed to open VaFS package\n");
-        chef_vafs_codec_context_destroy(mount->codec_context);
-        free(mount->mount_point);
-        free(mount);
-        return -1;
-    }
-    
-    mount->fuse = fuse_new(&args, &g_vafs_operations, sizeof(g_vafs_operations), mount);
-    if (mount->fuse == NULL) {
-        VLOG_ERROR("containerv", "__vafs_mount: failed to create FUSE instance\n");
-        vafs_reader_close(mount->vafs);
-        chef_vafs_codec_context_destroy(mount->codec_context);
-        free(mount->mount_point);
-        free(mount);
-        return -1;
-    }
-    
-    status = fuse_mount(mount->fuse, mount->mount_point);
-    if (status != 0) {
-        VLOG_ERROR("containerv", "__vafs_mount: failed to mount FUSE\n");
-        fuse_destroy(mount->fuse);
-        vafs_reader_close(mount->vafs);
-        chef_vafs_codec_context_destroy(mount->codec_context);
-        free(mount->mount_point);
-        free(mount);
-        return -1;
-    }
-    
-    status = thrd_create(&mount->worker, __fuse_loop_wrapper, (void*)mount->fuse);
-    if (status != thrd_success) {
-        VLOG_ERROR("containerv", "__vafs_mount: failed to create worker thread\n");
-        fuse_unmount(mount->fuse);
-        fuse_destroy(mount->fuse);
-        vafs_reader_close(mount->vafs);
-        chef_vafs_codec_context_destroy(mount->codec_context);
-        free(mount->mount_point);
-        free(mount);
-        return -1;
-    }
-    
-    VLOG_DEBUG("containerv", "__vafs_mount: successfully mounted\n");
-    *mount_out = mount;
-    return 0;
-}
-
-static void __vafs_unmount(struct __vafs_mount* mount)
-{
-    if (mount == NULL) {
-        return;
-    }
-    
-    VLOG_DEBUG("containerv", "__vafs_unmount: unmounting %s\n", mount->mount_point);
-    
-    if (mount->worker != 0) {
-        fuse_exit(mount->fuse);
-        thrd_join(mount->worker, NULL);
-        mount->worker = 0;
-    }
-    
-    if (mount->fuse != NULL) {
-        fuse_unmount(mount->fuse);
-        fuse_destroy(mount->fuse);
-    }
-    
-    if (mount->vafs != NULL) {
-        vafs_reader_close(mount->vafs);
-    }
-    chef_vafs_codec_context_destroy(mount->codec_context);
-    
-    free(mount->mount_point);
-    free(mount);
-}
 
 // ============================================================================
 // Layer Path Helpers
@@ -436,13 +126,6 @@ static struct containerv_layer_context* __containerv_layer_context_new(const cha
     return context;
 }
 
-static char* __create_vafs_mount_point(const char* container_id, int layer_index)
-{
-    char tmp[64];
-    snprintf(tmp, sizeof(tmp), "vafs-%d", layer_index);
-    return __create_layer_dir(container_id, tmp);
-}
-
 // ============================================================================
 // Layer Mounting
 // ============================================================================
@@ -461,7 +144,6 @@ static int __setup_base_rootfs(
         return -1;
     }
     
-    mountedLayer->handle = NULL;
     mountedLayer->type = layer->type;
     mountedLayer->mount_point = strdup(layer->source);
     mountedLayer->source_path = strdup(layer->source);
@@ -591,38 +273,19 @@ int containerv_layers_mount_in_namespace(struct containerv_layer_context* contex
     VLOG_DEBUG("containerv", "containerv_layers_mount_in_namespace: %d layers for %s\n",
                context->layer_count, context->container_id);
 
-    // 1) Mount all VAFS layers in this (current) mount namespace
-    for (int i = 0; i < context->layer_count; ++i) {
-        struct __mounted_layer* ml = &context->layers[i];
+    // VaFS package activation is owned by cvd. Any VaFS layer reaching this
+    // point must already expose a mounted rootfs path in source_path/mount_point.
 
-        if (ml->type != CONTAINERV_LAYER_VAFS_PACKAGE) {
-            continue;
-        }
-
-        VLOG_DEBUG("containerv", "containerv_layers_mount_in_namespace: mounting VAFS %s at %s\n",
-                   ml->source_path, ml->mount_point);
-
-        struct __vafs_mount* mount_handle = NULL;
-        status = __vafs_mount(ml->source_path, ml->mount_point, &mount_handle);
-        if (status != 0) {
-            VLOG_ERROR("containerv", "containerv_layers_mount_in_namespace: VAFS mount failed\n");
-            return -1;
-        }
-
-        ml->handle = mount_handle;
-    }
-
-    // 2) Compose overlay in this namespace, if we have multiple layers
+    // 1) Compose overlay in this namespace, if we have multiple layers.
     if (context->layer_count > 1) {
         status = __create_overlay_mount(context);
         if (status != 0) {
             VLOG_ERROR("containerv", "containerv_layers_mount_in_namespace: overlay mount failed\n");
-            // Optional: unmount already-mounted VAFS layers here
             return -1;
         }
     }
 
-    // 3) Bind-mount any HOST_DIRECTORY layers into the composed rootfs.
+    // 2) Bind-mount any HOST_DIRECTORY layers into the composed rootfs.
     //    At this point, either:
     //      - composed_rootfs is the overlay mountpoint (multi-layer), or
     //      - composed_rootfs is a single-layer path (base or vafs).
@@ -682,24 +345,15 @@ static int __process_context_layers(struct containerv_layer_context* context, st
 
         switch (layers[i].type) {
             // CONTAINERV_LAYER_BASE_ROOTFS is meant to point to a directory path, which is already mounted.
-            // CONTAINERV_LAYER_VAFS_PACKAGE is meant to point to a VaFS package file, which we mount via FUSE.
             // CONTAINERV_LAYER_HOST_DIRECTORY is a bind mount from host to container.
             // CONTAINERV_LAYER_OVERLAY is a writable overlay layer on top of the others. If not provided,
             // then we must mount the overlayfs as read-only.
+            // CONTAINERV_LAYER_VAFS_PACKAGE is not used on Linux; cvd activates packages and hands us
+            // the resulting mount as a BASE_ROOTFS layer.
 
             case CONTAINERV_LAYER_BASE_ROOTFS:
                 // Just record base rootfs path; no mount here.
                 status = __setup_base_rootfs(&layers[i], context->container_id, mounted_layer);
-                break;
-
-            case CONTAINERV_LAYER_VAFS_PACKAGE:
-                // Plan the VaFS mount point, but don't call __vafs_mount yet.
-                mounted_layer->type = layers[i].type;
-                mounted_layer->source_path = layers[i].source ? strdup(layers[i].source) : NULL;
-                mounted_layer->mount_point = __create_vafs_mount_point(context->container_id, i);
-                if (mounted_layer->mount_point == NULL) {
-                    status = -1;
-                }
                 break;
 
             case CONTAINERV_LAYER_HOST_DIRECTORY:
@@ -859,13 +513,5 @@ void containerv_layers_destroy(struct containerv_layer_context* context)
         umount2(context->composed_rootfs, MNT_DETACH);
     }
 
-    // Unmount all the layers
-    for (int i = 0; i < context->layer_count; i++) {
-        struct __mounted_layer* layer = &context->layers[i];
-        if (layer->type == CONTAINERV_LAYER_VAFS_PACKAGE && layer->handle != NULL) {
-            __vafs_unmount((struct __vafs_mount*)layer->handle);
-        }
-    }
-    
     __containerv_layer_context_delete(context);
 }

@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <vlog.h>
 
+#include "server/vafs_manager.h"
 #include "private.h"
 
 #if defined(__linux__)
@@ -220,6 +221,12 @@ int cvd_initialize_server(struct gracht_server_configuration* config, gracht_ser
 
     // Initialize BPF manager for eBPF-based security enforcement
     __initialize_bpf();
+
+    if (cvd_vafs_mount_manager_initialize() != 0) {
+        VLOG_ERROR("cvd", "failed to initialize VaFS mount manager\n");
+        return -1;
+    }
+    atexit(cvd_vafs_mount_manager_shutdown);
 
     VLOG_TRACE("cvd", "Creating gracht server handler\n");
     status = gracht_server_create(config, serverOut);

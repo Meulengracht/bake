@@ -34,11 +34,14 @@
 
 #include "../private.h"
 
+#include "vafs_manager.h"
+
 struct __container {
     struct list_item                 item_header;
     char*                            id;
     struct containerv_container*     handle;
     struct containerv_layer_context* layer_context;  // Layer composition context
+    struct cvd_vafs_layer_instance*  vafs_instance;
     struct list                      processes;
     unsigned int                     next_process_id;
 };
@@ -58,7 +61,10 @@ static void __container_process_delete(void* item)
     free(proc);
 }
 
-static struct __container* __container_new(struct containerv_container* handle, struct containerv_layer_context* layerContext)
+static struct __container* __container_new(
+    struct containerv_container*     handle,
+    struct containerv_layer_context* layerContext,
+    struct cvd_vafs_layer_instance*  vafsInstance)
 {
     struct __container* container = calloc(1, sizeof(struct __container));
     if (container == NULL) {
@@ -71,6 +77,7 @@ static struct __container* __container_new(struct containerv_container* handle, 
     }
     container->handle = handle;
     container->layer_context = layerContext;
+    container->vafs_instance = vafsInstance;
     list_init(&container->processes);
     container->next_process_id = 0;
     return container;
@@ -83,6 +90,7 @@ static void __container_delete(struct __container* container)
     }
 
     list_destroy(&container->processes, __container_process_delete);
+    cvd_vafs_layer_instance_release(container->vafs_instance);
     free(container->id);
     free(container);
 }
@@ -261,6 +269,7 @@ struct __create_container_params {
     struct containerv_layer*         layers; // cleanup
     int                              layers_count;
     struct containerv_layer_context* layer_context; // cleanup on failures
+    struct cvd_vafs_layer_instance*  vafs_instance; // transferred on success
 };
 
 static void __create_container_params_cleanup(struct __create_container_params* params)
@@ -278,6 +287,16 @@ static enum chef_status __create_linux_container(const struct chef_create_parame
 {
     struct containerv_policy* policy;
     int                       status;
+
+    status = cvd_vafs_mount_manager_prepare_layers(
+        containerParams->layers,
+        containerParams->layers_count,
+        &containerParams->vafs_instance
+    );
+    if (status) {
+        VLOG_ERROR("cvd", "cvd_create: failed to activate VaFS layers\n");
+        return CHEF_STATUS_FAILED_ROOTFS_SETUP;
+    }
 
     status = containerv_layers_compose(
         containerParams->layers,
@@ -641,18 +660,26 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
             containerv_destroy(containerParams.container);
         }
         containerv_layers_destroy(containerParams.layer_context);
+        cvd_vafs_layer_instance_release(containerParams.vafs_instance);
         return status;
     }
 
-    _container = __container_new(containerParams.container, containerParams.layer_context);
+    _container = __container_new(
+        containerParams.container,
+        containerParams.layer_context,
+        containerParams.vafs_instance
+    );
     if (_container == NULL) {
         VLOG_ERROR("cvd", "failed to allocate memory for the container structure\n");
         if (containerParams.container != NULL) {
             containerv_destroy(containerParams.container);
         }
         containerv_layers_destroy(containerParams.layer_context);
+        cvd_vafs_layer_instance_release(containerParams.vafs_instance);
         return __chef_status_from_errno();
     }
+
+    containerParams.vafs_instance = NULL;
 
     // Store the layer context for cleanup later
     _container->layer_context = containerParams.layer_context;
@@ -713,7 +740,7 @@ enum chef_status cvd_spawn(const struct chef_spawn_parameters* params, unsigned 
 {
     struct __container*             container;
     int                             status;
-    unsigned int                    public_id;
+    unsigned int                    publicID;
     process_handle_t                handle = 0;
     char*                           command = NULL;
     char*                           arguments = NULL;
@@ -767,8 +794,8 @@ enum chef_status cvd_spawn(const struct chef_spawn_parameters* params, unsigned 
         goto cleanup;
     }
 
-    public_id = __container_register_process(container, handle);
-    if (public_id == 0) {
+    publicID = __container_register_process(container, handle);
+    if (publicID == 0) {
         VLOG_ERROR("cvd", "cvd_spawn: failed to register process handle\n");
         containerv_kill(container->handle, handle);
         ret = CHEF_STATUS_INTERNAL_ERROR;
@@ -776,7 +803,7 @@ enum chef_status cvd_spawn(const struct chef_spawn_parameters* params, unsigned 
     }
 
     if (pIDOut != NULL) {
-        *pIDOut = public_id;
+        *pIDOut = publicID;
     }
 
 cleanup:
@@ -788,9 +815,9 @@ cleanup:
 
 enum chef_status cvd_kill(const char* containerID, const unsigned int pID)
 {
-    struct __container* container;
+    struct __container*         container;
     struct __container_process* proc;
-    int                 status;
+    int                         status;
     VLOG_DEBUG("cvd", "cvd_kill(id=%s, pid=%u)\n", containerID, pID);
 
     // find container
@@ -880,7 +907,11 @@ enum chef_status cvd_destroy(const char* containerID)
     // Clean up layer context
     if (container->layer_context != NULL) {
         containerv_layers_destroy(container->layer_context);
+        container->layer_context = NULL;
     }
+
+    cvd_vafs_layer_instance_release(container->vafs_instance);
+    container->vafs_instance = NULL;
 
     __container_delete(container);
     return status == 0 ? CHEF_STATUS_SUCCESS : __chef_status_from_errno();

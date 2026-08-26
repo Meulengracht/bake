@@ -1,5 +1,4 @@
 # Linux reference implementation of the served daemon
-find_package(FUSE REQUIRED)
 
 add_library(containerv-linux STATIC
     cgroups.c
@@ -14,6 +13,6 @@ add_library(containerv-linux STATIC
     utils.c
 )
 target_include_directories(containerv-linux PRIVATE ../include)
-target_link_libraries(containerv-linux PUBLIC platform vlog vafs ${FUSE_LIBRARIES})
+target_link_libraries(containerv-linux PUBLIC platform vlog)
 target_link_libraries(containerv-linux PUBLIC cap seccomp)
 target_link_libraries(containerv-linux PUBLIC containerv-common containerv-pid1 containerv-ebpf common)

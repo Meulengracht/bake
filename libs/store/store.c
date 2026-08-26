@@ -191,6 +191,10 @@ static int __find_package_in_inventory(struct store_package* package, struct sto
         &pack
     );
 
+    if (status == 0 && packOut != NULL) {
+        *packOut = pack;
+    }
+
     strsplit_free(names);
     return status;
 }
@@ -270,6 +274,9 @@ int store_ensure_package(struct store_package* package, struct chef_observer* ob
     }
 
 cleanup:
+    // Update the resolved revision, on errors this
+    // will be 0'ed
+    package->revision = revision;
     strsplit_free(names);
     free(pathTmp);
     free(path);

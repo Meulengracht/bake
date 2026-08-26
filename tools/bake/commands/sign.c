@@ -78,9 +78,9 @@ static int __load_dev_proof_options(struct __dev_proof_options* options)
 
     memset(options, 0, sizeof(struct __dev_proof_options));
 
-    config = chef_config_load(chef_dirs_config());
+    config = chef_config_load();
     if (config == NULL) {
-        VLOG_ERROR("bake", "failed to load configuration from %s\n", chef_dirs_config());
+        VLOG_ERROR("bake", "failed to load configuration\n");
         return -1;
     }
 

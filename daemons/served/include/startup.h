@@ -19,12 +19,15 @@
 #ifndef __SERVED_STARTUP_H__
 #define __SERVED_STARTUP_H__
 
+// forward declarations
+struct chef_config;
+
 /**
  * @brief
  *
  * @return
  */
-extern int served_startup(void);
+extern int served_startup(struct chef_config* config);
 
 /**
  * @brief 

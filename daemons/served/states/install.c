@@ -25,6 +25,8 @@
 #include <chef/platform.h>
 #include <chef/store.h>
 #include <vlog.h>
+#include <errno.h>
+#include <string.h>
 #include <stdlib.h>
 
 static struct chef_version* __duplicate_version(const struct chef_version* source)
@@ -86,7 +88,7 @@ static int __application_add_revision(struct state_application* application, con
 
 static int __load_application_package(struct state_transaction* state, const char* path, struct state_application** applicationOut)
 {
-    struct state_application*    application;
+    struct state_application*     application;
     struct chef_package_manifest* manifest = NULL;
     struct chef_version*          version = NULL;
     int                           status;
@@ -98,6 +100,23 @@ static int __load_application_package(struct state_transaction* state, const cha
 
     application = __application_new(state->name);
     if (application == NULL) {
+        status = -1;
+        goto cleanup;
+    }
+
+    switch (manifest->type) {
+    case CHEF_PACKAGE_TYPE_OSBASE:
+        application->type = STATE_APPLICATION_TYPE_OSBASE;
+        break;
+    case CHEF_PACKAGE_TYPE_CONTENT:
+        application->type = STATE_APPLICATION_TYPE_CONTENT;
+        break;
+    case CHEF_PACKAGE_TYPE_APPLICATION:
+        application->type = STATE_APPLICATION_TYPE_APPLICATION;
+        break;
+    default:
+        VLOG_ERROR("served", "load_application_package: unsupported package type %d for %s\n",
+            manifest->type, state->name);
         status = -1;
         goto cleanup;
     }
@@ -118,6 +137,10 @@ static int __load_application_package(struct state_transaction* state, const cha
     if (status) {
         chef_version_free(version);
         goto cleanup;
+    }
+
+    if (application->type != STATE_APPLICATION_TYPE_APPLICATION) {
+        goto done;
     }
 
     application->commands_count = (int)manifest->commands_count;
@@ -143,6 +166,7 @@ static int __load_application_package(struct state_transaction* state, const cha
         }
     }
 
+done:
     *applicationOut = application;
 
 cleanup:
@@ -157,7 +181,7 @@ enum sm_action_result served_handle_state_install(void* context)
     struct state_application*  application;
     sm_event_t                 event = SERVED_TX_EVENT_FAILED;
     char*                      storagePath = NULL;
-    const char*                path;
+    const char*                path = NULL;
     char**                     names = NULL;
     int                        status;
     int                        revision;
@@ -175,12 +199,15 @@ enum sm_action_result served_handle_state_install(void* context)
     served_state_unlock();
 
     if (names == NULL) {
+        VLOG_ERROR("served", "install: invalid package name %s\n", state->name);
         goto cleanup;
     }
 
     if (revision < 0) {
         path = utils_path_pack(names[0], names[1], revision);
         if (path == NULL) {
+            VLOG_ERROR("served", "install: failed to construct local package path for %s revision %i\n",
+                state->name, revision);
             goto cleanup;
         }
     } else {
@@ -192,30 +219,40 @@ enum sm_action_result served_handle_state_install(void* context)
             .revision = revision
         }, &path);
         if (status) {
-            VLOG_ERROR("served", "could not find the revision %i for %s\n", revision, state->name);
+            VLOG_ERROR("served", "install: could not find revision %i for %s: %s\n",
+                revision, state->name, strerror(errno));
             goto cleanup;
         }
     }
 
+    VLOG_DEBUG("served", "install: source path=%s\n", path != NULL ? path : "<null>");
     storagePath = utils_path_pack(names[0], names[1], revision);
     if (storagePath == NULL) {
+        VLOG_ERROR("served", "install: failed to construct storage path for %s revision %i\n",
+            state->name, revision);
         goto cleanup;
     }
 
     status = platform_copyfile(path, storagePath);
     if (status) {
+        VLOG_ERROR("served", "install: failed to copy %s to %s: %s\n",
+            path, storagePath, strerror(errno));
         goto cleanup;
     }
 
     served_state_lock();
     status = __load_application_package(state, path, &application);
     if (status) {
+        VLOG_ERROR("served", "install: failed to load package manifest from %s: %s\n",
+            path, strerror(errno));
         served_state_unlock();
         goto cleanup;
     }
 
     status = served_state_add_application(application);
     if (status) {
+        VLOG_ERROR("served", "install: failed to add application %s: %s\n",
+            state->name, strerror(errno));
         served_state_unlock();
         goto cleanup;
     }

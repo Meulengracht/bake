@@ -14,10 +14,20 @@ set (SRCS
     main.c
 )
 
+if (CMAKE_SYSTEM_NAME MATCHES Linux)
+    find_package(FUSE REQUIRED)
+    list(APPEND SRCS server/vafs_manager.c)
+endif ()
+
 add_executable(cvd ${SRCS})
 add_dependencies(cvd service_server)
 target_include_directories(cvd PRIVATE ${CMAKE_BINARY_DIR}/protocols include)
 target_link_libraries(cvd PRIVATE containerv jansson vlog dirconf common platform gracht)
+
+if (CMAKE_SYSTEM_NAME MATCHES Linux)
+    target_include_directories(cvd PRIVATE ${FUSE_INCLUDE_DIR})
+    target_link_libraries(cvd PRIVATE vafs ${FUSE_LIBRARIES})
+endif ()
 
 if (WIN32)
     add_custom_command(

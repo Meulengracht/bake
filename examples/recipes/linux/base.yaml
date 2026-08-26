@@ -1,13 +1,8 @@
-project: 
-  name: linux-base
-  summary: The linux OS base
-  description: |
-    This is the base OS linux ingredient, which is used as the base for all
-    other chef packages built for linux.
-  author: Philip Meulengracht
-  email: the_meulengracht@hotmail.com
-  version: 1.0.0
-  license: MIT
+name: ubuntu-24
+author: Philip Meulengracht
+email: the_meulengracht@hotmail.com
+version: 1.0.0
+license: MIT
 
 environment:
   host:
@@ -17,7 +12,7 @@ environment:
       - tar
 
 recipes:
-  - name: base
+  - name: ubuntu-rootfs
     source:
       type: path
       path: ./
@@ -29,5 +24,9 @@ recipes:
         end
 
 packs:
-- name: linux-base
+- name: ubuntu-24
+  summary: The Ubuntu 24.04 base
+  description: |
+    This is the Ubuntu 24.04 OS base, which is the default base for all
+    other chef packages built for linux.
   type: os

@@ -70,7 +70,7 @@ wait_for_dummy_store() {
 
 # Seed the dummy store with a package blob using the three-step publish API.
 #
-# Usage: seed_dummy_store PUBLISHER NAME PLATFORM ARCH CHANNEL MAJOR MINOR PATCH PACK_FILE
+# Usage: seed_dummy_store PUBLISHER NAME PLATFORM ARCH CHANNEL MAJOR MINOR PATCH PACK_FILE [PROOF_FILE]
 #
 # Returns 0 on success.  The revision assigned is printed to stdout.
 seed_dummy_store() {
@@ -83,9 +83,14 @@ seed_dummy_store() {
     local minor="$7"
     local patch="$8"
     local pack_file="$9"
+    local proof_file="${10:-}"
 
     if [[ ! -f "$pack_file" ]]; then
         echo "ERROR: seed_dummy_store: pack file not found: $pack_file" >&2
+        return 1
+    fi
+    if [[ -n "$proof_file" && ! -f "$proof_file" ]]; then
+        echo "ERROR: seed_dummy_store: proof file not found: $proof_file" >&2
         return 1
     fi
 
@@ -157,6 +162,15 @@ EOF
     if [[ $? -ne 0 ]]; then
         echo "ERROR: seed_dummy_store: complete failed: $complete_response" >&2
         return 1
+    fi
+
+    if [[ -n "$proof_file" ]]; then
+        local stored_proof
+        stored_proof="$DUMMY_STORE_ROOT/packages/$publisher/$name/rev/$revision/proof.bin"
+        if ! cp "$proof_file" "$stored_proof"; then
+            echo "ERROR: seed_dummy_store: failed to install proof at $stored_proof" >&2
+            return 1
+        fi
     fi
 
     echo "$revision"

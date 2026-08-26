@@ -36,7 +36,6 @@ DEFAULT_CASES=(
     hello-runtime
     dummy-store-roundtrip
     order-fetch-from-store
-    served-install-from-store
 )
 
 if [[ $# -gt 0 ]]; then

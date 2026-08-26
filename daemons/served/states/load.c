@@ -20,6 +20,7 @@
 #include <transaction/transaction.h>
 #include <state.h>
 #include <utils.h>
+#include <vlog.h>
 
 #include <chef/platform.h>
 #include <errno.h>
@@ -34,6 +35,15 @@ static int __load_application(const char* name, int revision)
     char                      containerId[256];
     int                       status;
     
+    application = served_state_application(name);
+    if (application == NULL) {
+        return -1;
+    }
+
+    if (application->type != STATE_APPLICATION_TYPE_APPLICATION) {
+        return 0;
+    }
+
     names = utils_split_package_name(name);
     if (names == NULL) {
         return -1;
@@ -46,12 +56,6 @@ static int __load_application(const char* name, int revision)
     }
     snprintf(&containerId[0], sizeof(containerId), "%s.%s", names[0], names[1]);
     strsplit_free(names);
-
-    application = served_state_application(name);
-    if (application == NULL) {
-        free(package);
-        return -1;
-    }
 
     status = container_client_create_container(&(struct container_options){
         .id = &containerId[0],

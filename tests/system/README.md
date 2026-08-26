@@ -124,15 +124,15 @@ End-to-end runtime workflow: build → install → run.
 |------|-------------|--------|
 | 1 | Create isolated temp environment | ✅ implemented |
 | 2 | Start `cvd` | ✅ implemented |
-| 3 | Build `hello-world` | ✅ implemented |
-| 4 | Configure isolated signing identity and sign the built `.pack` | ✅ implemented |
-| 5 | Start `served` with `--root <tmpdir>` | ✅ implemented |
-| 6 | Wait for `/tmp/served` socket | ✅ implemented |
-| 7 | Verify `serve list` succeeds | ✅ implemented |
-| 8 | `serve install <pack>` | ⚠️ aspirational — see Known Limitations |
-| 9 | Verify package in `serve list` | ⚠️ aspirational |
-| 10 | Run wrapper script | ⚠️ aspirational |
-| 11 | Assert exit 0 and output `"hello world"` | ⚠️ aspirational |
+| 3 | Build the Ubuntu base pack and `hello-world` | ✅ implemented |
+| 4 | Configure isolated signing identity and sign both `.pack` files | ✅ implemented |
+| 5 | Publish both packs to the isolated dummy store | ✅ implemented |
+| 6 | Start `served` with `--root <tmpdir>` and the dummy store URL | ✅ implemented |
+| 7 | Wait for `/tmp/served` socket | ✅ implemented |
+| 8 | Verify `serve list` succeeds | ✅ implemented |
+| 9 | `serve install testpub/hello-world`; served resolves `testpub/ubuntu-24` | ⚠️ aspirational — see Known Limitations |
+| 10 | Verify package in `serve list` | ⚠️ aspirational |
+| 11 | Run wrapper and assert output `"hello world"` | ⚠️ aspirational |
 
 Exit codes: `0` = full pass, `1` = infrastructure failure, `2` = aspirational
 steps not yet implemented.
@@ -391,25 +391,6 @@ binary) which launches the application inside its container:
 uses `printf("hello world")` without `\n`).
 
 ### 8. Known limitations / implementation gaps
-
-#### Local-file install path not implemented in `served`
-
-When `serve install ./file.pack` is invoked:
-
-1. The `serve` CLI sets `installOptions.path = <absolute-path>` and leaves
-   `installOptions.package = NULL`.
-2. `served`'s API handler (`daemons/served/api.c`,
-   `chef_served_install_invocation`) stores `options->package` in the
-   transaction state but **ignores `options->path`**.
-3. The transaction state machine's DOWNLOAD step calls
-   `store_ensure_package()` with a NULL package name, which fails.
-
-**Impact:** Steps 7–10 of `hello-runtime.sh` will fail until this gap is
-closed.
-
-**Fix required:** Store `options->path` in `state_transaction` and add a
-bypass in the DOWNLOAD state that uses the local path directly instead of
-fetching from the store.
 
 #### Package proof verification requires real RSA keys
 

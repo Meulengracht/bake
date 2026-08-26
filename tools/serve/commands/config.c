@@ -114,7 +114,7 @@ static int __handle_option(const char* option, const char* value, int unset)
         return -1;
     }
 
-    config = chef_config_load(chef_dirs_config());
+    config = chef_config_load();
     if (config == NULL) {
         fprintf(stderr, "serve: failed to load configuration: %s\n", strerror(errno));
         return -1;

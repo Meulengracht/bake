@@ -85,3 +85,92 @@ setup_test_signing_identity() {
 
     return 0
 }
+
+# Generate an isolated RSA keypair for the fake store.
+# Usage: setup_test_store_signing_identity ROOT_DIR KEY_PATH
+setup_test_store_signing_identity() {
+    local root_dir="${1:-}"
+    local key_path="${2:-}"
+
+    if [[ -z "$root_dir" || -z "$key_path" ]]; then
+        echo "ERROR: setup_test_store_signing_identity requires ROOT_DIR and KEY_PATH" >&2
+        return 1
+    fi
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo "ERROR: openssl is required for fake-store signing" >&2
+        return 1
+    fi
+
+    mkdir -p "$root_dir" "$(dirname "$key_path")"
+    if [[ ! -e "$key_path" ]]; then
+        if ! openssl genrsa -out "$key_path" 4096 >/dev/null 2>&1; then
+            echo "ERROR: failed to generate fake-store private key: $key_path" >&2
+            return 1
+        fi
+    fi
+
+    if ! openssl pkey -in "$key_path" -pubout -out "${key_path}.pub" >/dev/null 2>&1; then
+        echo "ERROR: failed to derive fake-store public key: ${key_path}.pub" >&2
+        return 1
+    fi
+}
+
+# Create a publisher-origin proof using the fake store keypair.
+# Usage: create_test_store_proof PACK_FILE PROOF_FILE PRIVATE_KEY PUBLIC_KEY PACKAGE_NAME
+create_test_store_proof() {
+    local pack_file="${1:-}"
+    local proof_file="${2:-}"
+    local private_key="${3:-}"
+    local public_key="${4:-}"
+    local package_name="${5:-}"
+    local temp_dir
+    local digest_file
+    local hash
+    local encoded_public_key
+    local signature
+
+    if [[ -z "$pack_file" || -z "$proof_file" || -z "$private_key" ||
+        -z "$public_key" || -z "$package_name" ]]; then
+        echo "ERROR: create_test_store_proof requires pack, proof, keys, and package name" >&2
+        return 1
+    fi
+    for required_file in "$pack_file" "$private_key" "$public_key"; do
+        if [[ ! -f "$required_file" ]]; then
+            echo "ERROR: create_test_store_proof: file not found: $required_file" >&2
+            return 1
+        fi
+    done
+
+    temp_dir=$(mktemp -d) || return 1
+    digest_file="$temp_dir/digest"
+
+    if ! openssl dgst -sha512 -binary "$pack_file" >"$digest_file"; then
+        rm -rf "$temp_dir"
+        return 1
+    fi
+    hash=$(base64 --wrap=0 "$digest_file") || {
+        rm -rf "$temp_dir"
+        return 1
+    }
+    encoded_public_key=$(base64 --wrap=0 "$public_key") || {
+        rm -rf "$temp_dir"
+        return 1
+    }
+    signature=$(openssl dgst -sha512 -sign "$private_key" "$digest_file" | base64 --wrap=0) || {
+        rm -rf "$temp_dir"
+        return 1
+    }
+
+    cat >"$proof_file" <<EOF
+{
+  "origin": "publisher",
+  "identity": "fake-store",
+  "package": "$package_name",
+  "hash-algorithm": "sha512",
+  "hash": "$hash",
+  "public-key": "$encoded_public_key",
+  "signature": "$signature"
+}
+EOF
+    rm -rf "$temp_dir"
+}

@@ -64,7 +64,7 @@ static int __handle_option(const char* option, const char* value)
     struct chef_config* config;
     void*               accountSection;
 
-    config = chef_config_load(chef_dirs_config());
+    config = chef_config_load();
     if (config == NULL) {
         fprintf(stderr, "order: failed to load configuration: %s\n", strerror(errno));
         return -1;

@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/config.h>
 #include <chef/dirs.h>
 #include <chef/platform.h>
 #include <errno.h>
@@ -119,7 +120,8 @@ static void __cleanup_systems(int sig)
 
 int main(int argc, char** argv)
 {
-    int status;
+    struct chef_config* config;
+    int                 status;
 
 #ifdef CHEF_ON_WINDOWS
     utils_path_set_root("C:\\");
@@ -152,8 +154,14 @@ int main(int argc, char** argv)
         return status;
     }
 
+    config = chef_config_load();
+    if (config == NULL) {
+        VLOG_ERROR("served", "failed to load configuration\n");
+        return -1;
+    }
+
     // Initialize the system (loads state from database)
-    status = served_startup();
+    status = served_startup(config);
     if (status) {
         VLOG_ERROR("served", "served_startup failed with code %d\n", status);
         return status;

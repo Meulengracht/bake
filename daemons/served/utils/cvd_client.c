@@ -595,7 +595,7 @@ static void __ensure_config_loaded(void)
     }
 
     // served initializes chef dirs at startup, so this should be safe.
-    g_servedConfig = chef_config_load(chef_dirs_config());
+    g_servedConfig = chef_config_load();
     if (g_servedConfig != NULL) {
         // Note: chef_config_section() creates the section if it does not exist.
         // We keep this to a single section to avoid creating many objects during lookups.
@@ -994,7 +994,7 @@ static enum chef_status __create_container(
 
     chef_create_parameters_init(&params);
     
-    params.id = (char*)id;
+    params.id = platform_strdup(id);
     params.gtype = __guest_type_from_base_selector(baseSelector);
 
     basePackagePath = __resolve_base_package_path(pack_id, baseSelector);
@@ -1031,7 +1031,9 @@ static enum chef_status __create_container(
 
     params.network.gateway_ip = __dup_pack_network_config_value(pack_id, "gateway");
     params.network.dns = __dup_pack_network_config_value(pack_id, "dns");
+    VLOG_DEBUG("served", "__create_container: loaded network overrides\n");
     if (params.network.gateway_ip == NULL || params.network.dns == NULL) {
+        VLOG_DEBUG("served", "__create_container: loading package network defaults\n");
         (void)__load_pack_network_defaults(package, &params.network.gateway_ip, &params.network.dns);
         (void)__load_pack_network_defaults(basePackagePath, &params.network.gateway_ip, &params.network.dns);
     }
@@ -1084,7 +1086,7 @@ static enum chef_status __create_container(
         free(basePackagePath);
         free(baseRootfsPath);
         chef_create_parameters_destroy(&params);
-        VLOG_ERROR("served", "__create_container failed to create client\n");
+        VLOG_ERROR("served", "__create_container failed to create container\n");
         return status;
     }
     gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);

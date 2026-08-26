@@ -157,6 +157,17 @@ int containerv_open_socket(struct containerv_container* container)
         VLOG_ERROR("containerv[child]", "containerv_open_socket: failed to bind socket to address %s\n", &namesock.sun_path[0]);
         return -1;
     }
+    
+    // Configure 0770 permissions for the socket so that the host can connect to it
+    VLOG_DEBUG("containerv[child]", "updating socket permissions %d\n", fd);
+    if (chmod(namesock.sun_path, 0770) != 0) {
+        VLOG_ERROR(
+            "containerv[child]",
+            "containerv_open_socket: failed to configure socket permissions\n"
+        );
+        close(fd);
+        return -1;
+    }
     return fd;
 }
 
@@ -565,7 +576,13 @@ struct containerv_socket_client {
 char* __get_client_socket_name(const char* containerId)
 {
     char buffer[PATH_MAX] = { 0 };
-    snprintf(&buffer[0], sizeof(buffer), __CONTAINER_SOCKET_RUNTIME_BASE "/%s/client", containerId);
+    char suffix[17] = { 0 };
+
+    if (platform_secure_random_string(&suffix[0], sizeof(suffix) - 1) != 0) {
+        return NULL;
+    }
+
+    snprintf(&buffer[0], sizeof(buffer), __CONTAINER_SOCKET_RUNTIME_BASE "/%s/clients/client.%s", containerId, &suffix[0]);
     return strdup(&buffer[0]);
 }
 
@@ -810,7 +827,7 @@ int containerv_socket_client_get_root(struct containerv_socket_client* client, c
     struct __socket_command command = {
         .type = __SOCKET_COMMAND_GETROOT
     };
-    VLOG_DEBUG("containerv[host]", "containerv_get_ns_sockets()\n");
+    VLOG_DEBUG("containerv[host]", "containerv_socket_client_get_root()\n");
 
     status = __send_command_maybe_fds(client->socket_fd, NULL, NULL, 0, &command, sizeof(struct __socket_command));
     if (status < 0) {
