@@ -177,7 +177,7 @@ static int __vafs_readlink(const char* path, char* buf, size_t size)
     int                      status;
     uint64_t                 bytesRead;
 
-    status = vafs_object_reader_open(mount->vafs, path, VaFsLookup_None, &handle);
+    status = vafs_object_reader_open(mount->vafs, path, VaFsLookup_NoFollow, &handle);
     if (status) {
         return -errno;
     }
@@ -187,7 +187,7 @@ static int __vafs_readlink(const char* path, char* buf, size_t size)
     if (bytesRead == UINT64_MAX) {
         return -errno;
     }
-    
+
     // return 0 on success
     return 0;
 }
