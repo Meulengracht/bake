@@ -169,6 +169,29 @@ static int __vafs_read(const char* path, char* buf, size_t size, off_t offset, s
     return (int)bytesRead;
 }
 
+static int __vafs_readlink(const char* path, char* buf, size_t size)
+{
+    struct fuse_context*     context = fuse_get_context();
+    struct cvd_vafs_mount*  mount = (struct cvd_vafs_mount*)context->private_data;
+    struct VaFsObjectReader* handle;
+    int                      status;
+    uint64_t                 bytesRead;
+
+    status = vafs_object_reader_open(mount->vafs, path, VaFsLookup_None, &handle);
+    if (status) {
+        return -errno;
+    }
+
+    bytesRead = vafs_object_reader_read(handle, buf, size);
+    vafs_object_reader_close(handle);
+    if (bytesRead == UINT64_MAX) {
+        return -errno;
+    }
+    
+    // return 0 on success
+    return 0;
+}
+
 static int __vafs_release(const char* path, struct fuse_file_info* fi)
 {
     struct VaFsObjectReader* handle = (struct VaFsObjectReader*)fi->fh;
@@ -256,6 +279,7 @@ static const struct fuse_operations g_vafs_operations = {
     .getattr    = __vafs_getattr,
     .open       = __vafs_open,
     .read       = __vafs_read,
+    .readlink   = __vafs_readlink,
     .release    = __vafs_release,
     .opendir    = __vafs_opendir,
     .readdir    = __vafs_readdir,

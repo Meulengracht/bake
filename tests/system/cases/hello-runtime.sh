@@ -386,7 +386,7 @@ else
 fi
 
 # Dump the contents of the vafs layers
-$SUDO find "/var/chef/vafs" -maxdepth 6 2>&1 | sed 's/^/       | /'
+$SUDO find "/var/chef/vafs" -maxdepth 6 -printf '%M %p\n' 2>&1 | sed 's/^/       | /'
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
