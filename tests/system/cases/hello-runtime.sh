@@ -67,9 +67,6 @@ register_log    "$SIGN_LOG"
 register_log    "$RUN_LOG"
 trap 'teardown_test' EXIT
 
-# Exit code 2 = aspirational steps failed (distinct from infrastructure failure)
-ASPIRATIONAL_FAILED=0
-
 echo "=== $TEST_NAME ==="
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
@@ -376,10 +373,10 @@ if [[ $run_rc -ne 0 ]]; then
     else
         echo "       /run/containerv does not exist"
     fi
-    ASPIRATIONAL_FAILED=1
+    exit 1
 elif ! assert_contains "$run_output" "hello world" "hello-world stdout"; then
     echo "SKIP (aspirational): expected output not found"
-    ASPIRATIONAL_FAILED=1
+    exit 1
 else
     echo "       output: $run_output"
     echo "       Application ran and produced expected output."
@@ -387,13 +384,4 @@ fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
-if [[ $ASPIRATIONAL_FAILED -ne 0 ]]; then
-    echo "PARTIAL: $TEST_NAME"
-    echo "  Infrastructure steps (1-10): PASS"
-    echo "  Runtime run step (11): NOT IMPLEMENTED YET"
-    echo "  See tests/system/README.md — 'Known Limitations' section."
-    # Exit code 2 signals aspirational-step failure (not an infra failure)
-    exit 2
-else
-    echo "PASS: $TEST_NAME (full end-to-end workflow)"
-fi
+echo "PASS: $TEST_NAME (full end-to-end workflow)"
