@@ -153,7 +153,7 @@ static struct containerv_container* __container_new(const char* containerId)
         }
     }
 
-    // The runtime socket permissions should be set to 766
+    // The runtime directory permissions should be set to 766
     // so that only the owner and group can access it. This is important 
     // for security, as the socket is used for communication between the container and the host.
     if (platform_chmod(container->runtime_dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
@@ -161,27 +161,34 @@ static struct containerv_container* __container_new(const char* containerId)
         free(container->runtime_dir);
         free(container);
         return NULL;
-    } 
+    }
 
     // The client socket dir is to allow clients to create their own 
     // sockets for communication with the container. This allows multiple clients to 
     // connect to the same container without interfering with each other.
-    // And also allows communication with reduced privileges
     clientSocketsDir = strpathcombine(container->runtime_dir, "clients");
     if (clientSocketsDir == NULL) {
         free(container->runtime_dir);
         free(container);
         return NULL;
     }
-    if (platform_mkdir(clientSocketsDir) || platform_chmod(clientSocketsDir, S_IRWXU | S_IRWXG | S_IRWXO)) {
+    if (platform_mkdir(clientSocketsDir)) {
         VLOG_ERROR("containerv", "__container_new: failed to create client socket dir %s\n", clientSocketsDir);
         free(clientSocketsDir);
         free(container->runtime_dir);
         free(container);
         return NULL;
     }
+    // The runtime clients directory permissions should be set to 766
+    if (platform_chmod(clientSocketsDir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
+        VLOG_ERROR("containerv", "__container_new: failed to set permissions on client socket dir %s\n", clientSocketsDir);
+        free(clientSocketsDir);
+        free(container->runtime_dir);
+        free(container);
+        return NULL;
+    }
     free(clientSocketsDir);
-    
+
     // get last part of directory path, the last token is the id
     container->id = strrchr(container->runtime_dir, CHEF_PATH_SEPARATOR) + 1;
 
