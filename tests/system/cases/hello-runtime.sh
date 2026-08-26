@@ -388,6 +388,9 @@ fi
 # Dump the contents of the vafs layers
 $SUDO find "/var/chef/vafs" -maxdepth 6 -printf '%M %p\n' 2>&1 | sed 's/^/       | /'
 
+# Print all links and what the resolve to in the vafs layers
+$SUDO find "/var/chef/vafs" -maxdepth 6 -type l -printf '%p -> %l\n' 2>&1 | sed 's/^/       | /'
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 if [[ $ASPIRATIONAL_FAILED -ne 0 ]]; then
