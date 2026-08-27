@@ -1,0 +1,31 @@
+Source: vchef
+Section: devel
+Priority: optional
+Maintainer: Philip Meulengracht <the_meulengracht@hotmail.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake,
+ libcap-dev,
+ libcurl4-openssl-dev,
+ libfuse3-dev,
+ libjansson-dev,
+ libseccomp-dev,
+ libsqlite3-dev,
+ libssl-dev,
+ libzstd-dev
+Standards-Version: 4.7.2
+Homepage: https://github.com/Meulengracht/bake
+Vcs-Git: https://github.com/Meulengracht/bake.git
+Vcs-Browser: https://github.com/Meulengracht/bake
+
+Package: vchef
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends}
+Description: Chef package management and build system
+ Chef is a cross-platform package management system written in C.
+ .
+ This package provides the bake build/package tool and the associated
+ Chef command-line utilities and runtime components.
+
