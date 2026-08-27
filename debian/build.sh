@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+distro="${1:-$(lsb_release -sc 2>/dev/null)}"
+
 package="vchef"
 version="$(dpkg-parsechangelog -S Version | sed 's/-[0-9][0-9]*$//')"
 
@@ -31,5 +33,13 @@ tar -C "$tmpdir" \
 
 echo "Created ../${package}_${version}.orig.tar.gz"
 
-dpkg-buildpackage -S -sa -d -k613EB7C143E6388E "$@"
+# back up the changelog
+cp debian/changelog debian/changelog.orig
+sed -i "s/UNRELEASED/${distro}/g" debian/changelog
+
+# do the package build
+dpkg-buildpackage -S -sa -d -k613EB7C143E6388E
+
+# restore the changelog
+mv debian/changelog.orig debian/changelog
 
