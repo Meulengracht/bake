@@ -52,7 +52,7 @@ if(MSVC)
 	set(_lua_msvc_build_dir "${CMAKE_BINARY_DIR}/lua54-msvc-build")
 	ExternalProject_Add(lua54
 		URL
-		  https://www.lua.org/ftp/lua-5.4.7.tar.gz
+		  "${CMAKE_SOURCE_DIR}/3rdparty/lua/lua-5.4.7.tar.gz"
 		# No patching needed; wrapper compiles sources directly.
 		PATCH_COMMAND
 		  ""
@@ -71,9 +71,9 @@ if(MSVC)
 else()
 	ExternalProject_Add(lua54
 		URL
-		  https://www.lua.org/ftp/lua-5.4.7.tar.gz
+		  "${CMAKE_SOURCE_DIR}/3rdparty/lua/lua-5.4.7.tar.gz"
 		PATCH_COMMAND
-		  patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/0001-install-static-target.patch
+		  patch -p1 < ${CMAKE_SOURCE_DIR}/3rdparty/lua/patches/0001-install-static-target.patch
 		CONFIGURE_COMMAND
 		  ""
 		BUILD_COMMAND
