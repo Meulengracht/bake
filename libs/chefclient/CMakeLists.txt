@@ -1,7 +1,7 @@
 # Project setup
 project (chef-client C)
 
-set(CHEF_CLIENT_API_URL "https://chef-api.meulen.io" CACHE STRING "Chef client API URL")
+set(CHEF_CLIENT_API_URL "https://chef-api.meulen.io/api" CACHE STRING "Chef client API URL")
 option(CHEF_CLIENT_API_SECURE "Use secure connection for Chef client API" ON)
 
 add_library(chef-client STATIC
