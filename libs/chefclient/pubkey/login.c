@@ -312,7 +312,7 @@ static int __pubkey_post_login(const char* email, const char* publicKey, const c
     snprintf(
         buffer,
         sizeof(buffer),
-        "{\"Email\":\"%s\",\"PublicKey\":\"%s\",\"SecurityToken\":\"%s\"}",
+        "{\"Email\":\"%s\",\"PublicKey\":\"%s\",\"Challenge\":\"%s\"}",
         email, keyBuffer, signature
     );
 
