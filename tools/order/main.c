@@ -53,6 +53,7 @@ enum order_global_action {
 
 struct order_global_options {
     enum order_global_action action;
+    int                      verbose_level;
 };
 
 static void __print_help(void)
@@ -70,10 +71,12 @@ static void __print_help(void)
     printf("Global Options:\n");
     printf("  --root <path>\n");
     printf("      Set a custom root path for all state and data files\n");
+    printf("  -v, -vv\n");
+    printf("      Set the verbosity level for logging\n");
+    printf("  --version\n");
+    printf("      Print the version of order\n");
     printf("  -h, --help\n");
     printf("      Print this help message\n");
-    printf("  -v, --version\n");
-    printf("      Print the version of order\n");
 }
 
 static struct command_handler* __get_command(const char* command)
@@ -94,8 +97,16 @@ static int __parse_global_option(int argc, char** argv, int* index, void* contex
         options->action = ORDER_GLOBAL_ACTION_HELP;
         return CLI_PARSE_RESULT_HANDLED;
     }
-    if (!strcmp(argv[*index], "-v") || !strcmp(argv[*index], "--version")) {
+    if (!strcmp(argv[*index], "--version")) {
         options->action = ORDER_GLOBAL_ACTION_VERSION;
+        return CLI_PARSE_RESULT_HANDLED;
+    }
+    if (!strncmp(argv[*index], "-v", 2)) {
+        int v_count = 2;
+        options->verbose_level++;
+        while (argv[*index][v_count++] == 'v') {
+            options->verbose_level++;
+        }
         return CLI_PARSE_RESULT_HANDLED;
     }
     if (!strncmp(argv[*index], "--root", 6)) {
@@ -117,12 +128,15 @@ static int __parse_global_option(int argc, char** argv, int* index, void* contex
 
 int main(int argc, char** argv, char** envp)
 {
-    struct command_handler* command = NULL;
+    struct command_handler*     command = NULL;
     struct order_global_options options = { 0 };
-    int                     commandIndex = argc;
-    int                     result;
+    int                         commandIndex = argc;
+    int                         result;
 
     (void)envp;
+
+    // Set the default verbosity level to warning
+    options.verbose_level = (int)VLOG_LEVEL_WARNING;
 
     result = __cli_parse_staged_global_options(argc, argv, __parse_global_option, &options, &commandIndex);
     if (result != 0) {
@@ -149,7 +163,7 @@ int main(int argc, char** argv, char** envp)
         return -1;
     }
 
-    vlog_initialize(VLOG_LEVEL_DEBUG);
+    vlog_initialize((enum vlog_level)options.verbose_level);
     result = chef_dirs_initialize(CHEF_DIR_SCOPE_BAKE);
     if (result != 0) {
         fprintf(stderr, "order: failed to initialize support library\n");
