@@ -451,6 +451,12 @@ static int __update_account(json_t* json, struct chef_account** accountOut)
         goto cleanup;
     }
 
+    code = chef_request_set_content_type(request, "application/json");
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__update_account: failed to set content type [%s]\n", request->error);
+        goto cleanup;
+    }
+
     code = chef_request_execute(request);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__update_account: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
@@ -711,19 +717,19 @@ int chef_account_apikey_create(const char* name, char** apiKey)
 
     request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
-        VLOG_ERROR("chef-client", "chef_account_publisher_register: failed to create request\n");
+        VLOG_ERROR("chef-client", "chef_account_apikey_create: failed to create request\n");
         return -1;
     }
 
     // set the url
     if (__get_account_apikeys_url(buffer, sizeof(buffer)) != 0) {
-        VLOG_ERROR("chef-client", "chef_account_publisher_register: buffer too small for account link\n");
+        VLOG_ERROR("chef-client", "chef_account_apikey_create: buffer too small for account link\n");
         goto cleanup;
     }
 
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "chef_account_publisher_register: failed to set url [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "chef_account_apikey_create: failed to set url [%s]\n", request->error);
         goto cleanup;
     }
 
@@ -737,13 +743,19 @@ int chef_account_apikey_create(const char* name, char** apiKey)
 
     code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, body);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "chef_account_publisher_register: failed to set body [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "chef_account_apikey_create: failed to set body [%s]\n", request->error);
+        goto cleanup;
+    }
+
+    code = chef_request_set_content_type(request, "application/json");
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "chef_account_apikey_create: failed to set content type [%s]\n", request->error);
         goto cleanup;
     }
 
     code = chef_request_execute(request);
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "chef_account_publisher_register: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
+        VLOG_ERROR("chef-client", "chef_account_apikey_create: chef_request_execute() failed: %s\n", curl_easy_strerror(code));
     }
 
     curl_easy_getinfo(request->curl, CURLINFO_RESPONSE_CODE, &httpCode);
@@ -752,7 +764,7 @@ int chef_account_apikey_create(const char* name, char** apiKey)
         if (httpCode == 401) {
             status = -EACCES;
         } else {
-            VLOG_ERROR("chef-client", "chef_account_publisher_register: http error %ld [%s]\n", httpCode, request->response);
+            VLOG_ERROR("chef-client", "chef_account_apikey_create: http error %ld [%s]\n", httpCode, request->response);
             status = -EIO;
         }
         goto cleanup;
@@ -805,6 +817,12 @@ int chef_account_apikey_delete(const char* name)
     code = curl_easy_setopt(request->curl, CURLOPT_CUSTOMREQUEST, "DELETE");
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "chef_account_apikey_delete: failed to set delete option [%s]\n", request->error);
+        goto cleanup;
+    }
+
+    code = chef_request_set_content_type(request, "application/json");
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "chef_account_apikey_delete: failed to set content type [%s]\n", request->error);
         goto cleanup;
     }
 
