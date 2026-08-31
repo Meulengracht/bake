@@ -271,12 +271,28 @@ static json_t* __serialize_account(struct chef_account* account)
     return json;
 }
 
+static char* __safe_member_string_parse_expected(json_t* root, const char* object, const char* key)
+{
+    json_t*     member = json_object_get(root, key);
+    const char* value;
+    if (member == NULL) {
+        VLOG_WARNING("chef-client", "%s: missing expected member '%s'\n", object, key);
+        return NULL;
+    }
+    value = json_string_value(member);
+    if (value == NULL) {
+        VLOG_WARNING("chef-client", "%s: expected member '%s' to be a string\n", object, key);
+        return NULL;
+    }
+    return platform_strdup(value);
+}
+
 static void __parse_publisher(json_t* root, struct chef_publisher* publisher)
 {
-    publisher->name = platform_strdup(json_string_value(json_object_get(root, "name")));
-    publisher->email = platform_strdup(json_string_value(json_object_get(root, "email")));
-    publisher->public_key = platform_strdup(json_string_value(json_object_get(root, "public-key")));
-    publisher->signed_key = platform_strdup(json_string_value(json_object_get(root, "signed-key")));
+    publisher->name = __safe_member_string_parse_expected(root, "publisher", "name");
+    publisher->email = __safe_member_string_parse_expected(root, "publisher", "email");
+    publisher->public_key = __safe_member_string_parse_expected(root, "publisher", "public-key");
+    publisher->signed_key = __safe_member_string_parse_expected(root, "publisher", "signature");
     publisher->verified_status = (enum chef_account_verified_status)json_integer_value(json_object_get(root, "status"));
 }
 
@@ -300,15 +316,8 @@ static int __parse_account(const char* response, struct chef_account** accountOu
     }
 
     // parse the account
-    member = json_object_get(root, "name");
-    if (member) {
-        account->name = platform_strdup(json_string_value(member));
-    }
-
-    member = json_object_get(root, "email");
-    if (member) {
-        account->email = platform_strdup(json_string_value(member));
-    }
+    account->name = __safe_member_string_parse_expected(root, "account", "name");
+    account->email = __safe_member_string_parse_expected(root, "account", "email");
 
     member = json_object_get(root, "status");
     if (member) {
@@ -347,7 +356,7 @@ static int __parse_account(const char* response, struct chef_account** accountOu
 
         for (size_t i = 0; i < count; i++) {
             json_t* key = json_array_get(member, i);
-            account->api_keys[i].name = platform_strdup(json_string_value(json_object_get(key, "name")));
+            account->api_keys[i].name = __safe_member_string_parse_expected(key, "api-key", "name");
         }
     }
 
