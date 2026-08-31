@@ -37,7 +37,7 @@ static void __print_help(void)
     printf("  api-key delete <name>  deletes the api-key with the specified id\n");
     printf("  api-key list           lists all api-keys for the current account\n");
     printf("\n  publisher           allows management of publishers for the current account\n");
-    printf("  publisher register <name>              registers a new publisher with the specified name\n");
+    printf("  publisher register                     register a new publisher\n");
     printf("  publisher list                         lists all publishers for the current account\n");
     printf("  publisher get <name> <option>          retrieves information about a specific publisher\n");
     printf("  publisher set <name> <option> <value>  sets the configuration option\n");
