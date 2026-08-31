@@ -117,9 +117,7 @@ static int __handle_whoami(void)
     } else {
         printf("api-keys\n");
         for (int i = 0; i < count; i++) {
-            printf("  key %i: %s \n", i + 1,
-                chef_account_apikey_name(account, i)
-            );
+            printf("  - %s\n", chef_account_apikey_name(account, i));
         }
     }
 
@@ -246,9 +244,7 @@ static int __handle_api_key(const char* option, const char* name)
         } else {
             printf("api-keys\n");
             for (int i = 0; i < count; i++) {
-                printf("  key %i: %s\n", i + 1,
-                    chef_account_apikey_name(account, i)
-                );
+                printf("  - %s\n", chef_account_apikey_name(account, i));
             }
         }
     } else {
