@@ -296,10 +296,6 @@ static int __pubkey_post_login(const char* email, const char* publicKey, const c
         return -1;
     }
 
-    // Set the content type and accept headers
-    request->headers = curl_slist_append(request->headers, "Content-Type: application/json");
-    request->headers = curl_slist_append(request->headers, "Accept: application/json");
-
     // Set the URL and headers
     snprintf(&url[0], sizeof(url), "%s/account/login", chefclient_api_base_url());
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &url[0]);
@@ -319,6 +315,13 @@ static int __pubkey_post_login(const char* email, const char* publicKey, const c
     code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, &buffer[0]);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__pubkey_post_login: failed to set body [%s]\n", request->error);
+        goto cleanup;
+    }
+
+
+    code = chef_request_set_content_type(request, "application/json");
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__pubkey_post_login: failed to set content type [%s]\n", request->error);
         goto cleanup;
     }
 
