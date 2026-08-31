@@ -61,6 +61,15 @@ extern void chef_request_delete(struct chef_request* request);
 extern void chef_set_curl_common_headers(void** headerlist, int authorization);
 
 /**
+ * @brief Sets the content type header for a curl request
+ * 
+ * @param request The request to set the content type for
+ * @param contentType The content type to set
+ * @return int 0 on success, -1 on failure
+ */
+extern int chef_request_set_content_type(struct chef_request* request, const char* contentType);
+
+/**
  * @brief Executes the request and fills in the response and error buffers
  * 
  * @param request The request to execute

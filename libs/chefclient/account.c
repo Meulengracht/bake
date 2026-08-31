@@ -637,6 +637,12 @@ int chef_account_publisher_register(const char* name, const char* email)
         goto cleanup;
     }
 
+    code = chef_request_set_content_type(request, "application/json");
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "chef_account_publisher_register: failed to set content type [%s]\n", request->error);
+        goto cleanup;
+    }
+
     code = chef_request_execute(request);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "chef_account_publisher_register: chef_request_execute() failed: %s\n", curl_easy_strerror(code));

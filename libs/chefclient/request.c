@@ -85,6 +85,22 @@ int __init_curl(struct chef_request* request, int https, int authorization)
     return 0;
 }
 
+int chef_request_set_content_type(struct chef_request* request, const char* contentType)
+{
+    char tmp[256];
+
+    if (request == NULL || contentType == NULL) {
+        return -1;
+    }
+
+    snprintf(tmp, sizeof(tmp), "Content-Type: %s", contentType);
+    request->headers = curl_slist_append(request->headers, &tmp[0]);
+
+    snprintf(tmp, sizeof(tmp), "Accept: %s", contentType);
+    request->headers = curl_slist_append(request->headers, &tmp[0]);
+    return CURLE_OK;
+}
+
 CURLcode chef_request_execute(struct chef_request* request)
 {
     CURLcode code;
