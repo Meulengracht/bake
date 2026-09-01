@@ -14,7 +14,7 @@ The best way to get started is to install the latest version of Chef using the [
 
 ## Feature Overview
 
-As of 1.6, Chef will be feature-complete for the basic use cases. While Chef may evolve as we move on, the 1.5
+As of 1.6, Chef will be feature-complete for the basic use cases. While Chef may evolve as we move on, the 1.6
 release will mark the first initial complete version of Chef. Some highlights of the features that Chef supports
 
 - Chef Container Runtime implemented in `libs/containerv`
