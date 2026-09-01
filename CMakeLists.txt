@@ -28,7 +28,7 @@ if(CMAKE_HOST_WIN32 AND NOT CMAKE_GENERATOR MATCHES "^Visual Studio")
     unset(_chef_windows_sdk_env_ready)
 endif()
 
-project(chef VERSION "1.5.4")
+project(chef VERSION "1.5.5")
 
 INCLUDE(CheckCXXSourceCompiles)
 include(CTest)
