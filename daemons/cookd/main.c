@@ -90,7 +90,7 @@ int main(int argc, char** argv)
         VLOG_ERROR("cookd", "failed to open log file\n");
         return -1;
     }
-    vlog_add_output(debuglog, 1);
+    vlog_sink_add_text(debuglog, 1);
     vlog_set_output_level(debuglog, VLOG_LEVEL_DEBUG);
 
     // initialize the client

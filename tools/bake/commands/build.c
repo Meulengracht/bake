@@ -171,7 +171,7 @@ static void __cleanup_systems(int sig)
     // printing as a part of a signal handler is not safe
     // but we live dangerously
     vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-    vlog_end();
+    vlog_view_destroy();
 
     // cleanup the kitchen, this will take out most of the systems
     // setup as a part of all this.
@@ -193,7 +193,7 @@ static char* __add_build_log(void)
         return NULL;
     }
 
-    vlog_add_output(stream, 1);
+    vlog_sink_add_text(stream, 1);
     vlog_set_output_level(stream, VLOG_LEVEL_DEBUG);
     return path;
 }
@@ -309,7 +309,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     atexit(store_cleanup);
 
     // setup the build log box
-    vlog_start(stdout, header, footer, 6);
+    vlog_view_create(stdout, header, footer, 6);
 
     // 0+1 are informational
     vlog_content_set_index(0);
@@ -393,7 +393,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
 
 cleanup:
     vlog_refresh(stdout);
-    vlog_end();
+    vlog_view_destroy();
     build_context_destroy(g_context);
     return status;
 }

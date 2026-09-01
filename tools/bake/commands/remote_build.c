@@ -109,7 +109,7 @@ static void __cleanup_systems(int sig)
     // printing as a part of a signal handler is not safe
     // but we live dangerously
     vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-    vlog_end();
+    vlog_view_destroy();
 
     // cleanup logging
     vlog_cleanup();
@@ -264,7 +264,7 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     }
 
     // setup the build log box
-    vlog_start(stdout , header, footer, 3 + options->architectures.count);
+    vlog_view_create(stdout , header, footer, 3 + options->architectures.count);
 
     // 0+1 are informational
     vlog_content_set_index(0);
@@ -349,7 +349,7 @@ cleanup:
     
     // end the view now
     vlog_refresh(stdout);
-    vlog_end();
+    vlog_view_destroy();
 
     // print the guide on how to download artifacts
     __print_download_help();

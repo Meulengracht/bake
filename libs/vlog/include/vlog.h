@@ -29,6 +29,11 @@ enum vlog_level {
     VLOG_LEVEL_DEBUG
 };
 
+enum vlog_sink_type {
+    VLOG_SINK_TYPE_TEXT,
+    VLOG_SINK_TYPE_VIEW
+};
+
 #define VLOG_FATAL(tag, ...)   vlog_output(VLOG_LEVEL_ERROR, tag, __VA_ARGS__); exit(EXIT_FAILURE)
 #define VLOG_ERROR(tag, ...)   vlog_output(VLOG_LEVEL_ERROR, tag, __VA_ARGS__)
 #define VLOG_WARNING(tag, ...) vlog_output(VLOG_LEVEL_WARNING, tag, __VA_ARGS__)
@@ -75,12 +80,20 @@ extern void vlog_set_level(enum vlog_level level);
  * @param output
  * @return
  */
-extern int vlog_add_output(FILE* output, int close);
+extern int vlog_sink_add_text(FILE* output, int close);
+
+/**
+ * @brief
+ *
+ * @param output
+ * @return
+ */
+extern int vlog_sink_add_view(FILE* output, int close);
 
 /**
  * @brief
  */
-extern int vlog_remove_output(FILE* output);
+extern int vlog_sink_remove(FILE* output);
 
 /**
  * @brief 
@@ -94,14 +107,6 @@ extern void vlog_clear_output_options(FILE* output, unsigned int flags);
  * @param level The log level that should be applied
  */
 extern void vlog_set_output_level(FILE* output, enum vlog_level level);
-
-/**
- * @brief Sets the current width of the output. This is useful for terminal
- * outputs where we want to keep proper retracing support.
- *
- * @param columns The number of columns for the output
- */
-extern void vlog_set_output_width(FILE* output, int columns);
 
 /**
  * @brief
@@ -126,21 +131,23 @@ enum vlog_content_status_type {
     VLOG_CONTENT_STATUS_FAILED
 };
 
-extern void vlog_start(FILE* handle, const char* header, const char* footer, int contentLineCount);
-extern void vlog_end(void);
+extern void vlog_view_create(FILE* handle, const char* header, const char* footer);
+extern void vlog_view_destroy(void);
 extern void vlog_content_set_index(int index);
 extern void vlog_content_set_prefix(const char* header);
 extern void vlog_content_set_status(enum vlog_content_status_type status);
 extern void vlog_refresh(FILE* handle);
 
 struct vlog_step {
-    int         index;
-    const char* prefix;
+    unsigned int id;
 };
 
-extern void vlog_step_init(struct vlog_step* step, int index, const char* prefix);
-extern void vlog_step_begin(struct vlog_step* step);
-extern void vlog_step_end(struct vlog_step* step, int success);
-extern void vlog_step_fail(struct vlog_step* step);
+extern int vlog_step_open(struct vlog_step* step, const char* label);
+extern int vlog_step_update(struct vlog_step* step,
+                     enum vlog_content_status_type status,
+                     const char* format, ...);
+extern int vlog_step_close(struct vlog_step* step,
+                    enum vlog_content_status_type status,
+                    const char* format, ...);
 
 #endif //!__VLOG_H__

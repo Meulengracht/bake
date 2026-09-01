@@ -223,7 +223,7 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
     }
 
     // setup the build log box
-    vlog_start(stdout , "downloading", "connected to: ", 2 + builds.count);
+    vlog_view_create(stdout , "downloading", "connected to: ", 2 + builds.count);
 
     // 0+1 are informational
     vlog_content_set_index(0);
@@ -276,7 +276,7 @@ cleanup:
         vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
     }
     vlog_refresh(stdout);
-    vlog_end();
+    vlog_view_destroy();
     __build_list_delete(&builds);
     return status;
 }
