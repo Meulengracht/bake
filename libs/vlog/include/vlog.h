@@ -131,12 +131,8 @@ enum vlog_content_status_type {
     VLOG_CONTENT_STATUS_FAILED
 };
 
-extern void vlog_view_create(FILE* handle, const char* header, const char* footer);
-extern void vlog_view_destroy(void);
-extern void vlog_content_set_index(int index);
-extern void vlog_content_set_prefix(const char* header);
-extern void vlog_content_set_status(enum vlog_content_status_type status);
-extern void vlog_refresh(FILE* handle);
+extern void vlog_view_open(FILE* handle, const char* header, const char* footer);
+extern void vlog_view_close(void);
 
 struct vlog_step {
     unsigned int id;
