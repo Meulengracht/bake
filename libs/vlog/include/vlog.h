@@ -43,7 +43,7 @@ enum vlog_sink_type {
 /**
  * @brief Emits an error event and terminates the process with EXIT_FAILURE.
  */
-#define VLOG_FATAL(tag, ...)   vlog_output(VLOG_LEVEL_ERROR, tag, __VA_ARGS__); exit(EXIT_FAILURE)
+#define VLOG_FATAL(tag, ...)   vlog_output(VLOG_LEVEL_ERROR, tag, __VA_ARGS__); vlog_barrier(); exit(EXIT_FAILURE)
 
 /**
  * @brief Emits an error event.

@@ -341,7 +341,7 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
         return;
     }
     
-    if (level < VLOG_LEVEL_ERROR) {
+    if (level == VLOG_LEVEL_ERROR) {
         event->data.log.err = errno;
     }
 
