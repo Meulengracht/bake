@@ -29,7 +29,6 @@
 
 #include "private.h"
 #include "sinks/sinks.h"
-#include "utils/queue.h"
 
 struct vlog_context {
     int             initialized;
@@ -89,6 +88,11 @@ void vlog_cleanup(void)
     // mark as uninitialized so that vlog_output() will not be used anymore
     g_vlog.initialized = 0;
 
+    if (!vlog_renderer_is_owner()) {
+        memset(&g_vlog, 0, sizeof(struct vlog_context));
+        return;
+    }
+
     // shutdown the renderer
     vlog_renderer_stop();
 
@@ -99,8 +103,15 @@ void vlog_cleanup(void)
 
 int vlog_sink_add_text(FILE* output, int close)
 {
+    struct vlog_event* event;
+
+    if (!vlog_renderer_is_owner()) {
+        errno = ENOTSUP;
+        return -1;
+    }
+
     // Create a new sink and push it to the renderer thread
-    struct vlog_event* event = __vlog_event_new(VLOG_EVENT_SINK_ADD);
+    event = __vlog_event_new(VLOG_EVENT_SINK_ADD);
     if (event == NULL) {
         return -1;
     }
@@ -120,8 +131,15 @@ int vlog_sink_add_text(FILE* output, int close)
 
 int vlog_sink_add_view(FILE* output, int close)
 {
+    struct vlog_event* event;
+
+    if (!vlog_renderer_is_owner()) {
+        errno = ENOTSUP;
+        return -1;
+    }
+
     // Create a new sink and push it to the renderer thread
-    struct vlog_event* event = __vlog_event_new(VLOG_EVENT_SINK_ADD);
+    event = __vlog_event_new(VLOG_EVENT_SINK_ADD);
     if (event == NULL) {
         return -1;
     }
@@ -144,7 +162,8 @@ int vlog_sink_remove(FILE* output)
     struct vlog_event* event;
 
     // ensure that vlog is initialized
-    if (!g_vlog.initialized) {
+    if (!g_vlog.initialized || !vlog_renderer_is_owner()) {
+        errno = ENOTSUP;
         return -1;
     }
 
@@ -188,6 +207,10 @@ void vlog_set_output_options(FILE* output, unsigned int flags)
 {
     struct vlog_event* event;
 
+    if (!vlog_renderer_is_owner()) {
+        return;
+    }
+
     event = __vlog_event_new(VLOG_EVENT_SINK_SET_OPTIONS);
     if (event == NULL) {
         return;
@@ -202,6 +225,10 @@ void vlog_clear_output_options(FILE* output, unsigned int flags)
 {
     struct vlog_event* event;
 
+    if (!vlog_renderer_is_owner()) {
+        return;
+    }
+
     event = __vlog_event_new(VLOG_EVENT_SINK_CLEAR_OPTIONS);
     if (event == NULL) {
         return;
@@ -215,6 +242,10 @@ void vlog_clear_output_options(FILE* output, unsigned int flags)
 void vlog_set_output_level(FILE* output, enum vlog_level level)
 {
     struct vlog_event* event;
+
+    if (!vlog_renderer_is_owner()) {
+        return;
+    }
 
     event = __vlog_event_new(VLOG_EVENT_SINK_SET_LEVEL);
     if (event == NULL) {
@@ -231,7 +262,7 @@ void vlog_flush(void)
     struct vlog_event* event;
 
     // ensure that vlog is initialized
-    if (!g_vlog.initialized) {
+    if (!g_vlog.initialized || !vlog_renderer_is_owner()) {
         return;
     }
 
@@ -280,7 +311,7 @@ void vlog_view_open(FILE* handle, const char* header, const char* footer)
     // Create a new event and push it to the renderer thread
     struct vlog_event* event;
 
-    if (!isatty(fileno(handle))) {
+    if (!vlog_renderer_is_owner() || !isatty(fileno(handle))) {
         return;
     }
 
@@ -308,7 +339,13 @@ void vlog_view_open(FILE* handle, const char* header, const char* footer)
 void vlog_view_close(void)
 {
     // Create a new event and push it to the renderer thread
-    struct vlog_event* event = __vlog_event_new(VLOG_EVENT_VIEW_CLOSE);
+    struct vlog_event* event;
+
+    if (!vlog_renderer_is_owner()) {
+        return;
+    }
+
+    event = __vlog_event_new(VLOG_EVENT_VIEW_CLOSE);
     if (event == NULL) {
         return;
     }
@@ -362,6 +399,11 @@ int vlog_step_open(struct vlog_step* step, const char* label)
 
     if (step == NULL) {
         errno = EINVAL;
+        return -1;
+    }
+
+    if (!vlog_renderer_is_owner()) {
+        errno = ENOTSUP;
         return -1;
     }
 

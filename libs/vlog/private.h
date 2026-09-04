@@ -130,6 +130,7 @@ extern void __vlog_event_delete(struct vlog_event* event);
 
 extern int vlog_renderer_start(void);
 extern void vlog_renderer_stop(void);
+extern int vlog_renderer_is_owner(void);
 extern void vlog_renderer_resize(void);
 extern void vlog_renderer_push_event(struct vlog_event* event);
 
