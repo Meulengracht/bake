@@ -40,14 +40,14 @@ static const char* g_levelNamesLong[] = {
         "debug"
 };
 
-static void __text_write(struct vlog_sink_text* sink, enum vlog_level level, const char* tag, const char* message)
+static void __text_write(struct vlog_sink_text* sink, const struct vlog_event* event)
 {
     char       dateTime[32];
     time_t     now;
     struct tm* timeInfo;
 
     // ensure level is appropriate for sink
-    if (sink->base.handle == NULL || level > sink->base.level) {
+    if (sink->base.handle == NULL || event->data.log.level > sink->base.level) {
         return;
     }
 
@@ -62,20 +62,20 @@ static void __text_write(struct vlog_sink_text* sink, enum vlog_level level, con
 
     if (!(sink->options & VLOG_OUTPUT_OPTION_NODECO)) {
         if (sink->options & VLOG_OUTPUT_OPTION_LONGDECO) {
-            fprintf(sink->base.handle, "[%s] %s | %s | ", &dateTime[0], g_levelNamesLong[level], tag);
-            if (level == VLOG_LEVEL_ERROR) {
-                fprintf(sink->base.handle, "[e%i, %s] | ", errno, strerror(errno));
+            fprintf(sink->base.handle, "[%s] %s | %s | ", &dateTime[0], g_levelNamesLong[event->data.log.level], event->data.log.tag);
+            if (event->data.log.level == VLOG_LEVEL_ERROR) {
+                fprintf(sink->base.handle, "[e%i, %s] | ", event->data.log.err, strerror(event->data.log.err));
             }
         } else {
-            if (level == VLOG_LEVEL_ERROR) {
-                fprintf(sink->base.handle, "%s[%s%i, %s] ", tag, g_levelNamesShort[level], errno, strerror(errno));
+            if (event->data.log.level == VLOG_LEVEL_ERROR) {
+                fprintf(sink->base.handle, "%s[%s%i, %s] ", event->data.log.tag, g_levelNamesShort[event->data.log.level], event->data.log.err, strerror(event->data.log.err));
             } else {
-                fprintf(sink->base.handle, "%s[%s] ", tag, g_levelNamesShort[level]);
+                fprintf(sink->base.handle, "%s[%s] ", event->data.log.tag, g_levelNamesShort[event->data.log.level]);
             }
         }
     }
 
-    fprintf(sink->base.handle, "%s", message);
+    fprintf(sink->base.handle, "%s", event->data.log.message);
     fflush(sink->base.handle);
 }
 
@@ -85,7 +85,7 @@ static void __text_emit(struct vlog_sink* base, const struct vlog_event* event)
 
     switch (event->type) {
         case VLOG_EVENT_LOG:
-            __text_write(sink, event->data.log.level, event->data.log.tag, event->data.log.message);
+            __text_write(sink, event);
             break;
         default:
             break;

@@ -7,6 +7,7 @@ add_library(vlog STATIC
     utils/helpers.c
     utils/queue.c
     logf.c
+    renderer.c
 )
 target_include_directories(vlog PUBLIC include)
 

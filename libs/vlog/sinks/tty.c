@@ -48,24 +48,44 @@ static const char* g_animatorCharacter[] = {
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #include <windows.h>
-static int __get_column_count(void)
+static int __get_column_count(FILE* handle)
 {
     CONSOLE_SCREEN_BUFFER_INFO csbi;
+    HANDLE                     console;
     int                        columns;
 
-    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+    if (handle == NULL) {
+        return 80;
+    }
+
+    console = (HANDLE)_get_osfhandle(fileno(handle));
+    if (console == INVALID_HANDLE_VALUE || !GetConsoleScreenBufferInfo(console, &csbi)) {
+        return 80;
+    }
+
     columns = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-    // rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    if (columns <= 0) {
+        return 80;
+    }
     return columns;
 }
 
 #else
 #include <sys/ioctl.h>
 #include <unistd.h>
-static int __get_column_count(void)
+static int __get_column_count(FILE* handle)
 {
-    struct winsize w;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    struct winsize w = { 0 };
+    int            fd;
+
+    if (handle == NULL) {
+        return 80;
+    }
+
+    fd = fileno(handle);
+    if (fd < 0 || ioctl(fd, TIOCGWINSZ, &w) != 0 || w.ws_col == 0) {
+        return 80;
+    }
     return (int)w.ws_col;
 }
 #endif
@@ -129,7 +149,7 @@ static void __refresh_view(struct vlog_sink_tty* sink, int clear)
         const char* message = sink->steps[i].message != NULL ? sink->steps[i].message : "";
 
         __fmt_indicator(sink, &indicator[0], sink->steps[i].status);
-        fprintf(sink->base.handle, "%lc %-10s %-*.*s %s%-10s%s%lc\n",
+        fprintf(sink->base.handle, "%lc %-10.10s %-*.*s %s%-10s%s%lc\n",
             0x2502,
             label,
             messageWidth,
@@ -272,7 +292,7 @@ static void __view_write(struct vlog_sink_tty* sink, enum vlog_level level, cons
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
     // update column count on sink to stdout if on windows, we can
     // only poll
-    sink->columns = __get_column_count();
+    sink->columns = __get_column_count(sink->base.handle);
 #endif
 
     if (!sink->view_active || sink->active_step_id == 0) {
@@ -355,6 +375,7 @@ static void __view_tick(struct vlog_sink* base, long long time)
 
     sink->spinner_time_ms += time;
     if (sink->spinner_time_ms >= 500) {
+        sink->spinner_time_ms = 0;
         sink->spinner_index++;
         __refresh_view(sink, 1);
     }
@@ -387,7 +408,7 @@ struct vlog_sink* vlog_sink_new_view(FILE* handle, enum vlog_level level, unsign
     sink->base.emit = __view_emit;
     sink->base.tick = __view_tick;
     sink->base.destroy = __view_destroy;
-    sink->columns = __get_column_count();
+    sink->columns = __get_column_count(handle);
     sink->options = options;
 
     return &sink->base;

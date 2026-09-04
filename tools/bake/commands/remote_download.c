@@ -87,6 +87,14 @@ static int __discover_artifacts(gracht_client_t* client, struct list* builds, en
 
     status = gracht_client_await_multiple(client, &msgs[0], i, GRACHT_AWAIT_ALL);
     if (status) {
+        list_foreach(builds, li) {
+            struct __build* build = (struct __build*)li;
+
+            if (build->status != CHEF_BUILD_STATUS_DONE && atype == CHEF_ARTIFACT_TYPE_PACKAGE) {
+                continue;
+            }
+            vlog_step_close(&build->step, VLOG_CONTENT_STATUS_FAILED, "connection lost waiting for build artifact");
+        }
         VLOG_ERROR("remote", "connection lost waiting for build artifact\n");
         return -1;
     }

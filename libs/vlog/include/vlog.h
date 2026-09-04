@@ -117,8 +117,8 @@ extern void vlog_set_level(enum vlog_level level);
 /**
  * @brief Adds a plain text sink for log events.
  *
- * The sink is created asynchronously on the renderer thread. Text sinks write
- * durable log lines to @p output and ignore view-only events.
+ * The sink is created on the renderer thread before this function returns.
+ * Text sinks write durable log lines to @p output and ignore view-only events.
  *
  * @param output FILE* that receives text log output.
  * @param close Non-zero to close @p output when the sink is destroyed.
@@ -129,8 +129,9 @@ extern int vlog_sink_add_text(FILE* output, int close);
 /**
  * @brief Adds an interactive terminal view sink.
  *
- * The sink is created asynchronously on the renderer thread. View sinks own the
- * progressive step model for their terminal and render retained status rows.
+ * The sink is created on the renderer thread before this function returns. View
+ * sinks own the progressive step model for their terminal and render retained
+ * status rows.
  *
  * @param output FILE* for the terminal view.
  * @param close Non-zero to close @p output when the sink is destroyed.
@@ -141,8 +142,8 @@ extern int vlog_sink_add_view(FILE* output, int close);
 /**
  * @brief Removes sinks attached to a FILE*.
  *
- * Removal is queued for the renderer thread. Any matching sink is destroyed
- * there, including closing its FILE* when configured to do so.
+ * Any matching sink is destroyed on the renderer thread before this function
+ * returns, including closing its FILE* when configured to do so.
  *
  * @param output FILE* whose sinks should be removed.
  * @return 0 if the remove event was queued, -1 if the event could not be allocated.
@@ -194,12 +195,18 @@ extern void vlog_set_output_level(FILE* output, enum vlog_level level);
 extern void vlog_output(enum vlog_level level, const char* tag, const char* format, ...);
 
 /**
- * @brief Blocks until previously queued events are rendered and flushed.
+ * @brief Blocks until previously queued events are flushed.
  *
  * This acts as a synchronization barrier with the renderer thread.
  */
 extern void vlog_flush(void);
 
+/**
+ * @brief Blocks until previously queued events are rendered.
+ *
+ * This acts as a synchronization barrier with the renderer thread.
+ */
+extern void vlog_barrier(void);
 
 /**
  * @brief Status values used by progressive step events.
@@ -217,7 +224,8 @@ enum vlog_content_status_type {
  *
  * A view sink is added for @p handle if needed. If @p handle is not a terminal,
  * this call is ignored. The header and footer strings are copied before being
- * queued.
+ * queued. The open event is applied by the renderer before this function
+ * returns.
  *
  * @param handle Terminal FILE* that should render the view.
  * @param header Title displayed at the top of the view.
@@ -228,8 +236,8 @@ extern void vlog_view_open(FILE* handle, const char* header, const char* footer)
 /**
  * @brief Closes any active progressive view.
  *
- * The close event is queued for the renderer thread. The final view state is
- * rendered before the view is marked inactive.
+ * The final view state is rendered and the close event is applied by the
+ * renderer before this function returns.
  */
 extern void vlog_view_close(void);
 

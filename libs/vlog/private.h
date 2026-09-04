@@ -6,7 +6,7 @@
  * the Free Software Foundation ? , either version 3 of the License, or
  * (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,½
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
  * GNU General Public License for more details.
@@ -19,6 +19,9 @@
 #ifndef __VLOG_PRIVATE_H__
 #define __VLOG_PRIVATE_H__
 
+#include <stdarg.h>
+#include <time.h>
+#include <threads.h>
 #include <vlog.h>
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
@@ -52,10 +55,16 @@ enum vlog_event_type {
     VLOG_EVENT_STEP_UPDATE,
     VLOG_EVENT_STEP_CLOSE,
     VLOG_EVENT_FLUSH,
+    VLOG_EVENT_BARRIER,
     VLOG_EVENT_SHUTDOWN
 };
 
-struct vlog_flush_state;
+struct vlog_barrier_state {
+    mtx_t lock;
+    cnd_t done;
+    int   completed;
+};
+
 struct vlog_event {
     enum vlog_event_type type;
     struct timespec      timestamp;
@@ -68,9 +77,10 @@ struct vlog_event {
         } sink;
 
         struct {
-            char* tag;
-            char* message;
+            char*           tag;
+            char*           message;
             enum vlog_level level;
+            int             err;
         } log;
 
         struct {
@@ -105,8 +115,8 @@ struct vlog_event {
         } step_close;
 
         struct {
-            struct vlog_flush_state* state;
-        } flush;
+            struct vlog_barrier_state* state;
+        } barrier;
     } data;
     
     struct vlog_event* next;
@@ -114,5 +124,10 @@ struct vlog_event {
 
 extern char* vlog_strdup(const char* text);
 extern char* vlog_vformat(const char* format, va_list args);
+
+extern int vlog_renderer_start(void);
+extern void vlog_renderer_stop(void);
+extern void vlog_renderer_resize(void);
+extern void vlog_renderer_push_event(struct vlog_event* event);
 
 #endif // __VLOG_PRIVATE_H__
