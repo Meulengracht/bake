@@ -51,6 +51,10 @@ void __winch_handler(int sig)
 
 void vlog_initialize(enum vlog_level level)
 {
+    if (g_vlog.initialized) {
+        return;
+    }
+
     memset(&g_vlog, 0, sizeof(struct vlog_context));
     mtx_init(&g_vlog.lock, mtx_plain);
 
@@ -69,15 +73,15 @@ void vlog_initialize(enum vlog_level level)
         exit(EXIT_FAILURE);
     }
 
+    // enable the vlog_* function to be used
+    g_vlog.initialized = 1;
+
     // set default output level
     vlog_set_level(level);
 
     // add stdout by default, and do this after spawning the thread to avoid
     // potential race conditions with the renderer thread
     vlog_sink_add_text(stdout, 0);
-
-    // enable the vlog_output() function to be used
-    g_vlog.initialized = 1;
 }
 
 void vlog_cleanup(void)
