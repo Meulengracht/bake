@@ -4,6 +4,7 @@ project (vlog C)
 add_library(vlog STATIC
     sinks/tty.c
     sinks/text.c
+    utils/event.c
     utils/helpers.c
     utils/queue.c
     logf.c

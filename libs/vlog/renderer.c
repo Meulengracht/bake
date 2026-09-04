@@ -97,15 +97,14 @@ static unsigned int* __sink_options(struct vlog_sink* sink)
     }
 }
 
-static void __sink_destroy(struct vlog_sink* sink)
+static void __sink_destroy(struct vlog_sink* sink, unsigned int ignoreClose)
 {
     if (sink == NULL) {
         return;
     }
 
-    if (sink->destroy) {
-        sink->destroy(sink);
-    }
+    // destroy must be implemented by each sink type
+    sink->destroy(sink, ignoreClose);
 }
 
 static struct vlog_sink* __sink_find(struct vlog_renderer* renderer, FILE* handle, enum vlog_sink_type type)
@@ -136,7 +135,9 @@ static void __sink_add(struct vlog_renderer* renderer, struct vlog_event* event)
             if (renderer->sinks[i] != NULL &&
                 renderer->sinks[i]->handle == event->data.sink.handle &&
                 renderer->sinks[i]->type == VLOG_SINK_TYPE_TEXT) {
-                __sink_destroy(renderer->sinks[i]);
+                // Since we are migrating the handle, let's not close it if ownership
+                // of the handle was controlled by the sink
+                __sink_destroy(renderer->sinks[i], 1);
                 renderer->sinks_count--;
                 if (i < renderer->sinks_count) {
                     memmove(
@@ -180,7 +181,7 @@ static void __sink_add(struct vlog_renderer* renderer, struct vlog_event* event)
         (renderer->sinks_count + 1) * sizeof(struct vlog_sink*)
     );
     if (sinks == NULL) {
-        __sink_destroy(sink);
+        __sink_destroy(sink, 0);
         fprintf(stderr, "vlog: failed to allocate memory for sink list\n");
         return;
     }
@@ -192,7 +193,7 @@ static void __sink_remove(struct vlog_renderer* renderer, struct vlog_event* eve
 {
     for (int i = 0; i < renderer->sinks_count; i++) {
         if (renderer->sinks[i] != NULL && renderer->sinks[i]->handle == event->data.sink.handle) {
-            __sink_destroy(renderer->sinks[i]);
+            __sink_destroy(renderer->sinks[i], 0);
             renderer->sinks_count--;
             if (i < renderer->sinks_count) {
                 memmove(
@@ -333,7 +334,7 @@ static int __renderer_main(void* context)
 
     // Close all sinks
     for (int i = 0; i < renderer->sinks_count; i++) {
-        __sink_destroy(renderer->sinks[i]);
+        __sink_destroy(renderer->sinks[i], 0);
     }
     free(renderer->sinks);
     renderer->sinks = NULL;

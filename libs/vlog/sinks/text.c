@@ -92,11 +92,11 @@ static void __text_emit(struct vlog_sink* base, const struct vlog_event* event)
     }
 }
 
-static void __text_destroy(struct vlog_sink* base)
+static void __text_destroy(struct vlog_sink* base, unsigned int ignoreClose)
 {
     struct vlog_sink_text* sink = (struct vlog_sink_text*)base;
     
-    if (sink->options & VLOG_OUTPUT_OPTION_CLOSE) {
+    if (ignoreClose == 0 && (sink->options & VLOG_OUTPUT_OPTION_CLOSE)) {
         fclose(sink->base.handle);
     }
     free(sink);

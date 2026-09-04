@@ -40,49 +40,6 @@ struct vlog_context {
 
 static struct vlog_context g_vlog = { 0 };
 
-static struct vlog_event* __vlog_event_new(enum vlog_event_type type)
-{
-    struct vlog_event* event;
-
-    event = calloc(1, sizeof(struct vlog_event));
-    if (event == NULL) {
-        return NULL;
-    }
-
-    event->type = type;
-    timespec_get(&event->timestamp, TIME_UTC);
-    return event;
-}
-
-static void __vlog_event_delete(struct vlog_event* event)
-{
-    if (event) {
-        switch (event->type) {
-            case VLOG_EVENT_LOG:
-                free(event->data.log.tag);
-                free(event->data.log.message);
-                break;
-            case VLOG_EVENT_VIEW_OPEN:
-                free(event->data.view_open.header);
-                free(event->data.view_open.footer);
-                break;
-            case VLOG_EVENT_STEP_OPEN:
-                free(event->data.step_open.label);
-                break;
-            case VLOG_EVENT_STEP_UPDATE:
-                free(event->data.step_update.message);
-                break;
-            case VLOG_EVENT_STEP_CLOSE:
-                free(event->data.step_close.message);
-                break;
-            default:
-                break;
-        }
-        free(event);
-    }
-}
-
-
 #if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
 #include <unistd.h>
 void __winch_handler(int sig)

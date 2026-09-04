@@ -381,13 +381,14 @@ static void __view_tick(struct vlog_sink* base, long long time)
     }
 }
 
-static void __view_destroy(struct vlog_sink* base)
+static void __view_destroy(struct vlog_sink* base, unsigned int ignoreClose)
 {
     struct vlog_sink_tty* sink = (struct vlog_sink_tty*)base;
     
-    if (sink->options & VLOG_OUTPUT_OPTION_CLOSE) {
+    if (ignoreClose == 0 && (sink->options & VLOG_OUTPUT_OPTION_CLOSE)) {
         fclose(base->handle);
     }
+    
     __view_steps_clear(sink);
     free(sink->steps);
     free(sink->title);

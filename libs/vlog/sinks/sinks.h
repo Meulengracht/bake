@@ -35,7 +35,7 @@ struct vlog_sink {
     void (*emit)(struct vlog_sink*, const struct vlog_event*);
     void (*tick)(struct vlog_sink*, long long time);
     void (*flush)(struct vlog_sink*);
-    void (*destroy)(struct vlog_sink*);
+    void (*destroy)(struct vlog_sink*, unsigned int ignoreClose);
 };
 
 struct vlog_sink_text {

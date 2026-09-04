@@ -125,6 +125,9 @@ struct vlog_event {
 extern char* vlog_strdup(const char* text);
 extern char* vlog_vformat(const char* format, va_list args);
 
+extern struct vlog_event* __vlog_event_new(enum vlog_event_type type);
+extern void __vlog_event_delete(struct vlog_event* event);
+
 extern int vlog_renderer_start(void);
 extern void vlog_renderer_stop(void);
 extern void vlog_renderer_resize(void);
