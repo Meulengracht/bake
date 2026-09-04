@@ -237,7 +237,9 @@ static void __view_step_open(struct vlog_sink_tty* sink, const struct vlog_event
     }
 
     __view_step_set_text(&step->label, event->data.step_open.label);
-    step->status = VLOG_CONTENT_STATUS_WAITING;
+    // Empty labels are used as visual spacer rows, not actionable steps.
+    step->status = event->data.step_open.label != NULL && event->data.step_open.label[0] != '\0' ?
+        VLOG_CONTENT_STATUS_WAITING : VLOG_CONTENT_STATUS_NONE;
 }
 
 static void __view_step_update(struct vlog_sink_tty* sink, unsigned int stepId, enum vlog_content_status_type status, const char* message)
@@ -337,7 +339,8 @@ static void __view_emit(struct vlog_sink* base, const struct vlog_event* event)
         default:
             break;
     }
-    if (sink->view_active) {
+    // Wait for the first row before rendering to avoid an empty transient frame.
+    if (sink->view_active && sink->step_count > 0) {
         __refresh_view(sink, sink->rendered_rows > 0);
     }
 }
