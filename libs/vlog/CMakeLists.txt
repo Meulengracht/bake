@@ -2,6 +2,10 @@
 project (vlog C)
 
 add_library(vlog STATIC
+    sinks/tty.c
+    sinks/text.c
+    utils/helpers.c
+    utils/queue.c
     logf.c
 )
 target_include_directories(vlog PUBLIC include)

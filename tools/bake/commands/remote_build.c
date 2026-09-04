@@ -108,7 +108,6 @@ static void __cleanup_systems(int sig)
 {
     // printing as a part of a signal handler is not safe
     // but we live dangerously
-    vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
     vlog_view_close();
 
     // cleanup logging
@@ -135,23 +134,23 @@ static char* __format_footer(const char* waiterdAddress)
     return platform_strdup(&tmp[0]);
 }
 
-static int __queue_builds(int logIndexStart, gracht_client_t* client, const char* imageUrl, struct list* builds, struct bake_command_options* options)
+static int __queue_builds(gracht_client_t* client, const char* imageUrl, struct list* builds, struct bake_command_options* options)
 {
     struct {
         struct gracht_message_context msg;
         const char*                   arch;
-        int                           log_index;
+        struct vlog_step              step;
     } storage[6] = { 0 };
     struct gracht_message_context* msgs[6] = { NULL };
     struct list_item*              li;
-    int                            logIndex;
     int                            msgIndex = 0;
     int                            status;
 
-    logIndex = logIndexStart;
     list_foreach(&options->architectures, li) {
         const char* arch = ((struct list_item_string*)li)->value;
-        vlog_content_set_index(logIndex);
+
+        vlog_step_open(&storage[msgIndex].step, arch);
+        vlog_step_update(&storage[msgIndex].step, VLOG_CONTENT_STATUS_WORKING, "requesting build");
         
         VLOG_TRACE("remote", "requesting build...\n");
         status = chef_waiterd_build(client, &storage[msgIndex].msg, 
@@ -163,19 +162,20 @@ static int __queue_builds(int logIndexStart, gracht_client_t* client, const char
             }
         );
         if (status) {
-            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            vlog_step_close(&storage[msgIndex].step, VLOG_CONTENT_STATUS_FAILED, "failed to request build");
         } else {
             storage[msgIndex].arch = arch;
-            storage[msgIndex].log_index = logIndex;
             msgs[msgIndex] = &storage[msgIndex].msg;
             msgIndex++;
         }
-        logIndex++;
     }
     
     status = gracht_client_await_multiple(client, &msgs[0], msgIndex, GRACHT_AWAIT_ALL);
     if (status) {
         VLOG_ERROR("remote", "connection lost waiting for builds\n");
+        for (int i = 0; i < msgIndex; i++) {
+            vlog_step_close(&storage[i].step, VLOG_CONTENT_STATUS_FAILED, "connection lost waiting for build");
+        }
         return -1;
     }
 
@@ -183,28 +183,29 @@ static int __queue_builds(int logIndexStart, gracht_client_t* client, const char
         char                   id[64] = { 0 };
         enum chef_queue_status qstatus;
 
-        vlog_content_set_index(storage[i].log_index);
         status = chef_waiterd_build_result(client, &storage[i].msg, &qstatus, &id[0], sizeof(id));
         if (status) {
-            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            vlog_step_close(&storage[i].step, VLOG_CONTENT_STATUS_FAILED, "failed to read build queue result");
             return -1;
         }
 
         switch (qstatus) {
             case CHEF_QUEUE_STATUS_NO_COOK_FOR_ARCHITECTURE: {
                 VLOG_ERROR("remote", "architecture unsupported\n", &id[0]);
-                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+                vlog_step_close(&storage[i].step, VLOG_CONTENT_STATUS_FAILED, "architecture unsupported");
             } break;
             case CHEF_QUEUE_STATUS_INTERNAL_ERROR: {
                 VLOG_ERROR("remote", "internal build error\n");
-                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+                vlog_step_close(&storage[i].step, VLOG_CONTENT_STATUS_FAILED, "internal build error");
             } break;
             case CHEF_QUEUE_STATUS_SUCCESS: {
-                status = __add_build(storage[i].arch, &id[0], storage[i].log_index, builds);
+                status = __add_build(storage[i].arch, &id[0], &storage[i].step, builds);
                 if (status) {
                     VLOG_ERROR("remote", "failed to track build id: %s\n", &id[0]);
+                    vlog_step_close(&storage[i].step, VLOG_CONTENT_STATUS_FAILED, "failed to track build id");
                     break;
                 }
+                vlog_step_update(&storage[i].step, VLOG_CONTENT_STATUS_WAITING, "build id: %s", &id[0]);
                 VLOG_TRACE("remote", "build id: %s\n", &id[0]);
             }
         }
@@ -222,6 +223,9 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     char*             footer;
     int               status;
     int               i;
+    struct vlog_step  step_connect;
+    struct vlog_step  step_prepare;
+    struct vlog_step  step_spacer;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -264,69 +268,60 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
     }
 
     // setup the build log box
-    vlog_view_open(stdout , header, footer, 3 + options->architectures.count);
+    vlog_view_open(stdout, header, footer);
 
     // 0+1 are informational
-    vlog_content_set_index(0);
-    vlog_content_set_prefix("connect");
-
-    vlog_content_set_index(1);
-    vlog_content_set_prefix("prepare");
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-
-    vlog_content_set_index(2);
-    vlog_content_set_prefix("");
-
-    i = 3;
-    list_foreach(&options->architectures, li) {
-        vlog_content_set_index(i++);
-        vlog_content_set_prefix(((struct list_item_string*)li)->value);
-        vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-    }
+    vlog_step_open(&step_connect, "connect");
+    vlog_step_open(&step_prepare, "prepare");
+    vlog_step_open(&step_spacer, "");
 
     // The first step is connection
-    vlog_content_set_index(0);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+    vlog_step_update(&step_connect, VLOG_CONTENT_STATUS_WORKING, "initializing network client");
     
     VLOG_TRACE("bake", "initializing network client\n");
     status = chefclient_initialize();
     if (status != 0) {
         VLOG_ERROR("bake", "remote_upload: failed to initialize chef client\n");
+        vlog_step_close(&step_connect, VLOG_CONTENT_STATUS_FAILED, "failed to initialize chef client");
         return -1;
     }
 
     VLOG_TRACE("bake", "connecting to waiterd\n");
+    vlog_step_update(&step_connect, VLOG_CONTENT_STATUS_WORKING, "connecting to waiterd");
     status = remote_client_create(&client);
     if (status) {
         VLOG_ERROR("bake", "failed to connect to the configured waiterd instance\n");
+        vlog_step_close(&step_connect, VLOG_CONTENT_STATUS_FAILED, "failed to connect to waiterd");
         goto cleanup;
     }
     VLOG_TRACE("bake", "connected\n");
 
     // first step done
-    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+    vlog_step_close(&step_connect, VLOG_CONTENT_STATUS_DONE, "connected");
 
     // prepare the source for sending
-    vlog_content_set_index(1);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+    vlog_step_update(&step_prepare, VLOG_CONTENT_STATUS_WORKING, "packing source code for delivery");
 
     VLOG_TRACE("bake", "packing source code for delivery\n");
     status = remote_pack(options->cwd, (const char* const*)envp, &imagePath);
     if (status) {
+        vlog_step_close(&step_prepare, VLOG_CONTENT_STATUS_FAILED, "failed to pack source code");
         goto cleanup;
     }
 
     VLOG_TRACE("bake", "uploading source code image\n");
+    vlog_step_update(&step_prepare, VLOG_CONTENT_STATUS_WORKING, "uploading source code image");
     status = remote_upload(imagePath, &dlUrl);
     if (status) {
+        vlog_step_close(&step_prepare, VLOG_CONTENT_STATUS_FAILED, "failed to upload source code image");
         goto cleanup;
     }
 
     VLOG_TRACE("bake", "source has been uploaded\n");
-    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+    vlog_step_close(&step_prepare, VLOG_CONTENT_STATUS_DONE, "source has been uploaded");
  
     // initiate all the build calls
-    status = __queue_builds(3, client, dlUrl, &g_builds, options);
+    status = __queue_builds(client, dlUrl, &g_builds, options);
     if (status) {
         goto cleanup;
     }
@@ -343,12 +338,9 @@ int remote_build_main(int argc, char** argv, char** envp, struct bake_command_op
 cleanup:
     chefclient_cleanup();
     gracht_client_shutdown(client);
-    if (status) {
-        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-    }
     
     // end the view now
-    vlog_refresh(stdout);
+    vlog_flush();
     vlog_view_close();
 
     // print the guide on how to download artifacts

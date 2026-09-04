@@ -27,140 +27,15 @@
 #include <threads.h>
 #include <vlog.h>
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-#include <io.h>
-#define isatty _isatty
-#define fileno _fileno
-#endif
-
-#define __VLOG_RESET_CURSOR "\r"
-#define __VLOG_CLEAR_LINE "\x1b[2K"
-#define __VLOG_CLEAR_TOCURSOR "\x1b[0J"
-#define __VLOG_MOVEUP_CURSOR "\x1b[1A"
-#define __VLOG_MOVEUP_CURSOR_FMT "\x1b[%iF"
-#define __VLOG_MOVEDOWN_CURSOR "\x1b[1B"
-#define __VLOG_MOVEDOWN_CURSOR_FMT "\x1b[%iE"
+#include "private.h"
+#include "sinks/sinks.h"
+#include "utils/queue.h"
 
 // Forward declarations
-struct vlog_event;
-
-struct vlog_sink {
-    enum vlog_sink_type type;
-    FILE*               handle;
-    enum vlog_level     level;
-    void (*emit)(struct vlog_sink*, const struct vlog_event*);
-    void (*tick)(struct vlog_sink*, long long time);
-    void (*flush)(struct vlog_sink*);
-    void (*destroy)(struct vlog_sink*);
-};
-
-struct vlog_sink_text {
-    struct vlog_sink base;
-    unsigned int     options;
-};
-
-struct vlog_sink_tty {
-    struct vlog_sink base;
-    unsigned int options;
-    int          close;
-
-    int columns;
-    int view_active;
-    int rendered_rows;
-
-    // The content of the view
-    char*                     title;
-    char*                     footer;
-    struct vlog_tty_step*     steps;
-    size_t                    step_count;
-    size_t                    step_capacity;
-    unsigned long long        active_step_id;
-    struct vlog_content_line* lines;
-
-    // Spinner information
-    long long          spinner_time_ms;
-    int                spinner_index;
-};
-
-struct vlog_content_line {
-    const char*                   prefix;
-    enum vlog_content_status_type status;
-    char                          buffer[1024];
-};
-
-enum vlog_event_type {
-    // Events that are emitted to the renderer
-    VLOG_EVENT_SINK_ADD,
-    VLOG_EVENT_SINK_REMOVE,
-
-    // Events that are emitted to the sinks
-    VLOG_EVENT_LOG,
-    VLOG_EVENT_RESIZE,
-    VLOG_EVENT_VIEW_OPEN,
-    VLOG_EVENT_VIEW_CLOSE,
-    VLOG_EVENT_STEP_OPEN,
-    VLOG_EVENT_STEP_UPDATE,
-    VLOG_EVENT_STEP_CLOSE,
-    VLOG_EVENT_FLUSH,
-    VLOG_EVENT_SHUTDOWN
-};
-
-struct vlog_event {
-    enum vlog_event_type type;
-    struct timespec      timestamp;
-    union {
-        struct {
-            FILE*               handle;
-            enum vlog_sink_type type;
-            enum vlog_level     level;
-            unsigned int        options;
-        } sink;
-
-        struct {
-            const char* tag;
-            const char* message;
-            enum vlog_level level;
-        } log;
-
-        struct {
-            int columns;
-        } resize;
-
-        struct {
-            const char* header;
-            const char* footer;
-        } view_open;
-
-        struct {
-            unsigned int step_id;
-            const char* prefix;
-        } step_open;
-
-        struct {
-            unsigned int step_id;
-            enum vlog_content_status_type status;
-            const char* message;
-        } step_update;
-
-        struct {
-            unsigned int step_id;
-            int success;
-        } step_close;
-    } data;
-    
-    struct vlog_event* next;
-};
-
-struct bb_queue {
+struct vlog_flush_state {
     mtx_t lock;
-    cnd_t drained;
-    cnd_t full;
-
-    int                 capacity;
-    int                 count;
-    int                 qindex;
-    int                 dqindex;
-    struct vlog_event** items;
+    cnd_t done;
+    int   completed;
 };
 
 struct vlog_renderer {
@@ -169,128 +44,69 @@ struct vlog_renderer {
     volatile int       index;
     volatile long long time;
     volatile int       update;
-    struct bb_queue    events;
+    struct queue       events;
     struct vlog_sink** sinks;
     int                sinks_count; 
 };
 
 struct vlog_context {
+    int                  initialized;
     enum vlog_level      default_level;
     struct vlog_renderer renderer;
+    mtx_t                lock;
+    unsigned int         next_step_id;
 };
 
-static struct vlog_context g_vlog = { { NULL, 0 } };
-static const char*         g_levelNamesShort[] = {
-        "",
-        "E",
-        "W",
-        "T",
-        "D"
-};
-static const char*         g_levelNamesLong[] = {
-        "",
-        "error",
-        "warning",
-        "trace",
-        "debug"
-};
+static struct vlog_context g_vlog = { 0 };
+#if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
+static volatile sig_atomic_t g_terminal_resized = 0;
+#endif
 
-static const char*         g_statusNames[] = {
-        "",
-        "WAITING",
-        "WORKING",
-        "DONE",
-        "FAILED"
-};
-static const char*         g_statusColor[] = {
-        "\x1b[37m",
-        "\x1b[90m",
-        "\x1b[37m",
-        "\x1b[32m",
-        "\x1b[31m"
-};
-static const char*         g_animatorCharacter[] = {
-        "|",
-        "/",
-        "-",
-        "\\",
-        "/",
-        "-"
-};
-
-static void __bb_queue_init(struct bb_queue* queue, int capacity)
+static struct vlog_event* __vlog_event_new(enum vlog_event_type type)
 {
-    memset(queue, 0, sizeof(struct bb_queue));
-    queue->items = calloc(capacity, sizeof(struct vlog_event*));
-    if (queue->items == NULL) {
-        fprintf(stderr, "failed to allocate memory for queue\n");
-        exit(1);
+    struct vlog_event* event;
+
+    event = calloc(1, sizeof(struct vlog_event));
+    if (event == NULL) {
+        return NULL;
     }
 
-    mtx_init(&queue->lock, mtx_plain);
-    cnd_init(&queue->drained);
-    cnd_init(&queue->full);
-    queue->capacity = capacity;
-}
-
-static void __bb_queue_destroy(struct bb_queue* queue)
-{
-    if (queue->items) {
-        free(queue->items);
-        queue->items = NULL;
-    }
-    cnd_destroy(&queue->drained);
-    cnd_destroy(&queue->full);
-    mtx_destroy(&queue->lock);
-}
-
-static void __bb_queue_push(struct bb_queue* queue, struct vlog_event* event)
-{
-    mtx_lock(&queue->lock);
-    while (queue->count == queue->capacity) {
-        cnd_wait(&queue->full, &queue->lock);
-    }
-
-    queue->items[queue->qindex] = event;
-    queue->qindex = (queue->qindex + 1) % queue->capacity;
-    queue->count++;
-
-    cnd_signal(&queue->drained);
-    mtx_unlock(&queue->lock);
-}
-
-static struct vlog_event* __bb_queue_pop(struct bb_queue* queue, struct timespec* timeout)
-{
-    struct vlog_event* event = NULL;
-
-    mtx_lock(&queue->lock);
-    while (queue->count == 0) {
-        if (cnd_timedwait(&queue->drained, &queue->lock, timeout) == thrd_timedout) {
-            mtx_unlock(&queue->lock);
-            return NULL;
-        }
-    }
-
-    event = queue->items[queue->dqindex];
-    queue->dqindex = (queue->dqindex + 1) % queue->capacity;
-    queue->count--;
-
-    cnd_signal(&queue->full);
-    mtx_unlock(&queue->lock);
-
+    event->type = type;
+    timespec_get(&event->timestamp, TIME_UTC);
     return event;
 }
 
 static void __vlog_event_delete(struct vlog_event* event)
 {
     if (event) {
+        switch (event->type) {
+            case VLOG_EVENT_LOG:
+                free(event->data.log.tag);
+                free(event->data.log.message);
+                break;
+            case VLOG_EVENT_VIEW_OPEN:
+                free(event->data.view_open.header);
+                free(event->data.view_open.footer);
+                break;
+            case VLOG_EVENT_STEP_OPEN:
+                free(event->data.step_open.label);
+                break;
+            case VLOG_EVENT_STEP_UPDATE:
+                free(event->data.step_update.message);
+                break;
+            case VLOG_EVENT_STEP_CLOSE:
+                free(event->data.step_close.message);
+                break;
+            default:
+                break;
+        }
         free(event);
     }
 }
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #include <windows.h>
-int __get_column_count(void)
+static int __get_column_count(void)
 {
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     int                        columns;
@@ -303,7 +119,7 @@ int __get_column_count(void)
 #else
 #include <sys/ioctl.h>
 #include <unistd.h>
-int __get_column_count(void)
+static int __get_column_count(void)
 {
     struct winsize w;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
@@ -312,81 +128,86 @@ int __get_column_count(void)
 
 void __winch_handler(int sig)
 {
-    struct vlog_event* event;
-
-    signal(SIGWINCH, SIG_IGN);
-
-    // allocate a new event and push it to the renderer thread
-    event = calloc(1, sizeof(struct vlog_event));
-    if (event == NULL) {
-        fprintf(stderr, "vlog: failed to allocate memory for resize event\n");
-        exit(EXIT_FAILURE);
-    }
-
-    event->type = VLOG_EVENT_RESIZE;
-    event->data.resize.columns = __get_column_count();
-    __bb_queue_push(&g_vlog.renderer.events, event);
-    signal(SIGWINCH, __winch_handler);
+    (void)sig;
+    g_terminal_resized = 1;
 }
 #endif
 
-// Forward declarations
-static void __text_emit(struct vlog_sink* sink, struct vlog_event* event);
-static void __text_destroy(struct vlog_sink* sink);
-static void __view_emit(struct vlog_sink* sink, struct vlog_event* event);
-static void __view_tick(struct vlog_sink* sink, long long time);
-static void __view_destroy(struct vlog_sink* sink);
-
-static struct vlog_sink* __vlog_sink_new_text(FILE* handle, enum vlog_level level, unsigned int options)
+static unsigned int* __sink_options(struct vlog_sink* sink)
 {
-    struct vlog_sink_text* sink = calloc(1, sizeof(struct vlog_sink_text));
-    if (sink == NULL) {
-        return NULL;
+    switch (sink->type) {
+        case VLOG_SINK_TYPE_TEXT:
+            return &((struct vlog_sink_text*)sink)->options;
+        case VLOG_SINK_TYPE_VIEW:
+            return &((struct vlog_sink_tty*)sink)->options;
+        default:
+            return NULL;
     }
-
-    sink->base.type = VLOG_SINK_TYPE_TEXT;
-    sink->base.handle = handle;
-    sink->base.level = level;
-    sink->base.emit = __text_emit;
-    sink->base.destroy = __text_destroy;
-    sink->options = options;
-
-    return sink;
 }
 
-static struct vlog_sink* __vlog_sink_new_view(FILE* handle, enum vlog_level level, unsigned int options)
+static void __sink_destroy(struct vlog_sink* sink)
 {
-    struct vlog_sink_tty* sink = calloc(1, sizeof(struct vlog_sink_tty));
     if (sink == NULL) {
-        return NULL;
+        return;
     }
 
-    sink->base.type = VLOG_SINK_TYPE_VIEW;
-    sink->base.handle = handle;
-    sink->base.level = level;
-    sink->base.emit = __view_emit;
-    sink->base.tick = __view_tick;
-    sink->base.destroy = __view_destroy;
-    sink->columns = __get_column_count();
-    sink->options = options;
+    if (sink->destroy) {
+        sink->destroy(sink);
+    }
+}
 
-    return (struct vlog_sink*)sink;
+static struct vlog_sink* __sink_find(struct vlog_renderer* renderer, FILE* handle, enum vlog_sink_type type)
+{
+    for (int i = 0; i < renderer->sinks_count; i++) {
+        if (renderer->sinks[i] != NULL &&
+            renderer->sinks[i]->handle == handle &&
+            renderer->sinks[i]->type == type) {
+            return renderer->sinks[i];
+        }
+    }
+    return NULL;
 }
 
 static void __sink_add(struct vlog_renderer* renderer, struct vlog_event* event)
 {
     struct vlog_sink* sink;
+    struct vlog_sink** sinks;
+
+    sink = __sink_find(renderer, event->data.sink.handle, event->data.sink.type);
+    if (sink != NULL) {
+        sink->level = event->data.sink.level;
+        return;
+    }
+
+    if (event->data.sink.type == VLOG_SINK_TYPE_VIEW) {
+        for (int i = 0; i < renderer->sinks_count; i++) {
+            if (renderer->sinks[i] != NULL &&
+                renderer->sinks[i]->handle == event->data.sink.handle &&
+                renderer->sinks[i]->type == VLOG_SINK_TYPE_TEXT) {
+                __sink_destroy(renderer->sinks[i]);
+                renderer->sinks_count--;
+                if (i < renderer->sinks_count) {
+                    memmove(
+                        &renderer->sinks[i],
+                        &renderer->sinks[i + 1],
+                        (renderer->sinks_count - i) * sizeof(struct vlog_sink*)
+                    );
+                }
+                break;
+            }
+        }
+    }
 
     switch (event->data.sink.type) {
         case VLOG_SINK_TYPE_TEXT:
-            sink = __vlog_sink_new_text(
+            sink = vlog_sink_new_text(
                 event->data.sink.handle,
                 event->data.sink.level,
                 event->data.sink.options
             );
             break;
         case VLOG_SINK_TYPE_VIEW:
-            sink = __vlog_sink_new_view(
+            sink = vlog_sink_new_view(
                 event->data.sink.handle,
                 event->data.sink.level,
                 event->data.sink.options
@@ -401,30 +222,80 @@ static void __sink_add(struct vlog_renderer* renderer, struct vlog_event* event)
         return;
     }
 
-    // Check for an open spot first
-    for (int i = 0; i < renderer->sinks_count; i++) {
-        if (renderer->sinks[i] == NULL) {
-            renderer->sinks[i] = sink;
-            return;
-        }
-    }
-
     // Otherwise grow the array
-    renderer->sinks = realloc(
+    sinks = realloc(
         renderer->sinks,
         (renderer->sinks_count + 1) * sizeof(struct vlog_sink*)
     );
-    g_vlog.renderer.sinks[g_vlog.renderer.sinks_count++] = sink;
+    if (sinks == NULL) {
+        __sink_destroy(sink);
+        fprintf(stderr, "vlog: failed to allocate memory for sink list\n");
+        return;
+    }
+    renderer->sinks = sinks;
+    renderer->sinks[renderer->sinks_count++] = sink;
 }
 
 static void __sink_remove(struct vlog_renderer* renderer, struct vlog_event* event)
 {
     for (int i = 0; i < renderer->sinks_count; i++) {
-        if (renderer->sinks[i]->handle == event->data.sink.handle) {
-            renderer->sinks[i]->destroy(renderer->sinks[i]);
-            renderer->sinks[i] = NULL;
+        if (renderer->sinks[i] != NULL && renderer->sinks[i]->handle == event->data.sink.handle) {
+            __sink_destroy(renderer->sinks[i]);
             renderer->sinks_count--;
-            break;
+            if (i < renderer->sinks_count) {
+                memmove(
+                    &renderer->sinks[i],
+                    &renderer->sinks[i + 1],
+                    (renderer->sinks_count - i) * sizeof(struct vlog_sink*)
+                );
+            }
+            i--;
+        }
+    }
+}
+
+static void __sink_set_level(struct vlog_renderer* renderer, struct vlog_event* event)
+{
+    for (int i = 0; i < renderer->sinks_count; i++) {
+        if (event->data.sink.handle == NULL || renderer->sinks[i]->handle == event->data.sink.handle) {
+            renderer->sinks[i]->level = event->data.sink.level;
+        }
+    }
+}
+
+static void __sink_set_options(struct vlog_renderer* renderer, struct vlog_event* event, int clear)
+{
+    for (int i = 0; i < renderer->sinks_count; i++) {
+        unsigned int* options;
+
+        if (renderer->sinks[i] == NULL || renderer->sinks[i]->handle != event->data.sink.handle) {
+            continue;
+        }
+
+        options = __sink_options(renderer->sinks[i]);
+        if (options == NULL) {
+            continue;
+        }
+
+        if (clear) {
+            *options &= ~event->data.sink.options;
+        } else {
+            *options |= event->data.sink.options;
+        }
+    }
+}
+
+static void __sink_flush(struct vlog_renderer* renderer)
+{
+    for (int i = 0; i < renderer->sinks_count; i++) {
+        if (renderer->sinks[i] == NULL) {
+            continue;
+        }
+
+        if (renderer->sinks[i]->flush) {
+            renderer->sinks[i]->flush(renderer->sinks[i]);
+        } else if (renderer->sinks[i]->handle != NULL) {
+            fflush(renderer->sinks[i]->handle);
         }
     }
 }
@@ -437,16 +308,16 @@ static int __renderer_main(void* context)
 
     renderer->running = 1;
     while (renderer->running == 1) {
-        timespec_get(&ts, TIME_UTC);
-        // wait for 100ms
-        ts.tv_nsec += 100 * 1000000;
-        if (ts.tv_nsec >= 1000000000) {
-            ts.tv_sec++;
-            ts.tv_nsec -= 1000000000;
-        }
-        
         do {
-            event = __bb_queue_pop(&renderer->events, &ts);
+            timespec_get(&ts, TIME_UTC);
+            // wait for 100ms
+            ts.tv_nsec += 100 * 1000000;
+            if (ts.tv_nsec >= 1000000000) {
+                ts.tv_sec++;
+                ts.tv_nsec -= 1000000000;
+            }
+            
+            event = queue_pop(&renderer->events, &ts);
             if (event != NULL) {
                 switch (event->type) {
                     case VLOG_EVENT_SINK_ADD:
@@ -454,6 +325,26 @@ static int __renderer_main(void* context)
                         break;
                     case VLOG_EVENT_SINK_REMOVE:
                         __sink_remove(renderer, event);
+                        break;
+                    case VLOG_EVENT_SINK_SET_LEVEL:
+                        __sink_set_level(renderer, event);
+                        break;
+                    case VLOG_EVENT_SINK_SET_OPTIONS:
+                        __sink_set_options(renderer, event, 0);
+                        break;
+                    case VLOG_EVENT_SINK_CLEAR_OPTIONS:
+                        __sink_set_options(renderer, event, 1);
+                        break;
+                    case VLOG_EVENT_FLUSH:
+                        __sink_flush(renderer);
+                        mtx_lock(&event->data.flush.state->lock);
+                        event->data.flush.state->completed = 1;
+                        cnd_signal(&event->data.flush.state->done);
+                        mtx_unlock(&event->data.flush.state->lock);
+                        break;
+                    case VLOG_EVENT_SHUTDOWN:
+                        __sink_flush(renderer);
+                        renderer->running = 0;
                         break;
                     default: {
                         for (int i = 0; i < renderer->sinks_count; i++) {
@@ -466,6 +357,17 @@ static int __renderer_main(void* context)
                 __vlog_event_delete(event);
             }
         } while (event != NULL);
+
+#if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
+        if (g_terminal_resized) {
+            g_terminal_resized = 0;
+            for (int i = 0; i < renderer->sinks_count; i++) {
+                if (renderer->sinks[i] != NULL && renderer->sinks[i]->type == VLOG_SINK_TYPE_VIEW) {
+                    ((struct vlog_sink_tty*)renderer->sinks[i])->columns = __get_column_count();
+                }
+            }
+        }
+#endif
         
         // Tick all sinks that have a tick function
         for (int i = 0; i < renderer->sinks_count; i++) {
@@ -477,20 +379,24 @@ static int __renderer_main(void* context)
 
     // Close all sinks
     for (int i = 0; i < renderer->sinks_count; i++) {
-        if (renderer->sinks[i]->destroy) {
-            renderer->sinks[i]->destroy(renderer->sinks[i]);
-        }
-        free(renderer->sinks[i]);
+        __sink_destroy(renderer->sinks[i]);
     }
     free(renderer->sinks);
-    memset(renderer, 0, sizeof(struct vlog_renderer));
+    renderer->sinks = NULL;
+    renderer->sinks_count = 0;
     return 0;
 }
 
 void vlog_initialize(enum vlog_level level)
 {
     memset(&g_vlog, 0, sizeof(struct vlog_context));
-    __bb_queue_init(&g_vlog.renderer.events, 128);
+    mtx_init(&g_vlog.lock, mtx_plain);
+
+    // initialize the event queue
+    if (queue_init(&g_vlog.renderer.events, 128) != 0) {
+        fprintf(stderr, "vlog: failed to initialize event queue\n");
+        exit(EXIT_FAILURE);
+    }
 
     // start by initializing locale
     setlocale(LC_ALL, "");
@@ -510,28 +416,46 @@ void vlog_initialize(enum vlog_level level)
     // spawn the renderer thread
     if (thrd_create(&g_vlog.renderer.tid, __renderer_main, &g_vlog.renderer) != thrd_success) {
         fprintf(stderr, "vlog: failed to spawn thread for renderer\n");
+        exit(EXIT_FAILURE);
     }
+
+    // enable the vlog_output() function to be used
+    g_vlog.initialized = 1;
 }
 
 void vlog_cleanup(void)
 {
+    // mark as uninitialized so that vlog_output() will not be used anymore
+    g_vlog.initialized = 0;
+
+    // shutdown the renderer
     if (g_vlog.renderer.running) {
+        struct vlog_event* event;
         int res;
-        g_vlog.renderer.running = 0;
+
+        event = __vlog_event_new(VLOG_EVENT_SHUTDOWN);
+        if (event != NULL) {
+            queue_push(&g_vlog.renderer.events, event);
+        } else {
+            g_vlog.renderer.running = 0;
+        }
         thrd_join(g_vlog.renderer.tid, &res);
     }
+
+    // clean resources
+    queue_destroy(&g_vlog.renderer.events);
+    mtx_destroy(&g_vlog.lock);
     memset(&g_vlog, 0, sizeof(struct vlog_context));
 }
 
 int vlog_sink_add_text(FILE* output, int close)
 {
     // Create a new sink and push it to the renderer thread
-    struct vlog_event* event = calloc(1, sizeof(struct vlog_event));
+    struct vlog_event* event = __vlog_event_new(VLOG_EVENT_SINK_ADD);
     if (event == NULL) {
         return -1;
     }
 
-    event->type = VLOG_EVENT_SINK_ADD;
     event->data.sink.handle = output;
     event->data.sink.level = g_vlog.default_level;
     event->data.sink.options = 0;
@@ -540,19 +464,18 @@ int vlog_sink_add_text(FILE* output, int close)
         event->data.sink.options |= VLOG_OUTPUT_OPTION_CLOSE;
     }
 
-    __bb_queue_push(&g_vlog.renderer.events, event);
+    queue_push(&g_vlog.renderer.events, event);
     return 0;
 }
 
 int vlog_sink_add_view(FILE* output, int close)
 {
     // Create a new sink and push it to the renderer thread
-    struct vlog_event* event = calloc(1, sizeof(struct vlog_event));
+    struct vlog_event* event = __vlog_event_new(VLOG_EVENT_SINK_ADD);
     if (event == NULL) {
         return -1;
     }
 
-    event->type = VLOG_EVENT_SINK_ADD;
     event->data.sink.handle = output;
     event->data.sink.level = g_vlog.default_level;
     event->data.sink.options = 0;
@@ -561,161 +484,156 @@ int vlog_sink_add_view(FILE* output, int close)
         event->data.sink.options |= VLOG_OUTPUT_OPTION_CLOSE;
     }
 
-    __bb_queue_push(&g_vlog.renderer.events, event);
+    queue_push(&g_vlog.renderer.events, event);
     return 0;
 }
 
 int vlog_sink_remove(FILE* output)
 {
     // Create a new sink and push it to the renderer thread
-    struct vlog_event* event = calloc(1, sizeof(struct vlog_event));
+    struct vlog_event* event = __vlog_event_new(VLOG_EVENT_SINK_REMOVE);
     if (event == NULL) {
         return -1;
     }
 
-    event->type = VLOG_EVENT_SINK_REMOVE;
     event->data.sink.handle = output;
     event->data.sink.level = g_vlog.default_level;
     event->data.sink.options = 0;
 
-    __bb_queue_push(&g_vlog.renderer.events, event);
+    queue_push(&g_vlog.renderer.events, event);
     return 0;
 }
 
 void vlog_set_level(enum vlog_level level)
 {
-    for (int i = 0; i < g_vlog.outputs_count; i++) {
-        g_vlog.outputs[i].level = level;
-    }
+    struct vlog_event* event;
+
     g_vlog.default_level = level;
+    if (!g_vlog.renderer.running) {
+        return;
+    }
+
+    event = __vlog_event_new(VLOG_EVENT_SINK_SET_LEVEL);
+    if (event == NULL) {
+        return;
+    }
+
+    event->data.sink.handle = NULL;
+    event->data.sink.level = level;
+    queue_push(&g_vlog.renderer.events, event);
 }
 
 void vlog_set_output_options(FILE* output, unsigned int flags)
 {
-    for (int i = 0; i < g_vlog.outputs_count; i++) {
-        if (g_vlog.outputs[i].handle == output) {
-            g_vlog.outputs[i].options |= flags;
-            break;
-        }
+    struct vlog_event* event;
+
+    event = __vlog_event_new(VLOG_EVENT_SINK_SET_OPTIONS);
+    if (event == NULL) {
+        return;
     }
+
+    event->data.sink.handle = output;
+    event->data.sink.options = flags;
+    queue_push(&g_vlog.renderer.events, event);
 }
 
 void vlog_clear_output_options(FILE* output, unsigned int flags)
 {
-    for (int i = 0; i < g_vlog.outputs_count; i++) {
-        if (g_vlog.outputs[i].handle == output) {
-            g_vlog.outputs[i].options &= ~(flags);
-            break;
-        }
+    struct vlog_event* event;
+
+    event = __vlog_event_new(VLOG_EVENT_SINK_CLEAR_OPTIONS);
+    if (event == NULL) {
+        return;
     }
+
+    event->data.sink.handle = output;
+    event->data.sink.options = flags;
+    queue_push(&g_vlog.renderer.events, event);
 }
 
 void vlog_set_output_level(FILE* output, enum vlog_level level)
 {
-    for (int i = 0; i < g_vlog.outputs_count; i++) {
-        if (g_vlog.outputs[i].handle == output) {
-            g_vlog.outputs[i].level = level;
-            break;
-        }
+    struct vlog_event* event;
+
+    event = __vlog_event_new(VLOG_EVENT_SINK_SET_LEVEL);
+    if (event == NULL) {
+        return;
     }
+
+    event->data.sink.handle = output;
+    event->data.sink.level = level;
+    queue_push(&g_vlog.renderer.events, event);
 }
 
 void vlog_flush(void)
 {
-    for (int i = 0; i < g_vlog.outputs_count; i++) {
-        fflush(g_vlog.outputs[i].handle);
-    }
-}
+    struct vlog_flush_state state;
+    struct vlog_event*      event;
 
-static void __render_line_with_text(struct vlog_sink_tty* sink, const char* embed, int lcorner, int middle, int rcorner)
-{
-    int columns = sink->columns;
-    int titleCount = embed != NULL ? ((int)strlen(embed) + 2) : 0;
-    int lcount = 3;
-    int rcount = columns - (titleCount + 2 + lcount);
-
-    fprintf(sink->base.handle, "%lc", lcorner);
-    for (int i = 0; i < lcount; i++) fprintf(sink->base.handle, "%lc", middle);
-    if (embed != NULL) {
-        fprintf(sink->base.handle, " %s ", embed);
-    }
-    for (int i = 0; i < rcount; i++) fprintf(sink->base.handle, "%lc", middle);
-    fprintf(sink->base.handle, "%lc\n", rcorner);
-}
-
-static void __fmt_indicator(char* buffer, enum vlog_content_status_type status)
-{
-    if (status == VLOG_CONTENT_STATUS_WORKING) {
-        long long seconds = g_vlog.renderer.time / 1000;
-        long long ms = (g_vlog.renderer.time % 1000) / 100;
-        int index = g_vlog.renderer.index % 6;
-        sprintf(buffer, "%s %lli.%llis", g_animatorCharacter[index], seconds, ms);
-    } else {
-        strcpy(buffer, g_statusNames[status]);
-    }
-}
-
-static void __refresh_view(struct vlog_sink_tty* sink, int clear)
-{
-    char indicator[20] = { 0 };
-    
-    if (clear) {
-        fprintf(
-            sink->base.handle,
-            __VLOG_MOVEUP_CURSOR_FMT __VLOG_CLEAR_TOCURSOR,
-            sink->step_count + 2
-        );
+    if (!g_vlog.renderer.running) {
+        return;
     }
 
-    // print first line
-    __render_line_with_text(sink, sink->title, 0x250D, 0x2500, 0x2511);
-
-    // print content lines
-    for (int i = 0; i < sink->step_count; i++) {
-        __fmt_indicator(&indicator[0], sink->lines[i].status);
-        fprintf(sink->base.handle, "%lc %-10s %-*.*s %s%-10s%s%lc\n",
-            0x2502,
-            sink->lines[i].prefix,
-            sink->columns - 25,
-            sink->columns - 25,
-            &sink->lines[i].buffer[0],
-            g_statusColor[sink->lines[i].status],
-            &indicator[0],
-            g_statusColor[0],
-            0x2502
-        );
+    event = __vlog_event_new(VLOG_EVENT_FLUSH);
+    if (event == NULL) {
+        return;
     }
 
-    // print final line
-    __render_line_with_text(sink, sink->footer, 0x2515, 0x2500, 0x2519);
+    mtx_init(&state.lock, mtx_plain);
+    cnd_init(&state.done);
+    state.completed = 0;
+    event->data.flush.state = &state;
 
-    fflush(sink->base.handle);
+    mtx_lock(&state.lock);
+    queue_push(&g_vlog.renderer.events, event);
+    while (!state.completed) {
+        cnd_wait(&state.done, &state.lock);
+    }
+    mtx_unlock(&state.lock);
+
+    cnd_destroy(&state.done);
+    mtx_destroy(&state.lock);
 }
 
 void vlog_view_open(FILE* handle, const char* header, const char* footer)
 {
     // Create a new event and push it to the renderer thread
-    struct vlog_event* event = calloc(1, sizeof(struct vlog_event));
+    struct vlog_event* event;
+
+    if (!isatty(fileno(handle))) {
+        return;
+    }
+
+    if (vlog_sink_add_view(handle, 0) != 0) {
+        return;
+    }
+
+    event = __vlog_event_new(VLOG_EVENT_VIEW_OPEN);
     if (event == NULL) {
         return;
     }
 
-    event->type = VLOG_EVENT_VIEW_OPEN;
-    event->data.view_open.header = header;
-    event->data.view_open.footer = footer;
-    __bb_queue_push(&g_vlog.renderer.events, event);
+    event->data.view_open.handle = handle;
+    event->data.view_open.header = vlog_strdup(header);
+    event->data.view_open.footer = vlog_strdup(footer);
+    if ((header != NULL && event->data.view_open.header == NULL) ||
+        (footer != NULL && event->data.view_open.footer == NULL)) {
+        __vlog_event_delete(event);
+        return;
+    }
+    queue_push(&g_vlog.renderer.events, event);
 }
 
 void vlog_view_close(void)
 {
     // Create a new event and push it to the renderer thread
-    struct vlog_event* event = calloc(1, sizeof(struct vlog_event));
+    struct vlog_event* event = __vlog_event_new(VLOG_EVENT_VIEW_CLOSE);
     if (event == NULL) {
         return;
     }
 
-    event->type = VLOG_EVENT_VIEW_CLOSE;
-    __bb_queue_push(&g_vlog.renderer.events, event);
+    event->data.view_close.handle = NULL;
+    queue_push(&g_vlog.renderer.events, event);
 }
 
 void vlog_output(enum vlog_level level, const char* tag, const char* format, ...)
@@ -723,201 +641,122 @@ void vlog_output(enum vlog_level level, const char* tag, const char* format, ...
     va_list            args;
     struct vlog_event* event;
 
-    // use __bb_queue_push to push the event to the renderer thread
-    event = calloc(1, sizeof(struct vlog_event));
+    // ensure that vlog is initialized before we try to log anything
+    if (!g_vlog.initialized) {
+        return;
+    }
+
+    // use queue_push to push the event to the renderer thread
+    event = __vlog_event_new(VLOG_EVENT_LOG);
     if (event == NULL) {
         return;
     }
 
-    event->type = VLOG_EVENT_LOG;
     event->data.log.level = level;
-    event->data.log.tag = tag;
+    event->data.log.tag = vlog_strdup(tag != NULL ? tag : "");
+    if (event->data.log.tag == NULL) {
+        __vlog_event_delete(event);
+        return;
+    }
     
     va_start(args, format);
-    vasprintf(&event->data.log.message, format, args);
+    event->data.log.message = vlog_vformat(format, args);
     va_end(args);
-
-    __bb_queue_push(&g_vlog.renderer.events, event);
-}
-
-static void __text_write(struct vlog_sink_text* sink, enum vlog_level level, const char* tag, const char* message)
-{
-    char       dateTime[32];
-    time_t     now;
-    struct tm* timeInfo;
-
-    // ensure level is appropriate for sink
-    if (sink->base.handle == NULL || level > sink->base.level) {
+    if (format != NULL && event->data.log.message == NULL) {
+        __vlog_event_delete(event);
         return;
     }
 
-    time(&now);
-    timeInfo = localtime(&now);
-
-    strftime(&dateTime[0], sizeof(dateTime) - 1, "%F %T", timeInfo);
-
-    if (sink->options & VLOG_OUTPUT_OPTION_PROGRESS) {
-        fprintf(sink->base.handle, __VLOG_CLEAR_LINE __VLOG_RESET_CURSOR);
-    }
-
-    if (!(sink->options & VLOG_OUTPUT_OPTION_NODECO)) {
-        if (sink->options & VLOG_OUTPUT_OPTION_LONGDECO) {
-            fprintf(sink->base.handle, "[%s] %s | %s | ", &dateTime[0], g_levelNamesLong[level], tag);
-            if (level == VLOG_LEVEL_ERROR) {
-                fprintf(sink->base.handle, "[e%i, %s] | ", errno, strerror(errno));
-            }
-        } else {
-            if (level == VLOG_LEVEL_ERROR) {
-                fprintf(sink->base.handle, "%s[%s%i, %s] ", tag, g_levelNamesShort[level], errno, strerror(errno));
-            } else {
-                fprintf(sink->base.handle, "%s[%s] ", tag, g_levelNamesShort[level]);
-            }
-        }
-    }
-
-    fprintf(sink->base.handle, "%s", message);
-    fflush(sink->base.handle);
+    queue_push(&g_vlog.renderer.events, event);
 }
 
-static void __text_emit(struct vlog_sink* base, struct vlog_event* event)
+int vlog_step_open(struct vlog_step* step, const char* label)
 {
-    struct vlog_sink_text* sink = (struct vlog_sink_text*)base;
+    struct vlog_event* event;
 
-    switch (event->type) {
-        case VLOG_EVENT_LOG:
-            __text_write(sink, event->data.log.level, event->data.log.tag, event->data.log.message);
-            break;
-        default:
-            break;
+    if (step == NULL) {
+        errno = EINVAL;
+        return -1;
     }
+
+    mtx_lock(&g_vlog.lock);
+    step->id = ++g_vlog.next_step_id;
+    if (step->id == 0) {
+        step->id = ++g_vlog.next_step_id;
+    }
+    mtx_unlock(&g_vlog.lock);
+
+    event = __vlog_event_new(VLOG_EVENT_STEP_OPEN);
+    if (event == NULL) {
+        return -1;
+    }
+
+    event->data.step_open.step_id = step->id;
+    event->data.step_open.label = vlog_strdup(label != NULL ? label : "");
+    if (event->data.step_open.label == NULL) {
+        __vlog_event_delete(event);
+        return -1;
+    }
+
+    queue_push(&g_vlog.renderer.events, event);
+    return 0;
 }
 
-static void __text_destroy(struct vlog_sink* base)
+int vlog_step_update(struct vlog_step* step, enum vlog_content_status_type status, const char* format, ...)
 {
-    struct vlog_sink_text* sink = (struct vlog_sink_text*)base;
-    
-    if (sink->options & VLOG_OUTPUT_OPTION_CLOSE) {
-        fclose(sink->base.handle);
+    va_list            args;
+    struct vlog_event* event;
+
+    if (step == NULL || step->id == 0) {
+        errno = EINVAL;
+        return -1;
     }
-    free(sink);
+
+    event = __vlog_event_new(VLOG_EVENT_STEP_UPDATE);
+    if (event == NULL) {
+        return -1;
+    }
+
+    event->data.step_update.step_id = step->id;
+    event->data.step_update.status = status;
+    va_start(args, format);
+    event->data.step_update.message = vlog_vformat(format, args);
+    va_end(args);
+    if (format != NULL && event->data.step_update.message == NULL) {
+        __vlog_event_delete(event);
+        return -1;
+    }
+
+    queue_push(&g_vlog.renderer.events, event);
+    return 0;
 }
 
-static void __view_write(struct vlog_sink_tty* sink, enum vlog_level level, const char* message)
+int vlog_step_close(struct vlog_step* step, enum vlog_content_status_type status, const char* format, ...)
 {
-    // ensure level is appropriate for sink
-    if (sink->base.handle == NULL || level > sink->base.level) {
-        return;
+    va_list            args;
+    struct vlog_event* event;
+
+    if (step == NULL || step->id == 0) {
+        errno = EINVAL;
+        return -1;
     }
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-    // update column count on sink to stdout if on windows, we can
-    // only poll
-    sink->columns = __get_column_count();
-#endif
-    strncpy(
-        &sink->lines[g_vlog.content_line_index].buffer[0],
-        message,
-        sizeof(sink->lines[g_vlog.content_line_index].buffer) - 1
-    );
-
-    // strip the newlines
-    for (int j = 0; sink->lines[g_vlog.content_line_index].buffer[j]; j++) {
-        if (sink->lines[g_vlog.content_line_index].buffer[j] == '\n') {
-            sink->lines[g_vlog.content_line_index].buffer[j] = ' ';
-        }
-    }
-}
-
-static void __view_emit(struct vlog_sink* base, struct vlog_event* event)
-{
-    struct vlog_sink_tty* sink = (struct vlog_sink_tty*)base;
-
-    switch (event->type) {
-        case VLOG_EVENT_LOG:
-            __view_write(sink, event->data.log.level, event->data.log.message);
-            break;
-        case VLOG_EVENT_RESIZE:
-            sink->columns = event->data.resize.columns;
-            break;
-        case VLOG_EVENT_STEP_OPEN:
-            vlog_content_set_index(event->data.step_open.step_id);
-            vlog_content_set_prefix(event->data.step_open.prefix);
-            vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-            break;
-        case VLOG_EVENT_STEP_UPDATE:
-            vlog_content_set_index(event->data.step_update.step_id);
-            vlog_content_set_status(event->data.step_update.status);
-            __view_write(sink, VLOG_LEVEL_TRACE, event->data.step_update.message);
-            break;
-        case VLOG_EVENT_STEP_CLOSE:
-            vlog_content_set_index(event->data.step_close.step_id);
-            vlog_content_set_status(event->data.step_close.success ? VLOG_CONTENT_STATUS_DONE
-                                                                  : VLOG_CONTENT_STATUS_FAILED);
-            break;
-        default:
-            break;
-    }
-    __refresh_view(sink, 1);
-}
-
-static void __view_tick(struct vlog_sink* base, long long time)
-{
-    struct vlog_sink_tty* sink = (struct vlog_sink_tty*)base;
-    sink->spinner_time_ms += time;
-    if (sink->spinner_time_ms >= 500) {
-        sink->spinner_time_ms = 0;
-        sink->spinner_index++;
-        __refresh_view(sink, 1);
-    }
-}
-
-static void __view_destroy(struct vlog_sink* base)
-{
-    struct vlog_sink_tty* sink = (struct vlog_sink_tty*)base;
-    
-    if (sink->options & VLOG_OUTPUT_OPTION_CLOSE) {
-        fclose(base->handle);
-    }
-    free(sink);
-}
-
-void vlog_step_init(struct vlog_step* step, int index, const char* prefix)
-{
-    if (!step) {
-        return;
+    event = __vlog_event_new(VLOG_EVENT_STEP_CLOSE);
+    if (event == NULL) {
+        return -1;
     }
 
-    step->index = index;
-    step->prefix = prefix;
-
-    vlog_content_set_index(index);
-    vlog_content_set_prefix(prefix);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-}
-
-void vlog_step_begin(struct vlog_step* step)
-{
-    if (!step) {
-        return;
+    event->data.step_close.step_id = step->id;
+    event->data.step_close.status = status;
+    va_start(args, format);
+    event->data.step_close.message = vlog_vformat(format, args);
+    va_end(args);
+    if (format != NULL && event->data.step_close.message == NULL) {
+        __vlog_event_delete(event);
+        return -1;
     }
 
-    vlog_content_set_index(step->index);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
-}
-
-void vlog_step_end(struct vlog_step* step, int success)
-{
-    if (!step) {
-        return;
-    }
-
-    vlog_content_set_index(step->index);
-    vlog_content_set_status(success ? VLOG_CONTENT_STATUS_DONE
-                                    : VLOG_CONTENT_STATUS_FAILED);
-}
-
-void vlog_step_fail(struct vlog_step* step)
-{
-    vlog_step_end(step, 0);
+    queue_push(&g_vlog.renderer.events, event);
+    return 0;
 }
 

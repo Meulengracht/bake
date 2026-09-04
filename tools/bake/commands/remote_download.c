@@ -76,10 +76,10 @@ static int __discover_artifacts(gracht_client_t* client, struct list* builds, en
             continue;
         }
 
-        vlog_content_set_index(build->log_index);
+        vlog_step_update(&build->step, VLOG_CONTENT_STATUS_WORKING, "requesting artifact information");
         status = chef_waiterd_artifact(client, &build->msg_storage, &build->id[0], atype);
         if (status) {
-            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            vlog_step_close(&build->step, VLOG_CONTENT_STATUS_FAILED, "failed to request artifact information");
             return -1;
         }
         msgs[i++] = &build->msg_storage;
@@ -102,10 +102,9 @@ static int __discover_artifacts(gracht_client_t* client, struct list* builds, en
         
         memset(&linkBuffer[0], 0, sizeof(linkBuffer));
 
-        vlog_content_set_index(build->log_index);
         status = chef_waiterd_artifact_result(client, &build->msg_storage, &linkBuffer[0], sizeof(linkBuffer));
         if (status) {
-            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            vlog_step_close(&build->step, VLOG_CONTENT_STATUS_FAILED, "failed to read artifact information");
             return -1;
         }
 
@@ -134,29 +133,31 @@ static int __download_artifacts(struct list* builds)
 
     list_foreach(builds, li) {
         struct __build* build = (struct __build*)li;
-        vlog_content_set_index(build->log_index);
 
         if (build->package_link != NULL) {
             VLOG_TRACE("remote", "downloading package...\n");
+            vlog_step_update(&build->step, VLOG_CONTENT_STATUS_WORKING, "downloading package");
             status = chef_client_gen_download(&build->package_link[0], NULL);
             if (status) {
                 VLOG_ERROR("remote", "failed to retrieve package\n");
-                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+                vlog_step_close(&build->step, VLOG_CONTENT_STATUS_FAILED, "failed to retrieve package");
                 continue;
             }
         }
 
         if (build->log_link != NULL) {
             VLOG_TRACE("remote", "downloading logs...\n");
+            vlog_step_update(&build->step, VLOG_CONTENT_STATUS_WORKING, "downloading logs");
             status = chef_client_gen_download(&build->log_link[0], NULL);
             if (status) {
                 VLOG_ERROR("remote", "failed to retrieve log\n");
-                vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+                vlog_step_close(&build->step, VLOG_CONTENT_STATUS_FAILED, "failed to retrieve log");
                 continue;
             }
         }
         
         VLOG_TRACE("remote", "artifacts has been retrieved!\n");
+        vlog_step_close(&build->step, VLOG_CONTENT_STATUS_DONE, "artifacts have been retrieved");
     }
 
     chefclient_cleanup();
@@ -170,6 +171,8 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
     struct list_item*       li;
     int                     status, i;
     enum chef_artifact_type atype;
+    struct vlog_step        step_connect;
+    struct vlog_step        step_spacer;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -223,38 +226,30 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
     }
 
     // setup the build log box
-    vlog_view_open(stdout , "downloading", "connected to: ", 2 + builds.count);
+    vlog_view_open(stdout, "downloading", "connected to: ");
 
     // 0+1 are informational
-    vlog_content_set_index(0);
-    vlog_content_set_prefix("connect");
+    vlog_step_open(&step_connect, "connect");
+    vlog_step_open(&step_spacer, "");
 
-    vlog_content_set_index(1);
-    vlog_content_set_prefix("");
-
-    i = 2;
     list_foreach(&builds, li) {
         struct __build* build = (struct __build*)li;
 
-        // attach a log index
-        build->log_index = i;
-
-        vlog_content_set_index(i++);
-        vlog_content_set_prefix("");
-        vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-        VLOG_TRACE("remote", "syncing: %s...", &build->id[0]);
+        __build_step_open(build);
+        vlog_step_update(&build->step, VLOG_CONTENT_STATUS_WAITING, "syncing: %s", &build->id[0]);
     }
 
     // start by connecting
-    vlog_content_set_index(0);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+    vlog_step_update(&step_connect, VLOG_CONTENT_STATUS_WORKING, "connecting to waiterd");
 
     VLOG_TRACE("bake", "connecting to waiterd\n");
     status = remote_client_create(&client);
     if (status) {
         VLOG_ERROR("bake", "failed to connect to the configured waiterd instance\n");
+        vlog_step_close(&step_connect, VLOG_CONTENT_STATUS_FAILED, "failed to connect to waiterd");
         goto cleanup;
     }
+    vlog_step_close(&step_connect, VLOG_CONTENT_STATUS_DONE, "connected");
 
     status = __build_statuses(client, &builds);
     if (status) {
@@ -272,10 +267,7 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
 
 cleanup:
     gracht_client_shutdown(client);
-    if (status) {
-        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-    }
-    vlog_refresh(stdout);
+    vlog_flush();
     vlog_view_close();
     __build_list_delete(&builds);
     return status;
