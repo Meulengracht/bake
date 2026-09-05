@@ -516,6 +516,19 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
     }
 
     __initialize_layers(&params, rootfs, bctx, params.gtype);
+    VLOG_DEBUG("bake", "bake_client_create_container: initialized %u layers\n", params.layers_count);
+
+    if (params.guest_windows.wcow_parent_layers == NULL) {
+        params.guest_windows.wcow_parent_layers = calloc(1, 1);
+        if (params.guest_windows.wcow_parent_layers == NULL) {
+            chef_create_parameters_destroy(&params);
+            free(rootfs);
+            free(utilityVMPath);
+            return CHEF_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    VLOG_DEBUG("bake", "bake_client_create_container: sending create request\n");
     
     status = chef_cvd_create(bctx->cvd_client, &context, &params);
     

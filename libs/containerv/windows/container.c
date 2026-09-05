@@ -1012,7 +1012,7 @@ static struct containerv_container* __container_new(void)
     }
     
     // Generate container ID
-    containerv_generate_id(container->id, sizeof(container->id));
+    platform_guid_new_string(container->id);
 
     // Convert container ID to wide string for HCS
     idLen = strlen(container->id);
@@ -1940,10 +1940,18 @@ int containerv_create(
                     __container_delete(container);
                     return -1;
                 }
-                if (containerv_oci_bundle_prepare_rootfs(&bundlePaths, rootFs) != 0) {
-                    VLOG_ERROR("containerv", "containerv_create: failed to prepare OCI bundle rootfs\n");
+                if (platform_mkdir(bundlePaths.bundle_dir) != 0) {
+                    VLOG_ERROR("containerv", "containerv_create: failed to prepare OCI bundle directory\n");
                     containerv_oci_bundle_paths_delete(&bundlePaths);
                     __container_delete(container);
+                    return -1;
+                }
+                free(bundlePaths.rootfs_dir);
+                bundlePaths.rootfs_dir = platform_strdup(rootFs);
+                if (bundlePaths.rootfs_dir == NULL) {
+                    containerv_oci_bundle_paths_delete(&bundlePaths);
+                    __container_delete(container);
+                    errno = ENOMEM;
                     return -1;
                 }
                 (void)containerv_oci_bundle_prepare_rootfs_mountpoints(&bundlePaths);
@@ -2978,9 +2986,9 @@ int containerv_join(
     }
     
     // Create operation
-    hr = g_hcs.HcsCreateOperation(NULL, NULL, &operation);
-    if (FAILED(hr)) {
-        VLOG_ERROR("containerv", "containerv_join: failed to create operation: 0x%lx\n", hr);
+    operation = g_hcs.HcsCreateOperation(NULL, NULL);
+    if (operation == NULL) {
+        VLOG_ERROR("containerv", "containerv_join: failed to create operation\n");
         goto cleanup;
     }
     
