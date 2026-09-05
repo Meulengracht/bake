@@ -102,7 +102,7 @@ int containerv_disk_setup_ubuntu_rootfs(const char* path, const char* base)
     }
 
     VLOG_TRACE("cvd", "unpacking %s into %s\n", archivePath, path);
-    status = containerv_disk_extract_archive(archivePath, path, 0, 1);
+    status = containerv_disk_extract_archive(archivePath, path, 1, 1);
     if (status) {
         VLOG_ERROR("cvd", "failed to unpack ubuntu rootfs\n");
         goto exit;
