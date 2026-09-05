@@ -170,8 +170,7 @@ static void __cleanup_systems(int sig)
 {
     // printing as a part of a signal handler is not safe
     // but we live dangerously
-    vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-    vlog_end();
+    vlog_view_close();
 
     // cleanup the kitchen, this will take out most of the systems
     // setup as a part of all this.
@@ -193,7 +192,7 @@ static char* __add_build_log(void)
         return NULL;
     }
 
-    vlog_add_output(stream, 1);
+    vlog_sink_add_text(stream, 1);
     vlog_set_output_level(stream, VLOG_LEVEL_DEBUG);
     return path;
 }
@@ -222,6 +221,8 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     char*                      header;
     char*                      footer;
     const char*                arch;
+    struct vlog_step           step_package_env;
+    struct vlog_step           step_spacer;
     struct vlog_step           step_prepare;
     struct vlog_step           step_source;
     struct vlog_step           step_build;
@@ -309,23 +310,18 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     atexit(store_cleanup);
 
     // setup the build log box
-    vlog_start(stdout, header, footer, 6);
-
-    // 0+1 are informational
-    vlog_content_set_index(0);
-    vlog_content_set_prefix("pkg-env");
-
-    vlog_content_set_index(1);
-    vlog_content_set_prefix("");
+    vlog_view_open(stdout, header, footer);
 
     // initialize pipeline steps
-    vlog_step_init(&step_prepare, 2, "prepare");
-    vlog_step_init(&step_source,  3, "source");
-    vlog_step_init(&step_build,   4, "build");
-    vlog_step_init(&step_pack,    5, "pack");
+    vlog_step_open(&step_package_env, "pkg-env");
+    vlog_step_open(&step_spacer, "");
+    vlog_step_open(&step_prepare, "prepare");
+    vlog_step_open(&step_source, "source");
+    vlog_step_open(&step_build, "build");
+    vlog_step_open(&step_pack, "pack");
 
     // use prepare for initial information
-    vlog_step_begin(&step_prepare);
+    vlog_step_update(&step_prepare, VLOG_CONTENT_STATUS_WORKING, NULL);
 
     // we want the recipe cache in this case for regular builds
     status = build_cache_create(options->recipe, options->cwd, &cache);
@@ -354,46 +350,46 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     status = __ensure_ingredients(options->recipe, options->platform, arch);
     if (status) {
         VLOG_ERROR("bake", "failed to fetch ingredients: %s\n", strerror(errno));
-        vlog_step_fail(&step_prepare);
+        vlog_step_close(&step_prepare, VLOG_CONTENT_STATUS_FAILED, NULL);
         goto cleanup;
     }
 
     status = bake_build_setup(g_context);
     if (status) {
         VLOG_ERROR("bake", "failed to setup build environment: %s\n", strerror(errno));
-        vlog_step_fail(&step_prepare);
+        vlog_step_close(&step_prepare, VLOG_CONTENT_STATUS_FAILED, NULL);
         goto cleanup;
     }
 
-    vlog_step_end(&step_prepare, 1);
+    vlog_step_close(&step_prepare, VLOG_CONTENT_STATUS_DONE, NULL);
 
-    vlog_step_begin(&step_source);
+    vlog_step_update(&step_source, VLOG_CONTENT_STATUS_WORKING, NULL);
     status = build_step_source(g_context);
     if (status) {
-        vlog_step_fail(&step_source);
+        vlog_step_close(&step_source, VLOG_CONTENT_STATUS_FAILED, NULL);
         goto cleanup;
     }
-    vlog_step_end(&step_source, 1);
+    vlog_step_close(&step_source, VLOG_CONTENT_STATUS_DONE, NULL);
 
-    vlog_step_begin(&step_build);
+    vlog_step_update(&step_build, VLOG_CONTENT_STATUS_WORKING, NULL);
     status = build_step_make(g_context);
     if (status) {
-        vlog_step_fail(&step_build);
+        vlog_step_close(&step_build, VLOG_CONTENT_STATUS_FAILED, NULL);
         goto cleanup;
     }
-    vlog_step_end(&step_build, 1);
+    vlog_step_close(&step_build, VLOG_CONTENT_STATUS_DONE, NULL);
 
-    vlog_step_begin(&step_pack);
+    vlog_step_update(&step_pack, VLOG_CONTENT_STATUS_WORKING, NULL);
     status = build_step_pack(g_context);
     if (status) {
-        vlog_step_fail(&step_pack);
+        vlog_step_close(&step_pack, VLOG_CONTENT_STATUS_FAILED, NULL);
         goto cleanup;
     }
-    vlog_step_end(&step_pack, status == 0);
+    vlog_step_close(&step_pack, VLOG_CONTENT_STATUS_DONE, NULL);
 
 cleanup:
-    vlog_refresh(stdout);
-    vlog_end();
+    vlog_flush();
+    vlog_view_close();
     build_context_destroy(g_context);
     return status;
 }

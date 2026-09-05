@@ -49,7 +49,7 @@ int platform_rmdir(const char *path)
         snprintf(fullPath, sizeof(fullPath), "%s\\%s", path, findFileData.cFileName);
 
         if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            result = RemoveDirectory(fullPath);
+            result = platform_rmdir(fullPath);
         } else if (!DeleteFile(fullPath)) {
                 result = -1;
         }

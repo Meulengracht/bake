@@ -26,7 +26,7 @@
 struct __build {
     struct list_item              list_header;
     struct gracht_message_context msg_storage;
-    int                           log_index;
+    struct vlog_step              step;
     
     char                          id[64];
     char                          arch[16];
@@ -82,13 +82,15 @@ static const char* __build_arch_to_arch_string(enum chef_build_architecture arch
     return "unknown";
 }
 
-static int __add_build(const char* arch, const char* id, int index, struct list* list)
+static int __add_build(const char* arch, const char* id, struct vlog_step* step, struct list* list)
 {
     struct __build* item = calloc(1, sizeof(struct __build));
     if (item == NULL) {
         return -1;
     }
-    item->log_index = index;
+    if (step != NULL) {
+        item->step = *step;
+    }
     strncpy(&item->id[0], id, sizeof(item->id));
     if (arch != NULL) {
         strncpy(&item->arch[0], arch, sizeof(item->arch));
@@ -110,7 +112,7 @@ static int __parse_build_ids(char** argv, int argc, int* i, struct list* builds)
     while (!*pOfId) {
         if (*pOfId == ',') {
             *pOfId = '\0';
-            if (__add_build(NULL, startOfId, 0, builds)) {
+            if (__add_build(NULL, startOfId, NULL, builds)) {
                 fprintf(stderr, "bake: failed to track build id: %s\n", startOfId);
                 return -1;
             }
@@ -118,7 +120,19 @@ static int __parse_build_ids(char** argv, int argc, int* i, struct list* builds)
         }
         pOfId++;
     }
-    return __add_build(NULL, startOfId, 0, builds);
+    return __add_build(NULL, startOfId, NULL, builds);
+}
+
+static int __build_step_open(struct __build* build)
+{
+    const char* label;
+
+    if (build->step.id != 0) {
+        return 0;
+    }
+
+    label = build->arch[0] != '\0' ? &build->arch[0] : &build->id[0];
+    return vlog_step_open(&build->step, label);
 }
 
 static int __build_statuses(gracht_client_t* client, struct list* builds)
@@ -133,10 +147,9 @@ static int __build_statuses(gracht_client_t* client, struct list* builds)
     list_foreach(builds, li) {
         struct __build* build = (struct __build*)li;
 
-        vlog_content_set_index(build->log_index);
         status = chef_waiterd_status(client, &build->msg_storage, &build->id[0]);
         if (status) {
-            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            vlog_step_close(&build->step, VLOG_CONTENT_STATUS_FAILED, "failed to request build status");
             return -1;
         }
         msgs[i++] = &build->msg_storage;
@@ -144,6 +157,10 @@ static int __build_statuses(gracht_client_t* client, struct list* builds)
 
     status = gracht_client_await_multiple(client, &msgs[0], builds->count, GRACHT_AWAIT_ALL);
     if (status) {
+        list_foreach(builds, li) {
+            struct __build* build = (struct __build*)li;
+            vlog_step_close(&build->step, VLOG_CONTENT_STATUS_FAILED, "connection lost waiting for build status");
+        }
         VLOG_ERROR("remote", "connection lost waiting for build status\n");
         return -1;
     }
@@ -152,17 +169,15 @@ static int __build_statuses(gracht_client_t* client, struct list* builds)
         struct __build* build = (struct __build*)li;
         struct chef_waiter_status_response resp;
 
-        vlog_content_set_index(build->log_index);
         status = chef_waiterd_status_result(client, &build->msg_storage, &resp);
         if (status) {
-            vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+            vlog_step_close(&build->step, VLOG_CONTENT_STATUS_FAILED, "failed to read build status");
             return -1;
         }
 
         // update arch
         if (build->arch[0] == '\0') {
             strcpy(&build->arch[0], __build_arch_to_arch_string(resp.arch));
-            vlog_content_set_prefix(&build->arch[0]);
         }
         build->last_status = build->status;
         build->status = resp.status;
@@ -181,11 +196,10 @@ static int __wait_for_builds(gracht_client_t* client, struct list* builds)
             struct __build* build = (struct __build*)li;
 
             // Update on status change
-            if (build->status = build->last_status) {
+            if (build->status == build->last_status) {
                 continue;
             }
 
-            vlog_content_set_index(build->log_index);
             switch (build->status) {
                 case CHEF_BUILD_STATUS_UNKNOWN: {
                     // unknown means it hasn't started yet, so for now we do
@@ -193,25 +207,28 @@ static int __wait_for_builds(gracht_client_t* client, struct list* builds)
                 } break;
                 case CHEF_BUILD_STATUS_QUEUED: {
                     VLOG_TRACE("remote", "build is currently waiting to be serviced\n");
+                    vlog_step_update(&build->step, VLOG_CONTENT_STATUS_WAITING, "build is currently waiting to be serviced");
                 } break;
                 case CHEF_BUILD_STATUS_SOURCING: {
                     VLOG_TRACE("remote", "build is now sourcing\n");
-                    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+                    vlog_step_update(&build->step, VLOG_CONTENT_STATUS_WORKING, "build is now sourcing");
                 } break;
                 case CHEF_BUILD_STATUS_BUILDING: {
                     VLOG_TRACE("remote", "build is in progress\n");
+                    vlog_step_update(&build->step, VLOG_CONTENT_STATUS_WORKING, "build is in progress");
                 } break;
                 case CHEF_BUILD_STATUS_PACKING: {
                     VLOG_TRACE("remote", "build has completed, and is being packed\n");
+                    vlog_step_update(&build->step, VLOG_CONTENT_STATUS_WORKING, "build has completed, and is being packed");
                 } break;
                 case CHEF_BUILD_STATUS_DONE: {
                     VLOG_TRACE("remote", "build has completed\n");
-                    vlog_content_set_status(VLOG_CONTENT_STATUS_DONE);
+                    vlog_step_close(&build->step, VLOG_CONTENT_STATUS_DONE, "build has completed");
                     buildsCompleted++;
                 } break;
                 case CHEF_BUILD_STATUS_FAILED: {
                     VLOG_TRACE("remote", "build failed\n");
-                    vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
+                    vlog_step_close(&build->step, VLOG_CONTENT_STATUS_FAILED, "build failed");
                     buildsCompleted++;
                 } break;
             }

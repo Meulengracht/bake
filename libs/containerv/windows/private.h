@@ -45,7 +45,7 @@
 #define HCS_E_UNSUPPORTED_PROTOCOL_VERSION  0x800710E1
 #endif
 
-#define __CONTAINER_ID_LENGTH 8
+#define __CONTAINER_ID_LENGTH 36
 
 // Windows-specific network configuration
 struct containerv_options_network {
@@ -220,10 +220,9 @@ typedef HRESULT (WINAPI *HcsModifyComputeSystem_t)(
     PCWSTR Settings
 );
 
-typedef HRESULT (WINAPI *HcsCreateOperation_t)(
+typedef HCS_OPERATION (WINAPI *HcsCreateOperation_t)(
     void* Context,
-    HCS_OPERATION_COMPLETION CompletionCallback,
-    HCS_OPERATION* Operation
+    HCS_OPERATION_COMPLETION CompletionCallback
 );
 
 // ComputeCore.dll helpers for synchronous waits

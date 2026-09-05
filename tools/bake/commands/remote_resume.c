@@ -63,6 +63,8 @@ int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_o
     gracht_client_t*  client = NULL;
     struct list_item* li;
     int               status, i;
+    struct vlog_step  step_connect;
+    struct vlog_step  step_spacer;
 
     // catch CTRL-C
     signal(SIGINT, __cleanup_systems);
@@ -93,48 +95,37 @@ int remote_resume_main(int argc, char** argv, char** envp, struct bake_command_o
     }
 
     // setup the build log box
-    vlog_start(stdout , "remote build", "connected to: ", 2 + builds.count);
+    vlog_view_open(stdout, "remote build", "connected to: ");
 
     // 0+1 are informational
-    vlog_content_set_index(0);
-    vlog_content_set_prefix("connect");
+    vlog_step_open(&step_connect, "connect");
+    vlog_step_open(&step_spacer, "");
 
-    vlog_content_set_index(1);
-    vlog_content_set_prefix("");
-
-    i = 2;
     list_foreach(&builds, li) {
         struct __build* build = (struct __build*)li;
 
-        // attach a log index
-        build->log_index = i;
-
-        vlog_content_set_index(i++);
-        vlog_content_set_prefix("");
-        vlog_content_set_status(VLOG_CONTENT_STATUS_WAITING);
-        VLOG_TRACE("remote", "resuming: %s...", &build->id[0]);
+        __build_step_open(build);
+        vlog_step_update(&build->step, VLOG_CONTENT_STATUS_WAITING, "resuming: %s", &build->id[0]);
     }
 
     // start by connecting
-    vlog_content_set_index(0);
-    vlog_content_set_status(VLOG_CONTENT_STATUS_WORKING);
+    vlog_step_update(&step_connect, VLOG_CONTENT_STATUS_WORKING, "connecting to waiterd");
 
     VLOG_TRACE("bake", "connecting to waiterd\n");
     status = remote_client_create(&client);
     if (status) {
         VLOG_ERROR("bake", "failed to connect to the configured waiterd instance\n");
+        vlog_step_close(&step_connect, VLOG_CONTENT_STATUS_FAILED, "failed to connect to waiterd");
         goto cleanup;
     }
+    vlog_step_close(&step_connect, VLOG_CONTENT_STATUS_DONE, "connected");
 
     status = __wait_for_builds(client, &builds);
 
 cleanup:
     gracht_client_shutdown(client);
-    if (status) {
-        vlog_content_set_status(VLOG_CONTENT_STATUS_FAILED);
-    }
-    vlog_refresh(stdout);
-    vlog_end();
+    vlog_flush();
+    vlog_view_close();
     __build_list_delete(&builds);
     return status;
 }

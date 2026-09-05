@@ -22,7 +22,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <vlog.h>
 
 #include "chef-config.h"
 
@@ -106,7 +105,6 @@ int main(int argc, char** argv, char** envp)
     const char* commandPath      = NULL;
     const char* workingDirectory = NULL;
     int         argIndex         = 1;
-    int         logLevel         = VLOG_LEVEL_DEBUG;
     int         status;
 
     if (argc > 1) {
@@ -129,11 +127,6 @@ int main(int argc, char** argv, char** envp)
         } else if (strcmp(argv[argIndex], "--wdir") == 0 && argIndex + 1 < argc) {
             workingDirectory = argv[argIndex + 1];
             argIndex += 2;
-        }  else if (strncmp(argv[argIndex], "-v", 2) == 0) {
-            int li = 1;
-            while (argv[argIndex][li++] == 'v') {
-                logLevel++;
-            }
         } else {
             break;
         }
@@ -145,9 +138,6 @@ int main(int argc, char** argv, char** envp)
         __print_help();
         return -1;
     }
-
-    // Initialize vlog to get debug output from containerv and other libraries
-    vlog_initialize((enum vlog_level)logLevel);
 
     // what we essentially do is redirect everything based on the application
     // path passed in argv[0]. This will tell us exactly which application is currently
