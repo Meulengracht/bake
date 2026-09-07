@@ -149,7 +149,10 @@ function Set-BakeLcowUvmUrl {
         Set-JsonProperty -Object $config -Name 'lcow' -Value ([pscustomobject]@{})
     }
     Set-JsonProperty -Object $config.lcow -Name 'uvm-url' -Value $Url
-    $config | ConvertTo-Json -Depth 16 | Set-Content -Path $configPath -Encoding UTF8
+    $configJson = $config | ConvertTo-Json -Depth 16
+    $tempConfigPath = "$configPath.$([Guid]::NewGuid().ToString('N')).tmp"
+    [System.IO.File]::WriteAllText($tempConfigPath, $configJson, [System.Text.UTF8Encoding]::new($false))
+    Move-Item -Path $tempConfigPath -Destination $configPath -Force
 
     return [pscustomobject]@{
         Path = $configPath
