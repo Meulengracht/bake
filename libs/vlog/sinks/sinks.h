@@ -58,7 +58,7 @@ struct vlog_sink_tty {
     struct vlog_tty_step*     steps;
     size_t                    step_count;
     size_t                    step_capacity;
-    unsigned long long        active_step_id;
+    unsigned int              active_step_id;
 
     // Spinner information
     long long          spinner_time_ms;

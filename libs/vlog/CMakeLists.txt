@@ -12,9 +12,11 @@ add_library(vlog STATIC
 )
 target_include_directories(vlog PUBLIC include)
 
-# Set C11 standard for proper threads.h support on Windows
+# Set C11 standard for proper threads.h support on Windows, and enable
+# MSVC's opt-in C11 atomics support required by <stdatomic.h>
 if(MSVC)
     target_compile_features(vlog PRIVATE c_std_11)
+    target_compile_options(vlog PRIVATE /experimental:c11atomics)
 endif()
 
 option(VLOG_BUILD_TESTS "Build vlog tests" ON)
