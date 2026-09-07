@@ -19,11 +19,21 @@ endif()
 
 option(VLOG_BUILD_TESTS "Build vlog tests" ON)
 if(VLOG_BUILD_TESTS)
+    function(vlog_add_test name source)
+        add_executable(${name} tests/${source})
+        target_link_libraries(${name} PRIVATE vlog)
+        add_test(NAME ${name} COMMAND ${name})
+    endfunction()
+
+    # Portable tests: no fork()/PTY usage, safe to build and run on Windows.
+    vlog_add_test(vlog_text_sink_level_filtering_test test_text_sink_level_filtering.c)
+    vlog_add_test(vlog_text_sink_decoration_options_test test_text_sink_decoration_options.c)
+    vlog_add_test(vlog_sink_remove_stops_output_test test_sink_remove_stops_output.c)
+    vlog_add_test(vlog_step_lifecycle_test test_step_lifecycle.c)
+
+    # These rely on fork()/posix_openpt() and are POSIX-only; they cannot run on Windows.
     if(NOT WIN32)
-        add_executable(vlog_fork_transport_test
-            tests/test_fork_transport.c
-        )
-        target_link_libraries(vlog_fork_transport_test PRIVATE vlog)
-        add_test(NAME vlog_fork_transport_test COMMAND vlog_fork_transport_test)
+        vlog_add_test(vlog_fork_transport_test test_fork_transport.c)
+        vlog_add_test(vlog_view_close_restores_text_test test_view_close_restores_text.c)
     endif()
 endif()

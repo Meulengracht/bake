@@ -368,13 +368,15 @@ static void __view_emit(struct vlog_sink* base, const struct vlog_event* event)
 static void __view_tick(struct vlog_sink* base, long long time)
 {
     struct vlog_sink_tty* sink = (struct vlog_sink_tty*)base;
+    long long             prevTimeMs;
 
     if (!sink->view_active || !__view_has_working_steps(sink)) {
         return;
     }
 
+    prevTimeMs = sink->spinner_time_ms;
     sink->spinner_time_ms += time;
-    if (sink->spinner_time_ms >= 500) {
+    if ((sink->spinner_time_ms / 500) != (prevTimeMs / 500)) {
         sink->spinner_time_ms = 0;
         sink->spinner_index++;
         __refresh_view(sink, 1);

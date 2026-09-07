@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <threads.h>
@@ -56,7 +57,6 @@ struct vlog_wire_header {
 
 struct vlog_renderer {
     thrd_t             tid;
-    int                running;
     int                index;
     long long          time;
     int                update;
@@ -66,9 +66,9 @@ struct vlog_renderer {
     struct vlog_sink** sinks;
     int                sinks_count;
 
-#if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
-    volatile sig_atomic_t resize;
-#endif
+    _Atomic(int)       resize;
+    _Atomic(int)       running;
+    _Atomic(int)       shutdown;
 };
 
 static struct vlog_renderer g_renderer = { 0 };
@@ -567,6 +567,41 @@ static void __sink_remove(struct vlog_renderer* renderer, struct vlog_event* eve
     }
 }
 
+static void __sink_emit(struct vlog_renderer* renderer, const struct vlog_event* event)
+{
+    for (int i = 0; i < renderer->sinks_count; i++) {
+        if (renderer->sinks[i] && renderer->sinks[i]->emit) {
+            renderer->sinks[i]->emit(renderer->sinks[i], event);
+        }
+    }
+}
+
+static void __sink_restore_text_after_view_close(struct vlog_renderer* renderer, const struct vlog_event* event)
+{
+    for (int i = 0; i < renderer->sinks_count; i++) {
+        struct vlog_sink* sink = renderer->sinks[i];
+        struct vlog_sink* text;
+        unsigned int      options;
+
+        if (sink == NULL || sink->type != VLOG_SINK_TYPE_VIEW) {
+            continue;
+        }
+        if (event->data.view_close.handle != NULL && sink->handle != event->data.view_close.handle) {
+            continue;
+        }
+
+        options = ((struct vlog_sink_tty*)sink)->options;
+        text = vlog_sink_new_text(sink->handle, sink->level, options);
+        if (text == NULL) {
+            fprintf(stderr, "vlog: failed to restore text sink after closing view\n");
+            continue;
+        }
+
+        __sink_destroy(sink, 1);
+        renderer->sinks[i] = text;
+    }
+}
+
 static void __sink_set_level(struct vlog_renderer* renderer, struct vlog_event* event)
 {
     for (int i = 0; i < renderer->sinks_count; i++) {
@@ -619,8 +654,8 @@ static int __renderer_main(void* context)
     struct timespec       ts;
     struct vlog_event*    event;
 
-    renderer->running = 1;
-    while (renderer->running == 1) {
+    atomic_store(&renderer->running, 1);
+    while (atomic_load(&renderer->shutdown) == 0) {
         do {
             timespec_get(&ts, TIME_UTC);
             // wait for 100ms
@@ -659,30 +694,33 @@ static int __renderer_main(void* context)
                         break;
                     case VLOG_EVENT_SHUTDOWN:
                         __sink_flush(renderer);
-                        renderer->running = 0;
+                        atomic_store(&renderer->shutdown, 1);
+                        break;
+                    case VLOG_EVENT_VIEW_CLOSE:
+                        __sink_emit(renderer, event);
+                        __sink_restore_text_after_view_close(renderer, event);
                         break;
                     default: {
-                        for (int i = 0; i < renderer->sinks_count; i++) {
-                            if (renderer->sinks[i] && renderer->sinks[i]->emit) {
-                                renderer->sinks[i]->emit(renderer->sinks[i], event);
-                            }
-                        }
+                        __sink_emit(renderer, event);
                     } break;
                 }
                 __vlog_event_delete(event);
             }
-        } while (event != NULL && renderer->running == 1);
+        } while (event != NULL && renderer->shutdown == 0);
 
-        if (renderer->running != 1) {
+        if (atomic_load(&renderer->shutdown)) {
             break;
         }
 
 #if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
-        if (renderer->resize) {
-            renderer->resize = 0;
+        if (atomic_load(&renderer->resize)) {
+            atomic_store(&renderer->resize, 0);
             for (int i = 0; i < renderer->sinks_count; i++) {
                 if (renderer->sinks[i] != NULL && renderer->sinks[i]->type == VLOG_SINK_TYPE_VIEW) {
-                    ((struct vlog_sink_tty*)renderer->sinks[i])->columns = __get_column_count(renderer->sinks[i]->handle);
+                    struct vlog_event resize_event = { 0 };
+                    resize_event.type = VLOG_EVENT_RESIZE;
+                    resize_event.data.resize.columns = __get_column_count(renderer->sinks[i]->handle);
+                    renderer->sinks[i]->emit(renderer->sinks[i], &resize_event);
                 }
             }
         }
@@ -695,6 +733,7 @@ static int __renderer_main(void* context)
             }
         }
     }
+    atomic_store(&renderer->running, 0);
 
     // Close all sinks
     for (int i = 0; i < renderer->sinks_count; i++) {
@@ -703,6 +742,11 @@ static int __renderer_main(void* context)
     free(renderer->sinks);
     renderer->sinks = NULL;
     renderer->sinks_count = 0;
+
+    // clean resources
+    vlog_pipe_close(&g_renderer.pipe);
+    mtx_destroy(&g_renderer.write_lock);
+    memset(&g_renderer, 0, sizeof(struct vlog_renderer));
     return 0;
 }
 
@@ -714,17 +758,14 @@ int vlog_renderer_start(void)
 
     memset(&g_renderer, 0, sizeof(struct vlog_renderer));
     g_renderer.owner_process_id = __current_process_id();
-    g_renderer.running = 1;
 
     if (mtx_init(&g_renderer.write_lock, mtx_plain) != thrd_success) {
-        g_renderer.running = 0;
         fprintf(stderr, "vlog: failed to initialize renderer write lock\n");
         return -1;
     }
 
     // initialize the event pipe before spawning the renderer thread
     if (vlog_pipe_open(&g_renderer.pipe) != 0) {
-        g_renderer.running = 0;
         mtx_destroy(&g_renderer.write_lock);
         fprintf(stderr, "vlog: failed to initialize event pipe\n");
         return -1;
@@ -732,7 +773,6 @@ int vlog_renderer_start(void)
 
     // spawn the renderer thread
     if (thrd_create(&g_renderer.tid, __renderer_main, &g_renderer) != thrd_success) {
-        g_renderer.running = 0;
         vlog_pipe_close(&g_renderer.pipe);
         mtx_destroy(&g_renderer.write_lock);
         fprintf(stderr, "vlog: failed to start renderer thread\n");
@@ -741,27 +781,25 @@ int vlog_renderer_start(void)
     return 0;
 }
 
-void vlog_renderer_stop(void)
+void vlog_renderer_stop(int sigContext)
 {
     if (!vlog_renderer_is_owner()) {
         return;
     }
 
-    if (g_renderer.running) {
+    if (atomic_load(&g_renderer.running)) {
         int                res;
-        struct vlog_event* event = __vlog_event_new(VLOG_EVENT_SHUTDOWN);
-        if (event != NULL) {
-            vlog_renderer_push_event(event);
-        } else {
-            g_renderer.running = 0;
-        }
-        thrd_join(g_renderer.tid, &res);
-    }
+        struct vlog_event* event;
 
-    // clean resources
-    vlog_pipe_close(&g_renderer.pipe);
-    mtx_destroy(&g_renderer.write_lock);
-    memset(&g_renderer, 0, sizeof(struct vlog_renderer));
+        if (!sigContext) {
+            event = __vlog_event_new(VLOG_EVENT_SHUTDOWN);
+            if (event != NULL) {
+                vlog_renderer_push_event(event);
+            }
+            thrd_join(g_renderer.tid, &res);
+        }
+        atomic_store(&g_renderer.shutdown, 1);
+    }
 }
 
 int vlog_renderer_is_owner(void)
@@ -771,9 +809,7 @@ int vlog_renderer_is_owner(void)
 
 void vlog_renderer_resize(void)
 {
-#if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__) && !defined(__NT__)
-    g_renderer.resize = 1;
-#endif
+    atomic_store(&g_renderer.resize, 1);
 }
 
 void vlog_renderer_push_event(struct vlog_event* event)

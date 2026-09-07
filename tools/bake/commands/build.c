@@ -314,6 +314,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
 
     // initialize pipeline steps
     vlog_step_open(&step_package_env, "pkg-env");
+    vlog_step_update(&step_package_env, VLOG_CONTENT_STATUS_NONE, NULL);
     vlog_step_open(&step_spacer, "");
     vlog_step_open(&step_prepare, "prepare");
     vlog_step_open(&step_source, "source");

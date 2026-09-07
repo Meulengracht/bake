@@ -243,7 +243,10 @@ int remote_download_main(int argc, char** argv, char** envp, struct bake_command
     list_foreach(&builds, li) {
         struct __build* build = (struct __build*)li;
 
-        __build_step_open(build);
+        status = __build_step_open(build);
+        if (status) {
+            return status;
+        }
         vlog_step_update(&build->step, VLOG_CONTENT_STATUS_WAITING, "syncing: %s", &build->id[0]);
     }
 

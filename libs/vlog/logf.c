@@ -94,7 +94,7 @@ void vlog_cleanup(void)
     }
 
     // shutdown the renderer
-    vlog_renderer_stop();
+    vlog_renderer_stop(0);
 
     // cleanup resources
     mtx_destroy(&g_vlog.lock);
