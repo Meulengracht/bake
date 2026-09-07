@@ -198,7 +198,7 @@ int __debug_log_new(const char* command)
 
     free(path);
 
-    vlog_add_output(stream, 1);
+    vlog_sink_add_text(stream, 1);
     vlog_set_output_level(stream, VLOG_LEVEL_DEBUG);
     return 0;
 }

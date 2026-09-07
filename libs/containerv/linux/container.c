@@ -1512,24 +1512,22 @@ int containerv_join(
     int                              status = -1;
     int                              count;
 
-    VLOG_DEBUG("containerv[host]", "connecting to %s\n", containerId);
     client = containerv_socket_client_open(containerId);
     if (client == NULL) {
-        VLOG_ERROR("containerv[host]", "containerv_join: failed to connect to server\n");
+        fprintf(stderr, "containerv_join: failed to connect to server\n");
         return status;
     }
 
-    VLOG_DEBUG("containerv[host]", "reading container configuration\n");
     status = containerv_socket_client_get_root(client, &chrPath[0], PATH_MAX);
     if (status) {
-        VLOG_ERROR("containerv[host]", "containerv_join: failed to read container configuration\n");
+        fprintf(stderr, "containerv_join: failed to read container configuration\n");
         containerv_socket_client_close(client);
         return status;
     }
 
     status = containerv_socket_client_get_nss(client, fds, &count);
     if (status) {
-        VLOG_ERROR("containerv[host]", "containerv_join: failed to read namespace sockets from container\n");
+        fprintf(stderr, "containerv_join: failed to read namespace sockets from container\n");
         containerv_socket_client_close(client);
         return status;
     }
@@ -1540,49 +1538,45 @@ int containerv_join(
     // any paths before
     status = chdir(&chrPath[0]);
     if (status) {
-        VLOG_ERROR("containerv[host]", "containerv_join: failed to change directory to the chroot\n");
+        fprintf(stderr, "containerv_join: failed to change directory to the chroot\n");
         return status;
     }
 
-    VLOG_DEBUG("containerv[host]", "preparing environment\n");
     for (int i = 0; i < count; i++) {
         if (setns(fds[i].fd, 0))  {
-            VLOG_WARNING("containerv[host]", "containerv_join: failed to join container namespace %i of type %i\n",
+            fprintf(stderr, "containerv_join: failed to join container namespace %i of type %i\n",
                 fds[i].fd, fds[i].type);
         }
     }
 
-    VLOG_DEBUG("containerv[host]", "joining container\n");
     status = chroot(&chrPath[0]);
     if (status) {
-        VLOG_ERROR("containerv[host]", "containerv_join: failed to chroot into container root %s\n", &chrPath[0]);
+        fprintf(stderr, "containerv_join: failed to chroot into container root %s\n", &chrPath[0]);
         return status;
     }
 
     // after chroot, we want to change to the root
     status = chdir("/");
     if (status) {
-        VLOG_ERROR("containerv[host]", "containerv_join: failed to change directory to root\n");
+        fprintf(stderr, "containerv_join: failed to change directory to root\n");
         return status;
     }
 
-    VLOG_DEBUG("containerv[host]", "dropping capabilities\n");
     status = containerv_drop_capabilities();
     if (status) {
-        VLOG_ERROR("containerv[child]", "containerv_join: failed to drop capabilities\n");
+        fprintf(stderr, "containerv_join: failed to drop capabilities\n");
         return status;
     }
-    VLOG_DEBUG("containerv[child]", "successfully joined container\n");
 
     status = chdir(options->cwd);
     if (status) {
-        VLOG_ERROR("containerv[child]", "containerv_join: failed to change directory to %s\n", options->cwd);
+        fprintf(stderr, "containerv_join: failed to change directory to %s\n", options->cwd);
         return status;
     }
 
     status = execve(commandPath, (char* const*)options->argv, (char* const*)options->envp);
     if (status) {
-        VLOG_ERROR("containerv[child]", "containerv_join: failed to execute %s\n", commandPath);
+        fprintf(stderr, "containerv_join: failed to execute %s\n", commandPath);
     }
     return 0;
 }

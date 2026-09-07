@@ -1084,18 +1084,7 @@ static int __append_mapped_dir_entry(
     free(norm_container);
 
     if (ctx->linux_container) {
-        const int mode = readonly ? 0555 : 0755;
-        json_t* meta = json_object();
-        if (meta == NULL ||
-            containerv_json_object_set_int(meta, "UID", 0) != 0 ||
-            containerv_json_object_set_int(meta, "GID", 0) != 0 ||
-            containerv_json_object_set_int(meta, "Mode", mode) != 0) {
-            json_decref(meta);
-            json_decref(obj);
-            return -1;
-        }
-        if (json_object_set_new(obj, "LinuxMetadata", meta) != 0) {
-            json_decref(meta);
+        if (containerv_json_object_set_bool(obj, "LinuxMetadata", 1) != 0) {
             json_decref(obj);
             return -1;
         }
@@ -1440,9 +1429,9 @@ int __hcs_create_container_system(
         return -1;
     }
 
-    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-    if (FAILED(hr)) {
-        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation: 0x%lx\n", hr);
+    operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+    if (operation == NULL) {
+        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation\n");
         goto cleanup;
     }
 
@@ -1453,27 +1442,45 @@ int __hcs_create_container_system(
         NULL,
         &container->hcs_system);
     if (FAILED(hr)) {
+        char* configUtf8 = __wide_to_utf8_alloc(config);
         VLOG_ERROR("containerv[hcs]", "failed to create container compute system: 0x%lx\n", hr);
+        if (configUtf8 != NULL) {
+            char configPath[MAX_PATH];
+            DWORD tempLength = GetTempPathA(sizeof(configPath), configPath);
+            if (tempLength > 0 && tempLength < sizeof(configPath)) {
+                snprintf(configPath + tempLength, sizeof(configPath) - tempLength, "chef-hcs-%s.json", container->id);
+                if (platform_writetextfile(configPath, configUtf8) == 0) {
+                    VLOG_ERROR("containerv[hcs]", "container configuration written to %s\n", configPath);
+                }
+            }
+            free(configUtf8);
+        }
         goto cleanup;
     }
 
     if (g_hcs.HcsWaitForOperationResult != NULL) {
         PWSTR resultDoc = NULL;
         hr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
-        __hcs_localfree_wstr(resultDoc);
         if (FAILED(hr)) {
+            char* resultUtf8 = __wide_to_utf8_alloc(resultDoc);
             VLOG_ERROR("containerv[hcs]", "container create wait failed: 0x%lx\n", hr);
+            if (resultUtf8 != NULL) {
+                VLOG_ERROR("containerv[hcs]", "container create result: %s\n", resultUtf8);
+                free(resultUtf8);
+            }
+            __hcs_localfree_wstr(resultDoc);
             g_hcs.HcsCloseComputeSystem(container->hcs_system);
             container->hcs_system = NULL;
             goto cleanup;
         }
+        __hcs_localfree_wstr(resultDoc);
     }
 
     g_hcs.HcsCloseOperation(operation);
     operation = NULL;
-    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-    if (FAILED(hr)) {
-        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation for start: 0x%lx\n", hr);
+    operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+    if (operation == NULL) {
+        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation for start\n");
         g_hcs.HcsCloseComputeSystem(container->hcs_system);
         container->hcs_system = NULL;
         goto cleanup;
@@ -1541,9 +1548,9 @@ static int __hcs_modify_compute_system(struct containerv_container* container, c
         return -1;
     }
 
-    hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-    if (FAILED(hr)) {
-        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation: 0x%lx\n", hr);
+    operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+    if (operation == NULL) {
+        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation\n");
         goto cleanup;
     }
 
@@ -1648,33 +1655,35 @@ int __hcs_initialize(void)
         return -1;
     }
 
+    // Load ComputeCore.dll for operation/wait helpers (Win10 1809+).
+    // Some installations export several HCS functions from computecore.dll
+    // rather than vmcompute.dll, so resolve from either module below.
+    g_hcs.hComputeCore = LoadLibraryA("computecore.dll");
+
     // Load HCS function pointers
     g_hcs.HcsOpenComputeSystem = (HcsOpenComputeSystem_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsOpenComputeSystem");
+        __get_proc_any("HcsOpenComputeSystem");
     g_hcs.HcsCreateComputeSystem = (HcsCreateComputeSystem_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsCreateComputeSystem");
+        __get_proc_any("HcsCreateComputeSystem");
     g_hcs.HcsStartComputeSystem = (HcsStartComputeSystem_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsStartComputeSystem");
+        __get_proc_any("HcsStartComputeSystem");
     g_hcs.HcsShutdownComputeSystem = (HcsShutdownComputeSystem_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsShutdownComputeSystem");
+        __get_proc_any("HcsShutdownComputeSystem");
     g_hcs.HcsTerminateComputeSystem = (HcsTerminateComputeSystem_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsTerminateComputeSystem");
+        __get_proc_any("HcsTerminateComputeSystem");
     g_hcs.HcsCreateProcess = (HcsCreateProcess_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsCreateProcess");
+        __get_proc_any("HcsCreateProcess");
     g_hcs.HcsModifyComputeSystem = (HcsModifyComputeSystem_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsModifyComputeSystem");
+        __get_proc_any("HcsModifyComputeSystem");
     g_hcs.HcsCreateOperation = (HcsCreateOperation_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsCreateOperation");
+        __get_proc_any("HcsCreateOperation");
     g_hcs.HcsCloseOperation = (HcsCloseOperation_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsCloseOperation");
+        __get_proc_any("HcsCloseOperation");
     g_hcs.HcsCloseComputeSystem = (HcsCloseComputeSystem_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsCloseComputeSystem");
+        __get_proc_any("HcsCloseComputeSystem");
     g_hcs.HcsCloseProcess = (HcsCloseProcess_t)
-        GetProcAddress(g_hcs.hVmCompute, "HcsCloseProcess");
+        __get_proc_any("HcsCloseProcess");
 
-    // Load ComputeCore.dll for synchronous wait helpers (Win10 1809+).
-    // Some installations may still export these from vmcompute.dll, so we resolve from either.
-    g_hcs.hComputeCore = LoadLibraryA("computecore.dll");
     g_hcs.HcsWaitForOperationResult = (HcsWaitForOperationResult_t)__get_proc_any("HcsWaitForOperationResult");
     g_hcs.HcsWaitForOperationResultAndProcessInfo = (HcsWaitForOperationResultAndProcessInfo_t)__get_proc_any("HcsWaitForOperationResultAndProcessInfo");
 
@@ -1724,9 +1733,9 @@ int __hcs_destroy_compute_system(struct containerv_container* container)
 
     if (container->vm_started) {
         // Try graceful shutdown first
-        hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-        if (FAILED(hr)) {
-            VLOG_WARNING("containerv[hcs]", "failed to create operation for shutdown: 0x%lx\n", hr);
+        operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+        if (operation == NULL) {
+            VLOG_WARNING("containerv[hcs]", "failed to create operation for shutdown\n");
             operation = NULL;
         }
 
@@ -1748,9 +1757,9 @@ int __hcs_destroy_compute_system(struct containerv_container* container)
         if (FAILED(hr)) {
             VLOG_WARNING("containerv[hcs]", "graceful shutdown failed, forcing termination: 0x%lx\n", hr);
 
-            hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-            if (FAILED(hr)) {
-                VLOG_WARNING("containerv[hcs]", "failed to create operation for terminate: 0x%lx\n", hr);
+            operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+            if (operation == NULL) {
+                VLOG_WARNING("containerv[hcs]", "failed to create operation for terminate\n");
                 operation = NULL;
             }
 
@@ -1923,9 +1932,9 @@ int __hcs_create_process(
             g_hcs.HcsCloseOperation(operation);
             operation = NULL;
         }
-        hr = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback, &operation);
-        if (FAILED(hr)) {
-            VLOG_ERROR("containerv[hcs]", "failed to create HCS operation: 0x%lx\n", hr);
+        operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+        if (operation == NULL) {
+            VLOG_ERROR("containerv[hcs]", "failed to create HCS operation\n");
             goto cleanup;
         }
 

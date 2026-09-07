@@ -3,4 +3,4 @@ set (SRCS
 )
 
 add_executable(serve-exec ${SRCS})
-target_link_libraries(serve-exec PRIVATE containerv vlog)
+target_link_libraries(serve-exec PRIVATE containerv)

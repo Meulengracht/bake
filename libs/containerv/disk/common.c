@@ -194,9 +194,13 @@ int containerv_disk_extract_archive(
         return -1;
     }
 
+#if !defined(_WIN32) && !defined(_WIN64)
     if (include_xattrs && __append_token(arguments, sizeof(arguments), &index, "--xattrs-include=*") != 0) {
         return -1;
     }
+#else
+    (void)include_xattrs;
+#endif
 
     if (__append_token(arguments, sizeof(arguments), &index, "-C") != 0 ||
         __append_token(arguments, sizeof(arguments), &index, destination) != 0) {

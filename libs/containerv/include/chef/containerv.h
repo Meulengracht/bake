@@ -369,6 +369,9 @@ struct containerv_join_options {
  *
  * This attaches to the container identified by `containerId` and runs
  * `commandPath` with the provided options.
+ * 
+ * NOTE: This function on linux replaces the current process, and for this purpose
+ * vlog cannot be used.
  *
  * @param containerId The unique identifier of the container to join.
  * @param commandPath Absolute or container-relative path to the executable.

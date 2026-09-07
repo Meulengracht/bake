@@ -364,7 +364,7 @@ static enum chef_status __create_linux_container(const struct chef_create_parame
 #elif CHEF_ON_WINDOWS
 static int __windows_hcs_has_disallowed_layers(const struct chef_create_parameters* params)
 {
-    if (params == NULL || params->layers == NULL || params->layers_count == 0) {
+    if (params == NULL || params->layers == NULL || params->layers_count == 0 || params->gtype == CHEF_GUEST_TYPE_LINUX) {
         return 0;
     }
 
@@ -622,13 +622,16 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     }
 
     if (params->id == NULL || strlen(params->id) == 0) {
-        platform_secure_random_string(&cvdIDBuffer[0], sizeof(cvdIDBuffer) - 1);
+        if (platform_secure_random_string(&cvdIDBuffer[0], sizeof(cvdIDBuffer) - 1) != 0) {
+            VLOG_ERROR("cvd", "cvd_create: failed to generate container ID\n");
+            return CHEF_STATUS_INTERNAL_ERROR;
+        }
         cvdIDBuffer[sizeof(cvdIDBuffer) - 1] = '\0';
         containerParams.id = &cvdIDBuffer[0];
     } else {
         containerParams.id = params->id;
     }
-    VLOG_TRACE("cvd", "cvd_create: container ID %s\n", containerParams.id);
+    VLOG_DEBUG("cvd", "cvd_create: container ID %s\n", containerParams.id);
 
     containerParams.opts = containerv_options_new();
     if (containerParams.opts == NULL) {
@@ -655,7 +658,7 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
     // this will free all non-essential members of containerParams
     __create_container_params_cleanup(&containerParams);
     if (status != CHEF_STATUS_SUCCESS) {
-        VLOG_ERROR("cvd", "cvd_create: failed to setup & create container\n");
+        VLOG_ERROR("cvd", "cvd_create: failed to setup & create container: %i\n", status);
         if (containerParams.container != NULL) {
             containerv_destroy(containerParams.container);
         }

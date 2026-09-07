@@ -566,7 +566,7 @@ static FILE* __cookd_build_log_new(const char* id, const char* root, char** logP
     }
 
     *logPathOut = logPath;
-    vlog_add_output(log, 0);
+    vlog_sink_add_text(log, 0);
     vlog_set_output_level(log, VLOG_LEVEL_DEBUG);
 
 cleanup:
@@ -575,7 +575,7 @@ cleanup:
 
 static void __cookd_build_log_cleanup(FILE* log)
 {
-    vlog_remove_output(log);
+    vlog_sink_remove(log);
     fflush(log);
     fclose(log);
 }
