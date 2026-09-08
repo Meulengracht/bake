@@ -20,6 +20,7 @@
 
 #include <chef/containerv/bpf.h>
 #include <chef/platform.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/bpf.h>
@@ -367,6 +368,128 @@ static unsigned long long __get_time_microseconds(void)
     return (unsigned long long)(ts.tv_sec) * 1000000ULL + (unsigned long long)(ts.tv_nsec / 1000);
 }
 
+// Must match PROTECC_PROFILE_MAP_MAX_ENTRIES used by the BPF programs.
+#define BPF_RECONCILE_MAX_MAP_ENTRIES 1024u
+
+/**
+ * @brief Collects the cgroup IDs (kernfs inode numbers) of every top-level
+ * directory currently under /sys/fs/cgroup. Container cgroups are created
+ * directly at /sys/fs/cgroup/<hostname>, so any cgroup ID not present in this
+ * set can no longer belong to a live containerv container.
+ *
+ * Cgroup IDs are recycled by the kernel once a cgroup is removed, so entries
+ * left behind in the pinned profile maps by a container that died without a
+ * matching containerv_bpf_cleanup_policy() call (daemon restart, crash, ...)
+ * can otherwise end up being silently applied to unrelated host cgroups.
+ */
+static int __collect_live_cgroup_ids(unsigned long long* ids, size_t maxIds, size_t* outCount)
+{
+    DIR*           dir;
+    struct dirent* entry;
+    size_t         count = 0;
+
+    dir = opendir("/sys/fs/cgroup");
+    if (dir == NULL) {
+        VLOG_WARNING("cvd", "bpf_manager: failed to open /sys/fs/cgroup: %s\n", strerror(errno));
+        return -1;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        struct stat st;
+        char        path[512];
+
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        snprintf(path, sizeof(path), "/sys/fs/cgroup/%s", entry->d_name);
+        if (stat(path, &st) < 0 || !S_ISDIR(st.st_mode)) {
+            continue;
+        }
+
+        if (count >= maxIds) {
+            VLOG_WARNING("cvd", "bpf_manager: too many cgroups under /sys/fs/cgroup, truncating reconcile set\n");
+            break;
+        }
+        ids[count++] = (unsigned long long)st.st_ino;
+    }
+    closedir(dir);
+
+    *outCount = count;
+    return 0;
+}
+
+static int __cgroup_id_is_live(unsigned long long id, const unsigned long long* liveIds, size_t liveCount)
+{
+    size_t i;
+    for (i = 0; i < liveCount; i++) {
+        if (liveIds[i] == id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief Deletes any entry in the given profile map whose cgroup ID does not
+ * correspond to a currently live cgroup, ensuring recycled cgroup IDs cannot
+ * inherit a stale profile left behind by a since-destroyed container.
+ */
+static void __reconcile_profile_map(int mapFd, const char* label, const unsigned long long* liveIds, size_t liveCount)
+{
+    unsigned long long staleKeys[BPF_RECONCILE_MAX_MAP_ENTRIES];
+    size_t             staleCount = 0;
+    unsigned long long key = 0;
+    unsigned long long nextKey;
+    int                haveKey = 0;
+    size_t             i;
+
+    if (mapFd < 0) {
+        return;
+    }
+
+    while (bpf_map_get_next_key(mapFd, haveKey ? &key : NULL, &nextKey) == 0) {
+        key = nextKey;
+        haveKey = 1;
+
+        if (!__cgroup_id_is_live(key, liveIds, liveCount)) {
+            if (staleCount < BPF_RECONCILE_MAX_MAP_ENTRIES) {
+                staleKeys[staleCount++] = key;
+            }
+        }
+    }
+
+    for (i = 0; i < staleCount; i++) {
+        if (bpf_map_delete_elem(mapFd, &staleKeys[i]) == 0) {
+            VLOG_DEBUG("cvd", "bpf_manager: reconcile removed stale %s entry for cgroup=%llu\n", label, staleKeys[i]);
+        }
+    }
+
+    if (staleCount > 0) {
+        VLOG_DEBUG("cvd", "bpf_manager: reconcile removed %zu stale %s entries\n", staleCount, label);
+    }
+}
+
+/**
+ * @brief Reconciles all pinned profile maps against currently live cgroups.
+ * Must run once at startup before any BPF LSM hook can consult the maps for
+ * decisions, so that recycled cgroup IDs never inherit orphaned policies.
+ */
+static void __reconcile_all_profile_maps(void)
+{
+    unsigned long long liveIds[BPF_RECONCILE_MAX_MAP_ENTRIES];
+    size_t             liveCount = 0;
+
+    if (__collect_live_cgroup_ids(liveIds, BPF_RECONCILE_MAX_MAP_ENTRIES, &liveCount) < 0) {
+        VLOG_WARNING("cvd", "bpf_manager: skipping profile map reconciliation\n");
+        return;
+    }
+
+    __reconcile_profile_map(g_bpf.profile_map_fd, "fs", liveIds, liveCount);
+    __reconcile_profile_map(g_bpf.net_profile_map_fd, "net", liveIds, liveCount);
+    __reconcile_profile_map(g_bpf.mount_profile_map_fd, "mount", liveIds, liveCount);
+}
+
 static int __create_bpf_pin_directory(void)
 {
     struct stat st;
@@ -710,7 +833,12 @@ enum containerv_bpf_status containerv_bpf_initialize(void)
         g_bpf.status = CV_BPF_FAILED_TO_INITIALIZE;
         goto error;
     }
-    
+
+    // Pinned maps survive daemon restarts, but our in-memory container
+    // trackers do not - drop any leftover entries for cgroup IDs that are
+    // no longer live before enforcement can act on them.
+    __reconcile_all_profile_maps();
+
     __start_denial_thread();
 
     g_bpf.status = CV_BPF_AVAILABLE;
