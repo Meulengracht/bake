@@ -104,6 +104,16 @@ static __always_inline int __read_user_or_kernel_string(
 	return 0;
 }
 
+/* Cgroups without a registered profile are unmanaged and must never be
+ * affected by parsing failures further down the hooks below. */
+static __always_inline bool __mount_has_profile(__u64 cgroupId)
+{
+	if (cgroupId == 0) {
+		return false;
+	}
+	return bpf_map_lookup_elem(&mount_profile_map, &cgroupId) != NULL;
+}
+
 static __always_inline int __check_allow_mount_request(
 	__u64                              cgroupId,
 	const protecc_bpf_mount_request_t* request,
@@ -164,7 +174,7 @@ int BPF_PROG(sb_mount_restrict,
 	}
 
 	cgroupId = get_current_cgroup_id();
-	if (cgroupId == 0) {
+	if (!__mount_has_profile(cgroupId)) {
 		return 0;
 	}
 

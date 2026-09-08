@@ -163,13 +163,21 @@ static int __check_profile_match(
     return 0;
 }
 
+static __always_inline bool __fs_has_profile(__u64 cgroupId)
+{
+    if (cgroupId == 0) {
+        return false;
+    }
+    return bpf_map_lookup_elem(&profile_map, &cgroupId) != NULL;
+}
+
 static __always_inline int __check_access_file(struct file* file, __u32 required, __u32 hookId)
 {
     __u64          cgroupId;
     struct dentry* dentry = NULL;
 
     cgroupId = get_current_cgroup_id();
-    if (cgroupId == 0) {
+    if (!__fs_has_profile(cgroupId)) {
         return 0;
     }
 
@@ -185,7 +193,7 @@ static __always_inline int __check_access_dentry(struct dentry* dentry, __u32 re
     __u64 cgroupId;
 
     cgroupId = get_current_cgroup_id();
-    if (cgroupId == 0) {
+    if (!__fs_has_profile(cgroupId)) {
         return 0;
     }
     return __check_profile_match(dentry, cgroupId, required, hookId);

@@ -228,6 +228,16 @@ static int __request_from_address(
     return 0;
 }
 
+/* Cgroups without a registered profile are unmanaged and must never be
+ * affected by parsing failures further down the hooks below. */
+static __always_inline bool __net_has_profile(__u64 cgroupId)
+{
+    if (cgroupId == 0) {
+        return false;
+    }
+    return bpf_map_lookup_elem(&net_profile_map, &cgroupId) != NULL;
+}
+
 static __noinline int __net_allow_request(
     __u64                            cgroupId,
     const protecc_bpf_net_request_t* request,
@@ -301,12 +311,16 @@ int BPF_PROG(socket_bind_restrict, struct socket *sock, struct sockaddr *address
         return ret;
     }
 
+    cgroupId = get_current_cgroup_id();
+    if (!__net_has_profile(cgroupId)) {
+        return 0;
+    }
+
     if (__sock_get_meta(sock, &family, &type, &protocol)) {
-        __emit_deny_event_basic(get_current_cgroup_id(), NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
+        __emit_deny_event_basic(cgroupId, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
         return -EACCES;
     }
 
-    cgroupId = get_current_cgroup_id();
     request.family = __to_protecc_net_family(family);
     request.protocol = __to_protecc_net_protocol(family, protocol);
     
@@ -338,12 +352,16 @@ int BPF_PROG(socket_connect_restrict, struct socket *sock, struct sockaddr *addr
         return ret;
     }
 
+    cgroupId = get_current_cgroup_id();
+    if (!__net_has_profile(cgroupId)) {
+        return 0;
+    }
+
     if (__sock_get_meta(sock, &family, &type, &protocol)) {
-        __emit_deny_event_basic(get_current_cgroup_id(), NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
+        __emit_deny_event_basic(cgroupId, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
         return -EACCES;
     }
 
-    cgroupId = get_current_cgroup_id();
     request.family = __to_protecc_net_family(family);
     request.protocol = __to_protecc_net_protocol(family, protocol);
     
@@ -377,19 +395,23 @@ int BPF_PROG(socket_listen_restrict, struct socket *sock, int backlog, int ret)
         return ret;
     }
 
+    cgroupId = get_current_cgroup_id();
+    if (!__net_has_profile(cgroupId)) {
+        return 0;
+    }
+
     if (__sock_get_meta(sock, &family, &type, &protocol)) {
-        __emit_deny_event_basic(get_current_cgroup_id(), NET_PERM_LISTEN, DENY_HOOK_SOCKET_LISTEN);
+        __emit_deny_event_basic(cgroupId, NET_PERM_LISTEN, DENY_HOOK_SOCKET_LISTEN);
         return -EACCES;
     }
 
     CORE_READ_INTO(&sk, sock, sk);
     if (!sk) {
-        __emit_deny_event_basic(get_current_cgroup_id(), NET_PERM_LISTEN, DENY_HOOK_SOCKET_LISTEN);
+        __emit_deny_event_basic(cgroupId, NET_PERM_LISTEN, DENY_HOOK_SOCKET_LISTEN);
         return -EACCES;
     }
     CORE_READ_INTO(&port, sk, __sk_common.skc_num);
 
-    cgroupId = get_current_cgroup_id();
     request.family = __to_protecc_net_family(family);
     request.protocol = __to_protecc_net_protocol(family, protocol);
     request.port = port;
@@ -413,19 +435,23 @@ int BPF_PROG(socket_accept_restrict, struct socket *sock, struct socket *newsock
     (void)newsock;
     (void)flags;
 
+    cgroupId = get_current_cgroup_id();
+    if (!__net_has_profile(cgroupId)) {
+        return 0;
+    }
+
     if (__sock_get_meta(sock, &family, &type, &protocol)) {
-        __emit_deny_event_basic(get_current_cgroup_id(), NET_PERM_ACCEPT, DENY_HOOK_SOCKET_ACCEPT);
+        __emit_deny_event_basic(cgroupId, NET_PERM_ACCEPT, DENY_HOOK_SOCKET_ACCEPT);
         return -EACCES;
     }
 
     CORE_READ_INTO(&sk, sock, sk);
     if (!sk) {
-        __emit_deny_event_basic(get_current_cgroup_id(), NET_PERM_ACCEPT, DENY_HOOK_SOCKET_ACCEPT);
+        __emit_deny_event_basic(cgroupId, NET_PERM_ACCEPT, DENY_HOOK_SOCKET_ACCEPT);
         return -EACCES;
     }
     CORE_READ_INTO(&port, sk, __sk_common.skc_num);
 
-    cgroupId = get_current_cgroup_id();
     request.family = __to_protecc_net_family(family);
     request.protocol = __to_protecc_net_protocol(family, protocol);
     request.port = port;
@@ -453,12 +479,16 @@ int BPF_PROG(socket_sendmsg_restrict, struct socket *sock, struct msghdr *msg, i
         return ret;
     }
     
+    cgroupId = get_current_cgroup_id();
+    if (!__net_has_profile(cgroupId)) {
+        return 0;
+    }
+
     if (__sock_get_meta(sock, &family, &type, &protocol)) {
-        __emit_deny_event_basic(get_current_cgroup_id(), NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
+        __emit_deny_event_basic(cgroupId, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
         return -EACCES;
     }
 
-    cgroupId = get_current_cgroup_id();
     request.family = __to_protecc_net_family(family);
     request.protocol = __to_protecc_net_protocol(family, protocol);
     request.port = 0;
