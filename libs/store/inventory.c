@@ -440,7 +440,7 @@ int inventory_add(struct store_inventory* inventory, const char* packPath, const
 
     // extend the pack array by one
     oldArray = inventory->packs;
-    newArray = malloc(sizeof(struct store_inventory_pack) * (inventory->packs_count + 1));
+    newArray = calloc(inventory->packs_count + 1, sizeof(struct store_inventory_pack));
     if (!newArray) {
         return -1;
     }
@@ -451,8 +451,6 @@ int inventory_add(struct store_inventory* inventory, const char* packPath, const
 
     // now create the new entry
     packEntry = &((struct store_inventory_pack*)newArray)[inventory->packs_count];
-    memset(packEntry, 0, sizeof(struct store_inventory_pack));
-
     packEntry->path      = packPath != NULL ? platform_strdup(packPath) : NULL;
     packEntry->publisher = platform_strdup(publisher);
     packEntry->package   = platform_strdup(package);
@@ -481,7 +479,7 @@ int inventory_add(struct store_inventory* inventory, const char* packPath, const
 
     // Update the new array stored before we serialize the inventory to disk.
     inventory->packs = newArray;
-    inventory->packs_count += 1;
+    inventory->packs_count++;
     free(oldArray);
     return 0;
 }

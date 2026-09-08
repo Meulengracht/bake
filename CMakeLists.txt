@@ -43,6 +43,24 @@ option(CHEF_BUILD_CONTAINER "Build the container manager" ON)
 option(CHEF_BUILD_SERVER "Build the cook build server" ON)
 option(CHEF_BUILD_MANAGER "Build the waiter build server manager" ON)
 option(CHEF_BUILD_AS_SNAP "Build binaries without setuid on unix" OFF)
+option(CHEF_ENABLE_SANITIZERS "Build with AddressSanitizer + UndefinedBehaviorSanitizer (GCC/Clang only)" OFF)
+
+if(CHEF_ENABLE_SANITIZERS)
+    if(MSVC)
+        message(WARNING "CHEF_ENABLE_SANITIZERS is not supported with MSVC; ignoring")
+    else()
+        add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=address,undefined)
+
+        # Statically link the sanitizer runtimes so instrumented binaries don't
+        # need libasan/libubsan present inside a container rootfs at runtime.
+        if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+            add_link_options(-static-libsan)
+        else()
+            add_link_options(-static-libasan -static-libubsan)
+        endif()
+    endif()
+endif()
 
 # Avoid warning about DOWNLOAD_EXTRACT_TIMESTAMP in CMake 3.24:
 if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
