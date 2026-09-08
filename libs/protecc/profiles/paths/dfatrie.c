@@ -468,9 +468,10 @@ protecc_error_t protecc_profile_setup_dfa(protecc_profile_t* profile)
     }
 
     while (queueIndex < state.state_count) {
-        const uint64_t* current = state.state_sets + (queueIndex * wordsPerState);
-
         for (uint32_t c = 0; c < PROTECC_PROFILE_DFA_CLASSMAP_SIZE; c++) {
+            // state.state_sets may be realloc'd by __dfa_builder_state_add_transition
+            // below, so this must be re-read fresh every iteration, not hoisted.
+            const uint64_t* current = state.state_sets + (queueIndex * wordsPerState);
             memset(state.scratch_set, 0, wordsPerState * sizeof(uint64_t));
 
             for (size_t n = 0; n < state.node_count; n++) {

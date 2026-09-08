@@ -652,9 +652,10 @@ protecc_error_t __build_dfa_from_patterns(
     }
 
     while (queueIndex < state.state_count) {
-        const uint64_t* current = state.state_sets + (queueIndex * wordsPerState);
-
         for (uint32_t c = 0; c < PROTECC_PROFILE_DFA_CLASSMAP_SIZE; c++) {
+            // state.state_sets may be realloc'd by __dfa_builder_add_transition
+            // below, so this must be re-read fresh every iteration, not hoisted.
+            const uint64_t* current = state.state_sets + (queueIndex * wordsPerState);
             memset(state.scratch_set, 0, wordsPerState * sizeof(uint64_t));
 
             for (size_t n = 0; n < state.node_count; n++) {
@@ -820,13 +821,18 @@ static protecc_error_t __dfa_validate_candidate_table(
     uint32_t       candidatesCount,
     size_t         ruleCount)
 {
-    const uint32_t* counts = (const uint32_t*)(blockBase + blockOffset + candidateCountOffset);
-    const uint32_t* starts = (const uint32_t*)(blockBase + blockOffset + candidateIndexOffset);
-    size_t          total = 0;
+    const uint8_t* counts = blockBase + blockOffset + candidateCountOffset;
+    const uint8_t* starts = blockBase + blockOffset + candidateIndexOffset;
+    size_t         total = 0;
 
     for (uint32_t i = 0; i < numStates; i++) {
-        uint32_t count = counts[i];
-        uint32_t start = starts[i];
+        uint32_t count, start;
+
+        // blob-backed offsets are not guaranteed to be 4-byte aligned, so read
+        // via memcpy rather than dereferencing a uint32_t* cast (UB, can trap
+        // on strict-alignment architectures).
+        memcpy(&count, counts + ((size_t)i * sizeof(uint32_t)), sizeof(count));
+        memcpy(&start, starts + ((size_t)i * sizeof(uint32_t)), sizeof(start));
 
         if (count > ruleCount) {
             return PROTECC_ERROR_INVALID_BLOB;
@@ -852,10 +858,12 @@ static protecc_error_t __dfa_validate_transition_table(
     size_t         transitionsCount,
     uint32_t       numStates)
 {
-    const uint32_t* transitions = (const uint32_t*)(blockBase + blockOffset + transitionsOffset);
+    const uint8_t* transitions = blockBase + blockOffset + transitionsOffset;
 
     for (size_t i = 0; i < transitionsCount; i++) {
-        if (transitions[i] >= numStates) {
+        uint32_t target;
+        memcpy(&target, transitions + (i * sizeof(uint32_t)), sizeof(target));
+        if (target >= numStates) {
             return PROTECC_ERROR_INVALID_BLOB;
         }
     }

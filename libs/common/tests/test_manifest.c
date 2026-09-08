@@ -59,6 +59,7 @@ static int __create_temp_paths(
     token = rand();
     snprintf(inputDirOut, inputDirSize, "%s/chef-package-input-%d-%d", tmpDir, pid, token);
     snprintf(packPathOut, packPathSize, "%s/chef-package-image-%d-%d.pack", tmpDir, pid, token);
+    free((void*)tmpDir);
     return 0;
 }
 

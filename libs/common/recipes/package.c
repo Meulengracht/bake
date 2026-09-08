@@ -1558,6 +1558,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             switch (event->type) {
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
+                    free(s->config_object.current_key);
                     s->config_object.current_key = __parse_string(value);
 
                     if (strcmp(s->config_object.current_key, "tcp") == 0) {
@@ -1602,6 +1603,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     }
                     // Add the port to the current allow list item.
                     __cap_network_client_add_allow_entry(s, s->config_object.current_key, value);
+                    free(s->config_object.current_key);
+                    s->config_object.current_key = NULL;
                     __parser_pop_state(s);
                     break;
 
@@ -1704,11 +1707,12 @@ static void __destroy_platform(struct recipe_platform* platform)
 static void __destroy_project(struct recipe_project* project)
 {
     free((void*)project->name);
-    free((void*)project->version);
-    free((void*)project->url);
-    free((void*)project->license);
     free((void*)project->author);
     free((void*)project->email);
+    free((void*)project->version);
+    free((void*)project->license);
+    free((void*)project->eula);
+    free((void*)project->url);
     // do not free project itself, part of recipe
 }
 
@@ -1716,6 +1720,7 @@ static void __destroy_ingredient(struct recipe_ingredient* ingredient)
 {
     free((void*)ingredient->name);
     free((void*)ingredient->channel);
+    __destroy_list(string, ingredient->filters.head, struct list_item_string);
     free(ingredient);
 }
 
@@ -1724,6 +1729,23 @@ static void __destroy_step(struct recipe_step* step)
     __destroy_list(string, step->depends.head, struct list_item_string);
     __destroy_list(string, step->arguments.head, struct list_item_string);
     __destroy_list(keypair, step->env_keypairs.head, struct chef_keypair_item);
+
+    // options is a union keyed by step->system; only free the variant that
+    // was actually populated, otherwise these bytes are garbage ints (make).
+    if (step->system != NULL && strcmp(step->system, "meson") == 0) {
+        struct list_item* item = step->options.meson.wraps.head;
+        while (item) {
+            struct meson_wrap_item* wrap = (struct meson_wrap_item*)item;
+            item = item->next;
+            free((void*)wrap->name);
+            free((void*)wrap->ingredient);
+            free(wrap);
+        }
+        free((void*)step->options.meson.cross_file);
+    }
+
+    free((void*)step->name);
+    free((void*)step->script);
     free((void*)step->system);
     free(step);
 }
@@ -1743,6 +1765,7 @@ static void __destroy_part(struct recipe_part* part)
     }
 
     free((void*)part->name);
+    free((void*)part->toolchain);
     free(part);
 }
 
@@ -1802,8 +1825,10 @@ void recipe_destroy(struct recipe* recipe)
 
     __destroy_project(&recipe->project);
     __destroy_list(ingredient, recipe->environment.host.ingredients.head, struct recipe_ingredient);
+    __destroy_list(string, recipe->environment.host.packages.head, struct list_item_string);
     __destroy_list(ingredient, recipe->environment.build.ingredients.head, struct recipe_ingredient);
     __destroy_list(ingredient, recipe->environment.runtime.ingredients.head, struct recipe_ingredient);
+    free((void*)recipe->environment.hooks.setup);
     __destroy_list(part, recipe->parts.head, struct recipe_part);
     __destroy_list(pack, recipe->packs.head, struct recipe_pack);
     __destroy_list(platform, recipe->platforms.head, struct recipe_platform);
