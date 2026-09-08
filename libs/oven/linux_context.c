@@ -209,7 +209,7 @@ struct __bakelib_context* __bakelib_context_new(
     }
 
     context->recipe = recipe;
-    context->recipe_path = recipe_path;
+    context->recipe_path = platform_strdup(recipe_path);
     context->pkg_manager = __setup_pkg_environment();
 
     context->build_platform = __get_platform();
