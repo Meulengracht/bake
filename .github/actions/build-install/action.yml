@@ -165,7 +165,8 @@ runs:
           -S '${{ steps.paths-unix.outputs.source-dir }}' \
           -B '${{ steps.paths-unix.outputs.build-dir }}' \
           -DCMAKE_BUILD_TYPE='${{ inputs.build-type }}' \
-          -DCMAKE_INSTALL_PREFIX='${{ steps.paths-unix.outputs.install-prefix }}'
+          -DCMAKE_INSTALL_PREFIX='${{ steps.paths-unix.outputs.install-prefix }}' \
+          -DCHEF_DIST_SYSTEMD=ON
 
     - name: Configure Windows
       if: runner.os == 'Windows'
@@ -213,11 +214,15 @@ runs:
     - name: Configure installed runtime environment
       if: runner.os != 'Windows'
       shell: bash
+      env:
+        CHEF_INSTALL_PREFIX: ${{ steps.paths-unix.outputs.install-prefix }}
       run: |
         set -euo pipefail
-        install_prefix='${{ steps.paths-unix.outputs.install-prefix }}'
-        echo "${install_prefix}/bin" >> "${GITHUB_PATH}"
-        printf 'LD_LIBRARY_PATH=%s/lib:%s\n' "${install_prefix}" "${LD_LIBRARY_PATH:-}" >> "${GITHUB_ENV}"
+        echo "${CHEF_INSTALL_PREFIX}/bin" >> "${GITHUB_PATH}"
+        printf 'LD_LIBRARY_PATH=%s/lib:%s\n' "${CHEF_INSTALL_PREFIX}" "${LD_LIBRARY_PATH:-}" >> "${GITHUB_ENV}"
+        printf '%s/lib\n' "${CHEF_INSTALL_PREFIX}" \
+          | sudo tee /etc/ld.so.conf.d/chef-action.conf >/dev/null
+        sudo ldconfig
 
     - name: Configure installed runtime environment
       if: runner.os == 'Windows'
@@ -225,3 +230,22 @@ runs:
       run: |
         $installPrefix = '${{ steps.paths-windows.outputs.install-prefix }}'
         Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $installPrefix 'bin')
+
+    # We only need the containerv service to run to build bake
+    # packages. The containerv service is the chef-cvd service.
+    - name: Start the containerv service
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        # copy the systemd service file to the systemd directory
+        sudo cp "${{ steps.paths-unix.outputs.install-prefix }}/lib/systemd/system/chef-cvd.service" /etc/systemd/system/
+        sudo systemctl daemon-reload
+        sudo systemctl start chef-cvd.service
+
+    - name: Start the containerv service
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        cvdLog: ${{ runner.temp }}/cvd.log
+        cvdErrorLog: ${{ runner.temp }}/cvd-error.log
+      run: Start-Process -FilePath ${{ steps.paths-windows.outputs.install-prefix }}/libexec/chef/cvd.exe -ArgumentList @('-vv') -RedirectStandardOutput $cvdLog -RedirectStandardError $cvdErrorLog -PassThru -WindowStyle Hidden

@@ -4,6 +4,6 @@ Wants=network.target
 After=network.target
 
 [Service]
-ExecStart=/usr/libexec/chef/served -vvv
+ExecStart=@CMAKE_INSTALL_FULL_LIBEXECDIR@/chef/served -vvv
 Restart=on-failure
 Type=simple
