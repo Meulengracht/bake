@@ -289,6 +289,8 @@ static void __dfa_builder_state_cleanup(struct __dfa_builder_state* state, prote
 
     if (err != PROTECC_OK) {
         free(state->transitions);
+        free(state->scratch_set);
+        free(state->state_sets);
     }
 }
 
