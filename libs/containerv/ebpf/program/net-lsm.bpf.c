@@ -298,194 +298,24 @@ int BPF_PROG(socket_create_restrict, int family, int type, int protocol, int ker
     return __net_allow_request(cgroupId, &request, NET_PERM_CREATE, DENY_HOOK_SOCKET_CREATE);
 }
 
-SEC("lsm/socket_bind")
-int BPF_PROG(socket_bind_restrict, struct socket *sock, struct sockaddr *address, int addrlen, int ret)
+/* Shared by socket_bind/connect/sendmsg: builds the request from socket meta
+ * plus an optional address (NULL for a sendmsg on an already-connected socket)
+ * and evaluates it against the cgroup's profile. */
+static __always_inline int __net_check_with_address(
+    struct socket*   sock,
+    struct sockaddr* address,
+    int              addrlen,
+    __u64            cgroupId,
+    __u32            required,
+    __u32            hookId)
 {
     protecc_bpf_net_request_t request = {};
     struct per_cpu_data*      scratch;
-    __u64                     cgroupId;
     __u16                     family, type;
     __u32                     protocol;
 
-    if (ret) {
-        return ret;
-    }
-
-    cgroupId = get_current_cgroup_id();
-    if (!__net_has_profile(cgroupId)) {
-        return 0;
-    }
-
     if (__sock_get_meta(sock, &family, &type, &protocol)) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
-        return -EACCES;
-    }
-
-    request.family = __to_protecc_net_family(family);
-    request.protocol = __to_protecc_net_protocol(family, protocol);
-    
-    scratch = __cpu_data();
-    if (!scratch) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
-        return -EACCES;
-    }
-
-    (void)type;
-
-    if (__request_from_address(scratch, family, address, addrlen, &request)) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
-        return -EACCES;
-    }
-    return __net_allow_request(cgroupId, &request, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
-}
-
-SEC("lsm/socket_connect")
-int BPF_PROG(socket_connect_restrict, struct socket *sock, struct sockaddr *address, int addrlen, int ret)
-{
-    protecc_bpf_net_request_t request = {};
-    struct per_cpu_data*      scratch;
-    __u64                     cgroupId;
-    __u16                     family, type;
-    __u32                     protocol;
-
-    if (ret) {
-        return ret;
-    }
-
-    cgroupId = get_current_cgroup_id();
-    if (!__net_has_profile(cgroupId)) {
-        return 0;
-    }
-
-    if (__sock_get_meta(sock, &family, &type, &protocol)) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
-        return -EACCES;
-    }
-
-    request.family = __to_protecc_net_family(family);
-    request.protocol = __to_protecc_net_protocol(family, protocol);
-    
-    scratch = __cpu_data();
-    if (!scratch) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
-        return -EACCES;
-    }
-
-    (void)type;
-
-    if (__request_from_address(scratch, family, address, addrlen, &request)) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
-        return -EACCES;
-    }
-    return __net_allow_request(cgroupId, &request, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
-}
-
-SEC("lsm/socket_listen")
-int BPF_PROG(socket_listen_restrict, struct socket *sock, int backlog, int ret)
-{
-    protecc_bpf_net_request_t request = {};
-    struct sock* sk = NULL;
-    __u64 cgroupId;
-    __u16 family, type;
-    __u32 protocol;
-    __u16 port = 0;
-    (void)backlog;
-    
-    if (ret) {
-        return ret;
-    }
-
-    cgroupId = get_current_cgroup_id();
-    if (!__net_has_profile(cgroupId)) {
-        return 0;
-    }
-
-    if (__sock_get_meta(sock, &family, &type, &protocol)) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_LISTEN, DENY_HOOK_SOCKET_LISTEN);
-        return -EACCES;
-    }
-
-    CORE_READ_INTO(&sk, sock, sk);
-    if (!sk) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_LISTEN, DENY_HOOK_SOCKET_LISTEN);
-        return -EACCES;
-    }
-    CORE_READ_INTO(&port, sk, __sk_common.skc_num);
-
-    request.family = __to_protecc_net_family(family);
-    request.protocol = __to_protecc_net_protocol(family, protocol);
-    request.port = port;
-    request.ip.data = NULL;
-    request.ip.len = 0;
-    request.unix_path.data = NULL;
-    request.unix_path.len = 0;
-    (void)type;
-    return __net_allow_request(cgroupId, &request, NET_PERM_LISTEN, DENY_HOOK_SOCKET_LISTEN);
-}
-
-SEC("lsm/socket_accept")
-int BPF_PROG(socket_accept_restrict, struct socket *sock, struct socket *newsock, int flags)
-{
-    protecc_bpf_net_request_t request = {};
-    struct sock* sk = NULL;
-    __u64 cgroupId;
-    __u16 family, type;
-    __u32 protocol;
-    __u16 port = 0;
-    (void)newsock;
-    (void)flags;
-
-    cgroupId = get_current_cgroup_id();
-    if (!__net_has_profile(cgroupId)) {
-        return 0;
-    }
-
-    if (__sock_get_meta(sock, &family, &type, &protocol)) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_ACCEPT, DENY_HOOK_SOCKET_ACCEPT);
-        return -EACCES;
-    }
-
-    CORE_READ_INTO(&sk, sock, sk);
-    if (!sk) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_ACCEPT, DENY_HOOK_SOCKET_ACCEPT);
-        return -EACCES;
-    }
-    CORE_READ_INTO(&port, sk, __sk_common.skc_num);
-
-    request.family = __to_protecc_net_family(family);
-    request.protocol = __to_protecc_net_protocol(family, protocol);
-    request.port = port;
-    request.ip.data = NULL;
-    request.ip.len = 0;
-    request.unix_path.data = NULL;
-    request.unix_path.len = 0;
-    (void)type;
-    return __net_allow_request(cgroupId, &request, NET_PERM_ACCEPT, DENY_HOOK_SOCKET_ACCEPT);
-}
-
-SEC("lsm/socket_sendmsg")
-int BPF_PROG(socket_sendmsg_restrict, struct socket *sock, struct msghdr *msg, int size, int ret)
-{
-    protecc_bpf_net_request_t request = {};
-    struct per_cpu_data*      scratch;
-    __u64                     cgroupId;
-    __u16                     family, type;
-    __u32                     protocol;
-    struct sockaddr*          addr = NULL;
-    __u32                     addrlen = 0;
-    (void)size;
-    
-    if (ret) {
-        return ret;
-    }
-    
-    cgroupId = get_current_cgroup_id();
-    if (!__net_has_profile(cgroupId)) {
-        return 0;
-    }
-
-    if (__sock_get_meta(sock, &family, &type, &protocol)) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
+        __emit_deny_event_basic(cgroupId, required, hookId);
         return -EACCES;
     }
 
@@ -496,28 +326,145 @@ int BPF_PROG(socket_sendmsg_restrict, struct socket *sock, struct msghdr *msg, i
     request.ip.len = 0;
     request.unix_path.data = NULL;
     request.unix_path.len = 0;
-    scratch = __cpu_data();
-    if (!scratch) {
-        __emit_deny_event_basic(cgroupId, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
+    (void)type;
+
+    if (address) {
+        scratch = __cpu_data();
+        if (!scratch) {
+            __emit_deny_event_basic(cgroupId, required, hookId);
+            return -EACCES;
+        }
+
+        if (__request_from_address(scratch, family, address, addrlen, &request)) {
+            __emit_deny_event_basic(cgroupId, required, hookId);
+            return -EACCES;
+        }
+    }
+
+    return __net_allow_request(cgroupId, &request, required, hookId);
+}
+
+/* Shared by socket_listen/accept: both only need the bound local port. */
+static __always_inline int __net_check_bound_socket(
+    struct socket* sock,
+    __u64          cgroupId,
+    __u32          required,
+    __u32          hookId)
+{
+    protecc_bpf_net_request_t request = {};
+    struct sock*              sk = NULL;
+    __u16                     family, type;
+    __u32                     protocol;
+    __u16                     port = 0;
+
+    if (__sock_get_meta(sock, &family, &type, &protocol)) {
+        __emit_deny_event_basic(cgroupId, required, hookId);
         return -EACCES;
     }
 
+    CORE_READ_INTO(&sk, sock, sk);
+    if (!sk) {
+        __emit_deny_event_basic(cgroupId, required, hookId);
+        return -EACCES;
+    }
+    CORE_READ_INTO(&port, sk, __sk_common.skc_num);
+
+    request.family = __to_protecc_net_family(family);
+    request.protocol = __to_protecc_net_protocol(family, protocol);
+    request.port = port;
+    request.ip.data = NULL;
+    request.ip.len = 0;
+    request.unix_path.data = NULL;
+    request.unix_path.len = 0;
     (void)type;
+    return __net_allow_request(cgroupId, &request, required, hookId);
+}
+
+SEC("lsm/socket_bind")
+int BPF_PROG(socket_bind_restrict, struct socket *sock, struct sockaddr *address, int addrlen, int ret)
+{
+    __u64 cgroupId;
+
+    if (ret) {
+        return ret;
+    }
+
+    cgroupId = get_current_cgroup_id();
+    if (!__net_has_profile(cgroupId)) {
+        return 0;
+    }
+    return __net_check_with_address(sock, address, addrlen, cgroupId, NET_PERM_BIND, DENY_HOOK_SOCKET_BIND);
+}
+
+SEC("lsm/socket_connect")
+int BPF_PROG(socket_connect_restrict, struct socket *sock, struct sockaddr *address, int addrlen, int ret)
+{
+    __u64 cgroupId;
+
+    if (ret) {
+        return ret;
+    }
+
+    cgroupId = get_current_cgroup_id();
+    if (!__net_has_profile(cgroupId)) {
+        return 0;
+    }
+    return __net_check_with_address(sock, address, addrlen, cgroupId, NET_PERM_CONNECT, DENY_HOOK_SOCKET_CONNECT);
+}
+
+SEC("lsm/socket_listen")
+int BPF_PROG(socket_listen_restrict, struct socket *sock, int backlog, int ret)
+{
+    __u64 cgroupId;
+    (void)backlog;
+
+    if (ret) {
+        return ret;
+    }
+
+    cgroupId = get_current_cgroup_id();
+    if (!__net_has_profile(cgroupId)) {
+        return 0;
+    }
+    return __net_check_bound_socket(sock, cgroupId, NET_PERM_LISTEN, DENY_HOOK_SOCKET_LISTEN);
+}
+
+SEC("lsm/socket_accept")
+int BPF_PROG(socket_accept_restrict, struct socket *sock, struct socket *newsock, int flags)
+{
+    __u64 cgroupId;
+    (void)newsock;
+    (void)flags;
+
+    cgroupId = get_current_cgroup_id();
+    if (!__net_has_profile(cgroupId)) {
+        return 0;
+    }
+    return __net_check_bound_socket(sock, cgroupId, NET_PERM_ACCEPT, DENY_HOOK_SOCKET_ACCEPT);
+}
+
+SEC("lsm/socket_sendmsg")
+int BPF_PROG(socket_sendmsg_restrict, struct socket *sock, struct msghdr *msg, int size, int ret)
+{
+    __u64            cgroupId;
+    struct sockaddr* addr = NULL;
+    __u32            addrlen = 0;
+    (void)size;
+
+    if (ret) {
+        return ret;
+    }
+
+    cgroupId = get_current_cgroup_id();
+    if (!__net_has_profile(cgroupId)) {
+        return 0;
+    }
 
     if (msg) {
         CORE_READ_INTO(&addr, msg, msg_name);
         CORE_READ_INTO(&addrlen, msg, msg_namelen);
     }
-
-    if (addr) {
-        if (__request_from_address(scratch, family, addr, addrlen, &request)) {
-            __emit_deny_event_basic(cgroupId, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
-            return -EACCES;
-        }
-        return __net_allow_request(cgroupId, &request, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
-    }
-
-    return __net_allow_request(cgroupId, &request, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
+    return __net_check_with_address(sock, addr, (int)addrlen, cgroupId, NET_PERM_SEND, DENY_HOOK_SOCKET_SENDMSG);
 }
 
 char LICENSE[] SEC("license") = "GPL";
