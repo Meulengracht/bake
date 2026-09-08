@@ -41,10 +41,9 @@ The action outputs `source-dir`, `build-dir`, and `install-prefix` for later wor
 | Name | Default | Description |
 | --- | --- | --- |
 | `repository` | `Meulengracht/bake` | GitHub repository containing the chef source to build. |
-| `ref` | empty | Git ref to check out. Empty resolves to the action ref when used remotely, then the workflow ref. |
+| `ref` | `main` | Git ref to check out from the chef repository. Set this explicitly when building a tag or branch. |
 | `checkout-source` | `true` | Check out the chef source before configuring. |
 | `checkout-path` | `.chef-source` | Workspace-relative path used when checking out the chef source. |
-| `fetch-depth` | `0` | Number of commits to fetch. `0` fetches the full history; use a positive value for a shallow checkout. |
 | `build-type` | `Release` | CMake build type/configuration to build. |
 | `source-dir` | empty | Source directory passed to CMake. Empty uses the checked-out chef source. |
 | `build-dir` | `build` | Build directory passed to CMake. Relative paths are resolved from `github.workspace`. |

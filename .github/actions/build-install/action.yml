@@ -7,9 +7,9 @@ inputs:
     required: false
     default: Meulengracht/bake
   ref:
-    description: Git ref to check out. Defaults to the action ref when used remotely, then the workflow ref.
+    description: Git ref to check out from the chef repository.
     required: false
-    default: ''
+    default: main
   checkout-source:
     description: Check out the chef source before configuring.
     required: false
@@ -18,10 +18,6 @@ inputs:
     description: Workspace-relative path used when checking out the chef source.
     required: false
     default: .chef-source
-  fetch-depth:
-    description: Number of commits to fetch for the chef source checkout. Use 0 for full history.
-    required: false
-    default: '0'
   build-type:
     description: CMake build type/configuration to build.
     required: false
@@ -66,9 +62,8 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: ${{ inputs.repository }}
-        ref: ${{ inputs.ref || github.action_ref || github.ref }}
+        ref: ${{ inputs.ref }}
         path: ${{ inputs.checkout-path }}
-        fetch-depth: ${{ inputs.fetch-depth }}
         submodules: recursive
 
     - name: Resolve paths
