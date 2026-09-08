@@ -283,14 +283,17 @@ static int __dfa_builder_state_setup(struct __dfa_builder_state* state, size_t w
 
 static void __dfa_builder_state_cleanup(struct __dfa_builder_state* state, protecc_error_t err)
 {
+    free(state->state_sets);
+    free(state->scratch_set);
     free(state->next_sibling);
     free(state->node_depths);
     free(state->nodes);
 
     if (err != PROTECC_OK) {
+        // transitions are passed on to the profile
+        // meaning if everything went okay then we do
+        // not own this anymore
         free(state->transitions);
-        free(state->scratch_set);
-        free(state->state_sets);
     }
 }
 
