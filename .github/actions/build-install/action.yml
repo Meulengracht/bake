@@ -1,0 +1,211 @@
+name: Build and install chef
+description: Configure, build, optionally test, and install chef for GitHub workflows.
+
+inputs:
+  repository:
+    description: GitHub repository containing the chef source to build.
+    required: false
+    default: Meulengracht/bake
+  ref:
+    description: Git ref to check out. Defaults to the action ref when used remotely, then the workflow ref.
+    required: false
+    default: ''
+  checkout-source:
+    description: Check out the chef source before configuring.
+    required: false
+    default: 'true'
+  checkout-path:
+    description: Workspace-relative path used when checking out the chef source.
+    required: false
+    default: .chef-source
+  build-type:
+    description: CMake build type/configuration to build.
+    required: false
+    default: Release
+  source-dir:
+    description: Source directory passed to CMake. Empty uses the checked-out chef source.
+    required: false
+    default: ''
+  build-dir:
+    description: Build directory passed to CMake.
+    required: false
+    default: build
+  install-prefix:
+    description: Install prefix. Defaults to $RUNNER_TEMP/chef-install when empty.
+    required: false
+    default: ''
+  install-dependencies:
+    description: Install operating system dependencies before configuring.
+    required: false
+    default: 'true'
+  run-tests:
+    description: Run CTest before installation.
+    required: false
+    default: 'false'
+
+outputs:
+  source-dir:
+    description: Absolute path to the chef source directory.
+    value: ${{ steps.paths-unix.outputs.source-dir || steps.paths-windows.outputs.source-dir }}
+  build-dir:
+    description: Absolute path to the CMake build directory.
+    value: ${{ steps.paths-unix.outputs.build-dir || steps.paths-windows.outputs.build-dir }}
+  install-prefix:
+    description: Absolute path where chef was installed.
+    value: ${{ steps.paths-unix.outputs.install-prefix || steps.paths-windows.outputs.install-prefix }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check out chef source
+      if: inputs.checkout-source == 'true' && inputs.source-dir == ''
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.repository }}
+        ref: ${{ inputs.ref || github.action_ref || github.ref }}
+        path: ${{ inputs.checkout-path }}
+        submodules: recursive
+
+    - name: Resolve paths
+      id: paths-unix
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        source_dir='${{ inputs.source-dir }}'
+        build_dir='${{ inputs.build-dir }}'
+        install_prefix='${{ inputs.install-prefix }}'
+
+        if [[ -z "${source_dir}" ]]; then
+          source_dir='${{ inputs.checkout-path }}'
+        fi
+
+        if [[ "${source_dir}" != /* ]]; then
+          source_dir="${GITHUB_WORKSPACE}/${source_dir}"
+        fi
+
+        if [[ "${build_dir}" != /* ]]; then
+          build_dir="${GITHUB_WORKSPACE}/${build_dir}"
+        fi
+
+        if [[ -z "${install_prefix}" ]]; then
+          install_prefix="${RUNNER_TEMP}/chef-install"
+        elif [[ "${install_prefix}" != /* ]]; then
+          install_prefix="${GITHUB_WORKSPACE}/${install_prefix}"
+        fi
+
+        echo "source-dir=${source_dir}" >> "${GITHUB_OUTPUT}"
+        echo "build-dir=${build_dir}" >> "${GITHUB_OUTPUT}"
+        echo "install-prefix=${install_prefix}" >> "${GITHUB_OUTPUT}"
+
+    - name: Resolve paths
+      id: paths-windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $sourceDir = '${{ inputs.source-dir }}'
+        $buildDir = '${{ inputs.build-dir }}'
+        $installPrefix = '${{ inputs.install-prefix }}'
+
+        if ([string]::IsNullOrWhiteSpace($sourceDir)) {
+          $sourceDir = '${{ inputs.checkout-path }}'
+        }
+
+        if (-not [System.IO.Path]::IsPathRooted($sourceDir)) {
+          $sourceDir = Join-Path $env:GITHUB_WORKSPACE $sourceDir
+        }
+
+        if (-not [System.IO.Path]::IsPathRooted($buildDir)) {
+          $buildDir = Join-Path $env:GITHUB_WORKSPACE $buildDir
+        }
+
+        if ([string]::IsNullOrWhiteSpace($installPrefix)) {
+          $installPrefix = Join-Path $env:RUNNER_TEMP 'chef-install'
+        } elseif (-not [System.IO.Path]::IsPathRooted($installPrefix)) {
+          $installPrefix = Join-Path $env:GITHUB_WORKSPACE $installPrefix
+        }
+
+        "source-dir=$sourceDir" >> $env:GITHUB_OUTPUT
+        "build-dir=$buildDir" >> $env:GITHUB_OUTPUT
+        "install-prefix=$installPrefix" >> $env:GITHUB_OUTPUT
+
+    - name: Install Ubuntu dependencies
+      if: runner.os == 'Linux' && inputs.install-dependencies == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y \
+          libsqlite3-0 \
+          libsqlite3-dev \
+          libfuse3-3 \
+          libfuse3-dev \
+          libcap2 \
+          libcap-dev \
+          libcurl4-openssl-dev \
+          libssl-dev \
+          libseccomp2 \
+          libseccomp-dev \
+          libbpf-dev \
+          linux-tools-azure \
+          auditd
+
+    - name: Install Windows dependencies
+      if: runner.os == 'Windows' && inputs.install-dependencies == 'true'
+      shell: pwsh
+      run: vcpkg install --triplet x64-windows
+
+    - name: Configure Ubuntu
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        cmake \
+          -S '${{ steps.paths-unix.outputs.source-dir }}' \
+          -B '${{ steps.paths-unix.outputs.build-dir }}' \
+          -DCMAKE_BUILD_TYPE='${{ inputs.build-type }}' \
+          -DCMAKE_INSTALL_PREFIX='${{ steps.paths-unix.outputs.install-prefix }}'
+
+    - name: Configure Windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        cmake `
+          -S '${{ steps.paths-windows.outputs.source-dir }}' `
+          -B '${{ steps.paths-windows.outputs.build-dir }}' `
+          -DCMAKE_BUILD_TYPE='${{ inputs.build-type }}' `
+          -DCMAKE_INSTALL_PREFIX='${{ steps.paths-windows.outputs.install-prefix }}' `
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+    - name: Build
+      if: runner.os != 'Windows'
+      shell: bash
+      run: cmake --build '${{ steps.paths-unix.outputs.build-dir }}' --config '${{ inputs.build-type }}'
+
+    - name: Build
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: cmake --build '${{ steps.paths-windows.outputs.build-dir }}' --config '${{ inputs.build-type }}'
+
+    - name: Test
+      if: runner.os != 'Windows' && inputs.run-tests == 'true'
+      shell: bash
+      working-directory: ${{ steps.paths-unix.outputs.build-dir }}
+      run: ctest -C '${{ inputs.build-type }}' --output-on-failure
+
+    - name: Test
+      if: runner.os == 'Windows' && inputs.run-tests == 'true'
+      shell: pwsh
+      working-directory: ${{ steps.paths-windows.outputs.build-dir }}
+      run: ctest -C '${{ inputs.build-type }}' --output-on-failure
+
+    - name: Install
+      if: runner.os != 'Windows'
+      shell: bash
+      run: cmake --install '${{ steps.paths-unix.outputs.build-dir }}' --config '${{ inputs.build-type }}'
+
+    - name: Install
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: cmake --install '${{ steps.paths-windows.outputs.build-dir }}' --config '${{ inputs.build-type }}'

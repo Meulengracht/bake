@@ -1,0 +1,67 @@
+name: Publish chef package
+description: Publish a built chef package with order.
+
+inputs:
+  api-key:
+    description: Chef API key used for publishing. Pass this from GitHub Secrets.
+    required: true
+  package-path:
+    description: Path to the built chef package to publish.
+    required: true
+  publisher:
+    description: Publisher name passed to order publish.
+    required: true
+  channel:
+    description: Channel passed to order publish.
+    required: false
+    default: devel
+  order-path:
+    description: Path to the order executable.
+    required: false
+    default: order
+  working-directory:
+    description: Directory from which order publish is invoked.
+    required: false
+    default: .
+
+runs:
+  using: composite
+  steps:
+    - name: Mask API key
+      shell: bash
+      env:
+        CHEF_PUBLISH_API_KEY: ${{ inputs.api-key }}
+      run: |
+        set -euo pipefail
+        echo "::add-mask::${CHEF_PUBLISH_API_KEY}"
+
+    - name: Publish package
+      if: runner.os != 'Windows'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CHEF_API_KEY: ${{ inputs.api-key }}
+        CHEF_PACKAGE_PATH: ${{ inputs.package-path }}
+        CHEF_PUBLISHER: ${{ inputs.publisher }}
+        CHEF_CHANNEL: ${{ inputs.channel }}
+        CHEF_ORDER_PATH: ${{ inputs.order-path }}
+      run: |
+        set -euo pipefail
+        "${CHEF_ORDER_PATH}" publish "${CHEF_PACKAGE_PATH}" \
+          --publisher "${CHEF_PUBLISHER}" \
+          --channel "${CHEF_CHANNEL}"
+
+    - name: Publish package
+      if: runner.os == 'Windows'
+      shell: pwsh
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CHEF_API_KEY: ${{ inputs.api-key }}
+        CHEF_PACKAGE_PATH: ${{ inputs.package-path }}
+        CHEF_PUBLISHER: ${{ inputs.publisher }}
+        CHEF_CHANNEL: ${{ inputs.channel }}
+        CHEF_ORDER_PATH: ${{ inputs.order-path }}
+      run: |
+        & $env:CHEF_ORDER_PATH publish $env:CHEF_PACKAGE_PATH `
+          --publisher $env:CHEF_PUBLISHER `
+          --channel $env:CHEF_CHANNEL
