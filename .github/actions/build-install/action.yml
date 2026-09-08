@@ -18,6 +18,10 @@ inputs:
     description: Workspace-relative path used when checking out the chef source.
     required: false
     default: .chef-source
+  fetch-depth:
+    description: Number of commits to fetch for the chef source checkout. Use 0 for full history.
+    required: false
+    default: '0'
   build-type:
     description: CMake build type/configuration to build.
     required: false
@@ -64,6 +68,7 @@ runs:
         repository: ${{ inputs.repository }}
         ref: ${{ inputs.ref || github.action_ref || github.ref }}
         path: ${{ inputs.checkout-path }}
+        fetch-depth: ${{ inputs.fetch-depth }}
         submodules: recursive
 
     - name: Resolve paths
