@@ -36,6 +36,8 @@ steps:
 
 The action outputs `source-dir`, `build-dir`, and `install-prefix` for later workflow steps.
 
+After installation, the action adds the install prefix's `bin` directory to `PATH`. On Unix runners it also adds the `lib` directory to `LD_LIBRARY_PATH`, so installed tools such as `bake` can find shared libraries such as `libgracht.so` in later workflow steps.
+
 ## Inputs
 
 | Name | Default | Description |

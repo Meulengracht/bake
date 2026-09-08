@@ -209,3 +209,19 @@ runs:
       if: runner.os == 'Windows'
       shell: pwsh
       run: cmake --install '${{ steps.paths-windows.outputs.build-dir }}' --config '${{ inputs.build-type }}'
+
+    - name: Configure installed runtime environment
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        install_prefix='${{ steps.paths-unix.outputs.install-prefix }}'
+        echo "${install_prefix}/bin" >> "${GITHUB_PATH}"
+        printf 'LD_LIBRARY_PATH=%s/lib:%s\n' "${install_prefix}" "${LD_LIBRARY_PATH:-}" >> "${GITHUB_ENV}"
+
+    - name: Configure installed runtime environment
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $installPrefix = '${{ steps.paths-windows.outputs.install-prefix }}'
+        Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $installPrefix 'bin')
