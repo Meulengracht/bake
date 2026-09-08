@@ -2290,7 +2290,14 @@ int __containerv_spawn(
         }
         
         if (options->flags & CV_SPAWN_WAIT) {
+            DWORD exitCode = 0;
             WaitForSingleObject(processInfo.hProcess, INFINITE);
+            // A successful wait says nothing about whether the process itself
+            // ran successfully - surface a non-zero exit code as a failure.
+            if (GetExitCodeProcess(processInfo.hProcess, &exitCode) && exitCode != 0) {
+                VLOG_ERROR("containerv", "__containerv_spawn: %s exited with code %lu\n", options->path, exitCode);
+                return -1;
+            }
         }
 
         if (handleOut) {

@@ -286,9 +286,9 @@ static int __wait_for_container_event(int fds[2], struct containerv_event* event
 
 static void __print(const char* line, int error) {
     if (error) {
-        VLOG_ERROR("containerv[child]", line);
+        VLOG_ERROR("containerv[child]", "%s", line);
     } else {
-        VLOG_TRACE("containerv[child]", line);
+        VLOG_TRACE("containerv[child]", "%s", line);
     }
 }
 
@@ -411,6 +411,16 @@ int __containerv_spawn(struct containerv_container* container, struct __containe
         if (proc) {
             list_remove(&container->processes, &proc->list_header);
             containerv_container_process_delete(proc);
+        }
+
+        // A syscall-level wait succeeding says nothing about whether the
+        // spawned process itself actually ran successfully - surface a
+        // non-zero exit code (e.g. immediate exec/loader failure) as a
+        // spawn failure so callers relying on CV_SPAWN_WAIT don't treat a
+        // crashed process as a successful one.
+        if (exit_code != 0) {
+            VLOG_ERROR("containerv[child]", "__containerv_spawn: %s exited with code %d\n", options->path, exit_code);
+            return -1;
         }
     }
 

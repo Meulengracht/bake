@@ -198,7 +198,7 @@ int recipe_parse_part_step(const char* str, char** part, char** step)
 static const char* __default_platform_base(const char* platform)
 {
     if (strcmp(platform, "linux") == 0) {
-        return "ubuntu:24";
+        return "ubuntu:26";
     } else if (strcmp(platform, "windows") == 0) {
         return "windows:servercore-ltsc2022";
     } else if (strcmp(platform, "macos") == 0) {

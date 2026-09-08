@@ -25,8 +25,13 @@
 #include <string.h>
 #include <vlog.h>
 
+// Update these based on 
+// https://cdimage.ubuntu.com/ubuntu-base/releases/
+#define UBUNTU_26_LTS_VERSION "26.04"
+#define UBUNTU_26_LTS_RELEASE "1"
+
 #define UBUNTU_24_LTS_VERSION "24.04"
-#define UBUNTU_24_LTS_RELEASE "3"
+#define UBUNTU_24_LTS_RELEASE "4"
 
 #define UBUNTU_22_LTS_VERSION "22.04"
 #define UBUNTU_22_LTS_RELEASE "5"
@@ -65,6 +70,8 @@ static int __ubuntu_get_base_number(const char* base) {
 static const char* __ubuntu_get_base_release(const char* base) {
     int version = __ubuntu_get_base_number(base);
     switch (version) {
+        case 26:
+            return UBUNTU_26_LTS_RELEASE;
         case 24:
             return UBUNTU_24_LTS_RELEASE;
         case 22:
