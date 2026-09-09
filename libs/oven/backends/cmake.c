@@ -430,7 +430,7 @@ int cmake_main(struct oven_backend_data* data, union chef_backend_options* optio
         argument,
         argumentLength - 1,
         "-S %s %s",
-        data->paths.project,
+        data->paths.source,
         newArguments
     );
     argument[written] = '\0';
