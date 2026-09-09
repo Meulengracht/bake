@@ -201,7 +201,7 @@ int configure_main(struct oven_backend_data* data, union chef_backend_options* o
     char** environment = NULL;
     int    status = -1;
 
-    configurePath = strpathcombine(data->paths.project, "configure");
+    configurePath = strpathcombine(data->paths.source, "configure");
     if (configurePath == NULL) {
         return -1;
     }

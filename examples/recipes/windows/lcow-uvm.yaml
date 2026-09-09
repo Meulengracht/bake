@@ -1,18 +1,8 @@
-project:
-  name: lcow-uvm
-  summary: LCOW runtime base
-  description: |
-    Builds a self-contained LCOW runtime base package for Windows-hosted Linux
-    containers. The pack contains:
-    - a Linux guest rootfs under `rootfs/`
-    - an LCOW UVM bundle at the package root (legacy `uvm.vhdx` or modern kernel + initrd/rootfs boot files)
-
-    This layout lets served/cvd resolve both the guest rootfs and the HvRuntime
-    UVM settings from a single base package.
-  author: Philip Meulengracht
-  email: the_meulengracht@hotmail.com
-  version: 1.0.0
-  license: MIT
+name: lcow-uvm
+author: Philip Meulengracht
+email: the_meulengracht@hotmail.com
+version: 1.0.0
+license: MIT
 
 environment:
   host:
@@ -41,4 +31,13 @@ recipes:
 
 packs:
 - name: lcow-uvm
+  summary: LCOW runtime base
+  description: |
+    Builds a self-contained LCOW runtime base package for Windows-hosted Linux
+    containers. The pack contains:
+    - a Linux guest rootfs under `rootfs/`
+    - an LCOW UVM bundle at the package root (legacy `uvm.vhdx` or modern kernel + initrd/rootfs boot files)
+  
+    This layout lets served/cvd resolve both the guest rootfs and the HvRuntime
+    UVM settings from a single base package.
   type: os

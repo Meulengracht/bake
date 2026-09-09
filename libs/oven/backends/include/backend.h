@@ -119,6 +119,7 @@ extern int meson_config_main(struct oven_backend_data* data, union chef_backend_
 //****************************************************************************//
 // Build backend entries                                                      //
 //****************************************************************************//
+extern int cmake_build_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int make_build_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int meson_build_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int ninja_build_main(struct oven_backend_data* data, union chef_backend_options* options);
@@ -126,6 +127,7 @@ extern int ninja_build_main(struct oven_backend_data* data, union chef_backend_o
 //****************************************************************************//
 // Clean backend entries                                                      //
 //****************************************************************************//
+extern int cmake_clean_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int make_clean_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int meson_clean_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int ninja_clean_main(struct oven_backend_data* data, union chef_backend_options* options);

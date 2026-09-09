@@ -422,14 +422,13 @@ int cmake_main(struct oven_backend_data* data, union chef_backend_options* optio
 
     environment = environment_create(data->process_environment, data->environment);
     if (environment == NULL) {
-        free(argument);
         goto cleanup;
     }
 
     written = snprintf(
         argument,
         argumentLength - 1,
-        "-S %s %s",
+        "-S \"%s\" %s",
         data->paths.source,
         newArguments
     );
@@ -452,4 +451,52 @@ cleanup:
     free(argument);
     free(newArguments);
     return status;
+}
+
+/* Use CMake's driver so the configured generator also works on Windows. */
+static int __cmake_build_command(struct oven_backend_data* data, const char* operation, const char* arguments)
+{
+    char** environment;
+    char* command;
+    size_t length;
+    int status;
+
+    length = strlen(operation) + strlen(data->profile_name) + strlen(arguments) + 48;
+    command = malloc(length);
+    if (command == NULL) {
+        return -1;
+    }
+    snprintf(command, length, "%s . --config \"%s\"%s%s", operation, data->profile_name,
+        arguments[0] ? " " : "", arguments);
+    environment = environment_create(data->process_environment, data->environment);
+    if (environment == NULL) {
+        free(command);
+        return -1;
+    }
+    VLOG_DEBUG("cmake", "executing 'cmake %s'\n", command);
+    status = platform_spawn("cmake", command, (const char* const*)environment,
+        &(struct platform_spawn_options) {
+            .cwd = data->paths.build,
+            .output_handler = __cmake_output_handler
+        });
+    if (status) {
+        VLOG_ERROR("cmake", "failed to execute 'cmake %s'\n", command);
+    }
+    environment_destroy(environment);
+    free(command);
+    return status;
+}
+
+int cmake_build_main(struct oven_backend_data* data, union chef_backend_options* options)
+{
+    int status = __cmake_build_command(data, "--build", data->arguments);
+    if (status) {
+        return status;
+    }
+    return __cmake_build_command(data, "--install", "");
+}
+
+int cmake_clean_main(struct oven_backend_data* data, union chef_backend_options* options)
+{
+    return __cmake_build_command(data, "--build", "--target clean");
 }

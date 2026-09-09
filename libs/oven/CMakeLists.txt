@@ -40,3 +40,15 @@ target_link_libraries(oven PUBLIC vafs ${ADDITIONAL_LIBS} oven-backends store ja
 if (NOT MSVC)
     target_link_libraries(oven PUBLIC m)
 endif()
+
+if(BUILD_TESTING AND UNIX)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_executable(oven_recipe_test_driver tests/recipe_driver.c)
+        target_link_libraries(oven_recipe_test_driver PRIVATE oven)
+        add_test(NAME oven_recipe_workflow
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_recipe_workflow.py
+                $<TARGET_FILE:oven_recipe_test_driver> ${CMAKE_COMMAND})
+        set_tests_properties(oven_recipe_workflow PROPERTIES TIMEOUT 120)
+    endif()
+endif()

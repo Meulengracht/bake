@@ -16,6 +16,7 @@
  * 
  */
 
+#include <chef/environment.h>
 #include <chef/ingredient.h>
 #include <chef/platform.h>
 #include <errno.h>
@@ -28,9 +29,9 @@
 
 static struct oven_backend g_backends[] = {
     //  name       configure          build             clean
-    { "autoconf",  configure_main,    NULL,             NULL },
-    { "autotools", configure_main,    NULL,             NULL },
-    { "cmake",     cmake_main,        NULL,             NULL },
+    { "autoconf",  configure_main,    make_build_main,  make_clean_main },
+    { "autotools", configure_main,    make_build_main,  make_clean_main },
+    { "cmake",     cmake_main,        cmake_build_main, cmake_clean_main },
     { "meson",     meson_config_main, meson_build_main, meson_clean_main },
     { "make",      NULL,              make_build_main,  make_clean_main },
     { "ninja",     NULL,              ninja_build_main, ninja_clean_main },
@@ -220,26 +221,37 @@ static struct chef_keypair_item* __preprocess_keypair(struct chef_keypair_item* 
 
     keypair->key   = platform_strdup(original->key);
     keypair->value = chef_preprocess_text(original->value, __get_variable, NULL);
+    if (keypair->key == NULL || keypair->value == NULL) {
+        free((void*)keypair->key);
+        free((void*)keypair->value);
+        free(keypair);
+        return NULL;
+    }
     return keypair;
 }
 
 static struct list* __preprocess_keypair_list(struct list* original)
 {
-    struct list*      processed = malloc(sizeof(struct list));
+    struct list*      processed;
     struct list_item* item;
 
+    processed = malloc(sizeof(struct list));
     if (!processed) {
         VLOG_ERROR("oven", "failed to allocate memory environment preprocessor\n");
-        return original;
+        return NULL;
     }
 
     list_init(processed);
+    if (original == NULL) {
+        return processed;
+    }
     list_foreach(original, item) {
         struct chef_keypair_item* keypair          = (struct chef_keypair_item*)item;
         struct chef_keypair_item* processedKeypair = __preprocess_keypair(keypair);
         if (!processedKeypair) {
             VLOG_ERROR("oven", "failed to allocate memory environment preprocessor\n");
-            break;
+            __cleanup_environment(processed);
+            return NULL;
         }
 
         list_add(processed, &processedKeypair->list_header);
@@ -353,7 +365,7 @@ static int __initialize_backend_data(
     // of the current step is. This can sometimes be neccessary when project files are
     // located in sub-directories.
     if (stepSources != NULL) {
-        data->paths.source = strpathjoin(g_oven.recipe.source_root, stepSources);
+        data->paths.source = strpathcombine(g_oven.recipe.source_root, stepSources);
     } else {
         data->paths.source = platform_strdup(g_oven.recipe.source_root);
     }
@@ -414,17 +426,61 @@ int oven_configure(struct oven_generate_options* options)
     return status;
 }
 
+static int __should_generate(const char* system, int skipGeneration)
+{
+    int combineSupported;
+
+    combineSupported = !strcmp(system, "cmake") ||
+            !strcmp(system, "autotools") ||
+            !strcmp(system, "autoconf");
+    return combineSupported && !skipGeneration;
+}
+
+static int __inline_generate(struct oven_build_options* options, struct oven_backend* backend)
+{
+    struct oven_backend_data data;
+    struct list*             generateEnvironment;
+    struct list              empty = { 0 };
+    int                      status;
+
+    VLOG_TRACE("oven", "configuring step %s (%s)\n", options->name, options->system);
+    status = __initialize_backend_data(
+        &data,
+        options->source_dir,
+        options->profile,
+        options->generate_arguments != NULL ? options->generate_arguments : &empty,
+        options->environment
+    );
+    if (status) {
+        return status;
+    }
+    generateEnvironment = __preprocess_keypair_list(options->generate_environment);
+    if (generateEnvironment == NULL) {
+        __cleanup_backend_data(&data);
+        return -1;
+    }
+
+    status = environment_update(data.environment, generateEnvironment);
+    __cleanup_environment(generateEnvironment);
+    if (!status) {
+        status = backend->generate(&data, options->system_options);
+    }
+    
+    __cleanup_backend_data(&data);
+    return status;
+}
+
 int oven_build(struct oven_build_options* options)
 {
     struct oven_backend*     backend;
     struct oven_backend_data data;
     int                      status;
-    VLOG_DEBUG("oven", "oven_build(name=%s, system=%s)\n", options->name, options->system);
 
-    if (!options) {
+    if (!options || !options->system) {
         errno = EINVAL;
         return -1;
     }
+    VLOG_DEBUG("oven", "oven_build(name=%s, system=%s)\n", options->name, options->system);
 
     backend = __get_backend(options->system);
     if (backend == NULL || backend->build == NULL) {
@@ -432,11 +488,25 @@ int oven_build(struct oven_build_options* options)
         return -1;
     }
 
-    status = __initialize_backend_data(&data, NULL, options->profile, options->arguments, options->environment);
+    if (__should_generate(options->system, options->skip_generate)) {
+        status = __inline_generate(options, backend);
+        if (status) {
+            VLOG_ERROR("oven", "configuration failed for step %s (%s)\n", options->name, options->system);
+            return status;
+        }
+    }
+
+    VLOG_TRACE("oven", "building and installing step %s (%s)\n", options->name, options->system);
+    status = __initialize_backend_data(
+        &data,
+        options->source_dir,
+        options->profile,
+        options->arguments,
+        options->environment
+    );
     if (status) {
         return status;
     }
-    
     status = backend->build(&data, options->system_options);
     __cleanup_backend_data(&data);
     return status;

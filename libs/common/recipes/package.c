@@ -90,6 +90,12 @@ enum state {
     STATE_RECIPE_STEP_SCRIPT,
     STATE_RECIPE_STEP_SOURCE_DIR,
     STATE_RECIPE_STEP_ARGUMENT_LIST,
+    STATE_RECIPE_STEP_CONFIGURE,
+    STATE_RECIPE_STEP_CONFIGURE_SETTINGS,
+    STATE_RECIPE_STEP_CONFIGURE_SOURCE_DIR,
+    STATE_RECIPE_STEP_CONFIGURE_ARGUMENT_LIST,
+    STATE_RECIPE_STEP_CONFIGURE_ENV_KEY,
+    STATE_RECIPE_STEP_CONFIGURE_ENV_VALUE,
 
     STATE_RECIPE_STEP_MESON_CROSS_FILE,
     STATE_RECIPE_STEP_MESON_WRAPS_LIST,
@@ -467,6 +473,7 @@ static void __finalize_step(struct parser_state* state)
 static void __finalize_step_env(struct parser_state* state)
 {
     struct chef_keypair_item* keypair;
+    struct list* environment;
 
     // key value must be provided
     if (state->env_keypair.key == NULL || strlen(state->env_keypair.key) == 0) {
@@ -481,7 +488,9 @@ static void __finalize_step_env(struct parser_state* state)
 
     keypair->key   = state->env_keypair.key;
     keypair->value = state->env_keypair.value;
-    list_add(&state->step.env_keypairs, &keypair->list_header);
+    environment = state->state == STATE_RECIPE_STEP_CONFIGURE_ENV_VALUE
+        ? &state->step.configure.env_keypairs : &state->step.env_keypairs;
+    list_add(environment, &keypair->list_header);
 
     // reset the keypair
     state->env_keypair.key   = NULL;
@@ -723,6 +732,7 @@ DEFINE_LIST_STRING_ADD(platform, platform, archs)
 DEFINE_LIST_STRING_ADD(ingredient, ingredient, filters)
 DEFINE_LIST_STRING_ADD(step, step, depends)
 DEFINE_LIST_STRING_ADD(step, step, arguments)
+DEFINE_LIST_STRING_ADD(configure, step.configure, arguments)
 DEFINE_LIST_STRING_ADD(pack, pack, filters)
 DEFINE_LIST_STRING_ADD(pack_options, pack.options, bin_dirs)
 DEFINE_LIST_STRING_ADD(pack_options, pack.options, inc_dirs)
@@ -1222,6 +1232,13 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 case YAML_MAPPING_START_EVENT:
                     break;
                 case YAML_MAPPING_END_EVENT:
+                    if (s->step.configure.specified &&
+                        (s->step.type != RECIPE_STEP_TYPE_BUILD || s->step.system == NULL ||
+                         (strcmp(s->step.system, "cmake") && strcmp(s->step.system, "autotools") &&
+                          strcmp(s->step.system, "autoconf")))) {
+                        fprintf(stderr, "parse error: configure settings require a cmake or autotools build step\n");
+                        return -1;
+                    }
                     __finalize_step(s);
                     __parser_pop_state(s);
                     break;
@@ -1238,6 +1255,13 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_RECIPE_STEP_SYSTEM);
                     } else if (strcmp(value, "script") == 0) {
                         __parser_push_state(s, STATE_RECIPE_STEP_SCRIPT);
+                    } else if (strcmp(value, "configure") == 0) {
+                        if (s->step.configure.specified) {
+                            fprintf(stderr, "parse error: duplicate configure settings\n");
+                            return -1;
+                        }
+                        s->step.configure.specified = 1;
+                        __parser_push_state(s, STATE_RECIPE_STEP_CONFIGURE);
                     } else if (strcmp(value, "source-dir") == 0) {
                         __parser_push_state(s, STATE_RECIPE_STEP_SOURCE_DIR);
                     } else if (strcmp(value, "meson-cross-file") == 0) {
@@ -1263,6 +1287,43 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
+        case STATE_RECIPE_STEP_CONFIGURE:
+            if (event->type == YAML_MAPPING_START_EVENT) {
+                s->state = STATE_RECIPE_STEP_CONFIGURE_SETTINGS;
+            } else if (event->type == YAML_SCALAR_EVENT &&
+                       (!strcmp((char*)event->data.scalar.value, "false") ||
+                        !strcmp((char*)event->data.scalar.value, "true"))) {
+                s->step.configure.disabled = !strcmp((char*)event->data.scalar.value, "false");
+                __parser_pop_state(s);
+            } else {
+                fprintf(stderr, "parse error: configure expects true, false, or a settings mapping\n");
+                return -1;
+            }
+            break;
+
+        case STATE_RECIPE_STEP_CONFIGURE_SETTINGS:
+            if (event->type == YAML_MAPPING_END_EVENT) {
+                __parser_pop_state(s);
+            } else if (event->type == YAML_SCALAR_EVENT) {
+                value = (char*)event->data.scalar.value;
+                if (!strcmp(value, "arguments")) {
+                    __parser_push_state(s, STATE_RECIPE_STEP_CONFIGURE_ARGUMENT_LIST);
+                } else if (!strcmp(value, "env")) {
+                    __parser_push_state(s, STATE_RECIPE_STEP_CONFIGURE_ENV_KEY);
+                } else if (!strcmp(value, "source-dir")) {
+                    __parser_push_state(s, STATE_RECIPE_STEP_CONFIGURE_SOURCE_DIR);
+                } else {
+                    fprintf(stderr, "parse error: unknown configure setting: %s\n", value);
+                    return -1;
+                }
+            } else {
+                return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_RECIPE_STEP_CONFIGURE_SOURCE_DIR, step.configure.source_dir, __parse_string)
+        __consume_sequence_unmapped(STATE_RECIPE_STEP_CONFIGURE_ARGUMENT_LIST, __add_configure_arguments)
+
         __consume_scalar_fn(STATE_RECIPE_STEP_NAME, step.name, __parse_string)
         __consume_scalar_fn(STATE_RECIPE_STEP_TYPE, step.type, __parse_recipe_step_type)
         __consume_scalar_fn(STATE_RECIPE_STEP_SYSTEM, step.system, __parse_string)
@@ -1276,6 +1337,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_sequence_unmapped(STATE_RECIPE_STEP_ARGUMENT_LIST, __add_step_arguments)
         __consume_sequence_unmapped(STATE_RECIPE_STEP_DEPEND_LIST, __add_step_depends)
 
+        case STATE_RECIPE_STEP_CONFIGURE_ENV_KEY:
         case STATE_RECIPE_STEP_ENV_LIST_KEY:
             switch (event->type) {
                 case YAML_MAPPING_START_EVENT:
@@ -1287,7 +1349,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                 case YAML_SCALAR_EVENT:
                     value = (char *)event->data.scalar.value;
                     s->env_keypair.key = __parse_string(value);
-                    __parser_push_state(s, STATE_RECIPE_STEP_ENV_LIST_VALUE);
+                    __parser_push_state(s, s->state == STATE_RECIPE_STEP_CONFIGURE_ENV_KEY
+                        ? STATE_RECIPE_STEP_CONFIGURE_ENV_VALUE : STATE_RECIPE_STEP_ENV_LIST_VALUE);
                     break;
 
                 default:
@@ -1296,6 +1359,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
         
+        case STATE_RECIPE_STEP_CONFIGURE_ENV_VALUE:
         case STATE_RECIPE_STEP_ENV_LIST_VALUE:
             switch (event->type) {
                 case YAML_SCALAR_EVENT:
@@ -1730,6 +1794,9 @@ static void __destroy_ingredient(struct recipe_ingredient* ingredient)
 
 static void __destroy_step(struct recipe_step* step)
 {
+    __destroy_list(string, step->configure.arguments.head, struct list_item_string);
+    __destroy_list(keypair, step->configure.env_keypairs.head, struct chef_keypair_item);
+    free((void*)step->configure.source_dir);
     __destroy_list(string, step->depends.head, struct list_item_string);
     __destroy_list(string, step->arguments.head, struct list_item_string);
     __destroy_list(keypair, step->env_keypairs.head, struct chef_keypair_item);

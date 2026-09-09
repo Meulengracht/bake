@@ -24,6 +24,55 @@
 #include <stdlib.h>
 #include <string.h>
 
+int environment_update(struct list* environment, const struct list* updates)
+{
+    struct list_item* item;
+
+    if (environment == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (updates == NULL || updates == environment) {
+        return 0;
+    }
+
+    list_foreach(updates, item) {
+        const struct chef_keypair_item* update = (const struct chef_keypair_item*)item;
+        struct chef_keypair_item*       copy;
+        struct list_item*              existing;
+
+        if (update->key == NULL || update->value == NULL) {
+            errno = EINVAL;
+            return -1;
+        }
+        copy = calloc(1, sizeof(struct chef_keypair_item));
+        if (copy == NULL) {
+            return -1;
+        }
+        copy->key = platform_strdup(update->key);
+        copy->value = platform_strdup(update->value);
+        if (copy->key == NULL || copy->value == NULL) {
+            free((void*)copy->key);
+            free((void*)copy->value);
+            free(copy);
+            return -1;
+        }
+
+        list_foreach(environment, existing) {
+            struct chef_keypair_item* pair = (struct chef_keypair_item*)existing;
+            if (!strcmp(pair->key, copy->key)) {
+                list_remove(environment, existing);
+                free((void*)pair->key);
+                free((void*)pair->value);
+                free(pair);
+                break;
+            }
+        }
+        list_add(environment, &copy->list_header);
+    }
+    return 0;
+}
+
 static char* __append_valuev(const char* value, char** values, char* sep)
 {
     size_t length;

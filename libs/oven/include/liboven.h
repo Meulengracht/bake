@@ -55,6 +55,12 @@ struct oven_build_options {
     union chef_backend_options* system_options;
     struct list*                arguments;
     struct list*                environment;
+    
+    // CMake/Autotools configure before building unless explicitly disabled.
+    int                         skip_generate;
+    const char*                 source_dir;
+    struct list*                generate_arguments;
+    struct list*                generate_environment;
 };
 
 enum oven_script_root_dir {

@@ -684,3 +684,62 @@ int test_recipe_full(void)
     recipe_destroy(recipe);
     return 0;
 }
+
+int test_recipe_combined_build(void)
+{
+    struct recipe* recipe = NULL;
+    const char* yaml =
+        "name: combined\nauthor: Test\nemail: test@test.com\nversion: 1.0.0\n"
+        "recipes:\n- name: app\n  steps:\n"
+        "  - name: default\n    type: build\n    system: cmake\n"
+        "  - name: custom\n    configure:\n"
+        "      arguments: [-DFEATURE=ON]\n      source-dir: subproject\n"
+        "      env: {MODE: configure}\n"
+        "    type: build\n    system: cmake\n"
+        "    arguments: [--parallel, '2']\n    env: {MODE: build}\n"
+        "  - name: prepared\n    type: build\n    system: autotools\n    configure: false\n"
+        "  - name: enabled\n    type: build\n    system: autoconf\n    configure: true\n"
+        "  - name: empty\n    type: build\n    system: cmake\n    configure: {}\n"
+        "packs:\n- name: combined\n  summary: Test\n  type: ingredient\n";
+    TEST_ASSERT(__parse_recipe(yaml, &recipe) == 0, "combined recipe should parse");
+    struct recipe_part* part = (struct recipe_part*)recipe->parts.head;
+    struct recipe_step* step = (struct recipe_step*)__list_nth(&part->steps, 0);
+    TEST_ASSERT(!step->configure.specified && !step->configure.disabled, "generation defaults to enabled");
+    step = (struct recipe_step*)__list_nth(&part->steps, 1);
+    TEST_ASSERT(step->configure.specified && !step->configure.disabled, "nested settings enable generation");
+    TEST_ASSERT(step->arguments.count == 2 && step->configure.arguments.count == 1, "phase arguments stay separate");
+    TEST_ASSERT(!strcmp(step->configure.source_dir, "subproject"), "nested source directory parsed");
+    TEST_ASSERT(!strcmp(((struct chef_keypair_item*)step->env_keypairs.head)->value, "build"), "shared environment preserved");
+    TEST_ASSERT(!strcmp(((struct chef_keypair_item*)step->configure.env_keypairs.head)->value, "configure"), "generation environment separated");
+    step = (struct recipe_step*)__list_nth(&part->steps, 2);
+    TEST_ASSERT(step->configure.disabled, "false disables generation");
+    step = (struct recipe_step*)__list_nth(&part->steps, 3);
+    TEST_ASSERT(step->configure.specified && !step->configure.disabled, "true enables generation");
+    step = (struct recipe_step*)__list_nth(&part->steps, 4);
+    TEST_ASSERT(step->configure.specified && !step->configure.disabled, "empty settings enable generation");
+    recipe_destroy(recipe);
+    return 0;
+}
+
+int test_recipe_invalid_configure(void)
+{
+    const char* steps[] = {
+        "type: build\n    system: cmake\n    configure: nonsense\n",
+        "type: build\n    system: cmake\n    configure: [false]\n",
+        "type: build\n    system: cmake\n    configure: {unknown: value}\n",
+        "type: build\n    system: cmake\n    configure: {false: value}\n",
+        "type: build\n    system: make\n    configure: {}\n",
+        "type: generate\n    system: cmake\n    configure: {}\n",
+        "type: script\n    configure: false\n",
+        "type: build\n    system: cmake\n    configure: true\n    configure: false\n"
+    };
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+        char yaml[1024];
+        struct recipe* recipe = NULL;
+        snprintf(yaml, sizeof(yaml),
+            "name: invalid\nauthor: Test\nemail: test@test.com\nversion: 1.0.0\n"
+            "recipes:\n- name: app\n  steps:\n  - name: test\n    %s", steps[i]);
+        TEST_ASSERT(__parse_recipe(yaml, &recipe) != 0, "invalid configure settings should be rejected");
+    }
+    return 0;
+}

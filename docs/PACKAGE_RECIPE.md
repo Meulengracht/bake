@@ -1,77 +1,96 @@
-
 <h1 align="center" style="margin-top: 0px;">Recipe Specification</h1>
+
+## Combined build steps
+
+CMake and Autotools projects can configure, build, and install into Chef's staging
+directory with a single step:
+
+```yaml
+steps:
+  - name: build
+    type: build
+    system: cmake
+```
+
+Use `system: autotools` (or its `autoconf` alias) for configure + Make projects.
+CMake builds use `cmake --build` and `cmake --install`, so the selected CMake
+generator is also used for compilation. The CMake executable must support
+`--install` (CMake 3.15 or later).
+
+Optional nested `configure` settings customize configuration without adding a step:
+
+```yaml
+steps:
+  - name: build
+    type: build
+    system: cmake
+    arguments: [--parallel, '2']
+    env:
+      SHARED_SETTING: value
+    configure:
+      source-dir: src
+      arguments: [-DBUILD_SHARED_LIBS=ON]
+      env:
+        CONFIGURE_SETTING: value
+```
+
+- `configure.arguments` goes only to configuration. Top-level `arguments` goes
+  only to compilation, as it does for existing build steps. For CMake, these are
+  `cmake --build` options; put native build-tool options after `--`.
+- Top-level `env` applies to configuration, compilation, and installation.
+  `configure.env` overrides matching keys for configuration only.
+- `configure.source-dir` selects a source subdirectory relative to the recipe
+  part's source root. It falls back to the step's `source-dir` when omitted.
+- Omitted `configure`, `configure: true`, and `configure: {}` all enable generation.
+  `configure: false` skips it and requires an already configured build directory.
+- Each execution of a combined step runs configuration before building unless
+  configuration is disabled. A configuration failure stops the step immediately.
+  Dependencies refer to the named build step as a whole.
+
+Explicit generation remains supported, for example when inserting a script
+between configuration and compilation:
+
+```yaml
+steps:
+  - name: config
+    type: generate
+    system: cmake
+    arguments: [-G, '"Unix Makefiles"']
+  - name: build
+    type: build
+    system: make
+    depends: [config]
+```
+
+A subsequent `build/cmake` step can instead use `configure: false` and
+`depends: [config]`. Chef does not infer this from an earlier generate step.
+Direct `build/make` and `build/ninja` steps retain their existing behavior.
+Meson retains its existing separate-step behavior; nested `configure` settings
+are currently accepted only on CMake and Autotools build steps. Script steps
+are unchanged.
+
 
 
 ```
 #########################
-# project
+# Project metadata (root fields)
 #
-# This member is required, and specifies project information which can be
-# viewed with 'order info'.
-project:
-  ###########################
-  # summary - Required
-  #
-  # A short summary of the project, this will be shown in the first line
-  # of the project info page.
-  summary: Simple Application Recipe
+# name, author, email, and version are required. These fields are written at
+# the recipe root; there is no project: wrapper.
+name: my-project
+author: who made it
+email: contact@me.com
+version: 0.1.0
 
-  ###########################
-  # description - Required
-  #
-  # A longer description of the project, detailing what the purpose is and how
-  # to use it.
-  description: A simple application recipe
+#########################
+# Optional project metadata
+license: MIT
+eula: https://myorg.com/project-eula
+homepage: https://example.com
 
-  ###########################
-  # author - Required
-  #
-  # The project author(s), this is just treated as a string value.
-  author: who made it
-
-  ###########################
-  # email - Required
-  #
-  # The email of the project or the primary author/maintainer.
-  # This will be visible to anyone who downloads the package.
-  email: contact@me.com
-
-  ##########################
-  # version - Required
-  #
-  # A three part version number for the current project version. Chef
-  # automatically adds an auto-incrementing revision number. This means
-  # for every publish done the revision increments, no matter if the 
-  # version number stays the same. 
-  version: 0.1.0
-  
-  #########################
-  # icon - Optional
-  #
-  # The project icon file. This is either a png, bmp or jpg file that will be
-  # shown in the project info page.
-  icon: /path/to/icon.png
-  
-  #########################
-  # license - Optional
-  #
-  # Specify the project license, this can either be a short-form of know
-  # licenses or a http link to the project license if a custom one is used.
-  license: MIT
-  
-  #########################
-  # eula - Optional
-  #
-  # If provided, the chef will open and require the user to sign an eula
-  # in case one if required for installing the package. <Planned Feature>
-  # The signing will be done either in the CLI or in the GUI when it arrives.
-  eula: https://myorg.com/project-eula
-
-  #########################
-  # homepage - Optional
-  #
-  # The project website, it is expected for this to be an url if provided.
-  homepage:
+# Pack presentation metadata belongs on each pack below. A pack can define
+# summary, description, and icon independently; these are not project-root
+# fields.
 
 ###########################
 # ingredients - Optional
@@ -190,7 +209,7 @@ recipes:
       #
       # Name of the step, this can also be used to refer to this step when
       # setting up step dependencies.
-    - name: config
+    - name: build
 
       ###########################
       # depends - Optional
@@ -198,7 +217,7 @@ recipes:
       # List of steps that this step depends on. Steps are executed in sequential order
       # of how they are defined in the YAML file. But when requesting specific steps to run
       # then chef needs to know which steps will be invalidated once that step has rerun.
-      depends: [config]
+      # depends: [earlier-step]
 
       ###########################
       # type - Required
@@ -206,18 +225,20 @@ recipes:
       #
       # The step type, which must be specified. This determines which
       # kinds of 'system' is available for this step.
-      type: generate
+      type: build
       
       ###########################
       # system - Required
-      #    generate-values: {autotools, cmake}
-      #    build-values:    {make}
+      #    generate-values: {autotools, autoconf, cmake, meson}
+      #    build-values:    {cmake, autotools, autoconf, make, ninja, meson}
       #    script-values:   <none>
       #
-      # This determines which backend will be used for this step. Configure steps
-      # will only be invoked when they change (todo!), but build/install steps are always
-      # executed.
-      system: autotools
+      # CMake and Autotools build steps configure, build, and install.
+      system: cmake
+
+      # Optional configuration-only settings (or configure: false to skip).
+      configure:
+        arguments: [-DBUILD_SHARED_LIBS=ON]
 
       ###########################
       # script - Required for script
@@ -244,7 +265,7 @@ recipes:
       # arguments - Optional
       # 
       # List of arguments that should be passed to the spawn invocation.
-      arguments: [--arg=value]
+      arguments: [--parallel, '2']
 
       ###########################
       # env - Optional
@@ -263,6 +284,16 @@ packs:
     # name that will be used for publishing. The published name will be
     # publisher/name of this pack.
   - name: mypack
+
+    ###########################
+    # summary - Required
+    #
+    # Short text shown when the pack is listed.
+    summary: My package
+
+    ###########################
+    # description - Optional
+    description: A package built with Chef
 
     ###########################
     # type - Required
