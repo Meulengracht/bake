@@ -83,10 +83,10 @@ static int __ensure_toolchains(struct list* platforms)
             .platform = CHEF_PLATFORM_STR
         }, NULL);
         if (status) {
+            VLOG_ERROR("bake", "failed to fetch ingredient %s\n", name);
             free(name);
             free(channel);
             free(version);
-            VLOG_ERROR("bake", "failed to fetch ingredient %s\n", name);
             return status;
         }
     }
