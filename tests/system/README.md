@@ -22,7 +22,6 @@ bash tests/system/run.sh hello-build
 bash tests/system/run.sh hello-runtime
 bash tests/system/run.sh dummy-store-roundtrip
 bash tests/system/run.sh order-fetch-from-store
-bash tests/system/run.sh served-install-from-store
 ```
 
 ### Required system dependencies
@@ -167,27 +166,6 @@ real chefclient code paths.
 - Negative-path: `order info` for a missing package — asserts non-zero exit
 
 Exit codes: `0` = pass, `1` = fail.
-
----
-
-### `served-install-from-store.sh`
-
-Validates that `daemons/served` can download a package from the dummy store.
-
-| Step | Description | Status |
-|------|-------------|--------|
-| 1–2  | Prerequisites and build hello-world | ✅ hard assertion |
-| 3    | Start dummy store | ✅ hard assertion |
-| 4    | Seed store with hello-world.pack | ✅ hard assertion |
-| 5    | Start served with `CHEF_STORE_URL` pointing at dummy store | ✅ hard assertion |
-| 6    | Verify served is responsive (`serve list`) | ✅ hard assertion |
-| 7    | Request install of `testpub/hello-world` | ✅ hard assertion |
-| 8    | Assert package blob downloaded into local cache | ✅ hard assertion |
-| 9    | Package appears in `serve list` | ⚠️ aspirational (requires crypto proof) |
-| 10   | Installed application is runnable | ⚠️ aspirational |
-
-Exit codes: `0` = full pass, `1` = infrastructure failure, `2` = aspirational
-steps not yet fully implemented.
 
 ---
 
