@@ -43,6 +43,7 @@ struct oven_generate_options {
     const char*                 profile;
     const char*                 system;
     union chef_backend_options* system_options;
+    const char*                 source_dir;
     struct list*                arguments;
     struct list*                environment;
 };

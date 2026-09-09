@@ -73,6 +73,7 @@ static void __initialize_generator_options(struct oven_generate_options* options
     options->profile        = NULL;
     options->system         = step->system;
     options->system_options = &step->options;
+    options->source_dir     = step->source_dir;
     options->arguments      = &step->arguments;
     options->environment    = &step->env_keypairs;
 }

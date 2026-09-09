@@ -88,6 +88,7 @@ enum state {
     STATE_RECIPE_STEP_DEPEND_LIST,
     STATE_RECIPE_STEP_SYSTEM,
     STATE_RECIPE_STEP_SCRIPT,
+    STATE_RECIPE_STEP_SOURCE_DIR,
     STATE_RECIPE_STEP_ARGUMENT_LIST,
 
     STATE_RECIPE_STEP_MESON_CROSS_FILE,
@@ -1237,6 +1238,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_RECIPE_STEP_SYSTEM);
                     } else if (strcmp(value, "script") == 0) {
                         __parser_push_state(s, STATE_RECIPE_STEP_SCRIPT);
+                    } else if (strcmp(value, "source-dir") == 0) {
+                        __parser_push_state(s, STATE_RECIPE_STEP_SOURCE_DIR);
                     } else if (strcmp(value, "meson-cross-file") == 0) {
                         __parser_push_state(s, STATE_RECIPE_STEP_MESON_CROSS_FILE);
                     } else if (strcmp(value, "meson-wraps") == 0) {
@@ -1264,6 +1267,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         __consume_scalar_fn(STATE_RECIPE_STEP_TYPE, step.type, __parse_recipe_step_type)
         __consume_scalar_fn(STATE_RECIPE_STEP_SYSTEM, step.system, __parse_string)
         __consume_scalar_fn(STATE_RECIPE_STEP_SCRIPT, step.script, __parse_string)
+        __consume_scalar_fn(STATE_RECIPE_STEP_SOURCE_DIR, step.source_dir, __parse_string)
 
         __consume_system_option_scalar_fn(STATE_RECIPE_STEP_MESON_CROSS_FILE, "meson", meson.cross_file, __parse_string)
         __consume_system_option_scalar_fn(STATE_RECIPE_STEP_MAKE_INTREE, "make", make.in_tree, __parse_boolean)
@@ -1747,6 +1751,7 @@ static void __destroy_step(struct recipe_step* step)
     free((void*)step->name);
     free((void*)step->script);
     free((void*)step->system);
+    free((void*)step->source_dir);
     free(step);
 }
 

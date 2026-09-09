@@ -70,6 +70,7 @@ struct recipe_step {
     enum recipe_step_type      type;
     const char*                system;
     const char*                script;
+    const char*                source_dir;
     struct list                depends;
     struct list                arguments;
     struct list                env_keypairs;

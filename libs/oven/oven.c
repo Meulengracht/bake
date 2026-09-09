@@ -206,6 +206,7 @@ static void __cleanup_backend_data(struct oven_backend_data* data)
 {
     __cleanup_environment(data->environment);
     free((void*)data->arguments);
+    free((void*)data->paths.source);
 }
 
 static struct chef_keypair_item* __preprocess_keypair(struct chef_keypair_item* original)
@@ -331,7 +332,12 @@ static int __append_or_update_environ_flags(struct list* environment, const char
     return 0;
 }
 
-static int __initialize_backend_data(struct oven_backend_data* data, const char* profile, struct list* arguments, struct list* environment)
+static int __initialize_backend_data(
+    struct oven_backend_data* data,
+    const char*               stepSources,
+    const char*               profile,
+    struct list*              arguments,
+    struct list*              environment)
 {
     // reset the datastructure
     memset(data, 0, sizeof(struct oven_backend_data));
@@ -339,10 +345,18 @@ static int __initialize_backend_data(struct oven_backend_data* data, const char*
     // setup expected paths
     data->paths.root              = g_oven.paths.project_root;
     data->paths.install           = g_oven.paths.install_root;
-    data->paths.source            = g_oven.recipe.source_root;
     data->paths.build             = g_oven.recipe.build_root;
     data->paths.build_ingredients = g_oven.paths.build_ingredients_root;
     data->paths.project           = g_oven.recipe.source_root;
+
+    // stepSources is a relative offset into the project root where the source
+    // of the current step is. This can sometimes be neccessary when project files are
+    // located in sub-directories.
+    if (stepSources != NULL) {
+        data->paths.source = strpathjoin(g_oven.recipe.source_root, stepSources);
+    } else {
+        data->paths.source = platform_strdup(g_oven.recipe.source_root);
+    }
 
     data->project_name        = g_oven.recipe.name;
     data->profile_name        = profile != NULL ? profile : "Release";
@@ -390,7 +404,7 @@ int oven_configure(struct oven_generate_options* options)
         return -1;
     }
 
-    status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
+    status = __initialize_backend_data(&data, options->source_dir, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
     }
@@ -418,7 +432,7 @@ int oven_build(struct oven_build_options* options)
         return -1;
     }
 
-    status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
+    status = __initialize_backend_data(&data, NULL, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
     }
@@ -447,7 +461,7 @@ int oven_clean(struct oven_clean_options* options)
     }
 
     VLOG_TRACE("oven", "running step %s\n", options->name);
-    status = __initialize_backend_data(&data, options->profile, options->arguments, options->environment);
+    status = __initialize_backend_data(&data, NULL, options->profile, options->arguments, options->environment);
     if (status) {
         return status;
     }
