@@ -161,8 +161,15 @@ char** environment_create(const char* const* parent, struct list* additional)
     // copy all variables over, but we skip those that are provided in additional
     // list, as we want to use that one instead
     while (parent[i]) {
+        // Skip parent entries that an explicit additional entry will replace.
         if (!__contains_envkey(additional, parent[i])) {
-            environment[j++] = platform_strdup(parent[i]);
+            environment[j] = platform_strdup(parent[i]);
+            // Abort because the environment would otherwise contain a NULL entry.
+            if (environment[j] == NULL) {
+                environment_destroy(environment);
+                return NULL;
+            }
+            j++;
         }
         i++;
     }
@@ -171,7 +178,9 @@ char** environment_create(const char* const* parent, struct list* additional)
         struct chef_keypair_item* keypair    = (struct chef_keypair_item*)item;
         size_t                    lineLength = strlen(keypair->key) + strlen(keypair->value) + 2;
         char*                     line       = (char*)calloc(lineLength, sizeof(char));
+        // Abort because the completed environment must not contain a missing entry.
         if (line == NULL) {
+            environment_destroy(environment);
             return NULL;
         }
 

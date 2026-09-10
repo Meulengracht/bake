@@ -416,7 +416,13 @@ int oven_configure(struct oven_generate_options* options)
         return -1;
     }
 
-    status = __initialize_backend_data(&data, options->source_dir, options->profile, options->arguments, options->environment);
+    status = __initialize_backend_data(
+        &data,
+        options->source_dir,
+        options->profile,
+        options->arguments,
+        options->environment
+    );
     if (status) {
         return status;
     }
@@ -531,7 +537,13 @@ int oven_clean(struct oven_clean_options* options)
     }
 
     VLOG_TRACE("oven", "running step %s\n", options->name);
-    status = __initialize_backend_data(&data, NULL, options->profile, options->arguments, options->environment);
+    status = __initialize_backend_data(
+        &data,
+        options->source_dir,
+        options->profile,
+        options->arguments,
+        options->environment
+    );
     if (status) {
         return status;
     }

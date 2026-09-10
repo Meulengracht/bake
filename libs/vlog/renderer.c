@@ -812,12 +812,15 @@ void vlog_renderer_resize(void)
     atomic_store(&g_renderer.resize, 1);
 }
 
-void vlog_renderer_push_event(struct vlog_event* event)
+int vlog_renderer_push_event(struct vlog_event* event)
 {
+    int status;
+
     if (event == NULL) {
-        return;
+        return -1;
     }
 
-    __renderer_send_event(&g_renderer, event);
+    status = __renderer_send_event(&g_renderer, event);
     __vlog_event_delete(event);
+    return status;
 }

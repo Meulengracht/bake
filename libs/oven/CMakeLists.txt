@@ -41,9 +41,20 @@ if (NOT MSVC)
     target_link_libraries(oven PUBLIC m)
 endif()
 
-if(BUILD_TESTING AND UNIX)
+# Python-backed workflow tests require a POSIX test runner and interpreter.
+if (BUILD_TESTING AND UNIX)
     find_package(Python3 COMPONENTS Interpreter QUIET)
-    if(Python3_Interpreter_FOUND)
+    # Register Python scenarios only when the interpreter is available.
+    if (Python3_Interpreter_FOUND)
+        # The output harness compiles a small backend translation unit directly
+        # and is only portable to the POSIX logging implementation.
+        # The direct output harness includes the POSIX backend implementation.
+        if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_test(NAME oven_backend_output
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_backend_output.py
+                    ${CMAKE_C_COMPILER})
+            set_tests_properties(oven_backend_output PROPERTIES TIMEOUT 60)
+        endif()
         add_executable(oven_recipe_test_driver tests/recipe_driver.c)
         target_link_libraries(oven_recipe_test_driver PRIVATE oven)
         add_test(NAME oven_recipe_workflow
@@ -51,4 +62,13 @@ if(BUILD_TESTING AND UNIX)
                 $<TARGET_FILE:oven_recipe_test_driver> ${CMAKE_COMMAND})
         set_tests_properties(oven_recipe_workflow PROPERTIES TIMEOUT 120)
     endif()
+endif()
+
+# This C test covers argument serialization and the backend helper contracts on
+# every platform with a working C compiler.
+if (BUILD_TESTING)
+    add_executable(oven_backend_arguments_test tests/test_backend_arguments.c)
+    target_link_libraries(oven_backend_arguments_test PRIVATE oven)
+    add_test(NAME oven_backend_arguments COMMAND oven_backend_arguments_test)
+    set_tests_properties(oven_backend_arguments PROPERTIES TIMEOUT 30)
 endif()

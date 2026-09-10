@@ -43,20 +43,19 @@ union chef_backend_options {
 };
 
 /**
- * @brief Processes text and replaces identifiers it encounters in the text of the
- * following syntax:
- * Variables: $[[ VARIABLE ]]
- * Environment Values: $[ ENVIRONMENT_KEY ]
- * 
- * For variables, the supplied 'resolve' function will be used to lookup the
- * the value based on the name of the variable. If an invalid variable is provided
- * the function should return NULL.
- * @param original The original text that should be processed
- * @param resolve  A callback function that will supply values based on the variable name
- * @param context  Context pointer supplied to the resolve callback
- * 
- * @return The processed text with variable and environment keys substituted. The text
- * is malloc'd and must be freed.
+ * @brief Expand Chef variables and environment variables in a string.
+ *
+ * Chef variables use the $[[ NAME ]] form and are resolved through the
+ * callback supplied by the caller. Environment variables use the $[ NAME ] form
+ * and are read from the process environment. Whitespace immediately inside the
+ * delimiters is ignored, while all other text is copied unchanged.
+ *
+ * @param original Text to expand. The input is not modified.
+ * @param resolve Callback used for Chef variables; it may be NULL when the
+ *                 input contains only environment variables.
+ * @param context Opaque value passed to @p resolve.
+ * @return A newly allocated expanded string, or NULL on invalid input,
+ *         allocation failure, or an unresolved variable.
  */
 extern char* chef_preprocess_text(const char* original, const char* (*resolve)(const char*, void*), void* context);
 

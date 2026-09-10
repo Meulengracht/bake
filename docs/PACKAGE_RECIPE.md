@@ -69,7 +69,65 @@ Meson retains its existing separate-step behavior; nested `configure` settings
 are currently accepted only on CMake and Autotools build steps. Script steps
 are unchanged.
 
+### Backend arguments and staging
 
+Backend-generated paths are passed as individual process arguments. Recipe argument
+lists retain their existing command-string syntax: use quotes inside a YAML string
+when a value contains spaces, for example:
+
+```yaml
+configure:
+  arguments:
+    - '-DCMAKE_INSTALL_PREFIX:PATH="/custom prefix"'
+    - '-DCMAKE_PREFIX_PATH="/dependency one;/dependency two"'
+```
+
+CMake definitions are matched by exact name, including optional types such as
+`:PATH`. `CMAKE_PREFIX_PATH` uses semicolon-separated entries on all platforms.
+Chef appends the ingredient root, plus `usr` and `usr/local` for Linux, or
+`Program Files` for Windows.
+
+CMake, Autotools, and Meson place their installation prefix under `INSTALL_PREFIX`.
+An already staged prefix is preserved only when it matches the staging root or a
+child path; a sibling with a similar name is staged as a new path. Parent-directory
+components (`..`) are rejected. This is lexical path handling, not a sandbox for
+build scripts or absolute install destinations defined by the project itself.
+
+Autotools checks both platform and architecture when deciding whether to generate
+cross-compilation settings. Its generated `chef-config.site` lives in the build
+folder and is selected through `CONFIG_SITE`. It appends ingredient include and
+library flags while preserving existing `CPPFLAGS`, `LDFLAGS`, and `CFLAGS`.
+An explicit `CONFIG_SITE` environment value takes precedence. Compiler selection
+and Autoconf `--host`/`--build` settings remain recipe responsibilities. Autoconf's
+compiler flag expansion still requires ingredient paths without whitespace.
+
+### Meson steps
+
+Meson uses an explicit generate step followed by a build step:
+
+```yaml
+steps:
+  - name: configure
+    type: generate
+    system: meson
+    source-dir: src
+    # Optional template, resolved relative to the recipe project directory:
+    meson-cross-file: toolchains/cross.txt
+    arguments: [--buildtype=release]
+  - name: build
+    type: build
+    system: meson
+    depends: [configure]
+    arguments: [-j, '2']
+```
+
+Generation runs `meson setup` with both source and build directories; subsequent
+runs use `--reconfigure`. The cross-file template is expanded into the build
+folder, and a read, expansion, or write failure stops generation. Build runs
+`meson compile` followed by `meson install --no-rebuild`; clean runs
+`meson compile --clean`. Build arguments apply to compilation only, while step
+environment settings also apply to installation. Meson must support `compile`
+(version 0.54 or later).
 
 ```
 #########################

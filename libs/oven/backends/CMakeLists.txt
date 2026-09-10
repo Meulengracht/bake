@@ -1,4 +1,5 @@
 add_library(oven-backends STATIC
+    common.c
     autotools.c
     cmake.c
     make.c

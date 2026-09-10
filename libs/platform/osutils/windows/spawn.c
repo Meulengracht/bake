@@ -13,10 +13,11 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  */
 
 #include <chef/platform.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,7 +47,7 @@ static void __report(char* line, enum platform_spawn_output_type type, struct pl
             p++;
         }
     }
-    
+
     // only do a final report if the line didn't end with a newline
     if (s != p) {
         options->output_handler(s, type);
@@ -58,11 +59,14 @@ static DWORD __read_from_pipe(HANDLE pipe, char* buffer, DWORD bufferSize)
     DWORD bytesRead = 0;
     DWORD bytesAvail = 0;
 
-    if (!PeekNamedPipe(pipe, NULL, 0, NULL, &bytesAvail, NULL) || bytesAvail == 0) {
+    // Avoid blocking when the child has not produced another output chunk.
+    if (PeekNamedPipe(pipe, NULL, 0, NULL, &bytesAvail, NULL) == FALSE ||
+        bytesAvail == 0) {
         return 0;
     }
 
-    if (!ReadFile(pipe, buffer, bufferSize - 1, &bytesRead, NULL)) {
+    // Read one bounded chunk so __report always receives a terminated string.
+    if (ReadFile(pipe, buffer, bufferSize - 1, &bytesRead, NULL) == FALSE) {
         return 0;
     }
 
@@ -70,25 +74,43 @@ static DWORD __read_from_pipe(HANDLE pipe, char* buffer, DWORD bufferSize)
     return bytesRead;
 }
 
-int platform_spawn(const char* path, const char* arguments, const char* const* envp, struct platform_spawn_options* options)
+static void __safe_close(HANDLE* handle)
 {
-    HANDLE hStdoutRead = NULL, hStdoutWrite = NULL;
-    HANDLE hStderrRead = NULL, hStderrWrite = NULL;
-    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES)};
-    STARTUPINFOA si = {sizeof(STARTUPINFOA)};
-    PROCESS_INFORMATION pi = {0};
+    if (handle != NULL && *handle != NULL) {
+        CloseHandle(*handle);
+        *handle = NULL;
+    }
+}
+
+int platform_spawn(const char* path, const char* arguments, const char* const* envp,
+    struct platform_spawn_options* options)
+{
+    HANDLE hStdoutRead = NULL;
+    HANDLE hStdoutWrite = NULL;
+    HANDLE hStderrRead = NULL;
+    HANDLE hStderrWrite = NULL;
+    SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES) };
+    STARTUPINFOA si = { sizeof(STARTUPINFOA) };
+    PROCESS_INFORMATION pi = { 0 };
     char* cmdLine = NULL;
     char* envBlock = NULL;
     int status = -1;
     DWORD exitCode = 0;
+    size_t cmdLineLen;
+
+    if (path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
 
     sa.bInheritHandle = TRUE;
     sa.lpSecurityDescriptor = NULL;
 
-    // Create pipes for stdout and stderr if output handler is provided
-    if (options && options->output_handler) {
-        if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0) ||
-            !CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0)) {
+    // Create pipes for stdout and stderr if output handler is provided.
+    if (options != NULL && options->output_handler != NULL) {
+        /* The child cannot be monitored unless both output streams have pipes. */
+        if (CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0) == FALSE ||
+            CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0) == FALSE) {
             fprintf(stderr, "platform_spawn: failed to create pipes\n");
             goto cleanup;
         }
@@ -108,53 +130,56 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
     }
 
     // Build command line: "path" arguments
-    size_t cmdLineLen = strlen(path) + 3; // for quotes and space
-    if (arguments) {
+    cmdLineLen = strlen(path) + 3; // for quotes and space
+    if (arguments != NULL) {
         cmdLineLen += strlen(arguments) + 1;
     }
-    
+
     cmdLine = (char*)calloc(1, cmdLineLen);
-    if (!cmdLine) {
+    if (cmdLine == NULL) {
         fprintf(stderr, "platform_spawn: failed to allocate command line\n");
         goto cleanup;
     }
 
     // Quote the path to handle spaces
     snprintf(cmdLine, cmdLineLen, "\"%s\"", path);
-    if (arguments && arguments[0] != '\0') {
+    if (arguments != NULL && arguments[0] != '\0') {
         strcat(cmdLine, " ");
         strcat(cmdLine, arguments);
     }
 
     // Build environment block if provided
-    if (envp) {
-        size_t totalSize = 0;
+    if (envp != NULL) {
         const char* const* env = envp;
-        
+        size_t             totalSize = 0;
+        char*              p;
+
         // Calculate total size needed
-        while (*env) {
+        while (*env != NULL) {
             totalSize += strlen(*env) + 1;
             env++;
         }
         totalSize++; // Double null terminator
-        
-        envBlock = (char*)calloc(1, totalSize);
-        if (envBlock) {
-            char* p = envBlock;
-            env = envp;
-            while (*env) {
-                size_t len = strlen(*env);
-                memcpy(p, *env, len);
-                p += len;
-                *p++ = '\0';
-                env++;
-            }
-            *p = '\0'; // Double null terminator
+
+        envBlock = (char*)calloc(1, totalSize + 1);
+        if (envBlock == NULL) {
+            goto cleanup;
         }
+
+        p = envBlock;
+        env = envp;
+        while (*env != NULL) {
+            size_t len = strlen(*env);
+            memcpy(p, *env, len);
+            p += len;
+            *p++ = '\0';
+            env++;
+        }
+        *p = '\0'; // Double null terminator
     }
 
     // Create the process
-    if (!CreateProcessA(
+    if (CreateProcessA(
         NULL,
         cmdLine,
         NULL,
@@ -162,25 +187,25 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
         TRUE,
         CREATE_NO_WINDOW,
         envBlock,
-        options && options->cwd ? options->cwd : NULL,
+        options != NULL && options->cwd != NULL ? options->cwd : NULL,
         &si,
-        &pi)) {
+        &pi) == FALSE) {
         fprintf(stderr, "platform_spawn: failed to create process: %lu\n", GetLastError());
         goto cleanup;
     }
 
     // Close write ends of pipes in parent
-    if (hStdoutWrite) {
+    if (hStdoutWrite != NULL) {
         CloseHandle(hStdoutWrite);
         hStdoutWrite = NULL;
     }
-    if (hStderrWrite) {
+    if (hStderrWrite != NULL) {
         CloseHandle(hStderrWrite);
         hStderrWrite = NULL;
     }
 
     // Read output if handler is provided
-    if (options && options->output_handler) {
+    if (options != NULL && options->output_handler != NULL) {
         char buffer[OUTPUT_BUFFER_SIZE];
         BOOL processRunning = TRUE;
 
@@ -205,18 +230,24 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
             }
         }
 
-        // Final read to get any remaining output
-        for (int i = 0; i < 2; i++) {
-            DWORD bytesRead;
-            
-            bytesRead = __read_from_pipe(hStdoutRead, buffer, sizeof(buffer));
-            if (bytesRead > 0) {
+        // Drain both streams completely after exit; output may exceed two chunks.
+        for (;;) {
+            DWORD stdoutBytes;
+            DWORD stderrBytes;
+
+            stdoutBytes = __read_from_pipe(hStdoutRead, buffer, sizeof(buffer));
+            if (stdoutBytes > 0) {
                 __report(buffer, PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT, options);
             }
 
-            bytesRead = __read_from_pipe(hStderrRead, buffer, sizeof(buffer));
-            if (bytesRead > 0) {
+            stderrBytes = __read_from_pipe(hStderrRead, buffer, sizeof(buffer));
+            if (stderrBytes > 0) {
                 __report(buffer, PLATFORM_SPAWN_OUTPUT_TYPE_STDERR, options);
+            }
+
+            // Both empty reads mean the child has no more buffered output
+            if (stdoutBytes == 0 && stderrBytes == 0) {
+                break;
             }
         }
     } else {
@@ -224,20 +255,40 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
         WaitForSingleObject(pi.hProcess, INFINITE);
     }
 
-    // Get exit code
-    if (GetExitCodeProcess(pi.hProcess, &exitCode)) {
+    // Get exit code and return it at the actual result
+    if (GetExitCodeProcess(pi.hProcess, &exitCode) != FALSE) {
         status = (int)exitCode;
     }
 
 cleanup:
-    if (hStdoutRead) CloseHandle(hStdoutRead);
-    if (hStdoutWrite) CloseHandle(hStdoutWrite);
-    if (hStderrRead) CloseHandle(hStderrRead);
-    if (hStderrWrite) CloseHandle(hStderrWrite);
-    if (pi.hProcess) CloseHandle(pi.hProcess);
-    if (pi.hThread) CloseHandle(pi.hThread);
+    __safe_close(&hStdoutRead);
+    __safe_close(&hStdoutWrite);
+    __safe_close(&hStderrRead);
+    __safe_close(&hStderrWrite);
+    __safe_close(&pi.hProcess);
+    __safe_close(&pi.hThread);
     free(cmdLine);
     free(envBlock);
-    
+    return status;
+}
+
+int platform_spawn_argv(const char* path, const char* const* arguments,
+    const char* const* envp, struct platform_spawn_options* options)
+{
+    char* command;
+    int   status;
+
+    if (path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    command = strargv_windows(arguments);
+    if (command == NULL) {
+        return -1;
+    }
+
+    status = platform_spawn(path, command, envp, options);
+    free(command);
     return status;
 }

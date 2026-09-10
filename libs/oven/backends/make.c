@@ -16,143 +16,89 @@
  * 
  */
 
-#include <backend.h>
-#include <chef/environment.h>
-#include <chef/platform.h>
-#include <errno.h>
+#include "private.h"
 #include <liboven.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <vlog.h>
 
-#define __INTERNAL_MAX(a,b) (((a) > (b)) ? (a) : (b))
-
-static void __make_output_handler(const char* line, enum platform_spawn_output_type type) 
+/**
+ * @brief Run a Make operation in the requested working directory.
+ */
+static int __run(struct oven_backend_data* data, const char* arguments, const char* cwd)
 {
-    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_DEBUG("make", line);
-    } else {
-        VLOG_ERROR("make", line);
+    struct backend_args args = { 0 };
+    int status = -1;
+
+    /* Run the command only when its argument string parsed successfully. */
+    if (backend_args_parse(&args, arguments) == 0) {
+        status = backend_run(data, "make", &args, cwd, NULL);
     }
+
+    backend_args_destroy(&args);
+    return status;
 }
 
-static int __cpu_workers(union chef_backend_options* options)
+static const char* __get_cwd(struct oven_backend_data* data, union chef_backend_options* options)
 {
-    if (options->make.parallel > 0) {
-        return options->make.parallel;
+    return (options != NULL && options->make.in_tree) ? data->paths.source : data->paths.build;
+}
+
+static int __get_workercount(union chef_backend_options* options)
+{
+    // never allow the full number of cpucount by default, we always
+    // reduce by 2.
+    int workers = options != NULL && options->make.parallel > 0
+        ? options->make.parallel
+        : platform_cpucount() - 2;
+    if (workers < 1) {
+        // always ensure at least one worker is used
+        workers = 1;
     }
-    // Never use the maximum number of cpus, that can make a system unstable/hang
-    return __INTERNAL_MAX(platform_cpucount() - 2, 1);
+    return workers;
 }
 
 int make_build_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
-    int         status      = -1;
-    char**      environment = NULL;
-    char*       argument    = NULL;
-    size_t      argumentLength;
-    const char* cwd = data->paths.build;
+    struct backend_args args = { 0 };
+    const char*         cwd;
+    char                jobs[32];
+    int                 workers;
+    int                 status;
 
-    argumentLength = strlen(data->arguments) + 32;
-    argument       = calloc(argumentLength, 1);
-    if (argument == NULL) {
-        return -1;
+    status = backend_validate(data);
+    if (status) {
+        return status;
     }
 
-    environment = environment_create(data->process_environment, data->environment);
-    if (environment == NULL) {
+    cwd = __get_cwd(data, options);
+    workers = __get_workercount(options);
+
+    // add the job count argument
+    snprintf(jobs, sizeof(jobs), "-j%d", workers);
+    if (backend_args_add(&args, jobs) != 0 ||
+        backend_args_parse(&args, data->arguments) != 0) {
+        status = -1;
         goto cleanup;
     }
 
-    // build the make parameters, execute from build folder
-    sprintf(argument, "-j%i", __cpu_workers(options));
-    if (strlen(data->arguments) > 0) {
-        strcat(argument, " ");
-        strcat(argument, data->arguments);
-    }
-
-    // handle in-tree builds
-    if (options->make.in_tree) {
-        cwd = data->paths.source;
-    }
-
-    // perform the build operation
-    VLOG_DEBUG("make", "executing 'make %s'\n", argument);
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    status = platform_spawn(
-        "make",
-        argument,
-        (const char* const*)environment, 
-        &(struct platform_spawn_options) {
-            .cwd = cwd,
-            .output_handler = __make_output_handler
-        }
-    );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    if (status != 0) {
-        VLOG_ERROR("make", "failed to execute 'make %s'\n", argument);
-        goto cleanup;
-    }
-
-    // perform the installation operation, ignore any other parameters
-    VLOG_DEBUG("make", "executing 'make install'\n");
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    status = platform_spawn(
-        "make",
-        "install",
-        (const char* const*)environment, 
-        &(struct platform_spawn_options) {
-            .cwd = cwd,
-            .output_handler = __make_output_handler
-        }
-    );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    if (status != 0) {
-        VLOG_ERROR("make", "failed to execute 'make install'\n");
+    // Install only after the compilation command succeeds.
+    status = backend_run(data, "make", &args, cwd, NULL);
+    if (status == 0) {
+        status = __run(data, "install", cwd);
     }
 
 cleanup:
-    free(argument);
-    environment_destroy(environment);
+    backend_args_destroy(&args);
     return status;
 }
 
-
 int make_clean_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
-    int         status      = -1;
-    char**      environment = NULL;
-    const char* cwd = data->paths.build;
+    const char* cwd;
+    int         status;
 
-    environment = environment_create(data->process_environment, data->environment);
-    if (environment == NULL) {
-        goto cleanup;
+    status = backend_validate(data);
+    if (status) {
+        return status;
     }
-
-    // handle in-tree builds
-    if (options->make.in_tree) {
-        cwd = data->paths.source;
-    }
-
-    // perform the installation operation, ignore any other parameters
-    VLOG_DEBUG("make", "executing 'make clean'\n");
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    status = platform_spawn(
-        "make",
-        "clean",
-        (const char* const*)environment, 
-        &(struct platform_spawn_options) {
-            .cwd = cwd,
-            .output_handler = __make_output_handler
-        }
-    );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    if (status != 0) {
-        VLOG_ERROR("make", "failed to execute 'make clean'\n");
-    }
-
-cleanup:
-    environment_destroy(environment);
-    return status;
+    return __run(data, "clean", __get_cwd(data, options));
 }

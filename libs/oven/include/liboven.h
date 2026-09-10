@@ -74,6 +74,13 @@ struct oven_script_options {
 };
 
 struct oven_clean_options {
+    /**
+     * @brief Optional source directory used by the clean backend.
+     *
+     * When NULL, the oven uses the part source directory. This is useful for
+     * build steps whose configure phase selected a different source directory.
+     */
+    const char*                 source_dir;
     const char*                 name;
     const char*                 profile;
     const char*                 system;
