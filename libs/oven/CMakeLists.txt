@@ -42,7 +42,7 @@ if (NOT MSVC)
 endif()
 
 # Python-backed workflow tests require a POSIX test runner and interpreter.
-if (BUILD_TESTING AND UNIX)
+if (BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(Python3 COMPONENTS Interpreter QUIET)
     # Register Python scenarios only when the interpreter is available.
     if (Python3_Interpreter_FOUND)

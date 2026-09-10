@@ -69,13 +69,14 @@ int main(int argc, char** argv, char** envp)
         struct recipe_step* step = (struct recipe_step*)item;
         // Clean mode exercises only build steps, matching oven_clean's API.
         if (getenv("CHEF_TEST_CLEAN") != NULL) {
-            // Generate steps have no build output for a clean backend to remove.
+            // Mirrors bakectl's __clean_step: only build steps reach oven_clean.
             if (step->type != RECIPE_STEP_TYPE_BUILD) {
                 continue;
             }
 
             struct oven_clean_options clean = {
                 .name = step->name,
+                .profile = NULL,
                 .system = step->system,
                 .system_options = &step->options,
                 .arguments = &step->arguments,

@@ -103,6 +103,15 @@ static int __clean_step(const char* partName, struct list* steps, const char* st
             continue;
         }
 
+        // Only build steps produce backend output to clean; generate steps are
+        // cleaned as part of their build step, and script steps have no system.
+        if (step->type != RECIPE_STEP_TYPE_BUILD) {
+            if (stepName != NULL) {
+                break;
+            }
+            continue;
+        }
+
         __initialize_clean_options(&cleanOptions, step);
         status = oven_clean(&cleanOptions);
         if (status) {

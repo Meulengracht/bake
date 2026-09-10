@@ -48,7 +48,7 @@ union chef_backend_options {
  * Chef variables use the $[[ NAME ]] form and are resolved through the
  * callback supplied by the caller. Environment variables use the $[ NAME ] form
  * and are read from the process environment. Whitespace immediately inside the
- * delimiters is ignored, while all other text is copied unchanged.
+ * delimiters and leading ASCII spaces are ignored; all other text is copied unchanged.
  *
  * @param original Text to expand. The input is not modified.
  * @param resolve Callback used for Chef variables; it may be NULL when the
