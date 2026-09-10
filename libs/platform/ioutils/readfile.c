@@ -60,3 +60,43 @@ int platform_readfile(const char* path, void** bufferOut, size_t* lengthOut)
     *lengthOut = size;
     return 0;
 }
+
+int platform_readtext(const char* path, char** bufferOut, size_t* lengthOut)
+{
+    FILE*  file;
+    void*  buffer;
+    size_t size, read;
+
+    if (path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    file = fopen(path, "r");
+    if (!file) {
+        return -1;
+    }
+
+    fseek(file, 0, SEEK_END);
+    size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    buffer = malloc(size);
+    if (!buffer) {
+        fclose(file);
+        return -1;
+    }
+
+    read = fread(buffer, 1, size, file);
+    if (read < size) {
+        fclose(file);
+        free(buffer);
+        return -1;
+    }
+    
+    fclose(file);
+
+    *bufferOut = buffer;
+    *lengthOut = size;
+    return 0;
+}

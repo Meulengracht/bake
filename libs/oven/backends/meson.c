@@ -93,13 +93,14 @@ static int __cross_file(
         goto cleanup;
     }
 
-    status = platform_readfile(input, (void**)&original, &originalLength);
+    status = platform_readtext(input, &original, &originalLength);
     if (status) {
         goto cleanup;
     }
 
     processed = oven_preprocess_text(original);
     if (processed == NULL) {
+        status = -1;
         goto cleanup;
     }
 
@@ -109,6 +110,7 @@ static int __cross_file(
     }
 
     if (backend_args_add(args, "--cross-file") != 0 || backend_args_add(args, path) != 0) {
+        status = -1;
         goto cleanup;
     }
 
@@ -179,9 +181,10 @@ int meson_config_main(struct oven_backend_data* data, union chef_backend_options
         return status;
     }
 
+    // Keep all setup failures visible until the backend process runs successfully.
+    status = -1;
     core = strpathcombine(data->paths.build, "meson-private/coredata.dat");
     if (core == NULL || backend_args_add(&args, "setup") != 0) {
-        status = -1;
         goto cleanup;
     }
 

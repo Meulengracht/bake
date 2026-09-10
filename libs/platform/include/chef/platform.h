@@ -594,6 +594,7 @@ extern const char* platform_copydir_lasterror_operation(void);
  *         read failure.
  */
 extern int platform_readfile(const char* path, void** bufferOut, size_t* lengthOut);
+extern int platform_readtext(const char* path, char** bufferOut, size_t* lengthOut);
 
 /**
  * @brief Replace a text file with a NUL-terminated string's contents.
