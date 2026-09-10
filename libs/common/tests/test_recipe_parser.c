@@ -693,7 +693,7 @@ int test_recipe_combined_build(void)
         "recipes:\n- name: app\n  steps:\n"
         "  - name: default\n    type: build\n    system: cmake\n"
         "  - name: custom\n    configure:\n"
-        "      arguments: [-DFEATURE=ON]\n      source-dir: subproject\n"
+        "      arguments: [-DFEATURE=ON]\n"
         "      env: {MODE: configure}\n"
         "    type: build\n    system: cmake\n"
         "    arguments: [--parallel, '2']\n    env: {MODE: build}\n"
@@ -708,7 +708,6 @@ int test_recipe_combined_build(void)
     step = (struct recipe_step*)__list_nth(&part->steps, 1);
     TEST_ASSERT(step->configure.specified && !step->configure.disabled, "nested settings enable generation");
     TEST_ASSERT(step->arguments.count == 2 && step->configure.arguments.count == 1, "phase arguments stay separate");
-    TEST_ASSERT(!strcmp(step->configure.source_dir, "subproject"), "nested source directory parsed");
     TEST_ASSERT(!strcmp(((struct chef_keypair_item*)step->env_keypairs.head)->value, "build"), "shared environment preserved");
     TEST_ASSERT(!strcmp(((struct chef_keypair_item*)step->configure.env_keypairs.head)->value, "configure"), "generation environment separated");
     step = (struct recipe_step*)__list_nth(&part->steps, 2);

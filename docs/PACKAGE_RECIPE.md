@@ -25,10 +25,10 @@ steps:
     type: build
     system: cmake
     arguments: [--parallel, '2']
+    source-dir: src
     env:
       SHARED_SETTING: value
     configure:
-      source-dir: src
       arguments: [-DBUILD_SHARED_LIBS=ON]
       env:
         CONFIGURE_SETTING: value
@@ -37,10 +37,9 @@ steps:
 - `configure.arguments` goes only to configuration. Top-level `arguments` goes
   only to compilation, as it does for existing build steps. For CMake, these are
   `cmake --build` options; put native build-tool options after `--`.
+- `source-dir` selects a source subdirectory relative to the recipe's root.
 - Top-level `env` applies to configuration, compilation, and installation.
   `configure.env` overrides matching keys for configuration only.
-- `configure.source-dir` selects a source subdirectory relative to the recipe
-  part's source root. It falls back to the step's `source-dir` when omitted.
 - Omitted `configure`, `configure: true`, and `configure: {}` all enable generation.
   `configure: false` skips it and requires an already configured build directory.
 - Each execution of a combined step runs configuration before building unless

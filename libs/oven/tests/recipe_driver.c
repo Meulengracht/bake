@@ -81,9 +81,7 @@ int main(int argc, char** argv, char** envp)
                 .system_options = &step->options,
                 .arguments = &step->arguments,
                 .environment = &step->env_keypairs,
-                .source_dir = step->configure.source_dir != NULL
-                    ? step->configure.source_dir
-                    : step->source_dir
+                .source_dir = step->source_dir
             };
             status = oven_clean(&clean);
         } else if (step->type == RECIPE_STEP_TYPE_GENERATE) {
@@ -104,9 +102,7 @@ int main(int argc, char** argv, char** envp)
                 .arguments = &step->arguments,
                 .environment = &step->env_keypairs,
                 .skip_generate = step->configure.disabled,
-                .source_dir = step->configure.source_dir != NULL
-                    ? step->configure.source_dir
-                    : step->source_dir,
+                .source_dir = step->source_dir,
                 .generate_arguments = &step->configure.arguments,
                 .generate_environment = &step->configure.env_keypairs
             };

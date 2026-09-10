@@ -87,8 +87,7 @@ static void __initialize_build_options(struct oven_build_options* options, struc
     options->arguments             = &step->arguments;
     options->environment           = &step->env_keypairs;
     options->skip_generate         = step->configure.disabled;
-    options->source_dir            = step->configure.source_dir != NULL
-        ? step->configure.source_dir : step->source_dir;
+    options->source_dir            = step->source_dir;
     options->generate_arguments    = &step->configure.arguments;
     options->generate_environment  = &step->configure.env_keypairs;
 }

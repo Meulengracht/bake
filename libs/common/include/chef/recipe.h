@@ -67,7 +67,6 @@ enum recipe_step_type {
 struct recipe_step_configure {
     int         specified;
     int         disabled;
-    const char* source_dir;
     struct list arguments;
     struct list env_keypairs;
 };

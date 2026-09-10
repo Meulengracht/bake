@@ -119,10 +119,10 @@ with tempfile.TemporaryDirectory(prefix="chef-oven-test-") as directory:
     custom = """  - name: build
     type: build
     system: cmake
+    source-dir: subproject
     arguments: [--parallel, '2']
     env: {MODE: build, SHARED: inherited}
     configure:
-      source-dir: subproject
       arguments: [-DFEATURE=ON]
       env: {MODE: configure, CONFIG_ONLY: "$[[ INSTALL_PREFIX ]]"}
 """
@@ -159,9 +159,9 @@ with tempfile.TemporaryDirectory(prefix="chef-oven-test-") as directory:
         calls = run(base / backend, f"""  - name: build
     type: build
     system: {backend}
+    source-dir: subproject
     arguments: [V=1]
     configure:
-      source-dir: subproject
       arguments: [--enable-shared]
 """)
         assert [c["tool"] for c in calls] == ["configure", "make", "make"], calls

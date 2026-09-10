@@ -71,15 +71,11 @@ static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, c
 
 static void __initialize_clean_options(struct oven_clean_options* options, struct recipe_step* step)
 {
-    /*
-     * Cleaning must use the same source directory as the corresponding build
-     * step. In particular, this keeps in-tree Make builds consistent with
-     * their configure phase.
-     */
-    options->source_dir     = step->configure.source_dir != NULL
-        ? step->configure.source_dir
-        : step->source_dir;
-    
+    // Cleaning must use the same source directory as the corresponding build
+    // step. In particular, this keeps in-tree Make builds consistent with
+    // their configure phase.
+    options->source_dir     = step->source_dir;
+
     options->name           = step->name;
     options->profile        = NULL;
     options->system         = step->system;

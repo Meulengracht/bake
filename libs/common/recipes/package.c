@@ -92,7 +92,6 @@ enum state {
     STATE_RECIPE_STEP_ARGUMENT_LIST,
     STATE_RECIPE_STEP_CONFIGURE,
     STATE_RECIPE_STEP_CONFIGURE_SETTINGS,
-    STATE_RECIPE_STEP_CONFIGURE_SOURCE_DIR,
     STATE_RECIPE_STEP_CONFIGURE_ARGUMENT_LIST,
     STATE_RECIPE_STEP_CONFIGURE_ENV_KEY,
     STATE_RECIPE_STEP_CONFIGURE_ENV_VALUE,
@@ -1310,8 +1309,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     __parser_push_state(s, STATE_RECIPE_STEP_CONFIGURE_ARGUMENT_LIST);
                 } else if (!strcmp(value, "env")) {
                     __parser_push_state(s, STATE_RECIPE_STEP_CONFIGURE_ENV_KEY);
-                } else if (!strcmp(value, "source-dir")) {
-                    __parser_push_state(s, STATE_RECIPE_STEP_CONFIGURE_SOURCE_DIR);
                 } else {
                     fprintf(stderr, "parse error: unknown configure setting: %s\n", value);
                     return -1;
@@ -1321,7 +1318,6 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
             }
             break;
 
-        __consume_scalar_fn(STATE_RECIPE_STEP_CONFIGURE_SOURCE_DIR, step.configure.source_dir, __parse_string)
         __consume_sequence_unmapped(STATE_RECIPE_STEP_CONFIGURE_ARGUMENT_LIST, __add_configure_arguments)
 
         __consume_scalar_fn(STATE_RECIPE_STEP_NAME, step.name, __parse_string)
@@ -1796,7 +1792,6 @@ static void __destroy_step(struct recipe_step* step)
 {
     __destroy_list(string, step->configure.arguments.head, struct list_item_string);
     __destroy_list(keypair, step->configure.env_keypairs.head, struct chef_keypair_item);
-    free((void*)step->configure.source_dir);
     __destroy_list(string, step->depends.head, struct list_item_string);
     __destroy_list(string, step->arguments.head, struct list_item_string);
     __destroy_list(keypair, step->env_keypairs.head, struct chef_keypair_item);
