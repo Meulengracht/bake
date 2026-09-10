@@ -104,6 +104,7 @@ void vlog_cleanup(void)
 int vlog_sink_add_text(FILE* output, int close)
 {
     struct vlog_event* event;
+    int                status;
 
     if (!vlog_renderer_is_owner()) {
         errno = ENOTSUP;
@@ -123,15 +124,16 @@ int vlog_sink_add_text(FILE* output, int close)
     if (close) {
         event->data.sink.options |= VLOG_OUTPUT_OPTION_CLOSE;
     }
-
-    vlog_renderer_push_event(event);
+    
+    status = vlog_renderer_push_event(event);
     vlog_barrier();
-    return 0;
+    return status;
 }
 
 int vlog_sink_add_view(FILE* output, int close)
 {
     struct vlog_event* event;
+    int                status;
 
     if (!vlog_renderer_is_owner()) {
         errno = ENOTSUP;
@@ -152,14 +154,15 @@ int vlog_sink_add_view(FILE* output, int close)
         event->data.sink.options |= VLOG_OUTPUT_OPTION_CLOSE;
     }
 
-    vlog_renderer_push_event(event);
+    status = vlog_renderer_push_event(event);
     vlog_barrier();
-    return 0;
+    return status;
 }
 
 int vlog_sink_remove(FILE* output)
 {
     struct vlog_event* event;
+    int                status;
 
     // ensure that vlog is initialized
     if (!g_vlog.initialized || !vlog_renderer_is_owner()) {
@@ -177,9 +180,11 @@ int vlog_sink_remove(FILE* output)
     event->data.sink.level = g_vlog.default_level;
     event->data.sink.options = 0;
 
-    vlog_renderer_push_event(event);
-    vlog_barrier();
-    return 0;
+    status = vlog_renderer_push_event(event);
+    if (!status) {
+        vlog_barrier();
+    }
+    return status;
 }
 
 void vlog_set_level(enum vlog_level level)
@@ -271,14 +276,15 @@ void vlog_flush(void)
         return;
     }
 
-    vlog_renderer_push_event(event);
-    vlog_barrier();
+    if (!vlog_renderer_push_event(event)) {
+        vlog_barrier();
+    }
 }
 
 void vlog_barrier(void)
 {
     struct vlog_barrier_state state;
-    struct vlog_event*      event;
+    struct vlog_event*        event;
 
     // ensure that vlog is initialized
     if (!g_vlog.initialized) {
@@ -296,10 +302,19 @@ void vlog_barrier(void)
     event->data.barrier.state = &state;
 
     mtx_lock(&state.lock);
-    vlog_renderer_push_event(event);
+    // If there is an issue with the renderer then
+    // we need to handle that gracefully so we don't
+    // wait indefinitely on a barrier that will never 
+    // be completed.
+    if (vlog_renderer_push_event(event)) {
+        goto exit;
+    }
+
     while (!state.completed) {
         cnd_wait(&state.done, &state.lock);
     }
+
+exit:
     mtx_unlock(&state.lock);
 
     cnd_destroy(&state.done);
@@ -332,8 +347,9 @@ void vlog_view_open(FILE* handle, const char* header, const char* footer)
         __vlog_event_delete(event);
         return;
     }
-    vlog_renderer_push_event(event);
-    vlog_barrier();
+    if (!vlog_renderer_push_event(event)) {
+        vlog_barrier();
+    }
 }
 
 void vlog_view_close(void)
@@ -351,8 +367,9 @@ void vlog_view_close(void)
     }
 
     event->data.view_close.handle = NULL;
-    vlog_renderer_push_event(event);
-    vlog_barrier();
+    if (!vlog_renderer_push_event(event)) {
+        vlog_barrier();
+    }
 }
 
 void vlog_output(enum vlog_level level, const char* tag, const char* format, ...)
@@ -425,9 +442,7 @@ int vlog_step_open(struct vlog_step* step, const char* label)
         __vlog_event_delete(event);
         return -1;
     }
-
-    vlog_renderer_push_event(event);
-    return 0;
+    return vlog_renderer_push_event(event);
 }
 
 int vlog_step_update(struct vlog_step* step, enum vlog_content_status_type status, const char* format, ...)
@@ -454,9 +469,7 @@ int vlog_step_update(struct vlog_step* step, enum vlog_content_status_type statu
         __vlog_event_delete(event);
         return -1;
     }
-
-    vlog_renderer_push_event(event);
-    return 0;
+    return vlog_renderer_push_event(event);
 }
 
 int vlog_step_close(struct vlog_step* step, enum vlog_content_status_type status, const char* format, ...)
@@ -483,8 +496,6 @@ int vlog_step_close(struct vlog_step* step, enum vlog_content_status_type status
         __vlog_event_delete(event);
         return -1;
     }
-
-    vlog_renderer_push_event(event);
-    return 0;
+    return vlog_renderer_push_event(event);
 }
 

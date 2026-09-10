@@ -27,12 +27,12 @@ char* strflatten(const char* const* values, char* sep, size_t* lengthOut)
     size_t flatLength = 1; // nil terminator
     size_t sepLength = strlen(sep);
 
-    for (int i = 0; values[i] != NULL; i++) {
+    // Calculate the complete allocation, including separators and NULL.
+    for (size_t i = 0; values[i] != NULL; i++) {
         flatLength += strlen(values[i]);
-        if (values[i + 1]) {
+        if (values[i + 1] != NULL) {
             flatLength += sepLength;
         }
-        i++;
     }
 
     flat = calloc(flatLength, 1);
@@ -40,17 +40,18 @@ char* strflatten(const char* const* values, char* sep, size_t* lengthOut)
         return NULL;
     }
 
+    // Copy each value and insert separators
     for (size_t i = 0, j = 0; values[i] != NULL; i++) {
         size_t len = strlen(values[i]);
         
         memcpy(&flat[j], values[i], len);
         j += len;
 
-        if (values[i + 1]) {
+        // Do not end on a separator
+        if (values[i + 1] != NULL) {
             memcpy(&flat[j], sep, sepLength);
             j += sepLength;
         }
-        i++;
     }
     *lengthOut = flatLength;
     return flat;

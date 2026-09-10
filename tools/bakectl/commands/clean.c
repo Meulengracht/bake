@@ -71,6 +71,15 @@ static char* __resolve_toolchain(struct recipe* recipe, const char* toolchain, c
 
 static void __initialize_clean_options(struct oven_clean_options* options, struct recipe_step* step)
 {
+    /*
+     * Cleaning must use the same source directory as the corresponding build
+     * step. In particular, this keeps in-tree Make builds consistent with
+     * their configure phase.
+     */
+    options->source_dir     = step->configure.source_dir != NULL
+        ? step->configure.source_dir
+        : step->source_dir;
+    
     options->name           = step->name;
     options->profile        = NULL;
     options->system         = step->system;
@@ -91,6 +100,15 @@ static int __clean_step(const char* partName, struct list* steps, const char* st
 
         // find the correct recipe step part
         if (stepName != NULL && strcmp(step->name, stepName)) {
+            continue;
+        }
+
+        // Only build steps produce backend output to clean; generate steps are
+        // cleaned as part of their build step, and script steps have no system.
+        if (step->type != RECIPE_STEP_TYPE_BUILD) {
+            if (stepName != NULL) {
+                break;
+            }
             continue;
         }
 

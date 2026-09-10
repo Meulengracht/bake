@@ -33,14 +33,12 @@ struct oven_backend_data_paths {
     const char* root;
 
     /**
-     * @brief The is the path to the project source directory, this is the path
-     * where the backend is supposed to load/execute files from.
-     * <root_directory>/<source_offset>
+     * @brief Recipe part source root, before applying the step's source-dir.
      */
     const char* project;
 
     /**
-     * @brief The path to the project source directory.
+     * @brief Step source directory, including the source-dir offset.
      */
     const char* source;
 
@@ -65,12 +63,38 @@ struct oven_backend_data_paths {
 };
 
 struct oven_backend_data_platform {
+    /** 
+     * @brief Build host platform name, or NULL to use the current host.
+     */
     const char* host_platform;
+    
+    /** 
+     * @brief Build host architecture name, or NULL to use the current host.
+     */
     const char* host_architecture;
+    
+    /** 
+     * @brief Requested target platform name.
+     */
     const char* target_platform;
+    
+    /** 
+     * @brief Requested target architecture, or NULL for the native architecture. *
+     */
     const char* target_architecture;
 };
 
+/**
+ * @brief Inputs shared by every backend entry point.
+ *
+ * All pointers are borrowed and remain owned by the caller. The source, build,
+ * install, build_ingredients, and target_platform fields are required; build
+ * and install must be non-empty absolute paths. The arguments, process_environment,
+ * environment, and backend options fields may be NULL to select their defaults.
+ * The root path is required when a relative Meson cross-file template is used.
+ * Backend entry points return zero on success and nonzero on error; build
+ * entry points include installation.
+ */
 struct oven_backend_data {
     /**
      * @brief The name of the current project. Will usually be the file-name without .yaml
@@ -89,7 +113,8 @@ struct oven_backend_data {
 
     /**
      * @brief Argument string for the current recipe step. The string is a
-     * whitespace seperated string with arguments.
+     * whitespace-separated string parsed by strargv(). Quote values containing
+     * whitespace; quoting may be embedded in an option (e.g. -DKEY="a b").
      */
     const char* arguments;
 
@@ -119,6 +144,7 @@ extern int meson_config_main(struct oven_backend_data* data, union chef_backend_
 //****************************************************************************//
 // Build backend entries                                                      //
 //****************************************************************************//
+extern int cmake_build_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int make_build_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int meson_build_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int ninja_build_main(struct oven_backend_data* data, union chef_backend_options* options);
@@ -126,6 +152,7 @@ extern int ninja_build_main(struct oven_backend_data* data, union chef_backend_o
 //****************************************************************************//
 // Clean backend entries                                                      //
 //****************************************************************************//
+extern int cmake_clean_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int make_clean_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int meson_clean_main(struct oven_backend_data* data, union chef_backend_options* options);
 extern int ninja_clean_main(struct oven_backend_data* data, union chef_backend_options* options);

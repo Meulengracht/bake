@@ -18,16 +18,9 @@ recipes:
       type: path
       path: hello-world
     steps:
-    - name: config
-      type: generate
-      system: cmake
-      arguments:
-        - -G
-        - '"Unix Makefiles"'
     - name: build
       type: build
-      depends: [config]
-      system: make
+      system: cmake
 
 packs:
 - name: hello-world

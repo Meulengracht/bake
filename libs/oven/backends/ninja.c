@@ -16,106 +16,47 @@
  * 
  */
 
-#include <backend.h>
-#include <errno.h>
-#include <liboven.h>
-#include <chef/environment.h>
-#include <chef/platform.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <vlog.h>
+#include "private.h"
 
-#define __INTERNAL_MAX(a,b) (((a) > (b)) ? (a) : (b))
-
-static void __ninja_output_handler(const char* line, enum platform_spawn_output_type type) 
+static int __run(struct oven_backend_data* data, const char* arguments)
 {
-    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_DEBUG("ninja", line);
-    } else {
-        VLOG_ERROR("ninja", line);
+    struct backend_args args = { 0 };
+    int status = -1;
+
+    if (backend_args_parse(&args, arguments) == 0) {
+        status = backend_run(data, "ninja", &args, data->paths.build, NULL);
     }
+
+    backend_args_destroy(&args);
+    return status;
 }
 
 int ninja_build_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
-    int    status      = -1;
-    char** environment = NULL;
+    int status;
+    (void)options;
 
-    environment = environment_create(data->process_environment, data->environment);
-    if (environment == NULL) {
-        goto cleanup;
+    status = backend_validate(data);
+    if (status) {
+        return status;
     }
-
-    // perform the build operation
-    VLOG_DEBUG("ninja", "executing 'ninja %s'\n", data->arguments);
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    status = platform_spawn(
-        "ninja",
-        data->arguments,
-        (const char* const*)environment, 
-        &(struct platform_spawn_options) {
-            .cwd = data->paths.build,
-            .output_handler = __ninja_output_handler
-        }
-    );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    if (status != 0) {
-        VLOG_ERROR("ninja", "failed to execute 'ninja %s'\n", data->arguments);
-        goto cleanup;
+    
+    // build then install
+    status = __run(data, data->arguments);
+    if (status) {
+        return status;
     }
-
-    // perform the installation operation, ignore any other parameters
-    VLOG_DEBUG("ninja", "executing 'ninja install'\n");
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    status = platform_spawn(
-        "ninja",
-        "install",
-        (const char* const*)environment, 
-        &(struct platform_spawn_options) {
-            .cwd = data->paths.build,
-            .output_handler = __ninja_output_handler
-        }
-    );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    if (status != 0) {
-        VLOG_ERROR("ninja", "failed to execute 'ninja install'\n");
-    }
-
-cleanup:
-    environment_destroy(environment);
-    return status;
+    return __run(data, "install");
 }
 
 int ninja_clean_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
-    int    status      = -1;
-    char** environment = NULL;
+    int status;
+    (void)options;
 
-    environment = environment_create(data->process_environment, data->environment);
-    if (environment == NULL) {
-        goto cleanup;
+    status = backend_validate(data);
+    if (status) {
+        return status;
     }
-
-    // perform the build operation
-    VLOG_DEBUG("ninja", "executing 'ninja clean'\n");
-    vlog_set_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    status = platform_spawn(
-        "ninja",
-        "clean",
-        (const char* const*)environment, 
-        &(struct platform_spawn_options) {
-            .cwd = data->paths.build,
-            .output_handler = __ninja_output_handler
-        }
-    );
-    vlog_clear_output_options(stdout, VLOG_OUTPUT_OPTION_NODECO);
-    if (status != 0) {
-        VLOG_ERROR("ninja", "failed to execute 'ninja clean'\n");
-        goto cleanup;
-    }
-
-cleanup:
-    environment_destroy(environment);
-    return status;
+    return __run(data, "clean");
 }

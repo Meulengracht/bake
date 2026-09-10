@@ -1,13 +1,9 @@
-project: 
-  summary: Vali SDK for C
-  description: |
-    The base SDK and runtime for the C language. It is required to build any C applications
-    against the MollenOS/Vali operating system.
-  author: Philip Meulengracht
-  email: the_meulengracht@hotmail.com
-  version: 1.0.0
-  license: LGPL
-  homepage: www.mollenos.com
+name: sdk-c
+author: Philip Meulengracht
+email: the_meulengracht@hotmail.com
+version: 1.0.0
+license: LGPL
+homepage: www.mollenos.com
 
 platforms:
   - name: vali
@@ -37,4 +33,8 @@ recipes:
 
 packs:
 - name: sdk-c
+  summary: Vali SDK for C
+  description: |
+    The base SDK and runtime for the C language. It is required to build any C applications
+    against the MollenOS/Vali operating system.
   type: ingredient

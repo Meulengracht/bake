@@ -31,6 +31,9 @@ extern int test_recipe_pack_capabilities(void);
 extern int test_recipe_environment(void);
 extern int test_recipe_full(void);
 
+extern int test_recipe_combined_build(void);
+extern int test_recipe_invalid_configure(void);
+
 // image parser tests
 extern int test_image_mbr_minimal(void);
 extern int test_image_gpt_minimal(void);
@@ -61,6 +64,9 @@ static const test_case_t tests[] = {
     {"Recipe: pack capabilities",    test_recipe_pack_capabilities},
     {"Recipe: environment",          test_recipe_environment},
     {"Recipe: full",                 test_recipe_full},
+
+    {"Recipe: combined build", test_recipe_combined_build},
+    {"Recipe: invalid configure", test_recipe_invalid_configure},
 
     // image tests
     {"Image: MBR minimal",          test_image_mbr_minimal},

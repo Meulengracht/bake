@@ -80,12 +80,17 @@ static void __initialize_generator_options(struct oven_generate_options* options
 
 static void __initialize_build_options(struct oven_build_options* options, struct recipe_step* step)
 {
-    options->name           = step->name;
-    options->profile        = NULL;
-    options->system         = step->system;
-    options->system_options = &step->options;
-    options->arguments      = &step->arguments;
-    options->environment    = &step->env_keypairs;
+    options->name                  = step->name;
+    options->profile               = NULL;
+    options->system                = step->system;
+    options->system_options        = &step->options;
+    options->arguments             = &step->arguments;
+    options->environment           = &step->env_keypairs;
+    options->skip_generate         = step->configure.disabled;
+    options->source_dir            = step->configure.source_dir != NULL
+        ? step->configure.source_dir : step->source_dir;
+    options->generate_arguments    = &step->configure.arguments;
+    options->generate_environment  = &step->configure.env_keypairs;
 }
 
 static int __build_step(const char* partName, struct list* steps, const char* stepName)

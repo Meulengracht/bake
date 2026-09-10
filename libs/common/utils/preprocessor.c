@@ -22,227 +22,184 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int __expand_variable(char** at, char** buffer, size_t* index, size_t* maxLength, const char* (*resolve)(const char*, void*), void* context)
+/**
+ * @brief Append a byte range to a NUL-terminated, heap-owned buffer.
+ *
+ * The helper keeps the buffer terminated after every successful append. That
+ * makes it safe for callers to pass the buffer to string functions while they
+ * are still building the result.
+ */
+static int __append(char** buffer, size_t* length, const char* value, size_t size)
 {
-    const char* start = *at;
-    const char* end   = strchr(start, ']');
-    if (end && end[1] == ']') {
-        char* variable;
+    char* grown;
 
-        // fixup at
-        *at = (char*)(end + 2);
-
-        start += 3; // skip $[[
-
-        // trim leading spaces
-        while (*start == ' ') {
-            start++;
-        }
-
-        // trim trailing spaces
-        end--;
-        while (*end == ' ') {
-            end--;
-        }
-        end++;
-        
-        variable = platform_strndup(start, end - start);
-        if (variable != NULL) {
-            const char* value = resolve(variable, context);
-            free(variable);
-            if (value != NULL) {
-                size_t valueLength = strlen(value);
-                if (valueLength > *maxLength) {
-                    *maxLength = valueLength;
-                    errno = ENOSPC;
-                    return -1;
-                }
-                
-                memcpy(&(*buffer)[*index], value, valueLength);
-                *index += valueLength;
-                return 0;
-            } else {
-                errno = ENOENT;
-                return -1;
-            }
-        } else {
-            errno = ENOMEM;
-            return -1;
-        }
-    }
-    errno = EINVAL;
-    return -1;
-}
-
-static int __expand_environment_variable(char** at, char** buffer, size_t* index, size_t* maxLength)
-{
-    const char* start = *at;
-    const char* end   = strchr(start, '}');
-    if (end) {
-        char* variable;
-        
-        // fixup at
-        *at = (char*)(end + 1);
-
-        start += 2; // skip ${
-
-        // trim leading spaces
-        while (*start == ' ') {
-            start++;
-        }
-
-        // trim trailing spaces
-        end--;
-        while (*end == ' ') {
-            end--;
-        }
-        end++;
-
-        variable = platform_strndup(start, end - start);
-        if (variable != NULL) {
-            char* value = getenv(variable);
-            free(variable);
-            if (value != NULL) {
-                size_t valueLength = strlen(value);
-                if (valueLength > *maxLength) {
-                    *maxLength = valueLength;
-                    errno = ENOSPC;
-                    return -1;
-                }
-                
-                memcpy(&(*buffer)[*index], value, valueLength);
-                *index += valueLength;
-                return 0;
-            }
-        } else {
-            errno = ENOENT;
-            return -1;
-        }
-    } else {
-        errno = ENOMEM;
+    // Reject the append before doing arithmetic that could wrap around.
+    if (*length == (size_t)-1 || size > (size_t)-1 - *length - 1) {
+        errno = EOVERFLOW;
         return -1;
     }
-    errno = EINVAL;
-    return -1;
-}
 
-static void* __resize_buffer(void* buffer, size_t length)
-{
-    void* biggerBuffer = calloc(1, length);
-    if (!biggerBuffer) {
-        return NULL;
+    grown = realloc(*buffer, *length + size + 1);
+    if (grown == NULL) {
+        return -1;
     }
-    strcat(biggerBuffer, buffer);
-    free(buffer);
-    return biggerBuffer;
+
+    *buffer = grown;
+    memcpy(grown + *length, value, size);
+    *length += size;
+    grown[*length] = '\0';
+    return 0;
 }
 
 char* chef_preprocess_text(const char* original, const char* (*resolve)(const char*, void*), void* context)
 {
-    const char* itr = original;
-    char*       result;
-    char*       buffer;
-    size_t      bufferSize = 4096;
-    size_t      index;
+    char* result;
+    size_t length = 0;
+    const char* at = original;
 
     if (original == NULL) {
-        return NULL;
-    }
-    
-    buffer = calloc(1, bufferSize);
-    if (buffer == NULL) {
-        errno = ENOMEM;
+        errno = EINVAL;
         return NULL;
     }
 
-    // trim spaces
-    while (*itr == ' ') {
-        itr++;
+    result = calloc(1, 1);
+    if (result == NULL) {
+        return NULL;
     }
-    
-    index = 0;
-    while (*itr) {
-        if (strncmp(itr, "$[[", 3) == 0) {
-            // handle variables
-            size_t spaceLeft = bufferSize - index;
-            int    status;
-            do {
-                status = __expand_variable((char**)&itr, &buffer, &index, &spaceLeft, resolve, context);
-                if (status) {
-                    if (errno == ENOSPC) {
-                        buffer = __resize_buffer(buffer, bufferSize + spaceLeft + 1024);
-                        if (!buffer) {
-                            free(buffer);
-                            return NULL;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-            } while (status != 0);
-        } else if (strncmp(itr, "$[", 2) == 0) {
-            // handle environment variables
-            size_t spaceLeft = bufferSize - index;
-            int    status;
-            do {
-                status = __expand_environment_variable((char**)&itr, &buffer, &index, &spaceLeft);
-                if (status) {
-                    if (errno == ENOSPC) {
-                        buffer = __resize_buffer(buffer, bufferSize + spaceLeft + 1024);
-                        if (!buffer) {
-                            free(buffer);
-                            return NULL;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                
-            } while (status != 0);
+
+    // Leading spaces are formatting around the complete expression, not data.
+    while (*at == ' ') {
+        at++;
+    }
+
+    // Scan until every input byte has either been copied or expanded.
+    while (*at != '\0') {
+        // A delimiter starts either a Chef variable or an environment lookup.
+        if (strncmp(at, "$[", 2) == 0) {
+            int variable = at[2] == '[';
+            const char* start = at + (variable ? 3 : 2);
+            const char* end = variable ? strstr(start, "]]") : strchr(start, ']');
+            const char* trimmed;
+            const char* value;
+            char* name;
+
+            // A missing closing delimiter makes the expression malformed.
+            if (end == NULL) {
+                errno = EINVAL;
+                goto error;
+            }
+
+            at = end + (variable ? 2 : 1);
+            // Ignore spaces immediately inside the opening delimiter.
+            while (start < end && *start == ' ') {
+                start++;
+            }
+
+            trimmed = end;
+            // Ignore spaces immediately before the closing delimiter.
+            while (trimmed > start && trimmed[-1] == ' ') {
+                trimmed--;
+            }
+
+            // An empty name cannot identify either kind of variable.
+            if (trimmed == start) {
+                errno = EINVAL;
+                goto error;
+            }
+
+            name = platform_strndup(start, trimmed - start);
+            if (name == NULL) {
+                goto error;
+            }
+
+            value = variable ? (resolve ? resolve(name, context) : NULL) : getenv(name);
+            free(name);
+
+            // Expansion cannot continue when the requested name is unknown.
+            if (value == NULL) {
+                errno = ENOENT;
+                goto error;
+            }
+
+            // Append the resolved value and keep scanning after its delimiter.
+            if (__append(&result, &length, value, strlen(value)) != 0) {
+                goto error;
+            }
         } else {
-            buffer[index++] = *itr;
-            itr++;
+            const char* end = strstr(at, "$[");
+
+            // Copy ordinary text in one range to avoid reallocating per byte.
+            if (end == NULL) {
+                end = at + strlen(at);
+            }
+
+            if (__append(&result, &length, at, end - at) != 0) {
+                goto error;
+            }
+
+            at = end;
         }
     }
-    
-    result = platform_strdup(buffer);
-    free(buffer);
+
     return result;
+
+error:
+    free(result);
+    return NULL;
 }
 
-const char* chef_process_argument_list(struct list* argumentList, const char* (*resolve)(const char*, void*), void* context)
+/**
+ * @brief Expand and join a recipe argument list.
+ *
+ * Each list item is expanded independently before being joined with one
+ * whitespace character. The returned string is owned by the caller.
+ */
+const char* chef_process_argument_list(struct list* argumentList,
+    const char* (*resolve)(const char*, void*), void* context)
 {
     struct list_item* item;
-    char*             argumentString;
-    char*             argumentItr;
-    size_t            totalLength = 0;
+    char* result = calloc(1, 1);
+    size_t length = 0;
 
-    // allocate memory for the string
-    argumentString = (char*)malloc(4096);
-    if (argumentString == NULL) {
-        errno = ENOMEM;
+    if (result == NULL) {
         return NULL;
     }
-    memset(argumentString, 0, 4096);
 
-    // copy arguments into buffer
-    argumentItr = argumentString;
+    // A missing recipe list represents an empty argument string.
+    if (argumentList == NULL) {
+        return result;
+    }
+
+    // Expand each list entry independently so its variables use the same context.
     list_foreach(argumentList, item) {
         struct list_item_string* value = (struct list_item_string*)item;
-        char*                   valueString = chef_preprocess_text(value->value, resolve, context);
-        size_t                  valueLength = strlen(valueString);
+        char* expanded = chef_preprocess_text(value->value, resolve, context);
+        size_t size;
 
-        if (valueLength > 0 && (totalLength + valueLength + 2) < 4096) {
-            strcpy(argumentItr, valueString);
-            
-            totalLength += valueLength;
-            argumentItr += valueLength;
-            if (item->next) {
-                *argumentItr = ' ';
-                argumentItr++;
-            }
+        // Stop immediately because returning a partial command would be unsafe.
+        if (expanded == NULL) {
+            goto error;
         }
-        free(valueString);
+
+        size = strlen(expanded);
+        // Separate two non-empty expanded arguments with one command space.
+        if (length != 0 && size != 0 && __append(&result, &length, " ", 1) != 0) {
+            free(expanded);
+            goto error;
+        }
+
+        // Append through the shared overflow-checked buffer helper.
+        if (__append(&result, &length, expanded, size) != 0) {
+            free(expanded);
+            goto error;
+        }
+
+        free(expanded);
     }
-    return argumentString;
+
+    return result;
+
+error:
+    free(result);
+    return NULL;
 }

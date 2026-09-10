@@ -62,82 +62,151 @@ static void __report(char* line, enum platform_spawn_output_type type, struct pl
 static void __wait_and_read_stds(struct pollfd* fds, struct platform_spawn_options* options)
 {
     char line[2048];
+    int  openCount = 2;
 
-    for (;;) {
+    while (openCount > 0) {
         int status = poll(fds, 2, -1);
+        if (status < 0 && errno == EINTR) {
+            // retry on EINTR
+            continue;
+        }
+
         if (status <= 0) {
+            // poll returned 0 or an error other than EINTR
+            // then we abort
             return;
         }
-        if (fds[0].revents & POLLIN) {
-            status = read(fds[0].fd, &line[0], sizeof(line));
-            line[status] = 0;
-            __report(&line[0], PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT, options);
-        } else if (fds[1].revents & POLLIN) {
-            status = read(fds[1].fd, &line[0], sizeof(line));
-            line[status] = 0;
-            __report(&line[0], PLATFORM_SPAWN_OUTPUT_TYPE_STDERR, options);
-        } else {
-            break;
+
+        for (int i = 0; i < 2; i++) {
+            ssize_t size;
+
+            // check for events
+            if (!(fds[i].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL))) {
+                continue;
+            }
+
+            size = read(fds[i].fd, line, sizeof(line) - 1);
+            if (size < 0 && errno == EINTR) {
+                // only for EINTR will we retry
+                continue;
+            }
+
+            // handle eof and read errors
+            if (size <= 0) {
+                fds[i].fd = -1;
+                openCount--;
+                continue;
+            }
+
+            line[size] = '\0';
+            __report(
+                line,
+                i == 0 ? PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT
+                       : PLATFORM_SPAWN_OUTPUT_TYPE_STDERR, 
+                options
+            );
         }
     }
 }
 
-int platform_spawn(const char* path, const char* arguments, const char* const* envp, struct platform_spawn_options* options)
+int platform_spawn_argv(const char* path, const char* const* arguments,
+    const char* const* envp, struct platform_spawn_options* options)
 {
     posix_spawn_file_actions_t actions;
     pid_t                      pid;
     char**                     argv;
-    int                        status;
-    char*                      argumentCopy = NULL;
-    int                        outp[2] = { 0 };
-    int                        errp[2] = { 0 };
+    int                        status = -1;
+    int                        outp[2] = { -1, -1 };
+    int                        errp[2] = { -1, -1 };
+    size_t count = 0;
 
-    // create a copy of the arguments to work on
-    if (arguments) {
-        argumentCopy = strdup(arguments);
-        if (!argumentCopy) {
-            return -1;
-        }
-    }
-
-    argv = strargv(argumentCopy, (options && options->argv0) ? options->argv0 : path, NULL);
-    if (argv == NULL) {
-        free(argumentCopy);
+    if (path == NULL) {
+        errno = EINVAL;
         return -1;
     }
 
-    // initialize the file actions
-    posix_spawn_file_actions_init(&actions);
-    
-    if (options && options->cwd) {
-        // change the working directory
-        posix_spawn_file_actions_addchdir_np(&actions, options->cwd);
+    // get the actual argument count
+    while (arguments != NULL && arguments[count] != NULL) {
+        count++;
     }
 
-    if (options && options->output_handler) {
+    argv = calloc(count + 2, sizeof(char*));
+    if (argv == NULL) {
+        return -1;
+    }
+
+    // it's important to note here we don't create argv copies, but
+    // rather maintain the ownership for the caller
+    argv[0] = (char*)((options != NULL && options->argv0 != NULL)
+        ? options->argv0
+        : path);
+    for (size_t i = 0; i < count; i++) {
+        argv[i + 1] = (char*)arguments[i];
+    }
+
+    // initialize the file actions
+    // posix_spawn* reports its error directly rather than through errno
+    status = posix_spawn_file_actions_init(&actions);
+    if (status) {
+        free(argv);
+        errno = status;
+        return -1;
+    }
+
+    status = -1;
+
+    if (options != NULL && options->cwd != NULL) {
+        // change the working directory
+        int error = posix_spawn_file_actions_addchdir_np(&actions, options->cwd);
+        if (error != 0) {
+            errno = error;
+            goto cleanup;
+        }
+    }
+
+    if (options != NULL && options->output_handler != NULL) {
         // let's redirect and poll for output
-        if (pipe(outp) || pipe(errp)) {
-            if (outp[0] > 0) {
-                close(outp[0]);
-                close(outp[1]);
-            }
+        if (pipe(outp) != 0 || pipe(errp) != 0) {
             fprintf(stderr, "platform_spawn: failed to create descriptors: %s\n", strerror(errno));
             goto cleanup;
         }
-        posix_spawn_file_actions_adddup2(&actions, outp[1], STDOUT_FILENO);
-        posix_spawn_file_actions_adddup2(&actions, errp[1], STDERR_FILENO);
+
+        int error = posix_spawn_file_actions_adddup2(&actions, outp[1], STDOUT_FILENO);
+        // Redirect stdout first, then stderr, so both streams use the same setup.
+        if (error == 0) {
+            error = posix_spawn_file_actions_adddup2(&actions, errp[1], STDERR_FILENO);
+        }
+
+        // Close every pipe end the child does not need after duplication.
+        for (int i = 0; error == 0 && i < 2; i++) {
+            // The child keeps only the standard descriptors after duplication.
+            if (outp[i] != STDOUT_FILENO && outp[i] != STDERR_FILENO) {
+                error = posix_spawn_file_actions_addclose(&actions, outp[i]);
+            }
+
+            // Do not add a second close action after the first one fails.
+            if (error == 0 && errp[i] != STDOUT_FILENO && errp[i] != STDERR_FILENO) {
+                error = posix_spawn_file_actions_addclose(&actions, errp[i]);
+            }
+        }
+
+        if (error) {
+            errno = error;
+            goto cleanup;
+        }
     }
 
     // perform the spawn
     status = posix_spawnp(&pid, path, &actions, NULL, argv, (char* const*)envp);
     if (status) {
+        errno = status;
         fprintf(stderr, "platform_spawn: failed to spawn process %s: %s\n", path, strerror(errno));
         goto cleanup;
     }
 
-    if (options && options->output_handler) {
-        struct pollfd fds[2] = { 
-            { 
+    if (options != NULL && options->output_handler != NULL) {
+        struct pollfd fds[2] = {
+            {
                 .fd = outp[0],
                 .events = POLLIN
             },
@@ -149,17 +218,57 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
 
         // close child-side of pipes
         close(outp[1]);
-        close(errp[1]); 
+        close(errp[1]);
+        outp[1] = errp[1] = -1;
 
         __wait_and_read_stds(&fds[0], options);
     }
 
     // wait for the process to complete
-    waitpid(pid, &status, 0);
+    while (waitpid(pid, &status, 0) < 0) {
+        // We can recover from EINTR
+        if (errno != EINTR) {
+            status = -1;
+            break;
+        }
+    }
 
 cleanup:
+    for (int i = 0; i < 2; i++) {
+        if (outp[i] >= 0) {
+            close(outp[i]);
+        }
+
+        if (errp[i] >= 0) {
+            close(errp[i]);
+        }
+    }
+
     posix_spawn_file_actions_destroy(&actions);
-    free(argumentCopy);
     strargv_free(argv);
+    return status;
+}
+
+int platform_spawn(const char* path, const char* arguments, const char* const* envp,
+    struct platform_spawn_options* options)
+{
+    char* copy;
+    char** argv;
+    int status;
+
+    copy = arguments != NULL ? platform_strdup(arguments) : NULL;
+    if (arguments != NULL && copy == NULL) {
+        return -1;
+    }
+
+    argv = strargv(copy, NULL, NULL);
+    if (argv == NULL) {
+        free(copy);
+        return -1;
+    }
+
+    status = platform_spawn_argv(path, (const char* const*)argv, envp, options);
+    strargv_free(argv);
+    free(copy);
     return status;
 }

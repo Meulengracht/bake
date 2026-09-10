@@ -1,33 +1,31 @@
-project: 
-  summary: Simple Application Recipe
-  description: A simple application recipe
-  author: who made it
-  email: contact@me.com
-  version: 0.1.0
-  license: MIT
+name: vafs
+author: who made it
+email: contact@me.com
+version: 0.1.0
+license: MIT
 
 # There are a number of keywords that can be used in the recipe
 # steps during generate, build, install and package.
+
 recipes:
   - name: vafs
     path: /
     steps:
-    - name: config
-      type: generate
-      system: cmake
-      arguments: [-G, '"Unix Makefiles"']
     - name: build
       type: build
-      depends: [config]
-      system: make
+      system: cmake
 
 packs:
 - name: libvafs
+  summary: Simple Application Recipe
+  description: A simple application recipe
   type: ingredient
   filters:
     - lib
     - include
 - name: vafs
+  summary: Simple Application Recipe
+  description: A simple application recipe
   type: application
   filters:
     - bin

@@ -55,6 +55,12 @@ struct oven_build_options {
     union chef_backend_options* system_options;
     struct list*                arguments;
     struct list*                environment;
+    
+    // CMake/Autotools configure before building unless explicitly disabled.
+    int                         skip_generate;
+    const char*                 source_dir;
+    struct list*                generate_arguments;
+    struct list*                generate_environment;
 };
 
 enum oven_script_root_dir {
@@ -68,6 +74,13 @@ struct oven_script_options {
 };
 
 struct oven_clean_options {
+    /**
+     * @brief Optional source directory used by the clean backend.
+     *
+     * When NULL, the oven uses the part source directory. This is useful for
+     * build steps whose configure phase selected a different source directory.
+     */
+    const char*                 source_dir;
     const char*                 name;
     const char*                 profile;
     const char*                 system;

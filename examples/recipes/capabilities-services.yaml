@@ -14,28 +14,18 @@ recipes:
       type: path
       path: api-server
     steps:
-    - name: config
-      type: generate
-      system: cmake
-      arguments: [-G, '"Unix Makefiles"']
     - name: build
       type: build
-      depends: [config]
-      system: make
+      system: cmake
 
   - name: worker
     source:
       type: path
       path: worker
     steps:
-    - name: config
-      type: generate
-      system: cmake
-      arguments: [-G, '"Unix Makefiles"']
     - name: build
       type: build
-      depends: [config]
-      system: make
+      system: cmake
 
 packs:
 # ---------- API server pack ----------

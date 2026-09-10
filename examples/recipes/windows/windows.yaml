@@ -1,14 +1,8 @@
-project: 
-  name: windows-base
-  summary: Windows base (guest rootfs)
-  description: |
-    Builds a Windows base pack for HCS containers on a Windows host.
-    The produced pack ships a windowsfilter layer folder + layerchain.json
-    and a UtilityVM payload (Files and/or UtilityVM.vhdx).
-  author: Philip Meulengracht
-  email: the_meulengracht@hotmail.com
-  version: 1.0.0
-  license: MIT
+name: windows-base
+author: Philip Meulengracht
+email: the_meulengracht@hotmail.com
+version: 1.0.0
+license: MIT
 
 recipes:
   - name: build-base
@@ -49,4 +43,9 @@ recipes:
 
 packs:
 - name: windows
+  summary: Windows base (guest rootfs)
+  description: |
+    Builds a Windows base pack for HCS containers on a Windows host.
+    The produced pack ships a windowsfilter layer folder + layerchain.json
+    and a UtilityVM payload (Files and/or UtilityVM.vhdx).
   type: ingredient

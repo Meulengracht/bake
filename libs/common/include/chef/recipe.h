@@ -64,6 +64,14 @@ enum recipe_step_type {
     RECIPE_STEP_TYPE_SCRIPT,
 };
 
+struct recipe_step_configure {
+    int         specified;
+    int         disabled;
+    const char* source_dir;
+    struct list arguments;
+    struct list env_keypairs;
+};
+
 struct recipe_step {
     struct list_item           list_header;
     const char*                name;
@@ -75,6 +83,7 @@ struct recipe_step {
     struct list                arguments;
     struct list                env_keypairs;
     union chef_backend_options options;
+    struct recipe_step_configure configure;
 };
 
 struct recipe_part {

@@ -16,81 +16,22 @@
  * 
  */
 
-#include <backend.h>
+#include "private.h"
 #include <errno.h>
 #include <liboven.h>
-#include <chef/environment.h>
-#include <chef/platform.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
+#include <sys/stat.h>
 #include <vlog.h>
 
-// import this while we find a suitiable place
 extern char* oven_preprocess_text(const char* original);
-
-static char* __processed_path(struct oven_backend_data* data)
-{
-    VLOG_DEBUG("meson", "__processed_path(build=%s)\n", 
-        data && data->paths.build ? data->paths.build : "(null)"
-    );
-    return strpathcombine(data->paths.build, "cross-file.txt");
-}
-
-static int __read_file(const char* path, char** bufferOut)
-{
-    FILE*  file;
-    long   size;
-    char*  buffer;
-    size_t read;
-    VLOG_DEBUG("meson", "__read_file(path=%s)\n", path ? path : "(null)");
-
-    if (bufferOut == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    *bufferOut = NULL;
-
-    file = fopen(path, "rb");
-    if (file == NULL) {
-        fprintf(stderr, "Failed to open %s for reading: %s\n", path, strerror(errno));
-        return -1;
-    }
-
-    fseek(file, 0, SEEK_END);
-    size = ftell(file);
-    rewind(file);
-
-    if (size < 0) {
-        fprintf(stderr, "Failed to read %s: %s\n", path, strerror(errno));
-        fclose(file);
-        return -1;
-    }
-
-    buffer = malloc((size_t)size + 1);
-    if (buffer == NULL) {
-        fprintf(stderr, "Failed to read %s: %s\n", path, strerror(errno));
-        fclose(file);
-        return -1;
-    }
-
-    read = fread(buffer, 1, (size_t)size, file);
-    if (read != (size_t)size) {
-        fprintf(stderr, "Failed to read %s: %s\n", path, strerror(errno));
-        free(buffer);
-        fclose(file);
-        return -1;
-    }
-    buffer[size] = '\0';
-    fclose(file);
-
-    *bufferOut = buffer;
-    return 0;
-}
 
 static int __write_file(const char* path, const char* buffer)
 {
     FILE* file;
+    int status;
+
     VLOG_DEBUG("meson", "__write_file(path=%s)\n", path ? path : "(null)");
 
     file = fopen(path, "w");
@@ -99,210 +40,233 @@ static int __write_file(const char* path, const char* buffer)
         return -1;
     }
 
-    fputs(buffer, file);
-    fclose(file);
-    return 0;
+    status = fputs(buffer, file) == EOF ? -1 : 0;
+    if (fclose(file)) {
+        status = -1;
+    }
+    return status;
 }
 
-static char* __compute_arguments(struct oven_backend_data* data, union chef_backend_options* options)
+/**
+ * @brief Create a Meson cross-file template.
+ *
+ * Relative templates are resolved against the recipe project root rather than
+ * the backend working directory. The generated file is written into the build
+ * directory and added to the setup command as a separate argument.
+ */
+static int __cross_file(
+    struct oven_backend_data*   data,
+    union chef_backend_options* options,
+    struct backend_args*        args)
 {
-    int   status;
-    char* args = NULL;
-    VLOG_DEBUG("meson", "__compute_arguments(cross_file=%s)\n",
-        (options && options->meson.cross_file) ? options->meson.cross_file : "(null)"
-    );
+    char*       input = NULL;
+    char*       original = NULL;
+    size_t      originalLength;
+    char*       processed = NULL;
+    char*       path = NULL;
+    const char* cross;
+    int         status = -1;
 
-    if (options->meson.cross_file != NULL) {
-        char* original, *processed, *path;
-        
-        path = __processed_path(data);
-        if (path == NULL) {
-            return NULL;
-        }
-
-        /**
-         * @brief The cross-file we take in, is a template. We will be pre-processing it a bit
-         * before writing a final cross-file to handle any variables present.
-         */
-        status = __read_file(options->meson.cross_file, &original);
-        if (status) {
-            free(path);
-            return NULL;
-        }
-
-        processed = oven_preprocess_text(original);
-        if (processed == NULL) {
-            free(path);
-            free(original);
-            return NULL;
-        }
-
-        status = __write_file(path, processed);
-        free(original);
-        free(processed);
-
-        if (status) {
-            free(path);
-            return NULL;
-        }
-
-        args = malloc(strlen("--cross-file ") + strlen(path) + 1);
-        if (args == NULL) {
-            free(path);
-            return NULL;
-        }
-
-        sprintf(args, "--cross-file %s", path);
-        free(path);
+    if (options == NULL || options->meson.cross_file == NULL) {
+        return 0;
     }
 
-    // --force-fallback-for=llvm
-    return args;
-}
+    cross = options->meson.cross_file;
 
-static void __meson_output_handler(const char* line, enum platform_spawn_output_type type) 
-{
-    if (type == PLATFORM_SPAWN_OUTPUT_TYPE_STDOUT) {
-        VLOG_DEBUG("meson", line);
+    // Relative cross-file templates live alongside the recipe, independent of cwd.
+    // Resolve relative templates from the recipe root, not the backend cwd.
+    if (cross[0] == '/' || cross[0] == '\\' ||
+        (cross[0] != '\0' && cross[1] == ':')) {
+        input = platform_strdup(cross);
     } else {
-        VLOG_ERROR("meson", line);
+        // A relative template has no meaningful base without the recipe root.
+        if (data->paths.root == NULL) {
+            errno = EINVAL;
+            return -1;
+        }
+
+        input = strpathcombine(data->paths.root, cross);
     }
+
+    path = strpathcombine(data->paths.build, "cross-file.txt");
+    if (input == NULL || path == NULL) {
+        goto cleanup;
+    }
+
+    status = platform_readtext(input, &original, &originalLength);
+    if (status) {
+        goto cleanup;
+    }
+
+    processed = oven_preprocess_text(original);
+    if (processed == NULL) {
+        status = -1;
+        goto cleanup;
+    }
+
+    status = __write_file(path, processed);
+    if (status) {
+        goto cleanup;
+    }
+
+    if (backend_args_add(args, "--cross-file") != 0 || backend_args_add(args, path) != 0) {
+        status = -1;
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    free(input);
+    free(original);
+    free(processed);
+    free(path);
+    return status;
+}
+
+// Convert Meson's -Dprefix spellings to --prefix.
+static int __prefix_options(struct backend_args* args)
+{
+    // Meson also accepts the built-in prefix option through -Dprefix=VALUE.
+    // Normalize each supported prefix spelling before installing the defaults.
+    for (size_t i = 0; i < args->count; i++) {
+        struct backend_args replacement = { 0 };
+        const char*         value = NULL;
+        int                 separate = 0;
+
+        // Skip the "-Dprefix=" part
+        // Or skip the -D prefix= part
+        if (strncmp(args->values[i], "-Dprefix=", 9) == 0) {
+            value = args->values[i] + 9;
+        } else if (strcmp(args->values[i], "-D") == 0 && i + 1 < args->count &&
+            strncmp(args->values[i + 1], "prefix=", 7) == 0) {
+            value = args->values[i + 1] + 7;
+            separate = 1;
+        }
+        
+        if (value == NULL) {
+            continue;
+        }
+
+        // Add the value again with the standard --prefix=
+        if (backend_args_pair(&replacement, "--prefix=", value) != 0) {
+            return -1;
+        }
+
+        // replace it in the list
+        free(args->values[i]);
+        args->values[i] = replacement.values[0];
+        free(replacement.values);
+
+        // Remove the consumed prefix= token when -D was provided separately.
+        if (separate) {
+            free(args->values[i + 1]);
+            memmove(&args->values[i + 1], &args->values[i + 2],
+                (args->count - i - 1) * sizeof(char*));
+            args->count--;
+        }
+    }
+    return 0;
 }
 
 int meson_config_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
-    char*  finalArguments = NULL;
-    char** environment    = NULL;
-    char*  args           = NULL;
-    int    status         = -1;
-    size_t length;
-    VLOG_DEBUG("meson", "meson_config_main(project=%s, build=%s)\n",
-        data && data->paths.project ? data->paths.project : "(null)",
-        data && data->paths.build ? data->paths.build : "(null)"
-    );
+    struct backend_args args = { 0 };
+    struct stat         info;
+    char*               core = NULL;
+    int                 status;
 
-    environment = environment_create(data->process_environment, data->environment);
-    if (environment == NULL) {
-        return -1;
+    status = backend_validate(data);
+    if (status) {
+        return status;
     }
 
-    // lets make it 128 to cover some extra grounds
-    length = 128 + strlen(data->arguments) + strlen(data->paths.build);
-    args = __compute_arguments(data, options);
-    if (args) {
-        length += strlen(args);
-    }
-    
-    finalArguments = malloc(length);
-    if (finalArguments == NULL) {
+    // Keep all setup failures visible until the backend process runs successfully.
+    status = -1;
+    core = strpathcombine(data->paths.build, "meson-private/coredata.dat");
+    if (core == NULL || backend_args_add(&args, "setup") != 0) {
         goto cleanup;
     }
 
-    if (args) {
-        snprintf(finalArguments, length, "configure %s %s %s", data->paths.build, data->arguments, args);
-    } else {
-        snprintf(finalArguments, length, "configure %s %s", data->paths.build, data->arguments);
+    // If meson already created it's coredata.dat file, then we reconfigure
+    if (stat(core, &info) == 0) {
+        // Make sure we update the existing tree instead of creating a new one
+        if (backend_args_add(&args, "--reconfigure") != 0) {
+            goto cleanup;
+        }
+    } else if (errno != ENOENT) {
+        // Any stat error other than a missing build tree is unexpected.
+        goto cleanup;
     }
 
-    VLOG_DEBUG("meson", "executing 'meson %s'\n", finalArguments);
-    status = platform_spawn(
-        "meson",
-        finalArguments,
-        (const char* const*)environment,
-        &(struct platform_spawn_options) {
-            .cwd = data->paths.project,
-            .output_handler = __meson_output_handler
-        }
-    );
+    // Append directories and user options only after setup mode is selected.
+    if (backend_args_add(&args, data->paths.build) != 0 ||
+        backend_args_add(&args, data->paths.source) != 0 ||
+        backend_args_parse(&args, data->arguments) != 0 || __prefix_options(&args) != 0 ||
+        backend_rewrite_prefix(&args, data->paths.install,
+            backend_default_prefix(data->platform.target_platform, "/usr/local")) != 0 ||
+        __cross_file(data, options, &args) != 0) {
+        goto cleanup;
+    }
+
+    status = backend_run(data, "meson", &args, data->paths.build, NULL);
 
 cleanup:
-    free(args);
-    free(finalArguments);
-    environment_destroy(environment);
+    free(core);
+    backend_args_destroy(&args);
+    return status;
+}
+
+/**
+ * @brief Run a Meson operation against the configured build directory.
+ */
+static int __command(struct oven_backend_data* data, const char* command, const char* arguments)
+{
+    struct backend_args args = { 0 };
+    int                 status;
+
+    // Keep Meson's command, build directory, and recipe arguments together.
+    if (backend_args_add(&args, command) != 0 || backend_args_add(&args, "-C") != 0 ||
+        backend_args_add(&args, data->paths.build) != 0 ||
+        backend_args_parse(&args, arguments) != 0) {
+        status = -1;
+        goto cleanup;
+    }
+
+    status = backend_run(data, "meson", &args, data->paths.build, NULL);
+
+cleanup:
+    backend_args_destroy(&args);
     return status;
 }
 
 int meson_build_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
-    char*  mesonCommand = NULL;
-    char** environment  = NULL;
-    int    status = -1;
-    size_t length;
-    VLOG_DEBUG("meson", "meson_build_main(project=%s, build=%s)\n",
-        data && data->paths.project ? data->paths.project : "(null)",
-        data && data->paths.build ? data->paths.build : "(null)"
-    );
+    int status;
+    (void)options;
 
-    environment = environment_create(data->process_environment, data->environment);
-    if (environment == NULL) {
-        return -1;
+    status = backend_validate(data);
+    if (status != 0) {
+        return status;
     }
 
-    // lets make it 64 to cover some extra grounds
-    length = 64 + strlen(data->paths.build);
-
-    mesonCommand = malloc(length);
-    if (mesonCommand == NULL) {
-        goto cleanup;
+    // Install only after compilation has produced the configured build tree.
+    status = __command(data, "compile", data->arguments);
+    if (status) {
+        return status;
     }
 
-    sprintf(mesonCommand, "compile -C %s", data->paths.build);
-    
-    // use the project directory (cwd) as the current build directory
-    status = platform_spawn(
-        "meson",
-        data->arguments,
-        (const char* const*)environment,
-        &(struct platform_spawn_options) {
-            .cwd = data->paths.project
-        }
-    );
-
-cleanup:
-    free(mesonCommand);
-    environment_destroy(environment);
-    return status;
+    return __command(data, "install", "--no-rebuild");
 }
 
 int meson_clean_main(struct oven_backend_data* data, union chef_backend_options* options)
 {
-    char*  mesonCommand = NULL;
-    char** environment  = NULL;
-    int    status = -1;
-    size_t length;
-    VLOG_DEBUG("meson", "meson_clean_main(project=%s, build=%s)\n",
-        data && data->paths.project ? data->paths.project : "(null)",
-        data && data->paths.build ? data->paths.build : "(null)"
-    );
-
-    environment = environment_create(data->process_environment, data->environment);
-    if (environment == NULL) {
-        return -1;
-    }
-
-    // lets make it 64 to cover some extra grounds
-    length = 64 + strlen(data->paths.build);
-
-    mesonCommand = malloc(length);
-    if (mesonCommand == NULL) {
-        goto cleanup;
-    }
-
-    sprintf(mesonCommand, "compile --clean -C %s", data->paths.build);
+    int status;
+    (void)options;
     
-    // use the project directory (cwd) as the current build directory
-    status = platform_spawn(
-        "meson",
-        data->arguments,
-        (const char* const*)environment,
-        &(struct platform_spawn_options) {
-            .cwd = data->paths.project,
-            .output_handler = __meson_output_handler
-        }
-    );
-
-cleanup:
-    free(mesonCommand);
-    environment_destroy(environment);
-    return status;
+    status = backend_validate(data);
+    if (status != 0) {
+        return status;
+    }
+    return __command(data, "compile", "--clean");
 }
