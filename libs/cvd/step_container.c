@@ -25,6 +25,7 @@
 #include <vlog.h>
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#define __UPLOAD_LOCAL_BAKECTL
 static int __find_bakectl(char** resolvedOut)
 {
     char   buffer[PATH_MAX] = { 0 };
@@ -128,10 +129,12 @@ static int __find_bakectl(char** resolvedOut)
 
 int bake_build_setup(struct __bake_build_context* bctx)
 {
-    int          status;
+#ifdef __UPLOAD_LOCAL_BAKECTL
     char*        bakectlPath;
+#endif
     unsigned int pid;
     char         buffer[1024];
+    int          status;
     VLOG_DEBUG("bake", "bake_build_setup()\n");
 
     if (bctx->cvd_client == NULL) {
@@ -145,6 +148,7 @@ int bake_build_setup(struct __bake_build_context* bctx)
         return status;
     }
 
+#ifdef __UPLOAD_LOCAL_BAKECTL
     status = __find_bakectl(&bakectlPath);
     if (status) {
         VLOG_ERROR("bake", "bake_build_setup: failed to locate bakectl for container\n");
@@ -159,6 +163,7 @@ int bake_build_setup(struct __bake_build_context* bctx)
         return status;
     }
     free(bakectlPath);
+#endif
 
     snprintf(&buffer[0], sizeof(buffer),
         "%s init --recipe %s",

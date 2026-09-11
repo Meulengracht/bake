@@ -118,10 +118,8 @@ static char* __ubuntu_get_base_image_url(const char* base) {
     }
 
     snprintf(&tmp[0], sizeof(tmp), 
-        "https://cdimage.ubuntu.com/ubuntu-base/releases/%i.04/release/ubuntu-base-%i.04.%s-base-%s.tar.gz",
+        "https://chef-store-eu-basic.s3.de.io.cloud.ovh.net/build-bases/ubuntu-base-%i.04-base-%s.tar.gz",
         version,
-        version,
-        release,
         CHEF_ARCHITECTURE_STR
     );
     return platform_strdup(&tmp[0]);
