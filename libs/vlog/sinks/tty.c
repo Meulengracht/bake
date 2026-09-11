@@ -377,7 +377,6 @@ static void __view_tick(struct vlog_sink* base, long long time)
     prevTimeMs = sink->spinner_time_ms;
     sink->spinner_time_ms += time;
     if ((sink->spinner_time_ms / 500) != (prevTimeMs / 500)) {
-        sink->spinner_time_ms = 0;
         sink->spinner_index++;
         __refresh_view(sink, 1);
     }
