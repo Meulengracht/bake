@@ -24,114 +24,11 @@
 #include <stdlib.h>
 #include <vlog.h>
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-static int __find_bakectl(char** resolvedOut)
-{
-    char   buffer[PATH_MAX] = { 0 };
-    char*  resolved = NULL;
-    char*  p;
-    size_t index;
-    
-    VLOG_DEBUG("bake", "__find_bakectl()\n");
-
-    if (GetModuleFileNameA(NULL, &buffer[0], PATH_MAX) == 0) {
-        VLOG_ERROR("bake", "__install_bakectl: failed to get module filename\n");
-        return -1;
-    }
-
-    p = strrchr(&buffer[0], CHEF_PATH_SEPARATOR);
-    if (p == NULL) {
-        VLOG_ERROR("bake", "__install_bakectl: could not find separator in %s\n", &buffer[0]);
-        return -1;
-    }
-    
-    index = (p + 1) - (&buffer[0]);
-    strncpy(&buffer[index], "bakectl.exe", PATH_MAX - index);
-    
-    resolved = _fullpath(NULL, &buffer[0], PATH_MAX);
-    if (resolved == NULL) {
-        VLOG_ERROR("bake", "__install_bakectl: failed to resolve bakectl path from %s\n", &buffer[0]);
-        return -1;
-    }
-
-    *resolvedOut = resolved;
-    return 0;
-}
-
-#elif defined(__linux__) || defined(__unix__)
-const char* g_possibleBakeCtlPaths[] = {
-    // relative path from the executable
-    "../libexec/chef/bakectl",
-    // when running from the daemon, bakectl is adjacent
-    "bakectl",
-    // from build folder
-    "../../bin/bakectl",
-    // fallbacks if wtf?
-    "/usr/libexec/chef/bakectl",
-    "/usr/local/libexec/chef/bakectl",
-    NULL
-};
-
-static int __find_bakectl(char** resolvedOut)
-{
-    char   buffer[PATH_MAX] = { 0 };
-    char   dirnm[PATH_MAX] = { 0 };
-    char*  resolved = NULL;
-    char*  p;
-    int    status;
-    size_t index;
-    VLOG_DEBUG("bake", "__find_bakectl()\n");
-
-    status = readlink("/proc/self/exe", &buffer[0], PATH_MAX);
-    if (status < 0) {
-        VLOG_ERROR("bake", "__install_bakectl: failed to read /proc/self/exe\n");
-        return status;
-    }
-
-    p = strrchr(&buffer[0], CHEF_PATH_SEPARATOR);
-    if (p == NULL) {
-        VLOG_ERROR("bake", "__install_bakectl: could not find separator in %s\n", &buffer[0]);
-        return -1;
-    }
-
-    index = (p + 1) - (&buffer[0]);
-    strncpy(&dirnm[0], &buffer[0], index);
-
-    VLOG_DEBUG("bake", "testing paths from %s\n", &dirnm[0]);
-    for (int i = 0; g_possibleBakeCtlPaths[i] != NULL; i++) {
-        const char* pathToUse = g_possibleBakeCtlPaths[i];
-        if (g_possibleBakeCtlPaths[i][0] != '/') {
-            strcpy(&dirnm[index], g_possibleBakeCtlPaths[i]);
-            pathToUse = &dirnm[0];
-        }
-        resolved = realpath(pathToUse, NULL);
-        if (resolved != NULL) {
-            VLOG_DEBUG("bake", "__install_bakectl: found bakectl here: %s\n", pathToUse);
-            break;
-        }
-        VLOG_DEBUG("bake", "__install_bakectl: tried %s\n", pathToUse);
-    }
-
-    if (resolved == NULL) {
-        status = readlink("/proc/self/exe", &dirnm[0], PATH_MAX);
-        if (status < 0) {
-            VLOG_ERROR("bake", "__install_bakectl: failed to read /proc/self/exe\n");
-            return status;
-        }
-        VLOG_ERROR("bake", "__install_bakectl: failed to resolve bakectl from %s\n", &dirnm[0]);
-        return -1;
-    }
-    *resolvedOut = resolved;
-    return 0;
-}
-#endif
-
 int bake_build_setup(struct __bake_build_context* bctx)
 {
-    int          status;
-    char*        bakectlPath;
     unsigned int pid;
     char         buffer[1024];
+    int          status;
     VLOG_DEBUG("bake", "bake_build_setup()\n");
 
     if (bctx->cvd_client == NULL) {
@@ -144,21 +41,6 @@ int bake_build_setup(struct __bake_build_context* bctx)
         VLOG_ERROR("bake", "bake_build_setup: failed to create build container: %u\n", status);
         return status;
     }
-
-    status = __find_bakectl(&bakectlPath);
-    if (status) {
-        VLOG_ERROR("bake", "bake_build_setup: failed to locate bakectl for container\n");
-        bake_client_destroy_container(bctx);
-        return status;
-    }
-    
-    status = bake_client_upload(bctx, bakectlPath, bctx->bakectl_path);
-    if (status) {
-        VLOG_ERROR("bake", "bake_build_setup: failed to write bakectl in container\n");
-        bake_client_destroy_container(bctx);
-        return status;
-    }
-    free(bakectlPath);
 
     snprintf(&buffer[0], sizeof(buffer),
         "%s init --recipe %s",

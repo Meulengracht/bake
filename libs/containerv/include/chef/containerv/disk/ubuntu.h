@@ -25,17 +25,6 @@
 #include <string.h>
 #include <vlog.h>
 
-// Update these based on 
-// https://cdimage.ubuntu.com/ubuntu-base/releases/
-#define UBUNTU_26_LTS_VERSION "26.04"
-#define UBUNTU_26_LTS_RELEASE "1"
-
-#define UBUNTU_24_LTS_VERSION "24.04"
-#define UBUNTU_24_LTS_RELEASE "4"
-
-#define UBUNTU_22_LTS_VERSION "22.04"
-#define UBUNTU_22_LTS_RELEASE "5"
-
 /**
  * @brief Parse the Ubuntu major version from a base selector.
  * @param base Base selector such as "ubuntu:24".
@@ -63,42 +52,17 @@ static int __ubuntu_get_base_number(const char* base) {
 }
 
 /**
- * @brief Resolve the Ubuntu point-release suffix for a supported base selector.
- * @param base Base selector such as "ubuntu:24".
- * @return Release suffix string, or NULL when the selector is unsupported.
- */
-static const char* __ubuntu_get_base_release(const char* base) {
-    int version = __ubuntu_get_base_number(base);
-    switch (version) {
-        case 26:
-            return UBUNTU_26_LTS_RELEASE;
-        case 24:
-            return UBUNTU_24_LTS_RELEASE;
-        case 22:
-            return UBUNTU_22_LTS_RELEASE;
-        default:
-            VLOG_ERROR("cvd", "__ubuntu_get_base_release: unsupported base image %s\n", base);
-            return NULL;
-    }
-}
-
-/**
  * @brief Build the expected Ubuntu base archive name for a selector.
  * @param base Base selector such as "ubuntu:24".
  * @return Allocated archive name string, or NULL on failure.
  */
 static char* __ubuntu_get_base_image_name(const char* base) {
-    char        tmp[1024];
-    int         version = __ubuntu_get_base_number(base);
-    const char* release = __ubuntu_get_base_release(base);
-    if (release == NULL) {
-        return NULL;
-    }
+    char tmp[1024];
+    int  version = __ubuntu_get_base_number(base);
 
     snprintf(&tmp[0], sizeof(tmp), 
-        "ubuntu-base-%i.04.%s-base-%s.tar.gz",
+        "ubuntu-base-%i.04-base-%s.tar.gz",
         version,
-        release,
         CHEF_ARCHITECTURE_STR
     );
     return platform_strdup(&tmp[0]);
@@ -110,18 +74,12 @@ static char* __ubuntu_get_base_image_name(const char* base) {
  * @return Allocated URL string, or NULL on failure.
  */
 static char* __ubuntu_get_base_image_url(const char* base) {
-    char        tmp[1024];
-    int         version = __ubuntu_get_base_number(base);
-    const char* release = __ubuntu_get_base_release(base);
-    if (release == NULL) {
-        return NULL;
-    }
+    char tmp[1024];
+    int  version = __ubuntu_get_base_number(base);
 
     snprintf(&tmp[0], sizeof(tmp), 
-        "https://cdimage.ubuntu.com/ubuntu-base/releases/%i.04/release/ubuntu-base-%i.04.%s-base-%s.tar.gz",
+        "https://chef-store-eu-basic.s3.de.io.cloud.ovh.net/build-bases/ubuntu-base-%i.04-base-%s.tar.gz",
         version,
-        version,
-        release,
         CHEF_ARCHITECTURE_STR
     );
     return platform_strdup(&tmp[0]);
