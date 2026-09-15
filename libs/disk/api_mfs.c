@@ -25,13 +25,14 @@
 #include "filesystems/mfs/api.h"
 
 struct __mfs_filesystem {
-    struct chef_disk_filesystem base;
-    struct mfs*                 fs;
-    const char*                 label;
-    const char*                 content;
-    uint64_t                    sector_count;
-    uint16_t                    bytes_per_sector;
-    FILE*                       stream;
+    struct chef_disk_filesystem        base;
+    struct chef_filesystem_mfs_options options;
+    struct mfs*                        fs;
+    const char*                        label;
+    const char*                        content;
+    uint64_t                           sector_count;
+    uint16_t                           bytes_per_sector;
+    FILE*                              stream;
 };
 
 static int __update_mbr(struct __mfs_filesystem* cfs, uint8_t* sector)
@@ -90,30 +91,33 @@ static int __write_reserved_image(struct __mfs_filesystem* cfs)
     size_t               size, written;
     int                  status;
 
-    // must have content set
-    if (cfs->content == NULL) {
+    if (cfs->content == NULL && cfs->options.reserved_image == NULL) {
         return 0;
     }
 
-    snprintf(
-        &tmp[0], sizeof(tmp) -1,
-        "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "mfs.img",
-        cfs->content
-    );
-    if (platform_stat(&tmp[0], &stats)) {
-        // not there, ignore
-        return 0;
+    if (cfs->content != NULL) {
+        snprintf(
+            &tmp[0], sizeof(tmp) -1,
+            "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "mfs.img",
+            cfs->content
+        );
+        if (platform_stat(&tmp[0], &stats)) {
+            // not there, ignore
+            return 0;
+        }
+    } else {
+        strcpy(&tmp[0], cfs->options.reserved_image);
     }
 
     status = platform_readfile(&tmp[0], &buffer, &size);
     if (status) {
-        VLOG_ERROR("mfs", "__update_mbr: failed to read %s\n", &tmp[0]);
+        VLOG_ERROR("mfs", "__write_reserved_image: failed to read %s\n", &tmp[0]);
         return status;
     }
 
     written = fwrite(buffer, size, 1, cfs->stream);
     if (written != size) {
-        VLOG_ERROR("mfs", "__update_mbr: failed to write reserved sectors\n");
+        VLOG_ERROR("mfs", "__write_reserved_image: failed to write reserved sectors\n");
         free(buffer);
         return -1;
     }
@@ -152,6 +156,7 @@ static int __partition_write(uint64_t sector, uint8_t *buffer, uint32_t sector_c
     if (sector == 0 && cfs->content != NULL) {
         status = __update_mbr(cfs, buffer);
         if (status) {
+            VLOG_ERROR("mfs", "failed to update mbr sector\n");
             return status;
         }
     }
@@ -160,7 +165,7 @@ static int __partition_write(uint64_t sector, uint8_t *buffer, uint32_t sector_c
 
     // let us write the reserved image contents
     // at the same time
-    if (sector == 0 && cfs->content != NULL) {
+    if (sector == 0) {
         status = __write_reserved_image(cfs);
         if (status) {
             return status;
@@ -223,7 +228,7 @@ static int __fs_write_raw(struct chef_disk_filesystem* fs, struct chef_disk_fs_w
 
         status = __partition_read(0, &mbr[0], 1, cfs);
         if (status) {
-            VLOG_ERROR("fat", "failed to read mbr from partition\n");
+            VLOG_ERROR("mfs", "failed to read mbr from partition\n");
             return status;
         }
 
@@ -284,6 +289,9 @@ struct chef_disk_filesystem* chef_filesystem_mfs_new(struct chef_disk_partition*
         free(cfs);
         return NULL;
     }
+
+    // copy options
+    cfs->options.reserved_image = params->options.mfs.reserved_image;
 
     // store members from partition that we need later
     cfs->label = partition->name;

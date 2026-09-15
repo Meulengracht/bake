@@ -659,11 +659,13 @@ static int __build_image(struct chef_image* image, const char* path, struct __mk
 
         if (strcmp(pi->fstype, "fat32") == 0) {
             fs = chef_filesystem_fat32_new(pd, &(struct chef_disk_filesystem_params) {
-                .sector_size = (unsigned int)options->sector_size
+                .sector_size = (unsigned int)options->sector_size,
+                .options.fat.reserved_image = pi->options.fat.reserved_image
             });
         } else if (strcmp(pi->fstype, "mfs") == 0) {
             fs = chef_filesystem_mfs_new(pd, &(struct chef_disk_filesystem_params) {
-                .sector_size = (unsigned int)options->sector_size
+                .sector_size = (unsigned int)options->sector_size,
+                .options.mfs.reserved_image = pi->options.mfs.reserved_image
             });
         } else {
             VLOG_ERROR("mkcdk", "__build_image: unsupported filesystem: %s\n", pi->fstype);

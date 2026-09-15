@@ -47,6 +47,9 @@ enum state {
     STATE_PARTITION_FAT_OPTIONS,
     STATE_PARTITION_FAT_OPTIONS_RESERVED_IMAGE,
 
+    STATE_PARTITION_MFS_OPTIONS,
+    STATE_PARTITION_MFS_OPTIONS_RESERVED_IMAGE,
+
     STATE_PARTITION_SOURCE,    // MAPPING_START
     STATE_PARTITION_SOURCE_TYPE,
     STATE_PARTITION_SOURCE_PATH,
@@ -488,6 +491,31 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
         
         __consume_scalar_fn(STATE_PARTITION_FAT_OPTIONS_RESERVED_IMAGE, partition.options.fat.reserved_image, __parse_string)
 
+        case STATE_PARTITION_MFS_OPTIONS:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __parser_pop_state(s);
+                    break;
+                
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "reserved-image") == 0) {
+                        __parser_push_state(s, STATE_PARTITION_MFS_OPTIONS_RESERVED_IMAGE);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_PARTITION_MFS_OPTIONS) unexpected scalar: %s.\n", value);
+                        return -1;
+                    }
+                    break;
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+        
+        __consume_scalar_fn(STATE_PARTITION_MFS_OPTIONS_RESERVED_IMAGE, partition.options.mfs.reserved_image, __parse_string)
+
         case STATE_PARTITION_SOURCE:
             switch (event->type) {
                 case YAML_SCALAR_EVENT:
@@ -591,11 +619,20 @@ static void __destroy_fat(struct chef_image_partition_fat_options* fatOptions)
     free((void*)fatOptions->reserved_image);
 }
 
+static void __destroy_mfs(struct chef_image_partition_mfs_options* mfsOptions)
+{
+    free((void*)mfsOptions->reserved_image);
+}
+
 static void __destroy_partition(struct chef_image_partition* partition)
 {
     // cleanup fs specific options
-    if (partition->fstype != NULL && (strncmp(partition->fstype, "fat", 3) == 0)) {
-        __destroy_fat(&partition->options.fat);
+    if (partition->fstype != NULL) {
+        if (strncmp(partition->fstype, "fat", 3) == 0) {
+            __destroy_fat(&partition->options.fat);
+        } else if (strncmp(partition->fstype, "mfs", 3) == 0) {
+            __destroy_mfs(&partition->options.mfs);
+        }
     }
 
     __destroy_list(string, partition->attributes.head, struct list_item_string);

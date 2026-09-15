@@ -117,8 +117,13 @@ struct chef_filesystem_fat_options {
     const char* reserved_image;
 };
 
+struct chef_filesystem_mfs_options {
+    const char* reserved_image;
+};
+
 union chef_filesystem_options {
     struct chef_filesystem_fat_options fat;
+    struct chef_filesystem_mfs_options mfs;
 };
 
 struct chef_disk_filesystem_params {

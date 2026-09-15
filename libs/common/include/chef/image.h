@@ -41,8 +41,13 @@ struct chef_image_partition_fat_options {
     const char* reserved_image;
 };
 
+struct chef_image_partition_mfs_options {
+    const char* reserved_image;
+};
+
 union chef_image_partition_options {
     struct chef_image_partition_fat_options fat;
+    struct chef_image_partition_mfs_options mfs;
 };
 
 struct chef_image_partition {
