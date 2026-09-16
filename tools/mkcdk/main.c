@@ -340,10 +340,6 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
         return -1;
     }
 
-    if (!strchr(ccpath, '/')) {
-        return 0;
-    }
-
     for (p = ccpath + 1; *p; p++) {
         if (*p == '/') {
             *p = 0;
@@ -422,6 +418,7 @@ static int __write_directory(struct chef_disk_filesystem* fs, const char* source
     int               status;
     VLOG_DEBUG("mkcdk", "__write_directory(source=%s, dest=%s)\n", source, dest);
 
+    list_init(&files);
     status = __ensure_directory(fs, dest);
     if (status) {
         VLOG_ERROR("mkcdk", "__write_directory: failed to create directory for %s\n", dest);
@@ -472,6 +469,7 @@ static int __write_image_content(struct chef_disk_filesystem* fs, const char* co
     int               status;
     VLOG_DEBUG("mkcdk", "__write_image_content()\n");
 
+    list_init(&files);
     status = platform_getfiles(content, 0, &files);
     if (status) {
         VLOG_ERROR("mkcdk", "__write_image_content: failed to read directory %s\n", content);
