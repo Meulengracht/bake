@@ -84,6 +84,7 @@ int fatfs_allocate_free_space(struct fatfs *fs, int newFile, uint32 *startCluste
     uint32 clusterSize;
     uint32 clusterCount;
     uint32 nextcluster;
+    uint32 searchCluster;
 
     if (size==0)
         return 0;
@@ -103,7 +104,11 @@ int fatfs_allocate_free_space(struct fatfs *fs, int newFile, uint32 *startCluste
     // Allocated first link in the chain if a new file
     if (newFile)
     {
-        if (!fatfs_find_blank_cluster(fs, fs->rootdir_first_cluster, &nextcluster))
+        searchCluster = fs->rootdir_first_cluster;
+        if (fs->fat_type == FAT_TYPE_16 && searchCluster == 0)
+            searchCluster = 2;
+
+        if (!fatfs_find_blank_cluster(fs, searchCluster, &nextcluster))
             return 0;
 
         // If this is all that is needed then all done
