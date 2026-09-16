@@ -36,6 +36,18 @@ struct __fat_filesystem {
     FILE*                              stream;
 };
 
+static int __normalize_path(const char* path, char* normalized, size_t length)
+{
+    int written;
+
+    if (path == NULL || normalized == NULL || length == 0) {
+        return -1;
+    }
+
+    written = snprintf(normalized, length, "%s%s", path[0] == '/' ? "" : "/", path);
+    return written >= 0 && (size_t)written < length ? 0 : -1;
+}
+
 static int __update_mbr(struct __fat_filesystem* cfs, uint8* sector)
 {
     struct platform_stat stats;
@@ -203,37 +215,53 @@ static int __fs_format(struct chef_disk_filesystem* fs)
     }
     // fat library will always return 1 for success, 0 for failure
     // we need to invert that to match api expectations
-    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label, (uint32_t)cfs->sector_start) == 1 ? 0 : -1;
+    return fl_format(cfs->fs, (uint32_t)cfs->sector_count, cfs->label, 0) == 1 ? 0 : -1;
 }
 
 static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
+    char                     path[PATH_MAX];
     int                      status;
 
-    status = fl_createdirectory(cfs->fs, params->path);
+    if (__normalize_path(params->path, &path[0], sizeof(path)) != 0) {
+        return -1;
+    }
+
+    status = fl_createdirectory(cfs->fs, &path[0]);
     if (status != 0) {
         // fat library will always return 1 for success, 0 for failure
         // we need to invert that to match api expectations
+        VLOG_DEBUG("fat", "__fs_create_directory: created %s\n", &path[0]);
         return 0;
     }
 
-    return fl_is_dir(cfs->fs, params->path) ? 0 : -1;
+    status = fl_is_dir(cfs->fs, &path[0]);
+    VLOG_DEBUG("fat", "__fs_create_directory: existing %s: %s\n",
+        &path[0], status ? "yes" : "no");
+    return status ? 0 : -1;
 }
 
 static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_file_params* params)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
+    char                     path[PATH_MAX];
     FL_FILE*                 stream;
     int                      written;
 
-    stream = fl_fopen(cfs->fs, params->path, "w");
+    if (__normalize_path(params->path, &path[0], sizeof(path)) != 0) {
+        return -1;
+    }
+
+    stream = fl_fopen(cfs->fs, &path[0], "w");
     if (stream == NULL) {
+        VLOG_ERROR("fat", "__fs_create_file: failed to open %s for writing\n", &path[0]);
         return -1;
     }
 
     written = fl_fwrite(cfs->fs, params->buffer, 1, (uint32_t)params->size, stream);
     if (written != (int)params->size) {
+        VLOG_ERROR("fat", "__fs_create_file: wrote %d of %zu bytes to %s\n", written, params->size, &path[0]);
         fl_fclose(cfs->fs, stream);
         return -1;
     }
