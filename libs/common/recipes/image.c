@@ -429,6 +429,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_PARTITION_ATTRIBUTES_LIST);
                     } else if (strcmp(value, "fat-options") == 0) {
                         __parser_push_state(s, STATE_PARTITION_FAT_OPTIONS);
+                    } else if (strcmp(value, "mfs-options") == 0) {
+                        __parser_push_state(s, STATE_PARTITION_MFS_OPTIONS);
                     } else if (strcmp(value, "sources") == 0) {
                         __parser_push_state(s, STATE_PARTITION_SOURCES_LIST);
                     } else {
