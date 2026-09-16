@@ -97,7 +97,13 @@ struct mfs {
 
 struct mfs_bucket_map;
 
-extern struct mfs_bucket_map* mfs_bucket_new(struct mfs_storage_operations* ops, uint64_t sector, uint32_t sectorCount, uint16_t sectorsPerBucket);
+extern struct mfs_bucket_map* mfs_bucket_new(
+    struct mfs_storage_operations* ops,
+    uint64_t sector,
+    uint32_t sectorCount,
+    uint16_t sectorsPerBucket,
+    uint16_t bytesPerSector
+);
 extern void mfs_bucket_delete(struct mfs_bucket_map* map);
 
 extern uint32_t mfs_bucket_map_next_free(struct mfs_bucket_map* map);

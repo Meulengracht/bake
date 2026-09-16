@@ -32,7 +32,13 @@ struct mfs_bucket_map {
     uint32_t                       next_free_bucket;
 };
 
-struct mfs_bucket_map* mfs_bucket_new(struct mfs_storage_operations* ops, uint64_t sector, uint32_t sectorCount, uint16_t sectorsPerBucket)
+struct mfs_bucket_map* mfs_bucket_new(
+    struct mfs_storage_operations* ops,
+    uint64_t sector,
+    uint32_t sectorCount,
+    uint16_t sectorsPerBucket,
+    uint16_t bytesPerSector
+)
 {
     struct mfs_bucket_map* map;
 
@@ -45,6 +51,7 @@ struct mfs_bucket_map* mfs_bucket_new(struct mfs_storage_operations* ops, uint64
     map->sector = sector;
     map->sector_count = sectorCount;
     map->sectors_per_bucket = sectorsPerBucket;
+    map->bytes_per_sector = bytesPerSector;
     return map;
 }
 

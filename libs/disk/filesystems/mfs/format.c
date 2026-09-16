@@ -42,16 +42,19 @@ struct mfs* mfs_new(struct mfs_new_params* params)
     mfs->bytes_per_sector = params->bytes_per_sector;
     mfs->sectors_per_track = params->sectors_per_track;
     mfs->heads_per_cylinder = params->heads_per_cylinder;
-
-    if (strcmp(params->guid, "C4483A10-E3A0-4D3F-B7CC-C04A6E16612B") == 0) {
-        mfs->flags |= MFS_PARTITION_FLAG_SYSTEMDRIVE;
-    } else if (strcmp(params->guid, "80C6C62A-B0D6-4FF4-A69D-558AB6FD8B53") == 0) {
-        mfs->flags |= MFS_PARTITION_FLAG_USERDRIVE | MFS_PARTITION_FLAG_DATADRIVE;
-    } else if (strcmp(params->guid, "8874F880-E7AD-4EE2-839E-6FFA54F19A72") == 0) {
-        mfs->flags |= MFS_PARTITION_FLAG_USERDRIVE;
-    } else if (strcmp(params->guid, "B8E1A523-5865-4651-9548-8A43A9C21384") == 0) {
-        mfs->flags |= MFS_PARTITION_FLAG_DATADRIVE;
+    
+    if (params->guid != NULL) {
+        if (strcmp(params->guid, "C4483A10-E3A0-4D3F-B7CC-C04A6E16612B") == 0) {
+            mfs->flags |= MFS_PARTITION_FLAG_SYSTEMDRIVE;
+        } else if (strcmp(params->guid, "80C6C62A-B0D6-4FF4-A69D-558AB6FD8B53") == 0) {
+            mfs->flags |= MFS_PARTITION_FLAG_USERDRIVE | MFS_PARTITION_FLAG_DATADRIVE;
+        } else if (strcmp(params->guid, "8874F880-E7AD-4EE2-839E-6FFA54F19A72") == 0) {
+            mfs->flags |= MFS_PARTITION_FLAG_USERDRIVE;
+        } else if (strcmp(params->guid, "B8E1A523-5865-4651-9548-8A43A9C21384") == 0) {
+            mfs->flags |= MFS_PARTITION_FLAG_DATADRIVE;
+        }
     }
+
     return mfs;
 }
 
@@ -62,8 +65,6 @@ void mfs_delete(struct mfs* mfs)
     }
 
     mfs_bucket_delete(mfs->map);
-    free((void*)mfs->label);
-    free((void*)mfs->guid);
     free(mfs);
 }
 
@@ -333,7 +334,8 @@ int mfs_format(struct mfs* mfs)
         &mfs->ops,
         mfs->reserved_sector_count,
         (uint32_t)(mfs->sector_count - mfs->reserved_sector_count),
-        mfs->bucket_size
+        mfs->bucket_size,
+        mfs->bytes_per_sector
     );
     if (mfs->map == NULL) {
         return -1;
