@@ -128,6 +128,11 @@ struct chef_diskbuilder* chef_diskbuilder_new(struct chef_diskbuilder_params* pa
     struct chef_diskbuilder* builder;
     VLOG_DEBUG("disk", "chef_diskbuilder_new(path=%s, size=%llu)\n", params->path, params->size);
 
+    if (params->sector_size == 0) {
+        VLOG_ERROR("disk", "chef_diskbuilder_new: sector size must not be zero\n");
+        return NULL;
+    }
+
     builder = calloc(1, sizeof(struct chef_diskbuilder));
     if (builder == NULL) {
         VLOG_ERROR("disk", "chef_diskbuilder_new: failed to allocate memory\n");
@@ -495,6 +500,9 @@ static void __partition_delete(struct chef_disk_partition* partition)
         return;
     }
 
+    if (partition->stream != NULL) {
+        fclose(partition->stream);
+    }
     free((void*)partition->name);
     free((void*)partition->guid);
     free(partition);
@@ -513,8 +521,9 @@ void chef_diskbuilder_delete(struct chef_diskbuilder* builder)
 struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuilder* builder, struct chef_disk_partition_params* params)
 {
     struct chef_disk_partition* p;
-    int    status;
-    char   tmp[PATH_MAX];
+    uint64_t                    requested_sectors;
+    int                         status;
+    char                        tmp[PATH_MAX];
     VLOG_DEBUG("disk", "chef_diskbuilder_partition_new(name=%s)\n", params->name);
 
     // Is the builder done already?
@@ -523,8 +532,14 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
         return NULL;
     }
 
-    // Make sure the size fits
-    if (params->size > (builder->last_usable_sector - builder->next_usable_sector)) {
+    requested_sectors = params->size / builder->disk_geometry.bytes_per_sector;
+    if ((params->size % builder->disk_geometry.bytes_per_sector) != 0) {
+        requested_sectors++;
+    }
+
+    // Make sure the size fits. The requested size is in bytes while the
+    // usable-sector bounds are expressed in sectors.
+    if (requested_sectors > (builder->last_usable_sector - builder->next_usable_sector)) {
         VLOG_ERROR("disk", 
             "chef_diskbuilder_partition_new: partition %s: size does not fit onto image\n",
             params->name

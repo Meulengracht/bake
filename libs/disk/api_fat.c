@@ -209,7 +209,16 @@ static int __fs_format(struct chef_disk_filesystem* fs)
 static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_directory_params* params)
 {
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
-    return fl_createdirectory(cfs->fs, params->path) == 0 ? -1 : 0;
+    int                      status;
+
+    status = fl_createdirectory(cfs->fs, params->path);
+    if (status != 0) {
+        // fat library will always return 1 for success, 0 for failure
+        // we need to invert that to match api expectations
+        return 0;
+    }
+
+    return fl_is_dir(cfs->fs, params->path) ? 0 : -1;
 }
 
 static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_file_params* params)
