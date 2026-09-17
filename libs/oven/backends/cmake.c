@@ -86,8 +86,22 @@ cleanup:
  */
 static int __rewrite_options(struct backend_args* args, struct oven_backend_data* data)
 {
-    const char* names[] = { "CMAKE_INSTALL_PREFIX", "CMAKE_PREFIX_PATH" };
-    int found[2] = { 0 };
+    const char* names[] = { "CMAKE_INSTALL_PREFIX", "CMAKE_PREFIX_PATH", "CMAKE_TOOLCHAIN_FILE" };
+    const char* toolchainFile = NULL;
+    int found[3] = { 0 };
+
+    if (data->environment != NULL) {
+        struct list_item* item;
+
+        list_foreach(data->environment, item) {
+            struct chef_keypair_item* pair = (struct chef_keypair_item*)item;
+
+            if (strcmp(pair->key, "TOOLCHAIN_CMAKE_FILE") == 0) {
+                toolchainFile = pair->value;
+                break;
+            }
+        }
+    }
 
     // Inspect each recipe option because either supported definition may be present.
     for (size_t i = 0; i < args->count; i++) {
@@ -110,7 +124,7 @@ static int __rewrite_options(struct backend_args* args, struct oven_backend_data
 
         definition = args->values[i] + offset;
         // Compare the definition against both staging-sensitive CMake variables.
-        for (size_t key = 0; key < 2; key++) {
+        for (size_t key = 0; key < 3; key++) {
             size_t length = strlen(names[key]);
             const char* equal;
             char* value;
@@ -135,9 +149,14 @@ static int __rewrite_options(struct backend_args* args, struct oven_backend_data
                 return -1;
             }
 
-            value = key == 0
-                ? backend_install_prefix(data->paths.install, equal + 1)
-                : __prefix_paths(equal + 1, data);
+            if (key == 0) {
+                value = backend_install_prefix(data->paths.install, equal + 1);
+            } else if (key == 1) {
+                value = __prefix_paths(equal + 1, data);
+            } else {
+                found[key] = 1;
+                break;
+            }
             if (value == NULL) {
                 return -1;
             }
@@ -166,7 +185,7 @@ static int __rewrite_options(struct backend_args* args, struct oven_backend_data
     }
 
     // Add defaults for staging-sensitive variables omitted by the recipe.
-    for (size_t key = 0; key < 2; key++) {
+    for (size_t key = 0; key < 3; key++) {
         char* value;
         int status;
 
@@ -175,16 +194,24 @@ static int __rewrite_options(struct backend_args* args, struct oven_backend_data
             continue;
         }
 
-        value = key == 0
-            ? backend_install_prefix(data->paths.install,
-                backend_default_prefix(data->platform.target_platform, "/usr"))
-            : __prefix_paths(NULL, data);
+        if (key == 0) {
+            value = backend_install_prefix(data->paths.install,
+                backend_default_prefix(data->platform.target_platform, "/usr"));
+        } else if (key == 1) {
+            value = __prefix_paths(NULL, data);
+        } else {
+            if (toolchainFile == NULL) {
+                continue;
+            }
+            value = platform_strdup(toolchainFile);
+        }
         if (value == NULL) {
             return -1;
         }
 
         status = backend_args_pair(args,
-            key == 0 ? "-DCMAKE_INSTALL_PREFIX=" : "-DCMAKE_PREFIX_PATH=", value);
+            key == 0 ? "-DCMAKE_INSTALL_PREFIX=" :
+            (key == 1 ? "-DCMAKE_PREFIX_PATH=" : "-DCMAKE_TOOLCHAIN_FILE="), value);
         free(value);
         // Fail rather than invoking CMake with a partially rewritten command.
         if (status != 0) {

@@ -19,6 +19,7 @@
 #include <chef/environment.h>
 #include <chef/ingredient.h>
 #include <chef/platform.h>
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +40,9 @@ static struct oven_backend g_backends[] = {
 
 static struct oven_context g_oven = { 0 };
 struct oven_context* __oven_instance() { return &g_oven; }
+
+static int __is_relative_toolchain_path(const char* path);
+static const char* __get_variable(const char* name, void* context);
 
 int oven_initialize(struct oven_initialize_options* parameters)
 {
@@ -97,8 +101,13 @@ static int __ensure_recipe_dirs(struct oven_recipe_options* options)
 
 int oven_recipe_start(struct oven_recipe_options* options)
 {
+    if (options == NULL || options->name == NULL) {
+        VLOG_ERROR("oven", "oven_recipe_start: invalid options\n");
+        errno = EINVAL;
+        return -1;
+    }
     VLOG_DEBUG("oven", "oven_recipe_start(name=%s)\n", options->name);
-
+    
     if (g_oven.recipe.name) {
         VLOG_ERROR("oven", "oven_recipe_start: recipe already started\n");
         errno = ENOSYS;
@@ -113,6 +122,31 @@ int oven_recipe_start(struct oven_recipe_options* options)
     // build the toolchain path
     if (options->toolchain != NULL) {
         g_oven.recipe.toolchain = strpathcombine(g_oven.paths.toolchains_root, options->toolchain);
+        if (g_oven.recipe.toolchain == NULL) {
+            goto error;
+        }
+    }
+    if (g_oven.recipe.toolchain != NULL && options->toolchain_config != NULL &&
+        options->toolchain_config->root != NULL) {
+        if (!__is_relative_toolchain_path(options->toolchain_config->root)) {
+            errno = EINVAL;
+            goto error;
+        }
+        char* root = strpathcombine(g_oven.recipe.toolchain, options->toolchain_config->root);
+        if (root == NULL) {
+            goto error;
+        }
+        free((void*)g_oven.recipe.toolchain);
+        g_oven.recipe.toolchain = root;
+    }
+    g_oven.recipe.toolchain_config = options->toolchain_config;
+    g_oven.recipe.target = options->target;
+    if (g_oven.recipe.target != NULL && g_oven.recipe.target->triple != NULL) {
+        g_oven.recipe.target_triple = chef_preprocess_text(g_oven.recipe.target->triple,
+            __get_variable, NULL);
+        if (g_oven.recipe.target_triple == NULL) {
+            goto error;
+        }
     }
 
     // create directories, last as it uses the global access
@@ -132,6 +166,7 @@ void oven_recipe_end(void)
     VLOG_DEBUG("oven", "oven_recipe_end()\n");
     free((void*)g_oven.recipe.name);
     free((void*)g_oven.recipe.toolchain);
+    free(g_oven.recipe.target_triple);
     free((void*)g_oven.recipe.source_root);
     free((void*)g_oven.recipe.build_root);
     memset(&g_oven.recipe, 0, sizeof(struct oven_recipe_context));
@@ -152,6 +187,7 @@ static const char* __get_variable(const char* name, void* context)
         { "CHEF_HOST_PLATFORM", &hostPlatform },
         { "CHEF_HOST_ARCHITECTURE", &hostArch },
         { "TOOLCHAIN_PREFIX", &g_oven.recipe.toolchain },
+        { "TOOLCHAIN_TARGET_TRIPLE", (const char**)&g_oven.recipe.target_triple },
         { "PROJECT_PATH", &g_oven.paths.project_root },
         { "INSTALL_PREFIX", &g_oven.paths.install_root },
         { "BUILD_INGREDIENTS_PREFIX", &g_oven.paths.build_ingredients_root },
@@ -284,13 +320,166 @@ static struct chef_keypair_item* __compose_keypair(const char* key, const char* 
     item->key = platform_strdup(key);
     if (item->key == NULL) {
         free(item);
+        return NULL;
     }
     item->value = platform_strdup(value);
     if (item->value == NULL) {
         free((void*)item->key);
         free(item);
+        return NULL;
     }
     return item;
+}
+
+// Package metadata paths must remain contained within the unpacked toolchain.
+static int __is_relative_toolchain_path(const char* path)
+{
+    const char* component = path;
+    const char* separator;
+
+    if (path == NULL || path[0] == '\0') {
+        return 0;
+    }
+    if (path[0] == '/' || path[0] == '\\' ||
+        (isalpha((unsigned char)path[0]) && path[1] == ':')) {
+        return 0;
+    }
+
+    do {
+        separator = strpbrk(component, "/\\");
+        if ((separator == component && component[0] == '.') ||
+            (separator != NULL && separator - component == 1 && component[0] == '.') ||
+            (separator == NULL && strcmp(component, ".") == 0) ||
+            (separator != NULL && separator - component == 2 && component[0] == '.' && component[1] == '.') ||
+            (separator == NULL && strcmp(component, "..") == 0)) {
+            return 0;
+        }
+        component = separator != NULL ? separator + 1 : NULL;
+    } while (component != NULL && component[0] != '\0');
+    return 1;
+}
+
+static int __add_toolchain_keypair(struct list* environment, const char* key, const char* relative)
+{
+    struct chef_keypair_item* pair;
+    char*                     value;
+
+    if (relative == NULL) {
+        return 0;
+    }
+    if (!__is_relative_toolchain_path(relative)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    value = strpathcombine(g_oven.recipe.toolchain, relative);
+    if (value == NULL) {
+        return -1;
+    }
+    pair = __compose_keypair(key, value);
+    free(value);
+    if (pair == NULL) {
+        return -1;
+    }
+    list_add(environment, &pair->list_header);
+    return 0;
+}
+
+static int __add_toolchain_compiler_args(
+    struct list*                                      environment,
+    const struct chef_package_manifest_toolchain_target* target)
+{
+    char** values;
+    char* flattened;
+    size_t length;
+
+    if (target == NULL || target->compiler_args.count == 0) {
+        return 0;
+    }
+
+    values = calloc(target->compiler_args.count + 1, sizeof(char*));
+    if (values == NULL) {
+        return -1;
+    }
+    for (size_t i = 0; i < target->compiler_args.count; i++) {
+        values[i] = chef_preprocess_text(target->compiler_args.values[i], __get_variable, NULL);
+        if (values[i] == NULL) {
+            while (i > 0) {
+                free(values[--i]);
+            }
+            free(values);
+            return -1;
+        }
+    }
+
+    flattened = strflatten((const char* const*)values, " ", &length);
+    for (size_t i = 0; i < target->compiler_args.count; i++) {
+        free(values[i]);
+    }
+    free(values);
+    if (flattened == NULL) {
+        return -1;
+    }
+
+    for (const char* key = "TOOLCHAIN_COMPILER_ARGS"; key != NULL;) {
+        struct chef_keypair_item* pair = __compose_keypair(key, flattened);
+        if (pair == NULL) {
+            free(flattened);
+            return -1;
+        }
+        list_add(environment, &pair->list_header);
+        key = strcmp(key, "TOOLCHAIN_COMPILER_ARGS") == 0 ? "CFLAGS" :
+            (strcmp(key, "CFLAGS") == 0 ? "CXXFLAGS" : NULL);
+    }
+    free(flattened);
+    return 0;
+}
+
+static int __add_toolchain_environment(struct list* environment)
+{
+    const struct chef_package_manifest_toolchain_config* toolchain = g_oven.recipe.toolchain_config;
+    const struct chef_package_manifest_toolchain_target* target = g_oven.recipe.target;
+    struct chef_keypair_item* pair;
+
+    // A package may omit the descriptor for compatibility with older packs.
+    if (g_oven.recipe.toolchain == NULL || toolchain == NULL) {
+        return 0;
+    }
+
+    pair = __compose_keypair("TOOLCHAIN_PREFIX", g_oven.recipe.toolchain);
+    if (pair == NULL) {
+        return -1;
+    }
+    list_add(environment, &pair->list_header);
+
+    if (__add_toolchain_keypair(environment, "CC", toolchain->cc) != 0 ||
+        __add_toolchain_keypair(environment, "CXX", toolchain->cxx) != 0 ||
+        __add_toolchain_keypair(environment, "AR", toolchain->ar) != 0 ||
+        __add_toolchain_keypair(environment, "RANLIB", toolchain->ranlib) != 0 ||
+        __add_toolchain_keypair(environment, "STRIP", toolchain->strip) != 0 ||
+        __add_toolchain_keypair(environment, "LLVM_CONFIG", toolchain->llvm_config) != 0 ||
+        __add_toolchain_keypair(environment, "TOOLCHAIN_CMAKE_FILE", toolchain->cmake_file) != 0) {
+        return -1;
+    }
+
+    if (target != NULL) {
+        pair = __compose_keypair("TOOLCHAIN_TARGET", target->name);
+        if (pair == NULL) {
+            return -1;
+        }
+        list_add(environment, &pair->list_header);
+    }
+    if (g_oven.recipe.target_triple != NULL) {
+        pair = __compose_keypair("TOOLCHAIN_TARGET_TRIPLE", g_oven.recipe.target_triple);
+        if (pair == NULL) {
+            return -1;
+        }
+        list_add(environment, &pair->list_header);
+    }
+    if (__add_toolchain_compiler_args(environment, target) != 0) {
+        return -1;
+    }
+    return 0;
 }
 
 static struct chef_keypair_item* __build_ingredients_system_path_keypair(const char* key, const char* systemRoot)
@@ -383,6 +572,20 @@ static int __initialize_backend_data(
     if (!data->environment) {
         __cleanup_backend_data(data);
         return -1;
+    }
+
+    if (g_oven.recipe.toolchain_config != NULL) {
+        struct list* toolchainEnvironment = __preprocess_keypair_list(NULL);
+        // Toolchain defaults are applied first; explicit step values override them.
+        if (toolchainEnvironment == NULL ||
+            __add_toolchain_environment(toolchainEnvironment) != 0 ||
+            environment_update(toolchainEnvironment, data->environment) != 0) {
+            __cleanup_environment(toolchainEnvironment);
+            __cleanup_backend_data(data);
+            return -1;
+        }
+        __cleanup_environment(data->environment);
+        data->environment = toolchainEnvironment;
     }
 
     //if (__append_or_update_environ_flags(data->environment)) {

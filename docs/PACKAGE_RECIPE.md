@@ -364,6 +364,29 @@ packs:
     type: application
 
     ###########################
+    # toolchain - Optional for toolchain packs
+    #
+    # Describes a host-side compiler installation using paths relative to the
+    # unpacked package root. A toolchain package may target another platform;
+    # targets select target-specific defaults by the build platform. Their
+    # triples and compiler arguments can use Chef variables, allowing one
+    # package to support multiple target architectures without duplicate packs.
+    toolchain:
+      root: usr/local
+      cc: bin/clang
+      cxx: bin/clang++
+      ar: bin/llvm-ar
+      ranlib: bin/llvm-ranlib
+      strip: bin/llvm-strip
+      llvm-config: bin/llvm-config
+      cmake-file: share/chef/toolchain.cmake
+      targets:
+        - name: vali
+          triple: $[[ CHEF_TARGET_ARCHITECTURE ]]-uml-vali
+          compiler-args:
+            - "--target=$[[ TOOLCHAIN_TARGET_TRIPLE ]]"
+
+    ###########################
     # ingredient options - Optional
     # 
     # Options provided by this ingredient pack. This can be additional include paths

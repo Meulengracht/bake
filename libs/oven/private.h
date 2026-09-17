@@ -23,10 +23,13 @@
 #include "backends/include/backend.h"
 
 struct oven_recipe_context {
-    const char* name;
-    const char* toolchain;
-    const char* source_root;
-    const char* build_root;
+    const char*                                          name;
+    const char*                                          toolchain;
+    const struct chef_package_manifest_toolchain_config* toolchain_config;
+    const struct chef_package_manifest_toolchain_target* target;
+    char*                                                target_triple;
+    const char*                                          source_root;
+    const char*                                          build_root;
 };
 
 struct oven_variables {

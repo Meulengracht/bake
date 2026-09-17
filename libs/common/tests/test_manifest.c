@@ -238,3 +238,66 @@ int test_package_manifest_ingredient_roundtrip(void)
     chef_package_manifest_free(loaded);
     return 0;
 }
+
+int test_package_manifest_toolchain_roundtrip(void)
+{
+    static const char* valiCompilerArgs[] = {
+        "--target=$[[ TOOLCHAIN_TARGET_TRIPLE ]]",
+        "-Wl,-rpath,/opt/sdk/lib"
+    };
+    struct chef_package_manifest_toolchain_target targets[] = {
+        { "vali", "$[[ CHEF_TARGET_ARCHITECTURE ]]-uml-vali", { valiCompilerArgs, 2 } },
+        { "linux", "$[[ CHEF_TARGET_ARCHITECTURE ]]-linux-gnu", { NULL, 0 } }
+    };
+    struct chef_package_manifest manifest = {
+        .name = "vali/clang-cc",
+        .platform = "linux",
+        .architecture = "amd64",
+        .type = CHEF_PACKAGE_TYPE_TOOLCHAIN,
+        .summary = "LLVM toolchain",
+        .version = { 18, 1, 0, 0, NULL, 0, NULL },
+        .toolchain = {
+            .root = "usr/local",
+            .cc = "bin/clang",
+            .cxx = "bin/clang++",
+            .ar = "bin/llvm-ar",
+            .ranlib = "bin/llvm-ranlib",
+            .strip = "bin/llvm-strip",
+            .llvm_config = "bin/llvm-config",
+            .targets = targets,
+            .targets_count = 2
+        }
+    };
+    struct chef_package_manifest* loaded = NULL;
+    char inputDir[PATH_MAX];
+    char path[PATH_MAX];
+    int status;
+
+    TEST_ASSERT(__create_temp_paths(&inputDir[0], sizeof(inputDir), &path[0], sizeof(path)) == 0, "temp path should be created");
+    TEST_ASSERT(__create_test_input_dir(&inputDir[0]) == 0, "input directory should be created");
+    status = __write_manifest_file(&inputDir[0], &path[0], &manifest);
+    TEST_ASSERT(status == 0, "manifest write should succeed");
+
+    status = chef_package_manifest_load(&path[0], &loaded);
+    __remove_test_input_dir(&inputDir[0]);
+    remove(&path[0]);
+    TEST_ASSERT(status == 0, "manifest load should succeed");
+    TEST_ASSERT(strcmp(loaded->toolchain.root, "usr/local") == 0, "toolchain root should roundtrip");
+    TEST_ASSERT(strcmp(loaded->toolchain.cc, "bin/clang") == 0, "toolchain cc should roundtrip");
+    TEST_ASSERT(strcmp(loaded->toolchain.cxx, "bin/clang++") == 0, "toolchain cxx should roundtrip");
+    TEST_ASSERT(strcmp(loaded->toolchain.llvm_config, "bin/llvm-config") == 0, "llvm-config should roundtrip");
+    TEST_ASSERT(loaded->toolchain.targets_count == 2, "target count should roundtrip");
+    TEST_ASSERT(strcmp(loaded->toolchain.targets[0].name, "vali") == 0, "first target name should roundtrip");
+    TEST_ASSERT(strcmp(loaded->toolchain.targets[0].triple,
+        "$[[ CHEF_TARGET_ARCHITECTURE ]]-uml-vali") == 0, "target triple should roundtrip");
+    TEST_ASSERT(loaded->toolchain.targets[0].compiler_args.count == 2,
+        "target compiler argument count should roundtrip");
+    TEST_ASSERT(strcmp(loaded->toolchain.targets[0].compiler_args.values[0],
+        "--target=$[[ TOOLCHAIN_TARGET_TRIPLE ]]") == 0, "target compiler argument should roundtrip");
+    TEST_ASSERT(strcmp(loaded->toolchain.targets[0].compiler_args.values[1],
+        "-Wl,-rpath,/opt/sdk/lib") == 0, "compiler argument commas should roundtrip");
+    TEST_ASSERT(strcmp(loaded->toolchain.targets[1].name, "linux") == 0, "second target name should roundtrip");
+
+    chef_package_manifest_free(loaded);
+    return 0;
+}

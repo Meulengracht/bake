@@ -18,6 +18,7 @@ add_sources(
     cache.c
     oven.c
     script.c
+    toolchain.c
 )
 if (UNIX)
     add_sources(linux_context.c)

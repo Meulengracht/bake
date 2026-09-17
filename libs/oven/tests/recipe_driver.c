@@ -18,6 +18,26 @@ static const char* __test_value_or_default(const char* name, const char* fallbac
 
 int main(int argc, char** argv, char** envp)
 {
+    static const char* compilerArgs[] = {
+        "--target=$[[ TOOLCHAIN_TARGET_TRIPLE ]]"
+    };
+    static struct chef_package_manifest_toolchain_target targets[] = {
+        {
+            .name = "vali",
+            .triple = "$[[ CHEF_TARGET_ARCHITECTURE ]]-uml-vali",
+            .compiler_args = { compilerArgs, 1 }
+        }
+    };
+    static const struct chef_package_manifest_toolchain_config toolchain = {
+        .root = "usr/local",
+        .cc = "bin/clang",
+        .cxx = "bin/clang++",
+        .ar = "bin/llvm-ar",
+        .ranlib = "bin/llvm-ranlib",
+        .cmake_file = "share/chef/toolchain.cmake",
+        .targets = targets,
+        .targets_count = 1
+    };
     struct recipe* recipe = NULL;
     struct list_item* item;
     FILE* file;
@@ -61,7 +81,12 @@ int main(int argc, char** argv, char** envp)
         return 1;
     }
     struct recipe_part* part = (struct recipe_part*)recipe->parts.head;
-    status = oven_recipe_start(&(struct oven_recipe_options){ .name = part->name });
+    status = oven_recipe_start(&(struct oven_recipe_options) {
+        .name = part->name,
+        .toolchain = getenv("CHEF_TEST_TOOLCHAIN") != NULL ? "toolchain" : NULL,
+        .toolchain_config = getenv("CHEF_TEST_TOOLCHAIN") != NULL ? &toolchain : NULL,
+        .target = getenv("CHEF_TEST_TOOLCHAIN") != NULL ? &targets[0] : NULL
+    });
     if (status) {
         goto cleanup;
     }

@@ -31,6 +31,7 @@
 #define CHEF_PACKAGE_ICON_GUID            { 0xDB6981BF, 0xC344, 0x47F5, { 0xB6, 0xE1, 0x5C, 0x3C, 0x76, 0xF5, 0x6F, 0xFF } }
 #define CHEF_PACKAGE_APPS_GUID            { 0xBE0B9C0E, 0x78D0, 0x45B9, { 0xBA, 0xF9, 0x51, 0xC8, 0x0B, 0x8D, 0x46, 0xC9 } }
 #define CHEF_PACKAGE_INGREDIENT_OPTS_GUID { 0xACB75CCE, 0x1A4C, 0x4830, { 0xA2, 0x54, 0x85, 0x2E, 0x9C, 0x03, 0xF5, 0xBA } }
+#define CHEF_PACKAGE_TOOLCHAIN_OPTS_GUID  { 0xCBF7302A, 0x2C90, 0x4B61, { 0xA4, 0x0E, 0x5B, 0x64, 0xA0, 0xD8, 0x19, 0xD3 } }
 #define CHEF_PACKAGE_NETWORK_GUID         { 0x2E8B3C5D, 0xA8A0, 0x4A62, { 0xB4, 0xD8, 0x11, 0x2C, 0xEE, 0x41, 0x2A, 0x19 } }
 #define CHEF_PACKAGE_CAPABILITIES_GUID    { 0x7F3A1B2D, 0xC9E4, 0x4D56, { 0xA1, 0x7E, 0x3B, 0x8F, 0x6D, 0x52, 0xE9, 0x04 } }
 
@@ -91,6 +92,25 @@ struct chef_vafs_feature_ingredient_opts {
     uint32_t                 lib_dirs_length;
     uint32_t                 compiler_flags_length;
     uint32_t                 linker_flags_length;
+};
+
+struct chef_vafs_feature_toolchain_opts {
+    struct VaFsFeatureHeader header;
+    uint32_t                 root_length;
+    uint32_t                 cc_length;
+    uint32_t                 cxx_length;
+    uint32_t                 ar_length;
+    uint32_t                 ranlib_length;
+    uint32_t                 strip_length;
+    uint32_t                 llvm_config_length;
+    uint32_t                 cmake_file_length;
+    uint32_t                 targets_count;
+};
+
+struct chef_vafs_toolchain_target {
+    uint32_t name_length;
+    uint32_t triple_length;
+    uint32_t compiler_args_count;
 };
 
 // Optional application runtime network defaults.

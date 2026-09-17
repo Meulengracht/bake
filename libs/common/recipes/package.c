@@ -118,6 +118,7 @@ enum state {
     STATE_PACK_TYPE,
     STATE_PACK_NETWORK,
     STATE_PACK_INGREDIENT_OPTIONS,
+    STATE_PACK_TOOLCHAIN_OPTIONS,
     STATE_PACK_FILTER_LIST,
     STATE_PACK_COMMANDS_LIST,
     
@@ -138,6 +139,20 @@ enum state {
     STATE_PACK_INGREDIENT_OPTIONS_LIB_PATHS_LIST,
     STATE_PACK_INGREDIENT_OPTIONS_COMPILER_ARGS_LIST,
     STATE_PACK_INGREDIENT_OPTIONS_LINKER_ARGS_LIST,
+
+    STATE_PACK_TOOLCHAIN_ROOT,
+    STATE_PACK_TOOLCHAIN_CC,
+    STATE_PACK_TOOLCHAIN_CXX,
+    STATE_PACK_TOOLCHAIN_AR,
+    STATE_PACK_TOOLCHAIN_RANLIB,
+    STATE_PACK_TOOLCHAIN_STRIP,
+    STATE_PACK_TOOLCHAIN_LLVM_CONFIG,
+    STATE_PACK_TOOLCHAIN_CMAKE_FILE,
+    STATE_PACK_TOOLCHAIN_TARGETS,
+    STATE_PACK_TOOLCHAIN_TARGET,
+    STATE_PACK_TOOLCHAIN_TARGET_NAME,
+    STATE_PACK_TOOLCHAIN_TARGET_TRIPLE,
+    STATE_PACK_TOOLCHAIN_TARGET_COMPILER_ARGS,
 
     STATE_COMMAND,         // MAPPING_START
     STATE_COMMAND_NAME,
@@ -162,6 +177,7 @@ struct parser_state {
     struct recipe_part                   part;
     struct recipe_step                   step;
     struct recipe_pack                   pack;
+    struct recipe_pack_toolchain_target  toolchain_target;
     struct recipe_pack_command           command;
     struct recipe_pack_capability        capability;
     struct chef_keypair_item             env_keypair;
@@ -706,6 +722,25 @@ static void __finalize_meson_wrap_item(struct parser_state* state)
     memset(&state->meson_wrap_item, 0, sizeof(struct meson_wrap_item));
 }
 
+static void __finalize_toolchain_target(struct parser_state* state)
+{
+    struct recipe_pack_toolchain_target* target;
+
+    if (state->toolchain_target.name == NULL) {
+        fprintf(stderr, "parse error: toolchain target name is required\n");
+        exit(EXIT_FAILURE);
+    }
+
+    target = malloc(sizeof(struct recipe_pack_toolchain_target));
+    if (target == NULL) {
+        fprintf(stderr, "error: out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+    memcpy(target, &state->toolchain_target, sizeof(struct recipe_pack_toolchain_target));
+    list_add(&state->pack.toolchain.targets, &target->list_header);
+    memset(&state->toolchain_target, 0, sizeof(struct recipe_pack_toolchain_target));
+}
+
 // TODO error handling
 #define DEFINE_LIST_STRING_ADD(_fname, _stname, _field) \
     static void __add_##_fname ##_##_field(struct parser_state* state, const char* value) \
@@ -738,6 +773,7 @@ DEFINE_LIST_STRING_ADD(pack_options, pack.options, inc_dirs)
 DEFINE_LIST_STRING_ADD(pack_options, pack.options, lib_dirs)
 DEFINE_LIST_STRING_ADD(pack_options, pack.options, compiler_flags)
 DEFINE_LIST_STRING_ADD(pack_options, pack.options, linker_flags)
+DEFINE_LIST_STRING_ADD(toolchain_target, toolchain_target, compiler_args)
 DEFINE_LIST_STRING_ADD(command, command, arguments)
 
 static int __parse_boolean(const char* string)
@@ -1427,6 +1463,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_PACK_NETWORK);
                     } else if (strcmp(value, "ingredient-options") == 0) {
                         __parser_push_state(s, STATE_PACK_INGREDIENT_OPTIONS);
+                    } else if (strcmp(value, "toolchain") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_OPTIONS);
                     } else if (strcmp(value, "filters") == 0) {
                         __parser_push_state(s, STATE_PACK_FILTER_LIST);
                     } else if (strcmp(value, "commands") == 0) {
@@ -1443,6 +1481,88 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                     return -1;
             }
             break;
+
+        case STATE_PACK_TOOLCHAIN_OPTIONS:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+
+                case YAML_MAPPING_END_EVENT:
+                    __parser_pop_state(s);
+                    break;
+
+                case YAML_SCALAR_EVENT:
+                    value = (char *)event->data.scalar.value;
+                    if (strcmp(value, "root") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_ROOT);
+                    } else if (strcmp(value, "cc") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_CC);
+                    } else if (strcmp(value, "cxx") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_CXX);
+                    } else if (strcmp(value, "ar") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_AR);
+                    } else if (strcmp(value, "ranlib") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_RANLIB);
+                    } else if (strcmp(value, "strip") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_STRIP);
+                    } else if (strcmp(value, "llvm-config") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_LLVM_CONFIG);
+                    } else if (strcmp(value, "cmake-file") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_CMAKE_FILE);
+                    } else if (strcmp(value, "targets") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_TARGETS);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_PACK_TOOLCHAIN_OPTIONS) unexpected scalar: %s.\n", value);
+                        return -1;
+                    }
+                    break;
+
+                default:
+                    fprintf(stderr, "__consume_event: unexpected event %d in state %d.\n", event->type, s->state);
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_PACK_TOOLCHAIN_ROOT, pack.toolchain.root, __parse_string)
+        __consume_scalar_fn(STATE_PACK_TOOLCHAIN_CC, pack.toolchain.cc, __parse_string)
+        __consume_scalar_fn(STATE_PACK_TOOLCHAIN_CXX, pack.toolchain.cxx, __parse_string)
+        __consume_scalar_fn(STATE_PACK_TOOLCHAIN_AR, pack.toolchain.ar, __parse_string)
+        __consume_scalar_fn(STATE_PACK_TOOLCHAIN_RANLIB, pack.toolchain.ranlib, __parse_string)
+        __consume_scalar_fn(STATE_PACK_TOOLCHAIN_STRIP, pack.toolchain.strip, __parse_string)
+        __consume_scalar_fn(STATE_PACK_TOOLCHAIN_LLVM_CONFIG, pack.toolchain.llvm_config, __parse_string)
+        __consume_scalar_fn(STATE_PACK_TOOLCHAIN_CMAKE_FILE, pack.toolchain.cmake_file, __parse_string)
+
+        __consume_sequence_mapped(STATE_PACK_TOOLCHAIN_TARGETS, STATE_PACK_TOOLCHAIN_TARGET)
+
+        case STATE_PACK_TOOLCHAIN_TARGET:
+            switch (event->type) {
+                case YAML_MAPPING_START_EVENT:
+                    break;
+                case YAML_MAPPING_END_EVENT:
+                    __finalize_toolchain_target(s);
+                    __parser_pop_state(s);
+                    break;
+                case YAML_SCALAR_EVENT:
+                    value = (char*)event->data.scalar.value;
+                    if (strcmp(value, "name") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_TARGET_NAME);
+                    } else if (strcmp(value, "triple") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_TARGET_TRIPLE);
+                    } else if (strcmp(value, "compiler-args") == 0) {
+                        __parser_push_state(s, STATE_PACK_TOOLCHAIN_TARGET_COMPILER_ARGS);
+                    } else {
+                        fprintf(stderr, "__consume_event: (STATE_PACK_TOOLCHAIN_TARGET) unexpected scalar: %s.\n", value);
+                        return -1;
+                    }
+                    break;
+                default:
+                    return -1;
+            }
+            break;
+
+        __consume_scalar_fn(STATE_PACK_TOOLCHAIN_TARGET_NAME, toolchain_target.name, __parse_string)
+        __consume_scalar_fn(STATE_PACK_TOOLCHAIN_TARGET_TRIPLE, toolchain_target.triple, __parse_string)
+        __consume_sequence_unmapped(STATE_PACK_TOOLCHAIN_TARGET_COMPILER_ARGS, __add_toolchain_target_compiler_args)
 
         __consume_scalar_fn(STATE_PACK_NAME, pack.name, __parse_string)
         __consume_scalar_fn(STATE_PACK_SUMMARY, pack.summary, __parse_string)
@@ -1854,6 +1974,29 @@ static void __destroy_pack_ingredient_options(struct recipe_pack_ingredient_opti
     __destroy_list(string, options->linker_flags.head, struct list_item_string);
 }
 
+static void __destroy_toolchain_target(struct recipe_pack_toolchain_target* target);
+
+static void __destroy_pack_toolchain_options(struct recipe_pack_toolchain_options* options)
+{
+    free((void*)options->root);
+    free((void*)options->cc);
+    free((void*)options->cxx);
+    free((void*)options->ar);
+    free((void*)options->ranlib);
+    free((void*)options->strip);
+    free((void*)options->llvm_config);
+    free((void*)options->cmake_file);
+    __destroy_list(toolchain_target, options->targets.head, struct recipe_pack_toolchain_target);
+}
+
+static void __destroy_toolchain_target(struct recipe_pack_toolchain_target* target)
+{
+    __destroy_list(string, target->compiler_args.head, struct list_item_string);
+    free((void*)target->name);
+    free((void*)target->triple);
+    free(target);
+}
+
 static void __destroy_capability(struct recipe_pack_capability* capability)
 {
     if (strcmp(capability->name, "network-client") == 0) {
@@ -1875,6 +2018,7 @@ static void __destroy_pack(struct recipe_pack* pack)
     __destroy_list(string, pack->filters.head, struct list_item_string);
 
     free((void*)pack->app_options.gateway);
+    __destroy_pack_toolchain_options(&pack->toolchain);
     free((void*)pack->app_options.dns);
 
     free((void*)pack->name);

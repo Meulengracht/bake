@@ -290,11 +290,6 @@ int store_package_path(struct store_package* package, const char** pathOut)
     int                          status;
     VLOG_DEBUG("store", "store_package_path(name=%s)\n", package->name);
 
-    if (package->revision == 0) {
-        VLOG_ERROR("store", "store_package_path: revision is required\n");
-        return -1;
-    }
-
     // split the publisher/package
     names = __split_name(package->name);
     if (names == NULL) {

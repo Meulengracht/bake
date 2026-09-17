@@ -133,6 +133,25 @@ struct recipe_pack_ingredient_options {
     struct list linker_flags;
 };
 
+struct recipe_pack_toolchain_target {
+    struct list_item list_header;
+    const char*      name;
+    const char*      triple;
+    struct list      compiler_args;
+};
+
+struct recipe_pack_toolchain_options {
+    const char* root;
+    const char* cc;
+    const char* cxx;
+    const char* ar;
+    const char* ranlib;
+    const char* strip;
+    const char* llvm_config;
+    const char* cmake_file;
+    struct list targets;
+};
+
 struct recipe_pack_command {
     struct list_item       list_header;
     const char*            name;
@@ -171,6 +190,7 @@ struct recipe_pack {
     enum chef_package_type                 type;
     struct recipe_pack_application_options app_options;
     struct recipe_pack_ingredient_options  options;
+    struct recipe_pack_toolchain_options   toolchain;
     struct list                            filters;  // list<list_item_string>
     struct list                            commands; // list<recipe_pack_command>
     struct list                            capabilities; // list<recipe_pack_capability>
