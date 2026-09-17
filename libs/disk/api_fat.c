@@ -36,16 +36,27 @@ struct __fat_filesystem {
     FILE*                              stream;
 };
 
+// remove the starting /
 static int __normalize_path(const char* path, char* normalized, size_t length)
 {
-    int written;
+    char*  p = path;
+    size_t len;
 
     if (path == NULL || normalized == NULL || length == 0) {
         return -1;
     }
 
-    written = snprintf(normalized, length, "%s%s", path[0] == '/' ? "" : "/", path);
-    return written >= 0 && (size_t)written < length ? 0 : -1;
+    // skip the leading /
+    if (*p == '/') {
+        p++;
+    }
+    
+    len = strlen(p);
+    if (len != 0) {
+        memcpy(normalized, p, len);
+    }
+    normalized[len] = '\0';
+    return 0;
 }
 
 static int __update_mbr(struct __fat_filesystem* cfs, uint8* sector)
@@ -223,23 +234,35 @@ static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_di
     struct __fat_filesystem* cfs = (struct __fat_filesystem*)fs;
     char                     path[PATH_MAX];
     int                      status;
+    VLOG_DEBUG("fat", "__fs_create_directory(path=%s)\n", params->path);
 
+    // normalize the path for FAT
     if (__normalize_path(params->path, &path[0], sizeof(path)) != 0) {
         return -1;
     }
 
-    status = fl_createdirectory(cfs->fs, &path[0]);
-    if (status != 0) {
-        // fat library will always return 1 for success, 0 for failure
-        // we need to invert that to match api expectations
-        VLOG_DEBUG("fat", "__fs_create_directory: created %s\n", &path[0]);
+    // if the path is the root directory, we don't need to create it
+    if (path[0] == '\0' && strcmp(&path[0], "/") == 0) {
+        return 0;
+    }
+    
+    // fat library will always return 1 for success, 0 for failure
+    // we need to invert that to match api expectations
+
+    // check if the directory already exists
+    status = fl_is_dir(cfs->fs, &path[0]);
+    if (status) {
+        VLOG_DEBUG("fat", "__fs_create_directory: existing %s: yes\n", &path[0]);
         return 0;
     }
 
-    status = fl_is_dir(cfs->fs, &path[0]);
-    VLOG_DEBUG("fat", "__fs_create_directory: existing %s: %s\n",
-        &path[0], status ? "yes" : "no");
-    return status ? 0 : -1;
+    // create the directory since it does not exist
+    status = fl_createdirectory(cfs->fs, &path[0]);
+    if (status != 0) {
+        VLOG_DEBUG("fat", "__fs_create_directory: created %s\n", &path[0]);
+        return 0;
+    }
+    return -1;
 }
 
 static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs_create_file_params* params)
@@ -248,7 +271,9 @@ static int __fs_create_file(struct chef_disk_filesystem* fs, struct chef_disk_fs
     char                     path[PATH_MAX];
     FL_FILE*                 stream;
     int                      written;
+    VLOG_DEBUG("fat", "__fs_create_file(path=%s)\n", params->path);
 
+    // normalize the path for FAT
     if (__normalize_path(params->path, &path[0], sizeof(path)) != 0) {
         return -1;
     }

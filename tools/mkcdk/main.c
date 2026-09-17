@@ -328,7 +328,6 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
         return 0;
     }
 
-    // ensure that there actually is a directory, and it's not a root directory
     length = strlen(path);
     if (length == 0 || (length == 1 && *path == '/')) {
         return 0;
@@ -354,7 +353,7 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
             *p = '/';
         }
     }
-    
+
     return fs->create_directory(fs, &(struct chef_disk_fs_create_directory_params) {
         .path = ccpath
     });
