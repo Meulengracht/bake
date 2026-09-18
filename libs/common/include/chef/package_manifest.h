@@ -74,6 +74,25 @@ struct chef_package_manifest_ingredient_config {
     struct chef_package_string_array linker_flags;
 };
 
+struct chef_package_manifest_toolchain_target {
+    const char*                      name;
+    const char*                      triple;
+    struct chef_package_string_array compiler_args;
+};
+
+struct chef_package_manifest_toolchain_config {
+    const char*                                    root;
+    const char*                                    cc;
+    const char*                                    cxx;
+    const char*                                    ar;
+    const char*                                    ranlib;
+    const char*                                    strip;
+    const char*                                    llvm_config;
+    const char*                                    cmake_file;
+    struct chef_package_manifest_toolchain_target* targets;
+    size_t                                         targets_count;
+};
+
 /**
  * @brief Canonical Chef package metadata model.
  *
@@ -85,28 +104,29 @@ struct chef_package_manifest_ingredient_config {
  * release it with chef_package_manifest_free().
  */
 struct chef_package_manifest {
-    const char* name;
-    const char* platform;
-    const char* architecture;
+    const char*            name;
+    const char*            platform;
+    const char*            architecture;
     enum chef_package_type type;
-    const char* base;
-    const char* summary;
-    const char* description;
-    const char* license;
-    const char* eula;
-    const char* maintainer;
-    const char* maintainer_email;
-    const char* homepage;
+    const char*            base;
+    const char*            summary;
+    const char*            description;
+    const char*            license;
+    const char*            eula;
+    const char*            maintainer;
+    const char*            maintainer_email;
+    const char*            homepage;
 
     struct chef_version      version;
     struct chef_package_blob icon;
 
-    struct chef_package_manifest_command*    commands;
-    size_t                                   commands_count;
+    struct chef_package_manifest_command*           commands;
+    size_t                                          commands_count;
     struct chef_package_manifest_application_config application;
     struct chef_package_manifest_ingredient_config  ingredient;
-    struct chef_package_manifest_capability* capabilities;
-    size_t                                   capabilities_count;
+    struct chef_package_manifest_toolchain_config   toolchain;
+    struct chef_package_manifest_capability*        capabilities;
+    size_t                                          capabilities_count;
 };
 
 /**

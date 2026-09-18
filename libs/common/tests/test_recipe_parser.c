@@ -403,6 +403,51 @@ int test_recipe_packs(void)
     return 0;
 }
 
+int test_recipe_toolchain_pack(void)
+{
+    struct recipe* recipe = NULL;
+    const char* yaml =
+        "name: toolchain-test\n"
+        "author: Test\n"
+        "email: test@test.com\n"
+        "version: 1.0.0\n"
+        "\n"
+        "packs:\n"
+        "- name: clang-cc\n"
+        "  summary: LLVM toolchain\n"
+        "  type: toolchain\n"
+        "  toolchain:\n"
+        "    root: usr/local\n"
+        "    cc: bin/clang\n"
+        "    cxx: bin/clang++\n"
+        "    ar: bin/llvm-ar\n"
+        "    ranlib: bin/llvm-ranlib\n"
+        "    llvm-config: bin/llvm-config\n"
+        "    targets:\n"
+        "    - name: vali\n"
+        "      triple: $[[ CHEF_TARGET_ARCHITECTURE ]]-uml-vali\n"
+            "      compiler-args: [\"--target=$[[ TOOLCHAIN_TARGET_TRIPLE ]]\"]\n";
+    struct recipe_pack* pack;
+
+    TEST_ASSERT(__parse_recipe(yaml, &recipe) == 0, "recipe_parse should succeed");
+
+    pack = (struct recipe_pack*)recipe->packs.head;
+    TEST_ASSERT(pack != NULL, "toolchain pack should exist");
+    TEST_ASSERT(pack->type == CHEF_PACKAGE_TYPE_TOOLCHAIN, "pack type should be TOOLCHAIN");
+    TEST_ASSERT(strcmp(pack->toolchain.root, "usr/local") == 0, "toolchain root should match");
+    TEST_ASSERT(strcmp(pack->toolchain.cc, "bin/clang") == 0, "toolchain cc should match");
+    TEST_ASSERT(strcmp(pack->toolchain.cxx, "bin/clang++") == 0, "toolchain cxx should match");
+    struct recipe_pack_toolchain_target* target =
+        (struct recipe_pack_toolchain_target*)pack->toolchain.targets.head;
+    TEST_ASSERT(target != NULL, "toolchain target should exist");
+    TEST_ASSERT(strcmp(target->name, "vali") == 0, "target name should match");
+    TEST_ASSERT(strcmp(target->triple,
+        "$[[ CHEF_TARGET_ARCHITECTURE ]]-uml-vali") == 0, "target triple should match");
+
+    recipe_destroy(recipe);
+    return 0;
+}
+
 /**
  * Test: pack commands
  */

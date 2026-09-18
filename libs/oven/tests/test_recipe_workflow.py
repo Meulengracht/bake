@@ -27,6 +27,7 @@ def run(
     build_fails=False,
     install_fails=False,
     extra_env=None,
+    toolchain=False,
 ):
     """Run the recipe driver and return the recorded process calls."""
     # Create every directory that the recipe driver and fake tools will use.
@@ -43,6 +44,8 @@ def run(
         CHEF_TEST_BUILD_FAIL=str(int(build_fails)),
         CHEF_TEST_INSTALL_FAIL=str(int(install_fails)),
     )
+    if toolchain:
+        env["CHEF_TEST_TOOLCHAIN"] = "1"
     env.update(extra_env or {})
     if fake:
         # Record the actual argv/environment received by the spawned programs.
@@ -58,6 +61,14 @@ with open(os.environ['CHEF_TEST_LOG'], 'a') as out:
         'shared': os.environ.get('SHARED'),
         'only': os.environ.get('CONFIG_ONLY'),
         'site': os.environ.get('CONFIG_SITE'),
+        'cc': os.environ.get('CC'),
+        'cxx': os.environ.get('CXX'),
+        'ar': os.environ.get('AR'),
+        'toolchain_prefix': os.environ.get('TOOLCHAIN_PREFIX'),
+        'toolchain_target': os.environ.get('TOOLCHAIN_TARGET'),
+        'toolchain_target_triple': os.environ.get('TOOLCHAIN_TARGET_TRIPLE'),
+        'cflags': os.environ.get('CFLAGS'),
+        'cxxflags': os.environ.get('CXXFLAGS'),
     }) + '\\n')
 # Simulate configuration failure for every backend's generate command.
 if os.environ['CHEF_TEST_CONFIGURE_FAIL'] == '1' and (
@@ -136,6 +147,31 @@ with tempfile.TemporaryDirectory(prefix="chef-oven-test-") as directory:
     assert build["args"] == ["--build", ".", "--config", "Release", "--parallel", "2"], calls
     assert install["args"] == ["--install", ".", "--config", "Release"], calls
     assert all(c["mode"] == "build" and c["only"] is None for c in (build, install)), calls
+    calls = run(base / "toolchain", custom, toolchain=True,
+                extra_env={"CHEF_TEST_ARCH": "amd64"})
+    configure = calls[0]
+    prefix = str(base / "toolchain/ingredients/toolchain/usr/local")
+    assert configure["toolchain_prefix"] == prefix, calls
+    assert configure["cc"] == prefix + "/bin/clang", calls
+    assert configure["cxx"] == prefix + "/bin/clang++", calls
+    assert configure["ar"] == prefix + "/bin/llvm-ar", calls
+    assert configure["toolchain_target"] == "vali", calls
+    assert configure["toolchain_target_triple"] == "amd64-uml-vali", calls
+    assert configure["cflags"] == "--target=amd64-uml-vali", calls
+    assert configure["cxxflags"] == "--target=amd64-uml-vali", calls
+    assert "-DCMAKE_TOOLCHAIN_FILE=" + prefix + "/share/chef/toolchain.cmake" in configure["args"], calls
+    calls = run(
+        base / "toolchain-override",
+        "  - name: build\n"
+        "    type: build\n"
+        "    system: cmake\n"
+        "    env: {CC: recipe-cc}\n"
+        "    configure:\n"
+        "      arguments: [-DCMAKE_TOOLCHAIN_FILE=/recipe/toolchain.cmake]\n",
+        toolchain=True,
+    )
+    assert calls[0]["cc"] == "recipe-cc", calls
+    assert "-DCMAKE_TOOLCHAIN_FILE=/recipe/toolchain.cmake" in calls[0]["args"], calls
     calls = run(base / "failed", custom, fail=True, configure_fails=True)
     assert len(calls) == 1, calls
     calls = run(base / "build-failed", custom, fail=True, build_fails=True)

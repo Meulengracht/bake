@@ -115,7 +115,7 @@ static int __write_reserved_image(struct __mfs_filesystem* cfs)
         return status;
     }
 
-    written = fwrite(buffer, size, 1, cfs->stream);
+    written = fwrite(buffer, 1, size, cfs->stream);
     if (written != size) {
         VLOG_ERROR("mfs", "__write_reserved_image: failed to write reserved sectors\n");
         free(buffer);
@@ -137,7 +137,9 @@ static int __partition_read(uint64_t sector, uint8_t *buffer, uint32_t sector_co
 
     status = fseek(cfs->stream, (long)offset, SEEK_SET);
 
-    fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
+    if (fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream) != sector_count) {
+        return -1;
+    }
     return 0;
 }
 
@@ -161,7 +163,9 @@ static int __partition_write(uint64_t sector, uint8_t *buffer, uint32_t sector_c
         }
     }
 
-    fwrite(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
+    if (fwrite(buffer, cfs->bytes_per_sector, sector_count, cfs->stream) != sector_count) {
+        return -1;
+    }
 
     // let us write the reserved image contents
     // at the same time

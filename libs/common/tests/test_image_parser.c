@@ -320,6 +320,33 @@ int test_image_multiple_partitions(void)
 }
 
 /**
+ * Test: partition size supports quantity suffixes
+ */
+int test_image_partition_size_suffix(void)
+{
+    struct chef_image* image = NULL;
+    const char* yaml =
+        "schema: mbr\n"
+        "\n"
+        "partitions:\n"
+        "- label: boot\n"
+        "  type: fat32\n"
+        "  id: 0C\n"
+        "  size: 128MB\n";
+
+    int status = __parse_image(yaml, &image);
+    TEST_ASSERT(status == 0, "chef_image_parse should succeed");
+
+    struct chef_image_partition* part =
+        (struct chef_image_partition*)image->partitions.head;
+    TEST_ASSERT(part->size == 134217728LL,
+        "partition size should parse 128MB as bytes");
+
+    chef_image_destroy(image);
+    return 0;
+}
+
+/**
  * Test: full image with multiple features combined
  */
 int test_image_full(void)

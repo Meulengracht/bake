@@ -19,6 +19,7 @@
 #include <ctype.h>
 #include <chef/platform.h>
 #include <chef/recipe.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vlog.h>
@@ -60,6 +61,11 @@ const char* recipe_find_platform_toolchain(struct recipe* recipe, const char* pl
     struct recipe_platform* p = NULL;
     struct list_item*       i;
 
+    if (recipe == NULL || platform == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+
     list_foreach(&recipe->platforms, i) {
         if (strcmp(((struct recipe_platform*)i)->name, platform) == 0) {
             p = (struct recipe_platform*)i;
@@ -68,6 +74,7 @@ const char* recipe_find_platform_toolchain(struct recipe* recipe, const char* pl
     }
 
     if (p == NULL) {
+        errno = ENOENT;
         return NULL;
     }
     return p->toolchain;

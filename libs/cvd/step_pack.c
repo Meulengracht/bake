@@ -119,6 +119,43 @@ static int __copy_string_list(struct list* list, struct chef_package_string_arra
     return 0;
 }
 
+static int __build_manifest_toolchain_targets(
+    struct chef_package_manifest* manifest,
+    struct recipe_pack*           pack)
+{
+    struct list_item* item;
+    size_t index = 0;
+
+    if (pack->toolchain.targets.count == 0) {
+        return 0;
+    }
+
+    manifest->toolchain.targets = calloc(pack->toolchain.targets.count,
+        sizeof(struct chef_package_manifest_toolchain_target));
+    if (manifest->toolchain.targets == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+    manifest->toolchain.targets_count = pack->toolchain.targets.count;
+
+    list_foreach(&pack->toolchain.targets, item) {
+        struct recipe_pack_toolchain_target* source =
+            (struct recipe_pack_toolchain_target*)item;
+        struct chef_package_manifest_toolchain_target* target =
+            &manifest->toolchain.targets[index++];
+
+        target->name = __duplicate_optional_string(source->name);
+        target->triple = __duplicate_optional_string(source->triple);
+        if (target->name == NULL ||
+            (source->triple != NULL && target->triple == NULL) ||
+            __copy_string_list(&source->compiler_args, &target->compiler_args) != 0) {
+            errno = ENOMEM;
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int __build_manifest_commands(
     struct chef_package_manifest* manifest,
     struct recipe_pack*           pack)
@@ -245,9 +282,25 @@ static int __build_manifest(
     manifest->homepage = __duplicate_optional_string(bctx->recipe->project.url);
     manifest->application.network_gateway = __duplicate_optional_string(pack->app_options.gateway);
     manifest->application.network_dns = __duplicate_optional_string(pack->app_options.dns);
+    manifest->toolchain.root = __duplicate_optional_string(pack->toolchain.root);
+    manifest->toolchain.cc = __duplicate_optional_string(pack->toolchain.cc);
+    manifest->toolchain.cxx = __duplicate_optional_string(pack->toolchain.cxx);
+    manifest->toolchain.ar = __duplicate_optional_string(pack->toolchain.ar);
+    manifest->toolchain.ranlib = __duplicate_optional_string(pack->toolchain.ranlib);
+    manifest->toolchain.strip = __duplicate_optional_string(pack->toolchain.strip);
+    manifest->toolchain.llvm_config = __duplicate_optional_string(pack->toolchain.llvm_config);
+    manifest->toolchain.cmake_file = __duplicate_optional_string(pack->toolchain.cmake_file);
     manifest->type = pack->type;
 
-    if (manifest->name == NULL || manifest->platform == NULL || manifest->architecture == NULL) {
+    if (manifest->name == NULL || manifest->platform == NULL || manifest->architecture == NULL ||
+        (pack->toolchain.root != NULL && manifest->toolchain.root == NULL) ||
+        (pack->toolchain.cc != NULL && manifest->toolchain.cc == NULL) ||
+        (pack->toolchain.cxx != NULL && manifest->toolchain.cxx == NULL) ||
+        (pack->toolchain.ar != NULL && manifest->toolchain.ar == NULL) ||
+        (pack->toolchain.ranlib != NULL && manifest->toolchain.ranlib == NULL) ||
+        (pack->toolchain.strip != NULL && manifest->toolchain.strip == NULL) ||
+        (pack->toolchain.llvm_config != NULL && manifest->toolchain.llvm_config == NULL) ||
+        (pack->toolchain.cmake_file != NULL && manifest->toolchain.cmake_file == NULL)) {
         chef_package_manifest_free(manifest);
         errno = ENOMEM;
         return -1;
@@ -260,6 +313,7 @@ static int __build_manifest(
      || __copy_string_list(&pack->options.lib_dirs, &manifest->ingredient.lib_dirs) != 0
      || __copy_string_list(&pack->options.compiler_flags, &manifest->ingredient.compiler_flags) != 0
      || __copy_string_list(&pack->options.linker_flags, &manifest->ingredient.linker_flags) != 0
+    || __build_manifest_toolchain_targets(manifest, pack) != 0
      || __build_manifest_commands(manifest, pack) != 0
      || __build_manifest_capabilities(manifest, pack) != 0) {
         chef_package_manifest_free(manifest);

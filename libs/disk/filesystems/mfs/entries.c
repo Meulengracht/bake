@@ -330,9 +330,9 @@ static struct mfs_record* __create_record(struct mfs* mfs, uint32_t directoryBuc
     VLOG_DEBUG("mfs", "__create_record(%u, %s)\n", directoryBucket, recordName);
     
     for (;;) {
-        VLOG_DEBUG("mfs", "__create_record: retrieving link and length of bucket %u", currentBucket);
+        VLOG_DEBUG("mfs", "__create_record: retrieving link and length of bucket %u\n", currentBucket);
         uint32_t bucketLink = mfs_bucket_map_bucket_info(mfs->map, currentBucket, &bucketLength);
-        VLOG_DEBUG("mfs", "__create_record: reading sector %llu, count %u", __BUCKET_SECTOR(currentBucket), mfs->bucket_size * bucketLength);
+        VLOG_DEBUG("mfs", "__create_record: reading sector %llu, count %u\n", __BUCKET_SECTOR(currentBucket), mfs->bucket_size * bucketLength);
         uint8_t* bucketBuffer = __read_sector(mfs, __BUCKET_SECTOR(currentBucket), mfs->bucket_size * bucketLength);
 
         uint32_t bytesToIterate = mfs->bucket_size * bucketLength * mfs->bytes_per_sector;

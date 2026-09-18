@@ -23,6 +23,7 @@
 #include <chef/ingredient.h>
 #include <chef/platform.h>
 #include <chef/pkgmgr.h>
+#include <chef/toolchain.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -336,10 +337,93 @@ static int __setup_toolchains(struct list* ingredients, const char* hostPath)
     return 0;
 }
 
+static int __unpack_toolchain(struct chef_toolchain* toolchain)
+{
+    struct ingredient* ingredient;
+    int                status;
+
+    status = ingredient_open(toolchain->package_path, &ingredient);
+    if (status) {
+        VLOG_ERROR("bakectl", "__unpack_toolchain: failed to open %s\n", toolchain->package_path);
+        return status;
+    }
+
+    status = platform_mkdir(toolchain->unpack_path);
+    if (status) {
+        ingredient_close(ingredient);
+        VLOG_ERROR("bakectl", "__unpack_toolchain: failed to create %s\n", toolchain->unpack_path);
+        return status;
+    }
+
+    status = ingredient_unpack(ingredient, toolchain->unpack_path, NULL, NULL);
+    if (status) {
+        ingredient_close(ingredient);
+        VLOG_ERROR("bakectl", "__unpack_toolchain: failed to unpack %s\n", toolchain->package_path);
+        return status;
+    }
+    ingredient_close(ingredient);
+    return 0;
+}
+
+static int __setup_platform_toolchains(struct __bakelib_context* context)
+{
+    struct list_item* item;
+
+    VLOG_DEBUG("bakectl", "__setup_platform_toolchains()\n");
+    list_foreach(&context->recipe->platforms, item) {
+        struct recipe_platform* platform = (struct recipe_platform*)item;
+        struct chef_toolchain   toolchain = { 0 };
+        int                     status;
+
+        // Make sure the name of the platform matches the build platform
+        if (strcmp(platform->name, context->build_platform) != 0) {
+            continue;
+        }
+
+        // Skip platforms that do not have a toolchain specified.
+        if (platform->toolchain == NULL) {
+            continue;
+        }
+
+        // Resolve the toolchain package now that we've found one that 
+        // matches the build platform.
+        status = chef_toolchain_resolve(
+            context->recipe,
+            platform->toolchain,
+            platform->name,
+            CHEF_PLATFORM_STR, CHEF_ARCHITECTURE_STR,
+            context->build_toolchains_directory,
+            &toolchain
+        );
+        if (status) {
+            VLOG_ERROR("bakectl", "__setup_platform_toolchains: failed to resolve %s\n", platform->toolchain);
+            return status;
+        }
+
+        // Unpack the toolchain package.
+        status = __unpack_toolchain(&toolchain);
+        chef_toolchain_destroy(&toolchain);
+        if (status) {
+            VLOG_ERROR("bakectl", "__setup_platform_toolchains: failed to unpack %s\n", platform->toolchain);
+            return status;
+        }
+
+        // Only one toolchain per platform is expected, 
+        // so we can break after setting up the first one.
+        break;
+    }
+    return 0;
+}
+
 static int __setup_ingredients(struct __bakelib_context* context)
 {
     int status;
     VLOG_DEBUG("bakectl", "__setup_ingredients()\n");
+
+    status = __setup_platform_toolchains(context);
+    if (status) {
+        return status;
+    }
 
     VLOG_DEBUG("bakectl", "__setup_ingredients: setting up host ingredients\n");
     status = __setup_ingredient(context, &context->recipe->environment.host.ingredients, "/");

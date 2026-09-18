@@ -38,6 +38,14 @@
 #include "fat_misc.h"
 
 #if FATFS_INC_WRITE_SUPPORT
+static uint32 fatfs_first_allocatable_cluster(struct fatfs *fs)
+{
+    if (fs->fat_type == FAT_TYPE_16 || fs->rootdir_first_cluster < 2)
+        return 2;
+
+    return fs->rootdir_first_cluster + 1;
+}
+
 //-----------------------------------------------------------------------------
 // fatfs_add_free_space: Allocate another cluster of free space to the end
 // of a files cluster chain.
@@ -54,8 +62,8 @@ int fatfs_add_free_space(struct fatfs *fs, uint32 *startCluster, uint32 clusters
 
     for (i=0;i<clusters;i++)
     {
-        // Start looking for free clusters from the beginning
-        if (fatfs_find_blank_cluster(fs, fs->rootdir_first_cluster, &nextcluster))
+        // Start looking for free clusters from the first allocatable cluster.
+        if (fatfs_find_blank_cluster(fs, fatfs_first_allocatable_cluster(fs), &nextcluster))
         {
             // Point last to this
             fatfs_fat_set_cluster(fs, start, nextcluster);
@@ -104,9 +112,7 @@ int fatfs_allocate_free_space(struct fatfs *fs, int newFile, uint32 *startCluste
     // Allocated first link in the chain if a new file
     if (newFile)
     {
-        searchCluster = fs->rootdir_first_cluster;
-        if (fs->fat_type == FAT_TYPE_16 && searchCluster == 0)
-            searchCluster = 2;
+        searchCluster = fatfs_first_allocatable_cluster(fs);
 
         if (!fatfs_find_blank_cluster(fs, searchCluster, &nextcluster))
             return 0;
@@ -235,7 +241,7 @@ static int fatfs_find_free_dir_offset(struct fatfs *fs, uint32 dirCluster, int e
             uint32 newCluster;
 
             // Get a new cluster for directory
-            if (!fatfs_find_blank_cluster(fs, fs->rootdir_first_cluster, &newCluster))
+            if (!fatfs_find_blank_cluster(fs, fatfs_first_allocatable_cluster(fs), &newCluster))
                 return 0;
 
             // Add cluster to end of directory tree

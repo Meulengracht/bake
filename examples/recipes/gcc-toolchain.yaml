@@ -41,3 +41,10 @@ packs:
       some of the runtime libraries, are under different terms; see the
       individual source files for details.
     type: toolchain
+    toolchain:
+      root: usr/local
+      cc: bin/gcc
+      cxx: bin/g++
+      ar: bin/ar
+      ranlib: bin/ranlib
+      strip: bin/strip

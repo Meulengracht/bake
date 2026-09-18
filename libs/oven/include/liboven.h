@@ -21,6 +21,7 @@
 
 #include <chef/build-common.h>
 #include <chef/package.h>
+#include <chef/package_manifest.h>
 #include <chef/list.h>
 
 //****************************************************************************//
@@ -34,8 +35,10 @@ struct oven_ingredient {
 };
 
 struct oven_recipe_options {
-    const char* name;
-    const char* toolchain;
+    const char*                                         name;
+    const char*                                         toolchain;
+    const struct chef_package_manifest_toolchain_config* toolchain_config;
+    const struct chef_package_manifest_toolchain_target* target;
 };
 
 struct oven_generate_options {
