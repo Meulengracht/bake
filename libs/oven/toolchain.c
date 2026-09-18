@@ -107,6 +107,7 @@ int chef_toolchain_resolve(
 
     packagePath = __get_package_path(name, channel, hostArchitecture, hostPlatform);
     if (packagePath == NULL) {
+        status = -1;
         goto cleanup;
     }
 
@@ -130,7 +131,7 @@ int chef_toolchain_resolve(
         const struct chef_package_manifest_toolchain_target* target =
             &toolchainOut->manifest->toolchain.targets[i];
 
-        if (strcmp(target->name, toolchainPlatform) == 0) {
+        if (target->name != NULL && strcmp(target->name, toolchainPlatform) == 0) {
             toolchainOut->target = target;
             break;
         }

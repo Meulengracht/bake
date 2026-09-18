@@ -49,6 +49,7 @@ extern int test_image_full(void);
 extern int test_package_manifest_application_roundtrip(void);
 extern int test_package_manifest_ingredient_roundtrip(void);
 extern int test_package_manifest_toolchain_roundtrip(void);
+extern int test_package_manifest_rejects_malformed_toolchain_metadata(void);
 
 typedef struct {
     const char* name;
@@ -86,6 +87,7 @@ static const test_case_t tests[] = {
     {"Package manifest: application roundtrip", test_package_manifest_application_roundtrip},
     {"Package manifest: ingredient roundtrip", test_package_manifest_ingredient_roundtrip},
     {"Package manifest: toolchain roundtrip", test_package_manifest_toolchain_roundtrip},
+    {"Package manifest: malformed toolchain metadata", test_package_manifest_rejects_malformed_toolchain_metadata},
 };
 
 static const size_t num_tests = sizeof(tests) / sizeof(tests[0]);

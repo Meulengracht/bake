@@ -18,10 +18,12 @@
 
 #include <chef/package_image.h>
 #include <chef/platform.h>
+#include <chef/utils_vafs.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vafs/builder.h>
 #if defined(_WIN32)
 #include <process.h>
 #else
@@ -104,6 +106,47 @@ static int __write_manifest_file(
     options.filters = NULL;
     options.manifest = manifest;
     return chef_package_image_create(&options);
+}
+
+static int __write_manifest_with_toolchain_feature(
+    const char*               outputPath,
+    struct VaFsFeatureHeader* toolchainFeature)
+{
+    struct VaFsGuid packageGuid = CHEF_PACKAGE_HEADER_GUID;
+    struct VaFsGuid versionGuid = CHEF_PACKAGE_VERSION_GUID;
+    struct VaFsBuilderConfiguration configuration;
+    struct chef_vafs_feature_package_header packageHeader = { 0 };
+    struct chef_vafs_feature_package_version packageVersion = { 0 };
+    struct VaFsDirectoryBuilder* root = NULL;
+    struct VaFs* vafs = NULL;
+    int status;
+
+    vafs_builder_config_initialize(&configuration);
+    status = vafs_builder_new(outputPath, &configuration, &vafs, &root);
+    if (status != 0) {
+        return status;
+    }
+
+    memcpy(&packageHeader.header.Guid, &packageGuid, sizeof(packageGuid));
+    packageHeader.header.Length = sizeof(packageHeader);
+    packageHeader.version = CHEF_PACKAGE_VERSION;
+    packageHeader.type = CHEF_PACKAGE_TYPE_TOOLCHAIN;
+    status = vafs_builder_add_feature(vafs, &packageHeader.header);
+
+    memcpy(&packageVersion.header.Guid, &versionGuid, sizeof(versionGuid));
+    packageVersion.header.Length = sizeof(packageVersion);
+    if (status == 0) {
+        status = vafs_builder_add_feature(vafs, &packageVersion.header);
+    }
+    if (status == 0) {
+        status = vafs_builder_add_feature(vafs, toolchainFeature);
+    }
+
+    vafs_directory_builder_close(root);
+    if (vafs_builder_close(vafs) != 0 && status == 0) {
+        status = -1;
+    }
+    return status;
 }
 
 int test_package_manifest_application_roundtrip(void)
@@ -247,7 +290,7 @@ int test_package_manifest_toolchain_roundtrip(void)
     };
     struct chef_package_manifest_toolchain_target targets[] = {
         { "vali", "$[[ CHEF_TARGET_ARCHITECTURE ]]-uml-vali", { valiCompilerArgs, 2 } },
-        { "linux", "$[[ CHEF_TARGET_ARCHITECTURE ]]-linux-gnu", { NULL, 0 } }
+        { "linux", NULL, { NULL, 0 } }
     };
     struct chef_package_manifest manifest = {
         .name = "vali/clang-cc",
@@ -297,7 +340,78 @@ int test_package_manifest_toolchain_roundtrip(void)
     TEST_ASSERT(strcmp(loaded->toolchain.targets[0].compiler_args.values[1],
         "-Wl,-rpath,/opt/sdk/lib") == 0, "compiler argument commas should roundtrip");
     TEST_ASSERT(strcmp(loaded->toolchain.targets[1].name, "linux") == 0, "second target name should roundtrip");
+    TEST_ASSERT(loaded->toolchain.targets[1].triple == NULL, "optional target triple should remain NULL");
 
     chef_package_manifest_free(loaded);
+    return 0;
+}
+
+int test_package_manifest_rejects_malformed_toolchain_metadata(void)
+{
+    struct VaFsGuid toolchainGuid = CHEF_PACKAGE_TOOLCHAIN_OPTS_GUID;
+    struct {
+        struct chef_vafs_feature_toolchain_opts header;
+        struct chef_vafs_toolchain_target target;
+        uint32_t argument_length;
+    } feature;
+    struct chef_package_manifest* loaded = NULL;
+    char inputDir[PATH_MAX];
+    char path[PATH_MAX];
+    int status;
+
+    TEST_ASSERT(__create_temp_paths(&inputDir[0], sizeof(inputDir), &path[0], sizeof(path)) == 0,
+        "temp path should be created");
+
+    memset(&feature, 0, sizeof(feature));
+    memcpy(&feature.header.header.Guid, &toolchainGuid, sizeof(toolchainGuid));
+    feature.header.header.Length = sizeof(struct VaFsFeatureHeader);
+    TEST_ASSERT(__write_manifest_with_toolchain_feature(path, &feature.header.header) == 0,
+        "undersized toolchain feature should be written");
+    status = chef_package_manifest_load(path, &loaded);
+    remove(path);
+    TEST_ASSERT(status != 0 && loaded == NULL, "undersized toolchain header should be rejected");
+
+    memset(&feature, 0, sizeof(feature));
+    memcpy(&feature.header.header.Guid, &toolchainGuid, sizeof(toolchainGuid));
+    feature.header.header.Length = sizeof(feature.header);
+    feature.header.root_length = 1;
+    TEST_ASSERT(__write_manifest_with_toolchain_feature(path, &feature.header.header) == 0,
+        "truncated string feature should be written");
+    status = chef_package_manifest_load(path, &loaded);
+    remove(path);
+    TEST_ASSERT(status != 0 && loaded == NULL, "truncated toolchain string should be rejected");
+
+    memset(&feature, 0, sizeof(feature));
+    memcpy(&feature.header.header.Guid, &toolchainGuid, sizeof(toolchainGuid));
+    feature.header.header.Length = sizeof(feature.header);
+    feature.header.targets_count = 1;
+    TEST_ASSERT(__write_manifest_with_toolchain_feature(path, &feature.header.header) == 0,
+        "truncated target feature should be written");
+    status = chef_package_manifest_load(path, &loaded);
+    remove(path);
+    TEST_ASSERT(status != 0 && loaded == NULL, "truncated toolchain target should be rejected");
+
+    memset(&feature, 0, sizeof(feature));
+    memcpy(&feature.header.header.Guid, &toolchainGuid, sizeof(toolchainGuid));
+    feature.header.header.Length = sizeof(feature.header) + sizeof(feature.target);
+    feature.header.targets_count = 1;
+    feature.target.compiler_args_count = 1;
+    TEST_ASSERT(__write_manifest_with_toolchain_feature(path, &feature.header.header) == 0,
+        "truncated argument count feature should be written");
+    status = chef_package_manifest_load(path, &loaded);
+    remove(path);
+    TEST_ASSERT(status != 0 && loaded == NULL, "impossible compiler argument count should be rejected");
+
+    memset(&feature, 0, sizeof(feature));
+    memcpy(&feature.header.header.Guid, &toolchainGuid, sizeof(toolchainGuid));
+    feature.header.header.Length = sizeof(feature);
+    feature.header.targets_count = 1;
+    feature.target.compiler_args_count = 1;
+    feature.argument_length = 1;
+    TEST_ASSERT(__write_manifest_with_toolchain_feature(path, &feature.header.header) == 0,
+        "truncated argument feature should be written");
+    status = chef_package_manifest_load(path, &loaded);
+    remove(path);
+    TEST_ASSERT(status != 0 && loaded == NULL, "truncated compiler argument should be rejected");
     return 0;
 }

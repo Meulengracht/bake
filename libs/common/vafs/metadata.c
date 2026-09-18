@@ -694,18 +694,24 @@ static int __write_toolchain_options_metadata(struct VaFs* vafs, const struct ch
         targetFeature->triple_length = (uint32_t)__safe_strlen(target->triple);
         targetFeature->compiler_args_count = (uint32_t)target->compiler_args.count;
         data += sizeof(*targetFeature);
-        memcpy(data, target->name, targetFeature->name_length);
-        data += targetFeature->name_length;
-        memcpy(data, target->triple, targetFeature->triple_length);
-        data += targetFeature->triple_length;
+        if (targetFeature->name_length > 0) {
+            memcpy(data, target->name, targetFeature->name_length);
+            data += targetFeature->name_length;
+        }
+        if (targetFeature->triple_length > 0) {
+            memcpy(data, target->triple, targetFeature->triple_length);
+            data += targetFeature->triple_length;
+        }
         
         for (size_t j = 0; j < target->compiler_args.count; j++) {
             uint32_t argumentLength = (uint32_t)__safe_strlen(target->compiler_args.values[j]);
 
             memcpy(data, &argumentLength, sizeof(argumentLength));
             data += sizeof(argumentLength);
-            memcpy(data, target->compiler_args.values[j], argumentLength);
-            data += argumentLength;
+            if (argumentLength > 0) {
+                memcpy(data, target->compiler_args.values[j], argumentLength);
+                data += argumentLength;
+            }
         }
     }
 
@@ -1026,6 +1032,7 @@ static int __load_toolchain_options_metadata(struct VaFs* vafs, struct chef_pack
     struct chef_vafs_feature_toolchain_opts* header;
     uint32_t*                                lengths;
     char*                                    data;
+    size_t                                   remaining;
     int                                      status;
 
     char** values[] = {
@@ -1040,18 +1047,34 @@ static int __load_toolchain_options_metadata(struct VaFs* vafs, struct chef_pack
         return 0;
     }
 
+    if (header->header.Length < sizeof(*header)) {
+        errno = EINVAL;
+        return -1;
+    }
+
     lengths = &header->root_length;
     data = (char*)header + sizeof(*header);
+    remaining = header->header.Length - sizeof(*header);
     
     for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+        if (lengths[i] > remaining) {
+            errno = EINVAL;
+            return -1;
+        }
         if (__copy_manifest_string(values[i], data, lengths[i]) != 0) {
             return -1;
         }
         data += lengths[i];
+        remaining -= lengths[i];
     }
     
     if (header->targets_count == 0) {
         return 0;
+    }
+
+    if (header->targets_count > remaining / sizeof(struct chef_vafs_toolchain_target)) {
+        errno = EINVAL;
+        return -1;
     }
     
     manifest->toolchain.targets = calloc(header->targets_count,
@@ -1069,17 +1092,37 @@ static int __load_toolchain_options_metadata(struct VaFs* vafs, struct chef_pack
         struct chef_package_manifest_toolchain_target* target 
             = &manifest->toolchain.targets[i];
 
+        if (remaining < sizeof(*targetFeature)) {
+            errno = EINVAL;
+            return -1;
+        }
         data += sizeof(*targetFeature);
+        remaining -= sizeof(*targetFeature);
         
+        if (targetFeature->name_length > remaining) {
+            errno = EINVAL;
+            return -1;
+        }
         if (__copy_manifest_string((char**)&target->name, data, targetFeature->name_length) != 0) {
             return -1;
         }
         data += targetFeature->name_length;
+        remaining -= targetFeature->name_length;
         
+        if (targetFeature->triple_length > remaining) {
+            errno = EINVAL;
+            return -1;
+        }
         if (__copy_manifest_string((char**)&target->triple, data, targetFeature->triple_length) != 0) {
             return -1;
         }
         data += targetFeature->triple_length;
+        remaining -= targetFeature->triple_length;
+
+        if (targetFeature->compiler_args_count > remaining / sizeof(uint32_t)) {
+            errno = EINVAL;
+            return -1;
+        }
         
         if (targetFeature->compiler_args_count > 0) {
             target->compiler_args.values = calloc(targetFeature->compiler_args_count, sizeof(char*));
@@ -1093,13 +1136,23 @@ static int __load_toolchain_options_metadata(struct VaFs* vafs, struct chef_pack
         for (size_t j = 0; j < target->compiler_args.count; j++) {
             uint32_t argumentLength;
 
+            if (remaining < sizeof(argumentLength)) {
+                errno = EINVAL;
+                return -1;
+            }
             memcpy(&argumentLength, data, sizeof(argumentLength));
             data += sizeof(argumentLength);
+            remaining -= sizeof(argumentLength);
+            if (argumentLength > remaining) {
+                errno = EINVAL;
+                return -1;
+            }
             if (__copy_manifest_string((char**)&target->compiler_args.values[j],
                 data, argumentLength) != 0) {
                 return -1;
             }
             data += argumentLength;
+            remaining -= argumentLength;
         }
     }
     return 0;
