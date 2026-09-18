@@ -257,16 +257,16 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
     header->header_crc32 = __calculate_crc32(headerSector, __GPT_HEADER_SIZE);
 
     // just write the main header and the table
-    written = fwrite(&header, builder->disk_geometry.bytes_per_sector, 1, builder->image_stream);
+    written = fwrite(header, 1, builder->disk_geometry.bytes_per_sector, builder->image_stream);
     if (written != builder->disk_geometry.bytes_per_sector) {
         VLOG_ERROR("disk", "__write_gpt_tables: failed write primary gpt header\n");
         status = -1;
         goto cleanup;
     }
 
-    written = fwrite(table, 
-        builder->disk_geometry.bytes_per_sector,
-        sectorsForTable,
+    written = fwrite(table,
+        1,
+        builder->disk_geometry.bytes_per_sector * sectorsForTable,
         builder->image_stream
     );
     if (written != (builder->disk_geometry.bytes_per_sector * sectorsForTable)) {
@@ -291,16 +291,16 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
     );
 
     // write backup
-    written = fwrite(&header, builder->disk_geometry.bytes_per_sector, 1, builder->image_stream);
+    written = fwrite(header, 1, builder->disk_geometry.bytes_per_sector, builder->image_stream);
     if (written != builder->disk_geometry.bytes_per_sector) {
         VLOG_ERROR("disk", "__write_gpt_tables: failed write secondary gpt header\n");
         status = -1;
         goto cleanup;
     }
 
-    written = fwrite(table, 
-        builder->disk_geometry.bytes_per_sector,
-        sectorsForTable,
+    written = fwrite(table,
+        1,
+        builder->disk_geometry.bytes_per_sector * sectorsForTable,
         builder->image_stream
     );
     if (written != (builder->disk_geometry.bytes_per_sector * sectorsForTable)) {
@@ -311,7 +311,7 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
 cleanup:
     free(headerSector);
     free(table);
-    return 0;
+    return status;
 }
 
 static void* __memdup(const void* data, size_t size)
