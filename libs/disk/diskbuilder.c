@@ -228,7 +228,7 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
     header->main_lba = 1;
     header->first_usable_lba = 2 + sectorsForTable;
     header->last_usable_lba = builder->disk_geometry.sector_count - (2 + sectorsForTable);
-    header->backup_lba = builder->disk_geometry.sector_count - (1 + sectorsForTable);
+    header->backup_lba = builder->disk_geometry.sector_count - 1;
     header->partition_entry_lba = 2;
     header->partition_entry_count = builder->partitions.count;
     header->partition_entry_size = __GPT_ENTRY_SIZE;
@@ -276,27 +276,20 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
     }
 
     // prepare backup header
-    header->main_lba = builder->disk_geometry.sector_count - (1 + sectorsForTable);
-    header->partition_entry_lba = builder->disk_geometry.sector_count - sectorsForTable;
+    header->main_lba = builder->disk_geometry.sector_count - 1;
+    header->partition_entry_lba = builder->disk_geometry.sector_count - (1 + sectorsForTable);
     header->backup_lba = 1;
     header->header_crc32 = 0;
     header->header_crc32 = __calculate_crc32(headerSector, __GPT_HEADER_SIZE);
 
-    // seek to the correct space in the file
+    // The backup partition table occupies the sectors immediately before the
+    // backup header at the end of the disk.
     fseek(
         builder->image_stream, 
-        (long)(builder->disk_geometry.bytes_per_sector 
-            * builder->disk_geometry.sector_count - (1 + sectorsForTable)),
+        (long)(builder->disk_geometry.bytes_per_sector
+            * (builder->disk_geometry.sector_count - (1 + sectorsForTable))),
         SEEK_SET
     );
-
-    // write backup
-    written = fwrite(header, 1, builder->disk_geometry.bytes_per_sector, builder->image_stream);
-    if (written != builder->disk_geometry.bytes_per_sector) {
-        VLOG_ERROR("disk", "__write_gpt_tables: failed write secondary gpt header\n");
-        status = -1;
-        goto cleanup;
-    }
 
     written = fwrite(table,
         1,
@@ -305,6 +298,20 @@ static int __write_gpt_tables(struct chef_diskbuilder* builder)
     );
     if (written != (builder->disk_geometry.bytes_per_sector * sectorsForTable)) {
         VLOG_ERROR("disk", "__write_gpt_tables: failed write secondary gpt table\n");
+        status = -1;
+        goto cleanup;
+    }
+
+    // Write the backup header in the final sector.
+    fseek(
+        builder->image_stream,
+        (long)(builder->disk_geometry.bytes_per_sector
+            * (builder->disk_geometry.sector_count - 1)),
+        SEEK_SET
+    );
+    written = fwrite(header, 1, builder->disk_geometry.bytes_per_sector, builder->image_stream);
+    if (written != builder->disk_geometry.bytes_per_sector) {
+        VLOG_ERROR("disk", "__write_gpt_tables: failed write secondary gpt header\n");
         status = -1;
     }
 
@@ -339,7 +346,8 @@ static int __write_mbr(struct chef_diskbuilder* builder, const unsigned char* te
     }
 
     pi = 0;
-    list_foreach(&builder->partitions, i) {
+    if (builder->schema == CHEF_DISK_SCHEMA_MBR) {
+        list_foreach(&builder->partitions, i) {
         struct chef_disk_partition* p = (struct chef_disk_partition*)i;
         int                         offset = __MBR_PARTITION(pi++);
         uint8_t                     pstatus = 0x00;
@@ -390,6 +398,7 @@ static int __write_mbr(struct chef_diskbuilder* builder, const unsigned char* te
         mbr[offset + 13] = (uint8_t)((p->sector_count >> 8) & 0xFF);
         mbr[offset + 14] = (uint8_t)((p->sector_count >> 16) & 0xFF);
         mbr[offset + 15] = (uint8_t)((p->sector_count >> 24) & 0xFF);
+        }
     }
 
     written = fwrite(mbr, 1, size, builder->image_stream);
