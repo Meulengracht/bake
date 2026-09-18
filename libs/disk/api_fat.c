@@ -36,26 +36,35 @@ struct __fat_filesystem {
     FILE*                              stream;
 };
 
-// remove the starting /
 static int __normalize_path(const char* path, char* normalized, size_t length)
 {
-    char*  p = path;
     size_t len;
 
     if (path == NULL || normalized == NULL || length == 0) {
         return -1;
     }
 
-    // skip the leading /
-    if (*p == '/') {
-        p++;
+    len = strlen(path);
+    while (len > 1 && path[len - 1] == '/') {
+        len--;
     }
-    
-    len = strlen(p);
-    if (len != 0) {
-        memcpy(normalized, p, len);
+
+    if (path[0] == '/') {
+        if (len >= length) {
+            return -1;
+        }
+        memcpy(normalized, path, len);
+        normalized[len] = '\0';
+        return 0;
     }
-    normalized[len] = '\0';
+
+    if (len + 1 >= length) {
+        return -1;
+    }
+
+    normalized[0] = '/';
+    memcpy(normalized + 1, path, len);
+    normalized[len + 1] = '\0';
     return 0;
 }
 
@@ -137,7 +146,7 @@ static int __write_reserved_image(struct __fat_filesystem* cfs)
         return status;
     }
 
-    written = fwrite(buffer, size, 1, cfs->stream);
+    written = fwrite(buffer, 1, size, cfs->stream);
     if (written != size) {
         VLOG_ERROR("fat", "__write_reserved_image: failed to write reserved sectors\n");
         free(buffer);
@@ -159,7 +168,9 @@ static int __partition_read(uint32 sector, uint8 *buffer, uint32 sector_count, v
     offset = sector * cfs->bytes_per_sector;
     status = fseek(cfs->stream, (long)offset, SEEK_SET);
 
-    fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
+    if (fread(buffer, cfs->bytes_per_sector, sector_count, cfs->stream) != sector_count) {
+        return 0;
+    }
     return 1;
 }
 
@@ -184,7 +195,9 @@ static int __partition_write(uint32 sector, uint8 *buffer, uint32 sector_count, 
         }
     }
 
-    fwrite(buffer, cfs->bytes_per_sector, sector_count, cfs->stream);
+    if (fwrite(buffer, cfs->bytes_per_sector, sector_count, cfs->stream) != sector_count) {
+        return 0;
+    }
 
     // let us write the reserved image contents
     // at the same time
@@ -242,7 +255,7 @@ static int __fs_create_directory(struct chef_disk_filesystem* fs, struct chef_di
     }
 
     // if the path is the root directory, we don't need to create it
-    if (path[0] == '\0' && strcmp(&path[0], "/") == 0) {
+    if (strcmp(&path[0], "/") == 0) {
         return 0;
     }
     

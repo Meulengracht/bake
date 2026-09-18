@@ -64,14 +64,9 @@ partitions:
     # size - Optional
     #
     # The partition size in bytes. If not specified for the last partition,
-    # it will use remaining space. The parser uses strtoll() to parse this
-    # value, so it expects a numeric value in bytes.
-    #
-    # Note: While examples may use suffixes like "128MB", these are NOT
-    # parsed by the image parser. They may be interpreted by other tools
-    # in the build chain, but the parser itself only reads the numeric value.
-    # To be safe, always specify sizes in bytes (e.g., 134217728 for 128MB).
-    size: 134217728
+    # it will use remaining space. Values may include B, KB, MB, GB, or TB
+    # suffixes.
+    size: 128MB
 
     ###########################
     # content - Optional

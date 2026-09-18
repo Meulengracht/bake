@@ -566,7 +566,7 @@ struct chef_disk_partition* chef_diskbuilder_partition_new(struct chef_diskbuild
     // this can obviously only be done for the final partition.
     p->sector_start = builder->next_usable_sector;
     if (params->size) {
-        p->sector_count = params->size / builder->disk_geometry.bytes_per_sector;
+        p->sector_count = requested_sectors;
     } else {
         p->sector_count = builder->last_usable_sector - builder->next_usable_sector;
     }

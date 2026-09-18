@@ -339,6 +339,10 @@ static int __ensure_directory(struct chef_disk_filesystem* fs, const char* path)
         return -1;
     }
 
+    while (length > 1 && ccpath[length - 1] == '/') {
+        ccpath[--length] = '\0';
+    }
+
     for (p = ccpath + 1; *p; p++) {
         if (*p == '/') {
             *p = 0;

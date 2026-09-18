@@ -42,6 +42,7 @@ extern int test_image_partition_sources(void);
 extern int test_image_partition_attributes(void);
 extern int test_image_fat_options(void);
 extern int test_image_multiple_partitions(void);
+extern int test_image_partition_size_suffix(void);
 extern int test_image_full(void);
 
 // package manifest tests
@@ -78,6 +79,7 @@ static const test_case_t tests[] = {
     {"Image: partition attributes",  test_image_partition_attributes},
     {"Image: FAT options",           test_image_fat_options},
     {"Image: multiple partitions",   test_image_multiple_partitions},
+    {"Image: partition size suffix", test_image_partition_size_suffix},
     {"Image: full",                  test_image_full},
 
     // package manifest tests
