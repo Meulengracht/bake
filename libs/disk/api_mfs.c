@@ -187,15 +187,19 @@ static void __fs_set_content(struct chef_disk_filesystem* fs, const char* path)
 static int __fs_format(struct chef_disk_filesystem* fs)
 {
     struct __mfs_filesystem* cfs = (struct __mfs_filesystem*)fs;
-    if (cfs->content != NULL) {
+    if (cfs->content != NULL || cfs->options.reserved_image != NULL) {
         struct platform_stat stats;
         char                 tmp[PATH_MAX];
 
-        snprintf(
-            &tmp[0], sizeof(tmp) -1,
-            "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "mfs.img",
-            cfs->content
-        );
+        if (cfs->content != NULL) {
+            snprintf(
+                &tmp[0], sizeof(tmp) -1,
+                "%s" CHEF_PATH_SEPARATOR_S "resources" CHEF_PATH_SEPARATOR_S "mfs.img",
+                cfs->content
+            );
+        } else {
+            strcpy(&tmp[0], cfs->options.reserved_image);
+        }
         if (!platform_stat(&tmp[0], &stats)) {
             mfs_set_reserved_sectors(
                 cfs->fs, 
