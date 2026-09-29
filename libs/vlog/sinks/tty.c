@@ -376,10 +376,15 @@ static void __view_tick(struct vlog_sink* base, long long time)
 
     prevTimeMs = sink->spinner_time_ms;
     sink->spinner_time_ms += time;
+
+    // Update the spinner index every 500 milliseconds
     if ((sink->spinner_time_ms / 500) != (prevTimeMs / 500)) {
         sink->spinner_index++;
-        __refresh_view(sink, 1);
     }
+
+    // Refresh the view to update the time spent usage
+    // in any case, so the view is regularly refreshed
+    __refresh_view(sink, 1);
 }
 
 static void __view_destroy(struct vlog_sink* base, unsigned int ignoreClose)
