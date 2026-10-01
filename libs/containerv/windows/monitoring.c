@@ -183,7 +183,7 @@ int containerv_get_stats(
         list_foreach(&container->processes, item) {
             proc = (struct containerv_container_process*)item;
 
-            if (proc->is_guest) {
+            if (proc->is_lcow_gcs) {
                 continue;
             }
             
@@ -315,7 +315,7 @@ int containerv_get_processes(
             
             proc = (struct containerv_container_process*)item;
 
-            if (proc->is_guest) {
+            if (proc->is_lcow_gcs) {
                 continue;
             }
             

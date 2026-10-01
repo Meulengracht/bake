@@ -50,14 +50,19 @@ int platform_rmdir(const char *path)
 
         if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             result = platform_rmdir(fullPath);
-        } else if (!DeleteFile(fullPath)) {
+        } else {
+            // DeleteFile refuses read-only files, which are common in extracted rootfs trees.
+            SetFileAttributes(fullPath, FILE_ATTRIBUTE_NORMAL);
+            if (!DeleteFile(fullPath)) {
                 result = -1;
+            }
         }
     } while (!result && FindNextFile(hFind, &findFileData));
 
     FindClose(hFind);
 
     if (!result) {
+        SetFileAttributes(path, FILE_ATTRIBUTE_NORMAL);
         if (!RemoveDirectory(path)) {
             result = -1;
         }

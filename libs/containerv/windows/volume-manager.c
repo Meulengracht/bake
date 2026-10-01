@@ -17,228 +17,10 @@
 
 #include <vlog.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <shlobj.h>
-#include <shlwapi.h>
-#include <virtdisk.h>
-
-// Some SDKs don't define the *_PARAMETERS_DEFAULT_VERSION helpers.
-#ifndef CREATE_VIRTUAL_DISK_VERSION_1
-#define CREATE_VIRTUAL_DISK_VERSION_1 1
-#endif
-#ifndef ATTACH_VIRTUAL_DISK_VERSION_1
-#define ATTACH_VIRTUAL_DISK_VERSION_1 1
-#endif
-#ifndef CREATE_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION
-#define CREATE_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION CREATE_VIRTUAL_DISK_VERSION_1
-#endif
-#ifndef ATTACH_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION
-#define ATTACH_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION ATTACH_VIRTUAL_DISK_VERSION_1
-#endif
-
-#pragma comment(lib, "virtdisk.lib")
 
 #include "private.h"
-
-// Default volume settings
-#define WINDOWS_DEFAULT_VHD_SIZE_MB 1024    // 1GB default VHD size
-#define WINDOWS_VOLUMES_DIR "containerv-volumes"
-
-// Some SDKs expose VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT as an extern symbol
-// provided by virtdisk.lib. To avoid a hard link dependency for static libraries,
-// use a local GUID constant instead.
-static const GUID g_virtualStorageTypeVendorMicrosoft = {
-    0xec984aec,
-    0xa0f9,
-    0x47e9,
-    {0x90, 0x1f, 0x71, 0x41, 0x5a, 0x66, 0x34, 0x5b}
-};
-
-/**
- * @brief Windows volume types for containers
- */
-enum windows_volume_type {
-    WINDOWS_VOLUME_HOST_BIND,     // Host directory bind mount (Plan9/shared folder)
-    WINDOWS_VOLUME_VHD,           // Virtual hard disk file  
-    WINDOWS_VOLUME_TMPFS,         // Temporary in-memory filesystem
-    WINDOWS_VOLUME_SMB_SHARE,     // Network SMB share
-    WINDOWS_VOLUME_NAMED          // Named persistent volume
-};
-
-/**
- * @brief Windows volume configuration
- */
-struct containerv_windows_volume {
-    enum windows_volume_type type;
-    char* source_path;            // Host path, VHD file, or SMB path
-    char* target_path;            // Path inside container/VM
-    char* volume_name;            // For named volumes
-    uint64_t size_mb;            // Size for created volumes
-    int read_only;               // Read-only access flag
-    char* filesystem;            // NTFS, ReFS, etc.
-    HANDLE vhd_handle;           // VHD handle for cleanup
-};
-
-/**
- * @brief Volume manager for Windows containers
- */
-struct containerv_volume_manager {
-    char* volumes_directory;      // Base directory for persistent volumes
-    struct list volumes;          // List of managed volumes
-    CRITICAL_SECTION lock;       // Thread safety
-    int initialized;
-};
-
-static struct containerv_volume_manager g_volume_manager = {0};
-
-// Initialize the Windows volume manager.
-static int __windows_volume_manager_init(void)
-{
-    char  volumesPath[MAX_PATH];
-    DWORD result;
-    DWORD error;
-    
-    if (g_volume_manager.initialized) {
-        return 0;
-    }
-    
-    VLOG_DEBUG("containerv[windows]", "initializing volume manager\n");
-    
-    // Get base directory for volumes (in temp directory)
-    result = GetTempPathA(MAX_PATH - 32, volumesPath);
-    if (result == 0 || result > MAX_PATH - 32) {
-        VLOG_ERROR("containerv[windows]", "failed to get temp path for volumes\n");
-        return -1;
-    }
-    
-    // Append volumes subdirectory
-    strcat_s(volumesPath, MAX_PATH, WINDOWS_VOLUMES_DIR);
-    
-    // Create volumes directory
-    if (!CreateDirectoryA(volumesPath, NULL)) {
-        error = GetLastError();
-        if (error != ERROR_ALREADY_EXISTS) {
-            VLOG_ERROR("containerv[windows]", "failed to create volumes directory: %lu\n", error);
-            return -1;
-        }
-    }
-    
-    g_volume_manager.volumes_directory = _strdup(volumesPath);
-    if (!g_volume_manager.volumes_directory) {
-        return -1;
-    }
-    
-    InitializeCriticalSection(&g_volume_manager.lock);
-    list_init(&g_volume_manager.volumes);
-    g_volume_manager.initialized = 1;
-    
-    VLOG_DEBUG("containerv[windows]", "volume manager initialized: %s\n", volumesPath);
-    return 0;
-}
-
-/**
- * @brief Create a VHD file for container storage
- * @param vhd_path Path where VHD file should be created
- * @param size_mb Size in megabytes
- * @param filesystem Filesystem type (NTFS, ReFS, etc.)
- * @return VHD handle on success, INVALID_HANDLE_VALUE on failure
- */
-// Create a VHD file for container storage.
-static HANDLE __windows_create_vhd_file(const char* vhdPath, uint64_t sizeMb, const char* filesystem)
-{
-    VIRTUAL_STORAGE_TYPE         storageType;
-    CREATE_VIRTUAL_DISK_PARAMETERS createParams;
-    HANDLE                       vhdHandle;
-    DWORD                        result;
-    wchar_t                      vhdPathW[MAX_PATH];
-    
-    VLOG_DEBUG("containerv[windows]", "creating VHD: %s (%llu MB, %s)\n", 
-              vhdPath, sizeMb, filesystem ? filesystem : "NTFS");
-
-    memset(&storageType, 0, sizeof(storageType));
-    memset(&createParams, 0, sizeof(createParams));
-    vhdHandle = INVALID_HANDLE_VALUE;
-    result = 0;
-    memset(vhdPathW, 0, sizeof(vhdPathW));
-    
-    // Convert path to wide string
-    if (MultiByteToWideChar(CP_UTF8, 0, vhdPath, -1, vhdPathW, MAX_PATH) == 0) {
-        VLOG_ERROR("containerv[windows]", "failed to convert VHD path to wide string\n");
-        return INVALID_HANDLE_VALUE;
-    }
-    
-    // Set virtual storage type for VHDx
-    storageType.DeviceId = VIRTUAL_STORAGE_TYPE_DEVICE_VHDX;
-    storageType.VendorId = g_virtualStorageTypeVendorMicrosoft;
-    
-    // Configure creation parameters
-    createParams.Version = CREATE_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION;
-    createParams.Version1.MaximumSize = sizeMb * 1024 * 1024; // Convert MB to bytes
-    createParams.Version1.BlockSizeInBytes = 0; // Use default block size
-    createParams.Version1.SectorSizeInBytes = 0; // Use default sector size
-    
-    // Create the VHD
-    result = CreateVirtualDisk(
-        &storageType,
-        vhdPathW,
-        VIRTUAL_DISK_ACCESS_ALL,
-        NULL,                    // Security descriptor
-        CREATE_VIRTUAL_DISK_FLAG_NONE,
-        0,                       // Provider specific flags
-        &createParams,
-        NULL,                    // Overlapped
-        &vhdHandle
-    );
-    
-    if (result != ERROR_SUCCESS) {
-        VLOG_ERROR("containerv[windows]", "failed to create VHD %s: %lu\n", vhdPath, result);
-        return INVALID_HANDLE_VALUE;
-    }
-    
-    VLOG_DEBUG("containerv[windows]", "VHD created successfully: %s\n", vhdPath);
-    return vhdHandle;
-}
-
-/**
- * @brief Attach VHD to the system (make it available)
- * @param vhd_handle Handle to VHD file
- * @param read_only Whether to attach as read-only
- * @return 0 on success, -1 on failure
- */
-// Attach a VHD and optionally mark it read-only.
-static int __windows_attach_vhd(HANDLE vhdHandle, int readOnly)
-{
-    ATTACH_VIRTUAL_DISK_PARAMETERS attachParams;
-    DWORD                          flags;
-    DWORD                          result;
-
-    memset(&attachParams, 0, sizeof(attachParams));
-    flags = ATTACH_VIRTUAL_DISK_FLAG_PERMANENT_LIFETIME;
-    result = 0;
-    
-    if (readOnly) {
-        flags |= ATTACH_VIRTUAL_DISK_FLAG_READ_ONLY;
-    }
-    
-    attachParams.Version = ATTACH_VIRTUAL_DISK_PARAMETERS_DEFAULT_VERSION;
-    
-    result = AttachVirtualDisk(
-        vhdHandle,
-        NULL,                    // Security descriptor
-        flags,
-        0,                       // Provider specific flags
-        &attachParams,
-        NULL                     // Overlapped
-    );
-    
-    if (result != ERROR_SUCCESS) {
-        VLOG_ERROR("containerv[windows]", "failed to attach VHD: %lu\n", result);
-        return -1;
-    }
-    
-    VLOG_DEBUG("containerv[windows]", "VHD attached successfully\n");
-    return 0;
-}
 
 /**
  * @brief Configure HyperV shared folder for host bind mount
@@ -255,8 +37,6 @@ static int __windows_configure_shared_folder(
     int         readonly)
 {
     char  name[64];
-    DWORD attrs;
-    unsigned long long hash = 1469598103934665603ull;
 
     if (container == NULL || host_path == NULL || host_path[0] == '\0' ||
         container_path == NULL || container_path[0] == '\0') {
@@ -266,30 +46,14 @@ static int __windows_configure_shared_folder(
     VLOG_DEBUG("containerv[windows]", "configuring shared folder: %s (ro=%d)\n",
               host_path, readonly);
 
-    attrs = GetFileAttributesA(host_path);
-    if (attrs == INVALID_FILE_ATTRIBUTES) {
-        if (readonly) {
-            VLOG_ERROR("containerv[windows]", "shared folder missing (readonly): %s\n", host_path);
-            return -1;
-        }
-        if (SHCreateDirectoryExA(NULL, host_path, NULL) != ERROR_SUCCESS) {
-            VLOG_ERROR("containerv[windows]", "failed to create shared folder path %s\n", host_path);
-            return -1;
-        }
-    } else if ((attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-        VLOG_ERROR("containerv[windows]", "shared folder host path is not a directory: %s\n", host_path);
+    if (__windows_prepare_share_dir(host_path, readonly) != 0) {
         return -1;
     }
 
-    for (const unsigned char* p = (const unsigned char*)host_path; *p; ++p) {
-        hash ^= (unsigned long long)(*p);
-        hash *= 1099511628211ull;
-    }
-
     if (!container->guest_is_windows && strcmp(container_path, "/chef/rootfs") == 0) {
-        snprintf(name, sizeof(name), "0");
+        snprintf(name, sizeof(name), "%s", HCS_LCOW_ROOTFS_SHARE_NAME);
     } else {
-        snprintf(name, sizeof(name), "%llu", (unsigned long long)(hash & 0xffffffffu));
+        __hcs_plan9_share_name(host_path, name, sizeof(name));
     }
 
     if (container->hcs_system != NULL) {
@@ -381,14 +145,7 @@ int __windows_setup_volumes(
     }
 
     VLOG_DEBUG("containerv[windows]", "setting up volumes for container %s from layers\n", container->id);
-    
-    // Initialize volume manager if needed
-    if (!g_volume_manager.initialized) {
-        if (__windows_volume_manager_init() != 0) {
-            return -1;
-        }
-    }
-    
+
     struct __windows_volume_iter_ctx ctx = {
         .container = container,
         .status = 0,
@@ -429,74 +186,5 @@ int __windows_setup_volumes(
     }
 
     VLOG_DEBUG("containerv[windows]", "volume setup from layers completed\n");
-    return 0;
-}
-
-/**
- * @brief Clean up volumes for container
- * @param container Container to clean up volumes for
- */
-void __windows_cleanup_volumes(struct containerv_container* container)
-{
-    if (!container) {
-        return;
-    }
-    
-    VLOG_DEBUG("containerv[windows]", "cleaning up volumes for container %s\n", container->id);
-    
-    // TODO: Implement volume cleanup
-    // 1. Detach VHDs from HyperV VM
-    // 2. Close VHD handles
-    // 3. Delete temporary VHD files
-    // 4. Remove shared folder configurations
-    
-    VLOG_DEBUG("containerv[windows]", "volume cleanup completed\n");
-}
-
-/**
- * @brief Create a named persistent volume
- * @param name Volume name
- * @param size_mb Size in megabytes
- * @param filesystem Filesystem type
- * @return 0 on success, -1 on failure
- */
-int containerv_volume_create(const char* name, uint64_t size_mb, const char* filesystem)
-{
-    char vhd_path[MAX_PATH];
-    HANDLE vhd_handle;
-    
-    if (!name) {
-        return -1;
-    }
-    
-    VLOG_DEBUG("containerv[windows]", "creating named volume: %s (%llu MB, %s)\n", 
-              name, size_mb, filesystem ? filesystem : "NTFS");
-    
-    // Initialize volume manager if needed
-    if (!g_volume_manager.initialized) {
-        if (__windows_volume_manager_init() != 0) {
-            return -1;
-        }
-    }
-    
-    // Create VHD path
-    snprintf(vhd_path, sizeof(vhd_path), "%s\\%s.vhdx", 
-             g_volume_manager.volumes_directory, name);
-    
-    // Check if volume already exists
-    if (PathFileExistsA(vhd_path)) {
-        VLOG_ERROR("containerv[windows]", "volume %s already exists\n", name);
-        return -1;
-    }
-    
-    // Create VHD file
-    vhd_handle = __windows_create_vhd_file(vhd_path, size_mb, filesystem);
-    if (vhd_handle == INVALID_HANDLE_VALUE) {
-        return -1;
-    }
-    
-    CloseHandle(vhd_handle);
-    
-    VLOG_DEBUG("containerv[windows]", "named volume %s created successfully\n", name);
     return 0;
 }

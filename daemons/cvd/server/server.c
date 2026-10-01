@@ -332,6 +332,10 @@ static enum chef_status __create_linux_container(const struct chef_create_parame
             __is_nonempty(params->network.gateway_ip) ? params->network.gateway_ip : NULL,
             __is_nonempty(params->network.dns) ? params->network.dns : NULL
         );
+    } else if (params->gtype == CHEF_GUEST_TYPE_LINUX) {
+        // LCOW utility VMs need an HNS endpoint even when the caller relies on
+        // the Default Switch's dynamic network configuration.
+        containerv_options_set_network_ex(containerParams->opts, NULL, NULL, NULL, NULL, NULL);
     }
 
     // setup other config
@@ -341,7 +345,8 @@ static enum chef_status __create_linux_container(const struct chef_create_parame
         CV_CAP_IPC;
 
     // Enable network capability if requested by policy profile or network configuration.
-    if (__spec_contains_plugin(&params->policy, "network") ||
+    if (params->gtype == CHEF_GUEST_TYPE_LINUX ||
+        __spec_contains_plugin(&params->policy, "network") ||
         (__is_nonempty(params->network.container_ip) 
             && __is_nonempty(params->network.container_netmask))) {
         caps |= CV_CAP_NETWORK;
@@ -577,6 +582,8 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
             __is_nonempty(params->network.gateway_ip) ? params->network.gateway_ip : NULL,
             __is_nonempty(params->network.dns) ? params->network.dns : NULL
         );
+    } else if (params->gtype == CHEF_GUEST_TYPE_LINUX) {
+        containerv_options_set_network_ex(containerParams->opts, NULL, NULL, NULL, NULL, NULL);
     }
 
     // setup other config
@@ -586,7 +593,8 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
         CV_CAP_IPC;
 
     // Enable network capability if requested by policy profile or network configuration.
-    if (__spec_contains_plugin(&params->policy, "network") ||
+    if (params->gtype == CHEF_GUEST_TYPE_LINUX ||
+        __spec_contains_plugin(&params->policy, "network") ||
         (__is_nonempty(params->network.container_ip) 
             && __is_nonempty(params->network.container_netmask))) {
         caps |= CV_CAP_NETWORK;

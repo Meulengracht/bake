@@ -56,11 +56,23 @@ static char* __get_username(void) {
 }
 
 static int __construct_paths(struct __bake_build_context* bctx) {
-    // TODO: Make sure that paths are constructed properly on Windows
-    // We want something like:
-    // C:\ProgramData\Chef\layers\<cache-uuid>\contents\chef\install\<platform>\<architecture>\
+    char* rootfs;
 
-    return 0;
+    rootfs = chef_dirs_rootfs_alloc(build_cache_uuid(bctx->build_cache));
+    if (rootfs == NULL) {
+        return -1;
+    }
+
+    bctx->install_path = strpathjoin(
+        rootfs,
+        "chef",
+        "install",
+        bctx->target_platform,
+        bctx->target_architecture,
+        NULL
+    );
+    free(rootfs);
+    return bctx->install_path == NULL ? -1 : 0;
 }
 
 #endif

@@ -47,7 +47,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
-#include <shlobj.h>
 #include <shlwapi.h>
 #include <vlog.h>
 
@@ -131,6 +130,51 @@ static void __hcs_localfree_wstr(PWSTR s)
     if (s != NULL) {
         LocalFree(s);
     }
+}
+
+// HCS requires a completion callback even though all calls here wait synchronously.
+static void CALLBACK __hcs_operation_callback(HCS_OPERATION operation, void* context)
+{
+    (void)operation;
+    (void)context;
+}
+
+static HCS_OPERATION __hcs_operation_new(void)
+{
+    HCS_OPERATION operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+    if (operation == NULL) {
+        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation\n");
+    }
+    return operation;
+}
+
+// Wait for an HCS operation to complete. When `what` is set, failures are logged with the HCS
+// result document; the document is returned as UTF-8 via resultOut when requested.
+static HRESULT __hcs_operation_wait(HCS_OPERATION operation, DWORD timeoutMs, const char* what, char** resultOut)
+{
+    PWSTR   resultDoc = NULL;
+    HRESULT hr;
+
+    if (resultOut != NULL) {
+        *resultOut = NULL;
+    }
+
+    // Without ComputeCore's wait API completion cannot be observed; treat the call as accepted.
+    if (g_hcs.HcsWaitForOperationResult == NULL) {
+        return S_OK;
+    }
+
+    hr = g_hcs.HcsWaitForOperationResult(operation, timeoutMs, &resultDoc);
+    if (FAILED(hr) && what != NULL) {
+        char* detail = __windows_wide_to_utf8_alloc(resultDoc);
+        VLOG_ERROR("containerv[hcs]", "%s failed: 0x%lx (%s)\n", what, hr, detail ? detail : "no details");
+        free(detail);
+    }
+    if (resultOut != NULL && resultDoc != NULL) {
+        *resultOut = __windows_wide_to_utf8_alloc(resultDoc);
+    }
+    __hcs_localfree_wstr(resultDoc);
+    return hr;
 }
 
 static void __gcs_u32le(unsigned char* p, uint32_t v)
@@ -443,19 +487,12 @@ static int __lcow_gcs_bridge_negotiate(struct containerv_container* container)
     return __lcow_gcs_rpc(container, GCS_RPC_NEGOTIATE_PROTOCOL, request, NULL);
 }
 
-static void __lcow_plan9_share_name(const char* host_path, char* buffer, size_t buffer_size)
+void __hcs_plan9_share_name(const char* host_path, char* buffer, size_t buffer_size)
 {
-    unsigned long long hash = 1469598103934665603ull;
-
     if (buffer == NULL || buffer_size == 0) {
         return;
     }
-
-    for (const unsigned char* p = (const unsigned char*)host_path; p != NULL && *p; ++p) {
-        hash ^= (unsigned long long)(*p);
-        hash *= 1099511628211ull;
-    }
-    snprintf(buffer, buffer_size, "%llu", (unsigned long long)(hash & 0xffffffffu));
+    snprintf(buffer, buffer_size, "%llu", (unsigned long long)(containerv_disk_fnv1a64(host_path) & 0xffffffffu));
 }
 
 static int __lcow_plan9_share_append(json_t* shares, const char* name, const char* host_path, int readonly)
@@ -501,7 +538,7 @@ static int __lcow_plan9_share_layer_cb(const char* host_path, const char* contai
         return 0;
     }
 
-    __lcow_plan9_share_name(host_path, name, sizeof(name));
+    __hcs_plan9_share_name(host_path, name, sizeof(name));
     return __lcow_plan9_share_append(ctx->shares, name, host_path, readonly);
 }
 
@@ -676,6 +713,90 @@ cleanup:
     return status;
 }
 
+static int __lcow_gcs_execute_host_process(
+    struct containerv_container* container,
+    const char* const*           argv,
+    uint32_t*                    pid_out)
+{
+    static const char* const uvm_id = "00000000-0000-0000-0000-000000000000";
+    json_t* req = NULL;
+    json_t* settings = NULL;
+    json_t* params = NULL;
+    json_t* args = NULL;
+    json_t* response = NULL;
+    json_t* pid = NULL;
+    char* params_json = NULL;
+    char* req_json = NULL;
+    char* response_json = NULL;
+    json_error_t jerr;
+    int status = -1;
+
+    if (container == NULL || argv == NULL || argv[0] == NULL || pid_out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    *pid_out = 0;
+
+    req = json_object();
+    settings = json_object();
+    params = json_object();
+    args = json_array();
+    if (req == NULL || settings == NULL || params == NULL || args == NULL) {
+        goto cleanup;
+    }
+
+    for (size_t i = 0; argv[i] != NULL; ++i) {
+        if (json_array_append_new(args, json_string(argv[i])) != 0) {
+            goto cleanup;
+        }
+    }
+
+    if (__json_set_request_base(req, uvm_id) != 0 ||
+        json_object_set_new(params, "CommandArgs", args) != 0) {
+        goto cleanup;
+    }
+    args = NULL;
+
+    if (containerv_json_object_set_string(params, "WorkingDirectory", "/") != 0 ||
+        containerv_json_object_set_bool(params, "CreateInUtilityVM", 1) != 0 ||
+        containerv_json_object_set_bool(params, "CreateStdInPipe", 0) != 0 ||
+        containerv_json_object_set_bool(params, "CreateStdOutPipe", 0) != 0 ||
+        containerv_json_object_set_bool(params, "CreateStdErrPipe", 0) != 0 ||
+        containerv_json_dumps_compact(params, &params_json) != 0 ||
+        containerv_json_object_set_string(settings, "ProcessParameters", params_json) != 0 ||
+        json_object_set_new(req, "Settings", settings) != 0) {
+        goto cleanup;
+    }
+    settings = NULL;
+
+    if (containerv_json_dumps_compact(req, &req_json) != 0 ||
+        __lcow_gcs_rpc(container, GCS_RPC_EXECUTE_PROCESS, req_json, &response_json) != 0) {
+        goto cleanup;
+    }
+
+    memset(&jerr, 0, sizeof(jerr));
+    response = json_loads(response_json, 0, &jerr);
+    pid = response != NULL ? json_object_get(response, "ProcessId") : NULL;
+    if (!json_is_integer(pid)) {
+        errno = EPROTO;
+        goto cleanup;
+    }
+
+    *pid_out = (uint32_t)json_integer_value(pid);
+    status = 0;
+
+cleanup:
+    json_decref(req);
+    json_decref(settings);
+    json_decref(params);
+    json_decref(args);
+    json_decref(response);
+    free(params_json);
+    free(req_json);
+    free(response_json);
+    return status;
+}
+
 static void __lcow_gcs_bridge_close(struct containerv_container* container)
 {
     if (container == NULL) {
@@ -748,6 +869,38 @@ cleanup:
     return status;
 }
 
+int __hcs_lcow_configure_network(struct containerv_container* container)
+{
+    static const char* const uvm_id = "00000000-0000-0000-0000-000000000000";
+    // Output goes to /dev/kmsg so it shows up in the LCOW console log; timeout bounds the infinite GCS wait.
+    static const char* const argv[] = {
+        "/bin/busybox",
+        "sh",
+        "-c",
+        "exec >/dev/kmsg 2>&1; "
+        "/bin/busybox ip -o link; "
+        "exec /bin/busybox timeout 30 /bin/busybox udhcpc -i eth0 -q -n -t 5 -T 2 -A 1 -s /usr/share/udhcpc/default.script",
+        NULL
+    };
+    struct containerv_lcow_gcs_process process = {0};
+    unsigned long exit_code = 0;
+
+    if (__lcow_gcs_execute_host_process(container, argv, &process.pid) != 0) {
+        VLOG_ERROR("containerv[gcs]", "failed to start LCOW DHCP client\n");
+        return -1;
+    }
+
+    process.magic = CONTAINERV_LCOW_GCS_PROCESS_MAGIC;
+    snprintf(process.container_id, sizeof(process.container_id), "%s", uvm_id);
+    if (__hcs_wait_lcow_gcs_process(container, &process, &exit_code) != 0 || exit_code != 0) {
+        VLOG_ERROR("containerv[gcs]", "LCOW DHCP client failed with exit code %lu\n", exit_code);
+        return -1;
+    }
+
+    VLOG_DEBUG("containerv[gcs]", "LCOW DHCP configuration completed\n");
+    return 0;
+}
+
 static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
 {
     if (buf == NULL || cap == NULL || len == NULL || fmt == NULL) {
@@ -800,64 +953,6 @@ static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
     }
 }
 
-static wchar_t* __utf8_to_wide_alloc(const char* s)
-{
-    if (s == NULL) {
-        return NULL;
-    }
-
-    int needed = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
-    if (needed <= 0) {
-        return NULL;
-    }
-
-    wchar_t* out = calloc((size_t)needed, sizeof(wchar_t));
-    if (out == NULL) {
-        return NULL;
-    }
-
-    if (MultiByteToWideChar(CP_UTF8, 0, s, -1, out, needed) == 0) {
-        free(out);
-        return NULL;
-    }
-    return out;
-}
-
-static char* __wide_to_utf8_alloc(const wchar_t* s)
-{
-    if (s == NULL) {
-        return NULL;
-    }
-
-    int needed = WideCharToMultiByte(CP_UTF8, 0, s, -1, NULL, 0, NULL, NULL);
-    if (needed <= 0) {
-        return NULL;
-    }
-
-    char* out = calloc((size_t)needed, 1);
-    if (out == NULL) {
-        return NULL;
-    }
-
-    if (WideCharToMultiByte(CP_UTF8, 0, s, -1, out, needed, NULL, NULL) == 0) {
-        free(out);
-        return NULL;
-    }
-    return out;
-}
-
-static int __path_exists_utf8(const char* path)
-{
-    DWORD attributes;
-
-    if (path == NULL || path[0] == '\0') {
-        return 0;
-    }
-
-    attributes = GetFileAttributesA(path);
-    return attributes != INVALID_FILE_ATTRIBUTES;
-}
-
 static int __lcow_bundle_uses_vhd_boot(const char* image_path)
 {
     static const char* const rootfs_candidates[] = { "rootfs.vhd", "rootfs.vhdx", NULL };
@@ -868,7 +963,7 @@ static int __lcow_bundle_uses_vhd_boot(const char* image_path)
 
     for (int i = 0; rootfs_candidates[i] != NULL; ++i) {
         char* candidate_path = strpathcombine(image_path, rootfs_candidates[i]);
-        int   exists = __path_exists_utf8(candidate_path);
+        int   exists = candidate_path != NULL && containerv_disk_path_exists(candidate_path);
 
         free(candidate_path);
         if (exists) {
@@ -958,7 +1053,6 @@ struct __mapped_dir_build_ctx {
 };
 
 static char* __normalize_container_path_linux_alloc(const char* p);
-static void CALLBACK __hcs_operation_callback(HCS_OPERATION operation, void* context);
 
 static DWORD WINAPI __lcow_console_reader(void* context)
 {
@@ -1053,33 +1147,28 @@ static int __hcs_wait_for_guest_connection(struct containerv_container* containe
     deadline = GetTickCount64() + HCS_OPERATION_TIMEOUT_MS;
     while (GetTickCount64() < deadline) {
         HCS_OPERATION operation;
-        PWSTR         resultDoc = NULL;
+        char*         result = NULL;
         HRESULT       hr;
+        int           ready;
 
-        operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+        operation = __hcs_operation_new();
         if (operation == NULL) {
             return -1;
         }
 
+        // Failures are expected while the guest boots, so poll quietly.
         hr = g_hcs.HcsGetComputeSystemProperties(container->hcs_system, operation, query);
         if (SUCCEEDED(hr)) {
-            hr = g_hcs.HcsWaitForOperationResult(operation, 1000, &resultDoc);
+            hr = __hcs_operation_wait(operation, 1000, NULL, &result);
         }
-
-        if (SUCCEEDED(hr) && resultDoc != NULL) {
-            char* resultUtf8 = __wide_to_utf8_alloc(resultDoc);
-            if (resultUtf8 != NULL && strstr(resultUtf8, "GuestConnectionInfo") != NULL) {
-                VLOG_DEBUG("containerv[hcs]", "HCS guest connection is ready\n");
-                free(resultUtf8);
-                __hcs_localfree_wstr(resultDoc);
-                g_hcs.HcsCloseOperation(operation);
-                return 0;
-            }
-            free(resultUtf8);
-        }
-
-        __hcs_localfree_wstr(resultDoc);
         g_hcs.HcsCloseOperation(operation);
+
+        ready = SUCCEEDED(hr) && result != NULL && strstr(result, "GuestConnectionInfo") != NULL;
+        free(result);
+        if (ready) {
+            VLOG_DEBUG("containerv[hcs]", "HCS guest connection is ready\n");
+            return 0;
+        }
         Sleep(250);
     }
 
@@ -1327,12 +1416,14 @@ static int __build_oci_spec_if_needed(
     struct containerv_oci_linux_spec_params params;
     struct __lcow_mount_ctx                 mountCtx;
     const char*                             rootfs_host;
+    char*                                   capture_args_json;
     char*                                   ociSpec;
 
     if (oci_spec_out == NULL) {
         return -1;
     }
     *oci_spec_out = NULL;
+    capture_args_json = NULL;
 
     if (guest_is_windows) {
         return 0;
@@ -1365,6 +1456,14 @@ static int __build_oci_spec_if_needed(
     memset(&mountCtx, 0, sizeof(mountCtx));
     mountCtx.root_prefix = "/chef/rootfs";
 
+    // Preserve the resolver prepared in the host-backed rootfs. Without an
+    // explicit mount, GCS generates an empty resolv.conf for host-networked
+    // standalone containers because they have no guest network adapter object.
+    if (__lcow_mounts_append(&mountCtx, "/chef/rootfs/chef/resolv.conf", "/etc/resolv.conf", 1) != 0) {
+        __lcow_mounts_free(&mountCtx);
+        return -1;
+    }
+
     // Always mount the staging directory when using OCI-in-UVM.
     {
         char* stage_src = __join_linux_prefix_alloc(mountCtx.root_prefix, "/chef/staging");
@@ -1388,6 +1487,42 @@ static int __build_oci_spec_if_needed(
     }
 
     params.args_json = (args_json_utf8 != NULL) ? args_json_utf8 : "[]";
+    if (getenv("CHEF_LCOW_CAPTURE_STDIO") != NULL) {
+        json_t* original_args = NULL;
+        json_t* wrapped_args = NULL;
+        json_error_t parse_error;
+
+        memset(&parse_error, 0, sizeof(parse_error));
+        original_args = json_loads(params.args_json, 0, &parse_error);
+        wrapped_args = json_array();
+        if (!json_is_array(original_args) || wrapped_args == NULL ||
+            json_array_append_new(wrapped_args, json_string("/bin/sh")) != 0 ||
+            json_array_append_new(wrapped_args, json_string("-c")) != 0 ||
+            json_array_append_new(wrapped_args, json_string("i=0; while [ -e \"/chef/staging/lcow-stdio-$i.log\" ]; do i=$((i + 1)); done; exec >\"/chef/staging/lcow-stdio-$i.log\" 2>&1; exec \"$@\"")) != 0 ||
+            json_array_append_new(wrapped_args, json_string("chef-lcow-capture")) != 0) {
+            json_decref(original_args);
+            json_decref(wrapped_args);
+            __lcow_mounts_free(&mountCtx);
+            return -1;
+        }
+        for (size_t i = 0; i < json_array_size(original_args); ++i) {
+            json_t* arg = json_array_get(original_args, i);
+            if (json_array_append(wrapped_args, arg) != 0) {
+                json_decref(original_args);
+                json_decref(wrapped_args);
+                __lcow_mounts_free(&mountCtx);
+                return -1;
+            }
+        }
+        capture_args_json = json_dumps(wrapped_args, JSON_COMPACT);
+        json_decref(original_args);
+        json_decref(wrapped_args);
+        if (capture_args_json == NULL) {
+            __lcow_mounts_free(&mountCtx);
+            return -1;
+        }
+        params.args_json = capture_args_json;
+    }
     params.envv = (const char* const*)options->envv;
     params.root_path = "/chef/rootfs";
     params.cwd = "/";
@@ -1397,9 +1532,11 @@ static int __build_oci_spec_if_needed(
 
     ociSpec = NULL;
     if (containerv_oci_build_linux_spec_json(&params, &ociSpec) != 0) {
+        free(capture_args_json);
         __lcow_mounts_free(&mountCtx);
         return -1;
     }
+    free(capture_args_json);
 
     if (container != NULL) {
         struct containerv_oci_bundle_paths bundle;
@@ -1839,20 +1976,7 @@ static int __append_mapped_dir_entry(
         return -1;
     }
 
-    DWORD attrs = GetFileAttributesA(host_path);
-    if (attrs == INVALID_FILE_ATTRIBUTES) {
-        if (readonly) {
-            VLOG_ERROR("containerv[hcs]", "mapped dir missing (readonly): %s\n", host_path);
-            return -1;
-        }
-        // Best-effort create for writable mounts.
-        int mk = SHCreateDirectoryExA(NULL, host_path, NULL);
-        if (mk != ERROR_SUCCESS && mk != ERROR_ALREADY_EXISTS) {
-            VLOG_ERROR("containerv[hcs]", "failed to create mapped dir %s (err=%d)\n", host_path, mk);
-            return -1;
-        }
-    } else if ((attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-        VLOG_ERROR("containerv[hcs]", "mapped dir host path is not a directory: %s\n", host_path);
+    if (__windows_prepare_share_dir(host_path, readonly) != 0) {
         return -1;
     }
 
@@ -1923,14 +2047,10 @@ static void __derive_layer_id_from_path(const char* path, char out36[37])
         return;
     }
 
-    // Fallback: stable pseudo-GUID derived from FNV1a of the path.
-    uint64_t h1 = 1469598103934665603ull;
+    // Fallback: stable pseudo-GUID derived from two FNV variants of the path.
+    uint64_t h1 = containerv_disk_fnv1a64(path);
     uint64_t h2 = 1099511628211ull;
     if (path != NULL) {
-        for (const unsigned char* p = (const unsigned char*)path; *p; ++p) {
-            h1 ^= (uint64_t)(*p);
-            h1 *= 1099511628211ull;
-        }
         for (const unsigned char* p = (const unsigned char*)path; *p; ++p) {
             h2 ^= (uint64_t)(*p);
             h2 *= 1469598103934665603ull;
@@ -2179,7 +2299,7 @@ static wchar_t* __hcs_create_container_config_schema1(
         return NULL;
     }
 
-    wchar_t* w = __utf8_to_wide_alloc(json_utf8);
+    wchar_t* w = __windows_utf8_to_wide_alloc(json_utf8);
     free(json_utf8);
     json_decref(cfg);
     json_decref(mapped);
@@ -2216,6 +2336,7 @@ static wchar_t* __hcs_create_lcow_config_schema2(
     json_t*     processor = NULL;
     json_t*     devices = NULL;
     json_t*     scsi = NULL;
+    json_t*     networkAdapters = NULL;
     json_t*     hvSocket = NULL;
     json_t*     hvSocketConfig = NULL;
     json_t*     serviceTable = NULL;
@@ -2259,6 +2380,7 @@ static wchar_t* __hcs_create_lcow_config_schema2(
     processor = json_object();
     devices = json_object();
     scsi = json_object();
+    networkAdapters = json_object();
     hvSocket = json_object();
     hvSocketConfig = json_object();
     serviceTable = json_object();
@@ -2268,7 +2390,7 @@ static wchar_t* __hcs_create_lcow_config_schema2(
     plan9Shares = json_array();
     if (cfg == NULL || schema == NULL || vm == NULL || chipset == NULL || uefi == NULL || boot == NULL ||
         topology == NULL || memory == NULL || processor == NULL || devices == NULL || scsi == NULL ||
-        hvSocket == NULL || hvSocketConfig == NULL || serviceTable == NULL ||
+        networkAdapters == NULL || hvSocket == NULL || hvSocketConfig == NULL || serviceTable == NULL ||
         comPorts == NULL || comPort == NULL || plan9 == NULL || plan9Shares == NULL) {
         goto cleanup;
     }
@@ -2296,12 +2418,12 @@ static wchar_t* __hcs_create_lcow_config_schema2(
         char stageName[64];
         struct __lcow_plan9_share_ctx shareCtx = { .shares = plan9Shares };
 
-        if (__lcow_plan9_share_append(plan9Shares, "0", rootfs_host_path, 0) != 0) {
+        if (__lcow_plan9_share_append(plan9Shares, HCS_LCOW_ROOTFS_SHARE_NAME, rootfs_host_path, 0) != 0) {
             goto cleanup;
         }
 
         snprintf(stageHost, sizeof(stageHost), "%s\\staging", container->runtime_dir);
-        __lcow_plan9_share_name(stageHost, stageName, sizeof(stageName));
+        __hcs_plan9_share_name(stageHost, stageName, sizeof(stageName));
         if (__lcow_plan9_share_append(plan9Shares, stageName, stageHost, 0) != 0) {
             goto cleanup;
         }
@@ -2357,6 +2479,18 @@ static wchar_t* __hcs_create_lcow_config_schema2(
         controller = NULL;
     }
 
+    if (container->hns_endpoint_id != NULL && container->hns_endpoint_id[0] != '\0') {
+        json_t* adapter = json_object();
+        if (adapter == NULL ||
+            containerv_json_object_set_string(adapter, "EndpointId", container->hns_endpoint_id) != 0 ||
+            (container->hns_mac_address != NULL && container->hns_mac_address[0] != '\0' &&
+             containerv_json_object_set_string(adapter, "MacAddress", container->hns_mac_address) != 0) ||
+            json_object_set_new(networkAdapters, container->hns_endpoint_id, adapter) != 0) {
+            json_decref(adapter);
+            goto cleanup;
+        }
+    }
+
 #define ATTACH_OBJECT(parent, key, child) \
     do { \
         if (json_object_set_new((parent), (key), (child)) != 0) { \
@@ -2372,6 +2506,7 @@ static wchar_t* __hcs_create_lcow_config_schema2(
     ATTACH_OBJECT(hvSocketConfig, "ServiceTable", serviceTable);
     ATTACH_OBJECT(hvSocket, "HvSocketConfig", hvSocketConfig);
     ATTACH_OBJECT(devices, "Scsi", scsi);
+    ATTACH_OBJECT(devices, "NetworkAdapters", networkAdapters);
     ATTACH_OBJECT(devices, "HvSocket", hvSocket);
     ATTACH_OBJECT(comPorts, "0", comPort);
     ATTACH_OBJECT(devices, "ComPorts", comPorts);
@@ -2387,7 +2522,7 @@ static wchar_t* __hcs_create_lcow_config_schema2(
     if (containerv_json_dumps_compact(cfg, &jsonUtf8) != 0) {
         goto cleanup;
     }
-    result = __utf8_to_wide_alloc(jsonUtf8);
+    result = __windows_utf8_to_wide_alloc(jsonUtf8);
 
 cleanup:
     free(jsonUtf8);
@@ -2402,6 +2537,7 @@ cleanup:
     json_decref(processor);
     json_decref(devices);
     json_decref(scsi);
+    json_decref(networkAdapters);
     json_decref(hvSocket);
     json_decref(hvSocketConfig);
     json_decref(serviceTable);
@@ -2451,6 +2587,28 @@ static int __grant_lcow_boot_files_access(
         free(path);
     }
     return 0;
+}
+
+// Keep the compute system document under %TEMP% for post-mortem debugging of HCS failures.
+static void __hcs_dump_config(const struct containerv_container* container, const wchar_t* config)
+{
+    char  configPath[MAX_PATH];
+    char* configUtf8;
+    DWORD tempLength;
+
+    configUtf8 = __windows_wide_to_utf8_alloc(config);
+    if (configUtf8 == NULL) {
+        return;
+    }
+
+    tempLength = GetTempPathA(sizeof(configPath), configPath);
+    if (tempLength > 0 && tempLength < sizeof(configPath)) {
+        snprintf(configPath + tempLength, sizeof(configPath) - tempLength, "chef-hcs-%s.json", container->id);
+        if (platform_writetextfile(configPath, configUtf8) == 0) {
+            VLOG_DEBUG("containerv[hcs]", "container configuration written to %s\n", configPath);
+        }
+    }
+    free(configUtf8);
 }
 
 int __hcs_create_container_system(
@@ -2504,24 +2662,10 @@ int __hcs_create_container_system(
         return -1;
     }
 
-    if (linux_container) {
-        char* configUtf8 = __wide_to_utf8_alloc(config);
-        if (configUtf8 != NULL) {
-            char configPath[MAX_PATH];
-            DWORD tempLength = GetTempPathA(sizeof(configPath), configPath);
-            if (tempLength > 0 && tempLength < sizeof(configPath)) {
-                snprintf(configPath + tempLength, sizeof(configPath) - tempLength, "chef-hcs-%s.json", container->id);
-                if (platform_writetextfile(configPath, configUtf8) == 0) {
-                    VLOG_DEBUG("containerv[hcs]", "container configuration written to %s\n", configPath);
-                }
-            }
-            free(configUtf8);
-        }
-    }
+    __hcs_dump_config(container, config);
 
-    operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+    operation = __hcs_operation_new();
     if (operation == NULL) {
-        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation\n");
         goto cleanup;
     }
 
@@ -2532,111 +2676,54 @@ int __hcs_create_container_system(
         operation,
         NULL,
         &container->hcs_system);
-    VLOG_DEBUG("containerv[hcs]", "HcsCreateComputeSystem returned 0x%lx\n", hr);
     if (FAILED(hr)) {
-        char* configUtf8 = __wide_to_utf8_alloc(config);
         VLOG_ERROR("containerv[hcs]", "failed to create container compute system: 0x%lx\n", hr);
-        if (configUtf8 != NULL) {
-            char configPath[MAX_PATH];
-            DWORD tempLength = GetTempPathA(sizeof(configPath), configPath);
-            if (tempLength > 0 && tempLength < sizeof(configPath)) {
-                snprintf(configPath + tempLength, sizeof(configPath) - tempLength, "chef-hcs-%s.json", container->id);
-                if (platform_writetextfile(configPath, configUtf8) == 0) {
-                    VLOG_ERROR("containerv[hcs]", "container configuration written to %s\n", configPath);
-                }
-            }
-            free(configUtf8);
-        }
         goto cleanup;
     }
 
-    if (g_hcs.HcsWaitForOperationResult != NULL) {
-        PWSTR resultDoc = NULL;
-        VLOG_DEBUG("containerv[hcs]", "waiting for HCS container create operation\n");
-        hr = g_hcs.HcsWaitForOperationResult(operation, HCS_OPERATION_TIMEOUT_MS, &resultDoc);
-        if (FAILED(hr)) {
-            char* resultUtf8 = __wide_to_utf8_alloc(resultDoc);
-            VLOG_ERROR("containerv[hcs]", "container create wait failed: 0x%lx\n", hr);
-            if (resultUtf8 != NULL) {
-                VLOG_ERROR("containerv[hcs]", "container create result: %s\n", resultUtf8);
-                free(resultUtf8);
-            }
-            __hcs_localfree_wstr(resultDoc);
-            g_hcs.HcsCloseComputeSystem(container->hcs_system);
-            container->hcs_system = NULL;
-            goto cleanup;
-        }
-        __hcs_localfree_wstr(resultDoc);
+    if (FAILED(__hcs_operation_wait(operation, HCS_OPERATION_TIMEOUT_MS, "container create", NULL))) {
+        goto close_system;
     }
 
     if (linux_container && __lcow_gcs_bridge_listen(container) != 0) {
-        g_hcs.HcsCloseComputeSystem(container->hcs_system);
-        container->hcs_system = NULL;
-        goto cleanup;
+        goto close_system;
     }
 
     g_hcs.HcsCloseOperation(operation);
-    operation = NULL;
-    operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+    operation = __hcs_operation_new();
     if (operation == NULL) {
-        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation for start\n");
-        g_hcs.HcsCloseComputeSystem(container->hcs_system);
-        container->hcs_system = NULL;
-        goto cleanup;
+        goto close_system;
     }
 
     hr = g_hcs.HcsStartComputeSystem(container->hcs_system, operation, NULL);
     if (FAILED(hr)) {
         VLOG_ERROR("containerv[hcs]", "failed to start container compute system: 0x%lx\n", hr);
-        g_hcs.HcsCloseComputeSystem(container->hcs_system);
-        container->hcs_system = NULL;
-        goto cleanup;
+        goto close_system;
     }
 
-    if (g_hcs.HcsWaitForOperationResult != NULL) {
-        PWSTR resultDoc = NULL;
-        VLOG_DEBUG("containerv[hcs]", "waiting for HCS container start operation\n");
-        hr = g_hcs.HcsWaitForOperationResult(operation, HCS_OPERATION_TIMEOUT_MS, &resultDoc);
-        if (FAILED(hr)) {
-            char* resultUtf8 = __wide_to_utf8_alloc(resultDoc);
-            VLOG_ERROR("containerv[hcs]", "container start wait failed: 0x%lx\n", hr);
-            if (resultUtf8 != NULL) {
-                VLOG_ERROR("containerv[hcs]", "container start result: %s\n", resultUtf8);
-                free(resultUtf8);
-            }
-            __hcs_localfree_wstr(resultDoc);
-            g_hcs.HcsCloseComputeSystem(container->hcs_system);
-            container->hcs_system = NULL;
-            goto cleanup;
-        }
-        __hcs_localfree_wstr(resultDoc);
+    if (FAILED(__hcs_operation_wait(operation, HCS_OPERATION_TIMEOUT_MS, "container start", NULL))) {
+        goto close_system;
     }
 
     if (linux_container &&
         (__lcow_gcs_bridge_accept(container) != 0 || __lcow_gcs_bridge_negotiate(container) != 0)) {
-        g_hcs.HcsCloseComputeSystem(container->hcs_system);
-        container->hcs_system = NULL;
-        goto cleanup;
+        goto close_system;
     }
 
     container->vm_started = 1;
     status = 0;
+    goto cleanup;
+
+close_system:
+    g_hcs.HcsCloseComputeSystem(container->hcs_system);
+    container->hcs_system = NULL;
 
 cleanup:
-    if (config) {
-        free(config);
-    }
+    free(config);
     if (operation) {
         g_hcs.HcsCloseOperation(operation);
     }
     return status;
-}
-
-// HCS operation callback (stub for now)
-static void CALLBACK __hcs_operation_callback(HCS_OPERATION operation, void* context)
-{
-    (void)operation;
-    (void)context;
 }
 
 static int __hcs_modify_compute_system(struct containerv_container* container, const char* settings_json_utf8)
@@ -2655,14 +2742,13 @@ static int __hcs_modify_compute_system(struct containerv_container* container, c
         return -1;
     }
 
-    settings_w = __utf8_to_wide_alloc(settings_json_utf8);
+    settings_w = __windows_utf8_to_wide_alloc(settings_json_utf8);
     if (settings_w == NULL) {
         return -1;
     }
 
-    operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+    operation = __hcs_operation_new();
     if (operation == NULL) {
-        VLOG_ERROR("containerv[hcs]", "failed to create HCS operation\n");
         goto cleanup;
     }
 
@@ -2674,17 +2760,8 @@ static int __hcs_modify_compute_system(struct containerv_container* container, c
         goto cleanup;
     }
 
-    if (g_hcs.HcsWaitForOperationResult != NULL) {
-        PWSTR resultDoc = NULL;
-        hr = g_hcs.HcsWaitForOperationResult(operation, HCS_OPERATION_TIMEOUT_MS, &resultDoc);
-        if (FAILED(hr)) {
-            char* detail = __wide_to_utf8_alloc(resultDoc);
-            VLOG_ERROR("containerv[hcs]", "modify compute system wait failed: 0x%lx (%s)\n", hr, detail ? detail : "no details");
-            free(detail);
-            __hcs_localfree_wstr(resultDoc);
-            goto cleanup;
-        }
-        __hcs_localfree_wstr(resultDoc);
+    if (FAILED(__hcs_operation_wait(operation, HCS_OPERATION_TIMEOUT_MS, "modify compute system", NULL))) {
+        goto cleanup;
     }
 
     status = 0;
@@ -2847,6 +2924,53 @@ cleanup:
     return status;
 }
 
+int __hcs_network_adapter_add(
+    struct containerv_container* container,
+    const char*                  adapter_id,
+    const char*                  endpoint_id,
+    const char*                  mac_address)
+{
+    json_t* root = NULL;
+    json_t* settings = NULL;
+    char*   resource_path = NULL;
+    char*   json_utf8 = NULL;
+    size_t  path_cap = 0;
+    size_t  path_len = 0;
+    int     status = -1;
+
+    if (container == NULL || adapter_id == NULL || endpoint_id == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    root = json_object();
+    settings = json_object();
+    if (root == NULL || settings == NULL ||
+        __appendf(&resource_path, &path_cap, &path_len, "VirtualMachine/Devices/NetworkAdapters/%s", adapter_id) != 0 ||
+        containerv_json_object_set_string(root, "ResourcePath", resource_path) != 0 ||
+        containerv_json_object_set_string(root, "RequestType", "Add") != 0 ||
+        containerv_json_object_set_string(settings, "EndpointId", endpoint_id) != 0 ||
+        (mac_address != NULL && mac_address[0] != '\0' && containerv_json_object_set_string(settings, "MacAddress", mac_address) != 0) ||
+        json_object_set_new(root, "Settings", settings) != 0) {
+        settings = NULL;
+        goto cleanup;
+    }
+    settings = NULL;
+
+    if (containerv_json_dumps_compact(root, &json_utf8) != 0) {
+        goto cleanup;
+    }
+
+    status = __hcs_modify_compute_system(container, json_utf8);
+
+cleanup:
+    json_decref(settings);
+    json_decref(root);
+    free(resource_path);
+    free(json_utf8);
+    return status;
+}
+
 int __hcs_initialize(void)
 {
     if (g_hcs.hVmCompute != NULL) {
@@ -2934,11 +3058,34 @@ void __hcs_cleanup(void)
     }
 }
 
+// Shut down (or forcibly terminate) the compute system and wait for it to stop.
+static HRESULT __hcs_stop_compute_system(struct containerv_container* container, int terminate)
+{
+    HCS_OPERATION operation;
+    HRESULT       hr;
+
+    operation = __hcs_operation_new();
+    if (operation == NULL) {
+        return E_FAIL;
+    }
+
+    if (terminate) {
+        hr = g_hcs.HcsTerminateComputeSystem(container->hcs_system, operation, NULL);
+    } else {
+        hr = g_hcs.HcsShutdownComputeSystem(container->hcs_system, operation, NULL);
+    }
+    if (SUCCEEDED(hr)) {
+        hr = __hcs_operation_wait(operation, INFINITE, NULL, NULL);
+    }
+
+    g_hcs.HcsCloseOperation(operation);
+    return hr;
+}
+
 int __hcs_destroy_compute_system(struct containerv_container* container)
 {
-    HCS_OPERATION operation = NULL;
     HRESULT hr;
-    int status = 0;
+    int     status = 0;
 
     if (!container || !container->hcs_system) {
         return 0;  // Nothing to destroy
@@ -2947,75 +3094,26 @@ int __hcs_destroy_compute_system(struct containerv_container* container)
     VLOG_DEBUG("containerv[hcs]", "destroying HCS compute system for container %s\n", container->id);
 
     if (container->vm_started) {
-        // Try graceful shutdown first
-        operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
-        if (operation == NULL) {
-            VLOG_WARNING("containerv[hcs]", "failed to create operation for shutdown\n");
-            operation = NULL;
-        }
-
-        hr = g_hcs.HcsShutdownComputeSystem(container->hcs_system, operation, NULL);
-        if (SUCCEEDED(hr) && g_hcs.HcsWaitForOperationResult != NULL && operation != NULL) {
-            PWSTR resultDoc = NULL;
-            HRESULT whr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
-            __hcs_localfree_wstr(resultDoc);
-            if (FAILED(whr)) {
-                hr = whr;
-            }
-        }
-
-        if (operation != NULL) {
-            g_hcs.HcsCloseOperation(operation);
-            operation = NULL;
-        }
-
+        hr = __hcs_stop_compute_system(container, 0);
         if (FAILED(hr)) {
             VLOG_WARNING("containerv[hcs]", "graceful shutdown failed, forcing termination: 0x%lx\n", hr);
-
-            operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
-            if (operation == NULL) {
-                VLOG_WARNING("containerv[hcs]", "failed to create operation for terminate\n");
-                operation = NULL;
-            }
-
-            hr = g_hcs.HcsTerminateComputeSystem(container->hcs_system, operation, NULL);
-            if (SUCCEEDED(hr) && g_hcs.HcsWaitForOperationResult != NULL && operation != NULL) {
-                PWSTR resultDoc = NULL;
-                HRESULT whr = g_hcs.HcsWaitForOperationResult(operation, INFINITE, &resultDoc);
-                __hcs_localfree_wstr(resultDoc);
-                if (FAILED(whr)) {
-                    hr = whr;
-                }
-            }
-
+            hr = __hcs_stop_compute_system(container, 1);
             if (FAILED(hr)) {
                 VLOG_ERROR("containerv[hcs]", "failed to terminate compute system: 0x%lx\n", hr);
                 status = -1;
             }
-
-            if (operation != NULL) {
-                g_hcs.HcsCloseOperation(operation);
-                operation = NULL;
-            }
         }
-
         container->vm_started = 0;
     }
 
     __lcow_gcs_bridge_close(container);
 
-    // Close the compute system handle
     hr = g_hcs.HcsCloseComputeSystem(container->hcs_system);
     if (FAILED(hr)) {
         VLOG_WARNING("containerv[hcs]", "failed to close compute system handle: 0x%lx\n", hr);
         status = -1;
     }
-
     container->hcs_system = NULL;
-
-    if (operation) {
-        g_hcs.HcsCloseOperation(operation);
-    }
 
     VLOG_DEBUG("containerv[hcs]", "destroyed compute system for container %s\n", container->id);
     return status;
@@ -3161,9 +3259,8 @@ int __hcs_create_process(
             g_hcs.HcsCloseOperation(operation);
             operation = NULL;
         }
-        operation = g_hcs.HcsCreateOperation(NULL, __hcs_operation_callback);
+        operation = __hcs_operation_new();
         if (operation == NULL) {
-            VLOG_ERROR("containerv[hcs]", "failed to create HCS operation\n");
             goto cleanup;
         }
 
@@ -3195,7 +3292,7 @@ int __hcs_create_process(
             process_config = NULL;
         }
 
-        process_config = __utf8_to_wide_alloc(json_utf8);
+        process_config = __windows_utf8_to_wide_alloc(json_utf8);
         if (process_config == NULL) {
             VLOG_ERROR("containerv[hcs]", "failed to convert process config to wide string\n");
             goto cleanup;
