@@ -32,7 +32,7 @@
 #include "private.h"
 
 // PowerShell command buffer size
-#define PS_CMD_BUFFER_SIZE 2048
+#define PS_CMD_BUFFER_SIZE 16384
 
 // Convert an IPv4 netmask string to a prefix length.
 static int __ipv4_netmask_to_prefix(const char* netmask, int* prefixOut)
@@ -300,7 +300,8 @@ static char* __windows_hns_create_and_attach_endpoint(
     int container_prefix,
     const char* gateway_ip,
     const char* dns,
-    int* policies_applied_out)
+    int* policies_applied_out,
+    char** mac_address_out)
 {
     // NOTE:
     // - This is best-effort and relies on HNS PowerShell helpers (commonly present on Windows).
@@ -317,6 +318,9 @@ static char* __windows_hns_create_and_attach_endpoint(
 
     if (policies_applied_out) {
         *policies_applied_out = 0;
+    }
+    if (mac_address_out) {
+        *mac_address_out = NULL;
     }
 
     char* esc_sw = __ps_escape_single_quoted(switch_name);
@@ -351,8 +355,9 @@ static char* __windows_hns_create_and_attach_endpoint(
         "}; "
         "$net=$best; if (-not $net) { throw 'No HNS networks found' }; "
         "$epName=('chef-' + $cid); "
-        "$cmd = Get-Command New-HnsEndpoint; "
-        "$keys = $cmd.Parameters.Keys; "
+        "$mod = Get-Module HostNetworkingService; if (-not $mod) { Import-Module HostNetworkingService; $mod = Get-Module HostNetworkingService }; "
+        "$cmd = Get-Command New-HnsEndpoint -ErrorAction SilentlyContinue; "
+        "$keys = if ($cmd) { $cmd.Parameters.Keys } else { @() }; "
         "$hasIp = ($keys -contains 'IpAddress') -or ($keys -contains 'IPAddress'); "
         "$hasPrefix = ($keys -contains 'PrefixLength'); "
         "$hasGw = ($keys -contains 'GatewayAddress') -or ($keys -contains 'Gateway') -or ($keys -contains 'DefaultGateway'); "
@@ -363,7 +368,10 @@ static char* __windows_hns_create_and_attach_endpoint(
         "if ($prefix -ge 0 -and $hasPrefix) { $p['PrefixLength'] = [int]$prefix; $applied = $true }; "
         "if ($gw -and $gw.Length -gt 0 -and $hasGw) { $p['GatewayAddress'] = $gw; $applied = $true }; "
         "if ($dns -and $dns.Length -gt 0 -and $hasDns) { $p['DnsServerList'] = ($dns -split '[ ,;]+' | Where-Object { $_ -and $_.Length -gt 0 }); $applied = $true }; "
-        "$ep = New-HnsEndpoint @p; "
+        "if ($cmd) { $ep = New-HnsEndpoint @p } else { "
+        "  $epData = @{ VirtualNetwork = $net.Id; Name = $epName } | ConvertTo-Json -Compress; "
+        "  $ep = & $mod { param($d) Invoke-HnsRequest -Method POST -Type endpoints -Data $d } $epData; "
+        "}; "
         // If New-HnsEndpoint didn't accept policy fields, attempt to set them post-create.
         "if (-not $applied) { "
         "  $setCmd = Get-Command Set-HnsEndpoint -ErrorAction SilentlyContinue; "
@@ -376,7 +384,6 @@ static char* __windows_hns_create_and_attach_endpoint(
         "    if ($applied) { Set-HnsEndpoint -InputObject $epObj | Out-Null }; "
         "  } "
         "}; "
-        "Attach-HnsEndpoint -EndpointId $ep.Id -ContainerId $cid; "
         "$pp = $env:CHEF_PORTPROXY_PORTS; "
         "if ($pp -and $ip -and $ip.Length -gt 0) { "
         "  $entries = $pp -split ','; "
@@ -391,7 +398,7 @@ static char* __windows_hns_create_and_attach_endpoint(
         "    } "
         "  } "
         "}; "
-        "Write-Output ($ep.Id + '|' + ([int]$applied));",
+        "Write-Output ($ep.Id + '|' + ([int]$applied) + '|' + $ep.MacAddress);",
         esc_sw,
         esc_cid,
         esc_ip,
@@ -416,12 +423,20 @@ static char* __windows_hns_create_and_attach_endpoint(
         return NULL;
     }
 
-    // Parse "<endpointId>|<applied>".
+    // Parse "<endpointId>|<applied>|<mac>".
     char* bar = strchr(out, '|');
     if (bar != NULL) {
         *bar = '\0';
         __trim_whitespace_inplace(out);
         char* applied_s = bar + 1;
+        char* mac_s = strchr(applied_s, '|');
+        if (mac_s != NULL) {
+            *mac_s++ = '\0';
+            __trim_whitespace_inplace(mac_s);
+            if (mac_address_out && mac_s[0] != '\0') {
+                *mac_address_out = _strdup(mac_s);
+            }
+        }
         __trim_whitespace_inplace(applied_s);
         if (policies_applied_out) {
             *policies_applied_out = atoi(applied_s) ? 1 : 0;
@@ -578,255 +593,6 @@ static int __windows_configure_container_network_in_hcs_container(
 }
 
 /**
- * @brief Create HyperV virtual switch if it doesn't exist
- * Equivalent to Linux bridge creation
- */
-int __windows_create_virtual_switch(const char* switch_name, const char* adapter_name)
-{
-    char command[PS_CMD_BUFFER_SIZE];
-
-    if (!switch_name || strlen(switch_name) == 0) {
-        switch_name = "containerv-switch";
-    }
-
-    VLOG_DEBUG("containerv[net]", "creating virtual switch: %s\n", switch_name);
-
-    // Check if switch already exists
-    snprintf(command, sizeof(command),
-        "$switch = Get-VMSwitch -Name '%s' -ErrorAction SilentlyContinue; "
-        "if ($switch) { Write-Host 'Switch exists'; exit 0 }; "
-        "New-VMSwitch -Name '%s' -SwitchType Internal -Notes 'Created by containerv'; "
-        "Write-Host 'Switch created'",
-        switch_name, switch_name);
-
-    return __execute_powershell_command(command);
-}
-
-/**
- * @brief Configure VM network adapter with IP settings
- * Equivalent to Linux veth configuration
- */
-int __windows_configure_vm_network(
-    struct containerv_container* container,
-    struct containerv_options* options)
-{
-    const char* switch_name;
-
-    if (!container || !options || !options->network.enable) {
-        return 0;  // No network configuration needed
-    }
-
-    switch_name = options->network.switch_name ? options->network.switch_name : "containerv-switch";
-
-    VLOG_DEBUG("containerv[net]", "configuring VM network for container %s\n", container->id);
-
-    // Create virtual switch if needed
-    if (__windows_create_virtual_switch(switch_name, NULL) != 0) {
-        VLOG_WARNING("containerv[net]", "failed to create/verify virtual switch, continuing anyway\n");
-    }
-
-    // Configure VM network adapter to use the switch
-    // This is done through HCS configuration rather than PowerShell for running VMs
-    // The actual IP configuration will be done inside the VM via HCS process execution
-
-    VLOG_DEBUG("containerv[net]", "VM network configuration prepared for container %s\n", container->id);
-    return 0;
-}
-
-/**
- * @brief Configure network inside the VM (equivalent to Linux container network setup)
- */
-int __windows_configure_container_network(
-    struct containerv_container* container,
-    struct containerv_options* options)
-{
-    struct __containerv_spawn_options spawn_opts = {0};
-    int status;
-    int exit_code = 0;
-    const char* gateway_ip;
-    const char* dns;
-
-    if (!container || !options || !options->network.enable) {
-        return 0;
-    }
-
-    if (!options->network.container_ip || !options->network.container_netmask) {
-        VLOG_ERROR("containerv[net]", "network enabled but IP/netmask not specified\n");
-        return -1;
-    }
-
-    gateway_ip = options->network.gateway_ip ? options->network.gateway_ip : options->network.host_ip;
-    dns = options->network.dns;
-
-    VLOG_DEBUG("containerv[net]", "configuring network inside VM for container %s\n", container->id);
-    VLOG_DEBUG("containerv[net]", "container IP: %s, netmask: %s\n", 
-               options->network.container_ip, options->network.container_netmask);
-
-    // Execute inside the guest via pid1d.
-    if (container->guest_is_windows) {
-        char ps[1024];
-        const char* gw = gateway_ip ? gateway_ip : "";
-        const char* dns_s = dns ? dns : "";
-
-        snprintf(
-            ps,
-            sizeof(ps),
-            "$if = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -notlike '*Loopback*' } | Select-Object -First 1).Name; "
-            "if (-not $if) { $if = 'Ethernet' }; "
-            "$gw = '%s'; $dns = '%s'; $ip = '%s'; $mask = '%s'; "
-            "if ($gw -and $gw.Length -gt 0) { "
-            "  netsh interface ip set address name=\"$if\" static $ip $mask $gw 1; "
-            "} else { "
-            "  netsh interface ip set address name=\"$if\" static $ip $mask none; "
-            "}; "
-            "$servers = $dns.Split(' ',',',';') | Where-Object { $_ -and $_.Length -gt 0 }; "
-            "if ($servers.Count -gt 0) { "
-            "  netsh interface ip set dns name=\"$if\" static $servers[0]; "
-            "  for ($i = 1; $i -lt $servers.Count; $i++) { netsh interface ip add dns name=\"$if\" addr=$servers[$i] index=($i+1) } "
-            "};",
-            gw,
-            dns_s,
-            options->network.container_ip,
-            options->network.container_netmask);
-
-        const char* const argv[] = {
-            "powershell.exe",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            ps,
-            NULL
-        };
-
-        spawn_opts.path = "powershell.exe";
-        spawn_opts.argv = argv;
-        spawn_opts.envv = NULL;
-        spawn_opts.flags = CV_SPAWN_WAIT;
-
-        status = __windows_exec_in_vm_via_pid1d(container, &spawn_opts, &exit_code);
-        if (status != 0) {
-            VLOG_ERROR("containerv[net]", "pid1d guest network config failed (Windows guest)\n");
-            return -1;
-        }
-        if (exit_code != 0) {
-            VLOG_ERROR("containerv[net]", "guest network config exited with %d (Windows guest)\n", exit_code);
-            return -1;
-        }
-    } else {
-        int prefix = 0;
-        if (__parse_prefix_any(options->network.container_netmask, &prefix) != 0) {
-            VLOG_ERROR("containerv[net]", "invalid netmask/prefix: %s\n", options->network.container_netmask);
-            return -1;
-        }
-
-        char sh[1024];
-        snprintf(
-            sh,
-            sizeof(sh),
-            "set -e; "
-            "IP='%s'; PREFIX='%d'; NETMASK='%s'; GW='%s'; DNS='%s'; "
-            "IF=; "
-            "for d in /sys/class/net/*; do n=${d##*/}; [ \"$n\" = lo ] && continue; IF=\"$n\"; break; done; "
-            "[ -n \"$IF\" ]; "
-            "if command -v ip >/dev/null 2>&1; then "
-            "  ip link set dev \"$IF\" up 2>/dev/null || true; "
-            "  if echo \"$IP\" | grep -q ':'; then "
-            "    ip -6 addr flush dev \"$IF\" 2>/dev/null || true; "
-            "    ip -6 addr add \"$IP\"/\"$PREFIX\" dev \"$IF\"; "
-            "    if [ -n \"$GW\" ]; then ip -6 route replace default via \"$GW\" dev \"$IF\" 2>/dev/null || true; fi; "
-            "  else "
-            "    ip addr flush dev \"$IF\" 2>/dev/null || true; "
-            "    ip addr add \"$IP\"/\"$PREFIX\" dev \"$IF\"; "
-            "    if [ -n \"$GW\" ]; then ip route replace default via \"$GW\" dev \"$IF\" 2>/dev/null || true; fi; "
-            "  fi; "
-            "else "
-            "  ifconfig \"$IF\" \"$IP\" netmask \"$NETMASK\" up; "
-            "  if [ -n \"$GW\" ] && command -v route >/dev/null 2>&1; then route add default gw \"$GW\" \"$IF\" 2>/dev/null || true; fi; "
-            "fi; "
-            "if [ -n \"$DNS\" ]; then "
-            "  rm -f /etc/resolv.conf; "
-            "  for s in $DNS; do echo \"nameserver $s\" >> /etc/resolv.conf; done; "
-            "fi;",
-            options->network.container_ip,
-            prefix,
-            options->network.container_netmask,
-            gateway_ip ? gateway_ip : "",
-            dns ? dns : "");
-
-        const char* const argv[] = { "/bin/sh", "-c", sh, NULL };
-        spawn_opts.path = "/bin/sh";
-        spawn_opts.argv = argv;
-        spawn_opts.envv = NULL;
-        spawn_opts.flags = CV_SPAWN_WAIT;
-
-        status = __windows_exec_in_vm_via_pid1d(container, &spawn_opts, &exit_code);
-        if (status != 0) {
-            VLOG_ERROR("containerv[net]", "pid1d guest network config failed (Linux guest)\n");
-            return -1;
-        }
-        if (exit_code != 0) {
-            VLOG_ERROR("containerv[net]", "guest network config exited with %d (Linux guest)\n", exit_code);
-            return -1;
-        }
-    }
-
-    VLOG_DEBUG("containerv[net]", "network configuration completed for container %s\n", container->id);
-    return 0;
-}
-
-/**
- * @brief Setup host-side network interface (equivalent to Linux host veth)
- */
-int __windows_configure_host_network(
-    struct containerv_container* container,
-    struct containerv_options* options)
-{
-    char command[PS_CMD_BUFFER_SIZE];
-    const char* switch_name;
-    int host_prefix = 24;
-
-    if (!container || !options || !options->network.enable) {
-        return 0;
-    }
-
-    if (!options->network.host_ip) {
-        VLOG_DEBUG("containerv[net]", "no host IP specified, skipping host network config\n");
-        return 0;
-    }
-
-    switch_name = options->network.switch_name ? options->network.switch_name : "containerv-switch";
-
-    if (options->network.container_netmask != NULL) {
-        (void)__ipv4_netmask_to_prefix(options->network.container_netmask, &host_prefix);
-    }
-
-    VLOG_DEBUG("containerv[net]", "configuring host network interface for switch %s\n", switch_name);
-
-    // Configure the host-side virtual adapter IP
-    // This is equivalent to configuring the Linux host veth interface
-    snprintf(command, sizeof(command),
-        "$adapter = Get-NetAdapter | Where-Object {$_.Name -like '*%s*'} | Select-Object -First 1; "
-        "if ($adapter) { "
-            "New-NetIPAddress -InterfaceAlias $adapter.Name -IPAddress %s -PrefixLength %d -ErrorAction SilentlyContinue; "
-            "Write-Host 'Host IP configured' "
-        "} else { "
-            "Write-Warning 'No adapter found for switch' "
-        "}",
-        switch_name, options->network.host_ip, host_prefix);
-
-    int result = __execute_powershell_command(command);
-    if (result != 0) {
-        VLOG_WARNING("containerv[net]", "host network configuration may have failed, but continuing\n");
-        // Don't fail container creation due to host network config issues
-        return 0;
-    }
-
-    VLOG_DEBUG("containerv[net]", "host network configuration completed\n");
-    return 0;
-}
-
-/**
  * @brief Clean up network configuration for container
  */
 int __windows_cleanup_network(
@@ -842,10 +608,10 @@ int __windows_cleanup_network(
             script,
             sizeof(script),
             "$ErrorActionPreference='SilentlyContinue'; "
-            "Import-Module HNS -ErrorAction SilentlyContinue | Out-Null; "
+            "Import-Module HostNetworkingService -ErrorAction SilentlyContinue | Out-Null; "
             "$id='%s'; $cid='%s'; "
             "try { Detach-HnsEndpoint -EndpointId $id -ContainerId $cid | Out-Null } catch {} ; "
-            "try { Remove-HnsEndpoint -Id $id | Out-Null } catch {} ;",
+            "try { Get-HnsEndpoint -Id $id | Remove-HnsEndpoint | Out-Null } catch {} ;",
             container->hns_endpoint_id,
             container->id);
 
@@ -854,17 +620,54 @@ int __windows_cleanup_network(
         free(container->hns_endpoint_id);
         container->hns_endpoint_id = NULL;
     }
+    free(container->hns_mac_address);
+    container->hns_mac_address = NULL;
+    container->hns_endpoint_predeclared = 0;
 
-    // For now, we don't actively clean up the virtual switch
-    // as it might be used by other containers
-    // In a production implementation, we might:
-    // 1. Reference count switch usage
-    // 2. Remove switch if no containers are using it
-    // 3. Clean up any specific network endpoints
-
-    VLOG_DEBUG("containerv[net]", "network cleanup for container %s (minimal implementation)\n", 
+    VLOG_DEBUG("containerv[net]", "network cleanup for container %s\n", 
                container ? container->id : "unknown");
     
+    return 0;
+}
+
+int __windows_prepare_hcs_container_network(
+    struct containerv_container* container,
+    struct containerv_options* options)
+{
+    const char* switch_name;
+    const char* gateway;
+    int         prefix = -1;
+    int         policies_applied = 0;
+
+    if (container == NULL || options == NULL || !options->network.enable || container->hns_endpoint_id != NULL) {
+        return 0;
+    }
+
+    switch_name = options->network.switch_name ? options->network.switch_name : "Default Switch";
+    if (options->network.container_ip != NULL && options->network.container_netmask != NULL &&
+        __ipv4_netmask_to_prefix(options->network.container_netmask, &prefix) != 0) {
+        prefix = -1;
+    }
+    gateway = options->network.gateway_ip ? options->network.gateway_ip : options->network.host_ip;
+
+    container->hns_endpoint_id = __windows_hns_create_and_attach_endpoint(
+        container->id,
+        switch_name,
+        options->network.container_ip,
+        prefix,
+        gateway,
+        options->network.dns,
+        &policies_applied,
+        &container->hns_mac_address);
+    if (container->hns_endpoint_id == NULL) {
+        return -1;
+    }
+
+    container->hns_endpoint_predeclared = 1;
+    VLOG_DEBUG(
+        "containerv[net]",
+        "prepared HNS endpoint %s for utility VM creation\n",
+        container->hns_endpoint_id);
     return 0;
 }
 
@@ -885,6 +688,15 @@ int __windows_configure_hcs_container_network(
         return 0;
     }
 
+    if (container->hns_endpoint_predeclared) {
+        VLOG_DEBUG("containerv[net]", "HNS endpoint %s was attached during utility VM creation\n", container->hns_endpoint_id);
+        if (!container->guest_is_windows && __hcs_lcow_configure_network(container) != 0) {
+            return -1;
+        }
+        container->network_configured = 1;
+        return 0;
+    }
+
     const char* switch_name = options->network.switch_name ? options->network.switch_name : "Default Switch";
 
     int prefix = -1;
@@ -896,9 +708,10 @@ int __windows_configure_hcs_container_network(
 
     const char* gw = options->network.gateway_ip ? options->network.gateway_ip : options->network.host_ip;
 
-    VLOG_DEBUG("containerv[net]", "creating/attaching HNS endpoint for compute system %s on switch %s\n", container->id, switch_name);
+    VLOG_DEBUG("containerv[net]", "creating HNS endpoint for compute system %s on switch %s\n", container->id, switch_name);
 
     int policies_applied = 0;
+    char* mac_address = NULL;
     char* endpoint_id = __windows_hns_create_and_attach_endpoint(
         container->id,
         switch_name,
@@ -906,15 +719,22 @@ int __windows_configure_hcs_container_network(
         prefix,
         gw,
         options->network.dns,
-        &policies_applied);
+        &policies_applied,
+        &mac_address);
     if (endpoint_id == NULL) {
-        VLOG_WARNING("containerv[net]", "failed to create/attach HNS endpoint; container may have no network\n");
+        VLOG_WARNING("containerv[net]", "failed to create HNS endpoint; container may have no network\n");
         return -1;
     }
 
     container->hns_endpoint_id = endpoint_id;
+    if (__hcs_network_adapter_add(container, endpoint_id, endpoint_id, mac_address) != 0) {
+        VLOG_ERROR("containerv[net]", "failed to attach HNS endpoint %s to utility VM\n", endpoint_id);
+        free(mac_address);
+        return -1;
+    }
+    free(mac_address);
 
-    VLOG_DEBUG("containerv[net]", "attached HNS endpoint %s\n", container->hns_endpoint_id);
+    VLOG_DEBUG("containerv[net]", "attached HNS endpoint %s to utility VM\n", container->hns_endpoint_id);
 
     if (!policies_applied) {
         // Fallback: configure static IP/DNS inside the container (best-effort).

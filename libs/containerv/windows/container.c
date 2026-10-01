@@ -17,9 +17,7 @@
  */
 
 #include <windows.h>
-#include <wincrypt.h>
 #include <objbase.h>
-#include <shlobj.h>
 #include <shlwapi.h>
 #include <chef/platform.h>
 #include <chef/containerv.h>
@@ -36,324 +34,12 @@
 
 #include "json-util.h"
 
-#include <pid1_windows.h>
-
 #include "private.h"
 
 #include "standard-mounts.h"
 #include "oci-bundle.h"
 
 #define MIN_REMAINING_PATH_LENGTH 20  // Minimum space needed for "containerv-XXXXXX" + null
-
-// PID1 is currently implemented as a process-global service. We reference count
-// active containers so we can init/cleanup once.
-static volatile LONG g_pid1_container_refcount = 0;
-static volatile LONG g_pid1_ready = 0;
-
-static int __pid1d_rpc(struct containerv_container* container, const char* reqLine, char* resp, size_t respCap);
-static int __pid1d_ensure(struct containerv_container* container);
-
-// Acquire the shared PID1 service for a container instance.
-static int __pid1_acquire_for_container(struct containerv_container* container)
-{
-    LONG after;
-
-    if (container == NULL) {
-        return -1;
-    }
-
-    after = InterlockedIncrement(&g_pid1_container_refcount);
-    if (after == 1) {
-        if (pid1_init() != 0) {
-            InterlockedDecrement(&g_pid1_container_refcount);
-            return -1;
-        }
-        InterlockedExchange(&g_pid1_ready, 1);
-    }
-
-    container->pid1_acquired = 1;
-    return 0;
-}
-
-// Release the shared PID1 service when a container is done.
-static void __pid1_release_for_container(void)
-{
-    LONG after;
-
-    after = InterlockedDecrement(&g_pid1_container_refcount);
-    if (after == 0) {
-        if (InterlockedExchange(&g_pid1_ready, 0) == 1) {
-            (void)pid1_cleanup();
-        }
-    }
-}
-
-// Send a JSON request to pid1d and read the response.
-static int __pid1d_rpc_json(struct containerv_container* container, json_t* req, char* resp, size_t respCap)
-{
-    char* reqUtf8;
-    int   rc;
-
-    if (container == NULL || req == NULL || resp == NULL || respCap == 0) {
-        return -1;
-    }
-
-    reqUtf8 = NULL;
-    rc = -1;
-    if (containerv_json_dumps_compact(req, &reqUtf8) != 0) {
-        return -1;
-    }
-
-    rc = __pid1d_rpc(container, reqUtf8, resp, respCap);
-    free(reqUtf8);
-    return rc;
-}
-
-// Write all bytes to a pid1d pipe handle.
-static int __pid1d_write_all(HANDLE handle, const char* data, size_t len)
-{
-    size_t writtenTotal;
-    DWORD  written;
-    BOOL   ok;
-
-    if (handle == NULL || data == NULL) {
-        return -1;
-    }
-
-    writtenTotal = 0;
-    written = 0;
-    ok = FALSE;
-    while (writtenTotal < len) {
-        written = 0;
-        ok = WriteFile(handle, data + writtenTotal, (DWORD)(len - writtenTotal), &written, NULL);
-        if (!ok) {
-            return -1;
-        }
-        writtenTotal += (size_t)written;
-    }
-    return 0;
-}
-
-// Read a single line from pid1d into the output buffer.
-static int __pid1d_read_line(HANDLE handle, char* out, size_t outCap)
-{
-    size_t length;
-    char   ch;
-    DWORD  read;
-    BOOL   ok;
-
-    if (handle == NULL || out == NULL || outCap == 0) {
-        return -1;
-    }
-
-    length = 0;
-    ch = 0;
-    read = 0;
-    ok = FALSE;
-    for (;;) {
-        ch = 0;
-        read = 0;
-        ok = ReadFile(handle, &ch, 1, &read, NULL);
-        if (!ok || read == 0) {
-            return -1;
-        }
-
-        if (ch == '\n') {
-            break;
-        }
-        if (ch == '\r') {
-            continue;
-        }
-
-        if (length + 1 >= outCap) {
-            return -1;
-        }
-        out[length++] = ch;
-    }
-
-    out[length] = '\0';
-    return 0;
-}
-
-// Return non-zero if the pid1d response indicates success.
-static int __pid1d_resp_ok(const char* resp)
-{
-    if (resp == NULL) {
-        return 0;
-    }
-    return strstr(resp, "\"ok\":true") != NULL;
-}
-
-// Parse a uint64 field from a pid1d JSON response.
-static int __pid1d_parse_uint64_field(const char* resp, const char* key, uint64_t* outValue)
-{
-    char        needle[64];
-    const char* p;
-    char*       endp;
-    unsigned long long value;
-
-    if (resp == NULL || key == NULL || outValue == NULL) {
-        return -1;
-    }
-
-    snprintf(needle, sizeof(needle), "\"%s\":", key);
-    p = strstr(resp, needle);
-    if (p == NULL) {
-        return -1;
-    }
-    p += strlen(needle);
-
-    while (*p == ' ' || *p == '\t') {
-        p++;
-    }
-
-    endp = NULL;
-    value = strtoull(p, &endp, 10);
-    if (endp == p) {
-        return -1;
-    }
-    *outValue = (uint64_t)value;
-    return 0;
-}
-
-// Parse an int field from a pid1d JSON response.
-static int __pid1d_parse_int_field(const char* resp, const char* key, int* outValue)
-{
-    uint64_t value;
-
-    value = 0;
-    if (__pid1d_parse_uint64_field(resp, key, &value) != 0) {
-        return -1;
-    }
-    *outValue = (int)value;
-    return 0;
-}
-
-// Parse a boolean field from a pid1d JSON response.
-static int __pid1d_parse_bool_field(const char* resp, const char* key, int* outValue)
-{
-    char        needle[64];
-    const char* p;
-
-    if (resp == NULL || key == NULL || outValue == NULL) {
-        return -1;
-    }
-
-    snprintf(needle, sizeof(needle), "\"%s\":", key);
-    p = strstr(resp, needle);
-    if (p == NULL) {
-        return -1;
-    }
-    p += strlen(needle);
-    while (*p == ' ' || *p == '\t') {
-        p++;
-    }
-    if (strncmp(p, "true", 4) == 0) {
-        *outValue = 1;
-        return 0;
-    }
-    if (strncmp(p, "false", 5) == 0) {
-        *outValue = 0;
-        return 0;
-    }
-    return -1;
-}
-
-// Parse a string field from a pid1d JSON response and return a copy.
-static char* __pid1d_parse_string_field_alloc(const char* resp, const char* key)
-{
-    char        needle[80];
-    const char* p;
-    const char* end;
-    size_t      length;
-    char*       outValue;
-
-    if (resp == NULL || key == NULL) {
-        return NULL;
-    }
-
-    snprintf(needle, sizeof(needle), "\"%s\":\"", key);
-    p = strstr(resp, needle);
-    if (p == NULL) {
-        return NULL;
-    }
-    p += strlen(needle);
-
-    // We expect base64 here (no escapes), so copy until next quote.
-    end = strchr(p, '"');
-    if (end == NULL || end < p) {
-        return NULL;
-    }
-    length = (size_t)(end - p);
-    outValue = calloc(length + 1, 1);
-    if (outValue == NULL) {
-        return NULL;
-    }
-    memcpy(outValue, p, length);
-    outValue[length] = '\0';
-    return outValue;
-}
-
-// Encode a buffer to base64 and return a newly allocated string.
-static char* __base64_encode_alloc(const unsigned char* data, size_t len)
-{
-    DWORD outLen;
-    char* outValue;
-
-    if (data == NULL && len != 0) {
-        return NULL;
-    }
-
-    outLen = 0;
-    if (!CryptBinaryToStringA((const BYTE*)data, (DWORD)len, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &outLen)) {
-        return NULL;
-    }
-
-    outValue = calloc(outLen + 1, 1);
-    if (outValue == NULL) {
-        return NULL;
-    }
-
-    if (!CryptBinaryToStringA((const BYTE*)data, (DWORD)len, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, outValue, &outLen)) {
-        free(outValue);
-        return NULL;
-    }
-    outValue[outLen] = 0;
-    return outValue;
-}
-
-// Decode a base64 string into a newly allocated buffer.
-static unsigned char* __base64_decode_alloc(const char* b64, size_t* outLen)
-{
-    DWORD          binLen;
-    unsigned char* outValue;
-
-    if (outLen != NULL) {
-        *outLen = 0;
-    }
-    if (b64 == NULL) {
-        return NULL;
-    }
-
-    binLen = 0;
-    if (!CryptStringToBinaryA(b64, 0, CRYPT_STRING_BASE64, NULL, &binLen, NULL, NULL)) {
-        return NULL;
-    }
-
-    outValue = malloc((size_t)binLen);
-    if (outValue == NULL) {
-        return NULL;
-    }
-
-    if (!CryptStringToBinaryA(b64, 0, CRYPT_STRING_BASE64, (BYTE*)outValue, &binLen, NULL, NULL)) {
-        free(outValue);
-        return NULL;
-    }
-    if (outLen != NULL) {
-        *outLen = (size_t)binLen;
-    }
-    return outValue;
-}
 
 // Ensure the parent directory exists for a host path.
 static int __ensure_parent_dir_hostpath(const char* hostPath)
@@ -383,524 +69,7 @@ static int __ensure_parent_dir_hostpath(const char* hostPath)
     if (tempPath[0] == 0) {
         return 0;
     }
-    (void)SHCreateDirectoryExA(NULL, tempPath, NULL);
-    return 0;
-}
-
-// Send a raw request line to pid1d and read a response line.
-static int __pid1d_rpc(struct containerv_container* container, const char* reqLine, char* resp, size_t respCap)
-{
-    size_t reqLen;
-
-    if (container == NULL || reqLine == NULL || resp == NULL) {
-        return -1;
-    }
-    if (container->pid1d_stdin == NULL || container->pid1d_stdout == NULL) {
-        return -1;
-    }
-
-    reqLen = strlen(reqLine);
-    if (__pid1d_write_all(container->pid1d_stdin, reqLine, reqLen) != 0) {
-        return -1;
-    }
-    if (__pid1d_write_all(container->pid1d_stdin, "\n", 1) != 0) {
-        return -1;
-    }
-    if (__pid1d_read_line(container->pid1d_stdout, resp, respCap) != 0) {
-        return -1;
-    }
-    return 0;
-}
-
-// Write file contents to pid1d using base64 payloads.
-static int __pid1d_file_write_b64(
-    struct containerv_container* container,
-    const char*                  path,
-    const unsigned char*         data,
-    size_t                       dataLen,
-    int                          appendMode,
-    int                          makeDirs)
-{
-    char*  b64;
-    json_t* req;
-    char   resp[8192];
-
-    if (container == NULL || path == NULL) {
-        return -1;
-    }
-    if (__pid1d_ensure(container) != 0) {
-        return -1;
-    }
-
-    b64 = __base64_encode_alloc(data, dataLen);
-    if (b64 == NULL) {
-        return -1;
-    }
-
-    req = json_object();
-    if (req == NULL ||
-        containerv_json_object_set_string(req, "op", "file_write_b64") != 0 ||
-        containerv_json_object_set_string(req, "path", path) != 0 ||
-        containerv_json_object_set_string(req, "data", b64) != 0 ||
-        containerv_json_object_set_bool(req, "append", appendMode) != 0 ||
-        containerv_json_object_set_bool(req, "mkdirs", makeDirs) != 0) {
-        json_decref(req);
-        free(b64);
-        return -1;
-    }
-    free(b64);
-
-    if (__pid1d_rpc_json(container, req, resp, sizeof(resp)) != 0) {
-        json_decref(req);
-        return -1;
-    }
-    json_decref(req);
-
-    if (!__pid1d_resp_ok(resp)) {
-        VLOG_ERROR("containerv", "pid1d file_write_b64 failed: %s\n", resp);
-        return -1;
-    }
-    return 0;
-}
-
-// Read file contents from pid1d as base64 payloads.
-static int __pid1d_file_read_b64(
-    struct containerv_container* container,
-    const char*                  path,
-    uint64_t                     offset,
-    uint64_t                     maxBytes,
-    char**                       b64Out,
-    uint64_t*                    bytesOut,
-    int*                         eofOut)
-{
-    json_t*  req;
-    char     resp[8192];
-    uint64_t bytes;
-    int      eof;
-    char*    b64;
-
-    if (container == NULL || path == NULL || b64Out == NULL || bytesOut == NULL || eofOut == NULL) {
-        return -1;
-    }
-    *b64Out = NULL;
-    *bytesOut = 0;
-    *eofOut = 0;
-
-    if (__pid1d_ensure(container) != 0) {
-        return -1;
-    }
-
-    req = json_object();
-    if (req == NULL ||
-        containerv_json_object_set_string(req, "op", "file_read_b64") != 0 ||
-        containerv_json_object_set_string(req, "path", path) != 0 ||
-        containerv_json_object_set_uint64(req, "offset", offset) != 0 ||
-        containerv_json_object_set_uint64(req, "max_bytes", maxBytes) != 0) {
-        json_decref(req);
-        return -1;
-    }
-
-    if (__pid1d_rpc_json(container, req, resp, sizeof(resp)) != 0) {
-        json_decref(req);
-        return -1;
-    }
-    json_decref(req);
-
-    if (!__pid1d_resp_ok(resp)) {
-        VLOG_ERROR("containerv", "pid1d file_read_b64 failed: %s\n", resp);
-        return -1;
-    }
-
-    bytes = 0;
-    eof = 0;
-    if (__pid1d_parse_uint64_field(resp, "bytes", &bytes) != 0) {
-        return -1;
-    }
-    if (__pid1d_parse_bool_field(resp, "eof", &eof) != 0) {
-        eof = 0;
-    }
-
-    b64 = __pid1d_parse_string_field_alloc(resp, "data");
-    if (b64 == NULL) {
-        // For zero-byte reads, pid1d should still return "data":"".
-        b64 = _strdup("");
-        if (b64 == NULL) {
-            return -1;
-        }
-    }
-    
-    *b64Out = b64;
-    *bytesOut = bytes;
-    *eofOut = eof;
-    return 0;
-}
-
-// Close the pid1d session and release stdio/process handles.
-static void __pid1d_close_session(struct containerv_container* container)
-{
-    if (container == NULL) {
-        return;
-    }
-
-    if (container->pid1d_stdin != NULL) {
-        CloseHandle(container->pid1d_stdin);
-        container->pid1d_stdin = NULL;
-    }
-    if (container->pid1d_stdout != NULL) {
-        CloseHandle(container->pid1d_stdout);
-        container->pid1d_stdout = NULL;
-    }
-    if (container->pid1d_stderr != NULL) {
-        CloseHandle(container->pid1d_stderr);
-        container->pid1d_stderr = NULL;
-    }
-
-    if (container->pid1d_process != NULL) {
-        if (g_hcs.HcsCloseProcess != NULL) {
-            g_hcs.HcsCloseProcess(container->pid1d_process);
-        } else {
-            CloseHandle((HANDLE)container->pid1d_process);
-        }
-        container->pid1d_process = NULL;
-    }
-
-    container->pid1d_started = 0;
-}
-
-// Ensure pid1d is running in the guest VM and ready to accept requests.
-static int __pid1d_ensure(struct containerv_container* container)
-{
-    const char*                     pid1dPath;
-    const char*                     argvLocal[2];
-    const char* const*              argv;
-    struct __containerv_spawn_options opts;
-    HCS_PROCESS                     proc;
-    HCS_PROCESS_INFORMATION         info;
-    int                             status;
-    char                            respBuf[8192];
-    json_t*                         request;
-    int                             pingRc;
-
-    if (container == NULL || container->hcs_system == NULL) {
-        return -1;
-    }
-    if (container->pid1d_started) {
-        return 0;
-    }
-
-    pid1dPath = container->guest_is_windows ? "C:\\pid1d.exe" : "/usr/bin/pid1d";
-    argvLocal[0] = pid1dPath;
-    argvLocal[1] = NULL;
-    argv = argvLocal;
-
-    memset(&opts, 0, sizeof(opts));
-    opts.path = pid1dPath;
-    opts.argv = argv;
-    opts.flags = 0;
-    opts.create_stdio_pipes = 1;
-
-    proc = NULL;
-    memset(&info, 0, sizeof(info));
-
-    status = __hcs_create_process(container, &opts, &proc, &info);
-    if (status != 0) {
-        VLOG_ERROR("containerv", "pid1d: failed to start in VM\n");
-        return -1;
-    }
-
-    if (info.StdInput == NULL || info.StdOutput == NULL) {
-        VLOG_ERROR("containerv", "pid1d: missing stdio pipes (ComputeCore wait API unavailable?)\n");
-        if (g_hcs.HcsCloseProcess != NULL && proc != NULL) {
-            g_hcs.HcsCloseProcess(proc);
-        }
-        return -1;
-    }
-
-    container->pid1d_process = proc;
-    container->pid1d_stdin = info.StdInput;
-    container->pid1d_stdout = info.StdOutput;
-    container->pid1d_stderr = info.StdError;
-    container->pid1d_started = 1;
-
-    request = json_object();
-    if (request == NULL || containerv_json_object_set_string(request, "op", "ping") != 0) {
-        json_decref(request);
-        __pid1d_close_session(container);
-        return -1;
-    }
-
-    pingRc = __pid1d_rpc_json(container, request, respBuf, sizeof(respBuf));
-    json_decref(request);
-    if (pingRc != 0 || !__pid1d_resp_ok(respBuf)) {
-        VLOG_ERROR("containerv", "pid1d: ping failed: %s\n", respBuf);
-        __pid1d_close_session(container);
-        return -1;
-    }
-
-    VLOG_DEBUG("containerv", "pid1d: session established\n");
-    return 0;
-}
-
-// Spawn a process in the guest through pid1d.
-static int __pid1d_spawn(struct containerv_container* container, struct __containerv_spawn_options* options, uint64_t* idOut)
-{
-    json_t* req;
-    json_t* args;
-    json_t* env;
-    char    resp[8192];
-    int     rc;
-    int     i;
-
-    if (container == NULL || options == NULL || options->path == NULL || idOut == NULL) {
-        return -1;
-    }
-    if (__pid1d_ensure(container) != 0) {
-        return -1;
-    }
-
-    req = json_object();
-    if (req == NULL ||
-        containerv_json_object_set_string(req, "op", "spawn") != 0 ||
-        containerv_json_object_set_string(req, "command", options->path) != 0 ||
-        containerv_json_object_set_bool(req, "wait", (options->flags & CV_SPAWN_WAIT) != 0) != 0) {
-        json_decref(req);
-        return -1;
-    }
-
-    if (options->argv != NULL) {
-        args = json_array();
-        if (args == NULL || json_object_set_new(req, "args", args) != 0) {
-            json_decref(args);
-            json_decref(req);
-            return -1;
-        }
-        for (i = 0; options->argv[i] != NULL; ++i) {
-            if (containerv_json_array_append_string(args, options->argv[i]) != 0) {
-                json_decref(req);
-                return -1;
-            }
-        }
-    }
-
-    if (options->envv != NULL) {
-        env = json_array();
-        if (env == NULL || json_object_set_new(req, "env", env) != 0) {
-            json_decref(env);
-            json_decref(req);
-            return -1;
-        }
-        for (i = 0; options->envv[i] != NULL; ++i) {
-            if (containerv_json_array_append_string(env, options->envv[i]) != 0) {
-                json_decref(req);
-                return -1;
-            }
-        }
-    }
-
-    rc = __pid1d_rpc_json(container, req, resp, sizeof(resp));
-    json_decref(req);
-    if (rc != 0 || !__pid1d_resp_ok(resp)) {
-        VLOG_ERROR("containerv", "pid1d: spawn failed: %s\n", resp);
-        return -1;
-    }
-
-    if (__pid1d_parse_uint64_field(resp, "id", idOut) != 0) {
-        VLOG_ERROR("containerv", "pid1d: spawn missing id: %s\n", resp);
-        return -1;
-    }
-
-    return 0;
-}
-
-// Wait for a pid1d process to exit and return its exit code.
-static int __pid1d_wait(struct containerv_container* container, uint64_t id, int* exitCodeOut)
-{
-    json_t* req;
-    char    resp[8192];
-    int     exitCode;
-
-    if (container == NULL) {
-        return -1;
-    }
-    if (__pid1d_ensure(container) != 0) {
-        return -1;
-    }
-
-    req = json_object();
-    if (req == NULL ||
-        containerv_json_object_set_string(req, "op", "wait") != 0 ||
-        containerv_json_object_set_uint64(req, "id", id) != 0) {
-        json_decref(req);
-        return -1;
-    }
-    if (__pid1d_rpc_json(container, req, resp, sizeof(resp)) != 0 || !__pid1d_resp_ok(resp)) {
-        json_decref(req);
-        VLOG_ERROR("containerv", "pid1d: wait failed: %s\n", resp);
-        return -1;
-    }
-    json_decref(req);
-
-    exitCode = 0;
-    (void)__pid1d_parse_int_field(resp, "exit_code", &exitCode);
-    if (exitCodeOut != NULL) {
-        *exitCodeOut = exitCode;
-    }
-    return 0;
-}
-
-// Terminate a pid1d process and request reaping.
-static int __pid1d_kill_reap(struct containerv_container* container, uint64_t id)
-{
-    json_t* req;
-    char    resp[8192];
-
-    if (container == NULL) {
-        return -1;
-    }
-    if (__pid1d_ensure(container) != 0) {
-        return -1;
-    }
-
-    req = json_object();
-    if (req == NULL ||
-        containerv_json_object_set_string(req, "op", "kill") != 0 ||
-        containerv_json_object_set_uint64(req, "id", id) != 0 ||
-        containerv_json_object_set_bool(req, "reap", 1) != 0) {
-        json_decref(req);
-        return -1;
-    }
-    if (__pid1d_rpc_json(container, req, resp, sizeof(resp)) != 0 || !__pid1d_resp_ok(resp)) {
-        json_decref(req);
-        VLOG_ERROR("containerv", "pid1d: kill failed: %s\n", resp);
-        return -1;
-    }
-    json_decref(req);
-    return 0;
-}
-
-int __windows_exec_in_vm_via_pid1d(
-    struct containerv_container*      container,
-    struct __containerv_spawn_options* options,
-    int*                              exitCodeOut)
-{
-    uint64_t id;
-
-    if (container == NULL || options == NULL || options->path == NULL) {
-        return -1;
-    }
-
-    id = 0;
-    if (__pid1d_spawn(container, options, &id) != 0) {
-        return -1;
-    }
-
-    if ((options->flags & CV_SPAWN_WAIT) != 0) {
-        return __pid1d_wait(container, id, exitCodeOut);
-    }
-
-    if (exitCodeOut != NULL) {
-        *exitCodeOut = 0;
-    }
-    return 0;
-}
-
-// Build a Windows environment block from an envv array.
-static char* __build_environment_block(const char* const* envv)
-{
-    size_t total;
-    char*  block;
-    size_t at;
-    size_t n;
-    int    i;
-
-    if (envv == NULL) {
-        return NULL;
-    }
-
-    total = 1; // final terminator
-    for (i = 0; envv[i] != NULL; ++i) {
-        total += strlen(envv[i]) + 1;
-    }
-
-    block = calloc(total, 1);
-    if (block == NULL) {
-        return NULL;
-    }
-
-    at = 0;
-    for (i = 0; envv[i] != NULL; ++i) {
-        n = strlen(envv[i]);
-        memcpy(block + at, envv[i], n);
-        at += n;
-        block[at++] = '\0';
-    }
-    block[at++] = '\0';
-    return block;
-}
-
-// Convert a UTF-8 string to a newly allocated wide string.
-static wchar_t* __utf8_to_wide_alloc(const char* src)
-{
-    int      needed;
-    wchar_t* out;
-
-    if (src == NULL) {
-        return NULL;
-    }
-    needed = MultiByteToWideChar(CP_UTF8, 0, src, -1, NULL, 0);
-    if (needed <= 0) {
-        return NULL;
-    }
-    out = calloc((size_t)needed, sizeof(wchar_t));
-    if (out == NULL) {
-        return NULL;
-    }
-    if (MultiByteToWideChar(CP_UTF8, 0, src, -1, out, needed) == 0) {
-        free(out);
-        return NULL;
-    }
-    return out;
-}
-
-// Build a wide environment block from an envv array.
-static wchar_t* __build_environment_block_wide(const char* const* envv)
-{
-    size_t   totalWchars;
-    int      n;
-    wchar_t* block;
-    size_t   at;
-    int      i;
-
-    if (envv == NULL) {
-        return NULL;
-    }
-
-    totalWchars = 1; // final terminator
-    for (i = 0; envv[i] != NULL; ++i) {
-        n = MultiByteToWideChar(CP_UTF8, 0, envv[i], -1, NULL, 0);
-        if (n <= 0) {
-            return NULL;
-        }
-        // n already includes null terminator for that string.
-        totalWchars += (size_t)n;
-    }
-
-    block = calloc(totalWchars, sizeof(wchar_t));
-    if (block == NULL) {
-        return NULL;
-    }
-
-    at = 0;
-    for (i = 0; envv[i] != NULL; ++i) {
-        n = MultiByteToWideChar(CP_UTF8, 0, envv[i], -1, block + at, (int)(totalWchars - at));
-        if (n <= 0) {
-            free(block);
-            return NULL;
-        }
-        at += (size_t)n;
-    }
-    block[at++] = L'\0';
-    return block;
+    return platform_mkdir(tempPath);
 }
 
 // Create a unique runtime directory under the temp path.
@@ -943,52 +112,11 @@ static char* __container_create_runtime_dir(void)
     return directory;
 }
 
-void containerv_generate_id(char* buffer, size_t length)
-{
-    const char charSet[] = "0123456789abcdef";
-    HCRYPTPROV cryptoProvider;
-    BYTE       randomBytes[__CONTAINER_ID_LENGTH / 2];  // Each byte generates 2 hex chars
-    ULONGLONG  tickCount;
-    DWORD      processId;
-    ULONGLONG  combinedValue;
-    size_t     i;
-    
-    if (length < __CONTAINER_ID_LENGTH + 1) {
-        return;
-    }
-    
-    // Use Windows Crypto API for random generation
-    if (CryptAcquireContext(&cryptoProvider, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
-        if (CryptGenRandom(cryptoProvider, sizeof(randomBytes), randomBytes)) {
-            for (i = 0; i < sizeof(randomBytes); i++) {
-                buffer[i * 2] = charSet[(randomBytes[i] >> 4) & 0x0F];
-                buffer[i * 2 + 1] = charSet[randomBytes[i] & 0x0F];
-            }
-            buffer[__CONTAINER_ID_LENGTH] = '\0';
-            CryptReleaseContext(cryptoProvider, 0);
-            return;
-        }
-        CryptReleaseContext(cryptoProvider, 0);
-    }
-    
-    // If crypto API fails, use GetTickCount64 + process ID as fallback
-    // This is not cryptographically secure but better than rand()
-    tickCount = GetTickCount64();
-    processId = GetCurrentProcessId();
-    combinedValue = (tickCount << 32) | processId;
-    
-    for (i = 0; i < __CONTAINER_ID_LENGTH; i++) {
-        buffer[i] = charSet[(combinedValue >> (i * 4)) & 0x0F];
-    }
-    buffer[__CONTAINER_ID_LENGTH] = '\0';
-}
-
 // Allocate and initialize a new container object.
 static struct containerv_container* __container_new(void)
 {
     struct containerv_container* container;
     char                         stagingPath[MAX_PATH];
-    DWORD                        errorCode;
     size_t                       idLen;
 
     container = calloc(1, sizeof(struct containerv_container));
@@ -1004,11 +132,8 @@ static struct containerv_container* __container_new(void)
     
     // Create staging directory for file transfers
     sprintf_s(stagingPath, sizeof(stagingPath), "%s\\staging", container->runtime_dir);
-    if (!CreateDirectoryA(stagingPath, NULL)) {
-        errorCode = GetLastError();
-        if (errorCode != ERROR_ALREADY_EXISTS) {
-            VLOG_WARNING("containerv", "failed to create staging directory: %lu\n", errorCode);
-        }
+    if (platform_mkdir(stagingPath) != 0) {
+        VLOG_WARNING("containerv", "failed to create staging directory %s\n", stagingPath);
     }
     
     // Generate container ID
@@ -1040,8 +165,6 @@ static struct containerv_container* __container_new(void)
     }
 
     container->hcs_system = NULL;
-    container->host_pipe = INVALID_HANDLE_VALUE;
-    container->child_pipe = INVALID_HANDLE_VALUE;
     container->lcow_console_pipe = INVALID_HANDLE_VALUE;
     container->lcow_console_thread = NULL;
     container->lcow_gcs_listener = (uintptr_t)INVALID_SOCKET;
@@ -1053,14 +176,10 @@ static struct containerv_container* __container_new(void)
     container->policy = NULL;
 
     container->guest_is_windows = 1;
-    container->pid1d_process = NULL;
 
     container->hns_endpoint_id = NULL;
-    container->pid1d_stdin = NULL;
-    container->pid1d_stdout = NULL;
-    container->pid1d_stderr = NULL;
-    container->pid1d_started = 0;
-    container->pid1_acquired = 0;
+    container->hns_mac_address = NULL;
+    container->hns_endpoint_predeclared = 0;
 
     return container;
 }
@@ -1077,8 +196,9 @@ static int __is_hcs_lcow_mode(const struct containerv_options* options)
 // Ensure LCOW rootfs mountpoint directories exist under the host path.
 static void __ensure_lcow_rootfs_mountpoint_dirs(const char* rootfsHostPath)
 {
-    char        chefDir[MAX_PATH];
     char        stagingDir[MAX_PATH];
+    char        resolverSource[MAX_PATH];
+    char        resolverSeed[MAX_PATH];
     const char* s;
     char        rel[MAX_PATH];
     size_t      j;
@@ -1088,12 +208,15 @@ static void __ensure_lcow_rootfs_mountpoint_dirs(const char* rootfsHostPath)
         return;
     }
 
-    snprintf(chefDir, sizeof(chefDir), "%s\\chef", rootfsHostPath);
     snprintf(stagingDir, sizeof(stagingDir), "%s\\chef\\staging", rootfsHostPath);
+    snprintf(resolverSource, sizeof(resolverSource), "%s\\etc\\resolv.conf", rootfsHostPath);
+    snprintf(resolverSeed, sizeof(resolverSeed), "%s\\chef\\resolv.conf", rootfsHostPath);
 
     // Best-effort: these are only mountpoints for bind mounts.
-    CreateDirectoryA(chefDir, NULL);
-    CreateDirectoryA(stagingDir, NULL);
+    (void)platform_mkdir(stagingDir);
+    if (!CopyFileA(resolverSource, resolverSeed, FALSE)) {
+        VLOG_WARNING("containerv", "LCOW: failed to seed resolver config: %lu\n", GetLastError());
+    }
 
     // Standard Linux mountpoints (stored as Linux-style absolute paths).
     for (const char* const* mp = containerv_standard_linux_mountpoints(); mp != NULL && *mp != NULL; ++mp) {
@@ -1116,7 +239,7 @@ static void __ensure_lcow_rootfs_mountpoint_dirs(const char* rootfsHostPath)
         }
 
         snprintf(full, sizeof(full), "%s\\%s", rootfsHostPath, rel);
-        CreateDirectoryA(full, NULL);
+        (void)platform_mkdir(full);
     }
 }
 
@@ -1193,397 +316,31 @@ static char* __escape_sh_single_quotes_alloc(const char* src)
     return out;
 }
 
-// Write a layerchain.json file with the provided layer paths.
-static int __write_layerchain_json(const char* layerFolderPath, char* const* paths, int count)
+// Read the WCOW container folder's layerchain.json and expand it into the full parent chain.
+static int __wcow_resolve_parent_chain(const char* rootFs, char*** parentsOut, int* countOut)
 {
-    char   chainPath[MAX_PATH];
-    int    rc;
-    json_t* root;
-    int    i;
-    json_t* entry;
+    char** chain = NULL;
+    int    chainCount = 0;
 
-    if (layerFolderPath == NULL || layerFolderPath[0] == '\0' || paths == NULL || count <= 0) {
+    if (__windows_layerchain_read(rootFs, &chain, &chainCount) != 0 || chainCount == 0) {
+        VLOG_ERROR("containerv", "WCOW: missing or empty layerchain.json under %s\n", rootFs);
+        __windows_strv_free(chain, chainCount);
         return -1;
     }
 
-    rc = snprintf(chainPath, sizeof(chainPath), "%s\\layerchain.json", layerFolderPath);
-    if (rc < 0 || (size_t)rc >= sizeof(chainPath)) {
+    if (__windows_layerchain_expand((const char* const*)chain, chainCount, parentsOut, countOut) != 0) {
+        VLOG_ERROR("containerv", "WCOW: parent layer chain validation/expansion failed for %s\n", rootFs);
+        __windows_strv_free(chain, chainCount);
         return -1;
     }
 
-    root = json_array();
-    if (root == NULL) {
-        return -1;
+    // Persist the expanded chain so later runs (and other tools) see the full list.
+    if (*countOut != chainCount &&
+        __windows_layerchain_write(rootFs, (const char* const*)*parentsOut, *countOut) != 0) {
+        VLOG_WARNING("containerv", "WCOW: failed to rewrite layerchain.json with expanded chain under %s\n", rootFs);
     }
 
-    for (i = 0; i < count; i++) {
-        if (paths[i] == NULL || paths[i][0] == '\0') {
-            continue;
-        }
-        entry = json_string(paths[i]);
-        if (entry == NULL) {
-            json_decref(root);
-            return -1;
-        }
-        json_array_append_new(root, entry);
-    }
-
-    if (json_dump_file(root, chainPath, JSON_INDENT(2)) != 0) {
-        json_decref(root);
-        return -1;
-    }
-
-    json_decref(root);
-    return 0;
-}
-
-// Read layerchain.json and return resolved parent layer paths.
-static int __read_layerchain_json(const char* layerFolderPath, char*** pathsOut, int* countOut)
-{
-    char        chainPath[MAX_PATH];
-    int         rc;
-    json_error_t jerr;
-    json_t*     root;
-    size_t      n;
-    char**      out;
-    int         outCount;
-    size_t      i;
-    json_t*     item;
-    const char* valueStr;
-    int         j;
-    int         changed;
-    char        resolved[MAX_PATH];
-    const char* base;
-    int         rr;
-
-    if (pathsOut == NULL || countOut == NULL || layerFolderPath == NULL || layerFolderPath[0] == '\0') {
-        return -1;
-    }
-    *pathsOut = NULL;
-    *countOut = 0;
-
-    rc = snprintf(chainPath, sizeof(chainPath), "%s\\layerchain.json", layerFolderPath);
-    if (rc < 0 || (size_t)rc >= sizeof(chainPath)) {
-        return -1;
-    }
-
-    memset(&jerr, 0, sizeof(jerr));
-    root = json_load_file(chainPath, 0, &jerr);
-    if (root == NULL) {
-        VLOG_ERROR("containerv", "failed to parse layerchain.json at %s: %s (line %d)\n", chainPath, jerr.text, jerr.line);
-        return -1;
-    }
-
-    if (!json_is_array(root)) {
-        json_decref(root);
-        VLOG_ERROR("containerv", "layerchain.json is not an array: %s\n", chainPath);
-        return -1;
-    }
-
-    n = json_array_size(root);
-    if (n == 0) {
-        json_decref(root);
-        VLOG_ERROR("containerv", "layerchain.json is empty: %s\n", chainPath);
-        return -1;
-    }
-
-    out = calloc(n, sizeof(char*));
-    if (out == NULL) {
-        json_decref(root);
-        return -1;
-    }
-
-    outCount = 0;
-    for (i = 0; i < n; i++) {
-        item = json_array_get(root, i);
-        if (!json_is_string(item)) {
-            continue;
-        }
-        valueStr = json_string_value(item);
-        if (valueStr == NULL || valueStr[0] == '\0') {
-            continue;
-        }
-        out[outCount++] = _strdup(valueStr);
-        if (out[outCount - 1] == NULL) {
-            for (j = 0; j < outCount - 1; j++) {
-                free(out[j]);
-            }
-            free(out);
-            json_decref(root);
-            return -1;
-        }
-    }
-
-    json_decref(root);
-
-    if (outCount == 0) {
-        free(out);
-        return -1;
-    }
-
-    changed = 0;
-    for (i = 0; i < (size_t)outCount; i++) {
-        valueStr = out[i];
-        if (valueStr == NULL || valueStr[0] == '\0') {
-            continue;
-        }
-        if (PathFileExistsA(valueStr)) {
-            continue;
-        }
-
-        resolved[0] = '\0';
-
-        if (PathIsRelativeA(valueStr)) {
-            rr = snprintf(resolved, sizeof(resolved), "%s\\%s", layerFolderPath, valueStr);
-            if (rr > 0 && (size_t)rr < sizeof(resolved) && PathFileExistsA(resolved)) {
-                // resolved relative path
-            } else {
-                resolved[0] = '\0';
-            }
-        }
-
-        if (resolved[0] == '\0') {
-            base = strrchr(valueStr, '\\');
-            if (base == NULL) {
-                base = strrchr(valueStr, '/');
-            }
-            if (base != NULL) {
-                base++;
-            } else {
-                base = valueStr;
-            }
-            rr = snprintf(resolved, sizeof(resolved), "%s\\parents\\%s", layerFolderPath, base);
-            if (rr > 0 && (size_t)rr < sizeof(resolved) && PathFileExistsA(resolved)) {
-                // resolved parents path
-            } else {
-                resolved[0] = '\0';
-            }
-        }
-
-        if (resolved[0] == '\0') {
-            VLOG_ERROR(
-                "containerv",
-                "layerchain.json entry does not exist and could not be resolved: %s (base %s)\n",
-                valueStr,
-                layerFolderPath);
-            for (j = 0; j < outCount; j++) {
-                free(out[j]);
-            }
-            free(out);
-            return -1;
-        }
-
-        free(out[i]);
-        out[i] = _strdup(resolved);
-        if (out[i] == NULL) {
-            for (j = 0; j < outCount; j++) {
-                free(out[j]);
-            }
-            free(out);
-            return -1;
-        }
-        changed = 1;
-    }
-
-    if (changed) {
-        if (__write_layerchain_json(layerFolderPath, out, outCount) != 0) {
-            VLOG_WARNING("containerv", "failed to rewrite layerchain.json with resolved paths under %s\n", layerFolderPath);
-        }
-    }
-
-    *pathsOut = out;
-    *countOut = outCount;
-    return 0;
-}
-
-// Return non-zero if layerchain.json exists under the layer folder.
-static int __windowsfilter_layerchain_exists(const char* layerFolderPath)
-{
-    char chainPath[MAX_PATH];
-    int  rc;
-
-    if (layerFolderPath == NULL || layerFolderPath[0] == '\0') {
-        return 0;
-    }
-
-    rc = snprintf(chainPath, sizeof(chainPath), "%s\\layerchain.json", layerFolderPath);
-    if (rc < 0 || (size_t)rc >= sizeof(chainPath)) {
-        return 0;
-    }
-
-    return PathFileExistsA(chainPath) ? 1 : 0;
-}
-
-// Free a vector of strings with a known count.
-static void __free_strv(char** values, int count)
-{
-    int i;
-
-    if (values == NULL) {
-        return;
-    }
-    for (i = 0; i < count; i++) {
-        free(values[i]);
-    }
-    free(values);
-}
-
-static int __is_abs_windows_path(const char* p)
-{
-    if (p == NULL || p[0] == '\0') {
-        return 0;
-    }
-
-    if (isalpha((unsigned char)p[0]) && p[1] == ':' && (p[2] == '\\' || p[2] == '/')) {
-        return 1;
-    }
-
-    if (p[0] == '\\' && p[1] == '\\') {
-        return 1;
-    }
-
-    return 0;
-}
-
-static int __strv_contains(const char* const* v, int n, const char* s)
-{
-    if (v == NULL || n <= 0 || s == NULL) {
-        return 0;
-    }
-    for (int i = 0; i < n; i++) {
-        if (v[i] != NULL && strcmp(v[i], s) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int __append_strv_unique(char*** v, int* n, int* cap, const char* s)
-{
-    if (v == NULL || n == NULL || cap == NULL || s == NULL || s[0] == '\0') {
-        return -1;
-    }
-
-    if (__strv_contains((const char* const*)*v, *n, s)) {
-        VLOG_ERROR("containerv", "WCOW: duplicate layer in chain: %s\n", s);
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (!PathFileExistsA(s)) {
-        VLOG_ERROR("containerv", "WCOW: layer path does not exist: %s\n", s);
-        errno = ENOENT;
-        return -1;
-    }
-
-    if (*n >= *cap) {
-        int newCap = (*cap == 0) ? 8 : (*cap * 2);
-        char** nv = realloc(*v, (size_t)newCap * sizeof(char*));
-        if (nv == NULL) {
-            errno = ENOMEM;
-            return -1;
-        }
-        *v = nv;
-        *cap = newCap;
-    }
-
-    (*v)[*n] = _strdup(s);
-    if ((*v)[*n] == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    (*n)++;
-    return 0;
-}
-
-// Expand + validate a parent layerchain by reading each parent's own layerchain.json (if present).
-// This helps when a layerchain.json only enumerates immediate parents rather than the full chain.
-static int __wcow_expand_and_validate_chain(const char* rootFs, char*** parents, int* parentCount)
-{
-    char** in;
-    int inCount;
-    char** out;
-    int outCount;
-    int outCap;
-
-    if (parents == NULL || parentCount == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    in = *parents;
-    inCount = *parentCount;
-    if (in == NULL || inCount <= 0) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    out = NULL;
-    outCount = 0;
-    outCap = 0;
-
-    for (int i = 0; i < inCount; i++) {
-        if (in[i] == NULL || in[i][0] == '\0') {
-            continue;
-        }
-        if (__append_strv_unique(&out, &outCount, &outCap, in[i]) != 0) {
-            __free_strv(out, outCount);
-            return -1;
-        }
-
-        // If this parent has its own layerchain.json, append it.
-        char chainPath[MAX_PATH];
-        int rc = snprintf(chainPath, sizeof(chainPath), "%s\\layerchain.json", in[i]);
-        if (rc < 0 || (size_t)rc >= sizeof(chainPath)) {
-            __free_strv(out, outCount);
-            errno = EINVAL;
-            return -1;
-        }
-        if (!PathFileExistsA(chainPath)) {
-            continue;
-        }
-
-        char** extra = NULL;
-        int extraCount = 0;
-        if (__read_layerchain_json(in[i], &extra, &extraCount) != 0) {
-            VLOG_ERROR("containerv", "WCOW: failed to parse parent layerchain.json under %s\n", in[i]);
-            __free_strv(out, outCount);
-            return -1;
-        }
-
-        for (int j = 0; j < extraCount; j++) {
-            if (extra[j] == NULL || extra[j][0] == '\0') {
-                continue;
-            }
-
-            // __read_layerchain_json already resolves paths best-effort.
-            if (__append_strv_unique(&out, &outCount, &outCap, extra[j]) != 0) {
-                __free_strv(extra, extraCount);
-                __free_strv(out, outCount);
-                return -1;
-            }
-        }
-
-        __free_strv(extra, extraCount);
-    }
-
-    if (outCount <= 0) {
-        __free_strv(out, outCount);
-        errno = EINVAL;
-        return -1;
-    }
-
-    // If expansion changed the chain length, rewrite rootfs layerchain.json for future runs.
-    if (outCount != inCount) {
-        if (__write_layerchain_json(rootFs, out, outCount) != 0) {
-            VLOG_WARNING("containerv", "WCOW: failed to rewrite layerchain.json with expanded chain under %s\n", rootFs);
-        }
-    }
-
-    __free_strv(in, inCount);
-    *parents = out;
-    *parentCount = outCount;
+    __windows_strv_free(chain, chainCount);
     return 0;
 }
 
@@ -1595,7 +352,6 @@ static char* __derive_utilityvm_path(
 {
     char        candidate[MAX_PATH];
     int         rc;
-    DWORD       attrs;
 
     // Caller requested Hyper-V isolation.
     if (options != NULL && options->windows_container.utilityvm_path != NULL && options->windows_container.utilityvm_path[0] != '\0') {
@@ -1619,8 +375,7 @@ static char* __derive_utilityvm_path(
             continue;
         }
 
-        attrs = GetFileAttributesA(candidate);
-        if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+        if (containerv_disk_path_is_directory(candidate)) {
             return _strdup(candidate);
         }
     }
@@ -1631,7 +386,6 @@ static char* __derive_utilityvm_path(
 // Validate a UtilityVM path and provide a reason on failure.
 static int __validate_utilityvm_path(const char* path, char* reason, size_t reasonCap)
 {
-    DWORD attrs;
     char  vhdx[MAX_PATH];
     char  filesDir[MAX_PATH];
     int   rv;
@@ -1650,8 +404,7 @@ static int __validate_utilityvm_path(const char* path, char* reason, size_t reas
         return 0;
     }
 
-    attrs = GetFileAttributesA(path);
-    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+    if (!containerv_disk_path_is_directory(path)) {
         if (reason && reasonCap > 0) {
             snprintf(reason, reasonCap, "UtilityVM path is not a directory");
         }
@@ -1668,7 +421,7 @@ static int __validate_utilityvm_path(const char* path, char* reason, size_t reas
     }
 
     vhdxExists = PathFileExistsA(vhdx) ? 1 : 0;
-    filesExists = (GetFileAttributesA(filesDir) != INVALID_FILE_ATTRIBUTES) ? 1 : 0;
+    filesExists = containerv_disk_path_is_directory(filesDir);
     if (!vhdxExists && !filesExists) {
         if (reason && reasonCap > 0) {
             snprintf(reason, reasonCap, "UtilityVM missing UtilityVM.vhdx and Files directory");
@@ -1698,45 +451,51 @@ static char* __format_utilityvm_candidate(const char* base)
 }
 
 // Release resources associated with a container instance.
+// Release the handle owned by a tracked process entry and free the entry.
+static void __container_process_free(struct containerv_container_process* proc)
+{
+    if (proc->handle != NULL) {
+        if (proc->is_lcow_gcs) {
+            free(proc->handle);
+        } else if (g_hcs.HcsCloseProcess != NULL) {
+            g_hcs.HcsCloseProcess((HCS_PROCESS)proc->handle);
+        } else {
+            CloseHandle(proc->handle);
+        }
+    }
+    free(proc);
+}
+
+static struct containerv_container_process* __container_process_find(
+    struct containerv_container* container,
+    HANDLE                       handle)
+{
+    struct list_item* i;
+
+    for (i = container->processes.head; i != NULL; i = i->next) {
+        struct containerv_container_process* proc = (struct containerv_container_process*)i;
+        if (proc->handle == handle) {
+            return proc;
+        }
+    }
+    return NULL;
+}
+
 static void __container_delete(struct containerv_container* container)
 {
     struct list_item* i;
-    int               pid1Acquired;
     
     if (!container) {
         return;
     }
 
-    pid1Acquired = container->pid1_acquired;
-    
-    // Clean up processes
     for (i = container->processes.head; i != NULL;) {
         struct containerv_container_process* proc = (struct containerv_container_process*)i;
         i = i->next;
-        
-        if (proc->handle != NULL) {
-            if (container->hcs_system != NULL) {
-                if (proc->is_guest) {
-                    free(proc->handle);
-                } else {
-                    if (g_hcs.HcsCloseProcess != NULL) {
-                        g_hcs.HcsCloseProcess((HCS_PROCESS)proc->handle);
-                    } else {
-                        CloseHandle(proc->handle);
-                    }
-                }
-            } else {
-                if (g_pid1_ready) {
-                    pid1_windows_untrack(proc->handle);
-                }
-                CloseHandle(proc->handle);
-            }
-        }
-        free(proc);
+        __container_process_free(proc);
     }
 
     if (container->hcs_system != NULL) {
-        __pid1d_close_session(container);
         __hcs_destroy_compute_system(container);
     }
 
@@ -1744,14 +503,6 @@ static void __container_delete(struct containerv_container* container)
     if (container->job_object != NULL) {
         CloseHandle(container->job_object);
         container->job_object = NULL;
-    }
-    
-    if (container->host_pipe != INVALID_HANDLE_VALUE) {
-        CloseHandle(container->host_pipe);
-    }
-    
-    if (container->child_pipe != INVALID_HANDLE_VALUE) {
-        CloseHandle(container->child_pipe);
     }
 
     if (container->lcow_console_thread != NULL) {
@@ -1780,11 +531,6 @@ static void __container_delete(struct containerv_container* container)
         container->policy = NULL;
     }
     free(container);
-
-    // Release PID1 service reference (kills remaining managed host processes on last container).
-    if (pid1Acquired) {
-        __pid1_release_for_container();
-    }
 }
 
 int containerv_create(
@@ -1865,7 +611,7 @@ int containerv_create(
     
     {
         if (!__is_hcs_lcow_mode(options)) {
-            if (!__windowsfilter_layerchain_exists(rootFs)) {
+            if (!__windows_layerchain_exists(rootFs)) {
                 VLOG_ERROR(
                     "containerv",
                     "containerv_create: HCS container mode requires a windowsfilter folder with layerchain.json at %s (VAFS/overlay materialization is not supported)\n",
@@ -1875,19 +621,9 @@ int containerv_create(
             }
 
             // True Windows containers (WCOW): rootfs must be a windowsfilter container folder.
-            // Parse its parent chain from layerchain.json.
             parentLayers = NULL;
             parentLayerCount = 0;
-            if (__read_layerchain_json(rootFs, &parentLayers, &parentLayerCount) != 0) {
-                VLOG_ERROR("containerv", "containerv_create: failed to parse layerchain.json under %s\n", rootFs);
-                __container_delete(container);
-                return -1;
-            }
-
-            // Validate and ensure the chain is fully enumerated.
-            if (__wcow_expand_and_validate_chain(rootFs, &parentLayers, &parentLayerCount) != 0) {
-                VLOG_ERROR("containerv", "containerv_create: WCOW parent layer chain validation/expansion failed for %s\n", rootFs);
-                __free_strv(parentLayers, parentLayerCount);
+            if (__wcow_resolve_parent_chain(rootFs, &parentLayers, &parentLayerCount) != 0) {
                 __container_delete(container);
                 return -1;
             }
@@ -1908,7 +644,7 @@ int containerv_create(
                         VLOG_ERROR("containerv", "containerv_create: Hyper-V isolation requires UtilityVM path (set via containerv_options_set_windows_container_utilityvm_path or ensure base layer has UtilityVM)\n");
                     }
                     free(candidate);
-                    __free_strv(parentLayers, parentLayerCount);
+                    __windows_strv_free(parentLayers, parentLayerCount);
                     __container_delete(container);
                     errno = ENOENT;
                     return -1;
@@ -1921,7 +657,7 @@ int containerv_create(
                         utilityVm,
                         reasonBuf[0] ? reasonBuf : "invalid UtilityVM path");
                     free(utilityVm);
-                    __free_strv(parentLayers, parentLayerCount);
+                    __windows_strv_free(parentLayers, parentLayerCount);
                     __container_delete(container);
                     errno = ENOENT;
                     return -1;
@@ -1932,13 +668,13 @@ int containerv_create(
             if (__hcs_create_container_system(container, options, rootFs, (const char* const*)parentLayers, parentLayerCount, utilityVm, 0) != 0) {
                 VLOG_ERROR("containerv", "containerv_create: failed to create HCS container compute system\n");
                 free(utilityVm);
-                __free_strv(parentLayers, parentLayerCount);
+                __windows_strv_free(parentLayers, parentLayerCount);
                 __container_delete(container);
                 return -1;
             }
 
             free(utilityVm);
-            __free_strv(parentLayers, parentLayerCount);
+            __windows_strv_free(parentLayers, parentLayerCount);
         } else {
             // LCOW container compute system (bring-up scaffolding): uses ContainerType=Linux and HvRuntime.
             // NOTE: OCI spec + rootfs plumbing is added in a subsequent step.
@@ -1994,6 +730,11 @@ int containerv_create(
                 lcowRootfsHost = bundlePaths.rootfs_dir;
             }
 
+            if (options != NULL && (options->capabilities & CV_CAP_NETWORK) &&
+                __windows_prepare_hcs_container_network(container, options) != 0) {
+                VLOG_WARNING("containerv", "containerv_create: failed to prepare LCOW network endpoint\n");
+            }
+
             if (__hcs_create_container_system(container, options, lcowRootfsHost, NULL, 0, imagePath, 1) != 0) {
                 VLOG_ERROR("containerv", "containerv_create: failed to create LCOW HCS container compute system\n");
                 containerv_oci_bundle_paths_delete(&bundlePaths);
@@ -2011,14 +752,6 @@ int containerv_create(
         }
     }
 
-    // Initialize PID1 service (used for host process lifecycle management; VM processes
-    // are managed through HCS). Reference-counted across containers.
-    if (__pid1_acquire_for_container(container) != 0) {
-        VLOG_ERROR("containerv", "containerv_create: failed to initialize PID1 service\n");
-        __container_delete(container);
-        return -1;
-    }
-
     // Take ownership of the policy (options may be deleted after create)
     if (options && options->policy) {
         container->policy = options->policy;
@@ -2031,8 +764,7 @@ int containerv_create(
     
     // Setup resource limits and/or security restrictions using Job Objects
     {
-        // Always create a job object so host-spawned processes are terminated when the
-        // container is destroyed (PID1-like behavior). Limits and security are layered on.
+        // TODO: HCS processes are never assigned to this job; limits must move into the HCS document.
         int wantJob = 1;
         if (options && (options->capabilities & CV_CAP_CGROUPS)) {
             if (options->limits.memory_max || options->limits.cpu_percent || options->limits.process_count) {
@@ -2093,236 +825,84 @@ int containerv_create(
     return 0;
 }
 
+// Wait for a tracked guest process to exit and retrieve its exit code.
+static int __container_process_wait(
+    struct containerv_container*         container,
+    struct containerv_container_process* proc,
+    unsigned long*                       exitCodeOut)
+{
+    if (proc->is_lcow_gcs) {
+        return __hcs_wait_lcow_gcs_process(
+            container,
+            (const struct containerv_lcow_gcs_process*)proc->handle,
+            exitCodeOut);
+    }
+
+    // HCS_PROCESS handles are waitable.
+    if (WaitForSingleObject(proc->handle, INFINITE) != WAIT_OBJECT_0) {
+        VLOG_ERROR("containerv", "__container_process_wait: WaitForSingleObject failed: %lu\n", GetLastError());
+        return -1;
+    }
+    return __hcs_get_process_exit_code((HCS_PROCESS)proc->handle, exitCodeOut);
+}
+
 int __containerv_spawn(
     struct containerv_container*       container,
     struct __containerv_spawn_options* options,
     HANDLE*                            handleOut)
 {
-    STARTUPINFOA                    startupInfo;
-    PROCESS_INFORMATION             processInfo;
-    HCS_PROCESS_INFORMATION         hcsProcessInfo;
-    BOOL                            result;
+    HCS_PROCESS_INFORMATION              hcsProcessInfo;
     struct containerv_container_process* proc;
-    char                            cmdline[4096];
-    size_t                          cmdlineLen;
-    int                             i;
-    size_t                          argLen;
-    HCS_PROCESS                     hcsProcess;
+    HCS_PROCESS                          hcsProcess;
     
-    if (!container || !options || !options->path) {
+    if (!container || !options || !options->path || container->hcs_system == NULL) {
         return -1;
     }
     
     VLOG_DEBUG("containerv", "__containerv_spawn(path=%s)\n", options->path);
-    
-    ZeroMemory(&startupInfo, sizeof(startupInfo));
-    startupInfo.cb = sizeof(startupInfo);
-    ZeroMemory(&processInfo, sizeof(processInfo));
-    
-    // Build command line from path and arguments
-    cmdlineLen = strlen(options->path);
-    if (cmdlineLen >= sizeof(cmdline)) {
-        VLOG_ERROR("containerv", "__containerv_spawn: path too long\n");
+
+    hcsProcess = NULL;
+    memset(&hcsProcessInfo, 0, sizeof(hcsProcessInfo));
+    if (__hcs_create_process(container, options, &hcsProcess, &hcsProcessInfo) != 0) {
+        VLOG_ERROR("containerv", "__containerv_spawn: HCS create process failed\n");
         return -1;
     }
-    strcpy_s(cmdline, sizeof(cmdline), options->path);
-    
-    if (options->argv) {
-        for (i = 1; options->argv[i] != NULL; i++) {
-            argLen = strlen(options->argv[i]);
-            // Check if adding " " + argument would overflow (current + space + arg + null)
-            if (cmdlineLen + 1 + argLen + 1 > sizeof(cmdline)) {
-                VLOG_ERROR("containerv", "__containerv_spawn: command line too long\n");
-                return -1;
-            }
-            strcat_s(cmdline, sizeof(cmdline), " ");
-            strcat_s(cmdline, sizeof(cmdline), options->argv[i]);
-            cmdlineLen += 1 + argLen;
+
+    proc = calloc(1, sizeof(struct containerv_container_process));
+    if (proc == NULL) {
+        VLOG_ERROR("containerv", "__containerv_spawn: out of memory\n");
+        if (g_hcs.HcsCloseProcess != NULL && hcsProcess != NULL) {
+            g_hcs.HcsCloseProcess(hcsProcess);
+        }
+        return -1;
+    }
+
+    proc->handle = (HANDLE)hcsProcess;
+    proc->pid = hcsProcessInfo.ProcessId;
+    proc->is_lcow_gcs = (!container->guest_is_windows && hcsProcess != NULL &&
+        ((struct containerv_lcow_gcs_process*)hcsProcess)->magic == CONTAINERV_LCOW_GCS_PROCESS_MAGIC);
+    list_add(&container->processes, &proc->list_header);
+
+    if (options->flags & CV_SPAWN_WAIT) {
+        unsigned long exitCode = 0;
+        int           waitStatus = __container_process_wait(container, proc, &exitCode);
+
+        if (waitStatus != 0 || exitCode != 0) {
+            VLOG_ERROR("containerv[hcs]", "guest process %s failed (wait=%d, exit=%lu)\n",
+                options->path,
+                waitStatus,
+                exitCode);
+            errno = ECHILD;
+            return -1;
         }
     }
-    
-    // Check if we have an HCS compute system to run the process in
-    if (container->hcs_system != NULL) {
-        // HCS container compute system (WCOW/LCOW): spawn via HCS process APIs.
-        hcsProcess = NULL;
-        memset(&hcsProcessInfo, 0, sizeof(hcsProcessInfo));
-        if (__hcs_create_process(container, options, &hcsProcess, &hcsProcessInfo) != 0) {
-            VLOG_ERROR("containerv", "__containerv_spawn: HCS create process failed\n");
-            return -1;
-        }
 
-        // Configure container networking on first process spawn
-        if (!container->network_configured) {
-            container->network_configured = 1;
-            VLOG_DEBUG("containerv", "__containerv_spawn: network setup deferred (would configure here)\n");
-        }
-
-        proc = calloc(1, sizeof(struct containerv_container_process));
-        if (proc == NULL) {
-            if (g_hcs.HcsCloseProcess != NULL && hcsProcess != NULL) {
-                g_hcs.HcsCloseProcess(hcsProcess);
-            }
-            return -1;
-        }
-
-        proc->handle = (HANDLE)hcsProcess;
-        proc->pid = hcsProcessInfo.ProcessId;
-        proc->is_lcow_gcs = (!container->guest_is_windows && hcsProcess != NULL &&
-            ((struct containerv_lcow_gcs_process*)hcsProcess)->magic == CONTAINERV_LCOW_GCS_PROCESS_MAGIC);
-        proc->is_guest = 0;
-        proc->guest_id = 0;
-        list_add(&container->processes, &proc->list_header);
-
-        if (handleOut) {
-            *handleOut = proc->handle;
-        }
-
-        VLOG_DEBUG("containerv", "__containerv_spawn: spawned process via HCS (pid=%lu)\n", (unsigned long)hcsProcessInfo.ProcessId);
-        return 0;
-    } else {
-        // Fallback to host process creation (for testing/debugging)
-        VLOG_WARNING("containerv", "__containerv_spawn: no HCS compute system, creating host process as fallback\n");
-
-        int didSecure;
-        didSecure = 0;
-        if (container->policy) {
-            enum containerv_security_level level = containerv_policy_get_security_level(container->policy);
-            int         useAppContainer;
-            const char* integrityLevel;
-            const char* const* capabilitySids;
-            int         capabilitySidCount;
-
-                useAppContainer = 0;
-                integrityLevel = NULL;
-                capabilitySids = NULL;
-                capabilitySidCount = 0;
-                if (containerv_policy_get_windows_isolation(
-                    container->policy,
-                    &useAppContainer,
-                    &integrityLevel,
-                    &capabilitySids,
-                    &capabilitySidCount) == 0) {
-                if (level != CV_SECURITY_DEFAULT || useAppContainer || integrityLevel || (capabilitySids && capabilitySidCount > 0)) {
-                    wchar_t* cmdlineWide = __utf8_to_wide_alloc(cmdline);
-                    wchar_t* cwdWide = __utf8_to_wide_alloc(container->rootfs);
-                    wchar_t* envWide = __build_environment_block_wide(options->envv);
-
-                    if (cmdlineWide != NULL) {
-                        if (windows_create_secure_process_ex(
-                                container->policy,
-                                cmdlineWide,
-                                cwdWide,
-                                envWide,
-                                &processInfo) == 0) {
-                            didSecure = 1;
-                            // Resume and close thread handle (CreateProcessAsUserW used CREATE_SUSPENDED)
-                            ResumeThread(processInfo.hThread);
-                            CloseHandle(processInfo.hThread);
-                            processInfo.hThread = NULL;
-                        }
-                    }
-
-                    free(cmdlineWide);
-                    free(cwdWide);
-                    free(envWide);
-                }
-            }
-        }
-
-        if (!didSecure) {
-            // Prefer PID1 abstraction for host processes: it assigns processes to a Job Object
-            // for kill-on-close and maintains internal tracking.
-            if (g_pid1_ready) {
-                if (container->job_object != NULL) {
-                    (void)pid1_windows_set_job_object_borrowed(container->job_object);
-                }
-
-                pid1_process_options_t popts = {0};
-                popts.command = options->path;
-                popts.args = options->argv;
-                popts.environment = options->envv;
-                popts.working_directory = container->rootfs;
-                popts.log_path = NULL;
-                popts.memory_limit_bytes = 0;
-                popts.cpu_percent = 0;
-                popts.process_limit = 0;
-                popts.uid = 0;
-                popts.gid = 0;
-                popts.wait_for_exit = (options->flags & CV_SPAWN_WAIT) ? 1 : 0;
-                popts.forward_signals = 1;
-
-                if (pid1_spawn_process(&popts, &processInfo.hProcess) != 0) {
-                    VLOG_ERROR("containerv", "__containerv_spawn: pid1_spawn_process failed\n");
-                    return -1;
-                }
-
-                // We don't have a Windows PID value here (pid1 returns a HANDLE).
-                processInfo.dwProcessId = 0;
-                processInfo.hThread = NULL;
-            } else {
-                char* envBlock = __build_environment_block(options->envv);
-
-                result = CreateProcessA(
-                    NULL,           // Application name
-                    cmdline,        // Command line
-                    NULL,           // Process security attributes
-                    NULL,           // Thread security attributes
-                    FALSE,          // Inherit handles
-                    0,              // Creation flags
-                    envBlock,       // Environment (NULL = inherit)
-                    container->rootfs, // Current directory
-                    &startupInfo,   // Startup info
-                    &processInfo    // Process information
-                );
-
-                free(envBlock);
-
-                if (!result) {
-                    VLOG_ERROR("containerv", "__containerv_spawn: CreateProcess failed: %lu\n", GetLastError());
-                    return -1;
-                }
-
-                // Close thread handle, we don't need it
-                CloseHandle(processInfo.hThread);
-            }
-        }
-
-        if (processInfo.hThread != NULL) {
-            CloseHandle(processInfo.hThread);
-        }
-
-        // Add process to container's process list
-        proc = calloc(1, sizeof(struct containerv_container_process));
-        if (proc) {
-            proc->handle = processInfo.hProcess;
-            proc->pid = processInfo.dwProcessId;
-            list_add(&container->processes, &proc->list_header);
-            
-            // Apply job object resource limits if configured
-            if (container->job_object) {
-                if (AssignProcessToJobObject(container->job_object, processInfo.hProcess)) {
-                    VLOG_DEBUG("containerv", "__containerv_spawn: assigned process %lu to job object\n", processInfo.dwProcessId);
-                } else {
-                    VLOG_WARNING("containerv", "__containerv_spawn: failed to assign process %lu to job: %lu\n", 
-                               processInfo.dwProcessId, GetLastError());
-                }
-            }
-        } else {
-            CloseHandle(processInfo.hProcess);
-            return -1;
-        }
-        
-        if (options->flags & CV_SPAWN_WAIT) {
-            WaitForSingleObject(processInfo.hProcess, INFINITE);
-        }
-
-        if (handleOut) {
-            *handleOut = processInfo.hProcess;
-        }
-
-        VLOG_DEBUG("containerv", "__containerv_spawn: spawned host process %lu\n", processInfo.dwProcessId);
-        return 0;
+    if (handleOut) {
+        *handleOut = proc->handle;
     }
+
+    VLOG_DEBUG("containerv", "__containerv_spawn: spawned process via HCS (pid=%lu)\n", (unsigned long)hcsProcessInfo.ProcessId);
+    return 0;
 }
 
 int containerv_spawn(
@@ -2384,80 +964,28 @@ int containerv_spawn(
 
 int __containerv_kill(struct containerv_container* container, HANDLE handle)
 {
-    BOOL result;
-    
+    struct containerv_container_process* proc;
+
     if (!container || handle == NULL) {
         return -1;
     }
     
     VLOG_DEBUG("containerv", "__containerv_kill(handle=%p)\n", handle);
 
-    // Find the tracked process entry first so we can interpret opaque guest tokens safely.
-    struct list_item* i;
-    struct containerv_container_process* found = NULL;
-    for (i = container->processes.head; i != NULL; i = i->next) {
-        struct containerv_container_process* proc = (struct containerv_container_process*)i;
-        if (proc->handle == handle) {
-            found = proc;
-            break;
-        }
+    proc = __container_process_find(container, handle);
+    if (proc == NULL) {
+        VLOG_ERROR("containerv", "__containerv_kill: unknown process handle %p\n", handle);
+        return -1;
     }
 
-    if (container->hcs_system != NULL && found != NULL && found->is_guest) {
-        if (__pid1d_kill_reap(container, found->guest_id) != 0) {
-            return -1;
-        }
-
-        list_remove(&container->processes, &found->list_header);
-        free(found->handle);
-        free(found);
-        return 0;
+    // GCS-backed LCOW processes have no host handle to terminate; they die with the UVM.
+    if (!proc->is_lcow_gcs && !TerminateProcess(handle, 1)) {
+        VLOG_ERROR("containerv", "__containerv_kill: TerminateProcess failed: %lu\n", GetLastError());
+        return -1;
     }
 
-    if (container->hcs_system != NULL && found != NULL && found->is_lcow_gcs) {
-        list_remove(&container->processes, &found->list_header);
-        free(found->handle);
-        free(found);
-        return 0;
-    }
-    
-    if (container->hcs_system == NULL && g_pid1_ready) {
-        if (pid1_kill_process(handle) != 0) {
-            VLOG_ERROR("containerv", "__containerv_kill: pid1_kill_process failed\n");
-            return -1;
-        }
-    } else {
-        result = TerminateProcess(handle, 1);
-        if (!result) {
-            VLOG_ERROR("containerv", "__containerv_kill: TerminateProcess failed: %lu\n", GetLastError());
-            return -1;
-        }
-    }
-    
-    // Remove from process list
-    for (i = container->processes.head; i != NULL; i = i->next) {
-        struct containerv_container_process* proc = (struct containerv_container_process*)i;
-        if (proc->handle == handle) {
-            list_remove(&container->processes, i);
-            if (proc->is_lcow_gcs) {
-                free(proc->handle);
-            } else if (container->hcs_system != NULL) {
-                if (g_hcs.HcsCloseProcess != NULL) {
-                    g_hcs.HcsCloseProcess((HCS_PROCESS)proc->handle);
-                } else {
-                    CloseHandle(proc->handle);
-                }
-            } else {
-                if (g_pid1_ready) {
-                    pid1_windows_untrack(proc->handle);
-                }
-                CloseHandle(proc->handle);
-            }
-            free(proc);
-            break;
-        }
-    }
-    
+    list_remove(&container->processes, &proc->list_header);
+    __container_process_free(proc);
     return 0;
 }
 
@@ -2468,110 +996,83 @@ int containerv_kill(struct containerv_container* container, process_handle_t pid
 
 int containerv_wait(struct containerv_container* container, process_handle_t pid, int* exit_code_out)
 {
+    struct containerv_container_process* proc;
+    unsigned long                        exitCode = 0;
+
     if (container == NULL || pid == NULL) {
         return -1;
     }
 
-    // If this is a VM container and the pid is one of our opaque guest tokens, wait via pid1d.
-    if (container->hcs_system != NULL) {
-        struct list_item* it;
-        for (it = container->processes.head; it != NULL; it = it->next) {
-            struct containerv_container_process* proc = (struct containerv_container_process*)it;
-            if (proc->handle == (HANDLE)pid && proc->is_lcow_gcs) {
-                unsigned long exitCode = 0;
-                if (__hcs_wait_lcow_gcs_process(container, (const struct containerv_lcow_gcs_process*)proc->handle, &exitCode) != 0) {
-                    return -1;
-                }
-                if (exit_code_out != NULL) {
-                    *exit_code_out = (int)exitCode;
-                }
-
-                list_remove(&container->processes, it);
-                free(proc->handle);
-                free(proc);
-                return 0;
-            }
-            if (proc->handle == (HANDLE)pid && proc->is_guest) {
-                int exitCode = 0;
-                if (__pid1d_wait(container, proc->guest_id, &exitCode) != 0) {
-                    return -1;
-                }
-                if (exit_code_out != NULL) {
-                    *exit_code_out = exitCode;
-                }
-
-                list_remove(&container->processes, it);
-                free(proc->handle);
-                free(proc);
-                return 0;
-            }
-        }
+    proc = __container_process_find(container, (HANDLE)pid);
+    if (proc == NULL) {
+        VLOG_ERROR("containerv", "containerv_wait: unknown process handle %p\n", pid);
+        return -1;
     }
 
-    // If PID1 is enabled for host processes, let it own the wait+tracking.
-    // For VM/HCS processes we still do the direct wait path.
-    if (container->hcs_system == NULL && g_pid1_ready) {
-        int exitCode = 0;
-        if (pid1_wait_process((HANDLE)pid, &exitCode) != 0) {
-            VLOG_ERROR("containerv", "containerv_wait: pid1_wait_process failed\n");
-            return -1;
-        }
-        if (exit_code_out != NULL) {
-            *exit_code_out = exitCode;
-        }
+    if (__container_process_wait(container, proc, &exitCode) != 0) {
+        VLOG_ERROR("containerv", "containerv_wait: failed to wait for process\n");
+        return -1;
+    }
+
+    if (exit_code_out != NULL) {
+        *exit_code_out = (int)exitCode;
+    }
+
+    list_remove(&container->processes, &proc->list_header);
+    __container_process_free(proc);
+    return 0;
+}
+
+// Format the host and guest paths of a file in the per-container staging directory.
+static void __container_staging_paths(
+    struct containerv_container* container,
+    const char*                  name,
+    char*                        hostPath,
+    char*                        guestPath,
+    size_t                       length)
+{
+    snprintf(hostPath, length, "%s\\staging\\%s", container->runtime_dir, name);
+    if (container->guest_is_windows) {
+        snprintf(guestPath, length, "C:\\chef\\staging\\%s", name);
     } else {
-        // HCS_PROCESS and normal process handles are both waitable HANDLEs.
-        DWORD waitResult = WaitForSingleObject((HANDLE)pid, INFINITE);
-        if (waitResult != WAIT_OBJECT_0) {
-            VLOG_ERROR("containerv", "containerv_wait: WaitForSingleObject failed: %lu\n", GetLastError());
+        snprintf(guestPath, length, "/chef/staging/%s", name);
+    }
+}
+
+// Copy a file between two paths inside the guest using the guest's shell.
+static int __container_guest_copy(struct containerv_container* container, const char* source, const char* destination)
+{
+    struct containerv_spawn_options spawnOpts = {0};
+    process_handle_t                processHandle;
+    char                            cmd[2048];
+    const char*                     shell;
+    int                             exitCode = 0;
+
+    if (container->guest_is_windows) {
+        snprintf(cmd, sizeof(cmd), "/c copy /Y \"%s\" \"%s\"", source, destination);
+        shell = "cmd.exe";
+    } else {
+        char* srcEsc = __escape_sh_single_quotes_alloc(source);
+        char* dstEsc = __escape_sh_single_quotes_alloc(destination);
+        if (srcEsc == NULL || dstEsc == NULL) {
+            free(srcEsc);
+            free(dstEsc);
             return -1;
         }
-
-        unsigned long exitCode = 0;
-        if (container->hcs_system != NULL) {
-            if (__hcs_get_process_exit_code((HCS_PROCESS)pid, &exitCode) != 0) {
-                VLOG_ERROR("containerv", "containerv_wait: failed to get process exit code\n");
-                return -1;
-            }
-        } else {
-            DWORD processExitCode = 0;
-            if (!GetExitCodeProcess((HANDLE)pid, &processExitCode)) {
-                VLOG_ERROR("containerv", "containerv_wait: GetExitCodeProcess failed: %lu\n", GetLastError());
-                return -1;
-            }
-            exitCode = (unsigned long)processExitCode;
-        }
-
-        if (exit_code_out != NULL) {
-            *exit_code_out = (int)exitCode;
-        }
+        snprintf(cmd, sizeof(cmd), "-c \"cp -f -- '%s' '%s'\"", srcEsc, dstEsc);
+        free(srcEsc);
+        free(dstEsc);
+        shell = "/bin/sh";
     }
 
-    // Remove from process list and close.
-    struct list_item* i;
-    for (i = container->processes.head; i != NULL; i = i->next) {
-        struct containerv_container_process* proc = (struct containerv_container_process*)i;
-        if (proc->handle == (HANDLE)pid) {
-            list_remove(&container->processes, i);
-            if (proc->is_lcow_gcs) {
-                free(proc->handle);
-            } else if (container->hcs_system != NULL) {
-                if (g_hcs.HcsCloseProcess != NULL) {
-                    g_hcs.HcsCloseProcess((HCS_PROCESS)pid);
-                } else {
-                    CloseHandle((HANDLE)pid);
-                }
-            } else {
-                if (g_pid1_ready) {
-                    pid1_windows_untrack((HANDLE)pid);
-                }
-                CloseHandle((HANDLE)pid);
-            }
-            free(proc);
-            break;
-        }
+    spawnOpts.arguments = cmd;
+    if (containerv_spawn(container, shell, &spawnOpts, &processHandle) != 0) {
+        return -1;
     }
-
+    if (containerv_wait(container, processHandle, &exitCode) != 0 || exitCode != 0) {
+        VLOG_ERROR("containerv", "__container_guest_copy: %s -> %s failed (exit=%d)\n", source, destination, exitCode);
+        return -1;
+    }
     return 0;
 }
 
@@ -2582,87 +1083,31 @@ int containerv_upload(
     int                          count
 )
 {
+    char stageHost[MAX_PATH];
+    char stageGuest[MAX_PATH];
+    char tmpName[64];
+
     VLOG_DEBUG("containerv", "containerv_upload(count=%d)\n", count);
     
     if (!container || !hostPaths || !containerPaths || count <= 0) {
         return -1;
     }
-    
-    // Enhanced file upload using VM-aware mechanisms
+
+    // Files travel through the staging directory, which is mapped into every guest.
     for (int i = 0; i < count; i++) {
         VLOG_DEBUG("containerv", "uploading: %s -> %s\n", hostPaths[i], containerPaths[i]);
-        
-        if (container->hcs_system) {
-            // HCS container: use mapped staging folder + in-container copy.
-            char stageHost[MAX_PATH];
-            char stageGuest[MAX_PATH];
-            char tmpName[64];
-            snprintf(tmpName, sizeof(tmpName), "upload-%d.tmp", i);
-            snprintf(stageHost, sizeof(stageHost), "%s\\staging\\%s", container->runtime_dir, tmpName);
-            if (container->guest_is_windows) {
-                snprintf(stageGuest, sizeof(stageGuest), "C:\\chef\\staging\\%s", tmpName);
-            } else {
-                snprintf(stageGuest, sizeof(stageGuest), "/chef/staging/%s", tmpName);
-            }
 
-            if (!CopyFileA(hostPaths[i], stageHost, FALSE)) {
-                VLOG_ERROR("containerv", "containerv_upload: failed to stage %s: %lu\n", hostPaths[i], GetLastError());
-                return -1;
-            }
+        snprintf(tmpName, sizeof(tmpName), "upload-%d.tmp", i);
+        __container_staging_paths(container, tmpName, stageHost, stageGuest, sizeof(stageHost));
 
-            // Best-effort: copy staged file to destination inside the container.
-            char cmd[2048];
-            struct containerv_spawn_options spawnOpts = {0};
-            process_handle_t               processHandle;
-            spawnOpts.flags = CV_SPAWN_WAIT;
+        if (!CopyFileA(hostPaths[i], stageHost, FALSE)) {
+            VLOG_ERROR("containerv", "containerv_upload: failed to stage %s: %lu\n", hostPaths[i], GetLastError());
+            return -1;
+        }
 
-            if (container->guest_is_windows) {
-                snprintf(cmd, sizeof(cmd), "/c copy /Y \"%s\" \"%s\"", stageGuest, containerPaths[i]);
-                spawnOpts.arguments = cmd;
-                if (containerv_spawn(container, "cmd.exe", &spawnOpts, &processHandle) != 0) {
-                    return -1;
-                }
-            } else {
-                char* srcEsc = __escape_sh_single_quotes_alloc(stageGuest);
-                char* dstEsc = __escape_sh_single_quotes_alloc(containerPaths[i]);
-                if (srcEsc == NULL || dstEsc == NULL) {
-                    free(srcEsc);
-                    free(dstEsc);
-                    return -1;
-                }
-                snprintf(cmd, sizeof(cmd), "-c \"cp -f -- '%s' '%s'\"", srcEsc, dstEsc);
-                free(srcEsc);
-                free(dstEsc);
-
-                spawnOpts.arguments = cmd;
-                if (containerv_spawn(container, "/bin/sh", &spawnOpts, &processHandle) != 0) {
-                    return -1;
-                }
-            }
-
-            int exitCode = 0;
-            if (containerv_wait(container, processHandle, &exitCode) != 0 || exitCode != 0) {
-                VLOG_ERROR("containerv", "containerv_upload: in-container copy failed (exit=%d)\n", exitCode);
-                return -1;
-            }
-        } else {
-            // Host process container: direct file copy
-            char   destPath[MAX_PATH];
-            size_t rootfsLen = strlen(container->rootfs);
-            size_t containerPathLen = strlen(containerPaths[i]);
-            
-            if (rootfsLen + 1 + containerPathLen + 1 > MAX_PATH) {
-                VLOG_ERROR("containerv", "containerv_upload: combined path too long\n");
-                return -1;
-            }
-            
-            sprintf_s(destPath, sizeof(destPath), "%s\\%s", container->rootfs, containerPaths[i]);
-            
-            if (!CopyFileA(hostPaths[i], destPath, FALSE)) {
-                VLOG_ERROR("containerv", "containerv_upload: failed to copy %s to %s: %lu\n",
-                          hostPaths[i], destPath, GetLastError());
-                return -1;
-            }
+        if (__container_guest_copy(container, stageGuest, containerPaths[i]) != 0) {
+            VLOG_ERROR("containerv", "containerv_upload: in-container copy failed for %s\n", containerPaths[i]);
+            return -1;
         }
     }
     
@@ -2676,88 +1121,32 @@ int containerv_download(
     int                          count
 )
 {
+    char stageHost[MAX_PATH];
+    char stageGuest[MAX_PATH];
+    char tmpName[64];
+
     VLOG_DEBUG("containerv", "containerv_download(count=%d)\n", count);
     
     if (!container || !hostPaths || !containerPaths || count <= 0) {
         return -1;
     }
-    
-    // Enhanced file download using VM-aware mechanisms
+
     for (int i = 0; i < count; i++) {
         VLOG_DEBUG("containerv", "downloading: %s -> %s\n", containerPaths[i], hostPaths[i]);
-        
-        if (container->hcs_system) {
-            // HCS container: stage in guest then copy out from host staging directory.
-            (void)__ensure_parent_dir_hostpath(hostPaths[i]);
 
-            char stageHost[MAX_PATH];
-            char stageGuest[MAX_PATH];
-            char tmpName[64];
-            snprintf(tmpName, sizeof(tmpName), "download-%d.tmp", i);
-            snprintf(stageHost, sizeof(stageHost), "%s\\staging\\%s", container->runtime_dir, tmpName);
-            if (container->guest_is_windows) {
-                snprintf(stageGuest, sizeof(stageGuest), "C:\\chef\\staging\\%s", tmpName);
-            } else {
-                snprintf(stageGuest, sizeof(stageGuest), "/chef/staging/%s", tmpName);
-            }
+        (void)__ensure_parent_dir_hostpath(hostPaths[i]);
 
-            char cmd[2048];
-            struct containerv_spawn_options spawnOpts = {0};
-            process_handle_t               processHandle;
-            spawnOpts.flags = CV_SPAWN_WAIT;
+        snprintf(tmpName, sizeof(tmpName), "download-%d.tmp", i);
+        __container_staging_paths(container, tmpName, stageHost, stageGuest, sizeof(stageHost));
 
-            if (container->guest_is_windows) {
-                snprintf(cmd, sizeof(cmd), "/c copy /Y \"%s\" \"%s\"", containerPaths[i], stageGuest);
-                spawnOpts.arguments = cmd;
-                if (containerv_spawn(container, "cmd.exe", &spawnOpts, &processHandle) != 0) {
-                    return -1;
-                }
-            } else {
-                char* srcEsc = __escape_sh_single_quotes_alloc(containerPaths[i]);
-                char* dstEsc = __escape_sh_single_quotes_alloc(stageGuest);
-                if (srcEsc == NULL || dstEsc == NULL) {
-                    free(srcEsc);
-                    free(dstEsc);
-                    return -1;
-                }
-                snprintf(cmd, sizeof(cmd), "-c \"cp -f -- '%s' '%s'\"", srcEsc, dstEsc);
-                free(srcEsc);
-                free(dstEsc);
+        if (__container_guest_copy(container, containerPaths[i], stageGuest) != 0) {
+            VLOG_ERROR("containerv", "containerv_download: in-container stage copy failed for %s\n", containerPaths[i]);
+            return -1;
+        }
 
-                spawnOpts.arguments = cmd;
-                if (containerv_spawn(container, "/bin/sh", &spawnOpts, &processHandle) != 0) {
-                    return -1;
-                }
-            }
-
-            int exitCode = 0;
-            if (containerv_wait(container, processHandle, &exitCode) != 0 || exitCode != 0) {
-                VLOG_ERROR("containerv", "containerv_download: in-container stage copy failed (exit=%d)\n", exitCode);
-                return -1;
-            }
-
-            if (!CopyFileA(stageHost, hostPaths[i], FALSE)) {
-                VLOG_ERROR("containerv", "containerv_download: failed to copy staged file to host: %lu\n", GetLastError());
-                return -1;
-            }
-        } else {
-            // Host process container: direct file copy
-            char   srcPath[MAX_PATH];
-            size_t rootfsLen = strlen(container->rootfs);
-            size_t containerPathLen = strlen(containerPaths[i]);
-            
-            if (rootfsLen + 1 + containerPathLen + 1 > MAX_PATH) {
-                VLOG_ERROR("containerv", "containerv_download: combined path too long\n");
-                return -1;
-            }
-            
-            sprintf_s(srcPath, sizeof(srcPath), "%s\\%s", container->rootfs, containerPaths[i]);
-            
-            if (!CopyFileA(srcPath, hostPaths[i], FALSE)) {
-                VLOG_ERROR("containerv", "containerv_download: failed to copy %s to %s: %lu\n",
-                          srcPath, hostPaths[i], GetLastError());
-                return -1;
-            }
+        if (!CopyFileA(stageHost, hostPaths[i], FALSE)) {
+            VLOG_ERROR("containerv", "containerv_download: failed to copy staged file to host: %lu\n", GetLastError());
+            return -1;
         }
     }
     
@@ -2788,16 +1177,13 @@ void __containerv_destroy(struct containerv_container* container)
     for (i = container->processes.head; i != NULL;) {
         struct containerv_container_process* proc = (struct containerv_container_process*)i;
         i = i->next;
-        
-        if (proc->handle != NULL) {
-            if (proc->is_lcow_gcs) {
-                free(proc->handle);
-            } else {
-                TerminateProcess(proc->handle, 0);
-                CloseHandle(proc->handle);
-            }
+
+        if (proc->handle != NULL && !proc->is_lcow_gcs) {
+            TerminateProcess(proc->handle, 0);
         }
+        __container_process_free(proc);
     }
+    list_init(&container->processes);
     
     // Clean up job object for resource limits
     if (container->job_object) {
@@ -2805,19 +1191,16 @@ void __containerv_destroy(struct containerv_container* container)
         container->job_object = NULL;
     }
     
-    // Clean up volumes and mounts
-    __windows_cleanup_volumes(container);
-    
     // Clean up network configuration
-    __windows_cleanup_network(container, NULL);  // We don't have options here, but that's OK
+    __windows_cleanup_network(container, NULL);
     
     // Shut down and delete the HCS compute system
     if (container->hcs_system) {
         __hcs_destroy_compute_system(container);
     }
     
-    // Remove runtime directory (recursively if needed)
-    if (container->runtime_dir) {
+    // Keep the runtime share available when collecting opt-in LCOW process logs.
+    if (container->runtime_dir && getenv("CHEF_LCOW_CAPTURE_STDIO") == NULL) {
         if (platform_rmdir(container->runtime_dir) != 0) {
             VLOG_WARNING("containerv", "__containerv_destroy: failed to remove runtime dir: %s\n", strerror(errno));
         }
@@ -3002,7 +1385,7 @@ int containerv_join(
     }
     
     // Convert container ID to wide string
-    containerIdW = __utf8_to_wide_alloc(containerId);
+    containerIdW = __windows_utf8_to_wide_alloc(containerId);
     if (containerIdW == NULL) {
         VLOG_ERROR("containerv", "containerv_join: failed to convert container ID\n");
         goto cleanup;
@@ -3031,7 +1414,7 @@ int containerv_join(
     VLOG_DEBUG("containerv", "Process config JSON: %s\n", jsonUtf8);
     
     // Convert to wide string
-    processConfigW = __utf8_to_wide_alloc(jsonUtf8);
+    processConfigW = __windows_utf8_to_wide_alloc(jsonUtf8);
     if (processConfigW == NULL) {
         VLOG_ERROR("containerv", "containerv_join: failed to convert process config\n");
         goto cleanup;

@@ -154,8 +154,16 @@ int platform_spawn(const char* path, const char* arguments, const char* const* e
         __wait_and_read_stds(&fds[0], options);
     }
 
-    // wait for the process to complete
-    waitpid(pid, &status, 0);
+    // Return the child exit code, not waitpid's encoded status.
+    if (waitpid(pid, &status, 0) < 0) {
+        status = -1;
+    } else if (WIFEXITED(status)) {
+        status = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        status = 128 + WTERMSIG(status);
+    } else {
+        status = -1;
+    }
 
 cleanup:
     posix_spawn_file_actions_destroy(&actions);

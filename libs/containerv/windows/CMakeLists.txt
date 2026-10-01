@@ -2,18 +2,18 @@ add_library(containerv-windows STATIC
     container-options.c
     container.c
     hcs.c
+    layerchain.c
     layers.c
     monitoring.c
     network.c
     resource-limits.c
     security.c
+    utils.c
     volume-manager.c
 )
 target_include_directories(containerv-windows PRIVATE ../include)
 target_link_libraries(containerv-windows PUBLIC platform vlog)
-target_link_libraries(containerv-windows PRIVATE containerv-common)
-# PID1 abstraction library (used by Windows backend for process lifecycle management)
-target_link_libraries(containerv-windows PRIVATE containerv-pid1)
+target_link_libraries(containerv-windows PRIVATE containerv-common containerv-disk)
 target_link_libraries(containerv-windows PRIVATE jansson)
 target_link_libraries(containerv-windows PUBLIC advapi32 ole32)
 
@@ -28,5 +28,4 @@ target_link_libraries(containerv-windows PUBLIC
     shell32        # Windows Shell API
     psapi          # Process Status API for memory info
     pdh            # Performance Data Helper for monitoring
-    virtdisk       # Virtual Disk API for VHD management
 )

@@ -14,7 +14,7 @@ Uses native Linux container technologies:
 See [linux/](linux/) for implementation details.
 
 ### Windows
-Windows support uses **HCS containers (true Windows containers)** with HCS "Container" compute systems (process isolation or Hyper-V isolation).
+Windows support uses **HCS containers (true Windows containers)** with HCS "Container" compute systems (process isolation or Hyper-V isolation). Every process runs inside the compute system; there is no host-process or VM-backed fallback.
 
 See [windows/](windows/) for implementation details.
 
@@ -111,10 +111,6 @@ Recommendation: set `switch_name` explicitly if your host has multiple HNS netwo
 ### Static IP / DNS
 
 If `container_ip/netmask/gateway/dns` are provided, containerv will first attempt to apply these at the HNS endpoint layer (when supported by the installed `New-HnsEndpoint` cmdlets on the host). If endpoint policies are not supported/available, containerv falls back to a best-effort in-container configuration step.
-
-### VM-backed mode (legacy)
-
-VM-backed containers are no longer supported in containerv. Only HCS container compute systems are supported on Windows.
 
 ## Features
 
@@ -291,9 +287,14 @@ containerv/
 │   ├── cgroups.c     # Resource management
 │   ├── network.c     # Network isolation
 │   └── ...
-└── windows/          # Windows implementation
-    ├── container.c   # Container lifecycle
-    └── ...
+└── windows/          # Windows implementation (HCS)
+    ├── container.c   # Container lifecycle, process tracking, file transfer
+    ├── hcs.c         # HCS API, compute system documents, LCOW GCS bridge
+    ├── layers.c      # windowsfilter/LCOW rootfs composition
+    ├── network.c     # HNS endpoints
+    ├── volume-manager.c # Plan9/mapped-directory shares for host layers
+    ├── security.c    # VM group ACLs and job object restrictions
+    └── utils.c       # Shared helpers (UTF-8/UTF-16 conversion)
 ```
 
 ## Contributing

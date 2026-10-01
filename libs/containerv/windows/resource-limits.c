@@ -230,51 +230,6 @@ HANDLE __windows_create_job_object(
 }
 
 /**
- * @brief Apply job object to HCS processes for resource control
- * @param container Container with running processes
- * @param job_handle Job object to apply
- * @return 0 on success, -1 on failure
- */
-int __windows_apply_job_to_processes(
-    struct containerv_container* container,
-    HANDLE                       job_handle)
-{
-    struct list_item* item;
-    struct containerv_container_process* process;
-    int               appliedCount;
-    
-    if (!job_handle) {
-        return -1;
-    }
-
-    item = NULL;
-    process = NULL;
-    appliedCount = 0;
-    
-    VLOG_DEBUG("containerv[windows]", "applying job limits to container processes\n");
-    
-    // Apply to all container processes
-    list_foreach(&container->processes, item) {
-        process = (struct containerv_container_process*)item;
-        if (process->is_guest) {
-            continue;
-        }
-        if (process->handle && process->handle != INVALID_HANDLE_VALUE) {
-            if (AssignProcessToJobObject(job_handle, process->handle)) {
-                appliedCount++;
-                VLOG_DEBUG("containerv[windows]", "assigned process %lu to job\n", process->pid);
-            } else {
-                VLOG_WARNING("containerv[windows]", "failed to assign process %lu to job: %lu\n", 
-                           process->pid, GetLastError());
-            }
-        }
-    }
-    
-    VLOG_DEBUG("containerv[windows]", "applied job limits to %d processes\n", appliedCount);
-    return appliedCount > 0 ? 0 : -1;
-}
-
-/**
  * @brief Query job object resource usage statistics
  * @param job_handle Job object to query
  * @param stats Output statistics structure

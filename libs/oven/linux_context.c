@@ -202,14 +202,20 @@ struct __bakelib_context* __bakelib_context_new(
         return NULL;
     }
 
+    context->recipe_path = platform_strdup(recipe_path);
+    if (context->recipe_path == NULL) {
+        free(context);
+        return NULL;
+    }
+
     if (recipe_cache_create(recipe, "/chef", &context->cache)) {
         VLOG_ERROR("bakectl", "failed to create build cache\n");
+        free((void*)context->recipe_path);
         free(context);
         return NULL;
     }
 
     context->recipe = recipe;
-    context->recipe_path = recipe_path;
     context->pkg_manager = __setup_pkg_environment();
 
     context->build_platform = __get_platform();

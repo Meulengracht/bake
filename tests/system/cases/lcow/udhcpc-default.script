@@ -1,0 +1,30 @@
+#!/bin/sh
+# busybox udhcpc lease handler for the Chef LCOW utility VM.
+bb=/bin/busybox
+
+case "$1" in
+    deconfig)
+        $bb ip -4 addr flush dev "$interface"
+        $bb ip link set dev "$interface" up
+        ;;
+    bound|renew)
+        $bb ip -4 addr flush dev "$interface"
+        $bb ip -4 addr add "$ip/${mask:-24}" dev "$interface"
+        $bb ip link set dev "$interface" up
+        if [ -n "$router" ]; then
+            while $bb ip -4 route del default dev "$interface" 2>/dev/null; do :; done
+            for gw in $router; do
+                $bb ip -4 route add default via "$gw" dev "$interface"
+                break
+            done
+        fi
+        if [ -n "$dns" ]; then
+            : > /chef/rootfs/chef/resolv.conf
+            for server in $dns; do
+                printf 'nameserver %s\n' "$server" >> /chef/rootfs/chef/resolv.conf
+            done
+        fi
+        ;;
+esac
+
+exit 0

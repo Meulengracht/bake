@@ -493,7 +493,8 @@ static int __build_annotations(json_t* spec, const char* root_path)
     }
 
     if (containerv_json_object_set_string(annotations, "com.chef.lcow", "true") != 0 ||
-        containerv_json_object_set_string(annotations, "com.chef.gcs", "true") != 0) {
+        containerv_json_object_set_string(annotations, "com.chef.gcs", "true") != 0 ||
+        containerv_json_object_set_string(annotations, "io.microsoft.virtualmachine.lcow.hostnetwork", "true") != 0) {
         json_decref(annotations);
         return -1;
     }
