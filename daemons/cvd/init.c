@@ -159,7 +159,13 @@ int register_server_link(gracht_server_t* server)
         return status;
     }
 
-    status = init_link_config(apiLink, gracht_link_packet_based, &apiAddress);
+        status = init_link_config(apiLink,
+    #if defined(_WIN32)
+        gracht_link_stream_based,
+    #else
+        gracht_link_packet_based,
+    #endif
+        &apiAddress);
     if (status) {
         fprintf(stderr, "register_server_link failed to initialize api link: %i (%i)\n", status, errno);
         return status;

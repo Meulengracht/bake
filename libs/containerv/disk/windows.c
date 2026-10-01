@@ -79,7 +79,7 @@ static char* __archive_name_from_url(const char* url)
 }
 
 /* Keep a validated LCOW bundle unpacked behind a readiness marker in the shared cache. */
-static int __ensure_cached_lcow_bundle(const char* archive_path, const char* bundle_path)
+static int __ensure_cached_lcow_bundle(const char* archive_path, const char* bundle_path, int refresh)
 {
     char* marker = NULL;
     int   status = -1;
@@ -90,7 +90,7 @@ static int __ensure_cached_lcow_bundle(const char* archive_path, const char* bun
         return -1;
     }
 
-    if (!containerv_disk_path_exists(marker) || containerv_disk_validate_lcow_uvm(bundle_path) != 0) {
+    if (refresh || !containerv_disk_path_exists(marker) || containerv_disk_validate_lcow_uvm(bundle_path) != 0) {
         if (containerv_disk_extract_archive(archive_path, bundle_path, 1, 0) != 0) {
             goto cleanup;
         }
@@ -343,6 +343,7 @@ int containerv_disk_setup_lcow_uvm(
     char     archiveName[64];
     char*    archivePath = NULL;
     char*    uvmUnpackDirectory = NULL;
+    int      refreshLocalBundle;
     int      status = -1;
 
     if (uvmImageOut == NULL) {
@@ -371,12 +372,26 @@ int containerv_disk_setup_lcow_uvm(
     }
 
     uvmUrlHash = containerv_disk_fnv1a64(uvmUrl);
+    refreshLocalBundle = strncmp(uvmUrl, "file:", 5) == 0;
     snprintf(uvmCacheKey, sizeof(uvmCacheKey), "%016llx", (unsigned long long)uvmUrlHash);
     if (__build_cached_archive_name(uvmUrl, uvmUrlHash, archiveName, sizeof(archiveName)) != 0) {
         goto cleanup;
     }
 
     VLOG_DEBUG("containerv[lcow]", "resolving LCOW UVM assets from %s\n", uvmUrl);
+    if (refreshLocalBundle) {
+        char* cachedArchive = strpathcombine(uvmDirectory, archiveName);
+        if (cachedArchive == NULL) {
+            errno = ENOMEM;
+            goto cleanup;
+        }
+        if (containerv_disk_path_exists(cachedArchive) && platform_unlink(cachedArchive) != 0) {
+            free(cachedArchive);
+            goto cleanup;
+        }
+        free(cachedArchive);
+    }
+
     if (containerv_disk_cache_archive(uvmDirectory, archiveName, uvmUrl, &archivePath) != 0) {
         VLOG_ERROR("containerv[lcow]", "failed to cache LCOW UVM assets from %s\n", uvmUrl);
         goto cleanup;
@@ -388,7 +403,7 @@ int containerv_disk_setup_lcow_uvm(
         goto cleanup;
     }
 
-    if (__ensure_cached_lcow_bundle(archivePath, uvmUnpackDirectory) != 0) {
+    if (__ensure_cached_lcow_bundle(archivePath, uvmUnpackDirectory, refreshLocalBundle) != 0) {
         VLOG_ERROR("containerv[lcow]", "failed to prepare cached LCOW UVM bundle at %s\n", uvmUnpackDirectory);
         goto cleanup;
     }

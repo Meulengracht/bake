@@ -221,6 +221,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
     char*                      header;
     char*                      footer;
     const char*                arch;
+    const char*                lcowUvmUrl = NULL;
     struct vlog_step           step_package_env;
     struct vlog_step           step_spacer;
     struct vlog_step           step_prepare;
@@ -272,6 +273,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         return -1;
     }
     chef_config_cvd_address(config, &cvdAddress);
+    lcowUvmUrl = chef_config_get_string(config, chef_config_section(config, "lcow"), "uvm-url");
 
     logPath = __add_build_log();
     if (logPath == NULL) {
@@ -338,6 +340,7 @@ int run_main(int argc, char** argv, char** envp, struct bake_command_options* op
         .envp = (const char* const*)envp,
         .recipe = options->recipe,
         .recipe_path = options->recipe_path,
+        .lcow_uvm_url = lcowUvmUrl,
         .build_cache = cache,
         .target_platform = options->platform,
         .target_architecture = arch,

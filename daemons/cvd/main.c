@@ -111,6 +111,7 @@ int main(int argc, char** argv)
 
     // we register protocols
     gracht_server_register_protocol(g_server, &chef_cvd_server_protocol);
+    printf("cvd server ready\n");
 
     // use the default server loop
     return gracht_server_main_loop(g_server);

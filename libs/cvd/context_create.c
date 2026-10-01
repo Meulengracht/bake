@@ -124,6 +124,9 @@ struct __bake_build_context* build_context_create(struct __bake_build_options* o
     bctx->recipe_path = platform_strdup(options->recipe_path);
     bctx->target_platform = platform_strdup(options->target_platform);
     bctx->target_architecture = platform_strdup(options->target_architecture);
+    if (options->lcow_uvm_url != NULL && options->lcow_uvm_url[0] != '\0') {
+        bctx->lcow_uvm_url = platform_strdup(options->lcow_uvm_url);
+    }
 
     if (options->cvd_address != NULL) {
         memcpy(&bctx->cvd_address, options->cvd_address, sizeof(struct chef_config_address));

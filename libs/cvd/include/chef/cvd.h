@@ -40,6 +40,7 @@ struct __bake_build_options {
     const char*                 cwd;
     const char* const*          envp;
     const char*                 recipe_path;
+    const char*                 lcow_uvm_url;
     struct build_cache*         build_cache;
     struct chef_config_address* cvd_address;
 };
@@ -55,6 +56,7 @@ struct __bake_build_context {
 
     const char*         target_architecture;
     const char*         target_platform;
+    const char*         lcow_uvm_url;
 
     const char* const*         base_environment;
     struct chef_config_address cvd_address;
