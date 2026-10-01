@@ -258,9 +258,8 @@ static int __windows_configure_shared_folder(
     DWORD attrs;
     unsigned long long hash = 1469598103934665603ull;
 
-    (void)container_path;
-
-    if (container == NULL || host_path == NULL || host_path[0] == '\0') {
+    if (container == NULL || host_path == NULL || host_path[0] == '\0' ||
+        container_path == NULL || container_path[0] == '\0') {
         return -1;
     }
 
@@ -287,10 +286,27 @@ static int __windows_configure_shared_folder(
         hash *= 1099511628211ull;
     }
 
-    snprintf(name, sizeof(name), "chefshare-%08llx", (unsigned long long)(hash & 0xffffffffu));
+    if (!container->guest_is_windows && strcmp(container_path, "/chef/rootfs") == 0) {
+        snprintf(name, sizeof(name), "0");
+    } else {
+        snprintf(name, sizeof(name), "%llu", (unsigned long long)(hash & 0xffffffffu));
+    }
 
     if (container->hcs_system != NULL) {
-        if (__hcs_plan9_share_add(container, name, host_path, readonly) != 0) {
+        if (windows_grant_vm_group_access(host_path) != 0) {
+            VLOG_ERROR("containerv[windows]", "failed to grant VM group access to shared folder %s\n", host_path);
+            return -1;
+        }
+
+        if (!container->guest_is_windows) {
+            if (__hcs_plan9_mapped_dir_add(container, name, container_path, readonly) != 0) {
+                VLOG_ERROR("containerv[windows]", "failed to mount predeclared Plan9 share %s for %s\n", name, host_path);
+                return -1;
+            }
+            return 0;
+        }
+
+        if (__hcs_plan9_share_add(container, name, host_path, container_path, readonly) != 0) {
             VLOG_ERROR("containerv[windows]", "failed to add Plan9 share %s for %s\n", name, host_path);
             return -1;
         }
@@ -303,6 +319,7 @@ struct __windows_volume_iter_ctx {
     struct containerv_container* container;
     int                          status;
     int                          enable_plan9;
+    int                          lcow;
 };
 
 static int __windows_layers_hostdir_cb(
@@ -312,6 +329,9 @@ static int __windows_layers_hostdir_cb(
     void*       user)
 {
     struct __windows_volume_iter_ctx* ctx = (struct __windows_volume_iter_ctx*)user;
+    char* guest_path = NULL;
+    int   rc;
+
     if (ctx == NULL || ctx->container == NULL) {
         return -1;
     }
@@ -320,7 +340,21 @@ static int __windows_layers_hostdir_cb(
         return 0;
     }
 
-    int rc = __windows_configure_shared_folder(ctx->container, host_path, container_path, readonly);
+    if (ctx->lcow) {
+        size_t length = strlen("/chef/rootfs") + strlen(container_path) + 1;
+        guest_path = calloc(length, 1);
+        if (guest_path == NULL) {
+            return -1;
+        }
+        snprintf(guest_path, length, "/chef/rootfs%s", container_path);
+    }
+
+    rc = __windows_configure_shared_folder(
+        ctx->container,
+        host_path,
+        guest_path != NULL ? guest_path : container_path,
+        readonly);
+    free(guest_path);
     if (rc != 0) {
         VLOG_WARNING("containerv[windows]", "failed to share host directory %s (ro=%d)\n",
                      host_path, readonly);
@@ -359,6 +393,7 @@ int __windows_setup_volumes(
         .container = container,
         .status = 0,
         .enable_plan9 = 0,
+        .lcow = options->windows_container_type == WINDOWS_CONTAINER_TYPE_LINUX,
     };
 
     if (options->windows_container_type == WINDOWS_CONTAINER_TYPE_LINUX ||
@@ -366,11 +401,18 @@ int __windows_setup_volumes(
         ctx.enable_plan9 = 1;
     }
 
+    if (options->windows_container_type == WINDOWS_CONTAINER_TYPE_LINUX && container->rootfs != NULL) {
+        if (__windows_configure_shared_folder(container, container->rootfs, "/chef/rootfs", 0) != 0) {
+            VLOG_ERROR("containerv[windows]", "failed to share LCOW rootfs %s\n", container->rootfs);
+            return -1;
+        }
+    }
+
     // Always share staging directory for Hyper-V containers (Plan9).
     if (ctx.enable_plan9 && container->runtime_dir != NULL) {
         char stage_host[MAX_PATH];
         snprintf(stage_host, sizeof(stage_host), "%s\\staging", container->runtime_dir);
-        if (__windows_configure_shared_folder(container, stage_host, NULL, 0) != 0) {
+        if (__windows_configure_shared_folder(container, stage_host, "/chef/rootfs/chef/staging", 0) != 0) {
             VLOG_WARNING("containerv[windows]", "failed to share staging directory %s\n", stage_host);
         }
     }

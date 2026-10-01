@@ -5,6 +5,7 @@ param(
     [string]$LcowUvmUrl,
     [string]$LcowUvmArchive,
     [string]$LcowUvmDir,
+    [string]$GuestBakectlPath,
     [switch]$PrepareLcowUvm,
     [switch]$KeepWorkDir
 )
@@ -262,6 +263,7 @@ $cvdErrorLog = Join-Path $WorkDir 'cvd.err.log'
 $bakeLog = Join-Path $WorkDir 'bake-build.log'
 $preparedUvmDir = Join-Path $WorkDir 'lcow-uvm'
 $bakeConfigState = $null
+$previousGuestBakectl = $env:CHEF_GUEST_BAKECTL
 
 try {
     Write-Host '=== hello-build-windows ==='
@@ -270,6 +272,17 @@ try {
     Write-Host "bake:       $bake"
     Write-Host "cvd:        $cvd"
     Write-Host "mkuvm:      $mkuvm"
+    Write-Host "cvd built:  $((Get-Item $cvd).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+    Write-Host "bake built: $((Get-Item $bake).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+
+    if (-not $GuestBakectlPath) {
+        $GuestBakectlPath = Join-Path $repoRoot 'build-lcow-guest\bin\bakectl'
+    }
+    if (-not (Test-Path $GuestBakectlPath)) {
+        throw "Linux ARM64 guest bakectl not found: $GuestBakectlPath"
+    }
+    $env:CHEF_GUEST_BAKECTL = (Resolve-Path $GuestBakectlPath).Path
+    Write-Host "guest tool: $env:CHEF_GUEST_BAKECTL"
 
     if ($LcowUvmDir) {
         if ($LcowUvmUrl -or $LcowUvmArchive) {
@@ -288,6 +301,9 @@ try {
         if ($LcowUvmUrl) {
             throw 'Use only one of -LcowUvmUrl and -LcowUvmArchive.'
         }
+        $archiveItem = Get-Item (Resolve-Path $LcowUvmArchive).Path
+        Write-Host "LCOW file:  $($archiveItem.FullName)"
+        Write-Host "LCOW built: $($archiveItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')) ($($archiveItem.Length) bytes)"
         $LcowUvmUrl = ConvertTo-FileUrl -Path $LcowUvmArchive
     }
 
@@ -362,6 +378,12 @@ catch {
 }
 finally {
     Restore-BakeConfig -State $bakeConfigState
+
+    if ($null -eq $previousGuestBakectl) {
+        Remove-Item Env:CHEF_GUEST_BAKECTL -ErrorAction SilentlyContinue
+    } else {
+        $env:CHEF_GUEST_BAKECTL = $previousGuestBakectl
+    }
 
     if (-not $KeepWorkDir) {
         Remove-Item -Recurse -Force $WorkDir -ErrorAction SilentlyContinue

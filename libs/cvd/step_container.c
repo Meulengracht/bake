@@ -28,11 +28,26 @@
 static int __find_bakectl(char** resolvedOut)
 {
     char   buffer[PATH_MAX] = { 0 };
+    const char* guestBakectl;
     char*  resolved = NULL;
     char*  p;
     size_t index;
     
     VLOG_DEBUG("bake", "__find_bakectl()\n");
+
+    guestBakectl = getenv("CHEF_GUEST_BAKECTL");
+    if (guestBakectl != NULL && guestBakectl[0] != '\0') {
+        if (GetFileAttributesA(guestBakectl) == INVALID_FILE_ATTRIBUTES) {
+            VLOG_ERROR("bake", "configured guest bakectl does not exist: %s\n", guestBakectl);
+            return -1;
+        }
+        resolved = _fullpath(NULL, guestBakectl, PATH_MAX);
+        if (resolved == NULL) {
+            return -1;
+        }
+        *resolvedOut = resolved;
+        return 0;
+    }
 
     if (GetModuleFileNameA(NULL, &buffer[0], PATH_MAX) == 0) {
         VLOG_ERROR("bake", "__install_bakectl: failed to get module filename\n");
@@ -159,6 +174,20 @@ int bake_build_setup(struct __bake_build_context* bctx)
         return status;
     }
     free(bakectlPath);
+
+    if (strncmp(bctx->target_platform, "linux", 5) == 0) {
+        status = bake_client_spawn(
+            bctx,
+            "chmod 0755 /usr/bin/bakectl",
+            CHEF_SPAWN_OPTIONS_WAIT,
+            &pid
+        );
+        if (status) {
+            VLOG_ERROR("bake", "bake_build_setup: failed to mark bakectl executable\n");
+            bake_client_destroy_container(bctx);
+            return status;
+        }
+    }
 
     snprintf(&buffer[0], sizeof(buffer),
         "%s init --recipe %s",

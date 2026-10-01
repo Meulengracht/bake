@@ -48,6 +48,7 @@ void build_context_destroy(struct __bake_build_context* bctx)
     free((void*)bctx->install_path);
     free((void*)bctx->target_architecture);
     free((void*)bctx->target_platform);
+    free((void*)bctx->lcow_uvm_url);
     free((void*)bctx->cvd_id);
     free(bctx);
 }

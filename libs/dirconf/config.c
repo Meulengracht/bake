@@ -142,7 +142,7 @@ static int __parse_config(struct chef_config* config)
     return 0;
 }
 
-static int __initialize_config(struct chef_config* config)
+static int __initialize_config_defaults(struct chef_config* config)
 {
     // No default values for remote address, it needs
     // to go through the wizard.
@@ -154,8 +154,7 @@ static int __initialize_config(struct chef_config* config)
     config->cvd.address = platform_strdup("127.0.0.1");
     config->cvd.port = 51003;
 #endif
-    config->root_object = json_object();
-    return 0;
+    return config->cvd.type != NULL && config->cvd.address != NULL ? 0 : -1;
 }
 
 struct chef_config* chef_config_load(void)
@@ -178,14 +177,16 @@ struct chef_config* chef_config_load(void)
         return NULL;
     }
 
+    if (__initialize_config_defaults(config)) {
+        __chef_config_delete(config);
+        return NULL;
+    }
+
     config->root_object = json_load_file(path, 0, &error);
     if (config->root_object == NULL) {
         if (json_error_code(&error) == json_error_cannot_open_file) {
             // assume no config, write the default one
-            if (__initialize_config(config)) {
-                __chef_config_delete(config);
-                return NULL;
-            }
+            config->root_object = json_object();
             return config;
         }
         VLOG_ERROR("config", "chef_config_load: failed to load %s\n", &path[0]);

@@ -1042,6 +1042,11 @@ static struct containerv_container* __container_new(void)
     container->hcs_system = NULL;
     container->host_pipe = INVALID_HANDLE_VALUE;
     container->child_pipe = INVALID_HANDLE_VALUE;
+    container->lcow_console_pipe = INVALID_HANDLE_VALUE;
+    container->lcow_console_thread = NULL;
+    container->lcow_gcs_listener = (uintptr_t)INVALID_SOCKET;
+    container->lcow_gcs_socket = (uintptr_t)INVALID_SOCKET;
+    container->lcow_gcs_next_id = 1;
     container->vm_started = 0;
     container->layers = NULL;
     list_init(&container->processes);
@@ -1748,6 +1753,22 @@ static void __container_delete(struct containerv_container* container)
     if (container->child_pipe != INVALID_HANDLE_VALUE) {
         CloseHandle(container->child_pipe);
     }
+
+    if (container->lcow_console_thread != NULL) {
+        if (WaitForSingleObject(container->lcow_console_thread, 2000) == WAIT_TIMEOUT &&
+            container->lcow_console_pipe != INVALID_HANDLE_VALUE) {
+            CloseHandle(container->lcow_console_pipe);
+            container->lcow_console_pipe = INVALID_HANDLE_VALUE;
+            WaitForSingleObject(container->lcow_console_thread, 2000);
+        }
+        CloseHandle(container->lcow_console_thread);
+        container->lcow_console_thread = NULL;
+    }
+
+    if (container->lcow_console_pipe != INVALID_HANDLE_VALUE) {
+        CloseHandle(container->lcow_console_pipe);
+        container->lcow_console_pipe = INVALID_HANDLE_VALUE;
+    }
     
     free(container->vm_id);
     free(container->hostname);
@@ -2146,6 +2167,8 @@ int __containerv_spawn(
 
         proc->handle = (HANDLE)hcsProcess;
         proc->pid = hcsProcessInfo.ProcessId;
+        proc->is_lcow_gcs = (!container->guest_is_windows && hcsProcess != NULL &&
+            ((struct containerv_lcow_gcs_process*)hcsProcess)->magic == CONTAINERV_LCOW_GCS_PROCESS_MAGIC);
         proc->is_guest = 0;
         proc->guest_id = 0;
         list_add(&container->processes, &proc->list_header);
@@ -2390,6 +2413,13 @@ int __containerv_kill(struct containerv_container* container, HANDLE handle)
         free(found);
         return 0;
     }
+
+    if (container->hcs_system != NULL && found != NULL && found->is_lcow_gcs) {
+        list_remove(&container->processes, &found->list_header);
+        free(found->handle);
+        free(found);
+        return 0;
+    }
     
     if (container->hcs_system == NULL && g_pid1_ready) {
         if (pid1_kill_process(handle) != 0) {
@@ -2409,7 +2439,9 @@ int __containerv_kill(struct containerv_container* container, HANDLE handle)
         struct containerv_container_process* proc = (struct containerv_container_process*)i;
         if (proc->handle == handle) {
             list_remove(&container->processes, i);
-            if (container->hcs_system != NULL) {
+            if (proc->is_lcow_gcs) {
+                free(proc->handle);
+            } else if (container->hcs_system != NULL) {
                 if (g_hcs.HcsCloseProcess != NULL) {
                     g_hcs.HcsCloseProcess((HCS_PROCESS)proc->handle);
                 } else {
@@ -2445,6 +2477,20 @@ int containerv_wait(struct containerv_container* container, process_handle_t pid
         struct list_item* it;
         for (it = container->processes.head; it != NULL; it = it->next) {
             struct containerv_container_process* proc = (struct containerv_container_process*)it;
+            if (proc->handle == (HANDLE)pid && proc->is_lcow_gcs) {
+                unsigned long exitCode = 0;
+                if (__hcs_wait_lcow_gcs_process(container, (const struct containerv_lcow_gcs_process*)proc->handle, &exitCode) != 0) {
+                    return -1;
+                }
+                if (exit_code_out != NULL) {
+                    *exit_code_out = (int)exitCode;
+                }
+
+                list_remove(&container->processes, it);
+                free(proc->handle);
+                free(proc);
+                return 0;
+            }
             if (proc->handle == (HANDLE)pid && proc->is_guest) {
                 int exitCode = 0;
                 if (__pid1d_wait(container, proc->guest_id, &exitCode) != 0) {
@@ -2507,7 +2553,9 @@ int containerv_wait(struct containerv_container* container, process_handle_t pid
         struct containerv_container_process* proc = (struct containerv_container_process*)i;
         if (proc->handle == (HANDLE)pid) {
             list_remove(&container->processes, i);
-            if (container->hcs_system != NULL) {
+            if (proc->is_lcow_gcs) {
+                free(proc->handle);
+            } else if (container->hcs_system != NULL) {
                 if (g_hcs.HcsCloseProcess != NULL) {
                     g_hcs.HcsCloseProcess((HCS_PROCESS)pid);
                 } else {
@@ -2742,8 +2790,12 @@ void __containerv_destroy(struct containerv_container* container)
         i = i->next;
         
         if (proc->handle != NULL) {
-            TerminateProcess(proc->handle, 0);
-            CloseHandle(proc->handle);
+            if (proc->is_lcow_gcs) {
+                free(proc->handle);
+            } else {
+                TerminateProcess(proc->handle, 0);
+                CloseHandle(proc->handle);
+            }
         }
     }
     

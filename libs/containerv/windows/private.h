@@ -46,6 +46,7 @@
 #endif
 
 #define __CONTAINER_ID_LENGTH 36
+#define CONTAINERV_LCOW_GCS_PROCESS_MAGIC 0x47435350u
 
 // Windows-specific network configuration
 struct containerv_options_network {
@@ -145,11 +146,18 @@ struct containerv_container_process {
     struct list_item list_header;
     HANDLE           handle;
     DWORD            pid;
+    int              is_lcow_gcs;
 
     // VM guest process representation when using pid1d.
     // `handle` is an opaque token owned by containerv; it is not a Win32 process handle.
     int              is_guest;
     uint64_t         guest_id;
+};
+
+struct containerv_lcow_gcs_process {
+    uint32_t magic;
+    uint32_t pid;
+    char     container_id[__CONTAINER_ID_LENGTH + 1];
 };
 
 struct containerv_layer_context;
@@ -220,6 +228,12 @@ typedef HRESULT (WINAPI *HcsModifyComputeSystem_t)(
     PCWSTR Settings
 );
 
+typedef HRESULT (WINAPI *HcsGetComputeSystemProperties_t)(
+    HCS_SYSTEM ComputeSystem,
+    HCS_OPERATION Operation,
+    PCWSTR PropertyQuery
+);
+
 typedef HCS_OPERATION (WINAPI *HcsCreateOperation_t)(
     void* Context,
     HCS_OPERATION_COMPLETION CompletionCallback
@@ -254,6 +268,7 @@ struct hcs_api {
     HcsTerminateComputeSystem_t HcsTerminateComputeSystem;
     HcsCreateProcess_t          HcsCreateProcess;
     HcsModifyComputeSystem_t    HcsModifyComputeSystem;
+    HcsGetComputeSystemProperties_t HcsGetComputeSystemProperties;
     HcsCreateOperation_t        HcsCreateOperation;
     HcsCloseOperation_t         HcsCloseOperation;
     HcsCloseComputeSystem_t     HcsCloseComputeSystem;
@@ -283,6 +298,11 @@ struct containerv_container {
     // Communication pipes
     HANDLE       host_pipe;
     HANDLE       child_pipe;
+    HANDLE       lcow_console_pipe;
+    HANDLE       lcow_console_thread;
+    uintptr_t    lcow_gcs_listener;
+    uintptr_t    lcow_gcs_socket;
+    uint64_t     lcow_gcs_next_id;
     
     // Resource management
     HANDLE                               job_object;         // Job Object for resource limits
@@ -324,6 +344,8 @@ extern int windows_create_secure_process_ex(
     PROCESS_INFORMATION*            process_info
 );
 
+extern int windows_grant_vm_group_access(const char* path);
+
 /**
  * @brief Generate a unique container ID
  */
@@ -361,6 +383,14 @@ extern int __hcs_plan9_share_add(
     struct containerv_container* container,
     const char*                  name,
     const char*                  host_path,
+    const char*                  guest_path,
+    int                          readonly
+);
+
+extern int __hcs_plan9_mapped_dir_add(
+    struct containerv_container* container,
+    const char*                  name,
+    const char*                  guest_path,
     int                          readonly
 );
 
@@ -423,6 +453,10 @@ extern int __hcs_wait_process(HCS_PROCESS process, unsigned int timeout_ms);
  * @brief Get HCS process exit code
  */
 extern int __hcs_get_process_exit_code(HCS_PROCESS process, unsigned long* exit_code);
+extern int __hcs_wait_lcow_gcs_process(
+    struct containerv_container* container,
+    const struct containerv_lcow_gcs_process* process,
+    unsigned long* exit_code);
 
 /**
  * @brief Windows-specific HyperV switch configuration

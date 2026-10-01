@@ -50,6 +50,80 @@ static const struct {
 
 static const size_t privilege_map_size = sizeof(privilege_map) / sizeof(privilege_map[0]);
 
+int windows_grant_vm_group_access(const char* path)
+{
+    static const char* vmGroupSidString = "S-1-5-83-0";
+    PSECURITY_DESCRIPTOR securityDescriptor = NULL;
+    PACL                 currentAcl = NULL;
+    PACL                 updatedAcl = NULL;
+    PSID                 vmGroupSid = NULL;
+    EXPLICIT_ACCESSA     access = { 0 };
+    DWORD                attributes;
+    DWORD                status;
+
+    if (path == NULL || path[0] == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    attributes = GetFileAttributesA(path);
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if (!ConvertStringSidToSidA(vmGroupSidString, &vmGroupSid)) {
+        errno = EACCES;
+        return -1;
+    }
+
+    status = GetNamedSecurityInfoA(
+        (LPSTR)path,
+        SE_FILE_OBJECT,
+        DACL_SECURITY_INFORMATION,
+        NULL,
+        NULL,
+        &currentAcl,
+        NULL,
+        &securityDescriptor);
+    if (status != ERROR_SUCCESS) {
+        goto cleanup;
+    }
+
+        access.grfAccessPermissions = GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE;
+    access.grfAccessMode = GRANT_ACCESS;
+    access.grfInheritance = (attributes & FILE_ATTRIBUTE_DIRECTORY)
+        ? SUB_CONTAINERS_AND_OBJECTS_INHERIT
+        : NO_INHERITANCE;
+    access.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    access.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    access.Trustee.ptstrName = (LPSTR)vmGroupSid;
+
+    status = SetEntriesInAclA(1, &access, currentAcl, &updatedAcl);
+    if (status != ERROR_SUCCESS) {
+        goto cleanup;
+    }
+
+    status = SetNamedSecurityInfoA(
+        (LPSTR)path,
+        SE_FILE_OBJECT,
+        DACL_SECURITY_INFORMATION,
+        NULL,
+        NULL,
+        updatedAcl,
+        NULL);
+
+cleanup:
+    LocalFree(updatedAcl);
+    LocalFree(securityDescriptor);
+    LocalFree(vmGroupSid);
+    if (status != ERROR_SUCCESS) {
+        errno = EACCES;
+        return -1;
+    }
+    return 0;
+}
+
 // Map containerv privilege enum to Windows privilege name.
 static const wchar_t* get_privilege_name(enum containerv_windows_privilege priv)
 {
