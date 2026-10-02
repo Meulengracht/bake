@@ -1,6 +1,8 @@
 add_library(containerv-windows STATIC
     container-options.c
     container.c
+    gcs-bridge.c
+    gcs-process.c
     hcs.c
     layerchain.c
     layers.c

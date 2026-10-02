@@ -276,7 +276,33 @@ struct hcs_api {
     HcsWaitForOperationResultAndProcessInfo_t  HcsWaitForOperationResultAndProcessInfo;
 };
 
+enum containerv_lcow_gcs_rpc {
+    CONTAINERV_LCOW_GCS_RPC_CREATE = 0x00100101u,
+    CONTAINERV_LCOW_GCS_RPC_EXECUTE_PROCESS = 0x00100501u,
+    CONTAINERV_LCOW_GCS_RPC_WAIT_FOR_PROCESS = 0x00100601u,
+    CONTAINERV_LCOW_GCS_RPC_MODIFY_SETTINGS = 0x00100a01u,
+    CONTAINERV_LCOW_GCS_RPC_NEGOTIATE_PROTOCOL = 0x00100b01u
+};
+
 extern struct hcs_api g_hcs;
+
+struct containerv_container;
+
+// LCOW HvSocket bridge lifecycle and framed GCS request transport.
+extern int __lcow_gcs_bridge_listen(struct containerv_container* container);
+extern int __lcow_gcs_bridge_accept(struct containerv_container* container);
+extern int __lcow_gcs_bridge_negotiate(struct containerv_container* container);
+extern void __lcow_gcs_bridge_close(struct containerv_container* container);
+extern int __lcow_gcs_rpc(struct containerv_container* container, uint32_t rpc, const char* request_json, char** response_json_out);
+extern int __lcow_gcs_modify_settings(struct containerv_container* container, const char* modification_json);
+extern int __lcow_gcs_create_container(struct containerv_container* container, const char* container_id, const char* oci_spec_utf8);
+extern int __lcow_gcs_execute_container_process(struct containerv_container* container, const char* container_id, uint32_t* pid_out);
+extern int __lcow_gcs_execute_host_process(struct containerv_container* container, const char* const* argv, uint32_t* pid_out);
+extern int __hcs_wait_lcow_gcs_process(
+    struct containerv_container* container,
+    const struct containerv_lcow_gcs_process* process,
+    unsigned long* exit_code);
+extern int __hcs_lcow_configure_network(struct containerv_container* container);
 
 struct containerv_container {
     // HCS compute system handle and configuration
@@ -352,6 +378,7 @@ struct __containerv_spawn_options {
     const char*                path;
     const char* const*         argv;
     const char* const*         envv;
+    const char*                working_directory;
     enum container_spawn_flags flags;
 
     // When true, request HCS stdio pipe handles for this process.
@@ -435,6 +462,10 @@ extern int __hcs_create_process(
     HCS_PROCESS* processOut,
     HCS_PROCESS_INFORMATION* processInfoOut
 );
+extern int __hcs_join(
+    const char* container_id,
+    const char* command_path,
+    struct containerv_join_options* options);
 
 /**
  * @brief Wait for HCS process completion

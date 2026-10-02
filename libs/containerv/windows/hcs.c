@@ -16,32 +16,6 @@
  *
  */
 
-// GCS RPC Documentation
-// build\lcow-hcsshim\internal\gcs\prot\protocol.go
-// build\lcow-hcsshim\internal\gcs\bridge.go
-// build\lcow-hcsshim\internal\guest\bridge\bridge_v2.go
-// build\lcow-hcsshim\internal\gcs\container.go
-// build\lcow-hcsshim\internal\gcs\process.go
-// build\lcow-hcsshim\internal\guest\runtime\hcsv2\uvm.go
-
-// Debugging GCS RPC
-// Keep -loglevel debug on GCS and serial console capture enabled.
-// Log every host bridge packet as we do now:
-// GCS RPC request type=... payload=...
-// GCS RPC response type=... payload=...
-// Decode RPC IDs from protocol.go:
-// - 0x10100101 create
-// - 0x10100501 execute
-// - 0x10100601 wait
-// - 0x10100a01 modify
-// - 0x10100b01 negotiate.
-// When GCS returns an HRESULT, inspect the guest span 
-// immediately above it; those spans include the real hcsshim 
-// file/function stack when available.
-
-#include <winsock2.h>
-#include <ws2tcpip.h>
-
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -59,31 +33,6 @@
 #include "oci-bundle.h"
 
 #include "private.h"
-
-#ifndef AF_HYPERV
-#define AF_HYPERV 34
-#endif
-
-#ifndef HV_PROTOCOL_RAW
-#define HV_PROTOCOL_RAW 1
-#endif
-
-#define LCOW_GCS_VSOCK_PORT 0x40000000u
-#define GCS_HDR_SIZE 16u
-#define GCS_MSG_REQUEST 0x10000000u
-#define GCS_MSG_RESPONSE 0x20000000u
-#define GCS_RPC_CREATE 0x00100101u
-#define GCS_RPC_EXECUTE_PROCESS 0x00100501u
-#define GCS_RPC_WAIT_FOR_PROCESS 0x00100601u
-#define GCS_RPC_MODIFY_SETTINGS 0x00100a01u
-#define GCS_RPC_NEGOTIATE_PROTOCOL 0x00100b01u
-
-struct chef_sockaddr_hv {
-    ADDRESS_FAMILY Family;
-    USHORT         Reserved;
-    GUID           VmId;
-    GUID           ServiceId;
-};
 
 static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...);
 
@@ -177,316 +126,6 @@ static HRESULT __hcs_operation_wait(HCS_OPERATION operation, DWORD timeoutMs, co
     return hr;
 }
 
-static void __gcs_u32le(unsigned char* p, uint32_t v)
-{
-    p[0] = (unsigned char)(v & 0xffu);
-    p[1] = (unsigned char)((v >> 8) & 0xffu);
-    p[2] = (unsigned char)((v >> 16) & 0xffu);
-    p[3] = (unsigned char)((v >> 24) & 0xffu);
-}
-
-static void __gcs_u64le(unsigned char* p, uint64_t v)
-{
-    for (int i = 0; i < 8; i++) {
-        p[i] = (unsigned char)((v >> (i * 8)) & 0xffu);
-    }
-}
-
-static uint32_t __gcs_read_u32le(const unsigned char* p)
-{
-    return ((uint32_t)p[0]) | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
-static uint64_t __gcs_read_u64le(const unsigned char* p)
-{
-    uint64_t v = 0;
-    for (int i = 0; i < 8; i++) {
-        v |= ((uint64_t)p[i]) << (i * 8);
-    }
-    return v;
-}
-
-static int __gcs_send_all(SOCKET s, const unsigned char* data, size_t length)
-{
-    while (length > 0) {
-        int chunk = (length > INT_MAX) ? INT_MAX : (int)length;
-        int sent = send(s, (const char*)data, chunk, 0);
-        if (sent <= 0) {
-            errno = EIO;
-            return -1;
-        }
-        data += sent;
-        length -= (size_t)sent;
-    }
-    return 0;
-}
-
-static int __gcs_recv_all(SOCKET s, unsigned char* data, size_t length)
-{
-    while (length > 0) {
-        int chunk = (length > INT_MAX) ? INT_MAX : (int)length;
-        int got = recv(s, (char*)data, chunk, 0);
-        if (got <= 0) {
-            errno = EIO;
-            return -1;
-        }
-        data += got;
-        length -= (size_t)got;
-    }
-    return 0;
-}
-
-static void __gcs_vsock_service_guid(uint32_t port, GUID* guid)
-{
-    memset(guid, 0, sizeof(*guid));
-    guid->Data1 = port;
-    guid->Data2 = 0xfacb;
-    guid->Data3 = 0x11e6;
-    guid->Data4[0] = 0xbd;
-    guid->Data4[1] = 0x58;
-    guid->Data4[2] = 0x64;
-    guid->Data4[3] = 0x00;
-    guid->Data4[4] = 0x6a;
-    guid->Data4[5] = 0x79;
-    guid->Data4[6] = 0x86;
-    guid->Data4[7] = 0xd3;
-}
-
-static int __lcow_gcs_bridge_listen(struct containerv_container* container)
-{
-    WSADATA                 wsa;
-    SOCKET                  listener;
-    GUID                    vmid;
-    wchar_t                 vmidBraced[__CONTAINER_ID_LENGTH + 3];
-    struct chef_sockaddr_hv addr;
-    u_long                  nonblocking = 1;
-
-    if (container == NULL || container->vm_id == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-        VLOG_ERROR("containerv[gcs]", "WSAStartup failed: %d\n", WSAGetLastError());
-        errno = EIO;
-        return -1;
-    }
-
-    if (swprintf(vmidBraced, sizeof(vmidBraced) / sizeof(vmidBraced[0]), L"{%ls}", container->vm_id) < 0 ||
-        CLSIDFromString(vmidBraced, &vmid) != S_OK) {
-        VLOG_ERROR("containerv[gcs]", "failed to parse LCOW VMID for HvSocket listener\n");
-        errno = EINVAL;
-        return -1;
-    }
-
-    listener = socket(AF_HYPERV, SOCK_STREAM, HV_PROTOCOL_RAW);
-    if (listener == INVALID_SOCKET) {
-        VLOG_ERROR("containerv[gcs]", "failed to create HvSocket listener: %d\n", WSAGetLastError());
-        errno = EIO;
-        return -1;
-    }
-
-    memset(&addr, 0, sizeof(addr));
-    addr.Family = AF_HYPERV;
-    addr.VmId = vmid;
-    __gcs_vsock_service_guid(LCOW_GCS_VSOCK_PORT, &addr.ServiceId);
-
-    if (bind(listener, (const struct sockaddr*)&addr, sizeof(addr)) != 0 || listen(listener, 1) != 0) {
-        VLOG_ERROR("containerv[gcs]", "failed to bind/listen HvSocket GCS bridge: %d\n", WSAGetLastError());
-        closesocket(listener);
-        errno = EIO;
-        return -1;
-    }
-
-    if (ioctlsocket(listener, FIONBIO, &nonblocking) != 0) {
-        closesocket(listener);
-        errno = EIO;
-        return -1;
-    }
-
-    container->lcow_gcs_listener = (uintptr_t)listener;
-    VLOG_DEBUG("containerv[gcs]", "listening for LCOW GCS bridge on vsock port 0x%08x\n", LCOW_GCS_VSOCK_PORT);
-    return 0;
-}
-
-static int __lcow_gcs_bridge_accept(struct containerv_container* container)
-{
-    SOCKET    listener;
-    SOCKET    client;
-    ULONGLONG deadline;
-    u_long    blocking;
-
-    if (container == NULL || container->lcow_gcs_listener == (uintptr_t)INVALID_SOCKET) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    listener = (SOCKET)container->lcow_gcs_listener;
-    deadline = GetTickCount64() + HCS_OPERATION_TIMEOUT_MS;
-    while (GetTickCount64() < deadline) {
-        client = accept(listener, NULL, NULL);
-        if (client != INVALID_SOCKET) {
-            blocking = 0;
-            if (ioctlsocket(client, FIONBIO, &blocking) != 0) {
-                VLOG_ERROR("containerv[gcs]", "failed to switch LCOW GCS bridge socket to blocking mode: %d\n", WSAGetLastError());
-                closesocket(client);
-                errno = EIO;
-                return -1;
-            }
-            container->lcow_gcs_socket = (uintptr_t)client;
-            closesocket(listener);
-            container->lcow_gcs_listener = (uintptr_t)INVALID_SOCKET;
-            VLOG_DEBUG("containerv[gcs]", "accepted LCOW GCS bridge connection\n");
-            return 0;
-        }
-        if (WSAGetLastError() != WSAEWOULDBLOCK) {
-            VLOG_ERROR("containerv[gcs]", "failed to accept LCOW GCS bridge: %d\n", WSAGetLastError());
-            errno = EIO;
-            return -1;
-        }
-        Sleep(50);
-    }
-
-    VLOG_ERROR("containerv[gcs]", "timed out waiting for LCOW GCS bridge connection\n");
-    errno = ETIMEDOUT;
-    return -1;
-}
-
-static int __lcow_gcs_rpc(struct containerv_container* container, uint32_t rpc, const char* request_json, char** response_json_out)
-{
-    SOCKET         s;
-    uint64_t       id;
-    size_t         payloadLen;
-    size_t         totalLen;
-    unsigned char* out = NULL;
-    unsigned char  header[GCS_HDR_SIZE];
-    unsigned char* payload = NULL;
-    uint32_t       responseType;
-    uint32_t       responseSize;
-    uint64_t       responseId;
-    json_t*        response = NULL;
-    json_error_t   jerr;
-    json_t*        resultValue;
-    int            result;
-    int            status = -1;
-
-    if (response_json_out != NULL) {
-        *response_json_out = NULL;
-    }
-
-    if (container == NULL || container->lcow_gcs_socket == (uintptr_t)INVALID_SOCKET || request_json == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    s = (SOCKET)container->lcow_gcs_socket;
-    id = container->lcow_gcs_next_id++;
-    payloadLen = strlen(request_json) + 1;
-    totalLen = GCS_HDR_SIZE + payloadLen;
-    if (totalLen > 0x10000u) {
-        errno = EMSGSIZE;
-        return -1;
-    }
-
-    out = calloc(totalLen, 1);
-    if (out == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-    __gcs_u32le(out, rpc | GCS_MSG_REQUEST);
-    __gcs_u32le(out + 4, (uint32_t)totalLen);
-    __gcs_u64le(out + 8, id);
-    memcpy(out + GCS_HDR_SIZE, request_json, payloadLen - 1);
-    out[totalLen - 1] = '\n';
-
-    VLOG_DEBUG("containerv[gcs]", "GCS RPC request type=0x%08x id=%llu payload=%s\n",
-        rpc | GCS_MSG_REQUEST, (unsigned long long)id, request_json);
-
-    if (__gcs_send_all(s, out, totalLen) != 0) {
-        goto cleanup;
-    }
-
-    for (;;) {
-        free(payload);
-        payload = NULL;
-
-        if (__gcs_recv_all(s, header, sizeof(header)) != 0) {
-            goto cleanup;
-        }
-
-        responseType = __gcs_read_u32le(header);
-        responseSize = __gcs_read_u32le(header + 4);
-        responseId = __gcs_read_u64le(header + 8);
-        if (responseSize < GCS_HDR_SIZE || responseSize > 0x10000u) {
-            errno = EPROTO;
-            goto cleanup;
-        }
-
-        payloadLen = responseSize - GCS_HDR_SIZE;
-        payload = calloc(payloadLen + 1, 1);
-        if (payload == NULL) {
-            errno = ENOMEM;
-            goto cleanup;
-        }
-        if (__gcs_recv_all(s, payload, payloadLen) != 0) {
-            goto cleanup;
-        }
-
-        VLOG_DEBUG("containerv[gcs]", "GCS RPC frame type=0x%08x id=%llu payload=%s\n",
-            responseType, (unsigned long long)responseId, payload);
-
-        if ((responseType & GCS_MSG_RESPONSE) != 0 && responseId == id &&
-            (responseType & ~GCS_MSG_RESPONSE) == rpc) {
-            break;
-        }
-    }
-
-    memset(&jerr, 0, sizeof(jerr));
-    response = json_loads((const char*)payload, 0, &jerr);
-    if (response == NULL) {
-        errno = EPROTO;
-        goto cleanup;
-    }
-
-    resultValue = json_object_get(response, "Result");
-    result = resultValue != NULL ? (int)json_integer_value(resultValue) : 0;
-    if (result != 0) {
-        json_t* message = json_object_get(response, "ErrorMessage");
-        VLOG_ERROR("containerv[gcs]", "GCS RPC failed: 0x%x %s\n", result,
-            json_is_string(message) ? json_string_value(message) : "");
-        errno = EIO;
-        goto cleanup;
-    }
-
-    if (response_json_out != NULL) {
-        *response_json_out = _strdup((const char*)payload);
-        if (*response_json_out == NULL) {
-            errno = ENOMEM;
-            goto cleanup;
-        }
-    }
-
-    status = 0;
-
-cleanup:
-    json_decref(response);
-    free(payload);
-    free(out);
-    return status;
-}
-
-static int __lcow_gcs_bridge_negotiate(struct containerv_container* container)
-{
-    char request[512];
-
-    snprintf(
-        request,
-        sizeof(request),
-        "{\"ContainerId\":\"%s\",\"ActivityId\":\"00000000-0000-0000-0000-000000000000\",\"MinimumVersion\":4,\"MaximumVersion\":4}",
-        container->id);
-    return __lcow_gcs_rpc(container, GCS_RPC_NEGOTIATE_PROTOCOL, request, NULL);
-}
-
 void __hcs_plan9_share_name(const char* host_path, char* buffer, size_t buffer_size)
 {
     if (buffer == NULL || buffer_size == 0) {
@@ -540,365 +179,6 @@ static int __lcow_plan9_share_layer_cb(const char* host_path, const char* contai
 
     __hcs_plan9_share_name(host_path, name, sizeof(name));
     return __lcow_plan9_share_append(ctx->shares, name, host_path, readonly);
-}
-
-static int __lcow_gcs_modify(struct containerv_container* container, const char* modification_json)
-{
-    char*  request = NULL;
-    size_t requestCap = 0;
-    size_t requestLen = 0;
-    int    status;
-
-    if (modification_json == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (__appendf(
-            &request,
-            &requestCap,
-            &requestLen,
-            "{\"ContainerId\":\"00000000-0000-0000-0000-000000000000\",\"ActivityId\":\"00000000-0000-0000-0000-000000000000\",\"Request\":%s}",
-            modification_json) != 0) {
-        return -1;
-    }
-
-    status = __lcow_gcs_rpc(container, GCS_RPC_MODIFY_SETTINGS, request, NULL);
-    free(request);
-    return status;
-}
-
-static int __json_set_request_base(json_t* obj, const char* container_id)
-{
-    return containerv_json_object_set_string(obj, "ContainerId", container_id) != 0 ||
-           containerv_json_object_set_string(obj, "ActivityId", "00000000-0000-0000-0000-000000000000") != 0;
-}
-
-static int __lcow_gcs_create_container(struct containerv_container* container, const char* container_id, const char* oci_spec_utf8)
-{
-    json_t* req = NULL;
-    json_t* hosted = NULL;
-    json_t* schema = NULL;
-    json_t* oci = NULL;
-    char*   hosted_json = NULL;
-    char*   req_json = NULL;
-    char    bundle_path[128];
-    char    scratch_path[160];
-    json_error_t jerr;
-    int     status = -1;
-
-    if (container == NULL || container_id == NULL || oci_spec_utf8 == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    memset(&jerr, 0, sizeof(jerr));
-    oci = json_loads(oci_spec_utf8, 0, &jerr);
-    if (oci == NULL) {
-        errno = EPROTO;
-        return -1;
-    }
-
-    req = json_object();
-    hosted = json_object();
-    schema = json_object();
-    if (req == NULL || hosted == NULL || schema == NULL) {
-        goto cleanup;
-    }
-
-    snprintf(bundle_path, sizeof(bundle_path), "/run/gcs/c/%s", container_id);
-    snprintf(scratch_path, sizeof(scratch_path), "/run/gcs/c/%s/scratch/%s", container_id, container_id);
-
-    if (__json_set_request_base(req, container_id) != 0 ||
-        containerv_json_object_set_int(schema, "Major", 2) != 0 ||
-        containerv_json_object_set_int(schema, "Minor", 1) != 0 ||
-        json_object_set_new(hosted, "SchemaVersion", schema) != 0) {
-        schema = NULL;
-        goto cleanup;
-    }
-    schema = NULL;
-
-    if (containerv_json_object_set_string(hosted, "OciBundlePath", bundle_path) != 0 ||
-        json_object_set_new(hosted, "OciSpecification", oci) != 0 ||
-        containerv_json_object_set_string(hosted, "ScratchDirPath", scratch_path) != 0) {
-        oci = NULL;
-        goto cleanup;
-    }
-    oci = NULL;
-
-    if (containerv_json_dumps_compact(hosted, &hosted_json) != 0 ||
-        containerv_json_object_set_string(req, "ContainerConfig", hosted_json) != 0 ||
-        containerv_json_dumps_compact(req, &req_json) != 0) {
-        goto cleanup;
-    }
-
-    status = __lcow_gcs_rpc(container, GCS_RPC_CREATE, req_json, NULL);
-
-cleanup:
-    json_decref(req);
-    json_decref(hosted);
-    json_decref(schema);
-    json_decref(oci);
-    free(hosted_json);
-    free(req_json);
-    return status;
-}
-
-static int __lcow_gcs_execute_container_process(struct containerv_container* container, const char* container_id, uint32_t* pid_out)
-{
-    json_t* req = NULL;
-    json_t* settings = NULL;
-    json_t* params = NULL;
-    char*   params_json = NULL;
-    char*   req_json = NULL;
-    char*   response_json = NULL;
-    json_t* response = NULL;
-    json_error_t jerr;
-    json_t* pid;
-    int     status = -1;
-
-    if (container == NULL || container_id == NULL || pid_out == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    *pid_out = 0;
-
-    req = json_object();
-    settings = json_object();
-    params = json_object();
-    if (req == NULL || settings == NULL || params == NULL) {
-        goto cleanup;
-    }
-
-    if (__json_set_request_base(req, container_id) != 0 ||
-        containerv_json_object_set_bool(params, "CreateStdInPipe", 0) != 0 ||
-        containerv_json_object_set_bool(params, "CreateStdOutPipe", 0) != 0 ||
-        containerv_json_object_set_bool(params, "CreateStdErrPipe", 0) != 0 ||
-        containerv_json_dumps_compact(params, &params_json) != 0 ||
-        containerv_json_object_set_string(settings, "ProcessParameters", params_json) != 0 ||
-        json_object_set_new(req, "Settings", settings) != 0) {
-        settings = NULL;
-        goto cleanup;
-    }
-    settings = NULL;
-
-    if (containerv_json_dumps_compact(req, &req_json) != 0 ||
-        __lcow_gcs_rpc(container, GCS_RPC_EXECUTE_PROCESS, req_json, &response_json) != 0) {
-        goto cleanup;
-    }
-
-    memset(&jerr, 0, sizeof(jerr));
-    response = json_loads(response_json, 0, &jerr);
-    if (response == NULL) {
-        errno = EPROTO;
-        goto cleanup;
-    }
-    pid = json_object_get(response, "ProcessId");
-    if (!json_is_integer(pid)) {
-        errno = EPROTO;
-        goto cleanup;
-    }
-
-    *pid_out = (uint32_t)json_integer_value(pid);
-    status = 0;
-
-cleanup:
-    json_decref(req);
-    json_decref(settings);
-    json_decref(params);
-    json_decref(response);
-    free(params_json);
-    free(req_json);
-    free(response_json);
-    return status;
-}
-
-static int __lcow_gcs_execute_host_process(
-    struct containerv_container* container,
-    const char* const*           argv,
-    uint32_t*                    pid_out)
-{
-    static const char* const uvm_id = "00000000-0000-0000-0000-000000000000";
-    json_t* req = NULL;
-    json_t* settings = NULL;
-    json_t* params = NULL;
-    json_t* args = NULL;
-    json_t* response = NULL;
-    json_t* pid = NULL;
-    char* params_json = NULL;
-    char* req_json = NULL;
-    char* response_json = NULL;
-    json_error_t jerr;
-    int status = -1;
-
-    if (container == NULL || argv == NULL || argv[0] == NULL || pid_out == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    *pid_out = 0;
-
-    req = json_object();
-    settings = json_object();
-    params = json_object();
-    args = json_array();
-    if (req == NULL || settings == NULL || params == NULL || args == NULL) {
-        goto cleanup;
-    }
-
-    for (size_t i = 0; argv[i] != NULL; ++i) {
-        if (json_array_append_new(args, json_string(argv[i])) != 0) {
-            goto cleanup;
-        }
-    }
-
-    if (__json_set_request_base(req, uvm_id) != 0 ||
-        json_object_set_new(params, "CommandArgs", args) != 0) {
-        goto cleanup;
-    }
-    args = NULL;
-
-    if (containerv_json_object_set_string(params, "WorkingDirectory", "/") != 0 ||
-        containerv_json_object_set_bool(params, "CreateInUtilityVM", 1) != 0 ||
-        containerv_json_object_set_bool(params, "CreateStdInPipe", 0) != 0 ||
-        containerv_json_object_set_bool(params, "CreateStdOutPipe", 0) != 0 ||
-        containerv_json_object_set_bool(params, "CreateStdErrPipe", 0) != 0 ||
-        containerv_json_dumps_compact(params, &params_json) != 0 ||
-        containerv_json_object_set_string(settings, "ProcessParameters", params_json) != 0 ||
-        json_object_set_new(req, "Settings", settings) != 0) {
-        goto cleanup;
-    }
-    settings = NULL;
-
-    if (containerv_json_dumps_compact(req, &req_json) != 0 ||
-        __lcow_gcs_rpc(container, GCS_RPC_EXECUTE_PROCESS, req_json, &response_json) != 0) {
-        goto cleanup;
-    }
-
-    memset(&jerr, 0, sizeof(jerr));
-    response = json_loads(response_json, 0, &jerr);
-    pid = response != NULL ? json_object_get(response, "ProcessId") : NULL;
-    if (!json_is_integer(pid)) {
-        errno = EPROTO;
-        goto cleanup;
-    }
-
-    *pid_out = (uint32_t)json_integer_value(pid);
-    status = 0;
-
-cleanup:
-    json_decref(req);
-    json_decref(settings);
-    json_decref(params);
-    json_decref(args);
-    json_decref(response);
-    free(params_json);
-    free(req_json);
-    free(response_json);
-    return status;
-}
-
-static void __lcow_gcs_bridge_close(struct containerv_container* container)
-{
-    if (container == NULL) {
-        return;
-    }
-    if (container->lcow_gcs_socket != (uintptr_t)INVALID_SOCKET) {
-        closesocket((SOCKET)container->lcow_gcs_socket);
-        container->lcow_gcs_socket = (uintptr_t)INVALID_SOCKET;
-    }
-    if (container->lcow_gcs_listener != (uintptr_t)INVALID_SOCKET) {
-        closesocket((SOCKET)container->lcow_gcs_listener);
-        container->lcow_gcs_listener = (uintptr_t)INVALID_SOCKET;
-    }
-}
-
-int __hcs_wait_lcow_gcs_process(
-    struct containerv_container* container,
-    const struct containerv_lcow_gcs_process* process,
-    unsigned long* exit_code)
-{
-    json_t* req = NULL;
-    char*   req_json = NULL;
-    char*   response_json = NULL;
-    json_t* response = NULL;
-    json_error_t jerr;
-    json_t* value;
-    int     status = -1;
-
-    if (container == NULL || process == NULL || process->magic != CONTAINERV_LCOW_GCS_PROCESS_MAGIC) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    req = json_object();
-    if (req == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    if (__json_set_request_base(req, process->container_id) != 0 ||
-        containerv_json_object_set_int(req, "ProcessId", (int)process->pid) != 0 ||
-        json_object_set_new(req, "TimeoutInMs", json_integer(0xffffffffu)) != 0 ||
-        containerv_json_dumps_compact(req, &req_json) != 0 ||
-        __lcow_gcs_rpc(container, GCS_RPC_WAIT_FOR_PROCESS, req_json, &response_json) != 0) {
-        goto cleanup;
-    }
-
-    memset(&jerr, 0, sizeof(jerr));
-    response = json_loads(response_json, 0, &jerr);
-    if (response == NULL) {
-        errno = EPROTO;
-        goto cleanup;
-    }
-
-    value = json_object_get(response, "ExitCode");
-    if (!json_is_integer(value)) {
-        errno = EPROTO;
-        goto cleanup;
-    }
-    if (exit_code != NULL) {
-        *exit_code = (unsigned long)json_integer_value(value);
-    }
-    status = 0;
-
-cleanup:
-    json_decref(req);
-    json_decref(response);
-    free(req_json);
-    free(response_json);
-    return status;
-}
-
-int __hcs_lcow_configure_network(struct containerv_container* container)
-{
-    static const char* const uvm_id = "00000000-0000-0000-0000-000000000000";
-    // Output goes to /dev/kmsg so it shows up in the LCOW console log; timeout bounds the infinite GCS wait.
-    static const char* const argv[] = {
-        "/bin/busybox",
-        "sh",
-        "-c",
-        "exec >/dev/kmsg 2>&1; "
-        "/bin/busybox ip -o link; "
-        "exec /bin/busybox timeout 30 /bin/busybox udhcpc -i eth0 -q -n -t 5 -T 2 -A 1 -s /usr/share/udhcpc/default.script",
-        NULL
-    };
-    struct containerv_lcow_gcs_process process = {0};
-    unsigned long exit_code = 0;
-
-    if (__lcow_gcs_execute_host_process(container, argv, &process.pid) != 0) {
-        VLOG_ERROR("containerv[gcs]", "failed to start LCOW DHCP client\n");
-        return -1;
-    }
-
-    process.magic = CONTAINERV_LCOW_GCS_PROCESS_MAGIC;
-    snprintf(process.container_id, sizeof(process.container_id), "%s", uvm_id);
-    if (__hcs_wait_lcow_gcs_process(container, &process, &exit_code) != 0 || exit_code != 0) {
-        VLOG_ERROR("containerv[gcs]", "LCOW DHCP client failed with exit code %lu\n", exit_code);
-        return -1;
-    }
-
-    VLOG_DEBUG("containerv[gcs]", "LCOW DHCP configuration completed\n");
-    return 0;
 }
 
 static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
@@ -1767,7 +1047,9 @@ static int __build_process_config_json(
     }
     *json_utf8_out = NULL;
 
-    workingDir = guest_is_windows ? "C:\\\\" : "/";
+    workingDir = options->working_directory != NULL
+        ? options->working_directory
+        : (guest_is_windows ? "C:\\\\" : "/");
     emulateConsole = guest_is_windows ? 1 : 0;
     procCfg = json_object();
     if (procCfg == NULL) {
@@ -2858,7 +2140,7 @@ int __hcs_plan9_share_add(
         goto cleanup;
     }
 
-    status = __lcow_gcs_modify(container, json_utf8);
+    status = __lcow_gcs_modify_settings(container, json_utf8);
     if (status != 0) {
         VLOG_ERROR("containerv[hcs]", "failed to mount Plan9 share %s at %s\n", name, guest_path);
     }
@@ -2912,7 +2194,7 @@ int __hcs_plan9_mapped_dir_add(
         goto cleanup;
     }
 
-    status = __lcow_gcs_modify(container, json_utf8);
+    status = __lcow_gcs_modify_settings(container, json_utf8);
     if (status != 0) {
         VLOG_ERROR("containerv[hcs]", "failed to mount Plan9 share %s at %s\n", name, guest_path);
     }
@@ -3410,6 +2692,68 @@ cleanup:
 /**
  * @brief Wait for HCS process completion (similar to Linux waitpid)
  */
+int __hcs_join(
+    const char* container_id,
+    const char* command_path,
+    struct containerv_join_options* options)
+{
+    struct containerv_container container = {0};
+    struct __containerv_spawn_options spawn_options = {0};
+    wchar_t* container_id_w = NULL;
+    HCS_PROCESS process = NULL;
+    unsigned long exit_code = 0;
+    int status = -1;
+    HRESULT hr;
+
+    if (container_id == NULL || command_path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (__hcs_initialize() != 0) {
+        return -1;
+    }
+
+    container_id_w = __windows_utf8_to_wide_alloc(container_id);
+    if (container_id_w == NULL) {
+        return -1;
+    }
+
+    hr = g_hcs.HcsOpenComputeSystem(container_id_w, GENERIC_ALL, &container.hcs_system);
+    if (FAILED(hr)) {
+        VLOG_ERROR("containerv[hcs]", "failed to open compute system %s: 0x%lx\n", container_id, hr);
+        goto cleanup;
+    }
+
+    container.guest_is_windows = 1;
+    spawn_options.path = command_path;
+    spawn_options.argv = options != NULL && options->argv != NULL && options->argv[0] != NULL
+        ? options->argv
+        : NULL;
+    spawn_options.envv = options != NULL ? options->envp : NULL;
+    spawn_options.working_directory = options != NULL && options->cwd != NULL && options->cwd[0] != '\0'
+        ? options->cwd
+        : NULL;
+
+    if (__hcs_create_process(&container, &spawn_options, &process, NULL) != 0) {
+        goto cleanup;
+    }
+    if (__hcs_wait_process(process, INFINITE) != 0 ||
+        __hcs_get_process_exit_code(process, &exit_code) != 0) {
+        goto cleanup;
+    }
+    status = (int)exit_code;
+
+cleanup:
+    if (process != NULL) {
+        g_hcs.HcsCloseProcess(process);
+    }
+    if (container.hcs_system != NULL) {
+        g_hcs.HcsCloseComputeSystem(container.hcs_system);
+    }
+    free(container_id_w);
+    return status;
+}
+
 int __hcs_wait_process(HCS_PROCESS process, unsigned int timeout_ms)
 {
     if (!process) {
