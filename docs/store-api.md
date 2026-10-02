@@ -623,7 +623,7 @@ Upload the package file. Uses `multipart/form-data` encoding.
 
 | Part name | Description |
 |---|---|
-| `sendfile` | The package file binary content |
+| `file` | The package file binary content |
 | `filename` | The destination filename on the server (value: `package.chef`) |
 | `submit` | Form submit indicator (value: `send`) |
 

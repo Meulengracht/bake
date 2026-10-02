@@ -23,7 +23,6 @@
 #include <curl/curl.h>
 #include <jansson.h>
 #include "../private.h"
-#include "base64/base64.h"
 #include <stdio.h>
 #include <string.h>
 #include <vlog.h>
@@ -51,7 +50,7 @@ static json_t* __create_publish_request(struct chef_publish_params* params)
     json_object_set_new(request, "Minor", json_integer(params->version->minor));
     json_object_set_new(request, "Patch", json_integer(params->version->patch));
     if (params->version->tag != NULL) {
-        json_object_set_new(request, "Tag", json_string(params->architecture));
+        json_object_set_new(request, "Tag", json_string(params->version->tag));
     }
     return request;
 }
@@ -78,6 +77,13 @@ static int __parse_initiate_response(const char* response, struct __initiate_res
     context->upload_token = __get_json_string_safe(root, "upload-token");
     context->revision     = (int)json_integer_value(json_object_get(root, "revision"));
     json_decref(root);
+
+    if (context->upload_token == NULL || context->revision <= 0) {
+        free((void*)context->upload_token);
+        context->upload_token = NULL;
+        context->revision = 0;
+        return -1;
+    }
     return 0;
 }
 
@@ -90,23 +96,61 @@ static int __get_publish_initate_url(char* urlBuffer, size_t bufferSize)
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __get_publish_upload_url(const char* key, char* urlBuffer, size_t bufferSize)
+static int __get_publish_upload_url(CURL* curl, const char* key, char* urlBuffer, size_t bufferSize)
 {
+    char* escapedKey;
     int written = snprintf(urlBuffer, bufferSize - 1, 
-        "%s/package/publish/upload?key=%s",
-        chefclient_api_base_url(),
-        key
+        "%s/package/publish/upload?key=",
+        chefclient_api_base_url()
     );
+    if (written >= (bufferSize - 1)) {
+        return -1;
+    }
+
+    escapedKey = curl_easy_escape(curl, key, 0);
+    if (escapedKey == NULL) {
+        return -1;
+    }
+
+    written += snprintf(urlBuffer + written, bufferSize - (size_t)written - 1, "%s", escapedKey);
+    curl_free(escapedKey);
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
-static int __get_publish_complete_url(const char* key, const char* channel, char* urlBuffer, size_t bufferSize)
+static int __get_publish_complete_url(
+    CURL*       curl,
+    const char* key,
+    const char* channel,
+    char*       urlBuffer,
+    size_t      bufferSize)
 {
-    int written = snprintf(urlBuffer, bufferSize - 1, 
-        "%s/package/publish/complete?key=%s&channel=%s",
-        chefclient_api_base_url(),
-        key, channel
+    char* escapedKey;
+    char* escapedChannel;
+    int   written = snprintf(urlBuffer, bufferSize - 1,
+        "%s/package/publish/complete?key=",
+        chefclient_api_base_url()
     );
+    if (written >= (bufferSize - 1)) {
+        return -1;
+    }
+
+    escapedKey = curl_easy_escape(curl, key, 0);
+    escapedChannel = curl_easy_escape(curl, channel, 0);
+    if (escapedKey == NULL || escapedChannel == NULL) {
+        curl_free(escapedKey);
+        curl_free(escapedChannel);
+        return -1;
+    }
+
+    written += snprintf(
+        urlBuffer + written,
+        bufferSize - (size_t)written - 1,
+        "%s&channel=%s",
+        escapedKey,
+        escapedChannel
+    );
+    curl_free(escapedKey);
+    curl_free(escapedChannel);
     return written < (bufferSize - 1) ? 0 : -1;
 }
 
@@ -116,7 +160,7 @@ static int __publish_request(json_t* json, struct __initiate_response* context)
     CURLcode             code;
     char*                body   = NULL;
     int                  status = -1;
-    char                 buffer[256];
+    char                 buffer[512];
     long                 httpCode;
 
     request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
@@ -140,6 +184,12 @@ static int __publish_request(json_t* json, struct __initiate_response* context)
     code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, body);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__publish_request: failed to set body [%s]\n", request->error);
+        goto cleanup;
+    }
+
+    code = chef_request_set_content_type(request, "application/json");
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__publish_request: failed to set content type [%s]\n", request->error);
         goto cleanup;
     }
 
@@ -194,7 +244,9 @@ static int __file_upload_context_init(struct file_upload_context* context, const
 
 static void __update_progress(struct file_upload_context* context)
 {
-    int percent = (int)((context->uploaded * 100) / context->length);
+    int percent = context->length == 0
+        ? 100
+        : (int)((context->uploaded * 100) / context->length);
     
     // print a fancy progress bar with percentage, upload progress and a moving
     // bar being filled
@@ -229,7 +281,10 @@ static void __file_finished(void* arg) {
     struct file_upload_context* context = (struct file_upload_context*)arg;
     context->uploaded = context->read;
     __update_progress(context);
-    fclose(context->file);
+    if (context->file != NULL) {
+        fclose(context->file);
+        context->file = NULL;
+    }
 }
 
 static int __upload_package(const char* path, struct __initiate_response* context)
@@ -252,10 +307,12 @@ static int __upload_package(const char* path, struct __initiate_response* contex
     request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
     if (!request) {
         VLOG_ERROR("chef-client", "__upload_package: failed to create request\n");
+        fclose(fileContext.file);
+        fileContext.file = NULL;
         return -1;
     }
 
-    if (__get_publish_upload_url(context->upload_token, buffer, sizeof(buffer)) != 0) {
+    if (__get_publish_upload_url(request->curl, context->upload_token, buffer, sizeof(buffer)) != 0) {
         VLOG_ERROR("chef-client", "__upload_package: buffer too small for publish link\n");
         goto cleanup;
     }
@@ -269,7 +326,7 @@ static int __upload_package(const char* path, struct __initiate_response* contex
     multipart = curl_mime_init(request->curl);
 
     part = curl_mime_addpart(multipart);
-    curl_mime_name(part, "sendfile");
+    curl_mime_name(part, "file");
     curl_mime_filedata(part, path);
     curl_mime_data_cb(part, fileContext.length, __file_read, __file_seek, __file_finished, &fileContext);
 
@@ -310,7 +367,13 @@ static int __upload_package(const char* path, struct __initiate_response* contex
     status = 0;
 
 cleanup:
-    curl_mime_free(multipart);
+    if (fileContext.file != NULL) {
+        fclose(fileContext.file);
+        fileContext.file = NULL;
+    }
+    if (multipart != NULL) {
+        curl_mime_free(multipart);
+    }
     chef_request_delete(request);
     return status;
 }
@@ -320,7 +383,7 @@ static int __publish_complete(const char* channel, struct __initiate_response* c
     struct chef_request* request;
     CURLcode             code;
     int                  status = -1;
-    char                 buffer[256];
+    char                 buffer[512];
     long                 httpCode;
 
     request = chef_request_new(CHEF_CLIENT_API_SECURE, 1);
@@ -329,7 +392,7 @@ static int __publish_complete(const char* channel, struct __initiate_response* c
         return -1;
     }
 
-    if (__get_publish_complete_url(context->upload_token, channel, buffer, sizeof(buffer)) != 0) {
+    if (__get_publish_complete_url(request->curl, context->upload_token, channel, buffer, sizeof(buffer)) != 0) {
         VLOG_ERROR("chef-client", "__publish_complete: buffer too small for publish link\n");
         goto cleanup;
     }
@@ -337,6 +400,12 @@ static int __publish_complete(const char* channel, struct __initiate_response* c
     code = curl_easy_setopt(request->curl, CURLOPT_URL, &buffer[0]);
     if (code != CURLE_OK) {
         VLOG_ERROR("chef-client", "__publish_complete: failed to set url [%s]\n", request->error);
+        goto cleanup;
+    }
+
+    code = curl_easy_setopt(request->curl, CURLOPT_POST, 1L);
+    if (code != CURLE_OK) {
+        VLOG_ERROR("chef-client", "__publish_complete: failed to set method [%s]\n", request->error);
         goto cleanup;
     }
 
