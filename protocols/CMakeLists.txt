@@ -1,3 +1,6 @@
+file(GLOB_RECURSE GRACHT_GENERATOR_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/libs/gracht/generator/*.py
+)
 
 set (GEN_SERVICE_HEADERS
     ${CMAKE_CURRENT_BINARY_DIR}/chef_cvd_service.h
@@ -44,7 +47,12 @@ add_custom_command(
     COMMAND python3 ${CMAKE_SOURCE_DIR}/libs/gracht/generator/parser.py --service ${CMAKE_CURRENT_SOURCE_DIR}/cvd.gr --out ${CMAKE_CURRENT_BINARY_DIR} --lang-c --client --server
     COMMAND python3 ${CMAKE_SOURCE_DIR}/libs/gracht/generator/parser.py --service ${CMAKE_CURRENT_SOURCE_DIR}/served.gr --out ${CMAKE_CURRENT_BINARY_DIR} --lang-c --client --server
     COMMAND python3 ${CMAKE_SOURCE_DIR}/libs/gracht/generator/parser.py --service ${CMAKE_CURRENT_SOURCE_DIR}/waiterd.gr --out ${CMAKE_CURRENT_BINARY_DIR} --lang-c --client --server
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/cvd.gr ${CMAKE_CURRENT_SOURCE_DIR}/served.gr ${CMAKE_CURRENT_SOURCE_DIR}/waiterd.gr
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/cvd.gr
+        ${CMAKE_CURRENT_SOURCE_DIR}/served.gr
+        ${CMAKE_CURRENT_SOURCE_DIR}/waiterd.gr
+        ${CMAKE_CURRENT_SOURCE_DIR}/types.gr
+        ${GRACHT_GENERATOR_SOURCES}
     COMMENT "Generating Gracht protocol sources"
     VERBATIM
 )

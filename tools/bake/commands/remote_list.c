@@ -161,9 +161,10 @@ int remote_list_main(int argc, char** argv, char** envp, struct bake_command_opt
     
     int count = 0;
     struct chef_waiter_agent_info agents[32]; // Allocate space for up to 32 agents
+    uint32_t agents_count = sizeof(agents) / sizeof(agents[0]);
     memset(agents, 0, sizeof(agents));
     
-    chef_waiterd_list_agents_result(client, &context, &count, agents, 32);
+    chef_waiterd_list_agents_result(client, &context, &count, agents, &agents_count);
 
     if (count == 0) {
         printf("No remote agents available");

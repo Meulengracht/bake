@@ -88,7 +88,7 @@ int list_main(int argc, char** argv)
         goto cleanup;
     }
     gracht_client_wait_message(client, &context, GRACHT_MESSAGE_BLOCK);
-    chef_served_list_result(client, &context, packages, packageCount);
+    chef_served_list_result(client, &context, packages, &packageCount);
 
     for (uint32_t i = 0; i < packageCount; i++) {
         printf("%30.30s %s\n", packages[i].name, packages[i].version);
