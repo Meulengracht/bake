@@ -64,6 +64,8 @@ extern int containerv_oci_bundle_prepare_rootfs_dir(
 );
 
 // Creates /etc/hosts, /etc/hostname, /etc/resolv.conf inside rootfs (best-effort).
+// NULL or empty DNS preserves an existing resolver, or creates an empty one if missing.
+// Explicit DNS replaces the resolver using space, tab, comma, or semicolon separators.
 extern int containerv_oci_bundle_prepare_rootfs_standard_files(
     const struct containerv_oci_bundle_paths* paths,
     const char* hostname,

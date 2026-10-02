@@ -532,25 +532,21 @@ static int __build_windows_cmdline(const struct __containerv_spawn_options* opti
     return 0;
 }
 
-// Build a Linux command line and argv array JSON from spawn options.
-static int __build_linux_cmdline_and_args(
+// Build the checked argv array JSON consumed by the OCI builder.
+static int __build_linux_args_json(
     const struct __containerv_spawn_options* options,
-    char**                                  cmdline_out,
-    json_t**                                cmd_args_out,
     char**                                  args_json_out)
 {
     const char* const* argv;
     const char*        defaultArgvBuf[2];
-    size_t             cmdCap;
-    size_t             cmdLen;
-    char*              cmdline;
     json_t*            cmdArgs;
     char*              argsJson;
     int                i;
 
-    if (options == NULL || options->path == NULL || cmdline_out == NULL || cmd_args_out == NULL || args_json_out == NULL) {
+    if (options == NULL || options->path == NULL || args_json_out == NULL) {
         return -1;
     }
+    *args_json_out = NULL;
 
     argv = options->argv;
     defaultArgvBuf[0] = NULL;
@@ -561,29 +557,13 @@ static int __build_linux_cmdline_and_args(
         argv = defaultArgvBuf;
     }
 
-    cmdCap = 0;
-    cmdLen = 0;
-    cmdline = NULL;
-    if (__appendf(&cmdline, &cmdCap, &cmdLen, "%s", argv[0]) != 0) {
-        free(cmdline);
-        return -1;
-    }
-    for (i = 1; argv[i] != NULL; ++i) {
-        if (__appendf(&cmdline, &cmdCap, &cmdLen, " %s", argv[i]) != 0) {
-            free(cmdline);
-            return -1;
-        }
-    }
-
     cmdArgs = json_array();
     if (cmdArgs == NULL) {
-        free(cmdline);
         return -1;
     }
     for (i = 0; argv[i] != NULL; ++i) {
         if (containerv_json_array_append_string(cmdArgs, argv[i]) != 0) {
             json_decref(cmdArgs);
-            free(cmdline);
             return -1;
         }
     }
@@ -591,12 +571,10 @@ static int __build_linux_cmdline_and_args(
     argsJson = NULL;
     if (containerv_json_dumps_compact(cmdArgs, &argsJson) != 0) {
         json_decref(cmdArgs);
-        free(cmdline);
         return -1;
     }
 
-    *cmdline_out = cmdline;
-    *cmd_args_out = cmdArgs;
+    json_decref(cmdArgs);
     *args_json_out = argsJson;
     return 0;
 }
@@ -690,12 +668,11 @@ static int __build_oci_spec_if_needed(
     struct containerv_container*            container,
     const struct __containerv_spawn_options* options,
     const char*                             args_json_utf8,
-    int                                     guest_is_windows,
     char**                                  oci_spec_out)
 {
     struct containerv_oci_linux_spec_params params;
     struct __lcow_mount_ctx                 mountCtx;
-    const char*                             rootfs_host;
+    int                                     rootfs_available;
     char*                                   capture_args_json;
     char*                                   ociSpec;
 
@@ -705,29 +682,25 @@ static int __build_oci_spec_if_needed(
     *oci_spec_out = NULL;
     capture_args_json = NULL;
 
-    if (guest_is_windows) {
-        return 0;
-    }
-
-    rootfs_host = NULL;
+    rootfs_available = 0;
     if (container != NULL && container->runtime_dir != NULL) {
         struct containerv_oci_bundle_paths bundlePaths;
         memset(&bundlePaths, 0, sizeof(bundlePaths));
         if (containerv_oci_bundle_get_paths(container->runtime_dir, &bundlePaths) == 0) {
             if (bundlePaths.rootfs_dir != NULL && PathFileExistsA(bundlePaths.rootfs_dir)) {
-                rootfs_host = bundlePaths.rootfs_dir;
+                rootfs_available = 1;
             }
             containerv_oci_bundle_paths_delete(&bundlePaths);
         }
     }
 
-    if (rootfs_host == NULL && container != NULL && container->rootfs != NULL && PathFileExistsA(container->rootfs)) {
+    if (!rootfs_available && container != NULL && container->rootfs != NULL && PathFileExistsA(container->rootfs)) {
         // Schema2 LCOW maps the prepared host rootfs directly at /chef/rootfs.
-        rootfs_host = container->rootfs;
+        rootfs_available = 1;
     }
 
     // If we don't have a rootfs mapped, fail LCOW process creation.
-    if (rootfs_host == NULL || rootfs_host[0] == '\0') {
+    if (!rootfs_available) {
         VLOG_ERROR("containerv[hcs]", "LCOW OCI spec failed: rootfs not mapped for container %s\n",
                    container ? container->id : "<unknown>");
         return -1;
@@ -767,7 +740,8 @@ static int __build_oci_spec_if_needed(
     }
 
     params.args_json = (args_json_utf8 != NULL) ? args_json_utf8 : "[]";
-    if (getenv("CHEF_LCOW_CAPTURE_STDIO") != NULL) {
+    // Direct GCS has no stdio transport; give every guest process valid descriptors.
+    {
         json_t* original_args = NULL;
         json_t* wrapped_args = NULL;
         json_error_t parse_error;
@@ -778,7 +752,7 @@ static int __build_oci_spec_if_needed(
         if (!json_is_array(original_args) || wrapped_args == NULL ||
             json_array_append_new(wrapped_args, json_string("/bin/sh")) != 0 ||
             json_array_append_new(wrapped_args, json_string("-c")) != 0 ||
-            json_array_append_new(wrapped_args, json_string("i=0; while [ -e \"/chef/staging/lcow-stdio-$i.log\" ]; do i=$((i + 1)); done; exec >\"/chef/staging/lcow-stdio-$i.log\" 2>&1; exec \"$@\"")) != 0 ||
+            json_array_append_new(wrapped_args, json_string("i=0; while [ -e \"/chef/staging/lcow-stdio-$i.log\" ]; do i=$((i + 1)); done; exec </dev/null >\"/chef/staging/lcow-stdio-$i.log\" 2>&1; exec \"$@\"")) != 0 ||
             json_array_append_new(wrapped_args, json_string("chef-lcow-capture")) != 0) {
             json_decref(original_args);
             json_decref(wrapped_args);
@@ -1020,26 +994,16 @@ static int __build_env_object(
     return 0;
 }
 
-// Build HCS process JSON configuration for Windows or LCOW.
-static int __build_process_config_json(
-    int                                     guest_is_windows,
+// Build HCS process JSON configuration for WCOW.
+static int __build_wcow_process_config_json(
     const struct __containerv_spawn_options* options,
     json_t*                                 env_obj,
     const char*                             cmdline_utf8,
-    json_t*                                 cmd_args,
-    const char*                             linux_cmdline_utf8,
-    const char*                             oci_spec_utf8,
     int                                     include_security,
-    int                                     lcow_use_oci,
-    int                                     lcow_use_command_args,
-    int                                     create_in_uvm,
     char**                                  json_utf8_out)
 {
     const char* workingDir;
-    int         emulateConsole;
     json_t*     procCfg;
-    json_error_t jerr;
-    json_t*     oci;
     char*       jsonUtf8;
 
     if (json_utf8_out == NULL) {
@@ -1049,70 +1013,23 @@ static int __build_process_config_json(
 
     workingDir = options->working_directory != NULL
         ? options->working_directory
-        : (guest_is_windows ? "C:\\\\" : "/");
-    emulateConsole = guest_is_windows ? 1 : 0;
+        : "C:\\\\";
     procCfg = json_object();
     if (procCfg == NULL) {
         return -1;
     }
 
-    if (guest_is_windows) {
-        if (cmdline_utf8 == NULL) {
-            json_decref(procCfg);
-            return -1;
-        }
-        if (containerv_json_object_set_string(procCfg, "CommandLine", cmdline_utf8) != 0 ||
-            containerv_json_object_set_string(procCfg, "WorkingDirectory", workingDir) != 0 ||
-            json_object_set(procCfg, "Environment", env_obj) != 0 ||
-            containerv_json_object_set_bool(procCfg, "EmulateConsole", emulateConsole) != 0 ||
-            containerv_json_object_set_bool(procCfg, "CreateStdInPipe", options->create_stdio_pipes != 0) != 0 ||
-            containerv_json_object_set_bool(procCfg, "CreateStdOutPipe", options->create_stdio_pipes != 0) != 0 ||
-            containerv_json_object_set_bool(procCfg, "CreateStdErrPipe", options->create_stdio_pipes != 0) != 0) {
-            json_decref(procCfg);
-            return -1;
-        }
-        if (include_security) {
-            if (containerv_json_object_set_string(procCfg, "User", "ContainerUser") != 0) {
-                json_decref(procCfg);
-                return -1;
-            }
-        }
-    } else {
-        if (lcow_use_command_args && cmd_args == NULL) {
-            json_decref(procCfg);
-            return -1;
-        }
-
-        if ((lcow_use_command_args && json_object_set(procCfg, "CommandArgs", cmd_args) != 0) ||
-            (!lcow_use_command_args && linux_cmdline_utf8 && containerv_json_object_set_string(procCfg, "CommandLine", linux_cmdline_utf8) != 0) ||
-            containerv_json_object_set_string(procCfg, "WorkingDirectory", workingDir) != 0 ||
-            containerv_json_object_set_bool(procCfg, "CreateInUtilityVm", create_in_uvm) != 0 ||
-            json_object_set(procCfg, "Environment", env_obj) != 0 ||
-            containerv_json_object_set_bool(procCfg, "EmulateConsole", emulateConsole) != 0 ||
-            containerv_json_object_set_bool(procCfg, "CreateStdInPipe", options->create_stdio_pipes != 0) != 0 ||
-            containerv_json_object_set_bool(procCfg, "CreateStdOutPipe", options->create_stdio_pipes != 0) != 0 ||
-            containerv_json_object_set_bool(procCfg, "CreateStdErrPipe", options->create_stdio_pipes != 0) != 0) {
-            json_decref(procCfg);
-            return -1;
-        }
-
-        if (lcow_use_oci) {
-            memset(&jerr, 0, sizeof(jerr));
-            oci = json_loads(oci_spec_utf8, 0, &jerr);
-            if (oci == NULL) {
-                json_decref(procCfg);
-                return -1;
-            }
-            if (json_object_set_new(procCfg, "OCISpecification", oci) != 0) {
-                json_decref(oci);
-                json_decref(procCfg);
-                return -1;
-            }
-            if (containerv_json_object_set_bool(procCfg, "CreateInUtilityVm", 0) != 0) {
-                json_decref(procCfg);
-                return -1;
-            }
-        }
+    if (cmdline_utf8 == NULL ||
+        containerv_json_object_set_string(procCfg, "CommandLine", cmdline_utf8) != 0 ||
+        containerv_json_object_set_string(procCfg, "WorkingDirectory", workingDir) != 0 ||
+        json_object_set(procCfg, "Environment", env_obj) != 0 ||
+        containerv_json_object_set_bool(procCfg, "EmulateConsole", 1) != 0 ||
+        containerv_json_object_set_bool(procCfg, "CreateStdInPipe", options->create_stdio_pipes != 0) != 0 ||
+        containerv_json_object_set_bool(procCfg, "CreateStdOutPipe", options->create_stdio_pipes != 0) != 0 ||
+        containerv_json_object_set_bool(procCfg, "CreateStdErrPipe", options->create_stdio_pipes != 0) != 0 ||
+        (include_security && containerv_json_object_set_string(procCfg, "User", "ContainerUser") != 0)) {
+        json_decref(procCfg);
+        return -1;
     }
 
     jsonUtf8 = NULL;
@@ -2401,7 +2318,64 @@ int __hcs_destroy_compute_system(struct containerv_container* container)
     return status;
 }
 
-int __hcs_create_process(
+static int __hcs_create_lcow_process(
+    struct containerv_container* container,
+    struct __containerv_spawn_options* options,
+    HCS_PROCESS* processOut,
+    HCS_PROCESS_INFORMATION* processInfoOut)
+{
+    char* args_json_utf8 = NULL;
+    char* oci_spec_utf8 = NULL;
+    struct containerv_lcow_gcs_process* gcsProcess;
+    char gcsContainerId[__CONTAINER_ID_LENGTH + 1];
+    uint32_t gcsPid;
+    int status = -1;
+
+    if (__build_linux_args_json(options, &args_json_utf8) != 0 ||
+        __build_oci_spec_if_needed(container, options, args_json_utf8, &oci_spec_utf8) != 0) {
+        goto cleanup;
+    }
+
+    if (options->create_stdio_pipes) {
+        VLOG_ERROR("containerv[hcs]", "LCOW direct GCS stdio pipes are not implemented yet\n");
+        errno = ENOSYS;
+        goto cleanup;
+    }
+
+    platform_guid_new_string(gcsContainerId);
+    VLOG_DEBUG("containerv[gcs]", "creating LCOW hosted container %s for process %s\n", gcsContainerId, options->path);
+    if (__lcow_gcs_create_container(container, gcsContainerId, oci_spec_utf8) != 0 ||
+        __lcow_gcs_execute_container_process(container, gcsContainerId, &gcsPid) != 0) {
+        goto cleanup;
+    }
+
+    gcsProcess = calloc(1, sizeof(*gcsProcess));
+    if (gcsProcess == NULL) {
+        errno = ENOMEM;
+        goto cleanup;
+    }
+    gcsProcess->magic = CONTAINERV_LCOW_GCS_PROCESS_MAGIC;
+    gcsProcess->pid = gcsPid;
+    memcpy(gcsProcess->container_id, gcsContainerId, sizeof(gcsProcess->container_id));
+
+    if (processOut != NULL) {
+        *processOut = (HCS_PROCESS)gcsProcess;
+    } else {
+        free(gcsProcess);
+    }
+    if (processInfoOut != NULL) {
+        memset(processInfoOut, 0, sizeof(*processInfoOut));
+        processInfoOut->ProcessId = gcsPid;
+    }
+    status = 0;
+
+cleanup:
+    free(args_json_utf8);
+    free(oci_spec_utf8);
+    return status;
+}
+
+static int __hcs_create_wcow_process(
     struct containerv_container* container,
     struct __containerv_spawn_options* options,
     HCS_PROCESS* processOut,
@@ -2413,33 +2387,8 @@ int __hcs_create_process(
     HRESULT hr;
     int status = -1;
     char* json_utf8 = NULL;
-
-    // Linux guests: argv array in JSON form (compact string) for OCI builder.
-    char* args_json_utf8 = NULL;
-
-    // LCOW: optional OCI spec JSON (raw) used by Linux GCS.
-    char* oci_spec_utf8 = NULL;
-
-    // Command representations.
     char* cmdline_utf8 = NULL;
-    char* linux_cmdline_utf8 = NULL;
-    json_t* cmd_args = NULL;
-
-    // Environment object for the guest.
     json_t* env_obj = NULL;
-
-    if (!container || !container->hcs_system || !options || !options->path) {
-        return -1;
-    }
-
-    VLOG_DEBUG("containerv[hcs]", "creating process in compute system: %s\n", options->path);
-
-    const int guest_is_windows = (container->guest_is_windows != 0);
-
-    // Normalize paths for Linux guests (LCOW).
-    // OCI-in-UVM uses /chef/rootfs as root.path, so process args must remain
-    // relative to that root (for example /bin/sh, not /chef/rootfs/bin/sh).
-    struct __containerv_spawn_options norm_opts = *options;
 
     const struct containerv_policy* policy = container->policy;
     enum containerv_security_level security_level = CV_SECURITY_DEFAULT;
@@ -2457,70 +2406,15 @@ int __hcs_create_process(
             &win_capability_sid_count);
     }
 
-    // Build command representation.
-    // - Windows GCS uses CommandLine (string).
-    // - Linux GCS supports CommandArgs (array) and treats it as an alternative to CommandLine.
-    if (guest_is_windows) {
-        if (__build_windows_cmdline(options, &cmdline_utf8) != 0) {
-            goto cleanup;
-        }
-    } else {
-        if (__build_linux_cmdline_and_args(&norm_opts, &linux_cmdline_utf8, &cmd_args, &args_json_utf8) != 0) {
-            goto cleanup;
-        }
-    }
-
-    // If we're running a Linux container compute system (LCOW), prefer OCISpecification.
-    // Rootfs is expected to be mapped into the container at /chef/rootfs.
-    if (__build_oci_spec_if_needed(container, &norm_opts, args_json_utf8, guest_is_windows, &oci_spec_utf8) != 0) {
-        goto cleanup;
-    }
-
-    if (!guest_is_windows) {
-        struct containerv_lcow_gcs_process* gcsProcess;
-        char                                gcsContainerId[__CONTAINER_ID_LENGTH + 1];
-        uint32_t                            gcsPid;
-
-        if (options->create_stdio_pipes) {
-            VLOG_ERROR("containerv[hcs]", "LCOW direct GCS stdio pipes are not implemented yet\n");
-            errno = ENOSYS;
-            goto cleanup;
-        }
-
-        platform_guid_new_string(gcsContainerId);
-        VLOG_DEBUG("containerv[gcs]", "creating LCOW hosted container %s for process %s\n", gcsContainerId, options->path);
-        if (__lcow_gcs_create_container(container, gcsContainerId, oci_spec_utf8) != 0 ||
-            __lcow_gcs_execute_container_process(container, gcsContainerId, &gcsPid) != 0) {
-            goto cleanup;
-        }
-
-        gcsProcess = calloc(1, sizeof(*gcsProcess));
-        if (gcsProcess == NULL) {
-            errno = ENOMEM;
-            goto cleanup;
-        }
-        gcsProcess->magic = CONTAINERV_LCOW_GCS_PROCESS_MAGIC;
-        gcsProcess->pid = gcsPid;
-        memcpy(gcsProcess->container_id, gcsContainerId, sizeof(gcsProcess->container_id));
-
-        if (processOut != NULL) {
-            *processOut = (HCS_PROCESS)gcsProcess;
-        } else {
-            free(gcsProcess);
-        }
-        if (processInfoOut != NULL) {
-            memset(processInfoOut, 0, sizeof(*processInfoOut));
-            processInfoOut->ProcessId = gcsPid;
-        }
-        status = 0;
+    if (__build_windows_cmdline(options, &cmdline_utf8) != 0) {
         goto cleanup;
     }
 
     // Build environment object. Always include a default PATH if not provided.
     int try_security_fields = 0;
     if (__build_env_object(
-        &norm_opts,
-        guest_is_windows,
+        options,
+        1,
         policy,
         security_level,
         win_use_app_container,
@@ -2532,7 +2426,6 @@ int __hcs_create_process(
         goto cleanup;
     }
 
-    int lcow_fallback = 0;
     for (int attempt = 0; attempt < 3; attempt++) {
         int include_security = (attempt == 0) && try_security_fields;
 
@@ -2549,22 +2442,11 @@ int __hcs_create_process(
         free(json_utf8);
         json_utf8 = NULL;
 
-        const int lcow_use_oci = (!guest_is_windows && oci_spec_utf8 != NULL && !lcow_fallback);
-        const int lcow_use_command_args = (!guest_is_windows && !lcow_fallback);
-        const int create_in_uvm = (!guest_is_windows && !lcow_use_oci) ? 1 : 0;
-
-        if (__build_process_config_json(
-            guest_is_windows,
-            &norm_opts,
+        if (__build_wcow_process_config_json(
+            options,
             env_obj,
             cmdline_utf8,
-            cmd_args,
-            linux_cmdline_utf8,
-            oci_spec_utf8,
             include_security,
-            lcow_use_oci,
-            lcow_use_command_args,
-            create_in_uvm,
             &json_utf8) != 0) {
             goto cleanup;
         }
@@ -2618,12 +2500,6 @@ int __hcs_create_process(
                 }
                 process = NULL;
 
-                if (!guest_is_windows && oci_spec_utf8 != NULL && !lcow_fallback) {
-                    VLOG_WARNING("containerv[hcs]", "LCOW process create rejected OCISpecification (hr=0x%lx); retrying without it\n", whr);
-                    lcow_fallback = 1;
-                    continue;
-                }
-
                 if (include_security) {
                     VLOG_WARNING("containerv[hcs]", "process create wait rejected security fields (hr=0x%lx); retrying without them\n", whr);
                     continue;
@@ -2669,13 +2545,7 @@ int __hcs_create_process(
 
 cleanup:
     free(json_utf8);
-    free(args_json_utf8);
-    free(oci_spec_utf8);
     free(cmdline_utf8);
-    free(linux_cmdline_utf8);
-    if (cmd_args) {
-        json_decref(cmd_args);
-    }
     if (env_obj) {
         json_decref(env_obj);
     }
@@ -2687,6 +2557,24 @@ cleanup:
     }
 
     return status;
+}
+
+int __hcs_create_process(
+    struct containerv_container* container,
+    struct __containerv_spawn_options* options,
+    HCS_PROCESS* processOut,
+    HCS_PROCESS_INFORMATION* processInfoOut)
+{
+    if (!container || !container->hcs_system || !options || !options->path) {
+        return -1;
+    }
+
+    VLOG_DEBUG("containerv[hcs]", "creating process in compute system: %s\n", options->path);
+
+    if (container->guest_is_windows) {
+        return __hcs_create_wcow_process(container, options, processOut, processInfoOut);
+    }
+    return __hcs_create_lcow_process(container, options, processOut, processInfoOut);
 }
 
 /**

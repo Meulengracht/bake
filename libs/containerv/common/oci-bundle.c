@@ -17,6 +17,7 @@
  */
 
 #include <chef/platform.h>
+#include <vlog.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stddef.h>
@@ -111,7 +112,18 @@ static int __write_resolv_conf(const char* path, const char* dns_servers)
     }
 
     if (dns_servers == NULL || dns_servers[0] == '\0') {
-        // No DNS settings; create an empty file if it doesn't exist.
+        struct platform_stat stats;
+
+        // Preserve the image or DHCP resolver unless DNS is explicitly configured.
+        if (platform_stat(path, &stats) == 0) {
+            return 0;
+        }
+        if (errno != ENOENT) {
+            int error = errno;
+            VLOG_ERROR("containerv", "failed to stat resolver '%s': %s\n", path, strerror(error));
+            errno = error;
+            return -1;
+        }
         return platform_writetextfile(path, "");
     }
 

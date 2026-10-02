@@ -29,7 +29,6 @@
 
 #include "private.h"
 
-#include "standard-mounts.h"
 #include "oci-bundle.h"
 
 #define MIN_REMAINING_PATH_LENGTH 20  // Minimum space needed for "containerv-XXXXXX" + null
@@ -110,7 +109,6 @@ static struct containerv_container* __container_new(void)
 {
     struct containerv_container* container;
     char                         stagingPath[MAX_PATH];
-    size_t                       idLen;
 
     container = calloc(1, sizeof(struct containerv_container));
     if (container == NULL) {
@@ -133,16 +131,8 @@ static struct containerv_container* __container_new(void)
     platform_guid_new_string(container->id);
 
     // Convert container ID to wide string for HCS
-    idLen = strlen(container->id);
-    container->vm_id = calloc(idLen + 1, sizeof(wchar_t));
+    container->vm_id = __windows_utf8_to_wide_alloc(container->id);
     if (container->vm_id == NULL) {
-        free(container->runtime_dir);
-        free(container);
-        return NULL;
-    }
-    
-    if (MultiByteToWideChar(CP_UTF8, 0, container->id, -1, container->vm_id, (int)idLen + 1) == 0) {
-        free(container->vm_id);
         free(container->runtime_dir);
         free(container);
         return NULL;
@@ -186,56 +176,6 @@ static int __is_hcs_lcow_mode(const struct containerv_options* options)
     return (options->windows_container_type == WINDOWS_CONTAINER_TYPE_LINUX);
 }
 
-// Ensure LCOW rootfs mountpoint directories exist under the host path.
-static void __ensure_lcow_rootfs_mountpoint_dirs(const char* rootfsHostPath)
-{
-    char        stagingDir[MAX_PATH];
-    char        resolverSource[MAX_PATH];
-    char        resolverSeed[MAX_PATH];
-    const char* s;
-    char        rel[MAX_PATH];
-    size_t      j;
-    char        full[MAX_PATH];
-
-    if (rootfsHostPath == NULL || rootfsHostPath[0] == '\0') {
-        return;
-    }
-
-    snprintf(stagingDir, sizeof(stagingDir), "%s\\chef\\staging", rootfsHostPath);
-    snprintf(resolverSource, sizeof(resolverSource), "%s\\etc\\resolv.conf", rootfsHostPath);
-    snprintf(resolverSeed, sizeof(resolverSeed), "%s\\chef\\resolv.conf", rootfsHostPath);
-
-    // Best-effort: these are only mountpoints for bind mounts.
-    (void)platform_mkdir(stagingDir);
-    if (!CopyFileA(resolverSource, resolverSeed, FALSE)) {
-        VLOG_WARNING("containerv", "LCOW: failed to seed resolver config: %lu\n", GetLastError());
-    }
-
-    // Standard Linux mountpoints (stored as Linux-style absolute paths).
-    for (const char* const* mp = containerv_standard_linux_mountpoints(); mp != NULL && *mp != NULL; ++mp) {
-        s = *mp;
-        if (s == NULL || s[0] == '\0') {
-            continue;
-        }
-
-        // Convert "/dev/pts" -> "dev\\pts" and join under rootfs_host_path.
-        j = 0;
-        while (*s == '/') {
-            s++;
-        }
-        for (; *s && j + 1 < sizeof(rel); ++s) {
-            rel[j++] = (*s == '/') ? '\\' : *s;
-        }
-        rel[j] = '\0';
-        if (rel[0] == '\0') {
-            continue;
-        }
-
-        snprintf(full, sizeof(full), "%s\\%s", rootfsHostPath, rel);
-        (void)platform_mkdir(full);
-    }
-}
-
 struct __lcow_bind_dir_ctx {
     const struct containerv_oci_bundle_paths* paths;
 };
@@ -266,6 +206,64 @@ static int __lcow_prepare_bind_dir_cb(
     }
 
     return 0;
+}
+
+static int __lcow_prepare_rootfs(
+    struct containerv_container* container,
+    const struct containerv_options* options,
+    struct containerv_oci_bundle_paths* paths)
+{
+    struct __lcow_bind_dir_ctx bindContext;
+    char*                     resolverSource = NULL;
+    char*                     resolverSeed = NULL;
+    int                       status = -1;
+
+    if (containerv_oci_bundle_get_paths(container->runtime_dir, paths) != 0 ||
+        platform_mkdir(paths->bundle_dir) != 0) {
+        VLOG_ERROR("containerv", "LCOW: failed to prepare OCI bundle directory\n");
+        goto cleanup;
+    }
+
+    free(paths->rootfs_dir);
+    paths->rootfs_dir = platform_strdup(container->rootfs);
+    if (paths->rootfs_dir == NULL) {
+        VLOG_ERROR("containerv", "LCOW: failed to allocate rootfs path\n");
+        goto cleanup;
+    }
+
+    if (containerv_oci_bundle_prepare_rootfs_mountpoints(paths) != 0 ||
+        containerv_oci_bundle_prepare_rootfs_dir(paths, "/chef/staging", 0755) != 0 ||
+        containerv_oci_bundle_prepare_rootfs_standard_files(
+            paths, container->hostname, options->network.dns) != 0) {
+        VLOG_ERROR("containerv", "LCOW: failed to prepare rootfs files and mountpoints\n");
+        goto cleanup;
+    }
+
+    resolverSource = strpathcombine(paths->rootfs_dir, "etc/resolv.conf");
+    resolverSeed = strpathcombine(paths->rootfs_dir, "chef/resolv.conf");
+    if (resolverSource == NULL || resolverSeed == NULL) {
+        VLOG_ERROR("containerv", "LCOW: failed to allocate resolver paths\n");
+        goto cleanup;
+    }
+    // GCS mounts this seed read-only; the UVM lease handler updates its backing file.
+    if (!CopyFileA(resolverSource, resolverSeed, FALSE)) {
+        VLOG_ERROR("containerv", "LCOW: failed to seed resolver config: %lu\n", GetLastError());
+        goto cleanup;
+    }
+
+    bindContext.paths = paths;
+    if (options->layers != NULL && containerv_layers_iterate(
+            options->layers, CONTAINERV_LAYER_HOST_DIRECTORY,
+            __lcow_prepare_bind_dir_cb, &bindContext) != 0) {
+        VLOG_ERROR("containerv", "LCOW: failed to prepare bind mount targets\n");
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    free(resolverSource);
+    free(resolverSeed);
+    return status;
 }
 
 // Escape single quotes for safe inclusion in single-quoted shell strings.
@@ -474,6 +472,26 @@ static struct containerv_container_process* __container_process_find(
     return NULL;
 }
 
+static void __lcow_console_stop(struct containerv_container* container)
+{
+    // Preserve the grace wait, pipe close, second wait, then thread handle close.
+    if (container->lcow_console_thread != NULL) {
+        if (WaitForSingleObject(container->lcow_console_thread, 2000) == WAIT_TIMEOUT &&
+            container->lcow_console_pipe != INVALID_HANDLE_VALUE) {
+            CloseHandle(container->lcow_console_pipe);
+            container->lcow_console_pipe = INVALID_HANDLE_VALUE;
+            WaitForSingleObject(container->lcow_console_thread, 2000);
+        }
+        CloseHandle(container->lcow_console_thread);
+        container->lcow_console_thread = NULL;
+    }
+
+    if (container->lcow_console_pipe != INVALID_HANDLE_VALUE) {
+        CloseHandle(container->lcow_console_pipe);
+        container->lcow_console_pipe = INVALID_HANDLE_VALUE;
+    }
+}
+
 static void __container_delete(struct containerv_container* container)
 {
     struct list_item* i;
@@ -498,21 +516,7 @@ static void __container_delete(struct containerv_container* container)
         container->job_object = NULL;
     }
 
-    if (container->lcow_console_thread != NULL) {
-        if (WaitForSingleObject(container->lcow_console_thread, 2000) == WAIT_TIMEOUT &&
-            container->lcow_console_pipe != INVALID_HANDLE_VALUE) {
-            CloseHandle(container->lcow_console_pipe);
-            container->lcow_console_pipe = INVALID_HANDLE_VALUE;
-            WaitForSingleObject(container->lcow_console_thread, 2000);
-        }
-        CloseHandle(container->lcow_console_thread);
-        container->lcow_console_thread = NULL;
-    }
-
-    if (container->lcow_console_pipe != INVALID_HANDLE_VALUE) {
-        CloseHandle(container->lcow_console_pipe);
-        container->lcow_console_pipe = INVALID_HANDLE_VALUE;
-    }
+    __lcow_console_stop(container);
     
     free(container->vm_id);
     free(container->hostname);
@@ -526,6 +530,112 @@ static void __container_delete(struct containerv_container* container)
     free(container);
 }
 
+static int __container_create_wcow_system(
+    struct containerv_container* container,
+    struct containerv_options*   options)
+{
+    char**      parentLayers = NULL;
+    int         parentLayerCount = 0;
+    char*       utilityVm = NULL;
+    const char* baseLayer;
+    char*       candidate = NULL;
+    char        reasonBuf[256];
+    int         status = -1;
+
+    // Parent paths and UtilityVM are temporary inputs, borrowed by HCS creation.
+    if (!__windows_layerchain_exists(container->rootfs)) {
+        VLOG_ERROR(
+            "containerv",
+            "containerv_create: HCS container mode requires a windowsfilter folder with layerchain.json at %s (VAFS/overlay materialization is not supported)\n",
+            container->rootfs);
+        goto cleanup;
+    }
+
+    if (__wcow_resolve_parent_chain(container->rootfs, &parentLayers, &parentLayerCount) != 0) {
+        goto cleanup;
+    }
+
+    if (options->windows_container.isolation == WINDOWS_CONTAINER_ISOLATION_HYPERV) {
+        utilityVm = __derive_utilityvm_path(options, (const char* const*)parentLayers, parentLayerCount);
+        if (utilityVm == NULL) {
+            baseLayer = (parentLayers != NULL && parentLayerCount > 0) ? parentLayers[parentLayerCount - 1] : NULL;
+            candidate = __format_utilityvm_candidate(baseLayer);
+            if (candidate != NULL) {
+                VLOG_ERROR(
+                    "containerv",
+                    "containerv_create: Hyper-V isolation requires UtilityVM path (set via containerv_options_set_windows_container_utilityvm_path or ensure base layer has UtilityVM at %s)\n",
+                    candidate);
+            } else {
+                VLOG_ERROR("containerv", "containerv_create: Hyper-V isolation requires UtilityVM path (set via containerv_options_set_windows_container_utilityvm_path or ensure base layer has UtilityVM)\n");
+            }
+            errno = ENOENT;
+            goto cleanup;
+        }
+
+        if (!__validate_utilityvm_path(utilityVm, reasonBuf, sizeof(reasonBuf))) {
+            VLOG_ERROR(
+                "containerv",
+                "containerv_create: UtilityVM validation failed for %s (%s)\n",
+                utilityVm,
+                reasonBuf[0] ? reasonBuf : "invalid UtilityVM path");
+            errno = ENOENT;
+            goto cleanup;
+        }
+    }
+
+    if (__hcs_create_container_system(container, options, container->rootfs,
+            (const char* const*)parentLayers, parentLayerCount, utilityVm, 0) != 0) {
+        VLOG_ERROR("containerv", "containerv_create: failed to create HCS container compute system\n");
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    free(candidate);
+    free(utilityVm);
+    __windows_strv_free(parentLayers, parentLayerCount);
+    return status;
+}
+
+static int __container_create_lcow_system(
+    struct containerv_container* container,
+    struct containerv_options*   options)
+{
+    struct containerv_oci_bundle_paths bundlePaths = {0};
+    const char*                       imagePath = options->windows_lcow.image_path;
+    int                               status = -1;
+
+    if (imagePath == NULL || imagePath[0] == '\0') {
+        VLOG_ERROR("containerv", "containerv_create: LCOW requires HvRuntime.ImagePath (set via containerv_options_set_windows_lcow_hvruntime)\n");
+        errno = ENOENT;
+        goto cleanup;
+    }
+
+    if (__lcow_prepare_rootfs(container, options, &bundlePaths) != 0) {
+        goto cleanup;
+    }
+
+    // LCOW predeclares its endpoint before HCS creation; host attachment follows later.
+    if ((options->capabilities & CV_CAP_NETWORK) &&
+        __windows_prepare_hcs_container_network(container, options) != 0) {
+        VLOG_WARNING("containerv", "containerv_create: failed to prepare LCOW network endpoint\n");
+    }
+
+    if (__hcs_create_container_system(container, options, bundlePaths.rootfs_dir,
+            NULL, 0, imagePath, 1) != 0) {
+        VLOG_ERROR("containerv", "containerv_create: failed to create LCOW HCS container compute system\n");
+        goto cleanup;
+    }
+
+    VLOG_DEBUG("containerv", "containerv_create: LCOW rootfs mapped at %s\n", bundlePaths.rootfs_dir);
+    status = 0;
+
+cleanup:
+    // Bundle paths belong to this helper, including partially prepared paths.
+    containerv_oci_bundle_paths_delete(&bundlePaths);
+    return status;
+}
+
 int containerv_create(
     const char*                   containerId,
     struct containerv_options*    options,
@@ -534,17 +644,6 @@ int containerv_create(
     struct containerv_container* container;
     const char*                  rootFs;
     HRESULT                      hr;
-    BOOL                         rootfsExists;
-    char**                       parentLayers;
-    int                          parentLayerCount;
-    int                          hv;
-    char*                        utilityVm;
-    const char*                  baseLayer;
-    char*                        candidate;
-    char                         reasonBuf[256];
-    const char*                  imagePath;
-    struct containerv_oci_bundle_paths bundlePaths;
-    const char*                  lcowRootfsHost;
     
     VLOG_DEBUG("containerv", "containerv_create(containerId=%s)\n", containerId);
     
@@ -564,238 +663,81 @@ int containerv_create(
         return -1;
     }
     
-    rootFs = containerv_layers_get_rootfs(options->layers);
-    container->rootfs = _strdup(rootFs);
-    if (container->rootfs == NULL) {
-        __container_delete(container);
-        return -1;
-    }
-
     // Track whether the guest rootfs is expected to be Windows or Linux.
     // For HCS container mode, this is controlled explicitly by options->windows_container_type.
     container->guest_is_windows = __is_hcs_lcow_mode(options) ? 0 : 1;
 
+    rootFs = containerv_layers_get_rootfs(options->layers);
+    if (rootFs == NULL) {
+        VLOG_ERROR("containerv", "containerv_create: rootfs path is required\n");
+        errno = EINVAL;
+        goto failure;
+    }
+    container->rootfs = _strdup(rootFs);
+    if (container->rootfs == NULL) {
+        VLOG_ERROR("containerv", "containerv_create: failed to allocate rootfs path\n");
+        goto failure;
+    }
+
     // Rootfs preparation for HCS container mode expects BASE_ROOTFS to point at a
     // pre-prepared windowsfilter container folder (WCOW) or an OCI rootfs (LCOW).
-    rootfsExists = PathFileExistsA(rootFs);
-    if (!rootfsExists) {
-        if (__is_hcs_lcow_mode(options)) {
+    if (!PathFileExistsA(rootFs)) {
+        if (!container->guest_is_windows) {
             VLOG_ERROR("containerv", "containerv_create: LCOW requires an existing rootfs path at %s\n", rootFs);
-            __container_delete(container);
             errno = ENOENT;
-            return -1;
         } else {
             VLOG_ERROR("containerv", "containerv_create: HCS container mode requires an existing windowsfilter container folder at %s\n", rootFs);
-            __container_delete(container);
-            return -1;
         }
-    }
-    if (__is_hcs_lcow_mode(options) && rootfsExists) {
-        __ensure_lcow_rootfs_mountpoint_dirs(rootFs);
+        goto failure;
     }
     
     // Initialize COM for HyperV operations
     hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
     if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
         VLOG_ERROR("containerv", "containerv_create: failed to initialize COM: 0x%lx\n", hr);
-        __container_delete(container);
-        return -1;
+        goto failure;
     }
     
-    {
-        if (!__is_hcs_lcow_mode(options)) {
-            if (!__windows_layerchain_exists(rootFs)) {
-                VLOG_ERROR(
-                    "containerv",
-                    "containerv_create: HCS container mode requires a windowsfilter folder with layerchain.json at %s (VAFS/overlay materialization is not supported)\n",
-                    rootFs);
-                __container_delete(container);
-                return -1;
-            }
-
-            // True Windows containers (WCOW): rootfs must be a windowsfilter container folder.
-            parentLayers = NULL;
-            parentLayerCount = 0;
-            if (__wcow_resolve_parent_chain(rootFs, &parentLayers, &parentLayerCount) != 0) {
-                __container_delete(container);
-                return -1;
-            }
-
-            hv = (options && options->windows_container.isolation == WINDOWS_CONTAINER_ISOLATION_HYPERV);
-            utilityVm = NULL;
-            if (hv) {
-                utilityVm = __derive_utilityvm_path(options, (const char* const*)parentLayers, parentLayerCount);
-                if (utilityVm == NULL) {
-                    baseLayer = (parentLayers != NULL && parentLayerCount > 0) ? parentLayers[parentLayerCount - 1] : NULL;
-                    candidate = __format_utilityvm_candidate(baseLayer);
-                    if (candidate != NULL) {
-                        VLOG_ERROR(
-                            "containerv",
-                            "containerv_create: Hyper-V isolation requires UtilityVM path (set via containerv_options_set_windows_container_utilityvm_path or ensure base layer has UtilityVM at %s)\n",
-                            candidate);
-                    } else {
-                        VLOG_ERROR("containerv", "containerv_create: Hyper-V isolation requires UtilityVM path (set via containerv_options_set_windows_container_utilityvm_path or ensure base layer has UtilityVM)\n");
-                    }
-                    free(candidate);
-                    __windows_strv_free(parentLayers, parentLayerCount);
-                    __container_delete(container);
-                    errno = ENOENT;
-                    return -1;
-                }
-
-                if (!__validate_utilityvm_path(utilityVm, reasonBuf, sizeof(reasonBuf))) {
-                    VLOG_ERROR(
-                        "containerv",
-                        "containerv_create: UtilityVM validation failed for %s (%s)\n",
-                        utilityVm,
-                        reasonBuf[0] ? reasonBuf : "invalid UtilityVM path");
-                    free(utilityVm);
-                    __windows_strv_free(parentLayers, parentLayerCount);
-                    __container_delete(container);
-                    errno = ENOENT;
-                    return -1;
-                }
-            }
-
-            // Create WCOW container compute system.
-            if (__hcs_create_container_system(container, options, rootFs, (const char* const*)parentLayers, parentLayerCount, utilityVm, 0) != 0) {
-                VLOG_ERROR("containerv", "containerv_create: failed to create HCS container compute system\n");
-                free(utilityVm);
-                __windows_strv_free(parentLayers, parentLayerCount);
-                __container_delete(container);
-                return -1;
-            }
-
-            free(utilityVm);
-            __windows_strv_free(parentLayers, parentLayerCount);
-        } else {
-            // LCOW container compute system (bring-up scaffolding): uses ContainerType=Linux and HvRuntime.
-            // NOTE: OCI spec + rootfs plumbing is added in a subsequent step.
-            imagePath = (options && options->windows_lcow.image_path) ? options->windows_lcow.image_path : NULL;
-            if (imagePath == NULL || imagePath[0] == '\0') {
-                VLOG_ERROR("containerv", "containerv_create: LCOW requires HvRuntime.ImagePath (set via containerv_options_set_windows_lcow_hvruntime)\n");
-                __container_delete(container);
-                errno = ENOENT;
-                return -1;
-            }
-
-            // If a host rootfs was provided, prepare a per-container OCI bundle under runtime_dir.
-            // This gives us a stable rootfs directory for mapping into the UVM.
-            memset(&bundlePaths, 0, sizeof(bundlePaths));
-
-            lcowRootfsHost = NULL;
-            if (rootfsExists) {
-                if (containerv_oci_bundle_get_paths(container->runtime_dir, &bundlePaths) != 0) {
-                    VLOG_ERROR("containerv", "containerv_create: failed to compute OCI bundle paths\n");
-                    __container_delete(container);
-                    return -1;
-                }
-                if (platform_mkdir(bundlePaths.bundle_dir) != 0) {
-                    VLOG_ERROR("containerv", "containerv_create: failed to prepare OCI bundle directory\n");
-                    containerv_oci_bundle_paths_delete(&bundlePaths);
-                    __container_delete(container);
-                    return -1;
-                }
-                free(bundlePaths.rootfs_dir);
-                bundlePaths.rootfs_dir = platform_strdup(rootFs);
-                if (bundlePaths.rootfs_dir == NULL) {
-                    containerv_oci_bundle_paths_delete(&bundlePaths);
-                    __container_delete(container);
-                    errno = ENOMEM;
-                    return -1;
-                }
-                (void)containerv_oci_bundle_prepare_rootfs_mountpoints(&bundlePaths);
-                (void)containerv_oci_bundle_prepare_rootfs_standard_files(
-                    &bundlePaths,
-                    container->hostname,
-                    (options && options->network.dns) ? options->network.dns : NULL);
-                (void)containerv_oci_bundle_prepare_rootfs_dir(&bundlePaths, "/chef", 0755);
-                (void)containerv_oci_bundle_prepare_rootfs_dir(&bundlePaths, "/chef/staging", 0755);
-
-                if (options != NULL && options->layers != NULL) {
-                    struct __lcow_bind_dir_ctx bctx = {.paths = &bundlePaths};
-                    (void)containerv_layers_iterate(
-                        options->layers,
-                        CONTAINERV_LAYER_HOST_DIRECTORY,
-                        __lcow_prepare_bind_dir_cb,
-                        &bctx);
-                }
-                lcowRootfsHost = bundlePaths.rootfs_dir;
-            }
-
-            if (options != NULL && (options->capabilities & CV_CAP_NETWORK) &&
-                __windows_prepare_hcs_container_network(container, options) != 0) {
-                VLOG_WARNING("containerv", "containerv_create: failed to prepare LCOW network endpoint\n");
-            }
-
-            if (__hcs_create_container_system(container, options, lcowRootfsHost, NULL, 0, imagePath, 1) != 0) {
-                VLOG_ERROR("containerv", "containerv_create: failed to create LCOW HCS container compute system\n");
-                containerv_oci_bundle_paths_delete(&bundlePaths);
-                __container_delete(container);
-                return -1;
-            }
-
-            if (lcowRootfsHost == NULL || lcowRootfsHost[0] == '\0') {
-                VLOG_WARNING("containerv", "containerv_create: LCOW compute system started without a mapped rootfs; OCI process spec will be limited\n");
-            } else {
-                VLOG_DEBUG("containerv", "containerv_create: LCOW rootfs mapped at %s\n", lcowRootfsHost);
-            }
-
-            containerv_oci_bundle_paths_delete(&bundlePaths);
+    if (container->guest_is_windows) {
+        if (__container_create_wcow_system(container, options) != 0) {
+            goto failure;
         }
+    } else if (__container_create_lcow_system(container, options) != 0) {
+        goto failure;
     }
 
-    // Take ownership of the policy (options may be deleted after create)
-    if (options && options->policy) {
+    // Transfer policy only after creation succeeds; layers remain borrowed.
+    if (options->policy) {
         container->policy = options->policy;
         options->policy = NULL;
     }
 
-    if (options && options->layers) {
+    if (options->layers) {
         container->layers = options->layers;
     }
     
-    // Setup resource limits and/or security restrictions using Job Objects
+    // Keep the existing Job Object setup; HCS processes are not assigned to it.
     {
         // TODO: HCS processes are never assigned to this job; limits must move into the HCS document.
-        int wantJob = 1;
-        if (options && (options->capabilities & CV_CAP_CGROUPS)) {
-            if (options->limits.memory_max || options->limits.cpu_percent || options->limits.process_count) {
-                wantJob = 1;
-            }
-        }
-        if (container->policy) {
-            enum containerv_security_level level = containerv_policy_get_security_level(container->policy);
-            if (level >= CV_SECURITY_RESTRICTED) {
-                wantJob = 1;
-            }
-        }
+        container->resource_limits = options->limits;
+        container->job_object = __windows_create_job_object(
+            container,
+            (options->limits.memory_max || options->limits.cpu_percent || options->limits.process_count)
+                ? &options->limits
+                : NULL);
 
-        if (wantJob) {
-            if (options) {
-                container->resource_limits = options->limits;
-            }
-            container->job_object = __windows_create_job_object(
-                container,
-                (options && (options->limits.memory_max || options->limits.cpu_percent || options->limits.process_count))
-                    ? &options->limits
-                    : NULL);
-
-            if (!container->job_object) {
-                VLOG_WARNING("containerv", "containerv_create: failed to create job object\n");
-            } else {
-                VLOG_DEBUG("containerv", "containerv_create: created job object\n");
-                if (container->policy) {
-                    if (windows_apply_job_security(container->job_object, container->policy) != 0) {
-                        VLOG_WARNING("containerv", "containerv_create: failed to apply job security\n");
-                    }
-                }
+        if (!container->job_object) {
+            VLOG_WARNING("containerv", "containerv_create: failed to create job object\n");
+        } else {
+            VLOG_DEBUG("containerv", "containerv_create: created job object\n");
+            if (container->policy && windows_apply_job_security(container->job_object, container->policy) != 0) {
+                VLOG_WARNING("containerv", "containerv_create: failed to apply job security\n");
             }
         }
     }
     
     // Setup volumes and mounts for container
-    if (options && (options->capabilities & CV_CAP_FILESYSTEM)) {
+    if (options->capabilities & CV_CAP_FILESYSTEM) {
         if (__windows_setup_volumes(container, options) != 0) {
             VLOG_WARNING("containerv", "containerv_create: volume setup encountered issues\n");
             // Continue anyway, basic filesystem might still work
@@ -803,7 +745,7 @@ int containerv_create(
     }
     
     // Configure host-side networking after compute system is created
-    if (options && (options->capabilities & CV_CAP_NETWORK)) {
+    if (options->capabilities & CV_CAP_NETWORK) {
         if (container->hcs_system != NULL) {
             // True container compute system (WCOW/LCOW): attach HNS endpoint on the host.
             if (__windows_configure_hcs_container_network(container, options) != 0) {
@@ -816,6 +758,10 @@ int containerv_create(
     
     *containerOut = container;
     return 0;
+
+failure:
+    __container_delete(container);
+    return -1;
 }
 
 // Wait for a tracked guest process to exit and retrieve its exit code.
@@ -854,26 +800,24 @@ int __containerv_spawn(
     
     VLOG_DEBUG("containerv", "__containerv_spawn(path=%s)\n", options->path);
 
+    // Reserve tracking before creation: LCOW returns a heap token, not an HCS handle.
+    proc = calloc(1, sizeof(struct containerv_container_process));
+    if (proc == NULL) {
+        VLOG_ERROR("containerv", "__containerv_spawn: out of memory\n");
+        return -1;
+    }
+
     hcsProcess = NULL;
     memset(&hcsProcessInfo, 0, sizeof(hcsProcessInfo));
     if (__hcs_create_process(container, options, &hcsProcess, &hcsProcessInfo) != 0) {
         VLOG_ERROR("containerv", "__containerv_spawn: HCS create process failed\n");
-        return -1;
-    }
-
-    proc = calloc(1, sizeof(struct containerv_container_process));
-    if (proc == NULL) {
-        VLOG_ERROR("containerv", "__containerv_spawn: out of memory\n");
-        if (g_hcs.HcsCloseProcess != NULL && hcsProcess != NULL) {
-            g_hcs.HcsCloseProcess(hcsProcess);
-        }
+        free(proc);
         return -1;
     }
 
     proc->handle = (HANDLE)hcsProcess;
     proc->pid = hcsProcessInfo.ProcessId;
-    proc->is_lcow_gcs = (!container->guest_is_windows && hcsProcess != NULL &&
-        ((struct containerv_lcow_gcs_process*)hcsProcess)->magic == CONTAINERV_LCOW_GCS_PROCESS_MAGIC);
+    proc->is_lcow_gcs = !container->guest_is_windows;
     list_add(&container->processes, &proc->list_header);
 
     if (options->flags & CV_SPAWN_WAIT) {
@@ -1192,8 +1136,8 @@ void __containerv_destroy(struct containerv_container* container)
         __hcs_destroy_compute_system(container);
     }
     
-    // Keep the runtime share available when collecting opt-in LCOW process logs.
-    if (container->runtime_dir && getenv("CHEF_LCOW_CAPTURE_STDIO") == NULL) {
+    // Retain LCOW staging logs after guest shutdown for diagnostics.
+    if (container->runtime_dir && container->guest_is_windows) {
         if (platform_rmdir(container->runtime_dir) != 0) {
             VLOG_WARNING("containerv", "__containerv_destroy: failed to remove runtime dir: %s\n", strerror(errno));
         }
