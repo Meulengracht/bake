@@ -182,6 +182,7 @@ int publish_main(int argc, char** argv)
             printf("failed to setup neccessary account information: %s\n", strerror(-status));
             break;
         }
+        params.publisher = publisher;
 
         // publish the package
         status = chefclient_pack_publish(&params, packPath);
