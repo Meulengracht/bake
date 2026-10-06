@@ -57,6 +57,7 @@ enum state {
     STATE_PLATFORM,       // MAPPING_START
     STATE_PLATFORM_NAME,
     STATE_PLATFORM_BASE,
+    STATE_PLATFORM_TARGET,
     STATE_PLATFORM_TOOLCHAIN,
     STATE_PLATFORM_ARCH_LIST,
 
@@ -989,6 +990,8 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
                         __parser_push_state(s, STATE_PLATFORM_NAME);
                     } else if (strcmp(value, "base") == 0) {
                         __parser_push_state(s, STATE_PLATFORM_BASE);
+                    } else if (strcmp(value, "target") == 0) {
+                        __parser_push_state(s, STATE_PLATFORM_TARGET);
                     } else if (strcmp(value, "toolchain") == 0) {
                         __parser_push_state(s, STATE_PLATFORM_TOOLCHAIN);
                     } else if (strcmp(value, "architectures") == 0) {
@@ -1009,6 +1012,7 @@ static int __consume_event(struct parser_state* s, yaml_event_t* event)
 
         __consume_scalar_fn(STATE_PLATFORM_NAME, platform.name, __parse_string)
         __consume_scalar_fn(STATE_PLATFORM_BASE, platform.base, __parse_string)
+        __consume_scalar_fn(STATE_PLATFORM_TARGET, platform.target, __parse_string)
         __consume_scalar_fn(STATE_PLATFORM_TOOLCHAIN, platform.toolchain, __parse_string)
         __consume_sequence_unmapped(STATE_PLATFORM_ARCH_LIST, __add_platform_archs)
 
@@ -1883,6 +1887,7 @@ static void __destroy_platform(struct recipe_platform* platform)
 {
     free((void*)platform->name);
     free((void*)platform->base);
+    free((void*)platform->target);
     free((void*)platform->toolchain);
     __destroy_list(string, platform->archs.head, struct list_item_string);
     free(platform);

@@ -1,5 +1,20 @@
 <h1 align="center" style="margin-top: 0px;">Recipe Specification</h1>
 
+## Platform toolchain targets
+
+`platforms[].name` identifies the Chef build/package platform. When a toolchain
+package exposes named target profiles, `platforms[].target` selects the profile
+to use; it does not change the Chef platform. If omitted, Chef selects the
+profile whose name matches `platforms[].name`. An explicit target that is not
+present in the selected toolchain package is an error.
+
+```yaml
+platforms:
+  - name: linux
+    target: vali
+    toolchain: vali/clang-cc=devel
+```
+
 ## Combined build steps
 
 CMake and Autotools projects can configure, build, and install into Chef's staging
@@ -368,9 +383,10 @@ packs:
     #
     # Describes a host-side compiler installation using paths relative to the
     # unpacked package root. A toolchain package may target another platform;
-    # targets select target-specific defaults by the build platform. Their
-    # triples and compiler arguments can use Chef variables, allowing one
-    # package to support multiple target architectures without duplicate packs.
+    # targets define target-specific defaults. The recipe platform's optional
+    # target field selects a profile (or defaults to the platform name). Their
+    # triples and compiler arguments can use Chef variables, allowing one package
+    # to support multiple target architectures without duplicate packs.
     toolchain:
       root: usr/local
       cc: bin/clang

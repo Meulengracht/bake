@@ -107,6 +107,7 @@ struct recipe_platform {
     struct list_item list_header;
     const char*      name;
     const char*      base;
+    const char*      target;
     const char*      toolchain;
     struct list      archs;  // list<list_item_string>
 };
@@ -251,6 +252,7 @@ extern void recipe_destroy(struct recipe* recipe);
 
 // recipe parser utilities
 extern int         recipe_parse_platform_toolchain(const char* toolchain, char** ingredient, char** channel, char** version);
+extern struct recipe_platform* recipe_find_platform(struct recipe* recipe, const char* platform);
 extern const char* recipe_find_platform_toolchain(struct recipe* recipe, const char* platform);
 extern int         recipe_ensure_target(struct recipe* recipe, const char** expectedPlatform, struct list* expectedArchs);
 extern int         recipe_parse_part_step(const char* str, char** part, char** step);

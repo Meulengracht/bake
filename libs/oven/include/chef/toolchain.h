@@ -33,9 +33,9 @@ struct chef_toolchain {
 /**
  * @brief Resolve a recipe toolchain reference for the build host.
  *
- * The selected platform is used to expand the special "platform" reference and
- * to select matching target metadata. The host platform and architecture are
- * used only to retrieve the toolchain package.
+ * The selected platform resolves the special "platform" reference. Its optional
+ * target selector chooses matching target metadata, defaulting to the platform
+ * name. The host platform and architecture retrieve the toolchain package.
  */
 extern int chef_toolchain_resolve(
     struct recipe*         recipe,

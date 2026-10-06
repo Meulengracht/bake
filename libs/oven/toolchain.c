@@ -68,7 +68,10 @@ int chef_toolchain_resolve(
     const char*            toolchainsRoot,
     struct chef_toolchain* toolchainOut)
 {
+    struct recipe_platform* platform;
+
     const char* packageReference = reference;
+    const char* targetName = toolchainPlatform;
     const char* packagePath;
     char*       name = NULL;
     char*       channel = NULL;
@@ -82,16 +85,22 @@ int chef_toolchain_resolve(
         errno = EINVAL;
         return -1;
     }
+    
     memset(toolchainOut, 0, sizeof(struct chef_toolchain));
+
+    platform = recipe_find_platform(recipe, toolchainPlatform);
+    if (platform != NULL && platform->target != NULL) {
+        targetName = platform->target;
+    }
 
     // If reference is set to platform, we must find it in the
     // platform list of the recipe.
     if (strcmp(reference, "platform") == 0) {
-        packageReference = recipe_find_platform_toolchain(recipe, toolchainPlatform);
-        if (packageReference == NULL) {
+        if (platform == NULL || platform->toolchain == NULL) {
             errno = ENOENT;
             return -1;
         }
+        packageReference = platform->toolchain;
     }
 
     // reference is expected to be in the format "publisher/name=channel"
@@ -131,18 +140,22 @@ int chef_toolchain_resolve(
         const struct chef_package_manifest_toolchain_target* target =
             &toolchainOut->manifest->toolchain.targets[i];
 
-        if (target->name != NULL && strcmp(target->name, toolchainPlatform) == 0) {
+        if (target->name != NULL && strcmp(target->name, targetName) == 0) {
             toolchainOut->target = target;
             break;
         }
     }
 
-    // If the toolchain has no target for the given platform, we can either
-    // fail or we can let the toolchain be used without a specific target for the platform.
-    // sometimes project supply their own things. We warn so it's visible, but do not
-    // stop execution. (For now)
     if (toolchainOut->target == NULL) {
-        VLOG_WARNING("toolchain", "no matching target found for platform %s in package %s\n", toolchainPlatform, packageReference);
+        if (platform != NULL && platform->target != NULL) {
+            VLOG_ERROR("toolchain", "target profile %s was not found in package %s\n",
+                targetName, packageReference);
+            errno = ENOENT;
+            status = -1;
+            goto cleanup;
+        }
+        VLOG_WARNING("toolchain", "no matching target found for platform %s in package %s\n",
+            targetName, packageReference);
     }
 
     toolchainOut->unpack_path = strpathcombine(toolchainsRoot, name);

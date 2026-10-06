@@ -137,6 +137,7 @@ int test_recipe_platforms(void)
         "platforms:\n"
         "- name: linux\n"
         "  base: ubuntu-22.04\n"
+        "  target: vali\n"
         "  toolchain: my-toolchain\n"
         "  architectures:\n"
         "  - x86_64\n"
@@ -156,6 +157,7 @@ int test_recipe_platforms(void)
     TEST_ASSERT(plat != NULL, "platform should not be NULL");
     TEST_ASSERT(strcmp(plat->name, "linux") == 0, "platform name should be 'linux'");
     TEST_ASSERT(strcmp(plat->base, "ubuntu-22.04") == 0, "platform base should be 'ubuntu-22.04'");
+    TEST_ASSERT(strcmp(plat->target, "vali") == 0, "platform target should be 'vali'");
     TEST_ASSERT(strcmp(plat->toolchain, "my-toolchain") == 0, "platform toolchain should match");
     TEST_ASSERT(plat->archs.count == 2, "platform should have 2 archs");
 
