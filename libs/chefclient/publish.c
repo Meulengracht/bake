@@ -453,9 +453,9 @@ static int __publish_complete(const char* channel, struct __initiate_response* c
         goto cleanup;
     }
 
-    code = curl_easy_setopt(request->curl, CURLOPT_POST, 1L);
+    code = curl_easy_setopt(request->curl, CURLOPT_POSTFIELDS, "");
     if (code != CURLE_OK) {
-        VLOG_ERROR("chef-client", "__publish_complete: failed to set method [%s]\n", request->error);
+        VLOG_ERROR("chef-client", "__publish_complete: failed to set empty body [%s]\n", request->error);
         goto cleanup;
     }
 
