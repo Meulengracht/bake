@@ -29,14 +29,58 @@
 
 extern const char* chefclient_api_base_url(void);
 
+static int __file_seek_offset(FILE* file, curl_off_t offset, int origin)
+{
+#if defined(_WIN32)
+    return _fseeki64(file, offset, origin);
+#else
+    return fseeko(file, (off_t)offset, origin);
+#endif
+}
+
+static int __get_file_size(FILE* file, curl_off_t* sizeOut)
+{
+    int status = __file_seek_offset(file, 0, SEEK_END);
+    if (status != 0) {
+        return -1;
+    }
+
+#if defined(_WIN32)
+    *sizeOut = _ftelli64(file);
+#else
+    *sizeOut = ftello(file);
+#endif
+    if (*sizeOut < 0) {
+        return -1;
+    }
+    return __file_seek_offset(file, 0, SEEK_SET);
+}
+
 struct __initiate_response {
     const char* upload_token;
     int         revision;
 };
 
-static json_t* __create_publish_request(struct chef_publish_params* params)
+static json_t* __create_publish_request(struct chef_publish_params* params, const char* path)
 {
-    json_t* request = json_object();
+    FILE*      file;
+    curl_off_t fileSize;
+    int        status;
+    json_t*    request;
+
+    file = fopen(path, "rb");
+    if (file == NULL) {
+        VLOG_ERROR("chef-client", "__create_publish_request: failed to open package %s\n", path);
+        return NULL;
+    }
+    status = __get_file_size(file, &fileSize);
+    fclose(file);
+    if (status != 0) {
+        VLOG_ERROR("chef-client", "__create_publish_request: failed to determine package size\n");
+        return NULL;
+    }
+
+    request = json_object();
     if (!request) {
         return NULL;
     }
@@ -45,7 +89,7 @@ static json_t* __create_publish_request(struct chef_publish_params* params)
     json_object_set_new(request, "PackageName", json_string(params->package));
     json_object_set_new(request, "Platform", json_string(params->platform));
     json_object_set_new(request, "Architecture", json_string(params->architecture));
-    json_object_set_new(request, "Size", json_integer(params->version->size));
+    json_object_set_new(request, "Size", json_integer((json_int_t)fileSize));
     json_object_set_new(request, "Major", json_integer(params->version->major));
     json_object_set_new(request, "Minor", json_integer(params->version->minor));
     json_object_set_new(request, "Patch", json_integer(params->version->patch));
@@ -220,23 +264,29 @@ cleanup:
 }
 
 struct file_upload_context {
-    FILE*  file;
-    size_t length;
-    size_t uploaded;
-    size_t read;
+    FILE*      file;
+    curl_off_t length;
+    curl_off_t uploaded;
+    curl_off_t read;
 };
 
 static int __file_upload_context_init(struct file_upload_context* context, const char* path)
 {
+    int status;
+
     context->file = fopen(path, "rb");
     if (context->file == NULL) {
         return -1;
     }
 
-    fseek(context->file, 0, SEEK_END);
-    context->length = ftell(context->file);
-    
-    fseek(context->file, 0, SEEK_SET);
+    status = __get_file_size(context->file, &context->length);
+    if (status != 0) {
+        VLOG_ERROR("chef-client", "__file_upload_context_init: failed to determine package size\n");
+        fclose(context->file);
+        context->file = NULL;
+        return -1;
+    }
+
     context->uploaded = 0;
     context->read     = 0;
     return 0;
@@ -259,13 +309,13 @@ static void __update_progress(struct file_upload_context* context)
             printf(" ");
         }
     }
-    printf("| %3d%%] %6zu / %6zu bytes", percent, context->uploaded, context->length);
+    printf("| %3d%%] %6lld / %6lld bytes", percent, (long long)context->uploaded, (long long)context->length);
     fflush(stdout);
 }
 
 static int __file_seek(void* arg, curl_off_t offset, int origin) {
     struct file_upload_context* context = (struct file_upload_context*)arg;
-    return fseek(context->file, (long)offset, origin);
+    return __file_seek_offset(context->file, offset, origin);
 }
 
 static size_t __file_read(char *buffer, size_t size, size_t nitems, void* arg) {
@@ -441,7 +491,7 @@ int chefclient_pack_publish(struct chef_publish_params* params, const char* path
     json_t*                    request;
     int                        status;
 
-    request = __create_publish_request(params);
+    request = __create_publish_request(params, path);
     if (!request) {
         VLOG_ERROR("chef-client", "chefclient_pack_publish: failed to create publish request\n");
         status = -1;
