@@ -474,13 +474,14 @@ static struct containerv_container_process* __container_process_find(
 
 static void __lcow_console_stop(struct containerv_container* container)
 {
-    // Preserve the grace wait, pipe close, second wait, then thread handle close.
+    // A failed VM creation leaves ConnectNamedPipe blocked. Closing the pipe
+    // from this thread can itself block on that synchronous I/O. Cancel the
+    // reader and join it before releasing its pipe or container memory.
     if (container->lcow_console_thread != NULL) {
-        if (WaitForSingleObject(container->lcow_console_thread, 2000) == WAIT_TIMEOUT &&
-            container->lcow_console_pipe != INVALID_HANDLE_VALUE) {
-            CloseHandle(container->lcow_console_pipe);
-            container->lcow_console_pipe = INVALID_HANDLE_VALUE;
-            WaitForSingleObject(container->lcow_console_thread, 2000);
+        InterlockedExchange(&container->lcow_console_stopping, 1);
+        while (WaitForSingleObject(container->lcow_console_thread, 100) == WAIT_TIMEOUT) {
+            // Repeat to cover cancellation racing the reader's first I/O.
+            CancelSynchronousIo(container->lcow_console_thread);
         }
         CloseHandle(container->lcow_console_thread);
         container->lcow_console_thread = NULL;
@@ -522,6 +523,11 @@ static void __container_delete(struct containerv_container* container)
     free(container->hostname);
     free(container->runtime_dir);
     free(container->rootfs);
+    free(container->lcow_disk_path);
+    free(container->lcow_disk_pending);
+    if (container->lcow_disk_lock != NULL) {
+        CloseHandle(container->lcow_disk_lock);
+    }
 
     if (container->policy != NULL) {
         containerv_policy_delete(container->policy);
@@ -611,7 +617,8 @@ static int __container_create_lcow_system(
         goto cleanup;
     }
 
-    if (__lcow_prepare_rootfs(container, options, &bundlePaths) != 0) {
+    if (__lcow_storage_prepare(container) != 0 ||
+        __lcow_prepare_rootfs(container, options, &bundlePaths) != 0) {
         goto cleanup;
     }
 
@@ -654,6 +661,16 @@ int containerv_create(
     if (options == NULL) {
         VLOG_ERROR("containerv", "containerv_create: options are required on Windows\n");
         errno = EINVAL;
+        return -1;
+    }
+
+    *containerOut = NULL;
+    // Host Job Objects do not contain HCS/GCS guest processes. Never accept
+    // limits that this backend cannot enforce.
+    if (options->limits.memory_max || options->limits.cpu_percent ||
+        options->limits.process_count || options->limits.io_bandwidth) {
+        VLOG_ERROR("containerv", "Windows guest resource limits are not implemented; refusing unenforced limits\n");
+        errno = ENOTSUP;
         return -1;
     }
     
@@ -706,12 +723,6 @@ int containerv_create(
         goto failure;
     }
 
-    // Transfer policy only after creation succeeds; layers remain borrowed.
-    if (options->policy) {
-        container->policy = options->policy;
-        options->policy = NULL;
-    }
-
     if (options->layers) {
         container->layers = options->layers;
     }
@@ -730,17 +741,17 @@ int containerv_create(
             VLOG_WARNING("containerv", "containerv_create: failed to create job object\n");
         } else {
             VLOG_DEBUG("containerv", "containerv_create: created job object\n");
-            if (container->policy && windows_apply_job_security(container->job_object, container->policy) != 0) {
+            if (options->policy && windows_apply_job_security(container->job_object, options->policy) != 0) {
                 VLOG_WARNING("containerv", "containerv_create: failed to apply job security\n");
             }
         }
     }
     
     // Setup volumes and mounts for container
-    if (options->capabilities & CV_CAP_FILESYSTEM) {
+    if (!container->guest_is_windows || (options->capabilities & CV_CAP_FILESYSTEM)) {
         if (__windows_setup_volumes(container, options) != 0) {
-            VLOG_WARNING("containerv", "containerv_create: volume setup encountered issues\n");
-            // Continue anyway, basic filesystem might still work
+            VLOG_ERROR("containerv", "containerv_create: required volume setup failed\n");
+            goto failure;
         }
     }
     
@@ -755,12 +766,21 @@ int containerv_create(
     }
 
     VLOG_DEBUG("containerv", "containerv_create: created HCS container %s\n", container->id);
+
+    // Transfer ownership only after all required setup succeeds.
+    container->policy = options->policy;
+    options->policy = NULL;
     
     *containerOut = container;
     return 0;
 
 failure:
-    __container_delete(container);
+    {
+        int saved_errno = errno;
+        __windows_cleanup_network(container, NULL);
+        __container_delete(container);
+        errno = saved_errno;
+    }
     return -1;
 }
 

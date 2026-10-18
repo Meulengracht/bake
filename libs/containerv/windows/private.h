@@ -322,9 +322,15 @@ struct containerv_container {
     // LCOW utility VM console capture and GCS bridge
     HANDLE       lcow_console_pipe;
     HANDLE       lcow_console_thread;
+    volatile LONG lcow_console_stopping;
     uintptr_t    lcow_gcs_listener;
     uintptr_t    lcow_gcs_socket;
     uint64_t     lcow_gcs_next_id;
+    char*        lcow_disk_path;
+    char*        lcow_disk_pending;
+    HANDLE       lcow_disk_lock;
+    int          lcow_disk_fresh;
+    int          lcow_storage_ready;
     
     // Resource management
     HANDLE                               job_object;         // Job Object for resource limits
@@ -402,6 +408,12 @@ extern void __hcs_cleanup(void);
 // Add a Plan9 share to an existing HCS compute system (Hyper-V isolation).
 // Share names must match between UVM creation and later mounts, so always derive them here.
 #define HCS_LCOW_ROOTFS_SHARE_NAME "0"
+#define HCS_LCOW_STORAGE_CONTROLLER "df6d0690-79e5-55b6-a5ec-c1e2f77f580a"
+#define HCS_LCOW_NATIVE_ROOTFS "/run/chef-storage/rootfs"
+extern int __lcow_storage_prepare(struct containerv_container* container);
+extern int __lcow_storage_mount(struct containerv_container* container);
+extern void __lcow_storage_flush(struct containerv_container* container);
+extern int __lcow_storage_copy_seed(const char* source, const char* destination);
 extern void __hcs_plan9_share_name(const char* host_path, char* buffer, size_t buffer_size);
 
 extern int __hcs_plan9_share_add(

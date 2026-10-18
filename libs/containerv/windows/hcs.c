@@ -114,6 +114,9 @@ static HRESULT __hcs_operation_wait(HCS_OPERATION operation, DWORD timeoutMs, co
     }
 
     hr = g_hcs.HcsWaitForOperationResult(operation, timeoutMs, &resultDoc);
+    if (FAILED(hr)) {
+        errno = (hr == (HRESULT)0x8037011b || hr == E_ACCESSDENIED) ? EACCES : EIO;
+    }
     if (FAILED(hr) && what != NULL) {
         char* detail = __windows_wide_to_utf8_alloc(resultDoc);
         VLOG_ERROR("containerv[hcs]", "%s failed: 0x%lx (%s)\n", what, hr, detail ? detail : "no details");
@@ -343,7 +346,8 @@ static DWORD WINAPI __lcow_console_reader(void* context)
     DWORD                        bytesRead;
     BOOL                         connected;
 
-    if (container == NULL || container->lcow_console_pipe == INVALID_HANDLE_VALUE) {
+    if (container == NULL || container->lcow_console_pipe == INVALID_HANDLE_VALUE ||
+        InterlockedCompareExchange(&container->lcow_console_stopping, 0, 0)) {
         return 1;
     }
 
@@ -354,7 +358,8 @@ static DWORD WINAPI __lcow_console_reader(void* context)
         return 1;
     }
 
-    while (ReadFile(container->lcow_console_pipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+    while (!InterlockedCompareExchange(&container->lcow_console_stopping, 0, 0) &&
+        ReadFile(container->lcow_console_pipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
         for (DWORD i = 0; i < bytesRead; i++) {
             char c = buffer[i];
 
@@ -700,7 +705,7 @@ static int __build_oci_spec_if_needed(
     }
 
     // If we don't have a rootfs mapped, fail LCOW process creation.
-    if (!rootfs_available) {
+    if (!rootfs_available || !container->lcow_storage_ready) {
         VLOG_ERROR("containerv[hcs]", "LCOW OCI spec failed: rootfs not mapped for container %s\n",
                    container ? container->id : "<unknown>");
         return -1;
@@ -778,7 +783,7 @@ static int __build_oci_spec_if_needed(
         params.args_json = capture_args_json;
     }
     params.envv = (const char* const*)options->envv;
-    params.root_path = "/chef/rootfs";
+    params.root_path = HCS_LCOW_NATIVE_ROOTFS;
     params.cwd = "/";
     params.hostname = "chef";
     params.mounts = mountCtx.mounts;
@@ -1514,7 +1519,7 @@ static wchar_t* __hcs_create_lcow_config_schema2(
     const char*                       console_pipe)
 {
     static const char* const scsiControllerGuids[] = {
-        "df6d0690-79e5-55b6-a5ec-c1e2f77f580a",
+        HCS_LCOW_STORAGE_CONTROLLER,
         "0110f83b-de10-5172-a266-78bca56bf50a",
         "b5d2d8d4-3a75-51bf-945b-3444dc6b8579",
         "305891a9-b251-5dfe-91a2-c25d9212275b"
@@ -1666,6 +1671,15 @@ static wchar_t* __hcs_create_lcow_config_schema2(
             json_decref(attachments);
             json_decref(controller);
             goto cleanup;
+        }
+        if (i == 0) {
+            json_t* disk = json_pack("{s:s,s:s,s:b}", "Type", "VirtualDisk",
+                "Path", container->lcow_disk_path, "ReadOnly", 0);
+            if (disk == NULL || json_object_set_new(attachments, "0", disk) != 0) {
+                json_decref(attachments);
+                json_decref(controller);
+                goto cleanup;
+            }
         }
         if (json_object_set_new(controller, "Attachments", attachments) != 0) {
             json_decref(controller);
@@ -2293,6 +2307,7 @@ int __hcs_destroy_compute_system(struct containerv_container* container)
     VLOG_DEBUG("containerv[hcs]", "destroying HCS compute system for container %s\n", container->id);
 
     if (container->vm_started) {
+        __lcow_storage_flush(container);
         hr = __hcs_stop_compute_system(container, 0);
         if (FAILED(hr)) {
             VLOG_WARNING("containerv[hcs]", "graceful shutdown failed, forcing termination: 0x%lx\n", hr);

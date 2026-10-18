@@ -436,7 +436,12 @@ int containerv_oci_bundle_prepare_rootfs_standard_files(
         return -1;
     }
 
-    (void)__ensure_parent_dirs(paths->rootfs_dir, "etc");
+    if (containerv_oci_bundle_prepare_rootfs_dir(paths, "/etc", 0755) != 0) {
+        free(etc_hosts);
+        free(etc_hostname);
+        free(etc_resolv);
+        return -1;
+    }
 
     char hosts_buf[512];
     snprintf(hosts_buf, sizeof(hosts_buf), "127.0.0.1\tlocalhost\n127.0.1.1\t%s\n", host);

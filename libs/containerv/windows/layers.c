@@ -260,7 +260,8 @@ int containerv_layers_compose_ex(
     // Windows backend supports:
     // - Exactly one BASE_ROOTFS, plus optional VAFS_PACKAGE layers applied on top by materialization, OR
     // - One or more VAFS_PACKAGE layers materialized into a directory (no BASE_ROOTFS).
-    // OVERLAY layers are ignored (no overlayfs).
+    // LCOW uses a persistent native writable rootfs provisioned at VM startup.
+    // WCOW still has no implementation of the generic OVERLAY descriptor.
     if (base_rootfs_count > 1) {
         VLOG_ERROR("containerv", "containerv_layers_compose: multiple BASE_ROOTFS layers are not supported on Windows\n");
         errno = ENOTSUP;
@@ -272,7 +273,7 @@ int containerv_layers_compose_ex(
         return -1;
     }
 
-    if (saw_overlay) {
+    if (saw_overlay && !is_lcow) {
         VLOG_WARNING("containerv", "containerv_layers_compose: OVERLAY layers are ignored on Windows (no overlayfs)\n");
     }
 
@@ -340,7 +341,8 @@ int containerv_layers_compose_ex(
                     errno = EINVAL;
                     return -1;
                 }
-                if (platform_copydir(base_rootfs, outDir) != 0) {
+                if ((is_lcow ? __lcow_storage_copy_seed(base_rootfs, outDir)
+                             : platform_copydir(base_rootfs, outDir)) != 0) {
                     VLOG_ERROR("containerv", "containerv_layers_compose: failed to materialize BASE_ROOTFS into %s (%s: %lu)\n",
                         outDir, platform_copydir_lasterror_operation(), platform_copydir_lasterror());
                     containerv_layers_destroy(context);

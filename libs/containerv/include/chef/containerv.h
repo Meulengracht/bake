@@ -226,7 +226,9 @@ extern void containerv_options_set_windows_wcow_parent_layers(
 );
 
 /**
- * @brief Configure resource limits for the Windows container using Job Objects
+ * @brief Request Windows guest resource limits.
+ * Windows creation currently rejects explicit limits with ENOTSUP: host Job
+ * Objects do not enforce limits on HCS/GCS guest processes.
  * @param options The container options to configure
  * @param memory_max Maximum memory (e.g., "1G", "512M", "max" for no limit), or NULL for default (1G)
  * @param cpu_percent CPU percentage (1-100), or NULL for default (50)

@@ -143,6 +143,11 @@ int __windows_setup_volumes(
         VLOG_DEBUG("containerv[windows]", "no layers/volumes to configure\n");
         return 0;
     }
+    // WCOW mapped directories are already part of its HCS Container document.
+    // Plan9 devices and GCS mapped-directory requests belong to the Linux UVM.
+    if (container->guest_is_windows) {
+        return 0;
+    }
 
     VLOG_DEBUG("containerv[windows]", "setting up volumes for container %s from layers\n", container->id);
 
@@ -163,6 +168,11 @@ int __windows_setup_volumes(
             VLOG_ERROR("containerv[windows]", "failed to share LCOW rootfs %s\n", container->rootfs);
             return -1;
         }
+        // Seed native storage before mounting project/store directories: these
+        // remain live host shares and must never be copied into the disk.
+        if (__lcow_storage_mount(container) != 0) {
+            return -1;
+        }
     }
 
     // Always share staging directory for Hyper-V containers (Plan9).
@@ -170,7 +180,8 @@ int __windows_setup_volumes(
         char stage_host[MAX_PATH];
         snprintf(stage_host, sizeof(stage_host), "%s\\staging", container->runtime_dir);
         if (__windows_configure_shared_folder(container, stage_host, "/chef/rootfs/chef/staging", 0) != 0) {
-            VLOG_WARNING("containerv[windows]", "failed to share staging directory %s\n", stage_host);
+            VLOG_ERROR("containerv[windows]", "failed to share staging directory %s\n", stage_host);
+            return -1;
         }
     }
 

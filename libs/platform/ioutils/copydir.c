@@ -27,6 +27,7 @@
 #include <wchar.h>
 #else
 #include <dirent.h>
+#include <unistd.h>
 #endif
 
 static int __path_is_directory(const char* path)
@@ -86,6 +87,9 @@ static void __set_errno_from_windows_error(DWORD error)
             break;
         case ERROR_DIRECTORY:
             errno = ENOTDIR;
+            break;
+        case ERROR_NOT_SUPPORTED:
+            errno = ENOTSUP;
             break;
         default:
             errno = EIO;
@@ -564,8 +568,14 @@ static int __copydir_windows(const wchar_t* source, const wchar_t* destination)
                 wchar_t* source_child;
                 wchar_t* destination_child;
 
-                if (!__is_dot_entry(entry->FileName, name_length) &&
-                    (entry->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
+                if (!__is_dot_entry(entry->FileName, name_length)) {
+                    if (entry->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+                        // Never report success with missing files. Reparse-point
+                        // preservation needs an explicit policy on Windows.
+                        __set_copydir_error("copy reparse point", ERROR_NOT_SUPPORTED);
+                        status = -1;
+                        break;
+                    }
                     source_child = __join_wide_path(source, entry->FileName, name_length);
                     destination_child = __join_wide_path(destination, entry->FileName, name_length);
                     if (source_child == NULL || destination_child == NULL) {
@@ -611,9 +621,13 @@ static int __copydir_linux(const char* source, const char* destination)
     DIR*           directory;
     struct dirent* entry;
     int            status = 0;
+    struct platform_stat source_stat;
 
-    if (!__path_is_directory(source)) {
-        errno = ENOENT;
+    if (platform_stat(source, &source_stat) != 0) {
+        return -1;
+    }
+    if (source_stat.type != PLATFORM_FILETYPE_DIRECTORY) {
+        errno = ENOTDIR;
         return -1;
     }
 
@@ -626,10 +640,17 @@ static int __copydir_linux(const char* source, const char* destination)
         return -1;
     }
 
-    while ((entry = readdir(directory)) != NULL) {
+    for (;;) {
         char* childSource;
         char* childDestination;
         struct platform_stat st;
+
+        errno = 0;
+        entry = readdir(directory);
+        if (entry == NULL) {
+            status = errno == 0 ? 0 : -1;
+            break;
+        }
 
         if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
             continue;
@@ -656,6 +677,21 @@ static int __copydir_linux(const char* source, const char* destination)
             status = __copydir_linux(childSource, childDestination);
         } else if (st.type == PLATFORM_FILETYPE_FILE) {
             status = platform_copyfile(childSource, childDestination);
+            if (status == 0) {
+                status = platform_chmod(childDestination, st.permissions);
+            }
+        } else if (st.type == PLATFORM_FILETYPE_SYMLINK) {
+            char* target = NULL;
+            status = platform_readlink(childSource, &target);
+            if (status == 0) {
+                // Do not dereference links or create their targets. In
+                // particular, dangling and relative links must stay intact.
+                status = symlink(target, childDestination);
+            }
+            free(target);
+        } else {
+            errno = ENOTSUP;
+            status = -1;
         }
 
         free(childSource);
@@ -665,7 +701,14 @@ static int __copydir_linux(const char* source, const char* destination)
         }
     }
 
-    closedir(directory);
+    {
+        int saved_errno = errno;
+        closedir(directory);
+        errno = saved_errno;
+    }
+    if (status == 0) {
+        status = platform_chmod(destination, source_stat.permissions);
+    }
     return status;
 }
 #endif
