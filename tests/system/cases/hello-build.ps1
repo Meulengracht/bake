@@ -274,6 +274,13 @@ try {
     [IO.File]::WriteAllText((Join-Path $configDir 'bake.json'), ($config | ConvertTo-Json -Depth 8))
 
     Copy-Item -Path $recipePath -Destination (Join-Path $WorkDir 'hello.yaml') -Force
+    Add-Content -LiteralPath (Join-Path $WorkDir 'hello.yaml') -Value @'
+- name: empty
+  type: ingredient
+  summary: Intentionally unmatched package
+  filters:
+  - nonexistent/**
+'@
     Copy-Item -Path $recipeSource -Destination (Join-Path $WorkDir 'hello-world') -Recurse -Force
     # Exercise metadata that would be lost by copying the install tree to NTFS.
     Add-Content -LiteralPath (Join-Path $WorkDir 'hello-world/CMakeLists.txt') -Value @'
@@ -295,12 +302,17 @@ install(CODE [[
                 Get-ChildItem -LiteralPath $WorkDir -Filter '*.pack' -File | Remove-Item
             }
             Write-Host "Building hello.yaml with bake (attempt $attempt, cold then cached)..."
+            # A skipped package must also remove a previous build's artifact.
+            [IO.File]::WriteAllText((Join-Path $WorkDir 'empty.pack'), 'stale artifact')
             $bakeProcess = Start-Process -FilePath $bake -ArgumentList @('--root', ('"' + $stateRoot + '"'), '-v', 'build', 'hello.yaml', '--platform', 'linux') -WorkingDirectory $WorkDir -RedirectStandardOutput $bakeLog -RedirectStandardError $bakeErrorLog -PassThru -WindowStyle Hidden
             if (-not $bakeProcess.WaitForExit(20 * 60 * 1000)) {
                 throw "bake build timed out after 20 minutes. See $bakeLog"
             }
             if ($bakeProcess.ExitCode -ne 0) {
                 throw "bake build failed with exit code $($bakeProcess.ExitCode). See $bakeLog"
+            }
+            if (Test-Path -LiteralPath (Join-Path $WorkDir 'empty.pack')) {
+                throw "Skipped package left a stale artifact on attempt $attempt"
             }
             if (-not (Get-ChildItem -LiteralPath $WorkDir -Filter '*.pack' -File)) {
                 throw "Build attempt $attempt produced no package. See $bakeLog"

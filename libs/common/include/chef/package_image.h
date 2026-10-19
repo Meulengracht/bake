@@ -44,13 +44,19 @@ struct chef_package_image_options {
     const struct chef_package_manifest* manifest;
 };
 
+enum chef_package_image_result {
+    CHEF_PACKAGE_IMAGE_CREATED = 0,
+    CHEF_PACKAGE_IMAGE_SKIPPED = 1
+};
+
 /**
  * @brief Creates a package image from a staged filesystem tree and manifest.
  *
  * The input directory is copied into a new VaFs image and the supplied Chef
  * manifest is written into the image metadata.
  *
- * @return 0 on success, -1 on failure with errno set.
+ * @return CHEF_PACKAGE_IMAGE_CREATED on success, CHEF_PACKAGE_IMAGE_SKIPPED
+ * when no files or symlinks match, or -1 on failure with errno set.
  */
 extern int chef_package_image_create(const struct chef_package_image_options* options);
 

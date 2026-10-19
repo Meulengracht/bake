@@ -17,6 +17,7 @@
  */
 
 #include <chef/package_image.h>
+#include <chef/platform.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +28,7 @@ int pack_main(int argc, char** argv, struct __bakelib_context* context, struct b
 {
     const char*                       name = NULL;
     const char*                       output = NULL;
+    const char*                       resultPath = NULL;
     struct recipe_pack*               pack = NULL;
     struct list_item*                 item;
     struct chef_package_manifest*     manifest = NULL;
@@ -39,6 +41,8 @@ int pack_main(int argc, char** argv, struct __bakelib_context* context, struct b
             output = argv[++i];
         } else if (!strcmp(argv[i], "--pack-name") && i + 1 < argc) {
             name = argv[++i];
+        } else if (!strcmp(argv[i], "--result") && i + 1 < argc) {
+            resultPath = argv[++i];
         }
     }
 
@@ -61,6 +65,17 @@ int pack_main(int argc, char** argv, struct __bakelib_context* context, struct b
     if (pack == NULL) {
         fprintf(stderr, "bakectl pack: package '%s' not found in recipe\n", name);
         return -1;
+    }
+
+    if (resultPath != NULL) {
+        if (strcmp(resultPath, output) == 0) {
+            fprintf(stderr, "bakectl pack: result and package paths must differ\n");
+            return -1;
+        }
+        
+        if (remove(resultPath) != 0 && errno != ENOENT) {
+            return -1;
+        }
     }
     
     // Do not let a skipped/failed pack expose a previous build's artifact.
@@ -85,11 +100,16 @@ int pack_main(int argc, char** argv, struct __bakelib_context* context, struct b
     image.filters = &pack->filters;
     image.manifest = manifest;
     status = chef_package_image_create(&image);
+    if (status == CHEF_PACKAGE_IMAGE_CREATED || status == CHEF_PACKAGE_IMAGE_SKIPPED) {
+        const char* result = status == CHEF_PACKAGE_IMAGE_SKIPPED ? "skipped\n" : "created\n";
+        status = resultPath != NULL ? platform_writetextfile(resultPath, result) : 0;
+    }
 
 cleanup:
     chef_package_manifest_free(manifest);
     if (status != 0) {
         remove(output);
+        if (resultPath != NULL) remove(resultPath);
     }
     return status;
 }

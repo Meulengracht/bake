@@ -531,7 +531,11 @@ int container_client_initialize(struct chef_config_address* config)
         return code;
     }
 
+#if defined(_WIN32)
+    init_link_config(link, gracht_link_stream_based, config);
+#else
     init_link_config(link, gracht_link_packet_based, config);
+#endif
 
     gracht_client_configuration_init(&clientConfiguration);
     gracht_client_configuration_set_link(&clientConfiguration, (struct gracht_link*)link);

@@ -47,6 +47,7 @@ extern int test_image_full(void);
 
 // package manifest tests
 extern int test_package_manifest_application_roundtrip(void);
+extern int test_package_image_empty_and_symlink_only(void);
 extern int test_package_manifest_ingredient_roundtrip(void);
 extern int test_package_manifest_toolchain_roundtrip(void);
 extern int test_package_manifest_rejects_malformed_toolchain_metadata(void);
@@ -84,6 +85,7 @@ static const test_case_t tests[] = {
     {"Image: full",                  test_image_full},
 
     // package manifest tests
+    {"Package image: empty and symlink-only", test_package_image_empty_and_symlink_only},
     {"Package manifest: application roundtrip", test_package_manifest_application_roundtrip},
     {"Package manifest: ingredient roundtrip", test_package_manifest_ingredient_roundtrip},
     {"Package manifest: toolchain roundtrip", test_package_manifest_toolchain_roundtrip},

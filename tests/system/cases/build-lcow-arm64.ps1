@@ -214,7 +214,7 @@ if (-not $DeltaArchive) {
         throw "hcsshim WSL path cannot contain a single quote: $hcsshimWslPath"
     }
     Write-Host "Building hcsshim LCOW guest delta"
-    Invoke-NativeChecked wsl.exe @('-e', 'sh', '-lc', "cd '$hcsshimWslPath' && for tool in make gcc go tar gzip runc; do command -v `$tool >/dev/null || { echo Required WSL tool not found: `$tool >&2; exit 1; }; done && { make USR_MERGED_ROOTFS=1 out/delta.tar.gz || test -s out/delta.tar.gz; }")
+    Invoke-NativeChecked wsl.exe @('-e', 'sh', '-lc', "cd '$hcsshimWslPath' && for tool in make gcc go tar gzip runc; do command -v `$tool >/dev/null || { echo Required WSL tool not found: `$tool >&2; exit 1; }; done && make USR_MERGED_ROOTFS=1 out/delta.tar.gz")
 
     $rawDeltaArchive = Join-Path $HcsshimDir 'out\delta.tar.gz'
     $DeltaArchive = Join-Path $InputsDir 'delta-with-runc.tar.gz'

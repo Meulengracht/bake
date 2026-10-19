@@ -108,6 +108,41 @@ static int __write_manifest_file(
     return chef_package_image_create(&options);
 }
 
+int test_package_image_empty_and_symlink_only(void)
+{
+    struct chef_package_manifest manifest = {
+        .name = "empty", .platform = "linux", .architecture = "arm64",
+        .type = CHEF_PACKAGE_TYPE_INGREDIENT
+    };
+    struct chef_package_image_options options = { 0 };
+    char* root = platform_tmpdir();
+    char input[PATH_MAX], output[PATH_MAX], payload[PATH_MAX];
+    int status;
+
+    TEST_ASSERT(root != NULL, "temporary directory should be created");
+    snprintf(input, sizeof(input), "%s/input", root);
+    snprintf(output, sizeof(output), "%s/empty.pack", root);
+    snprintf(payload, sizeof(payload), "%s/input/link", root);
+    TEST_ASSERT(platform_mkdir(input) == 0, "empty input should be created");
+    options.input_dir = input;
+    options.output_path = output;
+    options.manifest = &manifest;
+    status = chef_package_image_create(&options);
+    TEST_ASSERT(status == CHEF_PACKAGE_IMAGE_SKIPPED, "empty tree should explicitly skip");
+    TEST_ASSERT(fopen(output, "rb") == NULL, "skip should not create an artifact");
+#ifndef _WIN32
+    TEST_ASSERT(symlink("missing-target", payload) == 0, "symlink fixture should be created");
+    status = chef_package_image_create(&options);
+    TEST_ASSERT(status == CHEF_PACKAGE_IMAGE_CREATED, "symlink-only package must not be skipped");
+    TEST_ASSERT(platform_unlink(payload) == 0, "symlink fixture should be removed");
+#endif
+    TEST_ASSERT(platform_rmdir(input) == 0, "input should be removed");
+    TEST_ASSERT(chef_package_image_create(&options) == -1, "missing input is an error, not a skip");
+    TEST_ASSERT(platform_rmdir(root) == 0, "temporary tree should be removed");
+    free(root);
+    return 0;
+}
+
 static int __write_manifest_with_toolchain_feature(
     const char*               outputPath,
     struct VaFsFeatureHeader* toolchainFeature)

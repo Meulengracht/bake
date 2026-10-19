@@ -578,7 +578,10 @@ static enum chef_status __create_hyperv_container(const struct chef_create_param
             __is_nonempty(params->network.dns) ? params->network.dns : NULL
         );
     } else if (params->gtype == CHEF_GUEST_TYPE_LINUX) {
-        containerv_options_set_network_ex(containerParams->opts, NULL, NULL, NULL, NULL, NULL);
+        containerv_options_set_network_ex(containerParams->opts, NULL, NULL,
+            __is_nonempty(params->network.host_ip) ? params->network.host_ip : NULL,
+            __is_nonempty(params->network.gateway_ip) ? params->network.gateway_ip : NULL,
+            __is_nonempty(params->network.dns) ? params->network.dns : NULL);
     }
 
     // setup other config

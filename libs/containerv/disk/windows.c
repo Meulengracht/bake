@@ -29,6 +29,54 @@
 #include <string.h>
 #include <vlog.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/stat.h>
+#endif
+
+static char* __new_local_generation(const char* cache)
+{
+    for (int attempt = 0; attempt < 16; ++attempt) {
+        char  name[39] = "local-";
+        char* path;
+        int   exists;
+
+        if (platform_secure_random_string(name + 6, 32) != 0) {
+            return NULL;
+        }
+
+        path = strpathcombine(cache, name);
+        if (path == NULL) {
+            return NULL;
+        }
+        
+#ifdef _WIN32
+        if (CreateDirectoryA(path, NULL)) {
+            return path;
+        }
+        
+        exists = GetLastError() == ERROR_ALREADY_EXISTS;
+        if (!exists) {
+            errno = EIO;
+        }
+#else
+        if (mkdir(path, 0700) == 0) {
+            return path;
+        }
+        exists = errno == EEXIST;
+#endif
+        free(path);
+        
+        if (!exists) {
+            return NULL;
+        }
+    }
+    
+    errno = EEXIST;
+    return NULL;
+}
+
 /* Derive a stable cache archive name by prefixing the source suffix with a URL hash. */
 static int __build_cached_archive_name(const char* url, uint64_t hash, char* buffer, size_t buffer_size)
 {
@@ -79,7 +127,7 @@ static char* __archive_name_from_url(const char* url)
 }
 
 /* Keep a validated LCOW bundle unpacked behind a readiness marker in the shared cache. */
-static int __ensure_cached_lcow_bundle(const char* archive_path, const char* bundle_path, int refresh)
+static int __ensure_cached_lcow_bundle(const char* archive_path, const char* bundle_path)
 {
     char* marker = NULL;
     int   status = -1;
@@ -90,7 +138,7 @@ static int __ensure_cached_lcow_bundle(const char* archive_path, const char* bun
         return -1;
     }
 
-    if (refresh || !containerv_disk_path_exists(marker) || containerv_disk_validate_lcow_uvm(bundle_path) != 0) {
+    if (!containerv_disk_path_exists(marker) || containerv_disk_validate_lcow_uvm(bundle_path) != 0) {
         if (containerv_disk_extract_archive(archive_path, bundle_path, 1, 0) != 0) {
             goto cleanup;
         }
@@ -343,7 +391,8 @@ int containerv_disk_setup_lcow_uvm(
     char     archiveName[64];
     char*    archivePath = NULL;
     char*    uvmUnpackDirectory = NULL;
-    int      refreshLocalBundle;
+    int      refreshLocalBundle = 0;
+    int      ownsGeneration = 0;
     int      status = -1;
 
     if (uvmImageOut == NULL) {
@@ -380,16 +429,11 @@ int containerv_disk_setup_lcow_uvm(
 
     VLOG_DEBUG("containerv[lcow]", "resolving LCOW UVM assets from %s\n", uvmUrl);
     if (refreshLocalBundle) {
-        char* cachedArchive = strpathcombine(uvmDirectory, archiveName);
-        if (cachedArchive == NULL) {
-            errno = ENOMEM;
-            goto cleanup;
-        }
-        if (containerv_disk_path_exists(cachedArchive) && platform_unlink(cachedArchive) != 0) {
-            free(cachedArchive);
-            goto cleanup;
-        }
-        free(cachedArchive);
+        char* generation = __new_local_generation(uvmDirectory);
+        if (generation == NULL) goto cleanup;
+        free(uvmDirectory);
+        uvmDirectory = generation;
+        ownsGeneration = 1;
     }
 
     if (containerv_disk_cache_archive(uvmDirectory, archiveName, uvmUrl, &archivePath) != 0) {
@@ -403,7 +447,7 @@ int containerv_disk_setup_lcow_uvm(
         goto cleanup;
     }
 
-    if (__ensure_cached_lcow_bundle(archivePath, uvmUnpackDirectory, refreshLocalBundle) != 0) {
+    if (__ensure_cached_lcow_bundle(archivePath, uvmUnpackDirectory) != 0) {
         VLOG_ERROR("containerv[lcow]", "failed to prepare cached LCOW UVM bundle at %s\n", uvmUnpackDirectory);
         goto cleanup;
     }
@@ -413,6 +457,12 @@ int containerv_disk_setup_lcow_uvm(
     status = 0;
 
 cleanup:
+    // Only this invocation owns a local generation. Published generations are
+    // retained until the cache is explicitly cleared, never refreshed in place.
+    if (ownsGeneration) {
+        if (archivePath != NULL) (void)platform_unlink(archivePath);
+        if (status != 0) (void)platform_rmdir(uvmDirectory);
+    }
     free(archivePath);
     free(uvmUrl);
     free(uvmDirectory);

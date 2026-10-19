@@ -69,13 +69,26 @@ static int __stage_ingredients(struct __bake_build_context* bctx)
 static int __pack_in_guest(struct __bake_build_context* bctx, const char* name, const char* output)
 {
     char*        guestPath = NULL;
+    const char*  guestResult = "/chef/staging/pack-result.txt";
+    char*        temporary = NULL;
+    char*        hostResult = NULL;
+    void*        result = NULL;
+    size_t       resultLength = 0;
     unsigned int pid;
-    int          status;
+    int          status = -1;
     char*        command;
-    const char*  args[9];
+    const char*  args[11];
 
     if (__build_output_path("/chef/staging", name, &guestPath) != 0) {
         return -1;
+    }
+
+    temporary = platform_tmpdir();
+    if (temporary != NULL) {
+        hostResult = strpathcombine(temporary, "pack-result.txt");
+    }
+    if (hostResult == NULL) {
+        goto cleanup;
     }
 
     args[0] = bctx->bakectl_path;
@@ -86,21 +99,48 @@ static int __pack_in_guest(struct __bake_build_context* bctx, const char* name, 
     args[5] = name;
     args[6] = "--output";
     args[7] = guestPath;
-    args[8] = NULL;
+    args[8] = "--result";
+    args[9] = guestResult;
+    args[10] = NULL;
     
     command = strargv_windows(args);
     if (command == NULL) {
-        free(guestPath);
-        return -1;
+        goto cleanup;
     }
 
     // Execute the packing
     status = bake_client_spawn(bctx, command, CHEF_SPAWN_OPTIONS_WAIT, &pid);
     free(command);
     if (status == 0) {
-        // Download the packed file from the guest to the host.
-        status = bake_client_download(bctx, guestPath, output);
+        status = bake_client_download(bctx, guestResult, hostResult);
     }
+    if (status != 0) {
+        status = -1;
+        goto cleanup;
+    }
+    
+    status = platform_readfile(hostResult, &result, &resultLength);
+    if (status != 0) {
+        goto cleanup;
+    }
+    
+    if (resultLength == 8 && memcmp(result, "skipped\n", 8) == 0) {
+        status = CHEF_PACKAGE_IMAGE_SKIPPED;
+    } else if (resultLength == 8 && memcmp(result, "created\n", 8) == 0) {
+        // A missing artifact after an explicit created result is a real error.
+        status = bake_client_download(bctx, guestPath, output) == 0 ? 0 : -1;
+    } else {
+        VLOG_ERROR("bake", "invalid guest packaging result for %s\n", name);
+        status = -1;
+    }
+
+cleanup:
+    if (temporary != NULL) {
+        platform_rmdir(temporary);
+    }
+    free(result);
+    free(hostResult);
+    free(temporary);
     free(guestPath);
     return status;
 }
@@ -126,13 +166,8 @@ int build_step_pack(struct __bake_build_context* bctx)
 
         status = __build_output_path(bctx->host_cwd, pack->name, &outputPath);
         
-        // Because the build's actual install tree now lives on the guest’s ext4 disk. 
-        // Windows can't directly read that tree, and the old host packaging path would read the 
-        // original seed directory—which doesn't contain the build output.
-        // Copying the install tree back through Plan9/NTFS would risk losing the Linux symlinks 
-        // and permissions we introduced ext4 to preserve. Instead, the rootfs-provided bakectl 
-        // reads the native install tree and creates the .pack inside LCOW. Windows then downloads that file.
-        // This applies only to Windows-hosted Linux builds. Native Linux and Windows-container builds retain host-side packaging.
+        // LCOW's install tree lives on guest ext4. The rootfs-provided bakectl
+        // packages it there, preserving Linux metadata through the download.
 #ifdef _WIN32
         if (status == 0 && bctx->guest_type == CHEF_GUEST_TYPE_LINUX) {
             status = __pack_in_guest(bctx, pack->name, outputPath);
@@ -158,6 +193,10 @@ int build_step_pack(struct __bake_build_context* bctx)
             status = chef_package_image_create(&imageOptions);
         }
 
+        if (status == CHEF_PACKAGE_IMAGE_SKIPPED) {
+            // Empty packages are successful skips on both host and guest.
+            status = remove(outputPath) == 0 || errno == ENOENT ? 0 : -1;
+        }
         chef_package_manifest_free(manifest);
         free(outputPath);
         if (status) {
