@@ -44,8 +44,8 @@ int __lcow_storage_copy_seed(const char* source, const char* destination)
             continue;
         }
         attributes = GetFileAttributesA(entry->path);
-        if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-            errno = attributes == INVALID_FILE_ATTRIBUTES ? EIO : ENOTSUP;
+        if (attributes == INVALID_FILE_ATTRIBUTES) {
+            errno = EIO;
             status = -1;
             break;
         }
@@ -54,7 +54,9 @@ int __lcow_storage_copy_seed(const char* source, const char* destination)
             status = -1;
             break;
         }
-        if (entry->type == PLATFORM_FILETYPE_DIRECTORY) {
+        if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+            status = platform_copylink(entry->path, target);
+        } else if (entry->type == PLATFORM_FILETYPE_DIRECTORY) {
             status = platform_copydir(entry->path, target);
         } else if (entry->type == PLATFORM_FILETYPE_FILE) {
             status = platform_copyfile(entry->path, target);

@@ -26,6 +26,7 @@
 
 #include "json-util.h"
 #include "private.h"
+#include "lcow-network-script.h"
 
 static int __gcs_set_request_base(json_t* request, const char* container_id)
 {
@@ -319,22 +320,9 @@ int __hcs_lcow_configure_network(struct containerv_container* container,
         "/bin/busybox",
         "sh",
         "-c",
-        "exec >/dev/kmsg 2>&1; set -eu; bb=/bin/busybox; "
-        "if [ -n \"$1\" ]; then "
-        "  family=-4; case \"$1\" in *:*) family=-6;; esac; "
-        "  $bb ip link set dev eth0 up; "
-        "  $bb ip $family addr flush dev eth0; "
-        "  $bb ip $family addr add \"$1\" dev eth0; "
-        "  if [ -n \"$2\" ]; then $bb ip $family route replace default via \"$2\" dev eth0; fi; "
-        "else "
-        "  $bb timeout 30 $bb udhcpc -i eth0 -q -n -t 5 -T 2 -A 1 -s /usr/share/udhcpc/default.script; "
-        "fi; "
-        "if [ -n \"$3\" ]; then "
-        "  servers=$(printf '%s' \"$3\" | $bb tr ',;' '  '); "
-        "  set -f; : > /chef/rootfs/chef/resolv.conf; "
-        "  for server in $servers; do printf 'nameserver %s\\n' \"$server\" >> /chef/rootfs/chef/resolv.conf; done; "
-        "fi",
-        "chef-lcow-network", address ? address : "", gateway ? gateway : "", dns ? dns : "",
+        "exec >/dev/kmsg 2>&1; exec /bin/sh -c \"$1\" chef-lcow-network \"$2\" \"$3\" \"$4\"",
+        "chef-lcow-network", containerv_lcow_network_script,
+        address ? address : "", gateway ? gateway : "", dns ? dns : "",
         NULL
     };
     struct containerv_lcow_gcs_process process = {0};

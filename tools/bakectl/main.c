@@ -309,6 +309,7 @@ int main(int argc, char** argv, char** envp)
     context = __bakelib_context_new(recipe, recipePath, (const char* const*)envp);
     if (context == NULL) {
         VLOG_ERROR("bakectl", "failed to create bake context\n");
+        status = -1;
         goto cleanup;
     }
 

@@ -29,9 +29,19 @@
 int platform_rmdir(const char *path) 
 {
     WIN32_FIND_DATA findFileData;
-    HANDLE hFind;
-    char fullPath[MAX_PATH];
-    int result = 0;
+    HANDLE          hFind;
+    char            fullPath[MAX_PATH];
+    int             result = 0;
+    DWORD           attributes = GetFileAttributesA(path);
+
+    // Remove a directory link itself, never recurse into its target.
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        return -1;
+    }
+    
+    if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+        return (attributes & FILE_ATTRIBUTE_DIRECTORY ? RemoveDirectoryA(path) : DeleteFileA(path)) ? 0 : -1;
+    }
 
     snprintf(fullPath, sizeof(fullPath), "%s\\*", path);
 
@@ -48,7 +58,10 @@ int platform_rmdir(const char *path)
 
         snprintf(fullPath, sizeof(fullPath), "%s\\%s", path, findFileData.cFileName);
 
-        if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+            result = (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY
+                ? RemoveDirectoryA(fullPath) : DeleteFileA(fullPath)) ? 0 : -1;
+        } else if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             result = platform_rmdir(fullPath);
         } else {
             // DeleteFile refuses read-only files, which are common in extracted rootfs trees.

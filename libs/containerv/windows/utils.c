@@ -26,9 +26,9 @@
 
 int __windows_prepare_share_dir(const char* host_path, int readonly)
 {
-    struct platform_stat st;
+    int is_directory = platform_isdir(host_path);
 
-    if (platform_stat(host_path, &st) != 0) {
+    if (is_directory < 0) {
         if (readonly) {
             VLOG_ERROR("containerv", "shared directory missing (readonly): %s\n", host_path);
             return -1;
@@ -40,7 +40,7 @@ int __windows_prepare_share_dir(const char* host_path, int readonly)
         return 0;
     }
 
-    if (st.type != PLATFORM_FILETYPE_DIRECTORY) {
+    if (is_directory != 1) {
         VLOG_ERROR("containerv", "shared host path is not a directory: %s\n", host_path);
         return -1;
     }
