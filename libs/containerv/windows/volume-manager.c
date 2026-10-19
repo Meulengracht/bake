@@ -57,8 +57,8 @@ static int __windows_configure_shared_folder(
     }
 
     if (container->hcs_system != NULL) {
-        if (windows_grant_vm_group_access(host_path) != 0) {
-            VLOG_ERROR("containerv[windows]", "failed to grant VM group access to shared folder %s\n", host_path);
+        if (windows_grant_vm_access(container, host_path, readonly) != 0) {
+            VLOG_ERROR("containerv[windows]", "failed to grant VM access to shared folder %s\n", host_path);
             return -1;
         }
 

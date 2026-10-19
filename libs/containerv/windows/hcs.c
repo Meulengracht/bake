@@ -137,7 +137,7 @@ void __hcs_plan9_share_name(const char* host_path, char* buffer, size_t buffer_s
     snprintf(buffer, buffer_size, "%llu", (unsigned long long)(containerv_disk_fnv1a64(host_path) & 0xffffffffu));
 }
 
-static int __lcow_plan9_share_append(json_t* shares, const char* name, const char* host_path, int readonly)
+static int __lcow_plan9_share_append(struct containerv_container* container, json_t* shares, const char* name, const char* host_path, int readonly)
 {
     json_t* share;
 
@@ -145,8 +145,8 @@ static int __lcow_plan9_share_append(json_t* shares, const char* name, const cha
         return -1;
     }
 
-    if (windows_grant_vm_group_access(host_path) != 0) {
-        VLOG_ERROR("containerv[hcs]", "failed to grant VM group access to Plan9 share %s (%s)\n", name, host_path);
+    if (windows_grant_vm_access(container, host_path, readonly) != 0) {
+        VLOG_ERROR("containerv[hcs]", "failed to grant VM access to Plan9 share %s (%s)\n", name, host_path);
         return -1;
     }
 
@@ -166,6 +166,7 @@ static int __lcow_plan9_share_append(json_t* shares, const char* name, const cha
 }
 
 struct __lcow_plan9_share_ctx {
+    struct containerv_container* container;
     json_t* shares;
 };
 
@@ -181,7 +182,7 @@ static int __lcow_plan9_share_layer_cb(const char* host_path, const char* contai
     }
 
     __hcs_plan9_share_name(host_path, name, sizeof(name));
-    return __lcow_plan9_share_append(ctx->shares, name, host_path, readonly);
+    return __lcow_plan9_share_append(ctx->container, ctx->shares, name, host_path, readonly);
 }
 
 static int __appendf(char** buf, size_t* cap, size_t* len, const char* fmt, ...)
@@ -1620,15 +1621,15 @@ static wchar_t* __hcs_create_lcow_config_schema2(
     if (rootfs_host_path != NULL && rootfs_host_path[0] != '\0') {
         char stageHost[MAX_PATH];
         char stageName[64];
-        struct __lcow_plan9_share_ctx shareCtx = { .shares = plan9Shares };
+        struct __lcow_plan9_share_ctx shareCtx = { .container = container, .shares = plan9Shares };
 
-        if (__lcow_plan9_share_append(plan9Shares, HCS_LCOW_ROOTFS_SHARE_NAME, rootfs_host_path, 0) != 0) {
+        if (__lcow_plan9_share_append(container, plan9Shares, HCS_LCOW_ROOTFS_SHARE_NAME, rootfs_host_path, 0) != 0) {
             goto cleanup;
         }
 
         snprintf(stageHost, sizeof(stageHost), "%s\\staging", container->runtime_dir);
         __hcs_plan9_share_name(stageHost, stageName, sizeof(stageName));
-        if (__lcow_plan9_share_append(plan9Shares, stageName, stageHost, 0) != 0) {
+        if (__lcow_plan9_share_append(container, plan9Shares, stageName, stageHost, 0) != 0) {
             goto cleanup;
         }
 
@@ -1762,6 +1763,7 @@ cleanup:
 }
 
 static int __grant_lcow_boot_files_access(
+    struct containerv_container*     container,
     const struct containerv_options* options,
     const char*                      utilityvm_path)
 {
@@ -1772,8 +1774,8 @@ static int __grant_lcow_boot_files_access(
         return -1;
     }
 
-    if (windows_grant_vm_group_access(utilityvm_path) != 0) {
-        VLOG_ERROR("containerv[hcs]", "failed to grant VM group access to LCOW bundle %s\n", utilityvm_path);
+    if (windows_grant_vm_access(container, utilityvm_path, 1) != 0) {
+        VLOG_ERROR("containerv[hcs]", "failed to grant VM access to LCOW bundle %s\n", utilityvm_path);
         return -1;
     }
 
@@ -1792,8 +1794,8 @@ static int __grant_lcow_boot_files_access(
             return -1;
         }
 
-        if (windows_grant_vm_group_access(path) != 0) {
-            VLOG_ERROR("containerv[hcs]", "failed to grant VM group access to LCOW boot file %s\n", path);
+        if (windows_grant_vm_access(container, path, 1) != 0) {
+            VLOG_ERROR("containerv[hcs]", "failed to grant VM access to LCOW boot file %s\n", path);
             free(path);
             return -1;
         }
@@ -1849,7 +1851,7 @@ int __hcs_create_container_system(
         return -1;
     }
 
-    if (linux_container && __grant_lcow_boot_files_access(options, utilityvm_path) != 0) {
+    if (linux_container && __grant_lcow_boot_files_access(container, options, utilityvm_path) != 0) {
         return -1;
     }
 
@@ -2341,7 +2343,7 @@ static int __hcs_create_lcow_process(
 {
     char* args_json_utf8 = NULL;
     char* oci_spec_utf8 = NULL;
-    struct containerv_lcow_gcs_process* gcsProcess;
+    struct containerv_lcow_gcs_process* gcsProcess = NULL;
     char gcsContainerId[__CONTAINER_ID_LENGTH + 1];
     uint32_t gcsPid;
     int status = -1;
@@ -2357,18 +2359,11 @@ static int __hcs_create_lcow_process(
         goto cleanup;
     }
 
+    gcsProcess = calloc(1, sizeof(*gcsProcess));
+    if (!gcsProcess) { errno = ENOMEM; goto cleanup; }
     platform_guid_new_string(gcsContainerId);
     VLOG_DEBUG("containerv[gcs]", "creating LCOW hosted container %s for process %s\n", gcsContainerId, options->path);
-    if (__lcow_gcs_create_container(container, gcsContainerId, oci_spec_utf8) != 0 ||
-        __lcow_gcs_execute_container_process(container, gcsContainerId, &gcsPid) != 0) {
-        goto cleanup;
-    }
-
-    gcsProcess = calloc(1, sizeof(*gcsProcess));
-    if (gcsProcess == NULL) {
-        errno = ENOMEM;
-        goto cleanup;
-    }
+    if (__lcow_gcs_start_container(container, gcsContainerId, oci_spec_utf8, &gcsPid) != 0) goto cleanup;
     gcsProcess->magic = CONTAINERV_LCOW_GCS_PROCESS_MAGIC;
     gcsProcess->pid = gcsPid;
     memcpy(gcsProcess->container_id, gcsContainerId, sizeof(gcsProcess->container_id));
@@ -2378,6 +2373,7 @@ static int __hcs_create_lcow_process(
     } else {
         free(gcsProcess);
     }
+    gcsProcess = NULL;
     if (processInfoOut != NULL) {
         memset(processInfoOut, 0, sizeof(*processInfoOut));
         processInfoOut->ProcessId = gcsPid;
@@ -2385,6 +2381,7 @@ static int __hcs_create_lcow_process(
     status = 0;
 
 cleanup:
+    free(gcsProcess);
     free(args_json_utf8);
     free(oci_spec_utf8);
     return status;

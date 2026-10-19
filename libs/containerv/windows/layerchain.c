@@ -165,103 +165,151 @@ int __windows_layerchain_read(const char* layer_dir, char*** parents_out, int* c
     return 0;
 }
 
-static int __strv_contains(char* const* values, int count, const char* value)
+struct layer_node {
+    char* path;
+    BY_HANDLE_FILE_INFORMATION identity;
+    int* after;
+    int after_count;
+    int incoming;
+    int emitted;
+};
+
+struct layer_graph {
+    struct layer_node* nodes;
+    int count;
+};
+
+static int __layer_node(struct layer_graph* graph, const char* path)
 {
-    for (int i = 0; i < count; i++) {
-        if (strcmp(values[i], value) == 0) {
-            return 1;
-        }
+    BY_HANDLE_FILE_INFORMATION identity;
+    struct layer_node* grown;
+    wchar_t* wide = __windows_utf8_to_wide_alloc(path);
+    HANDLE directory;
+    if (!wide) return -1;
+    directory = CreateFileW(wide, FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    free(wide);
+    if (directory == INVALID_HANDLE_VALUE) { errno = ENOENT; return -1; }
+    int ok = GetFileInformationByHandle(directory, &identity);
+    CloseHandle(directory);
+    if (!ok || !(identity.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+        errno = ENOTDIR;
+        return -1;
     }
-    return 0;
+    // Directory identity also deduplicates relative paths and junction aliases,
+    // without conflating distinct names on case-sensitive volumes.
+    for (int i = 0; i < graph->count; ++i) {
+        BY_HANDLE_FILE_INFORMATION* other = &graph->nodes[i].identity;
+        if (identity.dwVolumeSerialNumber == other->dwVolumeSerialNumber &&
+            identity.nFileIndexHigh == other->nFileIndexHigh &&
+            identity.nFileIndexLow == other->nFileIndexLow) return i;
+    }
+    char* copy = _strdup(path);
+    if (!copy) return -1;
+    grown = realloc(graph->nodes, (graph->count + 1) * sizeof(*grown));
+    if (!grown) { free(copy); return -1; }
+    graph->nodes = grown;
+    memset(&grown[graph->count], 0, sizeof(*grown));
+    grown[graph->count].path = copy;
+    grown[graph->count].identity = identity;
+    return graph->count++;
 }
 
-static int __strv_append_unique(char*** values, int* count, int* capacity, const char* value)
+static int __layer_before(struct layer_graph* graph, int before, int after)
 {
-    if (__strv_contains(*values, *count, value)) {
-        VLOG_ERROR("containerv[layerchain]", "duplicate parent layer in chain: %s\n", value);
-        errno = EINVAL;
-        return -1;
+    struct layer_node* node = &graph->nodes[before];
+    for (int i = 0; i < node->after_count; ++i) {
+        if (node->after[i] == after) return 0;
     }
-    if (!containerv_disk_path_is_directory(value)) {
-        VLOG_ERROR("containerv[layerchain]", "parent layer path is not a directory: %s\n", value);
-        errno = ENOENT;
-        return -1;
-    }
-
-    if (*count >= *capacity) {
-        int    newCapacity = (*capacity == 0) ? 8 : (*capacity * 2);
-        char** grown = realloc(*values, (size_t)newCapacity * sizeof(char*));
-        if (grown == NULL) {
-            errno = ENOMEM;
-            return -1;
-        }
-        *values = grown;
-        *capacity = newCapacity;
-    }
-
-    (*values)[*count] = _strdup(value);
-    if ((*values)[*count] == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-    (*count)++;
+    int* grown = realloc(node->after, (node->after_count + 1) * sizeof(int));
+    if (!grown) return -1;
+    node->after = grown;
+    node->after[node->after_count++] = after;
+    graph->nodes[after].incoming++;
     return 0;
 }
 
 int __windows_layerchain_expand(
-    const char* const* parents,
-    int                count,
-    char***            expanded_out,
-    int*               expanded_count_out)
+    const char* const* parents, int count, char*** expanded_out, int* expanded_count_out)
 {
+    struct layer_graph graph = {0};
     char** out = NULL;
-    int    outCount = 0;
-    int    outCapacity = 0;
-
-    if (expanded_out == NULL || expanded_count_out == NULL || parents == NULL || count <= 0) {
+    int previous = -1, status = -1, out_count = 0;
+    if (!parents || count <= 0 || !expanded_out || !expanded_count_out) {
         errno = EINVAL;
         return -1;
     }
     *expanded_out = NULL;
     *expanded_count_out = 0;
-
-    for (int i = 0; i < count; i++) {
-        char** extra = NULL;
-        int    extraCount = 0;
-
-        if (parents[i] == NULL || parents[i][0] == '\0') {
-            continue;
-        }
-        if (__strv_append_unique(&out, &outCount, &outCapacity, parents[i]) != 0) {
-            goto error;
-        }
-
-        // Chains sometimes only list immediate parents; pull in each parent's own chain.
-        if (__windows_layerchain_read(parents[i], &extra, &extraCount) != 0) {
-            VLOG_ERROR("containerv[layerchain]", "failed to read parent chain under %s\n", parents[i]);
-            goto error;
-        }
-        for (int j = 0; j < extraCount; j++) {
-            if (__strv_append_unique(&out, &outCount, &outCapacity, extra[j]) != 0) {
-                __windows_strv_free(extra, extraCount);
-                goto error;
+    // Preserve the caller's top-to-bottom ordering as well as each parent's
+    // ancestry. Repeated entries are overlaps, not cycles by themselves.
+    for (int i = 0; i < count; ++i) {
+        if (!parents[i] || !parents[i][0]) continue;
+        int before_count = graph.count;
+        int node = __layer_node(&graph, parents[i]);
+        if (node < 0) goto cleanup;
+        if (node < before_count) continue;
+        if (previous >= 0 && __layer_before(&graph, previous, node) != 0) goto cleanup;
+        previous = node;
+    }
+    for (int i = 0; i < graph.count; ++i) {
+        char** ancestry = NULL;
+        int ancestry_count = 0;
+        if (__windows_layerchain_read(graph.nodes[i].path, &ancestry, &ancestry_count) != 0) goto cleanup;
+        int* seen = ancestry_count ? calloc(ancestry_count, sizeof(int)) : NULL;
+        int seen_count = 0;
+        if (ancestry_count && !seen) { __windows_strv_free(ancestry, ancestry_count); goto cleanup; }
+        previous = i;
+        for (int j = 0; j < ancestry_count; ++j) {
+            int node = __layer_node(&graph, ancestry[j]);
+            int duplicate = 0;
+            for (int k = 0; k < seen_count; ++k) if (seen[k] == node) duplicate = 1;
+            if (duplicate) continue;
+            if (node < 0 || __layer_before(&graph, previous, node) != 0) {
+                free(seen);
+                __windows_strv_free(ancestry, ancestry_count);
+                goto cleanup;
             }
+            seen[seen_count++] = node;
+            previous = node;
         }
-        __windows_strv_free(extra, extraCount);
+        free(seen);
+        __windows_strv_free(ancestry, ancestry_count);
     }
-
-    if (outCount == 0) {
-        errno = EINVAL;
-        goto error;
+    if (!graph.count) { errno = EINVAL; goto cleanup; }
+    out = calloc(graph.count, sizeof(char*));
+    if (!out) goto cleanup;
+    // Stable topological ordering distinguishes shared ancestry from cycles,
+    // including cycles reached through chains of immediate parents.
+    while (out_count < graph.count) {
+        int next = -1;
+        for (int i = 0; i < graph.count; ++i) {
+            if (!graph.nodes[i].emitted && graph.nodes[i].incoming == 0) { next = i; break; }
+        }
+        if (next < 0) {
+            VLOG_ERROR("containerv[layerchain]", "cyclic or inconsistent parent layer order\n");
+            errno = EINVAL;
+            goto cleanup;
+        }
+        struct layer_node* node = &graph.nodes[next];
+        out[out_count++] = node->path;
+        node->path = NULL;
+        node->emitted = 1;
+        for (int j = 0; j < node->after_count; ++j) graph.nodes[node->after[j]].incoming--;
     }
-
     *expanded_out = out;
-    *expanded_count_out = outCount;
-    return 0;
-
-error:
-    __windows_strv_free(out, outCount);
-    return -1;
+    *expanded_count_out = out_count;
+    out = NULL;
+    status = 0;
+cleanup:
+    __windows_strv_free(out, out_count);
+    for (int i = 0; i < graph.count; ++i) {
+        free(graph.nodes[i].path);
+        free(graph.nodes[i].after);
+    }
+    free(graph.nodes);
+    return status;
 }
 
 int __windows_layerchain_write(const char* layer_dir, const char* const* parents, int count)

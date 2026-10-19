@@ -510,6 +510,7 @@ static void __container_delete(struct containerv_container* container)
     if (container->hcs_system != NULL) {
         __hcs_destroy_compute_system(container);
     }
+    windows_revoke_vm_access(container);
 
     // Closing the job object triggers JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
     if (container->job_object != NULL) {
@@ -794,7 +795,7 @@ static int __container_process_wait(
     if (proc->is_lcow_gcs) {
         return __hcs_wait_lcow_gcs_process(
             container,
-            (const struct containerv_lcow_gcs_process*)proc->handle,
+            (struct containerv_lcow_gcs_process*)proc->handle,
             exitCodeOut);
     }
 
@@ -1156,6 +1157,7 @@ void __containerv_destroy(struct containerv_container* container)
     if (container->hcs_system) {
         __hcs_destroy_compute_system(container);
     }
+    windows_revoke_vm_access(container);
     
     // Retain LCOW staging logs after guest shutdown for diagnostics.
     if (container->runtime_dir && container->guest_is_windows) {

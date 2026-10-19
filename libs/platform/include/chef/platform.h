@@ -571,6 +571,7 @@ extern int platform_copylink(const char* source, const char* destination);
  * @return Zero on success and -1 on invalid input or copy failure.
  */
 extern int platform_copydir(const char* source, const char* destination);
+extern int platform_copydir_case_sensitivity(const char* source, const char* destination);
 
 /**
  * @brief Return the native error from the most recent Windows directory copy.

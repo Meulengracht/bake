@@ -609,6 +609,51 @@ cleanup:
     return 0;
 }
 
+static int __copydir_case_sensitivity(const wchar_t* source, const wchar_t* destination)
+{
+    struct { ULONG Flags; } source_info, destination_info;
+    HANDLE input, output;
+    DWORD  error = ERROR_SUCCESS;
+
+    input = CreateFileW(source, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (input == INVALID_HANDLE_VALUE) {
+        __set_copydir_error("open directory attributes", GetLastError());
+        return -1;
+    }
+
+    if (!GetFileInformationByHandleEx(input, FileCaseSensitiveInfo, &source_info, sizeof(source_info))) {
+        error = GetLastError();
+        CloseHandle(input);
+        // Filesystems without this feature use Windows' default name comparison.
+        if (error == ERROR_INVALID_PARAMETER || error == ERROR_NOT_SUPPORTED) return 0;
+        __set_copydir_error("read directory case sensitivity", error);
+        return -1;
+    }
+    CloseHandle(input);
+
+    output = CreateFileW(destination, FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (output == INVALID_HANDLE_VALUE) {
+        __set_copydir_error("open destination attributes", GetLastError());
+        return -1;
+    }
+
+    if (!GetFileInformationByHandleEx(output, FileCaseSensitiveInfo, &destination_info, sizeof(destination_info)) ||
+        (source_info.Flags != destination_info.Flags &&
+         !SetFileInformationByHandle(output, FileCaseSensitiveInfo, &source_info, sizeof(source_info)))) {
+        error = GetLastError();
+    }
+
+    CloseHandle(output);
+    if (error != ERROR_SUCCESS) {
+        __set_copydir_error("preserve directory case sensitivity", error);
+        return -1;
+    }
+    return 0;
+}
+
 static int __copydir_windows(const wchar_t* source, const wchar_t* destination)
 {
     HANDLE dir_handle;
@@ -616,6 +661,10 @@ static int __copydir_windows(const wchar_t* source, const wchar_t* destination)
     BYTE   buffer[64 * 1024];
 
     if (__mkdir_recursive_wide(destination) != 0) {
+        return -1;
+    }
+
+    if (__copydir_case_sensitivity(source, destination) != 0) {
         return -1;
     }
 
@@ -816,6 +865,23 @@ int platform_copydir(const char* source, const char* destination)
     return status;
 #else
     return __copydir_linux(source, destination);
+#endif
+}
+
+int platform_copydir_case_sensitivity(const char* source, const char* destination)
+{
+#if defined(_WIN32) || defined(_WIN64)
+    wchar_t* from = __path_to_normalized_wide(source);
+    wchar_t* to = __path_to_normalized_wide(destination);
+    int status = -1;
+    if (from && to) status = __copydir_case_sensitivity(from, to);
+    free(from);
+    free(to);
+    return status;
+#else
+    (void)source;
+    (void)destination;
+    return 0;
 #endif
 }
 

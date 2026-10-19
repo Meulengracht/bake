@@ -26,10 +26,17 @@ int __lcow_storage_copy_seed(const char* source, const char* destination)
         errno = (attributes & FILE_ATTRIBUTE_REPARSE_POINT) ? ENOTSUP : ENOTDIR;
         return -1;
     }
+
     list_init(&files);
+
     if (platform_mkdir(destination) != 0) {
         return -1;
     }
+
+    if (platform_copydir_case_sensitivity(source, destination) != 0) {
+        return -1;
+    }
+
     status = platform_getfiles(source, 0, &files);
     if (status != 0) {
         platform_getfiles_destroy(&files);
@@ -137,7 +144,7 @@ int __lcow_storage_prepare(struct containerv_container* container)
     // This marker exists only until the first successful initialization, before
     // any workload is allowed to run. It permits retrying an interrupted seed.
     container->lcow_disk_fresh = GetFileAttributesA(container->lcow_disk_pending) != INVALID_FILE_ATTRIBUTES;
-    if (windows_grant_vm_group_access(container->lcow_disk_path) != 0) {
+    if (windows_grant_vm_access(container, container->lcow_disk_path, 0) != 0) {
         goto cleanup;
     }
     status = 0;

@@ -255,9 +255,43 @@ cleanup:
     return status;
 }
 
+int __lcow_gcs_delete_container(struct containerv_container* container, const char* container_id)
+{
+    json_t* request;
+    char* text = NULL;
+    int status = -1;
+    if (!container_id || !strcmp(container_id, "00000000-0000-0000-0000-000000000000")) {
+        errno = EINVAL;
+        return -1;
+    }
+    request = json_object();
+    if (request && __gcs_set_request_base(request, container_id) == 0 &&
+        containerv_json_dumps_compact(request, &text) == 0) {
+        status = __lcow_gcs_rpc(container, CONTAINERV_LCOW_GCS_RPC_DELETE_CONTAINER, text, NULL);
+    }
+    json_decref(request);
+    free(text);
+    return status;
+}
+
+int __lcow_gcs_start_container(struct containerv_container* container, const char* container_id,
+    const char* oci_spec_utf8, uint32_t* pid_out)
+{
+    if (__lcow_gcs_create_container(container, container_id, oci_spec_utf8) != 0) return -1;
+    if (__lcow_gcs_execute_container_process(container, container_id, pid_out) != 0) {
+        int saved_errno = errno;
+        if (__lcow_gcs_delete_container(container, container_id) != 0) {
+            VLOG_ERROR("containerv[gcs]", "failed to clean up hosted container %s after start failure\n", container_id);
+        }
+        errno = saved_errno;
+        return -1;
+    }
+    return 0;
+}
+
 int __hcs_wait_lcow_gcs_process(
     struct containerv_container* container,
-    const struct containerv_lcow_gcs_process* process,
+    struct containerv_lcow_gcs_process* process,
     unsigned long* exit_code)
 {
     json_t* req = NULL;
@@ -272,6 +306,8 @@ int __hcs_wait_lcow_gcs_process(
         errno = EINVAL;
         return -1;
     }
+
+    if (process->exited) goto completed;
 
     req = json_object();
     if (req == NULL) {
@@ -299,8 +335,13 @@ int __hcs_wait_lcow_gcs_process(
         errno = EPROTO;
         goto cleanup;
     }
-    if (exit_code != NULL) {
-        *exit_code = (unsigned long)json_integer_value(value);
+    process->exit_code = (unsigned long)json_integer_value(value);
+    process->exited = 1;
+completed:
+    if (exit_code) *exit_code = process->exit_code;
+    if (!process->deleted && strcmp(process->container_id, "00000000-0000-0000-0000-000000000000")) {
+        if (__lcow_gcs_delete_container(container, process->container_id) != 0) goto cleanup;
+        process->deleted = 1;
     }
     status = 0;
 

@@ -156,6 +156,9 @@ struct containerv_lcow_gcs_process {
     uint32_t magic;
     uint32_t pid;
     char     container_id[__CONTAINER_ID_LENGTH + 1];
+    unsigned long exit_code;
+    int exited;
+    int deleted;
 };
 
 struct containerv_layer_context;
@@ -281,7 +284,8 @@ enum containerv_lcow_gcs_rpc {
     CONTAINERV_LCOW_GCS_RPC_EXECUTE_PROCESS = 0x00100501u,
     CONTAINERV_LCOW_GCS_RPC_WAIT_FOR_PROCESS = 0x00100601u,
     CONTAINERV_LCOW_GCS_RPC_MODIFY_SETTINGS = 0x00100a01u,
-    CONTAINERV_LCOW_GCS_RPC_NEGOTIATE_PROTOCOL = 0x00100b01u
+    CONTAINERV_LCOW_GCS_RPC_NEGOTIATE_PROTOCOL = 0x00100b01u,
+    CONTAINERV_LCOW_GCS_RPC_DELETE_CONTAINER = 0x00100d01u
 };
 
 extern struct hcs_api g_hcs;
@@ -300,8 +304,11 @@ extern int __lcow_gcs_execute_container_process(struct containerv_container* con
 extern int __lcow_gcs_execute_host_process(struct containerv_container* container, const char* const* argv, uint32_t* pid_out);
 extern int __hcs_wait_lcow_gcs_process(
     struct containerv_container* container,
-    const struct containerv_lcow_gcs_process* process,
+    struct containerv_lcow_gcs_process* process,
     unsigned long* exit_code);
+extern int __lcow_gcs_delete_container(struct containerv_container* container, const char* container_id);
+extern int __lcow_gcs_start_container(struct containerv_container* container, const char* container_id,
+    const char* oci_spec_utf8, uint32_t* pid_out);
 extern int __hcs_lcow_configure_network(struct containerv_container* container,
     const char* address, const char* gateway, const char* dns);
 
@@ -314,6 +321,7 @@ struct containerv_container {
     
     // Process management
     struct list  processes;
+    struct windows_vm_access* vm_access;
     
     // Container identification
     char         id[__CONTAINER_ID_LENGTH + 1];
@@ -357,7 +365,9 @@ struct containerv_container {
 
 // Windows security helpers
 extern int windows_apply_job_security(HANDLE job_handle, const struct containerv_policy* policy);
-extern int windows_grant_vm_group_access(const char* path);
+extern int windows_vm_sid(const char* vm_id, PSID* sid_out);
+extern int windows_grant_vm_access(struct containerv_container* container, const char* path, int readonly);
+extern void windows_revoke_vm_access(struct containerv_container* container);
 
 // Allocating UTF-8 <-> UTF-16 conversions; callers free() the result.
 extern wchar_t* __windows_utf8_to_wide_alloc(const char* text);
@@ -486,10 +496,6 @@ extern int __hcs_wait_process(HCS_PROCESS process, unsigned int timeout_ms);
  * @brief Get HCS process exit code
  */
 extern int __hcs_get_process_exit_code(HCS_PROCESS process, unsigned long* exit_code);
-extern int __hcs_wait_lcow_gcs_process(
-    struct containerv_container* container,
-    const struct containerv_lcow_gcs_process* process,
-    unsigned long* exit_code);
 
 /**
  * @brief Windows-specific HyperV switch configuration
