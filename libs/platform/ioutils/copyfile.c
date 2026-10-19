@@ -53,6 +53,9 @@ int platform_copyfile(const char* source, const char* destination)
 
         read = fread(buffer, 1, _SEGMENT_SIZE, sourceFile);
         if (read == 0) {
+            if (ferror(sourceFile)) {
+                status = -1;
+            }
             break;
         }
 
@@ -64,12 +67,17 @@ int platform_copyfile(const char* source, const char* destination)
 
         // was it last segment?
         if (read < _SEGMENT_SIZE) {
+            if (ferror(sourceFile)) {
+                status = -1;
+            }
             break;
         }
     }
 
     free(buffer);
     fclose(sourceFile);
-    fclose(destinationFile);
+    if (fclose(destinationFile) != 0) {
+        status = -1;
+    }
     return status;
 }

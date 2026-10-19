@@ -23,6 +23,7 @@ add_sources(
     clean.c
     common.c
     init.c
+    pack.c
     source.c
     stage.c
 )

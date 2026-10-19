@@ -350,6 +350,7 @@ int chef_package_image_create(const struct chef_package_image_options* options)
     struct VaFs*                    vafs = NULL;
     struct list                     files = { 0 };
     struct progress_context         progressContext = { 0 };
+    struct platform_stat            inputStat;
     const char*                     progressName;
     int                             status;
 
@@ -361,6 +362,12 @@ int chef_package_image_create(const struct chef_package_image_options* options)
     progressName = options->manifest->name != NULL ? options->manifest->name : __get_filename(options->output_path);
     VLOG_DEBUG("bake", "chef_package_image_create(name=%s, path=%s)\n", progressName, options->output_path);
 
+    // Enumeration treats a missing root as empty; packaging must distinguish
+    // a missing install tree from an existing tree with no matching files.
+    if (platform_stat(options->input_dir, &inputStat) != 0) {
+        return -1;
+    }
+    
     status = platform_getfiles(options->input_dir, 1, &files);
     if (status != 0) {
         VLOG_ERROR("bake", "failed to get files marked for install\n");
@@ -368,9 +375,9 @@ int chef_package_image_create(const struct chef_package_image_options* options)
     }
 
     __get_install_stats(&files, options->filters, &progressContext.files_total, &progressContext.symlinks_total);
-    if (progressContext.files_total == 0) {
+    if (progressContext.files_total == 0 && progressContext.symlinks_total == 0) {
         VLOG_TRACE("bake", "skipping pack %s, no files to pack\n", progressName);
-        status = 0;
+        status = CHEF_PACKAGE_IMAGE_SKIPPED;
         goto cleanup;
     }
 

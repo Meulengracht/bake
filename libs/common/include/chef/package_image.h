@@ -22,6 +22,10 @@
 #include <chef/list.h>
 #include <chef/package_manifest.h>
 
+// forward declarations
+struct recipe;
+struct recipe_pack;
+
 /**
  * @brief Package image construction API.
  *
@@ -40,14 +44,38 @@ struct chef_package_image_options {
     const struct chef_package_manifest* manifest;
 };
 
+enum chef_package_image_result {
+    CHEF_PACKAGE_IMAGE_CREATED = 0,
+    CHEF_PACKAGE_IMAGE_SKIPPED = 1
+};
+
 /**
  * @brief Creates a package image from a staged filesystem tree and manifest.
  *
  * The input directory is copied into a new VaFs image and the supplied Chef
  * manifest is written into the image metadata.
  *
- * @return 0 on success, -1 on failure with errno set.
+ * @return CHEF_PACKAGE_IMAGE_CREATED on success, CHEF_PACKAGE_IMAGE_SKIPPED
+ * when no files or symlinks match, or -1 on failure with errno set.
  */
 extern int chef_package_image_create(const struct chef_package_image_options* options);
+
+/** 
+ * @brief Generates a package manifest from a recipe and pack.
+ * 
+ * @param recipe The recipe to generate the manifest from.
+ * @param platform The target platform.
+ * @param architecture The target architecture.
+ * @param pack The recipe pack containing the staged files.
+ * @param manifestOut Output pointer for the generated manifest.
+ *
+ * @return 0 on success, -1 on failure with errno set.
+ */
+extern int chef_package_manifest_from_recipe(
+    struct recipe*                 recipe,
+    const char*                    platform,
+    const char*                    architecture,
+    struct recipe_pack*            pack,
+    struct chef_package_manifest** manifestOut);
 
 #endif //!__CHEF_PACKAGE_IMAGE_H__

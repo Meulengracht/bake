@@ -14,7 +14,7 @@ Uses native Linux container technologies:
 See [linux/](linux/) for implementation details.
 
 ### Windows
-Windows support uses **HCS containers (true Windows containers)** with HCS "Container" compute systems (process isolation or Hyper-V isolation).
+Windows support has two guest backends. **WCOW** uses HCS "Container" compute systems with process or Hyper-V isolation. **LCOW** hosts OCI containers inside a Linux utility VM and executes them through GCS. Guest execution never falls back to running the requested workload on the Windows host.
 
 See [windows/](windows/) for implementation details.
 
@@ -29,7 +29,7 @@ When using the HCS container backend, `BASE_ROOTFS` is expected to point at a pr
 
 #### LCOW (Linux containers on Windows)
 
-LCOW support is being implemented using the standard **OCI-in-UVM** approach:
+LCOW uses the standard **OCI-in-UVM** approach:
 
 - Container type selection: use the HCS container backend and set container type to Linux.
 - Requires a Linux utility VM (UVM) image directory plus (optionally) kernel/initrd/boot parameters.
@@ -86,11 +86,47 @@ Or in `cvd.json`:
 }
 ```
 
-Current status: LCOW compute-system bring-up is present and containerv will emit a minimal OCI spec for LCOW processes; rootfs mapping and full OCI bundle semantics are still evolving.
+LCOW seeds a persistent ext4 rootfs from the prepared host image and emits an OCI spec for each hosted process. On the schema2 path, HCS owns the utility VM while direct GCS requests create and execute hosted OCI containers. Direct GCS stdio pipes are not implemented, so every LCOW process redirects stdout and stderr to `/chef/staging/lcow-stdio-N.log` and reads stdin from `/dev/null`. Capture is unconditional and requires no environment setting. Logs are stored under the host's temporary `containerv-*` runtime directory in `staging/` and retained after container destruction; they must be removed when no longer needed. Live output forwarding and interactive stdin are not supported by this file-backed capture.
 
 Notes:
-- If a host rootfs directory is provided, it is mapped into the LCOW UVM at `/chef/rootfs`.
-- When that rootfs mapping is present, all bind mounts (including Chef staging) are rebased under `/chef/rootfs` so they remain visible after the OCI process pivots into the container root.
+- The host image is mapped into the UVM at `/chef/rootfs` for initial seeding, resolver updates, and host-share mount points. Workloads use `/run/chef-storage/rootfs` on ext4 as their OCI root.
+- Host directory layers (including project, store, and staging) remain Plan9 shares and explicit OCI bind mounts. Project contents are never copied as part of source preparation.
+
+### LCOW Native Storage
+
+The cached host rootfs owns `.containerv-lcow/rootfs.vhdx`, a dynamically allocated disk with a 64 GiB capacity. The disk contains the writable Linux rootfs, including `/chef/source`, build/install trees, toolchains, and package-manager changes. It is shared by successive hosted processes and reused after utility VM recreation. An exclusive host lock prevents two containers from writing the same cached disk concurrently; callers needing concurrency must use separate rootfs caches.
+
+On first initialization, containerv formats its new disk as ext4 and seeds it from the host image **before** mounting any project/store shares. The internal `.containerv-lcow` directory is excluded. `format.pending` permits retrying an interrupted first initialization; it is removed before any workload can run. Once published, an existing disk is never reformatted automatically. A failed mount aborts creation and preserves the disk for diagnosis. Changes made directly to the host seed after initialization do not update the native rootfs; use guest upload operations or a new rootfs cache instead.
+
+The disk lives under the existing rootfs cache so deleting that cache also removes its native storage. Container destruction flushes the disk before stopping the VM and retains it for incremental builds. Temporary UVMs and staging logs keep their existing lifecycle.
+
+The utility VM must provide Hyper-V SCSI, SCSI disk, and ext4 kernel support, `/bin/busybox`, and `mkfs.ext4` with its shared libraries. `tests/system/cases/build-lcow-arm64.ps1` includes these userspace tools through `lcow/repack-initrd.sh`. Older UVM bundles need rebuilding. Startup probes symlink creation on the mounted disk and treats storage and required share failures as fatal.
+
+`bakectl source` creates a source alias on native writable storage pointing into the shared project. There is no compile-time Windows switch or silent copy fallback. This keeps host edits visible and preserves the existing read-only project semantics. Source trees already containing links still depend on the host share's ability to represent those links.
+
+For LCOW, `bake` also invokes `bakectl pack --pack-name NAME` inside the guest: packaging reads the native install tree and writes a `.pack` file to staging, then downloads that opaque artifact to the host. Packages are selected by their unique recipe names, independently of recipe order. This preserves Linux permissions and symlinks without copying the install tree through NTFS. Native Linux and WCOW retain their host packaging path, using the same manifest construction code.
+
+Validation: `containerv_windows_preflight_test` runs without Hyper-V and checks rejection of unenforced resource limits, disk creation/reuse, exclusive locking, and exclusion of disk state from image clones. Run `containerv_lcow_storage_test.exe <uvm-directory> <static-linux-busybox>` from an elevated terminal on an LCOW-capable host for cold/warm disk initialization, cross-command and cross-VM persistence, symlinks, executable permissions, read-only shares, and live host edits. `platform_copydir_test` on Linux covers relative/dangling/cyclic links, modes, and rejection of unsupported special files. The guest script can also be tested independently with real ext4 disks in WSL: `sudo unshare --mount --propagation private bash tests/system/cases/lcow/test-native-storage.sh <initrd> libs/containerv/windows/lcow-storage.sh`.
+
+### Runtime Ownership
+
+- `windows/container.c` coordinates container creation, process tracking, policy ownership, and destruction. WCOW preparation owns its temporary parent-layer list and UtilityVM path; LCOW preparation owns its temporary OCI bundle paths.
+- `windows/hcs.c` owns HCS operations and configuration. Process creation dispatches to separate WCOW HCS and LCOW GCS paths; WCOW security-field retries do not apply to LCOW.
+- `windows/gcs-bridge.c` owns framed GCS transport; `windows/gcs-process.c` owns guest requests. `common/oci-bundle.c` and `common/oci-spec.c` provide filesystem preparation and OCI serialization without introducing another dependency.
+- Successful creation transfers the policy from options to the container. The layer context remains borrowed and must stay valid while the container uses it.
+- Destruction releases tracked process resources, destroys the compute system, and then stops console capture before freeing container state. LCOW process tokens are heap objects, not waitable Windows process handles.
+
+### LCOW Resolver Ownership
+
+Without explicit DNS settings, OCI preparation preserves the image's existing `/etc/resolv.conf`; if it is missing, it creates an empty file. Explicit DNS settings replace that file using the existing space/comma/semicolon-separated server list parser.
+
+LCOW then seeds `/chef/resolv.conf` from the prepared resolver. The OCI spec bind-mounts this backing file read-only at `/etc/resolv.conf`, because GCS otherwise generates an empty resolver for these host-networked containers. The utility VM's DHCP lease handler updates the backing file with lease-provided DNS, including on renewal.
+
+There is no additional Windows-specific hardcoded public DNS address. The image resolver is a fallback, not a guarantee that its servers are reachable from the selected HNS network. Static addresses and gateways are applied in the guest without running DHCP. With dynamic addressing, explicit DNS is reapplied after the initial lease; later DHCP renewals can still replace it, so a persistent explicit-DNS override would require coordination with the guest lease handler.
+
+### Enforcement Limitations
+
+The Windows runtime still creates a host Job Object, but HCS guest processes are not assigned to it. Explicit memory, CPU, process-count, and I/O limit requests are rejected with `ENOTSUP` at creation rather than silently accepted. Host Job Object security settings must not be treated as guest enforcement. Guest-enforced resource controls remain future work.
 
 ## Windows Networking (HCS container mode)
 
@@ -111,10 +147,6 @@ Recommendation: set `switch_name` explicitly if your host has multiple HNS netwo
 ### Static IP / DNS
 
 If `container_ip/netmask/gateway/dns` are provided, containerv will first attempt to apply these at the HNS endpoint layer (when supported by the installed `New-HnsEndpoint` cmdlets on the host). If endpoint policies are not supported/available, containerv falls back to a best-effort in-container configuration step.
-
-### VM-backed mode (legacy)
-
-VM-backed containers are no longer supported in containerv. Only HCS container compute systems are supported on Windows.
 
 ## Features
 
@@ -291,9 +323,14 @@ containerv/
 │   ├── cgroups.c     # Resource management
 │   ├── network.c     # Network isolation
 │   └── ...
-└── windows/          # Windows implementation
-    ├── container.c   # Container lifecycle
-    └── ...
+└── windows/          # Windows implementation (HCS)
+    ├── container.c   # Container lifecycle, process tracking, file transfer
+    ├── hcs.c         # HCS API, compute system documents, LCOW GCS bridge
+    ├── layers.c      # windowsfilter/LCOW rootfs composition
+    ├── network.c     # HNS endpoints
+    ├── volume-manager.c # Plan9/mapped-directory shares for host layers
+    ├── security.c    # VM group ACLs and job object restrictions
+    └── utils.c       # Shared helpers (UTF-8/UTF-16 conversion)
 ```
 
 ## Contributing

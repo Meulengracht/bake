@@ -551,17 +551,27 @@ extern int platform_cpucount(void);
  */
 extern int platform_copyfile(const char* source, const char* destination);
 
+/** 
+ * @brief Copy a link itself, preserving its target without following it.
+ * The destination must not exist. Windows supports symbolic links, junctions
+ * and LX symlinks; other reparse tags fail. Link creation privileges may be
+ * required. Returns zero on success, -1 on failure. 
+ */
+extern int platform_copylink(const char* source, const char* destination);
+
 /**
  * @brief Recursively copy a directory tree.
  *
  * Missing destination directories are created and regular files are copied or
- * replaced. Symbolic links and unsupported entry types are skipped.
+ * replaced. Links are preserved without following their targets; their
+ * destination must not exist. Unsupported entry types fail the copy.
  *
  * @param[in] source Existing source directory.
  * @param[in] destination Destination directory.
  * @return Zero on success and -1 on invalid input or copy failure.
  */
 extern int platform_copydir(const char* source, const char* destination);
+extern int platform_copydir_case_sensitivity(const char* source, const char* destination);
 
 /**
  * @brief Return the native error from the most recent Windows directory copy.

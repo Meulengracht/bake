@@ -24,7 +24,28 @@ bash tests/system/run.sh dummy-store-roundtrip
 bash tests/system/run.sh order-fetch-from-store
 ```
 
-### Required system dependencies
+### Windows LCOW build-to-package test
+
+From an elevated PowerShell terminal, after building `bake`, `cvd`, `mkuvm`,
+and `verify_hello_package` (enable `COMMON_BUILD_TESTS`):
+
+```powershell
+./tests/system/cases/hello-build.ps1 -BuildDir ./build -LcowUvmArchive C:/images/lcow-uvm.tar.xz -RootfsArchive C:/images/ubuntu-base-24.04-base-arm64.tar.gz -KeepWorkDir
+```
+
+The UVM needs the native-storage tools described in `libs/containerv/README.md`.
+The optional `-RootfsArchive` supplies a complete Chef rootfs for the host
+architecture. Its `/usr/bin/bakectl` must support `pack`;
+build that binary in the rootfs distribution's build environment. The test uses
+the image-provided binary, with no host bakectl override or runtime injection.
+Omit this option to use the configured rootfs download.
+
+The test gives both processes an isolated state root and loopback endpoint,
+builds the Linux hello recipe with both a fresh and a reused rootfs, and checks the downloaded package's manifest,
+ELF executable, executable permissions, and installed symlink. `-WorkDir`, if
+provided, must name a new directory; `-KeepWorkDir` preserves artifacts and logs.
+
+### Linux dependencies
 
 The tests run on Linux.  The following are needed in addition to the project's
 own build dependencies:

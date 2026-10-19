@@ -29,6 +29,8 @@ struct containerv_user {
 
 extern struct containerv_user* containerv_user_real(void);
 extern struct containerv_user* containerv_user_effective(void);
+// Named policy identities use /etc/passwd in the caller's current root,
+// independent of host NSS configuration/modules. Missing names fail.
 extern struct containerv_user* containerv_user_lookup(const char* name);
 extern struct containerv_user* containerv_user_from(char* name, uid_t uid, gid_t gid);
 extern void                    containerv_user_delete(struct containerv_user* user);
@@ -38,6 +40,7 @@ struct containerv_group {
     gid_t gid;
 };
 
+// As above, read /etc/group in the caller's current root, without NSS.
 extern struct containerv_group* containerv_group_lookup(const char* name);
 extern struct containerv_group* containerv_group_from(char* name, gid_t gid);
 extern void                     containerv_group_delete(struct containerv_group* group);

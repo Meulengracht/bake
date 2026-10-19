@@ -40,6 +40,7 @@ struct __bake_build_options {
     const char*                 cwd;
     const char* const*          envp;
     const char*                 recipe_path;
+    const char*                 lcow_uvm_url;
     struct build_cache*         build_cache;
     struct chef_config_address* cvd_address;
 };
@@ -55,11 +56,13 @@ struct __bake_build_context {
 
     const char*         target_architecture;
     const char*         target_platform;
+    const char*         lcow_uvm_url;
 
     const char* const*         base_environment;
     struct chef_config_address cvd_address;
     gracht_client_t*           cvd_client;
     char*                      cvd_id;
+    enum chef_guest_type       guest_type;
 };
 
 extern struct __bake_build_context* build_context_create(struct __bake_build_options* options);
@@ -85,6 +88,7 @@ extern enum chef_status bake_client_create_container(struct __bake_build_context
 extern enum chef_status bake_client_spawn(struct __bake_build_context* bctx, const char* command, enum chef_spawn_options options, unsigned int* pidOut);
 
 extern enum chef_status bake_client_upload(struct __bake_build_context* bctx, const char* hostPath, const char* containerPath);
+extern enum chef_status bake_client_download(struct __bake_build_context* bctx, const char* containerPath, const char* hostPath);
 
 extern enum chef_status bake_client_destroy_container(struct __bake_build_context* bctx);
 

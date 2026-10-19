@@ -24,9 +24,11 @@
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
+#include <winioctl.h>
 #include <wchar.h>
 #else
 #include <dirent.h>
+#include <unistd.h>
 #endif
 
 static int __path_is_directory(const char* path)
@@ -86,6 +88,9 @@ static void __set_errno_from_windows_error(DWORD error)
             break;
         case ERROR_DIRECTORY:
             errno = ENOTDIR;
+            break;
+        case ERROR_NOT_SUPPORTED:
+            errno = ENOTSUP;
             break;
         default:
             errno = EIO;
@@ -204,6 +209,11 @@ static wchar_t* __path_to_normalized_wide(const char* path)
 
     if (converted == NULL) {
         return NULL;
+    }
+
+    // Extended paths bypass Win32 slash normalization.
+    for (wchar_t* p = converted; *p; ++p) {
+        if (*p == L'/') *p = L'\\';
     }
 
     normalized = __normalize_extended_wide_path(converted);
@@ -379,7 +389,7 @@ static void __backup_privilege_end(struct __backup_privilege_scope* scope)
     scope->restore = 0;
 }
 
-static void __backup_privilege_begin(struct __backup_privilege_scope* scope)
+static void __privilege_begin(struct __backup_privilege_scope* scope, const wchar_t* name)
 {
     TOKEN_PRIVILEGES token_privs;
     LUID             privilege_luid;
@@ -394,7 +404,7 @@ static void __backup_privilege_begin(struct __backup_privilege_scope* scope)
         return;
     }
 
-    if (!LookupPrivilegeValueW(NULL, L"SeBackupPrivilege", &privilege_luid)) {
+    if (!LookupPrivilegeValueW(NULL, name, &privilege_luid)) {
         __backup_privilege_end(scope);
         return;
     }
@@ -528,6 +538,122 @@ static int __is_dot_entry(const WCHAR* file_name, DWORD file_name_length)
     return 0;
 }
 
+/* Copy only known link tags, without resolving targets or creating dummy
+ * targets. In particular, Linux links may be dangling or form cycles. */
+static int __copylink_windows(const wchar_t* source, const wchar_t* destination)
+{
+    struct { DWORD tag; WORD length; WORD reserved; BYTE data[MAXIMUM_REPARSE_DATA_BUFFER_SIZE]; } reparse;
+    struct __backup_privilege_scope privilege;
+    BY_HANDLE_FILE_INFORMATION info;
+    HANDLE input = INVALID_HANDLE_VALUE, output = INVALID_HANDLE_VALUE;
+    DWORD bytes = 0, ignored, error = ERROR_SUCCESS;
+    int created = 0, directory = 0;
+
+    input = CreateFileW(source, FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+        OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (input == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(input, &info) ||
+        !DeviceIoControl(input, FSCTL_GET_REPARSE_POINT, NULL, 0, &reparse,
+            sizeof(reparse), &bytes, NULL)) {
+        error = GetLastError();
+        goto cleanup;
+    }
+    if (bytes < 8 || (DWORD)reparse.length + 8 != bytes) {
+        error = ERROR_INVALID_REPARSE_DATA;
+        goto cleanup;
+    }
+    
+    // IO_REPARSE_TAG_LX_SYMLINK is used by Linux links stored on NTFS.
+    if (reparse.tag != IO_REPARSE_TAG_SYMLINK &&
+        reparse.tag != IO_REPARSE_TAG_MOUNT_POINT && reparse.tag != 0xA000001DUL) {
+        error = ERROR_NOT_SUPPORTED;
+        goto cleanup;
+    }
+    
+    directory = (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    if (directory) {
+        if (!CreateDirectoryW(destination, NULL)) {
+            error = GetLastError();
+            goto cleanup;
+        }
+        created = 1;
+    }
+    
+    output = CreateFileW(destination, GENERIC_WRITE, 0, NULL,
+        directory ? OPEN_EXISTING : CREATE_NEW,
+        FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (output == INVALID_HANDLE_VALUE) {
+        error = GetLastError();
+        goto cleanup;
+    }
+    created = 1;
+    
+    __privilege_begin(&privilege, L"SeCreateSymbolicLinkPrivilege");
+    if (!DeviceIoControl(output, FSCTL_SET_REPARSE_POINT, &reparse, bytes,
+            NULL, 0, &ignored, NULL)) {
+        error = GetLastError();
+    }
+    __backup_privilege_end(&privilege);
+
+cleanup:
+    if (input != INVALID_HANDLE_VALUE) CloseHandle(input);
+    if (output != INVALID_HANDLE_VALUE) CloseHandle(output);
+    if (error != ERROR_SUCCESS) {
+        if (created) {
+            if (directory) RemoveDirectoryW(destination);
+            else DeleteFileW(destination);
+        }
+        __set_copydir_error("copy link", error);
+        return -1;
+    }
+    return 0;
+}
+
+static int __copydir_case_sensitivity(const wchar_t* source, const wchar_t* destination)
+{
+    struct { ULONG Flags; } source_info, destination_info;
+    HANDLE input, output;
+    DWORD  error = ERROR_SUCCESS;
+
+    input = CreateFileW(source, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (input == INVALID_HANDLE_VALUE) {
+        __set_copydir_error("open directory attributes", GetLastError());
+        return -1;
+    }
+
+    if (!GetFileInformationByHandleEx(input, FileCaseSensitiveInfo, &source_info, sizeof(source_info))) {
+        error = GetLastError();
+        CloseHandle(input);
+        // Filesystems without this feature use Windows' default name comparison.
+        if (error == ERROR_INVALID_PARAMETER || error == ERROR_NOT_SUPPORTED) return 0;
+        __set_copydir_error("read directory case sensitivity", error);
+        return -1;
+    }
+    CloseHandle(input);
+
+    output = CreateFileW(destination, FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (output == INVALID_HANDLE_VALUE) {
+        __set_copydir_error("open destination attributes", GetLastError());
+        return -1;
+    }
+
+    if (!GetFileInformationByHandleEx(output, FileCaseSensitiveInfo, &destination_info, sizeof(destination_info)) ||
+        (source_info.Flags != destination_info.Flags &&
+         !SetFileInformationByHandle(output, FileCaseSensitiveInfo, &source_info, sizeof(source_info)))) {
+        error = GetLastError();
+    }
+
+    CloseHandle(output);
+    if (error != ERROR_SUCCESS) {
+        __set_copydir_error("preserve directory case sensitivity", error);
+        return -1;
+    }
+    return 0;
+}
+
 static int __copydir_windows(const wchar_t* source, const wchar_t* destination)
 {
     HANDLE dir_handle;
@@ -535,6 +661,10 @@ static int __copydir_windows(const wchar_t* source, const wchar_t* destination)
     BYTE   buffer[64 * 1024];
 
     if (__mkdir_recursive_wide(destination) != 0) {
+        return -1;
+    }
+
+    if (__copydir_case_sensitivity(source, destination) != 0) {
         return -1;
     }
 
@@ -564,8 +694,7 @@ static int __copydir_windows(const wchar_t* source, const wchar_t* destination)
                 wchar_t* source_child;
                 wchar_t* destination_child;
 
-                if (!__is_dot_entry(entry->FileName, name_length) &&
-                    (entry->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
+                if (!__is_dot_entry(entry->FileName, name_length)) {
                     source_child = __join_wide_path(source, entry->FileName, name_length);
                     destination_child = __join_wide_path(destination, entry->FileName, name_length);
                     if (source_child == NULL || destination_child == NULL) {
@@ -576,7 +705,9 @@ static int __copydir_windows(const wchar_t* source, const wchar_t* destination)
                         break;
                     }
 
-                    if ((entry->FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+                    if (entry->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+                        status = __copylink_windows(source_child, destination_child);
+                    } else if ((entry->FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
                         status = __copydir_windows(source_child, destination_child);
                     } else {
                         status = __copyfile_windows(source_child, destination_child);
@@ -611,9 +742,13 @@ static int __copydir_linux(const char* source, const char* destination)
     DIR*           directory;
     struct dirent* entry;
     int            status = 0;
+    struct platform_stat source_stat;
 
-    if (!__path_is_directory(source)) {
-        errno = ENOENT;
+    if (platform_stat(source, &source_stat) != 0) {
+        return -1;
+    }
+    if (source_stat.type != PLATFORM_FILETYPE_DIRECTORY) {
+        errno = ENOTDIR;
         return -1;
     }
 
@@ -626,10 +761,17 @@ static int __copydir_linux(const char* source, const char* destination)
         return -1;
     }
 
-    while ((entry = readdir(directory)) != NULL) {
+    for (;;) {
         char* childSource;
         char* childDestination;
         struct platform_stat st;
+
+        errno = 0;
+        entry = readdir(directory);
+        if (entry == NULL) {
+            status = errno == 0 ? 0 : -1;
+            break;
+        }
 
         if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
             continue;
@@ -656,6 +798,21 @@ static int __copydir_linux(const char* source, const char* destination)
             status = __copydir_linux(childSource, childDestination);
         } else if (st.type == PLATFORM_FILETYPE_FILE) {
             status = platform_copyfile(childSource, childDestination);
+            if (status == 0) {
+                status = platform_chmod(childDestination, st.permissions);
+            }
+        } else if (st.type == PLATFORM_FILETYPE_SYMLINK) {
+            char* target = NULL;
+            status = platform_readlink(childSource, &target);
+            if (status == 0) {
+                // Do not dereference links or create their targets. In
+                // particular, dangling and relative links must stay intact.
+                status = symlink(target, childDestination);
+            }
+            free(target);
+        } else {
+            errno = ENOTSUP;
+            status = -1;
         }
 
         free(childSource);
@@ -665,7 +822,14 @@ static int __copydir_linux(const char* source, const char* destination)
         }
     }
 
-    closedir(directory);
+    {
+        int saved_errno = errno;
+        closedir(directory);
+        errno = saved_errno;
+    }
+    if (status == 0) {
+        status = platform_chmod(destination, source_stat.permissions);
+    }
     return status;
 }
 #endif
@@ -692,7 +856,7 @@ int platform_copydir(const char* source, const char* destination)
         return -1;
     }
 
-    __backup_privilege_begin(&privilege_scope);
+    __privilege_begin(&privilege_scope, L"SeBackupPrivilege");
     status = __copydir_windows(source_wide, destination_wide);
     __backup_privilege_end(&privilege_scope);
 
@@ -702,6 +866,58 @@ int platform_copydir(const char* source, const char* destination)
 #else
     return __copydir_linux(source, destination);
 #endif
+}
+
+int platform_copydir_case_sensitivity(const char* source, const char* destination)
+{
+#if defined(_WIN32) || defined(_WIN64)
+    wchar_t* from = __path_to_normalized_wide(source);
+    wchar_t* to = __path_to_normalized_wide(destination);
+    int status = -1;
+    if (from && to) status = __copydir_case_sensitivity(from, to);
+    free(from);
+    free(to);
+    return status;
+#else
+    (void)source;
+    (void)destination;
+    return 0;
+#endif
+}
+
+int platform_copylink(const char* source, const char* destination)
+{
+    int status;
+
+    if (source == NULL || destination == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+#if defined(_WIN32) || defined(_WIN64)
+    wchar_t* source_wide = __path_to_normalized_wide(source);
+    wchar_t* destination_wide = __path_to_normalized_wide(destination);
+    
+    __clear_copydir_error();
+    if (source_wide == NULL || destination_wide == NULL) {
+        free(source_wide);
+        free(destination_wide);
+        return -1;
+    }
+    
+    status = __copylink_windows(source_wide, destination_wide);
+    free(source_wide);
+    free(destination_wide);
+#else
+    char* target = NULL;
+    
+    status = platform_readlink(source, &target);
+    if (status == 0) {
+        status = symlink(target, destination);
+    }
+    free(target);
+#endif
+    return status;
 }
 
 unsigned long platform_copydir_lasterror(void)

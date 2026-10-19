@@ -226,7 +226,9 @@ extern void containerv_options_set_windows_wcow_parent_layers(
 );
 
 /**
- * @brief Configure resource limits for the Windows container using Job Objects
+ * @brief Request Windows guest resource limits.
+ * Windows creation currently rejects explicit limits with ENOTSUP: host Job
+ * Objects do not enforce limits on HCS/GCS guest processes.
  * @param options The container options to configure
  * @param memory_max Maximum memory (e.g., "1G", "512M", "max" for no limit), or NULL for default (1G)
  * @param cpu_percent CPU percentage (1-100), or NULL for default (50)
@@ -237,19 +239,6 @@ extern void containerv_options_set_resource_limits(
     const char*                memory_max,
     const char*                cpu_percent,
     const char*                process_count
-);
-
-/**
- * @brief Create a named persistent volume (Windows VHD-based)
- * @param name Volume name (must be unique)
- * @param size_mb Size in megabytes (minimum 1MB)
- * @param filesystem Filesystem type ("NTFS", "ReFS", or NULL for NTFS)
- * @return 0 on success, -1 on failure
- */
-extern int containerv_volume_create(
-    const char* name,
-    uint64_t    size_mb,
-    const char* filesystem
 );
 
 #elif defined(__linux__) || defined(__unix__)

@@ -199,7 +199,13 @@ int bake_client_initialize(struct __bake_build_context* bctx)
         return code;
     }
 
-    init_link_config(link, gracht_link_packet_based, &bctx->cvd_address);
+        init_link_config(link,
+    #if defined(_WIN32)
+        gracht_link_stream_based,
+    #else
+        gracht_link_packet_based,
+    #endif
+        &bctx->cvd_address);
 
     gracht_client_configuration_init(&clientConfiguration);
     gracht_client_configuration_set_link(&clientConfiguration, (struct gracht_link*)link);
@@ -389,7 +395,8 @@ static char* __initialize_maybe_rootfs(
     const char*                    platform,
     const char*                    architecture,
     struct build_cache*            cache,
-    struct chef_create_parameters* params)
+    struct chef_create_parameters* params,
+    const char*                    lcowUvmUrl)
 {
     const char* base;
     char*       rootfs;
@@ -406,11 +413,6 @@ static char* __initialize_maybe_rootfs(
     if (rootfs == NULL) {
         VLOG_ERROR("bake", "__initialize_maybe_rootfs: failed to allocate memory for rootfs\n");
         return NULL;
-    }
-
-    if (build_cache_key_bool(cache, "rootfs-initialized")) {
-        VLOG_DEBUG("bake", "__initialize_maybe_rootfs: rootfs already initialized, skipping\n");
-        return rootfs;
     }
 
     if (params->gtype == CHEF_GUEST_TYPE_WINDOWS) {
@@ -440,10 +442,16 @@ static char* __initialize_maybe_rootfs(
         // to the rootfs overlay. The UVM setup is done here.
 #ifdef CHEF_ON_WINDOWS
         char* lcowUvmDirectory = NULL;
+        struct containerv_disk_lcow_uvm_config lcowUvmConfig = {
+            .uvm_url = lcowUvmUrl
+        };
 
-        status = containerv_disk_setup_lcow_uvm(NULL, &lcowUvmDirectory);
+        status = containerv_disk_setup_lcow_uvm(
+            lcowUvmUrl != NULL && lcowUvmUrl[0] != '\0' ? &lcowUvmConfig : NULL,
+            &lcowUvmDirectory);
         if (status) {
             fprintf(stderr, "cvctl: failed to fetch LCOW UVM bundle\n");
+            free(rootfs);
             return NULL;
         }
         
@@ -451,9 +459,16 @@ static char* __initialize_maybe_rootfs(
         if (status) {
             fprintf(stderr, "cvctl: failed to resolve LCOW UVM configuration from %s\n", lcowUvmDirectory);
             free(lcowUvmDirectory);
+            free(rootfs);
             return NULL;
         }
 #endif
+        // Runtime settings belong to each create request, even when the rootfs
+        // was already unpacked by an earlier build.
+        if (build_cache_key_bool(cache, "rootfs-initialized")) {
+            VLOG_DEBUG("bake", "__initialize_maybe_rootfs: reusing initialized rootfs\n");
+            return rootfs;
+        }
         status = containerv_disk_setup_ubuntu_rootfs(rootfs, base);
         if (status) {
             VLOG_ERROR("cvd", "failed to resolve the ubuntu rootfs image\n");
@@ -486,6 +501,7 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
     
     params.id = platform_strdup(build_cache_uuid(bctx->build_cache));
     params.gtype = __is_windows_guest_target(bctx->target_platform, base) ? CHEF_GUEST_TYPE_WINDOWS : CHEF_GUEST_TYPE_LINUX;
+    bctx->guest_type = params.gtype;
     VLOG_DEBUG("bake", "bake_client_create_container: target_platform=%s base=%s guest=%s\n",
         bctx->target_platform,
         base != NULL ? base : "(null)",
@@ -503,7 +519,8 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
         bctx->target_platform,
         bctx->target_architecture,
         bctx->build_cache,
-        &params
+        &params,
+        bctx->lcow_uvm_url
     );
     if (rootfs == NULL) {
         chef_create_parameters_destroy(&params);
@@ -531,6 +548,7 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
     VLOG_DEBUG("bake", "bake_client_create_container: sending create request\n");
     
     status = chef_cvd_create(bctx->cvd_client, &context, &params);
+    VLOG_DEBUG("bake", "bake_client_create_container: create request status=%i\n", status);
     
     chef_create_parameters_destroy(&params);
     free(rootfs);
@@ -540,8 +558,11 @@ enum chef_status bake_client_create_container(struct __bake_build_context* bctx)
         return status;
     }
 
+    VLOG_DEBUG("bake", "bake_client_create_container: waiting for create response\n");
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
+    VLOG_DEBUG("bake", "bake_client_create_container: received create response\n");
     chef_cvd_create_result(bctx->cvd_client, &context, &cvdid[0], sizeof(cvdid) - 1, &chstatus);
+    VLOG_DEBUG("bake", "bake_client_create_container: create response status=%i id=%s\n", chstatus, &cvdid[0]);
     if (chstatus == CHEF_STATUS_SUCCESS) {
         bctx->cvd_id = platform_strdup(&cvdid[0]);
         if (bctx->cvd_id == NULL) {
@@ -616,6 +637,27 @@ enum chef_status bake_client_upload(struct __bake_build_context* bctx, const cha
     gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK);
     chef_cvd_upload_result(bctx->cvd_client, &context, &chstatus);
     return chstatus;
+}
+
+enum chef_status bake_client_download(struct __bake_build_context* bctx, const char* containerPath, const char* hostPath)
+{
+    struct gracht_message_context context;
+    enum chef_status result = CHEF_STATUS_INTERNAL_ERROR;
+    int status = chef_cvd_download(bctx->cvd_client, &context,
+        &(struct chef_file_parameters) {
+            .container_id = bctx->cvd_id,
+            .source_path = (char*)containerPath,
+            .destination_path = (char*)hostPath,
+            .user.username = ""
+        });
+    if (status != 0) return status;
+    if (gracht_client_wait_message(bctx->cvd_client, &context, GRACHT_MESSAGE_BLOCK) != 0) {
+        return CHEF_STATUS_INTERNAL_ERROR;
+    }
+    if (chef_cvd_download_result(bctx->cvd_client, &context, &result) != 0) {
+        return CHEF_STATUS_INTERNAL_ERROR;
+    }
+    return result;
 }
 
 enum chef_status bake_client_destroy_container(struct __bake_build_context* bctx)

@@ -31,6 +31,8 @@
 #include <chef/containerv.h>
 #include <chef/list.h>
 
+#include "../disk/common.h"
+
 // HCS (Host Compute Service) includes
 #ifndef NTDDI_WIN10_RS1
 #define NTDDI_WIN10_RS1 0x0A000002
@@ -46,6 +48,7 @@
 #endif
 
 #define __CONTAINER_ID_LENGTH 36
+#define CONTAINERV_LCOW_GCS_PROCESS_MAGIC 0x47435350u
 
 // Windows-specific network configuration
 struct containerv_options_network {
@@ -143,13 +146,19 @@ struct containerv_options {
 
 struct containerv_container_process {
     struct list_item list_header;
+    // HCS_PROCESS for WCOW, or a heap-allocated containerv_lcow_gcs_process for LCOW.
     HANDLE           handle;
     DWORD            pid;
+    int              is_lcow_gcs;
+};
 
-    // VM guest process representation when using pid1d.
-    // `handle` is an opaque token owned by containerv; it is not a Win32 process handle.
-    int              is_guest;
-    uint64_t         guest_id;
+struct containerv_lcow_gcs_process {
+    uint32_t magic;
+    uint32_t pid;
+    char     container_id[__CONTAINER_ID_LENGTH + 1];
+    unsigned long exit_code;
+    int exited;
+    int deleted;
 };
 
 struct containerv_layer_context;
@@ -220,6 +229,12 @@ typedef HRESULT (WINAPI *HcsModifyComputeSystem_t)(
     PCWSTR Settings
 );
 
+typedef HRESULT (WINAPI *HcsGetComputeSystemProperties_t)(
+    HCS_SYSTEM ComputeSystem,
+    HCS_OPERATION Operation,
+    PCWSTR PropertyQuery
+);
+
 typedef HCS_OPERATION (WINAPI *HcsCreateOperation_t)(
     void* Context,
     HCS_OPERATION_COMPLETION CompletionCallback
@@ -254,6 +269,7 @@ struct hcs_api {
     HcsTerminateComputeSystem_t HcsTerminateComputeSystem;
     HcsCreateProcess_t          HcsCreateProcess;
     HcsModifyComputeSystem_t    HcsModifyComputeSystem;
+    HcsGetComputeSystemProperties_t HcsGetComputeSystemProperties;
     HcsCreateOperation_t        HcsCreateOperation;
     HcsCloseOperation_t         HcsCloseOperation;
     HcsCloseComputeSystem_t     HcsCloseComputeSystem;
@@ -263,7 +279,38 @@ struct hcs_api {
     HcsWaitForOperationResultAndProcessInfo_t  HcsWaitForOperationResultAndProcessInfo;
 };
 
+enum containerv_lcow_gcs_rpc {
+    CONTAINERV_LCOW_GCS_RPC_CREATE = 0x00100101u,
+    CONTAINERV_LCOW_GCS_RPC_EXECUTE_PROCESS = 0x00100501u,
+    CONTAINERV_LCOW_GCS_RPC_WAIT_FOR_PROCESS = 0x00100601u,
+    CONTAINERV_LCOW_GCS_RPC_MODIFY_SETTINGS = 0x00100a01u,
+    CONTAINERV_LCOW_GCS_RPC_NEGOTIATE_PROTOCOL = 0x00100b01u,
+    CONTAINERV_LCOW_GCS_RPC_DELETE_CONTAINER = 0x00100d01u
+};
+
 extern struct hcs_api g_hcs;
+
+struct containerv_container;
+
+// LCOW HvSocket bridge lifecycle and framed GCS request transport.
+extern int __lcow_gcs_bridge_listen(struct containerv_container* container);
+extern int __lcow_gcs_bridge_accept(struct containerv_container* container);
+extern int __lcow_gcs_bridge_negotiate(struct containerv_container* container);
+extern void __lcow_gcs_bridge_close(struct containerv_container* container);
+extern int __lcow_gcs_rpc(struct containerv_container* container, uint32_t rpc, const char* request_json, char** response_json_out);
+extern int __lcow_gcs_modify_settings(struct containerv_container* container, const char* modification_json);
+extern int __lcow_gcs_create_container(struct containerv_container* container, const char* container_id, const char* oci_spec_utf8);
+extern int __lcow_gcs_execute_container_process(struct containerv_container* container, const char* container_id, uint32_t* pid_out);
+extern int __lcow_gcs_execute_host_process(struct containerv_container* container, const char* const* argv, uint32_t* pid_out);
+extern int __hcs_wait_lcow_gcs_process(
+    struct containerv_container* container,
+    struct containerv_lcow_gcs_process* process,
+    unsigned long* exit_code);
+extern int __lcow_gcs_delete_container(struct containerv_container* container, const char* container_id);
+extern int __lcow_gcs_start_container(struct containerv_container* container, const char* container_id,
+    const char* oci_spec_utf8, uint32_t* pid_out);
+extern int __hcs_lcow_configure_network(struct containerv_container* container,
+    const char* address, const char* gateway, const char* dns);
 
 struct containerv_container {
     // HCS compute system handle and configuration
@@ -274,15 +321,25 @@ struct containerv_container {
     
     // Process management
     struct list  processes;
+    struct windows_vm_access* vm_access;
     
     // Container identification
     char         id[__CONTAINER_ID_LENGTH + 1];
     char*        runtime_dir;
     struct containerv_layer_context* layers;
     
-    // Communication pipes
-    HANDLE       host_pipe;
-    HANDLE       child_pipe;
+    // LCOW utility VM console capture and GCS bridge
+    HANDLE       lcow_console_pipe;
+    HANDLE       lcow_console_thread;
+    volatile LONG lcow_console_stopping;
+    uintptr_t    lcow_gcs_listener;
+    uintptr_t    lcow_gcs_socket;
+    uint64_t     lcow_gcs_next_id;
+    char*        lcow_disk_path;
+    char*        lcow_disk_pending;
+    HANDLE       lcow_disk_lock;
+    int          lcow_disk_fresh;
+    int          lcow_storage_ready;
     
     // Resource management
     HANDLE                               job_object;         // Job Object for resource limits
@@ -299,35 +356,37 @@ struct containerv_container {
 
     // HCS container-mode networking (HNS endpoint attached to this compute system).
     char*        hns_endpoint_id;
+    char*        hns_mac_address;
+    int          hns_endpoint_predeclared;
 
-    // Guest OS selection (used for in-VM helpers like pid1d)
+    // Guest OS selection: non-zero for WCOW, zero for LCOW.
     int          guest_is_windows;
-
-    // pid1d session (legacy VM containers only)
-    HCS_PROCESS  pid1d_process;
-    HANDLE       pid1d_stdin;
-    HANDLE       pid1d_stdout;
-    HANDLE       pid1d_stderr;
-    int          pid1d_started;
-
-    // PID1 integration
-    int          pid1_acquired;
 };
 
 // Windows security helpers
 extern int windows_apply_job_security(HANDLE job_handle, const struct containerv_policy* policy);
-extern int windows_create_secure_process_ex(
-    const struct containerv_policy* policy,
-    wchar_t*                        command_line,
-    const wchar_t*                  current_directory,
-    void*                           environment,
-    PROCESS_INFORMATION*            process_info
-);
+extern int windows_vm_sid(const char* vm_id, PSID* sid_out);
+extern int windows_grant_vm_access(struct containerv_container* container, const char* path, int readonly);
+extern void windows_revoke_vm_access(struct containerv_container* container);
 
-/**
- * @brief Generate a unique container ID
- */
-extern void containerv_generate_id(char* buffer, size_t length);
+// Allocating UTF-8 <-> UTF-16 conversions; callers free() the result.
+extern wchar_t* __windows_utf8_to_wide_alloc(const char* text);
+extern char*    __windows_wide_to_utf8_alloc(const wchar_t* text);
+
+extern void __windows_strv_free(char** values, int count);
+
+// Ensure a host directory exists before sharing it into a guest; writable shares are created on demand.
+extern int __windows_prepare_share_dir(const char* host_path, int readonly);
+
+// windowsfilter layerchain.json helpers (layerchain.c). Paths are resolved to existing directories.
+extern int __windows_layerchain_exists(const char* layer_dir);
+extern int __windows_layerchain_read(const char* layer_dir, char*** parents_out, int* count_out);
+extern int __windows_layerchain_expand(
+    const char* const* parents,
+    int                count,
+    char***            expanded_out,
+    int*               expanded_count_out);
+extern int __windows_layerchain_write(const char* layer_dir, const char* const* parents, int count);
 
 /**
  * @brief Internal spawn implementation
@@ -336,9 +395,10 @@ struct __containerv_spawn_options {
     const char*                path;
     const char* const*         argv;
     const char* const*         envv;
+    const char*                working_directory;
     enum container_spawn_flags flags;
 
-    // When true, request HCS stdio pipe handles for this process (VM path only).
+    // When true, request HCS stdio pipe handles for this process.
     int                        create_stdio_pipes;
 };
 
@@ -357,12 +417,38 @@ extern int __hcs_initialize(void);
 extern void __hcs_cleanup(void);
 
 // Add a Plan9 share to an existing HCS compute system (Hyper-V isolation).
+// Share names must match between UVM creation and later mounts, so always derive them here.
+#define HCS_LCOW_ROOTFS_SHARE_NAME "0"
+#define HCS_LCOW_STORAGE_CONTROLLER "df6d0690-79e5-55b6-a5ec-c1e2f77f580a"
+#define HCS_LCOW_NATIVE_ROOTFS "/run/chef-storage/rootfs"
+extern int __lcow_storage_prepare(struct containerv_container* container);
+extern int __lcow_storage_mount(struct containerv_container* container);
+extern void __lcow_storage_flush(struct containerv_container* container);
+extern int __lcow_storage_copy_seed(const char* source, const char* destination);
+extern void __hcs_plan9_share_name(const char* host_path, char* buffer, size_t buffer_size);
+
 extern int __hcs_plan9_share_add(
     struct containerv_container* container,
     const char*                  name,
     const char*                  host_path,
+    const char*                  guest_path,
     int                          readonly
 );
+
+extern int __hcs_plan9_mapped_dir_add(
+    struct containerv_container* container,
+    const char*                  name,
+    const char*                  guest_path,
+    int                          readonly
+);
+
+extern int __hcs_network_adapter_add(
+    struct containerv_container* container,
+    const char*                  adapter_id,
+    const char*                  endpoint_id,
+    const char*                  mac_address
+);
+
 
 /**
  * @brief Create and start an HCS container compute system (schema1 container config).
@@ -383,7 +469,7 @@ extern int __hcs_create_container_system(
 );
 
 /**
- * @brief Stop and destroy Hyper-V VM (legacy VM-backed mode)
+ * @brief Stop and destroy the HCS compute system backing the container
  */
 extern int __hcs_destroy_compute_system(struct containerv_container* container);
 
@@ -396,23 +482,10 @@ extern int __hcs_create_process(
     HCS_PROCESS* processOut,
     HCS_PROCESS_INFORMATION* processInfoOut
 );
-
-/**
- * @brief Execute process in an existing container by ID (for serve-exec)
- * @param containerId Container ID to execute in
- * @param commandPath Path to command inside container
- * @param workingDirectory Working directory for command
- * @param argv Command arguments (NULL-terminated)
- * @param envp Environment variables (NULL-terminated)
- * @return Exit code of the process, or -1 on error
- */
-extern int containerv_spawn_in_container(
-    const char* containerId,
-    const char* commandPath,
-    const char* workingDirectory,
-    char* const* argv,
-    char* const* envp
-);
+extern int __hcs_join(
+    const char* container_id,
+    const char* command_path,
+    struct containerv_join_options* options);
 
 /**
  * @brief Wait for HCS process completion
@@ -435,24 +508,15 @@ extern void containerv_options_set_vm_switch(
 /**
  * @brief Windows network management functions
  */
-extern int __windows_configure_vm_network(
-    struct containerv_container* container,
-    struct containerv_options* options
-);
-
-extern int __windows_configure_container_network(
-    struct containerv_container* container,
-    struct containerv_options* options
-);
 
 // HCS container compute system (WCOW/LCOW) networking.
 // Best-effort: creates and attaches an HNS endpoint (typically DHCP on the selected switch).
-extern int __windows_configure_hcs_container_network(
+extern int __windows_prepare_hcs_container_network(
     struct containerv_container* container,
     struct containerv_options* options
 );
 
-extern int __windows_configure_host_network(
+extern int __windows_configure_hcs_container_network(
     struct containerv_container* container,
     struct containerv_options* options
 );
@@ -460,17 +524,6 @@ extern int __windows_configure_host_network(
 extern int __windows_cleanup_network(
     struct containerv_container* container,
     struct containerv_options* options
-);
-
-/**
- * @brief Execute a command inside a VM guest via pid1d (legacy VM containers only).
- *
- * This is a thin internal wrapper used by subsystems like networking.
- */
-extern int __windows_exec_in_vm_via_pid1d(
-    struct containerv_container*       container,
-    struct __containerv_spawn_options* options,
-    int*                               exitCodeOut
 );
 
 /**
@@ -482,17 +535,6 @@ extern int __windows_exec_in_vm_via_pid1d(
 extern HANDLE __windows_create_job_object(
     struct containerv_container* container,
     const struct containerv_resource_limits* limits
-);
-
-/**
- * @brief Apply job object to container processes
- * @param container Container with running processes
- * @param job_handle Job object to apply
- * @return 0 on success, -1 on failure
- */
-extern int __windows_apply_job_to_processes(
-    struct containerv_container* container,
-    HANDLE job_handle
 );
 
 /**
@@ -522,20 +564,5 @@ extern int __windows_setup_volumes(
     struct containerv_container* container,
     const struct containerv_options* options
 );
-
-/**
- * @brief Clean up volumes for container
- * @param container Container to clean up volumes for
- */
-extern void __windows_cleanup_volumes(struct containerv_container* container);
-
-/**
- * @brief Create a named persistent volume
- * @param name Volume name
- * @param size_mb Size in megabytes
- * @param filesystem Filesystem type
- * @return 0 on success, -1 on failure
- */
-extern int containerv_volume_create(const char* name, uint64_t size_mb, const char* filesystem);
 
 #endif //!__CONTAINERV_WINDOWS_PRIVATE_H__

@@ -10,6 +10,7 @@ add_library(common STATIC
     vafs/image.c
     vafs/ingredient.c
     vafs/metadata.c
+    vafs/recipe_manifest.c
     vafs/utils.c
 
     utils/preprocessor.c
@@ -22,6 +23,8 @@ target_link_libraries(common PUBLIC yaml vafs zstd)
 # Tests
 option(COMMON_BUILD_TESTS "Build common parser tests" ON)
 if(COMMON_BUILD_TESTS)
+    add_executable(verify_hello_package tests/verify_hello_package.c)
+    target_link_libraries(verify_hello_package PRIVATE common platform)
     add_executable(common_parser_test
         tests/test_main.c
         tests/test_manifest.c

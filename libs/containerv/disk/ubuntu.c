@@ -26,6 +26,45 @@
 #include <string.h>
 #include <vlog.h>
 
+#if defined(_WIN32)
+#include <windows.h>
+#include <winternl.h>
+
+// Linux packages ship files differing only by case (e.g. xt_connmark.h/xt_CONNMARK.h).
+static int __enable_case_sensitivity(const char* path)
+{
+    typedef NTSTATUS (NTAPI *set_info_fn)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, ULONG);
+    const ULONG     fileCaseSensitiveInformation = 71;
+    ULONG           flags = 0x1; // FILE_CS_FLAG_CASE_SENSITIVE_DIR
+    IO_STATUS_BLOCK iosb;
+    set_info_fn     setInfo;
+    HANDLE          dir;
+    NTSTATUS        nt;
+
+    setInfo = (set_info_fn)GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtSetInformationFile");
+    if (setInfo == NULL) {
+        VLOG_ERROR("cvd", "__enable_case_sensitivity: NtSetInformationFile unavailable\n");
+        return -1;
+    }
+
+    dir = CreateFileA(path, FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                      NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (dir == INVALID_HANDLE_VALUE) {
+        VLOG_ERROR("cvd", "__enable_case_sensitivity: failed to open %s: %lu\n", path, GetLastError());
+        return -1;
+    }
+
+    memset(&iosb, 0, sizeof(iosb));
+    nt = setInfo(dir, &iosb, &flags, sizeof(flags), fileCaseSensitiveInformation);
+    CloseHandle(dir);
+    if (nt < 0) {
+        VLOG_ERROR("cvd", "__enable_case_sensitivity: failed for %s (status=0x%lx)\n", path, (unsigned long)nt);
+        return -1;
+    }
+    return 0;
+}
+#endif
+
 /* Replace the extracted resolver config with a deterministic container-facing DNS file. */
 static int __fixup_dns(const char* rootfs)
 {
@@ -101,8 +140,20 @@ int containerv_disk_setup_ubuntu_rootfs(const char* path, const char* base)
         goto exit;
     }
 
+    (void)platform_rmdir(path);
+    status = platform_mkdir(path);
+#if defined(_WIN32)
+    if (status == 0) {
+        status = __enable_case_sensitivity(path);
+    }
+#endif
+    if (status) {
+        VLOG_ERROR("cvd", "failed to prepare rootfs directory %s\n", path);
+        goto exit;
+    }
+
     VLOG_TRACE("cvd", "unpacking %s into %s\n", archivePath, path);
-    status = containerv_disk_extract_archive(archivePath, path, 1, 1);
+    status = containerv_disk_extract_archive(archivePath, path, 0, 1);
     if (status) {
         VLOG_ERROR("cvd", "failed to unpack ubuntu rootfs\n");
         goto exit;

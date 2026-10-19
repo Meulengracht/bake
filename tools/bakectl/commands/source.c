@@ -76,11 +76,12 @@ static int __prepare_path(const char* root, const char* relativePath, struct __s
         return -1;
     }
 
-    // Create a link from the source folder to the source folder in the
-    // project.
+    // The link lives in the writable guest filesystem; its target may be a
+    // host share. Preserve live source visibility on every backend.
     status = platform_symlink(root, canonicalized, 1);
     if (status) {
-        VLOG_ERROR("bakectl", "__prepare_path: failed to link %s to %s\n", root, canonicalized);
+        VLOG_ERROR("bakectl", "__prepare_path: failed to link %s to %s: %s; source storage must support symlinks\n",
+            root, canonicalized, strerror(errno));
     }
     
     free(project);

@@ -27,7 +27,7 @@ int platform_stat(const char* path, struct platform_stat* stats)
 		return -1;
 	}
 
-	stats->permissions = st.st_mode & 0777;
+	stats->permissions = st.st_mode & 07777;
 	stats->size        = st.st_size;
 	switch (st.st_mode & S_IFMT) {
 		case S_IFREG:
