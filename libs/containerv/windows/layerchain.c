@@ -50,7 +50,7 @@ static char* __layerchain_resolve_entry(const char* layer_dir, const char* entry
     const char* slash;
     int         rc;
 
-    if (containerv_disk_path_is_directory(entry)) {
+    if (!PathIsRelativeA(entry) && containerv_disk_path_is_directory(entry)) {
         return _strdup(entry);
     }
 

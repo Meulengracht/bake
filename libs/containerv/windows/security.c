@@ -120,7 +120,7 @@ int windows_grant_vm_access(struct containerv_container* container, const char* 
     HANDLE file;
     DWORD rights = FILE_GENERIC_READ | FILE_GENERIC_EXECUTE;
     if (!container || !path || !*path) { errno = EINVAL; return -1; }
-    if (!readonly) rights |= FILE_GENERIC_WRITE;
+    if (!readonly) rights |= FILE_GENERIC_WRITE | DELETE;
     wide = __windows_utf8_to_wide_alloc(path);
     if (!wide) return -1;
     file = CreateFileW(wide, READ_CONTROL | WRITE_DAC | FILE_READ_ATTRIBUTES,
